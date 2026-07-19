@@ -52,6 +52,7 @@ import type {
     RuntimeStateOptimisticTransactionalRepositoryLike,
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import { RuntimeStateRetryExhaustedError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 
 const SCOPE: StateScope = {
@@ -208,6 +209,167 @@ describe('convergent group and presence state', () => {
         ];
         for (const keys of keyFamilies) {
             expect(new Set(keys).size).toBe(lookalikeValues.length);
+        }
+    });
+
+    it('rejects noncanonical percent aliases for every derived child key on direct, list, and snapshot reads', async () => {
+        const ref = {
+            applicationId: 'canonical-child-app',
+            groupId: 'canonical-child-group',
+        };
+        const group: Group = {
+            ...createMutationRead().group!.value,
+            ...ref,
+            workspaceId: undefined,
+            activeMemberCount: 1,
+        };
+        const member: GroupMember = {
+            ...createMutationRead().actorMember!,
+            ...ref,
+            workspaceId: undefined,
+            principalId: 'alice',
+        };
+        const session: GroupPresenceSession = {
+            ...ref,
+            sessionId: 'session',
+            principalId: 'alice',
+            generationId: 'generation',
+            generationVersion: 1,
+            connectedAtEpochMs: 1_000,
+            lastHeartbeatAtEpochMs: 1_000,
+            expiresAtEpochMs: 10_000,
+        };
+        const admission: GroupPresenceAdmission = {
+            ...ref,
+            principalId: 'alice',
+            admittedSessions: [],
+            updatedAtEpochMs: 1_000,
+        };
+        const validIdempotency: GroupMutationIdempotencyRecord = {
+            aggregateRef: ref,
+            requestId: 'request',
+            commandHash: `sha256:${'1'.repeat(64)}`,
+            receipt: {
+                commandId: 'request',
+                commandHash: `sha256:${'1'.repeat(64)}`,
+                outcome: 'no-op',
+                stateRevision: 1,
+                snapshotVersion: 1,
+                causalRevision: { groupRevision: 1, presenceRevision: 0 },
+                event: { kind: 'none' },
+                joinCode: null,
+                joinCodeExpiresAtEpochMs: null,
+                rejection: null,
+            },
+        };
+        const cases = [
+            {
+                namespace: 'group-state:members',
+                canonicalKey: groupStateMemberStorageKey({ ...ref, principalId: 'alice' }),
+                aliasKey: `${groupStateGroupStorageKey(ref)}:member=%61lice`,
+                value: member,
+                direct: (repository: GroupStateRepository) =>
+                    repository.findMemberEntry({ ...ref, principalId: 'alice' }),
+                lists: (repository: GroupStateRepository) => [
+                    () => repository.listMembers(ref),
+                    () => repository.listMemberEntries(ref),
+                ],
+            },
+            {
+                namespace: 'group-state:sessions',
+                canonicalKey: groupStatePresenceSessionStorageKey({ ...ref, sessionId: 'session' }),
+                aliasKey: `${groupStateGroupStorageKey(ref)}:session=%73ession`,
+                value: session,
+                direct: (repository: GroupStateRepository) =>
+                    repository.findPresenceEntry({ ...ref, sessionId: 'session' }),
+                lists: (repository: GroupStateRepository) => [
+                    () => repository.listPresenceSessions(ref),
+                    () => repository.listPresenceSessionEntries(ref),
+                    () => repository.listAllPresenceSessions(),
+                ],
+            },
+            {
+                namespace: 'group-state:presence-admissions',
+                canonicalKey: groupStatePresenceAdmissionStorageKey({
+                    ...ref,
+                    principalId: 'alice',
+                }),
+                aliasKey: `${groupStateGroupStorageKey(ref)}:principal=%61lice`,
+                value: admission,
+                direct: (repository: GroupStateRepository) =>
+                    repository.findPresenceAdmissionEntry({ ...ref, principalId: 'alice' }),
+                lists: (repository: GroupStateRepository) => [
+                    () => repository.listPresenceAdmissions(ref),
+                    () => repository.listPresenceAdmissionEntries(ref),
+                ],
+            },
+            {
+                namespace: 'group-state:idempotent',
+                canonicalKey: groupStateIdempotencyStorageKey(ref, 'request'),
+                aliasKey: `${groupStateGroupStorageKey(ref)}:request=%72equest`,
+                value: validIdempotency,
+                direct: (repository: GroupStateRepository) =>
+                    repository.findIdempotentGroupMutationReceiptEntry(ref, 'request'),
+                lists: (_repository: GroupStateRepository) => [],
+            },
+        ] as const;
+
+        for (const testCase of cases) {
+            const directRuntime = new FakeRuntimeStateRepository();
+            vi.spyOn(directRuntime, 'findEntry').mockResolvedValue({
+                key: testCase.aliasKey,
+                value: JSON.stringify(testCase.value),
+                expireAtTimestamp: Number.MAX_SAFE_INTEGER,
+                updatedTimestamp: new Date().toISOString(),
+                revision: 0,
+            });
+            await expect(testCase.direct(new GroupStateRepository(directRuntime)))
+                .rejects.toMatchObject({
+                    code: 'group-state-repository-invariant-corruption',
+                });
+
+            const listRuntime = new FakeRuntimeStateRepository();
+            await listRuntime.upsert(
+                testCase.namespace,
+                testCase.aliasKey,
+                JSON.stringify(testCase.value),
+                Number.MAX_SAFE_INTEGER,
+            );
+            const listRepository = new GroupStateRepository(listRuntime);
+            for (const read of testCase.lists(listRepository)) {
+                await expect(read()).rejects.toMatchObject({
+                    code: 'group-state-repository-invariant-corruption',
+                });
+            }
+
+            expect(testCase.aliasKey).not.toBe(testCase.canonicalKey);
+        }
+
+        const snapshotRuntime = new FakeRuntimeStateRepository();
+        await snapshotRuntime.upsert(
+            'group-state:groups',
+            groupStateGroupStorageKey(ref),
+            JSON.stringify(group),
+            Number.MAX_SAFE_INTEGER,
+        );
+        await snapshotRuntime.upsert(
+            'group-state:members',
+            `${groupStateGroupStorageKey(ref)}:member=%61lice`,
+            JSON.stringify(member),
+            Number.MAX_SAFE_INTEGER,
+        );
+        const snapshotRepository = new GroupStateRepository(snapshotRuntime);
+        for (const read of [
+            () => snapshotRepository.readSnapshot(ref),
+            () => snapshotRepository.listSnapshots({ applicationId: ref.applicationId }),
+            () => snapshotRepository.listSnapshotsPage(
+                { applicationId: ref.applicationId },
+                { limit: 10 },
+            ),
+        ]) {
+            await expect(read()).rejects.toMatchObject({
+                code: 'group-state-repository-invariant-corruption',
+            });
         }
     });
 
@@ -536,6 +698,86 @@ describe('convergent group and presence state', () => {
         )).rejects.toMatchObject({
             code: 'group-state-repository-invariant-corruption',
         });
+    });
+
+    it('enforces the exact compact idempotency contract on insert and both read APIs', async () => {
+        const ref = {
+            applicationId: 'exact-receipt-app',
+            groupId: 'exact-receipt-group',
+        };
+        const requestId = 'exact-request';
+        const commandHash = `sha256:${'2'.repeat(64)}`;
+        const valid: GroupMutationIdempotencyRecord = {
+            aggregateRef: ref,
+            requestId,
+            commandHash,
+            receipt: {
+                commandId: requestId,
+                commandHash,
+                outcome: 'no-op',
+                stateRevision: 1,
+                snapshotVersion: 1,
+                causalRevision: { groupRevision: 1, presenceRevision: 0 },
+                event: { kind: 'none' },
+                joinCode: null,
+                joinCodeExpiresAtEpochMs: null,
+                rejection: null,
+            },
+        };
+        const { commandHash: _missingCommandHash, ...missingCommandHash } = valid;
+        const { aggregateRef: _legacyAggregateRef, ...legacyIdentityFree } = valid;
+        const invalidRecords: readonly [string, unknown][] = [
+            ['malformed SHA', { ...valid, commandHash: 'sha256:not-a-digest' }],
+            ['empty receipt', { ...valid, receipt: {} }],
+            ['unexpected top-level field', { ...valid, unexpected: true }],
+            ['unexpected aggregateRef field', {
+                ...valid,
+                aggregateRef: { ...ref, unexpected: true },
+            }],
+            ['missing required field', missingCommandHash],
+            ['mismatched receipt/hash identity', {
+                ...valid,
+                receipt: {
+                    ...valid.receipt,
+                    commandHash: `sha256:${'3'.repeat(64)}`,
+                },
+            }],
+            ['mismatched receipt/command identity', {
+                ...valid,
+                receipt: { ...valid.receipt, commandId: 'other-command' },
+            }],
+            ['legacy identity-free no-event record', legacyIdentityFree],
+        ];
+
+        for (const [label, invalid] of invalidRecords) {
+            const insertRepository = new GroupStateRepository(
+                new FakeRuntimeStateRepository(),
+            );
+            await expect(insertRepository.insertIdempotentGroupMutationReceipt(
+                ref,
+                requestId,
+                invalid as GroupMutationIdempotencyRecord,
+            ), label).rejects.toMatchObject({
+                code: 'group-state-repository-invariant-corruption',
+            });
+
+            const readRuntime = new FakeRuntimeStateRepository();
+            await readRuntime.upsert(
+                'group-state:idempotent',
+                groupStateIdempotencyStorageKey(ref, requestId),
+                JSON.stringify(invalid),
+                Number.MAX_SAFE_INTEGER,
+            );
+            const readRepository = new GroupStateRepository(readRuntime);
+            for (const read of [
+                () => readRepository.findIdempotentGroupMutationReceipt(ref, requestId),
+                () => readRepository.findIdempotentGroupMutationReceiptEntry(ref, requestId),
+            ]) {
+                await expect(read(), label).rejects.toMatchObject({
+                    code: 'group-state-repository-invariant-corruption',
+                });
+            }
+        }
     });
 
     it('builds collision-safe maintenance identities from the complete semantic command', async () => {
@@ -2703,6 +2945,99 @@ describe('convergent group and presence state', () => {
             .toBe('retry-exhaustion-room');
     });
 
+    it('rolls back group state, receipt, event, and outbox when the insert-only outbox collides', async () => {
+        const runtime = new GroupBarrierRepository();
+        await seedOpenGroup(runtime, 'outbox-collision-room');
+        const wake = vi.fn();
+        const timing: RallarTimingEvent[] = [];
+        runtime.resetGuards();
+        runtime.failNextOutboxInsert();
+
+        await expect(createService(
+            runtime,
+            2_000,
+            wake,
+            () => Promise.resolve(),
+            undefined,
+            (event) => timing.push(event),
+        ).updateGroup(
+            SCOPE,
+            'outbox-collision-room',
+            {
+                displayName: 'Must roll back',
+                actorPrincipalId: 'alice',
+                requestId: 'group-outbox-collision',
+            },
+        )).rejects.toMatchObject({
+            code: 'state-mutation-outbox-collision',
+        });
+
+        const repository = new GroupStateRepository(runtime);
+        const ref = groupRef('outbox-collision-room');
+        expect((await repository.findGroup(ref))?.displayName)
+            .toBe('outbox-collision-room');
+        expect(await repository.findIdempotentGroupMutationReceipt(
+            ref,
+            'group-outbox-collision',
+        )).toBeUndefined();
+        expect(await outboxFor(runtime, 'group-outbox-collision')).toEqual([]);
+        expect((await repository.listEvents(ref)).filter(
+            (event) => event.requestId === 'group-outbox-collision',
+        )).toEqual([]);
+        expect(runtime.groupGuards).toBe(1);
+        expect(wake).not.toHaveBeenCalled();
+        expect(timing.map((event) => event.operation)).not.toContain('mutation.conflict');
+        expect(timing).toEqual(expect.arrayContaining([
+            expect.objectContaining({ operation: 'mutation.write', status: 'error' }),
+            expect.objectContaining({
+                operation: 'mutation.transaction',
+                status: 'error',
+            }),
+        ]));
+    });
+
+    it('records direct group read, compute, validate, write, and transaction phases', async () => {
+        const runtime = new GroupBarrierRepository();
+        await seedOpenGroup(runtime, 'group-phase-room');
+        const timing: RallarTimingEvent[] = [];
+        const service = createService(
+            runtime,
+            2_000,
+            undefined,
+            () => Promise.resolve(),
+            undefined,
+            (event) => timing.push(event),
+        );
+        const request = {
+            displayName: 'Timed write',
+            actorPrincipalId: 'alice',
+            requestId: 'group-phase-write',
+        } as const;
+
+        await service.updateGroup(SCOPE, 'group-phase-room', request);
+        expect(timing.map((event) => event.operation)).toEqual(expect.arrayContaining([
+            'mutation.read',
+            'mutation.compute',
+            'mutation.validate',
+            'mutation.write',
+            'mutation.transaction',
+        ]));
+        expect(timing.filter((event) => event.operation.startsWith('mutation.')))
+            .toSatisfy((events: RallarTimingEvent[]) =>
+                events.every((event) => event.status === 'ok' && event.durationMs >= 0)
+            );
+
+        timing.length = 0;
+        await service.updateGroup(SCOPE, 'group-phase-room', request);
+        expect(timing.map((event) => event.operation)).toEqual(expect.arrayContaining([
+            'mutation.read',
+            'mutation.compute',
+            'mutation.validate',
+        ]));
+        expect(timing.map((event) => event.operation)).not.toContain('mutation.write');
+        expect(timing.map((event) => event.operation)).not.toContain('mutation.transaction');
+    });
+
     it('retries summary CAS and restart without duplicating the sole topology follow-up', async () => {
         const runtime = new GroupBarrierRepository();
         await seedOpenGroup(runtime, 'summary-room');
@@ -2719,12 +3054,14 @@ describe('convergent group and presence state', () => {
         );
         const before = await requireSnapshot(runtime, 'summary-room');
         const wake = vi.fn();
+        const timing: RallarTimingEvent[] = [];
         const work = new GroupPresenceSummaryWork({
             runtimeRepository: runtime,
             now: () => BASE_EPOCH_MS + 3_000,
             sleep: () => Promise.resolve(),
             serviceId: 'summary-worker',
             wakeStateMutationOutbox: wake,
+            timing: (event) => timing.push(event),
         });
         runtime.failNextPresenceSummaryCas();
         await work.enqueueForGroupSnapshot(before, 'summary-delivery');
@@ -2764,6 +3101,68 @@ describe('convergent group and presence state', () => {
             effects: ['rtc-topology-recompute'],
         });
         expect(wake).toHaveBeenCalledTimes(1);
+        expect(timing.map((event) => event.operation)).toEqual(expect.arrayContaining([
+            'backoff',
+            'mutation.read',
+            'mutation.compute',
+            'mutation.validate',
+            'mutation.write',
+            'mutation.transaction',
+            'conflict',
+        ]));
+        expect(timing.filter((event) => event.operation.startsWith('mutation.')))
+            .toSatisfy((events: RallarTimingEvent[]) =>
+                events.every((event) => event.durationMs >= 0)
+            );
+    });
+
+    it('rolls back the presence summary when its insert-only outbox collides', async () => {
+        const runtime = new GroupBarrierRepository();
+        await seedOpenGroup(runtime, 'summary-outbox-collision-room');
+        await createService(runtime, BASE_EPOCH_MS + 2_000).connectPresenceSession(
+            SCOPE,
+            'summary-outbox-collision-room',
+            'session-a',
+            {
+                principalId: 'alice',
+                generationId: 'generation-a',
+                expiresAtEpochMs: BASE_EPOCH_MS + 10_000,
+                requestId: 'connect-summary-outbox-collision',
+            },
+        );
+        const repository = new GroupStateRepository(runtime);
+        const ref = groupRef('summary-outbox-collision-room');
+        const before = await repository.findPresenceSummaryEntry(ref);
+        const wake = vi.fn();
+        const timing: RallarTimingEvent[] = [];
+        runtime.resetGuards();
+        runtime.failNextOutboxInsert();
+
+        await expect(new GroupPresenceSummaryWork({
+            runtimeRepository: runtime,
+            now: () => BASE_EPOCH_MS + 3_000,
+            serviceId: 'summary-worker',
+            wakeStateMutationOutbox: wake,
+            timing: (event) => timing.push(event),
+        }).converge(ref, 'summary-outbox-collision')).rejects.toMatchObject({
+            code: 'state-mutation-outbox-collision',
+        });
+
+        expect(await repository.findPresenceSummaryEntry(ref)).toEqual(before);
+        expect(await outboxFor(
+            runtime,
+            'group-presence-summary:summary-outbox-collision',
+        )).toEqual([]);
+        expect(runtime.presenceSummaryGuards).toBe(1);
+        expect(wake).not.toHaveBeenCalled();
+        expect(timing.map((event) => event.operation)).not.toContain('conflict');
+        expect(timing).toEqual(expect.arrayContaining([
+            expect.objectContaining({ operation: 'mutation.write', status: 'error' }),
+            expect.objectContaining({
+                operation: 'mutation.transaction',
+                status: 'error',
+            }),
+        ]));
     });
 });
 
@@ -2976,12 +3375,17 @@ class GroupBarrierRepository extends FakeRuntimeStateRepository {
     private admissionReadsArrived = 0;
     private releaseAdmissionReads: (() => void) | undefined;
     private transactionTail: Promise<void> = Promise.resolve();
+    private outboxConflictsRemaining = 0;
     private presenceSummaryConflictsRemaining = 0;
     private groupConflictsRemaining = 0;
     private conflictingGroupDisplayName: string | undefined;
 
     failNextPresenceSummaryCas(): void {
         this.presenceSummaryConflictsRemaining = 1;
+    }
+
+    failNextOutboxInsert(): void {
+        this.outboxConflictsRemaining += 1;
     }
 
     failNextGroupCas(count: number): void {
@@ -3077,6 +3481,13 @@ class GroupBarrierRepository extends FakeRuntimeStateRepository {
         expireAtTimestamp: number,
     ): Promise<RuntimeStateConditionalWriteResult> {
         this.recordGuard(namespace);
+        if (
+            namespace === STATE_MUTATION_OUTBOX_NAMESPACE &&
+            this.outboxConflictsRemaining > 0
+        ) {
+            this.outboxConflictsRemaining -= 1;
+            return Promise.resolve({ status: 'conflict' });
+        }
         return super.insertIfAbsent(namespace, key, value, expireAtTimestamp);
     }
 
@@ -3185,6 +3596,7 @@ function createService(
     wakeStateMutationOutbox?: () => void,
     sleep: (delayMs: number) => Promise<void> = () => Promise.resolve(),
     injectedRandomId?: () => string,
+    timing?: (event: RallarTimingEvent) => void,
 ) {
     let id = 0;
     const issued = new Map<string, IssuedAuthSession>();
@@ -3199,6 +3611,7 @@ function createService(
         sleep,
         serviceId: 'group-service',
         wakeStateMutationOutbox,
+        timing,
         authSessionRepository: {
             findBySessionId: (sessionId) => Promise.resolve(issued.get(sessionId)),
         },

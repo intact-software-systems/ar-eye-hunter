@@ -264,6 +264,23 @@ describe('StateMutationOutboxRepository', () => {
         })).rejects.toThrow('Delivered outbox state requires successful attempt metadata');
     });
 
+    it('uses a validated insert-only operation for authoritative writes and never reads a collision winner', async () => {
+        const runtime = new FakeRuntimeStateRepository();
+        const repository = new StateMutationOutboxRepository(runtime);
+        const record = createClientRecord(createClientSnapshot(1));
+        const first = await repository.insertForAuthoritativeWrite(record);
+        expect(first.record).toEqual(record);
+
+        const findEntry = vi.spyOn(runtime, 'findEntry');
+        await expect(repository.insertForAuthoritativeWrite(structuredClone(record)))
+            .rejects.toMatchObject({
+                code: 'state-mutation-outbox-collision',
+            });
+        expect(findEntry).not.toHaveBeenCalled();
+        expect(await runtime.findAllEntries(STATE_MUTATION_OUTBOX_NAMESPACE))
+            .toHaveLength(1);
+    });
+
     it('rejects retryable or delivered records as initial insert candidates', async () => {
         const runtime = new FakeRuntimeStateRepository();
         const repository = new StateMutationOutboxRepository(runtime);

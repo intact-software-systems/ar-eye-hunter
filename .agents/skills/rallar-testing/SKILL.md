@@ -21,6 +21,11 @@ Read `references/test-commands.md` when choosing commands. Prefer targeted check
   fail as typed invariant corruption rather than returning misses, filtering,
   rewriting, or guessing. Cover every decoded application/workspace/group and
   principal/session/request slot at memory and live database boundaries.
+- Authoritative transaction changes: force an outbox-key collision and prove a
+  typed failure rolls back state, receipt, event, and outbox without a winner
+  read. For group/summary phase changes, assert explicit read, compute,
+  validate, write, transaction, conflict, and backoff timing as applicable,
+  including replay paths that skip write and transaction.
 - Browser facade changes: include `packages/tests/shared-web` and app builds if game apps consume the surface.
 - Server/middleware changes: include `packages/tests/shared-server`, Deno checks for API apps, and focused restart/routing tests when relevant.
 - REST API additions or behavior changes: add or update Rallar black-box recipes/tests in `packages/shared-test/black-box-runner` alongside the API change, then run the focused black-box command when its required services are available.

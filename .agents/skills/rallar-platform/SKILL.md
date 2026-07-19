@@ -69,6 +69,14 @@ rg --files packages/shared packages/shared-web packages/shared-server packages/s
 - Every retry must re-read current state and rerun authorization, policy,
   capacity, lifecycle, and invariant checks before deriving a new candidate.
   Never retry only the final write of a stale decision.
+- Write the authoritative path as direct named `read`, `compute`, `validate`,
+  and `write` statements. Timing records surround those statements and report
+  transaction duration separately; a timing helper must not own the work in a
+  callback.
+- Insert authoritative outbox intents inside the state/receipt/event
+  transaction with insert-only semantics. Treat any collision as a typed
+  rollback failure without loading a winner. Winner loading belongs only to a
+  separately named non-authoritative/read path.
 - Hash semantic caller intent before volatile server defaults. Represent
   omission as a mandatory nullable command field, capture random/time material
   once in immutable mandatory facts only after a validated ledger miss, and

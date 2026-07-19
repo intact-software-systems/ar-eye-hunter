@@ -41,6 +41,14 @@ rg -n "GroupRef|groupRef|groupId|roomId|createAndSwitch|createAndJoin|joinRoom|w
 - Re-read and re-run authorization, policy, capacity, lifecycle, and invariants
   on every retry. Never reuse a decision derived from a predecessor that lost
   its compare-and-set race.
+- Keep group and summary convergence human-readable as direct named read,
+  compute, validate, and write statements. Record phase timing around each
+  statement, with transaction timing separate; do not pass the phase work into
+  timing callback wrappers.
+- State, idempotency receipt, insert-only outbox intent, and event commit in one
+  authoritative transaction. An outbox collision is a typed rollback failure
+  and must not load a winner. Winner loading is only for an explicitly
+  non-authoritative/read path.
 - Preserve omitted public random/time inputs as mandatory `null` command fields
   when hashing idempotent intent. After hashing, validate the ledger before any
   random, clock-default, verifier, or other volatile materialization. Only a

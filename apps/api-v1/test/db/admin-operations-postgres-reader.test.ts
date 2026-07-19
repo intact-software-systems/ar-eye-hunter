@@ -413,6 +413,82 @@ Deno.test('PSqlAdminOperationsStatsReader fails closed on wrong-scope group runt
   });
 });
 
+Deno.test('PSqlAdminOperationsStatsReader rejects noncanonical group child-key aliases', async () => {
+  for (
+    const input of [
+      {
+        namespace: 'group-state:members',
+        key: 'app=ops-alias-app:ws=alias-workspace:group=room:member=%61lice',
+        value: {
+          applicationId: 'ops-alias-app',
+          workspaceId: 'alias-workspace',
+          groupId: 'room',
+          principalId: 'alice',
+          status: 'active',
+        },
+      },
+      {
+        namespace: 'group-state:sessions',
+        key: 'app=ops-alias-app:ws=alias-workspace:group=room:session=%73ession',
+        value: {
+          applicationId: 'ops-alias-app',
+          workspaceId: 'alias-workspace',
+          groupId: 'room',
+          sessionId: 'session',
+          principalId: 'alice',
+          expiresAtEpochMs: 1_700_000_060_000,
+        },
+      },
+    ] as const
+  ) {
+    await withPGliteSql(async (sql) => {
+      await sql`
+        insert into runtime_state_store (
+          store_namespace, store_key, store_value, expire_at_ts
+        ) values (
+          'group-state:groups',
+          'app=ops-alias-app:ws=alias-workspace:group=room',
+          ${
+        JSON.stringify({
+          applicationId: 'ops-alias-app',
+          workspaceId: 'alias-workspace',
+          groupId: 'room',
+          status: 'active',
+        })
+      },
+          ${new Date('9999-12-31T23:59:59Z')}
+        )
+      `;
+      await sql`
+        insert into runtime_state_store (
+          store_namespace, store_key, store_value, expire_at_ts
+        ) values (
+          ${input.namespace}, ${input.key}, ${JSON.stringify(input.value)},
+          ${new Date('9999-12-31T23:59:59Z')}
+        )
+      `;
+      const reader = new PSqlAdminOperationsStatsReader(sql, {
+        now: () => 1_700_000_000_100,
+      });
+
+      await assert.rejects(
+        () =>
+          reader.readState({
+            adminSession: createAdminSession(),
+            scope: {
+              applicationId: 'ops-alias-app',
+              workspaceId: 'alias-workspace',
+            },
+          }),
+        (error) =>
+          error instanceof Error &&
+          'code' in error &&
+          error.code === 'admin-operations-state-invariant-corruption',
+      );
+    });
+  }
+});
+
 Deno.test('PSqlAdminOperationsStatsReader treats encoded scope prefixes literally', async () => {
   await withPGliteSql(async (sql) => {
     const applicationId = 'ops/app';

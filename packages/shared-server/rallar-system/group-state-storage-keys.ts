@@ -61,7 +61,12 @@ export function groupStateMemberStorageKey(ref: GroupMemberStorageRef): string {
 export function decodeGroupStateMemberStorageKey(
     storageKey: string,
 ): GroupMemberStorageRef {
-    return decodeChildStorageKey(storageKey, 'member', 'principalId');
+    return decodeChildStorageKey(
+        storageKey,
+        'member',
+        'principalId',
+        groupStateMemberStorageKey,
+    );
 }
 
 export function groupStatePresenceSessionStorageKey(
@@ -76,7 +81,12 @@ export function groupStatePresenceSessionStorageKey(
 export function decodeGroupStatePresenceSessionStorageKey(
     storageKey: string,
 ): GroupSessionStorageRef {
-    return decodeChildStorageKey(storageKey, 'session', 'sessionId');
+    return decodeChildStorageKey(
+        storageKey,
+        'session',
+        'sessionId',
+        groupStatePresenceSessionStorageKey,
+    );
 }
 
 export function groupStatePresenceAdmissionStorageKey(
@@ -91,7 +101,12 @@ export function groupStatePresenceAdmissionStorageKey(
 export function decodeGroupStatePresenceAdmissionStorageKey(
     storageKey: string,
 ): GroupMemberStorageRef {
-    return decodeChildStorageKey(storageKey, 'principal', 'principalId');
+    return decodeChildStorageKey(
+        storageKey,
+        'principal',
+        'principalId',
+        groupStatePresenceAdmissionStorageKey,
+    );
 }
 
 export function groupStatePresenceSummaryStorageKey(ref: GroupRef): string {
@@ -111,13 +126,21 @@ export function groupStateIdempotencyStorageKey(
 export function decodeGroupStateIdempotencyStorageKey(
     storageKey: string,
 ): GroupRef & Readonly<{ requestId: string }> {
-    return decodeChildStorageKey(storageKey, 'request', 'requestId');
+    return decodeChildStorageKey(
+        storageKey,
+        'request',
+        'requestId',
+        (ref) => groupStateIdempotencyStorageKey(ref, ref.requestId),
+    );
 }
 
 function decodeChildStorageKey<Name extends string>(
     storageKey: string,
     partName: string,
     propertyName: Name,
+    canonicalKeyFor: (
+        ref: GroupRef & Readonly<Record<Name, string>>,
+    ) => string,
 ): GroupRef & Readonly<Record<Name, string>> {
     const parts = storageKey.split(':');
     if (parts.length !== 4) {
@@ -125,8 +148,12 @@ function decodeChildStorageKey<Name extends string>(
     }
     const ref = decodeGroupStateGroupStorageKey(parts.slice(0, 3).join(':'));
     const value = decodeKeyPart(parts[3], partName);
-    return { ...ref, [propertyName]: value } as GroupRef &
+    const decoded = { ...ref, [propertyName]: value } as GroupRef &
         Readonly<Record<Name, string>>;
+    if (canonicalKeyFor(decoded) !== storageKey) {
+        throw new TypeError(`Group-state ${partName} storage key is not canonical`);
+    }
+    return decoded;
 }
 
 function decodeKeyPart(part: string | undefined, name: string): string {

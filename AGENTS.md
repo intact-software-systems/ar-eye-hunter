@@ -43,6 +43,14 @@ the repo-local Codex plugin under `.agents/skills/**`.
   delete owns deletion and expiry.
 - Every optimistic retry must re-read and rerun authorization, policy, capacity,
   lifecycle, and invariant checks. Never retry only a stale final write.
+- Keep authoritative mutation control flow as direct, named read, compute,
+  validate, and write statements. Measure those statements before and after;
+  do not hide the work inside timing callback wrappers. Report transaction
+  timing separately when the write owns a transaction.
+- Insert the authoritative outbox intent inside the same transaction as state,
+  idempotency receipt, and event. This path is insert-only: a key collision is
+  a typed failure that rolls back the transaction and never reads a winner.
+  Winner loading is reserved for an explicitly non-authoritative/read path.
 - Preserve caller omission as explicit `null` in the semantic command and hash
   that intent before applying server clock or random defaults. Capture any
   volatile candidate once in mandatory immutable facts only after a validated

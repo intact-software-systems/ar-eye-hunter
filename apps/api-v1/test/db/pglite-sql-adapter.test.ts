@@ -10,6 +10,7 @@ import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-stat
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
+import { createGroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
 import { CoalescedAppOutboxWorkService } from '@shared-server/rallar-system/services/CoalescedAppOutboxWorkService.ts';
 import { AppOutboxType } from '@shared-server/rallar-system/services/AppOutboxService.ts';
 import {
@@ -17,6 +18,7 @@ import {
   PSqlGroupStateEventRepository,
 } from '@shared-server/postgres/rallar-system/PSqlStateEventRepository.ts';
 import { groupEventWorkspaceKey } from '@shared-server/postgres/rallar-system/group-event-workspace-key.ts';
+import { createGroupStateEventRepository } from '@shared-server/postgres/rallar-system/createStateRepositories.ts';
 import type { ClientEvent } from '@shared/api/client-types.ts';
 import type { GroupEvent } from '@shared/api/group-types.ts';
 import {
@@ -426,14 +428,29 @@ Deno.test('PSql state event repositories page by snapshot cursor order', async (
     await groupEvents.appendGroupEvent(
       createGroupStateEvent('group-middle-snapshot', 3_000, 20),
     );
-    await groupEvents.appendGroupEvent(
-      createGroupStateEvent('group-duplicate', 4_000, 40, 'member-left'),
+    const firstDuplicate = createGroupStateEvent(
+      'group-duplicate',
+      4_000,
+      40,
+      'member-left',
     );
-    await groupEvents.appendGroupEvent(
-      createGroupStateEvent('group-duplicate', 5_000, 50, 'member-left', {
-        reason: 'updated',
-      }),
-    );
+    await groupEvents.appendGroupEvent(firstDuplicate);
+    for (
+      const duplicate of [
+        structuredClone(firstDuplicate),
+        createGroupStateEvent('group-duplicate', 5_000, 50, 'member-left', {
+          reason: 'updated',
+        }),
+      ]
+    ) {
+      await assert.rejects(
+        () => groupEvents.appendGroupEvent(duplicate),
+        (error) =>
+          error instanceof Error &&
+          'code' in error &&
+          error.code === 'group-state-event-collision',
+      );
+    }
 
     const firstGroupPage = await groupEvents.listGroupEventPage(groupRef, {
       limit: 2,
@@ -521,6 +538,82 @@ Deno.test('PSql group events isolate absent and explicit sentinel workspaces wit
     `;
     assert.equal(rows.length, 2);
     assert.notEqual(rows[0]?.workspace_key, rows[1]?.workspace_key);
+  });
+});
+
+Deno.test('PGlite group event collision rolls back the authoritative mutation transaction', async () => {
+  await withPGliteSql(async (sql) => {
+    const runtime = new PSqlRuntimeStateRepository(sql);
+    const eventIds = ['seed-event', 'colliding-event'];
+    const authority = {
+      clientId: 'alice',
+      sessionId: 'alice-session',
+      accessToken: 'test-token',
+      username: 'alice',
+      issuedAtEpochMs: 1,
+      expiresAtEpochMs: 100_000,
+    };
+    const service = createGroupStateService({
+      runtimeRepository: runtime,
+      createGroupStateEventStore: createGroupStateEventRepository,
+      authSessionRepository: {
+        findBySessionId: (sessionId) =>
+          Promise.resolve(sessionId === authority.sessionId ? authority : undefined),
+      },
+      now: () => 10_000,
+      randomId: () => eventIds.shift() ?? 'unexpected-event-id',
+      sleep: () => Promise.resolve(),
+      serviceId: 'pglite-group-service',
+    });
+    const scope = { applicationId: 'collision-app', workspaceId: 'main' };
+    const ref = { ...scope, groupId: 'collision-group' };
+    await service.createGroup(scope, {
+      groupId: ref.groupId,
+      displayName: 'Before collision',
+      kind: 'room',
+      joinMode: 'open',
+      createdByPrincipalId: 'alice',
+      requestId: 'seed-collision-group',
+    }, authority);
+    await new PSqlGroupStateEventRepository(sql).appendGroupEvent(
+      createGroupStateEvent('colliding-event', 9_000, 99, 'group-updated', {
+        ...ref,
+        requestId: 'preexisting-event',
+      }),
+    );
+
+    await assert.rejects(
+      () =>
+        service.updateGroup(scope, ref.groupId, {
+          displayName: 'Must roll back',
+          actorPrincipalId: 'alice',
+          requestId: 'collision-request',
+        }, authority),
+      (error) =>
+        error instanceof Error &&
+        'code' in error &&
+        error.code === 'group-state-event-collision',
+    );
+
+    const repository = new GroupStateRepository(runtime);
+    assert.equal((await repository.findGroup(ref))?.displayName, 'Before collision');
+    assert.equal(
+      await repository.findIdempotentGroupMutationReceipt(ref, 'collision-request'),
+      undefined,
+    );
+    const collisionOutbox = (await runtime.findAllEntries('state-mutation:outbox'))
+      .map((entry) => JSON.parse(entry.value) as { commandId?: string })
+      .filter((record) => record.commandId === 'collision-request');
+    assert.deepEqual(collisionOutbox, []);
+    const collisionRows = await sql<{ count: string }[]>`
+      select count(*) as count
+      from group_state_events
+      where application_id = ${ref.applicationId}
+        and workspace_key = ${groupEventWorkspaceKey(ref.workspaceId)}
+        and group_id = ${ref.groupId}
+        and event_id = 'colliding-event'
+    `;
+    assert.equal(Number(collisionRows[0]?.count), 1);
   });
 });
 

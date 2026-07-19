@@ -306,6 +306,42 @@ describe('Rallar repo skill and documentation integrity', () => {
         expect(readRepo('AGENTS.md')).not.toContain('  - `...`');
     });
 
+    it('keeps authoritative group and summary phases as direct statements', () => {
+        const groupService = readRepo(
+            'packages/shared-server/rallar-system/services/group-state-service.ts',
+        );
+        const summaryWork = readRepo(
+            'packages/shared-server/rallar-system/services/GroupPresenceSummaryWork.ts',
+        );
+        const clientService = readRepo(
+            'packages/shared-server/rallar-system/services/client-state-service.ts',
+        );
+
+        expect(groupService).not.toContain('timeMutationPhase');
+        expectAll(groupService, [
+            'const read = await readGroupMutation',
+            'computed = computeGroupMutation',
+            'validateGroupMutation({ command, read, facts, computed })',
+            'const written = await writeGroupMutation',
+            "'read' | 'compute' | 'validate' | 'write' | 'transaction'",
+        ]);
+        expectAll(summaryWork, [
+            'const read = await readGroupPresenceSummary',
+            'const computed = computeGroupPresenceSummary',
+            'validateGroupPresenceSummary({ ref, read, computed })',
+            'const written = await writeGroupPresenceSummary',
+            "'read' | 'compute' | 'validate' | 'write' | 'transaction'",
+        ]);
+        expect(clientService).not.toContain('timeMutationPhase');
+        expectAll(clientService, [
+            'const read = await readClientMutation',
+            'const computed = computeClientMutation',
+            'validateClientMutation({ command, read, computed, facts })',
+            'const written = await writeClientMutation',
+            "'read' | 'compute' | 'validate' | 'write' | 'transaction'",
+        ]);
+    });
+
     it('keeps current startup and recipe documentation internally consistent', () => {
         const aiSkill = readRepo('docs/rallar-ai-skill.md');
         const prompting = readRepo('docs/rallar-ai-prompting-guide.md');

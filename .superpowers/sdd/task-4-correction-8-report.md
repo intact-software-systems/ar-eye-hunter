@@ -1,5 +1,11 @@
 # Task 4 correction 8 report: fail-closed scoped group reads and events
 
+> **Superseded by correction 9 for final Task 4 acceptance.** Correction 8's
+> scoped-read findings and evidence remain valid, but its completion claim did
+> not cover canonical full child-key re-encoding, exact repository-boundary
+> idempotency validation, typed group-event collision rollback, direct visible
+> write phases, or insert-only authoritative outbox writes.
+
 ## Status and scope
 
 Status: `DONE_WITH_CONCERNS`.

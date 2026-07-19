@@ -20,8 +20,9 @@ import {
     RuntimeStateJsonStore,
     type RuntimeStateEntryValue,
 } from '../../runtime-state/RuntimeStateJsonStore.ts';
-import type {
-    GroupMutationIdempotencyRecord,
+import {
+    type GroupMutationIdempotencyRecord,
+    validateGroupMutationIdempotencyRecord,
 } from '@shared-server/rallar-system/services/group-state-mutations.ts';
 import type { GroupSnapshotPage, GroupSnapshotPageOptions } from '@shared-server/rallar-system/services/group-state-service.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
@@ -909,9 +910,17 @@ function assertIdempotencyIdentity(
     expected: GroupRef & Readonly<{ requestId: string }>,
     storageKey: string,
 ): void {
-    if (value.requestId !== expected.requestId ||
-        typeof value.aggregateRef !== 'object' ||
-        value.aggregateRef === null) {
+    try {
+        validateGroupMutationIdempotencyRecord(value, expected);
+    } catch (error) {
+        throw new GroupStateRepositoryInvariantCorruptionError(
+            storageKey,
+            error instanceof Error
+                ? error.message
+                : 'Stored group idempotency value is invalid',
+        );
+    }
+    if (value.requestId !== expected.requestId) {
         throwIdentityCorruption(storageKey, 'idempotency request');
     }
     assertGroupRefIdentity(value.aggregateRef, expected, storageKey);

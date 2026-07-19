@@ -21,6 +21,20 @@ type GroupStateEventRow = Readonly<{
 
 const DEFAULT_WORKSPACE_KEY = '_';
 
+export class GroupStateEventCollisionError extends Error {
+    readonly code = 'group-state-event-collision';
+
+    constructor(
+        readonly event: Pick<
+            GroupEvent,
+            'applicationId' | 'workspaceId' | 'groupId' | 'eventId'
+        >,
+    ) {
+        super(`Group state event already exists: ${event.eventId}`);
+        this.name = 'GroupStateEventCollisionError';
+    }
+}
+
 export class PSqlClientStateEventRepository implements ClientStateEventStore {
     constructor(private readonly sql: PSqlSql) {}
 
@@ -202,7 +216,7 @@ export class PSqlGroupStateEventRepository implements GroupStateEventStore {
     constructor(private readonly sql: PSqlSql) {}
 
     async appendGroupEvent(event: GroupEvent): Promise<void> {
-        await this.sql`
+        const inserted = await this.sql<{ event_id: string }[]>`
             insert into group_state_events (application_id,
                                             workspace_key,
                                             group_id,
@@ -221,7 +235,11 @@ export class PSqlGroupStateEventRepository implements GroupStateEventStore {
                     ${JSON.stringify(event)})
             on conflict (application_id, workspace_key, group_id, event_id)
                 do nothing
+            returning event_id
         `;
+        if (inserted.length !== 1) {
+            throw new GroupStateEventCollisionError(event);
+        }
     }
 
     async listGroupEvents(ref: GroupRef): Promise<readonly GroupEvent[]> {

@@ -416,31 +416,37 @@ export function createGroupStateRuntime(
                 { sleep: dependencies.sleep },
             );
             await reverifyAuthority?.();
-            const read = await timeMutationPhase(
-                dependencies,
-                command,
-                'read',
-                attempt,
-                backoffMs,
-                async () => await readGroupMutation(repositoryFor(runtime), command),
-            );
-            let resolvedFromIdempotency = false;
-            const computed = await timeMutationPhase(
-                dependencies,
-                command,
-                'compute',
-                attempt,
-                backoffMs,
-                async () => {
-                    const idempotency = probeGroupMutationIdempotency(
-                        command,
-                        read,
-                        commandHash,
-                    );
-                    if (idempotency.outcome !== 'miss') {
-                        resolvedFromIdempotency = true;
-                        return idempotency;
-                    }
+            let activePhase: 'read' | 'compute' | 'validate' | 'write' = 'read';
+            let phaseStarted = performance.now();
+            let phaseRecorded = false;
+            let transactionStarted: number | undefined;
+            try {
+                const read = await readGroupMutation(repositoryFor(runtime), command);
+                recordMutationPhase(
+                    dependencies,
+                    command,
+                    'read',
+                    'ok',
+                    phaseStarted,
+                    attempt,
+                    backoffMs,
+                );
+                phaseRecorded = true;
+
+                activePhase = 'compute';
+                phaseStarted = performance.now();
+                phaseRecorded = false;
+                let resolvedFromIdempotency = false;
+                let computed: GroupMutationComputed;
+                const idempotency = probeGroupMutationIdempotency(
+                    command,
+                    read,
+                    commandHash,
+                );
+                if (idempotency.outcome !== 'miss') {
+                    resolvedFromIdempotency = true;
+                    computed = idempotency;
+                } else {
                     if (!facts) {
                         const resolvedJoinCode = resolveCommandJoinCode(command, randomId);
                         facts = {
@@ -454,64 +460,112 @@ export function createGroupStateRuntime(
                             authenticatedAuthority,
                         };
                     }
-                    return computeGroupMutation({ command, read, facts });
-                },
-            );
-            await timeMutationPhase(
-                dependencies,
-                command,
-                'validate',
-                attempt,
-                backoffMs,
-                () => {
-                    if (resolvedFromIdempotency) {
-                        const canonical = probeGroupMutationIdempotency(
-                            command,
-                            read,
-                            commandHash,
+                    computed = computeGroupMutation({ command, read, facts });
+                }
+                recordMutationPhase(
+                    dependencies,
+                    command,
+                    'compute',
+                    'ok',
+                    phaseStarted,
+                    attempt,
+                    backoffMs,
+                );
+                phaseRecorded = true;
+
+                activePhase = 'validate';
+                phaseStarted = performance.now();
+                phaseRecorded = false;
+                if (resolvedFromIdempotency) {
+                    const canonical = probeGroupMutationIdempotency(
+                        command,
+                        read,
+                        commandHash,
+                    );
+                    if (canonicalJson(canonical) !== canonicalJson(computed)) {
+                        throw new TypeError(
+                            'Group mutation idempotency probe is not canonical',
                         );
-                        if (canonicalJson(canonical) !== canonicalJson(computed)) {
-                            throw new TypeError(
-                                'Group mutation idempotency probe is not canonical',
-                            );
-                        }
-                        return;
                     }
+                } else {
                     if (!facts) {
                         throw new TypeError('Group mutation facts were not materialized');
                     }
                     validateGroupMutation({ command, read, facts, computed });
-                },
-            );
-            if (computed.outcome === 'idempotency-conflict') {
-                throw new GroupMutationIdempotencyConflictError(
-                    command.commandId,
-                    computed.existingCommandHash,
-                    computed.receivedCommandHash,
+                }
+                recordMutationPhase(
+                    dependencies,
+                    command,
+                    'validate',
+                    'ok',
+                    phaseStarted,
+                    attempt,
+                    backoffMs,
                 );
-            }
-            if (computed.outcome !== 'write') {
-                return { receipt: computed.receipt, source: computed.outcome };
-            }
-            try {
-                const receipt = await timeMutationPhase(
+                phaseRecorded = true;
+
+                if (computed.outcome === 'idempotency-conflict') {
+                    throw new GroupMutationIdempotencyConflictError(
+                        command.commandId,
+                        computed.existingCommandHash,
+                        computed.receivedCommandHash,
+                    );
+                }
+                if (computed.outcome !== 'write') {
+                    return { receipt: computed.receipt, source: computed.outcome };
+                }
+
+                activePhase = 'write';
+                phaseStarted = performance.now();
+                phaseRecorded = false;
+                transactionStarted = performance.now();
+                const written = await writeGroupMutation(runtime, repositoryFor, computed);
+                recordMutationPhase(
+                    dependencies,
+                    command,
+                    'transaction',
+                    'ok',
+                    transactionStarted,
+                    attempt,
+                    backoffMs,
+                );
+                phaseRecorded = true;
+                recordMutationPhase(
                     dependencies,
                     command,
                     'write',
+                    'ok',
+                    phaseStarted,
                     attempt,
                     backoffMs,
-                    async () => await timeMutationPhase(
+                );
+                dependencies.wakeStateMutationOutbox?.();
+                return { receipt: written, source: 'write' };
+            } catch (error) {
+                if (activePhase === 'write' && transactionStarted !== undefined) {
+                    recordMutationPhase(
                         dependencies,
                         command,
                         'transaction',
+                        'error',
+                        transactionStarted,
                         attempt,
                         backoffMs,
-                        async () => await writeGroupMutation(runtime, repositoryFor, computed),
-                    ),
-                );
-                dependencies.wakeStateMutationOutbox?.();
-                return { receipt, source: 'write' };
-            } catch (error) {
+                        error,
+                    );
+                }
+                if (!phaseRecorded) {
+                    recordMutationPhase(
+                        dependencies,
+                        command,
+                        activePhase,
+                        'error',
+                        phaseStarted,
+                        attempt,
+                        backoffMs,
+                        error,
+                    );
+                }
                 if (!(error instanceof RuntimeStateWriteConflictError)) throw error;
                 lastConflict = error;
                 recordMutationConflict(dependencies, command, attempt, backoffMs);
@@ -1509,7 +1563,7 @@ async function writeGroupMutation(
                 ),
             );
         }
-        await new StateMutationOutboxRepository(transaction).putOrLoad(
+        await new StateMutationOutboxRepository(transaction).insertForAuthoritativeWrite(
             createStateMutationOutboxRecord(computed.outbox),
         );
         await repository.appendEvent(computed.event);
@@ -1940,37 +1994,24 @@ async function joinCodeVerifier(joinCode: string | null): Promise<string | null>
         .join('');
 }
 
-async function timeMutationPhase<T>(
+function recordMutationPhase(
     dependencies: GroupStateServiceDependencies,
     command: GroupMutationCommand,
     phase: 'read' | 'compute' | 'validate' | 'write' | 'transaction',
+    status: 'ok' | 'error',
+    started: number,
     attempt: number,
     backoffMs: number,
-    action: () => T | Promise<T>,
-): Promise<T> {
-    const started = performance.now();
-    try {
-        const result = await action();
-        recordRallarTiming(dependencies.timing, {
-            component: 'group-state-service',
-            operation: `mutation.${phase}`,
-            serviceId: dependencies.serviceId,
-            requestId: command.requestId ?? undefined,
-            ...command.aggregateRef,
-            details: { attempt, backoffMs, mutationOperation: command.operation },
-        }, 'ok', performance.now() - started);
-        return result;
-    } catch (error) {
-        recordRallarTiming(dependencies.timing, {
-            component: 'group-state-service',
-            operation: `mutation.${phase}`,
-            serviceId: dependencies.serviceId,
-            requestId: command.requestId ?? undefined,
-            ...command.aggregateRef,
-            details: { attempt, backoffMs, mutationOperation: command.operation },
-        }, 'error', performance.now() - started, error);
-        throw error;
-    }
+    error?: unknown,
+): void {
+    recordRallarTiming(dependencies.timing, {
+        component: 'group-state-service',
+        operation: `mutation.${phase}`,
+        serviceId: dependencies.serviceId,
+        requestId: command.requestId ?? undefined,
+        ...command.aggregateRef,
+        details: { attempt, backoffMs, mutationOperation: command.operation },
+    }, status, performance.now() - started, error);
 }
 
 function recordMutationConflict(

@@ -295,6 +295,43 @@ describe('convergent client state', () => {
         ]);
     });
 
+    it('rolls back client state, receipt, event, and outbox when the insert-only outbox collides', async () => {
+        const runtime = new AggregateBarrierRepository();
+        const repository = new ClientStateRepository(runtime);
+        const timing: RallarTimingEvent[] = [];
+        runtime.failNextOutboxInsert();
+
+        await expect(createService(
+            runtime,
+            1_000,
+            createPublisher(),
+            (event) => timing.push(event),
+        ).upsertPrincipal(SCOPE, 'alice', {
+            username: 'alice',
+            displayName: 'Should roll back',
+            requestId: 'client-outbox-collision',
+        })).rejects.toMatchObject({
+            code: 'state-mutation-outbox-collision',
+        });
+
+        expect(await repository.findPrincipal(principalRef('alice'))).toBeUndefined();
+        expect(await repository.findIdempotentClientMutationReceipt(
+            principalRef('alice'),
+            'client-outbox-collision',
+        )).toBeUndefined();
+        expect(await repository.listEvents(principalRef('alice'))).toEqual([]);
+        expect(await outboxFor(runtime, ['client-outbox-collision'])).toEqual([]);
+        expect(timing).toEqual(expect.arrayContaining([
+            expect.objectContaining({ operation: 'mutation.write', status: 'error' }),
+            expect.objectContaining({
+                operation: 'mutation.transaction',
+                status: 'error',
+            }),
+        ]));
+        expect(timing.map((event) => event.operation)).not.toContain('mutation.conflict');
+        expect(timing.filter((event) => event.operation === 'mutation.read')).toHaveLength(1);
+    });
+
     it('keeps pure compute and validation deterministic and side-effect free', () => {
         const command: ClientMutationCommand = deepFreeze({
             operation: 'upsertPrincipal',
@@ -378,6 +415,7 @@ describe('convergent client state', () => {
 
     it('opens no transaction for replay or no-op and guards the principal first for a write', async () => {
         const runtime = new StatementRecordingRepository();
+        const timing: RallarTimingEvent[] = [];
         const service = createClientStateService({
             runtimeRepository: runtime,
             syncPublisher: createPublisher(),
@@ -385,6 +423,7 @@ describe('convergent client state', () => {
             randomId: () => 'event-order',
             sleep: () => Promise.resolve(),
             serviceId: 'client-service',
+            timing: (event) => timing.push(event),
         });
         await service.upsertPrincipal(SCOPE, 'alice', {
             username: 'alice',
@@ -394,8 +433,16 @@ describe('convergent client state', () => {
         expect(runtime.transactionStatements[0]).toBe(
             'insertIfAbsent:client-state:principals',
         );
+        expect(timing.map((event) => event.operation)).toEqual(expect.arrayContaining([
+            'mutation.read',
+            'mutation.compute',
+            'mutation.validate',
+            'mutation.write',
+            'mutation.transaction',
+        ]));
 
         runtime.resetInstrumentation();
+        timing.length = 0;
         await service.upsertPrincipal(SCOPE, 'alice', {
             username: 'alice',
             displayName: 'Alice',
@@ -403,7 +450,17 @@ describe('convergent client state', () => {
         });
         expect(runtime.transactionBeginCount).toBe(0);
         expect(runtime.transactionStatements).toEqual([]);
+        expect(timing.map((event) => event.operation)).toEqual(expect.arrayContaining([
+            'mutation.read',
+            'mutation.compute',
+            'mutation.validate',
+        ]));
+        expect(timing.map((event) => event.operation)).not.toContain('mutation.write');
+        expect(timing.map((event) => event.operation)).not.toContain(
+            'mutation.transaction',
+        );
 
+        timing.length = 0;
         await service.upsertPrincipal(SCOPE, 'alice', {
             username: 'alice',
             displayName: 'Alice',
@@ -411,6 +468,10 @@ describe('convergent client state', () => {
         });
         expect(runtime.transactionBeginCount).toBe(0);
         expect(runtime.transactionStatements).toEqual([]);
+        expect(timing.map((event) => event.operation)).not.toContain('mutation.write');
+        expect(timing.map((event) => event.operation)).not.toContain(
+            'mutation.transaction',
+        );
     });
 
     it('requires generation identity and exposes no caller command hash', () => {
@@ -808,6 +869,11 @@ class AggregateBarrierRepository extends FakeRuntimeStateRepository {
     private principalReadsArrived = 0;
     private releasePrincipalReads: (() => void) | undefined;
     private transactionTail: Promise<void> = Promise.resolve();
+    private outboxConflictsRemaining = 0;
+
+    failNextOutboxInsert(): void {
+        this.outboxConflictsRemaining += 1;
+    }
 
     armPrincipalReadBarrier(readers: number): void {
         this.principalReadsRemaining = readers;
@@ -848,6 +914,22 @@ class AggregateBarrierRepository extends FakeRuntimeStateRepository {
         } finally {
             release();
         }
+    }
+
+    override insertIfAbsent(
+        namespace: string,
+        key: string,
+        value: string,
+        expireAtTimestamp: number,
+    ): Promise<RuntimeStateConditionalWriteResult> {
+        if (
+            namespace === STATE_MUTATION_OUTBOX_NAMESPACE
+            && this.outboxConflictsRemaining > 0
+        ) {
+            this.outboxConflictsRemaining -= 1;
+            return Promise.resolve({ status: 'conflict' });
+        }
+        return super.insertIfAbsent(namespace, key, value, expireAtTimestamp);
     }
 }
 
@@ -936,6 +1018,7 @@ function createService(
     runtimeRepository: AggregateBarrierRepository,
     nowEpochMs: number,
     syncPublisher: StateSyncPublisher = createPublisher(),
+    timing?: (event: RallarTimingEvent) => void,
 ) {
     return createClientStateService({
         runtimeRepository,
@@ -947,6 +1030,7 @@ function createService(
         })(),
         sleep: () => Promise.resolve(),
         serviceId: 'client-service',
+        timing,
     });
 }
 

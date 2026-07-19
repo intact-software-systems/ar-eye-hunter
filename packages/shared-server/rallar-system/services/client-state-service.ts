@@ -206,81 +206,143 @@ export function createClientStateService(
                 attempt as 0 | 1 | 2,
                 { sleep: dependencies.sleep },
             );
-            const read = await timeMutationPhase(
-                dependencies,
-                command,
-                'read',
-                { attempt, backoffMs },
-                async () => await readClientMutation(repositoryFor(runtimeRepository), command),
-            );
-            const computed = await timeMutationPhase(
-                dependencies,
-                command,
-                'compute',
-                { attempt, backoffMs },
-                () => computeClientMutation({ command, read, facts }),
-            );
-            await timeMutationPhase(
-                dependencies,
-                command,
-                'validate',
-                { attempt, backoffMs },
-                () => validateClientMutation({ command, read, computed, facts }),
-            );
-            if (computed.outcome === 'idempotency-conflict') {
-                throw new ClientMutationIdempotencyConflictError(
-                    command.commandId,
-                    computed.existingCommandHash,
-                    computed.receivedCommandHash,
-                );
-            }
-            if (computed.outcome === 'no-op' && computed.persistIdempotency &&
-                command.requestId !== null) {
-                const inserted = await repositoryFor(runtimeRepository)
-                    .insertIdempotentClientStateWritten(
-                        command.aggregateRef,
-                        command.requestId,
-                        {
-                            requestId: command.requestId,
-                            commandHash: facts.commandHash,
-                            receipt: computed.receipt,
-                        },
-                    );
-                if (inserted.status === 'conflict') {
-                    lastConflict = new RuntimeStateWriteConflictError();
-                    recordMutationConflict(
-                        dependencies,
-                        command,
-                        attempt,
-                        backoffMs,
-                    );
-                    continue;
-                }
-            }
-            if (computed.outcome !== 'write') {
-                return { receipt: computed.receipt, source: computed.outcome };
-            }
-
+            let activePhase: 'read' | 'compute' | 'validate' | 'write' = 'read';
+            let phaseStarted = nowMs();
+            let phaseRecorded = false;
+            let transactionStarted: number | undefined;
             try {
-                const receipt = await timeMutationPhase(
+                const read = await readClientMutation(
+                    repositoryFor(runtimeRepository),
+                    command,
+                );
+                recordMutationPhase(
+                    dependencies,
+                    command,
+                    'read',
+                    'ok',
+                    phaseStarted,
+                    attempt,
+                    backoffMs,
+                );
+                phaseRecorded = true;
+
+                activePhase = 'compute';
+                phaseStarted = nowMs();
+                phaseRecorded = false;
+                const computed = computeClientMutation({ command, read, facts });
+                recordMutationPhase(
+                    dependencies,
+                    command,
+                    'compute',
+                    'ok',
+                    phaseStarted,
+                    attempt,
+                    backoffMs,
+                );
+                phaseRecorded = true;
+
+                activePhase = 'validate';
+                phaseStarted = nowMs();
+                phaseRecorded = false;
+                validateClientMutation({ command, read, computed, facts });
+                recordMutationPhase(
+                    dependencies,
+                    command,
+                    'validate',
+                    'ok',
+                    phaseStarted,
+                    attempt,
+                    backoffMs,
+                );
+                phaseRecorded = true;
+                if (computed.outcome === 'idempotency-conflict') {
+                    throw new ClientMutationIdempotencyConflictError(
+                        command.commandId,
+                        computed.existingCommandHash,
+                        computed.receivedCommandHash,
+                    );
+                }
+                if (computed.outcome === 'no-op' && computed.persistIdempotency &&
+                    command.requestId !== null) {
+                    const inserted = await repositoryFor(runtimeRepository)
+                        .insertIdempotentClientStateWritten(
+                            command.aggregateRef,
+                            command.requestId,
+                            {
+                                requestId: command.requestId,
+                                commandHash: facts.commandHash,
+                                receipt: computed.receipt,
+                            },
+                        );
+                    if (inserted.status === 'conflict') {
+                        lastConflict = new RuntimeStateWriteConflictError();
+                        recordMutationConflict(
+                            dependencies,
+                            command,
+                            attempt,
+                            backoffMs,
+                        );
+                        continue;
+                    }
+                }
+                if (computed.outcome !== 'write') {
+                    return { receipt: computed.receipt, source: computed.outcome };
+                }
+
+                activePhase = 'write';
+                phaseStarted = nowMs();
+                phaseRecorded = false;
+                transactionStarted = nowMs();
+                const written = await writeClientMutation(
+                    runtimeRepository,
+                    repositoryFor,
+                    computed,
+                );
+                recordMutationPhase(
+                    dependencies,
+                    command,
+                    'transaction',
+                    'ok',
+                    transactionStarted,
+                    attempt,
+                    backoffMs,
+                );
+                recordMutationPhase(
                     dependencies,
                     command,
                     'write',
-                    { attempt, backoffMs },
-                    async () => await timeMutationPhase(
+                    'ok',
+                    phaseStarted,
+                    attempt,
+                    backoffMs,
+                );
+                phaseRecorded = true;
+                return { receipt: written, source: 'write' };
+            } catch (error) {
+                if (activePhase === 'write' && transactionStarted !== undefined) {
+                    recordMutationPhase(
                         dependencies,
                         command,
                         'transaction',
-                        { attempt, backoffMs },
-                        async () => await writeClientMutation(
-                            runtimeRepository,
-                            repositoryFor,
-                            computed,
-                        ),
-                    ),
-                );
-                return { receipt, source: 'write' };
-            } catch (error) {
+                        'error',
+                        transactionStarted,
+                        attempt,
+                        backoffMs,
+                        error,
+                    );
+                }
+                if (!phaseRecorded) {
+                    recordMutationPhase(
+                        dependencies,
+                        command,
+                        activePhase,
+                        'error',
+                        phaseStarted,
+                        attempt,
+                        backoffMs,
+                        error,
+                    );
+                }
                 if (!(error instanceof RuntimeStateWriteConflictError)) throw error;
                 lastConflict = error;
                 recordMutationConflict(dependencies, command, attempt, backoffMs);
@@ -568,7 +630,7 @@ async function writeClientMutation(
             );
         }
 
-        await new StateMutationOutboxRepository(transaction).putOrLoad(
+        await new StateMutationOutboxRepository(transaction).insertForAuthoritativeWrite(
             createStateMutationOutboxRecord(computed.outbox),
         );
         await repository.appendEvent(computed.event);
@@ -826,36 +888,24 @@ async function findClientSessionBySessionId(
     ) ?? sessions.find((session) => session.sessionId === sessionId);
 }
 
-async function timeMutationPhase<T>(
+function recordMutationPhase(
     dependencies: ClientStateServiceDependencies,
     command: ClientMutationCommand,
     phase: 'read' | 'compute' | 'validate' | 'write' | 'transaction',
-    details: Readonly<{ attempt: number; backoffMs: number }>,
-    action: () => T | Promise<T>,
-): Promise<T> {
-    const startedAt = nowMs();
-    try {
-        const value = await action();
-        recordRallarTiming(dependencies.timing, {
-            component: 'client-state-service',
-            operation: `mutation.${phase}`,
-            serviceId: dependencies.serviceId,
-            requestId: command.requestId ?? undefined,
-            ...command.aggregateRef,
-            details: { ...details, mutationOperation: command.operation },
-        }, 'ok', nowMs() - startedAt);
-        return value;
-    } catch (error) {
-        recordRallarTiming(dependencies.timing, {
-            component: 'client-state-service',
-            operation: `mutation.${phase}`,
-            serviceId: dependencies.serviceId,
-            requestId: command.requestId ?? undefined,
-            ...command.aggregateRef,
-            details: { ...details, mutationOperation: command.operation },
-        }, 'error', nowMs() - startedAt, error);
-        throw error;
-    }
+    status: 'ok' | 'error',
+    startedAt: number,
+    attempt: number,
+    backoffMs: number,
+    error?: unknown,
+): void {
+    recordRallarTiming(dependencies.timing, {
+        component: 'client-state-service',
+        operation: `mutation.${phase}`,
+        serviceId: dependencies.serviceId,
+        requestId: command.requestId ?? undefined,
+        ...command.aggregateRef,
+        details: { attempt, backoffMs, mutationOperation: command.operation },
+    }, status, nowMs() - startedAt, error);
 }
 
 function recordMutationConflict(

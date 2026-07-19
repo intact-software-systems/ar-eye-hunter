@@ -51,8 +51,16 @@ rg --files packages/tests packages/shared packages/shared-web packages/shared-se
 - On a compare-and-set conflict, bound the retry count, re-read the whole
   decision surface, and rerun authorization, policy, capacity, lifecycle, and invariant checks.
   A retry of only the stale write is incorrect.
+- Express authoritative control flow with direct named read, compute, validate,
+  and write statements. Surround each statement with timing records and report
+  the transaction separately; never put phase work in a timing callback.
 - Make idempotency claims with insert-if-absent semantics. The losing writer
-  loads the winner; it must not overwrite the ledger.
+  loads the winner; it must not overwrite the ledger. This winner-load rule is
+  for the idempotency ledger, not an authoritative outbox write.
+- Insert the outbox intent inside the authoritative state/receipt/event
+  transaction. Use an insert-only repository operation: a collision throws a
+  typed error, rolls everything back, and performs no winner read. Keep any
+  winner-loading convenience on a separately named non-authoritative/read path.
 - Hash caller semantics before server random/time defaults: keep omission as a
   mandatory nullable command field, then read and validate idempotency before
   invoking random, clock-default, verifier, or other volatile materialization.

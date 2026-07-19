@@ -214,11 +214,40 @@ export class StateMutationOutboxInvariantCorruptionError extends Error {
     }
 }
 
+export class StateMutationOutboxCollisionError extends Error {
+    readonly code = 'state-mutation-outbox-collision';
+
+    constructor(readonly outboxId: string) {
+        super(`State mutation outbox already exists: ${outboxId}`);
+        this.name = 'StateMutationOutboxCollisionError';
+    }
+}
+
 export class StateMutationOutboxRepository extends RuntimeStateJsonStore {
     constructor(
         repository: RuntimeStateOptimisticTransactionalRepositoryLike,
     ) {
         super(repository);
+    }
+
+    async insertForAuthoritativeWrite(
+        record: StateMutationOutboxRecord,
+    ): Promise<StoredStateMutationOutboxRecord> {
+        validateStateMutationOutboxRecord(record);
+        validateInitialStateMutationOutboxRecord(record);
+        const inserted = await this.putValueIfAbsent(
+            STATE_MUTATION_OUTBOX_NAMESPACE,
+            toStateMutationOutboxKey(record.outboxId),
+            record,
+            NEVER_EXPIRE_AT_TIMESTAMP,
+        );
+        if (inserted.status !== 'applied') {
+            throw new StateMutationOutboxCollisionError(record.outboxId);
+        }
+        return {
+            record,
+            storageRevision: inserted.revision,
+        };
     }
 
     async putOrLoad(

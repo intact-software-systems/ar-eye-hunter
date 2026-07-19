@@ -902,7 +902,7 @@ function validateGroupMutationRead(
             'Stored group idempotency',
             groupStateIdempotencyStorageKey(ref, command.requestId),
         );
-        validateIdempotencyRecord(read.idempotency.value, ref);
+        validateGroupMutationIdempotencyRecord(read.idempotency.value, ref);
     }
 }
 
@@ -1171,10 +1171,10 @@ function validatePresenceSummaryValue(summary: GroupPresenceSummary, ref: GroupR
     }
 }
 
-function validateIdempotencyRecord(
-    record: GroupMutationIdempotencyRecord,
+export function validateGroupMutationIdempotencyRecord(
+    record: unknown,
     ref: GroupRef,
-): void {
+): asserts record is GroupMutationIdempotencyRecord {
     const value = requireRecord(record, 'Stored group idempotency value');
     assertExactKeys(value, ['aggregateRef', 'requestId', 'commandHash', 'receipt'],
         'Stored group idempotency value');
@@ -1189,8 +1189,21 @@ function validateIdempotencyRecord(
     requireNonEmptyString(value.requestId, 'Stored group idempotency requestId');
     validateCommandHash(value.commandHash, 'Stored group idempotency commandHash');
     validateMutationReceipt(value.receipt, ref, 'Stored group idempotency receipt');
-    if ((value.receipt as GroupMutationReceipt).commandHash !== value.commandHash) {
+    const receipt = value.receipt as GroupMutationReceipt;
+    if (receipt.commandHash !== value.commandHash) {
         throw new TypeError('Stored group idempotency hashes differ');
+    }
+    if (receipt.commandId !== value.requestId) {
+        throw new TypeError(
+            'Stored group idempotency receipt command differs from request identity',
+        );
+    }
+    if (receipt.event.kind === 'group' &&
+        (receipt.event.event.requestId !== value.requestId ||
+            receipt.event.event.snapshotVersion !== receipt.snapshotVersion)) {
+        throw new TypeError(
+            'Stored group idempotency receipt event differs from request identity',
+        );
     }
 }
 
@@ -1384,7 +1397,7 @@ function validateComputedWrite(
         throw new TypeError('Group mutation computed receipt differs from command');
     }
     if (computed.idempotency !== null) {
-        validateIdempotencyRecord(computed.idempotency, ref);
+        validateGroupMutationIdempotencyRecord(computed.idempotency, ref);
         if (computed.idempotency.requestId !== command.requestId ||
             !jsonEquals(computed.idempotency.receipt, computed.receipt)) {
             throw new TypeError('Group mutation computed idempotency differs from receipt');
