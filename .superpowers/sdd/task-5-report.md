@@ -300,7 +300,10 @@ npm run test:unit -- --run packages/tests/shared-server/group-state-authority-fe
 v7 GREEN: 6 files passed; 151 tests passed
 
 npx vitest run packages/tests/shared-server/group-topology-config-repository.test.ts packages/tests/shared-server/group-topology-management-service.test.ts packages/tests/shared-server/group-topology-config-service.test.ts packages/tests/shared-server/state-mutation-outbox.test.ts packages/tests/shared-web/api-workflows.test.ts packages/tests/shared-server/state-write-performance-harness.test.ts
-6 files passed; 221 tests passed
+6 files passed; 226 tests passed
+
+npx vitest run packages/tests/shared-server/state-write-performance-harness.test.ts packages/tests/shared-server/group-list-fanout-performance-harness.test.ts
+2 files passed; 46 tests passed
 
 cd apps/api-v1 && deno test -A test/db/pglite-sql-adapter.test.ts
 20 passed; 0 failed, including the authority-overlap archive race
@@ -309,10 +312,13 @@ RALLAR_POSTGRES_INTEGRATION=1 DATABASE_URL=postgres://app:app@localhost:5432/app
 9 passed; 0 failed (independent PostgreSQL clients)
 
 cd apps/api-v1 && deno test --allow-env --allow-read test/services/runtime-state-expiry-startup.test.ts
-6 passed; 0 failed
+2 passed; 0 failed
 
 cd apps/api-v1 && deno test --allow-env --allow-read test/swagger-routes.test.ts
 12 passed; 0 failed
+
+cd apps/api-v1 && deno test --allow-env --allow-read test/services/runtime-state-expiry-startup.test.ts test/swagger-routes.test.ts
+14 passed; 0 failed
 
 cd apps/api-v1 && deno task test
 210 passed; 0 failed
