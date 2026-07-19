@@ -2001,6 +2001,60 @@ describe('browser Rallar black-box runtime', () => {
         expect(factoryEvents.every(event => event.atEpochMs === 12_345)).toBe(true);
     });
 
+    it('publishes correlated outbound runtime diagnostics', async () => {
+        const runtime = await loadRuntime();
+
+        await runtime.connect({
+            connection: 'aliceRtc',
+            actor: 'alice',
+            roomId: 'room-1',
+            rallar: {
+                apiBaseUrl: 'https://api.example.test',
+                username: 'alice',
+                password: 'secret',
+                transport: 'messages.rtc',
+                typeId: 'chat.message',
+                topicId: 'chat',
+            },
+        });
+
+        const connectOptions = facade.rallar.connect.mock.calls[0]?.[0] as
+            | Readonly<{
+                outboundDiagnostics?: (event: unknown) => void;
+            }>
+            | undefined;
+        expect(connectOptions).toEqual(expect.objectContaining({
+            outboundDiagnostics: expect.any(Function),
+        }));
+
+        connectOptions?.outboundDiagnostics?.({
+            kind: 'sender-queue-wait',
+            runtime: 'rtc-overlay',
+            senderId: 'self',
+            message: {
+                msgId: 'message-1',
+                senderId: 'self',
+                resourceId: 'frame-resource-1',
+            },
+            queued: true,
+            durationMs: 425,
+        });
+
+        expect(events).toContainEqual(expect.objectContaining({
+            kind: 'diagnostic',
+            topic: 'rallar.browser.al.outbound_runtime',
+            connection: 'aliceRtc',
+            transport: 'messages.rtc',
+            data: expect.objectContaining({
+                kind: 'sender-queue-wait',
+                runtime: 'rtc-overlay',
+                message: expect.objectContaining({
+                    resourceId: 'frame-resource-1',
+                }),
+            }),
+        }));
+    });
+
     it('rejects a connected identity change before mutating facade configuration', async () => {
         const runtime = await loadRuntime();
         await runtime.connect({

@@ -1,6 +1,7 @@
 import type { CommandOptions } from '@shared/cache/Command.ts';
 import type { CommandsOrchestratorPolicies } from '@shared/cache/CommandsOrchestrator.ts';
 import type { RtcDataChannelLaneConfig } from '@shared/services/WebRtcConnectionService.ts';
+import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/ALOutboundMessageRuntime.ts';
 
 export type RallarOperationRetryPredicate = (
     error: unknown,
@@ -15,6 +16,7 @@ export type RallarOperationOptions = Readonly<{
     dataChannelLanes?: readonly RtcDataChannelLaneConfig[];
     maxPeerConnections?: number;
     rttReportingDegreeLimit?: number;
+    outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
 }>;
 
 export function toRallarWorkflowPolicies<V>(
@@ -44,7 +46,8 @@ export function toRallarOperationOptions(
         options.shouldRetry === undefined &&
         options.dataChannelLanes === undefined &&
         options.maxPeerConnections === undefined &&
-        options.rttReportingDegreeLimit === undefined
+        options.rttReportingDegreeLimit === undefined &&
+        options.outboundDiagnostics === undefined
     ) {
         return {};
     }
@@ -57,6 +60,7 @@ export function toRallarOperationOptions(
         dataChannelLanes?: readonly RtcDataChannelLaneConfig[];
         maxPeerConnections?: number;
         rttReportingDegreeLimit?: number;
+        outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
     } = {};
     if (options.signal) {
         normalized.signal = options.signal;
@@ -78,6 +82,9 @@ export function toRallarOperationOptions(
     }
     if (options.rttReportingDegreeLimit !== undefined) {
         normalized.rttReportingDegreeLimit = options.rttReportingDegreeLimit;
+    }
+    if (options.outboundDiagnostics !== undefined) {
+        normalized.outboundDiagnostics = options.outboundDiagnostics;
     }
 
     return normalized;

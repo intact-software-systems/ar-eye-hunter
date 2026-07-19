@@ -5,6 +5,7 @@ describe('Rallar operation options compatibility', () => {
     it('normalizes operation options without adding empty fields', () => {
         const signal = new AbortController().signal;
         const shouldRetry = vi.fn(() => true);
+        const outboundDiagnostics = vi.fn();
         const lanes = [{ laneId: 'motion' }];
 
         expect(toRallarOperationOptions({})).toEqual({});
@@ -17,6 +18,7 @@ describe('Rallar operation options compatibility', () => {
                 dataChannelLanes: lanes,
                 maxPeerConnections: 12,
                 rttReportingDegreeLimit: 3,
+                outboundDiagnostics,
             }),
         ).toEqual({
             signal,
@@ -26,6 +28,7 @@ describe('Rallar operation options compatibility', () => {
             dataChannelLanes: lanes,
             maxPeerConnections: 12,
             rttReportingDegreeLimit: 3,
+            outboundDiagnostics,
         });
         expect(
             toRallarOperationOptions({
