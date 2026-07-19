@@ -1,10 +1,15 @@
 import type { Group, GroupMember, GroupPresenceSession } from '@shared/api/group-types.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
+import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 import type { StateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
 import type {
     RuntimeStateEntry,
-    RuntimeStateTransactionalRepositoryLike,
+    RuntimeStateOptimisticTransactionalRepositoryLike,
+} from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+import {
+    assertRuntimeStateExpectedRevision,
+    assertRuntimeStateUpsertExpectedRevision,
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 
 const GROUPS = Number(
@@ -37,8 +42,16 @@ type RunResult = Readonly<{
     findEntryCalls: number;
     findAllEntriesCalls: number;
     findEntriesByPrefixCalls: number;
+    findEntriesByPrefixCallsByNamespace: Readonly<Record<string, number>>;
     maxRowsReturnedPerPrefixCall: number;
 }>;
+
+const EXPECTED_PREFIX_READS = Object.freeze({
+    'group-state:groups': 2,
+    'group-state:members': 1,
+    'group-state:presence-summaries': 1,
+    'group-state:sessions': 1,
+});
 
 async function main(): Promise<void> {
     const repository = new CountingRuntimeStateRepository();
@@ -48,15 +61,18 @@ async function main(): Promise<void> {
         syncPublisher: noOpPublisher,
         now: () => 1_700_000_000_000,
         serviceId: 'group-list-fanout-bench',
+        authSessionRepository: new AuthSessionRepository(repository),
     });
 
     for (let index = 0; index < GROUPS; index += 1) {
         const groupId = `group-${String(index).padStart(6, '0')}`;
         const principalId = `principal-${String(index).padStart(6, '0')}`;
         const sessionId = `session-${String(index).padStart(6, '0')}`;
-        await groupRepository.putGroup(createGroup(groupId));
+        await groupRepository.putGroup(createGroup(groupId, principalId));
         await groupRepository.putMember(createMember(groupId, principalId));
-        await groupRepository.putPresenceSession(createPresenceSession(groupId, principalId, sessionId));
+        await groupRepository.putPresenceSession(
+            createPresenceSession(groupId, principalId, sessionId),
+        );
     }
 
     const results: RunResult[] = [];
@@ -68,9 +84,18 @@ async function main(): Promise<void> {
         if (snapshots.length !== GROUPS) {
             throw new Error(`Expected ${GROUPS} snapshots, got ${snapshots.length}`);
         }
-        if (repository.findEntriesByPrefixCalls !== 4 || repository.findEntryCalls !== 0) {
+        const prefixReads = repository.prefixReadCounts();
+        if (
+            repository.findEntriesByPrefixCalls !== 5 ||
+            repository.findEntryCalls !== 0 ||
+            JSON.stringify(prefixReads) !== JSON.stringify(EXPECTED_PREFIX_READS)
+        ) {
             throw new Error(
-                `Expected four prefix reads and zero point reads, got ${repository.findEntriesByPrefixCalls} and ${repository.findEntryCalls}`,
+                `Expected bounded semantic prefix reads ${
+                    JSON.stringify(EXPECTED_PREFIX_READS)
+                } and zero point reads, got ${
+                    JSON.stringify(prefixReads)
+                } and ${repository.findEntryCalls}`,
             );
         }
         results.push({
@@ -80,6 +105,7 @@ async function main(): Promise<void> {
             findEntryCalls: repository.findEntryCalls,
             findAllEntriesCalls: repository.findAllEntriesCalls,
             findEntriesByPrefixCalls: repository.findEntriesByPrefixCalls,
+            findEntriesByPrefixCallsByNamespace: prefixReads,
             maxRowsReturnedPerPrefixCall: repository.maxRowsReturnedPerPrefixCall,
         });
     }
@@ -87,16 +113,22 @@ async function main(): Promise<void> {
     await Deno.mkdir(OUT.slice(0, OUT.lastIndexOf('/')), { recursive: true });
     await Deno.writeTextFile(
         OUT,
-        `${JSON.stringify({
-            benchmark: 'group-list-snapshots-fanout',
-            groups: GROUPS,
-            runs: RUNS,
-            results,
-        }, null, 2)}\n`,
+        `${
+            JSON.stringify(
+                {
+                    benchmark: 'group-list-snapshots-fanout',
+                    groups: GROUPS,
+                    runs: RUNS,
+                    results,
+                },
+                null,
+                2,
+            )
+        }\n`,
     );
 }
 
-function createGroup(groupId: string): Group {
+function createGroup(groupId: string, ownerPrincipalId: string): Group {
     return {
         ...scope,
         groupId,
@@ -106,6 +138,8 @@ function createGroup(groupId: string): Group {
         status: 'active',
         joinMode: 'open',
         metadata: {},
+        activeMemberCount: 1,
+        ownerPrincipalId,
         snapshotVersion: 1,
         metadataVersion: 1,
         rosterVersion: 1,
@@ -120,7 +154,7 @@ function createMember(groupId: string, principalId: string): GroupMember {
         ...scope,
         groupId,
         principalId,
-        role: 'member',
+        role: 'owner',
         status: 'active',
         joined: { atEpochMs: 1, byServiceId: 'perf' },
         updated: { atEpochMs: 1, byServiceId: 'perf' },
@@ -137,21 +171,25 @@ function createPresenceSession(
         groupId,
         principalId,
         sessionId,
+        generationId: `${sessionId}:generation-1`,
+        generationVersion: 1_700_000_000_000,
         connectedAtEpochMs: 1_700_000_000_000,
         lastHeartbeatAtEpochMs: 1_700_000_000_000,
         expiresAtEpochMs: 4_102_444_821_000,
     };
 }
 
-class CountingRuntimeStateRepository implements RuntimeStateTransactionalRepositoryLike {
+export class CountingRuntimeStateRepository
+    implements RuntimeStateOptimisticTransactionalRepositoryLike {
     readonly data = new Map<string, RuntimeStateEntry>();
     findEntryCalls = 0;
     findAllEntriesCalls = 0;
     findEntriesByPrefixCalls = 0;
+    readonly findEntriesByPrefixCallsByNamespace = new Map<string, number>();
     maxRowsReturnedPerPrefixCall = 0;
 
     async begin<T>(
-        fn: (repository: RuntimeStateTransactionalRepositoryLike) => Promise<T>,
+        fn: (repository: RuntimeStateOptimisticTransactionalRepositoryLike) => Promise<T>,
     ): Promise<T> {
         return await fn(this);
     }
@@ -178,6 +216,10 @@ class CountingRuntimeStateRepository implements RuntimeStateTransactionalReposit
         keyPrefix: string,
     ): Promise<readonly RuntimeStateEntry[]> {
         this.findEntriesByPrefixCalls += 1;
+        this.findEntriesByPrefixCallsByNamespace.set(
+            namespace,
+            (this.findEntriesByPrefixCallsByNamespace.get(namespace) ?? 0) + 1,
+        );
         const rows = [...this.data.entries()]
             .filter(
                 ([compositeKey]) =>
@@ -224,6 +266,53 @@ class CountingRuntimeStateRepository implements RuntimeStateTransactionalReposit
         });
     }
 
+    async insertIfAbsent(
+        namespace: string,
+        key: string,
+        value: string,
+        expireAtTimestamp: number,
+    ): Promise<{ status: 'applied'; revision: number } | { status: 'conflict' }> {
+        const compositeKey = this.toKey(namespace, key);
+        if (this.data.has(compositeKey)) {
+            return { status: 'conflict' };
+        }
+        this.data.set(compositeKey, this.entry(key, value, expireAtTimestamp, 0));
+        return { status: 'applied', revision: 0 };
+    }
+
+    async upsertIfRevision(
+        namespace: string,
+        key: string,
+        value: string,
+        expireAtTimestamp: number,
+        expectedRevision: number,
+    ): Promise<{ status: 'applied'; revision: number } | { status: 'conflict' }> {
+        assertRuntimeStateUpsertExpectedRevision(expectedRevision);
+        const compositeKey = this.toKey(namespace, key);
+        const current = this.data.get(compositeKey);
+        if (!current || current.revision !== expectedRevision) {
+            return { status: 'conflict' };
+        }
+        const revision = expectedRevision + 1;
+        this.data.set(compositeKey, this.entry(key, value, expireAtTimestamp, revision));
+        return { status: 'applied', revision };
+    }
+
+    async deleteIfRevision(
+        namespace: string,
+        key: string,
+        expectedRevision: number,
+    ): Promise<{ status: 'applied' } | { status: 'conflict' }> {
+        assertRuntimeStateExpectedRevision(expectedRevision);
+        const compositeKey = this.toKey(namespace, key);
+        const current = this.data.get(compositeKey);
+        if (!current || current.revision !== expectedRevision) {
+            return { status: 'conflict' };
+        }
+        this.data.delete(compositeKey);
+        return { status: 'applied' };
+    }
+
     async deleteByKey(namespace: string, key: string): Promise<void> {
         this.data.delete(this.toKey(namespace, key));
     }
@@ -248,7 +337,31 @@ class CountingRuntimeStateRepository implements RuntimeStateTransactionalReposit
         this.findEntryCalls = 0;
         this.findAllEntriesCalls = 0;
         this.findEntriesByPrefixCalls = 0;
+        this.findEntriesByPrefixCallsByNamespace.clear();
         this.maxRowsReturnedPerPrefixCall = 0;
+    }
+
+    prefixReadCounts(): Readonly<Record<string, number>> {
+        return Object.fromEntries(
+            [...this.findEntriesByPrefixCallsByNamespace.entries()].sort(([left], [right]) =>
+                left.localeCompare(right)
+            ),
+        );
+    }
+
+    private entry(
+        key: string,
+        value: string,
+        expireAtTimestamp: number,
+        revision: number,
+    ): RuntimeStateEntry {
+        return {
+            key,
+            value,
+            expireAtTimestamp,
+            updatedTimestamp: new Date().toISOString(),
+            revision,
+        };
     }
 
     private toKey(namespace: string, key: string): string {
@@ -264,4 +377,6 @@ class CountingRuntimeStateRepository implements RuntimeStateTransactionalReposit
     }
 }
 
-await main();
+if (import.meta.main) {
+    await main();
+}

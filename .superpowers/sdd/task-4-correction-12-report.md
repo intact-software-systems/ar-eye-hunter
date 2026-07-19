@@ -1,5 +1,10 @@
 # Task 4 correction 12 report: isolate liveness projections from the summary cache
 
+> **Superseded for final Task 4 acceptance by correction 13.** Correction 12's
+> cache-boundary behavior and validation remain valid, but its final acceptance
+> overclaimed current-HEAD reproducibility because the reusable performance
+> consumers had not been native-checked after mandatory contract changes.
+
 ## Status and scope
 
 Status: `DONE`.

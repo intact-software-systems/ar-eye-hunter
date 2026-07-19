@@ -1,9 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   compareStateWriteArtifacts,
   STATE_WRITE_ARTIFACT_SCHEMA_VERSION,
   validateStateWriteArtifact,
 } from '../../../scripts/perf/compare-api-v1-state-write-results.mjs';
+import {
+  RuntimeStateRetryExhaustedError,
+  RuntimeStateWriteConflictError,
+} from '../../shared-server/runtime-state/optimistic-runtime-state-write.ts';
 
 const MUTATION_MIX = [
   'profile-instance',
@@ -35,7 +39,15 @@ describe('API-v1 state-write performance artifact contract', () => {
     expect(validateStateWriteArtifact(validArtifact())).toEqual([]);
   });
 
-  it('rejects setup, authentication, or HTTP time in mutation latency', () => {
+  it('accepts legacy and production-faithful timing exclusions and rejects omission', () => {
+    const productionFaithful = validArtifact();
+    productionFaithful.measurement.mutationTimingExcludes = [
+      'setup',
+      'auth-session insertion',
+      'http',
+    ];
+    expect(validateStateWriteArtifact(productionFaithful)).toEqual([]);
+
     const artifact = validArtifact();
     artifact.measurement.mutationTimingExcludes = ['http'];
 
@@ -320,6 +332,16 @@ describe('API-v1 state-write performance artifact contract', () => {
     );
   });
 
+  it('rejects any shared-workload retry exhaustion', () => {
+    const candidate = validArtifact({ candidate: true });
+    makeCommandExhausted(candidate.workloads[1].samples[0], 100);
+    refreshSummary(candidate.workloads[1]);
+
+    expect(compareStateWriteArtifacts(validArtifact(), candidate)).toEqual(
+      expect.arrayContaining([expect.stringContaining('shared retry exhaustion must remain zero')]),
+    );
+  });
+
   it('selects both service stacks deterministically and rejects fractional or NaN CLI counts', async () => {
     const bench = await import(
       '../../../scripts/perf/api-v1-state-write-concurrency-bench.ts'
@@ -346,6 +368,260 @@ describe('API-v1 state-write performance artifact contract', () => {
     }
     expect(() => bench.parseBenchmarkOptions(['--runs=0'])).toThrow(/integer/);
     expect(() => bench.parseBenchmarkOptions(['--concurrency=-1'])).toThrow(/integer/);
+  });
+
+  it('creates deterministic scope-isolated benchmark authority sessions', async () => {
+    const bench = await import(
+      '../../../scripts/perf/api-v1-state-write-concurrency-bench.ts'
+    ) as Record<string, (...args: any[]) => any>;
+
+    expect(bench.createBenchmarkAuthSession).toBeTypeOf('function');
+    const scope = { applicationId: 'benchmark-run-a', workspaceId: 'state-write-bench' };
+    const session = bench.createBenchmarkAuthSession(scope, 'client-7', 'client-session-7');
+
+    expect(session).toEqual({
+      clientId: 'client-7',
+      username: 'client-7',
+      sessionId: 'benchmark-run-a:state-write-bench:client-7:client-session-7',
+      accessToken:
+        'state-write-benchmark:benchmark-run-a:state-write-bench:client-7:client-session-7',
+      issuedAtEpochMs: 1_700_000_000_000,
+      expiresAtEpochMs: 4_102_444_800_000,
+    });
+    expect(bench.createBenchmarkAuthSession(scope, 'client-7', 'client-session-7'))
+      .toEqual(session);
+    expect(
+      bench.createBenchmarkAuthSession(
+        { ...scope, applicationId: 'benchmark-run-b' },
+        'client-7',
+        'client-session-7',
+      ).sessionId,
+    ).not.toBe(session.sessionId);
+
+    const delimiterLeft = bench.createBenchmarkAuthSession(
+      { applicationId: 'a:b', workspaceId: 'c' },
+      'principal:x',
+      'session:y',
+    );
+    const delimiterRight = bench.createBenchmarkAuthSession(
+      { applicationId: 'a', workspaceId: 'b:c' },
+      'principal:x',
+      'session:y',
+    );
+    const percentLookalike = bench.createBenchmarkAuthSession(
+      { applicationId: 'a%3Ab', workspaceId: 'c' },
+      'principal:x',
+      'session:y',
+    );
+    const differentPrincipal = bench.createBenchmarkAuthSession(
+      { applicationId: 'a:b', workspaceId: 'c' },
+      'principal:z',
+      'session:y',
+    );
+    expect(
+      new Set([
+        delimiterLeft.sessionId,
+        delimiterRight.sessionId,
+        percentLookalike.sessionId,
+        differentPrincipal.sessionId,
+      ]),
+    ).toHaveLength(4);
+    expect(
+      new Set([
+        delimiterLeft.accessToken,
+        delimiterRight.accessToken,
+        percentLookalike.accessToken,
+      ]),
+    ).toHaveLength(3);
+  });
+
+  it('preserves transaction savepoints through SQL instrumentation', async () => {
+    const bench = await import(
+      '../../../scripts/perf/api-v1-state-write-concurrency-bench.ts'
+    ) as Record<string, (...args: any[]) => any>;
+    expect(bench.createInstrumentedSql).toBeTypeOf('function');
+
+    let savepointCalls = 0;
+    const transaction = Object.assign(
+      async () => [{ value: 'nested-result' }],
+      {
+        begin: async (fn: (sql: unknown) => Promise<unknown>) => await fn(transaction),
+        savepoint: async (fn: (sql: unknown) => Promise<unknown>) => {
+          savepointCalls += 1;
+          return await fn(transaction);
+        },
+      },
+    );
+    const root = Object.assign(
+      async () => [],
+      { begin: async (fn: (sql: unknown) => Promise<unknown>) => await fn(transaction) },
+    );
+    const context = {
+      sql: {
+        statements: 0,
+        rowsRead: 0,
+        serializedResultBytes: 0,
+        readMs: 0,
+        writeMs: 0,
+        outboxSqlMs: 0,
+        transactionDurationMs: 0,
+      },
+      timingEvents: [],
+    };
+    const instrumented = bench.createInstrumentedSql(root, context, () => {});
+
+    await expect(instrumented.begin(async (sql: any) => {
+      expect(sql).not.toBe(transaction);
+      expect(sql.savepoint).toBeTypeOf('function');
+      return await sql.savepoint(async (nested: any) => {
+        expect(nested).not.toBe(transaction);
+        return await nested`select 1`;
+      });
+    })).resolves.toEqual([{ value: 'nested-result' }]);
+    expect(savepointCalls).toBe(1);
+    expect(context.sql.statements).toBe(1);
+
+    const failure = new Error('savepoint callback failed');
+    await expect(instrumented.begin(async (sql: any) =>
+      await sql.savepoint(async () => {
+        throw failure;
+      })
+    )).rejects.toBe(failure);
+    expect(savepointCalls).toBe(2);
+  });
+
+  it('drains in-flight concurrent work before propagating the initiating error', async () => {
+    const bench = await import(
+      '../../../scripts/perf/api-v1-state-write-concurrency-bench.ts'
+    ) as Record<string, (...args: any[]) => any>;
+    expect(bench.mapWithConcurrency).toBeTypeOf('function');
+
+    const initiatingError = new Error('initiating command failure');
+    const laterError = new Error('later in-flight failure');
+    let inFlightSettled = false;
+    const invoked: number[] = [];
+    await expect(bench.mapWithConcurrency([0, 1, 2], 2, async (value: number) => {
+      invoked.push(value);
+      if (value === 1) {
+        throw initiatingError;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      inFlightSettled = true;
+      throw laterError;
+    })).rejects.toBe(initiatingError);
+    expect(inFlightSettled).toBe(true);
+    expect(invoked).toEqual([0, 1]);
+  });
+
+  it('awaits failure cleanup before preserving the initiating error', async () => {
+    const bench = await import(
+      '../../../scripts/perf/api-v1-state-write-concurrency-bench.ts'
+    ) as Record<string, (...args: any[]) => any>;
+    expect(bench.rethrowAfterCleanup).toBeTypeOf('function');
+
+    const initiatingError = new Error('command failed');
+    let stopped = false;
+    await expect(bench.rethrowAfterCleanup(initiatingError, async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      stopped = true;
+    })).rejects.toBe(initiatingError);
+    expect(stopped).toBe(true);
+
+    const cleanupError = new Error('sampler stop failed');
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await expect(bench.rethrowAfterCleanup(initiatingError, async () => {
+      throw cleanupError;
+    })).rejects.toBe(initiatingError);
+    expect(errorLog).toHaveBeenCalledWith(
+      'State-write benchmark cleanup failed after command failure',
+      cleanupError,
+    );
+    errorLog.mockRestore();
+  });
+
+  it('classifies only typed production retry exhaustion as an exhausted command', async () => {
+    const bench = await import(
+      '../../../scripts/perf/api-v1-state-write-concurrency-bench.ts'
+    ) as Record<string, (...args: any[]) => any>;
+    expect(bench.isBenchmarkRetryExhaustion).toBeTypeOf('function');
+
+    expect(bench.isBenchmarkRetryExhaustion(
+      new RuntimeStateRetryExhaustedError(new RuntimeStateWriteConflictError()),
+    )).toBe(true);
+    expect(bench.isBenchmarkRetryExhaustion(new Error('unrelated failure'))).toBe(false);
+  });
+
+  it('cascades only causal exhausted prerequisites without invoking invalid dependents', async () => {
+    const bench = await import(
+      '../../../scripts/perf/api-v1-state-write-concurrency-bench.ts'
+    ) as Record<string, (...args: any[]) => any>;
+    expect(bench.resolveBenchmarkCommandTerminal).toBeTypeOf('function');
+    const exhaustion = () =>
+      new RuntimeStateRetryExhaustedError(new RuntimeStateWriteConflictError());
+
+    const membershipTerminals = new Set<string>();
+    await expect(bench.resolveBenchmarkCommandTerminal(
+      'membership',
+      membershipTerminals,
+      async () => {
+        throw exhaustion();
+      },
+    )).resolves.toEqual({ status: 'exhausted', source: 'production' });
+    let dependentCalls = 0;
+    for (const kind of ['presence-connect', 'presence-heartbeat', 'presence-disconnect']) {
+      await expect(bench.resolveBenchmarkCommandTerminal(
+        kind,
+        membershipTerminals,
+        async () => {
+          dependentCalls += 1;
+        },
+      )).resolves.toEqual({
+        status: 'exhausted',
+        source: 'prerequisite',
+        prerequisite: 'membership',
+      });
+    }
+    expect(dependentCalls).toBe(0);
+
+    const connectTerminals = new Set<string>();
+    await bench.resolveBenchmarkCommandTerminal('presence-connect', connectTerminals, async () => {
+      throw exhaustion();
+    });
+    for (const kind of ['presence-heartbeat', 'presence-disconnect']) {
+      await expect(bench.resolveBenchmarkCommandTerminal(
+        kind,
+        connectTerminals,
+        async () => {
+          dependentCalls += 1;
+        },
+      )).resolves.toMatchObject({ prerequisite: 'presence-connect' });
+    }
+    expect(dependentCalls).toBe(0);
+
+    const heartbeatTerminals = new Set<string>();
+    await bench.resolveBenchmarkCommandTerminal(
+      'presence-heartbeat',
+      heartbeatTerminals,
+      async () => {
+        throw exhaustion();
+      },
+    );
+    await expect(bench.resolveBenchmarkCommandTerminal(
+      'presence-disconnect',
+      heartbeatTerminals,
+      async () => {
+        dependentCalls += 1;
+      },
+    )).resolves.toEqual({ status: 'accepted', source: 'production' });
+    expect(dependentCalls).toBe(1);
+
+    await expect(bench.resolveBenchmarkCommandTerminal(
+      'membership',
+      new Set(),
+      async () => {
+        throw new Error('generic failure');
+      },
+    )).rejects.toThrow('generic failure');
   });
 
   it('returns descriptive errors instead of throwing for malformed JSON-like derivation inputs', () => {
@@ -742,6 +1018,7 @@ function refreshSampleOutcomes(sampleValue: any): void {
 
 function makeCommandExhausted(sampleValue: any, commandIndex: number): void {
   const command = sampleValue.commands[commandIndex];
+  const intentCount = INTENT_KINDS[command.kind].length;
   command.status = 'exhausted';
   sampleValue.attemptObservations = sampleValue.attemptObservations.filter(
     (entry: any) => entry.commandId !== command.commandId,
@@ -764,9 +1041,10 @@ function makeCommandExhausted(sampleValue: any, commandIndex: number): void {
     ...sampleValue.correctness,
     acceptedCommandCount: sampleValue.correctness.acceptedCommandCount - 1,
     receiptCount: sampleValue.correctness.receiptCount - 1,
-    effectfulCommandCount: sampleValue.correctness.effectfulCommandCount - 1,
-    requiredOutboxIntentCount: sampleValue.correctness.requiredOutboxIntentCount - 1,
-    outboxIntentCount: sampleValue.correctness.outboxIntentCount - 1,
+    effectfulCommandCount: sampleValue.correctness.effectfulCommandCount -
+      (intentCount > 0 ? 1 : 0),
+    requiredOutboxIntentCount: sampleValue.correctness.requiredOutboxIntentCount - intentCount,
+    outboxIntentCount: sampleValue.correctness.outboxIntentCount - intentCount,
   };
   refreshSampleOutcomes(sampleValue);
   sampleValue.throughputPerSecond = sampleValue.outcomes.accepted /

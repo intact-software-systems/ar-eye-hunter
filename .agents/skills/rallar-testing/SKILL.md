@@ -12,6 +12,11 @@ Read `references/test-commands.md` when choosing commands. Prefer targeted check
 ## Selection Rules
 
 - Shared contracts: run the relevant `packages/tests/shared*` Vitest files and the package `tsc`.
+- When shared state contracts, mandatory fields, repository interfaces, or
+  service composition/signatures change, native-check every affected reusable
+  `scripts/perf/**` consumer and smoke the relevant executable harness.
+  An unchanged historical artifact hash proves preservation, not that current
+  HEAD can reproduce it.
 - Scoped storage-key changes: prove exact canonical keys and pairwise
   non-collision for absence, valid sentinels, delimiters, percent/lookalikes,
   every derived child key, prefix/list behavior, and repository isolation;

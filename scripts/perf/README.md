@@ -114,8 +114,15 @@ npm run perf:api-v1:state-write -- \
 
 The harness constructs two independent PostgreSQL service/repository stacks
 against one database. It seeds complete client and group state before every
-warmup and measured phase, then resets measurement state. Setup, authentication,
-and HTTP routing are not included in mutation latency. Every workload uses 100
+warmup and measured phase, then resets measurement state. Setup, including
+deterministic auth-session insertion, and HTTP routing are not included in
+mutation latency. Each authoritative group mutation still performs production
+auth-session lookup and revalidation inside the measured service call, and that
+SQL is included in the harness counters and timings. If a membership or
+presence-connect command exhausts production retries, causally dependent
+presence commands are recorded as explicit exhausted-prerequisite terminals
+without invoking an invalid service call or writing receipts/outbox intents.
+Every workload uses 100
 clients, concurrency 10, and the same deterministic mix: profile/instance,
 membership, presence connect/heartbeat/disconnect, group config, and topology
 source config. Workload group counts are 100 (`uncontended`), five (`shared`),

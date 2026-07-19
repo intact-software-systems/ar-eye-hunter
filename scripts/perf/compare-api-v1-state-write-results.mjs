@@ -307,12 +307,15 @@ function validateMeasurement(measurement, errors) {
   }
   if (
     !isDenseArray(measurement.mutationTimingExcludes) ||
-    !['setup', 'authentication', 'http'].every((value) =>
-      measurement.mutationTimingExcludes.includes(value)
+    !measurement.mutationTimingExcludes.includes('setup') ||
+    !measurement.mutationTimingExcludes.includes('http') ||
+    !(
+      measurement.mutationTimingExcludes.includes('authentication') ||
+      measurement.mutationTimingExcludes.includes('auth-session insertion')
     )
   ) {
     errors.push(
-      'measurement.mutationTimingExcludes must be a dense array including setup, authentication, and http',
+      'measurement.mutationTimingExcludes must be a dense array including setup, http, and either legacy authentication or auth-session insertion',
     );
   }
   for (const source of COUNTER_SOURCES) {

@@ -15,6 +15,10 @@ import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/repositories/GroupTopologyConfigRepository.ts';
 import {
+  AuthSessionRepository,
+  type IssuedAuthSession,
+} from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+import {
   type ClientStateService,
   createClientStateService,
 } from '@shared-server/rallar-system/services/client-state-service.ts';
@@ -24,6 +28,7 @@ import {
 } from '@shared-server/rallar-system/services/group-state-service.ts';
 import { GroupTopologyManagementService } from '@shared-server/rallar-system/services/group-topology-management-service.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
+import { RuntimeStateRetryExhaustedError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import {
   type RallarTimingEvent,
   type RallarTimingSink,
@@ -40,6 +45,8 @@ const REQUIRED_CONCURRENCY = 10;
 const MAX_WARMUP_RUNS = 10;
 const MAX_MEASURED_RUNS = 100;
 const MAX_CONCURRENCY = 256;
+const BENCHMARK_SESSION_ISSUED_AT_EPOCH_MS = 1_700_000_000_000;
+const BENCHMARK_SESSION_EXPIRES_AT_EPOCH_MS = 4_102_444_800_000;
 const RECEIPT_TOPIC = 'state-write-bench-receipt';
 const OUTBOX_TOPIC = 'state-write-bench-outbox';
 const MUTATION_MIX = [
@@ -184,12 +191,36 @@ type PgCounters = {
   walLsn: string;
 };
 
+type PSqlSavepointMethod = <T>(
+  fn: (sql: PSqlTransactionSql) => Promise<T>,
+) => Promise<T>;
+
 const NOOP_PUBLISHER = {
   publishClientSnapshot: () => Promise.resolve(),
   publishClientEvent: () => Promise.resolve(),
   publishGroupSnapshot: () => Promise.resolve(),
   publishGroupEvent: () => Promise.resolve(),
 };
+
+export function createBenchmarkAuthSession(
+  scope: StateScope,
+  principalId: string,
+  sessionLabel: string,
+): IssuedAuthSession {
+  const scopeIdentity = `${encodeURIComponent(scope.applicationId)}:${
+    encodeURIComponent(scope.workspaceId)
+  }`;
+  const principalIdentity = encodeURIComponent(principalId);
+  const sessionIdentity = encodeURIComponent(sessionLabel);
+  return {
+    clientId: principalId,
+    username: principalId,
+    sessionId: `${scopeIdentity}:${principalIdentity}:${sessionIdentity}`,
+    accessToken: `state-write-benchmark:${scopeIdentity}:${principalIdentity}:${sessionIdentity}`,
+    issuedAtEpochMs: BENCHMARK_SESSION_ISSUED_AT_EPOCH_MS,
+    expiresAtEpochMs: BENCHMARK_SESSION_EXPIRES_AT_EPOCH_MS,
+  };
+}
 
 if (import.meta.main) {
   await main();
@@ -284,10 +315,11 @@ async function main(): Promise<void> {
         warmupRuns: options.warmup,
         measuredRuns: options.runs,
         concurrency: options.concurrency,
-        mutationTimingExcludes: ['setup', 'authentication', 'http'],
+        mutationTimingExcludes: ['setup', 'auth-session insertion', 'http'],
         tailSamplesDiscarded: false,
         counterSources: {
-          sql: 'thin postgres.js wrapper around both independent service clients',
+          sql:
+            'thin postgres.js wrapper around both independent service clients, including production auth-session lookup and revalidation',
           sharedBuffers: 'pg_stat_database immediately before and after each measured phase',
           wal: 'pg_current_wal_lsn immediately before and after each measured phase',
           lockWait: '5ms pg_stat_activity sampling of benchmark service backends waiting on Lock',
@@ -305,7 +337,7 @@ async function main(): Promise<void> {
             'write-classified production SQL duration excluding resource_inbox outbox writes',
           outboxTiming: 'resource_inbox SQL duration from the postgres.js wrapper',
           attempts:
-            'explicit state-write command-envelope timing events around production service calls; each successful call records one terminal accepted attempt, with profile and instance recorded as distinct operations; current services expose no internal retry events',
+            'explicit state-write command-envelope timing events around production service calls or a disclosed exhausted prerequisite; each successful call records one terminal accepted attempt, with profile and instance recorded as distinct operations; current services expose no internal retry events',
           receipts:
             'independent post-phase query of resource_inbox_results rows for the benchmark scope',
           outboxIntents:
@@ -358,28 +390,56 @@ async function runWorkloadPhase(input: {
   const cpuBefore = process.cpuUsage();
   const lockSampler = startLockWaitSampler(input.adminSql, `${input.runId}-service-`);
   const rawCommands: RawCommand[] = [];
+  const exhaustedKindsByClient = new Map<number, Set<MutationKind>>();
   const startedAt = performance.now();
 
-  for (const kind of MUTATION_MIX) {
-    const phaseCommands = commands.filter((command) => command.kind === kind);
-    const phaseResults = await mapWithConcurrency(
-      phaseCommands,
-      input.concurrency,
-      async (command, commandIndex) => {
-        const stackIndex = selectServiceStack(commandIndex, runtimes.length);
-        const commandId = commandIdentifier(scope, command);
-        const commandStartedAt = performance.now();
-        await executeMeasuredCommand(runtimes[stackIndex]!, scope, command, commandId, timing);
-        return {
-          commandId,
-          kind,
-          latencyMs: performance.now() - commandStartedAt,
-          stackIndex,
-          status: 'accepted' as const,
-        };
-      },
-    );
-    rawCommands.push(...phaseResults);
+  try {
+    for (const kind of MUTATION_MIX) {
+      const phaseCommands = commands.filter((command) => command.kind === kind);
+      const phaseResults = await mapWithConcurrency(
+        phaseCommands,
+        input.concurrency,
+        async (command, commandIndex) => {
+          const stackIndex = selectServiceStack(commandIndex, runtimes.length);
+          const commandId = commandIdentifier(scope, command);
+          const commandStartedAt = performance.now();
+          const exhaustedKinds = exhaustedKindsByClient.get(command.clientIndex) ??
+            new Set<MutationKind>();
+          exhaustedKindsByClient.set(command.clientIndex, exhaustedKinds);
+          const terminal = await resolveBenchmarkCommandTerminal(
+            kind,
+            exhaustedKinds,
+            async () =>
+              await executeMeasuredCommand(
+                runtimes[stackIndex]!,
+                scope,
+                command,
+                commandId,
+                timing,
+              ),
+          );
+          if (terminal.source === 'prerequisite') {
+            recordPrerequisiteExhaustion(
+              timing,
+              runtimes[stackIndex]!,
+              commandId,
+              terminal.prerequisite,
+              performance.now() - commandStartedAt,
+            );
+          }
+          return {
+            commandId,
+            kind,
+            latencyMs: performance.now() - commandStartedAt,
+            stackIndex,
+            status: terminal.status,
+          };
+        },
+      );
+      rawCommands.push(...phaseResults);
+    }
+  } catch (error) {
+    await rethrowAfterCleanup(error, lockSampler.stop);
   }
 
   const durationMs = performance.now() - startedAt;
@@ -452,6 +512,101 @@ async function runWorkloadPhase(input: {
   return sample;
 }
 
+export async function rethrowAfterCleanup(
+  error: unknown,
+  cleanup: () => Promise<unknown>,
+): Promise<never> {
+  try {
+    await cleanup();
+  } catch (cleanupError) {
+    console.error('State-write benchmark cleanup failed after command failure', cleanupError);
+  }
+  throw error;
+}
+
+export function isBenchmarkRetryExhaustion(
+  error: unknown,
+): error is RuntimeStateRetryExhaustedError {
+  return error instanceof RuntimeStateRetryExhaustedError;
+}
+
+export async function resolveBenchmarkCommandTerminal(
+  kind: MutationKind,
+  exhaustedKinds: Set<MutationKind>,
+  action: () => Promise<void>,
+): Promise<
+  | Readonly<{ status: 'accepted'; source: 'production' }>
+  | Readonly<{ status: 'exhausted'; source: 'production' }>
+  | Readonly<{
+    status: 'exhausted';
+    source: 'prerequisite';
+    prerequisite: 'membership' | 'presence-connect';
+  }>
+> {
+  const prerequisite = benchmarkCommandPrerequisite(kind, exhaustedKinds);
+  if (prerequisite) {
+    return { status: 'exhausted', source: 'prerequisite', prerequisite };
+  }
+  try {
+    await action();
+    return { status: 'accepted', source: 'production' };
+  } catch (error) {
+    if (!isBenchmarkRetryExhaustion(error)) {
+      throw error;
+    }
+    exhaustedKinds.add(kind);
+    return { status: 'exhausted', source: 'production' };
+  }
+}
+
+function benchmarkCommandPrerequisite(
+  kind: MutationKind,
+  exhaustedKinds: ReadonlySet<MutationKind>,
+): 'membership' | 'presence-connect' | undefined {
+  if (
+    (kind === 'presence-connect' ||
+      kind === 'presence-heartbeat' ||
+      kind === 'presence-disconnect') &&
+    exhaustedKinds.has('membership')
+  ) {
+    return 'membership';
+  }
+  if (
+    (kind === 'presence-heartbeat' || kind === 'presence-disconnect') &&
+    exhaustedKinds.has('presence-connect')
+  ) {
+    return 'presence-connect';
+  }
+  return undefined;
+}
+
+function recordPrerequisiteExhaustion(
+  timing: RallarTimingSink,
+  runtime: ServiceRuntime,
+  requestId: string,
+  prerequisite: 'membership' | 'presence-connect',
+  durationMs: number,
+): void {
+  recordRallarTiming(
+    timing,
+    {
+      component: 'state-write-command-envelope',
+      operation: `prerequisite-exhausted:${prerequisite}`,
+      serviceId: runtime.serviceId,
+      requestId,
+      details: {
+        operationId: 'command',
+        attempt: 1,
+        outcome: 'exhausted',
+        terminal: true,
+        prerequisite,
+      },
+    },
+    'error',
+    durationMs,
+  );
+}
+
 function createServiceRuntime(
   sql: Sql,
   serviceId: string,
@@ -460,12 +615,14 @@ function createServiceRuntime(
 ): ServiceRuntime {
   const instrumentedSql = createInstrumentedSql(sql as unknown as PSqlSql, context, timing);
   const runtimeRepository = new PSqlRuntimeStateRepository(instrumentedSql);
+  const authSessionRepository = new AuthSessionRepository(runtimeRepository);
   const group = createGroupStateService({
     runtimeRepository,
     createGroupStateEventStore: createGroupStateEventRepository,
     syncPublisher: NOOP_PUBLISHER,
     serviceId,
     timing,
+    authSessionRepository,
   });
   return {
     client: createClientStateService({
@@ -487,7 +644,7 @@ function createServiceRuntime(
   };
 }
 
-function createInstrumentedSql(
+export function createInstrumentedSql(
   sql: PSqlSql,
   context: RunContext,
   timing: RallarTimingSink,
@@ -556,6 +713,16 @@ function createInstrumentedSql(
       );
     }
   };
+  const savepoint = (sql as PSqlSql & { savepoint?: PSqlSavepointMethod }).savepoint;
+  if (typeof savepoint === 'function') {
+    const invokeSavepoint = savepoint.bind(sql) as PSqlSavepointMethod;
+    (instrumented as PSqlSql & { savepoint: PSqlSavepointMethod }).savepoint = async <T>(
+      fn: (transaction: PSqlTransactionSql) => Promise<T>,
+    ): Promise<T> =>
+      await invokeSavepoint<T>(
+        async (transaction) => await fn(createInstrumentedSql(transaction, context, timing)),
+      );
+  }
   return instrumented;
 }
 
@@ -570,12 +737,32 @@ async function executeMeasuredCommand(
     requestId,
     principalId: `client-${command.clientIndex}`,
     instanceId: `instance-${command.clientIndex}`,
-    sessionId: `session-${command.clientIndex}`,
+    clientAuthority: createBenchmarkAuthSession(
+      scope,
+      `client-${command.clientIndex}`,
+      `client-session-${command.clientIndex}`,
+    ),
+    ownerAuthority: createBenchmarkAuthSession(
+      scope,
+      `owner-${command.groupIndex}`,
+      `owner-session-${command.groupIndex}`,
+    ),
     groupId: `group-${command.groupIndex}`,
     ownerId: `owner-${command.groupIndex}`,
     timestamp: Date.now() + command.clientIndex,
   };
-  const effect = await executeMutation(runtime, scope, command.kind, prepared, timing);
+  const preparedWithPresenceIdentity = {
+    ...prepared,
+    sessionId: prepared.clientAuthority.sessionId,
+    generationId: `${prepared.clientAuthority.sessionId}:generation-1`,
+  };
+  const effect = await executeMutation(
+    runtime,
+    scope,
+    command.kind,
+    preparedWithPresenceIdentity,
+    timing,
+  );
   for (const [index, intent] of effect.outboxIntents.entries()) {
     const intentId = `${requestId}:intent:${index}`;
     await runtime.outbox.writeIfAbsentOrReplaceExpired(toResourceEntryWithKey(
@@ -611,6 +798,9 @@ async function executeMutation(
     groupId: string;
     ownerId: string;
     timestamp: number;
+    generationId: string;
+    clientAuthority: IssuedAuthSession;
+    ownerAuthority: IssuedAuthSession;
   }>,
   timing: RallarTimingSink,
 ): Promise<CommandEffect> {
@@ -678,6 +868,7 @@ async function executeMutation(
                 actorPrincipalId: command.ownerId,
                 requestId: command.requestId,
               },
+              command.ownerAuthority,
             ),
         ),
       );
@@ -697,6 +888,7 @@ async function executeMutation(
               command.sessionId,
               {
                 principalId: command.principalId,
+                generationId: command.generationId,
                 connectedAtEpochMs: command.timestamp,
                 lastHeartbeatAtEpochMs: command.timestamp,
                 expiresAtEpochMs: command.timestamp + 60_000,
@@ -704,6 +896,7 @@ async function executeMutation(
                 actorSessionId: command.sessionId,
                 requestId: command.requestId,
               },
+              command.clientAuthority,
             ),
         ),
       );
@@ -723,12 +916,14 @@ async function executeMutation(
               command.sessionId,
               {
                 principalId: command.principalId,
+                generationId: command.generationId,
                 lastHeartbeatAtEpochMs: command.timestamp + 1_000,
                 expiresAtEpochMs: command.timestamp + 61_000,
                 actorPrincipalId: command.principalId,
                 actorSessionId: command.sessionId,
                 requestId: command.requestId,
               },
+              command.clientAuthority,
             ),
         ),
       );
@@ -748,6 +943,7 @@ async function executeMutation(
               command.sessionId,
               {
                 principalId: command.principalId,
+                generationId: command.generationId,
                 disconnectedAtEpochMs: command.timestamp + 2_000,
                 lastHeartbeatAtEpochMs: command.timestamp + 1_000,
                 expiresAtEpochMs: command.timestamp + 61_000,
@@ -755,6 +951,7 @@ async function executeMutation(
                 actorSessionId: command.sessionId,
                 requestId: command.requestId,
               },
+              command.clientAuthority,
             ),
         ),
       );
@@ -776,6 +973,7 @@ async function executeMutation(
                 actorPrincipalId: command.ownerId,
                 requestId: command.requestId,
               },
+              command.ownerAuthority,
             ),
         ),
       );
@@ -885,6 +1083,7 @@ async function observeProductionAttempt<T>(
     );
     return result;
   } catch (error) {
+    const exhausted = isBenchmarkRetryExhaustion(error);
     recordRallarTiming(
       timing,
       {
@@ -892,7 +1091,7 @@ async function observeProductionAttempt<T>(
         details: {
           operationId: attemptOperationId(operation),
           attempt: 1,
-          outcome: 'operation-error',
+          outcome: exhausted ? 'exhausted' : 'operation-error',
           terminal: true,
         },
       },
@@ -922,6 +1121,7 @@ async function seedCompleteState(
 ): Promise<void> {
   const pgSql = sql as unknown as PSqlSql;
   const runtimeRepository = new PSqlRuntimeStateRepository(pgSql);
+  const authSessionRepository = new AuthSessionRepository(runtimeRepository);
   const client = createClientStateService({
     runtimeRepository,
     createClientStateEventStore: createClientStateEventRepository,
@@ -933,6 +1133,7 @@ async function seedCompleteState(
     createGroupStateEventStore: createGroupStateEventRepository,
     syncPublisher: NOOP_PUBLISHER,
     serviceId: 'state-write-bench-seed',
+    authSessionRepository,
   });
   const topology = new GroupTopologyManagementService({
     findGroupSnapshotByRef: (ref) => group.readSnapshot(ref),
@@ -945,6 +1146,12 @@ async function seedCompleteState(
     REQUIRED_CONCURRENCY,
     async (groupIndex) => {
       const ownerId = `owner-${groupIndex}`;
+      const authority = createBenchmarkAuthSession(
+        scope,
+        ownerId,
+        `owner-session-${groupIndex}`,
+      );
+      await authSessionRepository.putSession(authority);
       requireGroupMutation(
         await group.createGroup(scope, {
           groupId: `group-${groupIndex}`,
@@ -957,7 +1164,7 @@ async function seedCompleteState(
           createdByPrincipalId: ownerId,
           actorPrincipalId: ownerId,
           requestId: `seed-group-${groupIndex}`,
-        }),
+        }, authority),
       );
       await topology.putConfig({
         groupRef: { ...scope, groupId: `group-${groupIndex}` },
@@ -981,6 +1188,11 @@ async function seedCompleteState(
     REQUIRED_CONCURRENCY,
     async (clientIndex) => {
       const principalId = `client-${clientIndex}`;
+      await authSessionRepository.putSession(createBenchmarkAuthSession(
+        scope,
+        principalId,
+        `client-session-${clientIndex}`,
+      ));
       requireClientMutation(
         await client.upsertPrincipal(scope, principalId, {
           username: principalId,
@@ -1075,7 +1287,7 @@ function deriveAttemptObservations(
       const terminal = event.details?.terminal;
       const attempt = event.details?.attempt;
       if (
-        event.status !== 'ok' ||
+        (event.status !== 'ok' && outcome !== 'exhausted') ||
         (outcome !== 'accepted' && outcome !== 'conflicted' && outcome !== 'exhausted') ||
         typeof operationId !== 'string' ||
         typeof terminal !== 'boolean' ||
@@ -1388,24 +1600,40 @@ function newRunContext(): RunContext {
   };
 }
 
-async function mapWithConcurrency<T, R>(
+export async function mapWithConcurrency<T, R>(
   values: readonly T[],
   concurrency: number,
   mapper: (value: T, index: number) => Promise<R>,
 ): Promise<R[]> {
   const results = new Array<R>(values.length);
   let nextIndex = 0;
+  let firstFailure: unknown;
+  let failed = false;
   const workers = Array.from({ length: Math.min(concurrency, values.length) }, async () => {
     while (true) {
+      if (failed) {
+        return;
+      }
       const index = nextIndex;
       nextIndex += 1;
       if (index >= values.length) {
         return;
       }
-      results[index] = await mapper(values[index]!, index);
+      try {
+        results[index] = await mapper(values[index]!, index);
+      } catch (error) {
+        if (!failed) {
+          failed = true;
+          firstFailure = error;
+        }
+        return;
+      }
     }
   });
   await Promise.all(workers);
+  if (failed) {
+    throw firstFailure;
+  }
   return results;
 }
 
