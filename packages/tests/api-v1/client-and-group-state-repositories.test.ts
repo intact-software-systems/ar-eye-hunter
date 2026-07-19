@@ -692,7 +692,11 @@ describe('GroupStateRepository', () => {
             name: 'StateSnapshotReadConflictError',
             status: 503,
         });
-        expect(repository.findEntriesByPrefixCalls).toBe(3);
+        expect(repository.findEntriesByPrefixCalls).toBe(6);
+        expect(repository.findEntriesByPrefixCallsByNamespace).toEqual(new Map([
+            ['group-state:members', 3],
+            ['group-state:sessions', 3],
+        ]));
         expect(groupReads).toBe(6);
     });
 
@@ -744,7 +748,13 @@ describe('GroupStateRepository', () => {
         expect(snapshots[0].memberCount).toBe(1);
         expect(snapshots[0].onlineMemberCount).toBe(1);
         expect(repository.findEntryCalls).toBe(0);
-        expect(repository.findEntriesByPrefixCalls).toBe(4);
+        expect(repository.findEntriesByPrefixCalls).toBe(5);
+        expect(repository.findEntriesByPrefixCallsByNamespace).toEqual(new Map([
+            ['group-state:groups', 2],
+            ['group-state:members', 1],
+            ['group-state:presence-summaries', 1],
+            ['group-state:sessions', 1],
+        ]));
         expect(repository.maxRowsReturnedPerFindEntriesByPrefix).toBe(groupCount);
     });
 
@@ -791,7 +801,13 @@ describe('GroupStateRepository', () => {
                 expect.objectContaining({ principalId: 'principal-new' }),
             ]),
         });
-        expect(repository.findEntriesByPrefixCalls).toBe(5);
+        expect(repository.findEntriesByPrefixCalls).toBe(7);
+        expect(repository.findEntriesByPrefixCallsByNamespace).toEqual(new Map([
+            ['group-state:groups', 2],
+            ['group-state:members', 2],
+            ['group-state:presence-summaries', 1],
+            ['group-state:sessions', 2],
+        ]));
         expect(repository.findEntryCalls).toBe(3);
     });
 
@@ -851,7 +867,11 @@ describe('GroupStateRepository', () => {
             },
         ]);
         expect(repository.findEntriesByKeysCalls).toBe(1);
-        expect(repository.findEntriesByPrefixCalls).toBe(2);
+        expect(repository.findEntriesByPrefixCalls).toBe(4);
+        expect(repository.findEntriesByPrefixCallsByNamespace).toEqual(new Map([
+            ['group-state:members', 2],
+            ['group-state:sessions', 2],
+        ]));
         expect(repository.findEntryCalls).toBe(2);
         expect(repository.maxRowsReturnedPerFindEntriesByPrefix).toBe(1);
     });
@@ -955,7 +975,11 @@ describe('GroupStateRepository', () => {
             ]),
         });
         expect(repository.findEntriesByKeysCalls).toBe(1);
-        expect(repository.findEntriesByPrefixCalls).toBe(2);
+        expect(repository.findEntriesByPrefixCalls).toBe(4);
+        expect(repository.findEntriesByPrefixCallsByNamespace).toEqual(new Map([
+            ['group-state:members', 2],
+            ['group-state:sessions', 2],
+        ]));
         expect(repository.findEntryCalls).toBe(4);
     });
 
@@ -1292,6 +1316,7 @@ class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryL
     readonly data = new Map<string, RuntimeStateEntry>();
     findEntryCalls = 0;
     findEntriesByPrefixCalls = 0;
+    readonly findEntriesByPrefixCallsByNamespace = new Map<string, number>();
     findEntriesByKeysCalls = 0;
     maxRowsReturnedPerFindEntriesByPrefix = 0;
     onFindEntryAfterRead?: (
@@ -1334,6 +1359,10 @@ class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryL
         keyPrefix: string,
     ): Promise<readonly RuntimeStateEntry[]> {
         this.findEntriesByPrefixCalls += 1;
+        this.findEntriesByPrefixCallsByNamespace.set(
+            namespace,
+            (this.findEntriesByPrefixCallsByNamespace.get(namespace) ?? 0) + 1,
+        );
         await this.onFindEntriesByPrefix?.();
         const rows = [...this.data.entries()]
             .filter(
@@ -1490,6 +1519,7 @@ class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryL
     resetCounters(): void {
         this.findEntryCalls = 0;
         this.findEntriesByPrefixCalls = 0;
+        this.findEntriesByPrefixCallsByNamespace.clear();
         this.findEntriesByKeysCalls = 0;
         this.maxRowsReturnedPerFindEntriesByPrefix = 0;
         this.findEntriesByPrefixPageCalls.length = 0;

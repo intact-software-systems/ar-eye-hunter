@@ -4,10 +4,19 @@ import type {
     GroupMember,
     GroupPresenceSummary,
     GroupPresenceSession,
+    GroupRef,
+    GroupScope,
     GroupSnapshot,
 } from '@shared/api/group-types.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
+import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/services/GroupPresenceSummaryWork.ts';
+import { createCachedGroupStateService } from '@shared-server/rallar-system/services/cached-group-state-service.ts';
 import { createGroupStateSnapshotReadThroughCache } from '@shared-server/rallar-system/services/group-state-snapshot-read-through-cache.ts';
+import type {
+    GroupSnapshotPageOptions,
+    GroupStateService,
+} from '@shared-server/rallar-system/services/group-state-service.ts';
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 
@@ -70,6 +79,122 @@ describe('GroupStateSnapshotReadThroughCache', () => {
         })).toThrow('Group snapshot revision conflict');
         expect(cache.peek(revisionTwo.group)).toEqual(revisionTwo);
     });
+
+    it('keeps tuple-preserving liveness projections outside the monotonic summary cache', async () => {
+        configureTestCacheRepositories();
+        const runtime = new FakeRuntimeStateRepository();
+        const repository = new GroupStateRepository(runtime);
+        const cache = createGroupStateSnapshotReadThroughCache({
+            groupsRepository: repository,
+            now: () => 2_000,
+        });
+        const live = createGroupSnapshot(1, ['session-a']);
+        await putGroupSnapshot(repository, live);
+        const ref = live.group;
+        const primed = await cache.findOrLoadByRef(ref);
+        expect(primed?.activeSessions).toHaveLength(1);
+        if (!primed) throw new Error('Expected primed snapshot');
+
+        const durable = {
+            readSnapshot: (groupRef: GroupRef) => repository.readSnapshot(groupRef),
+            listSnapshots: (scope: GroupScope) => repository.listSnapshots(scope),
+            listSnapshotsPage: (
+                scope: GroupScope,
+                options: GroupSnapshotPageOptions,
+            ) =>
+                repository.listSnapshotsPage(scope, options),
+            disconnectPresenceSession: async () => {
+                const stored = await repository.findPresenceEntry({
+                    ...ref,
+                    sessionId: 'session-a',
+                });
+                if (!stored) throw new Error('Expected persisted session');
+                const committed = await repository.updatePresence({
+                    ...stored.value,
+                    disconnectedAtEpochMs: 2_000,
+                    disconnectReason: 'client-disconnect',
+                }, stored.entry.revision);
+                if (committed.status !== 'applied') {
+                    throw new Error('Expected durable disconnect to commit');
+                }
+                const snapshot = await repository.readSnapshot(ref);
+                if (!snapshot) throw new Error('Expected durable snapshot');
+                return {
+                    status: 'ok' as const,
+                    result: Either.ofRight({ snapshot, event: undefined }),
+                };
+            },
+        } as unknown as GroupStateService;
+        const service = createCachedGroupStateService({
+            durable,
+            cache: {
+                findOrLoadByRef: (groupRef, options) =>
+                    cache.findOrLoadByRef(groupRef, options),
+                observe: (snapshot) => cache.observe(snapshot),
+            },
+        });
+
+        const [disconnectOutcome] = await Promise.allSettled([
+            service.disconnectPresenceSession(
+                ref,
+                ref.groupId,
+                'session-a',
+                {} as never,
+                {} as never,
+            ),
+        ]);
+        const disconnected = await repository.findPresenceSession({
+            ...ref,
+            sessionId: 'session-a',
+        });
+        expect(disconnected?.disconnectedAtEpochMs).toBe(2_000);
+
+        const [listOutcome] = await Promise.allSettled([
+            service.listSnapshots(ref),
+        ]);
+        const [pageOutcome] = await Promise.allSettled([
+            service.listSnapshotsPage(ref, { limit: 10 }),
+        ]);
+
+        expect({
+            disconnect: disconnectOutcome.status,
+            list: listOutcome.status,
+            page: pageOutcome.status,
+        }).toEqual({
+            disconnect: 'fulfilled',
+            list: 'fulfilled',
+            page: 'fulfilled',
+        });
+        if (
+            disconnectOutcome.status !== 'fulfilled' ||
+            listOutcome.status !== 'fulfilled' ||
+            pageOutcome.status !== 'fulfilled'
+        ) {
+            throw new Error('Expected tuple-preserving projections to return');
+        }
+        expect(disconnectOutcome.value.result.right?.snapshot.activeSessions)
+            .toEqual([]);
+        expect(listOutcome.value[0]?.activeSessions).toEqual([]);
+        expect(pageOutcome.value.snapshots[0]?.activeSessions).toEqual([]);
+        expect(cache.peek(ref)).toEqual(primed);
+        await expect(service.readCurrentSnapshot(ref)).resolves.toMatchObject({
+            activeSessions: [],
+            onlineMemberCount: 0,
+        });
+
+        await new GroupPresenceSummaryWork({
+            runtimeRepository: runtime,
+            now: () => 2_001,
+            sleep: () => Promise.resolve(),
+            serviceId: 'cache-convergence-test',
+        }).converge(ref, 'cache-convergence-delivery');
+        const converged = await cache.refreshByRef(ref);
+        expect(converged?.activeSessions).toEqual([]);
+        expect(converged?.causalRevision.presenceRevision).toBeGreaterThan(
+            primed.causalRevision.presenceRevision,
+        );
+        expect(cache.peek(ref)).toEqual(converged);
+    });
 });
 
 async function putGroupSnapshot(
@@ -88,7 +213,9 @@ async function putGroupSnapshot(
     const current = await repository.findPresenceSummaryEntry(snapshot.group);
     const presenceRevision = (current?.value.causalRevision.presenceRevision ?? 0) + 1;
     const summary: GroupPresenceSummary = {
-        ...snapshot.group,
+        applicationId: snapshot.group.applicationId,
+        workspaceId: snapshot.group.workspaceId,
+        groupId: snapshot.group.groupId,
         causalRevision: {
             groupRevision: group.entry.revision + 1,
             presenceRevision,
@@ -157,7 +284,9 @@ function createGroupSnapshot(
     };
     const activeSessions: GroupPresenceSession[] = sessionIds.map(
         (sessionId) => ({
-            ...group,
+            applicationId: group.applicationId,
+            workspaceId: group.workspaceId,
+            groupId: group.groupId,
             sessionId,
             principalId: `principal-${sessionId}`,
             generationId: `generation-${sessionId}`,

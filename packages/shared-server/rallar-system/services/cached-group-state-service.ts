@@ -90,22 +90,10 @@ export function createCachedGroupStateService(options: Readonly<{
             await options.durable.readSnapshot(ref),
         readSnapshotAtLeast: async (ref, readOptions) =>
             await options.cache.findOrLoadByRef(ref, readOptions),
-        listSnapshots: async (scope) => {
-            const snapshots = await options.durable.listSnapshots(scope);
-            return await Promise.all(snapshots.map(observeSnapshot));
-        },
-        listSnapshotsPage: async (scope, pageOptions) => {
-            const page = await options.durable.listSnapshotsPage(
-                scope,
-                pageOptions,
-            );
-            return {
-                ...page,
-                snapshots: await Promise.all(
-                    page.snapshots.map(observeSnapshot),
-                ),
-            };
-        },
+        listSnapshots: async (scope) =>
+            await options.durable.listSnapshots(scope),
+        listSnapshotsPage: async (scope, pageOptions) =>
+            await options.durable.listSnapshotsPage(scope, pageOptions),
         readSnapshot: async (ref) =>
             await options.cache.findOrLoadByRef(ref),
         createGroup: async (scope, request, authority) =>
@@ -216,34 +204,28 @@ export function createCachedGroupStateService(options: Readonly<{
                 ),
             ),
         connectPresenceSession: async (scope, groupId, sessionId, request, authority) =>
-            await observeWritten(
-                await options.durable.connectPresenceSession(
-                    scope,
-                    groupId,
-                    sessionId,
-                    request,
-                    authority,
-                ),
+            await options.durable.connectPresenceSession(
+                scope,
+                groupId,
+                sessionId,
+                request,
+                authority,
             ),
         heartbeatPresenceSession: async (scope, groupId, sessionId, request, authority) =>
-            await observeWritten(
-                await options.durable.heartbeatPresenceSession(
-                    scope,
-                    groupId,
-                    sessionId,
-                    request,
-                    authority,
-                ),
+            await options.durable.heartbeatPresenceSession(
+                scope,
+                groupId,
+                sessionId,
+                request,
+                authority,
             ),
         disconnectPresenceSession: async (scope, groupId, sessionId, request, authority) =>
-            await observeWritten(
-                await options.durable.disconnectPresenceSession(
-                    scope,
-                    groupId,
-                    sessionId,
-                    request,
-                    authority,
-                ),
+            await options.durable.disconnectPresenceSession(
+                scope,
+                groupId,
+                sessionId,
+                request,
+                authority,
             ),
     };
 

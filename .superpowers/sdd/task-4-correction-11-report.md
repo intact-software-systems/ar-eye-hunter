@@ -1,5 +1,12 @@
 # Task 4 correction 11 report: snapshot liveness fences, complete admin validation, and live PostgreSQL proofs
 
+> **SUPERSEDED FINAL-ACCEPTANCE CLAIM:** Correction 12 proved that the cached
+> compatibility wrapper still observed tuple-preserving disconnect/list/page
+> liveness projections after durable success, and that five repository test
+> read-count expectations did not include correction 11's authoritative session
+> scans. Correction 11's liveness, admin validation, and PostgreSQL evidence
+> remains valid; correction 12 owns final Task 4 acceptance.
+
 ## Status and scope
 
 Status: `DONE`.
@@ -240,5 +247,5 @@ at an equal tuple. The cache may retain its prior summary until asynchronous
 summary convergence advances presence revision, but current room/policy
 authority never relies on it.
 
-No follow-up is required for correction 11. Task 5 remains blocked until the
-parent explicitly advances it.
+Correction 12 owns the remaining compatibility-cache boundary and validation
+follow-up. Task 5 remains blocked until the parent explicitly advances it.

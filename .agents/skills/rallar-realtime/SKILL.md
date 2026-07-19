@@ -77,6 +77,12 @@ rg -n "GroupRef|groupRef|groupId|roomId|createAndSwitch|createAndJoin|joinRoom|w
   summary with current group status/expiry: archived, deleted, or expired groups
   report zero active sessions and online members while preserving causal
   revisions. Newer source mutations enqueue follow-up convergence work.
+- A liveness-filtered current-authority projection that preserves the summary
+  causal tuple is not a canonical summary-cache observation. Return it without
+  observing, evicting, rewriting, or synthetically advancing the monotonic
+  cache; only canonical summary convergence with an advanced tuple updates that
+  cache. Never report committed authoritative success as failure because an
+  optional cache observation conflicts.
 - Treat storage-key/value/command relationships as part of those persisted
   shapes. A shape-valid row in the wrong actor, target, owner, director,
   principal-admission, session, summary, or idempotency slot is corruption and

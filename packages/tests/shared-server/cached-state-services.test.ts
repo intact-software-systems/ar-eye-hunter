@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
+import { StateSnapshotRevisionConflictError } from '@shared/repository/state-snapshot-revision.ts';
 import type { ClientStateService } from '@shared-server/rallar-system/services/client-state-service.ts';
 import { createCachedClientStateService } from '@shared-server/rallar-system/services/cached-client-state-service.ts';
 import type { GroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
@@ -55,6 +56,73 @@ describe('cached state services', () => {
         expect(findOrLoadByRef).not.toHaveBeenCalled();
         expect(observe).not.toHaveBeenCalled();
         expect(result).toBe(revisioned);
+    });
+
+    it('returns every session-only compatibility mutation without observing its projection', async () => {
+        const snapshot = createGroupSnapshot(5);
+        const written = {
+            status: 'ok' as const,
+            result: Either.ofRight({ snapshot, event: undefined }),
+        };
+        const observe = vi.fn(() => {
+            throw new Error('session projection must not be observed');
+        });
+        const durable = {
+            connectPresenceSession: vi.fn().mockResolvedValue(written),
+            heartbeatPresenceSession: vi.fn().mockResolvedValue(written),
+            disconnectPresenceSession: vi.fn().mockResolvedValue(written),
+        } as unknown as GroupStateService;
+        const service = createCachedGroupStateService({
+            durable,
+            cache: {
+                findOrLoadByRef: vi.fn(),
+                observe,
+            },
+        });
+        const scope = { applicationId: 'app-1', workspaceId: 'workspace-1' };
+
+        await expect(service.connectPresenceSession(
+            scope,
+            'group-1',
+            'session-1',
+            {} as never,
+            {} as never,
+        )).resolves.toBe(written);
+        await expect(service.heartbeatPresenceSession(
+            scope,
+            'group-1',
+            'session-1',
+            {} as never,
+            {} as never,
+        )).resolves.toBe(written);
+        await expect(service.disconnectPresenceSession(
+            scope,
+            'group-1',
+            'session-1',
+            {} as never,
+            {} as never,
+        )).resolves.toBe(written);
+
+        expect(observe).not.toHaveBeenCalled();
+    });
+
+    it('keeps explicit canonical group observation fail-closed', () => {
+        const snapshot = createGroupSnapshot(6);
+        const conflict = new StateSnapshotRevisionConflictError(
+            'Group',
+            snapshot.stateRevision,
+        );
+        const service = createCachedGroupStateService({
+            durable: {} as GroupStateService,
+            cache: {
+                findOrLoadByRef: vi.fn(),
+                observe: vi.fn(() => {
+                    throw conflict;
+                }),
+            },
+        });
+
+        expect(() => service.observeSnapshot(snapshot)).toThrow(conflict);
     });
 
     it('uses client read-through state and observes mutation results', async () => {
