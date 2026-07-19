@@ -378,11 +378,55 @@ class.
 Run the outbound runtime/store tests, RTC overlay and multicast regressions,
 and the shared/shared-web/shared-server/shared-test checks.
 
-- [ ] **Step 4: Push and collect iteration 7**
+- [x] **Step 4: Push and collect iteration 7**
 
 Rerun the unchanged 15-agent manifest. Acceptance requires a material reduction
 in stream-message first-drain delay and p95/p99 frame latency without restoring
 same-drain retry amplification or causing drops.
+
+Iteration 7 failed this acceptance criterion. Revert the mixed-claim quota in
+the next correction rather than combining it with another unmeasured change.
+
+### Task 7: Settle each claimed effect batch atomically
+
+**Files:**
+
+- Modify: `packages/shared/alm/ALOutboundAdmissionStore.ts`
+- Modify: `packages/shared/alm/ALOutboundMessageRuntime.ts`
+- Test: `packages/tests/shared/al-outbound-message-runtime.test.ts`
+- Test: `packages/tests/shared/al-indexeddb-runtime-stores.test.ts`
+
+**Interfaces:**
+
+- Consumes: the completed/rescheduled outcomes for one claimed drain batch.
+- Produces: optional `settleClaimedEffects(...)`, which verifies lease
+  ownership and applies all outcomes through one admission-backend write
+  boundary; custom stores without it retain the per-effect fallback.
+
+- [x] **Step 1: Reproduce the missing batch settlement boundary**
+
+Claim one completed and one retryable durable effect, then require one API call
+to remove the completed effect and make only the retryable effect claimable.
+Verify RED because the admission store only exposes per-effect settlement.
+
+- [x] **Step 2: Batch store settlement and runtime use**
+
+Add the claimed-batch settlement contract, implement it as one backend write,
+and make `completeEffect(...)` / `rescheduleEffect(...)` compatible delegates.
+Accumulate outcomes while running the claimed batch, then settle once. If the
+atomic write fails, conservatively convert completed outcomes to retries so
+the existing at-least-once recovery behavior remains intact.
+
+- [x] **Step 3: Verify focused regressions and typechecks**
+
+Run outbound runtime and IndexedDB persistence tests, the RTC/browser regression
+surface, and shared/shared-web/shared-server/shared-test checks.
+
+- [ ] **Step 4: Push and collect iteration 8**
+
+Rerun the unchanged 15-agent manifest after reverting iteration 7's rejected
+claim quota. Acceptance requires lower drain milliseconds per claimed effect,
+lower first-matching-drain delay, and lower frame p95/p99 without drops.
 
 ## Self-review
 

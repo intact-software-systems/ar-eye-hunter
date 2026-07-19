@@ -12,6 +12,7 @@ import type {
     ALOutboundAdmissionStore,
     ALOutboundCommitBundle,
     ALOutboundDurableEffectWrite,
+    ALOutboundEffectSettlement,
     ALOutboundMessageReadDto,
     ALOutboundRepairHint,
     ALPersistedOutboundEffect,
@@ -739,6 +740,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
                 }
                 claimedCount += claimed.length;
                 let rescheduledInBatch = false;
+                const settlements: ALOutboundEffectSettlement[] = [];
 
                 for (const effect of claimed) {
                     if (this.disposed) {
@@ -762,34 +764,49 @@ export class ALOutboundMessageRuntime<TPrepared> {
                         }
                         const runResult = await this.runDurableEffect(effect);
                         if (runResult.status === 'reschedule') {
-                            await this.admissionStore.rescheduleEffect(
-                                effect.effectId,
-                                this.effectWorkerId,
-                                runResult.readyAtMs,
-                                runResult.reason,
-                            );
-                            rescheduledCount += 1;
+                            settlements.push({
+                                effectId: effect.effectId,
+                                status: 'rescheduled',
+                                retryAtMs: runResult.readyAtMs,
+                                lastError: runResult.reason,
+                            });
                             rescheduledInBatch = true;
                             continue;
                         }
 
-                        await this.admissionStore.completeEffect(effect.effectId, this.effectWorkerId);
-                        completedCount += 1;
+                        settlements.push({
+                            effectId: effect.effectId,
+                            status: 'completed',
+                        });
                     } catch (error) {
                         if (this.disposed) {
                             break;
                         }
 
-                        await this.admissionStore.rescheduleEffect(
-                            effect.effectId,
-                            this.effectWorkerId,
-                            this.readNowMs() + this.toEffectRetryDelayMs(effect.attempts),
-                            ALOutboundMessageRuntime.toErrorMessage(error),
-                        );
-                        rescheduledCount += 1;
+                        settlements.push({
+                            effectId: effect.effectId,
+                            status: 'rescheduled',
+                            retryAtMs: this.readNowMs() +
+                                this.toEffectRetryDelayMs(effect.attempts),
+                            lastError: ALOutboundMessageRuntime.toErrorMessage(error),
+                        });
                         rescheduledInBatch = true;
                     }
                 }
+
+                const settled = await this.settleClaimedEffectBatch(
+                    claimed,
+                    settlements,
+                );
+                rescheduledInBatch ||= settled.some(
+                    settlement => settlement.status === 'rescheduled',
+                );
+                completedCount += settled.filter(
+                    settlement => settlement.status === 'completed',
+                ).length;
+                rescheduledCount += settled.filter(
+                    settlement => settlement.status === 'rescheduled',
+                ).length;
 
                 if (rescheduledInBatch) {
                     break;
@@ -816,6 +833,66 @@ export class ALOutboundMessageRuntime<TPrepared> {
                 skippedExpiredCount,
                 messages: [...messagesById.values()],
             });
+        }
+    }
+
+    private async settleClaimedEffectBatch(
+        claimed: readonly ALPersistedOutboundEffect<TPrepared>[],
+        settlements: readonly ALOutboundEffectSettlement[],
+    ): Promise<readonly ALOutboundEffectSettlement[]> {
+        const settleClaimedEffects = this.admissionStore.settleClaimedEffects?.bind(
+            this.admissionStore,
+        );
+        if (!settleClaimedEffects) {
+            for (const settlement of settlements) {
+                if (settlement.status === 'completed') {
+                    await this.admissionStore.completeEffect(
+                        settlement.effectId,
+                        this.effectWorkerId,
+                    );
+                    continue;
+                }
+                await this.admissionStore.rescheduleEffect(
+                    settlement.effectId,
+                    this.effectWorkerId,
+                    settlement.retryAtMs,
+                    settlement.lastError,
+                );
+            }
+            return settlements;
+        }
+
+        try {
+            await settleClaimedEffects(
+                this.effectWorkerId,
+                settlements,
+            );
+            return settlements;
+        } catch (error) {
+            if (this.disposed) {
+                return [];
+            }
+
+            const claimedById = new Map(claimed.map(effect => [effect.effectId, effect]));
+            const reason = ALOutboundMessageRuntime.toErrorMessage(error);
+            const retries = settlements.map((settlement): ALOutboundEffectSettlement => {
+                if (settlement.status === 'rescheduled') {
+                    return settlement;
+                }
+
+                const attempts = claimedById.get(settlement.effectId)?.attempts ?? 0;
+                return {
+                    effectId: settlement.effectId,
+                    status: 'rescheduled',
+                    retryAtMs: this.readNowMs() + this.toEffectRetryDelayMs(attempts),
+                    lastError: reason,
+                };
+            });
+            await settleClaimedEffects(
+                this.effectWorkerId,
+                retries,
+            );
+            return retries;
         }
     }
 

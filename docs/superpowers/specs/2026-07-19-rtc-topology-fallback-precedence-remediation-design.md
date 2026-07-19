@@ -233,6 +233,42 @@ of the batch is selected from unattempted effects and one quarter from retries,
 with unused capacity filled by the other class. No wire, topology, retry-delay,
 or recipe contract changes.
 
+## Iteration 7 outcome and per-effect settlement overhead
+
+Run `29685812280` at commit
+`79dd5f83` rejected the mixed fresh/retry claim quota. All 15 worker jobs
+succeeded, all 15 streams started, and all 2,250 frames were attempted with no
+drops, but only 2,200 completed and 50 failed. Aggregate stream latency
+regressed to p50 571 ms, p95 5,929 ms, p99 8,541 ms, and max 10,107 ms. The
+correlated 2,200 completed messages showed first matching drain start delay
+regress from iteration 6's p95 2,668 ms to 4,329 ms. The quota therefore did
+not establish fresh-effect progress and is reverted before iteration 8.
+
+Drain evidence shows a capacity limit below the offered workload rather than
+only an ordering defect. Iteration 7 drains claimed 31,620 effects, completed
+4,072, and rescheduled 27,451. A drain claimed p50 4 and p95 16 effects, while
+duration was p50 60 ms and p95 247 ms. Duration per claim averaged 25 ms (p95
+62 ms), or roughly 40 sequential effects per second at the average, while the
+15-agent 5 Hz all-peer stream can present approximately 75 messages per second
+to a forwarding runtime. This is an inference from the measured service rate
+and workload; per-agent topology degree changes the exact offered rate.
+
+The browser runtime uses the IndexedDB admission backend. After claiming a
+batch in one transaction, `runDurableEffectDrainLoop(...)` currently awaits a
+separate `completeEffect(...)` or `rescheduleEffect(...)` IndexedDB transaction
+for every effect. With 87% of claims rescheduled in iteration 7, that settlement
+path dominates the sequential batch even when the missing-lane check itself is
+immediate.
+
+Iteration 8 restores iteration 6's retry-time claim ordering and adds an
+optional atomic claimed-batch settlement operation. The runtime still invokes
+durable effects in order, but it collects their completed/rescheduled outcomes
+and verifies and writes all lease-owned states in one backend transaction. A
+custom store without the capability retains per-effect settlement. A failed
+batch write conservatively converts completed outcomes into retries, preserving
+at-least-once recovery. No transport concurrency, retry delay, topology, or
+workload contract changes.
+
 ## Contract change
 
 Add mandatory `provenance` to the browser-local `OverlayInfo` contract:

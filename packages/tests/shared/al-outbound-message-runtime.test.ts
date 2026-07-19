@@ -132,27 +132,14 @@ describe('ALOutboundMessageRuntime', () => {
 
     it('reschedules durable send-prepared effects when the transport is not ready', async () => {
         const admissionStore = createMemoryOutboundAdmissionStore();
-        const rescheduleEffect = vi.fn(async (
-            effectId: string,
-            workerId: string,
-            retryAtMs: number,
-            lastError?: string,
-        ) =>
-            await admissionStore.rescheduleEffect(
-                effectId,
-                workerId,
-                retryAtMs,
-                lastError,
-            )
-        );
-        const completeEffect = vi.fn(async (effectId: string, workerId: string) =>
-            await admissionStore.completeEffect(effectId, workerId)
+        const settleClaimedEffects = vi.fn(
+            async (...args: Parameters<NonNullable<ALOutboundAdmissionStore['settleClaimedEffects']>>) =>
+                await admissionStore.settleClaimedEffects!(...args),
         );
         const runtime = createOutboundRuntime({
             stores: {
                 admissionStore: createFlakyOutboundAdmissionStore(admissionStore, {
-                    completeEffect,
-                    rescheduleEffect,
+                    settleClaimedEffects,
                 }),
             },
             nowMs: () => 1_000,
@@ -170,13 +157,15 @@ describe('ALOutboundMessageRuntime', () => {
         const result = await runtime.enqueueIfAbsent(createOutboundMessage('msg-not-ready'));
 
         expect(result.status).toBe('sent-immediate');
-        expect(rescheduleEffect).toHaveBeenCalledWith(
-            expect.stringContaining('send:'),
+        expect(settleClaimedEffects).toHaveBeenCalledWith(
             expect.any(String),
-            1_025,
-            'RTC lane warming',
+            [expect.objectContaining({
+                effectId: expect.stringContaining('send:'),
+                status: 'rescheduled',
+                retryAtMs: 1_025,
+                lastError: 'RTC lane warming',
+            })],
         );
-        expect(completeEffect).not.toHaveBeenCalled();
         runtime.dispose();
     });
 
@@ -214,90 +203,99 @@ describe('ALOutboundMessageRuntime', () => {
         }
     });
 
-    it('reserves fresh-effect capacity without starving ready retries', async () => {
+    it('settles completed and rescheduled durable effects as one claimed batch', async () => {
         const admissionStore = createMemoryOutboundAdmissionStore();
         const nowMs = Date.now();
         const expireAtTimestamp = nowMs + 60_000;
-        const retryEffects = Array.from({ length: 16 }, (_, index) => ({
-            effectId: `a-retry-${index.toString().padStart(2, '0')}`,
-            retryAtMs: nowMs,
-            expireAtTimestamp,
-            payload: {
-                kind: 'ack-timeout' as const,
-                msgId: `retry-${index}`,
-            },
-        }));
-
-        await expect(admissionStore.commitBundle({
-            senderId: 'retry-sender',
+        await admissionStore.commitBundle({
+            senderId: 'batch-sender',
             mutations: [],
-            durableEffects: retryEffects,
-        })).resolves.toBe('committed');
-        const firstClaim = await admissionStore.claimReadyEffects(
-            'first-worker',
-            16,
+            durableEffects: [
+                {
+                    effectId: 'batch-complete',
+                    retryAtMs: nowMs,
+                    expireAtTimestamp,
+                    payload: { kind: 'ack-timeout', msgId: 'complete' },
+                },
+                {
+                    effectId: 'batch-reschedule',
+                    retryAtMs: nowMs,
+                    expireAtTimestamp,
+                    payload: { kind: 'ack-timeout', msgId: 'reschedule' },
+                },
+            ],
+        });
+        const claimed = await admissionStore.claimReadyEffects(
+            'batch-worker',
+            2,
             10_000,
             nowMs,
         );
-        expect(firstClaim).toHaveLength(16);
-        for (const effect of firstClaim) {
-            await admissionStore.rescheduleEffect(
-                effect.effectId,
-                'first-worker',
-                nowMs,
-                'transport not ready',
-            );
-        }
+        expect(claimed).toHaveLength(2);
 
-        const freshEffects = Array.from({ length: 16 }, (_, index) => ({
-            effectId: `z-fresh-${index.toString().padStart(2, '0')}`,
-            retryAtMs: nowMs,
-            expireAtTimestamp,
-            payload: {
-                kind: 'ack-timeout' as const,
-                msgId: `fresh-${index}`,
+        await admissionStore.settleClaimedEffects!('batch-worker', [
+            { effectId: 'batch-complete', status: 'completed' },
+            {
+                effectId: 'batch-reschedule',
+                status: 'rescheduled',
+                retryAtMs: nowMs,
+                lastError: 'transport not ready',
             },
-        }));
-        await expect(admissionStore.commitBundle({
-            senderId: 'fresh-sender',
-            mutations: [],
-            durableEffects: freshEffects,
-        })).resolves.toBe('committed');
+        ]);
 
-        const fairClaim = await admissionStore.claimReadyEffects(
-            'fair-worker',
-            16,
+        const reclaimed = await admissionStore.claimReadyEffects(
+            'next-worker',
+            2,
             10_000,
             nowMs,
         );
+        expect(reclaimed.map(effect => effect.effectId)).toEqual(['batch-reschedule']);
+        expect(reclaimed[0]?.attempts).toBe(2);
+    });
 
-        expect(fairClaim.filter(effect => effect.attempts === 1)).toHaveLength(12);
-        expect(fairClaim.filter(effect => effect.attempts === 2)).toHaveLength(4);
+    it('settles one runtime drain claim through the admission-store batch boundary', async () => {
+        const admissionStore = createMemoryOutboundAdmissionStore();
+        const settleClaimedEffects = vi.fn(
+            async (...args: Parameters<NonNullable<ALOutboundAdmissionStore['settleClaimedEffects']>>) =>
+                await admissionStore.settleClaimedEffects!(...args),
+        );
+        const runtime = createOutboundRuntime({
+            stores: {
+                admissionStore: createFlakyOutboundAdmissionStore(
+                    admissionStore,
+                    { settleClaimedEffects },
+                ),
+            },
+            sendPreparedMessage: async () => ({ status: 'sent' }),
+            planOutgoingMessage: () => ({
+                persist: false,
+                preparedMessages: [
+                    { kind: 'send', target: 'peer-1' },
+                    { kind: 'send', target: 'peer-2' },
+                ],
+            }),
+        });
+
+        await runtime.enqueueIfAbsent(createOutboundMessage('msg-batch-settlement'));
+
+        expect(settleClaimedEffects).toHaveBeenCalledOnce();
+        expect(settleClaimedEffects.mock.calls[0]?.[1]).toEqual([
+            expect.objectContaining({ status: 'completed' }),
+            expect.objectContaining({ status: 'completed' }),
+        ]);
+        runtime.dispose();
     });
 
     it('completes durable send-prepared effects when there are no RTC targets', async () => {
         const admissionStore = createMemoryOutboundAdmissionStore();
-        const rescheduleEffect = vi.fn(async (
-            effectId: string,
-            workerId: string,
-            retryAtMs: number,
-            lastError?: string,
-        ) =>
-            await admissionStore.rescheduleEffect(
-                effectId,
-                workerId,
-                retryAtMs,
-                lastError,
-            )
-        );
-        const completeEffect = vi.fn(async (effectId: string, workerId: string) =>
-            await admissionStore.completeEffect(effectId, workerId)
+        const settleClaimedEffects = vi.fn(
+            async (...args: Parameters<NonNullable<ALOutboundAdmissionStore['settleClaimedEffects']>>) =>
+                await admissionStore.settleClaimedEffects!(...args),
         );
         const runtime = createOutboundRuntime({
             stores: {
                 admissionStore: createFlakyOutboundAdmissionStore(admissionStore, {
-                    completeEffect,
-                    rescheduleEffect,
+                    settleClaimedEffects,
                 }),
             },
             sendPreparedMessage: async () => ({
@@ -313,8 +311,10 @@ describe('ALOutboundMessageRuntime', () => {
         const result = await runtime.enqueueIfAbsent(createOutboundMessage('msg-no-targets'));
 
         expect(result.status).toBe('sent-immediate');
-        expect(completeEffect).toHaveBeenCalledOnce();
-        expect(rescheduleEffect).not.toHaveBeenCalled();
+        expect(settleClaimedEffects).toHaveBeenCalledWith(
+            expect.any(String),
+            [expect.objectContaining({ status: 'completed' })],
+        );
         runtime.dispose();
     });
 
@@ -1240,18 +1240,18 @@ describe('ALOutboundMessageRuntime', () => {
 
         const sent: Array<Record<string, unknown>> = [];
         const admissionStore = createMemoryOutboundAdmissionStore();
-        let failFirstComplete = true;
+        let failFirstSettlement = true;
         const msg = createOutboundMessage('msg-complete-fails-after-send');
         const runtime = createOutboundRuntime({
             stores: {
                 admissionStore: createFlakyOutboundAdmissionStore(admissionStore, {
-                    completeEffect: async (effectId, workerId) => {
-                        if (failFirstComplete) {
-                            failFirstComplete = false;
+                    settleClaimedEffects: async (workerId, settlements) => {
+                        if (failFirstSettlement) {
+                            failFirstSettlement = false;
                             throw new Error('complete failed after send');
                         }
 
-                        await admissionStore.completeEffect(effectId, workerId);
+                        await admissionStore.settleClaimedEffects!(workerId, settlements);
                     },
                 }),
             },
@@ -1693,7 +1693,8 @@ function createFlakyOutboundAdmissionStore(
     inner: ALOutboundAdmissionStore,
     hooks: Partial<Pick<
         ALOutboundAdmissionStore,
-        'claimReadyEffects' | 'commitBundle' | 'completeEffect' | 'rescheduleEffect'
+        'claimReadyEffects' | 'commitBundle' | 'completeEffect' | 'rescheduleEffect' |
+        'settleClaimedEffects'
     >>,
 ): ALOutboundAdmissionStore {
     return {
@@ -1723,6 +1724,9 @@ function createFlakyOutboundAdmissionStore(
         ) => hooks.claimReadyEffects
             ? hooks.claimReadyEffects<TPrepared>(workerId, maxCount, leaseMs, nowMs)
             : inner.claimReadyEffects<TPrepared>(workerId, maxCount, leaseMs, nowMs),
+        settleClaimedEffects: (workerId, settlements) => hooks.settleClaimedEffects
+            ? hooks.settleClaimedEffects(workerId, settlements)
+            : inner.settleClaimedEffects!(workerId, settlements),
         completeEffect: (effectId: string, workerId: string) =>
             hooks.completeEffect
                 ? hooks.completeEffect(effectId, workerId)

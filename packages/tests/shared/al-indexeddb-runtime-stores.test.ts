@@ -811,7 +811,8 @@ function createFlakyOutboundAdmissionStore(
     inner: ALOutboundAdmissionStore,
     hooks: Partial<Pick<
         ALOutboundAdmissionStore,
-        'claimReadyEffects' | 'commitBundle' | 'completeEffect' | 'rescheduleEffect'
+        'claimReadyEffects' | 'commitBundle' | 'completeEffect' | 'rescheduleEffect' |
+        'settleClaimedEffects'
     >>,
 ): ALOutboundAdmissionStore {
     return {
@@ -840,6 +841,9 @@ function createFlakyOutboundAdmissionStore(
         ) => hooks.claimReadyEffects
             ? hooks.claimReadyEffects<TPrepared>(workerId, maxCount, leaseMs, nowMs)
             : inner.claimReadyEffects<TPrepared>(workerId, maxCount, leaseMs, nowMs),
+        settleClaimedEffects: (workerId, settlements) => hooks.settleClaimedEffects
+            ? hooks.settleClaimedEffects(workerId, settlements)
+            : inner.settleClaimedEffects!(workerId, settlements),
         completeEffect: (effectId: string, workerId: string) => hooks.completeEffect
             ? hooks.completeEffect(effectId, workerId)
             : inner.completeEffect(effectId, workerId),
