@@ -575,7 +575,9 @@ describe("Postgres presence expiry concurrency", () => {
           reason: string,
           snapshotVersion: number,
         ): GroupEvent => ({
-          ...ref,
+          applicationId: ref.applicationId,
+          workspaceId: ref.workspaceId,
+          groupId: ref.groupId,
           eventId: "shared-event",
           eventType: "group-updated",
           snapshotVersion,

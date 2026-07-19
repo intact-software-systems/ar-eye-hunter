@@ -1933,6 +1933,12 @@ function validateClientEvent(value: unknown, label: string): void {
     if (event.payload !== undefined) requireJsonRecord(event.payload, `${label}.payload`);
 }
 
+export function validateClientMutationIdempotencyRecord(
+    value: unknown,
+): asserts value is ClientMutationIdempotencyRecord {
+    validateIdempotencyRecord(value, 'Stored client idempotency value');
+}
+
 function validateIdempotencyRecord(value: unknown, label: string): void {
     const record = requirePlainRecord(value, label);
     requireExactKeys(record, ['requestId', 'commandHash', 'receipt'], label);

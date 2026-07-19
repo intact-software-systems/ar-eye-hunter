@@ -11,7 +11,10 @@ import type {
 } from '@shared/api/group-types.ts';
 import { toGroupSnapshotStateRevision } from '@shared/api/group-client-views.ts';
 import type { StateEventPage } from '@shared/api/state-event-types.ts';
-import type { RuntimeStateRepositoryLike } from '../../runtime-state/RuntimeStateRepository.ts';
+import type {
+    RuntimeStateEntry,
+    RuntimeStateRepositoryLike,
+} from '../../runtime-state/RuntimeStateRepository.ts';
 import type {
     RuntimeStateConditionalDeleteResult,
     RuntimeStateConditionalWriteResult,
@@ -23,6 +26,11 @@ import {
 import {
     type GroupMutationIdempotencyRecord,
     validateGroupMutationIdempotencyRecord,
+    validatePersistedGroup,
+    validatePersistedGroupMember,
+    validatePersistedGroupPresenceAdmission,
+    validatePersistedGroupPresenceSession,
+    validatePersistedGroupPresenceSummary,
 } from '@shared-server/rallar-system/services/group-state-mutations.ts';
 import type { GroupSnapshotPage, GroupSnapshotPageOptions } from '@shared-server/rallar-system/services/group-state-service.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
@@ -75,6 +83,23 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
         this.events = options.events ?? defaultGroupStateEventStoreFor(repository);
     }
 
+    protected override async toLiveEntryValue<T>(
+        namespace: string,
+        entry: RuntimeStateEntry,
+    ): Promise<RuntimeStateEntryValue<T> | undefined> {
+        try {
+            return await super.toLiveEntryValue<T>(namespace, entry);
+        } catch (error) {
+            if (error instanceof SyntaxError) {
+                throw new GroupStateRepositoryInvariantCorruptionError(
+                    entry.key,
+                    `Stored group-state JSON is invalid: ${error.message}`,
+                );
+            }
+            throw error;
+        }
+    }
+
     async insertIdempotentGroupMutationReceipt(
         ref: GroupRef,
         requestId: string,
@@ -118,14 +143,7 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
             GROUPS_NAMESPACE,
             this.groupKey(ref),
         );
-        if (stored) {
-            const decoded = decodeStoredKey(
-                stored.entry.key,
-                decodeGroupStateGroupStorageKey,
-            );
-            assertGroupRefIdentity(decoded, ref, stored.entry.key);
-            assertGroupRefIdentity(stored.value, decoded, stored.entry.key);
-        }
+        if (stored) assertStoredGroup(stored, ref);
         return stored;
     }
 
@@ -715,8 +733,6 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
                 .filter((session) => {
                     const authoritative = authoritativeSessionsById.get(session.sessionId);
                     return authoritative !== undefined &&
-                        hasCompleteGenerationIdentity(session) &&
-                        hasCompleteGenerationIdentity(authoritative) &&
                         authoritative.principalId === session.principalId &&
                         authoritative.generationId === session.generationId &&
                         authoritative.generationVersion === session.generationVersion &&
@@ -743,8 +759,9 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
             activeOwners.length !== 1 ||
             activeOwners[0]?.principalId !== group.ownerPrincipalId
         ) {
-            throw new TypeError(
-                `Group roster facts are inconsistent: ${group.groupId}`,
+            throw new GroupStateRepositoryInvariantCorruptionError(
+                this.groupKey(group),
+                'Stored group roster facts are inconsistent',
             );
         }
 
@@ -820,17 +837,6 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
     }
 }
 
-function hasCompleteGenerationIdentity(
-    session: GroupPresenceSession,
-): boolean {
-    return session.sessionId.length > 0 &&
-        session.principalId.length > 0 &&
-        typeof session.generationId === 'string' &&
-        session.generationId.length > 0 &&
-        Number.isSafeInteger(session.generationVersion) &&
-        (session.generationVersion ?? 0) > 0;
-}
-
 function assertGroupRefIdentity(
     value: GroupRef,
     expected: GroupRef,
@@ -870,6 +876,16 @@ function assertStoredGroup(
             'Stored group key differs from the requested scope',
         );
     }
+    if ('groupId' in expectedScope) {
+        assertGroupRefIdentity(decoded, expectedScope as GroupRef, stored.entry.key);
+    }
+    assertCompletePersistedValue(
+        stored.value,
+        decoded,
+        stored.entry.key,
+        validatePersistedGroup,
+        'Stored group value is invalid',
+    );
     assertGroupRefIdentity(stored.value, decoded, stored.entry.key);
 }
 
@@ -882,6 +898,13 @@ function assertStoredMember(
         decodeGroupStateMemberStorageKey,
     );
     assertTrustedGroupRef(decoded, expected, stored.entry.key);
+    assertCompletePersistedValue(
+        stored.value,
+        decoded,
+        stored.entry.key,
+        validatePersistedGroupMember,
+        'Stored group member value is invalid',
+    );
     assertGroupRefIdentity(stored.value, decoded, stored.entry.key);
     if (stored.value.principalId !== decoded.principalId ||
         (expected?.principalId !== undefined &&
@@ -899,6 +922,13 @@ function assertStoredSession(
         decodeGroupStatePresenceSessionStorageKey,
     );
     assertTrustedGroupRef(decoded, expected, stored.entry.key);
+    assertCompletePersistedValue(
+        stored.value,
+        decoded,
+        stored.entry.key,
+        validatePersistedGroupPresenceSession,
+        'Stored group presence session value is invalid',
+    );
     assertGroupRefIdentity(stored.value, decoded, stored.entry.key);
     if (stored.value.sessionId !== decoded.sessionId ||
         (expected?.sessionId !== undefined && decoded.sessionId !== expected.sessionId)) {
@@ -915,6 +945,13 @@ function assertStoredAdmission(
         decodeGroupStatePresenceAdmissionStorageKey,
     );
     assertTrustedGroupRef(decoded, expected, stored.entry.key);
+    assertCompletePersistedValue(
+        stored.value,
+        decoded,
+        stored.entry.key,
+        validatePersistedGroupPresenceAdmission,
+        'Stored group presence admission value is invalid',
+    );
     assertGroupRefIdentity(stored.value, decoded, stored.entry.key);
     if (stored.value.principalId !== decoded.principalId ||
         (expected?.principalId !== undefined &&
@@ -932,7 +969,31 @@ function assertStoredSummary(
         decodeGroupStateGroupStorageKey,
     );
     assertTrustedGroupRef(decoded, expected, stored.entry.key);
+    assertCompletePersistedValue(
+        stored.value,
+        decoded,
+        stored.entry.key,
+        validatePersistedGroupPresenceSummary,
+        'Stored group presence summary value is invalid',
+    );
     assertGroupRefIdentity(stored.value, decoded, stored.entry.key);
+}
+
+function assertCompletePersistedValue<T>(
+    value: unknown,
+    ref: GroupRef,
+    storageKey: string,
+    validate: (value: unknown, ref: GroupRef) => asserts value is T,
+    fallback: string,
+): void {
+    try {
+        validate(value, ref);
+    } catch (error) {
+        throw new GroupStateRepositoryInvariantCorruptionError(
+            storageKey,
+            error instanceof Error ? error.message : fallback,
+        );
+    }
 }
 
 function assertStoredIdempotency(

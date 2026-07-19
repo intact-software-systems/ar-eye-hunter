@@ -11,6 +11,11 @@ import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
+import {
+  groupStateGroupStorageKey,
+  groupStateMemberStorageKey,
+  groupStatePresenceSessionStorageKey,
+} from '@shared-server/rallar-system/group-state-storage-keys.ts';
 import { CoalescedAppOutboxWorkService } from '@shared-server/rallar-system/services/CoalescedAppOutboxWorkService.ts';
 import { AppOutboxType } from '@shared-server/rallar-system/services/AppOutboxService.ts';
 import {
@@ -20,7 +25,7 @@ import {
 import { groupEventWorkspaceKey } from '@shared-server/postgres/rallar-system/group-event-workspace-key.ts';
 import { createGroupStateEventRepository } from '@shared-server/postgres/rallar-system/createStateRepositories.ts';
 import type { ClientEvent } from '@shared/api/client-types.ts';
-import type { GroupEvent } from '@shared/api/group-types.ts';
+import type { Group, GroupEvent, GroupRef } from '@shared/api/group-types.ts';
 import {
   RALLAR_CRDT_OPERATION_VERSION,
   RALLAR_CRDT_PROTOCOL_VERSION,
@@ -40,6 +45,26 @@ const PAST_MS = Date.parse('2000-01-01T00:00:00.000Z');
 const FUTURE_INSTANT = Temporal.Instant.from('9999-12-31T23:59:59.999Z');
 const PAST_INSTANT = Temporal.Instant.from('2000-01-01T00:00:00.000Z');
 const CREATED_TS = Temporal.PlainDateTime.from('2026-06-01T12:00:00');
+
+function groupFixture(ref: GroupRef, displayName: string): Group {
+  const audit = { atEpochMs: 1, byServiceId: 'pglite-hierarchy-test' } as const;
+  return {
+    ...ref,
+    displayName,
+    kind: 'room',
+    status: 'active',
+    joinMode: 'open',
+    metadata: {},
+    activeMemberCount: 1,
+    ownerPrincipalId: 'alice',
+    snapshotVersion: 1,
+    metadataVersion: 1,
+    rosterVersion: 1,
+    presenceVersion: 0,
+    created: audit,
+    updated: audit,
+  };
+}
 
 Deno.test('group event workspace keys preserve ordinary values and isolate sentinels and lookalikes', () => {
   const workspaces = [undefined, '_', '%5F', 'main', 'a:b', 'a%3Ab', '＿'];
@@ -237,18 +262,16 @@ Deno.test('PGlite runtime-state hierarchy isolates sibling key segments', async 
       principalId: 'bob',
       presenceVersion: 1,
     } as never)).status, 'applied');
-    await groups.putGroup({
+    await groups.putGroup(groupFixture({
       applicationId: 'app',
       workspaceId: 'foo',
       groupId: 'room',
-      status: 'active',
-    } as never);
-    await groups.putGroup({
+    }, 'Foo room'));
+    await groups.putGroup(groupFixture({
       applicationId: 'app',
       workspaceId: 'foobar',
       groupId: 'room',
-      status: 'active',
-    } as never);
+    }, 'Foobar room'));
 
     assert.deepEqual(
       (await clients.listPrincipals({ applicationId: 'app', workspaceId: 'foo' }))
@@ -317,6 +340,129 @@ Deno.test('PGlite group-state reads fail closed on a directly seeded legacy wron
         error instanceof Error &&
         'code' in error &&
         error.code === 'group-state-repository-invariant-corruption');
+    }
+  });
+});
+
+Deno.test('PGlite group-state reads reject complete-contract corruption across public boundaries', async () => {
+  await withPGliteSql(async (sql) => {
+    const cases = [
+      { kind: 'group', namespace: 'group-state:groups', field: 'joinMode' },
+      { kind: 'member', namespace: 'group-state:members', field: 'status' },
+      { kind: 'session', namespace: 'group-state:sessions', field: 'generationId' },
+      {
+        kind: 'summary',
+        namespace: 'group-state:presence-summaries',
+        field: 'causalRevision',
+      },
+    ] as const;
+
+    for (const testCase of cases) {
+      const scope = {
+        applicationId: `pglite-complete-${testCase.kind}`,
+        workspaceId: 'main',
+      };
+      const ref = { ...scope, groupId: `group-${testCase.kind}` };
+      const authority = {
+        clientId: 'alice',
+        sessionId: `alice-session-${testCase.kind}`,
+        accessToken: `alice-token-${testCase.kind}`,
+        username: 'alice',
+        issuedAtEpochMs: 1,
+        expiresAtEpochMs: 100_000,
+      };
+      let eventSequence = 0;
+      const runtime = new PSqlRuntimeStateRepository(sql);
+      const service = createGroupStateService({
+        runtimeRepository: runtime,
+        createGroupStateEventStore: createGroupStateEventRepository,
+        authSessionRepository: {
+          findBySessionId: (sessionId) =>
+            Promise.resolve(sessionId === authority.sessionId ? authority : undefined),
+        },
+        now: () => 10_000,
+        randomId: () => `event-${testCase.kind}-${eventSequence++}`,
+        sleep: () => Promise.resolve(),
+        serviceId: `pglite-complete-${testCase.kind}`,
+      });
+      await service.createGroup(scope, {
+        groupId: ref.groupId,
+        displayName: `Complete ${testCase.kind}`,
+        kind: 'room',
+        joinMode: 'open',
+        createdByPrincipalId: 'alice',
+        requestId: `create-${testCase.kind}`,
+      }, authority);
+      if (testCase.kind === 'session') {
+        await service.connectPresenceSession(
+          scope,
+          ref.groupId,
+          authority.sessionId,
+          {
+            principalId: 'alice',
+            generationId: `generation-${testCase.kind}`,
+            connectedAtEpochMs: 10_000,
+            lastHeartbeatAtEpochMs: 10_000,
+            expiresAtEpochMs: 4_102_444_800_000,
+            actorPrincipalId: 'alice',
+            actorSessionId: authority.sessionId,
+            requestId: `connect-${testCase.kind}`,
+          },
+          authority,
+        );
+      }
+
+      const storageKey = testCase.kind === 'member'
+        ? groupStateMemberStorageKey({ ...ref, principalId: 'alice' })
+        : testCase.kind === 'session'
+        ? groupStatePresenceSessionStorageKey({ ...ref, sessionId: authority.sessionId })
+        : groupStateGroupStorageKey(ref);
+      await sql`
+        update runtime_state_store
+        set store_value = (store_value::jsonb - ${testCase.field})::text
+        where store_namespace = ${testCase.namespace}
+          and store_key = ${storageKey}
+      `;
+
+      const repository = new GroupStateRepository(runtime);
+      const reads = testCase.kind === 'group'
+        ? [
+          () => repository.findGroup(ref),
+          () => repository.listGroups(scope),
+          () => repository.readSnapshot(ref),
+          () => repository.listSnapshots(scope),
+          () => repository.listSnapshotsPage(scope, { limit: 10 }),
+        ]
+        : testCase.kind === 'member'
+        ? [
+          () => repository.findMember({ ...ref, principalId: 'alice' }),
+          () => repository.listMembers(ref),
+          () => repository.readSnapshot(ref),
+          () => repository.listSnapshots(scope),
+          () => repository.listSnapshotsPage(scope, { limit: 10 }),
+        ]
+        : testCase.kind === 'session'
+        ? [
+          () => repository.findPresenceSession({ ...ref, sessionId: authority.sessionId }),
+          () => repository.listPresenceSessions(ref),
+          () => repository.listAllPresenceSessions(),
+          () => repository.readSnapshot(ref),
+          () => repository.listSnapshots(scope),
+          () => repository.listSnapshotsPage(scope, { limit: 10 }),
+        ]
+        : [
+          () => repository.findPresenceSummaryEntry(ref),
+          () => repository.readSnapshot(ref),
+          () => repository.listSnapshots(scope),
+          () => repository.listSnapshotsPage(scope, { limit: 10 }),
+        ];
+      for (const [readIndex, read] of reads.entries()) {
+        await assert.rejects(read, (error) =>
+          error instanceof Error &&
+          'code' in error &&
+          error.code === 'group-state-repository-invariant-corruption',
+          `${testCase.kind} public read ${readIndex} accepted a corrupt persisted record`);
+      }
     }
   });
 });
@@ -682,6 +828,81 @@ Deno.test('PSql group event reads validate the decoded event-id slot', async () 
         'code' in error &&
         error.code === 'group-state-event-repository-invariant-corruption',
     );
+  });
+});
+
+Deno.test('PSql group events enforce the complete event contract and physical columns', async () => {
+  await withPGliteSql(async (sql) => {
+    const repository = new PSqlGroupStateEventRepository(sql);
+    const baseRef = {
+      applicationId: 'group-event-complete-contract-app',
+      workspaceId: 'main',
+      groupId: 'group-event-complete-contract-group',
+    };
+    const baseEvent = createGroupStateEvent(
+      'complete-contract-event',
+      1_000,
+      1,
+      'group-updated',
+      baseRef,
+    );
+    const missingActor = structuredClone(baseEvent) as Record<string, unknown>;
+    delete missingActor.actor;
+
+    await assert.rejects(
+      () => repository.appendGroupEvent(missingActor as unknown as GroupEvent),
+      (error) =>
+        error instanceof Error &&
+        'code' in error &&
+        error.code === 'group-state-event-repository-invariant-corruption',
+    );
+
+    const cases = [
+      { suffix: 'missing-actor', payload: missingActor },
+      {
+        suffix: 'event-type',
+        payload: { ...baseEvent, eventType: 'group-archived' },
+      },
+      {
+        suffix: 'snapshot-version',
+        payload: { ...baseEvent, snapshotVersion: 2 },
+      },
+      {
+        suffix: 'occurred-at',
+        payload: { ...baseEvent, occurredAtEpochMs: 2_000 },
+      },
+    ];
+
+    for (const testCase of cases) {
+      const ref = { ...baseRef, groupId: `${baseRef.groupId}-${testCase.suffix}` };
+      const payload = {
+        ...testCase.payload,
+        groupId: ref.groupId,
+        eventId: `${baseEvent.eventId}-${testCase.suffix}`,
+      };
+      await sql`
+        insert into group_state_events (
+          application_id, workspace_key, group_id, event_id, event_type,
+          snapshot_version, occurred_at_epoch_ms, event_json
+        ) values (
+          ${ref.applicationId}, ${groupEventWorkspaceKey(ref.workspaceId)},
+          ${ref.groupId}, ${payload.eventId}, ${baseEvent.eventType},
+          ${baseEvent.snapshotVersion}, ${baseEvent.occurredAtEpochMs},
+          ${JSON.stringify(payload)}
+        )
+      `;
+
+      for (const read of [
+        () => repository.listGroupEvents(ref),
+        () => repository.listRecentGroupEvents(ref),
+        () => repository.listGroupEventPage(ref, { limit: 10 }),
+      ]) {
+        await assert.rejects(read, (error) =>
+          error instanceof Error &&
+          'code' in error &&
+          error.code === 'group-state-event-repository-invariant-corruption');
+      }
+    }
   });
 });
 

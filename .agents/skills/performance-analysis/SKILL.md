@@ -204,3 +204,6 @@ The task is complete only when:
 - Runtime-validation tasks record exact commands and environment details.
 - Optimization tasks include correctness validation and performance before/after data when practical.
 - No optimization is accepted without a benchmark, profile, telemetry signal, or clear algorithmic proof.
+- Transactional correctness and retry evidence comes from production receipts,
+  outbox records/effects, and timing events. Synthetic post-call evidence cannot
+  prove atomicity; legacy artifact compatibility must not weaken candidate validation.

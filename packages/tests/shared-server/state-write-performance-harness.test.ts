@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import {
   compareStateWriteArtifacts,
   STATE_WRITE_ARTIFACT_SCHEMA_VERSION,
@@ -35,6 +36,279 @@ const INTENT_KINDS: Record<string, readonly string[]> = {
 };
 
 describe('API-v1 state-write performance artifact contract', () => {
+  it('does not create benchmark-only receipt or outbox evidence after production calls', () => {
+    const source = readFileSync(
+      new URL('../../../scripts/perf/api-v1-state-write-concurrency-bench.ts', import.meta.url),
+      'utf8',
+    );
+
+    expect(source).not.toContain('ResourceInboxRepository');
+    expect(source).not.toContain('ResourceInboxResultsRepository');
+    expect(source).not.toContain('STATE_WRITE_BENCH_RECEIPT');
+    expect(source).not.toContain('STATE_WRITE_BENCH_OUTBOX');
+  });
+
+  it('derives multi-conflict acceptance and exhaustion histories from production timing', async () => {
+    const bench = await import(
+      '../../../scripts/perf/api-v1-state-write-concurrency-bench.ts'
+    ) as Record<string, (...args: any[]) => any>;
+    expect(bench.deriveProductionAttemptObservations).toBeTypeOf('function');
+    const commands = [
+      {
+        commandId: 'run:profile-instance:0',
+        kind: 'profile-instance',
+        latencyMs: 1,
+        stackIndex: 0,
+        status: 'accepted',
+      },
+      {
+        commandId: 'run:membership:0',
+        kind: 'membership',
+        latencyMs: 1,
+        stackIndex: 1,
+        status: 'exhausted',
+      },
+    ];
+    const conflict = (requestId: string, attempt: number, component: string) => ({
+      component,
+      operation: 'mutation.conflict',
+      requestId,
+      status: 'ok',
+      durationMs: 0,
+      details: { attempt, conflict: true },
+    });
+    const events = [
+      conflict('run:profile-instance:0-profile', 0, 'client-state-service'),
+      conflict('run:profile-instance:0-profile', 1, 'client-state-service'),
+      {
+        component: 'client-state-service',
+        operation: 'mutation.write',
+        requestId: 'run:profile-instance:0-profile',
+        status: 'ok',
+        durationMs: 1,
+        details: { attempt: 2, phase: 'write' },
+      },
+      {
+        component: 'client-state-service',
+        operation: 'mutation.write',
+        requestId: 'run:profile-instance:0-instance',
+        status: 'ok',
+        durationMs: 1,
+        details: { attempt: 0, phase: 'write' },
+      },
+      conflict('run:membership:0', 0, 'group-state-service'),
+      conflict('run:membership:0', 1, 'group-state-service'),
+    ];
+
+    expect(bench.deriveProductionAttemptObservations(events, commands)).toEqual([
+      {
+        commandId: 'run:profile-instance:0',
+        operationId: 'profile',
+        attempt: 0,
+        outcome: 'conflicted',
+        terminal: false,
+        source: 'client-state-service.mutation.conflict',
+      },
+      {
+        commandId: 'run:profile-instance:0',
+        operationId: 'profile',
+        attempt: 1,
+        outcome: 'conflicted',
+        terminal: false,
+        source: 'client-state-service.mutation.conflict',
+      },
+      {
+        commandId: 'run:profile-instance:0',
+        operationId: 'profile',
+        attempt: 2,
+        outcome: 'accepted',
+        terminal: true,
+        source: 'client-state-service.mutation.write',
+      },
+      {
+        commandId: 'run:profile-instance:0',
+        operationId: 'instance',
+        attempt: 0,
+        outcome: 'accepted',
+        terminal: true,
+        source: 'client-state-service.mutation.write',
+      },
+      {
+        commandId: 'run:membership:0',
+        operationId: 'command',
+        attempt: 0,
+        outcome: 'conflicted',
+        terminal: false,
+        source: 'group-state-service.mutation.conflict',
+      },
+      {
+        commandId: 'run:membership:0',
+        operationId: 'command',
+        attempt: 1,
+        outcome: 'exhausted',
+        terminal: true,
+        source: 'group-state-service.mutation.conflict',
+      },
+    ]);
+  });
+
+  it('keeps explicit prerequisite exhaustion distinct from a production retry exhaustion', async () => {
+    const bench = await import(
+      '../../../scripts/perf/api-v1-state-write-concurrency-bench.ts'
+    ) as Record<string, (...args: any[]) => any>;
+    const command = {
+      commandId: 'run:presence-heartbeat:0',
+      kind: 'presence-heartbeat',
+      latencyMs: 1,
+      stackIndex: 0,
+      status: 'exhausted',
+    };
+    const prerequisiteEvent = {
+      component: 'state-write-command-envelope',
+      operation: 'prerequisite-exhausted:membership',
+      requestId: command.commandId,
+      status: 'error',
+      durationMs: 0,
+      details: { outcome: 'exhausted', prerequisite: 'membership' },
+    };
+
+    expect(bench.deriveProductionAttemptObservations([prerequisiteEvent], [command])).toEqual([
+      {
+        commandId: command.commandId,
+        operationId: 'command',
+        attempt: 1,
+        outcome: 'exhausted',
+        terminal: true,
+        source: 'state-write-command-envelope.prerequisite-exhausted:membership',
+      },
+    ]);
+  });
+
+  it('classifies the production outbox namespace from bound SQL values', async () => {
+    const bench = await import(
+      '../../../scripts/perf/api-v1-state-write-concurrency-bench.ts'
+    ) as Record<string, (...args: any[]) => any>;
+
+    expect(bench.classifyBenchmarkSql(
+      'insert into runtime_state_store values ($1, $2)',
+      ['state-mutation:outbox', 'record-1'],
+    )).toBe('outbox');
+    expect(bench.classifyBenchmarkSql(
+      'insert into runtime_state_store values ($1, $2)',
+      ['group-state:groups', 'group-1'],
+    )).toBe('write');
+  });
+
+  it('retains a real profile effect when the composite raw command exhausts later', async () => {
+    const bench = await import(
+      '../../../scripts/perf/api-v1-state-write-concurrency-bench.ts'
+    ) as Record<string, (...args: any[]) => any>;
+    expect(bench.projectProductionOutboxEvidence).toBeTypeOf('function');
+    const command = {
+      commandId: 'run:profile-instance:0',
+      kind: 'profile-instance',
+      latencyMs: 1,
+      stackIndex: 0,
+      status: 'exhausted',
+    };
+    expect(bench.projectProductionOutboxEvidence([command], [{
+      outboxId: 'real-profile-outbox',
+      commandId: `${command.commandId}-profile`,
+      effects: ['client-state-sync'],
+    }])).toEqual([{
+      intentId: 'real-profile-outbox:client-state-sync',
+      commandId: command.commandId,
+      intentKind: 'client-state-sync',
+    }]);
+  });
+
+  it('does not count an ID-matching but contract-incomplete production receipt', async () => {
+    const bench = await import(
+      '../../../scripts/perf/api-v1-state-write-concurrency-bench.ts'
+    ) as Record<string, (...args: any[]) => any>;
+    expect(bench.isValidProductionReceipt).toBeTypeOf('function');
+    expect(bench.isValidProductionReceipt({
+      requestId: 'request-1',
+      receipt: { commandId: 'request-1' },
+    }, 'request-1')).toBe(false);
+  });
+
+  it('keeps immutable legacy durability valid but requires production effects for candidates', () => {
+    expect(validateStateWriteArtifact(validArtifact())).toEqual([]);
+
+    const productionCandidate = validArtifact({ candidate: true });
+    expect(validateStateWriteArtifact(productionCandidate)).toEqual([]);
+
+    const legacyShapedCandidate = validArtifact();
+    legacyShapedCandidate.features = {
+      presenceSplitFromGroupAggregate: true,
+      governance: 'task10-post-remediation-candidate',
+      evidence: 'candidate metadata with impermissible legacy-shaped durability',
+    };
+    expect(validateStateWriteArtifact(legacyShapedCandidate)).toEqual(expect.arrayContaining([
+      expect.stringContaining('production durable contract'),
+    ]));
+  });
+
+  it('waives only the exact non-candidate topology diagnostic gap', () => {
+    const diagnostic = validArtifact({ candidate: true });
+    diagnostic.features = {
+      presenceSplitFromGroupAggregate: false,
+      governance: 'task4-production-evidence-diagnostic',
+      evidence: 'Production evidence with Task 5 topology persistence still pending',
+    };
+    for (const workloadValue of diagnostic.workloads) {
+      for (const sampleValue of workloadValue.samples) {
+        const topologyIds = new Set(sampleValue.commands
+          .filter((command: any) => command.kind === 'topology-source')
+          .map((command: any) => command.commandId));
+        sampleValue.durable.receiptCommandIds = sampleValue.durable.receiptCommandIds.filter(
+          (commandId: string) => !topologyIds.has(commandId),
+        );
+        sampleValue.durable.outboxIntents = sampleValue.durable.outboxIntents.filter(
+          (intent: any) => !topologyIds.has(intent.commandId),
+        );
+        sampleValue.correctness.receiptCount = sampleValue.durable.receiptCommandIds.length;
+        sampleValue.correctness.outboxIntentCount = sampleValue.durable.outboxIntents.length;
+        sampleValue.correctness.dbwFindings = ['DBW-06', 'DBW-12'];
+        for (const observation of sampleValue.attemptObservations) {
+          if (topologyIds.has(observation.commandId)) {
+            observation.source = 'production-return:topology-config';
+          }
+        }
+      }
+      refreshSummary(workloadValue);
+    }
+    expect(validateStateWriteArtifact(diagnostic)).toEqual([]);
+
+    const unrelatedGap = structuredClone(diagnostic);
+    const sampleValue = unrelatedGap.workloads[0].samples[0];
+    sampleValue.durable.receiptCommandIds.shift();
+    sampleValue.correctness.receiptCount = sampleValue.durable.receiptCommandIds.length;
+    refreshSummary(unrelatedGap.workloads[0]);
+    expect(validateStateWriteArtifact(unrelatedGap)).toEqual(expect.arrayContaining([
+      expect.stringContaining('durable receipts must match accepted command IDs exactly'),
+    ]));
+
+    const mislabeledCandidate = structuredClone(diagnostic);
+    mislabeledCandidate.features = {
+      presenceSplitFromGroupAggregate: true,
+      governance: 'task10-post-remediation-candidate',
+      evidence: 'A candidate cannot retain the Task 4 topology diagnostic gap',
+    };
+    expect(validateStateWriteArtifact(mislabeledCandidate)).toEqual(expect.arrayContaining([
+      expect.stringContaining('production attempt source is not a production mutation timing event'),
+      expect.stringContaining('durable receipts must match accepted command IDs exactly'),
+      expect.stringContaining('production durable contract'),
+    ]));
+
+    const extraFinding = structuredClone(diagnostic);
+    extraFinding.workloads[0].samples[0].correctness.dbwFindings.push('DBW-EXTRA');
+    refreshSummary(extraFinding.workloads[0]);
+    expect(validateStateWriteArtifact(extraFinding)).toEqual(expect.arrayContaining([
+      expect.stringContaining('durable receipts must match accepted command IDs exactly'),
+    ]));
+  });
   it('accepts coherent baseline raw samples, summaries, durable linkage, sources, and stack use', () => {
     expect(validateStateWriteArtifact(validArtifact())).toEqual([]);
   });
@@ -275,7 +549,7 @@ describe('API-v1 state-write performance artifact contract', () => {
 
     const intentIdCandidate = validArtifact({ candidate: true });
     intentIdCandidate.workloads[1].samples[0].durable.outboxIntents[0].intentId =
-      'bogus-unique-intent';
+      intentIdCandidate.workloads[1].samples[0].durable.outboxIntents[1].intentId;
     intentIdCandidate.workloads[1].samples[0].correctness.dbwFindings = [
       'DBW-ARBITRARY-WAIVER',
     ];
@@ -283,7 +557,7 @@ describe('API-v1 state-write performance artifact contract', () => {
     expect(compareStateWriteArtifacts(baseline, intentIdCandidate)).toEqual(
       expect.arrayContaining([
         expect.stringContaining('candidate'),
-        expect.stringContaining('durable outbox intents do not match the mutation contract'),
+        expect.stringContaining('durable outbox intent IDs must be unique'),
       ]),
     );
   });
@@ -308,6 +582,105 @@ describe('API-v1 state-write performance artifact contract', () => {
 
     expect(validateStateWriteArtifact(artifact)).toEqual(expect.arrayContaining([
       expect.stringContaining('exactly one terminal outcome'),
+    ]));
+  });
+
+  it('rejects zero-conflict production exhaustion but permits an explicit prerequisite terminal', () => {
+    const invalid = validArtifact();
+    makeCommandExhausted(invalid.workloads[2].samples[0], 699);
+    const commandId = invalid.workloads[2].samples[0].commands[699].commandId;
+    invalid.workloads[2].samples[0].attemptObservations =
+      invalid.workloads[2].samples[0].attemptObservations.filter(
+        (entry: any) => entry.commandId !== commandId || entry.outcome === 'exhausted',
+      );
+    invalid.workloads[2].samples[0].attemptObservations.find(
+      (entry: any) => entry.commandId === commandId,
+    ).attempt = 1;
+    refreshSampleOutcomes(invalid.workloads[2].samples[0]);
+    refreshSummary(invalid.workloads[2]);
+    expect(validateStateWriteArtifact(invalid)).toEqual(expect.arrayContaining([
+      expect.stringContaining('preceding production mutation.conflict observation'),
+    ]));
+
+    const prerequisite = validArtifact();
+    makeCommandExhausted(prerequisite.workloads[2].samples[0], 200);
+    const prerequisiteSample = prerequisite.workloads[2].samples[0];
+    const prerequisiteId = prerequisiteSample.commands[200].commandId;
+    prerequisiteSample.attemptObservations = prerequisiteSample.attemptObservations.filter(
+      (entry: any) => entry.commandId !== prerequisiteId,
+    );
+    prerequisiteSample.attemptObservations.push({
+      commandId: prerequisiteId,
+      operationId: 'command',
+      attempt: 1,
+      outcome: 'exhausted',
+      terminal: true,
+      source: 'state-write-command-envelope.prerequisite-exhausted:membership',
+    });
+    refreshSampleOutcomes(prerequisiteSample);
+    refreshSummary(prerequisite.workloads[2]);
+    expect(validateStateWriteArtifact(prerequisite)).toEqual([]);
+  });
+
+  it('permits only exact causal command and prerequisite pairs', () => {
+    const invalid = validArtifact({ candidate: true });
+    const invalidSample = invalid.workloads[2].samples[0];
+    makeCommandExhausted(invalidSample, 100);
+    const invalidId = invalidSample.commands[100].commandId;
+    invalidSample.attemptObservations = invalidSample.attemptObservations.filter(
+      (entry: any) => entry.commandId !== invalidId,
+    );
+    invalidSample.attemptObservations.push({
+      commandId: invalidId,
+      operationId: 'command',
+      attempt: 1,
+      outcome: 'exhausted',
+      terminal: true,
+      source: 'state-write-command-envelope.prerequisite-exhausted:membership',
+    });
+    refreshSampleOutcomes(invalidSample);
+    refreshSummary(invalid.workloads[2]);
+    expect(validateStateWriteArtifact(invalid)).toEqual(expect.arrayContaining([
+      expect.stringContaining('invalid prerequisite-exhausted command pair'),
+    ]));
+
+    const valid = validArtifact({ candidate: true });
+    const validSample = valid.workloads[2].samples[0];
+    makeCommandExhausted(validSample, 200);
+    const validId = validSample.commands[200].commandId;
+    validSample.attemptObservations = validSample.attemptObservations.filter(
+      (entry: any) => entry.commandId !== validId,
+    );
+    validSample.attemptObservations.push({
+      commandId: validId,
+      operationId: 'command',
+      attempt: 1,
+      outcome: 'exhausted',
+      terminal: true,
+      source: 'state-write-command-envelope.prerequisite-exhausted:membership',
+    });
+    refreshSampleOutcomes(validSample);
+    refreshSummary(valid.workloads[2]);
+    expect(validateStateWriteArtifact(valid)).toEqual([]);
+
+    const acceptedSpoof = validArtifact({ candidate: true });
+    const acceptedObservation = acceptedSpoof.workloads[0].samples[0]
+      .attemptObservations.find((entry: any) => entry.operationId === 'command');
+    acceptedObservation.attempt = 1;
+    acceptedObservation.source =
+      'state-write-command-envelope.prerequisite-exhausted:membership';
+    expect(validateStateWriteArtifact(acceptedSpoof)).toEqual(expect.arrayContaining([
+      expect.stringContaining('production attempt source is not a production mutation timing event'),
+    ]));
+
+    const wrongService = validArtifact({ candidate: true });
+    const membershipObservation = wrongService.workloads[0].samples[0]
+      .attemptObservations.find((entry: any) =>
+        entry.commandId.includes(':membership:')
+      );
+    membershipObservation.source = 'client-state-service.mutation.write';
+    expect(validateStateWriteArtifact(wrongService)).toEqual(expect.arrayContaining([
+      expect.stringContaining('production attempt source is not a production mutation timing event'),
     ]));
   });
 
@@ -830,7 +1203,7 @@ function validArtifact(options: { candidate?: boolean } = {}): any {
     workload('shared', 5, options.candidate ? 90 : 100),
     workload('hot', 1),
   ];
-  return {
+  const artifact = {
     schemaVersion: STATE_WRITE_ARTIFACT_SCHEMA_VERSION,
     gitCommit: 'edf4a529d065dae58d6a9ec3df0af6f6d5486065',
     backend: 'postgres',
@@ -857,6 +1230,49 @@ function validArtifact(options: { candidate?: boolean } = {}): any {
     regressionReasons: [],
     workloads,
   };
+  if (options.candidate) convertToProductionDurability(artifact);
+  return artifact;
+}
+
+function convertToProductionDurability(artifact: any): void {
+  const effects: Record<string, readonly string[]> = {
+    'profile-instance': ['client-state-sync', 'client-state-sync'],
+    membership: ['group-state-sync', 'group-presence-summary'],
+    'presence-connect': ['group-state-sync', 'group-presence-summary'],
+    'presence-heartbeat': ['group-state-sync', 'group-presence-summary'],
+    'presence-disconnect': ['group-state-sync', 'group-presence-summary'],
+    config: ['group-state-sync', 'group-presence-summary'],
+    'topology-source': ['rtc-topology-recompute'],
+  };
+  for (const workloadValue of artifact.workloads) {
+    for (const sampleValue of workloadValue.samples) {
+      const commandsById = new Map(sampleValue.commands.map((command: any) => [
+        command.commandId,
+        command,
+      ]));
+      for (const observation of sampleValue.attemptObservations) {
+        const command = commandsById.get(observation.commandId) as any;
+        observation.attempt = 0;
+        observation.source = command.kind === 'profile-instance'
+          ? 'client-state-service.mutation.write'
+          : command.kind === 'topology-source'
+          ? 'group-topology-config-service.mutation.write'
+          : 'group-state-service.mutation.write';
+      }
+      sampleValue.durable.outboxIntents = sampleValue.commands.flatMap((command: any) =>
+        effects[command.kind].map((intentKind, index) => ({
+          intentId: `${command.commandId}:production:${index}`,
+          commandId: command.commandId,
+          intentKind,
+        }))
+      );
+      sampleValue.correctness.requiredOutboxIntentCount =
+        sampleValue.durable.outboxIntents.length;
+      sampleValue.correctness.outboxIntentCount = sampleValue.durable.outboxIntents.length;
+      sampleValue.correctness.effectfulCommandCount = sampleValue.commands.length;
+    }
+    refreshSummary(workloadValue);
+  }
 }
 
 function workload(name: string, groups: number, durationMs = 100): any {
@@ -1018,7 +1434,17 @@ function refreshSampleOutcomes(sampleValue: any): void {
 
 function makeCommandExhausted(sampleValue: any, commandIndex: number): void {
   const command = sampleValue.commands[commandIndex];
-  const intentCount = INTENT_KINDS[command.kind].length;
+  const serviceComponent = command.kind === 'profile-instance'
+    ? 'client-state-service'
+    : command.kind === 'topology-source'
+    ? 'group-topology-config-service'
+    : 'group-state-service';
+  const firstAttempt = sampleValue.attemptObservations.find(
+    (entry: any) => entry.commandId === command.commandId,
+  )?.attempt ?? 1;
+  const intentCount = sampleValue.durable.outboxIntents.filter(
+    (intent: any) => intent.commandId === command.commandId,
+  ).length;
   command.status = 'exhausted';
   sampleValue.attemptObservations = sampleValue.attemptObservations.filter(
     (entry: any) => entry.commandId !== command.commandId,
@@ -1026,10 +1452,17 @@ function makeCommandExhausted(sampleValue: any, commandIndex: number): void {
   sampleValue.attemptObservations.push({
     commandId: command.commandId,
     operationId: 'command',
-    attempt: 1,
+    attempt: firstAttempt,
+    outcome: 'conflicted',
+    terminal: false,
+    source: `${serviceComponent}.mutation.conflict`,
+  }, {
+    commandId: command.commandId,
+    operationId: 'command',
+    attempt: firstAttempt + 1,
     outcome: 'exhausted',
     terminal: true,
-    source: 'group-topology-management-service.retry-budget',
+    source: `${serviceComponent}.mutation.conflict`,
   });
   sampleValue.durable.receiptCommandIds = sampleValue.durable.receiptCommandIds.filter(
     (commandId: string) => commandId !== command.commandId,

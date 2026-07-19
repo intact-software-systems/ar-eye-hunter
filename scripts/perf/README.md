@@ -137,26 +137,34 @@ counters, and process CPU time. PostgreSQL buffer and WAL counters are captured
 immediately before and after each measured phase; lock waits are sampled from
 `pg_stat_activity` while the phase runs.
 
-Attempt observations use an explicit command-envelope model. Each operation has
-an `operationId`, contiguous attempt numbers beginning at one, nonterminal
-`conflicted` observations when applicable, and exactly one final `accepted` or
-`exhausted` observation. Profile and instance are separate operations; the
-other mutation kinds use one command operation. Current production services do
-not expose internal retry events, so the baseline honestly records one terminal
-accepted envelope observation for each successful production service call.
+Attempt observations use production client/group service timing events. Each operation has
+an `operationId`, exact zero-based production attempt numbers, nonterminal
+`conflicted` observations with their production attempt numbers, and exactly
+one final `accepted` or `exhausted` observation. Acceptance is the attempt after
+the last conflict; typed retry exhaustion terminates at the final conflict.
+Profile and instance are separate production operations; the other mutation
+kinds use one command operation. A causal command deliberately not invoked
+after a prerequisite failure instead gets an explicitly labeled synthetic
+prerequisite terminal.
 Command accepted/exhausted outcomes, conflict counts, attempt counts, and
 attempts per accepted mutation are derived from these histories. Coherent hot
 baseline exhaustion is representable; comparison permits candidate hot
 exhaustion only up to that baseline while requiring zero in uncontended/shared.
 
-Receipts are persisted with the production replacement path and outbox entries
-carry deterministic intent IDs, originating command IDs, and contract intent
-kinds. After timed execution, the harness independently queries
-`resource_inbox_results` and `resource_inbox`; the artifact's durable evidence
-and correctness counters are derived from those rows, not from in-memory write
-counters. The required intent contract includes client snapshot/event intents,
-group snapshot/event intents, group topology publication, and topology-source
-publication. Every metric source is disclosed in `measurement.counterSources`.
+The timed command ends with the production service call. After the measured
+phase, the harness queries production client/group idempotency receipts and
+`StateMutationOutboxRepository` through an uninstrumented admin SQL stack.
+Profile-instance counts as received only when both profile and instance
+subcommand receipts are present and complete; a group command uses its exact
+request-ID receipt. Production outbox IDs and effects are projected without
+inventing evidence: two `client-state-sync` effects for profile-instance, and
+`group-state-sync` plus `group-presence-summary` for every accepted group
+mutation, including heartbeat. These post-phase evidence queries are excluded
+from command latency, SQL/resource deltas, and mutation timing. The current
+diagnostic producer labels topology-source's missing production receipt/outbox
+with DBW-06/DBW-12 until Task 5 supplies topology recompute persistence; it does
+not synthesize either record. Every metric source is disclosed in
+`measurement.counterSources`.
 
 Compare a candidate with its unmodified baseline:
 
@@ -175,15 +183,17 @@ Consequently, comparing a pre-remediation baseline with itself is expected to
 fail. A baseline correctness failure remains a failure sample and must link to a
 DBW finding; it never weakens candidate expectations. The validator recomputes
 all percentiles, throughput, outcome, attempt, median, and correctness summaries
-from raw records before applying comparison gates. Standalone validation can
-retain a known baseline durable defect when linked to a DBW finding, but
-candidate comparison always applies strict unique receipt/intent ID, command,
-and intent-kind linkage; candidate DBW tags cannot waive those invariants.
+from raw records before applying comparison gates. Standalone validation
+preserves the immutable governed pre-remediation legacy contract. A
+non-candidate production diagnostic may retain only the exact DBW-06/DBW-12
+topology-source receipt/effect gap. Candidate comparison always applies the
+production durable contract with strict unique receipt/intent ID, command, and
+effect linkage; candidate DBW tags cannot waive those invariants.
 DBW retention never waives record structure: every receipt is a nonempty raw
 command ID, every outbox record has nonempty intent/command/kind strings and a
 raw-command reference, and finding IDs must match the governed `DBW-...`
-format. Only exactness, uniqueness, or cardinality mismatches in a known
-baseline sample may be retained with a valid finding ID.
+format. The legacy waiver is selected only by governed baseline metadata; there
+is no permissive either-contract candidate path.
 Validation and comparison are total over parsed JSON-like input: malformed
 nested samples, unsupported mutation kinds, missing evidence containers, or
 invalid derivation records produce path-oriented baseline/candidate errors

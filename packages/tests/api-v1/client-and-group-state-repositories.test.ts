@@ -1210,6 +1210,7 @@ function createGroupMember(
     status: GroupMember['status'],
     groupId = 'group-1',
 ): GroupMember {
+    const updated = { atEpochMs: 2, byServiceId: 'seed' } as const;
     return {
         applicationId: 'app-1',
         workspaceId: 'workspace-1',
@@ -1218,7 +1219,10 @@ function createGroupMember(
         role: principalId === ownerPrincipalIdFor(groupId) ? 'owner' : 'member',
         status,
         joined: { atEpochMs: 1, byServiceId: 'seed' },
-        updated: { atEpochMs: 2, byServiceId: 'seed' },
+        updated,
+        ...(status === 'left' || status === 'removed' || status === 'banned'
+            ? { [status]: updated }
+            : {}),
     };
 }
 
@@ -1263,7 +1267,7 @@ function createGroupSession(
         principalId,
         sessionId,
         generationId: `generation-${sessionId}`,
-        generationVersion: 1,
+        generationVersion: overrides.connectedAtEpochMs ?? 10,
         connectedAtEpochMs: 10,
         lastHeartbeatAtEpochMs: 20,
         expiresAtEpochMs: Date.now() + 60_000,

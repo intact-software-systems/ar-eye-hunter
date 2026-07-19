@@ -89,7 +89,9 @@ rg --files packages/tests packages/shared packages/shared-web packages/shared-se
   candidates, events, receipts, and outbox intents to those same identities.
 - Apply that identity rule to reads as well as writes. Direct, prefix-list,
   page, event, and compact-receipt reads decode the canonical key and validate
-  the complete trusted scope and slot before returning data. A mismatch throws
+  the complete persisted contract and trusted scope and slot before returning
+  or projecting data. SQL-backed JSON must exactly agree with physical identity,
+  filter, order, and cursor columns. A mismatch throws
   a typed invariant-corruption error for the whole read; it is not a miss to
   hide, a list row to filter, or data to rewrite or guess.
 - Persisted shared-data validators enforce derived and cross-field invariants

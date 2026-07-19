@@ -1150,6 +1150,20 @@ export function validatePersistedGroupPresenceSession(
     );
 }
 
+export function validatePersistedGroupPresenceSummary(
+    value: unknown,
+    ref: GroupRef,
+): asserts value is GroupPresenceSummary {
+    validatePresenceSummaryValue(value as GroupPresenceSummary, ref);
+}
+
+export function validatePersistedGroupPresenceAdmission(
+    value: unknown,
+    ref: GroupRef,
+): asserts value is GroupPresenceAdmission {
+    validatePresenceAdmission(value as GroupPresenceAdmission, ref);
+}
+
 function validatePresenceSummaryValue(summary: GroupPresenceSummary, ref: GroupRef): void {
     const value = requireRecord(summary, 'Stored presence summary value');
     assertExactKeys(value, [
@@ -3515,6 +3529,13 @@ function validateMutationReceipt(
     if ((receipt.outcome === 'rejected') !== (receipt.rejection !== null)) {
         throw new TypeError(`${label} rejection differs from outcome`);
     }
+}
+
+export function validatePersistedGroupEvent(
+    value: unknown,
+    ref: GroupRef,
+): asserts value is GroupEvent {
+    validateGroupEvent(value, ref, 'Stored group event');
 }
 
 function validateGroupEvent(value: unknown, ref: GroupRef, label: string): void {

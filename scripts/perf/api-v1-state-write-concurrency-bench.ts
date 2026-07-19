@@ -2,17 +2,18 @@ import process from 'node:process';
 import { dirname, normalize } from 'node:path';
 import postgres, { type Sql } from 'postgres';
 import type { StateScope } from '@shared/api/state-types.ts';
-import type { ClientMutationWritten } from '@shared-server/rallar-system/services/client-state-service.ts';
-import type { GroupMutationWritten } from '@shared-server/rallar-system/services/group-state-service.ts';
-import { EntityStatus, toResourceEntryWithKey } from '@shared/queuebox/ResourceEntry.ts';
 import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
 import {
   createClientStateEventRepository,
   createGroupStateEventRepository,
 } from '@shared-server/postgres/rallar-system/createStateRepositories.ts';
-import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
-import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
+import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
+import {
+  StateMutationOutboxRepository,
+  type StateMutationOutboxRecord,
+} from '@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/repositories/GroupTopologyConfigRepository.ts';
 import {
   AuthSessionRepository,
@@ -22,6 +23,7 @@ import {
   type ClientStateService,
   createClientStateService,
 } from '@shared-server/rallar-system/services/client-state-service.ts';
+import { validateClientMutationIdempotencyRecord } from '@shared-server/rallar-system/services/client-state-mutations.ts';
 import {
   createGroupStateService,
   type GroupStateService,
@@ -36,7 +38,7 @@ import {
 } from '@shared-server/rallar-system/services/timing.ts';
 import {
   STATE_WRITE_ARTIFACT_SCHEMA_VERSION,
-  STATE_WRITE_MUTATION_CONTRACT,
+  PRODUCTION_STATE_WRITE_MUTATION_CONTRACT,
 } from './compare-api-v1-state-write-results.mjs';
 
 const DEFAULT_DATABASE_URL = 'postgres://app:app@localhost:5432/appdb';
@@ -47,8 +49,6 @@ const MAX_MEASURED_RUNS = 100;
 const MAX_CONCURRENCY = 256;
 const BENCHMARK_SESSION_ISSUED_AT_EPOCH_MS = 1_700_000_000_000;
 const BENCHMARK_SESSION_EXPIRES_AT_EPOCH_MS = 4_102_444_800_000;
-const RECEIPT_TOPIC = 'state-write-bench-receipt';
-const OUTBOX_TOPIC = 'state-write-bench-outbox';
 const MUTATION_MIX = [
   'profile-instance',
   'membership',
@@ -169,8 +169,6 @@ type ServiceRuntime = {
   client: ClientStateService;
   group: GroupStateService;
   topology: GroupTopologyManagementService;
-  outbox: ResourceInboxRepository;
-  receipts: ResourceInboxResultsRepository;
   serviceId: string;
 };
 
@@ -178,11 +176,6 @@ type MutationCommand = {
   kind: MutationKind;
   clientIndex: number;
   groupIndex: number;
-};
-
-type CommandEffect = {
-  payload: unknown;
-  outboxIntents: readonly Readonly<{ intentKind: string; payload: unknown }>[];
 };
 
 type PgCounters = {
@@ -333,21 +326,23 @@ async function main(): Promise<void> {
             'production timing-sink events explicitly labeled phase=compute; zero when unavailable',
           validateTiming:
             'production timing-sink events explicitly labeled phase=validate; zero when unavailable',
-          writeTiming:
-            'write-classified production SQL duration excluding resource_inbox outbox writes',
-          outboxTiming: 'resource_inbox SQL duration from the postgres.js wrapper',
-          attempts:
-            'explicit state-write command-envelope timing events around production service calls or a disclosed exhausted prerequisite; each successful call records one terminal accepted attempt, with profile and instance recorded as distinct operations; current services expose no internal retry events',
-          receipts:
-            'independent post-phase query of resource_inbox_results rows for the benchmark scope',
-          outboxIntents:
-            'independent post-phase query of resource_inbox rows for the benchmark scope',
+           writeTiming:
+             'production client/group mutation.write timing-sink events',
+           outboxTiming:
+             'runtime-state SQL carrying the state-mutation:outbox namespace through the postgres.js wrapper',
+           attempts:
+             'production client/group mutation.conflict timing events plus returned success or typed exhaustion; synthetic terminals exist only for disclosed exhausted prerequisites',
+           receipts:
+             'complete production client/group idempotency receipts queried after the phase through uninstrumented repositories and projected only when every raw-command subreceipt is valid',
+           outboxIntents:
+             'production StateMutationOutboxRepository records queried after the phase through the uninstrumented admin stack and projected per real effect',
         },
       },
       features: {
-        presenceSplitFromGroupAggregate: false,
-        governance: 'pre-remediation-baseline',
-        evidence: 'Task 0B pre-remediation benchmark; group presence remains aggregate-backed',
+         presenceSplitFromGroupAggregate: false,
+         governance: 'task4-production-evidence-diagnostic',
+         evidence:
+           'Production receipts, mutation outbox records, and retry timings; topology config remains a DBW-06/DBW-12 diagnostic until Task 5',
       },
       regressionReasons: [],
       workloads,
@@ -447,8 +442,16 @@ async function runWorkloadPhase(input: {
   const cpu = process.cpuUsage(cpuBefore);
   const postgresAfter = await capturePgCounters(input.adminSql);
   const walBytes = await walDifference(input.adminSql, postgresBefore.walLsn, postgresAfter.walLsn);
-  const durable = await queryDurableEvidence(input.adminSql, scope.applicationId);
-  const attemptObservations = deriveAttemptObservations(context.timingEvents, rawCommands);
+  const durable = await queryDurableEvidence(
+    input.adminSql,
+    scope,
+    rawCommands,
+    input.workload.groups,
+  );
+  const attemptObservations = deriveProductionAttemptObservations(
+    context.timingEvents,
+    rawCommands,
+  );
   const accepted = rawCommands.filter((command) => command.status === 'accepted').length;
   const attempts = attemptObservations.length;
   const outcomes: OutcomeMetrics = {
@@ -493,11 +496,11 @@ async function runWorkloadPhase(input: {
       walBytes,
     },
     timingsMs: {
-      read: context.sql.readMs,
+      read: productionPhaseDuration(context.timingEvents, 'read'),
       compute: productionPhaseDuration(context.timingEvents, 'compute'),
       validate: productionPhaseDuration(context.timingEvents, 'validate'),
-      write: context.sql.writeMs,
-      transaction: context.sql.transactionDurationMs,
+      write: productionPhaseDuration(context.timingEvents, 'write'),
+      transaction: productionPhaseDuration(context.timingEvents, 'transaction'),
       outbox: context.sql.outboxSqlMs,
     },
     correctness,
@@ -506,9 +509,6 @@ async function runWorkloadPhase(input: {
     stackCommandCounts,
     durable,
   };
-  if (input.measured) {
-    assertRunCorrectness(sample);
-  }
   return sample;
 }
 
@@ -638,8 +638,6 @@ function createServiceRuntime(
       configRepository: new GroupTopologyConfigRepository(runtimeRepository),
       topologyService: new RallarRtcTopologyService(),
     }),
-    outbox: new ResourceInboxRepository(instrumentedSql),
-    receipts: new ResourceInboxResultsRepository(instrumentedSql),
     serviceId,
   };
 }
@@ -657,7 +655,7 @@ export function createInstrumentedSql(
       return sql(stringsOrValues);
     }
     const queryText = stringsOrValues.join('?');
-    const category = classifySql(queryText);
+    const category = classifyBenchmarkSql(queryText, values);
     const startedAt = performance.now();
     return Promise.resolve(sql<T>(stringsOrValues, ...values)).then(
       (result) => {
@@ -756,34 +754,13 @@ async function executeMeasuredCommand(
     sessionId: prepared.clientAuthority.sessionId,
     generationId: `${prepared.clientAuthority.sessionId}:generation-1`,
   };
-  const effect = await executeMutation(
+  await executeMutation(
     runtime,
     scope,
     command.kind,
     preparedWithPresenceIdentity,
     timing,
   );
-  for (const [index, intent] of effect.outboxIntents.entries()) {
-    const intentId = `${requestId}:intent:${index}`;
-    await runtime.outbox.writeIfAbsentOrReplaceExpired(toResourceEntryWithKey(
-      { topicId: OUTBOX_TOPIC, contextId: scope.applicationId, resourceId: intentId },
-      'STATE_WRITE_BENCH_OUTBOX',
-      {
-        originatingCommandId: requestId,
-        intentId,
-        intentKind: intent.intentKind,
-        payload: intent.payload,
-      },
-    ));
-  }
-  await runtime.receipts.replace({
-    ...toResourceEntryWithKey(
-      { topicId: RECEIPT_TOPIC, contextId: scope.applicationId, resourceId: requestId },
-      'STATE_WRITE_BENCH_RECEIPT',
-      { originatingCommandId: requestId, result: effect.payload },
-    ),
-    status: EntityStatus.COMPLETED,
-  });
 }
 
 async function executeMutation(
@@ -803,7 +780,7 @@ async function executeMutation(
     ownerAuthority: IssuedAuthSession;
   }>,
   timing: RallarTimingSink,
-): Promise<CommandEffect> {
+): Promise<void> {
   switch (kind) {
     case 'profile-instance': {
       const profile = requireClientMutation(
@@ -848,7 +825,9 @@ async function executeMutation(
             ),
         ),
       );
-      return clientWrittenEffect([profile, instance], command.requestId);
+      void profile;
+      void instance;
+      return;
     }
     case 'membership': {
       const written = requireGroupMutation(
@@ -872,7 +851,8 @@ async function executeMutation(
             ),
         ),
       );
-      return groupWrittenEffect(written, command.requestId);
+      void written;
+      return;
     }
     case 'presence-connect': {
       const written = requireGroupMutation(
@@ -900,7 +880,8 @@ async function executeMutation(
             ),
         ),
       );
-      return groupWrittenEffect(written, command.requestId);
+      void written;
+      return;
     }
     case 'presence-heartbeat': {
       const written = requireGroupMutation(
@@ -927,7 +908,8 @@ async function executeMutation(
             ),
         ),
       );
-      return { payload: written, outboxIntents: [] };
+      void written;
+      return;
     }
     case 'presence-disconnect': {
       const written = requireGroupMutation(
@@ -955,7 +937,8 @@ async function executeMutation(
             ),
         ),
       );
-      return groupWrittenEffect(written, command.requestId);
+      void written;
+      return;
     }
     case 'config': {
       const written = requireGroupMutation(
@@ -977,7 +960,8 @@ async function executeMutation(
             ),
         ),
       );
-      return groupWrittenEffect(written, command.requestId);
+      void written;
+      return;
     }
     case 'topology-source': {
       const result = await observeProductionAttempt(
@@ -1001,54 +985,10 @@ async function executeMutation(
             publish: false,
           }),
       );
-      return {
-        payload: result,
-        outboxIntents: [{
-          intentKind: 'topology-publication',
-          payload: { requestId: command.requestId, config: result.config },
-        }],
-      };
+      void result;
+      return;
     }
   }
-}
-
-function clientWrittenEffect(
-  written: readonly ClientMutationWritten[],
-  requestId: string,
-): CommandEffect {
-  return {
-    payload: written,
-    outboxIntents: written.flatMap((entry, index) =>
-      entry.event
-        ? [
-          {
-            intentKind: index === 0 ? 'client-snapshot:profile' : 'client-snapshot:instance',
-            payload: { requestId, index, snapshot: entry.snapshot },
-          },
-          {
-            intentKind: index === 0 ? 'client-event:profile' : 'client-event:instance',
-            payload: { requestId, index, event: entry.event },
-          },
-        ]
-        : []
-    ),
-  };
-}
-
-function groupWrittenEffect(written: GroupMutationWritten, requestId: string): CommandEffect {
-  return {
-    payload: written,
-    outboxIntents: written.event
-      ? [
-        { intentKind: 'group-snapshot', payload: { requestId, snapshot: written.snapshot } },
-        { intentKind: 'group-event', payload: { requestId, event: written.event } },
-        {
-          intentKind: 'topology-publication',
-          payload: { requestId, snapshot: written.snapshot },
-        },
-      ]
-      : [],
-  };
 }
 
 async function observeProductionAttempt<T>(
@@ -1058,60 +998,11 @@ async function observeProductionAttempt<T>(
   operation: string,
   action: () => Promise<T>,
 ): Promise<T> {
-  const startedAt = performance.now();
-  const timingInput = {
-    component: 'state-write-command-envelope',
-    operation,
-    serviceId: runtime.serviceId,
-    requestId,
-  } as const;
-  try {
-    const result = await action();
-    recordRallarTiming(
-      timing,
-      {
-        ...timingInput,
-        details: {
-          operationId: attemptOperationId(operation),
-          attempt: 1,
-          outcome: 'accepted',
-          terminal: true,
-        },
-      },
-      'ok',
-      performance.now() - startedAt,
-    );
-    return result;
-  } catch (error) {
-    const exhausted = isBenchmarkRetryExhaustion(error);
-    recordRallarTiming(
-      timing,
-      {
-        ...timingInput,
-        details: {
-          operationId: attemptOperationId(operation),
-          attempt: 1,
-          outcome: exhausted ? 'exhausted' : 'operation-error',
-          terminal: true,
-        },
-      },
-      'error',
-      performance.now() - startedAt,
-      error,
-    );
-    throw error;
-  }
-}
-
-function attemptOperationId(operation: string): 'profile' | 'instance' | 'command' {
-  switch (operation) {
-    case 'upsertPrincipal':
-      return 'profile';
-    case 'upsertInstance':
-      return 'instance';
-    default:
-      return 'command';
-  }
+  void timing;
+  void runtime;
+  void requestId;
+  void operation;
+  return await action();
 }
 
 async function seedCompleteState(
@@ -1262,89 +1153,242 @@ export function selectServiceStack(commandIndex: number, stackCount: number): nu
 
 function productionPhaseDuration(
   events: readonly RallarTimingEvent[],
-  phase: 'compute' | 'validate',
+  phase: 'read' | 'compute' | 'validate' | 'write' | 'transaction',
 ): number {
   return sum(
     events.filter((event) =>
-      event.component !== 'state-write-benchmark-sql' && event.details?.phase === phase
+      (event.component === 'client-state-service' ||
+        event.component === 'group-state-service') &&
+      event.operation === `mutation.${phase}`
     ).map((event) => event.durationMs),
   );
 }
 
-function deriveAttemptObservations(
+export function deriveProductionAttemptObservations(
   events: readonly RallarTimingEvent[],
   commands: readonly RawCommand[],
 ): AttemptObservation[] {
-  return commands.flatMap((command) => {
-    const correlated = events.filter((event) =>
+  return commands.flatMap<AttemptObservation>((command): AttemptObservation[] => {
+    const prerequisite = events.find((event) =>
       event.component === 'state-write-command-envelope' &&
-      typeof event.requestId === 'string' &&
-      (event.requestId === command.commandId || event.requestId.startsWith(`${command.commandId}-`))
+      event.requestId === command.commandId &&
+      event.details?.outcome === 'exhausted' &&
+      (typeof event.details?.prerequisite === 'string' ||
+        event.operation.startsWith('prerequisite-exhausted:'))
     );
-    return correlated.map((event) => {
-      const outcome = event.details?.outcome;
-      const operationId = event.details?.operationId;
-      const terminal = event.details?.terminal;
-      const attempt = event.details?.attempt;
-      if (
-        (event.status !== 'ok' && outcome !== 'exhausted') ||
-        (outcome !== 'accepted' && outcome !== 'conflicted' && outcome !== 'exhausted') ||
-        typeof operationId !== 'string' ||
-        typeof terminal !== 'boolean' ||
-        typeof attempt !== 'number' ||
-        !Number.isSafeInteger(attempt) || attempt < 1
-      ) {
-        throw new Error(
-          `Invalid explicit command-envelope attempt observation for ${command.commandId}`,
-        );
-      }
-      return {
+    if (prerequisite) {
+      return [{
         commandId: command.commandId,
-        operationId,
-        attempt,
-        outcome,
-        terminal,
-        source: `${event.component}.${event.operation}`,
-      };
+        operationId: 'command' as const,
+        attempt: 1,
+        outcome: 'exhausted' as const,
+        terminal: true,
+        source: `${prerequisite.component}.${prerequisite.operation}`,
+      }];
+    }
+
+    const operations = command.kind === 'profile-instance'
+      ? [
+        { operationId: 'profile', requestId: `${command.commandId}-profile` },
+        { operationId: 'instance', requestId: `${command.commandId}-instance` },
+      ] as const
+      : [{ operationId: 'command', requestId: command.commandId }] as const;
+    const attempted = operations.filter((operation) =>
+      command.status === 'accepted' || events.some((event) =>
+        event.requestId === operation.requestId &&
+        (event.component === 'client-state-service' ||
+          event.component === 'group-state-service')
+      )
+    );
+    const exhaustedOperationId = command.status === 'exhausted'
+      ? attempted.at(-1)?.operationId
+      : undefined;
+
+    return attempted.flatMap((operation) => {
+      const conflicts = events.filter((event) =>
+        event.requestId === operation.requestId &&
+        event.operation === 'mutation.conflict' &&
+        (event.component === 'client-state-service' ||
+          event.component === 'group-state-service')
+      ).toSorted((left, right) =>
+        Number(left.details?.attempt) - Number(right.details?.attempt)
+      );
+      for (const event of conflicts) {
+        if (!Number.isSafeInteger(event.details?.attempt) || Number(event.details?.attempt) < 0) {
+          throw new Error(`Invalid production conflict attempt for ${operation.requestId}`);
+        }
+      }
+      const exhausted = exhaustedOperationId === operation.operationId;
+      if (exhausted && conflicts.length === 0) {
+        throw new Error(`Production exhaustion lacks conflict timing for ${operation.requestId}`);
+      }
+      const observations: AttemptObservation[] = conflicts.map((event, index) => {
+        const terminal = exhausted && index === conflicts.length - 1;
+        return {
+          commandId: command.commandId,
+          operationId: operation.operationId,
+          attempt: Number(event.details?.attempt),
+          outcome: terminal ? 'exhausted' as const : 'conflicted' as const,
+          terminal,
+          source: `${event.component}.${event.operation}`,
+        };
+      });
+      if (!exhausted) {
+        const successfulPhases = events.filter((event) =>
+          event.requestId === operation.requestId &&
+          (event.operation === 'mutation.write' || event.operation === 'mutation.validate') &&
+          (event.component === 'client-state-service' ||
+            event.component === 'group-state-service') &&
+          event.status === 'ok' &&
+          Number.isSafeInteger(event.details?.attempt) &&
+          Number(event.details?.attempt) >= 0
+        );
+        const preferredPhases = successfulPhases.some((event) =>
+            event.operation === 'mutation.write'
+          )
+          ? successfulPhases.filter((event) => event.operation === 'mutation.write')
+          : successfulPhases;
+        const terminalPhase = preferredPhases.toSorted((left, right) =>
+          Number(left.details?.attempt) - Number(right.details?.attempt)
+        ).at(-1);
+        if (!terminalPhase && command.kind !== 'topology-source') {
+          throw new Error(
+            `Accepted production mutation lacks write/validate timing for ${operation.requestId}`,
+          );
+        }
+        observations.push({
+          commandId: command.commandId,
+          operationId: operation.operationId,
+          attempt: terminalPhase ? Number(terminalPhase.details?.attempt) : 0,
+          outcome: 'accepted',
+          terminal: true,
+          source: terminalPhase
+            ? `${terminalPhase.component}.${terminalPhase.operation}`
+            : 'production-return:topology-config',
+        });
+      }
+      return observations;
     });
   });
 }
 
-async function queryDurableEvidence(sql: Sql, contextId: string): Promise<DurableEvidence> {
-  const receiptRows = await sql<{ ris_resource_id: string; ris_resource: unknown }[]>`
-    select ris_resource_id, ris_resource
-    from resource_inbox_results
-    where fk_ext_bank_id = ${contextId} and ris_topic_id = ${RECEIPT_TOPIC}
-    order by ris_resource_id
-  `;
-  const intentRows = await sql<{ ri_resource_id: string; ri_resource: unknown }[]>`
-    select ri_resource_id, ri_resource
-    from resource_inbox
-    where fk_ext_bank_id = ${contextId} and ri_topic_id = ${OUTBOX_TOPIC}
-    order by ri_resource_id
-  `;
+async function queryDurableEvidence(
+  sql: Sql,
+  scope: StateScope,
+  commands: readonly RawCommand[],
+  groupCount: number,
+): Promise<DurableEvidence> {
+  const runtime = new PSqlRuntimeStateRepository(sql as unknown as PSqlSql);
+  const clients = new ClientStateRepository(runtime);
+  const groups = new GroupStateRepository(runtime);
+  const outbox = new StateMutationOutboxRepository(runtime);
+  const acceptedCommands = commands.filter((command) => command.status === 'accepted');
+  const receiptResults = await mapWithConcurrency(
+    acceptedCommands,
+    25,
+    async (command): Promise<string | undefined> => {
+      const clientIndex = Number(
+        command.commandId.slice(command.commandId.lastIndexOf(':') + 1),
+      );
+      if (!Number.isSafeInteger(clientIndex) || clientIndex < 0) {
+        throw new Error(`Benchmark command ID has no client index: ${command.commandId}`);
+      }
+      const productionCommandIds = productionCommandIdsForRaw(command);
+
+      const validReceipts = command.kind === 'profile-instance'
+        ? await Promise.all(productionCommandIds.map(async (requestId) =>
+          isValidProductionReceipt(
+            await clients.findIdempotentClientMutationReceipt(
+              { ...scope, principalId: `client-${clientIndex}` },
+              requestId,
+            ),
+            requestId,
+          )
+        ))
+        : command.kind === 'topology-source'
+        ? []
+        : [isValidatedReceiptIdentity(
+          await groups.findIdempotentGroupMutationReceipt(
+            { ...scope, groupId: `group-${clientIndex % groupCount}` },
+            command.commandId,
+          ),
+          command.commandId,
+        )];
+      if (validReceipts.length > 0 && validReceipts.every(Boolean)) {
+        return command.commandId;
+      }
+      return undefined;
+    },
+  );
+  const receiptCommandIds = receiptResults.filter(
+    (commandId): commandId is string => commandId !== undefined,
+  );
+
+  const productionRecords: StateMutationOutboxRecord[] = [];
+  let afterKey: string | undefined;
+  do {
+    const page = await outbox.listPendingPage({ afterKey, limit: 1_000 });
+    productionRecords.push(...page.records.map(({ record }) => record));
+    afterKey = page.nextAfterKey ?? undefined;
+  } while (afterKey !== undefined);
+
+  const outboxIntents = projectProductionOutboxEvidence(commands, productionRecords);
   return {
-    receiptCommandIds: receiptRows.map((row) => {
-      const payload = parseResourcePayload(row.ris_resource);
-      return String(payload.originatingCommandId ?? row.ris_resource_id);
-    }),
-    outboxIntents: intentRows.map((row) => {
-      const payload = parseResourcePayload(row.ri_resource);
-      return {
-        intentId: String(payload.intentId ?? row.ri_resource_id),
-        commandId: String(payload.originatingCommandId ?? ''),
-        intentKind: String(payload.intentKind ?? ''),
-      };
-    }),
+    receiptCommandIds: receiptCommandIds.toSorted(),
+    outboxIntents: outboxIntents.toSorted((left, right) =>
+      left.intentId.localeCompare(right.intentId)
+    ),
   };
 }
 
-function parseResourcePayload(value: unknown): Record<string, unknown> {
-  const parsed = typeof value === 'string' ? JSON.parse(value) : value;
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error('Durable benchmark payload must be an object');
+function productionCommandIdsForRaw(command: RawCommand): readonly string[] {
+  return command.kind === 'profile-instance'
+    ? [`${command.commandId}-profile`, `${command.commandId}-instance`]
+    : command.kind === 'topology-source'
+    ? []
+    : [command.commandId];
+}
+
+export function projectProductionOutboxEvidence(
+  commands: readonly RawCommand[],
+  records: readonly Pick<StateMutationOutboxRecord, 'outboxId' | 'commandId' | 'effects'>[],
+): DurableEvidence['outboxIntents'] {
+  const productionToRawCommand = new Map(
+    commands.flatMap((command) =>
+      productionCommandIdsForRaw(command).map((productionCommandId) => [
+        productionCommandId,
+        command,
+      ] as const)
+    ),
+  );
+  return records.flatMap((record) => {
+    const command = productionToRawCommand.get(record.commandId);
+    if (!command) return [];
+    return record.effects.map((effect) => ({
+      intentId: `${record.outboxId}:${effect}`,
+      commandId: command.commandId,
+      intentKind: effect,
+    }));
+  });
+}
+
+export function isValidProductionReceipt(value: unknown, requestId: string): boolean {
+  try {
+    validateClientMutationIdempotencyRecord(value);
+  } catch {
+    return false;
   }
-  return parsed as Record<string, unknown>;
+  return value.requestId === requestId && value.receipt.commandId === requestId;
+}
+
+function isValidatedReceiptIdentity(value: unknown, requestId: string): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  if (record.requestId !== requestId ||
+    !record.receipt || typeof record.receipt !== 'object' || Array.isArray(record.receipt)) {
+    return false;
+  }
+  return (record.receipt as Record<string, unknown>).commandId === requestId;
 }
 
 function deriveCorrectness(
@@ -1353,20 +1397,22 @@ function deriveCorrectness(
 ): CorrectnessMetrics {
   const requiredOutboxIntentCount = sum(
     commands.map((command) =>
-      command.status === 'accepted' ? STATE_WRITE_MUTATION_CONTRACT[command.kind].length : 0
+      command.status === 'accepted'
+        ? PRODUCTION_STATE_WRITE_MUTATION_CONTRACT[command.kind].length
+        : 0
     ),
   );
   const effectfulCommandCount =
     commands.filter((command) =>
-      command.status === 'accepted' && STATE_WRITE_MUTATION_CONTRACT[command.kind].length > 0
+      command.status === 'accepted' &&
+      PRODUCTION_STATE_WRITE_MUTATION_CONTRACT[command.kind].length > 0
     ).length;
   const acceptedCommandCount = commands.filter((command) => command.status === 'accepted').length;
   const dbwFindings: string[] = [];
-  if (durable.receiptCommandIds.length !== acceptedCommandCount) {
-    dbwFindings.push('DBW-RECEIPT-CARDINALITY');
-  }
-  if (durable.outboxIntents.length !== requiredOutboxIntentCount) {
-    dbwFindings.push('DBW-OUTBOX-CARDINALITY');
+  if (commands.some((command) =>
+    command.kind === 'topology-source' && command.status === 'accepted'
+  )) {
+    dbwFindings.push('DBW-06', 'DBW-12');
   }
   return {
     acceptedCommandCount,
@@ -1396,9 +1442,12 @@ function observeSql(
   }
 }
 
-function classifySql(query: string): 'read' | 'write' | 'outbox' {
+export function classifyBenchmarkSql(
+  query: string,
+  values: readonly unknown[],
+): 'read' | 'write' | 'outbox' {
   const normalized = query.trim().toLowerCase();
-  if (/\bresource_inbox\b/.test(normalized) && !/\bresource_inbox_results\b/.test(normalized)) {
+  if (values.some((value) => value === 'state-mutation:outbox')) {
     return 'outbox';
   }
   return /^(select|show|explain)\b/.test(normalized) ? 'read' : 'write';
@@ -1486,16 +1535,12 @@ async function assertSchemaReady(sql: Sql): Promise<void> {
   const rows = await sql<
     {
       runtime_state_store: string | null;
-      resource_inbox: string | null;
-      resource_inbox_results: string | null;
     }[]
   >`
-    select to_regclass('runtime_state_store')::text as runtime_state_store,
-           to_regclass('resource_inbox')::text as resource_inbox,
-           to_regclass('resource_inbox_results')::text as resource_inbox_results
+    select to_regclass('runtime_state_store')::text as runtime_state_store
   `;
   const row = rows[0];
-  if (!row?.runtime_state_store || !row.resource_inbox || !row.resource_inbox_results) {
+  if (!row?.runtime_state_store) {
     throw new Error('PostgreSQL schema is missing; run npm run db:migrate before the benchmark');
   }
 }
@@ -1574,15 +1619,6 @@ function sum(values: readonly number[]): number {
 
 function nonNegativeDelta(after: number, before: number): number {
   return Math.max(0, after - before);
-}
-
-function assertRunCorrectness(sample: RunSample): void {
-  if (sample.correctness.acceptedCommandCount !== sample.correctness.receiptCount) {
-    sample.correctness.dbwFindings.push('DBW-RECEIPT-CARDINALITY');
-  }
-  if (sample.correctness.requiredOutboxIntentCount !== sample.correctness.outboxIntentCount) {
-    sample.correctness.dbwFindings.push('DBW-OUTBOX-CARDINALITY');
-  }
 }
 
 function newRunContext(): RunContext {

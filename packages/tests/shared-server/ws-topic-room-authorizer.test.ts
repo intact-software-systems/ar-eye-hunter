@@ -662,6 +662,9 @@ function withMemberStatus(
             ...member,
             role: 'member' as const,
             status,
+            ...(status === 'left' || status === 'removed' || status === 'banned'
+                ? { [status]: member.updated }
+                : {}),
         })), fixtureOwner],
         memberCount: 1,
     };
@@ -684,7 +687,9 @@ async function putDurableSnapshot(
     }
     const current = await repository.findPresenceSummaryEntry(snapshot.group);
     const summary: GroupPresenceSummary = {
-        ...snapshot.group,
+        applicationId: snapshot.group.applicationId,
+        workspaceId: snapshot.group.workspaceId,
+        groupId: snapshot.group.groupId,
         causalRevision: {
             groupRevision: group.entry.revision + 1,
             presenceRevision: snapshot.group.presenceVersion,

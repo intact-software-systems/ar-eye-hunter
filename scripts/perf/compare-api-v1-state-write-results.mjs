@@ -6,7 +6,7 @@ import { pathToFileURL } from 'node:url';
 export const STATE_WRITE_ARTIFACT_SCHEMA_VERSION = 'rallar.api-v1.state-write.v3';
 export const STATE_WRITE_COMMANDS_PER_RUN = 700;
 
-export const STATE_WRITE_MUTATION_CONTRACT = Object.freeze({
+export const LEGACY_STATE_WRITE_MUTATION_CONTRACT = Object.freeze({
   'profile-instance': Object.freeze([
     'client-snapshot:profile',
     'client-event:profile',
@@ -25,12 +25,24 @@ export const STATE_WRITE_MUTATION_CONTRACT = Object.freeze({
   'topology-source': Object.freeze(['topology-publication']),
 });
 
+export const PRODUCTION_STATE_WRITE_MUTATION_CONTRACT = Object.freeze({
+  'profile-instance': Object.freeze(['client-state-sync', 'client-state-sync']),
+  membership: Object.freeze(['group-state-sync', 'group-presence-summary']),
+  'presence-connect': Object.freeze(['group-state-sync', 'group-presence-summary']),
+  'presence-heartbeat': Object.freeze(['group-state-sync', 'group-presence-summary']),
+  'presence-disconnect': Object.freeze(['group-state-sync', 'group-presence-summary']),
+  config: Object.freeze(['group-state-sync', 'group-presence-summary']),
+  'topology-source': Object.freeze(['rtc-topology-recompute']),
+});
+
+export const STATE_WRITE_MUTATION_CONTRACT = LEGACY_STATE_WRITE_MUTATION_CONTRACT;
+
 const WORKLOADS = new Map([
   ['uncontended', { clients: 100, groups: 100, concurrency: 10 }],
   ['shared', { clients: 100, groups: 5, concurrency: 10 }],
   ['hot', { clients: 100, groups: 1, concurrency: 10 }],
 ]);
-const MUTATION_MIX = Object.keys(STATE_WRITE_MUTATION_CONTRACT);
+const MUTATION_MIX = Object.keys(LEGACY_STATE_WRITE_MUTATION_CONTRACT);
 const TIMING_BUCKETS = ['read', 'compute', 'validate', 'write', 'transaction', 'outbox'];
 const SQL_METRICS = ['statements', 'rowsRead', 'serializedResultBytes'];
 const POSTGRES_METRICS = [
@@ -121,6 +133,7 @@ function validateStateWriteArtifactInternal(
 
   validateMeasurement(artifact.measurement, errors);
   validateFeatures(artifact.features, errors);
+  const durableContract = durableContractForArtifact(artifact);
 
   if (!isDenseArray(artifact.workloads)) {
     errors.push('workloads must be a dense array');
@@ -142,6 +155,7 @@ function validateStateWriteArtifactInternal(
       `workloads[${index}]`,
       errors,
       allowDbwLinkedDurableDefects,
+      durableContract,
     );
   }
   validateRegressionReasons(artifact.regressionReasons, errors);
@@ -344,6 +358,21 @@ function validateFeatures(features, errors) {
   }
 }
 
+function durableContractForArtifact(artifact) {
+  return artifact?.features?.governance === 'pre-remediation-baseline'
+    ? {
+      name: 'legacy',
+      mutations: LEGACY_STATE_WRITE_MUTATION_CONTRACT,
+      topologyDiagnostic: false,
+    }
+    : {
+      name: 'production',
+      mutations: PRODUCTION_STATE_WRITE_MUTATION_CONTRACT,
+      topologyDiagnostic:
+        artifact?.features?.governance === 'task4-production-evidence-diagnostic',
+    };
+}
+
 function validateRegressionReasons(reasons, errors) {
   if (!isDenseArray(reasons)) {
     errors.push('regressionReasons must be a dense array');
@@ -398,6 +427,7 @@ function validateWorkload(
   path,
   errors,
   allowDbwLinkedDurableDefects,
+  durableContract,
 ) {
   if (!isObject(workload)) {
     errors.push(`${path} must be an object`);
@@ -437,10 +467,11 @@ function validateWorkload(
         index,
         errors,
         allowDbwLinkedDurableDefects,
+        durableContract,
       );
     }
     if (workload.samples.length > 0 && workload.samples.every(canDeriveWorkloadSample)) {
-      const derived = deriveWorkloadSummary(workload.samples);
+      const derived = deriveWorkloadSummary(workload.samples, durableContract.mutations);
       validateDerivedSummary(workload.summary, derived, `${path}.summary`, errors);
     } else if (workload.samples.length > 0) {
       errors.push(`${path}.summary cannot be derived from structurally malformed samples`);
@@ -448,7 +479,14 @@ function validateWorkload(
   }
 }
 
-function validateSample(sample, path, runIndex, errors, allowDbwLinkedDurableDefects) {
+function validateSample(
+  sample,
+  path,
+  runIndex,
+  errors,
+  allowDbwLinkedDurableDefects,
+  durableContract,
+) {
   validateMetrics(sample, path, errors);
   if (!isObject(sample)) {
     return;
@@ -521,7 +559,13 @@ function validateSample(sample, path, runIndex, errors, allowDbwLinkedDurableDef
   const dbwFindings = Array.isArray(sample.correctness?.dbwFindings)
     ? sample.correctness.dbwFindings
     : [];
-  const attempts = deriveAttempts(sample.attemptObservations, commandsById, path, errors);
+  const attempts = deriveAttempts(
+    sample.attemptObservations,
+    commandsById,
+    path,
+    errors,
+    durableContract,
+  );
   compareNumber(
     sample.outcomes?.attempts,
     attempts.attempts,
@@ -557,6 +601,7 @@ function validateSample(sample, path, runIndex, errors, allowDbwLinkedDurableDef
     path,
     errors,
     allowDbwLinkedDurableDefects,
+    durableContract,
   );
   compareNumber(
     sample.correctness?.acceptedCommandCount,
@@ -620,7 +665,7 @@ function validateSample(sample, path, runIndex, errors, allowDbwLinkedDurableDef
   );
 }
 
-function deriveAttempts(observations, commandsById, path, errors) {
+function deriveAttempts(observations, commandsById, path, errors, durableContract) {
   if (!isDenseArray(observations)) {
     errors.push(`${path}.attemptObservations must be a dense array`);
     return { attempts: 0, conflicted: 0, exhausted: 0, accepted: 0 };
@@ -637,8 +682,8 @@ function deriveAttempts(observations, commandsById, path, errors) {
       errors.push(`${observationPath}.operationId must be non-empty`);
       continue;
     }
-    if (!Number.isInteger(observation.attempt) || observation.attempt < 1) {
-      errors.push(`${observationPath}.attempt must be a positive integer`);
+    if (!Number.isInteger(observation.attempt) || observation.attempt < 0) {
+      errors.push(`${observationPath}.attempt must be a non-negative integer`);
     }
     if (!['accepted', 'conflicted', 'exhausted'].includes(observation.outcome)) {
       errors.push(`${observationPath}.outcome is invalid`);
@@ -668,10 +713,67 @@ function deriveAttempts(observations, commandsById, path, errors) {
     const commandId = historyKey.slice(0, separator);
     const operationId = historyKey.slice(separator + 1);
     historiesByCommand.get(commandId)?.push({ operationId, history });
+    const firstAttempt = history[0]?.attempt;
+    const prerequisiteHistory = history.length === 1 &&
+      history[0]?.attempt === 1 && history[0]?.outcome === 'exhausted' &&
+      history[0]?.terminal === true && history[0]?.source.startsWith(
+        'state-write-command-envelope.prerequisite-exhausted:',
+      );
+    if (prerequisiteHistory) {
+      const prerequisite = history[0].source.slice(
+        'state-write-command-envelope.prerequisite-exhausted:'.length,
+      );
+      const kind = commandsById.get(commandId)?.kind;
+      const validPair = prerequisite === 'membership'
+        ? kind === 'presence-connect' || kind === 'presence-heartbeat' ||
+          kind === 'presence-disconnect'
+        : prerequisite === 'presence-connect'
+        ? kind === 'presence-heartbeat' || kind === 'presence-disconnect'
+        : false;
+      if (!validPair) {
+        errors.push(`${path}: ${commandId}/${operationId} invalid prerequisite-exhausted command pair`);
+      }
+    }
+    const expectedFirstAttempt = durableContract.name === 'production' && !prerequisiteHistory
+      ? 0
+      : 1;
+    if (firstAttempt !== expectedFirstAttempt) {
+      errors.push(
+        `${path}: ${commandId}/${operationId} ${durableContract.name} attempts must ` +
+          `start at ${expectedFirstAttempt}`,
+      );
+    }
+    if (durableContract.name === 'production' && !prerequisiteHistory) {
+      const command = commandsById.get(commandId);
+      for (const observation of history) {
+        const serviceComponent = command?.kind === 'profile-instance'
+          ? 'client-state-service'
+          : command?.kind === 'topology-source'
+          ? 'group-topology-config-service'
+          : 'group-state-service';
+        const expectedSource = observation.outcome === 'accepted'
+          ? command?.kind === 'topology-source'
+            ? durableContract.topologyDiagnostic
+              ? observation.source === 'production-return:topology-config'
+              : /^group-topology-config-service\.mutation\.(write|validate)$/.test(
+                observation.source,
+              )
+            : observation.source === `${serviceComponent}.mutation.write` ||
+              observation.source === `${serviceComponent}.mutation.validate`
+          : observation.source === `${serviceComponent}.mutation.conflict`;
+        if (!expectedSource) {
+          errors.push(
+            `${path}: ${commandId}/${operationId} production attempt source is not a ` +
+              'production mutation timing event',
+          );
+          break;
+        }
+      }
+    }
     for (const [index, observation] of history.entries()) {
-      if (observation.attempt !== index + 1) {
+      if (observation.attempt !== firstAttempt + index) {
         errors.push(
-          `${path}: ${commandId}/${operationId} attempt numbers must be ordered and contiguous from 1`,
+          `${path}: ${commandId}/${operationId} attempt numbers must be ordered and contiguous`,
         );
         break;
       }
@@ -684,6 +786,24 @@ function deriveAttempts(observations, commandsById, path, errors) {
     }
     if (history.slice(0, -1).some((observation) => observation.outcome !== 'conflicted')) {
       errors.push(`${path}: ${commandId}/${operationId} only conflicts may precede a terminal`);
+    }
+    const terminal = terminals[0];
+    if (terminal?.outcome === 'exhausted') {
+      const prerequisiteTerminal = history.length === 1 &&
+        terminal.source.startsWith(
+          'state-write-command-envelope.prerequisite-exhausted:',
+        );
+      const productionExhaustion = terminal.source.endsWith('.mutation.conflict') &&
+        history.slice(0, -1).some((observation) =>
+          observation.outcome === 'conflicted' &&
+          observation.source.endsWith('.mutation.conflict')
+        );
+      if (!prerequisiteTerminal && !productionExhaustion) {
+        errors.push(
+          `${path}: ${commandId}/${operationId} production exhaustion must retain ` +
+            'a preceding production mutation.conflict observation',
+        );
+      }
     }
   }
 
@@ -738,6 +858,7 @@ function deriveDurableCorrectness(
   path,
   errors,
   allowDbwLinkedDurableDefects,
+  durableContract,
 ) {
   const receipts = sample.durable?.receiptCommandIds;
   const intents = sample.durable?.outboxIntents;
@@ -749,8 +870,14 @@ function deriveDurableCorrectness(
   if (!isDenseArray(intents)) {
     errors.push(`${path}.durable.outboxIntents must be a dense array`);
   }
-  const canRetainBaselineDefect = allowDbwLinkedDurableDefects &&
+  const canRetainLegacyBaselineDefect = durableContract.name === 'legacy' &&
+    allowDbwLinkedDurableDefects &&
     dbwFindings.length > 0 && dbwFindings.every(isValidDbwFinding);
+  const canRetainTopologyDiagnostic = durableContract.name === 'production' &&
+    durableContract.topologyDiagnostic === true &&
+    allowDbwLinkedDurableDefects && dbwFindings.length === 2 &&
+    new Set(dbwFindings).size === 2 &&
+    dbwFindings.includes('DBW-06') && dbwFindings.includes('DBW-12');
   const acceptedCommands = [...commandsById.values()].filter((command) =>
     command.status === 'accepted'
   );
@@ -765,21 +892,32 @@ function deriveDurableCorrectness(
     }
   }
   const receiptSet = new Set(receiptIds);
-  if (receiptSet.size !== receiptIds.length && !canRetainBaselineDefect) {
+  if (receiptSet.size !== receiptIds.length && !canRetainLegacyBaselineDefect) {
     errors.push(`${path}.durable receipt command IDs must be unique`);
   }
   const acceptedIds = acceptedCommands.map((command) => command.commandId).sort();
-  if (!sameStringArray([...receiptSet].sort(), acceptedIds) && !canRetainBaselineDefect) {
+  const acceptedNonTopologyIds = acceptedCommands
+    .filter((command) => command.kind !== 'topology-source')
+    .map((command) => command.commandId)
+    .sort();
+  const exactTopologyReceiptGap = canRetainTopologyDiagnostic &&
+    sameStringArray([...receiptSet].sort(), acceptedNonTopologyIds);
+  if (
+    !sameStringArray([...receiptSet].sort(), acceptedIds) &&
+    !canRetainLegacyBaselineDefect && !exactTopologyReceiptGap
+  ) {
     errors.push(`${path}.durable receipts must match accepted command IDs exactly`);
   }
 
   const intentIds = intentRecords.map((intent) => intent?.intentId);
-  if (new Set(intentIds).size !== intentIds.length && !canRetainBaselineDefect) {
+  if (new Set(intentIds).size !== intentIds.length && !canRetainLegacyBaselineDefect) {
     errors.push(`${path}.durable outbox intent IDs must be unique`);
   }
   const expected = acceptedCommands.flatMap((command) =>
-    (STATE_WRITE_MUTATION_CONTRACT[command.kind] ?? []).map((intentKind, index) =>
-      `${command.commandId}:intent:${index}\u0000${command.commandId}\u0000${intentKind}`
+    (durableContract.mutations[command.kind] ?? []).map((intentKind, index) =>
+      durableContract.name === 'legacy'
+        ? `${command.commandId}:intent:${index}\u0000${command.commandId}\u0000${intentKind}`
+        : `${command.commandId}\u0000${intentKind}`
     )
   ).sort();
   const actual = intentRecords.map((intent, index) => {
@@ -795,14 +933,31 @@ function deriveDurableCorrectness(
           'and intentKind fields and reference a raw command',
       );
     }
-    return `${intent?.intentId}\u0000${intent?.commandId}\u0000${intent?.intentKind}`;
+    return durableContract.name === 'legacy'
+      ? `${intent?.intentId}\u0000${intent?.commandId}\u0000${intent?.intentKind}`
+      : `${intent?.commandId}\u0000${intent?.intentKind}`;
   }).sort();
-  if (!sameStringArray(actual, expected) && !canRetainBaselineDefect) {
-    errors.push(`${path}.durable outbox intents do not match the mutation contract`);
+  const expectedWithoutTopology = acceptedCommands
+    .filter((command) => command.kind !== 'topology-source')
+    .flatMap((command) =>
+      (durableContract.mutations[command.kind] ?? []).map((intentKind) =>
+        `${command.commandId}\u0000${intentKind}`
+      )
+    ).sort();
+  const exactTopologyIntentGap = canRetainTopologyDiagnostic &&
+    sameStringArray(actual, expectedWithoutTopology);
+  if (
+    !sameStringArray(actual, expected) &&
+    !canRetainLegacyBaselineDefect && !exactTopologyIntentGap
+  ) {
+    errors.push(
+      `${path}.durable outbox intents do not match the mutation contract ` +
+        `(${durableContract.name} durable contract)`,
+    );
   }
   const effectfulCommandCount =
     acceptedCommands.filter((command) =>
-      (STATE_WRITE_MUTATION_CONTRACT[command.kind]?.length ?? 0) > 0
+      (durableContract.mutations[command.kind]?.length ?? 0) > 0
     )
       .length;
   return {
@@ -885,7 +1040,7 @@ function canDeriveWorkloadSample(sample) {
     isObject(sample.timingsMs);
 }
 
-function deriveWorkloadSummary(samples) {
+function deriveWorkloadSummary(samples, mutationContract) {
   const latencySamples = samples.flatMap((sample) =>
     sample.commands.map((command) => command.latencyMs)
   );
@@ -922,7 +1077,7 @@ function deriveWorkloadSummary(samples) {
         samples.map((sample) =>
           sample.commands.filter((command) =>
             command.status === 'accepted' &&
-            STATE_WRITE_MUTATION_CONTRACT[command.kind].length > 0
+            mutationContract[command.kind].length > 0
           ).length
         ),
       ),
@@ -930,7 +1085,7 @@ function deriveWorkloadSummary(samples) {
         sample.commands.reduce(
           (total, command) =>
             total + (
-              command.status === 'accepted' ? STATE_WRITE_MUTATION_CONTRACT[command.kind].length : 0
+              command.status === 'accepted' ? mutationContract[command.kind].length : 0
             ),
           0,
         )
@@ -1015,9 +1170,10 @@ function validateDerivedSummary(summary, derived, path, errors) {
 }
 
 function derivedWorkloads(artifact) {
+  const contract = durableContractForArtifact(artifact).mutations;
   return new Map(artifact.workloads.map((workload) => [
     workload.name,
-    deriveWorkloadSummary(workload.samples),
+    deriveWorkloadSummary(workload.samples, contract),
   ]));
 }
 

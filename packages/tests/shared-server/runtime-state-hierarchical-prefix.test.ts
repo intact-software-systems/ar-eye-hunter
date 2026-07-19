@@ -67,9 +67,19 @@ const clientSession = (principalId: string, clientInstanceId: string, sessionId:
 const group = (workspaceId: string, groupId: string) => ({
     ...scope(workspaceId),
     groupId,
+    displayName: groupId,
+    kind: 'room',
     status: 'active',
+    joinMode: 'open',
+    metadata: {},
     ownerPrincipalId: 'owner',
     activeMemberCount: 1,
+    snapshotVersion: 1,
+    metadataVersion: 1,
+    rosterVersion: 1,
+    presenceVersion: 0,
+    created: auditStamp,
+    updated: auditStamp,
 }) as never;
 const groupMember = (
     groupId: string,
@@ -81,5 +91,17 @@ const groupMember = (
     principalId,
     role: 'owner',
     status: 'active',
+    joined: auditStamp,
+    updated: auditStamp,
 }) as never;
-const groupSession = (groupId: string, sessionId: string) => ({ ...groupRef(groupId), sessionId, expiresAtEpochMs: Date.now() + 60_000 }) as never;
+const groupSession = (groupId: string, sessionId: string) => ({
+    ...groupRef(groupId),
+    sessionId,
+    principalId: 'alice',
+    generationId: `${sessionId}-generation`,
+    generationVersion: 1,
+    connectedAtEpochMs: 1,
+    lastHeartbeatAtEpochMs: 1,
+    expiresAtEpochMs: 4_102_444_800_000,
+}) as never;
+const auditStamp = { atEpochMs: 1, byServiceId: 'hierarchy-prefix-test' } as const;

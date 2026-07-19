@@ -591,6 +591,223 @@ describe('convergent group and presence state', () => {
         }
     });
 
+    it('rejects canonically keyed incomplete persisted rows at every public read boundary', async () => {
+        const ref = {
+            applicationId: 'incomplete-contract-app',
+            groupId: 'incomplete-contract-group',
+        };
+        const completeGroup: Group = {
+            ...createMutationRead().group!.value,
+            ...ref,
+            workspaceId: undefined,
+            activeMemberCount: 1,
+            ownerPrincipalId: 'alice',
+        };
+        const completeMember: GroupMember = {
+            ...createMutationRead().actorMember!,
+            ...ref,
+            workspaceId: undefined,
+            principalId: 'alice',
+            role: 'owner',
+            status: 'active',
+        };
+        const incompleteGroup = structuredClone(completeGroup) as Record<string, unknown>;
+        delete incompleteGroup.joinMode;
+
+        const groupRuntime = new FakeRuntimeStateRepository();
+        await groupRuntime.upsert(
+            'group-state:groups',
+            groupStateGroupStorageKey(ref),
+            JSON.stringify(incompleteGroup),
+            Number.MAX_SAFE_INTEGER,
+        );
+        const groupRepository = new GroupStateRepository(groupRuntime);
+        for (const read of [
+            () => groupRepository.findGroup(ref),
+            () => groupRepository.findGroupEntry(ref),
+            () => groupRepository.listGroups({ applicationId: ref.applicationId }),
+            () => groupRepository.readSnapshot(ref),
+            () => groupRepository.listSnapshots({ applicationId: ref.applicationId }),
+            () => groupRepository.listSnapshotsPage(
+                { applicationId: ref.applicationId },
+                { limit: 10 },
+            ),
+        ]) {
+            await expect(read()).rejects.toMatchObject({
+                code: 'group-state-repository-invariant-corruption',
+                storageKey: groupStateGroupStorageKey(ref),
+            });
+        }
+
+        const incompleteSession = {
+            ...ref,
+            sessionId: 'incomplete-session',
+            principalId: 'alice',
+            generationVersion: 1,
+            connectedAtEpochMs: 1_000,
+            lastHeartbeatAtEpochMs: 1_000,
+            expiresAtEpochMs: 10_000,
+        };
+        const sessionRuntime = new FakeRuntimeStateRepository();
+        await sessionRuntime.upsert(
+            'group-state:groups',
+            groupStateGroupStorageKey(ref),
+            JSON.stringify(completeGroup),
+            Number.MAX_SAFE_INTEGER,
+        );
+        await sessionRuntime.upsert(
+            'group-state:members',
+            groupStateMemberStorageKey({ ...ref, principalId: 'alice' }),
+            JSON.stringify(completeMember),
+            Number.MAX_SAFE_INTEGER,
+        );
+        const sessionKey = groupStatePresenceSessionStorageKey({
+            ...ref,
+            sessionId: incompleteSession.sessionId,
+        });
+        await sessionRuntime.upsert(
+            'group-state:sessions',
+            sessionKey,
+            JSON.stringify(incompleteSession),
+            Number.MAX_SAFE_INTEGER,
+        );
+        const sessionRepository = new GroupStateRepository(sessionRuntime);
+        for (const read of [
+            () => sessionRepository.findPresenceSession({
+                ...ref,
+                sessionId: incompleteSession.sessionId,
+            }),
+            () => sessionRepository.findPresenceEntry({
+                ...ref,
+                sessionId: incompleteSession.sessionId,
+            }),
+            () => sessionRepository.listPresenceSessions(ref),
+            () => sessionRepository.listPresenceSessionEntries(ref),
+            () => sessionRepository.listAllPresenceSessions(),
+            () => sessionRepository.readSnapshot(ref),
+            () => sessionRepository.listSnapshots({ applicationId: ref.applicationId }),
+            () => sessionRepository.listSnapshotsPage(
+                { applicationId: ref.applicationId },
+                { limit: 10 },
+            ),
+        ]) {
+            await expect(read()).rejects.toMatchObject({
+                code: 'group-state-repository-invariant-corruption',
+                storageKey: sessionKey,
+            });
+        }
+
+        const incompleteChildren = [
+            {
+                namespace: 'group-state:members',
+                key: groupStateMemberStorageKey({ ...ref, principalId: 'alice' }),
+                value: (() => {
+                    const value = structuredClone(completeMember) as Record<string, unknown>;
+                    delete value.status;
+                    return value;
+                })(),
+                reads: (repository: GroupStateRepository) => [
+                    () => repository.findMember({ ...ref, principalId: 'alice' }),
+                    () => repository.findMemberEntry({ ...ref, principalId: 'alice' }),
+                    () => repository.listMembers(ref),
+                    () => repository.listMemberEntries(ref),
+                    () => repository.readSnapshot(ref),
+                    () => repository.listSnapshots({ applicationId: ref.applicationId }),
+                    () => repository.listSnapshotsPage(
+                        { applicationId: ref.applicationId },
+                        { limit: 10 },
+                    ),
+                ],
+            },
+            {
+                namespace: 'group-state:presence-admissions',
+                key: groupStatePresenceAdmissionStorageKey({ ...ref, principalId: 'alice' }),
+                value: {
+                    ...ref,
+                    principalId: 'alice',
+                    admittedSessions: [],
+                },
+                reads: (repository: GroupStateRepository) => [
+                    () => repository.findPresenceAdmissionEntry({
+                        ...ref,
+                        principalId: 'alice',
+                    }),
+                    () => repository.listPresenceAdmissions(ref),
+                    () => repository.listPresenceAdmissionEntries(ref),
+                ],
+            },
+            {
+                namespace: 'group-state:presence-summaries',
+                key: groupStatePresenceSummaryStorageKey(ref),
+                value: {
+                    ...ref,
+                    activePrincipalIds: [],
+                    activeSessionIds: [],
+                    activeSessions: [],
+                    activePrincipalCount: 0,
+                    activeSessionCount: 0,
+                    computedAtEpochMs: 1_000,
+                },
+                reads: (repository: GroupStateRepository) => [
+                    () => repository.findPresenceSummaryEntry(ref),
+                    () => repository.readSnapshot(ref),
+                    () => repository.listSnapshots({ applicationId: ref.applicationId }),
+                    () => repository.listSnapshotsPage(
+                        { applicationId: ref.applicationId },
+                        { limit: 10 },
+                    ),
+                ],
+            },
+        ];
+        for (const testCase of incompleteChildren) {
+            const runtime = new FakeRuntimeStateRepository();
+            await runtime.upsert(
+                'group-state:groups',
+                groupStateGroupStorageKey(ref),
+                JSON.stringify(completeGroup),
+                Number.MAX_SAFE_INTEGER,
+            );
+            await runtime.upsert(
+                testCase.namespace,
+                testCase.key,
+                JSON.stringify(testCase.value),
+                Number.MAX_SAFE_INTEGER,
+            );
+            const repository = new GroupStateRepository(runtime);
+            for (const read of testCase.reads(repository)) {
+                await expect(read()).rejects.toMatchObject({
+                    code: 'group-state-repository-invariant-corruption',
+                    storageKey: testCase.key,
+                });
+            }
+        }
+    });
+
+    it('wraps non-object and invalid-JSON stored rows as typed repository corruption', async () => {
+        const ref = {
+            applicationId: 'malformed-json-app',
+            groupId: 'malformed-json-group',
+        };
+        const key = groupStateGroupStorageKey(ref);
+        for (const [value, read] of [
+            ['null', (repository: GroupStateRepository) => repository.findGroup(ref)],
+            ['{not-json', (repository: GroupStateRepository) =>
+                repository.listGroups({ applicationId: ref.applicationId })],
+        ] as const) {
+            const runtime = new FakeRuntimeStateRepository();
+            await runtime.upsert(
+                'group-state:groups',
+                key,
+                value,
+                Number.MAX_SAFE_INTEGER,
+            );
+            await expect(read(new GroupStateRepository(runtime))).rejects.toMatchObject({
+                code: 'group-state-repository-invariant-corruption',
+                storageKey: key,
+            });
+        }
+    });
+
     it('validates child entry identity before assembling scope snapshot lists', async () => {
         const runtime = new FakeRuntimeStateRepository();
         const repository = new GroupStateRepository(runtime);

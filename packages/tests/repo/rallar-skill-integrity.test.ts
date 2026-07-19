@@ -260,6 +260,15 @@ describe('Rallar repo skill and documentation integrity', () => {
         expectAll(codeWriting, [
             'expected-revision compare-and-set',
             'rerun authorization, policy, capacity, lifecycle, and invariant checks',
+            'complete persisted contract and trusted scope and slot',
+            'physical identity',
+            'filter, order, and cursor columns',
+        ]);
+        const performance = readRepo('.agents/skills/performance-analysis/SKILL.md');
+        expectAll(performance, [
+            'production receipts',
+            'Synthetic post-call evidence cannot',
+            'must not weaken candidate validation',
         ]);
         expectAll(packageCodeStyle, [
             'Do not use optional fields as a compatibility shortcut',

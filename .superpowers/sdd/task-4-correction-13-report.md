@@ -1,5 +1,11 @@
 # Task 4 correction 13 report: migrate reusable performance consumers
 
+> Superseded by correction 14 for final Task 4 acceptance and for claims that
+> durable benchmark evidence was production-derived. Correction 13's reusable
+> consumer compilation, authority composition, savepoint, cleanup, and fanout
+> evidence remains valid; its Resource Inbox receipt/outbox evidence did not
+> prove authoritative transaction atomicity.
+
 ## Status and scope
 
 Status: `DONE`.
