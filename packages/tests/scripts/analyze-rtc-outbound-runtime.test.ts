@@ -48,6 +48,15 @@ function completedEvent(atEpochMs, msgId, startedAtEpochMs) {
 }
 
 describe('RTC outbound runtime artifact analysis', () => {
+  it('rejects an artifact with no completed stream messages', () => {
+    const analysis = analyzeRtcOutboundRuntimeEvents([]);
+
+    expect(analysis.coverage.completedStreamMessages).toBe(0);
+    expect(analysis.evidenceErrors).toEqual([
+      'No completed stream messages are available for outbound runtime analysis.',
+    ]);
+  });
+
   it('matches original enqueue finalization and reports coverage plus drain composition', () => {
     const events = [
       runtimeEvent(120, {

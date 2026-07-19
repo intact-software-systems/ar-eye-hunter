@@ -231,10 +231,11 @@ node scripts/perf/analyze-rtc-outbound-runtime.mjs \
 The JSON contains fleet and per-agent enqueue-finalization timing, correlated
 stream-send timing, drain effect-kind totals, first/retry attempt counts, and
 ready-lateness histograms. Exit status `0` means every completed stream message
-has exactly one eligible original enqueue finalization. Exit status `2` means
-the evidence has missing or ambiguous enqueue finalizations and must not be
-used for a scheduler-direction decision. Keep downloaded artifacts and analyzer
-output under `tmp/perf/`; do not commit generated measurements.
+has at least one completed stream message and every completion has exactly one
+eligible original enqueue finalization. Exit status `2` means the sample is
+empty or the evidence has missing or ambiguous enqueue finalizations, and must
+not be used for a scheduler-direction decision. Keep downloaded artifacts and
+analyzer output under `tmp/perf/`; do not commit generated measurements.
 
 ## RTC Topology Lifetime
 

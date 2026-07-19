@@ -448,7 +448,8 @@ The module must:
    by all four modes;
 6. sum kind counts, attempt counts, and histogram buckets across drains at the
    fleet and per-agent levels; and
-7. emit evidence errors for missing or ambiguous coverage.
+7. emit evidence errors for an empty completion sample or missing/ambiguous
+   coverage.
 
 Implement the pure boundary with explicit zero-valued keys:
 

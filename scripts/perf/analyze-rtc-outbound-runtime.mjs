@@ -212,6 +212,11 @@ export function analyzeRtcOutboundRuntimeEvents(events) {
   );
 
   const evidenceErrors = [];
+  if (completions.length === 0) {
+    evidenceErrors.push(
+      'No completed stream messages are available for outbound runtime analysis.',
+    );
+  }
   if (missingEnqueueFinalizations > 0) {
     evidenceErrors.push(
       missingEnqueueFinalizations +
