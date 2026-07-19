@@ -452,9 +452,11 @@ describe('ALOutboundMessageRuntime', () => {
     it('returns a persisted enqueue without waiting for an unrelated active drain', async () => {
         const outbox = new InMemoryQueueBox(new Map());
         const admissionStore = createMemoryOutboundAdmissionStore();
+        const diagnostics = vi.fn();
         const committedMessageIds: string[] = [];
         const firstGate = createDeferred<void>();
         const runtime = createOutboundRuntime({
+            diagnostics,
             outbox,
             stores: {
                 admissionStore: createFlakyOutboundAdmissionStore(
@@ -520,6 +522,16 @@ describe('ALOutboundMessageRuntime', () => {
         expect(settledBeforeActiveDrain).toBe(true);
         expect(persistedResult.status).toBe('enqueued');
         expect(await reserveOutbox(outbox)).toHaveLength(1);
+        expect(diagnostics.mock.calls.map(([event]) => event).find(event =>
+            event.kind === 'outbound-finalization' &&
+            event.message.msgId === persistedMessage.id.msgId
+        )).toMatchObject({
+            intent: 'enqueue',
+            phase: 'immediate',
+            resultStatus: 'enqueued',
+            mode: 'background-existing-drain',
+            hadActiveDrain: true,
+        });
         runtime.dispose();
     });
 
@@ -548,6 +560,7 @@ describe('ALOutboundMessageRuntime', () => {
             'browser-lock-wait',
             'browser-lock-hold',
             'effect-drain',
+            'outbound-finalization',
         ]));
         expect(diagnostics.mock.calls).toContainEqual([
             expect.objectContaining({
@@ -584,12 +597,31 @@ describe('ALOutboundMessageRuntime', () => {
                 }],
             }),
         ]);
+        expect(diagnostics.mock.calls).toContainEqual([
+            expect.objectContaining({
+                kind: 'outbound-finalization',
+                runtime: 'test-outbound',
+                message: {
+                    msgId: message.id.msgId,
+                    senderId: 'self',
+                    resourceId: 'msg-diagnostics',
+                },
+                intent: 'enqueue',
+                phase: 'immediate',
+                resultStatus: 'sent-immediate',
+                mode: 'awaited-new-drain',
+                hadActiveDrain: false,
+                durationMs: expect.any(Number),
+            }),
+        ]);
         runtime.dispose();
     });
 
     it('returns an outbox entry when enqueue is persistent', async () => {
         const outbox = new InMemoryQueueBox(new Map());
+        const diagnostics = vi.fn();
         const runtime = createOutboundRuntime({
+            diagnostics,
             outbox,
             sendPreparedMessage: async () => Promise.resolve(),
             planOutgoingMessage: () => ({
@@ -610,6 +642,16 @@ describe('ALOutboundMessageRuntime', () => {
             id: {
                 msgId: msg.id.msgId,
             },
+        });
+        expect(diagnostics.mock.calls.map(([event]) => event).find(event =>
+            event.kind === 'outbound-finalization' &&
+            event.message.msgId === msg.id.msgId
+        )).toMatchObject({
+            intent: 'enqueue',
+            phase: 'immediate',
+            resultStatus: 'enqueued',
+            mode: 'awaited-new-drain',
+            hadActiveDrain: false,
         });
         runtime.dispose();
     });
@@ -1229,7 +1271,9 @@ describe('ALOutboundMessageRuntime', () => {
 
     it('persists repair dispatches when the repair planner requests outbox durability', async () => {
         const outbox = new InMemoryQueueBox(new Map());
+        const diagnostics = vi.fn();
         const runtime = createOutboundRuntime({
+            diagnostics,
             outbox,
             sendPreparedMessage: async () => Promise.resolve(),
             planOutgoingMessage: (msg) => ({
@@ -1262,6 +1306,15 @@ describe('ALOutboundMessageRuntime', () => {
         const stored = firstValue(reserved);
         const storedMsg = JSON.parse(stored.resource) as ALMessage;
         expect(storedMsg.id.msgId).toBe(msg.id.msgId);
+        expect(diagnostics.mock.calls.map(([event]) => event).find(event =>
+            event.kind === 'outbound-finalization' &&
+            event.intent === 'repair'
+        )).toMatchObject({
+            phase: 'immediate',
+            resultStatus: 'enqueued',
+            mode: 'deferred',
+        });
+        runtime.dispose();
     });
 
     it('drains committed send effects after a restart when the first runtime crashes before drain', async () => {

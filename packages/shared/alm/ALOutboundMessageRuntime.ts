@@ -33,6 +33,14 @@ import type {
 
 export type ALOutboundDispatchPhase = 'immediate' | 'dequeue';
 
+export type ALOutboundComputeIntent = 'enqueue' | 'dequeue' | 'repair';
+
+export type ALOutboundFinalizationMode =
+    | 'background-existing-drain'
+    | 'awaited-existing-drain'
+    | 'awaited-new-drain'
+    | 'deferred';
+
 export type ALOutboundPreparedSendStatus = 'sent' | 'no-targets' | 'not-ready';
 
 export type ALOutboundPreparedSendResult = Readonly<{
@@ -161,6 +169,16 @@ export type ALOutboundRuntimeDiagnosticsEvent =
     skippedExpiredCount: number;
     messages: readonly ALOutboundRuntimeMessageDiagnostics[];
 }>
+    | Readonly<{
+    kind: 'outbound-finalization';
+    message: ALOutboundRuntimeMessageDiagnostics;
+    intent: ALOutboundComputeIntent;
+    phase: ALOutboundDispatchPhase;
+    resultStatus: ALOutboundEnqueueStatus;
+    mode: ALOutboundFinalizationMode;
+    hadActiveDrain: boolean;
+    durationMs: number;
+}>
     );
 
 type ALOutboundRuntimeDiagnosticsEventInput =
@@ -201,8 +219,6 @@ export type ALOutboundEnqueueResult = Readonly<{
     entries: readonly ResourceEntry[];
     reason?: string;
 }>;
-
-type ALOutboundComputeIntent = 'enqueue' | 'dequeue' | 'repair';
 
 type ALOutboundComputeDependencies = Readonly<{
     toOutboxEntry: (msg: ALMessage) => ResourceEntry;
@@ -389,13 +405,33 @@ export class ALOutboundMessageRuntime<TPrepared> {
             ),
         );
 
-        if (result.committed && !options.deferEffectDrain) {
-            if (result.computed.status === 'enqueued' && this.effectDrainPromise) {
-                // The admission effect is already durable; an active drain owns progress.
+        if (result.committed) {
+            const finalizationStartedAtMs = this.readNowMs();
+            const hadActiveDrain = this.effectDrainPromise !== undefined;
+            let mode: ALOutboundFinalizationMode;
+
+            if (options.deferEffectDrain) {
+                mode = 'deferred';
+            } else if (result.computed.status === 'enqueued' && hadActiveDrain) {
+                mode = 'background-existing-drain';
                 this.requestEffectDrain();
             } else {
+                mode = hadActiveDrain
+                    ? 'awaited-existing-drain'
+                    : 'awaited-new-drain';
                 await this.finalizeCommittedOutbound();
             }
+
+            this.emitDiagnostics({
+                kind: 'outbound-finalization',
+                message: this.toMessageDiagnostics(msg),
+                intent,
+                phase,
+                resultStatus: result.computed.status,
+                mode,
+                hadActiveDrain,
+                durationMs: this.elapsedSince(finalizationStartedAtMs),
+            });
         }
 
         return result.computed;
