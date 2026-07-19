@@ -3,6 +3,8 @@
 ## Scope and architecture
 
 - Base: `e78881ef71b8cc0ab051b75405ef63458b6a7b05`.
+- Current clean implementation commit:
+  `4ea4588f5fee8da861b038143f5efb67873d6d8c`.
 - Durable config and temporary override writes now use entry-aware conditional
   insert/CAS/delete APIs. No topology config mutation uses locks,
   unconditional overwrite, compensating restore, synchronous recompute, or
@@ -17,14 +19,25 @@
   token; a changed bracket or transaction CAS forces a full reread. This
   serializes cross-target decisions without locks and prevents independently
   valid config/override writes from committing an invalid combined result.
-- Legacy config and override rows, including already-expired overrides, are
-  decoded through raw including-expired repository reads and optimistically
-  backfilled into the retained generation ledger with the same bounded
-  `[0, 2, 8]` CAS policy. API startup holds periodic runtime-state eviction
-  behind the all-scope backfill and remains fail-closed if backfill fails.
-  Reusable service access coalesces the same backfill once per group before
-  any public config-pair or override read, so lazy expiry cannot delete the
-  only legacy version source first.
+- Config, override, mutation-record, target-generation, and
+  invariant-generation records use the canonical group-state storage-key
+  codec. An absent workspace is distinct from the literal `_`, delimiters,
+  percent-encoded text, and Unicode lookalikes. Direct, list, and page reads
+  bind the physical key, canonical decoded key, stored value identity/child,
+  and trusted requested slot; corruption raises the typed repository invariant
+  error. Wrong-scope expired overrides are rejected before lazy expiry can
+  delete them.
+- Older ambiguous config/override source keys are moved only by the explicit
+  offline `migrateLegacyGroupTopologyConfigKeys` operation after old writers
+  are stopped. It re-reads in an optimistic transaction, value-verifies any
+  canonical destination, conditionally inserts when absent, deletes the source
+  by its observed revision, rolls back on conflict, and uses bounded
+  `[0, 2, 8]` retry without row/table/advisory locks. Ordinary per-group and
+  all-scope generation readiness never migrate or permanently dual-read these
+  keys. They fail closed until the operator migration is complete; API startup
+  therefore keeps periodic runtime-state eviction disabled. Once keys are
+  canonical, raw including-expired reads preserve config and already-expired
+  override version floors in the generation ledger before eviction.
 - `group-topology-management-service.ts` owns the visible three-attempt
   `[0, 2, 8]` retry loop. `readTopologyConfigMutation` reads outside a
   transaction; pure compute/validate receive explicit facts; only
@@ -77,6 +90,13 @@ governance still omitted topology receipts/outbox evidence.
 The API route RED command exited 1 with 5 passes and 2 failures because mutation
 routes still forwarded/defaulted `reconfigure` and `publish`.
 
+The mandatory optional-workspace correction first produced 5 failures with 17
+passes, then an expanded repository matrix produced 8 failures with 17 passes.
+Those failures showed literal `_` aliasing absent workspace, absent-workspace
+validation rejection, inconsistent direct/list/page decoding, missing legacy
+source movement, an absent source being claimed for `_`, unchecked destination
+conflict/duplicate handling, and missing transactional rollback proof.
+
 Later adversarial RED tests independently proved and then fixed:
 
 - replay pairing an old receipt with a newer current row;
@@ -118,7 +138,13 @@ Later adversarial RED tests independently proved and then fixed:
   hash while changing `putConfig` to `putOverride`, selecting the wrong replay
   reconstruction branch;
 - API startup wiring that was only source-order checked rather than proving
-  eviction stays uninitialized while backfill is pending and after rejection.
+  eviction stays uninitialized while backfill is pending and after rejection;
+- topology records inheriting the old ambiguous optional-workspace encoder,
+  plus direct reads trusting the requested lookup key without binding the
+  physical key and stored scope/child returned by the repository;
+- an expired wrong-scope override being eligible for lazy deletion before its
+  identity was rejected, and startup/readiness implicitly migrating legacy
+  keys instead of requiring an explicit offline operator action.
 
 ## Implemented behavior
 
@@ -138,11 +164,13 @@ Later adversarial RED tests independently proved and then fixed:
   transaction has closed.
 - Stored update time is monotonic under clock skew. Override expiry is resolved
   once from stable facts and stale expiry cleanup remains revision guarded.
-- Explicit generation backfill preserves legacy config and expired override
-  version floors without rewriting/deleting source rows, never downgrades a
-  concurrently advanced generation, and uses no row/table/advisory locks.
-  Deterministic API startup tests prove eviction starts only after all-scope
-  backfill success and never starts after backfill failure.
+- Explicit offline migration safely canonicalizes value-verified ambiguous
+  source keys, while ordinary generation backfill only accepts canonical
+  sources. Backfill preserves config and expired-override version floors,
+  never downgrades a concurrently advanced generation, and uses no
+  row/table/advisory locks. Deterministic API startup tests prove eviction
+  starts only after all-scope backfill success and never starts after backfill
+  failure or a pending legacy-key migration.
 - Ordinary effective reads and explicit reconfigure use the same bounded
   invariant-token bracket, so a changed config/override pair is reread rather
   than exposing a combination that never existed.
@@ -170,7 +198,10 @@ Later adversarial RED tests independently proved and then fixed:
 
 ```text
 npx vitest run packages/tests/shared-server/group-topology-config-repository.test.ts packages/tests/shared-server/group-topology-management-service.test.ts packages/tests/shared-server/group-topology-config-service.test.ts packages/tests/shared-server/state-mutation-outbox.test.ts packages/tests/shared-web/api-workflows.test.ts packages/tests/shared-server/state-write-performance-harness.test.ts
-6 files passed; 186 tests passed
+6 files passed; 200 tests passed
+
+npx vitest run packages/tests/shared-server/group-topology-config-repository.test.ts
+1 file passed; 31 tests passed
 
 npx vitest run packages/tests/shared-server/group-topology-management-service.test.ts -t "rejects a compact replay receipt whose operation differs"
 1 passed; 36 skipped
@@ -192,6 +223,9 @@ all root/workspace TypeScript checks passed
 
 git diff --check
 passed
+
+git diff --unified=0 -- packages/shared-server/rallar-system packages/tests/shared-server/group-topology-config-repository.test.ts | rg '^\+.*(lockKey|FOR UPDATE|advisory|withLock)'
+no matches
 ```
 
 The PGlite and live PostgreSQL proofs execute the production management
@@ -212,7 +246,7 @@ durable and no topology publisher runs in the mutation call.
 ### Production performance evidence
 
 The full PostgreSQL producer was rerun from the clean Task 5 implementation
-commit `85c33bde940108567406fcc378e84bc274e52d3e`:
+commit `4ea4588f5fee8da861b038143f5efb67873d6d8c`:
 
 ```text
 npm run perf:api-v1:state-write -- --backend=postgres --warmup=1 --runs=3 --concurrency=10 --out=tmp/perf/api-v1-state-write-task5.json
@@ -220,25 +254,27 @@ npm run perf:api-v1:state-write -- --backend=postgres --warmup=1 --runs=3 --conc
 
 The resulting canonical artifact remains ignored and uncommitted at
 `tmp/perf/api-v1-state-write-task5.json`. Its embedded `gitCommit` is exactly
-`85c33bde940108567406fcc378e84bc274e52d3e` and its SHA-256 is
-`08b458914932ff380879659328330e06653619a1826acf77437818c77753ffc6`.
+`4ea4588f5fee8da861b038143f5efb67873d6d8c` and its SHA-256 is
+`4ec05ba7f9b2bea5765092aca3dcb64da525cddeeb2052e45904160fa8f16c58`.
 
 ```text
 validateStateWriteArtifact(finalArtifact)
 []
 
 uncontended: 2100 accepted/receipts; 3900 required/actual intents; DBW []
-shared:      1919 accepted/receipts; 3595 required/actual intents; DBW []
-hot:          992 accepted/receipts; 1884 required/actual intents; DBW []
+shared:      1964 accepted/receipts; 3678 required/actual intents; DBW []
+hot:          997 accepted/receipts; 1894 required/actual intents; DBW []
 ```
 
 The immutable baseline remains byte-identical at SHA-256
 `ba502493d88d08272a14c66f8ac81575c273cba8c8c654800dad8a9ddfdb81a7`.
-Standalone Task 5 schema/correctness validation passes. Normal comparison of
-the unchanged canonical artifact returns this governance error before the
-performance gates execute:
+It also validates to `[]`. Standalone Task 5 schema/correctness validation
+passes. Normal comparison of the unchanged canonical artifact returns this
+governance error before the performance gates execute:
 
 ```text
+node scripts/perf/compare-api-v1-state-write-results.mjs tmp/perf/api-v1-state-write-baseline.json tmp/perf/api-v1-state-write-task5.json
+exit 1
 candidate must declare presenceSplitFromGroupAggregate=true with task10-post-remediation-candidate governance and evidence
 ```
 
@@ -246,25 +282,28 @@ That early return is not evidence that governance is the only failing gate. To
 audit every gate without mutating either artifact, the implementer cloned the
 candidate in memory and changed only the clone's governed feature label and
 evidence. The clone validated to `[]`; the canonical Task 5 artifact remained
-byte-identical and was never relabeled. The fresh clean-commit audit reported
-exactly these nine interim failures:
+byte-identical at
+`4ec05ba7f9b2bea5765092aca3dcb64da525cddeeb2052e45904160fa8f16c58`
+before and after the comparison and was never relabeled. The fresh clean-commit
+audit reported exactly these ten interim failures:
 
 ```text
-shared throughput regressed: baseline=752.2423201768095, candidate=631.2129021227651
-hot throughput regressed: baseline=295.1851420383843, candidate=291.31111733671145
+shared throughput regressed: baseline=752.2423201768095, candidate=629.5829957636627
+hot throughput regressed: baseline=295.1851420383843, candidate=294.6852212442774
 shared throughput must improve after presence is split from the group aggregate
 uncontended median sql.statements increased without a recorded reason: baseline=11200, candidate=12900
 uncontended median sql.rowsRead increased without a recorded reason: baseline=5400, candidate=7900
-shared median sql.statements increased without a recorded reason: baseline=11352, candidate=13568
-hot median sql.statements increased without a recorded reason: baseline=11536, candidate=12060
-shared retry exhaustion must remain zero; received 181
-hot retry exhaustion exceeded baseline: baseline=0, candidate=1108
+shared median sql.statements increased without a recorded reason: baseline=11352, candidate=14061
+shared median sql.rowsRead increased without a recorded reason: baseline=27290, candidate=28365
+hot median sql.statements increased without a recorded reason: baseline=11536, candidate=12175
+shared retry exhaustion must remain zero; received 136
+hot retry exhaustion exceeded baseline: baseline=0, candidate=1103
 ```
 
-The audit did not report an uncontended p95/p99 latency regression, shared
-rows-read regression, serialized-result-byte regression, or
-transaction-duration regression. The list above is the complete comparator
-output, including every reported throughput, SQL, latency, and retry gate.
+The audit did not report an uncontended p95/p99 latency regression,
+serialized-result-byte regression, or transaction-duration regression. The
+list above is the complete comparator output, including every reported
+throughput, SQL, latency, and retry gate.
 Task 5 therefore claims correctness evidence only, not performance acceptance.
 Later remediation tasks must address the measured contention/resource
 regressions, and Task 10 owns the governed final candidate and comparator
@@ -297,10 +336,11 @@ acceptance.
   the compact receipt. Three mandatory nullable replay scalars add a small
   fixed receipt cost while preserving the full accepted PUT response without
   rereading mutable current state or retaining the full accepted payload.
-- API startup delays generic runtime-state eviction until the all-scope legacy
-  generation backfill succeeds. A corrupt legacy topology row therefore keeps
-  eviction fail-closed and requires operator correction instead of risking
-  silent version loss.
+- API startup delays generic runtime-state eviction until strict all-scope
+  generation backfill succeeds. A pending ambiguous legacy key or corrupt
+  topology row therefore keeps eviction fail-closed. Operators must stop old
+  writers and run the explicit migration before restart instead of relying on
+  startup or first access to move keys and risk silent version loss.
 - Requests without `requestId` return a receipt but do not persist an immutable
   request record; effectful writes always persist the RTC recompute outbox.
 - The Task 5 performance artifact is an interim correctness/evidence sample.
