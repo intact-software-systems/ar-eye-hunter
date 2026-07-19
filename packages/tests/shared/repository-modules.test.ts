@@ -494,7 +494,7 @@ describe('repository modules', () => {
         expect(findOverlayById(first.overlayId)).toBeUndefined();
     });
 
-    it('prefers authoritative topology within the same group state revision', () => {
+    it('retains authoritative topology across fallback revisions', () => {
         const authoritative = {
             provenance: 'topology-snapshot',
             overlayId: 'overlay-1',
@@ -530,8 +530,16 @@ describe('repository modules', () => {
             overlayVersion: 31,
         };
         setOverlayById(nextRevisionFallback.overlayId, nextRevisionFallback);
+        expect(findOverlayById(authoritative.overlayId)).toEqual(authoritative);
+
+        const nextAuthoritative = {
+            ...authoritative,
+            sourceGroupStateRevision: 31,
+            overlayVersion: 17,
+        };
+        setOverlayById(nextAuthoritative.overlayId, nextAuthoritative);
         expect(findOverlayById(authoritative.overlayId)).toEqual(
-            nextRevisionFallback,
+            nextAuthoritative,
         );
     });
 

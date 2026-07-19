@@ -19,7 +19,7 @@ processing, rather than in the sender queue or TURN candidate gathering.
 
 ## Invariant
 
-Overlay selection is causal in this order:
+The initial selection rule was causal in this order:
 
 1. A higher `sourceGroupStateRevision` wins, so a fallback for newly observed
    membership may provisionally replace an authoritative topology for older
@@ -32,6 +32,29 @@ The rule is about provenance, not topology kind. An authoritative star must
 also beat a fallback star, and a future authoritative topology-kind change must
 not be constrained by a `tree > star` shortcut.
 
+## Iteration 1 evidence and revised invariant
+
+Run `29681076001` confirmed that equal-revision authority precedence worked,
+but also showed that a newer fallback could keep the authoritative stream from
+catching up. On controller-13, fallback revision 20 displaced authoritative
+revision 19; fallback revision 21 then arrived before authoritative revision
+20. Churn improved from 657 peer creations and 210 timeouts to 485 creations
+and 32 timeouts, but remained far above the approximately 28 directed peer
+relationships needed for a 15-node tree.
+
+The revised cross-provenance rule is therefore:
+
+1. A topology snapshot always wins over a group fallback once accepted,
+   independent of group revision.
+2. Within the same provenance, higher group state revision wins.
+3. Within the same provenance and group revision, higher overlay version wins.
+
+Before any authoritative snapshot has arrived, fallbacks still advance normally
+and provide startup connectivity. After authority is established, clients keep
+the last authoritative topology until a newer authoritative snapshot arrives.
+This may temporarily omit a newly joined peer, but avoids replacing a bounded
+tree with a full mesh during rapid membership convergence.
+
 ## Contract change
 
 Add mandatory `provenance` to the browser-local `OverlayInfo` contract:
@@ -39,10 +62,10 @@ Add mandatory `provenance` to the browser-local `OverlayInfo` contract:
 - `group-fallback` for overlays synthesized from group snapshots;
 - `topology-snapshot` for overlays projected from server topology snapshots.
 
-The overlay repository comparator will include a provenance rank between group
-state revision and overlay version. All in-repository constructors and fixtures
-will state provenance explicitly; no persisted or wire topology snapshot
-contract changes.
+The overlay repository comparator gives provenance the highest precedence, then
+orders within each provenance by group state revision and overlay version. All
+in-repository constructors and fixtures state provenance explicitly; no
+persisted or wire topology snapshot contract changes.
 
 ## Iterative verification
 

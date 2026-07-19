@@ -253,12 +253,12 @@ export function compareOverlayInfoTuple(
         'sourceGroupStateRevision' | 'provenance' | 'overlayVersion'
     >,
 ): number {
-    if (left.sourceGroupStateRevision !== right.sourceGroupStateRevision) {
-        return left.sourceGroupStateRevision - right.sourceGroupStateRevision;
-    }
     if (left.provenance !== right.provenance) {
         return overlayProvenanceRank(left.provenance) -
             overlayProvenanceRank(right.provenance);
+    }
+    if (left.sourceGroupStateRevision !== right.sourceGroupStateRevision) {
+        return left.sourceGroupStateRevision - right.sourceGroupStateRevision;
     }
     return left.overlayVersion - right.overlayVersion;
 }
