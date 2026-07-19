@@ -5,7 +5,7 @@ import {
 } from '@shared/webrtc/RtcSignalingTrace.ts';
 
 export type RtcSignalingBoundaryName =
-    | 'enqueueToSend'
+    | 'createdToSend'
     | 'outboxToServer'
     | 'serverProcessing'
     | 'serverToInbox'
@@ -58,7 +58,7 @@ const SIGNAL_TYPES: readonly RtcSignalType[] = [
 ];
 
 const BOUNDARIES: readonly RtcSignalingBoundaryName[] = [
-    'enqueueToSend',
+    'createdToSend',
     'outboxToServer',
     'serverProcessing',
     'serverToInbox',
@@ -68,6 +68,7 @@ const BOUNDARIES: readonly RtcSignalingBoundaryName[] = [
 
 type CorrelatedMessage = Readonly<{
     signalType: RtcSignalType;
+    messageCreatedAtEpochMs: number;
     stages: ReadonlyMap<RtcSignalingTraceStage, RtcSignalingTraceEvent>;
     serverReceivedAtEpochMs?: number;
     serverForwardedAtEpochMs?: number;
@@ -212,6 +213,7 @@ function correlateEvents(
         const serverForwardedAtEpochMs = readServerForwardedAt(stages);
         correlated.set(messageId, {
             signalType,
+            messageCreatedAtEpochMs: ordered[0].messageCreatedAtEpochMs,
             stages,
             serverReceivedAtEpochMs,
             serverForwardedAtEpochMs,
@@ -245,11 +247,15 @@ function calculateDurations(
     message: CorrelatedMessage,
 ): Map<RtcSignalingBoundaryName, number> {
     const result = new Map<RtcSignalingBoundaryName, number>();
-    const enqueue = message.stages.get('client-outbox-enqueued')?.atEpochMs;
     const send = message.stages.get('client-outbox-sent')?.atEpochMs;
     const inbox = message.stages.get('client-inbox-received')?.atEpochMs;
     const dispatch = message.stages.get('rtc-dispatched')?.atEpochMs;
-    addDuration(result, 'enqueueToSend', enqueue, send);
+    addDuration(
+        result,
+        'createdToSend',
+        message.messageCreatedAtEpochMs,
+        send,
+    );
     addDuration(result, 'outboxToServer', send, message.serverReceivedAtEpochMs);
     addDuration(
         result,
@@ -264,7 +270,12 @@ function calculateDurations(
         inbox,
     );
     addDuration(result, 'inboxToRtc', inbox, dispatch);
-    addDuration(result, 'endToEnd', enqueue, dispatch);
+    addDuration(
+        result,
+        'endToEnd',
+        message.messageCreatedAtEpochMs,
+        dispatch,
+    );
     return result;
 }
 
@@ -315,12 +326,12 @@ function renderRtcSignalingTraceMarkdown(
     analysis: Omit<RtcSignalingTraceAnalysis, 'markdown'>,
 ): string {
     const labels: Record<RtcSignalingBoundaryName, string> = {
-        enqueueToSend: 'outbox-enqueue → outbox-send',
+        createdToSend: 'message-create → outbox-send',
         outboxToServer: 'outbox-send → server-receive',
         serverProcessing: 'server-receive → server-forward',
         serverToInbox: 'server-forward → target-inbox',
         inboxToRtc: 'target-inbox → RTC-dispatch',
-        endToEnd: 'outbox-enqueue → RTC-dispatch',
+        endToEnd: 'message-create → RTC-dispatch',
     };
     const rows = BOUNDARIES.map((boundary) => {
         const summary = analysis.boundaries[boundary];

@@ -44,6 +44,23 @@ describe('RTC signaling trace analysis', () => {
         expect(analysis.events).toBe(0);
         expect(analysis.warnings).toHaveLength(2);
     });
+
+    it('uses immutable message creation time when send precedes enqueue return', () => {
+        const rows = [
+            event('immediate-send', 'client-outbox-sent', 910, 'Offer'),
+            event('immediate-send', 'client-outbox-enqueued', 920, 'Offer'),
+        ];
+
+        const analysis = analyzeRtcSignalingTraceLogs(rows.join('\n'));
+
+        expect(analysis.boundaries.createdToSend).toMatchObject({
+            count: 1,
+            p50Ms: 10,
+            p95Ms: 10,
+            maxMs: 10,
+        });
+        expect(analysis.warnings).toEqual([]);
+    });
 });
 
 function event(
