@@ -617,6 +617,60 @@ describe('ALOutboundMessageRuntime', () => {
         runtime.dispose();
     });
 
+    it('reports effect kind, attempt, outcome, and ready lateness', async () => {
+        vi.useFakeTimers();
+        let nowMs = 1_000;
+        let attempts = 0;
+        const diagnostics = vi.fn();
+        const runtime = createOutboundRuntime({
+            diagnostics,
+            nowMs: () => nowMs,
+            sendPreparedMessage: async () => {
+                attempts += 1;
+                return attempts === 1
+                    ? { status: 'not-ready' as const, reason: 'lane unavailable' }
+                    : { status: 'sent' as const };
+            },
+            planOutgoingMessage: () => ({
+                persist: false,
+                preparedMessages: [{ kind: 'send' }],
+            }),
+        });
+
+        await runtime.enqueueIfAbsent(createOutboundMessage('msg-composition'));
+        nowMs = 1_300;
+        await vi.advanceTimersByTimeAsync(50);
+        expect(attempts).toBe(2);
+
+        const drains = diagnostics.mock.calls
+            .map(([event]) => event)
+            .filter(event => event.kind === 'effect-drain' && event.claimedCount > 0);
+        expect(drains).toHaveLength(2);
+        expect(drains[0]).toMatchObject({
+            claimedByKind: {
+                'send-prepared': 1,
+                'enqueue-outbox': 0,
+                'fallback-dispatch': 0,
+                'ack-timeout': 0,
+                'repair-hint': 0,
+                'nack-retry': 0,
+            },
+            completedByKind: expect.objectContaining({ 'send-prepared': 0 }),
+            rescheduledByKind: expect.objectContaining({ 'send-prepared': 1 }),
+            claimedFirstAttemptCount: 1,
+            claimedRetryAttemptCount: 0,
+            firstAttemptReadyLateness: expect.objectContaining({ le0Ms: 1 }),
+        });
+        expect(drains[1]).toMatchObject({
+            completedByKind: expect.objectContaining({ 'send-prepared': 1 }),
+            rescheduledByKind: expect.objectContaining({ 'send-prepared': 0 }),
+            claimedFirstAttemptCount: 0,
+            claimedRetryAttemptCount: 1,
+            retryAttemptReadyLateness: expect.objectContaining({ le250Ms: 1 }),
+        });
+        runtime.dispose();
+    });
+
     it('returns an outbox entry when enqueue is persistent', async () => {
         const outbox = new InMemoryQueueBox(new Map());
         const diagnostics = vi.fn();

@@ -24,6 +24,13 @@ import {
     trackOutboundPendingAckSnapshot,
 } from './ALOutboundAdmissionStore.ts';
 import { resolveExplicitOutboundMessageExpireAtMs } from './ALMessageExpiry.ts';
+import {
+    createOutboundEffectDrainAccumulator,
+    type ALOutboundEffectDrainComposition,
+    recordOutboundEffectClaim,
+    recordOutboundEffectOutcome,
+    snapshotOutboundEffectDrainComposition,
+} from './ALOutboundRuntimeDiagnostics.ts';
 import type {
     ALOutboundPendingAckSnapshot,
     ALOutboundRepairAttemptSnapshot,
@@ -159,7 +166,7 @@ export type ALOutboundRuntimeDiagnosticsEvent =
     available: boolean;
     durationMs: number;
 }>
-    | Readonly<{
+    | (Readonly<{
     kind: 'effect-drain';
     workerId: string;
     durationMs: number;
@@ -168,7 +175,7 @@ export type ALOutboundRuntimeDiagnosticsEvent =
     rescheduledCount: number;
     skippedExpiredCount: number;
     messages: readonly ALOutboundRuntimeMessageDiagnostics[];
-}>
+}> & ALOutboundEffectDrainComposition)
     | Readonly<{
     kind: 'outbound-finalization';
     message: ALOutboundRuntimeMessageDiagnostics;
@@ -760,6 +767,9 @@ export class ALOutboundMessageRuntime<TPrepared> {
         let completedCount = 0;
         let rescheduledCount = 0;
         let skippedExpiredCount = 0;
+        const effectComposition = this.input.diagnostics
+            ? createOutboundEffectDrainAccumulator()
+            : undefined;
         const messagesById = new Map<
             string,
             ALOutboundRuntimeMessageDiagnostics
@@ -770,11 +780,12 @@ export class ALOutboundMessageRuntime<TPrepared> {
                     break;
                 }
 
+                const claimStartedAtMs = this.readNowMs();
                 const claimed = await this.admissionStore.claimReadyEffects<TPrepared>(
                     this.effectWorkerId,
                     ALOutboundMessageRuntime.MAX_EFFECT_BATCH,
                     ALOutboundMessageRuntime.EFFECT_LEASE_MS,
-                    this.readNowMs(),
+                    claimStartedAtMs,
                 );
                 if (claimed.length === 0) {
                     break;
@@ -784,6 +795,13 @@ export class ALOutboundMessageRuntime<TPrepared> {
                 const settlements: ALOutboundEffectSettlement[] = [];
 
                 for (const effect of claimed) {
+                    if (effectComposition) {
+                        recordOutboundEffectClaim(
+                            effectComposition,
+                            effect,
+                            claimStartedAtMs,
+                        );
+                    }
                     if (this.disposed) {
                         break;
                     }
@@ -839,6 +857,19 @@ export class ALOutboundMessageRuntime<TPrepared> {
                     claimed,
                     settlements,
                 );
+                const effectsById = new Map(
+                    claimed.map(effect => [effect.effectId, effect]),
+                );
+                for (const settlement of settled) {
+                    const effect = effectsById.get(settlement.effectId);
+                    if (effect && effectComposition) {
+                        recordOutboundEffectOutcome(
+                            effectComposition,
+                            effect,
+                            settlement.status,
+                        );
+                    }
+                }
                 rescheduledInBatch ||= settled.some(
                     settlement => settlement.status === 'rescheduled',
                 );
@@ -864,16 +895,19 @@ export class ALOutboundMessageRuntime<TPrepared> {
             }
         } finally {
             this.runningEffectDrain = false;
-            this.emitDiagnostics({
-                kind: 'effect-drain',
-                workerId: this.effectWorkerId,
-                durationMs: this.elapsedSince(startedAtMs),
-                claimedCount,
-                completedCount,
-                rescheduledCount,
-                skippedExpiredCount,
-                messages: [...messagesById.values()],
-            });
+            if (effectComposition) {
+                this.emitDiagnostics({
+                    kind: 'effect-drain',
+                    workerId: this.effectWorkerId,
+                    durationMs: this.elapsedSince(startedAtMs),
+                    claimedCount,
+                    completedCount,
+                    rescheduledCount,
+                    skippedExpiredCount,
+                    messages: [...messagesById.values()],
+                    ...snapshotOutboundEffectDrainComposition(effectComposition),
+                });
+            }
         }
     }
 
