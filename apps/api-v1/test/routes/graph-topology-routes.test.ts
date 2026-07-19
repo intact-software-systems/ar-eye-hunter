@@ -155,8 +155,6 @@ Deno.test('topology writes require group manager or platform admin auth', async 
     config: { topologyKind: 'tree' },
     updatedByPrincipalId: 'owner',
     requestId: 'idem-1',
-    reconfigure: true,
-    publish: true,
   });
 
   const adminCalls: unknown[] = [];
@@ -186,7 +184,7 @@ Deno.test('topology writes require group manager or platform admin auth', async 
   );
 });
 
-Deno.test('topology override, delete, and reconfigure routes forward request options', async () => {
+Deno.test('topology mutations return after commit while explicit reconfigure forwards options', async () => {
   const calls: unknown[] = [];
   const app = createRouteApp({
     group: createGroupSnapshot('room-1', ['owner']),
@@ -232,7 +230,7 @@ Deno.test('topology override, delete, and reconfigure routes forward request opt
   );
   assert.equal(
     (await app.request(
-      '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1/topology/config?reconfigure=false',
+      '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1/topology/config',
       {
         method: 'DELETE',
         headers: { authorization: 'Bearer token' },
@@ -273,8 +271,6 @@ Deno.test('topology override, delete, and reconfigure routes forward request opt
         expiresAtEpochMs: undefined,
         updatedByPrincipalId: 'owner',
         requestId: 'override-idem',
-        reconfigure: true,
-        publish: true,
       },
     },
     {
@@ -283,8 +279,6 @@ Deno.test('topology override, delete, and reconfigure routes forward request opt
         groupRef: { ...TEST_SCOPE, groupId: 'room-1' },
         updatedByPrincipalId: 'owner',
         requestId: undefined,
-        reconfigure: false,
-        publish: true,
       },
     },
     {
@@ -293,8 +287,6 @@ Deno.test('topology override, delete, and reconfigure routes forward request opt
         groupRef: { ...TEST_SCOPE, groupId: 'room-1' },
         updatedByPrincipalId: 'owner',
         requestId: undefined,
-        reconfigure: true,
-        publish: true,
       },
     },
     {

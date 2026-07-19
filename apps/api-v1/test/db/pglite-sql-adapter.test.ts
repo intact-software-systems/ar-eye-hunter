@@ -10,7 +10,11 @@ import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-stat
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
+import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/repositories/GroupTopologyConfigRepository.ts';
+import { StateMutationOutboxRepository } from '@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
+import { GroupTopologyManagementService } from '@shared-server/rallar-system/services/group-topology-management-service.ts';
+import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
 import {
   groupStateGroupStorageKey,
   groupStateMemberStorageKey,
@@ -25,7 +29,7 @@ import {
 import { groupEventWorkspaceKey } from '@shared-server/postgres/rallar-system/group-event-workspace-key.ts';
 import { createGroupStateEventRepository } from '@shared-server/postgres/rallar-system/createStateRepositories.ts';
 import type { ClientEvent } from '@shared/api/client-types.ts';
-import type { Group, GroupEvent, GroupRef } from '@shared/api/group-types.ts';
+import type { Group, GroupEvent, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import {
   RALLAR_CRDT_OPERATION_VERSION,
   RALLAR_CRDT_PROTOCOL_VERSION,
@@ -157,6 +161,72 @@ Deno.test('PSqlRuntimeStateRepository runs against PGlite SQL adapter', async ()
     await repository.upsert('runtime-smoke', 'expired', 'expired', PAST_MS);
     assert.equal(await repository.deleteExpired('runtime-smoke'), 1);
     assert.equal(await repository.findEntry('runtime-smoke', 'expired'), undefined);
+  });
+});
+
+Deno.test('PGlite topology config mutations converge concurrent CAS transactions with receipts and outboxes', async () => {
+  await withPGliteSql(async (sql) => {
+    const runtime = new PSqlRuntimeStateRepository(sql);
+    const repository = new GroupTopologyConfigRepository(runtime);
+    const groupRef = {
+      applicationId: 'pglite-topology',
+      workspaceId: 'concurrency',
+      groupId: 'room',
+    };
+    const snapshot = topologyGroupSnapshot(groupRef);
+    const service = () => new GroupTopologyManagementService({
+      findGroupSnapshotByRef: () => snapshot,
+      findAuthoritativeGroupSnapshotByRef: () => snapshot,
+      configRepository: repository,
+      topologyService: new RallarRtcTopologyService(),
+      sleep: () => Promise.resolve(),
+    });
+
+    const results = await Promise.all([
+      service().putConfig({
+        groupRef,
+        config: { topologyKind: 'tree' },
+        updatedByPrincipalId: 'owner',
+        requestId: 'pglite-topology-a',
+      }),
+      service().putConfig({
+        groupRef,
+        config: { topologyKind: 'mesh' },
+        updatedByPrincipalId: 'owner',
+        requestId: 'pglite-topology-b',
+      }),
+    ]);
+
+    assert.deepEqual(results.map(({ config }) => config.version).sort(), [1, 2]);
+    assert.deepEqual(
+      results.map(({ receipt }) => receipt.acceptedVersion).sort(),
+      [1, 2],
+    );
+    assert.ok(await repository.findMutationRecord(groupRef, 'pglite-topology-a'));
+    assert.ok(await repository.findMutationRecord(groupRef, 'pglite-topology-b'));
+    const generation = await repository.findGenerationEntry(groupRef, 'config');
+    assert.deepEqual(generation?.value, { groupRef, target: 'config', version: 2 });
+    assert.equal(generation?.entry.revision, 1);
+    const invariantGeneration = await repository.findInvariantGenerationEntry(groupRef);
+    assert.deepEqual(invariantGeneration?.value, { groupRef, version: 2 });
+    assert.equal(
+      invariantGeneration?.entry.key,
+      repository.invariantGenerationKey(groupRef),
+    );
+    assert.equal(invariantGeneration?.entry.revision, 1);
+    const outbox = new StateMutationOutboxRepository(runtime);
+    const pending = await outbox.listPendingPage({ limit: 10 });
+    assert.equal(pending.records.length, 2);
+    assert.ok(pending.records.every(({ record }) =>
+      record.effects.length === 1 && record.effects[0] === 'rtc-topology-recompute'
+    ));
+    const exactRecords = await Promise.all(
+      results.map(({ receipt }) => outbox.find(receipt.outboxId!)),
+    );
+    assert.deepEqual(
+      exactRecords.map((stored) => stored?.record.commandId).sort(),
+      ['pglite-topology-a', 'pglite-topology-b'],
+    );
   });
 });
 
@@ -1286,6 +1356,28 @@ Deno.test('PSqlCrdtLogRepository runs against PGlite SQL adapter', async () => {
     );
   });
 });
+
+function topologyGroupSnapshot(groupRef: GroupRef): GroupSnapshot {
+  return {
+    stateRevision: 1,
+    causalRevision: { groupRevision: 1, presenceRevision: 0 },
+    group: {
+      ...groupFixture(groupRef, 'Topology room'),
+      ownerPrincipalId: 'owner',
+    },
+    members: [{
+      ...groupRef,
+      principalId: 'owner',
+      role: 'owner',
+      status: 'active',
+      joined: { atEpochMs: 1, byPrincipalId: 'owner' },
+      updated: { atEpochMs: 1, byPrincipalId: 'owner' },
+    }],
+    activeSessions: [],
+    memberCount: 1,
+    onlineMemberCount: 0,
+  };
+}
 
 async function withPGliteSql(
   fn: (sql: PGliteSql) => Promise<void>,

@@ -48,6 +48,19 @@ describe('API-v1 state-write performance artifact contract', () => {
     expect(source).not.toContain('STATE_WRITE_BENCH_OUTBOX');
   });
 
+  it('governs the current producer as complete Task 5 production evidence', () => {
+    const source = readFileSync(
+      new URL('../../../scripts/perf/api-v1-state-write-concurrency-bench.ts', import.meta.url),
+      'utf8',
+    );
+
+    expect(source).toContain("governance: 'task5-production-evidence'");
+    expect(source).toContain('presenceSplitFromGroupAggregate: true');
+    expect(source).not.toContain("governance: 'task4-production-evidence-diagnostic'");
+    expect(source).not.toContain("dbwFindings.push('DBW-06', 'DBW-12')");
+    expect(source).not.toContain("'production-return:topology-config'");
+  });
+
   it('derives multi-conflict acceptance and exhaustion histories from production timing', async () => {
     const bench = await import(
       '../../../scripts/perf/api-v1-state-write-concurrency-bench.ts'
@@ -222,6 +235,29 @@ describe('API-v1 state-write performance artifact contract', () => {
     }]);
   });
 
+  it('projects a topology-source command from its production config outbox record', async () => {
+    const bench = await import(
+      '../../../scripts/perf/api-v1-state-write-concurrency-bench.ts'
+    ) as Record<string, (...args: any[]) => any>;
+    const command = {
+      commandId: 'run:topology-source:0',
+      kind: 'topology-source',
+      latencyMs: 1,
+      stackIndex: 0,
+      status: 'accepted',
+    };
+
+    expect(bench.projectProductionOutboxEvidence([command], [{
+      outboxId: 'real-topology-config-outbox',
+      commandId: command.commandId,
+      effects: ['rtc-topology-recompute'],
+    }])).toEqual([{
+      intentId: 'real-topology-config-outbox:rtc-topology-recompute',
+      commandId: command.commandId,
+      intentKind: 'rtc-topology-recompute',
+    }]);
+  });
+
   it('does not count an ID-matching but contract-incomplete production receipt', async () => {
     const bench = await import(
       '../../../scripts/perf/api-v1-state-write-concurrency-bench.ts'
@@ -307,6 +343,45 @@ describe('API-v1 state-write performance artifact contract', () => {
     refreshSummary(extraFinding.workloads[0]);
     expect(validateStateWriteArtifact(extraFinding)).toEqual(expect.arrayContaining([
       expect.stringContaining('durable receipts must match accepted command IDs exactly'),
+    ]));
+  });
+
+  it('requires Task 5 evidence to contain topology receipts, effects, and exact timing', () => {
+    const task5 = validArtifact({ candidate: true });
+    task5.features = {
+      presenceSplitFromGroupAggregate: true,
+      governance: 'task5-production-evidence',
+      evidence: 'Task 5 production topology receipts, effects, and mutation timings',
+    };
+    expect(validateStateWriteArtifact(task5)).toEqual([]);
+
+    const topologyId = task5.workloads[0].samples[0].commands.find(
+      (command: any) => command.kind === 'topology-source',
+    ).commandId;
+    const missing = structuredClone(task5);
+    const missingSample = missing.workloads[0].samples[0];
+    missingSample.durable.receiptCommandIds = missingSample.durable.receiptCommandIds.filter(
+      (commandId: string) => commandId !== topologyId,
+    );
+    missingSample.durable.outboxIntents = missingSample.durable.outboxIntents.filter(
+      (intent: any) => intent.commandId !== topologyId,
+    );
+    missingSample.correctness.receiptCount = missingSample.durable.receiptCommandIds.length;
+    missingSample.correctness.outboxIntentCount = missingSample.durable.outboxIntents.length;
+    missingSample.correctness.dbwFindings = ['DBW-06', 'DBW-12'];
+    refreshSummary(missing.workloads[0]);
+    expect(validateStateWriteArtifact(missing)).toEqual(expect.arrayContaining([
+      expect.stringContaining('durable receipts must match accepted command IDs exactly'),
+      expect.stringContaining('production durable contract'),
+    ]));
+
+    const syntheticTiming = structuredClone(task5);
+    const observation = syntheticTiming.workloads[0].samples[0].attemptObservations.find(
+      (entry: any) => entry.commandId === topologyId,
+    );
+    observation.source = 'production-return:topology-config';
+    expect(validateStateWriteArtifact(syntheticTiming)).toEqual(expect.arrayContaining([
+      expect.stringContaining('production attempt source is not a production mutation timing event'),
     ]));
   });
   it('accepts coherent baseline raw samples, summaries, durable linkage, sources, and stack use', () => {

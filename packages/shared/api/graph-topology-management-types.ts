@@ -71,11 +71,29 @@ export type StoredGroupTopologyConfig = Readonly<{
     createdAtEpochMs: number;
     updatedAtEpochMs: number;
     updatedByPrincipalId: string;
-    requestId?: string;
+    requestId: string | null;
 }>;
 
 export type StoredGroupTopologyOverride = StoredGroupTopologyConfig & Readonly<{
     expiresAtEpochMs: number;
+}>;
+
+export type GroupTopologyConfigMutationOperation =
+    | 'putConfig'
+    | 'deleteConfig'
+    | 'putOverride'
+    | 'deleteOverride';
+
+export type GroupTopologyConfigMutationReceipt = Readonly<{
+    commandId: string;
+    commandHash: string;
+    operation: GroupTopologyConfigMutationOperation;
+    outcome: 'applied' | 'no-op';
+    groupRef: GroupRef;
+    target: 'config' | 'override';
+    acceptedVersion: number;
+    acceptedStorageRevision: number | null;
+    outboxId: string | null;
 }>;
 
 export type GroupTopologyConfigView = Readonly<{
@@ -100,7 +118,6 @@ export type GroupTopologyManagementView = Readonly<{
 export type PutGroupTopologyConfigRequest = Readonly<{
     requestId?: string;
     config: GroupTopologyConfigPatch;
-    reconfigure?: boolean;
 }>;
 
 export type PutGroupTopologyOverrideRequest = Readonly<{
@@ -108,7 +125,6 @@ export type PutGroupTopologyOverrideRequest = Readonly<{
     config: GroupTopologyConfigPatch;
     ttlMs?: number;
     expiresAtEpochMs?: number;
-    reconfigure?: boolean;
 }>;
 
 export type ReconfigureGroupTopologyRequest = Readonly<{

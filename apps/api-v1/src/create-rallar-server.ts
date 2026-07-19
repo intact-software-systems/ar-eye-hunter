@@ -112,9 +112,12 @@ export function createRallarServer(
   const rttRepository = new RtcRttRepository(runtimeStateRepository, {
     now: rtcTopologyOptions.now,
   });
+  const adminClientIds = readAdminClientIds();
   const topologyManagement = new GroupTopologyManagementService({
     findGroupSnapshotByRef: (ref, cacheOptions) =>
       middleware.groupStateService.readSnapshotAtLeast(ref, cacheOptions ?? {}),
+    findAuthoritativeGroupSnapshotByRef: (ref) =>
+      middleware.groupStateService.readCurrentSnapshot(ref),
     configRepository: topologyConfigRepository,
     topologyService: rtcTopologyService,
     topologySnapshotRepository,
@@ -124,8 +127,11 @@ export function createRallarServer(
     },
     serverDefaults: rtcTopologyServerDefaults,
     now,
+    timing,
+    serviceId: myServerId,
+    adminPrincipalIds: new Set(adminClientIds),
+    wakeStateMutationOutbox: () => middleware.qboxEngine.wake(),
   });
-  const adminClientIds = readAdminClientIds();
   const databaseConfig = readApiV1DatabaseBackendConfig();
   const databasePubSubConfig = readApiV1DatabasePubSubConfig(Deno.env, databaseConfig);
   const emptyWsStatus = {

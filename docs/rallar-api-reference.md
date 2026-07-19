@@ -1137,11 +1137,22 @@ state scope used by clients and groups:
   reads the effective topology view, including the current overlay snapshot
   when one exists.
 - `GET|PUT|DELETE /api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/config`
-  manages durable group topology config.
+  manages durable group topology config. Mutations commit with optimistic CAS,
+  persist a first-writer idempotency record when `requestId` is supplied, and
+  always persist the queued `rtc-topology-recompute` intent for an effectful
+  write in the same transaction. A retained per-target generation record keeps
+  accepted versions monotonic across DELETE, recreation, and override TTL
+  expiry. A separate retained group invariant generation serializes config and
+  override decisions, forcing cross-target conflicts through a full reread and
+  revalidation. Every response includes a receipt, and the route returns
+  without waiting for recompute or publish. Browser DELETE callers can supply
+  `requestId`; REST callers send the same stable value as `Idempotency-Key`.
 - `GET|PUT|DELETE /api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/override`
-  manages temporary topology overrides.
+  manages temporary topology overrides with the same convergent receipt/outbox
+  transaction and asynchronous return contract.
 - `POST /api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/reconfigure`
-  recomputes and optionally publishes topology immediately.
+  is the only topology configuration route that waits synchronously for an
+  immediate recompute and optional publication.
 
 Topology config resolves as server defaults, durable config, temporary override,
 then request-time reconfigure options. Writes require an authenticated group

@@ -19,8 +19,31 @@ export class FakeRuntimeStateRepository
         namespace: string,
         key: string,
     ) => void | Promise<void>;
+    serializeTransactions = false;
+    private transactionTail: Promise<void> = Promise.resolve();
 
     async begin<T>(
+        fn: (
+            repository: RuntimeStateOptimisticTransactionalRepositoryLike,
+        ) => Promise<T>,
+    ): Promise<T> {
+        if (this.serializeTransactions) {
+            const previous = this.transactionTail;
+            let release!: () => void;
+            this.transactionTail = new Promise<void>((resolve) => {
+                release = resolve;
+            });
+            await previous;
+            try {
+                return await this.beginUnserialized(fn);
+            } finally {
+                release();
+            }
+        }
+        return await this.beginUnserialized(fn);
+    }
+
+    private async beginUnserialized<T>(
         fn: (
             repository: RuntimeStateOptimisticTransactionalRepositoryLike,
         ) => Promise<T>,

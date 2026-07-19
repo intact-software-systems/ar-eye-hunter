@@ -16,6 +16,11 @@ import { newALBroadcastMessage, newALRoute, type ALMessage } from '@shared/al-co
 import * as rttRepository from '@shared/repository/rtt-repository.ts';
 import { validateGroupTopologyNextHops } from '@shared-graph/group-topology-validation.ts';
 import { GroupTopologyConfigRepository } from '../repositories/GroupTopologyConfigRepository.ts';
+import {
+    createStateMutationOutboxRecord,
+    hashStateMutationCommand,
+    StateMutationOutboxRepository,
+} from '../repositories/StateMutationOutboxRepository.ts';
 import { RtcRttRepository } from '../repositories/RtcRttRepository.ts';
 import {
     RtcTopologySnapshotRepository,
@@ -29,6 +34,33 @@ import {
     resolveGroupTopologyConfig,
     resolveOverrideExpiresAtEpochMs,
 } from './group-topology-config-service.ts';
+import {
+    computeTopologyConfigMutation,
+    type GroupTopologyConfigDeleteTarget,
+    type GroupTopologyConfigMutationCommand,
+    type GroupTopologyConfigMutationComputed,
+    type GroupTopologyConfigMutationFacts,
+    type GroupTopologyConfigMutationRead,
+    type GroupTopologyConfigMutationReceipt,
+    normalizeGroupTopologyConfigPatch,
+    probeTopologyConfigMutationIdempotency,
+    validateTopologyConfigMutation,
+    validateTopologyConfigMutationIdempotency,
+} from './group-topology-config-mutations.ts';
+import {
+    DEFAULT_RUNTIME_STATE_WRITE_ATTEMPTS,
+    RuntimeStateRetryExhaustedError,
+    RuntimeStateWriteConflictError,
+    waitForRuntimeStateWriteRetry,
+} from '../../runtime-state/optimistic-runtime-state-write.ts';
+import type {
+    RuntimeStateOptimisticTransactionalRepositoryLike,
+} from '../../runtime-state/RuntimeStateRepository.ts';
+import {
+    isRuntimeStateConditionalRepositoryLike,
+    isRuntimeStateTransactionalRepositoryLike,
+} from '../../runtime-state/RuntimeStateRepository.ts';
+import { recordRallarTiming, type RallarTimingSink } from './timing.ts';
 import {
     RallarRtcTopologyService,
     type RallarRtcTopologyUpdateResult,
@@ -59,6 +91,19 @@ export class GroupTopologyCommitConflictError extends Error {
     }
 }
 
+export class GroupTopologyConfigIdempotencyConflictError extends Error {
+    readonly status = 409;
+    readonly code = 'group-topology-config-idempotency-conflict';
+
+    constructor(
+        readonly existingCommandHash: string,
+        readonly receivedCommandHash: string,
+    ) {
+        super('Topology config requestId was already used for a different mutation');
+        this.name = 'GroupTopologyConfigIdempotencyConflictError';
+    }
+}
+
 export type GroupTopologyPublisher = (
     message: ALMessage,
     snapshot: RallarOverlayTopologySnapshot,
@@ -71,6 +116,7 @@ export type GroupTopologyGroupSnapshotReader = (
 
 export type GroupTopologyManagementServiceOptions = Readonly<{
     findGroupSnapshotByRef: GroupTopologyGroupSnapshotReader;
+    findAuthoritativeGroupSnapshotByRef: GroupTopologyGroupSnapshotReader;
     configRepository?: GroupTopologyConfigRepository;
     topologyService: RallarRtcTopologyService;
     topologySnapshotRepository?: RtcTopologySnapshotRepository;
@@ -79,6 +125,12 @@ export type GroupTopologyManagementServiceOptions = Readonly<{
     publisher?: GroupTopologyPublisher;
     serverDefaults?: GroupTopologyServerOptions;
     now?: () => number;
+    randomId?: () => string;
+    sleep?: (delayMs: number) => Promise<void>;
+    timing?: RallarTimingSink;
+    serviceId?: string;
+    wakeStateMutationOutbox?: () => void;
+    adminPrincipalIds?: ReadonlySet<string>;
 }>;
 
 export type ReconfigureGroupTopologyInput = Readonly<{
@@ -94,15 +146,12 @@ export type PutGroupTopologyConfigInput = Readonly<{
     config: GroupTopologyConfigPatch;
     updatedByPrincipalId: string;
     requestId?: string;
-    reconfigure?: boolean;
-    publish?: boolean;
 }>;
 
 export type DeleteGroupTopologyConfigInput = Readonly<{
     groupRef: GroupRef;
     updatedByPrincipalId: string;
-    reconfigure?: boolean;
-    publish?: boolean;
+    requestId?: string;
 }>;
 
 export type PutGroupTopologyOverrideInput = PutGroupTopologyConfigInput & Readonly<{
@@ -112,17 +161,17 @@ export type PutGroupTopologyOverrideInput = PutGroupTopologyConfigInput & Readon
 
 export type PutGroupTopologyConfigResult = Readonly<{
     config: StoredGroupTopologyConfig;
-    reconfigure?: ReconfigureGroupTopologyResponse;
+    receipt: GroupTopologyConfigMutationReceipt;
 }>;
 
 export type PutGroupTopologyOverrideResult = Readonly<{
     override: StoredGroupTopologyOverride;
-    reconfigure?: ReconfigureGroupTopologyResponse;
+    receipt: GroupTopologyConfigMutationReceipt;
 }>;
 
 export type DeleteGroupTopologyConfigResult = Readonly<{
     deleted: boolean;
-    reconfigure?: ReconfigureGroupTopologyResponse;
+    receipt: GroupTopologyConfigMutationReceipt;
 }>;
 
 export type ReconcileGroupTopologyResult = Readonly<{
@@ -167,66 +216,43 @@ export class GroupTopologyManagementService {
     async putConfig(
         input: PutGroupTopologyConfigInput,
     ): Promise<PutGroupTopologyConfigResult> {
-        this.requireConfigRepository();
-        const current = await this.options.configRepository!.findConfig(input.groupRef);
-        const now = this.now();
-        const config: StoredGroupTopologyConfig = {
-            groupRef: input.groupRef,
-            config: input.config,
-            version: (current?.version ?? 0) + 1,
-            createdAtEpochMs: current?.createdAtEpochMs ?? now,
-            updatedAtEpochMs: now,
-            updatedByPrincipalId: input.updatedByPrincipalId,
-            requestId: input.requestId,
-        };
-        resolveGroupTopologyConfig({
-            serverOptions: this.options.serverDefaults,
-            durable: config,
-            temporary: await this.options.configRepository!.findOverride(input.groupRef),
+        const execution = await this.executeTopologyConfigMutation({
+            operation: 'putConfig',
+            aggregateRef: input.groupRef,
+            commandId: input.requestId ?? this.randomId(),
+            requestId: input.requestId ?? null,
+            input: {
+                config: normalizeGroupTopologyConfigPatch(input.config),
+                updatedByPrincipalId: input.updatedByPrincipalId,
+                ttlMs: null,
+                expiresAtEpochMs: null,
+            },
         });
-        await this.options.configRepository!.putConfig(config);
-
-        if (!(input.reconfigure ?? true)) {
-            return { config };
+        if (!execution.config) {
+            throw new TypeError('Topology config mutation did not return a config');
         }
-
-        try {
-            return {
-                config,
-                reconfigure: await this.reconfigureGroupTopology({
-                    groupRef: input.groupRef,
-                    publish: input.publish,
-                }),
-            };
-        } catch (error) {
-            await this.restoreConfig(input.groupRef, current);
-            throw error;
-        }
+        return { config: execution.config, receipt: execution.receipt };
     }
 
     async deleteConfig(
         input: DeleteGroupTopologyConfigInput,
     ): Promise<DeleteGroupTopologyConfigResult> {
-        this.requireConfigRepository();
-        const existing = await this.options.configRepository!.findConfig(input.groupRef);
-        await this.options.configRepository!.deleteConfig(input.groupRef);
-
-        if (!(input.reconfigure ?? true)) {
-            return { deleted: existing !== undefined };
-        }
-
-        try {
-            return {
-                deleted: existing !== undefined,
-                reconfigure: await this.reconfigureGroupTopology({
-                    groupRef: input.groupRef,
-                    publish: input.publish,
-                }),
-            };
-        } catch (error) {
-            await this.restoreConfig(input.groupRef, existing);
-            throw error;
-        }
+        const execution = await this.executeTopologyConfigMutation({
+            operation: 'deleteConfig',
+            aggregateRef: input.groupRef,
+            commandId: input.requestId ?? this.randomId(),
+            requestId: input.requestId ?? null,
+            input: {
+                config: null,
+                updatedByPrincipalId: input.updatedByPrincipalId,
+                ttlMs: null,
+                expiresAtEpochMs: null,
+            },
+        });
+        return {
+            deleted: execution.receipt.outcome === 'applied',
+            receipt: execution.receipt,
+        };
     }
 
     async readOverride(
@@ -238,72 +264,236 @@ export class GroupTopologyManagementService {
     async putOverride(
         input: PutGroupTopologyOverrideInput,
     ): Promise<PutGroupTopologyOverrideResult> {
-        this.requireConfigRepository();
-        const current = await this.options.configRepository!.findOverride(input.groupRef);
-        const now = this.now();
-        const expiresAtEpochMs = resolveOverrideExpiresAtEpochMs({
-            nowEpochMs: now,
-            ttlMs: input.ttlMs,
-            expiresAtEpochMs: input.expiresAtEpochMs,
+        const execution = await this.executeTopologyConfigMutation({
+            operation: 'putOverride',
+            aggregateRef: input.groupRef,
+            commandId: input.requestId ?? this.randomId(),
+            requestId: input.requestId ?? null,
+            input: {
+                config: normalizeGroupTopologyConfigPatch(input.config),
+                updatedByPrincipalId: input.updatedByPrincipalId,
+                ttlMs: input.expiresAtEpochMs === undefined
+                    ? input.ttlMs ?? null
+                    : null,
+                expiresAtEpochMs: input.expiresAtEpochMs ?? null,
+            },
         });
-        const override: StoredGroupTopologyOverride = {
-            groupRef: input.groupRef,
-            config: input.config,
-            version: (current?.version ?? 0) + 1,
-            createdAtEpochMs: current?.createdAtEpochMs ?? now,
-            updatedAtEpochMs: now,
-            updatedByPrincipalId: input.updatedByPrincipalId,
-            requestId: input.requestId,
-            expiresAtEpochMs,
-        };
-        resolveGroupTopologyConfig({
-            serverOptions: this.options.serverDefaults,
-            durable: await this.options.configRepository!.findConfig(input.groupRef),
-            temporary: override,
-        });
-        await this.options.configRepository!.putOverride(override, expiresAtEpochMs);
-
-        if (!(input.reconfigure ?? true)) {
-            return { override };
+        if (!execution.override) {
+            throw new TypeError('Topology override mutation did not return an override');
         }
-
-        try {
-            return {
-                override,
-                reconfigure: await this.reconfigureGroupTopology({
-                    groupRef: input.groupRef,
-                    publish: input.publish,
-                }),
-            };
-        } catch (error) {
-            await this.restoreOverride(input.groupRef, current);
-            throw error;
-        }
+        return { override: execution.override, receipt: execution.receipt };
     }
 
     async deleteOverride(
         input: DeleteGroupTopologyConfigInput,
     ): Promise<DeleteGroupTopologyConfigResult> {
-        this.requireConfigRepository();
-        const existing = await this.options.configRepository!.findOverride(input.groupRef);
-        await this.options.configRepository!.deleteOverride(input.groupRef);
+        const execution = await this.executeTopologyConfigMutation({
+            operation: 'deleteOverride',
+            aggregateRef: input.groupRef,
+            commandId: input.requestId ?? this.randomId(),
+            requestId: input.requestId ?? null,
+            input: {
+                config: null,
+                updatedByPrincipalId: input.updatedByPrincipalId,
+                ttlMs: null,
+                expiresAtEpochMs: null,
+            },
+        });
+        return {
+            deleted: execution.receipt.outcome === 'applied',
+            receipt: execution.receipt,
+        };
+    }
 
-        if (!(input.reconfigure ?? true)) {
-            return { deleted: existing !== undefined };
-        }
+    private async executeTopologyConfigMutation(
+        command: GroupTopologyConfigMutationCommand,
+    ): Promise<Readonly<{
+        receipt: GroupTopologyConfigMutationReceipt;
+        config?: StoredGroupTopologyConfig;
+        override?: StoredGroupTopologyOverride;
+    }>> {
+        const repository = this.requireConfigRepository();
+        const commandHash = await hashStateMutationCommand(command);
+        const authorityFacts = {
+            isPlatformAdmin: this.options.adminPrincipalIds?.has(
+                command.input.updatedByPrincipalId,
+            ) ?? false,
+        } as const;
+        let facts: GroupTopologyConfigMutationFacts | undefined;
+        let deleteTarget: GroupTopologyConfigDeleteTarget | null | undefined;
+        let lastConflict: RuntimeStateWriteConflictError | undefined;
 
-        try {
-            return {
-                deleted: existing !== undefined,
-                reconfigure: await this.reconfigureGroupTopology({
-                    groupRef: input.groupRef,
-                    publish: input.publish,
-                }),
-            };
-        } catch (error) {
-            await this.restoreOverride(input.groupRef, existing);
-            throw error;
+        for (let attempt = 0; attempt < DEFAULT_RUNTIME_STATE_WRITE_ATTEMPTS; attempt += 1) {
+            const backoffMs = await waitForRuntimeStateWriteRetry(attempt as 0 | 1 | 2, {
+                sleep: this.options.sleep,
+            });
+            let activePhase: 'read' | 'compute' | 'validate' | 'write' = 'read';
+            let phaseStarted = performance.now();
+            try {
+                const read = await readTopologyConfigMutation(
+                    repository,
+                    this.options.findAuthoritativeGroupSnapshotByRef,
+                    command,
+                );
+                this.recordConfigMutationPhase(command, 'read', phaseStarted, attempt, backoffMs);
+                activePhase = 'compute';
+                phaseStarted = performance.now();
+                const idempotency = probeTopologyConfigMutationIdempotency(
+                    command,
+                    read,
+                    commandHash,
+                );
+                let computed: GroupTopologyConfigMutationComputed;
+                if (idempotency.outcome !== 'miss') {
+                    computed = idempotency;
+                } else {
+                    if (deleteTarget === undefined) {
+                        const target = command.operation === 'deleteConfig'
+                            ? read.config
+                            : command.operation === 'deleteOverride'
+                            ? read.override
+                            : null;
+                        deleteTarget = target
+                            ? {
+                                target: command.operation === 'deleteConfig'
+                                    ? 'config'
+                                    : 'override',
+                                storageRevision: target.entry.revision,
+                                version: target.value.version,
+                                updatedAtEpochMs: target.value.updatedAtEpochMs,
+                                expiresAtEpochMs: command.operation === 'deleteOverride'
+                                    ? (target.value as StoredGroupTopologyOverride)
+                                        .expiresAtEpochMs
+                                    : null,
+                            }
+                            : null;
+                    }
+                    if (!facts) {
+                        const nowEpochMs = this.now();
+                        facts = {
+                            nowEpochMs,
+                            commandHash,
+                            isPlatformAdmin: authorityFacts.isPlatformAdmin,
+                            resolvedOverrideExpiresAtEpochMs:
+                                command.operation === 'putOverride'
+                                    ? resolveOverrideExpiresAtEpochMs({
+                                        nowEpochMs,
+                                        ttlMs: command.input.ttlMs ?? undefined,
+                                        expiresAtEpochMs:
+                                            command.input.expiresAtEpochMs ?? undefined,
+                                    })
+                                    : null,
+                            deleteTarget: deleteTarget ?? null,
+                        };
+                    }
+                    computed = computeTopologyConfigMutation({
+                        command,
+                        read,
+                        facts,
+                        serverDefaults: this.options.serverDefaults ?? {},
+                    });
+                }
+                this.recordConfigMutationPhase(command, 'compute', phaseStarted, attempt, backoffMs);
+
+                activePhase = 'validate';
+                phaseStarted = performance.now();
+                if (
+                    computed.outcome === 'replay' ||
+                    computed.outcome === 'idempotency-conflict'
+                ) {
+                    validateTopologyConfigMutationIdempotency(
+                        command,
+                        read,
+                        commandHash,
+                        authorityFacts,
+                        computed,
+                    );
+                } else {
+                    if (!facts) {
+                        throw new TypeError('Topology config facts were not materialized');
+                    }
+                    validateTopologyConfigMutation({
+                        command,
+                        read,
+                        facts,
+                        serverDefaults: this.options.serverDefaults ?? {},
+                        computed,
+                    });
+                }
+                this.recordConfigMutationPhase(command, 'validate', phaseStarted, attempt, backoffMs);
+
+                if (computed.outcome === 'idempotency-conflict') {
+                    throw new GroupTopologyConfigIdempotencyConflictError(
+                        computed.existingCommandHash,
+                        computed.receivedCommandHash,
+                    );
+                }
+                if (computed.outcome === 'replay' || computed.outcome === 'no-op') {
+                    return topologyConfigExecution(computed.receipt, computed);
+                }
+
+                activePhase = 'write';
+                phaseStarted = performance.now();
+                const transactionStarted = performance.now();
+                let written: WriteTopologyConfigMutationResult;
+                try {
+                    written = await writeTopologyConfigMutation(
+                        requireOptimisticTopologyRuntime(repository.runtimeRepository),
+                        computed,
+                    );
+                    if (written.status === 'conflict') {
+                        throw new RuntimeStateWriteConflictError();
+                    }
+                    this.recordConfigMutationPhase(
+                        command,
+                        'transaction',
+                        transactionStarted,
+                        attempt,
+                        backoffMs,
+                    );
+                } catch (error) {
+                    this.recordConfigMutationPhase(
+                        command,
+                        'transaction',
+                        transactionStarted,
+                        attempt,
+                        backoffMs,
+                        error,
+                    );
+                    throw error;
+                }
+                this.recordConfigMutationPhase(command, 'write', phaseStarted, attempt, backoffMs);
+                if (computed.outcome === 'write') this.wakeStateMutationOutbox(command);
+                return topologyConfigExecution(written.receipt, computed);
+            } catch (error) {
+                this.recordConfigMutationPhase(
+                    command,
+                    activePhase,
+                    phaseStarted,
+                    attempt,
+                    backoffMs,
+                    error,
+                );
+                if (!(error instanceof RuntimeStateWriteConflictError)) throw error;
+                lastConflict = error;
+                recordRallarTiming(this.options.timing, {
+                    component: 'group-topology-config-service',
+                    operation: 'mutation.conflict',
+                    serviceId: this.options.serviceId,
+                    requestId: command.requestId ?? undefined,
+                    ...command.aggregateRef,
+                    details: {
+                        attempt,
+                        backoffMs,
+                        conflict: true,
+                        mutationOperation: command.operation,
+                    },
+                }, 'ok', 0);
+            }
         }
+        throw new RuntimeStateRetryExhaustedError(
+            lastConflict ?? new RuntimeStateWriteConflictError(),
+        );
     }
 
     async reconfigureGroupTopology(
@@ -722,42 +912,241 @@ export class GroupTopologyManagementService {
         return await this.options.findGroupSnapshotByRef(groupRef);
     }
 
-    private requireConfigRepository(): void {
+    private requireConfigRepository(): GroupTopologyConfigRepository {
         if (!this.options.configRepository) {
             throw new Error('Group topology config repository is not configured');
         }
+        return this.options.configRepository;
     }
 
-    private async restoreConfig(
-        groupRef: GroupRef,
-        previous: StoredGroupTopologyConfig | undefined,
-    ): Promise<void> {
-        if (!previous) {
-            await this.options.configRepository!.deleteConfig(groupRef);
-            return;
-        }
-
-        await this.options.configRepository!.putConfig(previous);
+    private recordConfigMutationPhase(
+        command: GroupTopologyConfigMutationCommand,
+        phase: 'read' | 'compute' | 'validate' | 'transaction' | 'write',
+        started: number,
+        attempt: number,
+        backoffMs: number,
+        error?: unknown,
+    ): void {
+        recordRallarTiming(this.options.timing, {
+            component: 'group-topology-config-service',
+            operation: `mutation.${phase}`,
+            serviceId: this.options.serviceId,
+            requestId: command.requestId ?? undefined,
+            ...command.aggregateRef,
+            details: { attempt, backoffMs, mutationOperation: command.operation },
+        }, error === undefined ? 'ok' : 'error', performance.now() - started, error);
     }
 
-    private async restoreOverride(
-        groupRef: GroupRef,
-        previous: StoredGroupTopologyOverride | undefined,
-    ): Promise<void> {
-        if (!previous) {
-            await this.options.configRepository!.deleteOverride(groupRef);
-            return;
-        }
+    private wakeStateMutationOutbox(command: GroupTopologyConfigMutationCommand): void {
+        const wake = this.options.wakeStateMutationOutbox;
+        if (!wake) return;
 
-        await this.options.configRepository!.putOverride(
-            previous,
-            previous.expiresAtEpochMs,
-        );
+        const started = performance.now();
+        try {
+            wake();
+            recordRallarTiming(this.options.timing, {
+                component: 'group-topology-config-service',
+                operation: 'mutation.wake',
+                serviceId: this.options.serviceId,
+                requestId: command.requestId ?? undefined,
+                ...command.aggregateRef,
+                details: { mutationOperation: command.operation },
+            }, 'ok', performance.now() - started);
+        } catch (error) {
+            recordRallarTiming(this.options.timing, {
+                component: 'group-topology-config-service',
+                operation: 'mutation.wake',
+                serviceId: this.options.serviceId,
+                requestId: command.requestId ?? undefined,
+                ...command.aggregateRef,
+                details: { mutationOperation: command.operation },
+            }, 'error', performance.now() - started, error);
+        }
     }
 
     private now(): number {
         return this.options.now?.() ?? Date.now();
     }
+
+    private randomId(): string {
+        return this.options.randomId?.() ?? crypto.randomUUID();
+    }
+}
+
+async function readTopologyConfigMutation(
+    repository: GroupTopologyConfigRepository,
+    findGroupSnapshotByRef: GroupTopologyGroupSnapshotReader,
+    command: GroupTopologyConfigMutationCommand,
+): Promise<GroupTopologyConfigMutationRead> {
+    const invariantBefore = await repository.findInvariantGenerationEntry(
+        command.aggregateRef,
+    );
+    const [
+        config,
+        override,
+        configGeneration,
+        overrideGeneration,
+        idempotency,
+        groupSnapshot,
+    ] = await Promise.all([
+        repository.findConfigEntry(command.aggregateRef),
+        repository.findOverrideEntry(command.aggregateRef),
+        repository.findGenerationEntry(command.aggregateRef, 'config'),
+        repository.findGenerationEntry(command.aggregateRef, 'override'),
+        command.requestId === null
+            ? Promise.resolve(undefined)
+            : repository.findMutationRecordEntry(
+                command.aggregateRef,
+                command.requestId,
+            ),
+        findGroupSnapshotByRef(command.aggregateRef),
+    ]);
+    const invariantAfter = await repository.findInvariantGenerationEntry(
+        command.aggregateRef,
+    );
+    if (!groupSnapshot) {
+        throw new Error(`Group snapshot not found: ${command.aggregateRef.groupId}`);
+    }
+    if (!sameTopologyInvariantGeneration(invariantBefore, invariantAfter)) {
+        throw new RuntimeStateWriteConflictError();
+    }
+    return {
+        config: config ?? null,
+        override: override ?? null,
+        configGeneration: configGeneration ?? null,
+        overrideGeneration: overrideGeneration ?? null,
+        invariantGeneration: invariantAfter ?? null,
+        idempotency: idempotency ?? null,
+        groupSnapshot,
+    };
+}
+
+function sameTopologyInvariantGeneration(
+    left: Awaited<ReturnType<GroupTopologyConfigRepository['findInvariantGenerationEntry']>>,
+    right: Awaited<ReturnType<GroupTopologyConfigRepository['findInvariantGenerationEntry']>>,
+): boolean {
+    if (!left || !right) return left === right;
+    return left.entry.revision === right.entry.revision &&
+        left.value.version === right.value.version;
+}
+
+function requireOptimisticTopologyRuntime(
+    runtime: GroupTopologyConfigRepository['runtimeRepository'],
+): RuntimeStateOptimisticTransactionalRepositoryLike {
+    if (!isOptimisticTopologyRuntime(runtime)) {
+        throw new Error(
+            'Group topology config mutations require an optimistic transactional repository',
+        );
+    }
+    return runtime;
+}
+
+function isOptimisticTopologyRuntime(
+    runtime: GroupTopologyConfigRepository['runtimeRepository'],
+): runtime is RuntimeStateOptimisticTransactionalRepositoryLike {
+    return isRuntimeStateConditionalRepositoryLike(runtime) &&
+        isRuntimeStateTransactionalRepositoryLike(runtime);
+}
+
+type WriteTopologyConfigMutationResult =
+    | Readonly<{
+        status: 'accepted';
+        receipt: GroupTopologyConfigMutationReceipt;
+    }>
+    | Readonly<{ status: 'conflict' }>;
+
+async function writeTopologyConfigMutation(
+    runtime: RuntimeStateOptimisticTransactionalRepositoryLike,
+    computed: Extract<
+        GroupTopologyConfigMutationComputed,
+        { outcome: 'write' | 'claim' }
+    >,
+): Promise<WriteTopologyConfigMutationResult> {
+    try {
+        return await runtime.begin(async (transaction) => {
+            const repository = new GroupTopologyConfigRepository(transaction);
+            if (computed.outcome === 'write') {
+                const guard = computed.guard;
+                const state = guard.operation === 'delete'
+                    ? guard.target === 'config'
+                        ? await repository.deleteConfig(
+                            computed.receipt.groupRef,
+                            guard.expectedRevision,
+                        )
+                        : await repository.deleteOverride(
+                            computed.receipt.groupRef,
+                            guard.expectedRevision,
+                        )
+                    : guard.target === 'config'
+                    ? await repository.commitConfig(
+                        guard.value,
+                        guard.expectedRevision,
+                    )
+                    : await repository.commitOverride(
+                        guard.value,
+                        guard.expectedRevision,
+                    );
+                if (state.status === 'conflict') {
+                    throw new RuntimeStateWriteConflictError();
+                }
+                const invariantGeneration =
+                    await repository.commitInvariantGeneration(
+                        computed.invariantGenerationGuard.value,
+                        computed.invariantGenerationGuard.expectedRevision,
+                    );
+                if (invariantGeneration.status === 'conflict') {
+                    throw new RuntimeStateWriteConflictError();
+                }
+                const generation = await repository.commitGeneration(
+                    computed.generationGuard.value,
+                    computed.generationGuard.expectedRevision,
+                );
+                if (generation.status === 'conflict') {
+                    throw new RuntimeStateWriteConflictError();
+                }
+            }
+
+            if (computed.idempotency) {
+                const claimed = await repository.insertMutationRecord(
+                    computed.idempotency,
+                );
+                if (claimed.status === 'conflict') {
+                    throw new RuntimeStateWriteConflictError();
+                }
+            }
+
+            if (computed.outcome === 'write') {
+                await new StateMutationOutboxRepository(transaction)
+                    .insertForAuthoritativeWrite(
+                        createStateMutationOutboxRecord(computed.outbox),
+                    );
+            }
+            return { status: 'accepted', receipt: computed.receipt } as const;
+        });
+    } catch (error) {
+        if (error instanceof RuntimeStateWriteConflictError) {
+            return { status: 'conflict' };
+        }
+        throw error;
+    }
+}
+
+function topologyConfigExecution(
+    receipt: GroupTopologyConfigMutationReceipt,
+    computed: Extract<
+        GroupTopologyConfigMutationComputed,
+        { outcome: 'write' | 'claim' | 'replay' | 'no-op' }
+    >,
+): Readonly<{
+    receipt: GroupTopologyConfigMutationReceipt;
+    config?: StoredGroupTopologyConfig;
+    override?: StoredGroupTopologyOverride;
+}> {
+    return computed.result.kind === 'config'
+        ? { receipt, config: computed.result.config }
+        : computed.result.kind === 'override'
+        ? { receipt, override: computed.result.override }
+        : { receipt };
 }
 
 export function createRtcOverlayTopologyBroadcastMessage(

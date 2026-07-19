@@ -1477,12 +1477,20 @@ paths:
       responses:
         '200':
           description: Stored config write result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PutGroupTopologyConfigResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
     delete:
       tags: [Topology]
       summary: Delete durable group topology config
@@ -1493,16 +1501,24 @@ paths:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
-        - $ref: '#/components/parameters/TopologyReconfigure'
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
           description: Delete result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteGroupTopologyConfigResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
 
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/override:
     get:
@@ -1543,12 +1559,20 @@ paths:
       responses:
         '200':
           description: Stored override write result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PutGroupTopologyOverrideResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
     delete:
       tags: [Topology]
       summary: Delete temporary group topology override
@@ -1559,16 +1583,24 @@ paths:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
-        - $ref: '#/components/parameters/TopologyReconfigure'
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
           description: Delete result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteGroupTopologyConfigResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
 
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/reconfigure:
     post:
@@ -2468,6 +2500,13 @@ components:
       required: true
       schema:
         type: string
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: Stable request identifier for replaying the immutable DELETE result.
+      schema:
+        type: string
     GraphIncludeMeasured:
       name: includeMeasured
       in: query
@@ -2485,14 +2524,6 @@ components:
         type: string
         enum: [never, if-missing, always]
         default: if-missing
-    TopologyReconfigure:
-      name: reconfigure
-      in: query
-      required: false
-      description: Set to false to delete stored topology config without recomputing and publishing the effective topology.
-      schema:
-        type: boolean
-        default: true
     EventType:
       name: eventType
       in: query
@@ -2571,6 +2602,12 @@ components:
             $ref: '#/components/schemas/ErrorResponse'
     TooManyRequests:
       description: Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ServiceUnavailable:
+      description: The optimistic mutation could not converge within its bounded retry budget.
       content:
         application/json:
           schema:
@@ -4722,8 +4759,6 @@ components:
           type: string
         config:
           $ref: '#/components/schemas/GroupTopologyConfigPatch'
-        reconfigure:
-          type: boolean
 
     PutGroupTopologyOverrideRequest:
       type: object
@@ -4743,8 +4778,97 @@ components:
           type: integer
           format: int64
           minimum: 1
-        reconfigure:
+
+    StoredGroupTopologyConfig:
+      type: object
+      required: [groupRef, config, version, createdAtEpochMs, updatedAtEpochMs, updatedByPrincipalId, requestId]
+      properties:
+        groupRef:
+          $ref: '#/components/schemas/GroupRef'
+        config:
+          $ref: '#/components/schemas/GroupTopologyConfigPatch'
+        version:
+          type: integer
+          format: int64
+        createdAtEpochMs:
+          type: integer
+          format: int64
+        updatedAtEpochMs:
+          type: integer
+          format: int64
+        updatedByPrincipalId:
+          type: string
+        requestId:
+          type: string
+          nullable: true
+
+    StoredGroupTopologyOverride:
+      allOf:
+        - $ref: '#/components/schemas/StoredGroupTopologyConfig'
+        - type: object
+          required: [expiresAtEpochMs]
+          properties:
+            expiresAtEpochMs:
+              type: integer
+              format: int64
+
+    GroupTopologyConfigMutationReceipt:
+      type: object
+      required: [commandId, commandHash, operation, outcome, groupRef, target, acceptedVersion, acceptedStorageRevision, outboxId]
+      properties:
+        commandId:
+          type: string
+        commandHash:
+          type: string
+          pattern: '^sha256:[0-9a-f]{64}$'
+        operation:
+          type: string
+          enum: [putConfig, deleteConfig, putOverride, deleteOverride]
+        outcome:
+          type: string
+          enum: [applied, no-op]
+        groupRef:
+          $ref: '#/components/schemas/GroupRef'
+        target:
+          type: string
+          enum: [config, override]
+        acceptedVersion:
+          type: integer
+          format: int64
+        acceptedStorageRevision:
+          type: integer
+          nullable: true
+          format: int64
+        outboxId:
+          type: string
+          nullable: true
+
+    PutGroupTopologyConfigResponse:
+      type: object
+      required: [config, receipt]
+      properties:
+        config:
+          $ref: '#/components/schemas/StoredGroupTopologyConfig'
+        receipt:
+          $ref: '#/components/schemas/GroupTopologyConfigMutationReceipt'
+
+    PutGroupTopologyOverrideResponse:
+      type: object
+      required: [override, receipt]
+      properties:
+        override:
+          $ref: '#/components/schemas/StoredGroupTopologyOverride'
+        receipt:
+          $ref: '#/components/schemas/GroupTopologyConfigMutationReceipt'
+
+    DeleteGroupTopologyConfigResponse:
+      type: object
+      required: [deleted, receipt]
+      properties:
+        deleted:
           type: boolean
+        receipt:
+          $ref: '#/components/schemas/GroupTopologyConfigMutationReceipt'
 
     ReconfigureGroupTopologyRequest:
       type: object

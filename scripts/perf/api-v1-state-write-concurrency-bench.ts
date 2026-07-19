@@ -24,6 +24,7 @@ import {
   createClientStateService,
 } from '@shared-server/rallar-system/services/client-state-service.ts';
 import { validateClientMutationIdempotencyRecord } from '@shared-server/rallar-system/services/client-state-mutations.ts';
+import { validateGroupTopologyConfigMutationRecord } from '@shared-server/rallar-system/services/group-topology-config-mutations.ts';
 import {
   createGroupStateService,
   type GroupStateService,
@@ -326,23 +327,23 @@ async function main(): Promise<void> {
             'production timing-sink events explicitly labeled phase=compute; zero when unavailable',
           validateTiming:
             'production timing-sink events explicitly labeled phase=validate; zero when unavailable',
-           writeTiming:
-             'production client/group mutation.write timing-sink events',
-           outboxTiming:
-             'runtime-state SQL carrying the state-mutation:outbox namespace through the postgres.js wrapper',
-           attempts:
-             'production client/group mutation.conflict timing events plus returned success or typed exhaustion; synthetic terminals exist only for disclosed exhausted prerequisites',
-           receipts:
-             'complete production client/group idempotency receipts queried after the phase through uninstrumented repositories and projected only when every raw-command subreceipt is valid',
-           outboxIntents:
-             'production StateMutationOutboxRepository records queried after the phase through the uninstrumented admin stack and projected per real effect',
+          writeTiming:
+            'production client/group/topology mutation.write timing-sink events',
+          outboxTiming:
+            'runtime-state SQL carrying the state-mutation:outbox namespace through the postgres.js wrapper',
+          attempts:
+            'production client/group/topology mutation.conflict timing events plus returned success or typed exhaustion; synthetic terminals exist only for disclosed exhausted prerequisites',
+          receipts:
+            'complete production client/group/topology idempotency receipts queried after the phase through uninstrumented repositories and projected only when every raw-command subreceipt is valid',
+          outboxIntents:
+            'production StateMutationOutboxRepository records queried after the phase through the uninstrumented admin stack and projected per real effect',
         },
       },
       features: {
-         presenceSplitFromGroupAggregate: false,
-         governance: 'task4-production-evidence-diagnostic',
+         presenceSplitFromGroupAggregate: true,
+         governance: 'task5-production-evidence',
          evidence:
-           'Production receipts, mutation outbox records, and retry timings; topology config remains a DBW-06/DBW-12 diagnostic until Task 5',
+           'Production receipts, mutation outbox records, and exact retry timings including topology config mutations',
       },
       regressionReasons: [],
       workloads,
@@ -635,8 +636,11 @@ function createServiceRuntime(
     group,
     topology: new GroupTopologyManagementService({
       findGroupSnapshotByRef: (ref) => group.readSnapshot(ref),
+      findAuthoritativeGroupSnapshotByRef: (ref) => group.readSnapshot(ref),
       configRepository: new GroupTopologyConfigRepository(runtimeRepository),
       topologyService: new RallarRtcTopologyService(),
+      timing,
+      serviceId,
     }),
     serviceId,
   };
@@ -981,8 +985,6 @@ async function executeMutation(
             },
             updatedByPrincipalId: command.ownerId,
             requestId: command.requestId,
-            reconfigure: false,
-            publish: false,
           }),
       );
       void result;
@@ -1028,6 +1030,7 @@ async function seedCompleteState(
   });
   const topology = new GroupTopologyManagementService({
     findGroupSnapshotByRef: (ref) => group.readSnapshot(ref),
+    findAuthoritativeGroupSnapshotByRef: (ref) => group.readSnapshot(ref),
     configRepository: new GroupTopologyConfigRepository(runtimeRepository),
     topologyService: new RallarRtcTopologyService(),
   });
@@ -1068,8 +1071,6 @@ async function seedCompleteState(
         },
         updatedByPrincipalId: ownerId,
         requestId: `seed-topology-${groupIndex}`,
-        reconfigure: false,
-        publish: false,
       });
     },
   );
@@ -1158,7 +1159,8 @@ function productionPhaseDuration(
   return sum(
     events.filter((event) =>
       (event.component === 'client-state-service' ||
-        event.component === 'group-state-service') &&
+        event.component === 'group-state-service' ||
+        event.component === 'group-topology-config-service') &&
       event.operation === `mutation.${phase}`
     ).map((event) => event.durationMs),
   );
@@ -1197,7 +1199,8 @@ export function deriveProductionAttemptObservations(
       command.status === 'accepted' || events.some((event) =>
         event.requestId === operation.requestId &&
         (event.component === 'client-state-service' ||
-          event.component === 'group-state-service')
+          event.component === 'group-state-service' ||
+          event.component === 'group-topology-config-service')
       )
     );
     const exhaustedOperationId = command.status === 'exhausted'
@@ -1209,7 +1212,8 @@ export function deriveProductionAttemptObservations(
         event.requestId === operation.requestId &&
         event.operation === 'mutation.conflict' &&
         (event.component === 'client-state-service' ||
-          event.component === 'group-state-service')
+          event.component === 'group-state-service' ||
+          event.component === 'group-topology-config-service')
       ).toSorted((left, right) =>
         Number(left.details?.attempt) - Number(right.details?.attempt)
       );
@@ -1238,7 +1242,8 @@ export function deriveProductionAttemptObservations(
           event.requestId === operation.requestId &&
           (event.operation === 'mutation.write' || event.operation === 'mutation.validate') &&
           (event.component === 'client-state-service' ||
-            event.component === 'group-state-service') &&
+            event.component === 'group-state-service' ||
+            event.component === 'group-topology-config-service') &&
           event.status === 'ok' &&
           Number.isSafeInteger(event.details?.attempt) &&
           Number(event.details?.attempt) >= 0
@@ -1251,7 +1256,7 @@ export function deriveProductionAttemptObservations(
         const terminalPhase = preferredPhases.toSorted((left, right) =>
           Number(left.details?.attempt) - Number(right.details?.attempt)
         ).at(-1);
-        if (!terminalPhase && command.kind !== 'topology-source') {
+        if (!terminalPhase) {
           throw new Error(
             `Accepted production mutation lacks write/validate timing for ${operation.requestId}`,
           );
@@ -1262,9 +1267,7 @@ export function deriveProductionAttemptObservations(
           attempt: terminalPhase ? Number(terminalPhase.details?.attempt) : 0,
           outcome: 'accepted',
           terminal: true,
-          source: terminalPhase
-            ? `${terminalPhase.component}.${terminalPhase.operation}`
-            : 'production-return:topology-config',
+          source: `${terminalPhase!.component}.${terminalPhase!.operation}`,
         });
       }
       return observations;
@@ -1281,6 +1284,7 @@ async function queryDurableEvidence(
   const runtime = new PSqlRuntimeStateRepository(sql as unknown as PSqlSql);
   const clients = new ClientStateRepository(runtime);
   const groups = new GroupStateRepository(runtime);
+  const topology = new GroupTopologyConfigRepository(runtime);
   const outbox = new StateMutationOutboxRepository(runtime);
   const acceptedCommands = commands.filter((command) => command.status === 'accepted');
   const receiptResults = await mapWithConcurrency(
@@ -1306,7 +1310,14 @@ async function queryDurableEvidence(
           )
         ))
         : command.kind === 'topology-source'
-        ? []
+        ? [isValidatedTopologyReceipt(
+          await topology.findMutationRecord(
+            { ...scope, groupId: `group-${clientIndex % groupCount}` },
+            command.commandId,
+          ),
+          { ...scope, groupId: `group-${clientIndex % groupCount}` },
+          command.commandId,
+        )]
         : [isValidatedReceiptIdentity(
           await groups.findIdempotentGroupMutationReceipt(
             { ...scope, groupId: `group-${clientIndex % groupCount}` },
@@ -1344,8 +1355,6 @@ async function queryDurableEvidence(
 function productionCommandIdsForRaw(command: RawCommand): readonly string[] {
   return command.kind === 'profile-instance'
     ? [`${command.commandId}-profile`, `${command.commandId}-instance`]
-    : command.kind === 'topology-source'
-    ? []
     : [command.commandId];
 }
 
@@ -1391,6 +1400,19 @@ function isValidatedReceiptIdentity(value: unknown, requestId: string): boolean 
   return (record.receipt as Record<string, unknown>).commandId === requestId;
 }
 
+function isValidatedTopologyReceipt(
+  value: unknown,
+  groupRef: Readonly<{ applicationId: string; workspaceId: string; groupId: string }>,
+  requestId: string,
+): boolean {
+  try {
+    validateGroupTopologyConfigMutationRecord(value, { groupRef, requestId });
+  } catch {
+    return false;
+  }
+  return value.requestId === requestId && value.receipt.commandId === requestId;
+}
+
 function deriveCorrectness(
   commands: readonly RawCommand[],
   durable: DurableEvidence,
@@ -1409,11 +1431,6 @@ function deriveCorrectness(
     ).length;
   const acceptedCommandCount = commands.filter((command) => command.status === 'accepted').length;
   const dbwFindings: string[] = [];
-  if (commands.some((command) =>
-    command.kind === 'topology-source' && command.status === 'accepted'
-  )) {
-    dbwFindings.push('DBW-06', 'DBW-12');
-  }
   return {
     acceptedCommandCount,
     receiptCount: durable.receiptCommandIds.length,

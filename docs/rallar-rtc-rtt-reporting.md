@@ -167,10 +167,22 @@ browser converts each snapshot into local `OverlayInfo`, including
 `overlay.nextHopSessionIds` as both the steady-state desired RTC peer signal
 and the preferred RTT reporting set.
 
-API-v1 REST reconfigure uses the shared recompute path that WS group snapshots,
+Durable config and temporary override PUT/DELETE routes commit their optimistic
+state change and queued `rtc-topology-recompute` intent atomically, adding the
+first-writer idempotency record when `requestId` is supplied. Every response
+includes a receipt. A retained config/override generation record keeps receipt
+versions monotonic across physical deletion and override TTL expiry. A retained
+group invariant generation serializes config and override decisions before
+either can expose an invalid effective combination. DELETE uses
+`Idempotency-Key` on REST (or `requestId` in the shared browser options) for
+stable replay. They return after commit; outbox work performs recompute and
+publication asynchronously and can retry independently.
+
+API-v1 explicit REST reconfigure uses the shared recompute path that WS group snapshots,
 RTT timers, and app-inbox topology work use. `POST
 /api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/reconfigure`
-can apply request-time topology options for one recompute, while durable config
+is the only configuration endpoint that waits for immediate recompute. It can
+apply request-time topology options for one recompute, while durable config
 and temporary overrides are resolved before the same service update,
 validation, persistence, and overlay publication steps.
 

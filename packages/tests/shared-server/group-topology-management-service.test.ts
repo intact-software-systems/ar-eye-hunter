@@ -9,15 +9,788 @@ import {
 } from '@shared-server/mod.ts';
 import {
     GroupTopologyManagementService,
+    GroupTopologyConfigIdempotencyConflictError,
     GroupTopologyValidationError,
 } from '@shared-server/rallar-system/services/group-topology-management-service.ts';
+import {
+    STATE_MUTATION_OUTBOX_NAMESPACE,
+    StateMutationOutboxRepository,
+} from '@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts';
+import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
 import {
     RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
 } from '@shared-server/rallar-system/repositories/RtcTopologySnapshotRepository.ts';
+import {
+    GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+    GROUP_TOPOLOGY_CONFIG_GENERATION_NAMESPACE,
+    GROUP_TOPOLOGY_CONFIG_INVARIANT_GENERATION_NAMESPACE,
+    GROUP_TOPOLOGY_OVERRIDE_NAMESPACE,
+} from '@shared-server/rallar-system/repositories/GroupTopologyConfigRepository.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 
 describe('GroupTopologyManagementService', () => {
+    it('rebases simultaneous puts to distinct versions with receipts, outboxes, and zero-based timing', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        runtimeRepository.serializeTransactions = true;
+        const group = createGroupSnapshot(createGroupRef('workspace-1'));
+        const configRepository = new GroupTopologyConfigRepository(runtimeRepository);
+        await blockFirstReadsTogether(
+            runtimeRepository,
+            GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+            configRepository.configKey(group.group),
+            2,
+        );
+        const timingEvents: RallarTimingEvent[] = [];
+        const first = createService({
+            runtimeRepository,
+            group,
+            configRepository,
+            now: () => 1_000,
+            timing: (event) => timingEvents.push(event),
+        });
+        const second = createService({
+            runtimeRepository,
+            group,
+            configRepository,
+            now: () => 2_000,
+            timing: (event) => timingEvents.push(event),
+        });
+
+        const results = await Promise.all([
+            first.putConfig({
+                groupRef: group.group,
+                config: { topologyKind: 'tree' },
+                updatedByPrincipalId: 'owner',
+                requestId: 'config-race-1',
+            }),
+            second.putConfig({
+                groupRef: group.group,
+                config: { topologyKind: 'mesh' },
+                updatedByPrincipalId: 'owner',
+                requestId: 'config-race-2',
+            }),
+        ]);
+
+        expect(results.map((result) => result.config.version).sort()).toEqual([1, 2]);
+        expect(results.map((result) => result.receipt.acceptedVersion).sort())
+            .toEqual([1, 2]);
+        expect(results.every((result) =>
+            /^sha256:[0-9a-f]{64}$/.test(result.receipt.commandHash)
+        )).toBe(true);
+        const pending = await new StateMutationOutboxRepository(runtimeRepository)
+            .listPendingPage({ limit: 10 });
+        expect(pending.records).toHaveLength(2);
+        expect(pending.records.every(({ record }) =>
+            record.effects.length === 1 &&
+            record.effects[0] === 'rtc-topology-recompute'
+        )).toBe(true);
+        expect(timingEvents).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                component: 'group-topology-config-service',
+                operation: 'mutation.transaction',
+                status: 'error',
+                details: expect.objectContaining({ attempt: 0, backoffMs: 0 }),
+            }),
+            expect.objectContaining({
+                component: 'group-topology-config-service',
+                operation: 'mutation.transaction',
+                status: 'ok',
+                details: expect.objectContaining({ attempt: 1, backoffMs: 2 }),
+            }),
+            expect.objectContaining({
+                component: 'group-topology-config-service',
+                operation: 'mutation.conflict',
+                details: expect.objectContaining({ attempt: 0, conflict: true }),
+            }),
+            expect.objectContaining({
+                component: 'group-topology-config-service',
+                operation: 'mutation.write',
+                details: expect.objectContaining({ attempt: 1, backoffMs: 2 }),
+            }),
+        ]));
+    });
+
+    it('serializes cross-target writes before accepting a combined effective invariant', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        runtimeRepository.serializeTransactions = true;
+        const group = createGroupSnapshot(createGroupRef('workspace-1'));
+        const configRepository = new GroupTopologyConfigRepository(runtimeRepository);
+        await blockFirstReadsTogether(
+            runtimeRepository,
+            GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+            configRepository.configKey(group.group),
+            2,
+        );
+        const configService = createService({
+            runtimeRepository,
+            group,
+            configRepository,
+            sleep: () => Promise.resolve(),
+        });
+        const overrideService = createService({
+            runtimeRepository,
+            group,
+            configRepository,
+            sleep: () => Promise.resolve(),
+        });
+
+        const settled = await Promise.allSettled([
+            configService.putConfig({
+                groupRef: group.group,
+                config: { meshParamK: 4 },
+                updatedByPrincipalId: 'owner',
+                requestId: 'cross-target-config',
+            }),
+            overrideService.putOverride({
+                groupRef: group.group,
+                config: { degreeLimit: 3 },
+                expiresAtEpochMs: Date.now() + 60_000,
+                updatedByPrincipalId: 'owner',
+                requestId: 'cross-target-override',
+            }),
+        ]);
+
+        expect(settled.filter(({ status }) => status === 'fulfilled')).toHaveLength(1);
+        expect(settled.filter(({ status }) => status === 'rejected'))
+            .toEqual([expect.objectContaining({
+                reason: expect.objectContaining({
+                    code: 'group-topology-config-validation-failed',
+                }),
+            })]);
+        const [durable, temporary] = await Promise.all([
+            configRepository.findConfig(group.group),
+            configRepository.findOverride(group.group),
+        ]);
+        expect(Number(durable !== undefined) + Number(temporary !== undefined)).toBe(1);
+        expect(await configRepository.findInvariantGenerationEntry(group.group))
+            .toMatchObject({
+                value: { version: 1 },
+                entry: {
+                    key: configRepository.invariantGenerationKey(group.group),
+                    revision: 0,
+                },
+            });
+        await expect(configService.readConfig(group.group)).resolves.toBeDefined();
+    });
+
+    it('does not let a temporary override hide an invalid durable config after expiry', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const group = createGroupSnapshot(createGroupRef('workspace-1'));
+        const service = createService({
+            runtimeRepository,
+            group,
+            serverDefaults: { degreeLimit: 3, meshParamK: 2 },
+        });
+        await service.putOverride({
+            groupRef: group.group,
+            config: { degreeLimit: 5 },
+            expiresAtEpochMs: Date.now() + 60_000,
+            updatedByPrincipalId: 'owner',
+            requestId: 'temporary-invariant-cover',
+        });
+
+        await expect(service.putConfig({
+            groupRef: group.group,
+            config: { meshParamK: 4 },
+            updatedByPrincipalId: 'owner',
+            requestId: 'invalid-after-expiry',
+        })).rejects.toMatchObject({
+            code: 'group-topology-config-validation-failed',
+        });
+    });
+
+    it('retains per-target versions across delete and physical override expiry', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(1_000);
+        try {
+            const runtimeRepository = new FakeRuntimeStateRepository();
+            const group = createGroupSnapshot(createGroupRef('workspace-1'));
+            const service = createService({
+                runtimeRepository,
+                group,
+                now: () => Date.now(),
+            });
+
+            const firstConfig = await service.putConfig({
+                groupRef: group.group,
+                config: { topologyKind: 'tree' },
+                updatedByPrincipalId: 'owner',
+                requestId: 'version-config-1',
+            });
+            const deletedConfig = await service.deleteConfig({
+                groupRef: group.group,
+                updatedByPrincipalId: 'owner',
+                requestId: 'version-config-delete',
+            });
+            vi.setSystemTime(2_000);
+            const recreatedConfig = await service.putConfig({
+                groupRef: group.group,
+                config: { topologyKind: 'mesh' },
+                updatedByPrincipalId: 'owner',
+                requestId: 'version-config-2',
+            });
+
+            expect([
+                firstConfig.config.version,
+                deletedConfig.receipt.acceptedVersion,
+                recreatedConfig.config.version,
+            ]).toEqual([1, 2, 3]);
+
+            const firstOverride = await service.putOverride({
+                groupRef: group.group,
+                config: { degreeLimit: 3 },
+                expiresAtEpochMs: 2_500,
+                updatedByPrincipalId: 'owner',
+                requestId: 'version-override-1',
+            });
+            vi.setSystemTime(2_501);
+            expect(await runtimeRepository.deleteExpired(
+                GROUP_TOPOLOGY_OVERRIDE_NAMESPACE,
+            )).toBe(1);
+            const recreatedOverride = await service.putOverride({
+                groupRef: group.group,
+                config: { degreeLimit: 4 },
+                expiresAtEpochMs: 4_000,
+                updatedByPrincipalId: 'owner',
+                requestId: 'version-override-2',
+            });
+
+            expect([
+                firstOverride.override.version,
+                recreatedOverride.override.version,
+            ]).toEqual([1, 2]);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('rolls state back and retries when the durable generation guard conflicts', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const group = createGroupSnapshot(createGroupRef('workspace-1'));
+        const configRepository = new GroupTopologyConfigRepository(runtimeRepository);
+        const service = createService({
+            runtimeRepository,
+            group,
+            configRepository,
+            sleep: () => Promise.resolve(),
+        });
+        await service.putConfig({
+            groupRef: group.group,
+            config: { topologyKind: 'tree' },
+            updatedByPrincipalId: 'owner',
+            requestId: 'generation-seed',
+        });
+        const staleGeneration = await configRepository.findGenerationEntry(
+            group.group,
+            'config',
+        );
+        expect(staleGeneration).toBeDefined();
+        expect(await configRepository.commitGeneration({
+            groupRef: group.group,
+            target: 'config',
+            version: 2,
+        }, staleGeneration!.entry.revision)).toMatchObject({ status: 'accepted' });
+        returnFirstEntryAs(
+            runtimeRepository,
+            GROUP_TOPOLOGY_CONFIG_GENERATION_NAMESPACE,
+            configRepository.generationKey(group.group, 'config'),
+            staleGeneration,
+        );
+
+        const result = await service.putConfig({
+            groupRef: group.group,
+            config: { topologyKind: 'mesh' },
+            updatedByPrincipalId: 'owner',
+            requestId: 'generation-retry',
+        });
+
+        expect(result.config.version).toBe(3);
+        expect(await configRepository.findConfig(group.group)).toEqual(result.config);
+        expect(await configRepository.findGenerationEntry(group.group, 'config'))
+            .toMatchObject({ value: { version: 3 } });
+    });
+
+    it('retries when an outside-transaction read observes config ahead of its generation', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const group = createGroupSnapshot(createGroupRef('workspace-1'));
+        const configRepository = new GroupTopologyConfigRepository(runtimeRepository);
+        const service = createService({
+            runtimeRepository,
+            group,
+            configRepository,
+            sleep: () => Promise.resolve(),
+        });
+        const seeded = await service.putConfig({
+            groupRef: group.group,
+            config: { topologyKind: 'tree' },
+            updatedByPrincipalId: 'owner',
+            requestId: 'split-read-seed',
+        });
+        const staleGeneration = await configRepository.findGenerationEntry(
+            group.group,
+            'config',
+        );
+        const currentConfig = await configRepository.findConfigEntry(group.group);
+        expect(await configRepository.commitConfig({
+            ...seeded.config,
+            config: { topologyKind: 'mesh' },
+            version: 2,
+            updatedAtEpochMs: seeded.config.updatedAtEpochMs + 1,
+            requestId: 'split-read-winner',
+        }, currentConfig!.entry.revision)).toMatchObject({ status: 'accepted' });
+        expect(await configRepository.commitGeneration({
+            groupRef: group.group,
+            target: 'config',
+            version: 2,
+        }, staleGeneration!.entry.revision)).toMatchObject({ status: 'accepted' });
+        returnFirstEntryAs(
+            runtimeRepository,
+            GROUP_TOPOLOGY_CONFIG_GENERATION_NAMESPACE,
+            configRepository.generationKey(group.group, 'config'),
+            staleGeneration,
+        );
+
+        const result = await service.putConfig({
+            groupRef: group.group,
+            config: { degreeLimit: 4 },
+            updatedByPrincipalId: 'owner',
+            requestId: 'split-read-retry',
+        });
+
+        expect(result.config.version).toBe(3);
+        expect(await configRepository.findGenerationEntry(group.group, 'config'))
+            .toMatchObject({ value: { version: 3 } });
+    });
+
+    it('retries when the aggregate invariant token changes across an outside-transaction read', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const group = createGroupSnapshot(createGroupRef('workspace-1'));
+        const configRepository = new GroupTopologyConfigRepository(runtimeRepository);
+        const timingEvents: RallarTimingEvent[] = [];
+        const service = createService({
+            runtimeRepository,
+            group,
+            configRepository,
+            sleep: () => Promise.resolve(),
+            timing: (event) => timingEvents.push(event),
+        });
+        const seeded = await service.putConfig({
+            groupRef: group.group,
+            config: { topologyKind: 'tree' },
+            updatedByPrincipalId: 'owner',
+            requestId: 'invariant-read-seed',
+        });
+        const staleInvariant = await configRepository.findInvariantGenerationEntry(
+            group.group,
+        );
+        expect(await configRepository.commitOverride({
+            ...seeded.config,
+            config: { degreeLimit: 4 },
+            version: 1,
+            requestId: null,
+            expiresAtEpochMs: seeded.config.updatedAtEpochMs + 60_000,
+        }, null)).toMatchObject({ status: 'accepted' });
+        expect(await configRepository.commitGeneration({
+            groupRef: group.group,
+            target: 'override',
+            version: 1,
+        }, null)).toMatchObject({ status: 'accepted' });
+        expect(await configRepository.commitInvariantGeneration({
+            groupRef: group.group,
+            version: 2,
+        }, staleInvariant!.entry.revision)).toMatchObject({ status: 'accepted' });
+        returnFirstEntryAs(
+            runtimeRepository,
+            GROUP_TOPOLOGY_CONFIG_INVARIANT_GENERATION_NAMESPACE,
+            configRepository.invariantGenerationKey(group.group),
+            staleInvariant,
+        );
+
+        const result = await service.putConfig({
+            groupRef: group.group,
+            config: { topologyKind: 'mesh' },
+            updatedByPrincipalId: 'owner',
+            requestId: 'invariant-read-retry',
+        });
+
+        expect(result.config.version).toBe(2);
+        expect(timingEvents).toContainEqual(expect.objectContaining({
+            operation: 'mutation.conflict',
+            details: expect.objectContaining({ attempt: 0, conflict: true }),
+        }));
+    });
+
+    it('does not let a stale delete remove a refreshed config', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const group = createGroupSnapshot(createGroupRef('workspace-1'));
+        const configRepository = new GroupTopologyConfigRepository(runtimeRepository);
+        const first = topologyConfig(group.group, 1, 'tree', 'config-1');
+        const refreshed = topologyConfig(group.group, 2, 'mesh', 'config-2');
+        await configRepository.commitConfig(first, null);
+        const staleEntry = await configRepository.findConfigEntry(group.group);
+        await configRepository.commitConfig(refreshed, staleEntry!.entry.revision);
+        returnFirstEntryAs(
+            runtimeRepository,
+            GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+            configRepository.configKey(group.group),
+            staleEntry,
+        );
+        const service = createService({
+            runtimeRepository,
+            group,
+            configRepository,
+            now: () => 3_000,
+        });
+
+        const result = await service.deleteConfig({
+            groupRef: group.group,
+            updatedByPrincipalId: 'owner',
+            requestId: 'delete-stale-config',
+        });
+
+        expect(result).toMatchObject({
+            deleted: false,
+            receipt: {
+                outcome: 'no-op',
+                acceptedVersion: 2,
+                acceptedStorageRevision: 1,
+                outboxId: null,
+            },
+        });
+        expect(await configRepository.findConfig(group.group)).toEqual(refreshed);
+    });
+
+    it('recomputes lifecycle authorization and effective-config invariants after conflict', async () => {
+        const group = createGroupSnapshot(createGroupRef('workspace-1'));
+
+        const authorizationRuntime = new FakeRuntimeStateRepository();
+        const authorizationRepository = new GroupTopologyConfigRepository(
+            authorizationRuntime,
+        );
+        await authorizationRepository.commitConfig(
+            topologyConfig(group.group, 1, 'tree', 'winner'),
+            null,
+        );
+        returnFirstEntryAs(
+            authorizationRuntime,
+            GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+            authorizationRepository.configKey(group.group),
+            undefined,
+        );
+        let currentGroup = group;
+        const authorizationService = createService({
+            runtimeRepository: authorizationRuntime,
+            group,
+            authoritativeReadGroup: () => currentGroup,
+            configRepository: authorizationRepository,
+            sleep: async () => {
+                currentGroup = {
+                    ...group,
+                    group: { ...group.group, status: 'archived' },
+                };
+            },
+        });
+        await expect(authorizationService.putConfig({
+            groupRef: group.group,
+            config: { topologyKind: 'mesh' },
+            updatedByPrincipalId: 'owner',
+            requestId: 'fresh-authorization',
+        })).rejects.toMatchObject({ status: 403 });
+
+        const invariantRuntime = new FakeRuntimeStateRepository();
+        const invariantRepository = new GroupTopologyConfigRepository(invariantRuntime);
+        await invariantRepository.commitConfig({
+            ...topologyConfig(group.group, 1, 'tree', 'degree-winner'),
+        }, null);
+        await invariantRepository.commitOverride({
+            ...topologyConfig(group.group, 1, 'tree', 'degree-override'),
+            config: { degreeLimit: 2 },
+            expiresAtEpochMs: Date.now() + 60_000,
+        }, null);
+        returnFirstEntryAs(
+            invariantRuntime,
+            GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+            invariantRepository.configKey(group.group),
+            undefined,
+        );
+        const invariantService = createService({
+            runtimeRepository: invariantRuntime,
+            group,
+            configRepository: invariantRepository,
+        });
+        await expect(invariantService.putConfig({
+            groupRef: group.group,
+            config: { meshParamK: 3 },
+            updatedByPrincipalId: 'owner',
+            requestId: 'fresh-config-invariants',
+        })).rejects.toMatchObject({
+            code: 'group-topology-config-validation-failed',
+        });
+    });
+
+    it('makes identical request races first-writer-wins and rejects different command reuse', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const group = createGroupSnapshot(createGroupRef('workspace-1'));
+        const configRepository = new GroupTopologyConfigRepository(runtimeRepository);
+        const first = createService({ runtimeRepository, group, configRepository });
+        const second = createService({ runtimeRepository, group, configRepository });
+        const request = {
+            groupRef: group.group,
+            config: { topologyKind: 'tree' as const },
+            updatedByPrincipalId: 'owner',
+            requestId: 'same-request',
+        };
+
+        const identical = await Promise.all([
+            first.putConfig(request),
+            second.putConfig({ ...request, config: { topologyKind: 'tree' } }),
+        ]);
+        expect(identical[0].receipt).toEqual(identical[1].receipt);
+        expect(identical[0].config).toEqual(identical[1].config);
+
+        await expect(second.putConfig({
+            ...request,
+            config: { topologyKind: 'mesh' },
+        })).rejects.toBeInstanceOf(GroupTopologyConfigIdempotencyConflictError);
+        expect((await configRepository.findConfig(group.group))?.config)
+            .toEqual({ topologyKind: 'tree' });
+    });
+
+    it('does not materialize clock facts for replay or conflicting request reuse', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const group = createGroupSnapshot(createGroupRef('workspace-1'));
+        const now = vi.fn(() => 1_000);
+        const service = createService({ runtimeRepository, group, now });
+        const request = {
+            groupRef: group.group,
+            config: { topologyKind: 'tree' as const },
+            updatedByPrincipalId: 'owner',
+            requestId: 'clock-free-idempotency',
+        };
+        const accepted = await service.putConfig(request);
+        now.mockClear();
+        now.mockImplementation(() => {
+            throw new Error('clock must not run for a ledger winner');
+        });
+
+        expect(await service.putConfig(request)).toEqual(accepted);
+        await expect(service.putConfig({
+            ...request,
+            config: { topologyKind: 'mesh' },
+        })).rejects.toBeInstanceOf(GroupTopologyConfigIdempotencyConflictError);
+        expect(now).not.toHaveBeenCalled();
+    });
+
+    it('replays the immutable accepted PUT result after later overwrite and delete', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const group = createGroupSnapshot(createGroupRef('workspace-1'));
+        const service = createService({ runtimeRepository, group });
+        const request = {
+            groupRef: group.group,
+            config: { topologyKind: 'tree' as const },
+            updatedByPrincipalId: 'owner',
+            requestId: 'immutable-put-result',
+        };
+        const accepted = await service.putConfig(request);
+        await service.putConfig({
+            ...request,
+            config: { topologyKind: 'mesh' },
+            requestId: 'later-overwrite',
+        });
+
+        expect(await service.putConfig(request)).toEqual(accepted);
+
+        await service.deleteConfig({
+            groupRef: group.group,
+            updatedByPrincipalId: 'owner',
+            requestId: 'later-delete',
+        });
+        expect(await service.putConfig(request)).toEqual(accepted);
+    });
+
+    it('revalidates lifecycle and actor authority before replaying a winner', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const group = createGroupSnapshot(createGroupRef('workspace-1'));
+        let authoritative = group;
+        const service = createService({
+            runtimeRepository,
+            group,
+            authoritativeReadGroup: () => authoritative,
+        });
+        const request = {
+            groupRef: group.group,
+            config: { topologyKind: 'tree' as const },
+            updatedByPrincipalId: 'owner',
+            requestId: 'replay-authority',
+        };
+        await service.putConfig(request);
+
+        authoritative = {
+            ...group,
+            group: { ...group.group, status: 'archived' },
+        };
+        await expect(service.putConfig(request)).rejects.toMatchObject({ status: 403 });
+
+        authoritative = {
+            ...group,
+            members: group.members.map((member) =>
+                member.principalId === 'owner'
+                    ? { ...member, role: 'member' as const }
+                    : member
+            ),
+        };
+        await expect(service.putConfig(request)).rejects.toMatchObject({ status: 403 });
+    });
+
+    it('fails closed when an authoritative group reader is missing at runtime', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const group = createGroupSnapshot(createGroupRef('workspace-1'));
+        const ordinaryReader = vi.fn(() => group);
+        const service = new GroupTopologyManagementService({
+            findGroupSnapshotByRef: ordinaryReader,
+            configRepository: new GroupTopologyConfigRepository(runtimeRepository),
+            topologyService: new RallarRtcTopologyService(),
+        } as ConstructorParameters<typeof GroupTopologyManagementService>[0]);
+
+        await expect(service.putConfig({
+            groupRef: group.group,
+            config: { topologyKind: 'tree' },
+            updatedByPrincipalId: 'owner',
+            requestId: 'missing-authoritative-reader',
+        })).rejects.toBeInstanceOf(TypeError);
+        expect(ordinaryReader).not.toHaveBeenCalled();
+    });
+
+    it('records an absent delete winner and rejects later request-id reuse with different semantics', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const group = createGroupSnapshot(createGroupRef('workspace-1'));
+        const configRepository = new GroupTopologyConfigRepository(runtimeRepository);
+        const service = createService({ runtimeRepository, group, configRepository });
+
+        const deleted = await service.deleteConfig({
+            groupRef: group.group,
+            updatedByPrincipalId: 'owner',
+            requestId: 'absent-delete',
+        });
+        expect(deleted).toMatchObject({
+            deleted: false,
+            receipt: { outcome: 'no-op', outboxId: null },
+        });
+        expect(await configRepository.findMutationRecord(
+            group.group,
+            'absent-delete',
+        )).toMatchObject({ receipt: deleted.receipt });
+
+        await expect(service.putConfig({
+            groupRef: group.group,
+            config: { topologyKind: 'tree' },
+            updatedByPrincipalId: 'owner',
+            requestId: 'absent-delete',
+        })).rejects.toBeInstanceOf(GroupTopologyConfigIdempotencyConflictError);
+        expect(await configRepository.findConfig(group.group)).toBeUndefined();
+    });
+
+    it('rolls state and receipt back when the transaction-local outbox insert fails', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const group = createGroupSnapshot(createGroupRef('workspace-1'));
+        const configRepository = new GroupTopologyConfigRepository(runtimeRepository);
+        runtimeRepository.beforeConditionalWrite = (operation, namespace) => {
+            if (operation === 'insertIfAbsent' && namespace === STATE_MUTATION_OUTBOX_NAMESPACE) {
+                throw new Error('forced outbox insert failure');
+            }
+        };
+        const service = createService({ runtimeRepository, group, configRepository });
+
+        await expect(service.putConfig({
+            groupRef: group.group,
+            config: { topologyKind: 'tree' },
+            updatedByPrincipalId: 'owner',
+            requestId: 'atomic-outbox',
+        })).rejects.toThrow('forced outbox insert failure');
+        expect(await configRepository.findConfig(group.group)).toBeUndefined();
+        expect(await configRepository.findMutationRecord(group.group, 'atomic-outbox'))
+            .toBeUndefined();
+    });
+
+    it('commits config without synchronous recomputation, publication, or compensation', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const group = createGroupSnapshot(createGroupRef('workspace-1'));
+        const configRepository = new GroupTopologyConfigRepository(runtimeRepository);
+        const topologyService = createInvalidTopologyService(group.group);
+        const publisher = vi.fn(() => {
+            throw new Error('publisher must not run');
+        });
+        const service = createService({
+            runtimeRepository,
+            group,
+            configRepository,
+            topologyService,
+            publisher,
+        });
+
+        const result = await service.putConfig({
+            groupRef: group.group,
+            config: { topologyKind: 'tree' },
+            updatedByPrincipalId: 'owner',
+            requestId: 'async-only',
+        });
+
+        expect(result.config).toMatchObject({ version: 1 });
+        expect(result.receipt.outboxId).toMatch(/^state-mutation-/);
+        expect(topologyService.planGroupTopology).not.toHaveBeenCalled();
+        expect(publisher).not.toHaveBeenCalled();
+        expect(await configRepository.findConfig(group.group)).toEqual(result.config);
+    });
+
+    it('returns the accepted receipt when the post-commit outbox wake fails', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const group = createGroupSnapshot(createGroupRef('workspace-1'));
+        const configRepository = new GroupTopologyConfigRepository(runtimeRepository);
+        const timingEvents: RallarTimingEvent[] = [];
+        const wakeStateMutationOutbox = vi.fn(() => {
+            throw new Error('forced outbox wake failure');
+        });
+        const service = createService({
+            runtimeRepository,
+            group,
+            configRepository,
+            timing: (event) => timingEvents.push(event),
+            wakeStateMutationOutbox,
+        });
+
+        const result = await service.putConfig({
+            groupRef: group.group,
+            config: { topologyKind: 'tree' },
+            updatedByPrincipalId: 'owner',
+            requestId: 'best-effort-wake',
+        });
+
+        expect(result).toMatchObject({
+            config: { version: 1, requestId: 'best-effort-wake' },
+            receipt: {
+                outcome: 'applied',
+                acceptedVersion: 1,
+                outboxId: expect.stringMatching(/^state-mutation-/),
+            },
+        });
+        expect(wakeStateMutationOutbox).toHaveBeenCalledOnce();
+        expect(await configRepository.findConfig(group.group)).toEqual(result.config);
+        const pending = await new StateMutationOutboxRepository(runtimeRepository)
+            .listPendingPage({ limit: 10 });
+        expect(pending.records.map(({ record }) => record.outboxId))
+            .toContain(result.receipt.outboxId);
+        expect(timingEvents).toContainEqual(expect.objectContaining({
+            component: 'group-topology-config-service',
+            operation: 'mutation.wake',
+            status: 'error',
+            requestId: 'best-effort-wake',
+            error: expect.objectContaining({
+                message: 'forced outbox wake failure',
+            }),
+        }));
+    });
+
     it('plans topology from an explicit predecessor without persisting under the graph computation', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const group = createGroupSnapshot(createGroupRef('workspace-1'));
@@ -96,7 +869,7 @@ describe('GroupTopologyManagementService', () => {
         const group = createGroupSnapshot(createGroupRef('workspace-1'));
         const configRepository = new GroupTopologyConfigRepository(runtimeRepository);
         const rttRepository = new RtcRttRepository(runtimeRepository);
-        await configRepository.putConfig({
+        await configRepository.commitConfig({
             groupRef: group.group,
             config: {
                 topologyKind: 'tree',
@@ -106,7 +879,8 @@ describe('GroupTopologyManagementService', () => {
             createdAtEpochMs: 1,
             updatedAtEpochMs: 1,
             updatedByPrincipalId: 'owner',
-        });
+            requestId: null,
+        }, null);
         await rttRepository.putMeasurementIfNewer({
             sessionIdFrom: 'session-a',
             sessionIdTo: 'session-b',
@@ -377,7 +1151,7 @@ describe('GroupTopologyManagementService', () => {
         expect(publisher).not.toHaveBeenCalled();
     });
 
-    it('does not persist config or overrides when reconfigure validation fails', async () => {
+    it('commits config and overrides without invoking invalid synchronous topology work', async () => {
         const configRuntimeRepository = new FakeRuntimeStateRepository();
         const group = createGroupSnapshot(createGroupRef('workspace-1'));
         const configRepository = new GroupTopologyConfigRepository(
@@ -397,8 +1171,8 @@ describe('GroupTopologyManagementService', () => {
             },
             updatedByPrincipalId: 'owner',
             requestId: 'config-invalid-topology',
-        })).rejects.toThrow(GroupTopologyValidationError);
-        expect(await configRepository.findConfig(group.group)).toBeUndefined();
+        })).resolves.toMatchObject({ config: { version: 1 } });
+        expect(await configRepository.findConfig(group.group)).toBeDefined();
 
         const overrideRuntimeRepository = new FakeRuntimeStateRepository();
         const overrideRepository = new GroupTopologyConfigRepository(
@@ -418,11 +1192,11 @@ describe('GroupTopologyManagementService', () => {
             },
             updatedByPrincipalId: 'owner',
             requestId: 'override-invalid-topology',
-        })).rejects.toThrow(GroupTopologyValidationError);
-        expect(await overrideRepository.findOverride(group.group)).toBeUndefined();
+        })).resolves.toMatchObject({ override: { version: 1 } });
+        expect(await overrideRepository.findOverride(group.group)).toBeDefined();
     });
 
-    it('restores config or overrides when delete reconfigure validation fails', async () => {
+    it('deletes config and overrides without synchronous compensation', async () => {
         const group = createGroupSnapshot(createGroupRef('workspace-1'));
         const existingConfig = {
             groupRef: group.group,
@@ -439,7 +1213,7 @@ describe('GroupTopologyManagementService', () => {
         const configRepository = new GroupTopologyConfigRepository(
             configRuntimeRepository,
         );
-        await configRepository.putConfig(existingConfig);
+        await configRepository.commitConfig(existingConfig, null);
         const configService = createService({
             runtimeRepository: configRuntimeRepository,
             group,
@@ -450,8 +1224,8 @@ describe('GroupTopologyManagementService', () => {
         await expect(configService.deleteConfig({
             groupRef: group.group,
             updatedByPrincipalId: 'owner',
-        })).rejects.toThrow(GroupTopologyValidationError);
-        expect(await configRepository.findConfig(group.group)).toEqual(existingConfig);
+        })).resolves.toMatchObject({ deleted: true });
+        expect(await configRepository.findConfig(group.group)).toBeUndefined();
 
         const existingOverride = {
             ...existingConfig,
@@ -465,10 +1239,7 @@ describe('GroupTopologyManagementService', () => {
         const overrideRepository = new GroupTopologyConfigRepository(
             overrideRuntimeRepository,
         );
-        await overrideRepository.putOverride(
-            existingOverride,
-            existingOverride.expiresAtEpochMs,
-        );
+        await overrideRepository.commitOverride(existingOverride, null);
         const overrideService = createService({
             runtimeRepository: overrideRuntimeRepository,
             group,
@@ -479,16 +1250,16 @@ describe('GroupTopologyManagementService', () => {
         await expect(overrideService.deleteOverride({
             groupRef: group.group,
             updatedByPrincipalId: 'owner',
-        })).rejects.toThrow(GroupTopologyValidationError);
+        })).resolves.toMatchObject({ deleted: true });
         expect(await overrideRepository.findOverride(group.group))
-            .toEqual(existingOverride);
+            .toBeUndefined();
     });
 
     it('passes effective config into due RTT topology flushes', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const group = createGroupSnapshot(createGroupRef('workspace-1'));
         const configRepository = new GroupTopologyConfigRepository(runtimeRepository);
-        await configRepository.putConfig({
+        await configRepository.commitConfig({
             groupRef: group.group,
             config: {
                 topologyKind: 'tree',
@@ -498,7 +1269,8 @@ describe('GroupTopologyManagementService', () => {
             createdAtEpochMs: 1,
             updatedAtEpochMs: 1,
             updatedByPrincipalId: 'owner',
-        });
+            requestId: null,
+        }, null);
         const topologyService = new RallarRtcTopologyService({
             now: () => 1_000,
         });
@@ -533,7 +1305,7 @@ describe('GroupTopologyManagementService', () => {
         );
     });
 
-    it('writes and deletes config and overrides with default reconfigure enabled', async () => {
+    it('writes and deletes config and overrides without synchronous reconfigure', async () => {
         vi.useFakeTimers();
         vi.setSystemTime(1_000);
 
@@ -582,7 +1354,7 @@ describe('GroupTopologyManagementService', () => {
                 updatedByPrincipalId: 'owner',
             });
 
-            expect(planGroupTopology).toHaveBeenCalledTimes(4);
+            expect(planGroupTopology).not.toHaveBeenCalled();
             expect(await service.readOverride(group.group)).toBeUndefined();
             expect((await service.readConfig(group.group)).durable).toBeUndefined();
         } finally {
@@ -594,6 +1366,8 @@ describe('GroupTopologyManagementService', () => {
 function createService(options: {
     readonly runtimeRepository: FakeRuntimeStateRepository;
     readonly group: GroupSnapshot;
+    readonly readGroup?: () => GroupSnapshot;
+    readonly authoritativeReadGroup?: () => GroupSnapshot;
     readonly configRepository?: GroupTopologyConfigRepository;
     readonly rttRepository?: RtcRttRepository;
     readonly topologyService?: RallarRtcTopologyService;
@@ -601,13 +1375,23 @@ function createService(options: {
     readonly publisher?: (message: unknown) => void;
     readonly serverDefaults?: ConstructorParameters<typeof GroupTopologyManagementService>[0]['serverDefaults'];
     readonly now?: () => number;
+    readonly sleep?: (delayMs: number) => Promise<void>;
+    readonly timing?: (event: RallarTimingEvent) => void;
+    readonly wakeStateMutationOutbox?: () => void;
 }): GroupTopologyManagementService {
     return new GroupTopologyManagementService({
         findGroupSnapshotByRef: async (ref) =>
             ref.applicationId === options.group.group.applicationId &&
                 ref.workspaceId === options.group.group.workspaceId &&
                 ref.groupId === options.group.group.groupId
-                ? options.group
+                ? options.readGroup?.() ?? options.group
+                : undefined,
+        findAuthoritativeGroupSnapshotByRef: async (ref) =>
+            ref.applicationId === options.group.group.applicationId &&
+                ref.workspaceId === options.group.group.workspaceId &&
+                ref.groupId === options.group.group.groupId
+                ? options.authoritativeReadGroup?.() ?? options.readGroup?.() ??
+                    options.group
                 : undefined,
         configRepository: options.configRepository ??
             new GroupTopologyConfigRepository(options.runtimeRepository),
@@ -621,7 +1405,71 @@ function createService(options: {
         serverDefaults: options.serverDefaults,
         processRttReader: () => [],
         now: options.now,
+        sleep: options.sleep,
+        timing: options.timing,
+        wakeStateMutationOutbox: options.wakeStateMutationOutbox,
     });
+}
+
+function topologyConfig(
+    groupRef: GroupRef,
+    version: number,
+    topologyKind: 'tree' | 'mesh',
+    requestId: string,
+) {
+    return {
+        groupRef,
+        config: { topologyKind },
+        version,
+        createdAtEpochMs: 1,
+        updatedAtEpochMs: version,
+        updatedByPrincipalId: 'owner',
+        requestId,
+    };
+}
+
+function returnFirstEntryAs(
+    runtime: FakeRuntimeStateRepository,
+    namespace: string,
+    key: string,
+    entry: Awaited<ReturnType<FakeRuntimeStateRepository['findEntry']>>,
+): void {
+    const findEntry = runtime.findEntry.bind(runtime);
+    let first = true;
+    runtime.findEntry = async (candidateNamespace, candidateKey) => {
+        if (first && candidateNamespace === namespace && candidateKey === key) {
+            first = false;
+            return entry?.entry;
+        }
+        return await findEntry(candidateNamespace, candidateKey);
+    };
+}
+
+async function blockFirstReadsTogether(
+    runtime: FakeRuntimeStateRepository,
+    namespace: string,
+    key: string,
+    count: number,
+): Promise<void> {
+    const findEntry = runtime.findEntry.bind(runtime);
+    let waiting = 0;
+    let release!: () => void;
+    const barrier = new Promise<void>((resolve) => {
+        release = resolve;
+    });
+    runtime.findEntry = async (candidateNamespace, candidateKey) => {
+        const entry = await findEntry(candidateNamespace, candidateKey);
+        if (
+            candidateNamespace === namespace &&
+            candidateKey === key &&
+            waiting < count
+        ) {
+            waiting += 1;
+            if (waiting === count) release();
+            await barrier;
+        }
+        return entry;
+    };
 }
 
 function createGroupRef(workspaceId: string): GroupRef {
@@ -636,6 +1484,7 @@ function createGroupSnapshot(groupRef: GroupRef): GroupSnapshot {
     const sessionIds = ['session-a', 'session-b', 'session-c', 'session-d', 'session-e'];
     return {
         stateRevision: 1,
+        causalRevision: { groupRevision: 1, presenceRevision: 0 },
         group: {
             ...groupRef,
             displayName: groupRef.groupId,
@@ -647,6 +1496,8 @@ function createGroupSnapshot(groupRef: GroupRef): GroupSnapshot {
             metadataVersion: 0,
             rosterVersion: 1,
             presenceVersion: 0,
+            activeMemberCount: sessionIds.length,
+            ownerPrincipalId: 'owner',
             created: {
                 atEpochMs: 1,
                 byPrincipalId: 'owner',
@@ -656,10 +1507,10 @@ function createGroupSnapshot(groupRef: GroupRef): GroupSnapshot {
                 byPrincipalId: 'owner',
             },
         },
-        members: sessionIds.map((sessionId) => ({
+        members: sessionIds.map((sessionId, index) => ({
             ...groupRef,
-            principalId: sessionId,
-            role: 'member',
+            principalId: index === 0 ? 'owner' : sessionId,
+            role: index === 0 ? 'owner' : 'member',
             status: 'active',
             joined: {
                 atEpochMs: 1,
@@ -670,10 +1521,12 @@ function createGroupSnapshot(groupRef: GroupRef): GroupSnapshot {
                 byPrincipalId: 'owner',
             },
         })),
-        activeSessions: sessionIds.map((sessionId) => ({
+        activeSessions: sessionIds.map((sessionId, index) => ({
             ...groupRef,
             sessionId,
-            principalId: sessionId,
+            principalId: index === 0 ? 'owner' : sessionId,
+            generationId: `${sessionId}-generation`,
+            generationVersion: 1,
             connectedAtEpochMs: 1,
             lastHeartbeatAtEpochMs: 1,
             expiresAtEpochMs: 60_000,

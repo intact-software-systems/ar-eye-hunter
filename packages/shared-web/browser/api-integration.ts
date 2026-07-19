@@ -35,6 +35,7 @@ import type {
     GraphDiagnosticReadOptions,
     GraphDiagnosticReadResponse,
     GroupTopologyConfigView,
+    GroupTopologyConfigMutationReceipt,
     GroupTopologyManagementView,
     PutGroupTopologyConfigRequest,
     PutGroupTopologyOverrideRequest,
@@ -102,25 +103,23 @@ export type StateGraphDiagnosticReadOptions =
     & ApiRequestOptions
     & GraphDiagnosticReadOptions;
 
-export type StateGroupTopologyDeleteOptions =
-    & ApiRequestOptions
-    & Readonly<{
-    reconfigure?: boolean;
+export type StateGroupTopologyDeleteOptions = ApiRequestOptions & Readonly<{
+    requestId?: string;
 }>;
 
 export type PutStateGroupTopologyConfigResponse = Readonly<{
     config: StoredGroupTopologyConfig;
-    reconfigure?: ReconfigureGroupTopologyResponse;
+    receipt: GroupTopologyConfigMutationReceipt;
 }>;
 
 export type PutStateGroupTopologyOverrideResponse = Readonly<{
     override: StoredGroupTopologyOverride;
-    reconfigure?: ReconfigureGroupTopologyResponse;
+    receipt: GroupTopologyConfigMutationReceipt;
 }>;
 
 export type DeleteStateGroupTopologyConfigResponse = Readonly<{
     deleted: boolean;
-    reconfigure?: ReconfigureGroupTopologyResponse;
+    receipt: GroupTopologyConfigMutationReceipt;
 }>;
 
 export type GroupStateEventListRequestOptions =
@@ -460,12 +459,13 @@ async function executeHttpRequest<TReq, TRes>(
     method: ApiHttpMethod,
     body: TReq | undefined,
     options: ApiRequestOptions = {},
+    requestHeaders: Readonly<Record<string, string>> = {},
 ): Promise<TRes> {
     const url = `${baseUrl}${path}`;
 
     const init: RequestInit = {
         method,
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', ...requestHeaders },
         signal: options.signal,
     };
 
@@ -931,13 +931,11 @@ export async function deleteStateGroupTopologyConfig(
 ): Promise<DeleteStateGroupTopologyConfigResponse> {
     return await executeHttpRequest<void, DeleteStateGroupTopologyConfigResponse>(
         readApiBaseUrl(),
-        withTopologyDeleteQuery(
-            `${toStateGroupPath(scope, groupId)}/topology/config`,
-            options,
-        ),
+        `${toStateGroupPath(scope, groupId)}/topology/config`,
         'DELETE',
         undefined,
         options,
+        topologyDeleteHeaders(options),
     );
 }
 
@@ -980,14 +978,20 @@ export async function deleteStateGroupTopologyOverride(
 ): Promise<DeleteStateGroupTopologyConfigResponse> {
     return await executeHttpRequest<void, DeleteStateGroupTopologyConfigResponse>(
         readApiBaseUrl(),
-        withTopologyDeleteQuery(
-            `${toStateGroupPath(scope, groupId)}/topology/override`,
-            options,
-        ),
+        `${toStateGroupPath(scope, groupId)}/topology/override`,
         'DELETE',
         undefined,
         options,
+        topologyDeleteHeaders(options),
     );
+}
+
+function topologyDeleteHeaders(
+    options: StateGroupTopologyDeleteOptions | undefined,
+): Readonly<Record<string, string>> {
+    return options?.requestId
+        ? { 'Idempotency-Key': options.requestId }
+        : {};
 }
 
 export async function reconfigureStateGroupTopology(
@@ -1371,18 +1375,6 @@ function withGraphDiagnosticQuery(
     }
     if (options?.refresh !== undefined) {
         searchParams.set('refresh', options.refresh);
-    }
-
-    return withSearchParams(path, searchParams);
-}
-
-function withTopologyDeleteQuery(
-    path: string,
-    options?: StateGroupTopologyDeleteOptions,
-): string {
-    const searchParams = new URLSearchParams();
-    if (options?.reconfigure !== undefined) {
-        searchParams.set('reconfigure', String(options.reconfigure));
     }
 
     return withSearchParams(path, searchParams);

@@ -130,6 +130,7 @@ export function initRallarSystemWsTopics(
     const rtcTopologyManagement = options.rtcTopologyManagement ??
         new GroupTopologyManagementService({
         findGroupSnapshotByRef,
+        findAuthoritativeGroupSnapshotByRef: findGroupSnapshotByRef,
         configRepository: rtcTopologyRuntimeState?.topologyConfig,
         topologyService: rtcTopologyService,
         topologySnapshotRepository: rtcTopologyRuntimeState?.topologySnapshots,

@@ -137,7 +137,7 @@ counters, and process CPU time. PostgreSQL buffer and WAL counters are captured
 immediately before and after each measured phase; lock waits are sampled from
 `pg_stat_activity` while the phase runs.
 
-Attempt observations use production client/group service timing events. Each operation has
+Attempt observations use production client/group/topology-config service timing events. Each operation has
 an `operationId`, exact zero-based production attempt numbers, nonterminal
 `conflicted` observations with their production attempt numbers, and exactly
 one final `accepted` or `exhausted` observation. Acceptance is the attempt after
@@ -152,18 +152,18 @@ baseline exhaustion is representable; comparison permits candidate hot
 exhaustion only up to that baseline while requiring zero in uncontended/shared.
 
 The timed command ends with the production service call. After the measured
-phase, the harness queries production client/group idempotency receipts and
+phase, the harness queries production client/group/topology-config idempotency receipts and
 `StateMutationOutboxRepository` through an uninstrumented admin SQL stack.
 Profile-instance counts as received only when both profile and instance
 subcommand receipts are present and complete; a group command uses its exact
 request-ID receipt. Production outbox IDs and effects are projected without
 inventing evidence: two `client-state-sync` effects for profile-instance, and
 `group-state-sync` plus `group-presence-summary` for every accepted group
-mutation, including heartbeat. These post-phase evidence queries are excluded
-from command latency, SQL/resource deltas, and mutation timing. The current
-diagnostic producer labels topology-source's missing production receipt/outbox
-with DBW-06/DBW-12 until Task 5 supplies topology recompute persistence; it does
-not synthesize either record. Every metric source is disclosed in
+mutation, including heartbeat, plus one `rtc-topology-recompute` effect for
+each accepted topology-source mutation. These post-phase evidence queries are excluded
+from command latency, SQL/resource deltas, and mutation timing. The Task 5
+producer requires complete topology receipts, real outbox records, and exact
+zero-based mutation timings and emits no topology DBW exception. Every metric source is disclosed in
 `measurement.counterSources`.
 
 Compare a candidate with its unmodified baseline:

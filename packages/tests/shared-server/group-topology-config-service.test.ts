@@ -1,4 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import type {
+    PutGroupTopologyConfigRequest,
+    PutGroupTopologyOverrideRequest,
+} from '@shared/api/graph-topology-management-types.ts';
 import {
     DEFAULT_GROUP_TOPOLOGY_OVERRIDE_TTL_MS,
     GroupTopologyConfigValidationError,
@@ -9,8 +14,119 @@ import {
     validateEffectiveGroupTopologyConfig,
     validateGroupTopologyConfigPatch,
 } from '@shared-server/rallar-system/services/group-topology-config-service.ts';
+import {
+    computeTopologyConfigMutation,
+    validateTopologyConfigMutation,
+} from '@shared-server/rallar-system/services/group-topology-config-mutations.ts';
 
 describe('group topology config service', () => {
+    it('keeps synchronous reconfigure options off config mutation requests', () => {
+        type ConfigHasReconfigure = 'reconfigure' extends
+            keyof PutGroupTopologyConfigRequest ? true : false;
+        type OverrideHasReconfigure = 'reconfigure' extends
+            keyof PutGroupTopologyOverrideRequest ? true : false;
+        expectTypeOf<ConfigHasReconfigure>().toEqualTypeOf<false>();
+        expectTypeOf<OverrideHasReconfigure>().toEqualTypeOf<false>();
+    });
+
+    it('computes and validates the same immutable config mutation twice', () => {
+        const input = deepFreeze({
+            command: {
+                operation: 'putConfig' as const,
+                aggregateRef: createGroupRef(),
+                commandId: 'config-command-1',
+                requestId: 'config-command-1',
+                input: {
+                    config: { topologyKind: 'tree' as const, degreeLimit: 4 },
+                    updatedByPrincipalId: 'owner',
+                    ttlMs: null,
+                    expiresAtEpochMs: null,
+                },
+            },
+            read: {
+                config: null,
+                override: null,
+                idempotency: null,
+                groupSnapshot: createGroupSnapshot(),
+            },
+            facts: {
+                nowEpochMs: 1_000,
+                commandHash: `sha256:${'a'.repeat(64)}`,
+                isPlatformAdmin: false,
+                resolvedOverrideExpiresAtEpochMs: null,
+                deleteTarget: null,
+            },
+            serverDefaults: {},
+        });
+        const before = structuredClone(input);
+
+        const first = computeTopologyConfigMutation(input);
+        const second = computeTopologyConfigMutation(input);
+
+        expect(first).toEqual(second);
+        expect(input).toEqual(before);
+        expect(() => validateTopologyConfigMutation({ ...input, computed: first }))
+            .not.toThrow();
+        expect(() => validateTopologyConfigMutation({ ...input, computed: second }))
+            .not.toThrow();
+    });
+
+    it('keeps pure topology config phases ambient-free and orchestration visible', () => {
+        const mutationSource = readFileSync(
+            new URL(
+                '../../shared-server/rallar-system/services/group-topology-config-mutations.ts',
+                import.meta.url,
+            ),
+            'utf8',
+        );
+        for (const forbidden of [
+            'Date.now',
+            'Temporal.Now',
+            'Math.random',
+            'randomUUID',
+            '.begin(',
+            'new StateMutationOutboxRepository',
+            'publisher',
+            'topologyService',
+        ]) {
+            expect(mutationSource, forbidden).not.toContain(forbidden);
+        }
+
+        const serviceSource = readFileSync(
+            new URL(
+                '../../shared-server/rallar-system/services/group-topology-management-service.ts',
+                import.meta.url,
+            ),
+            'utf8',
+        );
+        const read = serviceSource.indexOf('const read = await readTopologyConfigMutation');
+        const compute = serviceSource.indexOf(
+            'computed = computeTopologyConfigMutation',
+            read,
+        );
+        const validate = serviceSource.indexOf('validateTopologyConfigMutation', compute);
+        const write = serviceSource.indexOf(
+            'written = await writeTopologyConfigMutation',
+            validate,
+        );
+        expect(read).toBeGreaterThan(-1);
+        expect(read).toBeLessThan(compute);
+        expect(compute).toBeLessThan(validate);
+        expect(validate).toBeLessThan(write);
+        const writeHelper = serviceSource.indexOf(
+            'async function writeTopologyConfigMutation',
+        );
+        const nextHelper = serviceSource.indexOf(
+            'function topologyConfigExecution',
+            writeHelper,
+        );
+        expect(writeHelper).toBeGreaterThan(write);
+        expect(serviceSource.slice(writeHelper, nextHelper))
+            .toContain('return await runtime.begin');
+        expect(serviceSource.match(/\.begin\(/g)).toHaveLength(1);
+        expect(serviceSource.slice(read, writeHelper)).not.toContain('.begin(');
+    });
+
     it('resolves server defaults, durable config, temporary override, and request options', () => {
         const durable = {
             groupRef: createGroupRef(),
@@ -139,4 +255,49 @@ function createGroupRef() {
         workspaceId: 'workspace-1',
         groupId: 'room-1',
     };
+}
+
+function createGroupSnapshot() {
+    const groupRef = createGroupRef();
+    return {
+        stateRevision: 1,
+        causalRevision: { groupRevision: 1, presenceRevision: 0 },
+        group: {
+            ...groupRef,
+            displayName: 'Room 1',
+            kind: 'room' as const,
+            status: 'active' as const,
+            joinMode: 'open' as const,
+            metadata: {},
+            snapshotVersion: 1,
+            metadataVersion: 0,
+            rosterVersion: 1,
+            presenceVersion: 0,
+            activeMemberCount: 1,
+            ownerPrincipalId: 'owner',
+            created: { atEpochMs: 1, byPrincipalId: 'owner' },
+            updated: { atEpochMs: 1, byPrincipalId: 'owner' },
+        },
+        members: [{
+            ...groupRef,
+            principalId: 'owner',
+            role: 'owner' as const,
+            status: 'active' as const,
+            joined: { atEpochMs: 1, byPrincipalId: 'owner' },
+            updated: { atEpochMs: 1, byPrincipalId: 'owner' },
+        }],
+        activeSessions: [],
+        memberCount: 1,
+        onlineMemberCount: 0,
+    };
+}
+
+function deepFreeze<T>(value: T): T {
+    if (value && typeof value === 'object') {
+        Object.freeze(value);
+        for (const nested of Object.values(value as Record<string, unknown>)) {
+            deepFreeze(nested);
+        }
+    }
+    return value;
 }

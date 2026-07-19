@@ -352,7 +352,6 @@ describe('state API workflows', () => {
             {
                 requestId: 'config-1',
                 config: { topologyKind: 'mesh', degreeLimit: 3 },
-                reconfigure: false,
             },
             scope,
             { authSession },
@@ -378,27 +377,26 @@ describe('state API workflows', () => {
             { authSession },
         );
         await deleteStateGroupTopologyConfig('room /1', scope, {
-            reconfigure: false,
             authSession,
+            requestId: 'config-delete-1',
         });
         await deleteStateGroupTopologyOverride('room /1', scope, {
-            reconfigure: false,
             authSession,
+            requestId: 'override-delete-1',
         });
 
         expect(fetchCalls.map((call) => `${call.method} ${call.url}`)).toEqual([
             'PUT /api/state/apps/app%201/workspaces/workspace%2F1/groups/room%20%2F1/topology/config',
             'PUT /api/state/apps/app%201/workspaces/workspace%2F1/groups/room%20%2F1/topology/override',
             'POST /api/state/apps/app%201/workspaces/workspace%2F1/groups/room%20%2F1/topology/reconfigure',
-            'DELETE /api/state/apps/app%201/workspaces/workspace%2F1/groups/room%20%2F1/topology/config?reconfigure=false',
-            'DELETE /api/state/apps/app%201/workspaces/workspace%2F1/groups/room%20%2F1/topology/override?reconfigure=false',
+            'DELETE /api/state/apps/app%201/workspaces/workspace%2F1/groups/room%20%2F1/topology/config',
+            'DELETE /api/state/apps/app%201/workspaces/workspace%2F1/groups/room%20%2F1/topology/override',
         ]);
         expect(fetchCalls.every((call) => call.headers.authorization === 'Bearer token-1'))
             .toBe(true);
         expect(fetchCalls[0].body).toMatchObject({
             requestId: 'config-1',
             config: { topologyKind: 'mesh', degreeLimit: 3 },
-            reconfigure: false,
         });
         expect(fetchCalls[1].body).toMatchObject({
             requestId: 'override-1',
@@ -412,6 +410,8 @@ describe('state API workflows', () => {
         });
         expect(fetchCalls[3].body).toBeUndefined();
         expect(fetchCalls[4].body).toBeUndefined();
+        expect(fetchCalls[3].headers['idempotency-key']).toBe('config-delete-1');
+        expect(fetchCalls[4].headers['idempotency-key']).toBe('override-delete-1');
     });
 
     it('creates and joins a state group as a sequential workflow', async () => {

@@ -312,7 +312,7 @@ Deno.test('OpenAPI JSON includes scoped graph and topology management contracts'
       '#/components/parameters/ApplicationId',
       '#/components/parameters/WorkspaceId',
       '#/components/parameters/GroupId',
-      '#/components/parameters/TopologyReconfigure',
+      '#/components/parameters/IdempotencyKey',
     ],
   );
   assert.deepEqual(
@@ -325,9 +325,25 @@ Deno.test('OpenAPI JSON includes scoped graph and topology management contracts'
       '#/components/parameters/ApplicationId',
       '#/components/parameters/WorkspaceId',
       '#/components/parameters/GroupId',
-      '#/components/parameters/TopologyReconfigure',
+      '#/components/parameters/IdempotencyKey',
     ],
   );
+  for (const topologyPath of [
+    '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config',
+    '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/override',
+  ]) {
+    for (const method of ['put', 'delete'] as const) {
+      const responses = json.paths[topologyPath]![method]!.responses!;
+      assert.equal(
+        responses['409'].$ref,
+        '#/components/responses/Conflict',
+      );
+      assert.equal(
+        responses['503'].$ref,
+        '#/components/responses/ServiceUnavailable',
+      );
+    }
+  }
 });
 
 Deno.test('OpenAPI JSON includes admin operations contracts', async () => {
@@ -524,7 +540,7 @@ type OpenApiOperation = {
   deprecated?: boolean;
   parameters?: readonly { $ref?: string }[];
   security?: readonly Record<string, readonly string[]>[];
-  responses?: Record<string, unknown>;
+  responses?: Record<string, { $ref?: string }>;
 };
 
 function parameterRefs(operation: OpenApiOperation | undefined): string[] {

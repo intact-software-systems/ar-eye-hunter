@@ -124,15 +124,12 @@ export function init(
       const body = await readJsonBody<{
         requestId?: string;
         config: GroupTopologyConfigPatch;
-        reconfigure?: boolean;
       }>(c);
       return c.json(await deps.topologyManagement.putConfig({
         groupRef,
         config: body.config,
         updatedByPrincipalId: authSession.clientId,
         requestId: readRequestId(c, body),
-        reconfigure: body.reconfigure ?? true,
-        publish: true,
       }));
     } catch (error) {
       return toErrorResponse(c, error);
@@ -146,8 +143,6 @@ export function init(
         groupRef,
         updatedByPrincipalId: authSession.clientId,
         requestId: c.req.header('Idempotency-Key'),
-        reconfigure: readReconfigureQuery(c),
-        publish: true,
       }));
     } catch (error) {
       return toErrorResponse(c, error);
@@ -173,7 +168,6 @@ export function init(
         config: GroupTopologyConfigPatch;
         ttlMs?: number;
         expiresAtEpochMs?: number;
-        reconfigure?: boolean;
       }>(c);
       return c.json(await deps.topologyManagement.putOverride({
         groupRef,
@@ -182,8 +176,6 @@ export function init(
         expiresAtEpochMs: body.expiresAtEpochMs,
         updatedByPrincipalId: authSession.clientId,
         requestId: readRequestId(c, body),
-        reconfigure: body.reconfigure ?? true,
-        publish: true,
       }));
     } catch (error) {
       return toErrorResponse(c, error);
@@ -197,8 +189,6 @@ export function init(
         groupRef,
         updatedByPrincipalId: authSession.clientId,
         requestId: c.req.header('Idempotency-Key'),
-        reconfigure: readReconfigureQuery(c),
-        publish: true,
       }));
     } catch (error) {
       return toErrorResponse(c, error);
@@ -357,14 +347,6 @@ function readGraphOptions(c: {
 
 function readBooleanQuery(value: string | undefined): boolean {
   return value?.trim().toLowerCase() === 'true' || value === '1';
-}
-
-function readReconfigureQuery(c: {
-  req: { query(name: string): string | undefined };
-}): boolean {
-  return c.req.query('reconfigure')?.trim().toLowerCase() === 'false'
-    ? false
-    : true;
 }
 
 async function readJsonBody<T>(c: {

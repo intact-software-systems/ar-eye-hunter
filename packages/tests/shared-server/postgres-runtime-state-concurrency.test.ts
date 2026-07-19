@@ -2,6 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
+import type { RuntimeStateEntry } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import {
+    GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+    GroupTopologyConfigRepository,
+} from '@shared-server/rallar-system/repositories/GroupTopologyConfigRepository.ts';
+import { StateMutationOutboxRepository } from '@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts';
+import { GroupTopologyManagementService } from '@shared-server/rallar-system/services/group-topology-management-service.ts';
+import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
 
 type PostgresSql = PSqlSql & Readonly<{
     end(): Promise<void>;
@@ -217,6 +226,179 @@ describe('Postgres runtime-state conditional-write concurrency', () => {
     );
 
     postgresIt(
+        'converges true-overlap topology config transactions across independent clients',
+        async () => {
+            const databaseUrl = requireDatabaseUrl();
+            const applicationId = `topology-postgres-${crypto.randomUUID()}`;
+            const groupRef = {
+                applicationId,
+                workspaceId: 'concurrency',
+                groupId: 'room',
+            };
+            const snapshot = topologyGroupSnapshot(groupRef);
+            const clients = [await createSql(databaseUrl), await createSql(databaseUrl)];
+            try {
+                const barrier = createReadBarrier(2);
+                const firstRuntime = new BarrierRuntimeStateRepository(
+                    clients[0]!,
+                    GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+                    barrier,
+                );
+                const secondRuntime = new BarrierRuntimeStateRepository(
+                    clients[1]!,
+                    GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+                    barrier,
+                );
+                const service = (runtime: PSqlRuntimeStateRepository) =>
+                    new GroupTopologyManagementService({
+                        findGroupSnapshotByRef: () => snapshot,
+                        findAuthoritativeGroupSnapshotByRef: () => snapshot,
+                        configRepository: new GroupTopologyConfigRepository(runtime),
+                        topologyService: new RallarRtcTopologyService(),
+                        sleep: () => Promise.resolve(),
+                    });
+
+                const results = await Promise.all([
+                    service(firstRuntime).putConfig({
+                        groupRef,
+                        config: { topologyKind: 'tree' },
+                        updatedByPrincipalId: 'owner',
+                        requestId: `${applicationId}-a`,
+                    }),
+                    service(secondRuntime).putConfig({
+                        groupRef,
+                        config: { topologyKind: 'mesh' },
+                        updatedByPrincipalId: 'owner',
+                        requestId: `${applicationId}-b`,
+                    }),
+                ]);
+
+                expect(results.map(({ config }) => config.version).sort())
+                    .toEqual([1, 2]);
+                const repository = new GroupTopologyConfigRepository(firstRuntime);
+                expect(await repository.findMutationRecord(groupRef, `${applicationId}-a`))
+                    .toBeDefined();
+                expect(await repository.findMutationRecord(groupRef, `${applicationId}-b`))
+                    .toBeDefined();
+                expect(await repository.findGenerationEntry(groupRef, 'config'))
+                    .toMatchObject({ value: { version: 2 }, entry: { revision: 1 } });
+                expect(await repository.findInvariantGenerationEntry(groupRef))
+                    .toMatchObject({
+                        value: { version: 2 },
+                        entry: {
+                            key: repository.invariantGenerationKey(groupRef),
+                            revision: 1,
+                        },
+                    });
+                const outbox = new StateMutationOutboxRepository(firstRuntime);
+                const exactRecords = await Promise.all(results.map(({ receipt }) =>
+                    outbox.find(receipt.outboxId!)
+                ));
+                expect(exactRecords.map((stored) => stored?.record.commandId).sort())
+                    .toEqual([`${applicationId}-a`, `${applicationId}-b`]);
+                expect(exactRecords.every((stored) =>
+                    stored?.record.effects.length === 1 &&
+                    stored.record.effects[0] === 'rtc-topology-recompute'
+                )).toBe(true);
+            } finally {
+                await Promise.allSettled(clients.map(async (client) => {
+                    await client`
+                        delete from runtime_state_store
+                        where store_value like ${`%${applicationId}%`}
+                    `;
+                }));
+                await Promise.allSettled(clients.map(async (client) => await client.end()));
+            }
+        },
+        60_000,
+    );
+
+    postgresIt(
+        'revalidates true-overlap config and override writes against one invariant surface',
+        async () => {
+            const databaseUrl = requireDatabaseUrl();
+            const applicationId = `topology-cross-target-${crypto.randomUUID()}`;
+            const groupRef = {
+                applicationId,
+                workspaceId: 'concurrency',
+                groupId: 'room',
+            };
+            const snapshot = topologyGroupSnapshot(groupRef);
+            const clients = [await createSql(databaseUrl), await createSql(databaseUrl)];
+            try {
+                const barrier = createReadBarrier(2);
+                const firstRuntime = new BarrierRuntimeStateRepository(
+                    clients[0]!,
+                    GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+                    barrier,
+                );
+                const secondRuntime = new BarrierRuntimeStateRepository(
+                    clients[1]!,
+                    GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+                    barrier,
+                );
+                const service = (runtime: PSqlRuntimeStateRepository) =>
+                    new GroupTopologyManagementService({
+                        findGroupSnapshotByRef: () => snapshot,
+                        findAuthoritativeGroupSnapshotByRef: () => snapshot,
+                        configRepository: new GroupTopologyConfigRepository(runtime),
+                        topologyService: new RallarRtcTopologyService(),
+                        sleep: () => Promise.resolve(),
+                    });
+
+                const settled = await Promise.allSettled([
+                    service(firstRuntime).putConfig({
+                        groupRef,
+                        config: { meshParamK: 4 },
+                        updatedByPrincipalId: 'owner',
+                        requestId: `${applicationId}-config`,
+                    }),
+                    service(secondRuntime).putOverride({
+                        groupRef,
+                        config: { degreeLimit: 3 },
+                        expiresAtEpochMs: Date.now() + 60_000,
+                        updatedByPrincipalId: 'owner',
+                        requestId: `${applicationId}-override`,
+                    }),
+                ]);
+
+                expect(settled.filter(({ status }) => status === 'fulfilled'))
+                    .toHaveLength(1);
+                expect(settled.filter(({ status }) => status === 'rejected'))
+                    .toEqual([expect.objectContaining({
+                        reason: expect.objectContaining({
+                            code: 'group-topology-config-validation-failed',
+                        }),
+                    })]);
+                const repository = new GroupTopologyConfigRepository(firstRuntime);
+                const [durable, temporary] = await Promise.all([
+                    repository.findConfig(groupRef),
+                    repository.findOverride(groupRef),
+                ]);
+                expect(Number(durable !== undefined) + Number(temporary !== undefined))
+                    .toBe(1);
+                expect(await repository.findInvariantGenerationEntry(groupRef))
+                    .toMatchObject({
+                        value: { version: 1 },
+                        entry: {
+                            key: repository.invariantGenerationKey(groupRef),
+                            revision: 0,
+                        },
+                    });
+            } finally {
+                await Promise.allSettled(clients.map(async (client) => {
+                    await client`
+                        delete from runtime_state_store
+                        where store_value like ${`%${applicationId}%`}
+                    `;
+                }));
+                await Promise.allSettled(clients.map(async (client) => await client.end()));
+            }
+        },
+        60_000,
+    );
+
+    postgresIt(
         'uses savepoints for nested optimistic transactions',
         async () => {
             const databaseUrl = requireDatabaseUrl();
@@ -356,6 +538,73 @@ async function createSql(databaseUrl: string): Promise<PostgresSql> {
         databaseUrl,
         { max: 1, idle_timeout: 1 },
     ) as unknown as PostgresSql;
+}
+
+class BarrierRuntimeStateRepository extends PSqlRuntimeStateRepository {
+    constructor(
+        sql: PSqlSql,
+        private readonly barrierNamespace: string,
+        private readonly barrier: () => Promise<void>,
+    ) {
+        super(sql);
+    }
+
+    override async findEntry(
+        namespace: string,
+        key: string,
+    ): Promise<RuntimeStateEntry | undefined> {
+        const entry = await super.findEntry(namespace, key);
+        if (namespace === this.barrierNamespace) await this.barrier();
+        return entry;
+    }
+}
+
+function createReadBarrier(parties: number): () => Promise<void> {
+    let arrivals = 0;
+    let release!: () => void;
+    const ready = new Promise<void>((resolve) => {
+        release = resolve;
+    });
+    return async () => {
+        if (arrivals >= parties) return;
+        arrivals += 1;
+        if (arrivals === parties) release();
+        await ready;
+    };
+}
+
+function topologyGroupSnapshot(groupRef: GroupRef): GroupSnapshot {
+    return {
+        stateRevision: 1,
+        causalRevision: { groupRevision: 1, presenceRevision: 0 },
+        group: {
+            ...groupRef,
+            displayName: 'Topology concurrency room',
+            kind: 'room',
+            status: 'active',
+            joinMode: 'open',
+            metadata: {},
+            snapshotVersion: 1,
+            metadataVersion: 0,
+            rosterVersion: 1,
+            presenceVersion: 0,
+            activeMemberCount: 1,
+            ownerPrincipalId: 'owner',
+            created: { atEpochMs: 1, byPrincipalId: 'owner' },
+            updated: { atEpochMs: 1, byPrincipalId: 'owner' },
+        },
+        members: [{
+            ...groupRef,
+            principalId: 'owner',
+            role: 'owner',
+            status: 'active',
+            joined: { atEpochMs: 1, byPrincipalId: 'owner' },
+            updated: { atEpochMs: 1, byPrincipalId: 'owner' },
+        }],
+        activeSessions: [],
+        memberCount: 1,
+        onlineMemberCount: 0,
+    };
 }
 
 function createLifecycleSql(
