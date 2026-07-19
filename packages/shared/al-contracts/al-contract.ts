@@ -111,8 +111,14 @@ export type ALPayload = Readonly<{
 // 10) Optional diagnostics
 // -------------------------------------------------------
 
+export type ALWsRelayTimingDiagnostics = Readonly<{
+    receivedAtEpochMs: number;
+    forwardedAtEpochMs: number;
+}>;
+
 export type ALDiagnostics = Readonly<{
     visitedPeerIds?: readonly string[]; // optional, bounded; mainly diagnostic
+    wsRelayTiming?: ALWsRelayTimingDiagnostics;
 }>;
 
 // -------------------------------------------------------
