@@ -517,11 +517,25 @@ Run the outbound runtime, IndexedDB, RTC overlay, multicast, operation-options,
 browser runtime, and middleware tests plus shared/shared-web/shared-server and
 shared-test TypeScript+Deno checks.
 
-- [ ] **Step 4: Push and collect iteration 10**
+- [x] **Step 4: Push and collect iteration 10**
 
 Run the unchanged manifest for the tenth and final iteration. Record the
 terminal recipe result and all outbound/stream metrics; do not make a further
 correction in this investigation if the gate still fails.
+
+Iteration 10 improved but did not pass the unchanged gate. Thirteen exported
+streams completed 1,918 of 1,950 attempted frames with 32 failures and no
+drops. Aggregate latency improved from iteration 9's p50 594 ms / p95 6,012 ms
+/ p99 9,038 ms to p50 536 ms / p95 4,026 ms / p99 6,600 ms. The run still
+exceeded the per-stream 2,500 ms p95 and 4,000 ms p99 limits, so this
+investigation stops at the requested ten iterations.
+
+The remaining boundary is durable-effect availability after commit, not the
+browser lock: own sender-queue wait was p95 1,161 ms, browser-lock time was p95
+252 ms, and first matching drain delay was p95 3,350 ms. A follow-up should
+decide, at the API-contract level, whether every persisted `enqueued` result may
+return immediately after the durable admission commit, or whether fresh outbox
+materialization effects need explicit priority over prepared-send retries.
 
 ## Self-review
 

@@ -332,6 +332,32 @@ the outbox effect. When no drain is active, the existing awaited path remains.
 Immediate prepared sends also retain their synchronous transport completion,
 so volatile send semantics do not change.
 
+## Iteration 10 terminal outcome
+
+Run `29687265298` at commit
+`2e6e923194c356676d0ffdfe4f87f3d1f86a968c` improved the remaining stream
+tail but did not satisfy the unchanged recipe thresholds. All 15 worker jobs
+succeeded. Thirteen stream results exported 1,950 attempts, 1,918 completions,
+32 failures, and no drops. Aggregate latency was p50 536 ms, p95 4,026 ms, p99
+6,600 ms, and max 8,379 ms. Compared with iteration 9, p95 improved by 1,986 ms,
+p99 improved by 2,438 ms, and failed frames fell from 124 to 32.
+
+The final run still failed the per-stream 2,500 ms p95 and 4,000 ms p99 gates.
+Across 2,057 correlated completed sends, own sender-queue wait was p95 1,161 ms
+and browser-lock wait plus hold was p95 252 ms. First matching own-drain delay
+was p95 3,350 ms, 999 messages appeared in rescheduling drains, and duration
+still correlated 0.965 with overlapping drain time. Drains claimed 11,236
+effects, completed 3,585, and rescheduled 7,628.
+
+The active-drain completion correction is retained because it materially
+reduced failures and latency while preserving the regression-proven immediate
+send contract. It is not a complete fix. The unresolved decision is whether a
+persisted `enqueued` API result should always return after its durable admission
+commit, including when no drain is active, or whether the effect scheduler must
+prioritize newly committed outbox-materialization work over prepared-send
+retries. That contract decision and any further remote run are outside this
+investigation, which ends at the requested ten-iteration limit.
+
 ## Contract change
 
 Add mandatory `provenance` to the browser-local `OverlayInfo` contract:
