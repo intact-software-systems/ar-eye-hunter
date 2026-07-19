@@ -45,6 +45,10 @@ rg --files packages/shared packages/shared-web packages/shared-server packages/s
   consumers are expected to handle and test. Sparse request, query, patch,
   builder, and migration input types are separate construction boundaries;
   their optionality must not leak into authoritative values.
+- When a successful authoritative response always contains a value, require it
+  in the shared TypeScript response and every derived response, OpenAPI
+  `required` array, serializer, and consumer/schema compatibility test. Request
+  omission semantics do not justify optional successful output.
 - Do not weaken an authoritative output type merely because an intermediate
   builder or migration step is incomplete. Use a separate input type, a
   discriminated union, or an explicit migration adapter at the boundary.
@@ -76,6 +80,13 @@ rg --files packages/shared packages/shared-web packages/shared-server packages/s
   fences, observed predecessor values, and every cleanup or expiry timestamp
   must distinguish its idempotency key; exclude only the command/request identity
   being derived. Raw delimiter joins are not sufficient.
+- Build scoped storage keys as injective typed projections, not escaped string
+  concatenations that erase `undefined` versus a present identifier. Field
+  name, presence/type, and value must determine one canonical key. Prove
+  sentinel, delimiter, percent/lookalike, every child-key helper, prefix/list,
+  and repository-boundary isolation. For an ambiguous legacy namespace,
+  conditionally migrate only rows whose stored value proves the target scope;
+  never fan out, guess, or retain an unbounded dual-read fallback.
 - Treat stale observations as rebase-or-ignore outcomes, duplicates as no-ops,
   and equal causal revisions with different content as invariant corruption.
 - Database row, table, and advisory locks are not the default. Do not extend an

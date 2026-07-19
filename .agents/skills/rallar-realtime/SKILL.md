@@ -75,6 +75,13 @@ rg -n "GroupRef|groupRef|groupId|roomId|createAndSwitch|createAndJoin|joinRoom|w
   must fail validation before the first authoritative write. Expected slot
   identity comes only from the trusted command and aggregate metadata, never
   from the candidate row itself.
+- Scoped realtime storage-key encodings must also be injective over absence and
+  every valid explicit identifier. Escaping a string does not encode its
+  presence type; URI encoders may leave sentinel-looking values unchanged.
+  Test group/member/session/admission/summary/idempotency keys plus delimiter,
+  percent, prefix/list, and real repository isolation. Preserve a legacy
+  namespace only when value identity proves its scope; use conditional
+  migration and fail closed on ambiguity or destination conflict.
 - Shape-valid effects can still describe the wrong operation. Canonically
   recompute and exactly compare operation-specific guards, dependent rows,
   events, receipts, and outbox intents before the first authoritative write.

@@ -1,7 +1,7 @@
 import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
 import type { ClientSessionRef } from "@shared/api/client-types.ts";
-import type { GroupRef } from "@shared/api/group-types.ts";
+import type { Group, GroupRef } from "@shared/api/group-types.ts";
 import type { StateScope } from "@shared/api/state-types.ts";
 import type { PSqlSql } from "@shared-server/postgres/PostgresSqlClient.ts";
 import type { RuntimeStateEntry } from "@shared-server/runtime-state/RuntimeStateRepository.ts";
@@ -191,7 +191,70 @@ describe("Postgres presence expiry concurrency", () => {
     },
     60_000,
   );
+
+  postgresIt(
+    "isolates absent and explicit sentinel workspaces at the live group repository boundary",
+    async () => {
+      const sql = await createSql(requireDatabaseUrl());
+      const applicationId = uniqueScope("group-scope-key-isolation")
+        .applicationId;
+      const absentGroup = groupFixture({
+        applicationId,
+        groupId: "shared-group",
+      }, "Absent workspace");
+      const explicitSentinelGroup = groupFixture({
+        applicationId,
+        workspaceId: "_",
+        groupId: "shared-group",
+      }, "Explicit sentinel workspace");
+
+      try {
+        const repository = createGroupStateRepository(sql);
+        await repository.putGroup(absentGroup);
+        await repository.putGroup(explicitSentinelGroup);
+
+        expect(await repository.findGroup(absentGroup)).toEqual(absentGroup);
+        expect(await repository.findGroup(explicitSentinelGroup)).toEqual(
+          explicitSentinelGroup,
+        );
+        expect(await repository.listGroups({ applicationId })).toEqual([
+          absentGroup,
+        ]);
+        expect(await repository.listGroups({
+          applicationId,
+          workspaceId: "_",
+        })).toEqual([explicitSentinelGroup]);
+      } finally {
+        await cleanupRuntimeState(sql, applicationId);
+        await sql.end();
+      }
+    },
+    60_000,
+  );
 });
+
+function groupFixture(ref: GroupRef, displayName: string): Group {
+  const audit = {
+    atEpochMs: Date.now(),
+    byServiceId: "postgres-group-key-test",
+  } as const;
+  return {
+    ...ref,
+    displayName,
+    kind: "room",
+    status: "active",
+    joinMode: "open",
+    metadata: {},
+    activeMemberCount: 1,
+    ownerPrincipalId: "alice",
+    snapshotVersion: 1,
+    metadataVersion: 1,
+    rosterVersion: 1,
+    presenceVersion: 0,
+    created: audit,
+    updated: audit,
+  };
+}
 
 async function seedExpiredClientSession(
   sql: PostgresSql,

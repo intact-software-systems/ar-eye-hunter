@@ -146,6 +146,24 @@ The key space is namespace plus encoded keys such as:
 - `token=<accessToken>`
 - `ticket=<ticket>`
 
+Scoped keys are canonical injective projections, not merely delimiter-escaped
+strings. The group-state key family preserves historical `ws=_` for an absent
+workspace. Because `_` is also a valid explicit workspace identifier and
+`encodeURIComponent('_')` remains `_`, a present `_` is encoded canonically as
+`ws=%5F`; a literal `%5F` identifier becomes `ws=%255F`. Other established
+workspace keys remain unchanged. Group, member, session, admission, presence
+summary, idempotency, and scope-list prefixes all delegate to the same helper.
+
+The old `ws=_` namespace is intrinsically ambiguous for data written before
+this distinction: it may mean absent workspace or explicit `_`, and an earlier
+collision may already have overwritten one value. Runtime code does not dual
+read or guess. An operator migration may move a row to `ws=%5F` only when the
+stored domain value proves `workspaceId: "_"`, using a conditional destination
+insert/CAS and an expected-revision source delete. Rows without enough scope
+identity, including some no-event idempotency receipts, must be expired or
+resolved manually. Never copy one ambiguous row into both namespaces; lost
+predecessors cannot be reconstructed automatically.
+
 ### `client_state_events` and `group_state_events`
 
 These tables store durable state-event logs separately from the JSON runtime

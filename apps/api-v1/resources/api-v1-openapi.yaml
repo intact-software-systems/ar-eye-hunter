@@ -4405,7 +4405,7 @@ components:
 
     GroupJoinCodeResponse:
       type: object
-      required: [joinCode, snapshot]
+      required: [joinCode, expiresAtEpochMs, snapshot]
       properties:
         joinCode:
           type: string

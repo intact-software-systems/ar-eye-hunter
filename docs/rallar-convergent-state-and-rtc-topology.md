@@ -46,6 +46,14 @@ default. A plan that retains a revisionless shape, legacy work envelope, or
 fallback authorization path must obtain explicit human approval and state its
 retirement conditions.
 
+Durable scoped key encodings are part of the concurrency contract. A key must
+be injective over field name, presence/type, and value; string escaping alone
+cannot distinguish an absent scope from a valid sentinel-looking identifier.
+Every derived child key and list prefix must use the same canonical encoder.
+Ambiguous legacy rows may be migrated only when their stored value proves the
+target scope and the destination is claimed conditionally; never guess, fan one
+row into multiple scopes, or keep a permanent dual-read fallback.
+
 ## Required Target For Database Writes
 
 This is the mandatory target for new work and for the remediation of client,

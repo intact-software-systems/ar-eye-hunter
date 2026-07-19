@@ -113,6 +113,12 @@ Deno.test('OpenAPI JSON exposes mandatory convergent group state fields', async 
   assert.ok(schemas.GroupSnapshot.properties?.causalRevision);
   assert.ok(schemas.GroupPresenceSession.required?.includes('generationId'));
   assert.ok(schemas.GroupPresenceSession.required?.includes('generationVersion'));
+  assert.deepEqual(schemas.GroupJoinCodeResponse.required, [
+    'joinCode',
+    'expiresAtEpochMs',
+    'snapshot',
+  ]);
+  assert.ok(schemas.GroupJoinCodeResponse.properties?.expiresAtEpochMs);
   for (
     const name of [
       'ConnectGroupPresenceSessionRequest',

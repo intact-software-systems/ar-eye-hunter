@@ -1238,6 +1238,36 @@ active, and the summarized session is connected and unexpired. `readSnapshot`,
 summary presence revision while reporting zero active sessions/online members
 for archived, deleted, or expired groups, even before summary convergence drains.
 
+## 14. Injective Group-State Scope Keys And Complete Join-Code Response
+
+A later fresh review found that the canonical group-state key helper mapped
+both absent `workspaceId` and the valid explicit value `_` to `ws=_`. Canonical
+relationship validation could therefore validate two distinct scopes against
+the same group/member/session/admission/summary/idempotency CAS namespace.
+Escaping alone was insufficient because `encodeURIComponent('_')` leaves the
+sentinel unchanged. Repository scope listings also used an inherited key
+builder rather than the group-state helper.
+
+The corrected group-state encoding preserves the historical absent-workspace
+key `ws=_` and maps only a present `_` to `ws=%5F`. Existing non-sentinel keys
+stay byte-for-byte compatible; delimiter and percent values remain injective
+through URI encoding, so literal `%5F` becomes `%255F`. All group-state direct
+keys and scope-list prefixes now delegate to this one projection. Focused tests
+cover every derived key family, delimiter/percent/lookalike values, and the
+repository boundary.
+
+Legacy `ws=_` rows written for explicit `_` cannot be distinguished from absent
+scope by key alone, and earlier overwrites are unrecoverable. The runtime does
+not guess or dual read. An offline migration may conditionally move only a row
+whose decoded domain value proves `workspaceId: "_"`; ambiguous receipts without
+scope evidence require manual resolution or expiry. Never fan one old row into
+both namespaces.
+
+The same review found `GroupJoinCodeResponse.expiresAtEpochMs` optional even
+though every successful rotation validates and returns it. The field is now
+mandatory in shared TypeScript and the OpenAPI required array, while the sparse
+rotation request remains optional because omission requests a server default.
+
 ## Suggested First Proofs
 
 1. Multi-workspace isolation test: prove whether state snapshots from workspace A reach a browser connected to workspace

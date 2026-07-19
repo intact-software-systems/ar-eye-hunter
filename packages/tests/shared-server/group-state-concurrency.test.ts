@@ -10,6 +10,7 @@ import type {
 import { toGroupSnapshotStateRevision } from '@shared/api/group-client-views.ts';
 import type {
     ConnectGroupPresenceSessionRequest,
+    GroupJoinCodeResponse,
     HeartbeatGroupPresenceSessionRequest,
     StateScope,
 } from '@shared/api/state-types.ts';
@@ -41,6 +42,7 @@ import {
     groupStatePresenceAdmissionStorageKey,
     groupStatePresenceSessionStorageKey,
     groupStatePresenceSummaryStorageKey,
+    groupStateScopeStorageKey,
 } from '@shared-server/rallar-system/group-state-storage-keys.ts';
 import type { StateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
 import type {
@@ -72,6 +74,8 @@ describe('convergent group and presence state', () => {
             .toHaveProperty('generationId').toEqualTypeOf<string>();
         expectTypeOf<ConnectGroupPresenceSessionRequest>()
             .not.toHaveProperty('commandHash');
+        expectTypeOf<GroupJoinCodeResponse>()
+            .toHaveProperty('expiresAtEpochMs').toEqualTypeOf<number>();
 
         const command = createMutationCommand({
             input: {
@@ -125,6 +129,118 @@ describe('convergent group and presence state', () => {
         })).toBe(`${groupKey}:principal=p%3Aa`);
         expect(groupStateIdempotencyStorageKey(ref, 'r/a'))
             .toBe(`${groupKey}:request=r%2Fa`);
+    });
+
+    it('keeps the legacy absent-workspace key while encoding every present workspace injectively', () => {
+        const absentRef = {
+            applicationId: 'app/one',
+            groupId: 'group:one',
+        };
+        const explicitSentinelRef = { ...absentRef, workspaceId: '_' };
+
+        expect(groupStateScopeStorageKey(absentRef))
+            .toBe('app=app%2Fone:ws=_');
+        expect(groupStateScopeStorageKey(explicitSentinelRef))
+            .toBe('app=app%2Fone:ws=%5F');
+
+        const absentKeys = [
+            groupStateGroupStorageKey(absentRef),
+            groupStateMemberStorageKey({ ...absentRef, principalId: 'p:a' }),
+            groupStatePresenceSessionStorageKey({ ...absentRef, sessionId: 's:a' }),
+            groupStatePresenceAdmissionStorageKey({
+                ...absentRef,
+                principalId: 'p:a',
+            }),
+            groupStatePresenceSummaryStorageKey(absentRef),
+            groupStateIdempotencyStorageKey(absentRef, 'r:a'),
+        ];
+        const explicitSentinelKeys = [
+            groupStateGroupStorageKey(explicitSentinelRef),
+            groupStateMemberStorageKey({
+                ...explicitSentinelRef,
+                principalId: 'p:a',
+            }),
+            groupStatePresenceSessionStorageKey({
+                ...explicitSentinelRef,
+                sessionId: 's:a',
+            }),
+            groupStatePresenceAdmissionStorageKey({
+                ...explicitSentinelRef,
+                principalId: 'p:a',
+            }),
+            groupStatePresenceSummaryStorageKey(explicitSentinelRef),
+            groupStateIdempotencyStorageKey(explicitSentinelRef, 'r:a'),
+        ];
+        for (let index = 0; index < absentKeys.length; index += 1) {
+            expect(explicitSentinelKeys[index]).not.toBe(absentKeys[index]);
+        }
+
+        const workspaceValues = [undefined, '_', '%5F', 'a:b', 'a%b', 'a/b'];
+        const scopeKeys = workspaceValues.map((workspaceId) =>
+            groupStateScopeStorageKey({
+                applicationId: 'app/one',
+                ...(workspaceId === undefined ? {} : { workspaceId }),
+            })
+        );
+        expect(new Set(scopeKeys).size).toBe(workspaceValues.length);
+
+        const lookalikeValues = ['a:b', 'a%3Ab', 'a%b', 'a/b'];
+        const keyFamilies = [
+            lookalikeValues.map((groupId) =>
+                groupStateGroupStorageKey({ ...absentRef, groupId })
+            ),
+            lookalikeValues.map((principalId) =>
+                groupStateMemberStorageKey({ ...absentRef, principalId })
+            ),
+            lookalikeValues.map((sessionId) =>
+                groupStatePresenceSessionStorageKey({ ...absentRef, sessionId })
+            ),
+            lookalikeValues.map((principalId) =>
+                groupStatePresenceAdmissionStorageKey({ ...absentRef, principalId })
+            ),
+            lookalikeValues.map((groupId) =>
+                groupStatePresenceSummaryStorageKey({ ...absentRef, groupId })
+            ),
+            lookalikeValues.map((requestId) =>
+                groupStateIdempotencyStorageKey(absentRef, requestId)
+            ),
+        ];
+        for (const keys of keyFamilies) {
+            expect(new Set(keys).size).toBe(lookalikeValues.length);
+        }
+    });
+
+    it('keeps absent and explicit sentinel workspaces isolated at the repository boundary', async () => {
+        const runtime = new FakeRuntimeStateRepository();
+        const repository = new GroupStateRepository(runtime);
+        const base = createMutationRead().group!.value;
+        const absentGroup: Group = {
+            ...base,
+            applicationId: 'boundary-app',
+            workspaceId: undefined,
+            groupId: 'boundary-group',
+            slug: 'absent-workspace',
+            displayName: 'Absent workspace',
+        };
+        const explicitSentinelGroup: Group = {
+            ...absentGroup,
+            workspaceId: '_',
+            slug: 'explicit-sentinel-workspace',
+            displayName: 'Explicit sentinel workspace',
+        };
+
+        await repository.putGroup(absentGroup);
+        await repository.putGroup(explicitSentinelGroup);
+
+        expect(await repository.findGroup(absentGroup)).toEqual(absentGroup);
+        expect(await repository.findGroup(explicitSentinelGroup))
+            .toEqual(explicitSentinelGroup);
+        expect(await repository.listGroups({ applicationId: 'boundary-app' }))
+            .toEqual([absentGroup]);
+        expect(await repository.listGroups({
+            applicationId: 'boundary-app',
+            workspaceId: '_',
+        })).toEqual([explicitSentinelGroup]);
     });
 
     it('builds collision-safe maintenance identities from the complete semantic command', async () => {

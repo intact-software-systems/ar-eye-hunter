@@ -3,8 +3,17 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 type GroupMemberStorageRef = GroupRef & Readonly<{ principalId: string }>;
 type GroupSessionStorageRef = GroupRef & Readonly<{ sessionId: string }>;
 
-function keyPart(name: string, value?: string): string {
-    return `${name}=${encodeURIComponent(value ?? '_')}`;
+function keyPart(name: string, value: string): string {
+    return `${name}=${encodeURIComponent(value)}`;
+}
+
+function workspaceKeyPart(workspaceId: string | undefined): string {
+    if (workspaceId === undefined) return 'ws=_';
+    // Keep the historical absent-workspace namespace while ensuring that the
+    // valid explicit identifier "_" cannot alias it. Percent is itself escaped
+    // by encodeURIComponent, so "%5F" and the explicit sentinel remain distinct.
+    const encoded = workspaceId === '_' ? '%5F' : encodeURIComponent(workspaceId);
+    return `ws=${encoded}`;
 }
 
 export function groupStateScopeStorageKey(
@@ -12,7 +21,7 @@ export function groupStateScopeStorageKey(
 ): string {
     return [
         keyPart('app', scope.applicationId),
-        keyPart('ws', scope.workspaceId),
+        workspaceKeyPart(scope.workspaceId),
     ].join(':');
 }
 

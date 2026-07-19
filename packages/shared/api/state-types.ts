@@ -145,7 +145,7 @@ export type RotateGroupJoinCodeRequest =
 
 export type GroupJoinCodeResponse = Readonly<{
     joinCode: string;
-    expiresAtEpochMs?: number;
+    expiresAtEpochMs: number;
     snapshot: GroupSnapshot;
 }>;
 

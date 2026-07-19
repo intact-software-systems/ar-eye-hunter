@@ -69,10 +69,20 @@ the repo-local Codex plugin under `.agents/skills/**`.
   contracts use mandatory fields by default. Optional fields require meaningful
   domain absence and consumer tests; sparse request, query, patch, builder, and
   migration inputs use separate types.
+- Successful authoritative responses must require every field that the service
+  always populates, with shared TypeScript, derived response types, OpenAPI
+  `required` arrays, serializers, and consumer/schema tests kept in agreement.
 - Validate canonical storage key, stored value identity, and trusted
   command-slot relationships before every authoritative compare-and-set.
   Never derive the expected actor, target, principal, session, or request
   identity from the candidate row being validated.
+- Scoped storage keys must be injective over field name, value type/presence,
+  and value. URI escaping strings is not absence encoding: an absent scope may
+  never alias any valid explicit identifier. Test delimiter, percent, sentinel,
+  child-key, prefix/list, and repository-boundary cases. Migrate an ambiguous
+  legacy row only after its stored value proves the intended scope and the new
+  key is claimed conditionally; never fan one row into two scopes or add an
+  unbounded dual-read fallback.
 - Validate the complete operation-specific candidate by canonical deterministic
   recomputation and exact comparison, including guards, dependent rows, events,
   receipts, and outbox intents. Shared shape checks alone are insufficient.

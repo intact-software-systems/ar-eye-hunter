@@ -1,5 +1,12 @@
 # Task 4 sixth fresh-review correction report
 
+> **Superseded by correction 7 for final Task 4 acceptance.** This report
+> correctly closed its replay, maintenance-identity, and snapshot-policy scope,
+> but its canonical-key claims did not prove that absent workspace and the valid
+> explicit `_` workspace had different storage namespaces. It also left the
+> always-populated join-code expiry optional in shared TypeScript and OpenAPI.
+> Correction 7 adds the missing injective-key and mandatory-response proofs.
+
 ## Scope
 
 This correction is limited to the Task 4 group/member/presence write path,

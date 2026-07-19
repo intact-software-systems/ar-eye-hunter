@@ -33,6 +33,10 @@ rg --files packages/tests packages/shared packages/shared-web packages/shared-se
   populated. Optional fields are appropriate only when omission has domain
   meaning and a consumer test; convenience during construction is not domain
   meaning.
+- A field present in every successful authoritative response is required in
+  shared TypeScript, derived service responses, OpenAPI, serializers, and
+  compatibility tests. Do not transfer optionality from a sparse request field
+  to its fully resolved successful output.
 - Model incomplete construction with a separate input type or discriminated
   union, then produce a fully populated authoritative value at the boundary.
 - Do not add a backwards-compatibility fallback by default. Before a plan
@@ -68,6 +72,13 @@ rg --files packages/tests packages/shared packages/shared-web packages/shared-se
   Derive expected principals, sessions, targets, and request IDs from the
   trusted command, never from the row being validated. Bind guards, dependent
   candidates, events, receipts, and outbox intents to those same identities.
+- Key builders are pure injective encoders over field name, type/presence, and
+  value. `encodeURIComponent`-style escaping alone cannot distinguish an
+  absent value from a valid sentinel string. Test exact canonical keys,
+  delimiter/percent/lookalike values, all derived child keys, prefix listings,
+  and repository isolation. Ambiguous legacy data requires value-verified,
+  conditional migration; never guess, duplicate into both scopes, or hide the
+  ambiguity behind permanent dual reads.
 - Recompute the complete canonical operation projection from the validated
   command, read set, and immutable facts and require exact equality before the
   first write. Common shape and identity checks are necessary but insufficient.

@@ -12,6 +12,10 @@ Read `references/test-commands.md` when choosing commands. Prefer targeted check
 ## Selection Rules
 
 - Shared contracts: run the relevant `packages/tests/shared*` Vitest files and the package `tsc`.
+- Scoped storage-key changes: prove exact canonical keys and pairwise
+  non-collision for absence, valid sentinels, delimiters, percent/lookalikes,
+  every derived child key, prefix/list behavior, and repository isolation;
+  include live Postgres when the keys guard authoritative shared state.
 - Browser facade changes: include `packages/tests/shared-web` and app builds if game apps consume the surface.
 - Server/middleware changes: include `packages/tests/shared-server`, Deno checks for API apps, and focused restart/routing tests when relevant.
 - REST API additions or behavior changes: add or update Rallar black-box recipes/tests in `packages/shared-test/black-box-runner` alongside the API change, then run the focused black-box command when its required services are available.

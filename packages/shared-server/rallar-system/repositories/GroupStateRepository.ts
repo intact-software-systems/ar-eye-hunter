@@ -35,6 +35,7 @@ import {
     groupStateMemberStorageKey,
     groupStatePresenceAdmissionStorageKey,
     groupStatePresenceSessionStorageKey,
+    groupStateScopeStorageKey,
 } from '../group-state-storage-keys.ts';
 
 const GROUPS_NAMESPACE = 'group-state:groups';
@@ -163,12 +164,12 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
     async listGroups(scope: GroupScope): Promise<readonly Group[]> {
         return await this.listValues<Group>(
             GROUPS_NAMESPACE,
-            this.scopeChildPrefix(scope),
+            this.groupStateScopeChildPrefix(scope),
         );
     }
 
     async listSnapshots(scope: GroupScope): Promise<readonly GroupSnapshot[]> {
-        const keyPrefix = this.scopeChildPrefix(scope);
+        const keyPrefix = this.groupStateScopeChildPrefix(scope);
         const groupsBefore = await this.listEntryValues<Group>(
             GROUPS_NAMESPACE,
             keyPrefix,
@@ -230,7 +231,7 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
         while (!hasMore) {
             const groupEntries = await this.listEntriesPage(
                 GROUPS_NAMESPACE,
-                this.scopeChildPrefix(scope),
+                this.groupStateScopeChildPrefix(scope),
                 {
                     afterKey,
                     limit: rawPageLimit,
@@ -679,6 +680,10 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
 
     private groupKey(ref: GroupRef): string {
         return groupStateGroupStorageKey(ref);
+    }
+
+    private groupStateScopeChildPrefix(scope: GroupScope): string {
+        return this.childKeyPrefix(groupStateScopeStorageKey(scope));
     }
 
     private idempotentGroupKey(ref: GroupRef, requestId: string): string {
