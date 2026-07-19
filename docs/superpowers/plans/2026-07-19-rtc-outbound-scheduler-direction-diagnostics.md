@@ -718,7 +718,7 @@ git commit -m "docs: record outbound diagnostic verification"
 git push origin HEAD
 ```
 
-- [ ] **Step 3: Verify the PR head**
+- [x] **Step 3: Verify the PR head**
 
 ```sh
 git rev-parse HEAD
@@ -739,7 +739,7 @@ Expected: local HEAD equals `headRefOid` and PR #40 remains open and draft.
 - Modify:
   `docs/superpowers/plans/2026-07-19-rtc-outbound-scheduler-direction-diagnostics.md`
 
-- [ ] **Step 1: Dispatch a full rollout outside the network sandbox**
+- [x] **Step 1: Dispatch a full rollout outside the network sandbox**
 
 ```sh
 diagnostic_run_id="rtc-outbound-direction-r11-$(date -u +%Y%m%dT%H%M%SZ)"
@@ -752,7 +752,7 @@ scripts/hetzner/dispatch-distributed-recipe.sh \
 
 Do not use `--fast`. Once GitHub accepts the dispatch, record series count 1/10.
 
-- [ ] **Step 2: Resolve and monitor the exact workflow**
+- [x] **Step 2: Resolve and monitor the exact workflow**
 
 ```sh
 github_run_id="$(gh run list --repo intact-software-systems/ar-eye-hunter \
@@ -765,7 +765,7 @@ gh run watch "$github_run_id" \
 
 A nonzero recipe gate is allowed only if artifact upload completed.
 
-- [ ] **Step 3: Download and resolve artifact directories**
+- [x] **Step 3: Download and resolve artifact directories**
 
 ```sh
 github_run_id="$(gh run list --repo intact-software-systems/ar-eye-hunter \
@@ -785,13 +785,13 @@ test -n "$artifact_bundle"
 test -n "$analysis_bundle"
 ```
 
-- [ ] **Step 4: Read authoritative evidence in order**
+- [x] **Step 4: Read authoritative evidence in order**
 
 Read `analysis.json`, then failure `fix-proposal.md`, cited raw evidence,
 `performance.md`, and `fleet-report.json.failureSignatures`. Reject the run for
 direction selection if parse warnings are nonempty or required files are absent.
 
-- [ ] **Step 5: Run the analyzer and select exactly one boundary**
+- [x] **Step 5: Run the analyzer and select exactly one boundary**
 
 ```sh
 github_run_id="$(gh run list --repo intact-software-systems/ar-eye-hunter \
@@ -816,7 +816,7 @@ Choose:
   dominate and fresh `enqueue-outbox` lateness grows; or
 - narrower IndexedDB/coordination diagnostics if both are prompt.
 
-- [ ] **Step 6: Record and push iteration 11**
+- [x] **Step 6: Record and push the diagnostic series**
 
 Add iteration outcome, commit/run/control/distributed IDs, artifact path, all
 metrics, interpretation, and keep/revert decision to the spec and this plan:
@@ -829,7 +829,7 @@ git commit -m "docs: record RTC outbound direction run"
 git push origin HEAD
 ```
 
-- [ ] **Step 7: Transition from evidence to the long-term answer**
+- [x] **Step 7: Transition from evidence to the long-term answer**
 
 If one boundary is established, write a separate production design and plan
 covering API semantics, worker ownership/liveness, fairness/backpressure,
@@ -837,6 +837,34 @@ restart recovery, IndexedDB transactions, observability, compatibility, and
 focused/distributed acceptance. If ambiguous, define one narrower measurement
 for iteration 12. Never combine competing behavior changes and never exceed
 iteration 20 overall / 10 additional runs.
+
+#### Series outcome
+
+The series stopped at five of ten allowed runs. Iterations 11-15 are recorded
+in the design spec with workflow IDs and metrics. Iteration 13 reproduced the
+readiness collapse on the pre-diagnostic commit, and iteration 14 passed the
+two-agent smoke, separating diagnostic overhead from scale/topology churn.
+
+Iteration 15 supplied the decisive scheduler sample: 112/112 accepted stream
+messages had an unambiguous enqueue finalization, all used
+`awaited-new-drain`, and the drain claimed only first-attempt
+`enqueue-outbox` effects. The retry scheduler claimed no effects. Across all
+RTC-overlay operations, sender-queue wait was p50 32,964 ms and p95 37,115 ms;
+browser-lock wait and hold were each about p95 1.5 seconds. The selected local
+direction is batched/range-bounded IndexedDB admission followed, only if still
+needed, by finer conflict domains than the sender-wide commit queue.
+
+Scale readiness remains a separate track. Iteration 15 emitted 118
+`peer-created` and 96 `peer-deleted` events, while the passing two-agent smoke
+emitted three and one. Existing events omit deletion cause and topology causal
+tuple, so the first topology change is diagnostic attribution and a stable
+readiness gate, followed by make-before-break reconciliation if the attributed
+events confirm topology replacement churn.
+
+The production design and executable long-term plan are:
+
+- `docs/superpowers/specs/2026-07-19-rtc-admission-throughput-and-topology-stability-design.md`
+- `docs/superpowers/plans/2026-07-19-rtc-admission-throughput-and-topology-stability.md`
 
 ---
 

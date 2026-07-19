@@ -191,3 +191,53 @@ backpressure guarantees, recovery after process/browser interruption,
 IndexedDB transaction boundaries, observability, migration compatibility, and
 focused plus distributed acceptance tests. Diagnostic commits on PR #40 remain
 directional evidence and are not automatically the final implementation.
+
+## Measured series and selected direction
+
+The diagnostic series stopped after five of the allowed ten additional runs.
+More repetitions would not distinguish the already separated boundaries.
+
+| Iteration | GitHub run | Workload | Result | Directional evidence |
+| --- | ---: | --- | --- | --- |
+| 11 | 29692326726 | 15 agents, tree, 5 Hz | 2 agents streamed; 17/300 frames completed | All 17 accepted sends were `awaited-new-drain`; finalization p95 was 1,683 ms while send p95 was 33,377 ms. |
+| 12 | 29692573020 | 15 agents, tree, 5 Hz | No agents streamed | Proved the analyzer must reject an empty completion sample. |
+| 13 | 29692862900 | 15 agents, pre-diagnostic canary | No agents streamed | Reproduced readiness collapse on `a661d1a4`; the new diagnostics did not cause it. |
+| 14 | 29693125758 | 2-agent RTC smoke | 100% pass | TURN and the basic RTC path were healthy; failure begins with topology scale/churn. |
+| 15 | 29693266840 | 10 agents, tree, 10 Hz | 9 agents streamed; 112/2,700 frames completed | Produced complete, non-ambiguous runtime evidence for the hot path. |
+
+Iteration 15 reported 112 matched accepted stream messages, zero missing or
+ambiguous finalizations, and ten additional transport outcomes correctly
+classified as `skipped`, not completed. Every accepted message used
+`awaited-new-drain`. Finalization p95 was 1,560 ms, but full send p95 was
+32,692 ms. The drains claimed 115 `enqueue-outbox` effects, zero
+`send-prepared` effects, and zero retries. First-attempt ready lateness never
+exceeded 1,000 ms.
+
+The wider RTC-overlay diagnostic population makes the responsible local
+boundary explicit:
+
+- sender-queue wait: p50 32,964 ms, p95 37,115 ms;
+- browser-lock wait: p50 20 ms, p95 1,501 ms;
+- browser-lock hold: p50 0 ms, p95 1,569 ms;
+- effect-drain duration: p50 820 ms, p95 1,562 ms; and
+- outbound finalization: p50 833 ms, p95 1,610 ms.
+
+The primary performance direction is therefore the serialized per-sender
+admission pipeline and its IndexedDB access pattern. `readOutgoingMessage(...)`
+performs multiple separately completed IndexedDB transactions, while effect
+claiming scans the shared object store and filters prefixes in JavaScript. The
+global effect drain adds latency after commit, but the retry scheduler is not
+the responsible workload boundary.
+
+The distributed failure is a separate topology-stability problem. Lifecycle
+evidence was 118 peer creations and 96 deletions in iteration 15, versus three
+creations and one deletion in the passing two-agent smoke. The 15-agent current
+and pre-diagnostic canary runs both showed more than 180 creations and more than
+150 deletions. Existing lifecycle events do not preserve deletion cause or the
+topology revision that triggered reconciliation, so the exact churn source
+must be instrumented before changing topology behavior.
+
+The production answer is specified in
+`2026-07-19-rtc-admission-throughput-and-topology-stability-design.md` and
+planned in
+`../plans/2026-07-19-rtc-admission-throughput-and-topology-stability.md`.
