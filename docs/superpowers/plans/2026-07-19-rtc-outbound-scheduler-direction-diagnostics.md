@@ -439,7 +439,8 @@ Expected: FAIL because the module is absent.
 The module must:
 
 1. filter `rallar.browser.al.outbound_runtime` events to `rtc-overlay`;
-2. group finalizations by `agentId + "\\0" + msgId`;
+2. group finalizations by `agentId + "\\0" + msgId` and exclude completion
+   diagnostics whose nested transport outcome is not `status: enqueued`;
 3. select the earliest `intent: enqueue` / `phase: immediate` event no later
    than each `rallar.browser.messages.rtc.send_completed` event;
 4. count zero, one, and multiple enqueue matches as missing, matched, and
@@ -519,7 +520,9 @@ export function analyzeRtcOutboundRuntimeEvents(events) {
       event.value?.topic !==
         'rallar.browser.messages.rtc.send_completed'
     ) return [];
-    const message = event.value.payload.data?.message?.message;
+    const outcome = event.value.payload.data?.message;
+    if (outcome?.status !== 'enqueued') return [];
+    const message = outcome.message;
     if (
       !message ||
       message.payload?.typeId !== 'black-box.group.multicast.position'

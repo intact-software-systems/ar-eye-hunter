@@ -139,7 +139,9 @@ export function analyzeRtcOutboundRuntimeEvents(events) {
 
   const completions = events.flatMap(event => {
     if (event.value?.topic !== COMPLETED_TOPIC) return [];
-    const message = event.value.payload.data?.message?.message;
+    const outcome = event.value.payload.data?.message;
+    if (outcome?.status !== 'enqueued') return [];
+    const message = outcome.message;
     if (!message || message.payload?.typeId !== STREAM_TYPE_ID) return [];
     return [{
       agentId: event.agentId,

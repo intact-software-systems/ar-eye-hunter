@@ -21,7 +21,12 @@ function runtimeEvent(atEpochMs, data) {
   };
 }
 
-function completedEvent(atEpochMs, msgId, startedAtEpochMs) {
+function completedEvent(
+  atEpochMs,
+  msgId,
+  startedAtEpochMs,
+  status = 'enqueued',
+) {
   return {
     agentId: 'controller-01',
     atEpochMs,
@@ -31,6 +36,7 @@ function completedEvent(atEpochMs, msgId, startedAtEpochMs) {
         atEpochMs,
         data: {
           message: {
+            status,
             message: {
               id: {
                 msgId,
@@ -48,6 +54,17 @@ function completedEvent(atEpochMs, msgId, startedAtEpochMs) {
 }
 
 describe('RTC outbound runtime artifact analysis', () => {
+  it('excludes skipped transport outcomes from completion coverage', () => {
+    const analysis = analyzeRtcOutboundRuntimeEvents([
+      completedEvent(200, 'msg-skipped', 100, 'skipped'),
+    ]);
+
+    expect(analysis.coverage.completedStreamMessages).toBe(0);
+    expect(analysis.evidenceErrors).toEqual([
+      'No completed stream messages are available for outbound runtime analysis.',
+    ]);
+  });
+
   it('rejects an artifact with no completed stream messages', () => {
     const analysis = analyzeRtcOutboundRuntimeEvents([]);
 

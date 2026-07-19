@@ -117,6 +117,7 @@ contract is required.
 
 The offline analyzer joins `outbound-finalization` events to
 `rallar.browser.messages.rtc.send_completed` by agent and message ID. It selects
+only nested `status: enqueued` transport outcomes, excluding skipped sends, and
 the earliest committed `intent: enqueue`, `phase: immediate` event for that
 message no later than the completion event; later `dequeue` and retry events are
 analyzed separately. A missing or ambiguous enqueue match is reported as an
