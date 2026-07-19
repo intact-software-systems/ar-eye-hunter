@@ -422,11 +422,57 @@ the existing at-least-once recovery behavior remains intact.
 Run outbound runtime and IndexedDB persistence tests, the RTC/browser regression
 surface, and shared/shared-web/shared-server/shared-test checks.
 
-- [ ] **Step 4: Push and collect iteration 8**
+- [x] **Step 4: Push and collect iteration 8**
 
 Rerun the unchanged 15-agent manifest after reverting iteration 7's rejected
 claim quota. Acceptance requires lower drain milliseconds per claimed effect,
 lower first-matching-drain delay, and lower frame p95/p99 without drops.
+
+Iteration 8 accepted the storage primitive but failed the end-to-end acceptance
+criterion. Batch settlement reduced drain duration per claim from 25 ms to 18
+ms on average and drain p95 from 247 ms to 128 ms, but increased available retry
+capacity exposed a fixed-delay retry storm: 51,354 effects were claimed, 3,026
+completed, and 48,301 rescheduled. Stream latency regressed to p50 2,273 ms,
+p95 10,001 ms, and p99 12,602 ms.
+
+### Task 8: Let durable RTC sends use exponential retry backoff
+
+**Files:**
+
+- Modify: `packages/shared/multicast/WebRtcOverlayMulticastManager.ts`
+- Test: `packages/tests/shared/webrtc-overlay-services.test.ts`
+
+**Interfaces:**
+
+- Consumes: a missing or non-open RTC data channel while running a durable
+  `send-prepared` effect.
+- Produces: `status: 'not-ready'` without a transport-specific fixed delay, so
+  `ALOutboundMessageRuntime` applies its existing bounded exponential delay.
+
+- [x] **Step 1: Reproduce the fixed-delay retry loop**
+
+Keep a durable channel unavailable through the first retry, make it available,
+and assert that the next attempt waits 100 ms rather than repeating after 50
+ms. Verify RED because the RTC manager currently supplies `retryAfterMs: 50` on
+every attempt.
+
+- [x] **Step 2: Restore the runtime-owned retry policy**
+
+Remove the 50 ms override from both missing-channel and non-open-channel
+results. Preserve `not-ready`, the reason, persistence, and the existing 5 s
+runtime backoff cap.
+
+- [x] **Step 3: Verify focused regressions and typechecks**
+
+Run the RTC overlay, outbound runtime, IndexedDB, multicast, browser runtime,
+and middleware regressions plus shared/shared-web/shared-server/shared-test
+checks.
+
+- [ ] **Step 4: Push and collect iteration 9**
+
+Rerun the unchanged 15-agent manifest. Acceptance requires a material drop in
+claimed/rescheduled effects and first-matching-drain delay, with all streams
+meeting the unchanged success and latency thresholds.
 
 ## Self-review
 

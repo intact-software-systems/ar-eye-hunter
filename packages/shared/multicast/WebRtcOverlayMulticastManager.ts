@@ -609,7 +609,6 @@ export class WebRtcOverlayMulticastManager {
             return {
                 status: 'not-ready',
                 reason,
-                retryAfterMs: 50,
             };
         }
 
@@ -618,7 +617,6 @@ export class WebRtcOverlayMulticastManager {
             return {
                 status: 'not-ready',
                 reason: `RTC channel for peer ${peerId} is ${health.readyState}`,
-                retryAfterMs: 50,
             };
         }
 

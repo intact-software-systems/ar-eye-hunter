@@ -269,6 +269,38 @@ batch write conservatively converts completed outcomes into retries, preserving
 at-least-once recovery. No transport concurrency, retry delay, topology, or
 workload contract changes.
 
+## Iteration 8 outcome and fixed RTC retry cadence
+
+Run `29686397200` at commit `4df70a00` validated batch settlement as a storage
+optimization but rejected it as a complete workload correction. Drain p95 fell
+from iteration 7's 247 ms to 128 ms, and duration per claimed effect fell from
+25 ms to 18 ms on average. Browser-lock and each stream message's own sender
+queue remained small (p95 146 ms and 549 ms respectively).
+
+The faster settlement boundary amplified the unresolved retry loop. Drains
+claimed 51,354 effects, completed 3,026, and rescheduled 48,301. Across 1,967
+completed stream frames, duration was p50 2,273 ms, p95 10,001 ms, p99 12,602
+ms, and max 14,018 ms; 283 sends failed and two frames hit the in-flight limit.
+Per-message completion still correlated with overlapping drain time at 0.998,
+and first matching drain delay was p95 8,548 ms. Batch settlement is retained
+because it reduces one IndexedDB write boundary without changing semantics, but
+it exposes rather than resolves the dominant retry cadence.
+
+The measured messages use at-least-once delivery and local outbox persistence,
+so dropping a prepared send merely because its current lane is absent would
+weaken the requested contract. The runtime already has bounded exponential
+effect backoff (`50, 100, 200, ...`, capped at 5 seconds), but
+`WebRtcOverlayMulticastManager.sendPreparedMessage(...)` overrides it by
+returning `retryAfterMs: 50` for every missing or non-open channel. Because a
+rescheduled batch now correctly ends its drain, that override repeatedly wakes
+the retry-ordered queue at 20 Hz and delays newly persisted effects.
+
+Iteration 9 removes only the RTC-specific delay override. The manager still
+returns `not-ready`, so durable delivery and retry reasons are unchanged; the
+shared outbound runtime owns the backoff already encoded by effect attempt
+count. Volatile sends, open-channel sends, topology selection, and the recipe
+remain unchanged.
+
 ## Contract change
 
 Add mandatory `provenance` to the browser-local `OverlayInfo` contract:
