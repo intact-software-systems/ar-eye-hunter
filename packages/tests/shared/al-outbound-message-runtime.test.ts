@@ -449,6 +449,80 @@ describe('ALOutboundMessageRuntime', () => {
         runtime.dispose();
     });
 
+    it('returns a persisted enqueue without waiting for an unrelated active drain', async () => {
+        const outbox = new InMemoryQueueBox(new Map());
+        const admissionStore = createMemoryOutboundAdmissionStore();
+        const committedMessageIds: string[] = [];
+        const firstGate = createDeferred<void>();
+        const runtime = createOutboundRuntime({
+            outbox,
+            stores: {
+                admissionStore: createFlakyOutboundAdmissionStore(
+                    admissionStore,
+                    {
+                        commitBundle: async <TPrepared>(
+                            bundle: ALOutboundCommitBundle<TPrepared>,
+                        ) => {
+                            const status = await admissionStore.commitBundle(bundle);
+                            const owner = bundle.mutations.find(
+                                mutation => mutation.kind === 'set-msg-owner',
+                            );
+                            if (owner?.kind === 'set-msg-owner') {
+                                committedMessageIds.push(owner.msgId);
+                            }
+                            return status;
+                        },
+                    },
+                ),
+            },
+            sendPreparedMessage: async (prepared) => {
+                if (prepared.resourceId === 'msg-active-drain') {
+                    await firstGate.promise;
+                }
+            },
+            planOutgoingMessage: (msg) => msg.route.resourceId === 'msg-active-drain'
+                ? {
+                    persist: false,
+                    preparedMessages: [{
+                        kind: 'send',
+                        resourceId: msg.route.resourceId,
+                    }],
+                }
+                : {
+                    persist: true,
+                    preparedMessages: [],
+                },
+        });
+
+        const activeDrainMessage = createOutboundMessage('msg-active-drain');
+        const persistedMessage = createOutboundMessage(
+            'msg-persisted-during-drain',
+        );
+        const first = runtime.enqueueIfAbsent(activeDrainMessage);
+        await waitUntil(() =>
+            committedMessageIds.includes(activeDrainMessage.id.msgId)
+        );
+
+        let persistedSettled = false;
+        const persisted = runtime.enqueueIfAbsent(persistedMessage).then(result => {
+            persistedSettled = true;
+            return result;
+        });
+        await waitUntil(() =>
+            committedMessageIds.includes(persistedMessage.id.msgId)
+        );
+        await Promise.resolve();
+        const settledBeforeActiveDrain = persistedSettled;
+
+        firstGate.resolve();
+        const [, persistedResult] = await Promise.all([first, persisted]);
+
+        expect(settledBeforeActiveDrain).toBe(true);
+        expect(persistedResult.status).toBe('enqueued');
+        expect(await reserveOutbox(outbox)).toHaveLength(1);
+        runtime.dispose();
+    });
+
     it('emits diagnostics for sender queue, browser lock, and effect drains', async () => {
         const diagnostics = vi.fn();
         let nowMs = 0;

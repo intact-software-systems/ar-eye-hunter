@@ -390,7 +390,12 @@ export class ALOutboundMessageRuntime<TPrepared> {
         );
 
         if (result.committed && !options.deferEffectDrain) {
-            await this.finalizeCommittedOutbound();
+            if (result.computed.status === 'enqueued' && this.effectDrainPromise) {
+                // The admission effect is already durable; an active drain owns progress.
+                this.requestEffectDrain();
+            } else {
+                await this.finalizeCommittedOutbound();
+            }
         }
 
         return result.computed;

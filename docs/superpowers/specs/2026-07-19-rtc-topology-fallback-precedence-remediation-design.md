@@ -301,6 +301,37 @@ shared outbound runtime owns the backoff already encoded by effect attempt
 count. Volatile sends, open-channel sends, topology selection, and the recipe
 remain unchanged.
 
+## Iteration 9 outcome and persisted-enqueue completion coupling
+
+Run `29686838653` at commit
+`1a118e51eff9bede67a601df7f57e20a732d8522` confirmed that the fixed RTC retry
+cadence was a dominant amplifier. Compared with iteration 8, claimed effects
+fell from 51,354 to 10,520 and reschedules fell from 48,301 to 6,000. Stream
+latency improved from p50 2,273 ms / p95 10,001 ms / p99 12,602 ms to p50 594
+ms / p95 6,012 ms / p99 9,038 ms. Failures fell from 283 to 124, and all 2,100
+frames were attempted with no drops. The retry correction is accepted.
+
+The unchanged gate still failed on 14 exported streams. Across 2,169 correlated
+completed sends, own sender-queue wait was p95 878 ms and browser-lock time was
+p95 178 ms, while overlapping effect-drain time was p95 3,032 ms. Send duration
+correlated 0.980 with overlapping drain time. First matching own-drain delay was
+p95 3,665 ms, and 48 completed sends had no matching drain at all.
+
+`commitDispatchPlanWithRetry(...)` commits a bundle before finalization. If a
+drain is already active, `finalizeCommittedOutbound(...)` first awaits that
+unrelated drain and then starts or joins another drain. A rescheduled batch can
+end without ever claiming the newly committed effect, so this wait both adds
+latency and fails to guarantee the caller's own effect ran. The durable
+admission record, rather than this arbitrary drain boundary, is the recovery
+contract.
+
+Iteration 10 changes only an already-persisted `enqueued` result committed while
+a drain is active. That caller returns after the admission commit and requests
+background progress; the active drain or its scheduled successor materializes
+the outbox effect. When no drain is active, the existing awaited path remains.
+Immediate prepared sends also retain their synchronous transport completion,
+so volatile send semantics do not change.
+
 ## Contract change
 
 Add mandatory `provenance` to the browser-local `OverlayInfo` contract:

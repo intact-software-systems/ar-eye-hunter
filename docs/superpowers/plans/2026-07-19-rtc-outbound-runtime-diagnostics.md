@@ -468,11 +468,60 @@ Run the RTC overlay, outbound runtime, IndexedDB, multicast, browser runtime,
 and middleware regressions plus shared/shared-web/shared-server/shared-test
 checks.
 
-- [ ] **Step 4: Push and collect iteration 9**
+- [x] **Step 4: Push and collect iteration 9**
 
 Rerun the unchanged 15-agent manifest. Acceptance requires a material drop in
 claimed/rescheduled effects and first-matching-drain delay, with all streams
 meeting the unchanged success and latency thresholds.
+
+Iteration 9 accepted the exponential retry correction but did not meet the
+end-to-end latency gate. Claims fell from 51,354 to 10,520 and reschedules from
+48,301 to 6,000. Stream latency improved to p50 594 ms / p95 6,012 ms / p99
+9,038 ms, with 124 failures and no drops. The remaining delay correlated at
+0.980 with overlapping drain time; 48 completed sends had no matching own drain,
+showing that the synchronous wait was coupled to unrelated work rather than
+guaranteeing its committed effect ran.
+
+### Task 9: Decouple persisted enqueue completion from an active drain
+
+**Files:**
+
+- Modify: `packages/shared/alm/ALOutboundMessageRuntime.ts`
+- Test: `packages/tests/shared/al-outbound-message-runtime.test.ts`
+
+**Interfaces:**
+
+- Consumes: a successfully committed `status: 'enqueued'` bundle while another
+  durable-effect drain is active.
+- Produces: immediate completion from the durable admission commit while the
+  active/background drain retains ownership of materializing the outbox effect.
+  Immediate prepared sends keep their synchronous transport completion.
+
+- [x] **Step 1: Reproduce the unrelated-drain wait**
+
+Block an immediate prepared send, commit a second persistent enqueue, and
+assert that the persistent result settles before the unrelated send is
+released. Verify RED because `finalizeCommittedOutbound(...)` awaits the active
+drain before returning.
+
+- [x] **Step 2: Return persisted commits while an active drain owns progress**
+
+When the committed result is `enqueued` and a drain promise already exists,
+request background progress and return the computed result. Preserve the
+existing awaited path when no drain is active and for all immediate prepared
+sends.
+
+- [x] **Step 3: Verify focused regressions and typechecks**
+
+Run the outbound runtime, IndexedDB, RTC overlay, multicast, operation-options,
+browser runtime, and middleware tests plus shared/shared-web/shared-server and
+shared-test TypeScript+Deno checks.
+
+- [ ] **Step 4: Push and collect iteration 10**
+
+Run the unchanged manifest for the tenth and final iteration. Record the
+terminal recipe result and all outbound/stream metrics; do not make a further
+correction in this investigation if the gate still fails.
 
 ## Self-review
 
