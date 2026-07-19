@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { PSqlAdminSupportReader } from '@shared-server/postgres/admin-support/PSqlAdminSupportReader.ts';
-import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { createApiV1SqlClient } from '../../src/db/db.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 

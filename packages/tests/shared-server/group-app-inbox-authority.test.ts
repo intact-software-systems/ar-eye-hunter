@@ -17,6 +17,7 @@ import { AuthSessionRepository } from '@shared-server/rallar-system/repositories
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import {
     AppGroupInboxService,
+    AppInboxService,
     type AppInboxEnqueueInput,
     AppInboxType,
     type GroupCreateAppInboxPayload,
@@ -41,6 +42,145 @@ const SCOPE: StateScope = {
 };
 
 describe('AppGroupInboxService authenticated authority', () => {
+    it('fails closed before a direct user mutation can read or write without authority', async () => {
+        const harness = await createAuthorityHarness(['owner']);
+        await createRoom(harness, 'direct-missing-authority', 'Before');
+
+        await expect(Reflect.apply(
+            harness.groupStateService.updateGroup,
+            undefined,
+            [
+                SCOPE,
+                'direct-missing-authority',
+                {
+                    displayName: 'Must Not Apply',
+                    actorPrincipalId: 'owner',
+                    actorSessionId: 'owner-session',
+                    requestId: 'direct-missing-authority',
+                },
+            ],
+        )).rejects.toMatchObject({ status: 403 });
+
+        expect((await harness.repository.readSnapshot({
+            ...SCOPE,
+            groupId: 'direct-missing-authority',
+        }))?.group.displayName).toBe('Before');
+        expect(await harness.repository.listEvents({
+            ...SCOPE,
+            groupId: 'direct-missing-authority',
+        })).toHaveLength(1);
+    });
+
+    it('rejects a raw user inbox call without authority before enqueue', async () => {
+        const harness = await createAuthorityHarness(['owner']);
+        const input: AppInboxEnqueueInput<GroupCreateAppInboxPayload> = {
+            type: AppInboxType.GROUP_CREATE,
+            resourceId: 'raw-missing-authority',
+            contextId: 'ar-eye-hunter:default:raw-missing-authority',
+            senderId: 'owner',
+            data: {
+                scope: SCOPE,
+                request: {
+                    groupId: 'raw-missing-authority',
+                    displayName: 'Must Not Exist',
+                    kind: 'room',
+                    joinMode: 'open',
+                    createdByPrincipalId: 'owner',
+                    actorPrincipalId: 'owner',
+                    actorSessionId: 'owner-session',
+                    requestId: 'raw-missing-authority',
+                },
+            },
+        };
+
+        await expect(Reflect.apply(
+            harness.service.processEntryUntilCompletion,
+            harness.service,
+            [input],
+        )).rejects.toMatchObject({ status: 403 });
+
+        expect(await harness.repository.readSnapshot({
+            ...SCOPE,
+            groupId: 'raw-missing-authority',
+        })).toBeUndefined();
+        expect([...harness.queueEntries()].filter((entry) =>
+            entry.status === EntityStatus.NEW
+        )).toHaveLength(0);
+    });
+
+    it('rejects a dequeued user command whose authority proof has extra fields', async () => {
+        const harness = await createAuthorityHarness(['owner']);
+        const input: AppInboxEnqueueInput<GroupCreateAppInboxPayload> = {
+            type: AppInboxType.GROUP_CREATE,
+            resourceId: 'raw-extra-proof',
+            contextId: 'ar-eye-hunter:default:raw-extra-proof',
+            senderId: 'owner',
+            authority: {
+                version: 1,
+                principalId: 'owner',
+                sessionId: 'owner-session',
+                sessionIssuedAtEpochMs: harness.sessions.owner.issuedAtEpochMs,
+                sessionExpiresAtEpochMs: harness.sessions.owner.expiresAtEpochMs,
+                commandMac: '0'.repeat(64),
+                internalAuthority: 'expiry',
+            },
+            data: {
+                scope: SCOPE,
+                request: {
+                    groupId: 'raw-extra-proof',
+                    displayName: 'Must Not Exist',
+                    kind: 'room',
+                    joinMode: 'open',
+                    createdByPrincipalId: 'owner',
+                    actorPrincipalId: 'owner',
+                    actorSessionId: 'owner-session',
+                    requestId: 'raw-extra-proof',
+                },
+            },
+        };
+
+        const pending = AppInboxService.prototype.processEntryUntilCompletion.call(
+            harness.service,
+            input,
+        );
+        await waitForQueueEntry(harness.queue);
+        await harness.reader.dequeueInbox(
+            InboxQueueReader.INBOX_DEQUEUE_TYPES,
+            createResilience(),
+        );
+
+        expect((await pending).left).toContain('authority proof is malformed');
+        expect(await harness.repository.readSnapshot({
+            ...SCOPE,
+            groupId: 'raw-extra-proof',
+        })).toBeUndefined();
+    });
+
+    it('rejects legacy maintenance inbox types and exposes no maintenance method', async () => {
+        const harness = await createAuthorityHarness(['owner']);
+        expect(Reflect.get(harness.groupStateService, 'expireExpiredPresenceSessions'))
+            .toBeUndefined();
+        expect(Reflect.get(
+            harness.groupStateService,
+            'disconnectPresenceSessionsBySessionIdWritten',
+        )).toBeUndefined();
+
+        await expect(Reflect.apply(
+            harness.service.processEntryUntilCompletion,
+            harness.service,
+            [{
+                type: 'GROUP_EXPIRED_PRESENCE_SESSIONS',
+                resourceId: 'raw-expiry',
+                contextId: 'raw-expiry',
+                senderId: 'attacker',
+                data: { atEpochMs: harness.nowEpochMs },
+            }],
+        )).rejects.toMatchObject({ status: 403 });
+        expect([...harness.queueEntries()].filter((entry) =>
+            entry.status === EntityStatus.NEW
+        )).toHaveLength(0);
+    });
+
     it('rejects an attacker bearer that claims the owner actor', async () => {
         const nowEpochMs = Date.now();
         const runtimeRepository = new FakeRuntimeStateRepository();
@@ -555,6 +695,7 @@ type AuthorityHarness = Readonly<{
     reader: InboxQueueReader;
     queue: TestResourceInbox;
     sessions: Readonly<Record<string, IssuedAuthSession>>;
+    queueEntries(): readonly ResourceEntry[];
 }>;
 
 async function createAuthorityHarness(
@@ -602,6 +743,9 @@ async function createAuthorityHarness(
         reader,
         queue,
         sessions,
+        queueEntries: () => [
+            ...(queue as unknown as { data: Map<string, ResourceEntry> }).data.values(),
+        ],
     };
 }
 
@@ -663,7 +807,7 @@ function authenticatedProcessor<V, R>(
     enqueue: AppInboxEnqueueInput<V>,
     authority: IssuedAuthSession,
 ) => Promise<Either<string, R>> {
-    return service.processEntryUntilCompletion.bind(service) as unknown as (
+    return service.processAuthenticatedEntryUntilCompletion.bind(service) as unknown as (
         enqueue: AppInboxEnqueueInput<V>,
         authority: IssuedAuthSession,
     ) => Promise<Either<string, R>>;

@@ -7,7 +7,8 @@ import {
 } from "@shared-server/postgres/rallar-system/createStateRepositories.ts";
 import { PSqlRuntimeStateRepository } from "@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts";
 import { createClientStateService } from "@shared-server/rallar-system/services/client-state-service.ts";
-import { createGroupStateService } from "@shared-server/rallar-system/services/group-state-service.ts";
+import { createGroupStateRuntime } from "@shared-server/rallar-system/services/group-state-service.ts";
+import { AuthSessionRepository } from "@shared-server/rallar-system/repositories/AuthSessionRepository.ts";
 import type { StateSyncPublisher } from "@shared-server/rallar-system/state-sync-publisher.ts";
 
 type ExpiryWorkerInput = Readonly<{
@@ -74,13 +75,14 @@ async function runExpiryWorker(
     };
   }
 
-  const results = await createGroupStateService({
+  const results = await createGroupStateRuntime({
     runtimeRepository,
+    authSessionRepository: new AuthSessionRepository(runtimeRepository),
     createGroupStateEventStore: createGroupStateEventRepository,
     syncPublisher: createPublisher(),
     now: () => input.atEpochMs,
     serviceId: `postgres-expiry-worker-${Deno.pid}`,
-  }).expireExpiredPresenceSessions(input.atEpochMs);
+  }).maintenance.expireExpiredPresenceSessions(input.atEpochMs);
 
   return {
     mode: input.mode,

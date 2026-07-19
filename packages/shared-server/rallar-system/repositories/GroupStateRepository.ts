@@ -348,6 +348,15 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
         );
     }
 
+    async listMemberEntries(
+        ref: GroupRef,
+    ): Promise<readonly RuntimeStateEntryValue<GroupMember>[]> {
+        return await this.listEntryValues<GroupMember>(
+            MEMBERS_NAMESPACE,
+            this.memberPrefix(ref),
+        );
+    }
+
     async removeMember(
         ref: GroupRef & Readonly<{ principalId: string }>,
     ): Promise<void> {
@@ -434,6 +443,15 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
         );
     }
 
+    async listPresenceSessionEntries(
+        ref: GroupRef,
+    ): Promise<readonly RuntimeStateEntryValue<GroupPresenceSession>[]> {
+        return await this.listEntryValues<GroupPresenceSession>(
+            SESSIONS_NAMESPACE,
+            this.sessionPrefix(ref),
+        );
+    }
+
     async findPresenceAdmissionEntry(
         ref: GroupRef & Readonly<{ principalId: string }>,
     ): Promise<RuntimeStateEntryValue<GroupPresenceAdmission> | undefined> {
@@ -470,6 +488,15 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
         ref: GroupRef,
     ): Promise<readonly GroupPresenceAdmission[]> {
         return await this.listValues<GroupPresenceAdmission>(
+            PRESENCE_ADMISSIONS_NAMESPACE,
+            this.presenceAdmissionPrefix(ref),
+        );
+    }
+
+    async listPresenceAdmissionEntries(
+        ref: GroupRef,
+    ): Promise<readonly RuntimeStateEntryValue<GroupPresenceAdmission>[]> {
+        return await this.listEntryValues<GroupPresenceAdmission>(
             PRESENCE_ADMISSIONS_NAMESPACE,
             this.presenceAdmissionPrefix(ref),
         );

@@ -28,7 +28,10 @@ import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/services/
 import { createRtcTopologyOutboxPublisher } from '@shared-server/rallar-system/services/RtcTopologyOutboxWork.ts';
 import { StateMutationOutboxRepository } from '@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts';
 import { createClientStateService } from '@shared-server/rallar-system/services/client-state-service.ts';
-import { createGroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
+import {
+  createGroupStateRuntime,
+  type GroupStateMaintenanceService,
+} from '@shared-server/rallar-system/services/group-state-service.ts';
 import {
   type CachedClientStateService,
   createCachedClientStateService,
@@ -41,9 +44,9 @@ import { createWsStateSyncPublisher } from '@shared-server/rallar-system/state-s
 import { myPublisherId, myServerId } from './runtime/runtime-identity.ts';
 import { toResilienceDto } from './middleware-resilience.ts';
 import {
+  createAuthSessionRepository,
   createClientStateEventRepository,
   createClientStateRepository,
-  createAuthSessionRepository,
   createGroupStateEventRepository,
   createGroupStateRepository,
   createRuntimeStateRepository,
@@ -76,28 +79,38 @@ import {
 } from '@shared-server/rallar-system/pubsub/RtcTopologyClusterTransport.ts';
 import { createApiV1RtcTopologyClusterTransport } from './db/api-v1-rtc-topology-cluster-transport.ts';
 
-export type Middleware = Omit<
-  RallarMiddlewareRuntime,
-  | 'clientStateService'
-  | 'groupStateService'
-  | 'rtcTopologyPublicationRepository'
-  | 'rtcTopologyExecutionRepository'
-  | 'rtcTopologyPublicationFanout'
-> & Readonly<{
-  clientStateService: CachedClientStateService;
-  groupStateService: CachedGroupStateService;
-  rtcTopologyPublicationRepository: RtcTopologyPublicationRepository;
-  rtcTopologyExecutionRepository: RtcTopologyExecutionRepository;
-  rtcTopologyPublicationFanout: RtcTopologyPublicationFanout;
-}>;
+export type Middleware =
+  & Omit<
+    RallarMiddlewareRuntime,
+    | 'clientStateService'
+    | 'groupStateService'
+    | 'rtcTopologyPublicationRepository'
+    | 'rtcTopologyExecutionRepository'
+    | 'rtcTopologyPublicationFanout'
+  >
+  & Readonly<{
+    clientStateService: CachedClientStateService;
+    groupStateService: CachedGroupStateService;
+    rtcTopologyPublicationRepository: RtcTopologyPublicationRepository;
+    rtcTopologyExecutionRepository: RtcTopologyExecutionRepository;
+    rtcTopologyPublicationFanout: RtcTopologyPublicationFanout;
+  }>;
 
 let middleware: Middleware | undefined = undefined;
+let groupStateMaintenanceService: GroupStateMaintenanceService | undefined;
 
 export function getMiddleware(): Middleware {
   if (middleware === undefined) {
     throw new Error('Middleware not initialised');
   }
   return middleware;
+}
+
+export function getGroupStateMaintenanceService(): GroupStateMaintenanceService {
+  if (groupStateMaintenanceService === undefined) {
+    throw new Error('Group state maintenance service not initialised');
+  }
+  return groupStateMaintenanceService;
 }
 
 export function initialiseMiddleware() {
@@ -129,18 +142,16 @@ function initialise(): Middleware {
     clientsRepository,
   });
   const runtimeStateRepository = createRuntimeStateRepository(sql);
-  const rtcTopologyPublicationRepository =
-    new RtcTopologyPublicationRepository(
-      runtimeStateRepository,
-      DEFAULT_RTC_TOPOLOGY_PUBLICATION_RETENTION_MS,
-      now,
-    );
-  const rtcTopologyExecutionRepository =
-    new RtcTopologyExecutionRepository(
-      runtimeStateRepository,
-      DEFAULT_RTC_TOPOLOGY_PUBLICATION_RETENTION_MS,
-      now,
-    );
+  const rtcTopologyPublicationRepository = new RtcTopologyPublicationRepository(
+    runtimeStateRepository,
+    DEFAULT_RTC_TOPOLOGY_PUBLICATION_RETENTION_MS,
+    now,
+  );
+  const rtcTopologyExecutionRepository = new RtcTopologyExecutionRepository(
+    runtimeStateRepository,
+    DEFAULT_RTC_TOPOLOGY_PUBLICATION_RETENTION_MS,
+    now,
+  );
   const rtcTopologyPublicationFanout = createRtcTopologyPublicationFanout({
     publisherId: myPublisherId,
     repository: rtcTopologyPublicationRepository,
@@ -171,15 +182,17 @@ function initialise(): Middleware {
       inboxQueueReader,
       wakeQueueEngine,
     }) => {
+      const durableRuntime = createGroupStateRuntime({
+        runtimeRepository: runtimeStateRepository,
+        authSessionRepository: createAuthSessionRepository(runtimeStateRepository),
+        createGroupStateEventStore: createGroupStateEventRepository,
+        serviceId: myServerId,
+        wakeStateMutationOutbox: wakeQueueEngine,
+        timing,
+      });
+      groupStateMaintenanceService = durableRuntime.maintenance;
       const groupStateService = createCachedGroupStateService({
-        durable: createGroupStateService({
-          runtimeRepository: runtimeStateRepository,
-          authSessionRepository: createAuthSessionRepository(runtimeStateRepository),
-          createGroupStateEventStore: createGroupStateEventRepository,
-          serviceId: myServerId,
-          wakeStateMutationOutbox: wakeQueueEngine,
-          timing,
-        }),
+        durable: durableRuntime.service,
         cache: groupSnapshotReadThroughCache,
       });
       return new AppGroupInboxService(
@@ -267,7 +280,10 @@ function initialise(): Middleware {
     });
   }
 
-  initPresenceExpiryReconciliation(runtime)
+  initPresenceExpiryReconciliation({
+    appClientInboxService: runtime.appClientInboxService,
+    groupStateMaintenanceService: getGroupStateMaintenanceService(),
+  })
     .catch((e) => console.error('Failed to initialise presence expiry reconciliation:', e));
 
   return requireApiMiddleware(runtime);

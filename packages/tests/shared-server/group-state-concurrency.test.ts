@@ -13,8 +13,12 @@ import { GroupStateRepository } from '@shared-server/rallar-system/repositories/
 import { STATE_MUTATION_OUTBOX_NAMESPACE } from '@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts';
 import {
     createGroupStateService,
+    createGroupStateRuntime,
+    type GroupMutationAuthority,
     GroupMutationIdempotencyConflictError,
+    type GroupStateService,
 } from '@shared-server/rallar-system/services/group-state-service.ts';
+import type { IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 import {
     computeGroupMutation,
     computeGroupPresenceSummary,
@@ -42,6 +46,13 @@ const SCOPE: StateScope = {
 const BASE_EPOCH_MS = Date.now();
 
 describe('convergent group and presence state', () => {
+    it('refuses to construct a user mutation service without an auth repository', () => {
+        expect(() => createGroupStateService({
+            runtimeRepository: new GroupBarrierRepository(),
+            serviceId: 'missing-auth-service',
+        } as never)).toThrow(/auth.*required/i);
+    });
+
     it('makes generation identity mandatory and rejects caller-controlled command hashes', () => {
         expectTypeOf<ConnectGroupPresenceSessionRequest>()
             .toHaveProperty('generationId').toEqualTypeOf<string>();
@@ -292,12 +303,15 @@ describe('convergent group and presence state', () => {
             entry: {
                 ...group.entry,
                 key: 'presence-summary',
+                value: JSON.stringify(base),
                 revision: 0,
             },
             value: base,
         };
+        const member = createMutationRead().actorMemberEntry!;
         const read = {
             group,
+            members: [member],
             admissions: [],
             presenceSessions: [],
             current,
@@ -314,16 +328,21 @@ describe('convergent group and presence state', () => {
                     activePrincipalCount: 1,
                 },
             },
-        })).toThrow(/equal.*different content/i);
+        })).toThrow(/equal.*different content|facts are inconsistent|canonical/i);
 
+        const aheadValue = {
+            ...base,
+            causalRevision: { groupRevision: 2, presenceRevision: 0 },
+        };
         const ahead = {
             ...read,
             current: {
                 ...current,
-                value: {
-                    ...base,
-                    causalRevision: { groupRevision: 2, presenceRevision: 0 },
+                entry: {
+                    ...current.entry,
+                    value: JSON.stringify(aheadValue),
                 },
+                value: aheadValue,
             },
         };
         const concurrent = computeGroupPresenceSummary({
@@ -387,7 +406,7 @@ describe('convergent group and presence state', () => {
         expect(runtime.locks).toEqual([]);
     });
 
-    it('rebases join versus ban against the winning member predecessor', async () => {
+    it('converges join versus ban under either valid serialization order', async () => {
         const runtime = new GroupBarrierRepository();
         await seedOpenGroup(runtime, 'join-ban-room');
         await createService(runtime, 1_100).upsertMember(
@@ -421,7 +440,9 @@ describe('convergent group and presence state', () => {
         const snapshot = await requireSnapshot(runtime, 'join-ban-room');
         expect(snapshot.members.find((member) => member.principalId === 'bob'))
             .toMatchObject({ status: 'banned' });
-        expect(snapshot.group.snapshotVersion).toBe(3);
+        expect(snapshot.group.snapshotVersion).toBe(
+            2 + results.filter((result) => result.status === 'fulfilled').length,
+        );
     });
 
     it('rebases ownership transfer versus target removal without losing a winner', async () => {
@@ -676,7 +697,8 @@ describe('convergent group and presence state', () => {
                 requestId: 'connect-generation-2',
             },
         );
-        await service.expireExpiredPresenceSessions(BASE_EPOCH_MS + 4_000);
+        await createMaintenance(runtime, BASE_EPOCH_MS + 4_000)
+            .expireExpiredPresenceSessions(BASE_EPOCH_MS + 4_000);
         const reconnected = await new GroupStateRepository(runtime).findPresenceSession({
             ...groupRef('presence-room'),
             sessionId: 'session-a',
@@ -785,6 +807,243 @@ describe('convergent group and presence state', () => {
             });
         expect(admission?.value.admittedSessions).toHaveLength(1);
     });
+
+    it.each([
+        ['ban', 'connect-first'],
+        ['ban', 'membership-first'],
+        ['remove', 'connect-first'],
+        ['remove', 'membership-first'],
+    ] as const)(
+        'fences a first connect racing %s with forced %s commit ordering',
+        async (operation, order) => {
+            const runtime = new GroupBarrierRepository();
+            const seed = createService(runtime, BASE_EPOCH_MS);
+            await seed.createGroup(SCOPE, {
+                groupId: `${operation}-${order}`,
+                displayName: 'Admission fence',
+                kind: 'room',
+                joinMode: 'open',
+                maxSessionsPerMember: 1,
+                createdByPrincipalId: 'alice',
+                requestId: `seed-${operation}-${order}`,
+            });
+            await seed.upsertMember(SCOPE, `${operation}-${order}`, 'bob', {
+                status: 'active',
+                actorPrincipalId: 'alice',
+                requestId: `activate-bob-${operation}-${order}`,
+            });
+
+            runtime.armAdmissionReadBarrier(2);
+            const connect = () => createService(runtime, BASE_EPOCH_MS + 2_000)
+                .connectPresenceSession(
+                    SCOPE,
+                    `${operation}-${order}`,
+                    'bob-session-old',
+                    {
+                        principalId: 'bob',
+                        generationId: 'bob-generation-old',
+                        actorPrincipalId: 'bob',
+                        expiresAtEpochMs: BASE_EPOCH_MS + 60_000,
+                        requestId: `connect-old-${operation}-${order}`,
+                    },
+                );
+            const changeMembership = () => {
+                const service = createService(runtime, BASE_EPOCH_MS + 2_001);
+                const request = {
+                    actorPrincipalId: 'alice',
+                    requestId: `${operation}-bob-${order}`,
+                };
+                return operation === 'ban'
+                    ? service.banGroupMember(
+                        SCOPE, `${operation}-${order}`, 'bob', request,
+                    )
+                    : service.removeGroupMember(
+                        SCOPE, `${operation}-${order}`, 'bob', request,
+                    );
+            };
+
+            const results = order === 'connect-first'
+                ? await Promise.allSettled([changeMembership(), connect()])
+                : await Promise.allSettled([connect(), changeMembership()]);
+            const membershipResult = results[order === 'connect-first' ? 0 : 1];
+            const connectResult = results[order === 'connect-first' ? 1 : 0];
+            expect(membershipResult).toMatchObject({ status: 'fulfilled' });
+            if (connectResult?.status === 'rejected') {
+                expect(connectResult.reason).toMatchObject({
+                    message: expect.stringMatching(/active group member required/i),
+                });
+            }
+
+            const repository = new GroupStateRepository(runtime);
+            const ref = groupRef(`${operation}-${order}`);
+            const snapshot = await repository.readSnapshot(ref);
+            expect(snapshot?.members.find((member) => member.principalId === 'bob'))
+                .toMatchObject({ status: operation === 'ban' ? 'banned' : 'removed' });
+            const admission = await repository.findPresenceAdmissionEntry({
+                ...ref,
+                principalId: 'bob',
+            });
+            expect(admission?.value.admittedSessions).toEqual([]);
+
+            const work = new GroupPresenceSummaryWork({
+                runtimeRepository: runtime,
+                now: () => BASE_EPOCH_MS + 3_000,
+                sleep: () => Promise.resolve(),
+                serviceId: 'summary-worker',
+            });
+            await work.converge(ref, `inactive-summary-${operation}-${order}`);
+            expect((await repository.findPresenceSummaryEntry(ref))?.value)
+                .toMatchObject({ activePrincipalIds: [], activeSessionIds: [] });
+
+            await createService(runtime, BASE_EPOCH_MS + 4_000).upsertMember(
+                SCOPE,
+                `${operation}-${order}`,
+                'bob',
+                {
+                    status: 'active',
+                    actorPrincipalId: 'alice',
+                    requestId: `reactivate-bob-${operation}-${order}`,
+                },
+            );
+            await work.converge(ref, `reactivated-summary-${operation}-${order}`);
+            expect((await repository.findPresenceSummaryEntry(ref))?.value)
+                .toMatchObject({ activePrincipalIds: [], activeSessionIds: [] });
+
+            const fresh = await createService(runtime, BASE_EPOCH_MS + 5_000)
+                .connectPresenceSession(
+                    SCOPE,
+                    `${operation}-${order}`,
+                    'bob-session-fresh',
+                    {
+                        principalId: 'bob',
+                        generationId: 'bob-generation-fresh',
+                        actorPrincipalId: 'bob',
+                        expiresAtEpochMs: BASE_EPOCH_MS + 70_000,
+                        requestId: `connect-fresh-${operation}-${order}`,
+                    },
+                );
+            expect(fresh.status).toBe('ok');
+            expect((await repository.findPresenceAdmissionEntry({
+                ...ref,
+                principalId: 'bob',
+            }))?.value.admittedSessions.map((session) => session.sessionId))
+                .toEqual(['bob-session-fresh']);
+        },
+    );
+
+    it('filters a stale admitted generation through the latest inactive membership', async () => {
+        const runtime = new GroupBarrierRepository();
+        const service = createService(runtime, BASE_EPOCH_MS);
+        await service.createGroup(SCOPE, {
+            groupId: 'inactive-summary-filter',
+            displayName: 'Inactive summary filter',
+            kind: 'room',
+            joinMode: 'open',
+            createdByPrincipalId: 'alice',
+            requestId: 'seed-inactive-summary-filter',
+        });
+        await service.upsertMember(SCOPE, 'inactive-summary-filter', 'bob', {
+            status: 'active',
+            actorPrincipalId: 'alice',
+            requestId: 'activate-filter-bob',
+        });
+        await service.connectPresenceSession(
+            SCOPE,
+            'inactive-summary-filter',
+            'filter-bob-session',
+            {
+                principalId: 'bob',
+                generationId: 'filter-bob-generation',
+                actorPrincipalId: 'bob',
+                expiresAtEpochMs: BASE_EPOCH_MS + 60_000,
+                requestId: 'connect-filter-bob',
+            },
+        );
+        const repository = new GroupStateRepository(runtime);
+        const ref = groupRef('inactive-summary-filter');
+        const admitted = await repository.findPresenceAdmissionEntry({
+            ...ref,
+            principalId: 'bob',
+        });
+        if (!admitted) throw new Error('Expected admitted bob generation');
+
+        await service.banGroupMember(SCOPE, 'inactive-summary-filter', 'bob', {
+            actorPrincipalId: 'alice',
+            requestId: 'ban-filter-bob',
+        });
+        await corruptFirstEntry(runtime, 'group-state:presence-admissions', (value) => ({
+            ...value,
+            admittedSessions: admitted.value.admittedSessions,
+        }));
+
+        await new GroupPresenceSummaryWork({
+            runtimeRepository: runtime,
+            now: () => BASE_EPOCH_MS + 3_000,
+            sleep: () => Promise.resolve(),
+            serviceId: 'summary-worker',
+        }).converge(ref, 'inactive-summary-filter');
+
+        expect((await repository.findPresenceSummaryEntry(ref))?.value).toMatchObject({
+            activePrincipalIds: [],
+            activeSessionIds: [],
+        });
+    });
+
+    it.each([
+        ['wrong-scope member', 'group-state:members', (value: Record<string, unknown>) => ({
+            ...value,
+            groupId: 'wrong-group',
+        })],
+        ['wrong-scope admission', 'group-state:presence-admissions',
+            (value: Record<string, unknown>) => ({ ...value, groupId: 'wrong-group' })],
+        ['impossible session lifecycle', 'group-state:sessions',
+            (value: Record<string, unknown>) => ({
+                ...value,
+                lastHeartbeatAtEpochMs: BASE_EPOCH_MS + 50_000,
+                expiresAtEpochMs: BASE_EPOCH_MS + 40_000,
+            })],
+        ['malformed current summary', 'group-state:presence-summaries',
+            (value: Record<string, unknown>) => ({ ...value, unexpected: true })],
+    ] as const)(
+        'rejects %s before the summary CAS',
+        async (_label, namespace, corrupt) => {
+            const runtime = new GroupBarrierRepository();
+            const service = createService(runtime, BASE_EPOCH_MS);
+            await service.createGroup(SCOPE, {
+                groupId: `corrupt-summary-${namespace}`,
+                displayName: 'Corrupt summary',
+                kind: 'room',
+                joinMode: 'open',
+                createdByPrincipalId: 'alice',
+                requestId: `seed-corrupt-summary-${namespace}`,
+            });
+            await service.connectPresenceSession(
+                SCOPE,
+                `corrupt-summary-${namespace}`,
+                'alice-corrupt-session',
+                {
+                    principalId: 'alice',
+                    generationId: 'alice-corrupt-generation',
+                    actorPrincipalId: 'alice',
+                    expiresAtEpochMs: BASE_EPOCH_MS + 60_000,
+                    requestId: `connect-corrupt-summary-${namespace}`,
+                },
+            );
+            await corruptFirstEntry(runtime, namespace, corrupt);
+            runtime.resetGuards();
+
+            await expect(new GroupPresenceSummaryWork({
+                runtimeRepository: runtime,
+                now: () => BASE_EPOCH_MS + 3_000,
+                sleep: () => Promise.resolve(),
+                serviceId: 'summary-worker',
+            }).converge(
+                groupRef(`corrupt-summary-${namespace}`),
+                `corrupt-${namespace}`,
+            )).rejects.toThrow(/scope|lifecycle|timestamp|unexpected|serialized|summary/i);
+            expect(runtime.presenceSummaryGuards).toBe(0);
+        },
+    );
 
     it('advances 100 independent heartbeats without acquiring the group guard', async () => {
         const runtime = new GroupBarrierRepository();
@@ -1020,7 +1279,7 @@ function createMutationCommand(
             emptySinceEpochMs: null,
             purgeAfterEpochMs: null,
             actorPrincipalId: 'alice',
-            actorSessionId: null,
+            actorSessionId: 'alice-session',
             reason: null,
             traceId: null,
         },
@@ -1098,13 +1357,17 @@ function createMutationFacts(): GroupMutationFacts {
         commandHash: `sha256:${'a'.repeat(64)}`,
         joinCodeVerifier: null,
         internalAuthority: 'none',
-        authenticatedAuthority: null,
+        authenticatedAuthority: {
+            principalId: 'alice',
+            sessionId: 'alice-session',
+        },
     };
 }
 
 class GroupBarrierRepository extends FakeRuntimeStateRepository {
     groupGuards = 0;
     presenceGuards = 0;
+    presenceSummaryGuards = 0;
     hotPathListReads = 0;
     compatibilitySnapshotListReads = 0;
     private groupReadsRemaining = 0;
@@ -1113,6 +1376,9 @@ class GroupBarrierRepository extends FakeRuntimeStateRepository {
     private presenceReadsRemaining = 0;
     private presenceReadsArrived = 0;
     private releasePresenceReads: (() => void) | undefined;
+    private admissionReadsRemaining = 0;
+    private admissionReadsArrived = 0;
+    private releaseAdmissionReads: (() => void) | undefined;
     private transactionTail: Promise<void> = Promise.resolve();
     private presenceSummaryConflictsRemaining = 0;
     private groupConflictsRemaining = 0;
@@ -1140,9 +1406,15 @@ class GroupBarrierRepository extends FakeRuntimeStateRepository {
         this.presenceReadsArrived = 0;
     }
 
+    armAdmissionReadBarrier(readers: number): void {
+        this.admissionReadsRemaining = readers;
+        this.admissionReadsArrived = 0;
+    }
+
     resetGuards(): void {
         this.groupGuards = 0;
         this.presenceGuards = 0;
+        this.presenceSummaryGuards = 0;
         this.hotPathListReads = 0;
         this.compatibilitySnapshotListReads = 0;
     }
@@ -1176,6 +1448,12 @@ class GroupBarrierRepository extends FakeRuntimeStateRepository {
         }
         if (namespace === 'group-state:sessions' && this.presenceReadsRemaining > 0) {
             await this.waitAtBarrier('presence');
+        }
+        if (
+            namespace === 'group-state:presence-admissions' &&
+            this.admissionReadsRemaining > 0
+        ) {
+            await this.waitAtBarrier('admission');
         }
         return value;
     }
@@ -1248,9 +1526,12 @@ class GroupBarrierRepository extends FakeRuntimeStateRepository {
     private recordGuard(namespace: string): void {
         if (namespace === 'group-state:groups') this.groupGuards += 1;
         if (namespace === 'group-state:sessions') this.presenceGuards += 1;
+        if (namespace === 'group-state:presence-summaries') {
+            this.presenceSummaryGuards += 1;
+        }
     }
 
-    private async waitAtBarrier(kind: 'group' | 'presence'): Promise<void> {
+    private async waitAtBarrier(kind: 'group' | 'presence' | 'admission'): Promise<void> {
         if (kind === 'group') {
             this.groupReadsArrived += 1;
             if (this.groupReadsArrived === this.groupReadsRemaining) {
@@ -1260,6 +1541,18 @@ class GroupBarrierRepository extends FakeRuntimeStateRepository {
             }
             await new Promise<void>((resolve) => {
                 this.releaseGroupReads = resolve;
+            });
+            return;
+        }
+        if (kind === 'admission') {
+            this.admissionReadsArrived += 1;
+            if (this.admissionReadsArrived === this.admissionReadsRemaining) {
+                this.admissionReadsRemaining = 0;
+                this.releaseAdmissionReads?.();
+                return;
+            }
+            await new Promise<void>((resolve) => {
+                this.releaseAdmissionReads = resolve;
             });
             return;
         }
@@ -1275,6 +1568,21 @@ class GroupBarrierRepository extends FakeRuntimeStateRepository {
     }
 }
 
+async function corruptFirstEntry(
+    runtime: GroupBarrierRepository,
+    namespace: string,
+    corrupt: (value: Record<string, unknown>) => Record<string, unknown>,
+): Promise<void> {
+    const entry = (await runtime.findAllEntries(namespace))[0];
+    if (!entry) throw new Error(`Missing ${namespace} entry to corrupt`);
+    await runtime.upsert(
+        namespace,
+        entry.key,
+        JSON.stringify(corrupt(JSON.parse(entry.value) as Record<string, unknown>)),
+        entry.expireAtTimestamp,
+    );
+}
+
 function createService(
     runtimeRepository: GroupBarrierRepository,
     nowEpochMs: number,
@@ -1282,7 +1590,8 @@ function createService(
     sleep: (delayMs: number) => Promise<void> = () => Promise.resolve(),
 ) {
     let id = 0;
-    return createGroupStateService({
+    const issued = new Map<string, IssuedAuthSession>();
+    const durable = createGroupStateService({
         runtimeRepository,
         syncPublisher: createPublisher(),
         now: () => nowEpochMs,
@@ -1290,7 +1599,80 @@ function createService(
         sleep,
         serviceId: 'group-service',
         wakeStateMutationOutbox,
+        authSessionRepository: {
+            findBySessionId: (sessionId) => Promise.resolve(issued.get(sessionId)),
+        },
     });
+    return new Proxy(durable, {
+        get(target, property, receiver) {
+            const value = Reflect.get(target, property, receiver);
+            if (typeof value !== 'function' || !TEST_USER_MUTATIONS.has(String(property))) {
+                return value;
+            }
+            return (...args: unknown[]) => {
+                const request = args.at(-1) as Record<string, unknown>;
+                const principalId = String(
+                    request.actorPrincipalId ??
+                    request.createdByPrincipalId ??
+                    request.principalId ??
+                    'alice',
+                );
+                const sessionId = TEST_PRESENCE_MUTATIONS.has(String(property))
+                    ? String(args[2])
+                    : String(request.actorSessionId ?? `${principalId}-session`);
+                const authority: IssuedAuthSession = {
+                    clientId: principalId,
+                    sessionId,
+                    accessToken: `test-token:${principalId}:${sessionId}`,
+                    username: principalId,
+                    issuedAtEpochMs: Math.max(0, nowEpochMs - 1_000),
+                    expiresAtEpochMs: nowEpochMs + 600_000,
+                };
+                issued.set(sessionId, authority);
+                return Reflect.apply(value, target, [...args, authority]);
+            };
+        },
+    }) as TestAuthenticatedGroupStateService;
+}
+
+type TestAuthenticatedGroupStateService = {
+    [K in keyof GroupStateService]: GroupStateService[K] extends (
+        ...args: [...infer Inputs, GroupMutationAuthority]
+    ) => infer Result
+        ? (...args: Inputs) => Result
+        : GroupStateService[K];
+};
+
+const TEST_USER_MUTATIONS = new Set([
+    'createGroup', 'updateGroup', 'appointDirector', 'joinGroup',
+    'createGroupInvite', 'revokeGroupInvite', 'acceptGroupInvite',
+    'rotateGroupJoinCode', 'removeGroupMember', 'banGroupMember',
+    'unbanGroupMember', 'setGroupMemberRole', 'transferGroupOwnership',
+    'upsertMember', 'connectPresenceSession', 'connectPresenceSessionReceipt',
+    'heartbeatPresenceSession', 'heartbeatPresenceSessionReceipt',
+    'disconnectPresenceSession', 'disconnectPresenceSessionReceipt',
+]);
+
+const TEST_PRESENCE_MUTATIONS = new Set([
+    'connectPresenceSession', 'connectPresenceSessionReceipt',
+    'heartbeatPresenceSession', 'heartbeatPresenceSessionReceipt',
+    'disconnectPresenceSession', 'disconnectPresenceSessionReceipt',
+]);
+
+function createMaintenance(
+    runtimeRepository: GroupBarrierRepository,
+    nowEpochMs: number,
+) {
+    return createGroupStateRuntime({
+        runtimeRepository,
+        authSessionRepository: {
+            findBySessionId: () => Promise.resolve(undefined),
+        },
+        now: () => nowEpochMs,
+        randomId: () => `maintenance-${nowEpochMs}`,
+        sleep: () => Promise.resolve(),
+        serviceId: 'group-maintenance',
+    }).maintenance;
 }
 
 async function seedOpenGroup(

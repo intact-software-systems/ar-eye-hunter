@@ -21,7 +21,6 @@ import {
     type AppInboxEnqueueInput,
     AppInboxType,
     type GroupCreateAppInboxPayload,
-    type GroupExpiredPresenceSessionsAppInboxPayload,
     type GroupInviteAcceptAppInboxPayload,
     type GroupInviteCreateAppInboxPayload,
     type GroupInviteRevokeAppInboxPayload,
@@ -39,12 +38,14 @@ import {
     type GroupUpdateAppInboxPayload,
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 import {
-    createGroupStateService,
+    createGroupStateService as createProductionGroupStateService,
     GroupStateService,
+    type GroupStateServiceDependencies,
     type GroupStateWritten,
     GroupWritten,
     type GroupJoinCodeWritten,
 } from '@shared-server/rallar-system/services/group-state-service.ts';
+import type { IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-policy.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
 import { toResultsDomain } from '@shared-server/postgres/resource-inbox/repository-utils.ts';
@@ -58,6 +59,63 @@ const SCOPE: StateScope = {
     applicationId: 'ar-eye-hunter',
     workspaceId: 'default',
 };
+
+const TEST_AUTHORITIES = new WeakMap<
+    GroupStateService,
+    (input: AppInboxEnqueueInput<unknown>) => IssuedAuthSession
+>();
+
+function createGroupStateService(
+    dependencies: Omit<GroupStateServiceDependencies, 'authSessionRepository'>,
+): GroupStateService {
+    const sessions = new Map<string, IssuedAuthSession>();
+    const service = createProductionGroupStateService({
+        ...dependencies,
+        authSessionRepository: {
+            findBySessionId: (sessionId) => Promise.resolve(sessions.get(sessionId)),
+        },
+    });
+    TEST_AUTHORITIES.set(service, (input) => {
+        const authority = toTestAuthority(input);
+        sessions.set(authority.sessionId, authority);
+        return authority;
+    });
+    return service;
+}
+
+function toTestAuthority(input: AppInboxEnqueueInput<unknown>): IssuedAuthSession {
+    const data = input.data as Readonly<Record<string, unknown>>;
+    const request = data.request as Readonly<Record<string, unknown>>;
+    const principalId = String(
+        request.actorPrincipalId ??
+        request.createdByPrincipalId ??
+        request.principalId ??
+        input.senderId ??
+        'alice',
+    );
+    const sessionId = String(
+        data.sessionId ?? request.actorSessionId ?? `${principalId}-session`,
+    );
+    return {
+        clientId: principalId,
+        sessionId,
+        accessToken: `test-token:${principalId}:${sessionId}`,
+        username: principalId,
+        issuedAtEpochMs: 1,
+        expiresAtEpochMs: Number.MAX_SAFE_INTEGER,
+    };
+}
+
+function testAuthorityFor<V>(
+    service: AppGroupInboxService,
+    input: AppInboxEnqueueInput<V>,
+): IssuedAuthSession {
+    const factory = TEST_AUTHORITIES.get(service.groupStateService);
+    if (!factory) {
+        throw new Error('Expected the test group state service to register authority');
+    }
+    return factory(input as AppInboxEnqueueInput<unknown>);
+}
 
 describe('AppInboxType', () => {
     it('does not expose server-produced RTC topology work', () => {
@@ -450,10 +508,7 @@ describe('AppInboxService', () => {
             },
         );
 
-        const resultPromise = service.processEntryUntilCompletion<
-            GroupCreateAppInboxPayload,
-            GroupStateWritten
-        >({
+        const input = {
             type: AppInboxType.GROUP_CREATE,
             resourceId: crypto.randomUUID(),
             contextId:
@@ -464,14 +519,19 @@ describe('AppInboxService', () => {
                 request: {
                     groupId: written.snapshot.group.groupId,
                     displayName: written.snapshot.group.displayName,
-                    kind: 'room',
-                    joinMode: 'open',
+                    kind: 'room' as const,
+                    joinMode: 'open' as const,
                     createdByPrincipalId: written.snapshot.members[0].principalId,
                     requestId: written.event.requestId,
                 },
             },
-        });
+        };
+        const resultPromise = service.processAuthenticatedEntryUntilCompletion<
+            GroupCreateAppInboxPayload,
+            GroupStateWritten
+        >(input, testAuthorityFor(service, input));
 
+        await waitForQueueEntry(queue);
         await reader.dequeueInbox(
             InboxQueueReader.INBOX_DEQUEUE_TYPES,
             createResilience(),
@@ -601,10 +661,7 @@ describe('AppInboxService', () => {
             },
         );
 
-        const result = await service.processEntryUntilCompletion<
-            GroupUpdateAppInboxPayload,
-            GroupStateWritten
-        >({
+        const input = {
             type: AppInboxType.GROUP_UPDATE,
             resourceId: 'update-timeout-room',
             contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:timeout-room`,
@@ -618,7 +675,11 @@ describe('AppInboxService', () => {
                     requestId: 'update-timeout-room',
                 },
             },
-        });
+        };
+        const result = await service.processAuthenticatedEntryUntilCompletion<
+            GroupUpdateAppInboxPayload,
+            GroupStateWritten
+        >(input, testAuthorityFor(service, input));
 
         expect(result.left).toBe('App inbox entry not completed');
         expect(timingEvents).toEqual(
@@ -973,332 +1034,16 @@ describe('AppInboxService', () => {
         expect(publisher.publishGroupEvent).not.toHaveBeenCalled();
     });
 
-    it('processes websocket group presence cleanup through the inbox', async () => {
-        const queue = new TestResourceInbox();
-        const reader = new InboxQueueReader(queue);
-        const results = new TestResourceInboxResults();
-        const runtimeRepository = new FakeRuntimeStateRepository();
-        const publisher = {
-            publishClientSnapshot: vi.fn(async () => undefined),
-            publishClientEvent: vi.fn(async () => undefined),
-            publishGroupSnapshot: vi.fn(async () => undefined),
-            publishGroupEvent: vi.fn(async () => undefined),
-        };
-        const service = new AppGroupInboxService(
-            reader,
-            queue as never,
-            results as never,
-            createGroupStateService({
-                runtimeRepository,
-                syncPublisher: publisher,
-                now: () => 2_000,
-                serviceId: 'server-12345678',
-            }),
-            'server-12345678',
+    it('keeps websocket and expiry maintenance off the public group inbox surface', () => {
+        expect(AppGroupInboxService.prototype).not.toHaveProperty(
+            'processPresenceDisconnectsBySessionId',
         );
-
-        await processCreateGroup(
-            service,
-            reader,
-            'ws-cleanup-room',
-            'create-ws-cleanup-room',
+        expect(AppGroupInboxService.prototype).not.toHaveProperty(
+            'processExpiredPresenceSessions',
         );
-        await processAppInbox<
-            GroupPresenceConnectAppInboxPayload,
-            GroupStateWritten
-        >(service, reader, {
-            type: AppInboxType.GROUP_PRESENCE_CONNECT,
-            resourceId: 'connect-alice-ws-cleanup-room',
-            contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:ws-cleanup-room`,
-            senderId: 'alice',
-            data: {
-                scope: SCOPE,
-                groupId: 'ws-cleanup-room',
-                sessionId: 'alice-ws-session',
-                request: {
-                    principalId: 'alice',
-                    generationId: 'alice-ws-generation-1',
-                    actorPrincipalId: 'alice',
-                    actorSessionId: 'alice-ws-session',
-                    expiresAtEpochMs: Date.now() + 60_000,
-                    requestId: 'connect-alice-ws-cleanup-room',
-                },
-            },
-        });
-        vi.mocked(publisher.publishGroupSnapshot).mockClear();
-        vi.mocked(publisher.publishGroupEvent).mockClear();
-
-        const disconnected = await processAppInboxMethod(reader, () =>
-            service.processPresenceDisconnectsBySessionId('alice-ws-session', {
-                actorSessionId: 'alice-ws-session',
-                reason: 'socket-closed',
-            })
+        expect(AppGroupInboxService.prototype).not.toHaveProperty(
+            'processExpiredPresenceSessionsNoWaiting',
         );
-
-        expect(disconnected.right).toHaveLength(1);
-        expect(disconnected.right?.[0].result.right?.snapshot.activeSessions).toHaveLength(0);
-        expect(disconnected.right?.[0].result.right?.event?.eventType).toBe(
-            'session-disconnected',
-        );
-        expect(publisher.publishGroupSnapshot).not.toHaveBeenCalled();
-        expect(publisher.publishGroupEvent).not.toHaveBeenCalled();
-    });
-
-    it('processes expired group presence sessions through the inbox and publishes written mutations', async () => {
-        const queue = new TestResourceInbox();
-        const reader = new InboxQueueReader(queue);
-        const results = new TestResourceInboxResults();
-        const runtimeRepository = new FakeRuntimeStateRepository();
-        const publisher = {
-            publishClientSnapshot: vi.fn(async () => undefined),
-            publishClientEvent: vi.fn(async () => undefined),
-            publishGroupSnapshot: vi.fn(async () => undefined),
-            publishGroupEvent: vi.fn(async () => undefined),
-        };
-        let serviceNow = 2_000;
-        const expiresAtEpochMs = Date.now() - 1_000;
-        const groupStateService = createGroupStateService({
-            runtimeRepository,
-            syncPublisher: publisher,
-            now: () => serviceNow,
-            serviceId: 'server-12345678',
-        });
-        await groupStateService.createGroup(SCOPE, {
-            groupId: 'expired-presence-room',
-            displayName: 'expired-presence-room',
-            kind: 'room',
-            joinMode: 'open',
-            createdByPrincipalId: 'alice',
-            requestId: 'seed-expired-presence-room',
-        });
-        await groupStateService.connectPresenceSession(
-            SCOPE,
-            'expired-presence-room',
-            'alice-session',
-            {
-                principalId: 'alice',
-                generationId: 'alice-expired-generation-1',
-                actorPrincipalId: 'alice',
-                actorSessionId: 'alice-session',
-                lastHeartbeatAtEpochMs: expiresAtEpochMs - 1_000,
-                expiresAtEpochMs,
-                requestId: 'seed-expired-presence-session',
-            },
-        );
-        serviceNow = expiresAtEpochMs + 1;
-
-        const service = new AppGroupInboxService(
-            reader,
-            queue as never,
-            results as never,
-            groupStateService,
-            'server-12345678',
-        );
-
-        const expired = await processAppInboxMethod(reader, () =>
-            service.processExpiredPresenceSessions(serviceNow)
-        );
-
-        expect(expired.right).toHaveLength(1);
-        expect(expired.right?.[0].result.right?.event).toMatchObject({
-            eventType: 'session-disconnected',
-            reason: 'expired',
-        });
-        expect(expired.right?.[0].result.right?.snapshot.activeSessions).toEqual([]);
-        expect(publisher.publishGroupSnapshot).not.toHaveBeenCalled();
-        expect(publisher.publishGroupEvent).not.toHaveBeenCalled();
-    });
-
-    it('keeps at most one active no-wait group expiry entry across timestamps', async () => {
-        const queue = new TestResourceInbox();
-        const reader = new InboxQueueReader(queue);
-        const results = new TestResourceInboxResults();
-        const _publisher = {
-            publishClientSnapshot: vi.fn(async () => undefined),
-            publishClientEvent: vi.fn(async () => undefined),
-            publishGroupSnapshot: vi.fn(async () => undefined),
-            publishGroupEvent: vi.fn(async () => undefined),
-        };
-        const groupStateService = createGroupStateServiceStub({
-            expireExpiredPresenceSessions: vi.fn(async () => []),
-        });
-        const service = new AppGroupInboxService(
-            reader,
-            queue as never,
-            results as never,
-            groupStateService,
-            'server-12345678',
-        );
-
-        service.processExpiredPresenceSessionsNoWaiting(60_000);
-        service.processExpiredPresenceSessionsNoWaiting(120_000);
-
-        await waitForQueueEntryCount(queue, 1);
-        const entries = await readEntries(queue);
-
-        expect(activeEntries(entries)).toHaveLength(1);
-        expect(entries[0].key.resourceId).toBe('expire-group-presence');
-        expect(
-            readEnqueuedData<GroupExpiredPresenceSessionsAppInboxPayload>(
-                entries[0],
-            ).atEpochMs,
-        ).toBe(60_000);
-        expect(groupStateService.expireExpiredPresenceSessions).not.toHaveBeenCalled();
-    });
-
-    it('keeps at most one active waiting group expiry entry across timestamps', async () => {
-        const queue = new TestResourceInbox();
-        const reader = new InboxQueueReader(queue);
-        const results = new TestResourceInboxResults();
-        const _publisher = {
-            publishClientSnapshot: vi.fn(async () => undefined),
-            publishClientEvent: vi.fn(async () => undefined),
-            publishGroupSnapshot: vi.fn(async () => undefined),
-            publishGroupEvent: vi.fn(async () => undefined),
-        };
-        const expireExpiredPresenceSessions = vi.fn(async () => []);
-        const groupStateService = createGroupStateServiceStub({
-            expireExpiredPresenceSessions,
-        });
-        const service = new AppGroupInboxService(
-            reader,
-            queue as never,
-            results as never,
-            groupStateService,
-            'server-12345678',
-        );
-
-        const first = service.processExpiredPresenceSessions(60_000);
-        const second = service.processExpiredPresenceSessions(120_000);
-
-        await waitForQueueEntryCount(queue, 1);
-        const entries = await readEntries(queue);
-
-        expect(activeEntries(entries)).toHaveLength(1);
-        expect(entries[0].key.resourceId).toBe('expire-group-presence');
-        expect(
-            readEnqueuedData<GroupExpiredPresenceSessionsAppInboxPayload>(
-                entries[0],
-            ).atEpochMs,
-        ).toBe(60_000);
-
-        await reader.dequeueInbox(
-            InboxQueueReader.INBOX_DEQUEUE_TYPES,
-            createResilience(),
-        );
-
-        await expect(first).resolves.toMatchObject({ right: [] });
-        await expect(second).resolves.toMatchObject({ right: [] });
-        expect(expireExpiredPresenceSessions).toHaveBeenCalledTimes(1);
-        expect(expireExpiredPresenceSessions).toHaveBeenLastCalledWith(60_000);
-    });
-
-    it('does not replace reserved or retry group expiry entries', async () => {
-        const queue = new TestResourceInbox();
-        const reader = new InboxQueueReader(queue);
-        const results = new TestResourceInboxResults();
-        const _publisher = {
-            publishClientSnapshot: vi.fn(async () => undefined),
-            publishClientEvent: vi.fn(async () => undefined),
-            publishGroupSnapshot: vi.fn(async () => undefined),
-            publishGroupEvent: vi.fn(async () => undefined),
-        };
-        const groupStateService = createGroupStateServiceStub({
-            expireExpiredPresenceSessions: vi.fn(async () => []),
-        });
-        const service = new AppGroupInboxService(
-            reader,
-            queue as never,
-            results as never,
-            groupStateService,
-            'server-12345678',
-        );
-
-        service.processExpiredPresenceSessionsNoWaiting(60_000);
-        await waitForQueueEntryCount(queue, 1);
-        let [entry] = await readEntries(queue);
-        await queue.releaseEntries([entry], EntityStatus.RESERVED);
-
-        service.processExpiredPresenceSessionsNoWaiting(120_000);
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        [entry] = await readEntries(queue);
-        expect(activeEntries([entry])).toHaveLength(1);
-        expect(entry.status).toBe(EntityStatus.RESERVED);
-        expect(
-            readEnqueuedData<GroupExpiredPresenceSessionsAppInboxPayload>(entry)
-                .atEpochMs,
-        ).toBe(60_000);
-
-        await queue.releaseEntries([entry], EntityStatus.RETRY);
-
-        service.processExpiredPresenceSessionsNoWaiting(180_000);
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        [entry] = await readEntries(queue);
-        expect(activeEntries([entry])).toHaveLength(1);
-        expect(entry.status).toBe(EntityStatus.RETRY);
-        expect(
-            readEnqueuedData<GroupExpiredPresenceSessionsAppInboxPayload>(entry)
-                .atEpochMs,
-        ).toBe(60_000);
-    });
-
-    it('skips active group expiry entries and replaces completed ones', async () => {
-        const queue = new TestResourceInbox();
-        const reader = new InboxQueueReader(queue);
-        const results = new TestResourceInboxResults();
-        const _publisher = {
-            publishClientSnapshot: vi.fn(async () => undefined),
-            publishClientEvent: vi.fn(async () => undefined),
-            publishGroupSnapshot: vi.fn(async () => undefined),
-            publishGroupEvent: vi.fn(async () => undefined),
-        };
-        const expireExpiredPresenceSessions = vi.fn(async () => []);
-        const groupStateService = createGroupStateServiceStub({
-            expireExpiredPresenceSessions,
-        });
-        const service = new AppGroupInboxService(
-            reader,
-            queue as never,
-            results as never,
-            groupStateService,
-            'server-12345678',
-        );
-
-        service.processExpiredPresenceSessionsNoWaiting(60_000);
-        service.processExpiredPresenceSessionsNoWaiting(120_000);
-
-        await waitForQueueEntryCount(queue, 1);
-        let [entry] = await readEntries(queue);
-        expect(activeEntries([entry])).toHaveLength(1);
-        expect(entry.key.resourceId).toBe('expire-group-presence');
-        expect(
-            readEnqueuedData<GroupExpiredPresenceSessionsAppInboxPayload>(entry)
-                .atEpochMs,
-        ).toBe(60_000);
-
-        await reader.dequeueInbox(
-            InboxQueueReader.INBOX_DEQUEUE_TYPES,
-            createResilience(),
-        );
-        expect(expireExpiredPresenceSessions).toHaveBeenCalledTimes(1);
-        expect(expireExpiredPresenceSessions).toHaveBeenLastCalledWith(60_000);
-
-        service.processExpiredPresenceSessionsNoWaiting(120_000);
-
-        await waitForQueueEntryStatus(queue, EntityStatus.NEW);
-        [entry] = await readEntries(queue);
-        expect(entry.status).toBe(EntityStatus.NEW);
-        expect(
-            readEnqueuedData<GroupExpiredPresenceSessionsAppInboxPayload>(entry)
-                .atEpochMs,
-        ).toBe(120_000);
-
-        await reader.dequeueInbox(
-            InboxQueueReader.INBOX_DEQUEUE_TYPES,
-            createResilience(),
-        );
-        expect(expireExpiredPresenceSessions).toHaveBeenCalledTimes(2);
-        expect(expireExpiredPresenceSessions).toHaveBeenLastCalledWith(120_000);
     });
 
     it('returns a left result when an app inbox mutation handler fails', async () => {
@@ -1401,6 +1146,11 @@ describe('AppInboxService', () => {
                 actorSessionId: 'alice-session',
                 requestId: 'join-request-1',
             },
+            expect.objectContaining({
+                version: 1,
+                principalId: 'alice',
+                sessionId: 'alice-session',
+            }),
         );
         expect(publisher.publishGroupSnapshot).not.toHaveBeenCalled();
         expect(publisher.publishGroupEvent).not.toHaveBeenCalled();
@@ -1502,6 +1252,11 @@ describe('AppInboxService', () => {
                 actorSessionId: 'owner-session',
                 requestId: 'invite-create-1',
             },
+            expect.objectContaining({
+                version: 1,
+                principalId: 'owner-1',
+                sessionId: 'owner-session',
+            }),
         );
         expect(groupStateService.revokeGroupInvite).toHaveBeenCalledWith(
             SCOPE,
@@ -1512,6 +1267,11 @@ describe('AppInboxService', () => {
                 actorSessionId: 'owner-session',
                 requestId: 'invite-revoke-1',
             },
+            expect.objectContaining({
+                version: 1,
+                principalId: 'owner-1',
+                sessionId: 'owner-session',
+            }),
         );
         expect(groupStateService.acceptGroupInvite).toHaveBeenCalledWith(
             SCOPE,
@@ -1521,6 +1281,11 @@ describe('AppInboxService', () => {
                 actorSessionId: 'member-session',
                 requestId: 'invite-accept-1',
             },
+            expect.objectContaining({
+                version: 1,
+                principalId: 'member-1',
+                sessionId: 'member-session',
+            }),
         );
         expect(publisher.publishGroupSnapshot).not.toHaveBeenCalled();
         expect(publisher.publishGroupEvent).not.toHaveBeenCalled();
@@ -1589,6 +1354,11 @@ describe('AppInboxService', () => {
                 actorSessionId: 'owner-session',
                 requestId: 'rotate-code-1',
             },
+            expect.objectContaining({
+                version: 1,
+                principalId: 'owner-1',
+                sessionId: 'owner-session',
+            }),
         );
         expect(publisher.publishGroupSnapshot).not.toHaveBeenCalled();
         expect(publisher.publishGroupEvent).not.toHaveBeenCalled();
@@ -1731,6 +1501,11 @@ describe('AppInboxService', () => {
                 actorSessionId: 'owner-session',
                 requestId: 'remove-member-1',
             },
+            expect.objectContaining({
+                version: 1,
+                principalId: 'owner-1',
+                sessionId: 'owner-session',
+            }),
         );
         expect(groupStateService.banGroupMember).toHaveBeenCalledWith(
             SCOPE,
@@ -1741,6 +1516,11 @@ describe('AppInboxService', () => {
                 actorSessionId: 'owner-session',
                 requestId: 'ban-member-1',
             },
+            expect.objectContaining({
+                version: 1,
+                principalId: 'owner-1',
+                sessionId: 'owner-session',
+            }),
         );
         expect(groupStateService.unbanGroupMember).toHaveBeenCalledWith(
             SCOPE,
@@ -1751,6 +1531,11 @@ describe('AppInboxService', () => {
                 actorSessionId: 'owner-session',
                 requestId: 'unban-member-1',
             },
+            expect.objectContaining({
+                version: 1,
+                principalId: 'owner-1',
+                sessionId: 'owner-session',
+            }),
         );
         expect(groupStateService.setGroupMemberRole).toHaveBeenCalledWith(
             SCOPE,
@@ -1762,6 +1547,11 @@ describe('AppInboxService', () => {
                 actorSessionId: 'owner-session',
                 requestId: 'role-member-1',
             },
+            expect.objectContaining({
+                version: 1,
+                principalId: 'owner-1',
+                sessionId: 'owner-session',
+            }),
         );
         expect(groupStateService.transferGroupOwnership).toHaveBeenCalledWith(
             SCOPE,
@@ -1772,6 +1562,11 @@ describe('AppInboxService', () => {
                 actorSessionId: 'owner-session',
                 requestId: 'transfer-owner',
             },
+            expect.objectContaining({
+                version: 1,
+                principalId: 'owner-1',
+                sessionId: 'owner-session',
+            }),
         );
         expect(publisher.publishGroupSnapshot).not.toHaveBeenCalled();
         expect(publisher.publishGroupEvent).not.toHaveBeenCalled();
@@ -1855,6 +1650,12 @@ describe('AppInboxService', () => {
             }),
             'server-12345678',
             (event) => timingEvents.push(event),
+            {
+                waitMaxElapsedMsecs: 1,
+                waitRetryIntervalMsecs: 1,
+                waitMaxRetryIntervalMsecs: 1,
+                waitJitterRatio: 0,
+            },
         );
 
         const entry = await processAppInboxNoWaiting<
@@ -1966,10 +1767,26 @@ class TestResourceInboxResults {
 function createGroupStateServiceStub(
     overrides: Partial<GroupStateService>,
 ): GroupStateService {
-    return {
+    const service = {
+        prepareMutation: vi.fn(async (descriptor, authority) => ({
+            authorityProof: {
+                version: 1 as const,
+                principalId: authority.clientId,
+                sessionId: authority.sessionId,
+                sessionIssuedAtEpochMs: authority.issuedAtEpochMs,
+                sessionExpiresAtEpochMs: authority.expiresAtEpochMs,
+                commandMac: '0'.repeat(64),
+            },
+            causalToken: 'test-causal-token',
+            queueResourceId: descriptor.request.requestId,
+        })),
         listSnapshots: vi.fn(),
+        listSnapshotsPage: vi.fn(),
         readSnapshot: vi.fn(),
+        readStateRevision: vi.fn(),
+        readCausalRevision: vi.fn(),
         listEvents: vi.fn(),
+        listEventPage: vi.fn(),
         createGroup: vi.fn(),
         updateGroup: vi.fn(),
         createGroupInvite: vi.fn(),
@@ -1986,11 +1803,10 @@ function createGroupStateServiceStub(
         connectPresenceSession: vi.fn(),
         heartbeatPresenceSession: vi.fn(),
         disconnectPresenceSession: vi.fn(),
-        disconnectPresenceSessionsBySessionId: vi.fn(),
-        disconnectPresenceSessionsBySessionIdWritten: vi.fn(),
-        expireExpiredPresenceSessions: vi.fn(),
         ...overrides,
     } as unknown as GroupStateService;
+    TEST_AUTHORITIES.set(service, toTestAuthority);
+    return service;
 }
 
 async function processCreateGroup(
@@ -2027,7 +1843,29 @@ async function processAppInbox<V, R>(
     reader: InboxQueueReader,
     input: AppInboxEnqueueInput<V>,
 ): Promise<Either<string, R>> {
-    const resultPromise = service.processEntryUntilCompletion<V, R>(input);
+    const resultPromise = service.processAuthenticatedEntryUntilCompletion<V, R>(
+        input,
+        testAuthorityFor(service, input),
+    );
+    const queue = service.resourceInbox as unknown as InMemoryQueueBox;
+    let settled = false;
+    void resultPromise.then(
+        () => {
+            settled = true;
+        },
+        () => {
+            settled = true;
+        },
+    );
+    for (let i = 0; i < 20 && !settled; i += 1) {
+        if ((await readEntries(queue)).some((entry) => entry.status === EntityStatus.NEW)) {
+            break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    if (settled) {
+        return await resultPromise;
+    }
     await reader.dequeueInbox(
         InboxQueueReader.INBOX_DEQUEUE_TYPES,
         createResilience(),
@@ -2055,12 +1893,16 @@ async function processAppInboxNoWaiting<V>(
     queue: InMemoryQueueBox,
     input: AppInboxEnqueueInput<V>,
 ): Promise<ResourceEntry> {
-    service.processEntryNoWaiting<V>(input);
-    await waitForQueueEntry(queue);
+    const resultPromise = service.processAuthenticatedEntryUntilCompletion<V>(
+        input,
+        testAuthorityFor(service, input),
+    );
+    await waitForQueueEntryStatus(queue, EntityStatus.NEW);
     await reader.dequeueInbox(
         InboxQueueReader.INBOX_DEQUEUE_TYPES,
         createResilience(),
     );
+    await resultPromise;
 
     const entry = readOnlyEntry(queue);
     if (!entry) {

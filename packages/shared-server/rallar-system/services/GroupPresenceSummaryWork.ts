@@ -66,15 +66,17 @@ export class GroupPresenceSummaryWork {
             );
             const started = performance.now();
             const repository = new GroupStateRepository(this.options.runtimeRepository);
-            const [group, admissions, presenceSessions, current] = await Promise.all([
+            const [group, members, admissions, presenceSessions, current] = await Promise.all([
                 repository.findGroupEntry(ref),
-                repository.listPresenceAdmissions(ref),
-                repository.listPresenceSessions(ref),
+                repository.listMemberEntries(ref),
+                repository.listPresenceAdmissionEntries(ref),
+                repository.listPresenceSessionEntries(ref),
                 repository.findPresenceSummaryEntry(ref),
             ]);
             if (!group) throw new Error(`Group not found for presence summary: ${ref.groupId}`);
             const read = {
                 group,
+                members,
                 admissions,
                 presenceSessions,
                 current: current ?? null,

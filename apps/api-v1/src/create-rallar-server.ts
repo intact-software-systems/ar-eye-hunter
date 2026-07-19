@@ -38,7 +38,10 @@ import {
 } from '@shared-graph/graph-diagnostics-service.ts';
 import type { RallarServerWsFacadeOptions } from '@shared-server/rallar-facade/ws-topic-router.ts';
 import type { Middleware } from './middleware.ts';
-import { initialiseMiddleware } from './middleware.ts';
+import { getGroupStateMaintenanceService, initialiseMiddleware } from './middleware.ts';
+import type {
+  GroupStateMaintenanceService,
+} from '@shared-server/rallar-system/services/group-state-service.ts';
 import { getApiRtcTopologyServiceOptions } from './services/rtc-topology-config.ts';
 import { getApiTimingSink } from './services/timing-service.ts';
 import { createApiV1RoomWsAuthorizer } from './services/ws-topic-room-authorizer.ts';
@@ -71,12 +74,16 @@ export type CreateRallarServerOptions = Readonly<{
   crdtAuditSink?: RallarCrdtAuditSink;
   ws?: RallarServerWsFacadeOptions;
   rtcTopologyOptions?: RallarRtcTopologyServiceOptions;
+  groupStateMaintenanceService?: GroupStateMaintenanceService;
 }>;
 
 export function createRallarServer(
   options: CreateRallarServerOptions = {},
 ): RallarServerApplication<Middleware, Hono> {
+  const usesDefaultMiddleware = options.middleware === undefined;
   const middleware = options.middleware ?? initialiseMiddleware();
+  const groupStateMaintenanceService = options.groupStateMaintenanceService ??
+    (usesDefaultMiddleware ? getGroupStateMaintenanceService() : undefined);
   const crdtLogRepository = options.crdtLogRepository ??
     new PSqlCrdtLogRepository(sql as unknown as PSqlSql, {
       serverId: myServerId,
@@ -121,7 +128,6 @@ export function createRallarServer(
   const adminClientIds = readAdminClientIds();
   const databaseConfig = readApiV1DatabaseBackendConfig();
   const databasePubSubConfig = readApiV1DatabasePubSubConfig(Deno.env, databaseConfig);
-  let rallarApplication: RallarServerApplication<Middleware, Hono> | undefined;
   const emptyWsStatus = {
     transport: 'ws-server' as const,
     connectionCount: 0,
@@ -166,7 +172,7 @@ export function createRallarServer(
     wsStatus: () => rallarApplication?.ws.status() ?? emptyWsStatus,
   });
 
-  rallarApplication = createRallarServerApplication({
+  const rallarApplication = createRallarServerApplication({
     runtime: middleware,
     repositories: options.repositories ?? defaultRepositoryManager,
     ws: {
@@ -231,19 +237,15 @@ export function createRallarServer(
           },
           disconnectGroupSessionsBySessionId: async (
             sessionId,
-            request,
+            _request,
           ) => {
-            const result = await runtime.appGroupInboxService
-              .processPresenceDisconnectsBySessionId(
-                sessionId,
-                request,
+            if (!groupStateMaintenanceService) {
+              throw new Error(
+                'Group state maintenance service is required for WebSocket cleanup',
               );
-            result.fold(
-              (error) => {
-                throw new Error(error);
-              },
-              () => undefined,
-            );
+            }
+            await groupStateMaintenanceService
+              .disconnectPresenceSessionsBySessionIdWritten(sessionId, now());
           },
         });
       },

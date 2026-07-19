@@ -3,13 +3,13 @@ import type { GroupEvent, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { GroupPolicyReasonCode } from '@shared/api/group-policy-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { readRallarGroupDirectorFromSnapshot } from '@shared/api/group-director.ts';
-import { createGroupStateService } from '../../src/services/group-state-service.ts';
+import { createTestGroupStateRuntime } from '../../../../packages/tests/shared-server/group-state-test-runtime.ts';
 import type { StateSyncPublisher } from '../../src/services/state-sync-service.ts';
 import type { GroupStateWritten } from '@shared-server/rallar-system/services/group-state-service.ts';
 import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-policy.ts';
 import type {
-  RuntimeStateEntry,
   RuntimeStateConditionalWriteResult,
+  RuntimeStateEntry,
   RuntimeStateOptimisticTransactionalRepositoryLike,
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 
@@ -1105,13 +1105,14 @@ Deno.test('rotateGroupJoinCode replays direct service retries for the same reque
     }),
   );
   await assert.rejects(
-    () => service.rotateGroupJoinCode(TEST_SCOPE, 'code-group', {
-      joinCode: 'second-code',
-      expiresAtEpochMs: REFRESHED_EXPIRES_AT_EPOCH_MS + 1,
-      actorPrincipalId: 'owner-1',
-      actorSessionId: 'owner-session',
-      requestId: 'rotate-code-idempotent',
-    }),
+    () =>
+      service.rotateGroupJoinCode(TEST_SCOPE, 'code-group', {
+        joinCode: 'second-code',
+        expiresAtEpochMs: REFRESHED_EXPIRES_AT_EPOCH_MS + 1,
+        actorPrincipalId: 'owner-1',
+        actorSessionId: 'owner-session',
+        requestId: 'rotate-code-idempotent',
+      }),
     /Group mutation command differs/,
   );
   assert.equal(first.joinCode, 'FIRSTCODE');
@@ -1591,12 +1592,16 @@ Deno.test('upsertMember and connectPresenceSession ignore unchanged semantic sta
 function createTestGroupStateService(
   syncPublisher: StateSyncPublisher = NO_OP_SYNC_PUBLISHER,
 ) {
-  return createGroupStateService({
+  const runtime = createTestGroupStateRuntime({
     runtimeRepository: new FakeRuntimeStateRepository(),
     syncPublisher,
     now: () => 1_000,
     serviceId: 'test-service',
   });
+  return {
+    ...runtime.service,
+    expireExpiredPresenceSessions: runtime.maintenance.expireExpiredPresenceSessions,
+  };
 }
 
 async function createGovernanceGroup(
@@ -1724,7 +1729,9 @@ function snapshotFromGroupStateWritten(written: GroupStateWritten): GroupSnapsho
 }
 
 function joinCodeResponseFromGroupJoinCodeWritten(
-  written: Awaited<ReturnType<ReturnType<typeof createTestGroupStateService>['rotateGroupJoinCode']>>,
+  written: Awaited<
+    ReturnType<ReturnType<typeof createTestGroupStateService>['rotateGroupJoinCode']>
+  >,
 ) {
   const response = written.result.right;
   if (!response) {
@@ -1734,8 +1741,7 @@ function joinCodeResponseFromGroupJoinCodeWritten(
   return response;
 }
 
-class FakeRuntimeStateRepository
-  implements RuntimeStateOptimisticTransactionalRepositoryLike {
+class FakeRuntimeStateRepository implements RuntimeStateOptimisticTransactionalRepositoryLike {
   readonly data = new Map<string, RuntimeStateEntry>();
 
   async begin<T>(

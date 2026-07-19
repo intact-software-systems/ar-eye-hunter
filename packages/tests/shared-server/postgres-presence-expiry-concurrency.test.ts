@@ -13,7 +13,7 @@ import {
 } from "@shared-server/postgres/rallar-system/createStateRepositories.ts";
 import { PSqlRuntimeStateRepository } from "@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts";
 import { createClientStateService } from "@shared-server/rallar-system/services/client-state-service.ts";
-import { createGroupStateService } from "@shared-server/rallar-system/services/group-state-service.ts";
+import { createTestGroupStateRuntime } from "./group-state-test-runtime.ts";
 import type { StateSyncPublisher } from "@shared-server/rallar-system/state-sync-publisher.ts";
 
 const POSTGRES_INTEGRATION_ENABLED =
@@ -155,10 +155,10 @@ describe("Postgres presence expiry concurrency", () => {
         );
         const expiryBarrier = new GroupPresenceReadBarrier(2);
         const [leftResults, rightResults] = await Promise.all([
-          createPostgresGroupService(leftSql, expiryBarrier, atEpochMs)
-            .expireExpiredPresenceSessions(atEpochMs),
-          createPostgresGroupService(rightSql, expiryBarrier, atEpochMs)
-            .expireExpiredPresenceSessions(atEpochMs),
+          createPostgresGroupRuntime(leftSql, expiryBarrier, atEpochMs)
+            .maintenance.expireExpiredPresenceSessions(atEpochMs),
+          createPostgresGroupRuntime(rightSql, expiryBarrier, atEpochMs)
+            .maintenance.expireExpiredPresenceSessions(atEpochMs),
         ]);
         expect(leftResults.length + rightResults.length).toBe(1);
 
@@ -232,13 +232,13 @@ async function seedExpiredGroupPresenceSession(
   sessionId: string,
   atEpochMs: number,
 ): Promise<void> {
-  const service = createGroupStateService({
+  const service = createTestGroupStateRuntime({
     runtimeRepository: toRuntimeRepository(sql),
     createGroupStateEventStore: createGroupStateEventRepository,
     syncPublisher: createPublisher(),
     now: () => atEpochMs - 10_000,
     serviceId: "postgres-expiry-test-setup",
-  });
+  }).service;
 
   await service.createGroup(scope, {
     groupId: groupRef.groupId,
@@ -309,12 +309,12 @@ function createPostgresClientService(
   });
 }
 
-function createPostgresGroupService(
+function createPostgresGroupRuntime(
   sql: PostgresSql,
   barrier: GroupPresenceReadBarrier,
   atEpochMs: number,
 ) {
-  return createGroupStateService({
+  return createTestGroupStateRuntime({
     runtimeRepository: new BarrierGroupPSqlRuntimeStateRepository(
       sql as unknown as PSqlSql,
       barrier,

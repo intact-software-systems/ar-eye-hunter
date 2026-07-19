@@ -4,7 +4,7 @@ import {
     newALEventRoute,
     newALMulticastMessage,
 } from '@shared/al-contracts/al-contract.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import type { GroupPresenceSummary, GroupSnapshot } from '@shared/api/group-types.ts';
 import {
     findGroupStateSnapshotByRef,
     setGroupStateSnapshot,
@@ -159,9 +159,7 @@ describe('createGroupRoomWsAuthorizer', () => {
             ['session-b'],
             3,
         );
-        await groupRepository.putGroup(group.group);
-        await groupRepository.putMember(group.members[0]!);
-        await groupRepository.putPresenceSession(group.activeSessions[0]!);
+        await putDurableSnapshot(groupRepository, group);
 
         const readThroughCache = createGroupStateSnapshotReadThroughCache({
             groupsRepository: groupRepository,
@@ -221,19 +219,16 @@ describe('createGroupRoomWsAuthorizer', () => {
         const readThroughCache = createGroupStateSnapshotReadThroughCache({
             groupsRepository: groupRepository,
         });
-        await groupRepository.putGroup(staleGroup.group);
-        await groupRepository.putMember(staleGroup.members[0]!);
-        await groupRepository.putPresenceSession(staleGroup.activeSessions[0]!);
+        await putDurableSnapshot(groupRepository, staleGroup);
         expect(await readThroughCache.findOrLoadByRef(staleGroup.group)).toEqual({
             ...staleGroup,
-            stateRevision: 1,
+            stateRevision: 2,
+            causalRevision: { groupRevision: 1, presenceRevision: 1 },
         });
         expect(
             findGroupStateSnapshotByRef(staleGroup.group)?.group.snapshotVersion,
         ).toBe(1);
-        await groupRepository.putGroup(currentGroup.group);
-        await groupRepository.putMember(currentGroup.members[0]!);
-        await groupRepository.putPresenceSession(currentGroup.activeSessions[0]!);
+        await putDurableSnapshot(groupRepository, currentGroup);
 
         const authorizer = createGroupRoomWsAuthorizer({
             findGroupSnapshotByRef: async (ref, input) =>
@@ -287,12 +282,11 @@ describe('createGroupRoomWsAuthorizer', () => {
         const readThroughCache = createGroupStateSnapshotReadThroughCache({
             groupsRepository: groupRepository,
         });
-        await groupRepository.putGroup(group.group);
-        await groupRepository.putMember(group.members[0]!);
-        await groupRepository.putPresenceSession(group.activeSessions[0]!);
+        await putDurableSnapshot(groupRepository, group);
         await expect(readThroughCache.findOrLoadByRef(group.group)).resolves.toEqual({
             ...group,
-            stateRevision: 1,
+            stateRevision: 4,
+            causalRevision: { groupRevision: 1, presenceRevision: 3 },
         });
 
         vi.setSystemTime(1_001);
@@ -445,7 +439,7 @@ describe('createGroupRoomWsAuthorizer', () => {
         }
     });
 
-    it('refreshes stale active snapshots and rejects a newer banned snapshot with policy details', async () => {
+    it('refreshes stale snapshots and rejects banned members without a live session', async () => {
         configureTestCacheRepositories();
 
         const runtimeRepository = new FakeRuntimeStateRepository();
@@ -470,16 +464,13 @@ describe('createGroupRoomWsAuthorizer', () => {
         const readThroughCache = createGroupStateSnapshotReadThroughCache({
             groupsRepository: groupRepository,
         });
-        await groupRepository.putGroup(staleGroup.group);
-        await groupRepository.putMember(staleGroup.members[0]!);
-        await groupRepository.putPresenceSession(staleGroup.activeSessions[0]!);
+        await putDurableSnapshot(groupRepository, staleGroup);
         await expect(readThroughCache.findOrLoadByRef(staleGroup.group)).resolves.toEqual({
             ...staleGroup,
-            stateRevision: 1,
+            stateRevision: 2,
+            causalRevision: { groupRevision: 1, presenceRevision: 1 },
         });
-        await groupRepository.putGroup(currentGroup.group);
-        await groupRepository.putMember(currentGroup.members[0]!);
-        await groupRepository.putPresenceSession(currentGroup.activeSessions[0]!);
+        await putDurableSnapshot(groupRepository, currentGroup);
 
         const authorizer = createGroupRoomWsAuthorizer({
             findGroupSnapshotByRef: async (ref, input) =>
@@ -512,7 +503,7 @@ describe('createGroupRoomWsAuthorizer', () => {
         expect(decision).toMatchObject({
             authorized: false,
             reason: 'unauthorized',
-            logMessage: expect.stringContaining('member-banned'),
+            logMessage: expect.stringContaining('member-not-active'),
             serverSnapshotVersion: 4,
         });
         expect(findGroupStateSnapshotByRef(currentGroup.group)?.group.snapshotVersion).toBe(
@@ -578,14 +569,68 @@ function withMemberStatus(
     snapshot: GroupSnapshot,
     status: GroupSnapshot['members'][number]['status'],
 ): GroupSnapshot {
+    if (status === 'active') {
+        return snapshot;
+    }
+    const target = snapshot.members[0]!;
+    const fixtureOwner = {
+        ...target,
+        principalId: 'fixture-owner',
+        role: 'owner' as const,
+        status: 'active' as const,
+    };
     return {
         ...snapshot,
-        members: snapshot.members.map((member) => ({
+        group: {
+            ...snapshot.group,
+            ownerPrincipalId: fixtureOwner.principalId,
+            activeMemberCount: 1,
+        },
+        members: [...snapshot.members.map((member) => ({
             ...member,
+            role: 'member' as const,
             status,
-        })),
-        memberCount: status === 'active' ? snapshot.memberCount : 0,
+        })), fixtureOwner],
+        memberCount: 1,
     };
+}
+
+async function putDurableSnapshot(
+    repository: GroupStateRepository,
+    snapshot: GroupSnapshot,
+): Promise<void> {
+    await repository.putGroup(snapshot.group);
+    await Promise.all(snapshot.members.map((member) => repository.putMember(member)));
+    await Promise.all(
+        snapshot.activeSessions.map((session) =>
+            repository.putPresenceSession(session)
+        ),
+    );
+    const group = await repository.findGroupEntry(snapshot.group);
+    if (!group) {
+        throw new Error('Expected persisted group');
+    }
+    const current = await repository.findPresenceSummaryEntry(snapshot.group);
+    const summary: GroupPresenceSummary = {
+        ...snapshot.group,
+        causalRevision: {
+            groupRevision: group.entry.revision + 1,
+            presenceRevision: snapshot.group.presenceVersion,
+        },
+        activePrincipalIds: snapshot.activeSessions.map((session) =>
+            session.principalId
+        ),
+        activeSessionIds: snapshot.activeSessions.map((session) => session.sessionId),
+        activeSessions: snapshot.activeSessions,
+        activePrincipalCount: snapshot.onlineMemberCount,
+        activeSessionCount: snapshot.activeSessions.length,
+        computedAtEpochMs: snapshot.group.updated.atEpochMs,
+    };
+    if (current) {
+        await repository.updatePresenceSummary(summary, current.entry.revision);
+    } else {
+        await repository.insertPresenceSummary(summary);
+    }
 }
 
 function createGroupSnapshot(
@@ -610,6 +655,8 @@ function createGroupSnapshot(
             metadataVersion: 1,
             rosterVersion: 1,
             presenceVersion: snapshotVersion,
+            ownerPrincipalId: sessionIds[0]!,
+            activeMemberCount: sessionIds.length,
             created: {
                 atEpochMs: 1,
             },
@@ -617,12 +664,12 @@ function createGroupSnapshot(
                 atEpochMs: snapshotVersion,
             },
         },
-        members: sessionIds.map((sessionId) => ({
+        members: sessionIds.map((sessionId, index) => ({
             applicationId,
             workspaceId,
             groupId,
             principalId: sessionId,
-            role: 'member',
+            role: index === 0 ? 'owner' : 'member',
             status: 'active',
             joined: {
                 atEpochMs: 1,

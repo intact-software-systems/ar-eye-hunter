@@ -15,6 +15,8 @@ describe('runtime-state hierarchical prefix isolation', () => {
             .resolves.toMatchObject({ status: 'applied' });
         await groups.putGroup(group('foo', 'room'));
         await groups.putGroup(group('foobar', 'room'));
+        await groups.putMember(groupMember('room', 'owner', 'foo'));
+        await groups.putMember(groupMember('room', 'owner', 'foobar'));
 
         expect((await clients.listPrincipals(scope('foo'))).map((item) => item.workspaceId)).toEqual(['foo']);
         expect((await clients.listSnapshots(scope('foo'))).map((item) => item.principal.workspaceId)).toEqual(['foo']);
@@ -62,6 +64,22 @@ const groupRef = (groupId: string) => ({ ...scope('workspace'), groupId });
 const clientPrincipal = (workspaceId: string, principalId: string) => ({ ...scope(workspaceId), principalId, presenceVersion: 1 }) as never;
 const clientInstance = (principalId: string, clientInstanceId: string) => ({ ...instanceRef(principalId, clientInstanceId), presenceVersion: 1 }) as never;
 const clientSession = (principalId: string, clientInstanceId: string, sessionId: string) => ({ ...instanceRef(principalId, clientInstanceId), sessionId, expiresAtEpochMs: Date.now() + 60_000 }) as never;
-const group = (workspaceId: string, groupId: string) => ({ ...scope(workspaceId), groupId, status: 'active' }) as never;
-const groupMember = (groupId: string, principalId: string) => ({ ...groupRef(groupId), principalId, status: 'active' }) as never;
+const group = (workspaceId: string, groupId: string) => ({
+    ...scope(workspaceId),
+    groupId,
+    status: 'active',
+    ownerPrincipalId: 'owner',
+    activeMemberCount: 1,
+}) as never;
+const groupMember = (
+    groupId: string,
+    principalId: string,
+    workspaceId = 'workspace',
+) => ({
+    ...scope(workspaceId),
+    groupId,
+    principalId,
+    role: 'owner',
+    status: 'active',
+}) as never;
 const groupSession = (groupId: string, sessionId: string) => ({ ...groupRef(groupId), sessionId, expiresAtEpochMs: Date.now() + 60_000 }) as never;

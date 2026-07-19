@@ -41,6 +41,19 @@ rg -n "GroupRef|groupRef|groupId|roomId|createAndSwitch|createAndJoin|joinRoom|w
 - Re-read and re-run authorization, policy, capacity, lifecycle, and invariants
   on every retry. Never reuse a decision derived from a predecessor that lost
   its compare-and-set race.
+- Group user mutations fail closed: the durable service requires a real issued
+  auth session or exact command-bound proof. Never add an optional authority
+  repository, missing-authority fallback, legacy payload bypass, or test-shaped
+  production overload.
+- Keep server maintenance as a separately wired narrow capability. Do not add
+  expiry or socket-cleanup methods to `GroupStateService`, middleware runtime,
+  or `AppGroupInboxService`; do not accept caller-supplied maintenance actor,
+  reason, or bypass flags. Derive cleanup identity from the persisted session.
+- Presence summaries are optimistic materialized views, not authority. Compute
+  them from entry-aware group/member/admission/session reads, validate their
+  exact persisted shapes, CAS the exact summary predecessor, and exclude
+  sessions whose member is no longer active even if a stale session row remains
+  live. Newer source mutations enqueue follow-up convergence work.
 - Database row, table, and advisory locks are not the default. Existing lock-based
   client-session, group-presence, topology, publication, or RTT code is
   migration debt rather than precedent. A lock exception requires explicit

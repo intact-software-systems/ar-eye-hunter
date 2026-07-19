@@ -114,11 +114,6 @@ export type GroupSnapshotPage = Readonly<{
     nextGroupKey?: string;
 }>;
 
-export type DisconnectPresenceBySessionRequest = Omit<
-    DisconnectGroupPresenceSessionRequest,
-    'generationId'
->;
-
 export type GroupMutationAuthorityProof = Readonly<{
     version: 1;
     principalId: string;
@@ -165,7 +160,7 @@ export type GroupMutationPreparation = Readonly<{
 }>;
 
 export type GroupStateService = Readonly<{
-    prepareMutation?(
+    prepareMutation(
         descriptor: GroupMutationDescriptor,
         authority: IssuedAuthSession,
     ): Promise<GroupMutationPreparation>;
@@ -189,146 +184,154 @@ export type GroupStateService = Readonly<{
     createGroup(
         scope: StateScope,
         request: CreateGroupRequest,
-        authority?: GroupMutationAuthority,
+        authority: GroupMutationAuthority,
     ): Promise<GroupStateWritten>;
     updateGroup(
         scope: StateScope,
         groupId: string,
         request: UpdateGroupRequest,
-        authority?: GroupMutationAuthority,
+        authority: GroupMutationAuthority,
     ): Promise<GroupStateWritten>;
     appointDirector(
         scope: StateScope,
         groupId: string,
         request: AppointGroupDirectorRequest,
-        authority?: GroupMutationAuthority,
+        authority: GroupMutationAuthority,
     ): Promise<GroupStateWritten>;
     joinGroup(
         scope: StateScope,
         groupId: string,
         request: JoinGroupRequest,
-        authority?: GroupMutationAuthority,
+        authority: GroupMutationAuthority,
     ): Promise<GroupStateWritten>;
     createGroupInvite(
         scope: StateScope,
         groupId: string,
         principalId: string,
         request: CreateGroupInviteRequest,
-        authority?: GroupMutationAuthority,
+        authority: GroupMutationAuthority,
     ): Promise<GroupStateWritten>;
     revokeGroupInvite(
         scope: StateScope,
         groupId: string,
         principalId: string,
         request: RevokeGroupInviteRequest,
-        authority?: GroupMutationAuthority,
+        authority: GroupMutationAuthority,
     ): Promise<GroupStateWritten>;
     acceptGroupInvite(
         scope: StateScope,
         groupId: string,
         request: AcceptGroupInviteRequest,
-        authority?: GroupMutationAuthority,
+        authority: GroupMutationAuthority,
     ): Promise<GroupStateWritten>;
     rotateGroupJoinCode(
         scope: StateScope,
         groupId: string,
         request: RotateGroupJoinCodeRequest,
-        authority?: GroupMutationAuthority,
+        authority: GroupMutationAuthority,
     ): Promise<GroupJoinCodeWritten>;
     removeGroupMember(
         scope: StateScope,
         groupId: string,
         principalId: string,
         request: RemoveGroupMemberRequest,
-        authority?: GroupMutationAuthority,
+        authority: GroupMutationAuthority,
     ): Promise<GroupStateWritten>;
     banGroupMember(
         scope: StateScope,
         groupId: string,
         principalId: string,
         request: BanGroupMemberRequest,
-        authority?: GroupMutationAuthority,
+        authority: GroupMutationAuthority,
     ): Promise<GroupStateWritten>;
     unbanGroupMember(
         scope: StateScope,
         groupId: string,
         principalId: string,
         request: UnbanGroupMemberRequest,
-        authority?: GroupMutationAuthority,
+        authority: GroupMutationAuthority,
     ): Promise<GroupStateWritten>;
     setGroupMemberRole(
         scope: StateScope,
         groupId: string,
         principalId: string,
         request: SetGroupMemberRoleRequest,
-        authority?: GroupMutationAuthority,
+        authority: GroupMutationAuthority,
     ): Promise<GroupStateWritten>;
     transferGroupOwnership(
         scope: StateScope,
         groupId: string,
         request: TransferGroupOwnershipRequest,
-        authority?: GroupMutationAuthority,
+        authority: GroupMutationAuthority,
     ): Promise<GroupStateWritten>;
     upsertMember(
         scope: StateScope,
         groupId: string,
         principalId: string,
         request: UpsertGroupMemberRequest,
-        authority?: GroupMutationAuthority,
+        authority: GroupMutationAuthority,
     ): Promise<GroupStateWritten>;
     connectPresenceSession(
         scope: StateScope,
         groupId: string,
         sessionId: string,
         request: ConnectGroupPresenceSessionRequest,
-        authority?: GroupMutationAuthority,
+        authority: GroupMutationAuthority,
     ): Promise<GroupStateWritten>;
     connectPresenceSessionReceipt(
         scope: StateScope,
         groupId: string,
         sessionId: string,
         request: ConnectGroupPresenceSessionRequest,
-        authority?: GroupMutationAuthority,
+        authority: GroupMutationAuthority,
     ): Promise<GroupMutationReceipt>;
     heartbeatPresenceSession(
         scope: StateScope,
         groupId: string,
         sessionId: string,
         request: HeartbeatGroupPresenceSessionRequest,
-        authority?: GroupMutationAuthority,
+        authority: GroupMutationAuthority,
     ): Promise<GroupStateWritten>;
     heartbeatPresenceSessionReceipt(
         scope: StateScope,
         groupId: string,
         sessionId: string,
         request: HeartbeatGroupPresenceSessionRequest,
-        authority?: GroupMutationAuthority,
+        authority: GroupMutationAuthority,
     ): Promise<GroupMutationReceipt>;
     disconnectPresenceSession(
         scope: StateScope,
         groupId: string,
         sessionId: string,
         request: DisconnectGroupPresenceSessionRequest,
-        authority?: GroupMutationAuthority,
+        authority: GroupMutationAuthority,
     ): Promise<GroupStateWritten>;
     disconnectPresenceSessionReceipt(
         scope: StateScope,
         groupId: string,
         sessionId: string,
         request: DisconnectGroupPresenceSessionRequest,
-        authority?: GroupMutationAuthority,
+        authority: GroupMutationAuthority,
     ): Promise<GroupMutationReceipt>;
+}>;
+
+export type GroupStateMaintenanceService = Readonly<{
     disconnectPresenceSessionsBySessionId(
         sessionId: string,
-        request?: DisconnectPresenceBySessionRequest,
+        disconnectedAtEpochMs: number,
     ): Promise<readonly GroupSnapshot[]>;
     disconnectPresenceSessionsBySessionIdWritten(
         sessionId: string,
-        request?: DisconnectPresenceBySessionRequest,
+        disconnectedAtEpochMs: number,
     ): Promise<readonly GroupStateWritten[]>;
     expireExpiredPresenceSessions(
-        atEpochMs?: number,
+        atEpochMs: number,
     ): Promise<readonly GroupStateWritten[]>;
+}>;
+
+export type GroupStateRuntime = Readonly<{
+    service: GroupStateService;
+    maintenance: GroupStateMaintenanceService;
 }>;
 
 export type GroupStateServiceDependencies = Readonly<{
@@ -348,7 +351,7 @@ export type GroupStateServiceDependencies = Readonly<{
     /** Wake the durable mutation drainer after a transaction commits. */
     wakeStateMutationOutbox?: () => void;
     timing?: RallarTimingSink;
-    authSessionRepository?: Pick<AuthSessionRepository, 'findBySessionId'>;
+    authSessionRepository: Pick<AuthSessionRepository, 'findBySessionId'>;
 }>;
 
 export class GroupMutationAuthorizationError extends Error {
@@ -380,9 +383,15 @@ type GroupMutationExecution = Readonly<{
     source: 'write' | 'replay' | 'no-op' | 'rejected';
 }>;
 
-export function createGroupStateService(
+export function createGroupStateRuntime(
     dependencies: GroupStateServiceDependencies,
-): GroupStateService {
+): GroupStateRuntime {
+    if (!dependencies.authSessionRepository ||
+        typeof dependencies.authSessionRepository.findBySessionId !== 'function') {
+        throw new GroupMutationAuthorizationError(
+            'An auth session repository is required for group mutations.',
+        );
+    }
     const runtime = dependencies.runtimeRepository;
     const now = dependencies.now ?? (() => Date.now());
     const randomId = dependencies.randomId ?? (() => crypto.randomUUID());
@@ -515,13 +524,12 @@ export function createGroupStateService(
         };
     };
 
-    const prepareMutation = dependencies.authSessionRepository
-        ? async (
+    const prepareMutation = async (
             descriptor: GroupMutationDescriptor,
             authority: IssuedAuthSession,
         ): Promise<GroupMutationPreparation> => {
             const verified = await verifyGroupMutationAuthority(
-                dependencies.authSessionRepository!,
+                dependencies.authSessionRepository,
                 descriptor,
                 authority,
                 now(),
@@ -551,20 +559,15 @@ export function createGroupStateService(
                 causalToken,
             })).slice(0, 34)}`;
             return { authorityProof, causalToken, queueResourceId };
-        }
-        : undefined;
+        };
 
     const executeAuthenticatedReceipt = async (
         descriptor: GroupMutationDescriptor,
-        authority: GroupMutationAuthority | undefined,
+        authority: GroupMutationAuthority,
     ): Promise<Readonly<{
         command: GroupMutationCommand;
         execution: GroupMutationExecution;
     }>> => {
-        if (!dependencies.authSessionRepository) {
-            const command = toDescriptorCommand(descriptor, randomId, now());
-            return { command, execution: await executeReceipt(command) };
-        }
         if (!authority) {
             throw new GroupMutationAuthorizationError(
                 'Authenticated mutation authority is required.',
@@ -579,7 +582,7 @@ export function createGroupStateService(
         const command = toDescriptorCommand(verified.descriptor, randomId, now());
         const reverify = async () => {
             const current = await verifyGroupMutationAuthority(
-                dependencies.authSessionRepository!,
+                dependencies.authSessionRepository,
                 descriptor,
                 authority,
                 now(),
@@ -607,11 +610,8 @@ export function createGroupStateService(
 
     const executeAuthenticatedCompatible = async (
         descriptor: GroupMutationDescriptor,
-        authority: GroupMutationAuthority | undefined,
+        authority: GroupMutationAuthority,
     ): Promise<GroupStateWritten> => {
-        if (!dependencies.authSessionRepository) {
-            return await executeCompatible(toDescriptorCommand(descriptor, randomId, now()));
-        }
         if (!authority) {
             throw new GroupMutationAuthorizationError(
                 'Authenticated mutation authority is required.',
@@ -626,7 +626,7 @@ export function createGroupStateService(
         const command = toDescriptorCommand(verified.descriptor, randomId, now());
         const reverify = async () => {
             const current = await verifyGroupMutationAuthority(
-                dependencies.authSessionRepository!,
+                dependencies.authSessionRepository,
                 descriptor,
                 authority,
                 now(),
@@ -649,7 +649,7 @@ export function createGroupStateService(
     };
 
     const service: GroupStateService = {
-        ...(prepareMutation ? { prepareMutation } : {}),
+        prepareMutation,
         listSnapshots: async (scope) => await repositoryFor(runtime).listSnapshots(scope),
         listSnapshotsPage: async (scope, options) =>
             await repositoryFor(runtime).listSnapshotsPage(scope, options),
@@ -812,16 +812,25 @@ export function createGroupStateService(
             ),
             authority,
         )).execution.receipt,
-        disconnectPresenceSessionsBySessionId: async (sessionId, request = {}) => {
-            const written = await service.disconnectPresenceSessionsBySessionIdWritten(
+    };
+
+    const maintenance: GroupStateMaintenanceService = {
+        disconnectPresenceSessionsBySessionId: async (
+            sessionId,
+            disconnectedAtEpochMs,
+        ) => {
+            const written = await maintenance.disconnectPresenceSessionsBySessionIdWritten(
                 sessionId,
-                request,
+                disconnectedAtEpochMs,
             );
             return written.flatMap((result) =>
                 result.result.right ? [result.result.right.snapshot] : []
             );
         },
-        disconnectPresenceSessionsBySessionIdWritten: async (sessionId, request = {}) => {
+        disconnectPresenceSessionsBySessionIdWritten: async (
+            sessionId,
+            disconnectedAtEpochMs,
+        ) => {
             const sessions = (await repositoryFor(runtime).listAllPresenceSessions())
                 .filter((session) =>
                     session.sessionId === sessionId &&
@@ -829,22 +838,14 @@ export function createGroupStateService(
                 );
             const written: GroupStateWritten[] = [];
             for (const session of sessions) {
-                written.push(await executeCompatible(toDisconnectPresenceCommand(
-                    {
-                        applicationId: session.applicationId,
-                        workspaceId: session.workspaceId ?? DEFAULT_STATE_WORKSPACE_ID,
-                    }, session.groupId, session.sessionId, {
-                        ...request,
-                        generationId: session.generationId,
-                        principalId: request.principalId ?? session.principalId,
-                        actorPrincipalId:
-                            request.actorPrincipalId ?? session.principalId,
-                        actorSessionId: request.actorSessionId ?? session.sessionId,
-                    }, randomId), 'session-cleanup'));
+                written.push(await executeCompatible(
+                    toSessionCleanupCommand(session, disconnectedAtEpochMs),
+                    'session-cleanup',
+                ));
             }
             return written;
         },
-        expireExpiredPresenceSessions: async (atEpochMs = now()) => {
+        expireExpiredPresenceSessions: async (atEpochMs) => {
             const candidates = (await repositoryFor(runtime).listAllPresenceSessions())
                 .filter((session) =>
                     session.disconnectedAtEpochMs === undefined &&
@@ -873,7 +874,20 @@ export function createGroupStateService(
         },
     };
 
-    return withGroupStateServiceTiming(service, dependencies.timing, dependencies.serviceId);
+    return {
+        service: withGroupStateServiceTiming(
+            service,
+            dependencies.timing,
+            dependencies.serviceId,
+        ),
+        maintenance,
+    };
+}
+
+export function createGroupStateService(
+    dependencies: GroupStateServiceDependencies,
+): GroupStateService {
+    return createGroupStateRuntime(dependencies).service;
 }
 
 type VerifiedGroupMutationAuthority = Readonly<{
@@ -1788,9 +1802,50 @@ function toExpiryCommand(
             disconnectedAtEpochMs: atEpochMs,
             lastHeartbeatAtEpochMs: session.lastHeartbeatAtEpochMs,
             expiresAtEpochMs: session.expiresAtEpochMs,
-            actorPrincipalId: session.principalId,
-            actorSessionId: session.sessionId,
+            actorPrincipalId: null,
+            actorSessionId: null,
             reason: 'expired',
+            traceId: null,
+        },
+    };
+}
+
+function toSessionCleanupCommand(
+    session: GroupPresenceSession,
+    disconnectedAtEpochMs: number,
+): GroupMutationCommand {
+    const commandId = [
+        'cleanup-group-presence-session',
+        session.applicationId,
+        session.workspaceId ?? DEFAULT_STATE_WORKSPACE_ID,
+        session.groupId,
+        session.sessionId,
+        session.generationId,
+        session.generationVersion,
+    ].join(':');
+    return {
+        operation: 'disconnectPresence',
+        aggregateRef: {
+            applicationId: session.applicationId,
+            ...(session.workspaceId === undefined
+                ? {}
+                : { workspaceId: session.workspaceId }),
+            groupId: session.groupId,
+        },
+        sessionId: session.sessionId,
+        commandId,
+        requestId: commandId,
+        input: {
+            principalId: session.principalId,
+            generationId: session.generationId,
+            generationVersion: session.generationVersion,
+            observedExpiresAtEpochMs: session.expiresAtEpochMs,
+            disconnectedAtEpochMs,
+            lastHeartbeatAtEpochMs: null,
+            expiresAtEpochMs: null,
+            actorPrincipalId: null,
+            actorSessionId: null,
+            reason: null,
             traceId: null,
         },
     };

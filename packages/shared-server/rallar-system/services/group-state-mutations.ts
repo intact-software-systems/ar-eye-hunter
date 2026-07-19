@@ -235,8 +235,9 @@ export type GroupMutationFacts = Readonly<{
 
 export type GroupPresenceSummaryRead = Readonly<{
     group: RuntimeStateEntryValue<Group>;
-    admissions: readonly GroupPresenceAdmission[];
-    presenceSessions: readonly GroupPresenceSession[];
+    members: readonly RuntimeStateEntryValue<GroupMember>[];
+    admissions: readonly RuntimeStateEntryValue<GroupPresenceAdmission>[];
+    presenceSessions: readonly RuntimeStateEntryValue<GroupPresenceSession>[];
     current: RuntimeStateEntryValue<GroupPresenceSummary> | null;
 }>;
 
@@ -583,7 +584,7 @@ export function computeGroupMutation(input: Readonly<{
     validateGroupMutationCommand(command);
     validateGroupMutationRead(read, command.aggregateRef);
     validateFacts(facts);
-    validateAuthenticatedAuthority(command, facts);
+    validateTrustedAuthorityMode(command, facts);
     if (read.idempotency) {
         return read.idempotency.value.commandHash === facts.commandHash
             ? { outcome: 'replay', receipt: read.idempotency.value.receipt }
@@ -637,7 +638,7 @@ export function validateGroupMutation(input: Readonly<{
     validateGroupMutationCommand(input.command);
     validateGroupMutationRead(input.read, input.command.aggregateRef);
     validateFacts(input.facts);
-    validateAuthenticatedAuthority(input.command, input.facts);
+    validateTrustedAuthorityMode(input.command, input.facts);
     requireJsonSafe(input.computed, 'Group mutation computed result');
     validateComputedMutationShape(
         input.command,
@@ -814,6 +815,12 @@ function validateStoredGroup(group: Group, ref: GroupRef): void {
         'Stored group archived');
     if (value.deleted !== undefined) validateAuditStamp(value.deleted,
         'Stored group deleted');
+    if (value.status === 'archived' && value.archived === undefined) {
+        throw new TypeError('Stored archived group is missing lifecycle audit');
+    }
+    if (value.status === 'deleted' && value.deleted === undefined) {
+        throw new TypeError('Stored deleted group is missing lifecycle audit');
+    }
     optionalPositiveSafeInteger(value.expiresAtEpochMs, 'Stored group expiresAtEpochMs');
     optionalPositiveSafeInteger(value.emptySinceEpochMs, 'Stored group emptySinceEpochMs');
     optionalPositiveSafeInteger(value.purgeAfterEpochMs, 'Stored group purgeAfterEpochMs');
@@ -856,6 +863,16 @@ function validateStoredMember(member: GroupMember, ref: GroupRef, label: string)
     for (const key of ['left', 'removed', 'banned'] as const) {
         if (value[key] !== undefined) validateAuditStamp(value[key], `${label} ${key}`);
     }
+    const lifecycleKey = value.status === 'left'
+        ? 'left'
+        : value.status === 'removed'
+        ? 'removed'
+        : value.status === 'banned'
+        ? 'banned'
+        : null;
+    if (lifecycleKey !== null && value[lifecycleKey] === undefined) {
+        throw new TypeError(`${label} is missing ${lifecycleKey} lifecycle audit`);
+    }
     optionalNonEmptyString(value.invitedByPrincipalId, `${label} invitedByPrincipalId`);
     optionalPositiveSafeInteger(value.invitationExpiresAtEpochMs,
         `${label} invitationExpiresAtEpochMs`);
@@ -896,6 +913,10 @@ function validatePresenceSession(
     if (value.disconnectedAtEpochMs !== undefined &&
         (value.disconnectedAtEpochMs as number) < (value.lastHeartbeatAtEpochMs as number)) {
         throw new TypeError(`${label} disconnect predates heartbeat`);
+    }
+    if ((value.disconnectedAtEpochMs === undefined) !==
+        (value.disconnectReason === undefined)) {
+        throw new TypeError(`${label} disconnect lifecycle fields differ`);
     }
 }
 
@@ -1098,6 +1119,32 @@ function validateComputedWrite(
             requireNonNegativeSafeInteger(computed.presenceAdmission.expectedRevision,
                 'Group mutation computed admission expectedRevision');
         }
+        const predecessor = read.targetAdmission;
+        if (computed.presenceAdmission.operation === 'insert') {
+            if (predecessor !== null) {
+                throw new TypeError(
+                    'Group mutation admission insert has an existing predecessor',
+                );
+            }
+        } else if (
+            predecessor === null ||
+            computed.presenceAdmission.expectedRevision !== predecessor.entry.revision
+        ) {
+            throw new TypeError(
+                'Group mutation admission update revision differs from predecessor',
+            );
+        }
+        const admittedPrincipalId = computed.presenceAdmission.value.principalId;
+        const expectedPrincipalId = computed.guard.kind === 'presence'
+            ? computed.guard.value.principalId
+            : computed.members.find((member) =>
+                member.principalId === admittedPrincipalId
+            )?.principalId;
+        if (expectedPrincipalId !== admittedPrincipalId) {
+            throw new TypeError(
+                'Group mutation admission principal differs from guarded authority',
+            );
+        }
     }
     validateGroupEvent(computed.event, ref, 'Group mutation computed event');
     validateMutationReceipt(computed.receipt, ref, 'Group mutation computed receipt');
@@ -1249,33 +1296,8 @@ export function computeGroupPresenceSummary(input: Readonly<{
     nowEpochMs: number;
 }>): GroupPresenceSummaryComputed {
     const { ref, read, nowEpochMs } = input;
-    const admitted = new Set(read.admissions.flatMap((admission) =>
-        admission.admittedSessions.map((session) =>
-            admissionIdentity(admission.principalId, session)
-        )
-    ));
-    const activeSessions = (read.group.value.status === 'active'
-        ? read.presenceSessions.filter((session) =>
-            admitted.has(admissionIdentity(session.principalId, session)) &&
-            session.disconnectedAtEpochMs === undefined &&
-            session.expiresAtEpochMs > nowEpochMs
-        )
-        : [])
-        .toSorted((left, right) =>
-            left.sessionId.localeCompare(right.sessionId) ||
-            left.generationVersion - right.generationVersion
-        );
-    const activePrincipalIds = [...new Set(
-        activeSessions.map((session) => session.principalId),
-    )].toSorted();
+    const content = deriveGroupPresenceSummaryContent(ref, read, nowEpochMs);
     const groupRevision = read.group.entry.revision + 1;
-    const content = {
-        activePrincipalIds,
-        activeSessionIds: activeSessions.map((session) => session.sessionId),
-        activeSessions,
-        activePrincipalCount: activePrincipalIds.length,
-        activeSessionCount: activeSessions.length,
-    } as const;
     const current = read.current?.value;
     if (current &&
         current.causalRevision.groupRevision === groupRevision &&
@@ -1308,54 +1330,66 @@ export function validateGroupPresenceSummary(input: Readonly<{
     computed: GroupPresenceSummaryComputed;
 }>): void {
     const { ref, read, computed } = input;
-    for (const admission of read.admissions) validatePresenceAdmission(admission);
+    requireJsonSafe(read, 'Group presence summary read');
+    requireJsonSafe(computed, 'Group presence summary computed result');
+    assertExactKeys(read as unknown as Record<string, unknown>, [
+        'group', 'members', 'admissions', 'presenceSessions', 'current',
+    ], 'Group presence summary read');
+    assertRequiredKeys(read as unknown as Record<string, unknown>, [
+        'group', 'members', 'admissions', 'presenceSessions', 'current',
+    ], 'Group presence summary read');
+    validateRuntimeEntryValue(read.group, 'Stored summary group');
+    validateStoredGroup(read.group.value, ref);
+    validateGroupPresenceSummaryReadCollections(ref, read);
+    if (read.current) {
+        validateRuntimeEntryValue(read.current, 'Stored current presence summary');
+        validatePresenceSummaryValue(read.current.value, ref);
+    }
+
     const summary = computed.summary;
-    if (
-        summary.applicationId !== ref.applicationId ||
-        summary.workspaceId !== ref.workspaceId ||
-        summary.groupId !== ref.groupId
-    ) {
-        throw new TypeError('Group presence summary scope differs from work');
-    }
-    if (summary.causalRevision.groupRevision !== read.group.entry.revision + 1) {
-        throw new TypeError('Group presence summary group revision is stale');
-    }
-    if (
-        !Number.isSafeInteger(summary.causalRevision.presenceRevision) ||
-        summary.causalRevision.presenceRevision < 0 ||
-        summary.activePrincipalCount !== summary.activePrincipalIds.length ||
-        summary.activeSessionCount !== summary.activeSessions.length ||
-        summary.activeSessionCount !== summary.activeSessionIds.length
-    ) {
-        throw new TypeError('Group presence summary counts or revision are invalid');
-    }
-    if (!jsonEquals(
-        summary.activeSessionIds,
-        summary.activeSessions.map((session) => session.sessionId),
-    )) {
-        throw new TypeError('Group presence summary session ids differ from sessions');
-    }
-    const canonicalSessions = summary.activeSessions.toSorted((left, right) =>
-        left.sessionId.localeCompare(right.sessionId) ||
-        left.generationVersion - right.generationVersion
+    validatePresenceSummaryValue(summary, ref);
+    const expectedContent = deriveGroupPresenceSummaryContent(
+        ref,
+        read,
+        summary.computedAtEpochMs,
     );
-    const canonicalPrincipals = [...new Set(summary.activePrincipalIds)].toSorted();
-    if (
-        !jsonEquals(canonicalSessions, summary.activeSessions) ||
-        !jsonEquals(canonicalPrincipals, summary.activePrincipalIds) ||
-        new Set(summary.activeSessionIds).size !== summary.activeSessionIds.length
-    ) {
-        throw new TypeError('Group presence summary arrays must be canonical and unique');
-    }
-    const admitted = new Set(read.admissions.flatMap((admission) =>
-        admission.admittedSessions.map((session) =>
-            admissionIdentity(admission.principalId, session)
-        )
-    ));
-    if (summary.activeSessions.some((session) =>
-        !admitted.has(admissionIdentity(session.principalId, session))
-    )) {
-        throw new TypeError('Group presence summary contains an unadmitted generation');
+    const groupRevision = read.group.entry.revision + 1;
+    const current = read.current?.value;
+    const expectedNoOp = current !== undefined &&
+        current.causalRevision.groupRevision === groupRevision &&
+        jsonEquals(summaryContent(current), expectedContent);
+    const shape = computed as unknown as Record<string, unknown>;
+    if (computed.outcome === 'no-op') {
+        assertExactKeys(shape, ['outcome', 'summary'],
+            'Group presence summary computed result');
+        if (!expectedNoOp || !current || !jsonEquals(summary, current)) {
+            throw new TypeError(
+                'Group presence summary no-op differs from current canonical candidate',
+            );
+        }
+    } else {
+        assertExactKeys(shape, ['outcome', 'operation', 'expectedRevision', 'summary'],
+            'Group presence summary computed result');
+        const expectedSummary: GroupPresenceSummary = {
+            applicationId: ref.applicationId,
+            ...(ref.workspaceId === undefined ? {} : { workspaceId: ref.workspaceId }),
+            groupId: ref.groupId,
+            causalRevision: {
+                groupRevision,
+                presenceRevision:
+                    (current?.causalRevision.presenceRevision ?? 0) + 1,
+            },
+            ...expectedContent,
+            computedAtEpochMs: summary.computedAtEpochMs,
+        };
+        if (expectedNoOp ||
+            computed.operation !== (read.current ? 'update' : 'insert') ||
+            computed.expectedRevision !== (read.current?.entry.revision ?? null) ||
+            !jsonEquals(summary, expectedSummary)) {
+            throw new TypeError(
+                'Group presence summary write differs from canonical predecessor projection',
+            );
+        }
     }
     if (read.current) {
         const comparison = compareGroupCausalRevision(
@@ -1370,6 +1404,121 @@ export function validateGroupPresenceSummary(input: Readonly<{
             !jsonEquals(summaryContent(summary), summaryContent(read.current.value))
         ) {
             throw new TypeError('Equal group presence summary tuple has different content');
+        }
+    }
+}
+
+function deriveGroupPresenceSummaryContent(
+    ref: GroupRef,
+    read: GroupPresenceSummaryRead,
+    nowEpochMs: number,
+): ReturnType<typeof summaryContent> {
+    const groupActive = read.group.value.status === 'active' &&
+        (read.group.value.expiresAtEpochMs === undefined ||
+            read.group.value.expiresAtEpochMs > nowEpochMs);
+    const activeMemberIds = new Set(read.members
+        .map((stored) => stored.value)
+        .filter((member) => member.status === 'active')
+        .map((member) => member.principalId));
+    const admitted = new Set(read.admissions.flatMap(({ value: admission }) =>
+        admission.admittedSessions.map((session) =>
+            admissionIdentity(admission.principalId, session)
+        )
+    ));
+    const activeSessions = (groupActive
+        ? read.presenceSessions.map(({ value }) => value).filter((session) =>
+            activeMemberIds.has(session.principalId) &&
+            admitted.has(admissionIdentity(session.principalId, session)) &&
+            session.disconnectedAtEpochMs === undefined &&
+            session.expiresAtEpochMs > nowEpochMs
+        )
+        : [])
+        .toSorted((left, right) =>
+            left.sessionId.localeCompare(right.sessionId) ||
+            left.generationVersion - right.generationVersion
+        );
+    const activePrincipalIds = [...new Set(
+        activeSessions.map((session) => session.principalId),
+    )].toSorted();
+    return {
+        activePrincipalIds,
+        activeSessionIds: activeSessions.map((session) => session.sessionId),
+        activeSessions,
+        activePrincipalCount: activePrincipalIds.length,
+        activeSessionCount: activeSessions.length,
+    };
+}
+
+function validateGroupPresenceSummaryReadCollections(
+    ref: GroupRef,
+    read: GroupPresenceSummaryRead,
+): void {
+    for (const [label, values] of [
+        ['members', read.members],
+        ['admissions', read.admissions],
+        ['presence sessions', read.presenceSessions],
+    ] as const) {
+        if (!Array.isArray(values)) {
+            throw new TypeError(`Group presence summary ${label} must be an array`);
+        }
+    }
+    const memberIds = new Set<string>();
+    for (const stored of read.members) {
+        validateRuntimeEntryValue(stored, 'Stored summary member');
+        validateStoredMember(stored.value, ref, 'Stored summary member');
+        if (memberIds.has(stored.value.principalId)) {
+            throw new TypeError('Group presence summary member principal is duplicated');
+        }
+        memberIds.add(stored.value.principalId);
+    }
+    const activeMembers = read.members.map(({ value }) => value)
+        .filter((member) => member.status === 'active');
+    const activeOwners = activeMembers.filter((member) => member.role === 'owner');
+    if (read.group.value.activeMemberCount !== activeMembers.length ||
+        activeOwners.length !== 1 ||
+        activeOwners[0]?.principalId !== read.group.value.ownerPrincipalId) {
+        throw new TypeError('Group presence summary roster facts are inconsistent');
+    }
+
+    const admissionPrincipals = new Set<string>();
+    const admittedSessionOwners = new Map<string, string>();
+    for (const stored of read.admissions) {
+        validateRuntimeEntryValue(stored, 'Stored summary admission');
+        validatePresenceAdmission(stored.value, ref);
+        if (admissionPrincipals.has(stored.value.principalId)) {
+            throw new TypeError('Group presence summary admission principal is duplicated');
+        }
+        admissionPrincipals.add(stored.value.principalId);
+        for (const session of stored.value.admittedSessions) {
+            const existing = admittedSessionOwners.get(session.sessionId);
+            if (existing !== undefined && existing !== stored.value.principalId) {
+                throw new TypeError('Group presence summary session has multiple principals');
+            }
+            admittedSessionOwners.set(session.sessionId, stored.value.principalId);
+        }
+    }
+
+    const sessionsById = new Map<string, GroupPresenceSession>();
+    for (const stored of read.presenceSessions) {
+        validateRuntimeEntryValue(stored, 'Stored summary presence session');
+        validatePresenceSession(stored.value, ref, 'Stored summary presence session');
+        if (sessionsById.has(stored.value.sessionId)) {
+            throw new TypeError('Group presence summary sessionId is duplicated');
+        }
+        sessionsById.set(stored.value.sessionId, stored.value);
+    }
+    for (const stored of read.admissions) {
+        for (const admitted of stored.value.admittedSessions) {
+            const session = sessionsById.get(admitted.sessionId);
+            if (!session) continue;
+            if (session.principalId !== stored.value.principalId ||
+                session.generationId !== admitted.generationId ||
+                session.generationVersion !== admitted.generationVersion ||
+                session.connectedAtEpochMs !== admitted.connectedAtEpochMs) {
+                throw new TypeError(
+                    'Group presence summary admission differs from stored generation',
+                );
+            }
         }
     }
 }
@@ -1712,6 +1861,7 @@ function computeGovernedMember(
         role,
         status,
         updated: audit,
+        ...(status === 'left' ? { left: audit } : {}),
         ...(status === 'removed' ? { removed: audit } : {}),
         ...(status === 'banned' ? { banned: audit } : {}),
     };
@@ -2468,22 +2618,43 @@ function admissionForMemberWrite(
     facts: GroupMutationFacts,
 ): PresenceAdmissionCandidate | null {
     const current = read.targetAdmission;
-    if (!current || current.value.admittedSessions.length === 0) return null;
-    const target = members.find((member) =>
-        member.principalId === current.value.principalId
-    );
-    if (!target || target.status === 'active') return null;
-    validatePresenceAdmission(current.value);
+    const target = members.find((member) => member.status !== 'active');
+    if (!target) return null;
+    if (current) {
+        validatePresenceAdmission(current.value);
+        if (current.value.principalId !== target.principalId) {
+            throw new TypeError(
+                'Presence admission predecessor differs from member authority target',
+            );
+        }
+    }
+    const previousUpdatedAt = current?.value.updatedAtEpochMs ?? 0;
+    if (previousUpdatedAt >= Number.MAX_SAFE_INTEGER) {
+        throw new TypeError('Presence admission fence timestamp cannot advance');
+    }
     const value: GroupPresenceAdmission = {
-        ...current.value,
+        ...commandRefForAdmission(target),
         admittedSessions: [],
-        updatedAtEpochMs: Math.max(current.value.updatedAtEpochMs, facts.nowEpochMs),
+        updatedAtEpochMs: Math.max(previousUpdatedAt + 1, facts.nowEpochMs),
     };
     validatePresenceAdmission(value);
+    return current
+        ? {
+            operation: 'update',
+            value,
+            expectedRevision: current.entry.revision,
+        }
+        : { operation: 'insert', value };
+}
+
+function commandRefForAdmission(
+    member: GroupMember,
+): GroupRef & Readonly<{ principalId: string }> {
     return {
-        operation: 'update',
-        value,
-        expectedRevision: current.entry.revision,
+        applicationId: member.applicationId,
+        ...(member.workspaceId === undefined ? {} : { workspaceId: member.workspaceId }),
+        groupId: member.groupId,
+        principalId: member.principalId,
     };
 }
 
@@ -2778,12 +2949,45 @@ function validateFacts(facts: GroupMutationFacts): void {
     }
 }
 
-function validateAuthenticatedAuthority(
+function validateTrustedAuthorityMode(
     command: GroupMutationCommand,
     facts: GroupMutationFacts,
 ): void {
     const authority = facts.authenticatedAuthority;
-    if (!authority) return;
+    if (facts.internalAuthority === 'none' && authority === null) {
+        throw new TypeError(
+            'User group mutation requires authenticated authority facts',
+        );
+    }
+    if (facts.internalAuthority !== 'none') {
+        if (authority !== null) {
+            throw new TypeError(
+                'Internal group mutation cannot use authenticated authority facts',
+            );
+        }
+        if (command.operation !== 'disconnectPresence') {
+            throw new TypeError(
+                'Internal group authority is limited to presence maintenance',
+            );
+        }
+        if (command.input.actorPrincipalId !== null ||
+            command.input.actorSessionId !== null) {
+            throw new TypeError(
+                'Internal group maintenance cannot claim semantic actor authority',
+            );
+        }
+        if (facts.internalAuthority === 'expiry' && command.input.reason !== 'expired') {
+            throw new TypeError('Group expiry authority requires an expiry command');
+        }
+        if (facts.internalAuthority === 'session-cleanup' &&
+            command.input.reason !== null) {
+            throw new TypeError('Group session cleanup authority has invalid command facts');
+        }
+        return;
+    }
+    if (!authority) {
+        throw new TypeError('Authenticated group mutation authority is missing');
+    }
     if (command.input.actorPrincipalId !== authority.principalId ||
         command.input.actorSessionId !== authority.sessionId) {
         throw new TypeError('Group mutation actor differs from authenticated authority');

@@ -788,30 +788,32 @@ export function init(
         const request = await readRequestWithRequestId<ConnectGroupPresenceSessionRequest>(c);
         validateGroupPresenceMutationRequest('connectPresence', request);
         const receipt = await deps.processGroupAppInbox<
-            GroupPresenceConnectAppInboxPayload,
-            GroupMutationReceipt
-          >(authSession, {
-            type: AppInboxType.GROUP_PRESENCE_CONNECT,
-            resourceId: request.requestId,
-            contextId: toGroupAppInboxContextId(scope, groupId),
-            senderId: authSession.clientId,
-            data: {
-              scope,
-              groupId,
-              sessionId,
-              request: {
-                ...request,
-                principalId: authSession.clientId,
-                actorPrincipalId: authSession.clientId,
-                actorSessionId: authSession.sessionId,
-              },
+          GroupPresenceConnectAppInboxPayload,
+          GroupMutationReceipt
+        >(authSession, {
+          type: AppInboxType.GROUP_PRESENCE_CONNECT,
+          resourceId: request.requestId,
+          contextId: toGroupAppInboxContextId(scope, groupId),
+          senderId: authSession.clientId,
+          data: {
+            scope,
+            groupId,
+            sessionId,
+            request: {
+              ...request,
+              principalId: authSession.clientId,
+              actorPrincipalId: authSession.clientId,
+              actorSessionId: authSession.sessionId,
             },
-          });
-        return c.json(await readReceiptSnapshot(
-          deps.getGroupStateService(),
-          { ...scope, groupId },
-          receipt,
-        ));
+          },
+        });
+        return c.json(
+          await readReceiptSnapshot(
+            deps.getGroupStateService(),
+            { ...scope, groupId },
+            receipt,
+          ),
+        );
       } catch (error) {
         return toErrorResponse(c, error);
       }
@@ -832,30 +834,32 @@ export function init(
         );
         validateGroupPresenceMutationRequest('heartbeatPresence', request);
         const receipt = await deps.processGroupAppInbox<
-            GroupPresenceHeartbeatAppInboxPayload,
-            GroupMutationReceipt
-          >(authSession, {
-            type: AppInboxType.GROUP_PRESENCE_HEARTBEAT,
-            resourceId: request.requestId,
-            contextId: toGroupAppInboxContextId(scope, groupId),
-            senderId: authSession.clientId,
-            data: {
-              scope,
-              groupId,
-              sessionId,
-              request: {
-                ...request,
-                principalId: authSession.clientId,
-                actorPrincipalId: authSession.clientId,
-                actorSessionId: authSession.sessionId,
-              },
+          GroupPresenceHeartbeatAppInboxPayload,
+          GroupMutationReceipt
+        >(authSession, {
+          type: AppInboxType.GROUP_PRESENCE_HEARTBEAT,
+          resourceId: request.requestId,
+          contextId: toGroupAppInboxContextId(scope, groupId),
+          senderId: authSession.clientId,
+          data: {
+            scope,
+            groupId,
+            sessionId,
+            request: {
+              ...request,
+              principalId: authSession.clientId,
+              actorPrincipalId: authSession.clientId,
+              actorSessionId: authSession.sessionId,
             },
-          });
-        return c.json(await readReceiptSnapshot(
-          deps.getGroupStateService(),
-          { ...scope, groupId },
-          receipt,
-        ));
+          },
+        });
+        return c.json(
+          await readReceiptSnapshot(
+            deps.getGroupStateService(),
+            { ...scope, groupId },
+            receipt,
+          ),
+        );
       } catch (error) {
         return toErrorResponse(c, error);
       }
@@ -876,30 +880,32 @@ export function init(
         );
         validateGroupPresenceMutationRequest('disconnectPresence', request);
         const receipt = await deps.processGroupAppInbox<
-            GroupPresenceDisconnectAppInboxPayload,
-            GroupMutationReceipt
-          >(authSession, {
-            type: AppInboxType.GROUP_PRESENCE_DISCONNECT,
-            resourceId: request.requestId,
-            contextId: toGroupAppInboxContextId(scope, groupId),
-            senderId: authSession.clientId,
-            data: {
-              scope,
-              groupId,
-              sessionId,
-              request: {
-                ...request,
-                principalId: authSession.clientId,
-                actorPrincipalId: authSession.clientId,
-                actorSessionId: authSession.sessionId,
-              },
+          GroupPresenceDisconnectAppInboxPayload,
+          GroupMutationReceipt
+        >(authSession, {
+          type: AppInboxType.GROUP_PRESENCE_DISCONNECT,
+          resourceId: request.requestId,
+          contextId: toGroupAppInboxContextId(scope, groupId),
+          senderId: authSession.clientId,
+          data: {
+            scope,
+            groupId,
+            sessionId,
+            request: {
+              ...request,
+              principalId: authSession.clientId,
+              actorPrincipalId: authSession.clientId,
+              actorSessionId: authSession.sessionId,
             },
-          });
-        return c.json(await readReceiptSnapshot(
-          deps.getGroupStateService(),
-          { ...scope, groupId },
-          receipt,
-        ));
+          },
+        });
+        return c.json(
+          await readReceiptSnapshot(
+            deps.getGroupStateService(),
+            { ...scope, groupId },
+            receipt,
+          ),
+        );
       } catch (error) {
         return toErrorResponse(c, error);
       }
@@ -1014,10 +1020,11 @@ async function defaultProcessGroupAppInbox<V, R>(
   authority: GroupStateRouteAuthSession,
   enqueue: AppInboxEnqueueInput<V>,
 ): Promise<R> {
-  const result = await getMiddleware().appGroupInboxService.processEntryUntilCompletion<V, R>(
-    enqueue,
-    authority as IssuedAuthSession,
-  );
+  const result = await getMiddleware().appGroupInboxService
+    .processAuthenticatedEntryUntilCompletion<V, R>(
+      enqueue,
+      authority as IssuedAuthSession,
+    );
 
   return result.fold(
     (error) => {

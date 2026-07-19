@@ -180,7 +180,10 @@ Deno.test('topology writes require group manager or platform admin auth', async 
     },
   );
   assert.equal(adminAllowed.status, 200);
-  assert.equal((adminCalls[0] as { updatedByPrincipalId: string }).updatedByPrincipalId, 'platform-admin');
+  assert.equal(
+    (adminCalls[0] as { updatedByPrincipalId: string }).updatedByPrincipalId,
+    'platform-admin',
+  );
 });
 
 Deno.test('topology override, delete, and reconfigure routes forward request options', async () => {
@@ -213,31 +216,40 @@ Deno.test('topology override, delete, and reconfigure routes forward request opt
     },
   });
 
-  assert.equal((await app.request(
-    '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1/topology/override',
-    {
-      method: 'PUT',
-      headers: {
-        authorization: 'Bearer token',
-        'Idempotency-Key': 'override-idem',
+  assert.equal(
+    (await app.request(
+      '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1/topology/override',
+      {
+        method: 'PUT',
+        headers: {
+          authorization: 'Bearer token',
+          'Idempotency-Key': 'override-idem',
+        },
+        body: JSON.stringify({ config: { degreeLimit: 4 }, ttlMs: 5_000 }),
       },
-      body: JSON.stringify({ config: { degreeLimit: 4 }, ttlMs: 5_000 }),
-    },
-  )).status, 200);
-  assert.equal((await app.request(
-    '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1/topology/config?reconfigure=false',
-    {
-      method: 'DELETE',
-      headers: { authorization: 'Bearer token' },
-    },
-  )).status, 200);
-  assert.equal((await app.request(
-    '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1/topology/override',
-    {
-      method: 'DELETE',
-      headers: { authorization: 'Bearer token' },
-    },
-  )).status, 200);
+    )).status,
+    200,
+  );
+  assert.equal(
+    (await app.request(
+      '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1/topology/config?reconfigure=false',
+      {
+        method: 'DELETE',
+        headers: { authorization: 'Bearer token' },
+      },
+    )).status,
+    200,
+  );
+  assert.equal(
+    (await app.request(
+      '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1/topology/override',
+      {
+        method: 'DELETE',
+        headers: { authorization: 'Bearer token' },
+      },
+    )).status,
+    200,
+  );
   const reconfigureResponse = await app.request(
     '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1/topology/reconfigure',
     {
@@ -371,8 +383,12 @@ function createRouteApp(options: {
   readonly session?: { clientId: string; sessionId: string };
   readonly adminClientIds?: readonly string[];
   readonly requireApiAuthSession?: GraphTopologyRouteRequireApiAuthSession;
-  readonly graphDiagnostics?: Partial<graphTopologyRoutes.GraphTopologyRouteDependencies['graphDiagnostics']>;
-  readonly topologyManagement?: Partial<graphTopologyRoutes.GraphTopologyRouteDependencies['topologyManagement']>;
+  readonly graphDiagnostics?: Partial<
+    graphTopologyRoutes.GraphTopologyRouteDependencies['graphDiagnostics']
+  >;
+  readonly topologyManagement?: Partial<
+    graphTopologyRoutes.GraphTopologyRouteDependencies['topologyManagement']
+  >;
 }): Hono {
   const app = new Hono();
   graphTopologyRoutes.init(app, {
@@ -380,9 +396,9 @@ function createRouteApp(options: {
       readSnapshot: (ref: GroupRef) =>
         Promise.resolve(
           options.group &&
-              options.group.group.applicationId === ref.applicationId &&
-              options.group.group.workspaceId === ref.workspaceId &&
-              options.group.group.groupId === ref.groupId
+            options.group.group.applicationId === ref.applicationId &&
+            options.group.group.workspaceId === ref.workspaceId &&
+            options.group.group.groupId === ref.groupId
             ? options.group
             : undefined,
         ),
@@ -448,6 +464,7 @@ function createGroupSnapshot(
 ): GroupSnapshot {
   return {
     stateRevision: 1,
+    causalRevision: { groupRevision: 1, presenceRevision: 0 },
     group: {
       ...TEST_SCOPE,
       groupId,
@@ -460,6 +477,8 @@ function createGroupSnapshot(
       metadataVersion: 0,
       rosterVersion: 1,
       presenceVersion: 0,
+      activeMemberCount: memberPrincipalIds.length,
+      ownerPrincipalId: memberPrincipalIds[0] ?? 'owner',
       created: { atEpochMs: 1, byPrincipalId: 'owner' },
       updated: { atEpochMs: 1, byPrincipalId: 'owner' },
     },
@@ -477,6 +496,8 @@ function createGroupSnapshot(
       groupId,
       principalId,
       sessionId: `${principalId}-session`,
+      generationId: `${principalId}-generation`,
+      generationVersion: 1,
       connectedAtEpochMs: 1,
       lastHeartbeatAtEpochMs: 1,
       expiresAtEpochMs: 60_000,

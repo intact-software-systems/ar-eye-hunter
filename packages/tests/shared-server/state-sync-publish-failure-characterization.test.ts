@@ -36,6 +36,7 @@ import {
     type GroupPresenceConnectAppInboxPayload,
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
+import type { IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 import { createWsStateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
 import { createCachedGroupStateService } from '@shared-server/rallar-system/services/cached-group-state-service.ts';
 import { createCachedClientStateService } from '@shared-server/rallar-system/services/cached-client-state-service.ts';
@@ -49,6 +50,11 @@ const SCOPE: StateScope = {
     applicationId: 'app-1',
     workspaceId: 'workspace-1',
 };
+
+const GROUP_INBOX_AUTHORITIES = new WeakMap<
+    AppGroupInboxService,
+    (principalId: string, sessionId?: string) => IssuedAuthSession
+>();
 
 describe('state sync publish failure characterization', () => {
     beforeEach(() => {
@@ -444,6 +450,7 @@ function createGroupAppInbox(
     const reader = new InboxQueueReader(queue);
     const results = new TestResourceInboxResults();
     const groupsRepository = new GroupStateRepository(runtimeRepository);
+    const sessions = new Map<string, IssuedAuthSession>();
     const appInbox = new AppGroupInboxService(
         reader,
         queue as never,
@@ -451,6 +458,10 @@ function createGroupAppInbox(
         createCachedGroupStateService({
             durable: createGroupStateService({
                 runtimeRepository,
+                authSessionRepository: {
+                    findBySessionId: (sessionId) =>
+                        Promise.resolve(sessions.get(sessionId)),
+                },
                 syncPublisher: publisher,
                 now: () => now,
                 serviceId: 'state-service',
@@ -461,6 +472,19 @@ function createGroupAppInbox(
         }),
         'state-service',
     );
+    GROUP_INBOX_AUTHORITIES.set(appInbox, (principalId, requestedSessionId) => {
+        const sessionId = requestedSessionId ?? `${principalId}-session`;
+        const authority = {
+            clientId: principalId,
+            sessionId,
+            accessToken: `test-token:${principalId}:${sessionId}`,
+            username: principalId,
+            issuedAtEpochMs: 1,
+            expiresAtEpochMs: Number.MAX_SAFE_INTEGER,
+        } satisfies IssuedAuthSession;
+        sessions.set(sessionId, authority);
+        return authority;
+    });
 
     return {
         appInbox,
@@ -518,7 +542,7 @@ async function processCreateGroup(
     groupId: string,
 ): Promise<ResourceEntry> {
     const requestId = `create-${groupId}`;
-    appInbox.processEntryNoWaiting<GroupCreateAppInboxPayload>({
+    const input = {
         type: AppInboxType.GROUP_CREATE,
         resourceId: requestId,
         contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${groupId}`,
@@ -528,21 +552,25 @@ async function processCreateGroup(
             request: {
                 groupId,
                 displayName: groupId === 'room-1' ? 'Room 1' : 'Room 2',
-                kind: 'room',
-                joinMode: 'open',
+                kind: 'room' as const,
+                joinMode: 'open' as const,
                 createdByPrincipalId: 'alice',
                 requestId,
             },
         },
-    });
+    };
+    const resultPromise = appInbox.processAuthenticatedEntryUntilCompletion<
+        GroupCreateAppInboxPayload
+    >(input, groupAuthority(appInbox, 'alice'));
 
-    await waitForQueueEntry(queue);
+    const queued = await waitForNewQueueEntry(queue);
     await reader.dequeueInbox(
         InboxQueueReader.INBOX_DEQUEUE_TYPES,
         createResilience(),
     );
+    await resultPromise;
 
-    const entry = readOnlyEntry(queue);
+    const entry = await queue.getItem(queued.key);
     if (!entry) {
         throw new Error('Expected app inbox entry to remain in queue');
     }
@@ -643,15 +671,10 @@ async function processUpsertGroupMember(
     principalId: string,
 ): Promise<ResourceEntry> {
     const requestId = `join-${principalId}-${groupId}`;
-    const key = {
-        topicId: 'app-inbox.group-state',
-        resourceId: requestId,
-        contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${groupId}`,
-    };
-    appInbox.processEntryNoWaiting<GroupMemberUpsertAppInboxPayload>({
+    const input = {
         type: AppInboxType.GROUP_MEMBER_UPSERT,
         resourceId: requestId,
-        contextId: key.contextId,
+        contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${groupId}`,
         senderId: principalId,
         data: {
             scope: SCOPE,
@@ -663,15 +686,19 @@ async function processUpsertGroupMember(
                 requestId,
             },
         },
-    });
+    };
+    const resultPromise = appInbox.processAuthenticatedEntryUntilCompletion<
+        GroupMemberUpsertAppInboxPayload
+    >(input, groupAuthority(appInbox, principalId));
 
-    await waitForQueueEntryKey(queue, key);
+    const queued = await waitForNewQueueEntry(queue);
     await reader.dequeueInbox(
         InboxQueueReader.INBOX_DEQUEUE_TYPES,
         createResilience(),
     );
+    await resultPromise;
 
-    return requireQueueEntry(await queue.getItem(key));
+    return requireQueueEntry(await queue.getItem(queued.key));
 }
 
 async function processConnectGroupPresence(
@@ -683,15 +710,10 @@ async function processConnectGroupPresence(
     sessionId: string,
 ): Promise<ResourceEntry> {
     const requestId = `connect-${sessionId}-${groupId}`;
-    const key = {
-        topicId: 'app-inbox.group-state',
-        resourceId: requestId,
-        contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${groupId}`,
-    };
-    appInbox.processEntryNoWaiting<GroupPresenceConnectAppInboxPayload>({
+    const input = {
         type: AppInboxType.GROUP_PRESENCE_CONNECT,
         resourceId: requestId,
-        contextId: key.contextId,
+        contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${groupId}`,
         senderId: principalId,
         data: {
             scope: SCOPE,
@@ -708,15 +730,31 @@ async function processConnectGroupPresence(
                 requestId,
             },
         },
-    });
+    };
+    const resultPromise = appInbox.processAuthenticatedEntryUntilCompletion<
+        GroupPresenceConnectAppInboxPayload
+    >(input, groupAuthority(appInbox, principalId, sessionId));
 
-    await waitForQueueEntryKey(queue, key);
+    const queued = await waitForNewQueueEntry(queue);
     await reader.dequeueInbox(
         InboxQueueReader.INBOX_DEQUEUE_TYPES,
         createResilience(),
     );
+    await resultPromise;
 
-    return requireQueueEntry(await queue.getItem(key));
+    return requireQueueEntry(await queue.getItem(queued.key));
+}
+
+function groupAuthority(
+    appInbox: AppGroupInboxService,
+    principalId: string,
+    sessionId?: string,
+): IssuedAuthSession {
+    const issue = GROUP_INBOX_AUTHORITIES.get(appInbox);
+    if (!issue) {
+        throw new Error('Expected group app inbox authority issuer');
+    }
+    return issue(principalId, sessionId);
 }
 
 function createResilience(): ResilienceDto {
@@ -769,19 +807,19 @@ async function waitForQueueEntry(queue: InMemoryQueueBox): Promise<void> {
     throw new Error('Expected app inbox entry to be enqueued');
 }
 
-async function waitForQueueEntryKey(
+async function waitForNewQueueEntry(
     queue: InMemoryQueueBox,
-    key: Key,
-): Promise<void> {
+): Promise<ResourceEntry> {
     for (let i = 0; i < 20; i += 1) {
-        if (await queue.getItem(key)) {
-            return;
+        const entry = [...(
+            queue as unknown as { data: Map<string, ResourceEntry> }
+        ).data.values()].find((candidate) => candidate.status === EntityStatus.NEW);
+        if (entry) {
+            return entry;
         }
-
         await new Promise((resolve) => setTimeout(resolve, 0));
     }
-
-    throw new Error(`Expected app inbox entry to be enqueued: ${toKeyAsString(key)}`);
+    throw new Error('Expected a new authenticated group inbox entry');
 }
 
 function requireQueueEntry(entry: ResourceEntry | undefined): ResourceEntry {

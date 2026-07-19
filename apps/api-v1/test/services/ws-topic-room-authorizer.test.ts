@@ -1,8 +1,5 @@
 import assert from 'node:assert/strict';
-import {
-  newALEventRoute,
-  newALMulticastMessage,
-} from '@shared/al-contracts/al-contract.ts';
+import { newALEventRoute, newALMulticastMessage } from '@shared/al-contracts/al-contract.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { GroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
 import { createCachedGroupStateService } from '@shared-server/rallar-system/services/cached-group-state-service.ts';
@@ -69,9 +66,9 @@ Deno.test('API room authorization observes remote bans and deletion across warm 
   let revisionProbes = 0;
   let stableReads = 0;
   const durable = {
-    readStateRevision: () => {
+    readCausalRevision: () => {
       revisionProbes += 1;
-      return Promise.resolve(current?.stateRevision);
+      return Promise.resolve(current?.causalRevision);
     },
     readSnapshot: () => {
       stableReads += 1;
@@ -80,16 +77,16 @@ Deno.test('API room authorization observes remote bans and deletion across warm 
   } as unknown as GroupStateService;
   const serverA = createCachedGroupStateService({
     durable,
-    cache: createIndependentCache(async () => {
+    cache: createIndependentCache(() => {
       stableReads += 1;
-      return current;
+      return Promise.resolve(current);
     }),
   });
   const serverB = createCachedGroupStateService({
     durable,
-    cache: createIndependentCache(async () => {
+    cache: createIndependentCache(() => {
       stableReads += 1;
-      return current;
+      return Promise.resolve(current);
     }),
   });
   const authorizer = createApiV1RoomWsAuthorizer(serverB);
@@ -113,6 +110,7 @@ Deno.test('API room authorization observes remote bans and deletion across warm 
   current = {
     ...createSnapshot(),
     stateRevision: 4,
+    causalRevision: { groupRevision: 3, presenceRevision: 1 },
     members: createSnapshot().members.map((member) => ({
       ...member,
       status: 'banned' as const,
@@ -134,12 +132,20 @@ function createIndependentCache(
   return {
     findOrLoadByRef: async (
       _ref: unknown,
-      options: { minStateRevision?: number } = {},
+      options: {
+        minCausalRevision?: Readonly<{
+          groupRevision: number;
+          presenceRevision: number;
+        }>;
+      } = {},
     ) => {
       if (
         cached &&
-        (options.minStateRevision === undefined ||
-          cached.stateRevision >= options.minStateRevision)
+        (options.minCausalRevision === undefined ||
+          (cached.causalRevision.groupRevision >=
+              options.minCausalRevision.groupRevision &&
+            cached.causalRevision.presenceRevision >=
+              options.minCausalRevision.presenceRevision))
       ) {
         return cached;
       }
@@ -163,6 +169,7 @@ function createIndependentCache(
 function createSnapshot(): GroupSnapshot {
   return {
     stateRevision: 3,
+    causalRevision: { groupRevision: 2, presenceRevision: 1 },
     group: {
       applicationId: 'app-1',
       workspaceId: 'workspace-1',
@@ -176,6 +183,8 @@ function createSnapshot(): GroupSnapshot {
       metadataVersion: 1,
       rosterVersion: 1,
       presenceVersion: 1,
+      activeMemberCount: 1,
+      ownerPrincipalId: 'alice',
       created: { atEpochMs: 1 },
       updated: { atEpochMs: 2 },
     },
@@ -184,7 +193,7 @@ function createSnapshot(): GroupSnapshot {
       workspaceId: 'workspace-1',
       groupId: 'group-1',
       principalId: 'alice',
-      role: 'member',
+      role: 'owner',
       status: 'active',
       joined: { atEpochMs: 1 },
       updated: { atEpochMs: 2 },
@@ -195,6 +204,8 @@ function createSnapshot(): GroupSnapshot {
       groupId: 'group-1',
       principalId: 'alice',
       sessionId: 'session-1',
+      generationId: 'generation-1',
+      generationVersion: 1,
       connectedAtEpochMs: 1,
       lastHeartbeatAtEpochMs: 2,
       expiresAtEpochMs: Date.now() + 60_000,

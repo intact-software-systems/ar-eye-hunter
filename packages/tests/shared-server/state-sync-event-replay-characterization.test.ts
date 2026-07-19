@@ -5,7 +5,7 @@ import type { StateScope } from '@shared/api/state-types.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import { createClientStateService } from '@shared-server/rallar-system/services/client-state-service.ts';
-import { createGroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
+import { createTestGroupStateService as createGroupStateService } from './group-state-test-runtime.ts';
 import type { StateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 

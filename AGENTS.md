@@ -43,6 +43,12 @@ the repo-local Codex plugin under `.agents/skills/**`.
   delete owns deletion and expiry.
 - Every optimistic retry must re-read and rerun authorization, policy, capacity,
   lifecycle, and invariant checks. Never retry only a stale final write.
+- Authoritative user-write authentication dependencies are mandatory and fail
+  closed; do not add optional authority repositories, missing-authority
+  fallbacks, or production overloads shaped only for tests.
+- Keep internal cleanup/expiry behind a separately wired narrow maintenance
+  capability. Never expose it through public group service or app-inbox types,
+  and never accept caller-provided actor, reason, or bypass fields.
 - Database row, table, and advisory locks are exceptional. Do not copy an
   existing lock as architecture precedent. Any exception needs explicit human
   approval, a documented invariant and measured need, a bounded critical

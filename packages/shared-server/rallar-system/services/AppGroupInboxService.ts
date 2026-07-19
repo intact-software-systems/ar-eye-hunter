@@ -27,8 +27,6 @@ import type {
     GroupMutationAuthorityProof,
     GroupMutationDescriptor,
     GroupStateService,
-    GroupStateWritten,
-    DisconnectPresenceBySessionRequest,
 } from '@shared-server/rallar-system/services/group-state-service.ts';
 import { GroupMutationAuthorizationError } from '@shared-server/rallar-system/services/group-state-service.ts';
 import {
@@ -39,7 +37,6 @@ import {
     AppInboxType,
     SIMPLER_GROUP_STATE_APP_INBOX_TOPIC,
 } from '@shared-server/rallar-system/services/AppInboxService.ts';
-import { isCompletedOrFailed } from '@shared/queuebox/ResourceEntry.ts';
 import type { RallarTimingSink } from './timing.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 import type { IssuedAuthSession } from '../repositories/AuthSessionRepository.ts';
@@ -162,26 +159,23 @@ export type GroupPresenceDisconnectAppInboxPayload = Readonly<{
     request: DisconnectGroupPresenceSessionRequest;
 }>;
 
-export type GroupPresenceDisconnectBySessionIdAppInboxPayload = Readonly<{
-    sessionId: string;
-    request?: DisconnectPresenceBySessionRequest;
-}>;
-
-export type GroupExpiredPresenceSessionsAppInboxPayload = Readonly<{
-    atEpochMs: number;
-}>;
-
 export class AppGroupInboxService extends AppInboxService {
     public override async processEntryUntilCompletion<V, R = V>(
         enqueue: AppInboxEnqueueInput<V>,
-        authority?: IssuedAuthSession,
     ): Promise<Either<string, R>> {
-        if (!this.groupStateService.prepareMutation || isInternalGroupInboxType(enqueue.type)) {
-            return await super.processEntryUntilCompletion<V, R>(enqueue);
-        }
-        if (!authority) {
+        void enqueue;
+        throw new GroupMutationAuthorizationError(
+            'Authenticated group mutation authority is required.',
+        );
+    }
+
+    public async processAuthenticatedEntryUntilCompletion<V, R = V>(
+        enqueue: AppInboxEnqueueInput<V>,
+        authority: IssuedAuthSession,
+    ): Promise<Either<string, R>> {
+        if (!isAuthenticatedGroupInboxType(enqueue.type)) {
             throw new GroupMutationAuthorizationError(
-                'Authenticated group mutation authority is required.',
+                'App inbox type is not an authenticated group mutation.',
             );
         }
         const preparation = await this.groupStateService.prepareMutation(
@@ -350,82 +344,6 @@ export class AppGroupInboxService extends AppInboxService {
                 [presence.scope, presence.groupId, presence.sessionId, presence.request],
             ),
         );
-        this.onStateMessage<GroupPresenceDisconnectBySessionIdAppInboxPayload>(
-            AppInboxType.GROUP_PRESENCE_DISCONNECT_BY_SESSION_ID,
-            async (presence) => {
-                const groupStateWrittenResults =
-                    await this.groupStateService.disconnectPresenceSessionsBySessionIdWritten(
-                        presence.sessionId,
-                        presence.request,
-                    );
-
-                return groupStateWrittenResults;
-            },
-        );
-        this.onStateMessage<GroupExpiredPresenceSessionsAppInboxPayload>(
-            AppInboxType.GROUP_EXPIRED_PRESENCE_SESSIONS,
-            async (input) => {
-                const groupStateWrittenResults =
-                    await this.groupStateService.expireExpiredPresenceSessions(
-                        input.atEpochMs,
-                    );
-
-                return groupStateWrittenResults;
-            },
-        );
-    }
-
-    public async processPresenceDisconnectsBySessionId(
-        sessionId: string,
-        request?: DisconnectPresenceBySessionRequest,
-    ) {
-        return await this.processEntryUntilCompletion<
-            GroupPresenceDisconnectBySessionIdAppInboxPayload,
-            readonly GroupStateWritten[]
-        >({
-            type: AppInboxType.GROUP_PRESENCE_DISCONNECT_BY_SESSION_ID,
-            resourceId: `disconnect-presence-${sessionId}`,
-            contextId: sessionId,
-            senderId: request?.actorPrincipalId ?? request?.actorSessionId ?? sessionId,
-            data: {
-                sessionId,
-                request,
-            },
-        });
-    }
-
-    public async processExpiredPresenceSessions(atEpochMs: number = Date.now()) {
-        return await this.processEntryUntilCompletionIf<
-            GroupExpiredPresenceSessionsAppInboxPayload,
-            readonly GroupStateWritten[]
-        >(
-            this.toExpiredPresenceSessionsEnqueue(atEpochMs),
-            entry => isCompletedOrFailed(entry.status),
-        );
-    }
-
-    public processExpiredPresenceSessionsNoWaiting(
-        atEpochMs: number = Date.now(),
-    ): void {
-        this.processEntryNoWaitingIf<GroupExpiredPresenceSessionsAppInboxPayload>(
-            this.toExpiredPresenceSessionsEnqueue(atEpochMs),
-            entry => isCompletedOrFailed(entry.status),
-        );
-    }
-
-    private toExpiredPresenceSessionsEnqueue(
-        atEpochMs: number,
-    ): AppInboxEnqueueInput<GroupExpiredPresenceSessionsAppInboxPayload> {
-        return {
-            type: AppInboxType.GROUP_EXPIRED_PRESENCE_SESSIONS,
-            topicId: AppInboxType.GROUP_EXPIRED_PRESENCE_SESSIONS,
-            resourceId: `expire-group-presence`,
-            contextId: 'expire-group-presence',
-            senderId: this.serviceId,
-            data: {
-                atEpochMs,
-            },
-        };
     }
 }
 
@@ -441,17 +359,26 @@ async function callGroupMutation<T>(
     return await Reflect.apply(
         method,
         undefined,
-        authority ? [...args, authority] : args,
+        [...args, authority],
     ) as T;
 }
 
 function readGroupMutationAuthorityProof(
     value: unknown,
-): GroupMutationAuthorityProof | undefined {
-    if (value === undefined) return undefined;
+): GroupMutationAuthorityProof {
+    const expectedKeys = [
+        'version',
+        'principalId',
+        'sessionId',
+        'sessionIssuedAtEpochMs',
+        'sessionExpiresAtEpochMs',
+        'commandMac',
+    ].toSorted();
     if (
         !value ||
         typeof value !== 'object' ||
+        Array.isArray(value) ||
+        JSON.stringify(Object.keys(value).toSorted()) !== JSON.stringify(expectedKeys) ||
         !('version' in value) ||
         value.version !== 1 ||
         !('principalId' in value) ||
@@ -472,9 +399,26 @@ function readGroupMutationAuthorityProof(
     return value as GroupMutationAuthorityProof;
 }
 
-function isInternalGroupInboxType(type: AppInboxType): boolean {
-    return type === AppInboxType.GROUP_PRESENCE_DISCONNECT_BY_SESSION_ID ||
-        type === AppInboxType.GROUP_EXPIRED_PRESENCE_SESSIONS;
+function isAuthenticatedGroupInboxType(type: AppInboxType): boolean {
+    return [
+        AppInboxType.GROUP_CREATE,
+        AppInboxType.GROUP_UPDATE,
+        AppInboxType.GROUP_DIRECTOR_APPOINT,
+        AppInboxType.GROUP_JOIN,
+        AppInboxType.GROUP_INVITE_CREATE,
+        AppInboxType.GROUP_INVITE_REVOKE,
+        AppInboxType.GROUP_INVITE_ACCEPT,
+        AppInboxType.GROUP_JOIN_CODE_ROTATE,
+        AppInboxType.GROUP_MEMBER_REMOVE,
+        AppInboxType.GROUP_MEMBER_BAN,
+        AppInboxType.GROUP_MEMBER_UNBAN,
+        AppInboxType.GROUP_MEMBER_ROLE_SET,
+        AppInboxType.GROUP_OWNERSHIP_TRANSFER,
+        AppInboxType.GROUP_MEMBER_UPSERT,
+        AppInboxType.GROUP_PRESENCE_CONNECT,
+        AppInboxType.GROUP_PRESENCE_HEARTBEAT,
+        AppInboxType.GROUP_PRESENCE_DISCONNECT,
+    ].includes(type);
 }
 
 function toGroupMutationDescriptor<V>(

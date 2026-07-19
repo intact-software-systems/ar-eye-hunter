@@ -2,7 +2,11 @@ import { describe, expect, it, vi } from "vitest";
 import type { GroupRef } from "@shared/api/group-types.ts";
 import type { StateScope } from "@shared/api/state-types.ts";
 import { GroupStateRepository } from "@shared-server/rallar-system/repositories/GroupStateRepository.ts";
-import { createGroupStateService } from "@shared-server/rallar-system/services/group-state-service.ts";
+import { STATE_MUTATION_OUTBOX_NAMESPACE } from "@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts";
+import {
+  createTestGroupStateRuntime,
+  createTestGroupStateService as createGroupStateService,
+} from "./group-state-test-runtime.ts";
 import type { RallarTimingEvent } from "@shared-server/rallar-system/services/timing.ts";
 import type { StateSyncPublisher } from "@shared-server/rallar-system/state-sync-publisher.ts";
 import { FakeRuntimeStateRepository } from "./fake-runtime-state-repository.ts";
@@ -109,12 +113,13 @@ describe("GroupStateService command idempotency", () => {
 
   it("returns a group-exists result when createGroup uses a different requestId for an existing group", async () => {
     const runtimeRepository = new FakeRuntimeStateRepository();
-    const service = createGroupStateService({
+    const runtime = createTestGroupStateRuntime({
       runtimeRepository,
       syncPublisher: createPublisher(),
       now: () => 1_000,
       serviceId: "group-service",
     });
+    const service = runtime.service;
     const groupRef = toGroupRef("room-6");
 
     await service.createGroup(SCOPE, {
@@ -418,18 +423,15 @@ describe("GroupStateService command idempotency", () => {
     await seedPresenceSession(runtimeRepository, "room-7");
 
     const publisher = createPublisher();
-    const service = createGroupStateService({
+    const runtime = createTestGroupStateRuntime({
       runtimeRepository,
       syncPublisher: publisher,
       now: () => 5_000,
       serviceId: "group-service",
     });
 
-    const snapshots = await service.disconnectPresenceSessionsBySessionId("session-1", {
-      reason: "closed",
-      actorPrincipalId: "alice",
-      actorSessionId: "session-1",
-    });
+    const snapshots = await runtime.maintenance
+      .disconnectPresenceSessionsBySessionId("session-1", 5_000);
 
     expect(snapshots).toHaveLength(1);
     expect(snapshots[0].activeSessions).toHaveLength(0);
@@ -443,7 +445,7 @@ describe("GroupStateService command idempotency", () => {
     await seedPresenceSession(runtimeRepository, "room-8");
 
     const publisher = createPublisher();
-    const service = createGroupStateService({
+    const runtime = createTestGroupStateRuntime({
       runtimeRepository,
       syncPublisher: publisher,
       now: () => 5_000,
@@ -451,11 +453,10 @@ describe("GroupStateService command idempotency", () => {
     });
 
     await expect(
-      service.disconnectPresenceSessionsBySessionIdWritten("session-1", {
-        reason: "closed",
-        actorPrincipalId: "alice",
-        actorSessionId: "session-1",
-      }),
+      runtime.maintenance.disconnectPresenceSessionsBySessionIdWritten(
+        "session-1",
+        5_000,
+      ),
     ).resolves.toMatchObject([
       {
         result: {
@@ -472,7 +473,7 @@ describe("GroupStateService command idempotency", () => {
     expect(publisher.publishGroupEvent).not.toHaveBeenCalled();
   });
 
-  it("expires stale presence sessions once and leaves publication to the app inbox", async () => {
+  it("eventually expires a session after missed websocket cleanup exactly once with receipt and outbox", async () => {
     const runtimeRepository = new FakeRuntimeStateRepository();
     await seedGroup(runtimeRepository, "room-9");
     const expiresAtEpochMs = Date.now() - 1_000;
@@ -483,7 +484,7 @@ describe("GroupStateService command idempotency", () => {
 
     const publisher = createPublisher();
     const now = expiresAtEpochMs + 1;
-    const service = createGroupStateService({
+    const runtime = createTestGroupStateRuntime({
       runtimeRepository,
       syncPublisher: publisher,
       now: () => now,
@@ -491,8 +492,8 @@ describe("GroupStateService command idempotency", () => {
     });
     const groupRef = toGroupRef("room-9");
 
-    const first = await service.expireExpiredPresenceSessions(now);
-    const second = await service.expireExpiredPresenceSessions(now);
+    const first = await runtime.maintenance.expireExpiredPresenceSessions(now);
+    const second = await runtime.maintenance.expireExpiredPresenceSessions(now);
 
     expect(first).toHaveLength(1);
     expect(second).toEqual([]);
@@ -511,6 +512,31 @@ describe("GroupStateService command idempotency", () => {
     });
 
     const repository = new GroupStateRepository(runtimeRepository);
+    const expiryRequestId = [
+      "expire-group-presence",
+      SCOPE.applicationId,
+      SCOPE.workspaceId,
+      groupRef.groupId,
+      "session-1",
+      "generation-session-1",
+      2_000,
+      expiresAtEpochMs,
+    ].join(":");
+    expect(
+      await repository.findIdempotentGroupMutationReceipt(
+        groupRef,
+        expiryRequestId,
+      ),
+    ).toMatchObject({ receipt: { outcome: "applied" } });
+    const expiryOutbox = (
+      await runtimeRepository.findAllEntries(STATE_MUTATION_OUTBOX_NAMESPACE)
+    ).map((entry) => JSON.parse(entry.value) as Record<string, unknown>)
+      .filter((record) => record.commandId === expiryRequestId);
+    expect(expiryOutbox).toHaveLength(1);
+    expect(expiryOutbox[0]).toMatchObject({
+      effects: ["group-state-sync", "group-presence-summary"],
+      delivery: { status: "pending" },
+    });
     expect(
       await repository.findPresenceSession({
         ...groupRef,
@@ -538,15 +564,16 @@ describe("GroupStateService command idempotency", () => {
     runtimeRepository.locks.splice(0);
 
     const now = expiresAtEpochMs + 1;
-    const service = createGroupStateService({
+    const runtime = createTestGroupStateRuntime({
       runtimeRepository,
       syncPublisher: createPublisher(),
       now: () => now,
       serviceId: "group-service",
     });
+    const service = runtime.service;
     const groupRef = toGroupRef("room-10");
 
-    await service.expireExpiredPresenceSessions(now);
+    await runtime.maintenance.expireExpiredPresenceSessions(now);
     const lateDisconnect = await service.disconnectPresenceSession(
       SCOPE,
       groupRef.groupId,
@@ -588,15 +615,16 @@ describe("GroupStateService command idempotency", () => {
     });
 
     const now = expiresAtEpochMs + 1;
-    const service = createGroupStateService({
+    const runtime = createTestGroupStateRuntime({
       runtimeRepository,
       syncPublisher: createPublisher(),
       now: () => now,
       serviceId: "group-service",
     });
+    const service = runtime.service;
     const groupRef = toGroupRef("room-11");
 
-    await service.expireExpiredPresenceSessions(now);
+    await runtime.maintenance.expireExpiredPresenceSessions(now);
     const lateHeartbeat = await service.heartbeatPresenceSession(
       SCOPE,
       groupRef.groupId,

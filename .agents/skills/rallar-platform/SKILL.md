@@ -73,6 +73,10 @@ rg --files packages/shared packages/shared-web packages/shared-server packages/s
   critical section, and migration or review condition.
 - Test overlapping writers, retry exhaustion, idempotency races, stale expiry,
   and final convergence against the real Postgres conditional-write boundary.
+- Authentication dependencies for authoritative user writes are mandatory and
+  fail closed at construction and execution. Internal maintenance uses a
+  closure-held narrow capability, never a forgeable public command type or
+  caller-provided bypass flag.
 
 ## Validation
 

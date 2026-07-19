@@ -83,11 +83,6 @@ export function createCachedGroupStateService(options: Readonly<{
             ),
         };
     };
-    const observeWrittenList = async (
-        values: readonly GroupStateWritten[],
-    ): Promise<readonly GroupStateWritten[]> =>
-        await Promise.all(values.map(observeWritten));
-
     const service: CachedGroupStateService = {
         ...options.durable,
         observeSnapshot,
@@ -255,26 +250,6 @@ export function createCachedGroupStateService(options: Readonly<{
                     request,
                     authority,
                 ),
-            ),
-        disconnectPresenceSessionsBySessionId: async (sessionId, request) => {
-            const snapshots = await options.durable
-                .disconnectPresenceSessionsBySessionId(sessionId, request);
-            return await Promise.all(snapshots.map(observeSnapshot));
-        },
-        disconnectPresenceSessionsBySessionIdWritten: async (
-            sessionId,
-            request,
-        ) =>
-            await observeWrittenList(
-                await options.durable
-                    .disconnectPresenceSessionsBySessionIdWritten(
-                        sessionId,
-                        request,
-                    ),
-            ),
-        expireExpiredPresenceSessions: async (atEpochMs) =>
-            await observeWrittenList(
-                await options.durable.expireExpiredPresenceSessions(atEpochMs),
             ),
     };
 
