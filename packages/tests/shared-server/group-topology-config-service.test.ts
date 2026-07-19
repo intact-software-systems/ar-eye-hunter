@@ -16,6 +16,7 @@ import {
 } from '@shared-server/rallar-system/services/group-topology-config-service.ts';
 import {
     computeTopologyConfigMutation,
+    validateGroupTopologyConfigMutationRecord,
     validateTopologyConfigMutation,
 } from '@shared-server/rallar-system/services/group-topology-config-mutations.ts';
 
@@ -82,6 +83,77 @@ describe('group topology config service', () => {
                 computed: laterPolicy,
             })
         ).not.toThrow();
+    });
+
+    it.each(['putConfig', 'putOverride'] as const)(
+        'rejects an impossible %s no-op receipt at the pure validator boundary',
+        (operation) => {
+            const groupRef = createGroupRef();
+            const requestId = `impossible-${operation}`;
+            const commandHash = `sha256:${'7'.repeat(64)}`;
+            expect(() =>
+                validateGroupTopologyConfigMutationRecord({
+                    groupRef,
+                    requestId,
+                    commandHash,
+                    receipt: {
+                        commandId: requestId,
+                        commandHash,
+                        operation,
+                        outcome: 'no-op',
+                        groupRef,
+                        target: operation === 'putConfig' ? 'config' : 'override',
+                        acceptedVersion: 1,
+                        acceptedStorageRevision: null,
+                        acceptedCreatedAtEpochMs: 1_000,
+                        acceptedUpdatedAtEpochMs: 1_000,
+                        acceptedExpiresAtEpochMs: operation === 'putOverride'
+                            ? 6_000
+                            : null,
+                        outboxId: null,
+                    },
+                }, { groupRef, requestId })
+            ).toThrow('Topology config PUT receipt must be applied');
+        },
+    );
+
+    it('rejects an elapsed stable override expiry with explicit pure facts', () => {
+        const input = deepFreeze({
+            command: {
+                operation: 'putOverride' as const,
+                aggregateRef: createGroupRef(),
+                commandId: 'elapsed-stable-expiry',
+                requestId: 'elapsed-stable-expiry',
+                input: {
+                    config: { topologyKind: 'tree' as const },
+                    updatedByPrincipalId: 'owner',
+                    ttlMs: 5_000,
+                    expiresAtEpochMs: null,
+                },
+            },
+            read: {
+                config: null,
+                override: null,
+                configGeneration: null,
+                overrideGeneration: null,
+                invariantGeneration: null,
+                idempotency: null,
+                groupSnapshot: createGroupSnapshot(),
+            },
+            facts: {
+                requestedAtEpochMs: 1_000,
+                policyNowEpochMs: 7_000,
+                commandHash: `sha256:${'8'.repeat(64)}`,
+                isPlatformAdmin: false,
+                resolvedOverrideExpiresAtEpochMs: 6_000,
+                deleteTarget: null,
+            },
+            serverDefaults: {},
+        });
+
+        expect(() => computeTopologyConfigMutation(input)).toThrow(
+            GroupTopologyConfigValidationError,
+        );
     });
 
     it('keeps pure topology config phases ambient-free and orchestration visible', () => {

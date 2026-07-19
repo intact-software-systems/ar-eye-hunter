@@ -186,9 +186,12 @@ rows are non-expiring, and override expiry must equal the value's
 `expiresAtEpochMs`; malformed scope, child, JSON, or expiry metadata fails
 before lazy deletion. Every retry re-evaluates active/unexpired group lifecycle
 at a fresh attempt time for owners and platform admins alike. Stored write time
-and relative override TTL remain fixed to the first non-replay attempt. The
-idempotency row stores only command identity plus the compact receipt; mandatory
-nullable receipt timestamps reconstruct accepted PUT responses on replay.
+and relative override TTL remain fixed to the first non-replay attempt; a retry
+after that expiry is rejected instead of extending or committing it. The
+idempotency row stores only command identity plus the compact receipt. PUT
+receipts must be applied, while DELETE can retain a legitimate no-op receipt;
+mandatory nullable receipt timestamps reconstruct accepted PUT responses on
+replay.
 DELETE uses
 `Idempotency-Key` on REST (or `requestId` in the shared browser options) for
 stable replay. They return after commit; outbox work performs recompute and

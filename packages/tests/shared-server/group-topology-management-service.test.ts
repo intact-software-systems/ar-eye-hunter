@@ -782,6 +782,70 @@ describe('GroupTopologyManagementService', () => {
         }
     });
 
+    it('rejects a stable relative override expiry that elapses before retry', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(500);
+        try {
+            const runtimeRepository = new FakeRuntimeStateRepository();
+            const base = createGroupSnapshot(createGroupRef('workspace-1'));
+            const group: GroupSnapshot = {
+                ...base,
+                group: { ...base.group, expiresAtEpochMs: 10_000 },
+            };
+            const configRepository = new GroupTopologyConfigRepository(
+                runtimeRepository,
+            );
+            const seeded = {
+                ...topologyConfig(group.group, 1, 'tree', 'elapsed-ttl-seed'),
+                createdAtEpochMs: 500,
+                updatedAtEpochMs: 500,
+                expiresAtEpochMs: 50_000,
+            };
+            await configRepository.commitOverride(seeded, null);
+            const now = vi.fn()
+                .mockReturnValueOnce(1_000)
+                .mockReturnValue(7_000);
+            const service = createService({
+                runtimeRepository,
+                group,
+                configRepository,
+                now,
+                sleep: () => Promise.resolve(),
+            });
+            await service.readConfig(group.group);
+            forceFirstTargetGenerationConflict(
+                runtimeRepository,
+                configRepository.generationKey(group.group, 'override'),
+            );
+
+            await expect(service.putOverride({
+                groupRef: group.group,
+                config: { topologyKind: 'mesh' },
+                ttlMs: 5_000,
+                updatedByPrincipalId: 'owner',
+                requestId: 'elapsed-stable-ttl-retry',
+            })).rejects.toMatchObject({
+                code: 'group-topology-config-validation-failed',
+                issues: [expect.objectContaining({
+                    code: 'override-expiry-not-in-future',
+                })],
+            });
+            expect(now).toHaveBeenCalledTimes(2);
+            await expect(configRepository.findOverride(group.group)).resolves
+                .toEqual(seeded);
+            await expect(configRepository.findMutationRecord(
+                group.group,
+                'elapsed-stable-ttl-retry',
+            )).resolves.toBeUndefined();
+            await expect(
+                new StateMutationOutboxRepository(runtimeRepository)
+                    .listPendingPage({ limit: 10 }),
+            ).resolves.toMatchObject({ records: [] });
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
     it('makes identical request races first-writer-wins and rejects different command reuse', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const group = createGroupSnapshot(createGroupRef('workspace-1'));
@@ -932,6 +996,69 @@ describe('GroupTopologyManagementService', () => {
             'Topology config receipt operation differs from command',
         );
     });
+
+    it.each(['putConfig', 'putOverride'] as const)(
+        'rejects an impossible persisted %s no-op instead of reconstructing replay state',
+        async (operation) => {
+            const runtimeRepository = new FakeRuntimeStateRepository();
+            const group = createGroupSnapshot(createGroupRef('workspace-1'));
+            const configRepository = new GroupTopologyConfigRepository(
+                runtimeRepository,
+            );
+            const now = vi.fn(() => 1_000);
+            const service = createService({
+                runtimeRepository,
+                group,
+                configRepository,
+                now,
+            });
+            const requestId = `impossible-replay-${operation}`;
+            const replay = operation === 'putConfig'
+                ? () => service.putConfig({
+                    groupRef: group.group,
+                    config: { topologyKind: 'tree' },
+                    updatedByPrincipalId: 'owner',
+                    requestId,
+                })
+                : () => service.putOverride({
+                    groupRef: group.group,
+                    config: { topologyKind: 'tree' },
+                    expiresAtEpochMs: NEVER_EXPIRE_AT_TIMESTAMP - 1,
+                    updatedByPrincipalId: 'owner',
+                    requestId,
+                });
+            const accepted = await replay();
+            const key = configRepository.mutationKey(group.group, requestId);
+            const entry = await runtimeRepository.findEntry(
+                GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE,
+                key,
+            );
+            const record = JSON.parse(entry!.value) as Record<string, unknown>;
+            await runtimeRepository.upsert(
+                GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE,
+                key,
+                JSON.stringify({
+                    ...record,
+                    receipt: {
+                        ...accepted.receipt,
+                        outcome: 'no-op',
+                        acceptedStorageRevision: null,
+                        outboxId: null,
+                    },
+                }),
+                NEVER_EXPIRE_AT_TIMESTAMP,
+            );
+            now.mockClear();
+            now.mockImplementation(() => {
+                throw new Error('clock must not run before invalid replay rejection');
+            });
+
+            await expect(replay()).rejects.toThrow(
+                'Topology config PUT receipt must be applied',
+            );
+            expect(now).not.toHaveBeenCalled();
+        },
+    );
 
     it('reconstructs an immutable override replay from its compact receipt', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();

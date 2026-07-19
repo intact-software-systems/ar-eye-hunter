@@ -19,6 +19,7 @@ import {
 import {
     type GroupTopologyServerOptions,
     resolveGroupTopologyConfig,
+    resolveOverrideExpiresAtEpochMs,
     validateGroupTopologyConfigPatch,
 } from './group-topology-config-service.ts';
 import type {
@@ -793,6 +794,10 @@ function validateTopologyConfigFacts(
             facts.resolvedOverrideExpiresAtEpochMs,
             'override expiry fact',
         );
+        resolveOverrideExpiresAtEpochMs({
+            nowEpochMs: facts.policyNowEpochMs,
+            expiresAtEpochMs: facts.resolvedOverrideExpiresAtEpochMs,
+        });
     }
 }
 
@@ -930,6 +935,11 @@ function validateTopologyConfigReceipt(value: unknown, expectedRef: GroupRef): v
     if ((expectsConfig ? 'config' : 'override') !== value.target) {
         throw new TypeError('Topology config receipt operation target is invalid');
     }
+    const isPut = value.operation === 'putConfig' ||
+        value.operation === 'putOverride';
+    if (isPut && value.outcome !== 'applied') {
+        throw new TypeError('Topology config PUT receipt must be applied');
+    }
     validateStorageRevision(value.acceptedVersion, 'Topology config accepted version');
     if (value.acceptedStorageRevision !== null) {
         validateStorageRevision(
@@ -965,7 +975,6 @@ function validateTopologyConfigReceipt(value: unknown, expectedRef: GroupRef): v
     ) {
         throw new TypeError('Topology config absent no-op receipt is invalid');
     }
-    const isPut = value.operation === 'putConfig' || value.operation === 'putOverride';
     if (
         isPut !==
             (value.acceptedCreatedAtEpochMs !== null &&

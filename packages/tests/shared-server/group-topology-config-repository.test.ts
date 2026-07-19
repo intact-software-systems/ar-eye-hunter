@@ -828,6 +828,48 @@ describe('group topology config repository', () => {
             .rejects.toThrow(message);
     });
 
+    it.each(['putConfig', 'putOverride'] as const)(
+        'rejects a persisted impossible %s no-op receipt as typed corruption',
+        async (operation) => {
+            const runtimeRepository = new FakeRuntimeStateRepository();
+            const repository = new GroupTopologyConfigRepository(runtimeRepository);
+            const groupRef = createGroupRef('workspace-1');
+            const requestId = `persisted-impossible-${operation}`;
+            const commandHash = `sha256:${'6'.repeat(64)}`;
+            await runtimeRepository.insertIfAbsent(
+                GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE,
+                repository.mutationKey(groupRef, requestId),
+                JSON.stringify({
+                    groupRef,
+                    requestId,
+                    commandHash,
+                    receipt: {
+                        commandId: requestId,
+                        commandHash,
+                        operation,
+                        outcome: 'no-op',
+                        groupRef,
+                        target: operation === 'putConfig' ? 'config' : 'override',
+                        acceptedVersion: 1,
+                        acceptedStorageRevision: null,
+                        acceptedCreatedAtEpochMs: 1_000,
+                        acceptedUpdatedAtEpochMs: 1_000,
+                        acceptedExpiresAtEpochMs: operation === 'putOverride'
+                            ? 6_000
+                            : null,
+                        outboxId: null,
+                    },
+                }),
+                NEVER_EXPIRE_AT_TIMESTAMP,
+            );
+
+            await expect(repository.findMutationRecord(groupRef, requestId))
+                .rejects.toBeInstanceOf(
+                    GroupTopologyConfigRepositoryInvariantCorruptionError,
+                );
+        },
+    );
+
     it.each([
         {
             label: 'put receipt without replay timestamps',

@@ -1163,9 +1163,11 @@ state scope used by clients and groups:
   states that never coexisted.
   Every response includes a compact receipt whose mandatory nullable replay
   timestamps let the service reconstruct a PUT replay without storing the full
-  accepted config in the idempotency ledger. The route returns without waiting
-  for recompute or publish. Browser DELETE callers can supply `requestId`; REST
-  callers send the same stable value as `Idempotency-Key`.
+  accepted config in the idempotency ledger. PUT receipts are always
+  `applied`; only DELETE may record either an applied deletion or a legitimate
+  no-op. The route returns without waiting for recompute or publish. Browser
+  DELETE callers can supply `requestId`; REST callers send the same stable value
+  as `Idempotency-Key`.
 - `GET|PUT|DELETE /api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/override`
   manages temporary topology overrides with the same convergent receipt/outbox
   transaction and asynchronous return contract.
@@ -1179,8 +1181,10 @@ and an authenticated group owner/admin or a platform admin client ID from
 `AUTH_ADMIN_CLIENT_IDS`; platform administration bypasses membership/role, not
 group lifecycle. On a CAS retry, lifecycle policy receives a fresh attempt time,
 while stored write timestamps and relative override TTL stay anchored to the
-first non-replay attempt. Strict read auth (`RALLAR_STATE_STRICT_READ_AUTH`)
-also protects group graph and topology reads.
+first non-replay attempt. If that stable override expiry has elapsed before a
+retry, the request fails with `override-expiry-not-in-future` rather than
+extending or committing the expired override. Strict read auth
+(`RALLAR_STATE_STRICT_READ_AUTH`) also protects group graph and topology reads.
 
 ### Admin Operations REST
 
