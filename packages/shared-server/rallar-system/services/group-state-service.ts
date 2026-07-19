@@ -27,7 +27,6 @@ import type {
     UpdateGroupRequest,
     UpsertGroupMemberRequest,
 } from '@shared/api/state-types.ts';
-import { DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import type { StateEventPage } from '@shared/api/state-event-types.ts';
 import type { StateEventListQuery } from '../state-event-listing.ts';
 import { Either } from '@shared/resilience/Either.ts';
@@ -67,6 +66,7 @@ import {
     type GroupMutationFacts,
     type GroupMutationReceipt,
     type GroupMutationRead,
+    probeGroupMutationIdempotency,
     validateGroupMutation,
     validateGroupMutationCommand,
 } from './group-state-mutations.ts';
@@ -401,23 +401,14 @@ export function createGroupStateRuntime(
 
     const executeReceipt = async (
         command: GroupMutationCommand,
-        mutationAtEpochMs: number = now(),
+        mutationAtEpochMs: number | undefined = undefined,
         internalAuthority: GroupMutationFacts['internalAuthority'] = 'none',
         authenticatedAuthority: GroupMutationFacts['authenticatedAuthority'] = null,
         reverifyAuthority?: () => Promise<void>,
     ): Promise<GroupMutationExecution> => {
         validateGroupMutationCommand(command);
-        const resolvedJoinCode = resolveCommandJoinCode(command, randomId);
-        const facts: GroupMutationFacts = {
-            nowEpochMs: mutationAtEpochMs,
-            serviceId: dependencies.serviceId,
-            eventId: randomId(),
-            commandHash: await hashStateMutationCommand(command),
-            resolvedJoinCode,
-            joinCodeVerifier: await joinCodeVerifier(resolvedJoinCode),
-            internalAuthority,
-            authenticatedAuthority,
-        };
+        const commandHash = await hashStateMutationCommand(command);
+        let facts: GroupMutationFacts | undefined;
         let lastConflict: RuntimeStateWriteConflictError | undefined;
         for (let attempt = 0; attempt < DEFAULT_RUNTIME_STATE_WRITE_ATTEMPTS; attempt += 1) {
             const backoffMs = await waitForRuntimeStateWriteRetry(
@@ -433,13 +424,38 @@ export function createGroupStateRuntime(
                 backoffMs,
                 async () => await readGroupMutation(repositoryFor(runtime), command),
             );
+            let resolvedFromIdempotency = false;
             const computed = await timeMutationPhase(
                 dependencies,
                 command,
                 'compute',
                 attempt,
                 backoffMs,
-                () => computeGroupMutation({ command, read, facts }),
+                async () => {
+                    const idempotency = probeGroupMutationIdempotency(
+                        command,
+                        read,
+                        commandHash,
+                    );
+                    if (idempotency.outcome !== 'miss') {
+                        resolvedFromIdempotency = true;
+                        return idempotency;
+                    }
+                    if (!facts) {
+                        const resolvedJoinCode = resolveCommandJoinCode(command, randomId);
+                        facts = {
+                            nowEpochMs: mutationAtEpochMs ?? now(),
+                            serviceId: dependencies.serviceId,
+                            eventId: randomId(),
+                            commandHash,
+                            resolvedJoinCode,
+                            joinCodeVerifier: await joinCodeVerifier(resolvedJoinCode),
+                            internalAuthority,
+                            authenticatedAuthority,
+                        };
+                    }
+                    return computeGroupMutation({ command, read, facts });
+                },
             );
             await timeMutationPhase(
                 dependencies,
@@ -447,7 +463,25 @@ export function createGroupStateRuntime(
                 'validate',
                 attempt,
                 backoffMs,
-                () => validateGroupMutation({ command, read, facts, computed }),
+                () => {
+                    if (resolvedFromIdempotency) {
+                        const canonical = probeGroupMutationIdempotency(
+                            command,
+                            read,
+                            commandHash,
+                        );
+                        if (canonicalJson(canonical) !== canonicalJson(computed)) {
+                            throw new TypeError(
+                                'Group mutation idempotency probe is not canonical',
+                            );
+                        }
+                        return;
+                    }
+                    if (!facts) {
+                        throw new TypeError('Group mutation facts were not materialized');
+                    }
+                    validateGroupMutation({ command, read, facts, computed });
+                },
             );
             if (computed.outcome === 'idempotency-conflict') {
                 throw new GroupMutationIdempotencyConflictError(
@@ -493,10 +527,11 @@ export function createGroupStateRuntime(
         internalAuthority: GroupMutationFacts['internalAuthority'] = 'none',
         authenticatedAuthority: GroupMutationFacts['authenticatedAuthority'] = null,
         reverifyAuthority?: () => Promise<void>,
+        mutationAtEpochMs?: number,
     ): Promise<GroupStateWritten> => {
         const execution = await executeReceipt(
             command,
-            now(),
+            mutationAtEpochMs,
             internalAuthority,
             authenticatedAuthority,
             reverifyAuthority,
@@ -596,7 +631,7 @@ export function createGroupStateRuntime(
             command,
             execution: await executeReceipt(
                 command,
-                now(),
+                undefined,
                 'none',
                 {
                     principalId: verified.session.clientId,
@@ -840,6 +875,9 @@ export function createGroupStateRuntime(
                 written.push(await executeCompatible(
                     toSessionCleanupCommand(session, disconnectedAtEpochMs),
                     'session-cleanup',
+                    null,
+                    undefined,
+                    disconnectedAtEpochMs,
                 ));
             }
             return written;
@@ -1771,18 +1809,7 @@ function toExpiryCommand(
     session: GroupPresenceSession,
     atEpochMs: number,
 ): GroupMutationCommand {
-    const commandId = [
-        'expire-group-presence',
-        session.applicationId,
-        session.workspaceId ?? '',
-        session.groupId,
-        session.sessionId,
-        session.generationId,
-        session.generationVersion,
-        session.expiresAtEpochMs,
-        atEpochMs,
-    ].join(':');
-    return {
+    const semanticCommand = {
         operation: 'disconnectPresence',
         aggregateRef: {
             applicationId: session.applicationId,
@@ -1790,8 +1817,6 @@ function toExpiryCommand(
             groupId: session.groupId,
         },
         sessionId: session.sessionId,
-        commandId,
-        requestId: commandId,
         input: {
             principalId: session.principalId,
             generationId: session.generationId,
@@ -1805,24 +1830,16 @@ function toExpiryCommand(
             reason: 'expired',
             traceId: null,
         },
-    };
+    } as const;
+    const commandId = groupStateMaintenanceRequestId('expiry', semanticCommand);
+    return { ...semanticCommand, commandId, requestId: commandId };
 }
 
 function toSessionCleanupCommand(
     session: GroupPresenceSession,
     disconnectedAtEpochMs: number,
 ): GroupMutationCommand {
-    const commandId = [
-        'cleanup-group-presence-session',
-        session.applicationId,
-        session.workspaceId ?? DEFAULT_STATE_WORKSPACE_ID,
-        session.groupId,
-        session.sessionId,
-        session.generationId,
-        session.generationVersion,
-        disconnectedAtEpochMs,
-    ].join(':');
-    return {
+    const semanticCommand = {
         operation: 'disconnectPresence',
         aggregateRef: {
             applicationId: session.applicationId,
@@ -1832,8 +1849,6 @@ function toSessionCleanupCommand(
             groupId: session.groupId,
         },
         sessionId: session.sessionId,
-        commandId,
-        requestId: commandId,
         input: {
             principalId: session.principalId,
             generationId: session.generationId,
@@ -1847,7 +1862,27 @@ function toSessionCleanupCommand(
             reason: null,
             traceId: null,
         },
-    };
+    } as const;
+    const commandId = groupStateMaintenanceRequestId(
+        'session-cleanup',
+        semanticCommand,
+    );
+    return { ...semanticCommand, commandId, requestId: commandId };
+}
+
+export type GroupMaintenanceSemanticCommand = Pick<
+    Extract<GroupMutationCommand, { operation: 'disconnectPresence' }>,
+    'operation' | 'aggregateRef' | 'sessionId' | 'input'
+>;
+
+export function groupStateMaintenanceRequestId(
+    authority: 'expiry' | 'session-cleanup',
+    semanticCommand: GroupMaintenanceSemanticCommand,
+): string {
+    const domain = authority === 'expiry'
+        ? 'expire-group-presence'
+        : 'cleanup-group-presence-session';
+    return `${domain}:v1:${canonicalJson(semanticCommand)}`;
 }
 
 function identity(requestId: string | undefined, randomId: () => string) {

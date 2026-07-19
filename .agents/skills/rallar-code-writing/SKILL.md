@@ -50,13 +50,16 @@ rg --files packages/tests packages/shared packages/shared-web packages/shared-se
 - Make idempotency claims with insert-if-absent semantics. The losing writer
   loads the winner; it must not overwrite the ledger.
 - Hash caller semantics before server random/time defaults: keep omission as a
-  mandatory nullable command field, capture each volatile candidate once in
-  immutable mandatory facts, read idempotency before applying it, and reuse the
-  same facts for the full retry loop. Never hash generated defaults or
-  regenerate them after a compare-and-set conflict.
-- Maintenance request IDs cover every variable semantic field that changes the
-  command hash, including observed cleanup/expiry timestamps and generation
-  fences. Do not rely on the hash to repair an aliased idempotency key.
+  mandatory nullable command field, then read and validate idempotency before
+  invoking random, clock-default, verifier, or other volatile materialization.
+  Only a ledger miss captures immutable facts. Reuse them for the full retry
+  loop; replay and conflicting key reuse invoke no volatile callbacks. Never
+  hash generated defaults or regenerate them after a compare-and-set conflict.
+- Maintenance request IDs use a collision-safe canonical projection of every
+  semantic field other than the derived command/request identity, including
+  operation, full scope, principal/session/generation fences, observed
+  cleanup/expiry values, and timestamps. Do not rely on the hash or raw
+  delimiter joins to repair an aliased idempotency key.
 - Database row, table, and advisory locks are exceptions, not reusable
   architecture. Require explicit human approval and document the protected
   invariant, evidence, bounded critical section, and removal condition.
@@ -68,6 +71,10 @@ rg --files packages/tests packages/shared packages/shared-web packages/shared-se
 - Recompute the complete canonical operation projection from the validated
   command, read set, and immutable facts and require exact equality before the
   first write. Common shape and identity checks are necessary but insufficient.
+- Snapshot assemblers capture one observation time and intersect optimistic
+  summary sessions with latest group active/unexpired policy, active membership,
+  and connected/unexpired session state. Terminal or expired groups retain their
+  causal tuple but report no live presence.
 
 ## Shape Decision
 

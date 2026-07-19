@@ -1199,6 +1199,45 @@ facts and requires exact equality before the first write. Shape-valid but
 operation-invalid guards, dependent rows, events, receipts, or outbox intents
 cannot pass merely because their common identities agree.
 
+## 13. Replay-Probe, Maintenance-Key, And Snapshot-Policy Correction
+
+A later fresh review found three gaps in the section 12 implementation:
+
+- semantic hashing preceded generated defaults, but random join-code/event and
+  verifier materialization still happened before the ledger read, so sequential
+  replay and conflicting key reuse depended on volatile callbacks;
+- maintenance IDs included selected timestamps rather than the complete hashed
+  semantic command, allowing different principal, heartbeat, or observed-expiry
+  projections to alias one request key; and
+- snapshot assembly trusted a stale live presence summary after the latest group
+  had become archived, deleted, or logically expired.
+
+The corrected execution order is explicit: validate and hash the semantic
+command, reverify authority, read the full mutation surface, and run a pure
+validated idempotency probe. A matching replay returns the stored receipt and a
+hash conflict fails without invoking random, clock-default, join-code verifier,
+or other volatile fact callbacks. Only a ledger miss captures one immutable
+fact set. That same set is reused across every CAS retry; if another contender
+wins, the next fresh read replays the winner without replacing the contender's
+facts or generating another set.
+
+Expiry and socket-cleanup request IDs now use a versioned domain prefix plus
+canonical JSON of the complete semantic command projection. Operation, full
+application/workspace/group scope, principal, session, generation ID/version,
+observed expiry, disconnect time, heartbeat, expiry, and fixed maintenance
+actor/reason fields are therefore unambiguous. Raw delimiter concatenation is
+not an acceptable substitute. Exact duplicates still share one terminal
+event/outbox; any changed hashed observation receives a distinct key and can
+rebase or no-op against the latest session.
+
+Finally, the shared `GroupStateRepository` snapshot assembler captures one
+observation time and intersects summary liveness with current policy. A session
+is live only while the latest group is active and unexpired, its member is
+active, and the summarized session is connected and unexpired. `readSnapshot`,
+`listSnapshots`, and `listSnapshotsPage` preserve the latest group revision and
+summary presence revision while reporting zero active sessions/online members
+for archived, deleted, or expired groups, even before summary convergence drains.
+
 ## Suggested First Proofs
 
 1. Multi-workspace isolation test: prove whether state snapshots from workspace A reach a browser connected to workspace

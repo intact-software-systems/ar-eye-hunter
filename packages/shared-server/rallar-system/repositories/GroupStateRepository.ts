@@ -607,6 +607,10 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
         summaryOrSessions: GroupPresenceSummary | readonly GroupPresenceSession[] | undefined,
         groupRevision: number,
     ): GroupSnapshot {
+        const observedAtEpochMs = Date.now();
+        const groupAllowsLivePresence = group.status === 'active' &&
+            (group.expiresAtEpochMs === undefined ||
+                group.expiresAtEpochMs > observedAtEpochMs);
         const activeMemberIds = new Set(
             members.filter((member) => member.status === 'active')
                 .map((member) => member.principalId),
@@ -619,8 +623,10 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
             : Array.isArray(summaryOrSessions)
             ? summaryOrSessions as readonly GroupPresenceSession[]
             : [];
-        const activeSessions = this.toActiveSessions(sourceSessions)
-            .filter((session) => activeMemberIds.has(session.principalId));
+        const activeSessions = groupAllowsLivePresence
+            ? this.toActiveSessions(sourceSessions, observedAtEpochMs)
+                .filter((session) => activeMemberIds.has(session.principalId))
+            : [];
         const presenceRevision = summary?.causalRevision.presenceRevision ?? 0;
         const causalRevision = { groupRevision, presenceRevision };
         const activePrincipals = new Set(
@@ -659,11 +665,15 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
 
     private toActiveSessions(
         sessions: readonly GroupPresenceSession[],
+        observedAtEpochMs: number,
     ): readonly GroupPresenceSession[] {
         return sessions.filter(
             (session) =>
                 session.disconnectedAtEpochMs === undefined &&
-                isLogicallyActiveSession(session.expiresAtEpochMs),
+                isLogicallyActiveSession(
+                    session.expiresAtEpochMs,
+                    observedAtEpochMs,
+                ),
         );
     }
 

@@ -3,6 +3,7 @@ import type { GroupRef } from "@shared/api/group-types.ts";
 import type { StateScope } from "@shared/api/state-types.ts";
 import { GroupStateRepository } from "@shared-server/rallar-system/repositories/GroupStateRepository.ts";
 import { STATE_MUTATION_OUTBOX_NAMESPACE } from "@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts";
+import { groupStateMaintenanceRequestId } from "@shared-server/rallar-system/services/group-state-service.ts";
 import {
   createTestGroupStateRuntime,
   createTestGroupStateService as createGroupStateService,
@@ -512,17 +513,24 @@ describe("GroupStateService command idempotency", () => {
     });
 
     const repository = new GroupStateRepository(runtimeRepository);
-    const expiryRequestId = [
-      "expire-group-presence",
-      SCOPE.applicationId,
-      SCOPE.workspaceId,
-      groupRef.groupId,
-      "session-1",
-      "generation-session-1",
-      2_000,
-      expiresAtEpochMs,
-      now,
-    ].join(":");
+    const expiryRequestId = groupStateMaintenanceRequestId("expiry", {
+      operation: "disconnectPresence",
+      aggregateRef: groupRef,
+      sessionId: "session-1",
+      input: {
+        principalId: "alice",
+        generationId: "generation-session-1",
+        generationVersion: 2_000,
+        observedExpiresAtEpochMs: expiresAtEpochMs,
+        disconnectedAtEpochMs: now,
+        lastHeartbeatAtEpochMs: expiresAtEpochMs - 1_000,
+        expiresAtEpochMs,
+        actorPrincipalId: null,
+        actorSessionId: null,
+        reason: "expired",
+        traceId: null,
+      },
+    });
     expect(
       await repository.findIdempotentGroupMutationReceipt(
         groupRef,

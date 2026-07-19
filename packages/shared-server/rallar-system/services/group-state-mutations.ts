@@ -337,6 +337,15 @@ export type GroupMutationComputed =
         outbox: GroupMutationOutboxCandidate;
     }>;
 
+export type GroupMutationIdempotencyProbe =
+    | Readonly<{ outcome: 'miss' }>
+    | Readonly<{ outcome: 'replay'; receipt: GroupMutationReceipt }>
+    | Readonly<{
+        outcome: 'idempotency-conflict';
+        existingCommandHash: string;
+        receivedCommandHash: string;
+    }>;
+
 export class GroupMutationRejectedError extends Error {
     readonly status = 400;
     readonly code = 'group-mutation-rejected';
@@ -602,15 +611,12 @@ export function computeGroupMutation(input: Readonly<{
     validateGroupMutationRead(read, command);
     validateFacts(facts);
     validateTrustedAuthorityMode(command, facts);
-    if (read.idempotency) {
-        return read.idempotency.value.commandHash === facts.commandHash
-            ? { outcome: 'replay', receipt: read.idempotency.value.receipt }
-            : {
-                outcome: 'idempotency-conflict',
-                existingCommandHash: read.idempotency.value.commandHash,
-                receivedCommandHash: facts.commandHash,
-            };
-    }
+    const idempotency = probeGroupMutationIdempotency(
+        command,
+        read,
+        facts.commandHash,
+    );
+    if (idempotency.outcome !== 'miss') return idempotency;
 
     switch (command.operation) {
         case 'createGroup':
@@ -644,6 +650,30 @@ export function computeGroupMutation(input: Readonly<{
         case 'disconnectPresence':
             return computeDisconnectPresence(command, read, facts);
     }
+}
+
+export function probeGroupMutationIdempotency(
+    command: GroupMutationCommand,
+    read: GroupMutationRead,
+    commandHash: string,
+): GroupMutationIdempotencyProbe {
+    validateGroupMutationCommand(command);
+    validateGroupMutationRead(read, command);
+    validateCommandHash(commandHash, 'Group mutation commandHash');
+    if (!read.idempotency) return { outcome: 'miss' };
+    const record = read.idempotency.value;
+    if (record.receipt.commandId !== command.commandId) {
+        throw new TypeError(
+            'Stored group idempotency receipt command differs from command identity',
+        );
+    }
+    return record.commandHash === commandHash
+        ? { outcome: 'replay', receipt: record.receipt }
+        : {
+            outcome: 'idempotency-conflict',
+            existingCommandHash: record.commandHash,
+            receivedCommandHash: commandHash,
+        };
 }
 
 export function validateGroupMutation(input: Readonly<{

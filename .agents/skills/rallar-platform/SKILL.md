@@ -67,13 +67,15 @@ rg --files packages/shared packages/shared-web packages/shared-server packages/s
   Never retry only the final write of a stale decision.
 - Hash semantic caller intent before volatile server defaults. Represent
   omission as a mandatory nullable command field, capture random/time material
-  once in immutable mandatory facts, consult the idempotency record before
-  using those facts, and reuse them unchanged across every CAS retry. A replay
-  returns the winning receipt rather than regenerating defaults.
-- Build maintenance request identity from the full semantic observation. Scope,
-  session/generation fences, observed predecessor values, and variable cleanup
-  or expiry timestamps that affect the command hash must also distinguish its
-  idempotency key.
+  once in immutable mandatory facts only after a validated ledger miss, and
+  reuse them unchanged across every CAS retry. Matching replay and conflicting
+  key reuse must not call random, clock-default, verifier, or other volatile
+  materialization; a replay returns the winning receipt directly.
+- Build maintenance request identity as a collision-safe canonical projection
+  of the full semantic command. Operation, scope, principal/session/generation
+  fences, observed predecessor values, and every cleanup or expiry timestamp
+  must distinguish its idempotency key; exclude only the command/request identity
+  being derived. Raw delimiter joins are not sufficient.
 - Treat stale observations as rebase-or-ignore outcomes, duplicates as no-ops,
   and equal causal revisions with different content as invariant corruption.
 - Database row, table, and advisory locks are not the default. Do not extend an
@@ -90,6 +92,10 @@ rg --files packages/shared packages/shared-web packages/shared-server packages/s
   validated command, read set, and immutable facts, then compare it exactly to
   the proposed guards, dependent rows, events, receipt, and outbox intent.
   Structural validation does not prove an operation is the one requested.
+- Assemble snapshots at one observation time and intersect optimistic summary
+  liveness with the latest group status and expiry, active membership, and
+  connected/unexpired sessions. Archived, deleted, and expired groups expose
+  zero live presence without discarding the summary's causal revision.
 
 ## Validation
 

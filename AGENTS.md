@@ -45,11 +45,16 @@ the repo-local Codex plugin under `.agents/skills/**`.
   lifecycle, and invariant checks. Never retry only a stale final write.
 - Preserve caller omission as explicit `null` in the semantic command and hash
   that intent before applying server clock or random defaults. Capture any
-  volatile candidate once in mandatory immutable facts, consult idempotency
-  before using it, and never regenerate it during compare-and-set retries.
-- Internal maintenance command/request identity must include every variable
-  semantic observation, including cleanup and expiry timestamps. A payload hash
-  does not make an incomplete idempotency key safe.
+  volatile candidate once in mandatory immutable facts only after a validated
+  ledger miss, and never regenerate it during compare-and-set retries. Matching
+  replays and conflicting key reuse must return or fail without invoking random,
+  clock-default, verifier, or other volatile materialization callbacks.
+- Internal maintenance command/request identity must be a collision-safe
+  canonical projection of every semantic field other than the derived
+  command/request identity itself: operation, full scope,
+  principal/session/generation fences, observed predecessor values, and all
+  cleanup or expiry timestamps. A payload hash does not make an incomplete or
+  raw-delimiter-joined idempotency key safe.
 - Authoritative user-write authentication dependencies are mandatory and fail
   closed; do not add optional authority repositories, missing-authority
   fallbacks, or production overloads shaped only for tests.
@@ -71,6 +76,11 @@ the repo-local Codex plugin under `.agents/skills/**`.
 - Validate the complete operation-specific candidate by canonical deterministic
   recomputation and exact comparison, including guards, dependent rows, events,
   receipts, and outbox intents. Shared shape checks alone are insufficient.
+- Snapshot assemblers must treat optimistic presence summaries as hints. At one
+  captured observation time, intersect summary sessions with the latest group
+  being active and unexpired, current active membership, and connected,
+  unexpired session state. Preserve causal revisions while reporting zero live
+  presence for archived, deleted, or expired groups.
 
 ## Validation
 

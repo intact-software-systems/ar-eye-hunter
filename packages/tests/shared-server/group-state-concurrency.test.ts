@@ -1,11 +1,13 @@
 import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 import type {
+    Group,
     GroupMember,
     GroupPresenceAdmission,
     GroupPresenceSession,
     GroupPresenceSummary,
     GroupRef,
 } from '@shared/api/group-types.ts';
+import { toGroupSnapshotStateRevision } from '@shared/api/group-client-views.ts';
 import type {
     ConnectGroupPresenceSessionRequest,
     HeartbeatGroupPresenceSessionRequest,
@@ -123,6 +125,90 @@ describe('convergent group and presence state', () => {
         })).toBe(`${groupKey}:principal=p%3Aa`);
         expect(groupStateIdempotencyStorageKey(ref, 'r/a'))
             .toBe(`${groupKey}:request=r%2Fa`);
+    });
+
+    it('builds collision-safe maintenance identities from the complete semantic command', async () => {
+        const module = await import(
+            '@shared-server/rallar-system/services/group-state-service.ts'
+        ) as Record<string, unknown>;
+        const requestIdFor = module.groupStateMaintenanceRequestId;
+        expect(requestIdFor).toBeTypeOf('function');
+        if (typeof requestIdFor !== 'function') return;
+
+        const command = {
+            operation: 'disconnectPresence',
+            aggregateRef: {
+                applicationId: 'app:one',
+                workspaceId: 'workspace:one',
+                groupId: 'group:one',
+            },
+            sessionId: 'session:one',
+            input: {
+                principalId: 'principal:one',
+                generationId: 'generation:one',
+                generationVersion: 2_000,
+                observedExpiresAtEpochMs: 9_000,
+                disconnectedAtEpochMs: 10_000,
+                lastHeartbeatAtEpochMs: 8_000,
+                expiresAtEpochMs: 9_000,
+                actorPrincipalId: null,
+                actorSessionId: null,
+                reason: 'expired',
+                traceId: null,
+            },
+        } as const;
+        const variants = [
+            ['session-cleanup', command],
+            ['expiry', { ...command, aggregateRef: {
+                ...command.aggregateRef, applicationId: 'app:two',
+            } }],
+            ['expiry', { ...command, aggregateRef: {
+                ...command.aggregateRef, workspaceId: 'workspace:two',
+            } }],
+            ['expiry', { ...command, aggregateRef: {
+                ...command.aggregateRef, workspaceId: undefined,
+            } }],
+            ['expiry', { ...command, aggregateRef: {
+                ...command.aggregateRef, groupId: 'group:two',
+            } }],
+            ['expiry', { ...command, sessionId: 'session:two' }],
+            ['expiry', { ...command, input: {
+                ...command.input, principalId: 'principal:two',
+            } }],
+            ['expiry', { ...command, input: {
+                ...command.input, generationId: 'generation:two',
+            } }],
+            ['expiry', { ...command, input: {
+                ...command.input, generationVersion: 2_001,
+            } }],
+            ['expiry', { ...command, input: {
+                ...command.input, observedExpiresAtEpochMs: 9_001,
+            } }],
+            ['expiry', { ...command, input: {
+                ...command.input, disconnectedAtEpochMs: 10_001,
+            } }],
+            ['expiry', { ...command, input: {
+                ...command.input, lastHeartbeatAtEpochMs: 8_001,
+            } }],
+            ['expiry', { ...command, input: {
+                ...command.input, expiresAtEpochMs: 9_001,
+            } }],
+        ] as const;
+        const requestIds = [
+            requestIdFor('expiry', command),
+            ...variants.map(([kind, variant]) => requestIdFor(kind, variant)),
+        ];
+
+        expect(new Set(requestIds).size).toBe(requestIds.length);
+        expect(requestIdFor('expiry', {
+            ...command,
+            aggregateRef: { ...command.aggregateRef, groupId: 'a:b' },
+            sessionId: 'c',
+        })).not.toBe(requestIdFor('expiry', {
+            ...command,
+            aggregateRef: { ...command.aggregateRef, groupId: 'a' },
+            sessionId: 'b:c',
+        }));
     });
 
     it('re-authorizes group mutation actors from the current retry read', async () => {
@@ -1236,7 +1322,13 @@ describe('convergent group and presence state', () => {
 
         expect(results.every((result) => result.status === 'fulfilled')).toBe(true);
         const snapshot = await requireSnapshot(runtime, 'metadata-code-room');
-        expect(snapshot.group.metadata).toEqual({ map: 'fjord' });
+        expect(snapshot.group.metadata).toMatchObject({
+            map: 'fjord',
+            rallarJoinCode: {
+                version: 1,
+                verifier: expect.stringMatching(/^[0-9a-f]{64}$/),
+            },
+        });
         expect(snapshot.group.snapshotVersion).toBe(3);
         expect(JSON.stringify(snapshot.group)).not.toContain('fjord-code');
         expect(await outboxFor(runtime, 'update-metadata-race')).toHaveLength(1);
@@ -1268,13 +1360,19 @@ describe('convergent group and presence state', () => {
             await seedOpenGroup(runtime, groupId);
             let nowEpochMs = BASE_EPOCH_MS + 2_000;
             let randomCalls = 0;
+            let rejectVolatileMaterialization = false;
             const requestId = `default-code-${index}`;
             const service = createService(
                 runtime,
                 () => nowEpochMs,
                 undefined,
                 undefined,
-                () => `generated-${index}-${++randomCalls}`,
+                () => {
+                    if (rejectVolatileMaterialization) {
+                        throw new Error('replay invoked random materialization');
+                    }
+                    return `generated-${index}-${++randomCalls}`;
+                },
             );
             const request = {
                 ...testCase.request,
@@ -1287,7 +1385,9 @@ describe('convergent group and presence state', () => {
                 groupId,
                 request,
             ));
+            const firstRandomCalls = randomCalls;
             nowEpochMs = BASE_EPOCH_MS + 8_000;
+            rejectVolatileMaterialization = true;
             const replay = requireJoinCodeResult(await service.rotateGroupJoinCode(
                 SCOPE,
                 groupId,
@@ -1295,7 +1395,8 @@ describe('convergent group and presence state', () => {
             ));
 
             expect(replay, testCase.label).toEqual(first);
-            expect(randomCalls, testCase.label).toBe(testCase.generatedCode ? 4 : 2);
+            expect(randomCalls, testCase.label).toBe(firstRandomCalls);
+            expect(firstRandomCalls, testCase.label).toBe(testCase.generatedCode ? 2 : 1);
             const repository = new GroupStateRepository(runtime);
             const idempotency = await repository.findIdempotentGroupMutationReceipt(
                 groupRef(groupId),
@@ -1316,13 +1417,28 @@ describe('convergent group and presence state', () => {
     it('treats explicit and omitted join-code intent as different semantics', async () => {
         const runtime = new GroupBarrierRepository();
         await seedOpenGroup(runtime, 'semantic-code-room');
-        const service = createService(runtime, BASE_EPOCH_MS + 2_000);
+        let randomCalls = 0;
+        let rejectVolatileMaterialization = false;
+        const service = createService(
+            runtime,
+            BASE_EPOCH_MS + 2_000,
+            undefined,
+            undefined,
+            () => {
+                if (rejectVolatileMaterialization) {
+                    throw new Error('conflict invoked random materialization');
+                }
+                return `semantic-code-${++randomCalls}`;
+            },
+        );
         const requestId = 'semantic-code-request';
         const winner = requireJoinCodeResult(await service.rotateGroupJoinCode(
             SCOPE,
             'semantic-code-room',
             { actorPrincipalId: 'alice', requestId },
         ));
+        const winnerRandomCalls = randomCalls;
+        rejectVolatileMaterialization = true;
 
         await expect(service.rotateGroupJoinCode(
             SCOPE,
@@ -1334,6 +1450,7 @@ describe('convergent group and presence state', () => {
                 requestId,
             },
         )).rejects.toBeInstanceOf(GroupMutationIdempotencyConflictError);
+        expect(randomCalls).toBe(winnerRandomCalls);
         await expect(service.rotateGroupJoinCode(
             SCOPE,
             'semantic-code-room',
@@ -1343,6 +1460,7 @@ describe('convergent group and presence state', () => {
                 requestId,
             },
         )).rejects.toBeInstanceOf(GroupMutationIdempotencyConflictError);
+        expect(randomCalls).toBe(winnerRandomCalls);
     });
 
     it('converges concurrent omitted join-code rotations on the winning receipt', async () => {
@@ -1870,6 +1988,103 @@ describe('convergent group and presence state', () => {
             activePrincipalIds: [],
             activeSessionIds: [],
         });
+    });
+
+    it('intersects stale live summaries with latest group lifecycle in every snapshot API', async () => {
+        const runtime = new GroupBarrierRepository();
+        const repository = new GroupStateRepository(runtime);
+        const observedAtEpochMs = Date.now();
+        const cases = [
+            { groupId: 'stale-summary-archived', status: 'archived' as const },
+            { groupId: 'stale-summary-deleted', status: 'deleted' as const },
+            { groupId: 'stale-summary-expired', status: 'expired' as const },
+        ];
+        const expectedPresenceRevisions = new Map<string, number>();
+
+        for (const [index, testCase] of cases.entries()) {
+            await seedOpenGroup(runtime, testCase.groupId);
+            const ref = groupRef(testCase.groupId);
+            const stored = await repository.findGroupEntry(ref);
+            const summary = await repository.findPresenceSummaryEntry(ref);
+            if (!stored || !summary) throw new Error('Missing seeded snapshot state');
+            const presenceRevision = 10 + index;
+            const activeSession: GroupPresenceSession = {
+                ...ref,
+                sessionId: `session-${testCase.groupId}`,
+                principalId: 'alice',
+                generationId: `generation-${testCase.groupId}`,
+                generationVersion: observedAtEpochMs - 5_000,
+                connectedAtEpochMs: observedAtEpochMs - 5_000,
+                lastHeartbeatAtEpochMs: observedAtEpochMs - 1_000,
+                expiresAtEpochMs: observedAtEpochMs + 60_000,
+            };
+            expect(await repository.updatePresenceSummary({
+                ...ref,
+                causalRevision: { groupRevision: 1, presenceRevision },
+                activePrincipalIds: ['alice'],
+                activeSessionIds: [activeSession.sessionId],
+                activeSessions: [activeSession],
+                activePrincipalCount: 1,
+                activeSessionCount: 1,
+                computedAtEpochMs: observedAtEpochMs - 500,
+            }, summary.entry.revision)).toMatchObject({ status: 'applied' });
+            const lifecycleAudit = {
+                atEpochMs: observedAtEpochMs - 1_000,
+                byPrincipalId: 'alice',
+                requestId: `lifecycle-${testCase.groupId}`,
+            };
+            const group: Group = testCase.status === 'archived'
+                ? {
+                    ...stored.value,
+                    status: 'archived',
+                    archived: lifecycleAudit,
+                    updated: lifecycleAudit,
+                }
+                : testCase.status === 'deleted'
+                ? {
+                    ...stored.value,
+                    status: 'deleted',
+                    deleted: lifecycleAudit,
+                    updated: lifecycleAudit,
+                }
+                : {
+                    ...stored.value,
+                    expiresAtEpochMs: observedAtEpochMs - 1,
+                    updated: lifecycleAudit,
+                };
+            expect(await repository.updateGroup(group, stored.entry.revision))
+                .toMatchObject({ status: 'applied' });
+            expectedPresenceRevisions.set(testCase.groupId, presenceRevision);
+        }
+
+        const direct = (await Promise.all(
+            cases.map(({ groupId }) => repository.readSnapshot(groupRef(groupId))),
+        )).filter((snapshot): snapshot is NonNullable<typeof snapshot> =>
+            snapshot !== undefined
+        );
+        const listed = await repository.listSnapshots(SCOPE);
+        const paged = (await repository.listSnapshotsPage(SCOPE, { limit: 10 })).snapshots;
+
+        for (const snapshots of [direct, listed, paged]) {
+            expect(snapshots).toHaveLength(cases.length);
+            for (const snapshot of snapshots) {
+                const presenceRevision = expectedPresenceRevisions.get(
+                    snapshot.group.groupId,
+                );
+                expect(presenceRevision).toBeDefined();
+                expect(snapshot.activeSessions).toEqual([]);
+                expect(snapshot.onlineMemberCount).toBe(0);
+                expect(snapshot.causalRevision).toEqual({
+                    groupRevision: 2,
+                    presenceRevision,
+                });
+                expect(snapshot.stateRevision).toBe(toGroupSnapshotStateRevision(
+                    2,
+                    presenceRevision!,
+                ));
+                expect(snapshot.group.presenceVersion).toBe(presenceRevision);
+            }
+        }
     });
 
     it.each([

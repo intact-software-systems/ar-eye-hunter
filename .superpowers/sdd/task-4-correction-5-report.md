@@ -1,5 +1,15 @@
 # Task 4 fifth fresh-review correction report
 
+> Historical limitation, superseded by correction 6: the implementation in
+> this checkpoint hashed caller intent correctly, but still resolved the random
+> join code, event ID, and verifier before reading the idempotency ledger. A
+> sequential replay therefore still depended on volatile callbacks despite the
+> claims below. Maintenance IDs also covered the newly added timestamps but not
+> the complete hashed semantic command (notably principal/heartbeat for expiry
+> and principal/observed expiry for cleanup). Correction 6 moves replay/conflict
+> resolution ahead of all volatile fact materialization and derives maintenance
+> identity from a collision-safe canonical projection of every semantic field.
+
 ## Scope
 
 This correction is limited to API-v1 group/member/presence mutation semantics,

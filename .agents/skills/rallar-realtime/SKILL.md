@@ -42,10 +42,11 @@ rg -n "GroupRef|groupRef|groupId|roomId|createAndSwitch|createAndJoin|joinRoom|w
   on every retry. Never reuse a decision derived from a predecessor that lost
   its compare-and-set race.
 - Preserve omitted public random/time inputs as mandatory `null` command fields
-  when hashing idempotent intent. Materialize volatile candidates once in
-  immutable facts, check the ledger before applying defaults, and keep the
-  winning code, expiry, verifier, receipt, and metadata unchanged across retry
-  and replay.
+  when hashing idempotent intent. After hashing, validate the ledger before any
+  random, clock-default, verifier, or other volatile materialization. Only a
+  ledger miss may capture immutable facts; matching replay and conflicting key
+  reuse invoke no volatile callbacks. Keep the winning code, expiry, verifier,
+  receipt, and metadata unchanged across retry and replay.
 - Group user mutations fail closed: the durable service requires a real issued
   auth session or exact command-bound proof. Never add an optional authority
   repository, missing-authority fallback, legacy payload bypass, or test-shaped
@@ -54,14 +55,20 @@ rg -n "GroupRef|groupRef|groupId|roomId|createAndSwitch|createAndJoin|joinRoom|w
   expiry or socket-cleanup methods to `GroupStateService`, middleware runtime,
   or `AppGroupInboxService`; do not accept caller-supplied maintenance actor,
   reason, or bypass flags. Derive cleanup identity from the persisted session.
-  Include every variable observation timestamp in the maintenance command and
-  request identity so different scans rebase/no-op instead of colliding under
+  Derive a collision-safe request identity from the complete semantic command,
+  including operation, full scope, principal/session/generation identity,
+  observed predecessor values, and every timestamp; exclude only the
+  command/request identity being derived. Do not use raw delimiter
+  concatenation. Different scans then rebase/no-op instead of colliding under
   one incomplete idempotency key.
 - Presence summaries are optimistic materialized views, not authority. Compute
   them from entry-aware group/member/admission/session reads, validate their
   exact persisted shapes, CAS the exact summary predecessor, and exclude
   sessions whose member is no longer active even if a stale session row remains
-  live. Newer source mutations enqueue follow-up convergence work.
+  live. Snapshot assembly captures one observation time and also intersects the
+  summary with current group status/expiry: archived, deleted, or expired groups
+  report zero active sessions and online members while preserving causal
+  revisions. Newer source mutations enqueue follow-up convergence work.
 - Treat storage-key/value/command relationships as part of those persisted
   shapes. A shape-valid row in the wrong actor, target, owner, director,
   principal-admission, session, summary, or idempotency slot is corruption and
