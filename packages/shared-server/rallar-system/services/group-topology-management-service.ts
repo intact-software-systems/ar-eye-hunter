@@ -48,6 +48,9 @@ import {
     validateTopologyConfigMutationIdempotency,
 } from './group-topology-config-mutations.ts';
 import {
+    backfillGroupTopologyConfigGenerationsForRef,
+} from './group-topology-config-generation-backfill.ts';
+import {
     DEFAULT_RUNTIME_STATE_WRITE_ATTEMPTS,
     RuntimeStateRetryExhaustedError,
     RuntimeStateWriteConflictError,
@@ -181,6 +184,11 @@ export type ReconcileGroupTopologyResult = Readonly<{
 }>;
 
 export class GroupTopologyManagementService {
+    private readonly topologyConfigGenerationReadiness = new Map<
+        string,
+        Promise<void>
+    >();
+
     constructor(private readonly options: GroupTopologyManagementServiceOptions) {}
 
     recordTopologyPublication(published: boolean): void {
@@ -206,11 +214,7 @@ export class GroupTopologyManagementService {
     }
 
     async readConfig(groupRef: GroupRef): Promise<GroupTopologyConfigView> {
-        return resolveGroupTopologyConfig({
-            serverOptions: this.options.serverDefaults,
-            durable: await this.options.configRepository?.findConfig(groupRef),
-            temporary: await this.options.configRepository?.findOverride(groupRef),
-        });
+        return await this.readResolvedTopologyConfig(groupRef);
     }
 
     async putConfig(
@@ -258,6 +262,7 @@ export class GroupTopologyManagementService {
     async readOverride(
         groupRef: GroupRef,
     ): Promise<StoredGroupTopologyOverride | undefined> {
+        await this.ensureTopologyConfigGenerationReady(groupRef);
         return await this.options.configRepository?.findOverride(groupRef);
     }
 
@@ -313,6 +318,7 @@ export class GroupTopologyManagementService {
         override?: StoredGroupTopologyOverride;
     }>> {
         const repository = this.requireConfigRepository();
+        await this.ensureTopologyConfigGenerationReady(command.aggregateRef);
         const commandHash = await hashStateMutationCommand(command);
         const authorityFacts = {
             isPlatformAdmin: this.options.adminPrincipalIds?.has(
@@ -505,12 +511,10 @@ export class GroupTopologyManagementService {
             throw new Error(`Group snapshot not found: ${input.groupRef.groupId}`);
         }
 
-        const config = resolveGroupTopologyConfig({
-            serverOptions: this.options.serverDefaults,
-            durable: await this.options.configRepository?.findConfig(input.groupRef),
-            temporary: await this.options.configRepository?.findOverride(input.groupRef),
-            requestOptions: input.requestOptions,
-        });
+        const config = await this.readResolvedTopologyConfig(
+            input.groupRef,
+            input.requestOptions,
+        );
         const rttMeasurements = await this.readRawRttMeasurements(group);
         const committed = this.options.topologySnapshotRepository
             ? await (async () => {
@@ -919,6 +923,56 @@ export class GroupTopologyManagementService {
         return this.options.configRepository;
     }
 
+    private async readResolvedTopologyConfig(
+        groupRef: GroupRef,
+        requestOptions?: GroupTopologyConfigPatch,
+    ): Promise<GroupTopologyConfigView> {
+        const repository = this.options.configRepository;
+        if (!repository) {
+            return resolveGroupTopologyConfig({
+                serverOptions: this.options.serverDefaults,
+                requestOptions,
+            });
+        }
+        await this.ensureTopologyConfigGenerationReady(groupRef);
+        const { config, override } = await readConsistentTopologyConfigPair(
+            repository,
+            groupRef,
+            this.options.sleep,
+        );
+        return resolveGroupTopologyConfig({
+            serverOptions: this.options.serverDefaults,
+            durable: config?.value,
+            temporary: override?.value,
+            requestOptions,
+        });
+    }
+
+    private async ensureTopologyConfigGenerationReady(
+        groupRef: GroupRef,
+    ): Promise<void> {
+        const repository = this.options.configRepository;
+        if (!repository) return;
+        const key = toScopedOverlayId(groupRef);
+        let readiness = this.topologyConfigGenerationReadiness.get(key);
+        if (!readiness) {
+            readiness = backfillGroupTopologyConfigGenerationsForRef(
+                repository,
+                groupRef,
+                { sleep: this.options.sleep },
+            ).then(() => undefined);
+            this.topologyConfigGenerationReadiness.set(key, readiness);
+        }
+        try {
+            await readiness;
+        } catch (error) {
+            if (this.topologyConfigGenerationReadiness.get(key) === readiness) {
+                this.topologyConfigGenerationReadiness.delete(key);
+            }
+            throw error;
+        }
+    }
+
     private recordConfigMutationPhase(
         command: GroupTopologyConfigMutationCommand,
         phase: 'read' | 'compute' | 'validate' | 'transaction' | 'write',
@@ -1019,6 +1073,33 @@ async function readTopologyConfigMutation(
         idempotency: idempotency ?? null,
         groupSnapshot,
     };
+}
+
+async function readConsistentTopologyConfigPair(
+    repository: GroupTopologyConfigRepository,
+    groupRef: GroupRef,
+    sleep?: (delayMs: number) => Promise<void>,
+): Promise<Readonly<{
+    config: Awaited<ReturnType<GroupTopologyConfigRepository['findConfigEntry']>>;
+    override: Awaited<ReturnType<GroupTopologyConfigRepository['findOverrideEntry']>>;
+}>> {
+    let lastConflict: RuntimeStateWriteConflictError | undefined;
+    for (let attempt = 0; attempt < DEFAULT_RUNTIME_STATE_WRITE_ATTEMPTS; attempt += 1) {
+        await waitForRuntimeStateWriteRetry(attempt as 0 | 1 | 2, { sleep });
+        const invariantBefore = await repository.findInvariantGenerationEntry(groupRef);
+        const [config, override] = await Promise.all([
+            repository.findConfigEntry(groupRef),
+            repository.findOverrideEntry(groupRef),
+        ]);
+        const invariantAfter = await repository.findInvariantGenerationEntry(groupRef);
+        if (sameTopologyInvariantGeneration(invariantBefore, invariantAfter)) {
+            return { config, override };
+        }
+        lastConflict = new RuntimeStateWriteConflictError();
+    }
+    throw new RuntimeStateRetryExhaustedError(
+        lastConflict ?? new RuntimeStateWriteConflictError(),
+    );
 }
 
 function sameTopologyInvariantGeneration(

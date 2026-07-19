@@ -45,7 +45,6 @@ export type GroupTopologyConfigMutationRecord = Readonly<{
     requestId: string;
     commandHash: string;
     receipt: GroupTopologyConfigMutationReceipt;
-    result: GroupTopologyConfigMutationAcceptedResult;
 }>;
 
 export type GroupTopologyConfigMutationAcceptedResult =
@@ -260,13 +259,23 @@ export function probeTopologyConfigMutationIdempotency(
         groupRef: command.aggregateRef,
         requestId: command.requestId!,
     });
-    return record.commandHash === commandHash
-        ? { outcome: 'replay', receipt: record.receipt, result: record.result }
-        : {
+    if (record.commandHash !== commandHash) {
+        return {
             outcome: 'idempotency-conflict',
             existingCommandHash: record.commandHash,
             receivedCommandHash: commandHash,
         };
+    }
+    if (record.receipt.operation !== command.operation) {
+        throw new TypeError(
+            'Topology config receipt operation differs from command',
+        );
+    }
+    return {
+        outcome: 'replay',
+        receipt: record.receipt,
+        result: resultFromTopologyConfigReceipt(command, record.receipt),
+    };
 }
 
 export function validateTopologyConfigMutationIdempotency(
@@ -411,6 +420,9 @@ function computeDelete(
                 generation?.value.version ?? 0,
             ),
             acceptedStorageRevision: current?.entry.revision ?? null,
+            acceptedCreatedAtEpochMs: null,
+            acceptedUpdatedAtEpochMs: null,
+            acceptedExpiresAtEpochMs: null,
             outboxId: null,
         });
         const result = { kind: 'delete', deleted: false } as const;
@@ -421,7 +433,7 @@ function computeDelete(
             outcome: 'claim',
             receipt,
             result,
-            idempotency: recordFor(input.command, input.facts, receipt, result)!,
+            idempotency: recordFor(input.command, input.facts, receipt)!,
         };
     }
     resolveGroupTopologyConfig({
@@ -469,11 +481,18 @@ function writeResult(
         effects: ['rtc-topology-recompute'],
         event: { kind: 'none' },
     };
+    const acceptedValue = guard.operation === 'delete' ? null : guard.value;
     const receipt = receiptFor(input.command, input.facts, {
         target: guard.target,
         outcome: 'applied',
         acceptedVersion,
         acceptedStorageRevision,
+        acceptedCreatedAtEpochMs: acceptedValue?.createdAtEpochMs ?? null,
+        acceptedUpdatedAtEpochMs: acceptedValue?.updatedAtEpochMs ?? null,
+        acceptedExpiresAtEpochMs: guard.operation !== 'delete' &&
+                guard.target === 'override'
+            ? guard.value.expiresAtEpochMs
+            : null,
         outboxId: toStateMutationOutboxId(outbox),
     });
     const result: GroupTopologyConfigMutationAcceptedResult =
@@ -501,7 +520,7 @@ function writeResult(
             },
         },
         receipt,
-        idempotency: recordFor(input.command, input.facts, receipt, result),
+        idempotency: recordFor(input.command, input.facts, receipt),
         outbox,
         result,
     };
@@ -523,6 +542,9 @@ function receiptFor(
         | 'outcome'
         | 'acceptedVersion'
         | 'acceptedStorageRevision'
+        | 'acceptedCreatedAtEpochMs'
+        | 'acceptedUpdatedAtEpochMs'
+        | 'acceptedExpiresAtEpochMs'
         | 'outboxId'
     >,
 ): GroupTopologyConfigMutationReceipt {
@@ -535,6 +557,9 @@ function receiptFor(
         target: input.target,
         acceptedVersion: input.acceptedVersion,
         acceptedStorageRevision: input.acceptedStorageRevision,
+        acceptedCreatedAtEpochMs: input.acceptedCreatedAtEpochMs,
+        acceptedUpdatedAtEpochMs: input.acceptedUpdatedAtEpochMs,
+        acceptedExpiresAtEpochMs: input.acceptedExpiresAtEpochMs,
         outboxId: input.outboxId,
     };
 }
@@ -543,14 +568,51 @@ function recordFor(
     command: GroupTopologyConfigMutationCommand,
     facts: GroupTopologyConfigMutationFacts,
     receipt: GroupTopologyConfigMutationReceipt,
-    result: GroupTopologyConfigMutationAcceptedResult,
 ): GroupTopologyConfigMutationRecord | null {
     return command.requestId === null ? null : {
         groupRef: copyGroupRef(command.aggregateRef),
         requestId: command.requestId,
         commandHash: facts.commandHash,
         receipt,
-        result,
+    };
+}
+
+function resultFromTopologyConfigReceipt(
+    command: GroupTopologyConfigMutationCommand,
+    receipt: GroupTopologyConfigMutationReceipt,
+): GroupTopologyConfigMutationAcceptedResult {
+    if (receipt.operation === 'putConfig') {
+        return {
+            kind: 'config',
+            config: {
+                groupRef: copyGroupRef(command.aggregateRef),
+                config: normalizeGroupTopologyConfigPatch(command.input.config!),
+                version: receipt.acceptedVersion,
+                createdAtEpochMs: receipt.acceptedCreatedAtEpochMs!,
+                updatedAtEpochMs: receipt.acceptedUpdatedAtEpochMs!,
+                updatedByPrincipalId: command.input.updatedByPrincipalId,
+                requestId: command.requestId,
+            },
+        };
+    }
+    if (receipt.operation === 'putOverride') {
+        return {
+            kind: 'override',
+            override: {
+                groupRef: copyGroupRef(command.aggregateRef),
+                config: normalizeGroupTopologyConfigPatch(command.input.config!),
+                version: receipt.acceptedVersion,
+                createdAtEpochMs: receipt.acceptedCreatedAtEpochMs!,
+                updatedAtEpochMs: receipt.acceptedUpdatedAtEpochMs!,
+                updatedByPrincipalId: command.input.updatedByPrincipalId,
+                requestId: command.requestId,
+                expiresAtEpochMs: receipt.acceptedExpiresAtEpochMs!,
+            },
+        };
+    }
+    return {
+        kind: 'delete',
+        deleted: receipt.outcome === 'applied',
     };
 }
 
@@ -794,7 +856,7 @@ export function validateGroupTopologyConfigMutationRecord(
     if (!isRecord(value)) throw new TypeError('Topology config mutation record is invalid');
     validateExactKeys(
         value,
-        ['groupRef', 'requestId', 'commandHash', 'receipt', 'result'],
+        ['groupRef', 'requestId', 'commandHash', 'receipt'],
         'Topology config mutation record',
     );
     validateGroupRef(value.groupRef, 'Topology config mutation record groupRef');
@@ -809,12 +871,6 @@ export function validateGroupTopologyConfigMutationRecord(
         throw new TypeError('Topology config mutation record hash is invalid');
     }
     validateTopologyConfigReceipt(value.receipt, expected.groupRef);
-    validateTopologyConfigAcceptedResult(
-        value.result,
-        value.receipt as GroupTopologyConfigMutationReceipt,
-        expected.groupRef,
-        expected.requestId,
-    );
     if (
         (value.receipt as GroupTopologyConfigMutationReceipt).commandHash !==
             value.commandHash
@@ -831,70 +887,6 @@ export function validateGroupTopologyConfigMutationRecord(
     }
 }
 
-function validateTopologyConfigAcceptedResult(
-    value: unknown,
-    receipt: GroupTopologyConfigMutationReceipt,
-    expectedRef: GroupRef,
-    expectedRequestId: string,
-): void {
-    if (!isRecord(value)) {
-        throw new TypeError('Topology config accepted result is invalid');
-    }
-    if (value.kind === 'config') {
-        validateExactKeys(value, ['kind', 'config'], 'Topology config accepted result');
-        validateStoredGroupTopologyConfig(value.config, expectedRef);
-        if (receipt.target !== 'config' || receipt.operation !== 'putConfig') {
-            throw new TypeError('Topology config accepted result differs from receipt');
-        }
-        if (receipt.outcome !== 'applied') {
-            throw new TypeError(
-                'Topology config accepted result outcome differs from receipt',
-            );
-        }
-        if ((value.config as StoredGroupTopologyConfig).requestId !== expectedRequestId) {
-            throw new TypeError(
-                'Topology config accepted result requestId differs from record',
-            );
-        }
-        if ((value.config as StoredGroupTopologyConfig).version !== receipt.acceptedVersion) {
-            throw new TypeError('Topology config accepted result version differs from receipt');
-        }
-        return;
-    }
-    if (value.kind === 'override') {
-        validateExactKeys(value, ['kind', 'override'], 'Topology config accepted result');
-        validateStoredGroupTopologyOverride(value.override, expectedRef);
-        if (receipt.target !== 'override' || receipt.operation !== 'putOverride') {
-            throw new TypeError('Topology config accepted result differs from receipt');
-        }
-        if (receipt.outcome !== 'applied') {
-            throw new TypeError(
-                'Topology config accepted result outcome differs from receipt',
-            );
-        }
-        if ((value.override as StoredGroupTopologyOverride).requestId !== expectedRequestId) {
-            throw new TypeError(
-                'Topology config accepted result requestId differs from record',
-            );
-        }
-        if ((value.override as StoredGroupTopologyOverride).version !== receipt.acceptedVersion) {
-            throw new TypeError('Topology config accepted result version differs from receipt');
-        }
-        return;
-    }
-    if (value.kind === 'delete') {
-        validateExactKeys(value, ['kind', 'deleted'], 'Topology config accepted result');
-        if (typeof value.deleted !== 'boolean' || !receipt.operation.startsWith('delete')) {
-            throw new TypeError('Topology config accepted result differs from receipt');
-        }
-        if (value.deleted !== (receipt.outcome === 'applied')) {
-            throw new TypeError('Topology config accepted delete result differs from receipt');
-        }
-        return;
-    }
-    throw new TypeError('Topology config accepted result kind is invalid');
-}
-
 function validateTopologyConfigReceipt(value: unknown, expectedRef: GroupRef): void {
     if (!isRecord(value)) throw new TypeError('Topology config receipt is invalid');
     validateExactKeys(value, [
@@ -906,6 +898,9 @@ function validateTopologyConfigReceipt(value: unknown, expectedRef: GroupRef): v
         'target',
         'acceptedVersion',
         'acceptedStorageRevision',
+        'acceptedCreatedAtEpochMs',
+        'acceptedUpdatedAtEpochMs',
+        'acceptedExpiresAtEpochMs',
         'outboxId',
     ], 'Topology config receipt');
     requireString(value.commandId, 'Topology config receipt commandId');
@@ -937,6 +932,13 @@ function validateTopologyConfigReceipt(value: unknown, expectedRef: GroupRef): v
             'Topology config accepted storage revision',
         );
     }
+    for (const [field, label] of [
+        ['acceptedCreatedAtEpochMs', 'Topology config accepted creation time'],
+        ['acceptedUpdatedAtEpochMs', 'Topology config accepted update time'],
+        ['acceptedExpiresAtEpochMs', 'Topology config accepted expiry'],
+    ] as const) {
+        if (value[field] !== null) validateStorageRevision(value[field], label);
+    }
     if (value.outboxId !== null) requireString(value.outboxId, 'Topology config outboxId');
     if ((value.outcome === 'applied') !== (value.outboxId !== null)) {
         throw new TypeError('Topology config receipt effect does not match outboxId');
@@ -957,6 +959,32 @@ function validateTopologyConfigReceipt(value: unknown, expectedRef: GroupRef): v
         value.acceptedStorageRevision !== null
     ) {
         throw new TypeError('Topology config absent no-op receipt is invalid');
+    }
+    const isPut = value.operation === 'putConfig' || value.operation === 'putOverride';
+    if (
+        isPut !==
+            (value.acceptedCreatedAtEpochMs !== null &&
+                value.acceptedUpdatedAtEpochMs !== null)
+    ) {
+        throw new TypeError('Topology config receipt timestamps do not match operation');
+    }
+    if (
+        value.acceptedCreatedAtEpochMs !== null &&
+        Number(value.acceptedUpdatedAtEpochMs) < Number(value.acceptedCreatedAtEpochMs)
+    ) {
+        throw new TypeError('Topology config receipt update precedes creation');
+    }
+    if (
+        (value.operation === 'putOverride') !==
+            (value.acceptedExpiresAtEpochMs !== null)
+    ) {
+        throw new TypeError('Topology config receipt expiry does not match operation');
+    }
+    if (
+        value.acceptedExpiresAtEpochMs !== null &&
+        Number(value.acceptedExpiresAtEpochMs) <= Number(value.acceptedUpdatedAtEpochMs)
+    ) {
+        throw new TypeError('Topology config receipt expiry does not follow update');
     }
 }
 

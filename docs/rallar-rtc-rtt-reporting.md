@@ -173,7 +173,12 @@ first-writer idempotency record when `requestId` is supplied. Every response
 includes a receipt. A retained config/override generation record keeps receipt
 versions monotonic across physical deletion and override TTL expiry. A retained
 group invariant generation serializes config and override decisions before
-either can expose an invalid effective combination. DELETE uses
+either can expose an invalid effective combination. Startup and first-access
+backfill preserve legacy config/override version floors before expiry cleanup,
+while effective reads bracket the pair with the invariant generation. The
+idempotency row stores only command identity plus the compact receipt; mandatory
+nullable receipt timestamps reconstruct accepted PUT responses on replay.
+DELETE uses
 `Idempotency-Key` on REST (or `requestId` in the shared browser options) for
 stable replay. They return after commit; outbox work performs recompute and
 publication asynchronously and can retry independently.

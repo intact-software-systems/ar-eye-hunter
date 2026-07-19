@@ -196,6 +196,22 @@ Deno.test('OpenAPI JSON includes scoped graph and topology management contracts'
     topologyOverrideRequest.properties?.expiresAtEpochMs?.description ?? '',
     /future/i,
   );
+  const topologyReceipt = json.components.schemas
+    .GroupTopologyConfigMutationReceipt;
+  assert.deepEqual(topologyReceipt.required, [
+    'commandId',
+    'commandHash',
+    'operation',
+    'outcome',
+    'groupRef',
+    'target',
+    'acceptedVersion',
+    'acceptedStorageRevision',
+    'acceptedCreatedAtEpochMs',
+    'acceptedUpdatedAtEpochMs',
+    'acceptedExpiresAtEpochMs',
+    'outboxId',
+  ]);
   assert.ok(
     json.components.schemas.ReconfigureGroupTopologyResponse.properties?.changed,
   );
@@ -328,10 +344,12 @@ Deno.test('OpenAPI JSON includes scoped graph and topology management contracts'
       '#/components/parameters/IdempotencyKey',
     ],
   );
-  for (const topologyPath of [
-    '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config',
-    '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/override',
-  ]) {
+  for (
+    const topologyPath of [
+      '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config',
+      '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/override',
+    ]
+  ) {
     for (const method of ['put', 'delete'] as const) {
       const responses = json.paths[topologyPath]![method]!.responses!;
       assert.equal(

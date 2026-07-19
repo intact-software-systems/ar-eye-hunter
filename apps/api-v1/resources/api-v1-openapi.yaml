@@ -4781,7 +4781,15 @@ components:
 
     StoredGroupTopologyConfig:
       type: object
-      required: [groupRef, config, version, createdAtEpochMs, updatedAtEpochMs, updatedByPrincipalId, requestId]
+      required: [
+        groupRef,
+        config,
+        version,
+        createdAtEpochMs,
+        updatedAtEpochMs,
+        updatedByPrincipalId,
+        requestId,
+      ]
       properties:
         groupRef:
           $ref: '#/components/schemas/GroupRef'
@@ -4814,7 +4822,20 @@ components:
 
     GroupTopologyConfigMutationReceipt:
       type: object
-      required: [commandId, commandHash, operation, outcome, groupRef, target, acceptedVersion, acceptedStorageRevision, outboxId]
+      required: [
+        commandId,
+        commandHash,
+        operation,
+        outcome,
+        groupRef,
+        target,
+        acceptedVersion,
+        acceptedStorageRevision,
+        acceptedCreatedAtEpochMs,
+        acceptedUpdatedAtEpochMs,
+        acceptedExpiresAtEpochMs,
+        outboxId,
+      ]
       properties:
         commandId:
           type: string
@@ -4836,6 +4857,18 @@ components:
           type: integer
           format: int64
         acceptedStorageRevision:
+          type: integer
+          nullable: true
+          format: int64
+        acceptedCreatedAtEpochMs:
+          type: integer
+          nullable: true
+          format: int64
+        acceptedUpdatedAtEpochMs:
+          type: integer
+          nullable: true
+          format: int64
+        acceptedExpiresAtEpochMs:
           type: integer
           nullable: true
           format: int64

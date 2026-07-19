@@ -27,6 +27,10 @@ import { AppGroupInboxService } from '@shared-server/rallar-system/services/AppG
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/services/GroupPresenceSummaryWork.ts';
 import { createRtcTopologyOutboxPublisher } from '@shared-server/rallar-system/services/RtcTopologyOutboxWork.ts';
 import { StateMutationOutboxRepository } from '@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts';
+import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/repositories/GroupTopologyConfigRepository.ts';
+import {
+  backfillAllGroupTopologyConfigGenerations,
+} from '@shared-server/rallar-system/services/group-topology-config-generation-backfill.ts';
 import { createClientStateService } from '@shared-server/rallar-system/services/client-state-service.ts';
 import {
   createGroupStateRuntime,
@@ -62,6 +66,7 @@ import {
   initPresenceExpiryReconciliation,
 } from '@shared-server/rallar-system/services/presence-expiry-reconciliation-service.ts';
 import { getApiAppInboxServiceOptions, getApiTimingSink } from './services/timing-service.ts';
+import { runRuntimeStateExpiryStartupBarrier } from './services/runtime-state-expiry-startup.ts';
 import { readApiV1DatabasePubSubConfig } from './db/database-pubsub-config.ts';
 import {
   createApiV1QueuePubSubBridge,
@@ -166,8 +171,25 @@ function initialise(): Middleware {
   initResourceInboxExpiryEviction(queueBox.repo).catch((e) =>
     console.error('Failed to initialise resource inbox expiry eviction:', e)
   );
-  initRuntimeStateExpiryEviction(new PSqlRuntimeStateRepository(postgresSql)).catch((e) =>
-    console.error('Failed to initialise runtime state expiry eviction:', e)
+  runRuntimeStateExpiryStartupBarrier({
+    backfillTopologyGenerations: () =>
+      backfillAllGroupTopologyConfigGenerations(
+        new GroupTopologyConfigRepository(runtimeStateRepository),
+      ),
+    initialiseRuntimeStateExpiryEviction: () =>
+      initRuntimeStateExpiryEviction(
+        new PSqlRuntimeStateRepository(postgresSql),
+      ),
+    onGenerationsBackfilled: (advanced) => {
+      if (advanced > 0) {
+        console.log(`Backfilled group topology config generations: ${advanced}`);
+      }
+    },
+  }).catch((e) =>
+    console.error(
+      'Failed to backfill topology generations or initialise runtime state expiry eviction:',
+      e,
+    )
   );
 
   const runtime = createRallarMiddleware({

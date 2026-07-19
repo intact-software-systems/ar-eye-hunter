@@ -25,6 +25,7 @@ import {
     GROUP_TOPOLOGY_CONFIG_NAMESPACE,
     GROUP_TOPOLOGY_CONFIG_GENERATION_NAMESPACE,
     GROUP_TOPOLOGY_CONFIG_INVARIANT_GENERATION_NAMESPACE,
+    GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE,
     GROUP_TOPOLOGY_OVERRIDE_NAMESPACE,
 } from '@shared-server/rallar-system/repositories/GroupTopologyConfigRepository.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
@@ -35,12 +36,6 @@ describe('GroupTopologyManagementService', () => {
         runtimeRepository.serializeTransactions = true;
         const group = createGroupSnapshot(createGroupRef('workspace-1'));
         const configRepository = new GroupTopologyConfigRepository(runtimeRepository);
-        await blockFirstReadsTogether(
-            runtimeRepository,
-            GROUP_TOPOLOGY_CONFIG_NAMESPACE,
-            configRepository.configKey(group.group),
-            2,
-        );
         const timingEvents: RallarTimingEvent[] = [];
         const first = createService({
             runtimeRepository,
@@ -56,6 +51,16 @@ describe('GroupTopologyManagementService', () => {
             now: () => 2_000,
             timing: (event) => timingEvents.push(event),
         });
+        await Promise.all([
+            first.readConfig(group.group),
+            second.readConfig(group.group),
+        ]);
+        await blockFirstReadsTogether(
+            runtimeRepository,
+            GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+            configRepository.configKey(group.group),
+            2,
+        );
 
         const results = await Promise.all([
             first.putConfig({
@@ -174,6 +179,75 @@ describe('GroupTopologyManagementService', () => {
         await expect(configService.readConfig(group.group)).resolves.toBeDefined();
     });
 
+    it.each([
+        {
+            label: 'ordinary config reads',
+            read: async (service: GroupTopologyManagementService, groupRef: GroupRef) =>
+                (await service.readConfig(groupRef)).effective,
+        },
+        {
+            label: 'explicit reconfigure reads',
+            read: async (service: GroupTopologyManagementService, groupRef: GroupRef) =>
+                (await service.reconfigureGroupTopology({ groupRef })).config.effective,
+        },
+    ])('brackets $label across config and override mutations', async ({ read }) => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const group = createGroupSnapshot(createGroupRef('workspace-1'));
+        const configRepository = new GroupTopologyConfigRepository(runtimeRepository);
+        const service = createService({
+            runtimeRepository,
+            group,
+            configRepository,
+            sleep: () => Promise.resolve(),
+        });
+        await service.putConfig({
+            groupRef: group.group,
+            config: { meshParamK: 4 },
+            updatedByPrincipalId: 'owner',
+            requestId: 'bracket-config-before',
+        });
+        await service.putOverride({
+            groupRef: group.group,
+            config: { degreeLimit: 5 },
+            expiresAtEpochMs: Date.now() + 60_000,
+            updatedByPrincipalId: 'owner',
+            requestId: 'bracket-override-before',
+        });
+
+        const findEntry = runtimeRepository.findEntry.bind(runtimeRepository);
+        let advanced = false;
+        runtimeRepository.findEntry = async (namespace, key) => {
+            const entry = await findEntry(namespace, key);
+            if (
+                !advanced &&
+                namespace === GROUP_TOPOLOGY_CONFIG_NAMESPACE &&
+                key === configRepository.configKey(group.group)
+            ) {
+                advanced = true;
+                runtimeRepository.findEntry = findEntry;
+                await service.putConfig({
+                    groupRef: group.group,
+                    config: { meshParamK: 2 },
+                    updatedByPrincipalId: 'owner',
+                    requestId: 'bracket-config-after',
+                });
+                await service.putOverride({
+                    groupRef: group.group,
+                    config: { degreeLimit: 3 },
+                    expiresAtEpochMs: Date.now() + 60_000,
+                    updatedByPrincipalId: 'owner',
+                    requestId: 'bracket-override-after',
+                });
+            }
+            return entry;
+        };
+
+        await expect(read(service, group.group)).resolves.toMatchObject({
+            meshParamK: 2,
+            degreeLimit: 3,
+        });
+    });
+
     it('does not let a temporary override hide an invalid durable config after expiry', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const group = createGroupSnapshot(createGroupRef('workspace-1'));
@@ -260,6 +334,57 @@ describe('GroupTopologyManagementService', () => {
                 firstOverride.override.version,
                 recreatedOverride.override.version,
             ]).toEqual([1, 2]);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('backfills an expired legacy override generation before recreating it', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(2_000);
+        try {
+            const runtimeRepository = new FakeRuntimeStateRepository();
+            const group = createGroupSnapshot(createGroupRef('workspace-1'));
+            const configRepository = new GroupTopologyConfigRepository(runtimeRepository);
+            await runtimeRepository.insertIfAbsent(
+                GROUP_TOPOLOGY_OVERRIDE_NAMESPACE,
+                configRepository.overrideKey(group.group),
+                JSON.stringify({
+                    groupRef: group.group,
+                    config: { degreeLimit: 3 },
+                    version: 7,
+                    createdAtEpochMs: 1_000,
+                    updatedAtEpochMs: 1_000,
+                    updatedByPrincipalId: 'legacy-owner',
+                    expiresAtEpochMs: 1_500,
+                }),
+                1_500,
+            );
+            const service = createService({
+                runtimeRepository,
+                group,
+                configRepository,
+                now: () => Date.now(),
+                sleep: () => Promise.resolve(),
+            });
+
+            await expect(service.readConfig(group.group)).resolves.toMatchObject({
+                temporary: undefined,
+            });
+            await expect(configRepository.findGenerationEntry(group.group, 'override'))
+                .resolves.toMatchObject({ value: { version: 7 } });
+
+            const recreated = await service.putOverride({
+                groupRef: group.group,
+                config: { degreeLimit: 4 },
+                expiresAtEpochMs: 3_000,
+                updatedByPrincipalId: 'owner',
+                requestId: 'legacy-override-recreated',
+            });
+
+            expect(recreated.override.version).toBe(8);
+            expect(await configRepository.findGenerationEntry(group.group, 'override'))
+                .toMatchObject({ value: { version: 8 } });
         } finally {
             vi.useRealTimers();
         }
@@ -430,18 +555,19 @@ describe('GroupTopologyManagementService', () => {
         await configRepository.commitConfig(first, null);
         const staleEntry = await configRepository.findConfigEntry(group.group);
         await configRepository.commitConfig(refreshed, staleEntry!.entry.revision);
-        returnFirstEntryAs(
-            runtimeRepository,
-            GROUP_TOPOLOGY_CONFIG_NAMESPACE,
-            configRepository.configKey(group.group),
-            staleEntry,
-        );
         const service = createService({
             runtimeRepository,
             group,
             configRepository,
             now: () => 3_000,
         });
+        await service.readConfig(group.group);
+        returnFirstEntryAs(
+            runtimeRepository,
+            GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+            configRepository.configKey(group.group),
+            staleEntry,
+        );
 
         const result = await service.deleteConfig({
             groupRef: group.group,
@@ -472,12 +598,6 @@ describe('GroupTopologyManagementService', () => {
             topologyConfig(group.group, 1, 'tree', 'winner'),
             null,
         );
-        returnFirstEntryAs(
-            authorizationRuntime,
-            GROUP_TOPOLOGY_CONFIG_NAMESPACE,
-            authorizationRepository.configKey(group.group),
-            undefined,
-        );
         let currentGroup = group;
         const authorizationService = createService({
             runtimeRepository: authorizationRuntime,
@@ -491,6 +611,13 @@ describe('GroupTopologyManagementService', () => {
                 };
             },
         });
+        await authorizationService.readConfig(group.group);
+        returnFirstEntryAs(
+            authorizationRuntime,
+            GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+            authorizationRepository.configKey(group.group),
+            undefined,
+        );
         await expect(authorizationService.putConfig({
             groupRef: group.group,
             config: { topologyKind: 'mesh' },
@@ -508,17 +635,18 @@ describe('GroupTopologyManagementService', () => {
             config: { degreeLimit: 2 },
             expiresAtEpochMs: Date.now() + 60_000,
         }, null);
+        const invariantService = createService({
+            runtimeRepository: invariantRuntime,
+            group,
+            configRepository: invariantRepository,
+        });
+        await invariantService.readConfig(group.group);
         returnFirstEntryAs(
             invariantRuntime,
             GROUP_TOPOLOGY_CONFIG_NAMESPACE,
             invariantRepository.configKey(group.group),
             undefined,
         );
-        const invariantService = createService({
-            runtimeRepository: invariantRuntime,
-            group,
-            configRepository: invariantRepository,
-        });
         await expect(invariantService.putConfig({
             groupRef: group.group,
             config: { meshParamK: 3 },
@@ -607,6 +735,108 @@ describe('GroupTopologyManagementService', () => {
             requestId: 'later-delete',
         });
         expect(await service.putConfig(request)).toEqual(accepted);
+    });
+
+    it('persists only command identity and a compact reconstructable receipt', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const group = createGroupSnapshot(createGroupRef('workspace-1'));
+        const configRepository = new GroupTopologyConfigRepository(runtimeRepository);
+        const service = createService({ runtimeRepository, group, configRepository });
+
+        const accepted = await service.putConfig({
+            groupRef: group.group,
+            config: { topologyKind: 'tree' },
+            updatedByPrincipalId: 'owner',
+            requestId: 'compact-config-ledger',
+        });
+        const entry = await runtimeRepository.findEntry(
+            GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE,
+            configRepository.mutationKey(group.group, 'compact-config-ledger'),
+        );
+        const record = JSON.parse(entry!.value) as Record<string, unknown>;
+
+        expect(Object.keys(record).sort()).toEqual([
+            'commandHash',
+            'groupRef',
+            'receipt',
+            'requestId',
+        ]);
+        expect(record).not.toHaveProperty('result');
+        expect(accepted.receipt).toMatchObject({
+            acceptedCreatedAtEpochMs: accepted.config.createdAtEpochMs,
+            acceptedUpdatedAtEpochMs: accepted.config.updatedAtEpochMs,
+            acceptedExpiresAtEpochMs: null,
+        });
+    });
+
+    it('rejects a compact replay receipt whose operation differs from the verified command', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const group = createGroupSnapshot(createGroupRef('workspace-1'));
+        const configRepository = new GroupTopologyConfigRepository(runtimeRepository);
+        const service = createService({ runtimeRepository, group, configRepository });
+        const request = {
+            groupRef: group.group,
+            config: { topologyKind: 'tree' as const },
+            updatedByPrincipalId: 'owner',
+            requestId: 'mismatched-replay-operation',
+        };
+        const accepted = await service.putConfig(request);
+        const key = configRepository.mutationKey(group.group, request.requestId);
+        const entry = await runtimeRepository.findEntry(
+            GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE,
+            key,
+        );
+        const record = JSON.parse(entry!.value) as Record<string, unknown>;
+        await runtimeRepository.upsert(
+            GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE,
+            key,
+            JSON.stringify({
+                ...record,
+                receipt: {
+                    ...accepted.receipt,
+                    operation: 'putOverride',
+                    target: 'override',
+                    acceptedExpiresAtEpochMs:
+                        accepted.receipt.acceptedUpdatedAtEpochMs! + 1,
+                },
+            }),
+            Number.MAX_SAFE_INTEGER,
+        );
+
+        await expect(service.putConfig(request)).rejects.toThrow(
+            'Topology config receipt operation differs from command',
+        );
+    });
+
+    it('reconstructs an immutable override replay from its compact receipt', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const group = createGroupSnapshot(createGroupRef('workspace-1'));
+        const service = createService({ runtimeRepository, group });
+        const request = {
+            groupRef: group.group,
+            config: { degreeLimit: 4 },
+            expiresAtEpochMs: Date.now() + 60_000,
+            updatedByPrincipalId: 'owner',
+            requestId: 'compact-override-replay',
+        };
+        const accepted = await service.putOverride(request);
+        await service.putOverride({
+            ...request,
+            config: { degreeLimit: 5 },
+            requestId: 'compact-override-overwrite',
+        });
+        await service.deleteOverride({
+            groupRef: group.group,
+            updatedByPrincipalId: 'owner',
+            requestId: 'compact-override-delete',
+        });
+
+        expect(await service.putOverride(request)).toEqual(accepted);
+        expect(accepted.receipt).toMatchObject({
+            acceptedCreatedAtEpochMs: accepted.override.createdAtEpochMs,
+            acceptedUpdatedAtEpochMs: accepted.override.updatedAtEpochMs,
+            acceptedExpiresAtEpochMs: accepted.override.expiresAtEpochMs,
+        });
     });
 
     it('revalidates lifecycle and actor authority before replaying a winner', async () => {

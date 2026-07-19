@@ -93,6 +93,9 @@ export type GroupTopologyConfigMutationReceipt = Readonly<{
     target: 'config' | 'override';
     acceptedVersion: number;
     acceptedStorageRevision: number | null;
+    acceptedCreatedAtEpochMs: number | null;
+    acceptedUpdatedAtEpochMs: number | null;
+    acceptedExpiresAtEpochMs: number | null;
     outboxId: string | null;
 }>;
 

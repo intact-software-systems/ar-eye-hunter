@@ -1144,9 +1144,15 @@ state scope used by clients and groups:
   accepted versions monotonic across DELETE, recreation, and override TTL
   expiry. A separate retained group invariant generation serializes config and
   override decisions, forcing cross-target conflicts through a full reread and
-  revalidation. Every response includes a receipt, and the route returns
-  without waiting for recompute or publish. Browser DELETE callers can supply
-  `requestId`; REST callers send the same stable value as `Idempotency-Key`.
+  revalidation. Legacy generation floors are optimistically backfilled before
+  first access and before periodic expiry cleanup, including already-expired
+  override rows. Effective reads bracket durable config and override with the
+  invariant generation so they cannot combine states that never coexisted.
+  Every response includes a compact receipt whose mandatory nullable replay
+  timestamps let the service reconstruct a PUT replay without storing the full
+  accepted config in the idempotency ledger. The route returns without waiting
+  for recompute or publish. Browser DELETE callers can supply `requestId`; REST
+  callers send the same stable value as `Idempotency-Key`.
 - `GET|PUT|DELETE /api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/override`
   manages temporary topology overrides with the same convergent receipt/outbox
   transaction and asynchronous return contract.

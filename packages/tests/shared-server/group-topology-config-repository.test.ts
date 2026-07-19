@@ -7,6 +7,10 @@ import {
     GROUP_TOPOLOGY_OVERRIDE_NAMESPACE,
     GroupTopologyConfigRepository,
 } from '@shared-server/rallar-system/repositories/GroupTopologyConfigRepository.ts';
+import {
+    backfillAllGroupTopologyConfigGenerations,
+    backfillGroupTopologyConfigGenerationsForRef,
+} from '@shared-server/rallar-system/services/group-topology-config-generation-backfill.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 
 describe('group topology config repository', () => {
@@ -77,6 +81,21 @@ describe('group topology config repository', () => {
 
         await expect(repository.findConfig(groupRef))
             .rejects.toThrow('Stored topology config fields are invalid');
+    });
+
+    it('rejects a generation backfill source with a missing group ref safely', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const repository = new GroupTopologyConfigRepository(runtimeRepository);
+        await runtimeRepository.insertIfAbsent(
+            GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+            'malformed-generation-source',
+            JSON.stringify({ version: 7 }),
+            Number.MAX_SAFE_INTEGER,
+        );
+
+        await expect(repository.listGenerationSources('config')).rejects.toThrow(
+            'Stored topology config generation source groupRef is invalid',
+        );
     });
 
     it('commits config and overrides only against the observed storage revision', async () => {
@@ -157,9 +176,11 @@ describe('group topology config repository', () => {
                     target: 'config',
                     acceptedVersion: 0,
                     acceptedStorageRevision: null,
+                    acceptedCreatedAtEpochMs: null,
+                    acceptedUpdatedAtEpochMs: null,
+                    acceptedExpiresAtEpochMs: null,
                     outboxId: null,
                 },
-                result: { kind: 'delete', deleted: false },
             }),
             Number.MAX_SAFE_INTEGER,
         );
@@ -216,10 +237,12 @@ describe('group topology config repository', () => {
                     target: 'config',
                     acceptedVersion: 0,
                     acceptedStorageRevision: null,
+                    acceptedCreatedAtEpochMs: null,
+                    acceptedUpdatedAtEpochMs: null,
+                    acceptedExpiresAtEpochMs: null,
                     outboxId: null,
                     ...receipt,
                 },
-                result: { kind: 'delete', deleted: false },
             }),
             Number.MAX_SAFE_INTEGER,
         );
@@ -230,18 +253,19 @@ describe('group topology config repository', () => {
 
     it.each([
         {
-            label: 'accepted config with another requestId',
-            receipt: {},
-            resultRequestId: 'different-request',
-            message: 'accepted result requestId differs from record',
+            label: 'put receipt without replay timestamps',
+            receipt: {
+                acceptedCreatedAtEpochMs: null,
+                acceptedUpdatedAtEpochMs: null,
+            },
+            message: 'receipt timestamps do not match operation',
         },
         {
-            label: 'put result paired with a no-op receipt',
-            receipt: { outcome: 'no-op', outboxId: null },
-            resultRequestId: 'expected-request',
-            message: 'accepted result outcome differs from receipt',
+            label: 'config receipt with override expiry',
+            receipt: { acceptedExpiresAtEpochMs: 2 },
+            message: 'receipt expiry does not match operation',
         },
-    ])('rejects persisted $label', async ({ receipt, resultRequestId, message }) => {
+    ])('rejects persisted $label', async ({ receipt, message }) => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const repository = new GroupTopologyConfigRepository(runtimeRepository);
         const groupRef = createGroupRef('workspace-1');
@@ -263,20 +287,11 @@ describe('group topology config repository', () => {
                     target: 'config',
                     acceptedVersion: 1,
                     acceptedStorageRevision: 0,
+                    acceptedCreatedAtEpochMs: 1,
+                    acceptedUpdatedAtEpochMs: 1,
+                    acceptedExpiresAtEpochMs: null,
                     outboxId: 'state-mutation-valid-shape',
                     ...receipt,
-                },
-                result: {
-                    kind: 'config',
-                    config: {
-                        groupRef,
-                        config: { topologyKind: 'tree' },
-                        version: 1,
-                        createdAtEpochMs: 1,
-                        updatedAtEpochMs: 1,
-                        updatedByPrincipalId: 'owner',
-                        requestId: resultRequestId,
-                    },
                 },
             }),
             Number.MAX_SAFE_INTEGER,
@@ -309,6 +324,109 @@ describe('group topology config repository', () => {
         expect(runtimeRepository.data.has(
             `${GROUP_TOPOLOGY_CONFIG_GENERATION_NAMESPACE}::${repository.generationKey(groupRef, 'config')}`,
         )).toBe(true);
+    });
+
+    it('optimistically backfills config and expired override generations without deleting sources', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(2_000);
+        try {
+            const runtimeRepository = new FakeRuntimeStateRepository();
+            const repository = new GroupTopologyConfigRepository(runtimeRepository);
+            const groupRef = createGroupRef('workspace-1');
+            const legacyConfig = {
+                groupRef,
+                config: { topologyKind: 'tree' as const },
+                version: 6,
+                createdAtEpochMs: 1,
+                updatedAtEpochMs: 1,
+                updatedByPrincipalId: 'legacy-owner',
+            };
+            const legacyOverride = {
+                ...legacyConfig,
+                version: 7,
+                expiresAtEpochMs: 1_500,
+            };
+            await runtimeRepository.insertIfAbsent(
+                GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+                repository.configKey(groupRef),
+                JSON.stringify(legacyConfig),
+                Number.MAX_SAFE_INTEGER,
+            );
+            await runtimeRepository.insertIfAbsent(
+                GROUP_TOPOLOGY_OVERRIDE_NAMESPACE,
+                repository.overrideKey(groupRef),
+                JSON.stringify(legacyOverride),
+                legacyOverride.expiresAtEpochMs,
+            );
+
+            await expect(backfillAllGroupTopologyConfigGenerations(repository, {
+                sleep: () => Promise.resolve(),
+            })).resolves.toEqual({ scanned: 2, advanced: 2 });
+            await expect(repository.findGenerationEntry(groupRef, 'config'))
+                .resolves.toMatchObject({ value: { version: 6 } });
+            await expect(repository.findGenerationEntry(groupRef, 'override'))
+                .resolves.toMatchObject({ value: { version: 7 } });
+            expect(await runtimeRepository.findEntry(
+                GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+                repository.configKey(groupRef),
+            )).toBeDefined();
+            expect(await runtimeRepository.findEntry(
+                GROUP_TOPOLOGY_OVERRIDE_NAMESPACE,
+                repository.overrideKey(groupRef),
+            )).toBeDefined();
+            expect(runtimeRepository.locks).toEqual([]);
+
+            await expect(backfillAllGroupTopologyConfigGenerations(repository, {
+                sleep: () => Promise.resolve(),
+            })).resolves.toEqual({ scanned: 2, advanced: 0 });
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('does not downgrade a generation that wins a backfill conflict', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const repository = new GroupTopologyConfigRepository(runtimeRepository);
+        const groupRef = createGroupRef('workspace-1');
+        await runtimeRepository.insertIfAbsent(
+            GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+            repository.configKey(groupRef),
+            JSON.stringify({
+                groupRef,
+                config: { topologyKind: 'tree' },
+                version: 7,
+                createdAtEpochMs: 1,
+                updatedAtEpochMs: 1,
+                updatedByPrincipalId: 'legacy-owner',
+            }),
+            Number.MAX_SAFE_INTEGER,
+        );
+        runtimeRepository.beforeConditionalWrite = async (
+            operation,
+            namespace,
+            key,
+        ) => {
+            if (
+                operation !== 'insertIfAbsent' ||
+                namespace !== GROUP_TOPOLOGY_CONFIG_GENERATION_NAMESPACE
+            ) return;
+            runtimeRepository.beforeConditionalWrite = undefined;
+            await runtimeRepository.insertIfAbsent(
+                namespace,
+                key,
+                JSON.stringify({ groupRef, target: 'config', version: 8 }),
+                Number.MAX_SAFE_INTEGER,
+            );
+        };
+
+        await expect(backfillGroupTopologyConfigGenerationsForRef(
+            repository,
+            groupRef,
+            { sleep: () => Promise.resolve() },
+        )).resolves.toEqual({ scanned: 1, advanced: 0 });
+        await expect(repository.findGenerationEntry(groupRef, 'config'))
+            .resolves.toMatchObject({ value: { version: 8 } });
+        expect(runtimeRepository.locks).toEqual([]);
     });
 
     it('conditionally advances the retained aggregate invariant generation', async () => {

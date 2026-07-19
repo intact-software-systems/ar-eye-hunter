@@ -40,6 +40,12 @@ export type GroupTopologyConfigDeleteResult =
     | Readonly<{ status: 'accepted' }>
     | Readonly<{ status: 'conflict' }>;
 
+export type GroupTopologyConfigGenerationSource = Readonly<{
+    groupRef: GroupRef;
+    target: GroupTopologyConfigGenerationTarget;
+    version: number;
+}>;
+
 export class GroupTopologyConfigRepository extends RuntimeStateJsonStore {
     constructor(
         readonly runtimeRepository:
@@ -218,6 +224,45 @@ export class GroupTopologyConfigRepository extends RuntimeStateJsonStore {
         return stored;
     }
 
+    async findGenerationSource(
+        ref: GroupRef,
+        target: GroupTopologyConfigGenerationTarget,
+    ): Promise<GroupTopologyConfigGenerationSource | undefined> {
+        const namespace = target === 'config'
+            ? GROUP_TOPOLOGY_CONFIG_NAMESPACE
+            : GROUP_TOPOLOGY_OVERRIDE_NAMESPACE;
+        const entry = await this.runtimeRepository.findEntry(
+            namespace,
+            target === 'config' ? this.configKey(ref) : this.overrideKey(ref),
+        );
+        if (!entry) return undefined;
+        const value = target === 'config'
+            ? decodeStoredGroupTopologyConfig(JSON.parse(entry.value), ref)
+            : decodeStoredGroupTopologyOverride(JSON.parse(entry.value), ref);
+        return { groupRef: value.groupRef, target, version: value.version };
+    }
+
+    async listGenerationSources(
+        target: GroupTopologyConfigGenerationTarget,
+    ): Promise<readonly GroupTopologyConfigGenerationSource[]> {
+        const namespace = target === 'config'
+            ? GROUP_TOPOLOGY_CONFIG_NAMESPACE
+            : GROUP_TOPOLOGY_OVERRIDE_NAMESPACE;
+        const entries = await this.runtimeRepository.findAllEntries(namespace);
+        return entries.map((entry) => {
+            const value = target === 'config'
+                ? decodeStoredGroupTopologyConfig(JSON.parse(entry.value))
+                : decodeStoredGroupTopologyOverride(JSON.parse(entry.value));
+            const expectedKey = target === 'config'
+                ? this.configKey(value.groupRef)
+                : this.overrideKey(value.groupRef);
+            if (entry.key !== expectedKey) {
+                throw new TypeError('Stored topology config generation source has wrong key');
+            }
+            return { groupRef: value.groupRef, target, version: value.version };
+        });
+    }
+
     async commitGeneration(
         input: GroupTopologyConfigGeneration,
         expectedRevision: number | null,
@@ -331,28 +376,56 @@ const LEGACY_OVERRIDE_KEYS = [
 
 function decodeStoredGroupTopologyConfig(
     value: unknown,
-    expectedRef: GroupRef,
+    expectedRef?: GroupRef,
 ): StoredGroupTopologyConfig {
-    if (hasExactKeys(value, LEGACY_CONFIG_KEYS)) {
-        const normalized = { ...value, requestId: null };
-        validateStoredGroupTopologyConfig(normalized, expectedRef);
-        return normalized;
-    }
-    validateStoredGroupTopologyConfig(value, expectedRef);
-    return value;
+    const normalized = hasExactKeys(value, LEGACY_CONFIG_KEYS)
+        ? { ...value, requestId: null }
+        : value;
+    const validationRef = expectedRef ?? storedTopologyGroupRef(normalized);
+    validateStoredGroupTopologyConfig(normalized, validationRef);
+    return normalized;
 }
 
 function decodeStoredGroupTopologyOverride(
     value: unknown,
-    expectedRef: GroupRef,
+    expectedRef?: GroupRef,
 ): StoredGroupTopologyOverride {
-    if (hasExactKeys(value, LEGACY_OVERRIDE_KEYS)) {
-        const normalized = { ...value, requestId: null };
-        validateStoredGroupTopologyOverride(normalized, expectedRef);
-        return normalized;
+    const normalized = hasExactKeys(value, LEGACY_OVERRIDE_KEYS)
+        ? { ...value, requestId: null }
+        : value;
+    const validationRef = expectedRef ?? storedTopologyGroupRef(normalized);
+    validateStoredGroupTopologyOverride(normalized, validationRef);
+    return normalized;
+}
+
+function storedTopologyGroupRef(value: unknown): GroupRef {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        throw new TypeError('Stored topology config generation source is invalid');
     }
-    validateStoredGroupTopologyOverride(value, expectedRef);
-    return value;
+    const groupRef = (value as Readonly<{ groupRef?: unknown }>).groupRef;
+    if (!groupRef || typeof groupRef !== 'object' || Array.isArray(groupRef)) {
+        throw new TypeError(
+            'Stored topology config generation source groupRef is invalid',
+        );
+    }
+    const candidate = groupRef as Readonly<Record<string, unknown>>;
+    if (
+        typeof candidate.applicationId !== 'string' ||
+        candidate.applicationId.trim().length === 0 ||
+        typeof candidate.workspaceId !== 'string' ||
+        candidate.workspaceId.trim().length === 0 ||
+        typeof candidate.groupId !== 'string' ||
+        candidate.groupId.trim().length === 0
+    ) {
+        throw new TypeError(
+            'Stored topology config generation source groupRef is invalid',
+        );
+    }
+    return {
+        applicationId: candidate.applicationId,
+        workspaceId: candidate.workspaceId,
+        groupId: candidate.groupId,
+    };
 }
 
 function hasExactKeys(
