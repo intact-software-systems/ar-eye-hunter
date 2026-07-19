@@ -4,7 +4,7 @@
 
 - Base: `e78881ef71b8cc0ab051b75405ef63458b6a7b05`.
 - Current clean implementation commit:
-  `22d13895a4b0c939ee5776fd242046306d3e9f98`.
+  `cdccde896fad754adf52c44509aea5b34e63e565`.
 - Durable config and temporary override writes now use entry-aware conditional
   insert/CAS/delete APIs. No topology config mutation uses locks,
   unconditional overwrite, compensating restore, synchronous recompute, or
@@ -66,7 +66,9 @@
   so retries cannot authorize against stale time or extend TTL. Replay and
   conflicting request reuse still probe the immutable ledger before invoking
   the clock. Platform admins bypass membership/role only; the shared active and
-  unexpired group lifecycle policy applies to every actor.
+  unexpired group lifecycle policy applies to every actor. A relative override
+  expiry that elapses before a retry is rejected with the typed topology config
+  validation error instead of being extended or committed already expired.
 - Request IDs are immutable first-writer claims. The canonical command is
   normalized before its SHA-256 digest is computed once. Records contain
   exactly `{groupRef, requestId, commandHash, receipt}`. Mandatory nullable
@@ -76,7 +78,8 @@
   receipt operation to the freshly verified command before choosing a
   reconstruction branch. Record validation also binds scoped key/request ID,
   command ID/hash, operation/target, outcome/effect, version, storage revision,
-  timestamps, and expiry.
+  timestamps, and expiry. PUT receipts must be `applied`; only DELETE receipts
+  may represent either an applied delete or a legitimate no-op.
 - The repository boundary decodes exactly the legacy config/override key set
   that omitted `requestId`, normalizing it to mandatory `null` in memory. New
   writes and public types remain mandatory, malformed extra fields still fail,
@@ -123,6 +126,16 @@ owner retry reused first-attempt lifecycle time after a forced generation CAS
 conflict; and a relative-TTL retry invoked the clock only once. The first GREEN
 added the pure fact split and passed all 89 tests across repository, management,
 and topology config service suites.
+
+The v6 correction RED ran the same three focused suites and exited 1 with
+exactly 8 failures and 89 passes across 97 tests. Both `putConfig` and
+`putOverride` impossible no-op receipts passed the pure validator, repository,
+and service replay boundaries, allowing reconstruction of state that had never
+been accepted. The remaining two failures showed pure facts and a forced CAS
+retry accepting stable expiry `6000` when attempt-local policy time was `7000`.
+The first GREEN passed all 97 focused tests while retaining the clock-free replay
+assertion and proving the failed retry committed no state, request record, or
+outbox intent.
 
 Later adversarial RED tests independently proved and then fixed:
 
@@ -192,7 +205,9 @@ Later adversarial RED tests independently proved and then fixed:
 - Stored update time is monotonic under clock skew. Stored write time and
   override expiry are resolved once from request-stable facts, while every
   non-replay retry supplies fresh lifecycle policy time; stale expiry cleanup
-  remains revision guarded.
+  remains revision guarded. If policy time reaches that stable expiry, the
+  mutation fails with `override-expiry-not-in-future` and does not write state,
+  a receipt, or an outbox record.
 - Corrupt retained rows cannot disappear through lazy expiry: canonical key,
   raw JSON, stored scope/child, and exact physical retention are checked first.
   Config and retained ledger rows are physically non-expiring, while temporary
@@ -209,7 +224,9 @@ Later adversarial RED tests independently proved and then fixed:
   than exposing a combination that never existed.
 - Idempotency rows are compact receipt-only records. PUT replay reconstructs
   from the verified normalized command plus accepted receipt scalars and
-  rejects a receipt whose operation does not match that command.
+  rejects a receipt whose operation does not match that command. The receipt
+  validator also rejects no-op PUT receipts at pure, repository, and replay
+  boundaries, while preserving legitimate DELETE no-op claims.
 - API route types, shared browser helpers, OpenAPI schemas, black-box requests,
   and product documentation no longer expose synchronous mutation controls.
   PUT/DELETE responses require the compact receipt; OpenAPI advertises typed
@@ -231,13 +248,19 @@ Later adversarial RED tests independently proved and then fixed:
 
 ```text
 npm run test:unit -- packages/tests/shared-server/group-topology-config-repository.test.ts packages/tests/shared-server/group-topology-management-service.test.ts
-RED: 2 files failed; 13 tests failed; 68 tests passed (81 total)
+v5 RED: 2 files failed; 13 tests failed; 68 tests passed (81 total)
 
 npm run test:unit -- packages/tests/shared-server/group-topology-config-repository.test.ts packages/tests/shared-server/group-topology-config-service.test.ts packages/tests/shared-server/group-topology-management-service.test.ts
-first GREEN: 3 files passed; 89 tests passed
+v5 first GREEN: 3 files passed; 89 tests passed
+
+npm run test:unit -- packages/tests/shared-server/group-topology-config-repository.test.ts packages/tests/shared-server/group-topology-config-service.test.ts packages/tests/shared-server/group-topology-management-service.test.ts
+v6 RED: 3 files failed; 8 tests failed; 89 tests passed (97 total)
+
+npm run test:unit -- packages/tests/shared-server/group-topology-config-repository.test.ts packages/tests/shared-server/group-topology-config-service.test.ts packages/tests/shared-server/group-topology-management-service.test.ts
+v6 first GREEN: 3 files passed; 97 tests passed
 
 npx vitest run packages/tests/shared-server/group-topology-config-repository.test.ts packages/tests/shared-server/group-topology-management-service.test.ts packages/tests/shared-server/group-topology-config-service.test.ts packages/tests/shared-server/state-mutation-outbox.test.ts packages/tests/shared-web/api-workflows.test.ts packages/tests/shared-server/state-write-performance-harness.test.ts
-6 files passed; 213 tests passed
+6 files passed; 221 tests passed
 
 deno test -A --filter "PGlite topology config mutations" apps/api-v1/test/db/pglite-sql-adapter.test.ts
 1 passed; 0 failed; 18 filtered
@@ -279,7 +302,7 @@ durable and no topology publisher runs in the mutation call.
 ### Production performance evidence
 
 The full PostgreSQL producer was rerun from the clean Task 5 implementation
-commit `22d13895a4b0c939ee5776fd242046306d3e9f98`:
+commit `cdccde896fad754adf52c44509aea5b34e63e565`:
 
 ```text
 npm run perf:api-v1:state-write -- --backend=postgres --warmup=1 --runs=3 --concurrency=10 --out=tmp/perf/api-v1-state-write-task5.json
@@ -287,16 +310,16 @@ npm run perf:api-v1:state-write -- --backend=postgres --warmup=1 --runs=3 --conc
 
 The resulting canonical artifact remains ignored and uncommitted at
 `tmp/perf/api-v1-state-write-task5.json`. Its embedded `gitCommit` is exactly
-`22d13895a4b0c939ee5776fd242046306d3e9f98` and its SHA-256 is
-`5a7211be1c876e3b31c3ae3293ded52c8b063351c7dc6f4c611dffafee2de9b0`.
+`cdccde896fad754adf52c44509aea5b34e63e565` and its SHA-256 is
+`db9bc06f6acaccd833cf07c0f736904d42e949be11a2fb5881f2d06c0ef73b42`.
 
 ```text
 validateStateWriteArtifact(finalArtifact)
 []
 
 uncontended: 2100 accepted/receipts; 3900 required/actual intents; DBW []
-shared:      1958 accepted/receipts; 3667 required/actual intents; DBW []
-hot:          983 accepted/receipts; 1867 required/actual intents; DBW []
+shared:      1965 accepted/receipts; 3682 required/actual intents; DBW []
+hot:         1018 accepted/receipts; 1935 required/actual intents; DBW []
 ```
 
 The immutable baseline remains byte-identical at SHA-256
@@ -316,21 +339,21 @@ audit every gate without mutating either artifact, the implementer cloned the
 candidate in memory and changed only the clone's governed feature label and
 evidence. The clone validated to `[]`; the canonical Task 5 artifact remained
 byte-identical at
-`5a7211be1c876e3b31c3ae3293ded52c8b063351c7dc6f4c611dffafee2de9b0`
+`db9bc06f6acaccd833cf07c0f736904d42e949be11a2fb5881f2d06c0ef73b42`
 before and after the comparison and was never relabeled. The fresh clean-commit
 audit reported exactly these ten interim failures:
 
 ```text
-shared throughput regressed: baseline=752.2423201768095, candidate=628.16159436996
-hot throughput regressed: baseline=295.1851420383843, candidate=291.9452224907553
+shared throughput regressed: baseline=752.2423201768095, candidate=595.6668645907487
+hot throughput regressed: baseline=295.1851420383843, candidate=291.5636224235517
 shared throughput must improve after presence is split from the group aggregate
 uncontended median sql.statements increased without a recorded reason: baseline=11200, candidate=12900
 uncontended median sql.rowsRead increased without a recorded reason: baseline=5400, candidate=7900
-shared median sql.statements increased without a recorded reason: baseline=11352, candidate=13871
-shared median sql.rowsRead increased without a recorded reason: baseline=27290, candidate=27860
-hot median sql.statements increased without a recorded reason: baseline=11536, candidate=12194
-shared retry exhaustion must remain zero; received 142
-hot retry exhaustion exceeded baseline: baseline=0, candidate=1117
+shared median sql.statements increased without a recorded reason: baseline=11352, candidate=13940
+shared median sql.rowsRead increased without a recorded reason: baseline=27290, candidate=27861
+hot median sql.statements increased without a recorded reason: baseline=11536, candidate=12324
+shared retry exhaustion must remain zero; received 135
+hot retry exhaustion exceeded baseline: baseline=0, candidate=1082
 ```
 
 The audit did not report an uncontended p95/p99 latency regression,
