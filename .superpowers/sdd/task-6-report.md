@@ -220,6 +220,85 @@
   the repository's broad pre-existing Deno/Emscripten and stale-fixture type
   baseline. The governing root/workspace and api-v1 checks above are green.
 
+## Second review correction: receipt replay and persisted contract completeness
+
+### Scope and commits
+
+- Review-correction base:
+  `614b64db93a13593656db86090c49182fbffa02d`.
+- Second review implementation commit:
+  `c123eac1d88ac1402ab2070a31d069f0d06f1af9`.
+- A stale removal trigger now cancels only when fresh authority is active at
+  the captured planning time. Newer archived, deleted, or logically expired
+  authority replans a tombstone from that fresh snapshot; a topology CAS
+  conflict returns to the complete authority and predecessor read.
+- RTT mutation execution computes one canonical SHA-256 command hash from
+  `{ rtt, alSenderId }` before attempt zero. Every attempt reads the immutable
+  pair/version receipt. Matching receipts are explicit accepted replays with
+  `updated: false`; a different hash raises typed
+  `rtc-rtt-idempotency-conflict`, including after measurement and endpoint
+  admission expiry. Receipts remain compact, while receipt and recompute
+  intent validators require the exact lowercase hash shape. Recompute outbox
+  IDs include the command hash, so first-writer identity is cryptographically
+  bound without changing the pair/version receipt slot.
+- `group-snapshot-validation.ts` is the single complete persisted
+  `GroupSnapshot` validator for later Task 7 hardening. It composes the shared
+  group/member/presence validators and enforces exact top-level fields,
+  canonical scope, causal revision projection, owner and active-member facts,
+  unique session/member identities, and online presence consistency.
+- `al-message-persistence-validation.ts` validates the complete durable AL
+  envelope while retaining documented optional sections. Topology publication
+  validation additionally requires and binds the builder-mandatory id, route,
+  payload, audit, room-broadcast targets/groupRef, and delivery sections to the
+  exact RTC topic, route resource, and topology snapshot.
+
+### Second correction RED evidence
+
+- The initial four-file RED command failed exactly 12 tests with 109 passing
+  across 121 tests. The failures covered newer-terminal removal, removal CAS
+  reread, frozen receipt replay/divergence, post-expiry replay, concurrent
+  first writers, receipt and nested snapshot validation-before-cleanup, AL
+  envelope direct/list/page reads, and missing id/route/typeId before replay
+  fanout.
+- The first production attempt failed 14 tests with 107 passing. Four old pure
+  RTT inputs omitted the newly mandatory receipt/hash facts; eight runtime RTT
+  cases used a snapshot fixture whose state revision contradicted its causal
+  tuple; one publication fixture used the obsolete sparse envelope; and one
+  removal test expected a concurrent row that the fake transaction correctly
+  rolled back. Fixtures were completed; validators were not weakened.
+- Expanding the WebSocket gate exposed four more incomplete group fixtures:
+  missing `activeMemberCount`/`ownerPrincipalId`, no owner member, and an
+  invalid zero metadata revision. The five-file slice then passed 141/141.
+- The first unsandboxed live PostgreSQL rerun exposed two equivalent strict
+  fixture violations in the topology publication and RTT group helpers. After
+  completing those contracts, the same live test passed 11/11.
+
+### Second correction GREEN and baseline evidence
+
+- The final nine-file Task 6 matrix passed 9/9 files and 188/188 tests.
+- `npx vitest run packages/tests/shared-server --reporter=dot` passed 58 files
+  with 2 configured-skip files; 730 tests passed and 12 environment-gated
+  PostgreSQL tests were skipped.
+- `npm run typecheck` passed the root shared check and every workspace
+  typecheck. `deno task check` in `apps/api-v1` passed, and the full
+  `deno task test` passed 210/210 tests.
+- `RALLAR_POSTGRES_INTEGRATION=1 DATABASE_URL=postgres://app:app@localhost:5432/appdb npx vitest run packages/tests/shared-server/postgres-runtime-state-concurrency.test.ts --reporter=dot`
+  passed 1/1 file and 11/11 tests after the expected sandbox-denied localhost
+  attempt was rerun with local database access.
+- The root-wide `npm run test:unit` is **not claimed as passing**. It finished
+  with 445 passed files, 2 configured-skip files, 1 failed file; 4,235 tests
+  passed, 12 skipped, and 7 failed. All seven failures are the untouched
+  `packages/tests/shared-web/rallar-workflow-options-compat.test.ts` baseline
+  concerning pre-existing workflow mock argument positions and retry-policy
+  expectations. The related shared-server cluster failures first exposed by
+  the new envelope validator were corrected and are green.
+- Final targeted scans found no unconditional `.upsert`, `.putValue`,
+  `deleteByKey`, `lockKey`, `putSnapshot`, `FOR UPDATE`, `pg_advisory`,
+  locale-sensitive RTC identity comparison, or publication-expiry non-null
+  assertion in the corrected paths. Both `git diff --check` and the staged
+  implementation `git diff --cached --check` passed, including the two new
+  validator files.
+
 ## Environment, performance, and artifacts
 
 - An early sandboxed live PostgreSQL attempt was denied local network access;
