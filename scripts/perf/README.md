@@ -70,6 +70,7 @@ to vary by machine, Postgres state, runtime version, cache warmth, and load.
 | `rtc-data-channel-error-reference-bench.ts` | DataChannel native error reference/handler-retention workload. |
 | `rtc-data-channel-browser-soak.mjs` | Playwright/Chromium DataChannel close/reconnect soak. |
 | `rtc-peer-connection-diagnostics-burst.ts` | Synthetic QRtcPeerConnection burst probe for queued ICE candidates, offer collisions, reconnect timers, ICE restarts, and diagnostic counter validation. |
+| `analyze-rtc-outbound-runtime.mjs` | Summarizes outbound finalization modes, send timing, drain composition, retry lateness, and evidence coverage from a distributed-run artifact. |
 | `webrtc-group-cache-fallback-bench.ts` | `WebRtcGroupService` fallback lookup cache workload. |
 | `webrtc-group-manager-state-bench.ts` | `WebRtcGroupManager.state()` online peer set workload. |
 | `webrtc-group-manager-peer-owners-bench.ts` | `WebRtcGroupManager.peerOwners()` ownership-map workload. |
@@ -217,6 +218,23 @@ Useful live signals:
   `pendingIceCandidateQueueLength` for ICE queue pressure.
 - `outboundSignalingErrorCount` and `inboundSignalingErrorCount` for signaling
   failures.
+
+Analyze the outbound scheduler evidence from a downloaded Hetzner distributed
+run artifact:
+
+```sh
+node scripts/perf/analyze-rtc-outbound-runtime.mjs \
+  /path/to/hetzner-distributed-dist-run \
+  > tmp/perf/results/rtc-outbound-runtime-run.json
+```
+
+The JSON contains fleet and per-agent enqueue-finalization timing, correlated
+stream-send timing, drain effect-kind totals, first/retry attempt counts, and
+ready-lateness histograms. Exit status `0` means every completed stream message
+has exactly one eligible original enqueue finalization. Exit status `2` means
+the evidence has missing or ambiguous enqueue finalizations and must not be
+used for a scheduler-direction decision. Keep downloaded artifacts and analyzer
+output under `tmp/perf/`; do not commit generated measurements.
 
 ## RTC Topology Lifetime
 
@@ -382,4 +400,3 @@ When using these scripts to validate an optimization, record:
 - input size and mode;
 - number of runs;
 - before and after artifacts under `tmp/perf/`.
-

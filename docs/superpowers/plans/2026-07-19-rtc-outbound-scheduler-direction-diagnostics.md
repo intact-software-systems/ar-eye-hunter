@@ -393,14 +393,15 @@ Expected: both test files and the shared typecheck pass.
 **Files:**
 
 - Create: `scripts/perf/analyze-rtc-outbound-runtime.mjs`
-- Create: `scripts/perf/analyze-rtc-outbound-runtime.test.mjs`
+- Create: `packages/tests/scripts/analyze-rtc-outbound-runtime.test.ts`
 - Modify: `scripts/perf/README.md`
 
 **Interfaces:**
 
 - Consumes: parsed `events.jsonl` rows.
 - Produces: `analyzeRtcOutboundRuntimeEvents(events)` and CLI JSON containing
-  enqueue coverage, per-mode timings, drain totals, and evidence errors.
+  fleet/per-agent enqueue coverage, per-mode timings, drain totals, and
+  evidence errors.
 
 - [ ] **Step 1: Write a failing synthetic analyzer test**
 
@@ -419,6 +420,8 @@ expect(analysis.enqueueByMode['awaited-new-drain'])
   .toMatchObject({ count: 1 });
 expect(analysis.drainComposition.claimedByKind)
   .toMatchObject({ 'enqueue-outbox': 1, 'send-prepared': 3 });
+expect(analysis.agents['controller-01'].drainComposition.claimedByKind)
+  .toMatchObject({ 'enqueue-outbox': 1, 'send-prepared': 3 });
 expect(analysis.evidenceErrors[0])
   .toContain('missing enqueue finalization');
 ```
@@ -426,7 +429,7 @@ expect(analysis.evidenceErrors[0])
 - [ ] **Step 2: Verify RED**
 
 ```sh
-npx vitest run scripts/perf/analyze-rtc-outbound-runtime.test.mjs
+npx vitest run packages/tests/scripts/analyze-rtc-outbound-runtime.test.ts
 ```
 
 Expected: FAIL because the module is absent.
@@ -443,7 +446,8 @@ The module must:
    ambiguous coverage;
 5. compute count/min/p50/p95/p99/max/average for finalization and send duration
    by all four modes;
-6. sum kind counts, attempt counts, and histogram buckets across drains; and
+6. sum kind counts, attempt counts, and histogram buckets across drains at the
+   fleet and per-agent levels; and
 7. emit evidence errors for missing or ambiguous coverage.
 
 Implement the pure boundary with explicit zero-valued keys:
@@ -649,11 +653,11 @@ node scripts/perf/analyze-rtc-outbound-runtime.mjs \
 Then run:
 
 ```sh
-npx vitest run scripts/perf/analyze-rtc-outbound-runtime.test.mjs
+npx vitest run packages/tests/scripts/analyze-rtc-outbound-runtime.test.ts
 node scripts/perf/analyze-rtc-outbound-runtime.mjs \
   /private/tmp/rtc-durable-enqueue-r10-29687265298.H4p3Rd/hetzner-distributed-dist-rtc-durable-enqueue-r10-20260719T123400Z
 git add scripts/perf/analyze-rtc-outbound-runtime.mjs \
-  scripts/perf/analyze-rtc-outbound-runtime.test.mjs scripts/perf/README.md
+  packages/tests/scripts/analyze-rtc-outbound-runtime.test.ts scripts/perf/README.md
 git commit -m "test: analyze RTC outbound scheduler evidence"
 ```
 
@@ -679,7 +683,7 @@ npx vitest run \
   packages/tests/shared-web/rallar-operation-options.test.ts \
   packages/tests/shared-test/rallar-browser-runtime.test.ts \
   packages/tests/shared-web/browser-middleware-rtt.test.ts \
-  scripts/perf/analyze-rtc-outbound-runtime.test.mjs
+  packages/tests/scripts/analyze-rtc-outbound-runtime.test.ts
 npx tsc -p packages/shared/tsconfig.json --noEmit
 npx tsc -p packages/shared-web/tsconfig.json --noEmit
 npx tsc -p packages/shared-server/tsconfig.json --noEmit
