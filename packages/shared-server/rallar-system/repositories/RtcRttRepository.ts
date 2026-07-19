@@ -20,10 +20,11 @@ import {
 } from '../../runtime-state/optimistic-runtime-state-write.ts';
 import type {
     RtcRttEndpointAdmission,
-    RtcRttMutationFacts,
+    RtcRttMutationLifecycleFacts,
     RtcRttMutationReceipt,
     RtcRttRecomputeIntent,
 } from '../services/rtc-topology-mutations.ts';
+import { validatePersistedGroupSnapshot } from '../services/group-snapshot-validation.ts';
 import { compareRtcTopologyIdentifiers } from '../rtc-topology-identifiers.ts';
 import { RtcTopologyRepositoryInvariantCorruptionError } from './RtcTopologySnapshotRepository.ts';
 
@@ -44,8 +45,9 @@ export function toRtcRttMutationReceiptId(
 export function toRtcRttRecomputeOutboxId(
     receiptId: string,
     groupRef: GroupRef,
+    commandHash: string,
 ): string {
-    return `${receiptId}:group=${encodeURIComponent(JSON.stringify([
+    return `${receiptId}:commandHash=${encodeURIComponent(commandHash)}:group=${encodeURIComponent(JSON.stringify([
         groupRef.applicationId,
         groupRef.workspaceId === undefined
             ? ['absent']
@@ -260,29 +262,50 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
     async findMutationReceipt(
         receiptId: string,
     ): Promise<RtcRttMutationReceipt | undefined> {
+        return (await this.findMutationReceiptEntry(receiptId))?.value;
+    }
+
+    async findMutationReceiptEntry(
+        receiptId: string,
+    ): Promise<RuntimeStateEntryValue<RtcRttMutationReceipt> | undefined> {
         const entry = await this.runtimeRepository.findEntry(
             RTC_RTT_RECEIPTS_NAMESPACE,
             receiptId,
         );
         if (!entry) return undefined;
         try {
-            return (await this.toLiveReceiptEntry(entry, receiptId))?.value;
+            return await this.toLiveReceiptEntry(entry, receiptId);
         } catch (error) {
             throw rttCorruption(entry.key, error instanceof Error ? error.message : 'Invalid RTT receipt');
         }
     }
 
-    async listRecomputeIntents(): Promise<readonly RtcRttRecomputeIntent[]> {
+    async listMutationReceiptEntries(): Promise<
+        readonly RuntimeStateEntryValue<RtcRttMutationReceipt>[]
+    > {
         const entries = await this.runtimeRepository.findAllEntries(
-            RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE,
+            RTC_RTT_RECEIPTS_NAMESPACE,
         );
-        return compact(await Promise.all(entries.map(async (entry) => {
-            try {
-                return (await this.toLiveRecomputeIntentEntry(entry))?.value;
-            } catch (error) {
-                throw rttCorruption(entry.key, error instanceof Error ? error.message : 'Invalid RTT recompute intent');
-            }
-        })));
+        return compact(await Promise.all(entries.map((entry) =>
+            this.toLiveReceiptEntry(entry)
+        )));
+    }
+
+    async listMutationReceiptEntriesPage(
+        options: RuntimeStateEntryPageOptions,
+    ): Promise<readonly RuntimeStateEntryValue<RtcRttMutationReceipt>[]> {
+        const entries = await this.listEntriesPage(
+            RTC_RTT_RECEIPTS_NAMESPACE,
+            '',
+            options,
+        );
+        return compact(await Promise.all(entries.map((entry) =>
+            this.toLiveReceiptEntry(entry)
+        )));
+    }
+
+    async listRecomputeIntents(): Promise<readonly RtcRttRecomputeIntent[]> {
+        return (await this.listRecomputeIntentEntries()).map(({ value }) => value);
     }
 
     async removeRecomputeIntent(
@@ -309,6 +332,31 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
         return compact(await Promise.all(entries.map(async (entry) => {
             return await this.toLiveRecomputeIntentEntry(entry);
         })));
+    }
+
+    async findRecomputeIntentEntry(
+        outboxId: string,
+    ): Promise<RuntimeStateEntryValue<RtcRttRecomputeIntent> | undefined> {
+        const entry = await this.runtimeRepository.findEntry(
+            RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE,
+            outboxId,
+        );
+        return entry
+            ? await this.toLiveRecomputeIntentEntry(entry, outboxId)
+            : undefined;
+    }
+
+    async listRecomputeIntentEntriesPage(
+        options: RuntimeStateEntryPageOptions,
+    ): Promise<readonly RuntimeStateEntryValue<RtcRttRecomputeIntent>[]> {
+        const entries = await this.listEntriesPage(
+            RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE,
+            '',
+            options,
+        );
+        return compact(await Promise.all(entries.map((entry) =>
+            this.toLiveRecomputeIntentEntry(entry)
+        )));
     }
 
     async putMeasurementIfNewer(
@@ -369,7 +417,7 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
         return this.nowEpochMs() + (this.options.ttlMs ?? DEFAULT_RTC_RTT_TTL_MS);
     }
 
-    readMutationFacts(): RtcRttMutationFacts {
+    readMutationFacts(): RtcRttMutationLifecycleFacts {
         const requestedAtEpochMs = this.nowEpochMs();
         return {
             requestedAtEpochMs,
@@ -498,8 +546,16 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
         if (trustedReceiptId !== undefined && entry.key !== trustedReceiptId) {
             throw rttCorruption(entry.key, 'RTC RTT receipt differs from trusted slot');
         }
-        const value = parseValue(entry) as RtcRttMutationReceipt;
-        validateMutationReceipt(value);
+        let value: RtcRttMutationReceipt;
+        try {
+            value = parseValue(entry) as RtcRttMutationReceipt;
+            validateMutationReceipt(value);
+        } catch (error) {
+            throw rttCorruption(
+                entry.key,
+                error instanceof Error ? error.message : 'Invalid RTT receipt',
+            );
+        }
         if (value.receiptId !== entry.key) {
             throw rttCorruption(entry.key, 'RTC RTT receipt differs from physical key');
         }
@@ -518,10 +574,22 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
 
     private async toLiveRecomputeIntentEntry(
         entry: RuntimeStateEntry,
+        trustedOutboxId?: string,
         expiryAttempt = 0,
     ): Promise<RuntimeStateEntryValue<RtcRttRecomputeIntent> | undefined> {
-        const value = parseValue(entry) as RtcRttRecomputeIntent;
-        validateRecomputeIntent(value);
+        if (trustedOutboxId !== undefined && entry.key !== trustedOutboxId) {
+            throw rttCorruption(entry.key, 'RTC RTT recompute intent differs from trusted slot');
+        }
+        let value: RtcRttRecomputeIntent;
+        try {
+            value = parseValue(entry) as RtcRttRecomputeIntent;
+            validateRecomputeIntent(value);
+        } catch (error) {
+            throw rttCorruption(
+                entry.key,
+                error instanceof Error ? error.message : 'Invalid RTT recompute intent',
+            );
+        }
         if (value.outboxId !== entry.key) {
             throw rttCorruption(entry.key, 'RTC RTT recompute intent differs from physical key');
         }
@@ -531,6 +599,7 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
             value,
             (replacement, nextAttempt) => this.toLiveRecomputeIntentEntry(
                 replacement,
+                trustedOutboxId,
                 nextAttempt,
             ),
             expiryAttempt,
@@ -664,12 +733,13 @@ function validateMutationReceipt(
     if (!isRecord(value)) throw new TypeError('RTC RTT receipt is invalid');
     assertExactKeys(value, [
         'receiptId', 'sessionIdFrom', 'sessionIdTo', 'measurementVersion',
-        'affectedGroupRefs', 'acceptedAtEpochMs', 'outcome',
+        'affectedGroupRefs', 'acceptedAtEpochMs', 'outcome', 'commandHash',
     ]);
     if (
         typeof value.receiptId !== 'string' || value.receiptId.length === 0 ||
         typeof value.sessionIdFrom !== 'string' || value.sessionIdFrom.length === 0 ||
         typeof value.sessionIdTo !== 'string' || value.sessionIdTo.length === 0 ||
+        value.sessionIdFrom === value.sessionIdTo ||
         typeof value.measurementVersion !== 'number' ||
         !Number.isSafeInteger(value.measurementVersion) || value.measurementVersion < 1 ||
         typeof value.acceptedAtEpochMs !== 'number' ||
@@ -678,6 +748,7 @@ function validateMutationReceipt(
     ) {
         throw new TypeError('RTC RTT receipt fields are invalid');
     }
+    validateCommandHash(value.commandHash);
     if (value.receiptId !== toRtcRttMutationReceiptId({
         sessionIdFrom: value.sessionIdFrom as string,
         sessionIdTo: value.sessionIdTo as string,
@@ -694,24 +765,36 @@ function validateRecomputeIntent(
     if (!isRecord(value)) throw new TypeError('RTC RTT recompute intent is invalid');
     assertExactKeys(value, [
         'outboxId', 'receiptId', 'groupSnapshot', 'rtt', 'createdAtEpochMs',
+        'commandHash',
     ]);
     if (
         typeof value.outboxId !== 'string' || value.outboxId.length === 0 ||
         typeof value.receiptId !== 'string' || value.receiptId.length === 0 ||
-        !isRecord(value.groupSnapshot) || !isRecord(value.groupSnapshot.group) ||
         typeof value.createdAtEpochMs !== 'number' ||
         !Number.isSafeInteger(value.createdAtEpochMs) || value.createdAtEpochMs < 0
     ) {
         throw new TypeError('RTC RTT recompute intent fields are invalid');
     }
+    validateCommandHash(value.commandHash);
+    validatePersistedGroupSnapshot(value.groupSnapshot);
     validateMeasurement(value.rtt);
-    const groupRef = value.groupSnapshot.group as GroupRef;
+    const groupRef = value.groupSnapshot.group;
     const expectedReceiptId = toRtcRttMutationReceiptId(value.rtt);
     if (
         value.receiptId !== expectedReceiptId ||
-        value.outboxId !== toRtcRttRecomputeOutboxId(expectedReceiptId, groupRef)
+        value.outboxId !== toRtcRttRecomputeOutboxId(
+            expectedReceiptId,
+            groupRef,
+            value.commandHash,
+        )
     ) {
         throw new TypeError('RTC RTT recompute intent identity is invalid');
+    }
+}
+
+function validateCommandHash(value: unknown): asserts value is string {
+    if (typeof value !== 'string' || !/^sha256:[0-9a-f]{64}$/.test(value)) {
+        throw new TypeError('RTC RTT command hash is invalid');
     }
 }
 

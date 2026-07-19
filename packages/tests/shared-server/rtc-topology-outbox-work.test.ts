@@ -326,6 +326,72 @@ describe('RTC topology APP_OUTBOX work', () => {
         expect(publish).not.toHaveBeenCalled();
     });
 
+    it.each(['id', 'route', 'typeId'] as const)(
+        'fails closed before replay fanout when the durable envelope is missing %s',
+        async (defect) => {
+            const queue = new InMemoryQueueBox();
+            const runtime = createRtcTopologyOutboxPublisher({
+                outboxQueueReader: new OutboxQueueReader(queue),
+                now: () => 100,
+            });
+            const group = createGroupSnapshot(3);
+            await runtime.publisher.enqueueForGroupSnapshot(group);
+            const [entry] = await entriesIn(queue);
+            const message = JSON.parse(entry.resource) as ALMessage;
+            const runtimeRepository = new FakeRuntimeStateRepository();
+            let currentGroup = group;
+            const topologyManagement = new ConcreteGroupTopologyManagementService({
+                findGroupSnapshotByRef: () => currentGroup,
+                topologyService: new RallarRtcTopologyService({ now: () => 10 }),
+                topologySnapshotRepository: new RtcTopologySnapshotRepository(
+                    runtimeRepository,
+                ),
+                processRttReader: () => [],
+            });
+            const executionRepository = new RtcTopologyExecutionRepository(
+                runtimeRepository,
+            );
+            const publish = vi.fn().mockResolvedValue(0);
+            const handler = createRtcTopologyWorkHandler({
+                runtime,
+                topologyManagement,
+                executionRepository,
+                publicationFanout: {
+                    readiness: Promise.resolve(), publish, deliverLocal: () => 0,
+                },
+            });
+            await handler.onMessage(message, entry, new JsonWebSocketServer());
+            const [stored] = await runtimeRepository.findAllEntries(
+                RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
+            );
+            const publication = JSON.parse(stored!.value) as {
+                message: Record<string, unknown>;
+            };
+            if (defect === 'typeId') {
+                delete (publication.message.payload as Record<string, unknown>).typeId;
+            } else {
+                delete publication.message[defect];
+            }
+            await runtimeRepository.upsert(
+                RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
+                stored!.key,
+                JSON.stringify(publication),
+                stored!.expireAtTimestamp,
+            );
+            publish.mockClear();
+            currentGroup = createGroupSnapshot(4);
+
+            await expect(handler.onMessage(
+                message,
+                entry,
+                new JsonWebSocketServer(),
+            )).rejects.toMatchObject({
+                code: 'rtc-topology-repository-invariant-corruption',
+            });
+            expect(publish).not.toHaveBeenCalled();
+        },
+    );
+
     it('retries a torn publication-ahead read and never fans it out', async () => {
         const queue = new InMemoryQueueBox();
         const runtime = createRtcTopologyOutboxPublisher({

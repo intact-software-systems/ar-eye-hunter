@@ -28,7 +28,11 @@ import {
 } from '@shared-server/rallar-system/repositories/RtcRttRepository.ts';
 import { executeRttMutation } from '@shared-server/rallar-system/services/rtc-topology-mutations.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import {
+    newALBroadcastMessage,
+    newALRoute,
+} from '@shared/al-contracts/al-contract.ts';
+import { AppTopics } from '@shared/api/api-config.ts';
 
 type PostgresSql = PSqlSql & Readonly<{
     end(): Promise<void>;
@@ -891,10 +895,23 @@ function topologyPublication(
         sourceGroupStateRevision: snapshot.sourceGroupStateRevision,
         overlayVersion: snapshot.version,
         recipientSessionIds: snapshot.activeSessionIds,
-        message: {
-            id: `${workId}-message`,
-            payload: { resource: JSON.stringify(snapshot) },
-        } as unknown as ALMessage,
+        message: newALBroadcastMessage(
+            'rallar-server',
+            newALRoute(
+                AppTopics.overlayTopology,
+                snapshot.groupRef.groupId,
+                `${snapshot.overlayId}:${snapshot.sourceGroupStateRevision}:${snapshot.version}`,
+            ),
+            'room',
+            AppTopics.overlayTopology,
+            snapshot,
+            {
+                groupRef: snapshot.groupRef,
+                minSnapshotVersion: 1,
+                reliability: 'best-effort',
+                ack: 'none',
+            },
+        ),
         createdAtEpochMs: 1,
     };
 }
@@ -906,10 +923,15 @@ function rttGroupSnapshot(
     const base = topologyGroupSnapshot(groupRef);
     return {
         ...base,
-        members: sessionIds.map((sessionId) => ({
+        group: {
+            ...base.group,
+            activeMemberCount: sessionIds.length,
+            ownerPrincipalId: sessionIds[0]!,
+        },
+        members: sessionIds.map((sessionId, index) => ({
             ...groupRef,
             principalId: sessionId,
-            role: 'member' as const,
+            role: index === 0 ? 'owner' as const : 'member' as const,
             status: 'active' as const,
             joined: { atEpochMs: 1, byPrincipalId: 'owner' },
             updated: { atEpochMs: 1, byPrincipalId: 'owner' },

@@ -1811,6 +1811,140 @@ describe('GroupTopologyManagementService', () => {
         expect(runtimeRepository.locks).toEqual([]);
     });
 
+    it('does not treat a newer expired active group as removal cancellation', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const base = createGroupSnapshot(createGroupRef('workspace-expired-removal'));
+        const staleRemoval: GroupSnapshot = {
+            ...base,
+            group: {
+                ...base.group,
+                status: 'deleted',
+                deleted: { atEpochMs: 2, byPrincipalId: 'owner' },
+                updated: { atEpochMs: 2, byPrincipalId: 'owner' },
+            },
+        };
+        const expired: GroupSnapshot = {
+            ...base,
+            stateRevision: 2,
+            causalRevision: { ...base.causalRevision, groupRevision: 2 },
+            group: {
+                ...base.group,
+                snapshotVersion: 2,
+                expiresAtEpochMs: 100,
+                updated: { atEpochMs: 2, byPrincipalId: 'owner' },
+            },
+        };
+        const snapshots = new RtcTopologySnapshotRepository(runtimeRepository);
+        await seedTopologySnapshot(snapshots, createTopologySnapshot(base.group, {
+            'session-a': ['session-b'],
+            'session-b': ['session-a'],
+        }));
+        const service = createService({ runtimeRepository, group: expired });
+
+        await service.removeGroupTopology(staleRemoval);
+
+        expect(await snapshots.findSnapshot(expired.group)).toMatchObject({
+            state: 'removed',
+            sourceGroupStateRevision: 2,
+        });
+    });
+
+    it('replans a stale removal from the newer terminal group authority', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const base = createGroupSnapshot(createGroupRef('workspace-terminal-removal'));
+        const staleRemoval: GroupSnapshot = {
+            ...base,
+            group: {
+                ...base.group,
+                status: 'deleted',
+                deleted: { atEpochMs: 2, byPrincipalId: 'owner' },
+                updated: { atEpochMs: 2, byPrincipalId: 'owner' },
+            },
+        };
+        const currentGroup: GroupSnapshot = {
+            ...staleRemoval,
+            stateRevision: 2,
+            causalRevision: { ...staleRemoval.causalRevision, groupRevision: 2 },
+            group: {
+                ...staleRemoval.group,
+                snapshotVersion: 2,
+                deleted: { atEpochMs: 3, byPrincipalId: 'owner' },
+                updated: { atEpochMs: 3, byPrincipalId: 'owner' },
+            },
+        };
+        const current = createTopologySnapshot(base.group, {
+            'session-a': ['session-b'],
+            'session-b': ['session-a'],
+        });
+        const snapshots = new RtcTopologySnapshotRepository(runtimeRepository);
+        await seedTopologySnapshot(snapshots, current);
+        const service = createService({ runtimeRepository, group: currentGroup });
+
+        await service.removeGroupTopology(staleRemoval);
+
+        expect(await snapshots.findSnapshot(currentGroup.group)).toMatchObject({
+            state: 'removed',
+            sourceGroupStateRevision: 2,
+        });
+        expect(runtimeRepository.locks).toEqual([]);
+    });
+
+    it('rereads terminal authority and the topology predecessor after a removal CAS conflict', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const base = createGroupSnapshot(createGroupRef('workspace-removal-conflict'));
+        const removed: GroupSnapshot = {
+            ...base,
+            stateRevision: 2,
+            causalRevision: { ...base.causalRevision, groupRevision: 2 },
+            group: {
+                ...base.group,
+                status: 'deleted',
+                snapshotVersion: 2,
+                deleted: { atEpochMs: 2, byPrincipalId: 'owner' },
+                updated: { atEpochMs: 2, byPrincipalId: 'owner' },
+            },
+        };
+        const initial = createTopologySnapshot(base.group, {
+            'session-a': ['session-b'],
+            'session-b': ['session-a'],
+        });
+        const moved = { ...initial, version: 2, updatedAtEpochMs: 2 };
+        const snapshots = new RtcTopologySnapshotRepository(runtimeRepository);
+        await seedTopologySnapshot(snapshots, initial);
+        let injected = false;
+        runtimeRepository.beforeConditionalWrite = async (
+            operation,
+            namespace,
+            key,
+        ) => {
+            if (
+                injected || operation !== 'upsertIfRevision' ||
+                namespace !== RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE
+            ) return;
+            injected = true;
+            await runtimeRepository.upsert(
+                namespace,
+                key,
+                JSON.stringify(moved),
+                NEVER_EXPIRE_AT_TIMESTAMP,
+            );
+        };
+        const begin = vi.spyOn(runtimeRepository, 'begin');
+        const sleep = vi.fn(async () => {});
+        const service = createService({ runtimeRepository, group: removed, sleep });
+
+        await service.removeGroupTopology(removed);
+
+        expect(begin).toHaveBeenCalledTimes(2);
+        expect(sleep).toHaveBeenCalledWith(2);
+        expect(await snapshots.findSnapshot(removed.group)).toMatchObject({
+            state: 'removed',
+            sourceGroupStateRevision: 2,
+            version: 1,
+        });
+        expect(runtimeRepository.locks).toEqual([]);
+    });
+
     it('replans outside the transaction when the durable predecessor moves', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const baseGroup = createGroupSnapshot(createGroupRef('workspace-1'));

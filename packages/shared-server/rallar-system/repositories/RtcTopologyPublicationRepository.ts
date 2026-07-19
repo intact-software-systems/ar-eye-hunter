@@ -1,4 +1,5 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { AppTopics } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { RuntimeStateEntryValue } from '../../runtime-state/RuntimeStateJsonStore.ts';
@@ -22,6 +23,7 @@ import {
     RtcTopologyRepositoryInvariantCorruptionError,
     validateTopologySnapshot,
 } from './RtcTopologySnapshotRepository.ts';
+import { validatePersistedALMessage } from '../services/al-message-persistence-validation.ts';
 
 export const RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE = 'rtc-topology:publications';
 export const RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE =
@@ -528,6 +530,7 @@ function validatePublication(value: unknown, expectedRef: GroupRef): void {
     ) {
         throw new TypeError('RTC topology publication payload is invalid');
     }
+    validatePersistedALMessage(value.message);
     let snapshot: unknown;
     try {
         snapshot = JSON.parse((value.message as ALMessage).payload.resource);
@@ -535,6 +538,11 @@ function validatePublication(value: unknown, expectedRef: GroupRef): void {
         throw new TypeError('RTC topology publication message snapshot is invalid');
     }
     validateTopologySnapshot(snapshot, expectedRef);
+    validateTopologyPublicationEnvelope(
+        value.message,
+        expectedRef,
+        snapshot as RallarOverlayTopologySnapshot,
+    );
     if (
         (snapshot as RallarOverlayTopologySnapshot).sourceGroupStateRevision !==
             value.sourceGroupStateRevision ||
@@ -543,6 +551,40 @@ function validatePublication(value: unknown, expectedRef: GroupRef): void {
             JSON.stringify(value.recipientSessionIds)
     ) {
         throw new TypeError('RTC topology publication message identity is invalid');
+    }
+}
+
+function validateTopologyPublicationEnvelope(
+    message: ALMessage,
+    expectedRef: GroupRef,
+    snapshot: Pick<
+        RallarOverlayTopologySnapshot,
+        'overlayId' | 'sourceGroupStateRevision' | 'version'
+    >,
+): void {
+    if (!message.targets || !message.delivery || !message.audit) {
+        throw new TypeError('RTC topology publication is missing builder envelope sections');
+    }
+    const expectedResourceId =
+        `${snapshot.overlayId}:${snapshot.sourceGroupStateRevision}:${snapshot.version}`;
+    if (
+        message.id.senderId !== 'rallar-server' ||
+        message.route.topicId !== AppTopics.overlayTopology ||
+        message.route.contextId !== expectedRef.groupId ||
+        message.route.resourceId !== expectedResourceId ||
+        message.payload.typeId !== AppTopics.overlayTopology ||
+        message.payload.contentType !== 'application/json' ||
+        message.targets.mode !== 'broadcast' ||
+        message.targets.scope !== 'room' ||
+        message.targets.groupRef === undefined ||
+        !sameGroupRef(message.targets.groupRef, expectedRef) ||
+        message.targets.minSnapshotVersion === undefined ||
+        message.delivery.reliability !== 'best-effort' ||
+        message.delivery.ack !== 'none' ||
+        message.audit.createdBy !== 'rallar-server' ||
+        message.audit.createdTs !== message.id.ts
+    ) {
+        throw new TypeError('RTC topology publication envelope identity is invalid');
     }
 }
 

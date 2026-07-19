@@ -16,6 +16,7 @@ import {
     toRtcRttMutationReceiptId,
     toRtcRttRecomputeOutboxId,
 } from '../repositories/RtcRttRepository.ts';
+import { hashStateMutationCommand } from '../repositories/StateMutationOutboxRepository.ts';
 import { compareRtcTopologyIdentifiers } from '../rtc-topology-identifiers.ts';
 import type { RtcTopologyPublication } from '../repositories/RtcTopologyPublicationRepository.ts';
 import {
@@ -220,12 +221,19 @@ export type RtcRttMutationCommand = Readonly<{
 }>;
 
 export type RtcRttMutationRead = Readonly<{
+    receipt: RuntimeStateEntryValue<RtcRttMutationReceipt> | null;
     measurement: RuntimeStateEntryValue<RttMeasurementInfo> | null;
     endpointAdmissions: readonly RuntimeStateEntryValue<RtcRttEndpointAdmission>[];
     measurements: readonly RuntimeStateEntryValue<RttMeasurementInfo>[];
 }>;
 
 export type RtcRttMutationFacts = Readonly<{
+    purgeAfterEpochMs: number;
+    requestedAtEpochMs: number;
+    commandHash: string;
+}>;
+
+export type RtcRttMutationLifecycleFacts = Readonly<{
     purgeAfterEpochMs: number;
     requestedAtEpochMs: number;
 }>;
@@ -238,6 +246,12 @@ export type RtcRttEndpointGuard = Readonly<{
 }>;
 
 export type RtcRttMutationComputed =
+    | Readonly<{
+        outcome: 'replay';
+        reason: 'accepted';
+        affectedGroups: readonly GroupSnapshot[];
+        receipt: RtcRttMutationReceipt;
+    }>
     | Readonly<{
         outcome: 'rejected';
         reason: RtcRttAcceptanceReason | 'stale';
@@ -265,6 +279,7 @@ export type RtcRttMutationReceipt = Readonly<{
     affectedGroupRefs: readonly GroupRef[];
     acceptedAtEpochMs: number;
     outcome: 'accepted';
+    commandHash: string;
 }>;
 
 export type RtcRttRecomputeIntent = Readonly<{
@@ -273,7 +288,18 @@ export type RtcRttRecomputeIntent = Readonly<{
     groupSnapshot: GroupSnapshot;
     rtt: RttMeasurementInfo;
     createdAtEpochMs: number;
+    commandHash: string;
 }>;
+
+export class RtcRttMutationIdempotencyConflictError extends Error {
+    readonly status = 409;
+    readonly code = 'rtc-rtt-idempotency-conflict';
+
+    constructor(readonly receiptId: string) {
+        super(`RTC RTT receipt ${receiptId} was already claimed by another command`);
+        this.name = 'RtcRttMutationIdempotencyConflictError';
+    }
+}
 
 export function computeRttMutation(input: Readonly<{
     command: RtcRttMutationCommand;
@@ -281,6 +307,19 @@ export function computeRttMutation(input: Readonly<{
     facts: RtcRttMutationFacts;
 }>): RtcRttMutationComputed {
     validateRttMutationFacts(input.facts);
+    if (input.read.receipt) {
+        if (input.read.receipt.value.commandHash !== input.facts.commandHash) {
+            throw new RtcRttMutationIdempotencyConflictError(
+                input.read.receipt.value.receiptId,
+            );
+        }
+        return {
+            outcome: 'replay',
+            reason: 'accepted',
+            affectedGroups: [],
+            receipt: input.read.receipt.value,
+        };
+    }
     if (
         input.read.measurement &&
         input.read.measurement.value.version > input.command.rtt.version
@@ -404,13 +443,19 @@ export function computeRttMutation(input: Readonly<{
             affectedGroupRefs,
             acceptedAtEpochMs: input.facts.requestedAtEpochMs,
             outcome: 'accepted',
+            commandHash: input.facts.commandHash,
         },
         recomputeIntents: acceptance.affectedGroups.map((group) => ({
-            outboxId: toRtcRttRecomputeOutboxId(receiptId, group.group),
+            outboxId: toRtcRttRecomputeOutboxId(
+                receiptId,
+                group.group,
+                input.facts.commandHash,
+            ),
             receiptId,
             groupSnapshot: group,
             rtt: input.command.rtt,
             createdAtEpochMs: input.facts.requestedAtEpochMs,
+            commandHash: input.facts.commandHash,
         })),
     };
 }
@@ -472,17 +517,25 @@ export function validateRttMutationFacts(facts: RtcRttMutationFacts): void {
     ) {
         throw new TypeError('RTC RTT purge-after lifecycle fact is invalid');
     }
+    if (!/^sha256:[0-9a-f]{64}$/.test(facts.commandHash)) {
+        throw new TypeError('RTC RTT command hash fact is invalid');
+    }
 }
 
 export async function readRttMutation(
     repository: RtcRttRepository,
     command: RtcRttMutationCommand,
 ): Promise<RtcRttMutationRead> {
-    const [measurement, ...endpointAdmissions] = await Promise.all([
+    const [receipt, measurement, measurements, ...endpointAdmissions] =
+        await Promise.all([
+        repository.findMutationReceiptEntry(
+            toRtcRttMutationReceiptId(command.rtt),
+        ),
         repository.findMeasurementEntry(
             command.rtt.sessionIdFrom,
             command.rtt.sessionIdTo,
         ),
+        repository.listMeasurementEntries(),
         ...[...new Set([
             command.rtt.sessionIdFrom,
             command.rtt.sessionIdTo,
@@ -490,8 +543,8 @@ export async function readRttMutation(
             repository.findEndpointAdmissionEntry(endpointId)
         ),
     ]);
-    const measurements = await repository.listMeasurementEntries();
     return {
+        receipt: receipt ?? null,
         measurement: measurement ?? null,
         endpointAdmissions: endpointAdmissions.filter((entry): entry is
             NonNullable<typeof entry> => entry !== undefined),
@@ -574,18 +627,25 @@ export async function executeRttMutation(input: Readonly<{
     runtime: RuntimeStateOptimisticTransactionalRepositoryLike;
     command: RtcRttMutationCommand;
     readCommand?: () => RtcRttMutationCommand | Promise<RtcRttMutationCommand>;
-    readFacts: () => RtcRttMutationFacts | Promise<RtcRttMutationFacts>;
+    readFacts: () => RtcRttMutationLifecycleFacts | Promise<RtcRttMutationLifecycleFacts>;
     sleep?: (delayMs: number) => Promise<void>;
     timing?: RallarTimingSink;
     serviceId?: string;
 }>): Promise<ExecuteRttMutationResult> {
+    const commandHash = await hashStateMutationCommand({
+        rtt: input.command.rtt,
+        alSenderId: input.command.alSenderId,
+    });
     let lastConflict: RuntimeStateWriteConflictError | undefined;
     for (let attempt = 0; attempt < 3; attempt += 1) {
         const backoffMs = await waitForRuntimeStateWriteRetry(attempt as 0 | 1 | 2, {
             sleep: input.sleep,
         });
         const readStarted = performance.now();
-        const facts = await input.readFacts();
+        const facts: RtcRttMutationFacts = {
+            ...await input.readFacts(),
+            commandHash,
+        };
         validateRttMutationFacts(facts);
         const command = await input.readCommand?.() ?? input.command;
         if (!sameRttRequest(command, input.command)) {
@@ -610,7 +670,7 @@ export async function executeRttMutation(input: Readonly<{
             computed,
         });
         recordRttPhase(input, 'validate', validateStarted, attempt, backoffMs);
-        if (computed.outcome === 'rejected') {
+        if (computed.outcome === 'rejected' || computed.outcome === 'replay') {
             return { computed, updated: false };
         }
 

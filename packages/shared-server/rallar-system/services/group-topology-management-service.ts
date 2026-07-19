@@ -658,7 +658,7 @@ export class GroupTopologyManagementService {
         previous: RallarOverlayTopologySnapshot | undefined,
     ): ReconcileGroupTopologyResult {
         const group = authority.group;
-        if (group.group.status === 'active') {
+        if (isGroupTopologyActiveAt(group, authority.nowEpochMs)) {
             const filteredRttMeasurements = this.filterRttMeasurementsForGroup(
                 group,
                 authority.rttMeasurements,
@@ -839,12 +839,7 @@ export class GroupTopologyManagementService {
             this.recordTopologyMutationPhase(
                 group.group, 'read', readStarted, attempt, backoffMs,
             );
-            if (
-                freshGroup.group.status === 'active' ||
-                readGroupStateRevision(freshGroup) > readGroupStateRevision(group)
-            ) {
-                return;
-            }
+            if (isGroupTopologyActiveAt(freshGroup, authority.nowEpochMs)) return;
             const planned = this.planTopologyFromAuthority(
                 authority,
                 read.snapshot?.value,
@@ -1473,6 +1468,15 @@ export function createRtcOverlayTopologyBroadcastMessage(
             ack: 'none',
         },
     );
+}
+
+function isGroupTopologyActiveAt(
+    snapshot: GroupSnapshot,
+    observedAtEpochMs: number,
+): boolean {
+    return snapshot.group.status === 'active' &&
+        (snapshot.group.expiresAtEpochMs === undefined ||
+            snapshot.group.expiresAtEpochMs > observedAtEpochMs);
 }
 
 function canonicalGroupRef(ref: GroupRef): GroupRef {

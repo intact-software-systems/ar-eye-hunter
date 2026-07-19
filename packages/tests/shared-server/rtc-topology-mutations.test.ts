@@ -8,6 +8,10 @@ import {
     validateRttMutation,
     validateTopologyMutation,
 } from '@shared-server/rallar-system/services/rtc-topology-mutations.ts';
+import { toRtcRttMutationReceiptId } from '@shared-server/rallar-system/repositories/RtcRttRepository.ts';
+
+const RTT_COMMAND_HASH = `sha256:${'a'.repeat(64)}`;
+const OTHER_RTT_COMMAND_HASH = `sha256:${'b'.repeat(64)}`;
 
 describe('RTC topology mutation phases', () => {
     it('computes and validates an absent topology guard deterministically from frozen input', () => {
@@ -66,6 +70,7 @@ describe('RTC topology mutation phases', () => {
                 degreeLimit: 1,
             },
             read: {
+                receipt: null,
                 measurement: {
                     entry: {
                         key: 'pair=session-a%3A%3Asession-b',
@@ -91,6 +96,7 @@ describe('RTC topology mutation phases', () => {
             facts: {
                 purgeAfterEpochMs: 10_000,
                 requestedAtEpochMs: 2,
+                commandHash: RTT_COMMAND_HASH,
             },
         });
 
@@ -317,9 +323,18 @@ describe('RTC topology mutation phases', () => {
                 rtt, alSenderId: 'session-a', candidateGroups: [group],
                 overlaySnapshotsByGroupKey: new Map(), degreeLimit: 1,
             },
-            facts: { requestedAtEpochMs: 1, purgeAfterEpochMs: 60_001 },
+            facts: {
+                requestedAtEpochMs: 1,
+                purgeAfterEpochMs: 60_001,
+                commandHash: RTT_COMMAND_HASH,
+            },
         };
-        const emptyRead = { measurement: null, endpointAdmissions: [], measurements: [] };
+        const emptyRead = {
+            receipt: null,
+            measurement: null,
+            endpointAdmissions: [],
+            measurements: [],
+        };
         expect(computeAndValidateRttTwice(deepFreeze({
             ...base,
             command: { ...base.command, candidateGroups: [] },
@@ -366,7 +381,12 @@ describe('RTC topology mutation phases', () => {
             sessionIdFrom: 'session-a', sessionIdTo: 'session-b',
             rttMs: 5, createdAtEpochMs: 1, version: 1,
         };
-        const emptyRead = { measurement: null, endpointAdmissions: [], measurements: [] };
+        const emptyRead = {
+            receipt: null,
+            measurement: null,
+            endpointAdmissions: [],
+            measurements: [],
+        };
         const reportingOverlay = {
             ...topologySnapshot(group.group, 1),
             activeSessionIds: ['session-a', 'session-b', 'session-c'],
@@ -407,7 +427,11 @@ describe('RTC topology mutation phases', () => {
             const input = deepFreeze({
                 command: testCase.command,
                 read: emptyRead,
-                facts: { requestedAtEpochMs: 1, purgeAfterEpochMs: 60_001 },
+                facts: {
+                    requestedAtEpochMs: 1,
+                    purgeAfterEpochMs: 60_001,
+                    commandHash: RTT_COMMAND_HASH,
+                },
             });
             expect(computeAndValidateRttTwice(input))
                 .toMatchObject({ outcome: 'rejected', reason: testCase.reason });
@@ -420,6 +444,7 @@ describe('RTC topology mutation phases', () => {
             rttMs: 5, createdAtEpochMs: 2, version: 2,
         };
         const readFor = (value: typeof incoming) => ({
+            receipt: null,
             measurement: {
                 entry: {
                     key: 'from=session-a:to=session-b',
@@ -440,7 +465,11 @@ describe('RTC topology mutation phases', () => {
             overlaySnapshotsByGroupKey: new Map(),
             degreeLimit: 1,
         };
-        const facts = { purgeAfterEpochMs: 10_000, requestedAtEpochMs: 2 };
+        const facts = {
+            purgeAfterEpochMs: 10_000,
+            requestedAtEpochMs: 2,
+            commandHash: RTT_COMMAND_HASH,
+        };
         expect(computeAndValidateRttTwice(deepFreeze({
             command,
             read: readFor(incoming),
@@ -456,6 +485,114 @@ describe('RTC topology mutation phases', () => {
             .toThrow('equal version differs from durable measurement');
         expect(() => computeRttMutation(conflicting))
             .toThrow('equal version differs from durable measurement');
+    });
+
+    it('computes an exact receipt replay twice from frozen immutable authority', () => {
+        const rtt = {
+            sessionIdFrom: 'session-a', sessionIdTo: 'session-b',
+            rttMs: 5, createdAtEpochMs: 2, version: 2,
+        };
+        const receiptId = toRtcRttMutationReceiptId(rtt);
+        const receipt = {
+            receiptId,
+            sessionIdFrom: rtt.sessionIdFrom,
+            sessionIdTo: rtt.sessionIdTo,
+            measurementVersion: rtt.version,
+            affectedGroupRefs: [],
+            acceptedAtEpochMs: 1,
+            outcome: 'accepted' as const,
+            commandHash: RTT_COMMAND_HASH,
+        };
+        const input = deepFreeze({
+            command: {
+                rtt,
+                alSenderId: 'session-a',
+                candidateGroups: [],
+                overlaySnapshotsByGroupKey: new Map(),
+                degreeLimit: 1,
+            },
+            read: {
+                receipt: {
+                    entry: {
+                        key: receiptId,
+                        value: JSON.stringify(receipt),
+                        expireAtTimestamp: 86_400_001,
+                        updatedTimestamp: '1970-01-01T00:00:00.000Z',
+                        revision: 0,
+                    },
+                    value: receipt,
+                },
+                measurement: null,
+                endpointAdmissions: [],
+                measurements: [],
+            },
+            facts: {
+                requestedAtEpochMs: 2,
+                purgeAfterEpochMs: 60_002,
+                commandHash: RTT_COMMAND_HASH,
+            },
+        });
+
+        expect(computeAndValidateRttTwice(input)).toEqual({
+            outcome: 'replay',
+            reason: 'accepted',
+            affectedGroups: [],
+            receipt,
+        });
+    });
+
+    it('rejects divergent pair/version reuse from frozen receipt authority twice', () => {
+        const rtt = {
+            sessionIdFrom: 'session-a', sessionIdTo: 'session-b',
+            rttMs: 5, createdAtEpochMs: 2, version: 2,
+        };
+        const receiptId = toRtcRttMutationReceiptId(rtt);
+        const receipt = {
+            receiptId,
+            sessionIdFrom: rtt.sessionIdFrom,
+            sessionIdTo: rtt.sessionIdTo,
+            measurementVersion: rtt.version,
+            affectedGroupRefs: [],
+            acceptedAtEpochMs: 1,
+            outcome: 'accepted' as const,
+            commandHash: OTHER_RTT_COMMAND_HASH,
+        };
+        const input = deepFreeze({
+            command: {
+                rtt,
+                alSenderId: 'session-a',
+                candidateGroups: [],
+                overlaySnapshotsByGroupKey: new Map(),
+                degreeLimit: 1,
+            },
+            read: {
+                receipt: {
+                    entry: {
+                        key: receiptId,
+                        value: JSON.stringify(receipt),
+                        expireAtTimestamp: 86_400_001,
+                        updatedTimestamp: '1970-01-01T00:00:00.000Z',
+                        revision: 0,
+                    },
+                    value: receipt,
+                },
+                measurement: null,
+                endpointAdmissions: [],
+                measurements: [],
+            },
+            facts: {
+                requestedAtEpochMs: 2,
+                purgeAfterEpochMs: 60_002,
+                commandHash: RTT_COMMAND_HASH,
+            },
+        });
+
+        expect(() => computeRttMutation(input)).toThrowError(expect.objectContaining({
+            code: 'rtc-rtt-idempotency-conflict',
+        }));
+        expect(() => computeRttMutation(input)).toThrowError(expect.objectContaining({
+            code: 'rtc-rtt-idempotency-conflict',
+        }));
     });
 });
 

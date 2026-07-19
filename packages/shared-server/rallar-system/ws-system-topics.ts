@@ -690,6 +690,14 @@ async function acceptRtcRttMeasurementWithPolicy(input: {
     if (executed.updated) {
         rttRepository.setRtt(input.rtt);
     }
+    if (executed.computed.outcome === 'replay') {
+        return {
+            accepted: true,
+            reason: 'accepted',
+            affectedGroups: [],
+            updated: false,
+        };
+    }
     if (executed.computed.outcome === 'rejected') {
         return executed.computed.reason === 'stale'
             ? {

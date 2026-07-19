@@ -591,6 +591,42 @@ describe('Rallar system websocket topics RTC topology', () => {
         expect(runtimeRepository.locks).toEqual([]);
     });
 
+    it('accepts an exact runtime-state RTT receipt replay without duplicate effects', async () => {
+        configureTestCacheRepositories();
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const { sockets, topologyService } = createRttHarness(
+            ['session-a', 'session-b'],
+            { runtimeRepository },
+        );
+        const group = createGroupSnapshot('room-1', ['session-a', 'session-b']);
+        groupStateSnapshotsRepository.setGroupStateSnapshot(group);
+        const rtt = {
+            sessionIdFrom: 'session-a',
+            sessionIdTo: 'session-b',
+            rttMs: 12,
+            createdAtEpochMs: 1,
+            version: 1,
+        };
+        const durableRtts = new RtcRttRepository(runtimeRepository);
+        const observeRtt = vi.spyOn(vivaldiService, 'observeRtt');
+        const queueRttTopologyUpdate = vi.spyOn(
+            topologyService,
+            'queueRttTopologyUpdate',
+        );
+
+        await dispatchRtt(sockets.get('session-a')!, 'session-a', rtt, group);
+        const first = await durableRtts.findMeasurementEntry('session-a', 'session-b');
+        observeRtt.mockClear();
+        queueRttTopologyUpdate.mockClear();
+
+        await dispatchRtt(sockets.get('session-a')!, 'session-a', rtt, group);
+
+        expect(await durableRtts.findMeasurementEntry('session-a', 'session-b'))
+            .toEqual(first);
+        expect(observeRtt).not.toHaveBeenCalled();
+        expect(queueRttTopologyUpdate).not.toHaveBeenCalled();
+    });
+
     it('debounces and coalesces RTT-triggered overlay topology broadcasts', async () => {
         vi.useFakeTimers();
         vi.setSystemTime(1_000);
@@ -1397,9 +1433,11 @@ function createGroupSnapshot(
             joinMode: 'open',
             metadata: {},
             snapshotVersion: 1,
-            metadataVersion: 0,
+            metadataVersion: 1,
             rosterVersion: 1,
             presenceVersion: 0,
+            activeMemberCount: memberSessionIds.length,
+            ownerPrincipalId: memberSessionIds[0]!,
             created: {
                 atEpochMs: 1,
                 byPrincipalId: 'owner',
@@ -1409,12 +1447,12 @@ function createGroupSnapshot(
                 byPrincipalId: 'owner',
             },
         },
-        members: memberSessionIds.map((sessionId) => ({
+        members: memberSessionIds.map((sessionId, index) => ({
             applicationId,
             workspaceId,
             groupId,
             principalId: sessionId,
-            role: 'member',
+            role: index === 0 ? 'owner' : 'member',
             status: 'active',
             joined: {
                 atEpochMs: 1,

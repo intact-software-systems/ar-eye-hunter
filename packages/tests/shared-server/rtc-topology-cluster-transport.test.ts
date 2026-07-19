@@ -5,6 +5,8 @@ import {
     newALBroadcastMessage,
     newALRoute,
 } from '@shared/mod.ts';
+import { AppTopics } from '@shared/api/api-config.ts';
+import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { RtcTopologyPublicationRepository } from '@shared-server/rallar-system/repositories/RtcTopologyPublicationRepository.ts';
 import {
     createLocalRtcTopologyClusterBus,
@@ -51,13 +53,7 @@ describe('RTC topology cluster publication fanout', () => {
             sourceGroupStateRevision: 4,
             overlayVersion: 2,
             recipientSessionIds: ['session-a', 'session-b'],
-            message: newALBroadcastMessage(
-                'server-a',
-                newALRoute('overlay-topology', 'room-1', 'publication-1'),
-                'room',
-                'overlay-topology',
-                snapshot,
-            ),
+            message: topologyPublicationMessage(snapshot),
             createdAtEpochMs: Date.now(),
         };
         await repository.putOrLoad(publication);
@@ -101,13 +97,7 @@ describe('RTC topology cluster publication fanout', () => {
             sourceGroupStateRevision: 4,
             overlayVersion: 2,
             recipientSessionIds: ['session-b'],
-            message: newALBroadcastMessage(
-                'server-a',
-                newALRoute('overlay-topology', 'room-1', 'publication-legacy'),
-                'room',
-                'overlay-topology',
-                snapshot,
-            ),
+            message: topologyPublicationMessage(snapshot),
             createdAtEpochMs: Date.now(),
         };
         await repository.putOrLoad(publication);
@@ -162,13 +152,7 @@ describe('RTC topology cluster publication fanout', () => {
                 sourceGroupStateRevision: 4,
                 overlayVersion: 2,
                 recipientSessionIds: [recipient],
-                message: newALBroadcastMessage(
-                    'server-a',
-                    newALRoute('overlay-topology', 'room-1', publicationId),
-                    'room',
-                    'overlay-topology',
-                    snapshot,
-                ),
+                message: topologyPublicationMessage(snapshot),
                 createdAtEpochMs: Date.now(),
             });
         }
@@ -249,6 +233,26 @@ function topologySnapshot(activeSessionIds: readonly string[]) {
     return topologySnapshotForGroup(activeSessionIds, {
         applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1',
     });
+}
+
+function topologyPublicationMessage(snapshot: RallarOverlayTopologySnapshot) {
+    return newALBroadcastMessage(
+        'rallar-server',
+        newALRoute(
+            AppTopics.overlayTopology,
+            snapshot.groupRef.groupId,
+            `${snapshot.overlayId}:${snapshot.sourceGroupStateRevision}:${snapshot.version}`,
+        ),
+        'room',
+        AppTopics.overlayTopology,
+        snapshot,
+        {
+            groupRef: snapshot.groupRef,
+            minSnapshotVersion: 1,
+            reliability: 'best-effort',
+            ack: 'none',
+        },
+    );
 }
 
 function topologySnapshotForGroup(
