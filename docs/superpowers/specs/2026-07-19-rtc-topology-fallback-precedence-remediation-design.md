@@ -37,8 +37,7 @@ not be constrained by a `tree > star` shortcut.
 Run `29681076001` confirmed that equal-revision authority precedence worked,
 but also showed that a newer fallback could keep the authoritative stream from
 catching up. On controller-13, fallback revision 20 displaced authoritative
-revision 19; fallback revision 21 then arrived before authoritative revision
-20. Churn improved from 657 peer creations and 210 timeouts to 485 creations
+revision 19; fallback revision 21 then arrived before authoritative revision 20. Churn improved from 657 peer creations and 210 timeouts to 485 creations
 and 32 timeouts, but remained far above the approximately 28 directed peer
 relationships needed for a 15-node tree.
 
@@ -77,6 +76,50 @@ eventual-consistency startup. Once all active groups have authoritative
 topology, inbound signaling from a peer owned by no group is denied. Desired
 peers remain allowed, and topology reconciliation creates a peer normally if a
 later authoritative snapshot adds it back.
+
+## Iteration 3 outcome and residual bottleneck
+
+Run `29681807664` crossed the RTC-readiness boundary. All 15 agents emitted
+`rallar.bb.rtc.readiness_ready`, no agent emitted a readiness timeout, and all
+15 agents started the stream command. The new admission rule rejected 1,063
+delayed signaling messages whose senders were excluded by converged
+authoritative topology. Compared with the original run, open data-channel lanes
+increased from 0 to 216 and peer-establishment timeouts fell from 210 to 4.
+Signaling end-to-end latency improved from p50 36.6 seconds / p95 41.4 seconds
+to p50 2.46 seconds / p95 17.4 seconds.
+
+The run still failed, but the first failure moved from RTC readiness to the
+unchanged stream-performance threshold. Controller-05 scheduled and attempted
+all 150 frames with no drops, backpressure, or send failures; its frame latency
+was p50 1,577 ms, p95 4,051 ms, p99 4,398 ms, and max 4,567 ms. Across the 12
+reported stream results, 1,738 of 1,800 frames completed, no frame was dropped,
+maximum scheduler drift was 27 ms, and aggregate latency was p50 815 ms, p95
+6,515 ms, and p99 8,217 ms. Only controllers 10 and 12 satisfied the configured
+latency and success-ratio thresholds.
+
+Slow frames completed in timestamp-aligned batches. Within each batch, duration
+declined by approximately the 200 ms frame interval, which rules out scheduler
+drift and points to a shared awaited boundary holding several already-scheduled
+frames. The black-box frame duration wraps the browser-side
+`rallar.messages.rtc.send(...)` promise. That promise resolves after
+`WebRtcOverlayMulticastManager.enqueueIfAbsent(...)` commits the outbound plan
+and finalizes durable effects; it does not wait for a remote acknowledgement.
+The remaining causal boundary is therefore local outbound admission, the
+per-sender commit queue/browser lock, or durable-effect draining, rather than
+RTC readiness or receiver acknowledgement.
+
+The outbound runtime already exposes `sender-queue-wait`, `browser-lock-wait`,
+`browser-lock-hold`, and `effect-drain` timing events through its
+`outboundDiagnostics` hook. The next diagnostic should wire that hook into the
+black-box browser event stream and correlate those events with each stream
+frame's message ID. A rerun is useful only after those timings are captured; it
+can then distinguish queued commit contention, cross-context lock contention,
+and slow effect draining without changing the recipe thresholds or topology.
+
+The iterative investigation stops after three of the allowed five remote runs
+because the failure has moved to a different subsystem and the next missing
+measurement is now explicit. Applying a traffic-layer change before collecting
+that measurement would be speculative.
 
 ## Contract change
 
