@@ -54,6 +54,8 @@ import { GroupStateRepository } from '@shared-server/rallar-system/repositories/
 import { InMemoryGroupStateEventStore } from '@shared-server/rallar-system/repositories/StateEventStore.ts';
 import { ClientMutationIdempotencyConflictError } from '@shared-server/rallar-system/services/client-state-service.ts';
 import type { GroupMutationReceipt } from '@shared-server/rallar-system/services/group-state-mutations.ts';
+import { GroupStateEventCollisionError } from '@shared-server/postgres/rallar-system/PSqlStateEventRepository.ts';
+import { StateMutationOutboxCollisionError } from '@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts';
 
 const SCOPE: StateScope = {
     applicationId: 'ar-eye-hunter',
@@ -471,6 +473,61 @@ describe('AppInboxService', () => {
             code: 'client-mutation-idempotency-conflict',
             status: 409,
         });
+        expect(handler).toHaveBeenCalledOnce();
+        expect(readOnlyEntry(queue)?.status).toBe(EntityStatus.COMPLETED);
+        expect(readOnlyEntry(queue)?.dequeueAudit.attempts).toBe(1);
+    });
+
+    it.each([
+        [
+            'group event',
+            new GroupStateEventCollisionError({
+                applicationId: SCOPE.applicationId,
+                workspaceId: SCOPE.workspaceId,
+                groupId: 'collision-room',
+                eventId: 'collision-event',
+            }),
+            'group-state-event-collision',
+        ],
+        [
+            'state mutation outbox',
+            new StateMutationOutboxCollisionError('collision-outbox'),
+            'state-mutation-outbox-collision',
+        ],
+    ])('stores %s collision as terminal without queue retry', async (_label, error, code) => {
+        const queue = new TestResourceInbox();
+        const reader = new InboxQueueReader(queue);
+        const results = new TestResourceInboxResults();
+        const service = new AppInboxService(
+            reader,
+            queue as never,
+            results as never,
+            'server-12345678',
+            SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
+            undefined,
+            {
+                waitMaxElapsedMsecs: 5_000,
+                waitRetryIntervalMsecs: 1,
+                waitMaxRetryIntervalMsecs: 1,
+                waitJitterRatio: 0,
+            },
+        );
+        const handler = vi.fn(() => Promise.reject(error));
+        service.onStateMessage(AppInboxType.CLIENT_PRINCIPAL_UPSERT, handler);
+        const pending = service.processEntryUntilCompletion({
+            type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
+            resourceId: `terminal-${code}`,
+            contextId: 'app:workspace:alice',
+            data: { requestId: `terminal-${code}`, username: 'alice' },
+        });
+
+        await reader.dequeueInbox(
+            InboxQueueReader.INBOX_DEQUEUE_TYPES,
+            createResilience(),
+        );
+        const result = await pending;
+
+        expect(JSON.parse(result.left ?? '{}')).toMatchObject({ code, status: 409 });
         expect(handler).toHaveBeenCalledOnce();
         expect(readOnlyEntry(queue)?.status).toBe(EntityStatus.COMPLETED);
         expect(readOnlyEntry(queue)?.dequeueAudit.attempts).toBe(1);

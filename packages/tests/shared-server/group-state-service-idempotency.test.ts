@@ -513,6 +513,12 @@ describe("GroupStateService command idempotency", () => {
     });
 
     const repository = new GroupStateRepository(runtimeRepository);
+    expect(
+      await repository.findPresenceSession({
+        ...groupRef,
+        sessionId: "session-1",
+      }),
+    ).toBeUndefined();
     const expiryRequestId = groupStateMaintenanceRequestId("expiry", {
       operation: "disconnectPresence",
       aggregateRef: groupRef,
@@ -547,15 +553,6 @@ describe("GroupStateService command idempotency", () => {
       delivery: { status: "pending" },
     });
     expect(
-      await repository.findPresenceSession({
-        ...groupRef,
-        sessionId: "session-1",
-      }),
-    ).toMatchObject({
-      disconnectReason: "expired",
-      disconnectedAtEpochMs: now,
-    });
-    expect(
       (await repository.listEvents(groupRef)).map((event) => event.eventType),
     ).toEqual(["group-created", "session-connected", "session-disconnected"]);
     expect(publisher.publishGroupSnapshot).not.toHaveBeenCalled();
@@ -583,7 +580,7 @@ describe("GroupStateService command idempotency", () => {
     const groupRef = toGroupRef("room-10");
 
     await runtime.maintenance.expireExpiredPresenceSessions(now);
-    const lateDisconnect = await service.disconnectPresenceSession(
+    await expect(service.disconnectPresenceSession(
       SCOPE,
       groupRef.groupId,
       "session-1",
@@ -595,19 +592,15 @@ describe("GroupStateService command idempotency", () => {
         actorSessionId: "session-1",
         requestId: "late-disconnect-after-expiry",
       },
-    );
+    )).rejects.toThrow(/presence session not found/i);
 
-    expect(lateDisconnect.result.right?.event).toBeUndefined();
     const repository = new GroupStateRepository(runtimeRepository);
     expect(
       await repository.findPresenceSession({
         ...groupRef,
         sessionId: "session-1",
       }),
-    ).toMatchObject({
-      disconnectReason: "expired",
-      disconnectedAtEpochMs: now,
-    });
+    ).toBeUndefined();
     expect(
       (await repository.listEvents(groupRef)).map((event) => event.eventType),
     ).toEqual(["group-created", "session-connected", "session-disconnected"]);
@@ -634,7 +627,7 @@ describe("GroupStateService command idempotency", () => {
     const groupRef = toGroupRef("room-11");
 
     await runtime.maintenance.expireExpiredPresenceSessions(now);
-    const lateHeartbeat = await service.heartbeatPresenceSession(
+    await expect(service.heartbeatPresenceSession(
       SCOPE,
       groupRef.groupId,
       "session-1",
@@ -647,21 +640,14 @@ describe("GroupStateService command idempotency", () => {
         expiresAtEpochMs: now + 60_000,
         requestId: "late-heartbeat-after-expiry",
       },
-    );
-
-    expect(lateHeartbeat.result.right?.event).toBeUndefined();
+    )).rejects.toThrow(/presence session not found/i);
 
     const repository = new GroupStateRepository(runtimeRepository);
     const session = await repository.findPresenceSession({
       ...groupRef,
       sessionId: "session-1",
     });
-    expect(session).toMatchObject({
-      lastHeartbeatAtEpochMs: expiresAtEpochMs - 1_000,
-      expiresAtEpochMs,
-      disconnectedAtEpochMs: now,
-      disconnectReason: "expired",
-    });
+    expect(session).toBeUndefined();
     expect(
       (await repository.listEvents(groupRef)).map((event) => event.eventType),
     ).toEqual([

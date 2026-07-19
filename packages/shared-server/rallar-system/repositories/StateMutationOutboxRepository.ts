@@ -216,6 +216,7 @@ export class StateMutationOutboxInvariantCorruptionError extends Error {
 
 export class StateMutationOutboxCollisionError extends Error {
     readonly code = 'state-mutation-outbox-collision';
+    readonly status = 409;
 
     constructor(readonly outboxId: string) {
         super(`State mutation outbox already exists: ${outboxId}`);

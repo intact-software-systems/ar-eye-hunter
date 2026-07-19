@@ -47,6 +47,7 @@ import {
 } from '@shared-server/rallar-system/group-state-storage-keys.ts';
 import type { StateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
 import type {
+    RuntimeStateConditionalDeleteResult,
     RuntimeStateConditionalWriteResult,
     RuntimeStateEntry,
     RuntimeStateOptimisticTransactionalRepositoryLike,
@@ -745,6 +746,14 @@ describe('convergent group and presence state', () => {
             ['mismatched receipt/command identity', {
                 ...valid,
                 receipt: { ...valid.receipt, commandId: 'other-command' },
+            }],
+            ['mismatched derived state revision', {
+                ...valid,
+                receipt: { ...valid.receipt, stateRevision: 2 },
+            }],
+            ['applied receipt without an authoritative event', {
+                ...valid,
+                receipt: { ...valid.receipt, outcome: 'applied' },
             }],
             ['legacy identity-free no-event record', legacyIdentityFree],
         ];
@@ -2269,6 +2278,7 @@ describe('convergent group and presence state', () => {
                 requestId: 'connect-duplicate-expiry',
             },
         );
+        runtime.resetGuards();
         runtime.armPresenceReadBarrier(2);
         const atEpochMs = BASE_EPOCH_MS + 3_000;
 
@@ -2283,7 +2293,95 @@ describe('convergent group and presence state', () => {
         expect(results.flat()).toHaveLength(1);
         expect(events).toHaveLength(1);
         expect(await outboxFor(runtime, 'expire-group-presence')).toHaveLength(1);
+        expect(runtime.conditionalOperations[0]).toBe('delete:group-state:sessions');
         expect(runtime.locks).toEqual([]);
+    });
+
+    it('rolls back expiry delete, receipt, event, and outbox on dependent collision', async () => {
+        const runtime = new GroupBarrierRepository();
+        const ref = groupRef('expiry-rollback-room');
+        await seedOpenGroup(runtime, ref.groupId);
+        await createService(runtime, BASE_EPOCH_MS + 2_000).connectPresenceSession(
+            SCOPE,
+            ref.groupId,
+            'expiry-rollback-session',
+            {
+                principalId: 'alice',
+                generationId: 'expiry-rollback-generation',
+                connectedAtEpochMs: BASE_EPOCH_MS + 2_000,
+                lastHeartbeatAtEpochMs: BASE_EPOCH_MS + 2_000,
+                expiresAtEpochMs: BASE_EPOCH_MS + 2_500,
+                requestId: 'connect-expiry-rollback',
+            },
+        );
+        runtime.resetGuards();
+        runtime.failNextOutboxInsert();
+
+        await expect(createMaintenance(runtime, BASE_EPOCH_MS + 3_000)
+            .expireExpiredPresenceSessions(BASE_EPOCH_MS + 3_000))
+            .rejects.toMatchObject({
+                code: 'state-mutation-outbox-collision',
+                status: 409,
+            });
+
+        const repository = new GroupStateRepository(runtime);
+        const retainedSession = await repository.findPresenceSession({
+            ...ref,
+            sessionId: 'expiry-rollback-session',
+        });
+        expect(retainedSession).toMatchObject({
+            generationId: 'expiry-rollback-generation',
+        });
+        expect(retainedSession?.disconnectedAtEpochMs).toBeUndefined();
+        expect((await repository.listEvents(ref)).filter((event) =>
+            event.eventType === 'session-disconnected'
+        )).toEqual([]);
+        expect(await outboxFor(runtime, 'expire-group-presence')).toEqual([]);
+        expect(runtime.conditionalOperations[0]).toBe('delete:group-state:sessions');
+    });
+
+    it('re-reads expiry state and exposes bounded exhaustion after delete conflicts', async () => {
+        const runtime = new GroupBarrierRepository();
+        const ref = groupRef('expiry-delete-exhaustion-room');
+        await seedOpenGroup(runtime, ref.groupId);
+        await createService(runtime, BASE_EPOCH_MS + 2_000).connectPresenceSession(
+            SCOPE,
+            ref.groupId,
+            'expiry-delete-exhaustion-session',
+            {
+                principalId: 'alice',
+                generationId: 'expiry-delete-exhaustion-generation',
+                connectedAtEpochMs: BASE_EPOCH_MS + 2_000,
+                lastHeartbeatAtEpochMs: BASE_EPOCH_MS + 2_000,
+                expiresAtEpochMs: BASE_EPOCH_MS + 2_500,
+                requestId: 'connect-expiry-delete-exhaustion',
+            },
+        );
+        runtime.resetGuards();
+        runtime.failNextPresenceDelete(3);
+        const sleep = vi.fn(() => Promise.resolve());
+
+        await expect(createMaintenance(
+            runtime,
+            BASE_EPOCH_MS + 3_000,
+            sleep,
+        ).expireExpiredPresenceSessions(BASE_EPOCH_MS + 3_000))
+            .rejects.toBeInstanceOf(RuntimeStateRetryExhaustedError);
+
+        expect(sleep.mock.calls.map(([delay]) => delay)).toEqual([2, 8]);
+        expect(runtime.conditionalOperations).toEqual([
+            'delete:group-state:sessions',
+            'delete:group-state:sessions',
+            'delete:group-state:sessions',
+        ]);
+        expect(await new GroupStateRepository(runtime).findPresenceSession({
+            ...ref,
+            sessionId: 'expiry-delete-exhaustion-session',
+        })).toMatchObject({ generationId: 'expiry-delete-exhaustion-generation' });
+        expect((await new GroupStateRepository(runtime).listEvents(ref)).filter((event) =>
+            event.eventType === 'session-disconnected'
+        )).toEqual([]);
+        expect(await outboxFor(runtime, 'expire-group-presence')).toEqual([]);
     });
 
     it('fences heartbeat/disconnect and stale expiry across presence generations without a group write', async () => {
@@ -3363,6 +3461,7 @@ class GroupBarrierRepository extends FakeRuntimeStateRepository {
     groupGuards = 0;
     presenceGuards = 0;
     presenceSummaryGuards = 0;
+    conditionalOperations: string[] = [];
     hotPathListReads = 0;
     compatibilitySnapshotListReads = 0;
     private groupReadsRemaining = 0;
@@ -3378,6 +3477,7 @@ class GroupBarrierRepository extends FakeRuntimeStateRepository {
     private outboxConflictsRemaining = 0;
     private presenceSummaryConflictsRemaining = 0;
     private groupConflictsRemaining = 0;
+    private presenceDeleteConflictsRemaining = 0;
     private conflictingGroupDisplayName: string | undefined;
 
     failNextPresenceSummaryCas(): void {
@@ -3390,6 +3490,10 @@ class GroupBarrierRepository extends FakeRuntimeStateRepository {
 
     failNextGroupCas(count: number): void {
         this.groupConflictsRemaining = count;
+    }
+
+    failNextPresenceDelete(count: number): void {
+        this.presenceDeleteConflictsRemaining = count;
     }
 
     conflictNextGroupDisplayName(displayName: string): void {
@@ -3415,6 +3519,7 @@ class GroupBarrierRepository extends FakeRuntimeStateRepository {
         this.groupGuards = 0;
         this.presenceGuards = 0;
         this.presenceSummaryGuards = 0;
+        this.conditionalOperations = [];
         this.hotPathListReads = 0;
         this.compatibilitySnapshotListReads = 0;
     }
@@ -3480,6 +3585,7 @@ class GroupBarrierRepository extends FakeRuntimeStateRepository {
         value: string,
         expireAtTimestamp: number,
     ): Promise<RuntimeStateConditionalWriteResult> {
+        this.conditionalOperations.push(`insert:${namespace}`);
         this.recordGuard(namespace);
         if (
             namespace === STATE_MUTATION_OUTBOX_NAMESPACE &&
@@ -3498,6 +3604,7 @@ class GroupBarrierRepository extends FakeRuntimeStateRepository {
         expireAtTimestamp: number,
         expectedRevision: number,
     ): Promise<RuntimeStateConditionalWriteResult> {
+        this.conditionalOperations.push(`update:${namespace}`);
         this.recordGuard(namespace);
         if (
             namespace === 'group-state:groups' &&
@@ -3528,6 +3635,23 @@ class GroupBarrierRepository extends FakeRuntimeStateRepository {
             expireAtTimestamp,
             expectedRevision,
         );
+    }
+
+    override deleteIfRevision(
+        namespace: string,
+        key: string,
+        expectedRevision: number,
+    ): Promise<RuntimeStateConditionalDeleteResult> {
+        this.conditionalOperations.push(`delete:${namespace}`);
+        this.recordGuard(namespace);
+        if (
+            namespace === 'group-state:sessions' &&
+            this.presenceDeleteConflictsRemaining > 0
+        ) {
+            this.presenceDeleteConflictsRemaining -= 1;
+            return Promise.resolve({ status: 'conflict' });
+        }
+        return super.deleteIfRevision(namespace, key, expectedRevision);
     }
 
     private recordGuard(namespace: string): void {
@@ -3684,6 +3808,7 @@ const TEST_PRESENCE_MUTATIONS = new Set([
 function createMaintenance(
     runtimeRepository: GroupBarrierRepository,
     nowEpochMs: number,
+    sleep: (delayMs: number) => Promise<void> = () => Promise.resolve(),
 ) {
     return createGroupStateRuntime({
         runtimeRepository,
@@ -3692,7 +3817,7 @@ function createMaintenance(
         },
         now: () => nowEpochMs,
         randomId: () => `maintenance-${nowEpochMs}`,
-        sleep: () => Promise.resolve(),
+        sleep,
         serviceId: 'group-maintenance',
     }).maintenance;
 }

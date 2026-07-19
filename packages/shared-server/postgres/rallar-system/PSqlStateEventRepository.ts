@@ -23,6 +23,7 @@ const DEFAULT_WORKSPACE_KEY = '_';
 
 export class GroupStateEventCollisionError extends Error {
     readonly code = 'group-state-event-collision';
+    readonly status = 409;
 
     constructor(
         readonly event: Pick<

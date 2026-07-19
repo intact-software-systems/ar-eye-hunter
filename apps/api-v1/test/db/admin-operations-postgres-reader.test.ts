@@ -890,7 +890,122 @@ Deno.test('PSqlAdminOperationsStatsReader keeps colon-bearing identities distinc
   });
 });
 
-Deno.test('PSqlAdminOperationsStatsReader avoids unbounded global runtime JSON scans', async () => {
+Deno.test('PSqlAdminOperationsStatsReader fails closed on corrupt global group rows', async () => {
+  await withPGliteSql(async (sql) => {
+    await insertRuntimeState(sql, {
+      namespace: 'group-state:members',
+      key: 'app=ops-global-corrupt:ws=_:group=room:member=alice',
+      value: {
+        applicationId: 'ops-global-corrupt',
+        workspaceId: '_',
+        groupId: 'room',
+        principalId: 'alice',
+        status: 'active',
+      },
+    });
+    const reader = new PSqlAdminOperationsStatsReader(sql, {
+      now: () => 1_700_000_000_000,
+    });
+
+    await assert.rejects(
+      () => reader.readState({ adminSession: createAdminSession() }),
+      (error) =>
+        error instanceof Error &&
+        'code' in error &&
+        error.code === 'admin-operations-state-invariant-corruption',
+    );
+  });
+});
+
+Deno.test('PSqlAdminOperationsStatsReader rejects global noncanonical group keys', async () => {
+  for (
+    const input of [
+      {
+        namespace: 'group-state:groups',
+        key: 'app=ops-global-alias:ws=workspace:group=%72oom',
+        value: {
+          applicationId: 'ops-global-alias',
+          workspaceId: 'workspace',
+          groupId: 'room',
+          status: 'active',
+        },
+      },
+      {
+        namespace: 'group-state:members',
+        key: 'app=ops-global-alias:ws=workspace:group=room:member=%61lice',
+        value: {
+          applicationId: 'ops-global-alias',
+          workspaceId: 'workspace',
+          groupId: 'room',
+          principalId: 'alice',
+          status: 'active',
+        },
+      },
+      {
+        namespace: 'group-state:sessions',
+        key: 'app=ops-global-alias:ws=workspace:group=room:session=%73ession',
+        value: {
+          applicationId: 'ops-global-alias',
+          workspaceId: 'workspace',
+          groupId: 'room',
+          sessionId: 'session',
+          principalId: 'alice',
+          expiresAtEpochMs: 1_700_000_060_000,
+        },
+      },
+    ] as const
+  ) {
+    await withPGliteSql(async (sql) => {
+      await sql`
+        insert into runtime_state_store (
+          store_namespace, store_key, store_value, expire_at_ts
+        ) values (
+          ${input.namespace}, ${input.key}, ${JSON.stringify(input.value)},
+          ${new Date('9999-12-31T23:59:59Z')}
+        )
+      `;
+      const reader = new PSqlAdminOperationsStatsReader(sql, {
+        now: () => 1_700_000_000_000,
+      });
+
+      await assert.rejects(
+        () => reader.readState({ adminSession: createAdminSession() }),
+        (error) =>
+          error instanceof Error &&
+          'code' in error &&
+          error.code === 'admin-operations-state-invariant-corruption',
+      );
+    });
+  }
+});
+
+Deno.test('PSqlAdminOperationsStatsReader distinguishes absent and explicit sentinel workspaces globally', async () => {
+  await withPGliteSql(async (sql) => {
+    await insertRuntimeState(sql, {
+      namespace: 'group-state:members',
+      key: 'app=ops-global-sentinel:ws=_:group=room:member=alice',
+      value: { status: 'active' },
+    });
+    await insertRuntimeState(sql, {
+      namespace: 'group-state:sessions',
+      key: 'app=ops-global-sentinel:ws=%5F:group=room:session=explicit-session',
+      value: {
+        principalId: 'alice',
+        expiresAtEpochMs: 1_700_000_060_000,
+      },
+    });
+    const reader = new PSqlAdminOperationsStatsReader(sql, {
+      now: () => 1_700_000_000_000,
+    });
+
+    const state = await reader.readState({ adminSession: createAdminSession() });
+
+    assert.equal(state.groups.totalActiveMembers, 1);
+    assert.equal(state.groups.onlineMembers, 0);
+  });
+});
+
+Deno.test('PSqlAdminOperationsStatsReader validates the three global group row families', async () => {
   await withPGliteSql(async (sql) => {
     const guard = createRuntimeJsonScanGuard(sql);
     const reader = new PSqlAdminOperationsStatsReader(guard.guardedSql, {
@@ -899,7 +1014,7 @@ Deno.test('PSqlAdminOperationsStatsReader avoids unbounded global runtime JSON s
 
     await reader.readState({ adminSession: createAdminSession() });
 
-    assert.equal(guard.runtimeJsonScanCount, 0);
+    assert.equal(guard.runtimeJsonScanCount, 3);
   });
 });
 

@@ -147,7 +147,7 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
     const onlineGroupMemberIds = new Set(
       groupSessionRows
         .filter((row) => isActiveGroupSessionRow(row, nowEpochMs))
-        .map(readGroupMemberIdentity)
+        .map((row) => readCanonicalGroupMemberIdentity(row, 'session'))
         .filter((identity): identity is string => identity !== undefined),
     );
 
@@ -162,7 +162,7 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
         activeGroups: groupRows.filter((row) => isActiveGroupRow(row, nowEpochMs)).length,
         totalActiveMembers: activeMembers.length,
         onlineMembers: activeMembers.filter((member) => {
-          const identity = readGroupMemberIdentity(member);
+          const identity = readCanonicalGroupMemberIdentity(member, 'member');
           return identity !== undefined && onlineGroupMemberIds.has(identity);
         }).length,
       },
@@ -178,21 +178,32 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
       totalPrincipals,
       onlinePrincipals,
       activeSessions,
-      activeGroups,
-      totalActiveMembers,
-      onlineMembers,
+      groupRows,
+      memberRows,
+      groupSessionRows,
       recentClientEvents,
       recentGroupEvents,
     ] = await Promise.all([
       this.countLiveRuntimeRows('client-state:principals'),
       this.countGlobalActiveClientPrincipals(),
       this.countGlobalActiveClientSessions(),
-      this.countGlobalActiveGroups(),
-      this.countGlobalStatusRows('group-state:members', 'active'),
-      this.countGlobalOnlineGroupMembers(),
+      this.readLiveRuntimeRows('group-state:groups', undefined),
+      this.readLiveRuntimeRows('group-state:members', undefined),
+      this.readLiveRuntimeRows('group-state:sessions', undefined),
       this.countRecentClientEvents(),
       this.countRecentGroupEvents(),
     ]);
+    validateScopedGroupRuntimeRows('group-state:groups', groupRows);
+    validateScopedGroupRuntimeRows('group-state:members', memberRows);
+    validateScopedGroupRuntimeRows('group-state:sessions', groupSessionRows);
+    const nowEpochMs = this.options.now();
+    const activeMembers = memberRows.filter(isActiveGroupMemberRow);
+    const onlineGroupMemberIds = new Set(
+      groupSessionRows
+        .filter((row) => isActiveGroupSessionRow(row, nowEpochMs))
+        .map((row) => readCanonicalGroupMemberIdentity(row, 'session'))
+        .filter((identity): identity is string => identity !== undefined),
+    );
 
     return {
       ...this.base(),
@@ -202,9 +213,12 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
         activeSessions,
       },
       groups: {
-        activeGroups,
-        totalActiveMembers,
-        onlineMembers,
+        activeGroups: groupRows.filter((row) => isActiveGroupRow(row, nowEpochMs)).length,
+        totalActiveMembers: activeMembers.length,
+        onlineMembers: activeMembers.filter((member) => {
+          const identity = readCanonicalGroupMemberIdentity(member, 'member');
+          return identity !== undefined && onlineGroupMemberIds.has(identity);
+        }).length,
       },
       events: {
         recentClientEvents,
@@ -409,36 +423,6 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
     );
   }
 
-  private async countGlobalStatusRows(namespace: string, status: string): Promise<number> {
-    return toNumber(
-      (await this.sql<CountRow[]>`
-            select count(*) as count
-            from runtime_state_store
-            where store_namespace = ${namespace}
-              and expire_at_ts > now()
-              and store_value::jsonb ->> 'status' = ${status}
-        `)[0]?.count,
-    );
-  }
-
-  private async countGlobalActiveGroups(): Promise<number> {
-    return toNumber(
-      (await this.sql<CountRow[]>`
-            select count(*) as count
-            from runtime_state_store
-            where store_namespace = 'group-state:groups'
-              and expire_at_ts > now()
-              and store_value::jsonb ->> 'status' = 'active'
-              and case
-                when store_value::jsonb ->> 'expiresAtEpochMs' is null then true
-                when jsonb_typeof(store_value::jsonb -> 'expiresAtEpochMs') = 'number'
-                  then (store_value::jsonb ->> 'expiresAtEpochMs')::double precision > ${this.options.now()}
-                else false
-              end
-        `)[0]?.count,
-    );
-  }
-
   private async countGlobalActiveClientSessions(): Promise<number> {
     return toNumber(
       (await this.sql<CountRow[]>`
@@ -471,52 +455,6 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
                   and store_value::jsonb ->> 'principalId' is not null
                   and (store_value::jsonb ->> 'expiresAtEpochMs')::double precision > ${this.options.now()}
             ) principals
-        `)[0]?.count,
-    );
-  }
-
-  private async countGlobalOnlineGroupMembers(): Promise<number> {
-    return toNumber(
-      (await this.sql<CountRow[]>`
-            with active_members as (
-                select
-                    store_value::jsonb ->> 'applicationId' as application_id,
-                    coalesce(store_value::jsonb ->> 'workspaceId', '_') as workspace_id,
-                    store_value::jsonb ->> 'groupId' as group_id,
-                    store_value::jsonb ->> 'principalId' as principal_id
-                from runtime_state_store
-                where store_namespace = 'group-state:members'
-                  and expire_at_ts > now()
-                  and store_value::jsonb ->> 'status' = 'active'
-                  and store_value::jsonb ->> 'applicationId' is not null
-                  and store_value::jsonb ->> 'groupId' is not null
-                  and store_value::jsonb ->> 'principalId' is not null
-            ),
-            active_sessions as (
-                select
-                    store_value::jsonb ->> 'applicationId' as application_id,
-                    coalesce(store_value::jsonb ->> 'workspaceId', '_') as workspace_id,
-                    store_value::jsonb ->> 'groupId' as group_id,
-                    store_value::jsonb ->> 'principalId' as principal_id
-                from runtime_state_store
-                where store_namespace = 'group-state:sessions'
-                  and expire_at_ts > now()
-                  and store_value::jsonb ->> 'disconnectedAtEpochMs' is null
-                  and store_value::jsonb ->> 'applicationId' is not null
-                  and store_value::jsonb ->> 'groupId' is not null
-                  and store_value::jsonb ->> 'principalId' is not null
-                  and (store_value::jsonb ->> 'expiresAtEpochMs')::double precision > ${this.options.now()}
-            )
-            select count(*) as count
-            from active_members member
-            where exists (
-                select 1
-                from active_sessions session
-                where session.application_id = member.application_id
-                  and session.workspace_id = member.workspace_id
-                  and session.group_id = member.group_id
-                  and session.principal_id = member.principal_id
-            )
         `)[0]?.count,
     );
   }
@@ -830,7 +768,7 @@ function runtimeStateScopePrefix(namespace: string, scope: StateScope): string {
 function validateScopedGroupRuntimeRows(
   namespace: string,
   rows: readonly RuntimeStateRow[],
-  scope: StateScope,
+  scope?: StateScope,
 ): void {
   for (const row of rows) {
     let decoded: Readonly<Record<string, string | undefined>>;
@@ -856,8 +794,9 @@ function validateScopedGroupRuntimeRows(
       );
     }
     if (
-      decoded.applicationId !== scope.applicationId ||
-      decoded.workspaceId !== scope.workspaceId ||
+      (scope !== undefined &&
+        (decoded.applicationId !== scope.applicationId ||
+          decoded.workspaceId !== scope.workspaceId)) ||
       value.applicationId !== decoded.applicationId ||
       value.workspaceId !== decoded.workspaceId ||
       value.groupId !== decoded.groupId ||
@@ -960,12 +899,22 @@ function readClientPrincipalIdentity(row: RuntimeStateRow): string | undefined {
   ]);
 }
 
-function readGroupMemberIdentity(row: RuntimeStateRow): string | undefined {
-  return toIdentityKey([
-    readApplicationId(row),
-    readWorkspaceId(row),
-    readGroupId(row),
-    readPrincipalId(row),
+function readCanonicalGroupMemberIdentity(
+  row: RuntimeStateRow,
+  kind: 'member' | 'session',
+): string | undefined {
+  const decoded = kind === 'member'
+    ? decodeGroupStateMemberStorageKey(row.store_key)
+    : decodeGroupStatePresenceSessionStorageKey(row.store_key);
+  const principalId = readString(readRuntimeStateValue(row).principalId);
+  if (principalId === undefined) return undefined;
+  return JSON.stringify([
+    decoded.applicationId,
+    decoded.workspaceId === undefined
+      ? ['workspace-absent']
+      : ['workspace-present', decoded.workspaceId],
+    decoded.groupId,
+    principalId,
   ]);
 }
 
@@ -978,11 +927,6 @@ function readWorkspaceId(row: RuntimeStateRow): string {
   return readString(readRuntimeStateValue(row).workspaceId) ??
     readKeyPart(row.store_key, 'ws') ??
     '_';
-}
-
-function readGroupId(row: RuntimeStateRow): string | undefined {
-  return readString(readRuntimeStateValue(row).groupId) ??
-    readKeyPart(row.store_key, 'group');
 }
 
 function readPrincipalId(row: RuntimeStateRow): string | undefined {

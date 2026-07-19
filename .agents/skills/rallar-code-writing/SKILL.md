@@ -48,6 +48,10 @@ rg --files packages/tests packages/shared packages/shared-web packages/shared-se
 - Do not implement authoritative state as read, derive, then unconditional
   upsert. Create with conditional insert; update with expected-revision compare-and-set;
   delete or expire with expected-revision conditional delete.
+- Treat expiry as deletion: its first authoritative guard is the
+  expected-revision conditional delete of the exact observed row. Do not use a
+  disconnected/tombstone update as an expiry shortcut; reserve such updates
+  for non-expiry lifecycle transitions that explicitly retain the row.
 - On a compare-and-set conflict, bound the retry count, re-read the whole
   decision surface, and rerun authorization, policy, capacity, lifecycle, and invariant checks.
   A retry of only the stale write is incorrect.
@@ -61,6 +65,9 @@ rg --files packages/tests packages/shared packages/shared-web packages/shared-se
   transaction. Use an insert-only repository operation: a collision throws a
   typed error, rolls everything back, and performs no winner read. Keep any
   winner-loading convenience on a separately named non-authoritative/read path.
+- Fail-closed event, outbox, and immutable-identity collisions are terminal at
+  queue boundaries. Give their typed errors an explicit 4xx status and never
+  retry, reschedule, or regenerate a command after such a collision.
 - Hash caller semantics before server random/time defaults: keep omission as a
   mandatory nullable command field, then read and validate idempotency before
   invoking random, clock-default, verifier, or other volatile materialization.
@@ -85,6 +92,15 @@ rg --files packages/tests packages/shared packages/shared-web packages/shared-se
   the complete trusted scope and slot before returning data. A mismatch throws
   a typed invariant-corruption error for the whole read; it is not a miss to
   hide, a list row to filter, or data to rewrite or guess.
+- Persisted shared-data validators enforce derived and cross-field invariants
+  in addition to exact keys and primitive shapes. Recompute canonical scalar
+  projections and require discriminants, payload presence, revisions, hashes,
+  and related lifecycle fields to agree before accepting or replaying a row.
+- Authoritative admin/domain summaries validate every source row canonically,
+  including unscoped/global reads, before counting or joining in domain code.
+  Never collapse absent scope and a present sentinel-looking identifier into
+  one join key. Aggregate shortcuts are allowed only for separately labeled raw
+  storage telemetry, not authoritative domain summary fields.
 - Key builders are pure injective encoders over field name, type/presence, and
   value. `encodeURIComponent`-style escaping alone cannot distinguish an
   absent value from a valid sentinel string. Test exact canonical keys,

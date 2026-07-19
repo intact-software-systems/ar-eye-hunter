@@ -284,6 +284,12 @@ type PresenceGuardCandidate =
         operation: 'update';
         value: GroupPresenceSession;
         expectedRevision: number;
+    }>
+    | Readonly<{
+        kind: 'presence';
+        operation: 'delete';
+        value: GroupPresenceSession;
+        expectedRevision: number;
     }>;
 
 type PresenceAdmissionCandidate =
@@ -1271,21 +1277,24 @@ function validateComputedWrite(
     const guard = computed.guard as unknown as Record<string, unknown>;
     assertExactKeys(guard, [
         'kind', 'operation', 'value',
-        ...(computed.guard.operation === 'update' ? ['expectedRevision'] : []),
+        ...(computed.guard.operation === 'insert' ? [] : ['expectedRevision']),
     ], 'Group mutation computed guard');
     assertRequiredKeys(guard, [
         'kind', 'operation', 'value',
-        ...(computed.guard.operation === 'update' ? ['expectedRevision'] : []),
+        ...(computed.guard.operation === 'insert' ? [] : ['expectedRevision']),
     ], 'Group mutation computed guard');
     requireOneOf(computed.guard.kind, ['group', 'presence'],
         'Group mutation computed guard kind');
-    requireOneOf(computed.guard.operation, ['insert', 'update'],
+    requireOneOf(computed.guard.operation, ['insert', 'update', 'delete'],
         'Group mutation computed guard operation');
-    if (computed.guard.operation === 'update') {
+    if (computed.guard.operation !== 'insert') {
         requireNonNegativeSafeInteger(computed.guard.expectedRevision,
             'Group mutation computed guard expectedRevision');
     }
     if (computed.guard.kind === 'group') {
+        if (guard.operation === 'delete') {
+            throw new TypeError('Group mutation cannot use a group delete guard');
+        }
         validateStoredGroup(computed.guard.value, ref);
         const expectedRevision = read.group?.entry.revision;
         if (computed.guard.operation === 'insert') {
@@ -1313,7 +1322,13 @@ function validateComputedWrite(
                 throw new TypeError('Presence insert guard has an existing predecessor');
             }
         } else if (computed.guard.expectedRevision !== expectedRevision) {
-            throw new TypeError('Presence update guard revision differs from predecessor');
+            throw new TypeError('Presence write guard revision differs from predecessor');
+        }
+        if (computed.guard.operation === 'delete' &&
+            (command.operation !== 'disconnectPresence' ||
+                facts.internalAuthority !== 'expiry' ||
+                command.input.reason !== 'expired')) {
+            throw new TypeError('Presence delete guard requires expiry authority');
         }
     }
     if (!Array.isArray(computed.members)) {
@@ -2441,7 +2456,12 @@ function computeDisconnectPresence(
 ): GroupMutationComputed {
     requireGroup(read, command.aggregateRef);
     const existing = read.targetPresence;
-    if (!existing) throw new GroupMutationRejectedError(`Group presence session not found: ${command.sessionId}`);
+    if (!existing) {
+        if (facts.internalAuthority === 'expiry') return noOp(command, read, facts);
+        throw new GroupMutationRejectedError(
+            `Group presence session not found: ${command.sessionId}`,
+        );
+    }
     assertPresenceAuthority(command, existing.value.principalId, facts);
     if (
         existing.value.generationId !== command.input.generationId ||
@@ -2454,6 +2474,17 @@ function computeDisconnectPresence(
     const disconnectedAt = command.input.disconnectedAtEpochMs ?? facts.nowEpochMs;
     if (disconnectedAt < existing.value.lastHeartbeatAtEpochMs) {
         return noOp(command, read, facts);
+    }
+    if (facts.internalAuthority === 'expiry') {
+        return presenceWrite(
+            command,
+            read,
+            facts,
+            existing.value,
+            'delete',
+            'session-disconnected',
+            admissionForDisconnect(read, existing.value, facts),
+        );
     }
     const session: GroupPresenceSession = {
         ...existing.value,
@@ -2559,16 +2590,23 @@ function presenceWrite(
     read: GroupMutationRead,
     facts: GroupMutationFacts,
     session: GroupPresenceSession,
-    operation: 'insert' | 'update',
+    operation: 'insert' | 'update' | 'delete',
     eventType: GroupEventType,
     presenceAdmission: PresenceAdmissionCandidate | null = null,
 ): GroupMutationComputed {
     const stored = requireGroup(read, command.aggregateRef);
     const guard = operation === 'insert'
         ? { kind: 'presence', operation: 'insert', value: session } as const
-        : {
+        : operation === 'update'
+        ? {
             kind: 'presence',
             operation: 'update',
+            value: session,
+            expectedRevision: read.targetPresence!.entry.revision,
+        } as const
+        : {
+            kind: 'presence',
+            operation: 'delete',
             value: session,
             expectedRevision: read.targetPresence!.entry.revision,
         } as const;
@@ -3416,6 +3454,13 @@ function validateMutationReceipt(
     requireNonNegativeSafeInteger(receipt.stateRevision, `${label} stateRevision`);
     requireNonNegativeSafeInteger(receipt.snapshotVersion, `${label} snapshotVersion`);
     validateCausalRevision(receipt.causalRevision, label);
+    const causalRevision = receipt.causalRevision as GroupStateCausalRevision;
+    if (receipt.stateRevision !== toGroupSnapshotStateRevision(
+        causalRevision.groupRevision,
+        causalRevision.presenceRevision,
+    )) {
+        throw new TypeError(`${label} stateRevision differs from causalRevision`);
+    }
     const event = requireRecord(receipt.event, `${label} event`);
     requireOneOf(event.kind, ['none', 'group'], `${label} event kind`);
     if (event.kind === 'none') {
@@ -3425,6 +3470,9 @@ function validateMutationReceipt(
         assertExactKeys(event, ['kind', 'event'], `${label} event`);
         assertRequiredKeys(event, ['kind', 'event'], `${label} event`);
         validateGroupEvent(event.event, ref, `${label} event`);
+    }
+    if ((receipt.outcome === 'applied') !== (event.kind === 'group')) {
+        throw new TypeError(`${label} event differs from outcome`);
     }
     if (receipt.joinCode !== null) {
         requireNonEmptyString(receipt.joinCode, `${label} joinCode`);

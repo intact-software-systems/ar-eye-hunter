@@ -1531,7 +1531,12 @@ async function writeGroupMutation(
         } else {
             requireConditionalWrite(computed.guard.operation === 'insert'
                 ? await repository.insertPresence(computed.guard.value)
-                : await repository.updatePresence(
+                : computed.guard.operation === 'update'
+                ? await repository.updatePresence(
+                    computed.guard.value,
+                    computed.guard.expectedRevision,
+                )
+                : await repository.deletePresence(
                     computed.guard.value,
                     computed.guard.expectedRevision,
                 ));

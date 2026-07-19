@@ -1,5 +1,10 @@
 # Task 4 correction 9 report: canonical child keys and explicit write phases
 
+> **Superseded by correction 10.** This report's claim that typed event/outbox
+> collisions were nonretryable was incomplete: the errors had stable codes but
+> no terminal HTTP status, so AppInbox still retried them. Correction 10 adds
+> explicit 409 semantics and is the final acceptance record for these paths.
+
 ## Status and scope
 
 Status: `DONE_WITH_CONCERNS`.

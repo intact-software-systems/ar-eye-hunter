@@ -2,7 +2,9 @@ import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
 import type { ClientSessionRef } from "@shared/api/client-types.ts";
 import type { Group, GroupEvent, GroupRef } from "@shared/api/group-types.ts";
+import { toGroupSnapshotStateRevision } from "@shared/api/group-client-views.ts";
 import type { StateScope } from "@shared/api/state-types.ts";
+import { NEVER_EXPIRE_AT_TIMESTAMP } from "@shared/persistence/PersistenceProvider.ts";
 import type { PSqlSql } from "@shared-server/postgres/PostgresSqlClient.ts";
 import type { RuntimeStateEntry } from "@shared-server/runtime-state/RuntimeStateRepository.ts";
 import {
@@ -15,6 +17,11 @@ import { PSqlRuntimeStateRepository } from "@shared-server/postgres/runtime-stat
 import { createClientStateService } from "@shared-server/rallar-system/services/client-state-service.ts";
 import { createTestGroupStateRuntime } from "./group-state-test-runtime.ts";
 import type { StateSyncPublisher } from "@shared-server/rallar-system/state-sync-publisher.ts";
+import { groupStateMaintenanceRequestId } from "@shared-server/rallar-system/services/group-state-service.ts";
+import {
+  STATE_MUTATION_OUTBOX_NAMESPACE,
+  toStateMutationOutboxId,
+} from "@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts";
 
 const POSTGRES_INTEGRATION_ENABLED =
   Deno.env.get("RALLAR_POSTGRES_INTEGRATION") === "1";
@@ -169,10 +176,7 @@ describe("Postgres presence expiry concurrency", () => {
         });
         const events = await repository.listEvents(groupRef);
 
-        expect(session).toMatchObject({
-          disconnectedAtEpochMs: atEpochMs,
-          disconnectReason: "expired",
-        });
+        expect(session).toBeUndefined();
         expect(
           events.filter(
             (event) =>
@@ -187,6 +191,99 @@ describe("Postgres presence expiry concurrency", () => {
           leftSql.end(),
           rightSql.end(),
         ]);
+      }
+    },
+    60_000,
+  );
+
+  postgresIt(
+    "rolls back a real group expiry delete when its outbox insert collides",
+    async () => {
+      const sql = await createSql(requireDatabaseUrl());
+      const scope = uniqueScope("group-expiry-rollback");
+      const atEpochMs = Date.now();
+      const groupRef: GroupRef = { ...scope, groupId: "room-1" };
+      const sessionId = "session-1";
+      let collisionKey: string | undefined;
+
+      try {
+        await seedExpiredGroupPresenceSession(sql, scope, groupRef, sessionId, atEpochMs);
+        const repository = createGroupStateRepository(sql);
+        const groupEntry = await repository.findGroupEntry(groupRef);
+        const sessionEntry = await repository.findPresenceEntry({ ...groupRef, sessionId });
+        const presenceSummary = await repository.findPresenceSummaryEntry(groupRef);
+        if (!groupEntry || !sessionEntry) throw new Error("Expected seeded group presence");
+        const semanticCommand = {
+          operation: "disconnectPresence",
+          aggregateRef: groupRef,
+          sessionId,
+          input: {
+            principalId: sessionEntry.value.principalId,
+            generationId: sessionEntry.value.generationId,
+            generationVersion: sessionEntry.value.generationVersion,
+            observedExpiresAtEpochMs: sessionEntry.value.expiresAtEpochMs,
+            disconnectedAtEpochMs: atEpochMs,
+            lastHeartbeatAtEpochMs: sessionEntry.value.lastHeartbeatAtEpochMs,
+            expiresAtEpochMs: sessionEntry.value.expiresAtEpochMs,
+            actorPrincipalId: null,
+            actorSessionId: null,
+            reason: "expired",
+            traceId: null,
+          },
+        } as const;
+        const commandId = groupStateMaintenanceRequestId("expiry", semanticCommand);
+        const groupRevision = groupEntry.entry.revision + 1;
+        const presenceRevision =
+          presenceSummary?.value.causalRevision.presenceRevision ?? 0;
+        const outboxId = toStateMutationOutboxId({
+          kind: "group",
+          aggregateRef: groupRef,
+          commandId,
+          acceptedCausalRevision: {
+            kind: "group",
+            stateRevision: toGroupSnapshotStateRevision(
+              groupRevision,
+              presenceRevision,
+            ),
+            snapshotVersion: groupEntry.value.snapshotVersion,
+            metadataVersion: groupEntry.value.metadataVersion,
+            rosterVersion: groupEntry.value.rosterVersion,
+            presenceVersion: presenceRevision,
+          },
+        });
+        collisionKey = `intent:${outboxId}`;
+        await toRuntimeRepository(sql).insertIfAbsent(
+          STATE_MUTATION_OUTBOX_NAMESPACE,
+          collisionKey,
+          "{}",
+          NEVER_EXPIRE_AT_TIMESTAMP,
+        );
+
+        await expect(createPostgresGroupRuntime(
+          sql,
+          new GroupPresenceReadBarrier(1),
+          atEpochMs,
+        ).maintenance.expireExpiredPresenceSessions(atEpochMs)).rejects.toMatchObject({
+          code: "state-mutation-outbox-collision",
+          status: 409,
+        });
+
+        expect(await repository.findPresenceSession({ ...groupRef, sessionId }))
+          .toMatchObject({ generationId: sessionEntry.value.generationId });
+        expect((await repository.listEvents(groupRef)).filter((event) =>
+          event.eventType === "session-disconnected"
+        )).toEqual([]);
+        expect(await repository.findIdempotentGroupMutationReceipt(groupRef, commandId))
+          .toBeUndefined();
+      } finally {
+        if (collisionKey) {
+          await toRuntimeRepository(sql).deleteByKey(
+            STATE_MUTATION_OUTBOX_NAMESPACE,
+            collisionKey,
+          );
+        }
+        await cleanupRuntimeState(sql, scope.applicationId);
+        await sql.end();
       }
     },
     60_000,
