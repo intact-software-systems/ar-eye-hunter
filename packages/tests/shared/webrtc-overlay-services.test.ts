@@ -815,6 +815,9 @@ function createOverlayContext(
             onlineMemberCount: memberSessionIds.length,
         },
         overlay: {
+            sourceGroupStateRevision: 1,
+            provenance: 'topology-snapshot' as const,
+            state: 'active' as const,
             overlayId: groupId,
             name: 'Group 1',
             createdByClientId: 'owner',

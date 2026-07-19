@@ -504,6 +504,7 @@ describe('browser data caches state scope filtering', () => {
         expect(findOverlayById(topology.overlayId)).toMatchObject({
             overlayId: topology.overlayId,
             groupRef: groupSnapshot.group,
+            provenance: 'topology-snapshot',
             topology: 'tree',
             nextHopSessionIds: ['session-b'],
             overlayVersion: 1,

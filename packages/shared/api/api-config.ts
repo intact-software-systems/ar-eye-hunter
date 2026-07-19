@@ -114,8 +114,11 @@ export type GroupId = string;
 
 export type OverlayId = string;
 
+export type OverlayProvenance = 'group-fallback' | 'topology-snapshot';
+
 export type OverlayInfo = {
     readonly sourceGroupStateRevision: number;
+    readonly provenance: OverlayProvenance;
     readonly state: 'active' | 'removed';
     readonly overlayId: OverlayId;
     readonly groupRef?: GroupRef;

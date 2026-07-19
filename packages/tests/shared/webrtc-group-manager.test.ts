@@ -701,6 +701,9 @@ function createOverlayInfo(
     overlayVersion = 1,
 ): OverlayInfo {
     return {
+        sourceGroupStateRevision: group.stateRevision,
+        provenance: 'topology-snapshot',
+        state: 'active',
         overlayId: toScopedOverlayId(group.group),
         groupRef: group.group,
         topology: 'tree',
