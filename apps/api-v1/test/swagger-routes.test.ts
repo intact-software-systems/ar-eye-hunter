@@ -86,6 +86,45 @@ Deno.test('OpenAPI JSON includes black-box auth support contracts', async () => 
   );
 });
 
+Deno.test('OpenAPI JSON exposes mandatory convergent group state fields', async () => {
+  const app = init(new Hono());
+  const response = await app.request('/api/openapi.json');
+  const json = await response.json() as {
+    components: {
+      schemas: Record<string, {
+        required?: string[];
+        properties?: Record<string, unknown>;
+      }>;
+    };
+  };
+  const schemas = json.components.schemas;
+
+  assert.ok(schemas.Group.required?.includes('activeMemberCount'));
+  assert.ok(schemas.Group.required?.includes('ownerPrincipalId'));
+  assert.ok(schemas.Group.properties?.activeMemberCount);
+  assert.ok(schemas.Group.properties?.ownerPrincipalId);
+  assert.deepEqual(schemas.GroupStateCausalRevision.required, [
+    'groupRevision',
+    'presenceRevision',
+  ]);
+  assert.ok(schemas.GroupSnapshot.required?.includes('stateRevision'));
+  assert.ok(schemas.GroupSnapshot.required?.includes('causalRevision'));
+  assert.ok(schemas.GroupSnapshot.properties?.stateRevision);
+  assert.ok(schemas.GroupSnapshot.properties?.causalRevision);
+  assert.ok(schemas.GroupPresenceSession.required?.includes('generationId'));
+  assert.ok(schemas.GroupPresenceSession.required?.includes('generationVersion'));
+  for (
+    const name of [
+      'ConnectGroupPresenceSessionRequest',
+      'HeartbeatGroupPresenceSessionRequest',
+      'DisconnectGroupPresenceSessionRequest',
+    ]
+  ) {
+    assert.ok(schemas[name]?.required?.includes('generationId'), name);
+    assert.ok(schemas[name]?.properties?.generationId, name);
+  }
+});
+
 Deno.test('OpenAPI JSON includes scoped graph and topology management contracts', async () => {
   const app = init(new Hono());
   const response = await app.request('/api/openapi.json');

@@ -54,6 +54,12 @@ rg -n "GroupRef|groupRef|groupId|roomId|createAndSwitch|createAndJoin|joinRoom|w
   exact persisted shapes, CAS the exact summary predecessor, and exclude
   sessions whose member is no longer active even if a stale session row remains
   live. Newer source mutations enqueue follow-up convergence work.
+- Treat storage-key/value/command relationships as part of those persisted
+  shapes. A shape-valid row in the wrong actor, target, owner, director,
+  principal-admission, session, summary, or idempotency slot is corruption and
+  must fail validation before the first authoritative write. Expected slot
+  identity comes only from the trusted command and aggregate metadata, never
+  from the candidate row itself.
 - Database row, table, and advisory locks are not the default. Existing lock-based
   client-session, group-presence, topology, publication, or RTT code is
   migration debt rather than precedent. A lock exception requires explicit

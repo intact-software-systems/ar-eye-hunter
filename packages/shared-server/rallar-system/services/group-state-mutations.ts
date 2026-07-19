@@ -17,7 +17,6 @@ import type {
 } from '@shared/api/group-types.ts';
 import { toGroupSnapshotStateRevision } from '@shared/api/group-client-views.ts';
 import type { RuntimeStateEntryValue } from '../../runtime-state/RuntimeStateJsonStore.ts';
-import type { GroupStateMutationCausalRevision } from '../repositories/StateMutationOutboxRepository.ts';
 import {
     canActivateGroupMember,
     canConnectGroupPresenceSession,
@@ -36,10 +35,19 @@ import type {
 import {
     createRallarGroupDirectorAppointment,
     mergeRallarGroupDirectorMetadata,
+    readRallarGroupDirectorAppointment,
     readRallarGroupDirectorFromSnapshot,
     resolveRallarGroupDirectorAppointmentEligibility,
 } from '@shared/api/group-director.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
+import {
+    groupStateGroupStorageKey,
+    groupStateIdempotencyStorageKey,
+    groupStateMemberStorageKey,
+    groupStatePresenceAdmissionStorageKey,
+    groupStatePresenceSessionStorageKey,
+    groupStatePresenceSummaryStorageKey,
+} from '../group-state-storage-keys.ts';
 
 const DEFAULT_GROUP_SESSION_TTL_MS = 24 * 60 * 60 * 1_000;
 const DEFAULT_GROUP_INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
@@ -292,7 +300,14 @@ export type GroupMutationOutboxCandidate = Readonly<{
     commandId: string;
     commandHash: string;
     createdAtEpochMs: number;
-    acceptedCausalRevision: GroupStateMutationCausalRevision;
+    acceptedCausalRevision: Readonly<{
+        kind: 'group';
+        stateRevision: number;
+        snapshotVersion: number;
+        metadataVersion: number;
+        rosterVersion: number;
+        presenceVersion: number;
+    }>;
     effects: readonly ['group-state-sync', 'group-presence-summary'];
     event: Readonly<{ kind: 'group'; event: GroupEvent }>;
 }>;
@@ -582,7 +597,7 @@ export function computeGroupMutation(input: Readonly<{
 }>): GroupMutationComputed {
     const { command, read, facts } = input;
     validateGroupMutationCommand(command);
-    validateGroupMutationRead(read, command.aggregateRef);
+    validateGroupMutationRead(read, command);
     validateFacts(facts);
     validateTrustedAuthorityMode(command, facts);
     if (read.idempotency) {
@@ -636,7 +651,7 @@ export function validateGroupMutation(input: Readonly<{
     computed: GroupMutationComputed;
 }>): void {
     validateGroupMutationCommand(input.command);
-    validateGroupMutationRead(input.read, input.command.aggregateRef);
+    validateGroupMutationRead(input.read, input.command);
     validateFacts(input.facts);
     validateTrustedAuthorityMode(input.command, input.facts);
     requireJsonSafe(input.computed, 'Group mutation computed result');
@@ -670,7 +685,11 @@ export function validateGroupMutation(input: Readonly<{
     }
 }
 
-function validateGroupMutationRead(read: GroupMutationRead, ref: GroupRef): void {
+function validateGroupMutationRead(
+    read: GroupMutationRead,
+    command: GroupMutationCommand,
+): void {
+    const ref = command.aggregateRef;
     requireJsonSafe(read, 'Group mutation read');
     assertExactKeys(read as unknown as Record<string, unknown>, [
         'idempotency', 'group', 'actorMember', 'targetMember', 'authorityMember',
@@ -688,29 +707,73 @@ function validateGroupMutationRead(read: GroupMutationRead, ref: GroupRef): void
         'presenceSummary',
     ], 'Group mutation read');
     if (read.group) {
-        validateRuntimeEntryValue(read.group, 'Stored group');
+        validateRuntimeEntryValue(
+            read.group,
+            'Stored group',
+            groupStateGroupStorageKey(ref),
+        );
         validateStoredGroup(read.group.value, ref);
     }
+    const actorPrincipalId = command.input.actorPrincipalId;
+    const targetPrincipalId = mutationTargetPrincipalId(command);
+    const ownerPrincipalId = read.group?.value.ownerPrincipalId ?? null;
+    const directorPrincipalId = readRallarGroupDirectorAppointment(
+        read.group?.value.metadata,
+    )?.principalId ?? null;
     validateMemberReadPair(read.actorMember, read.actorMemberEntry, ref,
-        'Actor member');
+        actorPrincipalId, 'Actor member');
     validateMemberReadPair(read.targetMember, read.targetMemberEntry, ref,
-        'Target member');
+        targetPrincipalId, 'Target member');
     validateMemberReadPair(read.authorityMember, read.authorityMemberEntry, ref,
-        'Authority member');
+        ownerPrincipalId, 'Authority member');
     validateMemberReadPair(read.directorMember, read.directorMemberEntry, ref,
-        'Director member');
+        directorPrincipalId, 'Director member');
+    const targetSessionId = mutationTargetSessionId(command);
     if (read.targetPresence) {
-        validateRuntimeEntryValue(read.targetPresence, 'Stored target presence');
+        if (targetSessionId === null ||
+            read.targetPresence.value.sessionId !== targetSessionId) {
+            throw new TypeError(
+                'Stored target presence session differs from command slot identity',
+            );
+        }
+        if (targetPrincipalId === null ||
+            read.targetPresence.value.principalId !== targetPrincipalId) {
+            throw new TypeError(
+                'Stored target presence principal differs from command slot identity',
+            );
+        }
+        validateRuntimeEntryValue(
+            read.targetPresence,
+            'Stored target presence',
+            groupStatePresenceSessionStorageKey({ ...ref, sessionId: targetSessionId }),
+        );
         validatePresenceSession(read.targetPresence.value, ref,
             'Stored target presence');
     }
-    for (const [label, admission] of [
-        ['Target admission', read.targetAdmission],
-        ['Authority admission', read.authorityAdmission],
-        ['Director admission', read.directorAdmission],
+    const authorityAdmissionPrincipalId = command.operation === 'appointDirector'
+        ? ownerPrincipalId
+        : null;
+    const directorAdmissionPrincipalId = command.operation === 'appointDirector'
+        ? directorPrincipalId
+        : null;
+    for (const [label, admission, expectedPrincipalId] of [
+        ['Target admission', read.targetAdmission, targetPrincipalId],
+        ['Authority admission', read.authorityAdmission, authorityAdmissionPrincipalId],
+        ['Director admission', read.directorAdmission, directorAdmissionPrincipalId],
     ] as const) {
         if (!admission) continue;
-        validateRuntimeEntryValue(admission, label);
+        if (expectedPrincipalId === null ||
+            admission.value.principalId !== expectedPrincipalId) {
+            throw new TypeError(`${label} principal differs from command slot identity`);
+        }
+        validateRuntimeEntryValue(
+            admission,
+            label,
+            groupStatePresenceAdmissionStorageKey({
+                ...ref,
+                principalId: expectedPrincipalId,
+            }),
+        );
         validatePresenceAdmission(admission.value, ref);
     }
     if (!Array.isArray(read.authorityPresenceSessions) ||
@@ -721,19 +784,81 @@ function validateGroupMutationRead(read: GroupMutationRead, ref: GroupRef): void
         read.authorityPresenceSessionEntries.length) {
         throw new TypeError('Authority presence sessions differ from stored entries');
     }
+    const referencedAuthoritySessions = new Map<string, Readonly<{
+        principalId: string;
+        generationId: string;
+        generationVersion: number;
+        connectedAtEpochMs: number;
+    }>>();
+    for (const admission of [read.authorityAdmission, read.directorAdmission]) {
+        if (!admission) continue;
+        for (const session of admission.value.admittedSessions) {
+            const existing = referencedAuthoritySessions.get(session.sessionId);
+            if (existing && existing.principalId !== admission.value.principalId) {
+                throw new TypeError(
+                    'Stored authority presence session is referenced by multiple principals',
+                );
+            }
+            if (existing && (
+                existing.generationId !== session.generationId ||
+                existing.generationVersion !== session.generationVersion ||
+                existing.connectedAtEpochMs !== session.connectedAtEpochMs
+            )) {
+                throw new TypeError(
+                    'Stored authority presence session has conflicting admission generations',
+                );
+            }
+            referencedAuthoritySessions.set(session.sessionId, {
+                principalId: admission.value.principalId,
+                generationId: session.generationId,
+                generationVersion: session.generationVersion,
+                connectedAtEpochMs: session.connectedAtEpochMs,
+            });
+        }
+    }
     read.authorityPresenceSessionEntries.forEach((entry, index) => {
-        validateRuntimeEntryValue(entry, 'Stored authority presence');
+        const expected = referencedAuthoritySessions.get(entry.value.sessionId);
+        if (!expected || expected.principalId !== entry.value.principalId ||
+            expected.generationId !== entry.value.generationId ||
+            expected.generationVersion !== entry.value.generationVersion ||
+            expected.connectedAtEpochMs !== entry.value.connectedAtEpochMs) {
+            throw new TypeError(
+                'Stored authority presence is not referenced by its corresponding admission',
+            );
+        }
+        validateRuntimeEntryValue(
+            entry,
+            'Stored authority presence',
+            groupStatePresenceSessionStorageKey({
+                ...ref,
+                sessionId: entry.value.sessionId,
+            }),
+        );
         validatePresenceSession(entry.value, ref, 'Stored authority presence');
         if (!jsonEquals(entry.value, read.authorityPresenceSessions[index])) {
             throw new TypeError('Authority presence session differs from stored entry');
         }
     });
     if (read.presenceSummary) {
-        validateRuntimeEntryValue(read.presenceSummary, 'Stored presence summary');
+        validateRuntimeEntryValue(
+            read.presenceSummary,
+            'Stored presence summary',
+            groupStatePresenceSummaryStorageKey(ref),
+        );
         validatePresenceSummaryValue(read.presenceSummary.value, ref);
     }
     if (read.idempotency) {
-        validateRuntimeEntryValue(read.idempotency, 'Stored group idempotency');
+        if (command.requestId === null ||
+            read.idempotency.value.requestId !== command.requestId) {
+            throw new TypeError(
+                'Stored group idempotency request differs from command identity',
+            );
+        }
+        validateRuntimeEntryValue(
+            read.idempotency,
+            'Stored group idempotency',
+            groupStateIdempotencyStorageKey(ref, command.requestId),
+        );
         validateIdempotencyRecord(read.idempotency.value, ref);
     }
 }
@@ -741,6 +866,7 @@ function validateGroupMutationRead(read: GroupMutationRead, ref: GroupRef): void
 function validateRuntimeEntryValue<T>(
     stored: RuntimeStateEntryValue<T>,
     label: string,
+    expectedKey?: string,
 ): void {
     const wrapper = requireRecord(stored, label);
     assertExactKeys(wrapper, ['entry', 'value'], label);
@@ -753,6 +879,9 @@ function validateRuntimeEntryValue<T>(
         'key', 'value', 'expireAtTimestamp', 'updatedTimestamp', 'revision',
     ], `${label} entry`);
     requireNonEmptyString(entry.key, `${label} entry key`);
+    if (expectedKey !== undefined && entry.key !== expectedKey) {
+        throw new TypeError(`${label} entry key is not canonical for its identity`);
+    }
     if (typeof entry.value !== 'string') {
         throw new TypeError(`${label} entry value must be serialized JSON`);
     }
@@ -830,17 +959,44 @@ function validateMemberReadPair(
     member: GroupMember | null,
     stored: RuntimeStateEntryValue<GroupMember> | null,
     ref: GroupRef,
+    expectedPrincipalId: string | null,
     label: string,
 ): void {
     if ((member === null) !== (stored === null)) {
         throw new TypeError(`${label} differs from stored entry presence`);
     }
     if (!member || !stored) return;
-    validateRuntimeEntryValue(stored, `Stored ${label.toLowerCase()}`);
+    if (expectedPrincipalId === null || member.principalId !== expectedPrincipalId) {
+        throw new TypeError(`${label} principal differs from command slot identity`);
+    }
+    validateRuntimeEntryValue(
+        stored,
+        `Stored ${label.toLowerCase()}`,
+        groupStateMemberStorageKey({ ...ref, principalId: expectedPrincipalId }),
+    );
     validateStoredMember(stored.value, ref, label);
     if (!jsonEquals(member, stored.value)) {
         throw new TypeError(`${label} differs from stored entry value`);
     }
+}
+
+function mutationTargetPrincipalId(
+    command: GroupMutationCommand,
+): string | null {
+    if ('targetPrincipalId' in command) return command.targetPrincipalId;
+    if (command.operation === 'connectPresence') return command.input.principalId;
+    if (command.operation === 'heartbeatPresence' ||
+        command.operation === 'disconnectPresence') {
+        return command.input.principalId ?? command.input.actorPrincipalId;
+    }
+    return command.input.actorPrincipalId;
+}
+
+function mutationTargetSessionId(command: GroupMutationCommand): string | null {
+    if ('sessionId' in command) return command.sessionId;
+    return command.operation === 'appointDirector'
+        ? command.input.actorSessionId
+        : null;
 }
 
 function validateStoredMember(member: GroupMember, ref: GroupRef, label: string): void {
@@ -1080,6 +1236,15 @@ function validateComputedWrite(
     } else {
         validatePresenceSession(computed.guard.value, ref,
             'Group mutation computed presence guard');
+        const expectedSessionId = mutationTargetSessionId(command);
+        const expectedPrincipalId = mutationTargetPrincipalId(command);
+        if (expectedSessionId === null || expectedPrincipalId === null ||
+            computed.guard.value.sessionId !== expectedSessionId ||
+            computed.guard.value.principalId !== expectedPrincipalId) {
+            throw new TypeError(
+                'Group mutation presence guard differs from command target identity',
+            );
+        }
         const expectedRevision = read.targetPresence?.entry.revision;
         if (computed.guard.operation === 'insert') {
             if (read.targetPresence !== null) {
@@ -1094,6 +1259,15 @@ function validateComputedWrite(
     }
     for (const member of computed.members) {
         validateStoredMember(member, ref, 'Group mutation computed member');
+    }
+    const expectedMemberPrincipalIds = expectedMutationMemberPrincipalIds(command, read);
+    const actualMemberPrincipalIds = computed.members
+        .map((member) => member.principalId)
+        .toSorted();
+    if (!jsonEquals(actualMemberPrincipalIds, expectedMemberPrincipalIds)) {
+        throw new TypeError(
+            'Group mutation member candidate identity differs from command target',
+        );
     }
     if (computed.initialPresenceSummary !== null) {
         validatePresenceSummaryValue(computed.initialPresenceSummary, ref);
@@ -1135,18 +1309,25 @@ function validateComputedWrite(
             );
         }
         const admittedPrincipalId = computed.presenceAdmission.value.principalId;
-        const expectedPrincipalId = computed.guard.kind === 'presence'
-            ? computed.guard.value.principalId
-            : computed.members.find((member) =>
-                member.principalId === admittedPrincipalId
-            )?.principalId;
-        if (expectedPrincipalId !== admittedPrincipalId) {
+        const expectedPrincipalId = mutationTargetPrincipalId(command);
+        if (expectedPrincipalId === null || expectedPrincipalId !== admittedPrincipalId) {
             throw new TypeError(
-                'Group mutation admission principal differs from guarded authority',
+                'Group mutation admission principal differs from command target identity',
             );
         }
     }
     validateGroupEvent(computed.event, ref, 'Group mutation computed event');
+    if (computed.event.eventId !== facts.eventId ||
+        computed.event.occurredAtEpochMs !== facts.nowEpochMs ||
+        (computed.event.requestId ?? null) !== command.requestId ||
+        (computed.event.actor.principalId ?? null) !==
+            command.input.actorPrincipalId ||
+        (computed.event.actor.sessionId ?? null) !== command.input.actorSessionId ||
+        computed.event.actor.serviceId !== facts.serviceId) {
+        throw new TypeError(
+            'Group mutation computed event identity differs from command and facts',
+        );
+    }
     validateMutationReceipt(computed.receipt, ref, 'Group mutation computed receipt');
     if (computed.receipt.outcome !== 'applied' ||
         computed.receipt.commandId !== command.commandId ||
@@ -1163,6 +1344,39 @@ function validateComputedWrite(
         throw new TypeError('Group mutation computed idempotency is missing');
     }
     validateComputedOutbox(command, read, facts, computed);
+}
+
+function expectedMutationMemberPrincipalIds(
+    command: GroupMutationCommand,
+    read: GroupMutationRead,
+): readonly string[] {
+    switch (command.operation) {
+        case 'createGroup':
+            return [command.input.createdByPrincipalId];
+        case 'joinGroup':
+        case 'acceptGroupInvite':
+        case 'createGroupInvite':
+        case 'revokeGroupInvite':
+        case 'removeGroupMember':
+        case 'banGroupMember':
+        case 'unbanGroupMember':
+        case 'setGroupMemberRole':
+        case 'upsertMember':
+            return [command.targetPrincipalId];
+        case 'transferGroupOwnership': {
+            const currentOwner = read.group?.value.ownerPrincipalId;
+            return currentOwner === undefined
+                ? [command.targetPrincipalId]
+                : [currentOwner, command.targetPrincipalId].toSorted();
+        }
+        case 'updateGroup':
+        case 'appointDirector':
+        case 'rotateGroupJoinCode':
+        case 'connectPresence':
+        case 'heartbeatPresence':
+        case 'disconnectPresence':
+            return [];
+    }
 }
 
 function validateComputedOutbox(
@@ -1338,11 +1552,19 @@ export function validateGroupPresenceSummary(input: Readonly<{
     assertRequiredKeys(read as unknown as Record<string, unknown>, [
         'group', 'members', 'admissions', 'presenceSessions', 'current',
     ], 'Group presence summary read');
-    validateRuntimeEntryValue(read.group, 'Stored summary group');
+    validateRuntimeEntryValue(
+        read.group,
+        'Stored summary group',
+        groupStateGroupStorageKey(ref),
+    );
     validateStoredGroup(read.group.value, ref);
     validateGroupPresenceSummaryReadCollections(ref, read);
     if (read.current) {
-        validateRuntimeEntryValue(read.current, 'Stored current presence summary');
+        validateRuntimeEntryValue(
+            read.current,
+            'Stored current presence summary',
+            groupStatePresenceSummaryStorageKey(ref),
+        );
         validatePresenceSummaryValue(read.current.value, ref);
     }
 
@@ -1464,7 +1686,14 @@ function validateGroupPresenceSummaryReadCollections(
     }
     const memberIds = new Set<string>();
     for (const stored of read.members) {
-        validateRuntimeEntryValue(stored, 'Stored summary member');
+        validateRuntimeEntryValue(
+            stored,
+            'Stored summary member',
+            groupStateMemberStorageKey({
+                ...ref,
+                principalId: stored.value.principalId,
+            }),
+        );
         validateStoredMember(stored.value, ref, 'Stored summary member');
         if (memberIds.has(stored.value.principalId)) {
             throw new TypeError('Group presence summary member principal is duplicated');
@@ -1483,7 +1712,14 @@ function validateGroupPresenceSummaryReadCollections(
     const admissionPrincipals = new Set<string>();
     const admittedSessionOwners = new Map<string, string>();
     for (const stored of read.admissions) {
-        validateRuntimeEntryValue(stored, 'Stored summary admission');
+        validateRuntimeEntryValue(
+            stored,
+            'Stored summary admission',
+            groupStatePresenceAdmissionStorageKey({
+                ...ref,
+                principalId: stored.value.principalId,
+            }),
+        );
         validatePresenceAdmission(stored.value, ref);
         if (admissionPrincipals.has(stored.value.principalId)) {
             throw new TypeError('Group presence summary admission principal is duplicated');
@@ -1500,7 +1736,14 @@ function validateGroupPresenceSummaryReadCollections(
 
     const sessionsById = new Map<string, GroupPresenceSession>();
     for (const stored of read.presenceSessions) {
-        validateRuntimeEntryValue(stored, 'Stored summary presence session');
+        validateRuntimeEntryValue(
+            stored,
+            'Stored summary presence session',
+            groupStatePresenceSessionStorageKey({
+                ...ref,
+                sessionId: stored.value.sessionId,
+            }),
+        );
         validatePresenceSession(stored.value, ref, 'Stored summary presence session');
         if (sessionsById.has(stored.value.sessionId)) {
             throw new TypeError('Group presence summary sessionId is duplicated');

@@ -52,6 +52,11 @@ rg --files packages/tests packages/shared packages/shared-web packages/shared-se
 - Database row, table, and advisory locks are exceptions, not reusable
   architecture. Require explicit human approval and document the protected
   invariant, evidence, bounded critical section, and removal condition.
+- Before an authoritative compare-and-set, validate each persisted entry's
+  canonical storage key, decoded value identity, and command-derived read slot.
+  Derive expected principals, sessions, targets, and request IDs from the
+  trusted command, never from the row being validated. Bind guards, dependent
+  candidates, events, receipts, and outbox intents to those same identities.
 
 ## Shape Decision
 

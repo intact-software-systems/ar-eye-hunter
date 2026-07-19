@@ -40,6 +40,7 @@ import {
 import type { RallarTimingSink } from './timing.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 import type { IssuedAuthSession } from '../repositories/AuthSessionRepository.ts';
+import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 export {
     AppInboxService,
@@ -160,10 +161,41 @@ export type GroupPresenceDisconnectAppInboxPayload = Readonly<{
 }>;
 
 export class AppGroupInboxService extends AppInboxService {
+    public override processEntryNoWaiting<V, R = V>(
+        enqueue: AppInboxEnqueueInput<V>,
+    ): void {
+        void enqueue;
+        throw new GroupMutationAuthorizationError(
+            'Authenticated group mutation authority is required.',
+        );
+    }
+
+    public override processEntryNoWaitingIf<V, R = V>(
+        enqueue: AppInboxEnqueueInput<V>,
+        enqueueIf: (entry: ResourceEntry) => boolean,
+    ): void {
+        void enqueue;
+        void enqueueIf;
+        throw new GroupMutationAuthorizationError(
+            'Authenticated group mutation authority is required.',
+        );
+    }
+
     public override async processEntryUntilCompletion<V, R = V>(
         enqueue: AppInboxEnqueueInput<V>,
     ): Promise<Either<string, R>> {
         void enqueue;
+        throw new GroupMutationAuthorizationError(
+            'Authenticated group mutation authority is required.',
+        );
+    }
+
+    public override async processEntryUntilCompletionIf<V, R = V>(
+        enqueue: AppInboxEnqueueInput<V>,
+        enqueueIf: (entry: ResourceEntry) => boolean,
+    ): Promise<Either<string, R>> {
+        void enqueue;
+        void enqueueIf;
         throw new GroupMutationAuthorizationError(
             'Authenticated group mutation authority is required.',
         );

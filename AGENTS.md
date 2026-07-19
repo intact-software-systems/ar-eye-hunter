@@ -57,6 +57,10 @@ the repo-local Codex plugin under `.agents/skills/**`.
   contracts use mandatory fields by default. Optional fields require meaningful
   domain absence and consumer tests; sparse request, query, patch, builder, and
   migration inputs use separate types.
+- Validate canonical storage key, stored value identity, and trusted
+  command-slot relationships before every authoritative compare-and-set.
+  Never derive the expected actor, target, principal, session, or request
+  identity from the candidate row being validated.
 
 ## Validation
 

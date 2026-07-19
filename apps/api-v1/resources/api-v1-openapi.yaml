@@ -3834,6 +3834,8 @@ components:
         - status
         - joinMode
         - metadata
+        - activeMemberCount
+        - ownerPrincipalId
         - snapshotVersion
         - metadataVersion
         - rosterVersion
@@ -3871,6 +3873,12 @@ components:
         metadata:
           type: object
           additionalProperties: true
+        activeMemberCount:
+          type: integer
+          format: int64
+          minimum: 1
+        ownerPrincipalId:
+          type: string
         snapshotVersion:
           type: integer
           format: int64
@@ -3951,6 +3959,8 @@ components:
         - groupId
         - sessionId
         - principalId
+        - generationId
+        - generationVersion
         - connectedAtEpochMs
         - lastHeartbeatAtEpochMs
         - expiresAtEpochMs
@@ -3965,6 +3975,12 @@ components:
           type: string
         principalId:
           type: string
+        generationId:
+          type: string
+        generationVersion:
+          type: integer
+          format: int64
+          minimum: 1
         connectedAtEpochMs:
           type: integer
           format: int64
@@ -3980,10 +3996,36 @@ components:
         disconnectReason:
           type: string
 
+    GroupStateCausalRevision:
+      type: object
+      required: [groupRevision, presenceRevision]
+      properties:
+        groupRevision:
+          type: integer
+          format: int64
+          minimum: 0
+        presenceRevision:
+          type: integer
+          format: int64
+          minimum: 0
+
     GroupSnapshot:
       type: object
-      required: [group, members, activeSessions, memberCount, onlineMemberCount]
+      required:
+        - stateRevision
+        - causalRevision
+        - group
+        - members
+        - activeSessions
+        - memberCount
+        - onlineMemberCount
       properties:
+        stateRevision:
+          type: integer
+          format: int64
+          minimum: 0
+        causalRevision:
+          $ref: '#/components/schemas/GroupStateCausalRevision'
         group:
           $ref: '#/components/schemas/Group'
         members:
@@ -4446,7 +4488,10 @@ components:
 
     ConnectGroupPresenceSessionRequest:
       type: object
+      required: [generationId]
       properties:
+        generationId:
+          type: string
         connectedAtEpochMs:
           type: integer
           format: int64
@@ -4465,7 +4510,10 @@ components:
 
     HeartbeatGroupPresenceSessionRequest:
       type: object
+      required: [generationId]
       properties:
+        generationId:
+          type: string
         lastHeartbeatAtEpochMs:
           type: integer
           format: int64
@@ -4481,7 +4529,10 @@ components:
 
     DisconnectGroupPresenceSessionRequest:
       type: object
+      required: [generationId]
       properties:
+        generationId:
+          type: string
         disconnectedAtEpochMs:
           type: integer
           format: int64

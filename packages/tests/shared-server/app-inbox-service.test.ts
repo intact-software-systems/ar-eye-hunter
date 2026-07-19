@@ -597,6 +597,52 @@ describe('AppInboxService', () => {
         );
     });
 
+    it('rejects every inherited unauthenticated group enqueue variant before insertion', async () => {
+        const queue = new TestResourceInbox();
+        const reader = new InboxQueueReader(queue);
+        const results = new TestResourceInboxResults();
+        const groupStateService = createGroupStateServiceStub({});
+        const service = new AppGroupInboxService(
+            reader,
+            queue as never,
+            results as never,
+            groupStateService,
+            'server-1',
+        );
+        const input: AppInboxEnqueueInput<GroupCreateAppInboxPayload> = {
+            type: AppInboxType.GROUP_CREATE,
+            resourceId: 'unauthenticated-group-create',
+            contextId: 'app:workspace:group',
+            senderId: 'mallory',
+            data: {
+                scope: SCOPE,
+                request: {
+                    groupId: 'group',
+                    displayName: 'Group',
+                    kind: 'room',
+                    createdByPrincipalId: 'mallory',
+                    requestId: 'unauthenticated-group-create',
+                },
+            },
+        };
+
+        expect(() => service.processEntryNoWaiting(input)).toThrow(
+            /authenticated group mutation authority/i,
+        );
+        expect(() => service.processEntryNoWaitingIf(input, () => true)).toThrow(
+            /authenticated group mutation authority/i,
+        );
+        await expect(service.processEntryUntilCompletion(input)).rejects.toThrow(
+            /authenticated group mutation authority/i,
+        );
+        await expect(
+            service.processEntryUntilCompletionIf(input, () => true),
+        ).rejects.toThrow(/authenticated group mutation authority/i);
+
+        expect(readOnlyEntry(queue)).toBeUndefined();
+        expect(groupStateService.prepareMutation).not.toHaveBeenCalled();
+    });
+
     it('does not publish state sync or derived outbox work without a mutation event', async () => {
         const queue = new TestResourceInbox();
         const reader = new InboxQueueReader(queue);

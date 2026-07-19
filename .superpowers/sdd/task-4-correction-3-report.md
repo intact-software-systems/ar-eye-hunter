@@ -89,7 +89,7 @@ The final focused authority/inbox/outbox regression passed 3 files and 40 tests.
 ## Final validation
 
 ```text
-npx vitest run --project shared-server
+npx vitest run packages/tests/shared-server
 55 files passed; 2 configured files skipped
 514 tests passed; 7 configured tests skipped
 

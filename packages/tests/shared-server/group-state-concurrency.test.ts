@@ -1,5 +1,7 @@
 import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 import type {
+    GroupMember,
+    GroupPresenceAdmission,
     GroupPresenceSession,
     GroupPresenceSummary,
     GroupRef,
@@ -30,6 +32,14 @@ import {
     validateGroupPresenceSummary,
 } from '@shared-server/rallar-system/services/group-state-mutations.ts';
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/services/GroupPresenceSummaryWork.ts';
+import {
+    groupStateGroupStorageKey,
+    groupStateIdempotencyStorageKey,
+    groupStateMemberStorageKey,
+    groupStatePresenceAdmissionStorageKey,
+    groupStatePresenceSessionStorageKey,
+    groupStatePresenceSummaryStorageKey,
+} from '@shared-server/rallar-system/group-state-storage-keys.ts';
 import type { StateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
 import type {
     RuntimeStateConditionalWriteResult,
@@ -81,6 +91,26 @@ describe('convergent group and presence state', () => {
                 unexpected: true,
             },
         } as never))).toThrow(/unexpected|key/i);
+    });
+
+    it('encodes canonical group storage keys including workspace absence and reserved IDs', () => {
+        const ref = {
+            applicationId: 'app/one',
+            groupId: 'group:one',
+        };
+        const groupKey = 'app=app%2Fone:ws=_:group=group%3Aone';
+        expect(groupStateGroupStorageKey(ref)).toBe(groupKey);
+        expect(groupStatePresenceSummaryStorageKey(ref)).toBe(groupKey);
+        expect(groupStateMemberStorageKey({ ...ref, principalId: 'p/a' }))
+            .toBe(`${groupKey}:member=p%2Fa`);
+        expect(groupStatePresenceSessionStorageKey({ ...ref, sessionId: 's:a' }))
+            .toBe(`${groupKey}:session=s%3Aa`);
+        expect(groupStatePresenceAdmissionStorageKey({
+            ...ref,
+            principalId: 'p:a',
+        })).toBe(`${groupKey}:principal=p%3Aa`);
+        expect(groupStateIdempotencyStorageKey(ref, 'r/a'))
+            .toBe(`${groupKey}:request=r%2Fa`);
     });
 
     it('re-authorizes group mutation actors from the current retry read', async () => {
@@ -242,6 +272,459 @@ describe('convergent group and presence state', () => {
         }
     });
 
+    it('binds every mutation read slot to its canonical storage key and command identity', () => {
+        const base = createMutationRead();
+        const facts = createMutationFacts();
+        const targetCommand = createMutationCommand({
+            operation: 'setGroupMemberRole',
+            targetPrincipalId: 'bob',
+            input: {
+                actorPrincipalId: 'alice',
+                actorSessionId: 'alice-session',
+                reason: null,
+                traceId: null,
+                role: 'admin',
+            },
+        } as Partial<GroupMutationCommand>);
+        const bob = memberFor('bob');
+        const targetRead: GroupMutationRead = {
+            ...base,
+            targetMember: bob,
+            targetMemberEntry: storedEntry(groupMemberStorageKey('bob'), bob),
+        };
+        const directorGroup = {
+            ...base.group!.value,
+            metadata: {
+                rallarDirector: {
+                    version: 1,
+                    mode: 'appointed-spa',
+                    sessionId: 'director-session',
+                    principalId: 'director',
+                    epoch: 1,
+                    appointedAtEpochMs: 1_000,
+                    heartbeatTtlMs: 5_000,
+                },
+            },
+        };
+        const director = memberFor('director');
+        const ownerAdmission = admissionFor('alice', []);
+        const directorAdmission = admissionFor('director', [{
+            sessionId: 'director-session',
+            generationId: 'director-generation',
+            generationVersion: 1_000,
+            connectedAtEpochMs: 1_000,
+        }]);
+        const directorSession = presenceFor(
+            'director', 'director-session', 'director-generation',
+        );
+        const directorCommand = createMutationCommand({
+            operation: 'appointDirector',
+            input: {
+                actorPrincipalId: 'alice',
+                actorSessionId: 'alice-session',
+                reason: null,
+                traceId: null,
+                heartbeatTtlMs: 5_000,
+            },
+        } as Partial<GroupMutationCommand>);
+        const directorRead: GroupMutationRead = {
+            ...base,
+            group: storedEntry(groupStorageKey(), directorGroup),
+            authorityMember: base.actorMember,
+            authorityMemberEntry: base.actorMemberEntry,
+            directorMember: director,
+            directorMemberEntry: storedEntry(groupMemberStorageKey('director'), director),
+            authorityAdmission: storedEntry(
+                groupAdmissionStorageKey('alice'), ownerAdmission,
+            ),
+            directorAdmission: storedEntry(
+                groupAdmissionStorageKey('director'), directorAdmission,
+            ),
+            authorityPresenceSessions: [directorSession],
+            authorityPresenceSessionEntries: [storedEntry(
+                groupSessionStorageKey('director-session'), directorSession,
+            )],
+        };
+        const presenceCommand = createMutationCommand({
+            operation: 'connectPresence',
+            sessionId: 'bob-session',
+            input: {
+                actorPrincipalId: 'alice',
+                actorSessionId: 'alice-session',
+                reason: null,
+                traceId: null,
+                principalId: 'bob',
+                generationId: 'bob-generation',
+                connectedAtEpochMs: 1_000,
+                lastHeartbeatAtEpochMs: 1_000,
+                expiresAtEpochMs: 10_000,
+            },
+        } as Partial<GroupMutationCommand>);
+        const bobAdmission = admissionFor('bob', []);
+        const presenceRead: GroupMutationRead = {
+            ...targetRead,
+            targetAdmission: storedEntry(
+                groupAdmissionStorageKey('bob'), bobAdmission,
+            ),
+        };
+        const idempotency = {
+            requestId: targetCommand.requestId!,
+            commandHash: facts.commandHash,
+            receipt: {
+                commandId: targetCommand.commandId,
+                commandHash: facts.commandHash,
+                outcome: 'no-op' as const,
+                stateRevision: 1_000_000,
+                snapshotVersion: 1,
+                causalRevision: { groupRevision: 1, presenceRevision: 0 },
+                event: { kind: 'none' as const },
+                joinCode: null,
+                joinCodeExpiresAtEpochMs: null,
+                rejection: null,
+            },
+        };
+
+        const cases: readonly [string, GroupMutationCommand, GroupMutationRead][] = [
+            ['group key', targetCommand, {
+                ...targetRead,
+                group: rekey(targetRead.group!, `${groupStorageKey()}:wrong`),
+            }],
+            ['actor slot value', targetCommand, {
+                ...targetRead,
+                actorMember: bob,
+                actorMemberEntry: storedEntry(groupMemberStorageKey('bob'), bob),
+            }],
+            ['actor slot key', targetCommand, {
+                ...targetRead,
+                actorMemberEntry: rekey(
+                    targetRead.actorMemberEntry!, groupMemberStorageKey('bob'),
+                ),
+            }],
+            ['target slot', targetCommand, {
+                ...targetRead,
+                targetMember: memberFor('charlie'),
+                targetMemberEntry: storedEntry(
+                    groupMemberStorageKey('charlie'), memberFor('charlie'),
+                ),
+            }],
+            ['owner authority slot', directorCommand, {
+                ...directorRead,
+                authorityMember: bob,
+                authorityMemberEntry: storedEntry(groupMemberStorageKey('bob'), bob),
+            }],
+            ['director slot', directorCommand, {
+                ...directorRead,
+                directorMember: bob,
+                directorMemberEntry: storedEntry(groupMemberStorageKey('bob'), bob),
+            }],
+            ['target admission', presenceCommand, {
+                ...presenceRead,
+                targetAdmission: storedEntry(
+                    groupAdmissionStorageKey('charlie'), admissionFor('charlie', []),
+                ),
+            }],
+            ['target presence session', presenceCommand, {
+                ...presenceRead,
+                targetPresence: storedEntry(
+                    groupSessionStorageKey('other-session'),
+                    presenceFor('bob', 'other-session', 'bob-generation'),
+                ),
+            }],
+            ['authority admission', directorCommand, {
+                ...directorRead,
+                authorityAdmission: storedEntry(
+                    groupAdmissionStorageKey('bob'), admissionFor('bob', []),
+                ),
+            }],
+            ['director admission', directorCommand, {
+                ...directorRead,
+                directorAdmission: storedEntry(
+                    groupAdmissionStorageKey('bob'), admissionFor('bob', []),
+                ),
+            }],
+            ['unreferenced authority session', directorCommand, {
+                ...directorRead,
+                authorityPresenceSessions: [presenceFor(
+                    'director', 'other-session', 'other-generation',
+                )],
+                authorityPresenceSessionEntries: [storedEntry(
+                    groupSessionStorageKey('other-session'),
+                    presenceFor('director', 'other-session', 'other-generation'),
+                )],
+            }],
+            ['idempotency key', targetCommand, {
+                ...targetRead,
+                idempotency: storedEntry(
+                    groupIdempotencyStorageKey('other-request'), idempotency,
+                ),
+            }],
+            ['idempotency record request', targetCommand, {
+                ...targetRead,
+                idempotency: storedEntry(
+                    groupIdempotencyStorageKey('other-request'),
+                    { ...idempotency, requestId: 'other-request' },
+                ),
+            }],
+        ];
+
+        for (const [label, command, read] of cases) {
+            expect(
+                () => computeGroupMutation({ command, read, facts }),
+                label,
+            ).toThrow(/canonical|identity|slot|key|request|principal|session|referenced/i);
+        }
+    });
+
+    it('binds mutation write candidates to the exact command target', () => {
+        const command = createMutationCommand({
+            operation: 'setGroupMemberRole',
+            targetPrincipalId: 'bob',
+            input: {
+                actorPrincipalId: 'alice',
+                actorSessionId: 'alice-session',
+                reason: null,
+                traceId: null,
+                role: 'admin',
+            },
+        } as Partial<GroupMutationCommand>);
+        const bob = memberFor('bob');
+        const read: GroupMutationRead = {
+            ...createMutationRead(),
+            targetMember: bob,
+            targetMemberEntry: storedEntry(groupMemberStorageKey('bob'), bob),
+        };
+        const facts = createMutationFacts();
+        const computed = computeGroupMutation({ command, read, facts });
+        if (computed.outcome !== 'write') throw new Error('Expected write');
+        const wrongMember = {
+            ...computed.members[0]!,
+            principalId: 'charlie',
+        };
+        const malformed = {
+            ...computed,
+            members: [wrongMember],
+            guard: {
+                ...computed.guard,
+                value: computed.guard.kind === 'group'
+                    ? { ...computed.guard.value, activeMemberCount: 2 }
+                    : computed.guard.value,
+            },
+        };
+
+        expect(() => validateGroupMutation({
+            command,
+            read,
+            facts,
+            computed: malformed as never,
+        })).toThrow(/command target|candidate identity|principal/i);
+    });
+
+    it('binds heartbeat and disconnect read principals independently from corrupt rows', () => {
+        const bob = memberFor('bob');
+        const session = presenceFor('bob', 'alice-session', 'generation-1');
+        const admission = admissionFor('bob', [{
+            sessionId: session.sessionId,
+            generationId: session.generationId,
+            generationVersion: session.generationVersion,
+            connectedAtEpochMs: session.connectedAtEpochMs,
+        }]);
+        const corruptRead: GroupMutationRead = {
+            ...createMutationRead(),
+            targetMember: bob,
+            targetMemberEntry: storedEntry(groupMemberStorageKey('bob'), bob),
+            targetPresence: storedEntry(
+                groupSessionStorageKey('alice-session'), session,
+            ),
+            targetAdmission: storedEntry(
+                groupAdmissionStorageKey('bob'), admission,
+            ),
+        };
+        const publicFacts = createMutationFacts();
+        const heartbeat = createMutationCommand({
+            operation: 'heartbeatPresence',
+            sessionId: 'alice-session',
+            input: {
+                actorPrincipalId: 'alice',
+                actorSessionId: 'alice-session',
+                reason: null,
+                traceId: null,
+                principalId: null,
+                generationId: 'generation-1',
+                lastHeartbeatAtEpochMs: 2_000,
+                expiresAtEpochMs: 10_000,
+            },
+        } as Partial<GroupMutationCommand>);
+        const disconnect = createMutationCommand({
+            operation: 'disconnectPresence',
+            sessionId: 'alice-session',
+            input: {
+                actorPrincipalId: 'alice',
+                actorSessionId: 'alice-session',
+                reason: null,
+                traceId: null,
+                principalId: null,
+                generationId: 'generation-1',
+                generationVersion: null,
+                observedExpiresAtEpochMs: null,
+                disconnectedAtEpochMs: 2_000,
+                lastHeartbeatAtEpochMs: null,
+                expiresAtEpochMs: null,
+            },
+        } as Partial<GroupMutationCommand>);
+        const internalDisconnect = createMutationCommand({
+            ...disconnect,
+            commandId: 'cleanup-command',
+            requestId: 'cleanup-command',
+            input: {
+                ...disconnect.input,
+                principalId: 'alice',
+                actorPrincipalId: null,
+                actorSessionId: null,
+            },
+        } as Partial<GroupMutationCommand>);
+        const internalFacts: GroupMutationFacts = {
+            ...publicFacts,
+            internalAuthority: 'session-cleanup',
+            authenticatedAuthority: null,
+        };
+
+        for (const [label, command, facts] of [
+            ['public heartbeat', heartbeat, publicFacts],
+            ['public disconnect', disconnect, publicFacts],
+            ['internal disconnect', internalDisconnect, internalFacts],
+        ] as const) {
+            expect(
+                () => computeGroupMutation({ command, read: corruptRead, facts }),
+                label,
+            ).toThrow(/command slot identity|command principal|canonical principal/i);
+        }
+    });
+
+    it('rejects a canonical target session whose value belongs to another principal', () => {
+        const wrongPrincipalSession = presenceFor(
+            'bob', 'alice-session', 'generation-1',
+        );
+        const read: GroupMutationRead = {
+            ...createMutationRead(),
+            targetPresence: storedEntry(
+                groupSessionStorageKey('alice-session'),
+                wrongPrincipalSession,
+            ),
+        };
+        const internalRead: GroupMutationRead = {
+            ...read,
+            actorMember: null,
+            actorMemberEntry: null,
+            targetMember: read.actorMember,
+            targetMemberEntry: read.actorMemberEntry,
+        };
+        const disconnect = createMutationCommand({
+            operation: 'disconnectPresence',
+            sessionId: 'alice-session',
+            commandId: 'cleanup-command',
+            requestId: 'cleanup-command',
+            input: {
+                actorPrincipalId: null,
+                actorSessionId: null,
+                reason: null,
+                traceId: null,
+                principalId: 'alice',
+                generationId: 'generation-1',
+                generationVersion: 1_000,
+                observedExpiresAtEpochMs: 10_000,
+                disconnectedAtEpochMs: 2_000,
+                lastHeartbeatAtEpochMs: null,
+                expiresAtEpochMs: null,
+            },
+        } as Partial<GroupMutationCommand>);
+        const facts: GroupMutationFacts = {
+            ...createMutationFacts(),
+            internalAuthority: 'session-cleanup',
+            authenticatedAuthority: null,
+        };
+        const appointment = createMutationCommand({
+            operation: 'appointDirector',
+            input: {
+                actorPrincipalId: 'alice',
+                actorSessionId: 'alice-session',
+                reason: null,
+                traceId: null,
+                heartbeatTtlMs: 5_000,
+            },
+        } as Partial<GroupMutationCommand>);
+
+        expect(() => computeGroupMutation({
+            command: disconnect,
+            read: internalRead,
+            facts,
+        }))
+            .toThrow(/target presence principal.*command|command slot identity/i);
+        expect(() => computeGroupMutation({
+            command: appointment,
+            read,
+            facts: createMutationFacts(),
+        })).toThrow(/target presence principal.*command|command slot identity/i);
+    });
+
+    it('rejects one authority session referenced by different principal admissions', () => {
+        const base = createMutationRead();
+        const group = {
+            ...base.group!.value,
+            metadata: {
+                rallarDirector: {
+                    version: 1,
+                    mode: 'appointed-spa',
+                    sessionId: 'shared-session',
+                    principalId: 'director',
+                    epoch: 1,
+                    appointedAtEpochMs: 1_000,
+                    heartbeatTtlMs: 5_000,
+                },
+            },
+        };
+        const admitted = {
+            sessionId: 'shared-session',
+            generationId: 'generation-1',
+            generationVersion: 1_000,
+            connectedAtEpochMs: 1_000,
+        } as const;
+        const directorSession = presenceFor(
+            'director', 'shared-session', 'generation-1',
+        );
+        const read: GroupMutationRead = {
+            ...base,
+            group: storedEntry(groupStorageKey(), group),
+            authorityAdmission: storedEntry(
+                groupAdmissionStorageKey('alice'),
+                admissionFor('alice', [admitted]),
+            ),
+            directorAdmission: storedEntry(
+                groupAdmissionStorageKey('director'),
+                admissionFor('director', [admitted]),
+            ),
+            authorityPresenceSessions: [directorSession],
+            authorityPresenceSessionEntries: [storedEntry(
+                groupSessionStorageKey('shared-session'), directorSession,
+            )],
+        };
+        const command = createMutationCommand({
+            operation: 'appointDirector',
+            input: {
+                actorPrincipalId: 'alice',
+                actorSessionId: 'alice-session',
+                reason: null,
+                traceId: null,
+                heartbeatTtlMs: 5_000,
+            },
+        } as Partial<GroupMutationCommand>);
+
+        expect(() => computeGroupMutation({
+            command,
+            read,
+            facts: createMutationFacts(),
+        })).toThrow(/multiple principals|different principal admissions|duplicated authority/i);
+    });
+
     it('rejects malformed computed guards, receipts, and outbox projections', () => {
         const command = createMutationCommand();
         const read = createMutationRead();
@@ -302,7 +785,7 @@ describe('convergent group and presence state', () => {
         const current = {
             entry: {
                 ...group.entry,
-                key: 'presence-summary',
+                key: groupPresenceSummaryStorageKey(),
                 value: JSON.stringify(base),
                 revision: 0,
             },
@@ -361,6 +844,15 @@ describe('convergent group and presence state', () => {
             read: ahead,
             computed: concurrent,
         })).toThrow(/advance.*causal tuple|incomparable/i);
+
+        expect(() => validateGroupPresenceSummary({
+            ref: groupRef('pure-room'),
+            read: {
+                ...read,
+                current: rekey(current, `${groupPresenceSummaryStorageKey()}:wrong`),
+            },
+            computed: { outcome: 'no-op', summary: base },
+        })).toThrow(/canonical|key/i);
     });
 
     it('rebases simultaneous create and last-slot joins through the group guard', async () => {
@@ -1318,24 +1810,14 @@ function createMutationRead(): GroupMutationRead {
         joined: audit,
         updated: audit,
     };
-    const entry = (key: string, value: unknown) => ({
-        entry: {
-            key,
-            value: JSON.stringify(value),
-            expireAtTimestamp: Number.MAX_SAFE_INTEGER,
-            updatedTimestamp: new Date(0).toISOString(),
-            revision: 0,
-        },
-        value,
-    });
     return {
         idempotency: null,
-        group: entry('group', group),
+        group: storedEntry(groupStorageKey(), group),
         actorMember,
         targetMember: null,
         authorityMember: null,
         directorMember: null,
-        actorMemberEntry: entry('member:alice', actorMember),
+        actorMemberEntry: storedEntry(groupMemberStorageKey('alice'), actorMember),
         targetMemberEntry: null,
         authorityMemberEntry: null,
         directorMemberEntry: null,
@@ -1347,6 +1829,101 @@ function createMutationRead(): GroupMutationRead {
         authorityPresenceSessionEntries: [],
         presenceSummary: null,
     } as GroupMutationRead;
+}
+
+function storagePart(name: string, value?: string): string {
+    return `${name}=${encodeURIComponent(value ?? '_')}`;
+}
+
+function groupStorageKey(): string {
+    return [
+        storagePart('app', 'app-1'),
+        storagePart('ws', 'workspace-1'),
+        storagePart('group', 'pure-room'),
+    ].join(':');
+}
+
+function groupMemberStorageKey(principalId: string): string {
+    return `${groupStorageKey()}:${storagePart('member', principalId)}`;
+}
+
+function groupSessionStorageKey(sessionId: string): string {
+    return `${groupStorageKey()}:${storagePart('session', sessionId)}`;
+}
+
+function groupAdmissionStorageKey(principalId: string): string {
+    return `${groupStorageKey()}:${storagePart('principal', principalId)}`;
+}
+
+function groupIdempotencyStorageKey(requestId: string): string {
+    return `${groupStorageKey()}:${storagePart('request', requestId)}`;
+}
+
+function groupPresenceSummaryStorageKey(): string {
+    return groupStorageKey();
+}
+
+function storedEntry<T>(key: string, value: T) {
+    return {
+        entry: {
+            key,
+            value: JSON.stringify(value),
+            expireAtTimestamp: Number.MAX_SAFE_INTEGER,
+            updatedTimestamp: new Date(0).toISOString(),
+            revision: 0,
+        },
+        value,
+    };
+}
+
+function rekey<T>(stored: ReturnType<typeof storedEntry<T>>, key: string) {
+    return { ...stored, entry: { ...stored.entry, key } };
+}
+
+function memberFor(principalId: string): GroupMember {
+    const audit = {
+        atEpochMs: 1_000,
+        byPrincipalId: 'alice',
+        byServiceId: 'group-service',
+        requestId: 'seed',
+    };
+    return {
+        ...groupRef('pure-room'),
+        principalId,
+        role: 'member',
+        status: 'active',
+        joined: audit,
+        updated: audit,
+    };
+}
+
+function admissionFor(
+    principalId: string,
+    admittedSessions: GroupPresenceAdmission['admittedSessions'],
+): GroupPresenceAdmission {
+    return {
+        ...groupRef('pure-room'),
+        principalId,
+        admittedSessions,
+        updatedAtEpochMs: 1_000,
+    };
+}
+
+function presenceFor(
+    principalId: string,
+    sessionId: string,
+    generationId: string,
+): GroupPresenceSession {
+    return {
+        ...groupRef('pure-room'),
+        principalId,
+        sessionId,
+        generationId,
+        generationVersion: 1_000,
+        connectedAtEpochMs: 1_000,
+        lastHeartbeatAtEpochMs: 1_000,
+        expiresAtEpochMs: 10_000,
+    };
 }
 
 function createMutationFacts(): GroupMutationFacts {

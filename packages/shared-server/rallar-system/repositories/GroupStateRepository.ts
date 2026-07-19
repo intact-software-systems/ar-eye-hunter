@@ -29,6 +29,13 @@ import { isLogicallyActiveSession, toSessionPurgeAfterEpochMs } from './session-
 import { defaultGroupStateEventStoreFor, type GroupStateEventStore } from './StateEventStore.ts';
 import { filterStateEventsForList, type StateEventListQuery } from '../state-event-listing.ts';
 import { readStableStateSnapshot } from './state-snapshot-read.ts';
+import {
+    groupStateGroupStorageKey,
+    groupStateIdempotencyStorageKey,
+    groupStateMemberStorageKey,
+    groupStatePresenceAdmissionStorageKey,
+    groupStatePresenceSessionStorageKey,
+} from '../group-state-storage-keys.ts';
 
 const GROUPS_NAMESPACE = 'group-state:groups';
 const MEMBERS_NAMESPACE = 'group-state:members';
@@ -661,11 +668,11 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
     }
 
     private groupKey(ref: GroupRef): string {
-        return [this.scopeKey(ref), this.idKey('group', ref.groupId)].join(':');
+        return groupStateGroupStorageKey(ref);
     }
 
     private idempotentGroupKey(ref: GroupRef, requestId: string): string {
-        return [this.groupKey(ref), this.idKey('request', requestId)].join(':');
+        return groupStateIdempotencyStorageKey(ref, requestId);
     }
 
     private memberPrefix(ref: GroupRef): string {
@@ -675,9 +682,7 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
     private memberKey(
         ref: GroupRef & Readonly<{ principalId: string }>,
     ): string {
-        return [this.groupKey(ref), this.idKey('member', ref.principalId)].join(
-            ':',
-        );
+        return groupStateMemberStorageKey(ref);
     }
 
     private sessionPrefix(ref: GroupRef): string {
@@ -687,9 +692,7 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
     private sessionKey(
         ref: GroupRef & Readonly<{ sessionId: string }>,
     ): string {
-        return [this.groupKey(ref), this.idKey('session', ref.sessionId)].join(
-            ':',
-        );
+        return groupStatePresenceSessionStorageKey(ref);
     }
 
     private presenceAdmissionPrefix(ref: GroupRef): string {
@@ -699,10 +702,7 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
     private presenceAdmissionKey(
         ref: GroupRef & Readonly<{ principalId: string }>,
     ): string {
-        return [
-            this.groupKey(ref),
-            this.idKey('principal', ref.principalId),
-        ].join(':');
+        return groupStatePresenceAdmissionStorageKey(ref);
     }
 }
 

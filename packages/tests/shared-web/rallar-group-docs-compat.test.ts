@@ -84,6 +84,13 @@ describe('Rallar group documentation compatibility', () => {
             'TransferGroupOwnershipRequest',
             'GroupPolicyReasonCode',
             'code:',
+            'GroupStateCausalRevision:',
+            'activeMemberCount',
+            'ownerPrincipalId',
+            'generationId',
+            'generationVersion',
+            'causalRevision',
+            'stateRevision',
         ]);
     });
 });
