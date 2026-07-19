@@ -5,6 +5,10 @@
 - Base: `d1ef2a6e1032583d756d1c13b4d82e64861ae889`.
 - Clean implementation commit:
   `21d28525e048c92a9176f08682efb3cbd37314b2`.
+- Initial Task 6 report commit:
+  `fbd457667b31f59eb5fab29927c885a94a1cf1e7`.
+- Review-correction implementation commit:
+  `cad8207025188368153b1983b84ef64cf437c343`.
 - Topology snapshots, immutable publication/work claims, topology execution,
   RTT latest values, endpoint admissions, RTT receipts, and recompute intents
   now use conditional insert, expected-revision CAS/delete, and short atomic
@@ -133,6 +137,88 @@
   deleted lock helper, `FOR UPDATE`, or `pg_advisory` reference in the Task 6
   topology/publication/RTT repositories and orchestration paths.
 - `git diff --cached --check` passed before the implementation commit.
+
+## Review-correction evidence
+
+### Corrected invariants
+
+- A claimed publication is compared with the independently read durable
+  snapshot. An equal causal tuple requires semantic, object-key-order-neutral
+  equality; divergent content is typed corruption. A newer durable snapshot
+  may coexist with an older immutable publication, while a publication ahead
+  of its snapshot is a retryable torn observation.
+- A committed work claim is replayed even after group authority advances. The
+  stale group-revision shortcut applies only before a claim exists, preserving
+  restart-safe fanout of the durable immutable winner.
+- Equal-version RTT values are duplicate only when every canonical field is
+  equal. Divergent equal-version content is typed corruption in both the pure
+  mutation and compatibility paths. A compatibility CAS race throws
+  `RuntimeStateWriteConflictError`; only exact duplicate or strictly stale input
+  returns `false`, and the method contains no hidden retry.
+- RTC pair, endpoint-peer, weighted-edge, and topology tie-break ordering uses
+  one exact UTF-16 code-unit comparator. No RTC identity decision depends on
+  locale collation, including composed and decomposed Unicode identifiers.
+- Publication expiry is a mandatory nullable mutation fact. Publication plus
+  numeric expiry is a discriminated write invariant; expiry is materialized
+  outside the transaction, validated before `begin`, and never obtained through
+  a non-null assertion or transaction-time clock read.
+- Direct topology reconfiguration and removal use the same named
+  `readTopologyMutation` / `writeTopologyMutation` execution seam as outbox
+  work. Transaction timing surrounds the actual transaction, and the
+  unconditional snapshot overwrite helper was removed.
+- RTT lifecycle facts are read and validated on every optimistic attempt. A
+  conflict rereads current time and authority, re-evaluates expired endpoint
+  leases and capacity, and derives a fresh purge expiry while the submitted
+  measurement payload remains stable.
+
+### Correction RED evidence
+
+- The seven ranked review findings first failed the four focused files with 12
+  failures and 94 passes. Failures covered publication-ahead torn reads,
+  missing explicit expiry, equal-version RTT divergence, the unconditional
+  snapshot helper, transaction-time clock access, locale-dependent Unicode
+  pair keys, skipped claimed-work replay, corrupt/torn replay, and direct writes
+  bypassing the shared execution transaction.
+- The first correction GREEN attempt passed 105 tests and failed one obsolete
+  test mock that still intercepted the removed snapshot helper. Moving that
+  forced conflict to the shared transaction seam made the same four files pass
+  106/106.
+- A supplemental topology-planner Unicode test failed 1 test with 30 passing:
+  locale collation preserved the wrong equal-weight edge order. The shared
+  exact comparator made the file pass 31/31.
+- Two binding lifecycle tests then failed with 2 failures and 31 passes: a
+  malformed publication expiry entered and committed a transaction, and RTT
+  retry reused absent/static lifecycle facts after a clock-crossing conflict.
+  Explicit pre-transaction narrowing and mandatory attempt-local `readFacts`
+  made the file pass 33/33.
+- The final compatibility RED failed 1 test with 33 passing because a forced
+  RTT CAS race returned `false`. It now raises the typed write conflict, and the
+  repository file passes 34/34.
+
+### Final correction GREEN evidence
+
+- The final nine-file focused command covering topology mutations,
+  repositories, outbox, direct management, WebSocket topics, cluster
+  transports, topology planning, api-v1 transport adaptation, and browser data
+  caches passed 9 files and 173/173 tests.
+- `npx vitest run packages/tests/shared-server --reporter=dot` passed 58 files
+  with 2 configured-skip files; 715 tests passed and 12 environment-gated tests
+  were skipped.
+- `npm run typecheck` passed the root shared check and every workspace
+  typecheck. `npx tsc -p packages/shared-server/tsconfig.json --noEmit` also
+  passed during the focused lifecycle correction.
+- `deno task --config deno.json check` from `apps/api-v1` passed
+  `deno check src/main.ts`.
+- `RALLAR_POSTGRES_INTEGRATION=1 DATABASE_URL=postgres://app:app@localhost:5432/appdb npx vitest run packages/tests/shared-server/postgres-runtime-state-concurrency.test.ts --reporter=dot`
+  passed 1 file and 11/11 tests against live PostgreSQL after the expected
+  sandbox-denied localhost attempt was rerun with local database access.
+- Final scans found no unconditional `.upsert`, `.putValue`, `deleteByKey`,
+  `lockKey`, `putSnapshot`, `FOR UPDATE`, `pg_advisory`, locale-sensitive RTC
+  identifier comparison, or publication-expiry non-null assertion in the
+  corrected paths. `git diff --check` and `git diff --cached --check` passed.
+- A non-governing exploratory `packages/tests/tsconfig.json` check still sees
+  the repository's broad pre-existing Deno/Emscripten and stale-fixture type
+  baseline. The governing root/workspace and api-v1 checks above are green.
 
 ## Environment, performance, and artifacts
 
