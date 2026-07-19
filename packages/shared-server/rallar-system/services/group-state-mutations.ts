@@ -1125,6 +1125,31 @@ function validatePresenceSession(
     }
 }
 
+export function validatePersistedGroup(
+    value: unknown,
+    ref: GroupRef,
+): asserts value is Group {
+    validateStoredGroup(value as Group, ref);
+}
+
+export function validatePersistedGroupMember(
+    value: unknown,
+    ref: GroupRef,
+): asserts value is GroupMember {
+    validateStoredMember(value as GroupMember, ref, 'Stored group member');
+}
+
+export function validatePersistedGroupPresenceSession(
+    value: unknown,
+    ref: GroupRef,
+): asserts value is GroupPresenceSession {
+    validatePresenceSession(
+        value as GroupPresenceSession,
+        ref,
+        'Stored group presence session',
+    );
+}
+
 function validatePresenceSummaryValue(summary: GroupPresenceSummary, ref: GroupRef): void {
     const value = requireRecord(summary, 'Stored presence summary value');
     assertExactKeys(value, [

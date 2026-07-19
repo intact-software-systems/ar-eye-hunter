@@ -132,44 +132,98 @@ Deno.test('PSqlAdminOperationsStatsReader bounds recent events and expires activ
   });
 });
 
-Deno.test('PSqlAdminOperationsStatsReader excludes malformed group expiries in both scopes', async () => {
+Deno.test('PSqlAdminOperationsStatsReader fails closed on complete-contract violations in both scopes', async () => {
+  const nowEpochMs = 1_700_000_000_000;
+  const scope = { applicationId: 'app-1', workspaceId: 'workspace-1' };
+  const keyPrefix = 'app=app-1:ws=workspace-1';
+  const missingUpdated = canonicalGroupRuntimeValue(`${keyPrefix}:group=missing-updated`);
+  delete missingUpdated.updated;
+
+  for (
+    const input of [
+      {
+        label: 'missing mandatory group field',
+        namespace: 'group-state:groups',
+        key: `${keyPrefix}:group=missing-updated`,
+        value: missingUpdated,
+      },
+      {
+        label: 'wrong group discriminant primitive',
+        namespace: 'group-state:groups',
+        key: `${keyPrefix}:group=wrong-status`,
+        value: canonicalGroupRuntimeValue(`${keyPrefix}:group=wrong-status`, { status: 1 }),
+      },
+      {
+        label: 'null group expiry',
+        namespace: 'group-state:groups',
+        key: `${keyPrefix}:group=null-expiry`,
+        value: canonicalGroupRuntimeValue(`${keyPrefix}:group=null-expiry`, {
+          expiresAtEpochMs: null,
+        }),
+      },
+      {
+        label: 'wrong member role primitive',
+        namespace: 'group-state:members',
+        key: `${keyPrefix}:group=room:member=alice`,
+        value: canonicalMemberRuntimeValue(`${keyPrefix}:group=room:member=alice`, { role: 2 }),
+      },
+      {
+        label: 'session heartbeat after expiry',
+        namespace: 'group-state:sessions',
+        key: `${keyPrefix}:group=room:session=session-a`,
+        value: canonicalSessionRuntimeValue(`${keyPrefix}:group=room:session=session-a`, {
+          lastHeartbeatAtEpochMs: nowEpochMs + 2_000,
+          expiresAtEpochMs: nowEpochMs + 1_000,
+        }),
+      },
+    ] as const
+  ) {
+    await withPGliteSql(async (sql) => {
+      await insertRawRuntimeState(sql, input);
+      const reader = new PSqlAdminOperationsStatsReader(sql, { now: () => nowEpochMs });
+      for (
+        const read of [
+          () => reader.readState({ adminSession: createAdminSession() }),
+          () => reader.readState({ adminSession: createAdminSession(), scope }),
+        ]
+      ) {
+        await assert.rejects(
+          read,
+          (error) =>
+            error instanceof Error &&
+            'code' in error &&
+            error.code === 'admin-operations-state-invariant-corruption',
+          input.label,
+        );
+      }
+    });
+  }
+});
+
+Deno.test('PSqlAdminOperationsStatsReader counts canonical valid group expiries in both scopes', async () => {
   await withPGliteSql(async (sql) => {
     const nowEpochMs = 1_700_000_000_000;
     const scope = { applicationId: 'app-1', workspaceId: 'workspace-1' };
     const keyPrefix = 'app=app-1:ws=workspace-1';
-
     for (
-      const [key, value] of [
-        [`${keyPrefix}:group=no-expiry`, { status: 'active' }],
-        [`${keyPrefix}:group=explicit-null-expiry`, { status: 'active', expiresAtEpochMs: null }],
-        [
-          `${keyPrefix}:group=future-expiry`,
-          { status: 'active', expiresAtEpochMs: nowEpochMs + 1 },
-        ],
-        [
-          `${keyPrefix}:group=string-expiry`,
-          { status: 'active', expiresAtEpochMs: 'not-an-epoch' },
-        ],
-        [
-          `${keyPrefix}:group=object-expiry`,
-          { status: 'active', expiresAtEpochMs: { value: nowEpochMs + 1 } },
-        ],
+      const [groupId, expiresAtEpochMs] of [
+        ['no-expiry', undefined],
+        ['future-expiry', nowEpochMs + 1],
+        ['expired-now', nowEpochMs],
       ] as const
     ) {
-      await insertRuntimeState(sql, {
+      const key = `${keyPrefix}:group=${groupId}`;
+      await insertRawRuntimeState(sql, {
         namespace: 'group-state:groups',
         key,
-        value,
+        value: canonicalGroupRuntimeValue(key, { expiresAtEpochMs }),
       });
     }
-
     const reader = new PSqlAdminOperationsStatsReader(sql, { now: () => nowEpochMs });
-
     const globalState = await reader.readState({ adminSession: createAdminSession() });
     const scopedState = await reader.readState({ adminSession: createAdminSession(), scope });
-
-    assert.equal(globalState.groups.activeGroups, 3);
-    assert.equal(scopedState.groups.activeGroups, 3);
+    assert.equal(globalState.groups.activeGroups, 2);
+    assert.equal(scopedState.groups.activeGroups, 2);
   });
 });
 
@@ -1274,6 +1328,108 @@ async function insertRuntimeState(
   `;
 }
 
+async function insertRawRuntimeState(
+  sql: PGliteSql,
+  input: Readonly<{
+    namespace: string;
+    key: string;
+    value: unknown;
+    expireAt?: string;
+  }>,
+): Promise<void> {
+  await sql`
+    insert into runtime_state_store (store_namespace, store_key, store_value, expire_at_ts)
+    values (
+      ${input.namespace},
+      ${input.key},
+      ${JSON.stringify(input.value)},
+      ${new Date(input.expireAt ?? '9999-12-31T23:59:59Z')}
+    )
+  `;
+}
+
+const CANONICAL_AUDIT = Object.freeze({
+  atEpochMs: 1_700_000_000_000,
+  byPrincipalId: 'admin-test-owner',
+  requestId: 'admin-test-request',
+});
+
+function canonicalGroupRuntimeValue(
+  key: string,
+  overrides: Readonly<Record<string, unknown>> = {},
+): Record<string, unknown> {
+  const identity = decodeGroupStateGroupStorageKey(key);
+  const value: Record<string, unknown> = {
+    ...identity,
+    displayName: identity.groupId,
+    kind: 'room',
+    status: 'active',
+    joinMode: 'open',
+    metadata: {},
+    activeMemberCount: 1,
+    ownerPrincipalId: 'admin-test-owner',
+    snapshotVersion: 1,
+    metadataVersion: 1,
+    rosterVersion: 1,
+    presenceVersion: 0,
+    created: CANONICAL_AUDIT,
+    updated: CANONICAL_AUDIT,
+    ...overrides,
+  };
+  if (value.status === 'archived' && value.archived === undefined) {
+    value.archived = CANONICAL_AUDIT;
+  }
+  if (value.status === 'deleted' && value.deleted === undefined) {
+    value.deleted = CANONICAL_AUDIT;
+  }
+  return value;
+}
+
+function canonicalMemberRuntimeValue(
+  key: string,
+  overrides: Readonly<Record<string, unknown>> = {},
+): Record<string, unknown> {
+  const value: Record<string, unknown> = {
+    ...decodeGroupStateMemberStorageKey(key),
+    role: 'member',
+    status: 'active',
+    joined: CANONICAL_AUDIT,
+    updated: CANONICAL_AUDIT,
+    ...overrides,
+  };
+  if (value.status === 'left' && value.left === undefined) value.left = CANONICAL_AUDIT;
+  if (value.status === 'removed' && value.removed === undefined) {
+    value.removed = CANONICAL_AUDIT;
+  }
+  if (value.status === 'banned' && value.banned === undefined) value.banned = CANONICAL_AUDIT;
+  return value;
+}
+
+function canonicalSessionRuntimeValue(
+  key: string,
+  overrides: Readonly<Record<string, unknown>> = {},
+): Record<string, unknown> {
+  const identity = decodeGroupStatePresenceSessionStorageKey(key);
+  const requestedExpiry = overrides.expiresAtEpochMs;
+  const connectedAtEpochMs = typeof requestedExpiry === 'number' && requestedExpiry > 1_000
+    ? Math.min(1_700_000_000_000, requestedExpiry - 1_000)
+    : 1_700_000_000_000;
+  const value: Record<string, unknown> = {
+    ...identity,
+    principalId: 'admin-test-owner',
+    generationId: `${identity.sessionId}-generation`,
+    generationVersion: connectedAtEpochMs,
+    connectedAtEpochMs,
+    lastHeartbeatAtEpochMs: connectedAtEpochMs,
+    expiresAtEpochMs: connectedAtEpochMs + 60_000,
+    ...overrides,
+  };
+  if (value.disconnectedAtEpochMs !== undefined && value.disconnectReason === undefined) {
+    value.disconnectReason = 'admin-test-disconnect';
+  }
+  return value;
+}
+
 function withCanonicalGroupRuntimeIdentity(
   namespace: string,
   key: string,
@@ -1282,14 +1438,14 @@ function withCanonicalGroupRuntimeIdentity(
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     return value;
   }
-  const identity = namespace === 'group-state:groups'
-    ? decodeGroupStateGroupStorageKey(key)
+  const overrides = value as Readonly<Record<string, unknown>>;
+  return namespace === 'group-state:groups'
+    ? canonicalGroupRuntimeValue(key, overrides)
     : namespace === 'group-state:members'
-    ? decodeGroupStateMemberStorageKey(key)
+    ? canonicalMemberRuntimeValue(key, overrides)
     : namespace === 'group-state:sessions'
-    ? decodeGroupStatePresenceSessionStorageKey(key)
-    : null;
-  return identity === null ? value : { ...identity, ...value };
+    ? canonicalSessionRuntimeValue(key, overrides)
+    : value;
 }
 
 function createRuntimeJsonScanGuard(

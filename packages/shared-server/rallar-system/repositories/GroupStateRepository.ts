@@ -202,17 +202,19 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
     }
 
     async listSnapshots(scope: GroupScope): Promise<readonly GroupSnapshot[]> {
+        const observedAtEpochMs = Date.now();
         const keyPrefix = this.groupStateScopeChildPrefix(scope);
         const groupsBefore = await this.listEntryValues<Group>(
             GROUPS_NAMESPACE,
             keyPrefix,
         );
-        const [memberEntries, summaryEntries] = await Promise.all([
+        const [memberEntries, summaryEntries, sessionEntries] = await Promise.all([
             this.listEntryValues<GroupMember>(MEMBERS_NAMESPACE, keyPrefix),
             this.listEntryValues<GroupPresenceSummary>(
                 PRESENCE_SUMMARIES_NAMESPACE,
                 keyPrefix,
             ),
+            this.listEntryValues<GroupPresenceSession>(SESSIONS_NAMESPACE, keyPrefix),
         ]);
         const groupsAfter = await this.listEntryValues<Group>(
             GROUPS_NAMESPACE,
@@ -237,8 +239,17 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
             assertDecodedScope(decoded, scope, stored.entry.key);
             assertStoredSummary(stored, decoded);
         }
+        for (const stored of sessionEntries) {
+            const decoded = decodeStoredKey(
+                stored.entry.key,
+                decodeGroupStatePresenceSessionStorageKey,
+            );
+            assertDecodedScope(decoded, scope, stored.entry.key);
+            assertStoredSession(stored);
+        }
         const members = memberEntries.map(({ value }) => value);
         const summaries = summaryEntries.map(({ value }) => value);
+        const sessions = sessionEntries.map(({ value }) => value);
         const membersByGroupId = new Map<string, GroupMember[]>();
         for (const member of members) {
             const current = membersByGroupId.get(member.groupId) ?? [];
@@ -249,6 +260,12 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
         const summariesByGroupId = new Map(
             summaries.map((summary) => [summary.groupId, summary]),
         );
+        const sessionsByGroupId = new Map<string, GroupPresenceSession[]>();
+        for (const session of sessions) {
+            const current = sessionsByGroupId.get(session.groupId) ?? [];
+            current.push(session);
+            sessionsByGroupId.set(session.groupId, current);
+        }
 
         const beforeByKey = new Map(
             groupsBefore.map((stored) => [stored.entry.key, stored]),
@@ -263,7 +280,9 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
                     stored.value,
                     membersByGroupId.get(stored.value.groupId) ?? [],
                     summariesByGroupId.get(stored.value.groupId),
+                    sessionsByGroupId.get(stored.value.groupId) ?? [],
                     stored.entry.revision + 1,
+                    observedAtEpochMs,
                 );
             }),
         );
@@ -276,6 +295,7 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
         scope: GroupScope,
         options: GroupSnapshotPageOptions,
     ): Promise<GroupSnapshotPage> {
+        const observedAtEpochMs = Date.now();
         const limit = Math.max(1, Math.floor(options.limit));
         const rawPageLimit = limit + 1;
         const pageGroups: Array<Readonly<{
@@ -329,11 +349,12 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
 
         const candidates = await Promise.all(
             pageGroups.map(async ({ entry, group }) => {
-                const [members, summary] = await Promise.all([
+                const [members, summary, sessions] = await Promise.all([
                     this.listMembers(group),
                     this.findPresenceSummaryEntry(group),
+                    this.listPresenceSessions(group),
                 ]);
-                return { entry, group, members, summary: summary?.value };
+                return { entry, group, members, summary: summary?.value, sessions };
             }),
         );
         const groupsAfter = await this.listEntryValuesByKeys<Group>(
@@ -359,7 +380,9 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
                     after.value,
                     candidate.members,
                     candidate.summary,
+                    candidate.sessions,
                     after.entry.revision + 1,
+                    observedAtEpochMs,
                 );
             }),
         );
@@ -642,23 +665,27 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
     }
 
     async readSnapshot(ref: GroupRef): Promise<GroupSnapshot | undefined> {
+        const observedAtEpochMs = Date.now();
         const groupKey = this.groupKey(ref);
         return await readStableStateSnapshot({
             snapshotKey: groupKey,
             readAggregate: async () => await this.findGroupEntry(ref),
             readChildren: async () => {
-                const [members, summary] = await Promise.all([
+                const [members, summary, sessions] = await Promise.all([
                     this.listMembers(ref),
                     this.findPresenceSummaryEntry(ref),
+                    this.listPresenceSessions(ref),
                 ]);
-                return [members, summary?.value] as const;
+                return [members, { summary: summary?.value, sessions }] as const;
             },
-            assemble: (stored, members, summary) =>
+            assemble: (stored, members, presence) =>
                 this.toSnapshot(
                     stored.value,
                     members,
-                    summary,
+                    presence.summary,
+                    presence.sessions,
                     stored.entry.revision + 1,
+                    observedAtEpochMs,
                 ),
         });
     }
@@ -666,10 +693,11 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
     private toSnapshot(
         group: Group,
         members: readonly GroupMember[],
-        summaryOrSessions: GroupPresenceSummary | readonly GroupPresenceSession[] | undefined,
+        summary: GroupPresenceSummary | undefined,
+        authoritativeSessions: readonly GroupPresenceSession[],
         groupRevision: number,
+        observedAtEpochMs: number,
     ): GroupSnapshot {
-        const observedAtEpochMs = Date.now();
         const groupAllowsLivePresence = group.status === 'active' &&
             (group.expiresAtEpochMs === undefined ||
                 group.expiresAtEpochMs > observedAtEpochMs);
@@ -677,17 +705,27 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
             members.filter((member) => member.status === 'active')
                 .map((member) => member.principalId),
         );
-        const summary = isPresenceSummary(summaryOrSessions)
-            ? summaryOrSessions
-            : undefined;
-        const sourceSessions: readonly GroupPresenceSession[] = summary
-            ? summary.activeSessions
-            : Array.isArray(summaryOrSessions)
-            ? summaryOrSessions as readonly GroupPresenceSession[]
-            : [];
+        const sourceSessions = summary?.activeSessions ?? [];
+        const authoritativeSessionsById = new Map(
+            authoritativeSessions.map((session) => [session.sessionId, session]),
+        );
         const activeSessions = groupAllowsLivePresence
             ? this.toActiveSessions(sourceSessions, observedAtEpochMs)
                 .filter((session) => activeMemberIds.has(session.principalId))
+                .filter((session) => {
+                    const authoritative = authoritativeSessionsById.get(session.sessionId);
+                    return authoritative !== undefined &&
+                        hasCompleteGenerationIdentity(session) &&
+                        hasCompleteGenerationIdentity(authoritative) &&
+                        authoritative.principalId === session.principalId &&
+                        authoritative.generationId === session.generationId &&
+                        authoritative.generationVersion === session.generationVersion &&
+                        authoritative.disconnectedAtEpochMs === undefined &&
+                        isLogicallyActiveSession(
+                            authoritative.expiresAtEpochMs,
+                            observedAtEpochMs,
+                        );
+                })
             : [];
         const presenceRevision = summary?.causalRevision.presenceRevision ?? 0;
         const causalRevision = { groupRevision, presenceRevision };
@@ -782,11 +820,15 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
     }
 }
 
-function isPresenceSummary(
-    value: GroupPresenceSummary | readonly GroupPresenceSession[] | undefined,
-): value is GroupPresenceSummary {
-    return value !== undefined && !Array.isArray(value) &&
-        'causalRevision' in value;
+function hasCompleteGenerationIdentity(
+    session: GroupPresenceSession,
+): boolean {
+    return session.sessionId.length > 0 &&
+        session.principalId.length > 0 &&
+        typeof session.generationId === 'string' &&
+        session.generationId.length > 0 &&
+        Number.isSafeInteger(session.generationVersion) &&
+        (session.generationVersion ?? 0) > 0;
 }
 
 function assertGroupRefIdentity(

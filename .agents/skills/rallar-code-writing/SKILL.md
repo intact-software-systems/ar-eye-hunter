@@ -98,6 +98,9 @@ rg --files packages/tests packages/shared packages/shared-web packages/shared-se
   and related lifecycle fields to agree before accepting or replaying a row.
 - Authoritative admin/domain summaries validate every source row canonically,
   including unscoped/global reads, before counting or joining in domain code.
+  Reuse the complete persisted contract: exact shape, mandatory fields,
+  identity, and cross-field lifecycle invariants. Test canonically keyed but
+  shape-invalid rows, not only noncanonical keys or wrong-slot identities.
   Never collapse absent scope and a present sentinel-looking identifier into
   one join key. Aggregate shortcuts are allowed only for separately labeled raw
   storage telemetry, not authoritative domain summary fields.

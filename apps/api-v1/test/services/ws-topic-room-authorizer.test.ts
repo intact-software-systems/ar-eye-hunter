@@ -121,8 +121,8 @@ Deno.test('API room authorization observes remote bans and deletion across warm 
   assert.notEqual(await authorizer(input), true);
   current = undefined;
   assert.equal(await authorizer(input), false);
-  assert.equal(revisionProbes, 3);
-  assert.equal(stableReads, 2);
+  assert.equal(revisionProbes, 0);
+  assert.equal(stableReads, 3);
 });
 
 function createIndependentCache(

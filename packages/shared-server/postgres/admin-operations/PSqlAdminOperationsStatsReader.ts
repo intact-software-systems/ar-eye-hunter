@@ -8,6 +8,7 @@ import type {
   AdminPruneExpiredCategory,
 } from '@shared/api/admin-operations-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import type {
   AdminOperationsPruner,
   AdminOperationsReadInput,
@@ -22,6 +23,11 @@ import {
   groupStateScopeStorageKey,
 } from '../../rallar-system/group-state-storage-keys.ts';
 import { groupEventWorkspaceKey } from '../rallar-system/group-event-workspace-key.ts';
+import {
+  validatePersistedGroup,
+  validatePersistedGroupMember,
+  validatePersistedGroupPresenceSession,
+} from '../../rallar-system/services/group-state-mutations.ts';
 
 const DEFAULT_RECENT_EVENT_WINDOW_MS = 15 * 60 * 1_000;
 
@@ -788,6 +794,14 @@ function validateScopedGroupRuntimeRows(
         throw new TypeError('Stored group runtime value is not an object');
       }
       value = parsed as Readonly<Record<string, unknown>>;
+      const ref = decoded as GroupRef;
+      if (namespace === 'group-state:groups') {
+        validatePersistedGroup(parsed, ref);
+      } else if (namespace === 'group-state:members') {
+        validatePersistedGroupMember(parsed, ref);
+      } else {
+        validatePersistedGroupPresenceSession(parsed, ref);
+      }
     } catch (error) {
       throw new AdminOperationsStateInvariantCorruptionError(
         error instanceof Error ? error.message : 'Stored group runtime row is invalid',

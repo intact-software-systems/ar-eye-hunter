@@ -20,6 +20,7 @@ import type { StateSyncPublisher } from "@shared-server/rallar-system/state-sync
 import { groupStateMaintenanceRequestId } from "@shared-server/rallar-system/services/group-state-service.ts";
 import {
   STATE_MUTATION_OUTBOX_NAMESPACE,
+  type StateMutationOutboxRecord,
   toStateMutationOutboxId,
 } from "@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts";
 
@@ -39,6 +40,233 @@ type PostgresFactory = (
 const postgresIt = POSTGRES_INTEGRATION_ENABLED ? it : it.skip;
 
 describe("Postgres presence expiry concurrency", () => {
+  postgresIt(
+    "admits exactly one independent contender for the last group member slot",
+    async () => {
+      const databaseUrl = requireDatabaseUrl();
+      const setupSql = await createSql(databaseUrl);
+      const leftSql = await createSql(databaseUrl);
+      const rightSql = await createSql(databaseUrl);
+      const scope = uniqueScope("group-last-slot-capacity");
+      const groupRef: GroupRef = { ...scope, groupId: "room-1" };
+      const atEpochMs = Date.now();
+      const contenderRequestIds = ["postgres-join-bob", "postgres-join-carol"];
+
+      try {
+        await createPostgresGroupRuntime(
+          setupSql,
+          new GroupPresenceReadBarrier(1),
+          atEpochMs,
+        ).service.createGroup(scope, {
+          groupId: groupRef.groupId,
+          displayName: "Last slot",
+          kind: "room",
+          joinMode: "open",
+          maxMembers: 2,
+          createdByPrincipalId: "alice",
+          requestId: "postgres-create-last-slot",
+        });
+
+        const barrier = new GroupPresenceReadBarrier(2);
+        const left = createPostgresGroupRuntime(
+          leftSql,
+          barrier,
+          atEpochMs + 1_000,
+          "group-state:groups",
+        ).service;
+        const right = createPostgresGroupRuntime(
+          rightSql,
+          barrier,
+          atEpochMs + 1_001,
+          "group-state:groups",
+        ).service;
+        const results = await Promise.allSettled([
+          left.joinGroup(scope, groupRef.groupId, {
+            actorPrincipalId: "bob",
+            requestId: contenderRequestIds[0],
+          }),
+          right.joinGroup(scope, groupRef.groupId, {
+            actorPrincipalId: "carol",
+            requestId: contenderRequestIds[1],
+          }),
+        ]);
+
+        expect(results.filter((result) => result.status === "fulfilled"))
+          .toHaveLength(1);
+        expect(results.filter((result) => result.status === "rejected"))
+          .toHaveLength(1);
+        const rejected = results.find((result) => result.status === "rejected");
+        expect(rejected?.status === "rejected" ? rejected.reason : undefined)
+          .toMatchObject({ message: expect.stringMatching(/capacity|full/i) });
+
+        const repository = createGroupStateRepository(setupSql);
+        const snapshot = await repository.readSnapshot(groupRef);
+        expect(snapshot?.members.filter((member) => member.status === "active"))
+          .toHaveLength(2);
+        expect(snapshot?.members.filter((member) =>
+          member.principalId === "bob" || member.principalId === "carol"
+        )).toHaveLength(1);
+        const terminalEvents = (await repository.listEvents(groupRef)).filter((event) =>
+          event.eventType === "member-joined" &&
+          contenderRequestIds.includes(event.requestId ?? "")
+        );
+        expect(terminalEvents).toHaveLength(1);
+        const outbox = await findGroupOutboxRecords(
+          setupSql,
+          groupRef,
+          contenderRequestIds,
+        );
+        expect(outbox).toHaveLength(1);
+        expect(outbox[0]).toMatchObject({
+          kind: "group",
+          aggregateRef: groupRef,
+          effects: ["group-state-sync", "group-presence-summary"],
+          event: { kind: "group", event: { eventType: "member-joined" } },
+        });
+      } finally {
+        await cleanupRuntimeState(setupSql, scope.applicationId);
+        await Promise.all([setupSql.end(), leftSql.end(), rightSql.end()]);
+      }
+    },
+    60_000,
+  );
+
+  postgresIt(
+    "advances 100 independent session heartbeats across two Postgres services without revising the group aggregate",
+    async () => {
+      const databaseUrl = requireDatabaseUrl();
+      const setupSql = await createSql(databaseUrl);
+      const leftSql = await createSql(databaseUrl);
+      const rightSql = await createSql(databaseUrl);
+      const scope = uniqueScope("group-heartbeat-100");
+      const groupRef: GroupRef = { ...scope, groupId: "room-1" };
+      const atEpochMs = Date.now();
+      const sessionCount = 100;
+
+      try {
+        const setup = createPostgresGroupRuntime(
+          setupSql,
+          new GroupPresenceReadBarrier(1),
+          atEpochMs,
+        ).service;
+        await setup.createGroup(scope, {
+          groupId: groupRef.groupId,
+          displayName: "Heartbeat 100",
+          kind: "room",
+          joinMode: "open",
+          maxMembers: sessionCount + 1,
+          createdByPrincipalId: "alice",
+          requestId: "postgres-heartbeat-create",
+        });
+        for (let index = 0; index < sessionCount; index += 1) {
+          const principalId = `member-${index}`;
+          await setup.upsertMember(scope, groupRef.groupId, principalId, {
+            status: "active",
+            actorPrincipalId: principalId,
+            requestId: `postgres-heartbeat-member-${index}`,
+          });
+          await setup.connectPresenceSession(
+            scope,
+            groupRef.groupId,
+            `session-${index}`,
+            {
+              principalId,
+              generationId: `generation-${index}`,
+              connectedAtEpochMs: atEpochMs,
+              lastHeartbeatAtEpochMs: atEpochMs,
+              expiresAtEpochMs: atEpochMs + 60_000,
+              actorPrincipalId: principalId,
+              requestId: `postgres-heartbeat-connect-${index}`,
+            },
+          );
+        }
+
+        const repository = createGroupStateRepository(setupSql);
+        const groupBefore = await repository.findGroupEntry(groupRef);
+        if (!groupBefore) throw new Error("Expected seeded heartbeat group");
+        const sessionRevisions = new Map<string, number>();
+        for (let index = 0; index < sessionCount; index += 1) {
+          const sessionId = `session-${index}`;
+          const entry = await repository.findPresenceEntry({ ...groupRef, sessionId });
+          if (!entry) throw new Error(`Expected seeded session ${sessionId}`);
+          sessionRevisions.set(sessionId, entry.entry.revision);
+        }
+
+        const barrier = new GroupPresenceReadBarrier(sessionCount);
+        const left = createPostgresGroupRuntime(
+          leftSql,
+          barrier,
+          atEpochMs + 1_000,
+        ).service;
+        const right = createPostgresGroupRuntime(
+          rightSql,
+          barrier,
+          atEpochMs + 1_000,
+        ).service;
+        const heartbeatRequestIds = Array.from(
+          { length: sessionCount },
+          (_, index) => `postgres-heartbeat-${index}`,
+        );
+        const heartbeats = await Promise.all(heartbeatRequestIds.map((requestId, index) =>
+          (index % 2 === 0 ? left : right).heartbeatPresenceSessionReceipt(
+            scope,
+            groupRef.groupId,
+            `session-${index}`,
+            {
+              generationId: `generation-${index}`,
+              actorPrincipalId: `member-${index}`,
+              lastHeartbeatAtEpochMs: atEpochMs + 1_000,
+              expiresAtEpochMs: atEpochMs + 120_000,
+              requestId,
+            },
+          )
+        ));
+        expect(heartbeats).toHaveLength(sessionCount);
+
+        const groupAfter = await repository.findGroupEntry(groupRef);
+        expect(groupAfter?.entry.revision).toBe(groupBefore.entry.revision);
+        for (let index = 0; index < sessionCount; index += 1) {
+          const sessionId = `session-${index}`;
+          const entry = await repository.findPresenceEntry({ ...groupRef, sessionId });
+          expect(entry?.entry.revision).toBe((sessionRevisions.get(sessionId) ?? -1) + 1);
+          expect(entry?.value).toMatchObject({
+            generationId: `generation-${index}`,
+            lastHeartbeatAtEpochMs: atEpochMs + 1_000,
+            expiresAtEpochMs: atEpochMs + 120_000,
+          });
+        }
+        const terminalEvents = (await repository.listEvents(groupRef)).filter((event) =>
+          event.eventType === "session-heartbeat" &&
+          heartbeatRequestIds.includes(event.requestId ?? "")
+        );
+        expect(terminalEvents).toHaveLength(sessionCount);
+        expect(new Set(terminalEvents.map((event) => event.requestId)).size)
+          .toBe(sessionCount);
+
+        const outbox = await findGroupOutboxRecords(
+          setupSql,
+          groupRef,
+          heartbeatRequestIds,
+        );
+        expect(outbox).toHaveLength(sessionCount);
+        expect(new Set(outbox.map((record) => record.commandId)).size)
+          .toBe(sessionCount);
+        for (const record of outbox) {
+          expect(record).toMatchObject({
+            kind: "group",
+            aggregateRef: groupRef,
+            effects: ["group-state-sync", "group-presence-summary"],
+            event: { kind: "group", event: { eventType: "session-heartbeat" } },
+          });
+        }
+      } finally {
+        await cleanupRuntimeState(setupSql, scope.applicationId);
+        await Promise.all([setupSql.end(), leftSql.end(), rightSql.end()]);
+      }
+    },
+    120_000,
+  );
+
   postgresIt(
     "rebases client expiry CAS workers and preserves a concurrent reconnect",
     async () => {
@@ -64,9 +292,9 @@ describe("Postgres presence expiry concurrency", () => {
         );
         const expiryBarrier = new PrincipalReadBarrier(2);
         const [leftResults, rightResults] = await Promise.all([
-          createPostgresClientService(leftSql, expiryBarrier, atEpochMs)
+          createPostgresClientService(leftSql, expiryBarrier, atEpochMs, scope.applicationId)
             .expireExpiredSessions(atEpochMs),
-          createPostgresClientService(rightSql, expiryBarrier, atEpochMs)
+          createPostgresClientService(rightSql, expiryBarrier, atEpochMs, scope.applicationId)
             .expireExpiredSessions(atEpochMs),
         ]);
         expect(leftResults.length + rightResults.length).toBe(1);
@@ -101,9 +329,14 @@ describe("Postgres presence expiry concurrency", () => {
         );
         const reconnectBarrier = new PrincipalReadBarrier(2);
         await Promise.all([
-          createPostgresClientService(leftSql, reconnectBarrier, atEpochMs)
+          createPostgresClientService(leftSql, reconnectBarrier, atEpochMs, scope.applicationId)
             .expireExpiredSessions(atEpochMs),
-          createPostgresClientService(rightSql, reconnectBarrier, atEpochMs + 1)
+          createPostgresClientService(
+            rightSql,
+            reconnectBarrier,
+            atEpochMs + 1,
+            scope.applicationId,
+          )
             .connectSession(
               scope,
               reconnectRef.principalId,
@@ -162,9 +395,21 @@ describe("Postgres presence expiry concurrency", () => {
         );
         const expiryBarrier = new GroupPresenceReadBarrier(2);
         const [leftResults, rightResults] = await Promise.all([
-          createPostgresGroupRuntime(leftSql, expiryBarrier, atEpochMs)
+          createPostgresGroupRuntime(
+            leftSql,
+            expiryBarrier,
+            atEpochMs,
+            "group-state:sessions",
+            scope.applicationId,
+          )
             .maintenance.expireExpiredPresenceSessions(atEpochMs),
-          createPostgresGroupRuntime(rightSql, expiryBarrier, atEpochMs)
+          createPostgresGroupRuntime(
+            rightSql,
+            expiryBarrier,
+            atEpochMs,
+            "group-state:sessions",
+            scope.applicationId,
+          )
             .maintenance.expireExpiredPresenceSessions(atEpochMs),
         ]);
         expect(leftResults.length + rightResults.length).toBe(1);
@@ -263,6 +508,8 @@ describe("Postgres presence expiry concurrency", () => {
           sql,
           new GroupPresenceReadBarrier(1),
           atEpochMs,
+          "group-state:sessions",
+          scope.applicationId,
         ).maintenance.expireExpiredPresenceSessions(atEpochMs)).rejects.toMatchObject({
           code: "state-mutation-outbox-collision",
           status: 409,
@@ -479,6 +726,30 @@ async function cleanupRuntimeState(
         delete from runtime_state_store
         where store_key like ${`app=${encodeURIComponent(applicationId)}:%`}
     `;
+  await sql`
+        delete from runtime_state_store
+        where store_namespace = ${STATE_MUTATION_OUTBOX_NAMESPACE}
+          and store_value::jsonb -> 'aggregateRef' ->> 'applicationId' = ${applicationId}
+    `;
+}
+
+async function findGroupOutboxRecords(
+  sql: PostgresSql,
+  ref: GroupRef,
+  commandIds: readonly string[],
+): Promise<readonly StateMutationOutboxRecord[]> {
+  const commandIdSet = new Set(commandIds);
+  return (await toRuntimeRepository(sql).findAllEntries(
+    STATE_MUTATION_OUTBOX_NAMESPACE,
+  ))
+    .map((entry) => JSON.parse(entry.value) as StateMutationOutboxRecord)
+    .filter((record) =>
+      record.kind === "group" &&
+      record.aggregateRef.applicationId === ref.applicationId &&
+      record.aggregateRef.workspaceId === ref.workspaceId &&
+      record.aggregateRef.groupId === ref.groupId &&
+      commandIdSet.has(record.commandId)
+    );
 }
 
 function createSql(databaseUrl: string): PostgresSql {
@@ -495,10 +766,12 @@ function createPostgresClientService(
   sql: PostgresSql,
   barrier: PrincipalReadBarrier,
   atEpochMs: number,
+  applicationId?: string,
 ) {
   const runtimeRepository = new BarrierPSqlRuntimeStateRepository(
     sql as unknown as PSqlSql,
     barrier,
+    applicationId,
   );
   return createClientStateService({
     runtimeRepository,
@@ -514,11 +787,15 @@ function createPostgresGroupRuntime(
   sql: PostgresSql,
   barrier: GroupPresenceReadBarrier,
   atEpochMs: number,
+  barrierNamespace = "group-state:sessions",
+  applicationId?: string,
 ) {
   return createTestGroupStateRuntime({
     runtimeRepository: new BarrierGroupPSqlRuntimeStateRepository(
       sql as unknown as PSqlSql,
       barrier,
+      barrierNamespace,
+      applicationId,
     ),
     createGroupStateEventStore: createGroupStateEventRepository,
     syncPublisher: createPublisher(),
@@ -532,6 +809,7 @@ class BarrierPSqlRuntimeStateRepository extends PSqlRuntimeStateRepository {
   constructor(
     sql: PSqlSql,
     private readonly barrier: PrincipalReadBarrier,
+    private readonly applicationId?: string,
   ) {
     super(sql);
   }
@@ -546,6 +824,15 @@ class BarrierPSqlRuntimeStateRepository extends PSqlRuntimeStateRepository {
     }
     return entry;
   }
+
+  override async findAllEntries(namespace: string): Promise<readonly RuntimeStateEntry[]> {
+    const entries = await super.findAllEntries(namespace);
+    return this.applicationId === undefined
+      ? entries
+      : entries.filter((entry) => entry.key.startsWith(
+        `app=${encodeURIComponent(this.applicationId!)}:`,
+      ));
+  }
 }
 
 class BarrierGroupPSqlRuntimeStateRepository
@@ -553,6 +840,8 @@ class BarrierGroupPSqlRuntimeStateRepository
   constructor(
     sql: PSqlSql,
     private readonly barrier: GroupPresenceReadBarrier,
+    private readonly barrierNamespace = "group-state:sessions",
+    private readonly applicationId?: string,
   ) {
     super(sql);
   }
@@ -562,10 +851,19 @@ class BarrierGroupPSqlRuntimeStateRepository
     key: string,
   ): Promise<RuntimeStateEntry | undefined> {
     const entry = await super.findEntry(namespace, key);
-    if (namespace === "group-state:sessions") {
+    if (namespace === this.barrierNamespace) {
       await this.barrier.arrive();
     }
     return entry;
+  }
+
+  override async findAllEntries(namespace: string): Promise<readonly RuntimeStateEntry[]> {
+    const entries = await super.findAllEntries(namespace);
+    return this.applicationId === undefined
+      ? entries
+      : entries.filter((entry) => entry.key.startsWith(
+        `app=${encodeURIComponent(this.applicationId!)}:`,
+      ));
   }
 }
 

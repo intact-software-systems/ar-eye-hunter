@@ -12,6 +12,10 @@ import {
 import { createGroupRoomWsAuthorizer } from '@shared-server/rallar-system/services/ws-topic-room-authorizer.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import { createGroupStateSnapshotReadThroughCache } from '@shared-server/rallar-system/services/group-state-snapshot-read-through-cache.ts';
+import {
+    createCachedGroupStateService,
+} from '@shared-server/rallar-system/services/cached-group-state-service.ts';
+import type { GroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 
@@ -320,6 +324,74 @@ describe('createGroupRoomWsAuthorizer', () => {
             logMessage: expect.stringContaining('member-not-active'),
         });
         expect(findGroupStateSnapshotByRef(group.group)?.activeSessions).toEqual([]);
+    });
+
+    it('rejects room sends when a summary session is stale behind an authoritative disconnect', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(1_000);
+        configureTestCacheRepositories();
+
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const groupRepository = new GroupStateRepository(runtimeRepository);
+        const group = createGroupSnapshot(
+            'stale-disconnect-room',
+            'app-1',
+            'workspace-b',
+            ['session-b'],
+            3,
+        );
+        await putDurableSnapshot(groupRepository, group);
+        const readThroughCache = createGroupStateSnapshotReadThroughCache({
+            groupsRepository: groupRepository,
+        });
+        await expect(readThroughCache.findOrLoadByRef(group.group)).resolves
+            .toMatchObject({ activeSessions: [{ sessionId: 'session-b' }] });
+        const stored = await groupRepository.findPresenceEntry({
+            ...group.group,
+            sessionId: 'session-b',
+        });
+        if (!stored) throw new Error('Expected persisted room session');
+        expect(await groupRepository.updatePresence({
+            ...stored.value,
+            disconnectedAtEpochMs: 1_000,
+            disconnectReason: 'client-disconnect',
+        }, stored.entry.revision)).toMatchObject({ status: 'applied' });
+
+        const currentService = createCachedGroupStateService({
+            durable: {
+                readSnapshot: (ref) => groupRepository.readSnapshot(ref),
+            } as GroupStateService,
+            cache: {
+                findOrLoadByRef: (ref, options) =>
+                    readThroughCache.findOrLoadByRef(ref, options),
+                observe: (snapshot) => readThroughCache.observe(snapshot),
+            },
+        });
+        const authorizer = createGroupRoomWsAuthorizer({
+            findGroupSnapshotByRef: (ref) =>
+                currentService.readCurrentSnapshot(ref),
+        });
+        const message = newALBroadcastMessage(
+            'session-b',
+            newALEventRoute('room.chat', group.group.groupId, 'msg-stale-disconnect'),
+            'room',
+            'chat.message.v1',
+            { text: 'stale disconnect' },
+            { groupRef: group.group },
+        );
+
+        await expect(Promise.resolve(authorizer({
+            message,
+            roomId: group.group.groupId,
+            senderId: 'session-b',
+            topicId: 'room.chat',
+            typeId: 'chat.message.v1',
+        }))).resolves.toMatchObject({
+            authorized: false,
+            reason: 'unauthorized',
+            logMessage: expect.stringContaining('member-not-active'),
+        });
+        expect(readThroughCache.peek(group.group)?.activeSessions).toHaveLength(1);
     });
 
     it('rejects archived and deleted room messages with lifecycle policy details', async () => {
@@ -684,6 +756,8 @@ function createGroupSnapshot(
             groupId,
             sessionId,
             principalId: sessionId,
+            generationId: `generation-${sessionId}`,
+            generationVersion: 1,
             connectedAtEpochMs: 1,
             lastHeartbeatAtEpochMs: snapshotVersion,
             expiresAtEpochMs,

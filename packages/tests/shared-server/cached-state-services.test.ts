@@ -34,15 +34,12 @@ describe('cached state services', () => {
         expect(result.result.right?.snapshot).toBe(snapshot);
     });
 
-    it('validates a warm group snapshot against the full durable causal revision', async () => {
+    it('reads current group authority durably without caching an equal-revision projection', async () => {
         const revisioned = createGroupSnapshot(4);
         const observe = vi.fn();
-        const findOrLoadByRef = vi.fn().mockResolvedValue(revisioned);
+        const findOrLoadByRef = vi.fn();
         const durable = {
-            readCausalRevision: vi.fn().mockResolvedValue({
-                groupRevision: 1,
-                presenceRevision: 3,
-            }),
+            readSnapshot: vi.fn().mockResolvedValue(revisioned),
         } as unknown as GroupStateService;
         const service = createCachedGroupStateService({
             durable,
@@ -54,10 +51,9 @@ describe('cached state services', () => {
 
         const result = await service.readCurrentSnapshot(revisioned.group);
 
-        expect(durable.readCausalRevision).toHaveBeenCalledWith(revisioned.group);
-        expect(findOrLoadByRef).toHaveBeenCalledWith(revisioned.group, {
-            minCausalRevision: { groupRevision: 1, presenceRevision: 3 },
-        });
+        expect(durable.readSnapshot).toHaveBeenCalledWith(revisioned.group);
+        expect(findOrLoadByRef).not.toHaveBeenCalled();
+        expect(observe).not.toHaveBeenCalled();
         expect(result).toBe(revisioned);
     });
 

@@ -86,14 +86,8 @@ export function createCachedGroupStateService(options: Readonly<{
     const service: CachedGroupStateService = {
         ...options.durable,
         observeSnapshot,
-        readCurrentSnapshot: async (ref) => {
-            const causalRevision = await options.durable.readCausalRevision(ref);
-            return causalRevision === undefined
-                ? undefined
-                : await options.cache.findOrLoadByRef(ref, {
-                    minCausalRevision: causalRevision,
-                });
-        },
+        readCurrentSnapshot: async (ref) =>
+            await options.durable.readSnapshot(ref),
         readSnapshotAtLeast: async (ref, readOptions) =>
             await options.cache.findOrLoadByRef(ref, readOptions),
         listSnapshots: async (scope) => {

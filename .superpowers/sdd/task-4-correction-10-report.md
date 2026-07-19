@@ -1,5 +1,13 @@
 # Task 4 correction 10 report: validated receipts, canonical global summaries, terminal collisions, and expiry deletion
 
+> **Superseded for final Task 4 acceptance by correction 11.** Whole-range
+> review 11 showed that correction 10's “canonical” admin summary validation
+> covered canonical keys and slot identity but not the complete persisted
+> Group/GroupMember/GroupPresenceSession contracts. It also found stale
+> summary-session liveness in snapshots and the two missing plan-mandated live
+> PostgreSQL proofs. Correction 11 closes those gaps; the receipt, collision,
+> and expiry-delete results below remain valid.
+
 ## Status and scope
 
 Status: `DONE`.
