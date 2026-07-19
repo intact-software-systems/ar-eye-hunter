@@ -6,6 +6,10 @@ import {
 } from './QRtcSignalingContracts.ts';
 import WsQueueBoxClientService from '../services/WsQueueBoxClientService.ts';
 import { ResourceEntry } from '../queuebox/ResourceEntry.ts';
+import {
+    emitRtcSignalingTrace,
+    type RtcSignalingTraceOptions,
+} from './RtcSignalingTrace.ts';
 
 export class WsRtcSignalingTransportUsingWsQBox implements QRtcSignalingTransport {
 
@@ -15,6 +19,7 @@ export class WsRtcSignalingTransportUsingWsQBox implements QRtcSignalingTranspor
         public readonly qbox: WsQueueBoxClientService,
         public readonly typeId: string,
         private readonly wakeOutbox?: () => void,
+        private readonly rtcSignalingTrace: RtcSignalingTraceOptions = {},
     ) {
     }
 
@@ -55,7 +60,16 @@ export class WsRtcSignalingTransportUsingWsQBox implements QRtcSignalingTranspor
                             throw new Error(`Unexpected message type: ${message.payload.typeId}`);
                         }
 
-                        await input.callbacks.onMessage(input.sessionId, input.token, message);
+                        const traced = emitRtcSignalingTrace(
+                            message,
+                            'rtc-dispatched',
+                            this.rtcSignalingTrace,
+                        );
+                        await input.callbacks.onMessage(
+                            input.sessionId,
+                            input.token,
+                            traced.message,
+                        );
                     } catch (e) {
                         console.error('Error in onMessage handler', e);
                     }
@@ -69,14 +83,20 @@ export class WsRtcSignalingTransportUsingWsQBox implements QRtcSignalingTranspor
     }
 
     async send(payload: QRtcSignalingMessage): Promise<void> {
+        const message = newALUnicastMessage(
+            payload.fromId,
+            newALEventRoute(this.typeId, payload.toId),
+            payload.toId,
+            this.typeId,
+            payload,
+        );
         const result = await this.qbox.enqueueOutboxIfAbsent(
-            newALUnicastMessage(
-                payload.fromId,
-                newALEventRoute(this.typeId, payload.toId),
-                payload.toId,
-                this.typeId,
-                payload
-            )
+            message,
+        );
+        emitRtcSignalingTrace(
+            message,
+            'client-outbox-enqueued',
+            this.rtcSignalingTrace,
         );
         if (result.status === 'enqueued' || result.status === 'duplicate') {
             this.wakeOutbox?.();

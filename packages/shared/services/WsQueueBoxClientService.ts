@@ -23,6 +23,10 @@ import type {
     ALOutboundRuntimeStores,
 } from '../alm/ALOutboundMessageRuntime.ts';
 import {
+    emitRtcSignalingTrace,
+    type RtcSignalingTraceOptions,
+} from '../webrtc/RtcSignalingTrace.ts';
+import {
     ALOutboundAckTrackingPlan,
     ALOutboundEnqueueResult,
     ALOutboundMessageRuntime,
@@ -39,6 +43,7 @@ export type WsQueueBoxClientServiceOptions = Readonly<{
     inboundStores?: ALInboundRuntimeStores;
     outboundStores?: ALOutboundRuntimeStores;
     outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
+    rtcSignalingTrace?: RtcSignalingTraceOptions;
     reconnect: WsQueueBoxClientReconnectOptions;
 }>;
 
@@ -170,9 +175,14 @@ export class WsQueueBoxClientService {
                     };
                 },
                 sendPreparedMessage: async (msg, _phase) => {
+                    const traced = emitRtcSignalingTrace(
+                        msg,
+                        'client-outbox-sent',
+                        this.options.rtcSignalingTrace,
+                    );
                     await this.dispatchOutboxEntry(
                         QueueBoxUtilities.toResourceEntryFromMsg(
-                            msg,
+                            traced.message,
                             WsQueueBoxClientService.OUTBOX_ENQUEUE_TYPE,
                         ),
                     );
@@ -523,7 +533,15 @@ export class WsQueueBoxClientService {
     }
 
     private async handleIncomingWsMessage(msg: ALMessage): Promise<void> {
-        await this.inboundRuntime.handleIncomingMessage(msg, msg.id.senderId);
+        const traced = emitRtcSignalingTrace(
+            msg,
+            'client-inbox-received',
+            this.options.rtcSignalingTrace,
+        );
+        await this.inboundRuntime.handleIncomingMessage(
+            traced.message,
+            traced.message.id.senderId,
+        );
     }
 
     private async dispatchInboxEntry(

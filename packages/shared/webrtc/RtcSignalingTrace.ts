@@ -36,6 +36,31 @@ export type RtcSignalingTraceResult = Readonly<{
     event?: RtcSignalingTraceEvent;
 }>;
 
+export type RtcSignalingTraceOptions = Readonly<{
+    nowMs?: () => number;
+    emit?: (event: RtcSignalingTraceEvent) => void;
+}>;
+
+export function emitRtcSignalingTrace(
+    message: ALMessage,
+    stage: RtcSignalingTraceStage,
+    options: RtcSignalingTraceOptions = {},
+): RtcSignalingTraceResult {
+    const result = traceRtcSignalingMessage(
+        message,
+        stage,
+        options.nowMs?.() ?? Date.now(),
+    );
+    if (result.event) {
+        (options.emit ?? emitRtcSignalingTraceToConsole)(result.event);
+    }
+    return result;
+}
+
+function emitRtcSignalingTraceToConsole(event: RtcSignalingTraceEvent): void {
+    console.log(`${RTC_SIGNALING_TRACE_LOG_PREFIX}${JSON.stringify(event)}`);
+}
+
 export function traceRtcSignalingMessage(
     message: ALMessage,
     stage: RtcSignalingTraceStage,
