@@ -416,3 +416,79 @@
 - Tasks 7-10 were not started. Task 7 still owns the repository-wide
   authoritative optional-field/OpenAPI hardening, and Task 10 owns final
   performance and full black-box acceptance.
+
+## Fifth review correction: receipt-first orchestration and durable intent identity
+
+Implementation commit: `151e4fd2` (`fix(rtc): enforce receipt-first convergence contracts`),
+based on reviewed Task 6 report commit `a52c452c`.
+
+### Corrected behavior
+
+- The websocket/runtime RTT path now hashes the stable request before attempt
+  zero and reads the immutable receipt before any group, topology, policy,
+  lifecycle, measurement, admission, or recompute-intent state. Exact receipt
+  replay uses explicit receipt-only command/fact variants with required `null`
+  fields and does not invoke the authority or lifecycle readers. Divergent
+  receipts fail closed before those readers or any write effect.
+- Effectful RTT orchestration moved to
+  `services/rtc-rtt-mutation-service.ts`. The mutation module is synchronous
+  and pure; the service visibly performs read, compute, validate, and write in
+  order, and only `writeRttMutation` opens the transaction. Stable `[0, 2, 8]`
+  millisecond retry waits remain outside transactions, and every conflict
+  rereads from the receipt boundary.
+- A single recursive semantic equality helper now provides object-key-order
+  neutrality while preserving array order. Snapshot decisions, persisted
+  snapshot/publication/work comparisons, migrations, service reconciliation,
+  and cluster replay use this contract instead of serialization order.
+- Publication message IDs are derived deterministically from `workId`. Direct,
+  list, page, and replay paths validate the binding strictly. The explicit
+  offline legacy migration reconstructs deterministic message ID, target
+  version, and publication/audit time before conditional convergence.
+- RTT receipt affected-group references are canonical, unique, and strictly
+  sorted, with exactly one recompute intent per reference. Every live intent is
+  cross-checked against its immutable receipt ID, command hash, accepted time,
+  group reference, active group lifetime, and pair-session membership/lifetime.
+  Direct, list, page, and drain surfaces fail closed, while expired intent and
+  receipt cleanup remains joint and idempotent.
+
+### Fifth correction RED evidence
+
+- The initial focused four-file command collected 199 tests and failed 49
+  tests, with 150 passing. The failures covered the missing pure/effect split,
+  receipt-only null contracts, receipt-first runtime behavior, canonical group
+  references, semantic object-order replay, deterministic publication IDs and
+  legacy migration, tampered direct/list/page/replay publications, receipt
+  reference validation, and intent/receipt cross-checking.
+- A supplemental filtered liveness test failed 4 of 8 exercised cases before
+  the fix, demonstrating that expired active groups were accepted through
+  direct, list, page, and drain intent surfaces. Expired pair-session cases were
+  already rejected by persisted-group validation and stayed covered.
+
+### Fifth correction GREEN, baseline, and architecture evidence
+
+- The final focused four-file review command passed 4/4 files and 207/207
+  tests. The nine-file Task 6 matrix passed 9/9 files and 310/310 tests.
+- `npx vitest run packages/tests/shared-server --reporter=dot` passed 58 files
+  with 2 configured-skip files; 852 tests passed and 12 environment-gated tests
+  were skipped.
+- The live PostgreSQL concurrency command passed 1/1 file and 11/11 tests. The
+  first attempt was sandbox-denied; after local database access was approved,
+  one legacy random publication fixture exposed the new deterministic-ID
+  contract, was corrected, and the rerun passed fully.
+- `npm run typecheck` passed the root and all workspace checks. In
+  `apps/api-v1`, `deno task --config deno.json check` passed and
+  `deno task --config deno.json test` passed 210/210 tests.
+- Root-wide `npm run test:unit` remains explicitly **not claimed as passing**:
+  445 files passed, 2 were configured skips, and 1 failed; 4,350 tests passed,
+  12 skipped, and the same 7 tests failed in the untouched
+  `packages/tests/shared-web/rallar-workflow-options-compat.test.ts` baseline.
+  That file is absent from this correction's diff.
+- Final targeted scans found no `.upsert`, `deleteByKey`, or `lockKey` in the
+  governed client/group/topology repositories and services. The exact RTC pure
+  module scan found no lowercase `repository`, transaction, ambient clock,
+  randomness/environment, command hashing, timing, or async API. Repository-wide
+  lock matches are limited to the documented out-of-scope queue/auth/admission
+  implementations, the general lock interface, docs, and test doubles; no Task
+  6 topology, publication, or RTT path matched.
+- `git diff --check` and staged implementation `git diff --cached --check`
+  passed. Tasks 7-10 were not started by this correction.
