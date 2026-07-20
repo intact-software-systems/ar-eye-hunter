@@ -119,6 +119,8 @@ Deno.test('API room authorization observes remote bans and deletion across warm 
     members: createSnapshot().members.map((member): GroupMember => ({
       ...member,
       status: 'banned',
+      left: null,
+      removed: null,
       banned: auditStamp(3),
     })),
   };

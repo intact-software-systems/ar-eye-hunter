@@ -175,12 +175,18 @@ describe('state API workflows', () => {
     });
 
     it('lists state events with entity encoding and query filters', async () => {
-        const groupEvents = [groupEvent('group-event-1', 'member-joined')];
-        const clientEvents = [clientEvent('client-event-1', 'session-connected')];
         const scope = {
             applicationId: 'app 1',
             workspaceId: 'workspace/1',
         };
+        const groupEvents = [groupEvent('group-event-1', 'member-joined', {
+            ...scope,
+            groupId: 'room /1',
+        })];
+        const clientEvents = [clientEvent('client-event-1', 'session-connected', {
+            ...scope,
+            principalId: 'alice@example.test',
+        })];
         stubFetch(({ url, method }) => {
             if (method === 'GET' && url.includes('/groups/room%20%2F1/events')) {
                 return jsonResponse(groupEvents);
@@ -216,8 +222,18 @@ describe('state API workflows', () => {
     });
 
     it('lists state event pages with cursor query filters', async () => {
-        const groupEvents = [groupEvent('group-event-2', 'member-left')];
-        const clientEvents = [clientEvent('client-event-2', 'session-disconnected')];
+        const scope = {
+            applicationId: 'app 1',
+            workspaceId: 'workspace/1',
+        };
+        const groupEvents = [groupEvent('group-event-2', 'member-left', {
+            ...scope,
+            groupId: 'room /1',
+        })];
+        const clientEvents = [clientEvent('client-event-2', 'session-disconnected', {
+            ...scope,
+            principalId: 'alice@example.test',
+        })];
         const groupPage = {
             events: groupEvents,
             nextCursor: {
@@ -235,10 +251,6 @@ describe('state API workflows', () => {
                 eventId: 'client-event-2',
             },
             hasMore: true,
-        };
-        const scope = {
-            applicationId: 'app 1',
-            workspaceId: 'workspace/1',
         };
         stubFetch(({ url, method }) => {
             if (method === 'GET' && url.includes('/groups/room%20%2F1/events/page')) {
@@ -282,6 +294,46 @@ describe('state API workflows', () => {
             '/api/state/apps/app%201/workspaces/workspace%2F1/groups/room%20%2F1/events/page?eventType=member-left&limit=10&afterSnapshotVersion=1&afterOccurredAtEpochMs=1000&afterEventId=group-event-1',
             '/api/state/apps/app%201/workspaces/workspace%2F1/clients/alice%40example.test/events/page?eventType=session-disconnected&limit=5&afterSnapshotVersion=2&afterOccurredAtEpochMs=2000&afterEventId=client-event-1',
         ]);
+    });
+
+    it('rejects malformed authoritative event lists and pages from REST', async () => {
+        const scope = {
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+        };
+        stubFetch(({ url }) => {
+            if (url.includes('/groups/room-1/events')) {
+                return jsonResponse([{
+                    ...groupEvent('group-event-1', 'member-joined', {
+                        ...scope,
+                        groupId: 'room-1',
+                    }),
+                    actor: { kind: 'service', serviceId: '' },
+                }]);
+            }
+            return jsonResponse({
+                events: [{
+                    ...clientEvent('client-event-1', 'session-connected', {
+                        ...scope,
+                        principalId: 'alice',
+                    }),
+                    snapshotVersion: 1.5,
+                }],
+                nextCursor: {
+                    snapshotVersion: 1,
+                    occurredAtEpochMs: 1,
+                    eventId: 'client-event-1',
+                },
+                hasMore: false,
+            });
+        });
+
+        await expect(listStateGroupEvents('room-1', scope)).rejects.toThrow(
+            /actor|serviceId/,
+        );
+        await expect(listStateClientEventPage('alice', scope)).rejects.toThrow(
+            /snapshotVersion/,
+        );
     });
 
     it('reads scoped graph diagnostics and topology views with encoded query paths', async () => {
@@ -1701,11 +1753,16 @@ function notFoundResponse(): Response {
 function clientEvent(
     eventId: string,
     eventType: ClientEvent['eventType'],
+    identity: Readonly<{
+        applicationId?: string;
+        workspaceId?: string;
+        principalId?: string;
+    }> = {},
 ): ClientEvent {
     return {
-        applicationId: 'ar-eye-hunter',
-        workspaceId: 'default',
-        principalId: 'principal-1',
+        applicationId: identity.applicationId ?? 'ar-eye-hunter',
+        workspaceId: identity.workspaceId ?? 'default',
+        principalId: identity.principalId ?? 'principal-1',
         eventId,
         eventType,
         snapshotVersion: 1,
@@ -1726,11 +1783,16 @@ function clientEvent(
 function groupEvent(
     eventId: string,
     eventType: GroupEvent['eventType'],
+    identity: Readonly<{
+        applicationId?: string;
+        workspaceId?: string;
+        groupId?: string;
+    }> = {},
 ): GroupEvent {
     return {
-        applicationId: 'ar-eye-hunter',
-        workspaceId: 'default',
-        groupId: 'group-1',
+        applicationId: identity.applicationId ?? 'ar-eye-hunter',
+        workspaceId: identity.workspaceId ?? 'default',
+        groupId: identity.groupId ?? 'group-1',
         eventId,
         eventType,
         snapshotVersion: 1,

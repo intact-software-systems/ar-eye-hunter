@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type {
-  RallarCrdtBackupBundle,
-  RallarCrdtDebugBundle,
-  RallarCrdtDocumentRef,
-} from '@shared/crdt/mod.ts';
+import type { RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
 import type {
   AdminOperationsCrdtResponse,
   AdminOperationsQueuesResponse,
@@ -265,7 +261,7 @@ describe('AdminOperationsService', () => {
     const document: RallarCrdtDocumentRef = {
       applicationId: 'app-1',
       workspaceId: 'workspace-1',
-      scope: 'room',
+      documentScope: 'group',
       documentType: 'map',
       documentId: 'doc-1',
     };
@@ -285,7 +281,13 @@ describe('AdminOperationsService', () => {
     };
     const service = createService({
       crdtAdminRepository: {
-        exportBackupBundle: () => Promise.resolve(createBackupBundle(document, 5)),
+        exportBackupBundle: () =>
+          Promise.resolve({
+            document,
+            documentKey: 'doc-key-1',
+            metadata: { lastAppendSequence: 5 },
+            records: [],
+          }),
         writeSnapshot: () => Promise.resolve(undefined),
       },
     });
@@ -314,7 +316,7 @@ describe('AdminOperationsService', () => {
     const document: RallarCrdtDocumentRef = {
       applicationId: 'app-1',
       workspaceId: 'workspace-1',
-      scope: 'room',
+      documentScope: 'group',
       documentType: 'map',
       documentId: 'doc-1',
     };
@@ -338,7 +340,13 @@ describe('AdminOperationsService', () => {
     let writeCount = 0;
     const service = createService({
       crdtAdminRepository: {
-        exportBackupBundle: () => Promise.resolve(createBackupBundle(document, 5)),
+        exportBackupBundle: () =>
+          Promise.resolve({
+            document,
+            documentKey: 'doc-key-1',
+            metadata: { lastAppendSequence: 5 },
+            records: [],
+          }),
         writeSnapshot: () => {
           writeCount += 1;
           return Promise.resolve(undefined);
@@ -396,9 +404,9 @@ describe('AdminOperationsService', () => {
     const calls: unknown[] = [];
     const service = createService({
       crdtAdminRepository: {
-        exportDebugBundle: (document, options) => {
+        exportDebugBundle: (document: RallarCrdtDocumentRef, options: unknown) => {
           calls.push({ document, options });
-          return Promise.resolve(createDebugBundle(document));
+          return Promise.resolve({ document, payloadsRedacted: true });
         },
       },
     });
@@ -409,7 +417,7 @@ describe('AdminOperationsService', () => {
         document: {
           applicationId: 'app-1',
           workspaceId: 'workspace-1',
-          scope: 'room',
+          documentScope: 'group',
           documentType: 'map',
           documentId: 'doc-1',
         },
@@ -421,7 +429,7 @@ describe('AdminOperationsService', () => {
         document: {
           applicationId: 'app-1',
           workspaceId: 'workspace-1',
-          scope: 'room',
+          documentScope: 'group',
           documentType: 'map',
           documentId: 'doc-1',
         },
@@ -438,62 +446,10 @@ describe('AdminOperationsService', () => {
       document: {
         documentId: 'doc-1',
       },
-      redaction: { payloadsRedacted: true },
+      payloadsRedacted: true,
     });
   });
 });
-
-function createBackupBundle(
-  document: RallarCrdtDocumentRef,
-  lastAppendSequence: number,
-): RallarCrdtBackupBundle {
-  return {
-    format: 'rallar.crdt.backup-bundle.v1',
-    exportedAtEpochMs: NOW_EPOCH_MS,
-    document,
-    documentKey: 'doc-key-1',
-    metadata: {
-      document,
-      documentKey: 'doc-key-1',
-      lifecycle: 'active',
-      createdAtEpochMs: NOW_EPOCH_MS,
-      updatedAtEpochMs: NOW_EPOCH_MS,
-      lastAppendSequence,
-      updateCount: 0,
-      snapshotCount: 0,
-    },
-    records: [],
-    integrity: {
-      bundleHash: 'bundle-hash',
-      documentRefHash: 'document-ref-hash',
-      updateHashes: {},
-      updateCount: 0,
-      sequenceGaps: [],
-    },
-  };
-}
-
-function createDebugBundle(document: RallarCrdtDocumentRef): RallarCrdtDebugBundle {
-  return {
-    format: 'rallar.crdt.debug-bundle.v1',
-    exportedAtEpochMs: NOW_EPOCH_MS,
-    reason: 'api-v1-admin-operations-debug-export',
-    document,
-    documentKey: 'doc-key-1',
-    records: [],
-    redaction: {
-      payloadsRedacted: true,
-      reason: 'api-v1-admin-operations-redaction',
-    },
-    integrity: {
-      bundleHash: 'bundle-hash',
-      documentRefHash: 'document-ref-hash',
-      updateHashes: {},
-      updateCount: 0,
-      sequenceGaps: [],
-    },
-  };
-}
 
 function createService(
   overrides: Partial<ConstructorParameters<typeof AdminOperationsService>[0]> = {},

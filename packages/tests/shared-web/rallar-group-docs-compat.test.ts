@@ -138,6 +138,14 @@ describe('Rallar group documentation compatibility', () => {
             'stateRevision', 'snapshotVersion', 'metadataVersion',
             'rosterVersion', 'presenceVersion', 'causalRevision',
         ]);
+        expectSchemaRequired('GroupTopologyConfigMutationReceipt', [
+            'commandId', 'requestId', 'commandHash', 'operation', 'outcome',
+            'attemptCount', 'groupRef', 'target', 'acceptedVersion',
+            'acceptedStorageRevision', 'acceptedCreatedAtEpochMs',
+            'acceptedUpdatedAtEpochMs', 'acceptedExpiresAtEpochMs',
+            'acceptedConfig', 'acceptedCausalRevision', 'eventId', 'outboxId',
+            'outboxIds',
+        ]);
         expect(
             schema('GroupTopologyConfigAcceptedCausalRevision')
                 .properties?.causalRevision?.$ref,
@@ -193,10 +201,79 @@ describe('Rallar group documentation compatibility', () => {
             expect(schema(schemaName).oneOf?.length).toBeGreaterThan(1);
         }
     });
+
+    it('uses exact topology config schema references for sparse inputs and effective output', () => {
+        expect(schema('PutGroupTopologyConfigRequest').properties?.config?.$ref)
+            .toBe('#/components/schemas/GroupTopologyConfigPatch');
+        expect(schema('StoredGroupTopologyConfig').properties?.config?.$ref)
+            .toBe('#/components/schemas/EffectiveGroupTopologyConfig');
+        expect(schema('GroupTopologyConfigView').properties?.temporary?.$ref)
+            .toBe('#/components/schemas/StoredGroupTopologyOverride');
+        expect(schema('GroupTopologyConfigMutationReceipt').properties?.acceptedConfig?.$ref)
+            .toBe('#/components/schemas/EffectiveGroupTopologyConfig');
+    });
+
+    it('enforces authoritative lifecycle correlations in every status branch', () => {
+        expectNullProperties('ClientPrincipal', 'active', ['disabled', 'deleted']);
+        expectAuditProperties('ClientPrincipal', 'disabled', ['disabled']);
+        expectNullProperties('ClientPrincipal', 'disabled', ['deleted']);
+        expectAuditProperties('ClientPrincipal', 'deleted', ['deleted']);
+        expectNullableAuditProperties('ClientPrincipal', 'deleted', ['disabled']);
+
+        expectNullProperties('ClientInstance', 'active', ['revoked']);
+        expectAuditProperties('ClientInstance', 'revoked', ['revoked']);
+        expectAuditProperties('ClientInstance', 'retired', ['revoked']);
+
+        expectNullProperties('ClientSession', 'active', [
+            'disconnectedAtEpochMs', 'disconnectReason',
+        ]);
+        expectTypedProperties('ClientSession', 'disconnected', {
+            disconnectedAtEpochMs: 'integer',
+            disconnectReason: 'string',
+        });
+        expectTypedProperties('ClientSession', 'expired', {
+            disconnectedAtEpochMs: 'integer',
+            disconnectReason: 'string',
+        });
+
+        expectNullProperties('Group', 'active', ['archived', 'deleted']);
+        expectAuditProperties('Group', 'archived', ['archived']);
+        expectNullProperties('Group', 'archived', ['deleted']);
+        expectAuditProperties('Group', 'deleted', ['deleted']);
+        expectNullableAuditProperties('Group', 'deleted', ['archived']);
+
+        expectNullProperties('GroupMember', 'invited', [
+            'joined', 'left', 'removed', 'banned',
+        ]);
+        expectAuditProperties('GroupMember', 'active', ['joined']);
+        expectNullProperties('GroupMember', 'active', ['left', 'removed', 'banned']);
+        for (const [status, auditProperty] of [
+            ['left', 'left'],
+            ['removed', 'removed'],
+            ['banned', 'banned'],
+        ] as const) {
+            expectAuditProperties('GroupMember', status, [auditProperty]);
+            expectNullableAuditProperties('GroupMember', status, ['joined']);
+            expectNullProperties(
+                'GroupMember',
+                status,
+                ['left', 'removed', 'banned'].filter((key) => key !== auditProperty),
+            );
+        }
+
+        expectNullProperties('GroupPresenceSession', 'active', [
+            'disconnectedAtEpochMs', 'disconnectReason',
+        ]);
+        expectTypedProperties('GroupPresenceSession', 'disconnected', {
+            disconnectedAtEpochMs: 'integer',
+            disconnectReason: 'string',
+        });
+    });
 });
 
 type OpenApiSchema = Readonly<{
     $ref?: string;
+    type?: string;
     required?: readonly string[];
     properties?: Readonly<Record<string, OpenApiSchema>>;
     nullable?: boolean;
@@ -258,6 +335,7 @@ function parseOpenApiSchema(value: unknown, label: string): OpenApiSchema {
         throw new TypeError(`OpenAPI schema ${label} discriminator is invalid`);
     }
     return {
+        ...(typeof source.type === 'string' ? { type: source.type } : {}),
         ...(typeof source.$ref === 'string' ? { $ref: source.$ref } : {}),
         ...(source.required === undefined
             ? {}
@@ -318,6 +396,64 @@ function requireStringArray(value: unknown, label: string): readonly string[] {
 
 function expectSchemaRequired(name: string, expected: readonly string[]): void {
     expect([...(schema(name).required ?? [])].sort()).toEqual([...expected].sort());
+}
+
+function statusVariant(schemaName: string, status: string): OpenApiSchema {
+    const variant = schema(schemaName).oneOf?.find((candidate) =>
+        candidate.properties?.status?.enum?.includes(status)
+    );
+    if (!variant) throw new Error(`Missing ${schemaName} ${status} lifecycle variant`);
+    return variant;
+}
+
+function expectNullProperties(
+    schemaName: string,
+    status: string,
+    propertyNames: readonly string[],
+): void {
+    const variant = statusVariant(schemaName, status);
+    for (const propertyName of propertyNames) {
+        expect(variant.properties?.[propertyName]?.enum).toEqual([null]);
+        expect(variant.properties?.[propertyName]?.nullable).toBe(true);
+    }
+}
+
+function expectAuditProperties(
+    schemaName: string,
+    status: string,
+    propertyNames: readonly string[],
+): void {
+    const variant = statusVariant(schemaName, status);
+    for (const propertyName of propertyNames) {
+        expect(variant.properties?.[propertyName]?.$ref)
+            .toBe('#/components/schemas/AuditStamp');
+        expect(variant.properties?.[propertyName]?.nullable).not.toBe(true);
+    }
+}
+
+function expectNullableAuditProperties(
+    schemaName: string,
+    status: string,
+    propertyNames: readonly string[],
+): void {
+    const variant = statusVariant(schemaName, status);
+    for (const propertyName of propertyNames) {
+        expect(variant.properties?.[propertyName]?.allOf?.[0]?.$ref)
+            .toBe('#/components/schemas/AuditStamp');
+        expect(variant.properties?.[propertyName]?.nullable).toBe(true);
+    }
+}
+
+function expectTypedProperties(
+    schemaName: string,
+    status: string,
+    properties: Readonly<Record<string, string>>,
+): void {
+    const variant = statusVariant(schemaName, status);
+    for (const [propertyName, type] of Object.entries(properties)) {
+        expect(variant.properties?.[propertyName]?.type).toBe(type);
+        expect(variant.properties?.[propertyName]?.nullable).not.toBe(true);
+    }
 }
 
 function readRepoFile(filePath: string): string {

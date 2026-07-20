@@ -338,6 +338,49 @@ describe('Rallar rooms and people event compatibility', () => {
         });
     });
 
+    it('drops malformed authoritative group and client events received over WS', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        const facade = createRallarFacade();
+        const roomListener = vi.fn();
+        const peopleListener = vi.fn();
+
+        facade.setDefaults({
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+        });
+        facade.rooms.onEvent(roomListener, { roomId: 'room-1' });
+        facade.people.onEvent(peopleListener, { principalId: 'alice' });
+        await facade.connect();
+
+        const wsCallback = findWsAnyMessageCallback();
+        const groupEvent = createGroupEvent(
+            'room-1',
+            'group-event-valid',
+            'member-joined',
+        );
+        const clientEvent = createClientEvent(
+            'alice',
+            'client-event-valid',
+            'session-connected',
+        );
+        await wsCallback?.onMessage?.(toGroupStateEventMessage({
+            ...groupEvent,
+            actor: { kind: 'session', principalId: 'alice', sessionId: '' },
+        }));
+        const { requestId: omitted, ...missingRequestId } = clientEvent;
+        expect(omitted).not.toBeUndefined();
+        await wsCallback?.onMessage?.(toClientStateEventMessage(missingRequestId));
+        await wsCallback?.onMessage?.(toGroupStateEventMessage(groupEvent));
+        await wsCallback?.onMessage?.(toClientStateEventMessage(clientEvent));
+
+        expect(roomListener).toHaveBeenCalledOnce();
+        expect(roomListener.mock.calls[0]?.[0]).toEqual(groupEvent);
+        expect(peopleListener).toHaveBeenCalledOnce();
+        expect(peopleListener.mock.calls[0]?.[0]).toEqual(clientEvent);
+    });
+
     it('does not replay live state events missed while disconnected', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
@@ -861,7 +904,11 @@ function findLatestWsAnyMessageCallback(): {
         .at(-1)?.[1] as { onMessage?: (message: unknown) => Promise<void> } | undefined;
 }
 
-function toGroupStateEventMessage(event: GroupEvent) {
+function toGroupStateEventMessage<
+    TEvent extends Readonly<{ groupId: string; eventId: string }>,
+>(
+    event: TEvent,
+) {
     return newALBroadcastMessage(
         'server-1',
         newALEventRoute(AppTopics.groupStateEvent, event.groupId, event.eventId),
@@ -871,7 +918,11 @@ function toGroupStateEventMessage(event: GroupEvent) {
     );
 }
 
-function toClientStateEventMessage(event: ClientEvent) {
+function toClientStateEventMessage<
+    TEvent extends Readonly<{ principalId: string; eventId: string }>,
+>(
+    event: TEvent,
+) {
     return newALBroadcastMessage(
         'server-1',
         newALEventRoute(

@@ -31,6 +31,10 @@ import {
     newALRoute,
 } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
+import {
+    validateAuthoritativeClientEvent,
+    validateAuthoritativeGroupEvent,
+} from '@shared/api/authoritative-state-validation.ts';
 import type { ClientEvent } from '@shared/api/client-types.ts';
 import type { GroupEvent, GroupRef } from '@shared/api/group-types.ts';
 import type {
@@ -680,25 +684,21 @@ function toStateEventListRequestOptions<TEventType extends string>(
 }
 
 function isGroupEventPayload(value: unknown): value is GroupEvent {
-    return isRecord(value) &&
-        typeof value.applicationId === 'string' &&
-        typeof value.groupId === 'string' &&
-        typeof value.eventId === 'string' &&
-        typeof value.eventType === 'string' &&
-        typeof value.snapshotVersion === 'number';
+    try {
+        validateAuthoritativeGroupEvent(value);
+        return true;
+    } catch {
+        return false;
+    }
 }
 
 function isClientEventPayload(value: unknown): value is ClientEvent {
-    return isRecord(value) &&
-        typeof value.applicationId === 'string' &&
-        typeof value.principalId === 'string' &&
-        typeof value.eventId === 'string' &&
-        typeof value.eventType === 'string' &&
-        typeof value.snapshotVersion === 'number';
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null;
+    try {
+        validateAuthoritativeClientEvent(value);
+        return true;
+    } catch {
+        return false;
+    }
 }
 
 function isSameStateGroupRef(

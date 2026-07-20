@@ -411,14 +411,12 @@ function createFakeRallar() {
             entries: [],
         } satisfies RallarServerWsPublishResult)),
     };
-    const rallarFixture = {
+    const rallar = {
         ws,
         data: {
-            open: vi.fn(async () => Reflect.get({ store }, 'store')),
+            open: vi.fn(async () => store),
         },
     };
-    const rallarFixtureKey: string = 'rallarFixture';
-    const rallar = Reflect.get({ rallarFixture }, rallarFixtureKey);
 
     return {
         rallar,

@@ -384,7 +384,7 @@ describe('GroupTopologyManagementService', () => {
                 });
                 await service.putOverride({
                     groupRef: group.group,
-                    config: { degreeLimit: 3 },
+                    config: { ...effectiveTopologyConfig(), degreeLimit: 3 },
                     expiresAtEpochMs: Date.now() + 60_000,
                     updatedByPrincipalId: 'owner',
                     requestId: 'bracket-override-after',
@@ -502,7 +502,7 @@ describe('GroupTopologyManagementService', () => {
                 configRepository.overrideKey(group.group),
                 JSON.stringify({
                     groupRef: group.group,
-                    config: { degreeLimit: 3 },
+                    config: { ...effectiveTopologyConfig(), degreeLimit: 3 },
                     version: 7,
                     createdAtEpochMs: 1_000,
                     updatedAtEpochMs: 1_000,
@@ -1091,6 +1091,94 @@ describe('GroupTopologyManagementService', () => {
             requestId: 'later-delete',
         });
         expect(await service.putConfig(request)).toEqual(accepted);
+    });
+
+    it('replays an exact sparse durable patch over nondefault accepted authority', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const group = createGroupSnapshot(createGroupRef('workspace-1'));
+        const service = createService({
+            runtimeRepository,
+            group,
+            serverDefaults: {
+                topologyKind: 'star',
+                degreeLimit: 9,
+                treeMinSize: 4,
+                meshMinSize: 12,
+                meshParamK: 3,
+            },
+        });
+        await service.putConfig({
+            groupRef: group.group,
+            config: {
+                topologyKind: 'mesh',
+                degreeLimit: 8,
+                treeMinSize: 6,
+                meshMinSize: 18,
+                meshParamK: 4,
+            },
+            updatedByPrincipalId: 'owner',
+            requestId: 'durable-base',
+        });
+        const request = {
+            groupRef: group.group,
+            config: { topologyKind: 'tree' as const },
+            updatedByPrincipalId: 'owner',
+            requestId: 'durable-sparse-replay',
+        };
+
+        const accepted = await service.putConfig(request);
+        const replayed = await service.putConfig(request);
+
+        expect(accepted.config.config).toEqual({
+            topologyKind: 'tree',
+            degreeLimit: 8,
+            treeMinSize: 6,
+            meshMinSize: 18,
+            meshParamK: 4,
+        });
+        expect(replayed).toEqual(accepted);
+    });
+
+    it('replays an exact sparse override over durable authority and custom defaults', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const group = createGroupSnapshot(createGroupRef('workspace-1'));
+        const service = createService({
+            runtimeRepository,
+            group,
+            now: () => 1_000,
+            serverDefaults: {
+                topologyKind: 'star',
+                degreeLimit: 9,
+                treeMinSize: 4,
+                meshMinSize: 12,
+                meshParamK: 3,
+            },
+        });
+        await service.putConfig({
+            groupRef: group.group,
+            config: { degreeLimit: 8, meshParamK: 4 },
+            updatedByPrincipalId: 'owner',
+            requestId: 'override-durable-base',
+        });
+        const request = {
+            groupRef: group.group,
+            config: { topologyKind: 'tree' as const },
+            expiresAtEpochMs: 60_000,
+            updatedByPrincipalId: 'owner',
+            requestId: 'override-sparse-replay',
+        };
+
+        const accepted = await service.putOverride(request);
+        const replayed = await service.putOverride(request);
+
+        expect(accepted.override.config).toEqual({
+            topologyKind: 'tree',
+            degreeLimit: 8,
+            treeMinSize: 4,
+            meshMinSize: 12,
+            meshParamK: 4,
+        });
+        expect(replayed).toEqual(accepted);
     });
 
     it('persists only command identity and a compact reconstructable receipt', async () => {

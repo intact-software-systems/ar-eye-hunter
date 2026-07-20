@@ -212,6 +212,7 @@ Deno.test('OpenAPI JSON includes scoped graph and topology management contracts'
     'acceptedCreatedAtEpochMs',
     'acceptedUpdatedAtEpochMs',
     'acceptedExpiresAtEpochMs',
+    'acceptedConfig',
     'acceptedCausalRevision',
     'eventId',
     'outboxId',

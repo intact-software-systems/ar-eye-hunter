@@ -2,6 +2,12 @@ import { Temporal } from '@js-temporal/polyfill';
 import { readApiBaseUrl } from './api-client-config.ts';
 import { readSession } from '@shared/api/auth.ts';
 import {
+    validateAuthoritativeClientEventList,
+    validateAuthoritativeClientEventPage,
+    validateAuthoritativeGroupEventList,
+    validateAuthoritativeGroupEventPage,
+} from '@shared/api/authoritative-state-validation.ts';
+import {
     AgentSessionTicketRequest,
     AgentSessionTicketResponse,
     ApiConfig,
@@ -742,7 +748,7 @@ export async function listStateGroupEvents(
     scope: StateScope = defaultStateScope(),
     options?: GroupStateEventListRequestOptions,
 ): Promise<GroupEvent[]> {
-    return await executeHttpRequest<void, GroupEvent[]>(
+    const response: unknown = await executeHttpRequest<void, unknown>(
         readApiBaseUrl(),
         withStateEventListQuery(
             `${toStateScopePath(scope)}/groups/${encodeURIComponent(groupId)}/events`,
@@ -752,6 +758,8 @@ export async function listStateGroupEvents(
         undefined,
         options,
     );
+    validateAuthoritativeGroupEventList(response, { ...scope, groupId });
+    return response;
 }
 
 export async function listStateGroupEventPage(
@@ -759,7 +767,7 @@ export async function listStateGroupEventPage(
     scope: StateScope = defaultStateScope(),
     options?: GroupStateEventListRequestOptions,
 ): Promise<StateEventPage<GroupEvent>> {
-    return await executeHttpRequest<void, StateEventPage<GroupEvent>>(
+    const response: unknown = await executeHttpRequest<void, unknown>(
         readApiBaseUrl(),
         withStateEventListQuery(
             `${toStateScopePath(scope)}/groups/${encodeURIComponent(groupId)}/events/page`,
@@ -769,6 +777,8 @@ export async function listStateGroupEventPage(
         undefined,
         options,
     );
+    validateAuthoritativeGroupEventPage(response, { ...scope, groupId });
+    return response;
 }
 
 export async function listStateClientEvents(
@@ -776,7 +786,7 @@ export async function listStateClientEvents(
     scope: StateScope = defaultStateScope(),
     options?: ClientStateEventListRequestOptions,
 ): Promise<ClientEvent[]> {
-    return await executeHttpRequest<void, ClientEvent[]>(
+    const response: unknown = await executeHttpRequest<void, unknown>(
         readApiBaseUrl(),
         withStateEventListQuery(
             `${toStateScopePath(scope)}/clients/${encodeURIComponent(principalId)}/events`,
@@ -786,6 +796,8 @@ export async function listStateClientEvents(
         undefined,
         options,
     );
+    validateAuthoritativeClientEventList(response, { ...scope, principalId });
+    return response;
 }
 
 export async function listStateClientEventPage(
@@ -793,7 +805,7 @@ export async function listStateClientEventPage(
     scope: StateScope = defaultStateScope(),
     options?: ClientStateEventListRequestOptions,
 ): Promise<StateEventPage<ClientEvent>> {
-    return await executeHttpRequest<void, StateEventPage<ClientEvent>>(
+    const response: unknown = await executeHttpRequest<void, unknown>(
         readApiBaseUrl(),
         withStateEventListQuery(
             `${toStateScopePath(scope)}/clients/${encodeURIComponent(principalId)}/events/page`,
@@ -803,6 +815,8 @@ export async function listStateClientEventPage(
         undefined,
         options,
     );
+    validateAuthoritativeClientEventPage(response, { ...scope, principalId });
+    return response;
 }
 
 export async function readStateScopedGlobalGraph(

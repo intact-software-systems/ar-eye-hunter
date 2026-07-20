@@ -28,9 +28,12 @@ import type {
     RallarServerWsTopicDefinition,
 } from '../rallar-facade/ws-topic-router.ts';
 import type {
-    RallarServerAppDataStore,
     RallarServerAppDataStoreOptions,
 } from '../app-data/RallarServerAppData.ts';
+
+type RallarServerAiDataStore<V> = Readonly<{
+    set(key: string, value: V): Promise<void>;
+}>;
 
 export type RallarServerAiRallar = Readonly<{
     ws: Readonly<{
@@ -48,7 +51,7 @@ export type RallarServerAiRallar = Readonly<{
         open<V>(
             input: string,
             options?: RallarServerAppDataStoreOptions<V>,
-        ): Promise<RallarServerAppDataStore<V>>;
+        ): Promise<RallarServerAiDataStore<V>>;
     }>;
 }>;
 

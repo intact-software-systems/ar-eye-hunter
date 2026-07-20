@@ -102,7 +102,7 @@ export function createGroupSnapshotFixture(input: Readonly<{
             activeMemberCount: memberPrincipalIds.length,
             ownerPrincipalId,
             snapshotVersion: 1,
-            metadataVersion: 0,
+            metadataVersion: 1,
             rosterVersion: 1,
             presenceVersion: input.sessionIds.length,
             created: createAuditStampFixture(1, 'creator'),

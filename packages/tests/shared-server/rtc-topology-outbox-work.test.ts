@@ -1243,7 +1243,7 @@ function createGroupSnapshot(stateRevision: number): GroupSnapshot {
             activeMemberCount: 0,
             ownerPrincipalId: 'owner',
             snapshotVersion: stateRevision,
-            metadataVersion: 0,
+            metadataVersion: 1,
             rosterVersion: 1,
             presenceVersion: 0,
             created: createAuditStamp(1),

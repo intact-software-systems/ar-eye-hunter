@@ -110,7 +110,7 @@ describe('group topology config repository', () => {
                 groupStateGroupStorageKey(groupRef),
                 JSON.stringify({
                     groupRef,
-                    config: { topologyKind: 'tree' },
+                    config: createEffectiveConfig('tree'),
                     version: index + 1,
                     createdAtEpochMs: 1,
                     updatedAtEpochMs: 1,
@@ -165,7 +165,7 @@ describe('group topology config repository', () => {
         const groupRef = createGroupRef('workspace-1');
         const legacy = {
             groupRef,
-            config: { topologyKind: 'tree' as const },
+            config: createEffectiveConfig('tree'),
             version: 7,
             createdAtEpochMs: 1,
             updatedAtEpochMs: 2,
@@ -200,7 +200,7 @@ describe('group topology config repository', () => {
             repository.configKey(groupRef),
             JSON.stringify({
                 groupRef,
-                config: { topologyKind: 'tree' },
+                config: createEffectiveConfig('tree'),
                 version: 1,
                 createdAtEpochMs: 1,
                 updatedAtEpochMs: 1,
@@ -244,7 +244,7 @@ describe('group topology config repository', () => {
                 key,
                 JSON.stringify({
                     groupRef: wrongScope,
-                    config: { topologyKind: 'tree' },
+                    config: createEffectiveConfig('tree'),
                     version: 7,
                     createdAtEpochMs: 1,
                     updatedAtEpochMs: 1,
@@ -302,6 +302,7 @@ describe('group topology config repository', () => {
                                 acceptedCreatedAtEpochMs: null,
                                 acceptedUpdatedAtEpochMs: null,
                                 acceptedExpiresAtEpochMs: null,
+                                acceptedConfig: null,
                                 acceptedCausalRevision: null,
                                 outboxId: null,
                             },
@@ -375,6 +376,7 @@ describe('group topology config repository', () => {
                             acceptedCreatedAtEpochMs: null,
                             acceptedUpdatedAtEpochMs: null,
                             acceptedExpiresAtEpochMs: null,
+                            acceptedConfig: null,
                             acceptedCausalRevision: null,
                             outboxId: null,
                         },
@@ -428,7 +430,7 @@ describe('group topology config repository', () => {
                 : repository.overrideKey(groupRef);
             const value = {
                 groupRef,
-                config: { topologyKind: 'tree' as const },
+                config: createEffectiveConfig('tree'),
                 version: 1,
                 createdAtEpochMs: 1,
                 updatedAtEpochMs: 1,
@@ -469,7 +471,7 @@ describe('group topology config repository', () => {
             noncanonicalKey,
             JSON.stringify({
                 groupRef,
-                config: { topologyKind: 'tree' },
+                config: createEffectiveConfig('tree'),
                 version: 1,
                 createdAtEpochMs: 1,
                 updatedAtEpochMs: 1,
@@ -545,6 +547,7 @@ describe('group topology config repository', () => {
                             acceptedCreatedAtEpochMs: null,
                             acceptedUpdatedAtEpochMs: null,
                             acceptedExpiresAtEpochMs: null,
+                            acceptedConfig: null,
                             acceptedCausalRevision: null,
                             eventId: null,
                             outboxId: null,
@@ -605,7 +608,7 @@ describe('group topology config repository', () => {
                 key: repository.configKey(groupRef),
                 value: {
                     groupRef: wrongRef,
-                    config: { topologyKind: 'tree' },
+                    config: createEffectiveConfig('tree'),
                     version: 1,
                     createdAtEpochMs: 1,
                     updatedAtEpochMs: 1,
@@ -620,7 +623,7 @@ describe('group topology config repository', () => {
                 key: repository.overrideKey(groupRef),
                 value: {
                     groupRef: wrongRef,
-                    config: { topologyKind: 'tree' },
+                    config: createEffectiveConfig('tree'),
                     version: 1,
                     createdAtEpochMs: 1,
                     updatedAtEpochMs: 1,
@@ -650,6 +653,7 @@ describe('group topology config repository', () => {
                         acceptedCreatedAtEpochMs: null,
                         acceptedUpdatedAtEpochMs: null,
                         acceptedExpiresAtEpochMs: null,
+                        acceptedConfig: null,
                         acceptedCausalRevision: null,
                         outboxId: null,
                     },
@@ -769,6 +773,7 @@ describe('group topology config repository', () => {
                     acceptedCreatedAtEpochMs: null,
                     acceptedUpdatedAtEpochMs: null,
                     acceptedExpiresAtEpochMs: null,
+                    acceptedConfig: null,
                     acceptedCausalRevision: null,
                     eventId: null,
                     outboxId: null,
@@ -833,6 +838,7 @@ describe('group topology config repository', () => {
                     acceptedCreatedAtEpochMs: null,
                     acceptedUpdatedAtEpochMs: null,
                     acceptedExpiresAtEpochMs: null,
+                    acceptedConfig: null,
                     acceptedCausalRevision: null,
                     eventId: null,
                     outboxId: null,
@@ -878,6 +884,7 @@ describe('group topology config repository', () => {
                         acceptedExpiresAtEpochMs: operation === 'putOverride'
                             ? 6_000
                             : null,
+                        acceptedConfig: createEffectiveConfig('tree'),
                         acceptedCausalRevision: null,
                         eventId: null,
                         outboxId: null,
@@ -952,6 +959,7 @@ describe('group topology config repository', () => {
                     acceptedCreatedAtEpochMs: 1,
                     acceptedUpdatedAtEpochMs: 1,
                     acceptedExpiresAtEpochMs: null,
+                    acceptedConfig: createEffectiveConfig('tree'),
                     acceptedCausalRevision,
                     eventId: null,
                     outboxId,
@@ -1000,7 +1008,7 @@ describe('group topology config repository', () => {
             const groupRef = createGroupRef('workspace-1');
             const legacyConfig = {
                 groupRef,
-                config: { topologyKind: 'tree' as const },
+                config: createEffectiveConfig('tree'),
                 version: 6,
                 createdAtEpochMs: 1,
                 updatedAtEpochMs: 1,
@@ -1061,7 +1069,7 @@ describe('group topology config repository', () => {
         const canonicalKey = groupStateGroupStorageKey(groupRef);
         const legacy = {
             groupRef,
-            config: { topologyKind: 'tree' as const },
+            config: createEffectiveConfig('tree'),
             version: 7,
             createdAtEpochMs: 1,
             updatedAtEpochMs: 1,
@@ -1109,7 +1117,7 @@ describe('group topology config repository', () => {
             legacyKey,
             JSON.stringify({
                 groupRef,
-                config: { topologyKind: 'tree' },
+                config: createEffectiveConfig('tree'),
                 version: 7,
                 createdAtEpochMs: 1,
                 updatedAtEpochMs: 1,
@@ -1152,7 +1160,7 @@ describe('group topology config repository', () => {
         const sentinelRef: GroupRef = { ...absentRef, workspaceId: '_' };
         const source = {
             groupRef: absentRef,
-            config: { topologyKind: 'tree' as const },
+            config: createEffectiveConfig('tree'),
             version: 7,
             createdAtEpochMs: 1,
             updatedAtEpochMs: 1,
@@ -1187,7 +1195,7 @@ describe('group topology config repository', () => {
         const legacyKey = 'app=app-1:ws=_:group=room-1';
         const source = {
             groupRef,
-            config: { topologyKind: 'tree' as const },
+            config: createEffectiveConfig('tree'),
             version: 7,
             createdAtEpochMs: 1,
             updatedAtEpochMs: 1,
@@ -1195,7 +1203,7 @@ describe('group topology config repository', () => {
         };
         const winner = {
             ...source,
-            config: { topologyKind: 'mesh' as const },
+            config: createEffectiveConfig('mesh'),
             version: 8,
             updatedAtEpochMs: 2,
         };
@@ -1237,7 +1245,7 @@ describe('group topology config repository', () => {
         const legacyKey = 'app=app-1:ws=_:group=room-1';
         const source = {
             groupRef,
-            config: { topologyKind: 'tree' as const, degreeLimit: 4 },
+            config: { ...createEffectiveConfig('tree'), degreeLimit: 4 },
             version: 7,
             createdAtEpochMs: 1,
             updatedAtEpochMs: 1,
@@ -1258,7 +1266,7 @@ describe('group topology config repository', () => {
                 updatedAtEpochMs: source.updatedAtEpochMs,
                 createdAtEpochMs: source.createdAtEpochMs,
                 version: source.version,
-                config: { degreeLimit: 4, topologyKind: 'tree' },
+                config: { ...createEffectiveConfig('tree'), degreeLimit: 4 },
                 groupRef: {
                     groupId: groupRef.groupId,
                     workspaceId: groupRef.workspaceId,
@@ -1297,7 +1305,7 @@ describe('group topology config repository', () => {
         const canonicalKey = groupStateGroupStorageKey(groupRef);
         const source = {
             groupRef,
-            config: { topologyKind: 'tree' as const },
+            config: createEffectiveConfig('tree'),
             version: 7,
             createdAtEpochMs: 1,
             updatedAtEpochMs: 1,
@@ -1360,7 +1368,7 @@ describe('group topology config repository', () => {
                 `app=app-1:ws=_:group=${groupRef.groupId}`,
                 JSON.stringify({
                     groupRef,
-                    config: { topologyKind: 'tree' },
+                    config: createEffectiveConfig('tree'),
                     version: index + 1,
                     createdAtEpochMs: 1,
                     updatedAtEpochMs: 1,
@@ -1399,7 +1407,7 @@ describe('group topology config repository', () => {
             repository.configKey(groupRef),
             JSON.stringify({
                 groupRef,
-                config: { topologyKind: 'tree' },
+                config: createEffectiveConfig('tree'),
                 version: 7,
                 createdAtEpochMs: 1,
                 updatedAtEpochMs: 1,

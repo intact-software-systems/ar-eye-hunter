@@ -3610,10 +3610,21 @@ components:
       oneOf:
         - properties:
             status: { type: string, enum: [active] }
+            disabled: { nullable: true, enum: [null] }
+            deleted: { nullable: true, enum: [null] }
         - properties:
             status: { type: string, enum: [disabled] }
+            disabled:
+              $ref: '#/components/schemas/AuditStamp'
+            deleted: { nullable: true, enum: [null] }
         - properties:
             status: { type: string, enum: [deleted] }
+            disabled:
+              allOf:
+                - $ref: '#/components/schemas/AuditStamp'
+              nullable: true
+            deleted:
+              $ref: '#/components/schemas/AuditStamp'
       properties:
         applicationId:
           type: string
@@ -3690,10 +3701,15 @@ components:
       oneOf:
         - properties:
             status: { type: string, enum: [active] }
+            revoked: { nullable: true, enum: [null] }
         - properties:
             status: { type: string, enum: [revoked] }
+            revoked:
+              $ref: '#/components/schemas/AuditStamp'
         - properties:
             status: { type: string, enum: [retired] }
+            revoked:
+              $ref: '#/components/schemas/AuditStamp'
       properties:
         applicationId:
           type: string
@@ -3755,10 +3771,22 @@ components:
       oneOf:
         - properties:
             status: { type: string, enum: [active] }
+            disconnectedAtEpochMs: { nullable: true, enum: [null] }
+            disconnectReason: { nullable: true, enum: [null] }
         - properties:
             status: { type: string, enum: [disconnected] }
+            disconnectedAtEpochMs:
+              type: integer
+              format: int64
+            disconnectReason:
+              type: string
         - properties:
             status: { type: string, enum: [expired] }
+            disconnectedAtEpochMs:
+              type: integer
+              format: int64
+            disconnectReason:
+              type: string
       properties:
         applicationId:
           type: string
@@ -4008,10 +4036,21 @@ components:
       oneOf:
         - properties:
             status: { type: string, enum: [active] }
+            archived: { nullable: true, enum: [null] }
+            deleted: { nullable: true, enum: [null] }
         - properties:
             status: { type: string, enum: [archived] }
+            archived:
+              $ref: '#/components/schemas/AuditStamp'
+            deleted: { nullable: true, enum: [null] }
         - properties:
             status: { type: string, enum: [deleted] }
+            archived:
+              allOf:
+                - $ref: '#/components/schemas/AuditStamp'
+              nullable: true
+            deleted:
+              $ref: '#/components/schemas/AuditStamp'
       properties:
         applicationId:
           type: string
@@ -4110,28 +4149,46 @@ components:
         - properties:
             status: { type: string, enum: [invited] }
             joined: { nullable: true, enum: [null] }
+            left: { nullable: true, enum: [null] }
+            removed: { nullable: true, enum: [null] }
+            banned: { nullable: true, enum: [null] }
         - properties:
             status: { type: string, enum: [active] }
             joined:
               $ref: '#/components/schemas/AuditStamp'
+            left: { nullable: true, enum: [null] }
+            removed: { nullable: true, enum: [null] }
+            banned: { nullable: true, enum: [null] }
         - properties:
             status: { type: string, enum: [left] }
             joined:
               allOf:
                 - $ref: '#/components/schemas/AuditStamp'
               nullable: true
+            left:
+              $ref: '#/components/schemas/AuditStamp'
+            removed: { nullable: true, enum: [null] }
+            banned: { nullable: true, enum: [null] }
         - properties:
             status: { type: string, enum: [removed] }
             joined:
               allOf:
                 - $ref: '#/components/schemas/AuditStamp'
               nullable: true
+            left: { nullable: true, enum: [null] }
+            removed:
+              $ref: '#/components/schemas/AuditStamp'
+            banned: { nullable: true, enum: [null] }
         - properties:
             status: { type: string, enum: [banned] }
             joined:
               allOf:
                 - $ref: '#/components/schemas/AuditStamp'
               nullable: true
+            left: { nullable: true, enum: [null] }
+            removed: { nullable: true, enum: [null] }
+            banned:
+              $ref: '#/components/schemas/AuditStamp'
       properties:
         applicationId:
           type: string
@@ -4191,8 +4248,15 @@ components:
       oneOf:
         - properties:
             status: { type: string, enum: [active] }
+            disconnectedAtEpochMs: { nullable: true, enum: [null] }
+            disconnectReason: { nullable: true, enum: [null] }
         - properties:
             status: { type: string, enum: [disconnected] }
+            disconnectedAtEpochMs:
+              type: integer
+              format: int64
+            disconnectReason:
+              type: string
       properties:
         applicationId:
           type: string
@@ -4915,9 +4979,8 @@ components:
           $ref: '#/components/schemas/StoredGroupTopologyConfig'
           nullable: true
         temporary:
-          type: object
+          $ref: '#/components/schemas/StoredGroupTopologyOverride'
           nullable: true
-          additionalProperties: true
         requestOptions:
           $ref: '#/components/schemas/GroupTopologyConfigPatch'
           nullable: true
@@ -5012,7 +5075,7 @@ components:
         requestId:
           type: string
         config:
-          $ref: '#/components/schemas/EffectiveGroupTopologyConfig'
+          $ref: '#/components/schemas/GroupTopologyConfigPatch'
 
     PutGroupTopologyOverrideRequest:
       type: object
@@ -5047,7 +5110,7 @@ components:
         groupRef:
           $ref: '#/components/schemas/GroupRef'
         config:
-          $ref: '#/components/schemas/GroupTopologyConfigPatch'
+          $ref: '#/components/schemas/EffectiveGroupTopologyConfig'
         version:
           type: integer
           format: int64
@@ -5123,6 +5186,7 @@ components:
         - acceptedCreatedAtEpochMs
         - acceptedUpdatedAtEpochMs
         - acceptedExpiresAtEpochMs
+        - acceptedConfig
         - acceptedCausalRevision
         - eventId
         - outboxId
@@ -5170,6 +5234,9 @@ components:
           type: integer
           nullable: true
           format: int64
+        acceptedConfig:
+          $ref: '#/components/schemas/EffectiveGroupTopologyConfig'
+          nullable: true
         acceptedCausalRevision:
           nullable: true
           allOf:

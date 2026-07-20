@@ -377,8 +377,9 @@ describe('group policy helpers', () => {
                 canJoinGroup({snapshot: snapshot({status: 'deleted'}), actor: actor('carol')}),
             ),
             expectCode(canJoinGroup({
-                snapshot: withInvalidGroupStatus(snapshot(), 'paused'),
+                snapshot: snapshot({expiresAtEpochMs: NOW - 1}),
                 actor: actor('carol'),
+                nowEpochMs: NOW,
             })),
             expectCode(canJoinGroup({snapshot: snapshot({maxMembers: 1}), actor: actor('carol')})),
             expectCode(canConnectGroupPresenceSession({
@@ -512,14 +513,6 @@ function snapshot(
     };
 }
 
-function withInvalidGroupStatus(
-    value: GroupSnapshot,
-    status: string,
-): GroupSnapshot {
-    Reflect.set(value.group, 'status', status);
-    return value;
-}
-
 function member(
     principalId: string,
     options: Partial<GroupMember> = {},
@@ -544,9 +537,19 @@ function member(
     if (options.status === 'banned') {
         return {...common, status: 'banned', left: null, removed: null, banned: options.banned ?? audit(1)};
     }
+    if (options.status === 'invited') {
+        return {
+            ...common,
+            status: 'invited',
+            joined: null,
+            left: null,
+            removed: null,
+            banned: null,
+        };
+    }
     return {
         ...common,
-        status: options.status === 'invited' ? 'invited' : 'active',
+        status: 'active',
         left: null,
         removed: null,
         banned: null,

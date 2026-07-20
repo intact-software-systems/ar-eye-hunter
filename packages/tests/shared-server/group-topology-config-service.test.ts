@@ -105,6 +105,27 @@ describe('group topology config service', () => {
             groupRef: input.command.aggregateRef,
             requestId: input.command.requestId,
         })).toThrow('Topology config receipt outboxIds are invalid');
+        expect(() => validateGroupTopologyConfigMutationRecord({
+            groupRef: input.command.aggregateRef,
+            requestId: input.command.requestId,
+            commandHash: input.facts.commandHash,
+            receipt: { ...first.receipt, acceptedConfig: null },
+        }, {
+            groupRef: input.command.aggregateRef,
+            requestId: input.command.requestId,
+        })).toThrow('accepted config does not match operation');
+        expect(() => validateGroupTopologyConfigMutationRecord({
+            groupRef: input.command.aggregateRef,
+            requestId: input.command.requestId,
+            commandHash: input.facts.commandHash,
+            receipt: {
+                ...first.receipt,
+                acceptedConfig: { topologyKind: 'tree' },
+            },
+        }, {
+            groupRef: input.command.aggregateRef,
+            requestId: input.command.requestId,
+        })).toThrow('accepted config fields are invalid');
     });
 
     it.each(['putConfig', 'putOverride'] as const)(
@@ -134,6 +155,13 @@ describe('group topology config service', () => {
                         acceptedExpiresAtEpochMs: operation === 'putOverride'
                             ? 6_000
                             : null,
+                        acceptedConfig: {
+                            topologyKind: 'tree',
+                            degreeLimit: 5,
+                            treeMinSize: 5,
+                            meshMinSize: 16,
+                            meshParamK: 2,
+                        },
                         acceptedCausalRevision: null,
                         eventId: null,
                         outboxId: null,

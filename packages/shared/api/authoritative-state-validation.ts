@@ -1,9 +1,11 @@
 import type {
+    ClientEvent,
     ClientSnapshot,
 } from './client-types.ts';
 import { toGroupSnapshotStateRevision } from './group-client-views.ts';
-import type { GroupRef, GroupSnapshot } from './group-types.ts';
+import type { GroupEvent, GroupRef, GroupSnapshot } from './group-types.ts';
 import type { RallarOverlayTopologySnapshot } from './overlay-topology.ts';
+import type { StateEventPage } from './state-event-types.ts';
 import type { StateScope } from './state-types.ts';
 
 const AUDIT_KEYS = ['atEpochMs', 'actor', 'reason', 'traceId', 'requestId'];
@@ -43,6 +45,29 @@ const GROUP_SESSION_KEYS = [
     'generationId', 'generationVersion', 'status', 'connectedAtEpochMs',
     'lastHeartbeatAtEpochMs', 'expiresAtEpochMs', 'disconnectedAtEpochMs',
     'disconnectReason',
+];
+const CLIENT_EVENT_KEYS = [
+    'applicationId', 'workspaceId', 'principalId', 'eventId', 'eventType',
+    'snapshotVersion', 'clientInstanceId', 'sessionId', 'occurredAtEpochMs',
+    'actor', 'reason', 'traceId', 'requestId', 'payload',
+];
+const GROUP_EVENT_KEYS = [
+    'applicationId', 'workspaceId', 'groupId', 'eventId', 'eventType',
+    'snapshotVersion', 'causalRevision', 'occurredAtEpochMs', 'actor',
+    'reason', 'traceId', 'requestId', 'payload',
+];
+const CLIENT_EVENT_TYPES = [
+    'principal-created', 'principal-updated', 'principal-disabled',
+    'principal-deleted', 'instance-registered', 'instance-updated',
+    'instance-revoked', 'session-authenticated', 'session-connected',
+    'session-heartbeat', 'session-disconnected', 'session-expired',
+];
+const GROUP_EVENT_TYPES = [
+    'group-created', 'group-updated', 'group-archived', 'group-deleted',
+    'member-invited', 'member-joined', 'member-left', 'member-removed',
+    'member-banned', 'member-unbanned', 'member-role-changed',
+    'ownership-transferred', 'session-connected', 'session-heartbeat',
+    'session-disconnected',
 ];
 
 export function parseAuthoritativeClientSnapshot(
@@ -88,8 +113,14 @@ export function validateAuthoritativeClientSnapshot(
     enumValue(principal.status, ['active', 'disabled', 'deleted'],
         'ClientSnapshot.principal.status');
     nonEmptyString(principal.username, 'ClientSnapshot.principal.username');
+    for (const key of [
+        'displayName', 'avatarUrl', 'authProvider', 'externalSubjectId',
+    ] as const) nullableString(principal[key], `ClientSnapshot.principal.${key}`);
     stringArray(principal.roles, 'ClientSnapshot.principal.roles');
     record(principal.metadata, 'ClientSnapshot.principal.metadata');
+    for (const key of [
+        'snapshotVersion', 'profileVersion', 'presenceVersion',
+    ] as const) positiveInteger(principal[key], `ClientSnapshot.principal.${key}`);
     validateAudit(principal.created, 'ClientSnapshot.principal.created');
     validateAudit(principal.updated, 'ClientSnapshot.principal.updated');
     nullableAudit(principal.disabled, 'ClientSnapshot.principal.disabled');
@@ -105,6 +136,10 @@ export function validateAuthoritativeClientSnapshot(
     if (principal.status === 'deleted' && principal.deleted === null) {
         fail('ClientSnapshot principal lifecycle is invalid');
     }
+    nullableNonNegativeInteger(
+        principal.lastSeenAtEpochMs,
+        'ClientSnapshot.principal.lastSeenAtEpochMs',
+    );
     const instances = array(snapshot.instances, 'ClientSnapshot.instances');
     for (const item of instances) {
         const instance = record(item, 'ClientSnapshot.instance');
@@ -119,6 +154,9 @@ export function validateAuthoritativeClientSnapshot(
         enumValue(instance.platform, [
             'web', 'ios', 'android', 'desktop', 'server', 'unknown',
         ], 'ClientSnapshot.instance.platform');
+        for (const key of ['deviceLabel', 'appVersion', 'userAgent'] as const) {
+            nullableString(instance[key], `ClientSnapshot.instance.${key}`);
+        }
         stringArray(instance.capabilities, 'ClientSnapshot.instance.capabilities');
         validateAudit(instance.registered, 'ClientSnapshot.instance.registered');
         validateAudit(instance.updated, 'ClientSnapshot.instance.updated');
@@ -135,13 +173,36 @@ export function validateAuthoritativeClientSnapshot(
         for (const key of [
             'clientInstanceId', 'sessionId', 'generationId',
         ] as const) nonEmptyString(session[key], `ClientSnapshot.session.${key}`);
+        positiveInteger(
+            session.generationVersion,
+            'ClientSnapshot.session.generationVersion',
+        );
         enumValue(session.presenceState, ['online', 'offline', 'away', 'busy'],
             'ClientSnapshot.session.presenceState');
         enumValue(session.transport, ['ws', 'http', 'rtc', 'unknown'],
             'ClientSnapshot.session.transport');
+        nullableString(session.connectionId, 'ClientSnapshot.session.connectionId');
+        const authenticatedAt = session.authenticatedAtEpochMs;
+        const connectedAt = session.connectedAtEpochMs;
+        const heartbeatAt = session.lastHeartbeatAtEpochMs;
+        const expiresAt = session.expiresAtEpochMs;
+        nonNegativeInteger(
+            authenticatedAt,
+            'ClientSnapshot.session.authenticatedAtEpochMs',
+        );
+        nonNegativeInteger(connectedAt, 'ClientSnapshot.session.connectedAtEpochMs');
+        nonNegativeInteger(
+            heartbeatAt,
+            'ClientSnapshot.session.lastHeartbeatAtEpochMs',
+        );
+        nonNegativeInteger(expiresAt, 'ClientSnapshot.session.expiresAtEpochMs');
         if (session.status !== 'active' || session.disconnectedAtEpochMs !== null ||
             session.disconnectReason !== null) {
             fail('ClientSnapshot active session lifecycle is invalid');
+        }
+        if (authenticatedAt > connectedAt || connectedAt > heartbeatAt ||
+            heartbeatAt > expiresAt) {
+            fail('ClientSnapshot active session timestamps are causally inconsistent');
         }
     }
     nonNegativeInteger(snapshot.activeSessionCount, 'ClientSnapshot.activeSessionCount');
@@ -152,6 +213,10 @@ export function validateAuthoritativeClientSnapshot(
     if (snapshot.isOnline !== (sessions.length > 0)) {
         fail('ClientSnapshot isOnline is inconsistent');
     }
+    nullableNonNegativeInteger(
+        snapshot.lastSeenAtEpochMs,
+        'ClientSnapshot.lastSeenAtEpochMs',
+    );
 }
 
 export function validateAuthoritativeGroupSnapshot(
@@ -178,10 +243,20 @@ export function validateAuthoritativeGroupSnapshot(
         'GroupSnapshot.group.kind');
     enumValue(group.joinMode, ['invite-only', 'code', 'open'],
         'GroupSnapshot.group.joinMode');
+    nullableString(group.slug, 'GroupSnapshot.group.slug');
     nonEmptyString(group.displayName, 'GroupSnapshot.group.displayName');
+    nullableString(group.description, 'GroupSnapshot.group.description');
+    nullablePositiveInteger(group.maxMembers, 'GroupSnapshot.group.maxMembers');
+    nullablePositiveInteger(
+        group.maxSessionsPerMember,
+        'GroupSnapshot.group.maxSessionsPerMember',
+    );
     nonEmptyString(group.ownerPrincipalId, 'GroupSnapshot.group.ownerPrincipalId');
     record(group.metadata, 'GroupSnapshot.group.metadata');
     nonNegativeInteger(group.activeMemberCount, 'GroupSnapshot.group.activeMemberCount');
+    for (const key of [
+        'snapshotVersion', 'metadataVersion', 'rosterVersion',
+    ] as const) positiveInteger(group[key], `GroupSnapshot.group.${key}`);
     nonNegativeInteger(group.presenceVersion, 'GroupSnapshot.group.presenceVersion');
     if (group.presenceVersion !== causal.presenceRevision) {
         fail('GroupSnapshot group presenceVersion differs from causalRevision');
@@ -199,6 +274,9 @@ export function validateAuthoritativeGroupSnapshot(
     if (group.status === 'deleted' && group.deleted === null) {
         fail('GroupSnapshot group lifecycle is invalid');
     }
+    for (const key of [
+        'expiresAtEpochMs', 'emptySinceEpochMs', 'purgeAfterEpochMs',
+    ] as const) nullablePositiveInteger(group[key], `GroupSnapshot.group.${key}`);
     const members = array(snapshot.members, 'GroupSnapshot.members');
     for (const item of members) validateGroupMember(item, ref);
     const sessions = array(snapshot.activeSessions, 'GroupSnapshot.activeSessions');
@@ -210,12 +288,29 @@ export function validateAuthoritativeGroupSnapshot(
         for (const key of [
             'sessionId', 'principalId', 'generationId',
         ] as const) nonEmptyString(session[key], `GroupSnapshot.session.${key}`);
-        nonEmptyString(session.principalId, 'GroupSnapshot.session.principalId');
+        const principalId = session.principalId;
+        nonEmptyString(principalId, 'GroupSnapshot.session.principalId');
+        positiveInteger(
+            session.generationVersion,
+            'GroupSnapshot.session.generationVersion',
+        );
+        const connectedAt = session.connectedAtEpochMs;
+        const heartbeatAt = session.lastHeartbeatAtEpochMs;
+        const expiresAt = session.expiresAtEpochMs;
+        positiveInteger(connectedAt, 'GroupSnapshot.session.connectedAtEpochMs');
+        positiveInteger(
+            heartbeatAt,
+            'GroupSnapshot.session.lastHeartbeatAtEpochMs',
+        );
+        positiveInteger(expiresAt, 'GroupSnapshot.session.expiresAtEpochMs');
+        if (heartbeatAt < connectedAt || expiresAt < heartbeatAt) {
+            fail('GroupSnapshot active session timestamps are causally inconsistent');
+        }
         if (session.status !== 'active' || session.disconnectedAtEpochMs !== null ||
             session.disconnectReason !== null) {
             fail('GroupSnapshot active session lifecycle is invalid');
         }
-        onlinePrincipalIds.add(session.principalId);
+        onlinePrincipalIds.add(principalId);
     }
     nonNegativeInteger(snapshot.memberCount, 'GroupSnapshot.memberCount');
     nonNegativeInteger(snapshot.onlineMemberCount, 'GroupSnapshot.onlineMemberCount');
@@ -308,6 +403,118 @@ export function validateAuthoritativeGroupSnapshotList(
     for (const snapshot of snapshots) validateAuthoritativeGroupSnapshot(snapshot, scope);
 }
 
+export function validateAuthoritativeClientEvent(
+    value: unknown,
+    expected?: StateScope & Readonly<{ principalId?: string }>,
+): asserts value is ClientEvent {
+    const event = record(value, 'ClientEvent');
+    exact(event, CLIENT_EVENT_KEYS, 'ClientEvent');
+    const ref = clientRef(event, 'ClientEvent', expected);
+    if (expected?.principalId !== undefined && ref.principalId !== expected.principalId) {
+        fail('ClientEvent is outside the requested principal');
+    }
+    nonEmptyString(event.eventId, 'ClientEvent.eventId');
+    enumValue(event.eventType, CLIENT_EVENT_TYPES, 'ClientEvent.eventType');
+    positiveInteger(event.snapshotVersion, 'ClientEvent.snapshotVersion');
+    nullableString(event.clientInstanceId, 'ClientEvent.clientInstanceId');
+    nullableString(event.sessionId, 'ClientEvent.sessionId');
+    nonNegativeInteger(event.occurredAtEpochMs, 'ClientEvent.occurredAtEpochMs');
+    validateActor(event.actor, 'ClientEvent.actor');
+    nullableString(event.reason, 'ClientEvent.reason');
+    nullableString(event.traceId, 'ClientEvent.traceId');
+    nullableString(event.requestId, 'ClientEvent.requestId');
+    record(event.payload, 'ClientEvent.payload');
+}
+
+export function validateAuthoritativeGroupEvent(
+    value: unknown,
+    expected?: StateScope & Readonly<{ groupId?: string }>,
+): asserts value is GroupEvent {
+    const event = record(value, 'GroupEvent');
+    exact(event, GROUP_EVENT_KEYS, 'GroupEvent');
+    const ref = groupRef(event, 'GroupEvent', expected);
+    if (expected?.groupId !== undefined && ref.groupId !== expected.groupId) {
+        fail('GroupEvent is outside the requested group');
+    }
+    nonEmptyString(event.eventId, 'GroupEvent.eventId');
+    enumValue(event.eventType, GROUP_EVENT_TYPES, 'GroupEvent.eventType');
+    nonNegativeInteger(event.snapshotVersion, 'GroupEvent.snapshotVersion');
+    causalRevision(event.causalRevision, 'GroupEvent.causalRevision');
+    nonNegativeInteger(event.occurredAtEpochMs, 'GroupEvent.occurredAtEpochMs');
+    validateActor(event.actor, 'GroupEvent.actor');
+    nullableString(event.reason, 'GroupEvent.reason');
+    nullableString(event.traceId, 'GroupEvent.traceId');
+    nullableString(event.requestId, 'GroupEvent.requestId');
+    record(event.payload, 'GroupEvent.payload');
+}
+
+export function validateAuthoritativeClientEventList(
+    value: unknown,
+    expected: StateScope & Readonly<{ principalId?: string }>,
+): asserts value is ClientEvent[] {
+    const events = array(value, 'ClientEvent list');
+    for (const event of events) validateAuthoritativeClientEvent(event, expected);
+}
+
+export function validateAuthoritativeGroupEventList(
+    value: unknown,
+    expected: StateScope & Readonly<{ groupId?: string }>,
+): asserts value is GroupEvent[] {
+    const events = array(value, 'GroupEvent list');
+    for (const event of events) validateAuthoritativeGroupEvent(event, expected);
+}
+
+export function validateAuthoritativeClientEventPage(
+    value: unknown,
+    expected: StateScope & Readonly<{ principalId?: string }>,
+): asserts value is StateEventPage<ClientEvent> {
+    validateEventPage(value, (event) =>
+        validateAuthoritativeClientEvent(event, expected), 'ClientEventPage');
+}
+
+export function validateAuthoritativeGroupEventPage(
+    value: unknown,
+    expected: StateScope & Readonly<{ groupId?: string }>,
+): asserts value is StateEventPage<GroupEvent> {
+    validateEventPage(value, (event) =>
+        validateAuthoritativeGroupEvent(event, expected), 'GroupEventPage');
+}
+
+function validateEventPage(
+    value: unknown,
+    validateEvent: (event: unknown) => void,
+    label: string,
+): void {
+    const page = record(value, label);
+    exact(
+        page,
+        Object.hasOwn(page, 'nextCursor')
+            ? ['events', 'nextCursor', 'hasMore']
+            : ['events', 'hasMore'],
+        label,
+    );
+    const events = array(page.events, `${label}.events`);
+    for (const event of events) validateEvent(event);
+    if (typeof page.hasMore !== 'boolean') fail(`${label}.hasMore is invalid`);
+    if (Object.hasOwn(page, 'nextCursor')) {
+        const cursor = record(page.nextCursor, `${label}.nextCursor`);
+        exact(
+            cursor,
+            ['snapshotVersion', 'occurredAtEpochMs', 'eventId'],
+            `${label}.nextCursor`,
+        );
+        nonNegativeInteger(
+            cursor.snapshotVersion,
+            `${label}.nextCursor.snapshotVersion`,
+        );
+        nonNegativeInteger(
+            cursor.occurredAtEpochMs,
+            `${label}.nextCursor.occurredAtEpochMs`,
+        );
+        nonEmptyString(cursor.eventId, `${label}.nextCursor.eventId`);
+    }
+}
+
 function validateGroupMember(value: unknown, ref: GroupRef): void {
     const member = record(value, 'GroupSnapshot.member');
     exact(member, GROUP_MEMBER_KEYS, 'GroupSnapshot.member');
@@ -321,21 +528,31 @@ function validateGroupMember(value: unknown, ref: GroupRef): void {
     nullableAudit(member.left, 'GroupSnapshot.member.left');
     nullableAudit(member.removed, 'GroupSnapshot.member.removed');
     nullableAudit(member.banned, 'GroupSnapshot.member.banned');
+    nullableString(
+        member.invitedByPrincipalId,
+        'GroupSnapshot.member.invitedByPrincipalId',
+    );
+    nullablePositiveInteger(
+        member.invitationExpiresAtEpochMs,
+        'GroupSnapshot.member.invitationExpiresAtEpochMs',
+    );
     if (member.status === 'invited' && member.joined !== null) {
         fail('GroupSnapshot invited member joined must be null');
     }
     if (member.status === 'active' && member.joined === null) {
         fail('GroupSnapshot active member joined is required');
     }
-    const terminal = member.status === 'left'
-        ? member.left
+    const expectedTerminal = member.status === 'left'
+        ? 'left'
         : member.status === 'removed'
-        ? member.removed
+        ? 'removed'
         : member.status === 'banned'
-        ? member.banned
+        ? 'banned'
         : null;
-    if (['left', 'removed', 'banned'].includes(String(member.status)) && terminal === null) {
-        fail('GroupSnapshot member terminal lifecycle is invalid');
+    for (const terminal of ['left', 'removed', 'banned'] as const) {
+        if ((terminal === expectedTerminal) !== (member[terminal] !== null)) {
+            fail('GroupSnapshot member terminal lifecycle is invalid');
+        }
     }
 }
 
@@ -343,15 +560,31 @@ function validateAudit(value: unknown, label: string): void {
     const audit = record(value, label);
     exact(audit, AUDIT_KEYS, label);
     nonNegativeInteger(audit.atEpochMs, `${label}.atEpochMs`);
-    const actor = record(audit.actor, `${label}.actor`);
-    if (actor.kind === 'principal') exact(actor, ['kind', 'principalId'], `${label}.actor`);
-    else if (actor.kind === 'session') {
-        exact(actor, ['kind', 'sessionId', 'principalId'], `${label}.actor`);
-    } else if (actor.kind === 'service') exact(actor, ['kind', 'serviceId'], `${label}.actor`);
-    else fail(`${label}.actor.kind is invalid`);
+    validateActor(audit.actor, `${label}.actor`);
     nullableString(audit.reason, `${label}.reason`);
     nullableString(audit.traceId, `${label}.traceId`);
     nullableString(audit.requestId, `${label}.requestId`);
+}
+
+function validateActor(value: unknown, label: string): void {
+    const actor = record(value, label);
+    if (actor.kind === 'principal') {
+        exact(actor, ['kind', 'principalId'], label);
+        nonEmptyString(actor.principalId, `${label}.principalId`);
+        return;
+    }
+    if (actor.kind === 'session') {
+        exact(actor, ['kind', 'sessionId', 'principalId'], label);
+        nonEmptyString(actor.sessionId, `${label}.sessionId`);
+        nonEmptyString(actor.principalId, `${label}.principalId`);
+        return;
+    }
+    if (actor.kind === 'service') {
+        exact(actor, ['kind', 'serviceId'], label);
+        nonEmptyString(actor.serviceId, `${label}.serviceId`);
+        return;
+    }
+    fail(`${label}.kind is invalid`);
 }
 
 function nullableAudit(value: unknown, label: string): void {
@@ -482,6 +715,14 @@ function nonEmptyString(value: unknown, label: string): asserts value is string 
 
 function nullableString(value: unknown, label: string): void {
     if (value !== null) nonEmptyString(value, label);
+}
+
+function nullableNonNegativeInteger(value: unknown, label: string): void {
+    if (value !== null) nonNegativeInteger(value, label);
+}
+
+function nullablePositiveInteger(value: unknown, label: string): void {
+    if (value !== null) positiveInteger(value, label);
 }
 
 function nonNegativeInteger(value: unknown, label: string): asserts value is number {

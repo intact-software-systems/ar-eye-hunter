@@ -107,6 +107,7 @@ export type GroupTopologyConfigMutationReceipt = Readonly<{
     acceptedCreatedAtEpochMs: number | null;
     acceptedUpdatedAtEpochMs: number | null;
     acceptedExpiresAtEpochMs: number | null;
+    acceptedConfig: EffectiveGroupTopologyConfig | null;
     acceptedCausalRevision: GroupTopologyConfigAcceptedCausalRevision | null;
     eventId: null;
     /** Compatibility mirror for existing API consumers; outboxIds is canonical. */

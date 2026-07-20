@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
     installRallarGameAuthorityServer,
     type RallarGameAuthorityServerRallarFacade,
-} from '@shared-server/game/authority-server.ts';
+} from '@shared-server/mod.ts';
 import {
     createRallarGameAuthorityEnvelope,
     type RallarGameAuthorityEnvelope,
@@ -335,20 +335,14 @@ function createFakeServerRallar() {
                 raw: {} as ALMessage,
                 receivedAtEpochMs: Date.now(),
             };
-            const context = this.context(senderId) as RallarServerWsMessageContext<
-                RallarGameAuthorityEnvelope<T>
-            >;
+            const context = this.context(senderId);
             await Promise.all(
                 handlers
                     .filter((subscription) =>
                         subscription.selector.topicId === 'game.authority' &&
                         subscription.selector.typeId === typeId
                     )
-                    .map((subscription) => Reflect.apply(
-                        subscription.handler,
-                        undefined,
-                        [message, context],
-                    )),
+                    .map((subscription) => subscription.handler(message, context)),
             );
         },
     };

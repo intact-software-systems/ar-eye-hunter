@@ -116,21 +116,21 @@ export type GroupMember = GroupMemberBase & (
         status: 'left';
         joined: AuditStamp | null;
         left: AuditStamp;
-        removed: AuditStamp | null;
-        banned: AuditStamp | null;
+        removed: null;
+        banned: null;
     }>
     | Readonly<{
         status: 'removed';
         joined: AuditStamp | null;
-        left: AuditStamp | null;
+        left: null;
         removed: AuditStamp;
-        banned: AuditStamp | null;
+        banned: null;
     }>
     | Readonly<{
         status: 'banned';
         joined: AuditStamp | null;
-        left: AuditStamp | null;
-        removed: AuditStamp | null;
+        left: null;
+        removed: null;
         banned: AuditStamp;
     }>
 );

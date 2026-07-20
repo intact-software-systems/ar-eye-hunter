@@ -1,7 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
+import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { PSqlAppDataRepository } from '@shared-server/postgres/app-data/PSqlAppDataRepository.ts';
 import { RallarServerDataFacade } from '@shared-server/rallar-facade/RallarServer.ts';
+
+type PostgresSql = PSqlSql & Readonly<{
+    end(): Promise<void>;
+}>;
+
+type PostgresModule = Readonly<{
+    default: (
+        databaseUrl: string,
+        options: Readonly<{ max: number; idle_timeout: number }>,
+    ) => PostgresSql;
+}>;
 
 type GlobalEnv = Readonly<{
     Deno?: Readonly<{
@@ -71,11 +83,9 @@ describe('Postgres app-data concurrency', () => {
     );
 });
 
-async function createSql(databaseUrl: string) {
-    const postgres = await import('postgres');
-    const sql = postgres.default(databaseUrl, { max: 5, idle_timeout: 1 });
-    const sqlFixtureKey: string = 'sql';
-    return Reflect.get({ sql }, sqlFixtureKey);
+async function createSql(databaseUrl: string): Promise<PostgresSql> {
+    const postgres = await import('postgres') as PostgresModule;
+    return postgres.default(databaseUrl, { max: 5, idle_timeout: 1 });
 }
 
 function requireDatabaseUrl(): string {
