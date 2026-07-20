@@ -565,8 +565,12 @@ Deno.test('OpenAPI JSON includes SPA statistics contracts', async () => {
 });
 
 Deno.test('graph topology product docs describe implemented REST and recompute behavior', async () => {
-  const apiReference = await Deno.readTextFile('../../docs/rallar-api-reference.md');
-  const rttDoc = await Deno.readTextFile('../../docs/rallar-rtc-rtt-reporting.md');
+  const apiReference = await Deno.readTextFile(
+    new URL('../../../docs/rallar-api-reference.md', import.meta.url),
+  );
+  const rttDoc = await Deno.readTextFile(
+    new URL('../../../docs/rallar-rtc-rtt-reporting.md', import.meta.url),
+  );
 
   assert.match(apiReference, /\/graphs\/global/);
   assert.match(apiReference, /\/topology\/reconfigure/);
@@ -575,8 +579,12 @@ Deno.test('graph topology product docs describe implemented REST and recompute b
 });
 
 Deno.test('admin operations product docs describe implemented REST auth and safety behavior', async () => {
-  const apiReference = await Deno.readTextFile('../../docs/rallar-api-reference.md');
-  const envDocs = await Deno.readTextFile('../../docs/environment-variables.md');
+  const apiReference = await Deno.readTextFile(
+    new URL('../../../docs/rallar-api-reference.md', import.meta.url),
+  );
+  const envDocs = await Deno.readTextFile(
+    new URL('../../../docs/environment-variables.md', import.meta.url),
+  );
 
   assert.match(apiReference, /\/api\/admin\/operations\/overview/);
   assert.match(apiReference, /\/api\/admin\/operations\/maintenance\/prune-expired/);
@@ -586,8 +594,12 @@ Deno.test('admin operations product docs describe implemented REST auth and safe
 });
 
 Deno.test('SPA statistics product docs describe implemented REST auth and safety behavior', async () => {
-  const apiReference = await Deno.readTextFile('../../docs/rallar-api-reference.md');
-  const envDocs = await Deno.readTextFile('../../docs/environment-variables.md');
+  const apiReference = await Deno.readTextFile(
+    new URL('../../../docs/rallar-api-reference.md', import.meta.url),
+  );
+  const envDocs = await Deno.readTextFile(
+    new URL('../../../docs/environment-variables.md', import.meta.url),
+  );
 
   assert.match(apiReference, /\/stats\/summary/);
   assert.match(apiReference, /\/stats\/me\/realtime/);
