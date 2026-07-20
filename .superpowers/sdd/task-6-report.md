@@ -492,3 +492,83 @@ based on reviewed Task 6 report commit `a52c452c`.
   6 topology, publication, or RTT path matched.
 - `git diff --check` and staged implementation `git diff --cached --check`
   passed. Tasks 7-10 were not started by this correction.
+
+## Sixth review correction: lifecycle-safe retained receipt authority
+
+Implementation commit: `8c9f1eba` (`fix(rtc): enforce convergent receipt lifecycles`),
+based on reviewed Task 6 report commit `2f4a7126`.
+
+### Corrected behavior
+
+- Explicit legacy publication migration now also upgrades a legacy publication
+  already stored at its canonical key. It accepts only the documented raw
+  legacy publication and claim shapes inside the offline migration, compares
+  structured values semantically rather than by serialized property order,
+  repairs partial canonical destinations with conditional writes, fails closed
+  on divergent destinations, and remains idempotent. Normal runtime reads stay
+  strict before and after migration.
+- Every RTT policy attempt now evaluates the candidate group and both named
+  sessions against one explicit attempt timestamp. The group must be active and
+  unexpired, and both sessions must be active, belong to the pair, and be
+  unexpired. A compare-and-set conflict rereads the command and all authority
+  facts, captures a fresh attempt time, and reruns the complete policy rather
+  than retrying a stale final write.
+- Immutable mutation receipt probing is now a raw, clock-free, effect-free
+  operation. An exact retained receipt replay succeeds and a divergent replay
+  conflicts even after its physical expiry, without invoking lifecycle,
+  measurement, policy, admission, transaction, cleanup, or enqueue effects.
+  Ordinary receipt list/page projections may hide physically expired receipts,
+  but do not delete receipt authority independently.
+- Receipt and recompute-intent expiry is physically joint. Cleanup runs in a
+  bounded optimistic transaction after waiting outside the transaction,
+  rereads the receipt and every sibling intent, validates exact receipt binding
+  and equal physical expiry, requires all rows to be jointly expired, and
+  requires the remaining sibling group-reference set to equal the receipt's
+  complete affected-group set. Missing, extra, duplicate, live, mismatched, or
+  corrupt siblings fail closed and preserve all authority. Only an exact
+  complete set is conditionally deleted, with conflicts causing a full reread
+  and retry; no row or advisory lock was added.
+
+### Sixth correction RED evidence
+
+- The initial exact four-file focused command collected 235 tests and exited 1
+  with 28 failures and 207 passes. The failures covered canonical-key legacy
+  publication and claim migration, group/session lifecycle checks, full retry
+  revalidation after expiry, five receipt/intent physical-expiry combinations
+  through direct/list/page/drain surfaces, and clock-free exact/divergent raw
+  receipt replay.
+- Before sibling cleanup was implemented, the filtered sibling command failed
+  both exercised tests: exact jointly expired siblings were retained, while a
+  live sibling incorrectly allowed partial cleanup. Before exact affected-set
+  equality was implemented, the missing-sibling case failed while the other two
+  sibling cases passed. Production changes followed each demonstrated failure.
+
+### Sixth correction GREEN, baseline, and architecture evidence
+
+- The final exact four-file focused command passed 4/4 files and 238/238 tests.
+  The final nine-file Task 6 matrix passed 9/9 files and 341/341 tests.
+- `npx vitest run packages/tests/shared-server --reporter=dot` passed 58 files
+  with 2 configured-skip files; 883 tests passed and 12 environment-gated tests
+  were skipped.
+- `npm run typecheck` passed the root and every workspace typecheck. In
+  `apps/api-v1`, `deno task --config deno.json check` passed and
+  `deno task --config deno.json test` passed 210/210 tests.
+- The live PostgreSQL concurrency command passed 1/1 file and 11/11 tests after
+  the expected sandbox-denied localhost attempt was rerun with local database
+  access. The denied attempt reached 3 non-network tests and failed the 8 tests
+  needing PostgreSQL solely with `connect EPERM`.
+- Root-wide `npm run test:unit` remains explicitly **not claimed as passing**:
+  445 files passed, 2 were configured skips, and 1 failed; 4,389 tests passed,
+  12 skipped, and the same 7 tests failed in the untouched
+  `packages/tests/shared-web/rallar-workflow-options-compat.test.ts` baseline.
+  That file is absent from this correction's diff.
+- Targeted scans found no `.upsert`, `deleteByKey`, or `lockKey` in the governed
+  client/group/topology repositories and services. The exact RTC pure-module
+  scan found no repository, transaction, ambient clock, randomness/environment,
+  hashing, timing, or async API. Repository-wide lock matches remain limited to
+  documented out-of-scope queue/auth/admission implementations, the general
+  interface, docs, and tests; no changed Task 6 path matched. Serialization in
+  the corrected repositories is confined to persistence and raw parsing, not
+  semantic equality. `git diff --check` and staged implementation
+  `git diff --cached --check` passed.
+- Task 7 and later tasks were not started by this correction.
