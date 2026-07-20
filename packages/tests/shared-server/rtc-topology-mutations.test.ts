@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
+import { AppTopics } from '@shared/api/api-config.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
@@ -10,6 +11,9 @@ import {
     validateTopologyMutation,
 } from '@shared-server/rallar-system/services/rtc-topology-mutations.ts';
 import { toRtcRttMutationReceiptId } from '@shared-server/rallar-system/repositories/RtcRttRepository.ts';
+import { toRtcTopologyPublicationMessageId } from '@shared-server/rallar-system/rtc-topology-identifiers.ts';
+import { writeRttMutation } from '@shared-server/rallar-system/services/rtc-rtt-mutation-service.ts';
+import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 
 const RTT_COMMAND_HASH = `sha256:${'a'.repeat(64)}`;
 const OTHER_RTT_COMMAND_HASH = `sha256:${'b'.repeat(64)}`;
@@ -34,6 +38,47 @@ describe('RTC topology mutation phases', () => {
         for (const pattern of forbidden) {
             expect(source, `forbidden pure-module pattern ${pattern}`).not.toMatch(pattern);
         }
+    });
+
+    it('shares strict persisted publication and RTT validators from neutral pure contract modules', () => {
+        const publicationContractUrl = new URL(
+            '../../shared-server/rallar-system/rtc-topology-publication-validation.ts',
+            import.meta.url,
+        );
+        const rttContractUrl = new URL(
+            '../../shared-server/rallar-system/rtc-rtt-persistence-validation.ts',
+            import.meta.url,
+        );
+        expect(existsSync(publicationContractUrl)).toBe(true);
+        expect(existsSync(rttContractUrl)).toBe(true);
+        if (!existsSync(publicationContractUrl) || !existsSync(rttContractUrl)) {
+            return;
+        }
+
+        for (const contractUrl of [publicationContractUrl, rttContractUrl]) {
+            const contractSource = readFileSync(contractUrl, 'utf8');
+            expect(contractSource).not.toMatch(
+                /\.begin\s*\(|\b(?:async|await)\b|\b(?:Date|Temporal)\b|performance\.now|(?:Deno|process)\.env/,
+            );
+            expect(contractSource).not.toMatch(/\/repositories\//);
+        }
+        const mutationSource = readFileSync(new URL(
+            '../../shared-server/rallar-system/services/rtc-topology-mutations.ts',
+            import.meta.url,
+        ), 'utf8');
+        const rttRepositorySource = readFileSync(new URL(
+            '../../shared-server/rallar-system/repositories/RtcRttRepository.ts',
+            import.meta.url,
+        ), 'utf8');
+        const publicationRepositorySource = readFileSync(new URL(
+            '../../shared-server/rallar-system/repositories/RtcTopologyPublicationRepository.ts',
+            import.meta.url,
+        ), 'utf8');
+        expect(mutationSource).toMatch(/rtc-topology-publication-validation/);
+        expect(mutationSource).toMatch(/rtc-rtt-persistence-validation/);
+        expect(rttRepositorySource).toMatch(/rtc-rtt-persistence-validation/);
+        expect(publicationRepositorySource)
+            .toMatch(/rtc-topology-publication-validation/);
     });
 
     it('owns RTT read-compute-validate-write ordering and transactions in the effectful service', () => {
@@ -196,30 +241,23 @@ describe('RTC topology mutation phases', () => {
     it('loads only the durable publication winner and rejects a claim without its snapshot', () => {
         const groupRef = { applicationId: 'app-1', groupId: 'room-1' };
         const snapshot = topologySnapshot(groupRef, 2);
-        const publication = {
-            publicationId: 'work-1:2:2', workId: 'work-1', groupRef,
-            sourceGroupStateRevision: 2, overlayVersion: 2,
-            targetGroupSnapshotVersion: 1,
-            recipientSessionIds: snapshot.activeSessionIds,
-            message: { payload: { resource: JSON.stringify(snapshot) } } as never,
-            createdAtEpochMs: 2,
-        };
+        const publication = topologyPublication(snapshot, 'work-1');
         const entry = {
             key: 'snapshot', value: JSON.stringify(snapshot),
             expireAtTimestamp: 1_000, updatedTimestamp: 'now', revision: 3,
         };
         const loadedInput = deepFreeze({
             read: { snapshot: { entry, value: snapshot }, publicationClaim: { publication } },
-            candidate: { ...snapshot, name: 'losing retry' },
-            publication: { ...publication, publicationId: 'loser' },
+            candidate: null,
+            publication: null,
             facts: { publicationExpireAtTimestamp: null },
         });
         expect(computeAndValidateTopologyTwice(loadedInput))
             .toEqual({ outcome: 'loaded', snapshot, publication });
         const missingSnapshot = deepFreeze({
             read: { snapshot: null, publicationClaim: { publication } },
-            candidate: snapshot,
-            publication,
+            candidate: null,
+            publication: null,
             facts: { publicationExpireAtTimestamp: null },
         });
         expect(() => computeTopologyMutation(missingSnapshot)).toThrow('has no durable snapshot');
@@ -240,19 +278,10 @@ describe('RTC topology mutation phases', () => {
     it('relates a claimed publication payload to the independently read snapshot', () => {
         const groupRef = { applicationId: 'app-1', groupId: 'room-1' };
         const publicationSnapshot = topologySnapshot(groupRef, 2);
-        const publication = {
-            publicationId: 'work-causal:2:2',
-            workId: 'work-causal',
-            groupRef,
-            sourceGroupStateRevision: 2,
-            overlayVersion: 2,
-            targetGroupSnapshotVersion: 1,
-            recipientSessionIds: publicationSnapshot.activeSessionIds,
-            message: {
-                payload: { resource: JSON.stringify(publicationSnapshot) },
-            } as never,
-            createdAtEpochMs: 2,
-        };
+        const publication = topologyPublication(
+            publicationSnapshot,
+            'work-causal',
+        );
         const toRead = (snapshot: RallarOverlayTopologySnapshot) => ({
             snapshot: {
                 entry: {
@@ -268,7 +297,7 @@ describe('RTC topology mutation phases', () => {
         });
         const exactInput = deepFreeze({
             read: toRead(publicationSnapshot),
-            candidate: publicationSnapshot,
+            candidate: null,
             publication: null,
             facts: { publicationExpireAtTimestamp: null },
         });
@@ -291,7 +320,7 @@ describe('RTC topology mutation phases', () => {
         };
         const reorderedInput = deepFreeze({
             read: toRead(reorderedEquivalent),
-            candidate: reorderedEquivalent,
+            candidate: null,
             publication: null,
             facts: { publicationExpireAtTimestamp: null },
         });
@@ -304,7 +333,7 @@ describe('RTC topology mutation phases', () => {
         const newerDurable = topologySnapshot(groupRef, 3);
         const newerInput = deepFreeze({
             read: toRead(newerDurable),
-            candidate: newerDurable,
+            candidate: null,
             publication: null,
             facts: { publicationExpireAtTimestamp: null },
         });
@@ -317,7 +346,7 @@ describe('RTC topology mutation phases', () => {
         const olderDurable = topologySnapshot(groupRef, 1);
         const tornInput = deepFreeze({
             read: toRead(olderDurable),
-            candidate: olderDurable,
+            candidate: null,
             publication: null,
             facts: { publicationExpireAtTimestamp: null },
         });
@@ -332,7 +361,7 @@ describe('RTC topology mutation phases', () => {
         };
         const corruptInput = deepFreeze({
             read: toRead(equalTupleDifferentSnapshot),
-            candidate: equalTupleDifferentSnapshot,
+            candidate: null,
             publication: null,
             facts: { publicationExpireAtTimestamp: null },
         });
@@ -345,14 +374,7 @@ describe('RTC topology mutation phases', () => {
     it('materializes publication expiry in canonical computed topology output', () => {
         const groupRef = { applicationId: 'app-1', groupId: 'room-1' };
         const candidate = topologySnapshot(groupRef, 1);
-        const publication = {
-            publicationId: 'work-expiry:1:1', workId: 'work-expiry', groupRef,
-            sourceGroupStateRevision: 1, overlayVersion: 1,
-            targetGroupSnapshotVersion: 1,
-            recipientSessionIds: candidate.activeSessionIds,
-            message: { payload: { resource: JSON.stringify(candidate) } } as never,
-            createdAtEpochMs: 1,
-        };
+        const publication = topologyPublication(candidate, 'work-expiry');
         const input = deepFreeze({
             read: { snapshot: null, publicationClaim: null },
             candidate,
@@ -364,6 +386,32 @@ describe('RTC topology mutation phases', () => {
             outcome: 'write',
             publicationExpireAtTimestamp: 86_400_123,
         });
+    });
+
+    it('validates the complete topology publication envelope before the write phase', () => {
+        const groupRef = { applicationId: 'app-1', groupId: 'room-1' };
+        const candidate = topologySnapshot(groupRef, 1);
+        const publication = topologyPublication(candidate, 'work-malformed-envelope');
+        const malformed = {
+            ...publication,
+            message: {
+                ...publication.message,
+                id: {
+                    ...publication.message.id,
+                    msgId: 'nondeterministic-message-id',
+                },
+            },
+        };
+        const input = deepFreeze({
+            read: { snapshot: null, publicationClaim: null },
+            candidate,
+            publication: malformed,
+            facts: { publicationExpireAtTimestamp: 86_400_100 },
+        });
+        const computed = computeTopologyMutation(input);
+
+        expect(() => validateTopologyMutation({ ...input, computed }))
+            .toThrow(/message|publication|envelope|identity/i);
     });
 
     it('computes duplicate, advanced, and superseded topology outcomes', () => {
@@ -462,6 +510,97 @@ describe('RTC topology mutation phases', () => {
             .toThrow('differs from canonical');
         expect(() => validateRttMutation({ ...acceptedInput, computed: tampered }))
             .toThrow('differs from canonical');
+    });
+
+    it('rejects a malformed complete RTT write candidate before opening a transaction', async () => {
+        const rtt = {
+            sessionIdFrom: 'session-a', sessionIdTo: 'session-b',
+            rttMs: 5, createdAtEpochMs: 1, version: 1,
+        };
+        const group = rttGroupSnapshot(['session-a', 'session-b']);
+        const computed = computeRttMutation({
+            command: {
+                rtt, alSenderId: 'session-a', candidateGroups: [group],
+                overlaySnapshotsByGroupKey: new Map(), degreeLimit: 1,
+            },
+            read: {
+                receipt: null,
+                measurement: null,
+                endpointAdmissions: [],
+                measurements: [],
+            },
+            facts: {
+                requestedAtEpochMs: 1,
+                purgeAfterEpochMs: 60_001,
+                commandHash: RTT_COMMAND_HASH,
+            },
+        });
+        if (computed.outcome !== 'write') throw new Error('Expected RTT write');
+        const malformed = structuredClone(computed) as typeof computed;
+        delete (malformed.recomputeIntents[0]!.groupSnapshot as unknown as {
+            causalRevision?: unknown;
+        }).causalRevision;
+        const runtime = new FakeRuntimeStateRepository();
+        const begin = vi.spyOn(runtime, 'begin');
+
+        await expect(writeRttMutation(
+            runtime,
+            { ttlMs: 60_000, now: () => 1 },
+            malformed,
+        )).rejects.toThrow();
+        expect(begin).not.toHaveBeenCalled();
+        await expect(runtime.findAllEntries('rtc-rtt:latest')).resolves.toEqual([]);
+    });
+
+    it('requires both RTT endpoint sessions to cover the full active interval at acceptance time', () => {
+        const rtt = {
+            sessionIdFrom: 'session-a', sessionIdTo: 'session-b',
+            rttMs: 5, createdAtEpochMs: 1, version: 1,
+        };
+        const baseGroup = rttGroupSnapshot(['session-a', 'session-b']);
+        const withBounds = (
+            connectedAtEpochMs: number,
+            expiresAtEpochMs: number,
+        ): GroupSnapshot => ({
+            ...baseGroup,
+            activeSessions: baseGroup.activeSessions.map((session) => ({
+                ...session,
+                connectedAtEpochMs,
+                lastHeartbeatAtEpochMs: Math.max(
+                    session.lastHeartbeatAtEpochMs,
+                    connectedAtEpochMs,
+                ),
+                expiresAtEpochMs,
+            })),
+        });
+        const computeAt = (
+            requestedAtEpochMs: number,
+            group: GroupSnapshot,
+        ) => computeRttMutation({
+            command: {
+                rtt, alSenderId: 'session-a', candidateGroups: [group],
+                overlaySnapshotsByGroupKey: new Map(), degreeLimit: 1,
+            },
+            read: {
+                receipt: null,
+                measurement: null,
+                endpointAdmissions: [],
+                measurements: [],
+            },
+            facts: {
+                requestedAtEpochMs,
+                purgeAfterEpochMs: requestedAtEpochMs + 60_000,
+                commandHash: RTT_COMMAND_HASH,
+            },
+        });
+
+        expect(computeAt(1, withBounds(2, 10))).toMatchObject({
+            outcome: 'rejected', reason: 'no-shared-active-group',
+        });
+        expect(computeAt(2, withBounds(2, 10))).toMatchObject({ outcome: 'write' });
+        expect(computeAt(10, withBounds(2, 10))).toMatchObject({
+            outcome: 'rejected', reason: 'no-shared-active-group',
+        });
     });
 
     it('computes every RTT policy rejection family twice from frozen authority', () => {
@@ -746,7 +885,55 @@ function topologySnapshot(
         createdByClientId: 'owner',
         createdAtEpochMs: 1,
         updatedAtEpochMs: 2,
-    };
+    } as const;
+}
+
+function topologyPublication(
+    snapshot: RallarOverlayTopologySnapshot,
+    workId: string,
+) {
+    const createdAtEpochMs = 100;
+    return {
+        publicationId:
+            `${workId}:${snapshot.sourceGroupStateRevision}:${snapshot.version}`,
+        workId,
+        groupRef: snapshot.groupRef,
+        sourceGroupStateRevision: snapshot.sourceGroupStateRevision,
+        overlayVersion: snapshot.version,
+        targetGroupSnapshotVersion: 1,
+        recipientSessionIds: snapshot.activeSessionIds,
+        message: {
+            id: {
+                v: 2,
+                msgId: toRtcTopologyPublicationMessageId(workId),
+                ts: createdAtEpochMs,
+                senderId: 'rallar-server',
+            },
+            route: {
+                topicId: AppTopics.overlayTopology,
+                contextId: snapshot.groupRef.groupId,
+                resourceId:
+                    `${snapshot.overlayId}:${snapshot.sourceGroupStateRevision}:${snapshot.version}`,
+            },
+            targets: {
+                mode: 'broadcast',
+                scope: 'room',
+                groupRef: snapshot.groupRef,
+                minSnapshotVersion: 1,
+            },
+            delivery: { reliability: 'best-effort', ack: 'none' },
+            payload: {
+                typeId: AppTopics.overlayTopology,
+                contentType: 'application/json',
+                resource: JSON.stringify(snapshot),
+            },
+            audit: {
+                createdBy: 'rallar-server',
+                createdTs: createdAtEpochMs,
+            },
+        },
+        createdAtEpochMs,
+    } as const;
 }
 
 function deepFreeze<T>(value: T): T {
@@ -792,17 +979,20 @@ function rttGroupSnapshot(
     groupRef: GroupRef = { applicationId: 'app-1', groupId: 'room-1' },
 ): GroupSnapshot {
     return {
-        stateRevision: 1,
+        stateRevision: 2,
         causalRevision: { groupRevision: 1, presenceRevision: 1 },
         group: {
             ...groupRef, displayName: 'Room 1', kind: 'room', status: 'active',
             joinMode: 'open', metadata: {}, snapshotVersion: 1, metadataVersion: 1,
             rosterVersion: 1, presenceVersion: 1,
+            activeMemberCount: sessionIds.length,
+            ownerPrincipalId: sessionIds[0]!,
             created: { atEpochMs: 1, byPrincipalId: 'owner' },
             updated: { atEpochMs: 1, byPrincipalId: 'owner' },
         },
-        members: sessionIds.map((sessionId) => ({
-            ...groupRef, principalId: sessionId, role: 'member' as const,
+        members: sessionIds.map((sessionId, index) => ({
+            ...groupRef, principalId: sessionId,
+            role: index === 0 ? 'owner' as const : 'member' as const,
             status: 'active' as const,
             joined: { atEpochMs: 1, byPrincipalId: 'owner' },
             updated: { atEpochMs: 1, byPrincipalId: 'owner' },

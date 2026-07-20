@@ -1,7 +1,5 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { AppTopics } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { RuntimeStateEntryValue } from '../../runtime-state/RuntimeStateJsonStore.ts';
 import { RuntimeStateJsonStore } from '../../runtime-state/RuntimeStateJsonStore.ts';
 import type {
@@ -23,13 +21,18 @@ import {
     groupStateGroupStorageKey,
 } from '../group-state-storage-keys.ts';
 import { RtcTopologyRepositoryInvariantCorruptionError } from '../rtc-topology-errors.ts';
-import { toRtcTopologyPublicationMessageId } from '../rtc-topology-identifiers.ts';
+import {
+    toRtcTopologyPublicationId,
+    toRtcTopologyPublicationMessageId,
+} from '../rtc-topology-identifiers.ts';
 import type { RtcTopologyPublication } from '../rtc-topology-publication-contract.ts';
 import { validateTopologySnapshot } from '../rtc-topology-snapshot-contract.ts';
 import { rtcTopologySemanticEqual } from '../rtc-topology-semantic-equality.ts';
 import { validatePersistedALMessage } from '../services/al-message-persistence-validation.ts';
+import { validateRtcTopologyPublication } from '../rtc-topology-publication-validation.ts';
 
 export type { RtcTopologyPublication } from '../rtc-topology-publication-contract.ts';
+export { toRtcTopologyPublicationId } from '../rtc-topology-identifiers.ts';
 
 export const RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE = 'rtc-topology:publications';
 export const RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE =
@@ -440,7 +443,7 @@ export class RtcTopologyPublicationRepository extends RuntimeStateJsonStore {
     ): Promise<PutRtcTopologyPublicationResult> {
         // Compatibility seam with explicit optimistic first-writer semantics.
         // It never overwrites either immutable row and never retries a conflict.
-        validatePublication(publication, publication.groupRef);
+        validateRtcTopologyPublication(publication, publication.groupRef);
         const runtime = requireOptimisticRuntime(this.runtimeRepository);
         const expireAtTimestamp = this.now() + this.retentionMs;
         const inserted = await runtime.begin(async (transaction) => {
@@ -492,7 +495,7 @@ export class RtcTopologyPublicationRepository extends RuntimeStateJsonStore {
         publication: RtcTopologyPublication,
         expireAtTimestamp: number,
     ): Promise<void> {
-        validatePublication(publication, publication.groupRef);
+        validateRtcTopologyPublication(publication, publication.groupRef);
         const result = await this.putValueIfAbsent(
             RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
             this.publicationKey(publication.groupRef, publication.publicationId),
@@ -532,7 +535,7 @@ export class RtcTopologyPublicationRepository extends RuntimeStateJsonStore {
         );
         const value = parseValue(entry) as RtcTopologyPublication;
         try {
-            validatePublication(value, decoded.groupRef);
+            validateRtcTopologyPublication(value, decoded.groupRef);
         } catch (error) {
             throw publicationCorruption(
                 entry.key,
@@ -583,139 +586,6 @@ export class RtcTopologyPublicationRepository extends RuntimeStateJsonStore {
             this.retentionMs,
             this.now,
         );
-    }
-}
-
-export function toRtcTopologyPublicationId(input: Readonly<{
-    workId: string;
-    sourceGroupStateRevision: number;
-    overlayVersion: number;
-}>): string {
-    return [
-        input.workId,
-        input.sourceGroupStateRevision,
-        input.overlayVersion,
-    ].join(':');
-}
-
-function validatePublication(value: unknown, expectedRef: GroupRef): void {
-    if (!isRecord(value)) throw new TypeError('RTC topology publication is invalid');
-    assertExactKeys(value, [
-        'publicationId',
-        'workId',
-        'groupRef',
-        'sourceGroupStateRevision',
-        'overlayVersion',
-        'targetGroupSnapshotVersion',
-        'recipientSessionIds',
-        'message',
-        'createdAtEpochMs',
-    ]);
-    validateGroupRef(value.groupRef, expectedRef);
-    for (const field of ['publicationId', 'workId'] as const) {
-        if (typeof value[field] !== 'string' || value[field].length === 0) {
-            throw new TypeError(`RTC topology ${field} is invalid`);
-        }
-    }
-    if (value.publicationId !== toRtcTopologyPublicationId({
-        workId: value.workId as string,
-        sourceGroupStateRevision: value.sourceGroupStateRevision as number,
-        overlayVersion: value.overlayVersion as number,
-    })) {
-        throw new TypeError('RTC topology publication id is not deterministic');
-    }
-    for (const field of [
-        'sourceGroupStateRevision',
-        'overlayVersion',
-        'targetGroupSnapshotVersion',
-        'createdAtEpochMs',
-    ] as const) {
-        if (!Number.isSafeInteger(value[field]) || (value[field] as number) < 0) {
-            throw new TypeError(`RTC topology ${field} is invalid`);
-        }
-    }
-    if (
-        !Array.isArray(value.recipientSessionIds) ||
-        !value.recipientSessionIds.every((entry) => typeof entry === 'string') ||
-        !isRecord(value.message)
-    ) {
-        throw new TypeError('RTC topology publication payload is invalid');
-    }
-    validatePersistedALMessage(value.message);
-    let snapshot: unknown;
-    try {
-        snapshot = JSON.parse((value.message as ALMessage).payload.resource);
-    } catch {
-        throw new TypeError('RTC topology publication message snapshot is invalid');
-    }
-    validateTopologySnapshot(snapshot, expectedRef);
-    const targets = (value.message as ALMessage).targets;
-    if (
-        targets?.mode !== 'broadcast' ||
-        targets.minSnapshotVersion !== value.targetGroupSnapshotVersion
-    ) {
-        throw new TypeError('RTC topology publication target snapshot version is invalid');
-    }
-    validateTopologyPublicationEnvelope(
-        value.message,
-        expectedRef,
-        snapshot as RallarOverlayTopologySnapshot,
-        value.targetGroupSnapshotVersion as number,
-        value.createdAtEpochMs as number,
-    );
-    if (
-        (value.message as ALMessage).id.msgId !==
-            toRtcTopologyPublicationMessageId(value.workId as string)
-    ) {
-        throw new TypeError('RTC topology publication message id is not deterministic');
-    }
-    if (
-        (snapshot as RallarOverlayTopologySnapshot).sourceGroupStateRevision !==
-            value.sourceGroupStateRevision ||
-        (snapshot as RallarOverlayTopologySnapshot).version !== value.overlayVersion ||
-        !rtcTopologySemanticEqual(
-            (snapshot as RallarOverlayTopologySnapshot).activeSessionIds,
-            value.recipientSessionIds,
-        )
-    ) {
-        throw new TypeError('RTC topology publication message identity is invalid');
-    }
-}
-
-function validateTopologyPublicationEnvelope(
-    message: ALMessage,
-    expectedRef: GroupRef,
-    snapshot: Pick<
-        RallarOverlayTopologySnapshot,
-        'overlayId' | 'sourceGroupStateRevision' | 'version'
-    >,
-    targetGroupSnapshotVersion: number,
-    createdAtEpochMs: number,
-): void {
-    if (!message.targets || !message.delivery || !message.audit) {
-        throw new TypeError('RTC topology publication is missing builder envelope sections');
-    }
-    const expectedResourceId =
-        `${snapshot.overlayId}:${snapshot.sourceGroupStateRevision}:${snapshot.version}`;
-    if (
-        message.id.senderId !== 'rallar-server' ||
-        message.route.topicId !== AppTopics.overlayTopology ||
-        message.route.contextId !== expectedRef.groupId ||
-        message.route.resourceId !== expectedResourceId ||
-        message.payload.typeId !== AppTopics.overlayTopology ||
-        message.payload.contentType !== 'application/json' ||
-        message.targets.mode !== 'broadcast' ||
-        message.targets.scope !== 'room' ||
-        message.targets.groupRef === undefined ||
-        !sameGroupRef(message.targets.groupRef, expectedRef) ||
-        message.targets.minSnapshotVersion !== targetGroupSnapshotVersion ||
-        message.delivery.reliability !== 'best-effort' ||
-        message.delivery.ack !== 'none' ||
-        message.audit.createdBy !== 'rallar-server' ||
-        message.audit.createdTs !== message.id.ts ||
-        message.id.ts !== createdAtEpochMs
-    ) {
-        throw new TypeError('RTC topology publication envelope identity or timestamp is invalid');
     }
 }
 
@@ -996,13 +866,6 @@ function publicationForMigration(
     }
     const groupRef = raw.groupRef as GroupRef;
     validateTopologySnapshot(snapshot, groupRef);
-    validateTopologyPublicationEnvelope(
-        message,
-        groupRef,
-        snapshot,
-        message.targets.minSnapshotVersion,
-        message.id.ts,
-    );
     const targetGroupSnapshotVersion = hasTarget
         ? raw.targetGroupSnapshotVersion as number
         : message.targets.minSnapshotVersion;
@@ -1027,7 +890,7 @@ function publicationForMigration(
             },
         },
     });
-    validatePublication(publication, publication.groupRef);
+    validateRtcTopologyPublication(publication, publication.groupRef);
     return publication;
 }
 

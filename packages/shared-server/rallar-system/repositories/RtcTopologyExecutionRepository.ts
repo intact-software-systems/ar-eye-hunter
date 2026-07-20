@@ -135,9 +135,10 @@ export class RtcTopologyExecutionRepository {
         ) {
             return { status: 'retry', current: read.snapshot?.value };
         }
+        const candidate = read.publicationClaim ? null : input.candidate;
         const computed = computeTopologyMutation({
             read,
-            candidate: input.candidate,
+            candidate,
             publication: read.publicationClaim ? null : input.publication,
             facts: {
                 publicationExpireAtTimestamp: read.publicationClaim
@@ -147,7 +148,7 @@ export class RtcTopologyExecutionRepository {
         });
         validateTopologyMutation({
             read,
-            candidate: input.candidate,
+            candidate,
             publication: read.publicationClaim ? null : input.publication,
             facts: {
                 publicationExpireAtTimestamp: computed.outcome === 'write'

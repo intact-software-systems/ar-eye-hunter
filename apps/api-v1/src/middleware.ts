@@ -112,6 +112,7 @@ export type Middleware =
 let middleware: Middleware | undefined = undefined;
 let groupStateMaintenanceService: GroupStateMaintenanceService | undefined;
 const runtimeStateExpiryLifecycle = createRuntimeStateExpiryLifecycle();
+const middlewareBackgroundTaskStops = new Set<() => void>();
 
 export function getMiddleware(): Middleware {
   if (middleware === undefined) {
@@ -129,15 +130,29 @@ export function getGroupStateMaintenanceService(): GroupStateMaintenanceService 
 
 export function initialiseMiddleware() {
   shutdownMiddlewareBackgroundTasks();
-  middleware = initialise();
+  const expiryStartupGeneration = runtimeStateExpiryLifecycle
+    .beginStartupGeneration();
+  middleware = initialise(expiryStartupGeneration);
   return middleware;
 }
 
 export function shutdownMiddlewareBackgroundTasks(): void {
+  const stops = [...middlewareBackgroundTaskStops];
+  middlewareBackgroundTaskStops.clear();
+  for (const stop of stops) stop();
   runtimeStateExpiryLifecycle.stop();
 }
 
-function initialise(): Middleware {
+export function registerMiddlewareBackgroundTask(stop: () => void): () => void {
+  middlewareBackgroundTaskStops.add(stop);
+  return () => middlewareBackgroundTaskStops.delete(stop);
+}
+
+function initialise(
+  expiryStartupGeneration: ReturnType<
+    typeof runtimeStateExpiryLifecycle.beginStartupGeneration
+  >,
+): Middleware {
   const dbWsChannelId = 'ws-channel';
   const wsRuntimeName = 'default-qbox-server';
   const postgresSql = sql as unknown as PSqlSql;
@@ -192,13 +207,17 @@ function initialise(): Middleware {
         new GroupTopologyConfigRepository(runtimeStateRepository),
       ),
     initialiseRtcRttReceiptFamilyCleanup: async () => {
-      await runtimeStateExpiryLifecycle.startRtcRttReceiptFamilyCleanup(() =>
+      await expiryStartupGeneration.startRtcRttReceiptFamilyCleanup(() =>
         initRtcRttReceiptFamilyCleanup(rtcRttRepository, {
           onError: (error) => {
             console.error('RTC RTT receipt family cleanup failed:', error);
           },
         })
       );
+    },
+    isCurrentGeneration: expiryStartupGeneration.isCurrent,
+    onDetachedRuntimeStateExpiryEvictionFailure: (error) => {
+      console.error('Protected generic runtime-state expiry eviction failed:', error);
     },
     initialiseRuntimeStateExpiryEviction: () =>
       initRuntimeStateExpiryEviction(

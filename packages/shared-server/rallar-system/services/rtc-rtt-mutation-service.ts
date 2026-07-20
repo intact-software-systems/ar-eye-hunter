@@ -7,9 +7,12 @@ import {
     waitForRuntimeStateWriteRetry,
 } from '../../runtime-state/optimistic-runtime-state-write.ts';
 import {
-    DEFAULT_RTC_RTT_MUTATION_RETENTION_MS,
     RtcRttRepository,
 } from '../repositories/RtcRttRepository.ts';
+import {
+    RTC_RTT_MUTATION_RETENTION_MS,
+    validateRtcRttWriteCandidate,
+} from '../rtc-rtt-persistence-validation.ts';
 import { hashStateMutationCommand } from '../repositories/StateMutationOutboxRepository.ts';
 import {
     compareRtcTopologyIdentifiers,
@@ -64,6 +67,9 @@ export async function writeRttMutation(
     options: ConstructorParameters<typeof RtcRttRepository>[1],
     computed: Extract<RtcRttMutationComputed, { outcome: 'write' }>,
 ): Promise<'accepted' | 'conflict'> {
+    const mutationExpireAtTimestamp = computed.receipt.acceptedAtEpochMs +
+        RTC_RTT_MUTATION_RETENTION_MS;
+    validateRtcRttWriteCandidate(computed, mutationExpireAtTimestamp);
     try {
         const accepted = await runtime.begin(async (transaction) => {
             const repository = new RtcRttRepository(transaction, options);
@@ -87,8 +93,6 @@ export async function writeRttMutation(
             if (measurement.status === 'conflict') {
                 throw new RuntimeStateWriteConflictError();
             }
-            const mutationExpireAtTimestamp = computed.receipt.acceptedAtEpochMs +
-                DEFAULT_RTC_RTT_MUTATION_RETENTION_MS;
             const receipt = await repository.insertMutationReceipt(
                 computed.receipt,
                 mutationExpireAtTimestamp,

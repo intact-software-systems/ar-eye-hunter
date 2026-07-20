@@ -307,6 +307,63 @@ describe('RTC topology APP_OUTBOX work', () => {
         expect(publish.mock.calls[0][0].createdAtEpochMs).toBe(100);
     });
 
+    it('replays a durable publication before consulting mutable planning authority', async () => {
+        const queue = new InMemoryQueueBox();
+        const runtime = createRtcTopologyOutboxPublisher({
+            outboxQueueReader: new OutboxQueueReader(queue),
+            now: () => 100,
+        });
+        const group = createGroupSnapshot(3);
+        await runtime.publisher.enqueueForGroupSnapshot(group);
+        const [entry] = await entriesIn(queue);
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const topologyManagement = new ConcreteGroupTopologyManagementService({
+            findGroupSnapshotByRef: () => group,
+            topologyService: new RallarRtcTopologyService({ now: () => 10 }),
+            topologySnapshotRepository: new RtcTopologySnapshotRepository(
+                runtimeRepository,
+            ),
+            processRttReader: () => [],
+        });
+        const readAuthority = vi.spyOn(
+            topologyManagement,
+            'readTopologyPlanningAuthority',
+        );
+        const executionRepository = new RtcTopologyExecutionRepository(
+            runtimeRepository,
+        );
+        const publish = vi.fn()
+            .mockRejectedValueOnce(new Error('fanout failed'))
+            .mockResolvedValue(0);
+        const handler = createRtcTopologyWorkHandler({
+            runtime,
+            topologyManagement,
+            executionRepository,
+            publicationFanout: {
+                readiness: Promise.resolve(), publish, deliverLocal: () => 0,
+            },
+        });
+        const message = JSON.parse(entry.resource) as ALMessage;
+
+        await expect(handler.onMessage(
+            message,
+            entry,
+            new JsonWebSocketServer(),
+        )).rejects.toThrow('fanout failed');
+        readAuthority.mockRejectedValueOnce(
+            new Error('mutable authority must not be read on replay'),
+        );
+
+        await expect(handler.onMessage(
+            message,
+            entry,
+            new JsonWebSocketServer(),
+        )).resolves.toBeUndefined();
+        expect(readAuthority).toHaveBeenCalledTimes(1);
+        expect(publish).toHaveBeenCalledTimes(2);
+        expect(publish.mock.calls[1][0]).toEqual(publish.mock.calls[0][0]);
+    });
+
     it('fails closed without fanout when a durable replay publication is corrupt', async () => {
         const queue = new InMemoryQueueBox();
         const runtime = createRtcTopologyOutboxPublisher({

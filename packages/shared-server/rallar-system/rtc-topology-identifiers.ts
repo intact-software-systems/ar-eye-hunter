@@ -55,3 +55,15 @@ export function toRtcTopologyPublicationMessageId(workId: string): string {
     }
     return JSON.stringify(['rtc-topology-publication', workId]);
 }
+
+export function toRtcTopologyPublicationId(input: Readonly<{
+    workId: string;
+    sourceGroupStateRevision: number;
+    overlayVersion: number;
+}>): string {
+    return [
+        input.workId,
+        input.sourceGroupStateRevision,
+        input.overlayVersion,
+    ].join(':');
+}

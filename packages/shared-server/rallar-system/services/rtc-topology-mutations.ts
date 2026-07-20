@@ -10,12 +10,17 @@ import {
     toRtcRttRecomputeOutboxId,
 } from '../rtc-topology-identifiers.ts';
 import type { RtcTopologyPublication } from '../rtc-topology-publication-contract.ts';
+import { validateRtcTopologyPublication } from '../rtc-topology-publication-validation.ts';
 import {
     compareTopologyTuple,
     decideTopologySnapshot,
     validateTopologySnapshot,
 } from '../rtc-topology-snapshot-contract.ts';
 import { rtcTopologySemanticEqual } from '../rtc-topology-semantic-equality.ts';
+import {
+    RTC_RTT_MUTATION_RETENTION_MS,
+    validateRtcRttWriteCandidate,
+} from '../rtc-rtt-persistence-validation.ts';
 import {
     evaluateRtcRttMeasurement,
     type RtcRttAcceptanceReason,
@@ -32,7 +37,7 @@ export type RtcTopologyMutationRead = Readonly<{
 
 export type RtcTopologyMutationInput = Readonly<{
     read: RtcTopologyMutationRead;
-    candidate: RallarOverlayTopologySnapshot;
+    candidate: RallarOverlayTopologySnapshot | null;
     publication: RtcTopologyPublication | null;
     facts: RtcTopologyMutationFacts;
 }>;
@@ -79,6 +84,14 @@ export function computeTopologyMutation(
     input: RtcTopologyMutationInput,
 ): RtcTopologyMutationComputed {
     if (input.read.publicationClaim) {
+        if (
+            input.candidate !== null || input.publication !== null ||
+            input.facts.publicationExpireAtTimestamp !== null
+        ) {
+            throw new TypeError(
+                'RTC topology publication replay must not include mutable planning input',
+            );
+        }
         if (!input.read.snapshot) {
             throw new TypeError(
                 'RTC topology publication claim has no durable snapshot',
@@ -110,6 +123,11 @@ export function computeTopologyMutation(
         };
     }
 
+    if (input.candidate === null) {
+        throw new TypeError(
+            'RTC topology publication claim miss requires a candidate snapshot',
+        );
+    }
     const current = input.read.snapshot?.value;
     const observation = decideTopologySnapshot(current, input.candidate);
     if (observation === 'stale') {
@@ -146,6 +164,7 @@ export function computeTopologyMutation(
 function assertPublicationSelfConsistent(
     publication: RtcTopologyPublication,
 ): RallarOverlayTopologySnapshot {
+    validateRtcTopologyPublication(publication, publication.groupRef);
     let payload: unknown;
     try {
         payload = JSON.parse(publication.message.payload.resource);
@@ -178,6 +197,7 @@ export function validateTopologyMutation(
     if (!rtcTopologySemanticEqual(recomputed, input.computed)) {
         throw new TypeError('RTC topology mutation differs from canonical computation');
     }
+    if (input.candidate === null) return;
     if (
         input.publication &&
         (!sameGroupRef(input.publication.groupRef, input.candidate.groupRef) ||
@@ -526,6 +546,11 @@ export function validateRttMutation(input: Readonly<{
         throw new TypeError('RTC RTT mutation differs from canonical computation');
     }
     if (input.computed.outcome === 'write') {
+        validateRtcRttWriteCandidate(
+            input.computed,
+            input.computed.receipt.acceptedAtEpochMs +
+                RTC_RTT_MUTATION_RETENTION_MS,
+        );
         const endpointIds = input.computed.endpointGuards.map((guard) => guard.endpointId);
         if (
             !rtcTopologySemanticEqual(

@@ -3,6 +3,8 @@ export type RuntimeStateExpiryStartupBarrierOptions = Readonly<{
   initialiseRtcRttReceiptFamilyCleanup: () => Promise<void>;
   initialiseRuntimeStateExpiryEviction: () => Promise<void>;
   onGenerationsBackfilled?: (advanced: number) => void;
+  isCurrentGeneration?: () => boolean;
+  onDetachedRuntimeStateExpiryEvictionFailure?: (error: unknown) => void;
 }>;
 
 export type RuntimeStateExpiryCleanupHandle = Readonly<{
@@ -11,29 +13,73 @@ export type RuntimeStateExpiryCleanupHandle = Readonly<{
 }>;
 
 export type RuntimeStateExpiryLifecycle = Readonly<{
+  beginStartupGeneration(): RuntimeStateExpiryStartupGeneration;
   startRtcRttReceiptFamilyCleanup(
     initialise: () => RuntimeStateExpiryCleanupHandle,
   ): Promise<number>;
   stop(): void;
 }>;
 
+export type RuntimeStateExpiryStartupGeneration = Readonly<{
+  isCurrent(): boolean;
+  startRtcRttReceiptFamilyCleanup(
+    initialise: () => RuntimeStateExpiryCleanupHandle,
+  ): Promise<number>;
+}>;
+
 export function createRuntimeStateExpiryLifecycle(): RuntimeStateExpiryLifecycle {
   let cleanup: RuntimeStateExpiryCleanupHandle | undefined;
-  return {
-    startRtcRttReceiptFamilyCleanup: async (initialise) => {
-      const previous = cleanup;
-      cleanup = undefined;
-      previous?.stop();
-      const current = initialise();
-      cleanup = current;
-      return await current.firstRun;
-    },
+  let token = 0;
+  let invalidateCurrent: (() => void) | undefined;
+  const stopCleanup = (): void => {
+    const current = cleanup;
+    cleanup = undefined;
+    current?.stop();
+  };
+  const beginStartupGeneration = (): RuntimeStateExpiryStartupGeneration => {
+    invalidateCurrent?.();
+    stopCleanup();
+    const reservedToken = ++token;
+    let valid = true;
+    let invalidate!: () => void;
+    const invalidated = new Promise<void>((resolve) => {
+      invalidate = () => {
+        if (!valid) return;
+        valid = false;
+        resolve();
+      };
+    });
+    invalidateCurrent = invalidate;
+    const isCurrent = () => valid && reservedToken === token;
+    return {
+      isCurrent,
+      startRtcRttReceiptFamilyCleanup: async (initialise) => {
+        const handle = initialise();
+        if (!isCurrent()) {
+          handle.stop();
+          void handle.firstRun.catch(() => undefined);
+          return 0;
+        }
+        cleanup = handle;
+        return await Promise.race([
+          handle.firstRun,
+          invalidated.then(() => 0),
+        ]);
+      },
+    };
+  };
+  const lifecycle: RuntimeStateExpiryLifecycle = {
+    beginStartupGeneration,
+    startRtcRttReceiptFamilyCleanup: (initialise) =>
+      beginStartupGeneration().startRtcRttReceiptFamilyCleanup(initialise),
     stop: () => {
-      const current = cleanup;
-      cleanup = undefined;
-      current?.stop();
+      token += 1;
+      invalidateCurrent?.();
+      invalidateCurrent = undefined;
+      stopCleanup();
     },
   };
+  return lifecycle;
 }
 
 /**
@@ -53,8 +99,10 @@ export async function runRuntimeStateExpiryStartupBarrier(
     cleanupFailure = error;
     cleanupFailed = true;
   }
+  if (options.isCurrentGeneration && !options.isCurrentGeneration()) return;
+  let eviction: Promise<void>;
   try {
-    await options.initialiseRuntimeStateExpiryEviction();
+    eviction = options.initialiseRuntimeStateExpiryEviction();
   } catch (evictionFailure) {
     if (cleanupFailed) {
       throw new AggregateError(
@@ -64,5 +112,11 @@ export async function runRuntimeStateExpiryStartupBarrier(
     }
     throw evictionFailure;
   }
-  if (cleanupFailed) throw cleanupFailure;
+  if (cleanupFailed) {
+    void eviction.catch((error) => {
+      options.onDetachedRuntimeStateExpiryEvictionFailure?.(error);
+    });
+    throw cleanupFailure;
+  }
+  await eviction;
 }

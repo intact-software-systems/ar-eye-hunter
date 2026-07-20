@@ -168,37 +168,71 @@ export function createRtcTopologyWorkHandler(options: Readonly<{
                     { sleep: options.sleep },
                 );
                 const readStarted = performance.now();
-                const [authority, read] = await Promise.all([
-                    options.topologyManagement.readTopologyPlanningAuthority(
-                        work.groupSnapshot.group,
-                    ),
-                    options.executionRepository.readTopologyMutation(
-                        work.groupSnapshot.group,
+                const read = await options.executionRepository
+                    .readTopologyMutation(work.groupSnapshot.group, workId);
+                if (read.publicationClaim) {
+                    recordTopologyExecutionPhase(
+                        options,
                         workId,
-                    ),
-                ]);
+                        work.groupSnapshot.group,
+                        'read',
+                        readStarted,
+                        attempt,
+                        backoffMs,
+                    );
+                    const replayInput = {
+                        read,
+                        candidate: null,
+                        publication: null,
+                        facts: { publicationExpireAtTimestamp: null },
+                    } as const;
+                    const computeStarted = performance.now();
+                    const computed = computeTopologyMutation(replayInput);
+                    recordTopologyExecutionPhase(
+                        options,
+                        workId,
+                        work.groupSnapshot.group,
+                        'compute',
+                        computeStarted,
+                        attempt,
+                        backoffMs,
+                    );
+                    const validateStarted = performance.now();
+                    validateTopologyMutation({ ...replayInput, computed });
+                    recordTopologyExecutionPhase(
+                        options,
+                        workId,
+                        work.groupSnapshot.group,
+                        'validate',
+                        validateStarted,
+                        attempt,
+                        backoffMs,
+                    );
+                    if (computed.outcome === 'retry') continue;
+                    if (computed.outcome !== 'loaded') {
+                        throw new TypeError(
+                            'RTC topology claimed replay has an invalid outcome',
+                        );
+                    }
+                    await options.publicationFanout.publish(computed.publication);
+                    options.topologyManagement.recordTopologyPublication(true);
+                    return;
+                }
+                const authority = await options.topologyManagement
+                    .readTopologyPlanningAuthority(work.groupSnapshot.group);
                 const group = authority.group;
                 if (
-                    !read.publicationClaim &&
                     work.kind === 'group-revision' &&
                     work.sourceGroupStateRevision < readGroupStateRevision(group)
                 ) {
                     return;
                 }
                 const facts = {
-                    publicationExpireAtTimestamp: read.publicationClaim
-                        ? null
-                        : options.executionRepository
-                            .publicationExpireAtTimestamp(),
+                    publicationExpireAtTimestamp: options.executionRepository
+                        .publicationExpireAtTimestamp(),
                 } as const;
-                const planned = read.publicationClaim && read.snapshot
-                    ? {
-                        snapshot: read.snapshot.value,
-                        previous: read.snapshot.value,
-                        changed: false,
-                    }
-                    : options.topologyManagement
-                        .planTopologyFromAuthority(authority, read.snapshot?.value);
+                const planned = options.topologyManagement
+                    .planTopologyFromAuthority(authority, read.snapshot?.value);
                 recordTopologyExecutionPhase(
                     options,
                     workId,
@@ -209,14 +243,12 @@ export function createRtcTopologyWorkHandler(options: Readonly<{
                     backoffMs,
                 );
                 const computeStarted = performance.now();
-                const publication = read.publicationClaim
-                    ? null
-                    : toTopologyPublication(
-                        workEnvelope,
-                        group,
-                        planned.snapshot,
-                        publicationFacts,
-                    );
+                const publication = toTopologyPublication(
+                    workEnvelope,
+                    group,
+                    planned.snapshot,
+                    publicationFacts,
+                );
                 const computed = computeTopologyMutation({
                     read,
                     candidate: planned.snapshot,
@@ -263,11 +295,10 @@ export function createRtcTopologyWorkHandler(options: Readonly<{
                     continue;
                 }
                 if (computed.outcome === 'loaded') {
-                    await options.publicationFanout.publish(computed.publication);
-                    options.topologyManagement.recordTopologyPublication(true);
-                    return;
+                    throw new TypeError(
+                        'RTC topology publication claim appeared on a claim-miss path',
+                    );
                 }
-
                 const writeStarted = performance.now();
                 const transactionStarted = performance.now();
                 const written = await options.executionRepository
@@ -335,7 +366,7 @@ export async function drainRtcRttRecomputeOutbox(input: Readonly<{
         ) {
             throw new RtcTopologyRepositoryInvariantCorruptionError(
                 entry.entry.key,
-                'RTC RTT recompute delivery time is outside the retained family lifetime',
+                `RTC RTT recompute delivery time ${observedAtEpochMs} is outside retained family ${entry.value.createdAtEpochMs}..${entry.entry.expireAtTimestamp}`,
             );
         }
         await input.publisher.enqueueForRtt(
@@ -351,7 +382,7 @@ export async function drainRtcRttRecomputeOutbox(input: Readonly<{
         ) {
             throw new RtcTopologyRepositoryInvariantCorruptionError(
                 entry.entry.key,
-                'RTC RTT recompute delivery time is outside the retained family lifetime',
+                `RTC RTT recompute delivery time ${deliveredAtEpochMs} is outside retained family ${entry.value.createdAtEpochMs}..${entry.entry.expireAtTimestamp}`,
             );
         }
         const marked = await input.repository.markRecomputeIntentDelivered(
@@ -361,6 +392,187 @@ export async function drainRtcRttRecomputeOutbox(input: Readonly<{
         if (marked.status === 'accepted') delivered += 1;
     }
     return delivered;
+}
+
+export const DEFAULT_RTC_RTT_RECOMPUTE_OUTBOX_INTERVAL_MS = 1_000;
+export const DEFAULT_RTC_RTT_RECOMPUTE_OUTBOX_RETRY_DELAYS_MS = [
+    2,
+    8,
+    32,
+    128,
+    512,
+    1_000,
+] as const;
+
+export type RtcRttRecomputeOutboxWorkerFailure = Readonly<{
+    name: string;
+    message: string;
+    code?: string;
+}>;
+
+export type RtcRttRecomputeOutboxWorker = Readonly<{
+    firstRun: Promise<number>;
+    wake(): void;
+    stop(): void;
+}>;
+
+export function initRtcRttRecomputeOutboxWorker(input: Readonly<{
+    repository: RtcRttRepository;
+    publisher: RtcTopologyWorkPublisher;
+    debounceMs: number;
+    intervalMs?: number;
+    retryDelaysMs?: readonly number[];
+    now?: () => number;
+    schedule?: (
+        callback: () => void | Promise<void>,
+        delayMs: number,
+    ) => unknown;
+    cancel?: (handle: unknown) => void;
+    onError?: (failure: RtcRttRecomputeOutboxWorkerFailure) => void;
+}>): RtcRttRecomputeOutboxWorker {
+    const intervalMs = input.intervalMs ??
+        DEFAULT_RTC_RTT_RECOMPUTE_OUTBOX_INTERVAL_MS;
+    const retryDelaysMs = input.retryDelaysMs ??
+        DEFAULT_RTC_RTT_RECOMPUTE_OUTBOX_RETRY_DELAYS_MS;
+    validateWorkerDelays(intervalMs, retryDelaysMs);
+    const schedule = input.schedule ?? ((
+        callback: () => void | Promise<void>,
+        delayMs: number,
+    ) => {
+        const handle = setTimeout(() => void callback(), delayMs);
+        (handle as { unref?: () => void }).unref?.();
+        return handle;
+    });
+    const cancel = input.cancel ?? ((handle: unknown) => {
+        clearTimeout(handle as ReturnType<typeof setTimeout>);
+    });
+    let stopped = false;
+    let running = false;
+    let wakeRequested = false;
+    let scheduledHandle: unknown;
+    let failureCount = 0;
+    let settleFirstRun!: (count: number) => void;
+    let rejectFirstRun!: (error: unknown) => void;
+    let firstRunSettled = false;
+    const firstRun = new Promise<number>((resolve, reject) => {
+        settleFirstRun = resolve;
+        rejectFirstRun = reject;
+    });
+
+    const cancelScheduled = (): void => {
+        if (scheduledHandle === undefined) return;
+        cancel(scheduledHandle);
+        scheduledHandle = undefined;
+    };
+    const scheduleRun = (delayMs: number): void => {
+        if (stopped) return;
+        cancelScheduled();
+        let handle: unknown;
+        handle = schedule(async () => {
+            if (scheduledHandle === handle) scheduledHandle = undefined;
+            await run();
+        }, delayMs);
+        scheduledHandle = handle;
+        (handle as { unref?: () => void }).unref?.();
+    };
+    const run = async (): Promise<void> => {
+        if (stopped) return;
+        if (running) {
+            wakeRequested = true;
+            return;
+        }
+        running = true;
+        let failed = false;
+        try {
+            const delivered = await drainRtcRttRecomputeOutbox(input);
+            failureCount = 0;
+            if (!firstRunSettled) {
+                firstRunSettled = true;
+                settleFirstRun(delivered);
+            }
+        } catch (error) {
+            failed = true;
+            try {
+                input.onError?.(sanitizeWorkerFailure(error));
+            } catch {
+                // Observability must not disable autonomous durable delivery.
+            }
+            if (!firstRunSettled) {
+                firstRunSettled = true;
+                rejectFirstRun(error);
+            }
+            failureCount += 1;
+        } finally {
+            running = false;
+            if (stopped) return;
+            if (wakeRequested) {
+                wakeRequested = false;
+                scheduleRun(0);
+            } else if (failed) {
+                scheduleRun(retryDelaysMs[
+                    Math.min(failureCount - 1, retryDelaysMs.length - 1)
+                ]!);
+            } else {
+                scheduleRun(intervalMs);
+            }
+        }
+    };
+
+    void run();
+    return {
+        firstRun,
+        wake: () => {
+            if (stopped) return;
+            if (running) {
+                wakeRequested = true;
+                return;
+            }
+            scheduleRun(0);
+        },
+        stop: () => {
+            if (stopped) return;
+            stopped = true;
+            wakeRequested = false;
+            cancelScheduled();
+        },
+    };
+}
+
+function validateWorkerDelays(
+    intervalMs: number,
+    retryDelaysMs: readonly number[],
+): void {
+    if (!Number.isSafeInteger(intervalMs) || intervalMs < 1) {
+        throw new RangeError('RTC RTT recompute worker interval is invalid');
+    }
+    if (
+        retryDelaysMs.length === 0 ||
+        retryDelaysMs.some((delayMs) =>
+            !Number.isSafeInteger(delayMs) || delayMs < 0
+        )
+    ) {
+        throw new RangeError('RTC RTT recompute worker retry schedule is invalid');
+    }
+}
+
+function sanitizeWorkerFailure(
+    error: unknown,
+): RtcRttRecomputeOutboxWorkerFailure {
+    const rawName = error instanceof Error ? error.name : undefined;
+    const name = typeof rawName === 'string' &&
+            /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/.test(rawName)
+        ? rawName
+        : 'Error';
+    const code = error && typeof error === 'object'
+        ? (error as { code?: unknown }).code
+        : undefined;
+    return {
+        name,
+        message: 'RTC RTT recompute outbox delivery failed',
+        ...(typeof code === 'string' && /^[a-z0-9-]{1,64}$/.test(code)
+            ? { code }
+            : {}),
+    };
 }
 
 function createRtcTopologyWorkRuntime(

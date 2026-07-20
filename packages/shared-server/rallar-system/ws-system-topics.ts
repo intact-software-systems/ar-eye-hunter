@@ -22,7 +22,8 @@ import { sendStateSyncMessage } from './state-sync-routing.ts';
 import {
     createRtcTopologyOutboxPublisher,
     createRtcTopologyWorkHandler,
-    drainRtcRttRecomputeOutbox,
+    initRtcRttRecomputeOutboxWorker,
+    type RtcRttRecomputeOutboxWorker,
     type RtcTopologyWorkPublisher,
 } from './services/RtcTopologyOutboxWork.ts';
 import {
@@ -77,6 +78,8 @@ export type InitRallarSystemWsTopicsOptions = Readonly<{
 
 export type RallarSystemWsTopicsRuntime = Readonly<{
     rtcTopologyWorkPublisher: RtcTopologyWorkPublisher | null;
+    rtcRttRecomputeOutboxWorker: RtcRttRecomputeOutboxWorker | null;
+    stop(): void;
 }>;
 
 type RtcTopologyFlushTimer = ReturnType<typeof setTimeout>;
@@ -161,6 +164,18 @@ export function initRallarSystemWsTopics(
             now: options.rtcTopologyOptions?.now,
         })
         : undefined;
+    const rtcRttRecomputeOutboxWorker =
+        rtcTopologyAppOutbox && rtcTopologyRuntimeState
+            ? initRtcRttRecomputeOutboxWorker({
+                repository: rtcTopologyRuntimeState.rtts,
+                publisher: rtcTopologyAppOutbox.publisher,
+                debounceMs: rtcTopologyService.readRttRebuildDebounceMs(),
+                onError: (failure) => {
+                    console.warn('RTC RTT recompute outbox worker failed', failure);
+                },
+            })
+            : undefined;
+    void rtcRttRecomputeOutboxWorker?.firstRun.catch(() => undefined);
 
     if (rtcTopologyAppOutbox && rtcTopologyAppOutboxOptions) {
         rtcTopologyAppOutboxOptions.outboxQueueReader.onOutboxMessageDo(
@@ -178,15 +193,6 @@ export function initRallarSystemWsTopics(
                     ),
             }),
         );
-        if (rtcTopologyRuntimeState) {
-            void drainRtcRttRecomputeOutbox({
-                repository: rtcTopologyRuntimeState.rtts,
-                publisher: rtcTopologyAppOutbox.publisher,
-                debounceMs: rtcTopologyService.readRttRebuildDebounceMs(),
-            }).catch((error) => {
-                console.warn('RTC RTT recompute outbox startup drain failed', error);
-            });
-        }
     }
 
     initStateBroadcastTopic(AppTopics.clientStateSnapshot, wsQBoxServerService, (rawData) => {
@@ -256,6 +262,7 @@ export function initRallarSystemWsTopics(
         rtcTopologyAppOutbox?.publisher,
         rtcTopologyManagement,
         rtcTopologyRuntimeState,
+        rtcRttRecomputeOutboxWorker,
         scheduleGlobalGraphRttRecompute,
         findGroupSnapshotByRef,
     );
@@ -265,6 +272,18 @@ export function initRallarSystemWsTopics(
     }
     return {
         rtcTopologyWorkPublisher: rtcTopologyAppOutbox?.publisher ?? null,
+        rtcRttRecomputeOutboxWorker: rtcRttRecomputeOutboxWorker ?? null,
+        stop: () => {
+            rtcRttRecomputeOutboxWorker?.stop();
+            if (globalGraphRttRecomputeTimer !== undefined) {
+                clearTimeout(globalGraphRttRecomputeTimer);
+                globalGraphRttRecomputeTimer = undefined;
+            }
+            for (const timer of rtcTopologyFlushTimers.values()) {
+                clearTimeout(timer);
+            }
+            rtcTopologyFlushTimers.clear();
+        },
     };
 }
 
@@ -540,6 +559,7 @@ function initRttTopic(
     rtcTopologyWorkPublisher?: RtcTopologyWorkPublisher,
     topologyManagement?: GroupTopologyManagementService,
     runtimeState?: RtcTopologyRuntimeState,
+    rtcRttRecomputeOutboxWorker?: RtcRttRecomputeOutboxWorker,
     scheduleGlobalGraphRttRecompute: () => void = () => {
     },
     findGroupSnapshotByRef?: GroupTopologyGroupSnapshotReader,
@@ -588,11 +608,7 @@ function initRttTopic(
             scheduleGlobalGraphRttRecompute();
             if (rtcTopologyWorkPublisher) {
                 if (runtimeState) {
-                    await drainRtcRttRecomputeOutbox({
-                        repository: runtimeState.rtts,
-                        publisher: rtcTopologyWorkPublisher,
-                        debounceMs: rtcTopologyService.readRttRebuildDebounceMs(),
-                    });
+                    rtcRttRecomputeOutboxWorker?.wake();
                 } else {
                     await rtcTopologyWorkPublisher.enqueueForRttGroups(
                         rtt,

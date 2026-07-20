@@ -288,7 +288,7 @@ export async function migrateLegacyRtcTopologySnapshotKeys(
                             RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
                             canonicalKey,
                             current.value,
-                            current.expireAtTimestamp,
+                            NEVER_EXPIRE_AT_TIMESTAMP,
                         );
                         if (inserted.status === 'conflict') {
                             throw new RuntimeStateWriteConflictError();

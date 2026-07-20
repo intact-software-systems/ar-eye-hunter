@@ -1360,6 +1360,38 @@ describe('RTC topology runtime-state repositories', () => {
         )).toBeUndefined();
     });
 
+    it('normalizes an expiring legacy topology snapshot to a never-expiring canonical row', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const repository = new RtcTopologySnapshotRepository(runtimeRepository);
+        const ref = {
+            ...createGroupRef(),
+            workspaceId: '_',
+        };
+        const snapshot = createTopologySnapshot(ref, 1);
+        const legacyKey = 'app=app-1:ws=_:group=room-1';
+        await runtimeRepository.upsert(
+            RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
+            legacyKey,
+            JSON.stringify(snapshot),
+            12_345,
+        );
+
+        await migrateLegacyRtcTopologySnapshotKeys(repository, {
+            oldWritersStopped: true,
+        });
+
+        const canonical = await runtimeRepository.findEntry(
+            RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
+            repository.snapshotKey(ref),
+        );
+        expect(canonical?.expireAtTimestamp).toBe(NEVER_EXPIRE_AT_TIMESTAMP);
+        await expect(repository.findSnapshot(ref)).resolves.toEqual(snapshot);
+        await expect(runtimeRepository.findEntry(
+            RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
+            legacyKey,
+        )).resolves.toBeUndefined();
+    });
+
     it('keeps latest RTT measurements by sorted pair and expires stale entries', async () => {
         vi.useFakeTimers();
         vi.setSystemTime(1_000);
@@ -1911,6 +1943,7 @@ describe('RTC topology runtime-state repositories', () => {
             'expired-group',
             'missing-pair-member',
             'expired-pair-session',
+            'future-pair-session',
         ] as const)
             .flatMap((defect) =>
                 (['direct', 'list', 'page', 'drain', 'sweep'] as const).map((surface) => ({
@@ -2047,6 +2080,22 @@ describe('RTC topology runtime-state repositories', () => {
                                 connectedAtEpochMs: 0,
                                 lastHeartbeatAtEpochMs: 0,
                                 expiresAtEpochMs: intent.createdAtEpochMs,
+                            }
+                            : session
+                    ),
+                },
+            };
+        } else if (defect === 'future-pair-session') {
+            intent = {
+                ...intent,
+                groupSnapshot: {
+                    ...intent.groupSnapshot,
+                    activeSessions: intent.groupSnapshot.activeSessions.map((session) =>
+                        session.sessionId === intent.rtt.sessionIdFrom
+                            ? {
+                                ...session,
+                                connectedAtEpochMs: intent.createdAtEpochMs + 1,
+                                lastHeartbeatAtEpochMs: intent.createdAtEpochMs + 1,
                             }
                             : session
                     ),
@@ -2869,6 +2918,74 @@ describe('RTC topology runtime-state repositories', () => {
             .resolves.toMatchObject({ entry: { expireAtTimestamp: 106 } });
     });
 
+    it('fully rereads RTT authority after conflict when a session connection boundary moves past acceptance', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const repository = new RtcRttRepository(runtimeRepository, { now: () => 0 });
+        const originalBegin = runtimeRepository.begin.bind(runtimeRepository);
+        const begin = vi.spyOn(runtimeRepository, 'begin')
+            .mockImplementationOnce(async () => {
+                throw new RuntimeStateWriteConflictError();
+            })
+            .mockImplementation(originalBegin);
+        const initial = createRttGroupSnapshot(
+            'room-session-boundary',
+            ['session-a', 'session-b'],
+        );
+        const futureConnection: GroupSnapshot = {
+            ...initial,
+            activeSessions: initial.activeSessions.map((session) => ({
+                ...session,
+                generationVersion: 3,
+                connectedAtEpochMs: 3,
+                lastHeartbeatAtEpochMs: 3,
+            })),
+        };
+        const commands = [initial, futureConnection];
+        const readCommand = vi.fn(() => {
+            const group = commands.shift();
+            if (!group) throw new Error('commands exhausted');
+            return {
+                rtt: {
+                    sessionIdFrom: 'session-a',
+                    sessionIdTo: 'session-b',
+                    rttMs: 1,
+                    createdAtEpochMs: 1,
+                    version: 1,
+                },
+                alSenderId: 'session-a',
+                candidateGroups: [group],
+                overlaySnapshotsByGroupKey: new Map(),
+                degreeLimit: 1,
+            };
+        });
+        const stableCommand = readCommand();
+        commands.unshift(initial);
+
+        const result = await executeRttMutation({
+            repository,
+            runtime: runtimeRepository,
+            command: stableCommand,
+            readCommand,
+            readFacts: () => ({
+                requestedAtEpochMs: 2,
+                purgeAfterEpochMs: 60_002,
+            }),
+            sleep: async () => {},
+        });
+
+        expect(result).toMatchObject({
+            updated: false,
+            computed: {
+                outcome: 'rejected',
+                reason: 'no-shared-active-group',
+            },
+        });
+        expect(readCommand).toHaveBeenCalledTimes(3);
+        expect(begin).toHaveBeenCalledTimes(1);
+        await expect(repository.findMeasurement('session-a', 'session-b'))
+            .resolves.toBeUndefined();
+    });
+
     it('rolls back RTT capacity, measurement, and receipt when intent persistence fails', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const repository = new RtcRttRepository(runtimeRepository, { now: () => 1 });
@@ -2905,6 +3022,228 @@ describe('RTC topology runtime-state repositories', () => {
             .toEqual([]);
         expect(await runtimeRepository.findAllEntries(RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE))
             .toEqual([]);
+    });
+
+    it('autonomously retries a pending RTT recompute intent after enqueue failure and exact receipt replay', async () => {
+        const module = await import(
+            '../../shared-server/rallar-system/services/RtcTopologyOutboxWork.ts'
+        ) as unknown as Record<string, unknown>;
+        const initialiseWorker = module.initRtcRttRecomputeOutboxWorker as
+            | ((input: Readonly<{
+                repository: RtcRttRepository;
+                publisher: RtcTopologyWorkPublisher;
+                debounceMs: number;
+                intervalMs: number;
+                retryDelaysMs: readonly number[];
+                now: () => number;
+                schedule(callback: () => Promise<void>, delayMs: number): unknown;
+                cancel(handle: unknown): void;
+                onError(error: unknown): void;
+            }>) => Readonly<{
+                firstRun: Promise<number>;
+                wake(): void;
+                stop(): void;
+            }>)
+            | undefined;
+        expect(typeof initialiseWorker).toBe('function');
+
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const group = createRttGroupSnapshot(
+            'room-autonomous-retry',
+            ['session-a', 'session-b'],
+        );
+        const seeded = await seedAcceptedRttMutation(runtimeRepository, group);
+        const repository = new RtcRttRepository(runtimeRepository, { now: () => 2 });
+        const enqueueForRtt = vi.fn()
+            .mockRejectedValueOnce(new Error('queue temporarily unavailable'))
+            .mockResolvedValue(undefined);
+        const scheduled: Array<Readonly<{
+            callback: () => Promise<void>;
+            delayMs: number;
+            handle: object;
+        }>> = [];
+        const cancelled: unknown[] = [];
+        const onError = vi.fn(() => {
+            throw new Error('observer failed');
+        });
+        const worker = initialiseWorker!({
+            repository,
+            publisher: createRttWorkPublisher(enqueueForRtt),
+            debounceMs: 0,
+            intervalMs: 1_000,
+            retryDelaysMs: [2, 8],
+            now: () => 2,
+            schedule: (callback, delayMs) => {
+                const handle = {};
+                scheduled.push({ callback, delayMs, handle });
+                return handle;
+            },
+            cancel: (handle) => cancelled.push(handle),
+            onError,
+        });
+
+        await expect(worker.firstRun).rejects.toThrow('queue temporarily unavailable');
+        expect(onError).toHaveBeenCalledTimes(1);
+        expect(onError).toHaveBeenCalledWith({
+            name: 'Error',
+            message: 'RTC RTT recompute outbox delivery failed',
+        });
+        expect(JSON.stringify(onError.mock.calls)).not.toContain(
+            'queue temporarily unavailable',
+        );
+        expect(scheduled.map(({ delayMs }) => delayMs)).toEqual([2]);
+        await expect(repository.findRecomputeIntentEntry(seeded.intent.outboxId))
+            .resolves.toMatchObject({ value: { delivery: { state: 'pending' } } });
+
+        const replayReadCommand = vi.fn(() => {
+            throw new Error('receipt replay must not read mutable authority');
+        });
+        const replay = await executeRttMutation({
+            repository,
+            runtime: runtimeRepository,
+            command: {
+                rtt: seeded.intent.rtt,
+                alSenderId: seeded.intent.rtt.sessionIdFrom,
+                candidateGroups: [group],
+                overlaySnapshotsByGroupKey: new Map(),
+                degreeLimit: 1,
+            },
+            readCommand: replayReadCommand,
+            readFacts: () => {
+                throw new Error('receipt replay must not read lifecycle facts');
+            },
+        });
+        expect(replay).toMatchObject({
+            updated: false,
+            computed: { outcome: 'replay' },
+        });
+        expect(replayReadCommand).not.toHaveBeenCalled();
+        expect(enqueueForRtt).toHaveBeenCalledTimes(1);
+
+        await scheduled[0]!.callback();
+        expect(enqueueForRtt).toHaveBeenCalledTimes(2);
+        await expect(repository.findRecomputeIntentEntry(seeded.intent.outboxId))
+            .resolves.toMatchObject({
+                value: { delivery: { state: 'delivered', deliveredAtEpochMs: 2 } },
+            });
+        expect(scheduled.map(({ delayMs }) => delayMs)).toEqual([2, 1_000]);
+
+        worker.stop();
+        worker.stop();
+        expect(cancelled).toEqual([scheduled[1]!.handle]);
+    });
+
+    it('coalesces worker wakes while an RTT recompute drain is in flight', async () => {
+        const module = await import(
+            '../../shared-server/rallar-system/services/RtcTopologyOutboxWork.ts'
+        ) as unknown as Record<string, unknown>;
+        const initialiseWorker = module.initRtcRttRecomputeOutboxWorker as
+            | ((input: Readonly<{
+                repository: RtcRttRepository;
+                publisher: RtcTopologyWorkPublisher;
+                debounceMs: number;
+                intervalMs: number;
+                now: () => number;
+                schedule(callback: () => Promise<void>, delayMs: number): unknown;
+                cancel(handle: unknown): void;
+            }>) => Readonly<{
+                firstRun: Promise<number>;
+                wake(): void;
+                stop(): void;
+            }>)
+            | undefined;
+        expect(typeof initialiseWorker).toBe('function');
+
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const group = createRttGroupSnapshot(
+            'room-non-overlap',
+            ['session-a', 'session-b'],
+        );
+        await seedAcceptedRttMutation(runtimeRepository, group);
+        const repository = new RtcRttRepository(runtimeRepository, { now: () => 2 });
+        let release!: () => void;
+        const blocked = new Promise<void>((resolve) => release = resolve);
+        let active = 0;
+        let maxActive = 0;
+        const enqueueForRtt = vi.fn(async () => {
+            active += 1;
+            maxActive = Math.max(maxActive, active);
+            await blocked;
+            active -= 1;
+        });
+        const worker = initialiseWorker!({
+            repository,
+            publisher: createRttWorkPublisher(enqueueForRtt),
+            debounceMs: 0,
+            intervalMs: 1_000,
+            now: () => 2,
+            schedule: () => ({}),
+            cancel: () => {},
+        });
+
+        while (enqueueForRtt.mock.calls.length === 0) await Promise.resolve();
+        worker.wake();
+        worker.wake();
+        expect(enqueueForRtt).toHaveBeenCalledTimes(1);
+        release();
+        await worker.firstRun;
+        for (let turn = 0; turn < 5; turn += 1) await Promise.resolve();
+
+        expect(maxActive).toBe(1);
+        expect(enqueueForRtt).toHaveBeenCalledTimes(1);
+        worker.stop();
+    });
+
+    it('prevents an in-flight RTT worker completion from scheduling after stop', async () => {
+        const module = await import(
+            '../../shared-server/rallar-system/services/RtcTopologyOutboxWork.ts'
+        ) as unknown as Record<string, unknown>;
+        const initialiseWorker = module.initRtcRttRecomputeOutboxWorker as (
+            input: Readonly<{
+                repository: RtcRttRepository;
+                publisher: RtcTopologyWorkPublisher;
+                debounceMs: number;
+                intervalMs: number;
+                now: () => number;
+                schedule(callback: () => Promise<void>, delayMs: number): unknown;
+                cancel(handle: unknown): void;
+            }>,
+        ) => Readonly<{
+            firstRun: Promise<number>;
+            wake(): void;
+            stop(): void;
+        }>;
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const group = createRttGroupSnapshot(
+            'room-stop-in-flight',
+            ['session-a', 'session-b'],
+        );
+        await seedAcceptedRttMutation(runtimeRepository, group);
+        const repository = new RtcRttRepository(runtimeRepository, { now: () => 2 });
+        let release!: () => void;
+        const blocked = new Promise<void>((resolve) => release = resolve);
+        const enqueueForRtt = vi.fn(() => blocked);
+        const schedule = vi.fn(() => ({}));
+        const cancel = vi.fn();
+        const worker = initialiseWorker({
+            repository,
+            publisher: createRttWorkPublisher(enqueueForRtt),
+            debounceMs: 0,
+            intervalMs: 1_000,
+            now: () => 2,
+            schedule,
+            cancel,
+        });
+
+        while (enqueueForRtt.mock.calls.length === 0) await Promise.resolve();
+        worker.stop();
+        worker.wake();
+        release();
+        await worker.firstRun;
+
+        expect(schedule).not.toHaveBeenCalled();
+        expect(cancel).not.toHaveBeenCalled();
+        expect(enqueueForRtt).toHaveBeenCalledTimes(1);
     });
 
     it('retains a delivered RTT intent proof after a worker restart drain', async () => {

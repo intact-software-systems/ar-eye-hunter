@@ -39,7 +39,11 @@ import {
 } from '@shared-graph/graph-diagnostics-service.ts';
 import type { RallarServerWsFacadeOptions } from '@shared-server/rallar-facade/ws-topic-router.ts';
 import type { Middleware } from './middleware.ts';
-import { getGroupStateMaintenanceService, initialiseMiddleware } from './middleware.ts';
+import {
+  getGroupStateMaintenanceService,
+  initialiseMiddleware,
+  registerMiddlewareBackgroundTask,
+} from './middleware.ts';
 import type {
   GroupStateMaintenanceService,
 } from '@shared-server/rallar-system/services/group-state-service.ts';
@@ -178,6 +182,7 @@ export function createRallarServer(
     groupStateService: middleware.groupStateService,
     wsStatus: () => rallarApplication?.ws.status() ?? emptyWsStatus,
   });
+  let stopSystemTopics: (() => void) | undefined;
 
   const rallarApplication = createRallarServerApplication({
     runtime: middleware,
@@ -194,35 +199,44 @@ export function createRallarServer(
     },
     system: {
       installDefaultMiddlewareTopics: (runtime, ws) => {
-        initRallarSystemWsTopics(runtime.wsQBoxServerService, {
-          initDynamicTopics: false,
-          rtcTopologyService,
-          rtcTopologyOptions,
-          rtcTopologyManagement: topologyManagement,
-          observeGroupSnapshot: async (snapshot) => {
-            await runtime.groupStateService.observeSnapshot(snapshot);
+        stopSystemTopics?.();
+        const systemTopics = initRallarSystemWsTopics(
+          runtime.wsQBoxServerService,
+          {
+            initDynamicTopics: false,
+            rtcTopologyService,
+            rtcTopologyOptions,
+            rtcTopologyManagement: topologyManagement,
+            observeGroupSnapshot: async (snapshot) => {
+              await runtime.groupStateService.observeSnapshot(snapshot);
+            },
+            observeClientSnapshot: async (snapshot) => {
+              await runtime.clientStateService.observeSnapshot(snapshot);
+            },
+            rtcTopologyRuntimeState: {
+              repository: runtimeStateRepository,
+            },
+            rtcTopologyRepositories: {
+              topologyConfig: topologyConfigRepository,
+              topologySnapshots: topologySnapshotRepository,
+              rtts: rttRepository,
+            },
+            rtcTopologyAppOutbox: {
+              outboxQueueReader: runtime.outboxQueueReader,
+              senderId: myServerId,
+              wake: () => runtime.qboxEngine.wake(),
+              executionRepository: runtime.rtcTopologyExecutionRepository,
+              publicationFanout: runtime.rtcTopologyPublicationFanout,
+              findGroupSnapshotByRef: (ref, cacheOptions) =>
+                runtime.groupStateService.readSnapshotAtLeast(ref, cacheOptions ?? {}),
+            },
           },
-          observeClientSnapshot: async (snapshot) => {
-            await runtime.clientStateService.observeSnapshot(snapshot);
-          },
-          rtcTopologyRuntimeState: {
-            repository: runtimeStateRepository,
-          },
-          rtcTopologyRepositories: {
-            topologyConfig: topologyConfigRepository,
-            topologySnapshots: topologySnapshotRepository,
-            rtts: rttRepository,
-          },
-          rtcTopologyAppOutbox: {
-            outboxQueueReader: runtime.outboxQueueReader,
-            senderId: myServerId,
-            wake: () => runtime.qboxEngine.wake(),
-            executionRepository: runtime.rtcTopologyExecutionRepository,
-            publicationFanout: runtime.rtcTopologyPublicationFanout,
-            findGroupSnapshotByRef: (ref, cacheOptions) =>
-              runtime.groupStateService.readSnapshotAtLeast(ref, cacheOptions ?? {}),
-          },
-        });
+        );
+        const unregister = registerMiddlewareBackgroundTask(systemTopics.stop);
+        stopSystemTopics = () => {
+          unregister();
+          systemTopics.stop();
+        };
         installRallarCrdtWsTopics(ws, {
           logRepository: crdtLogRepository,
         });

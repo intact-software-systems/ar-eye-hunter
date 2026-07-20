@@ -136,7 +136,10 @@ function groupIncludesLivePairAt(
 ): boolean {
     const liveSessionIds = new Set(
         group.activeSessions
-            .filter((session) => session.expiresAtEpochMs > requestedAtEpochMs)
+            .filter((session) =>
+                session.connectedAtEpochMs <= requestedAtEpochMs &&
+                session.expiresAtEpochMs > requestedAtEpochMs
+            )
             .map((session) => session.sessionId),
     );
     return liveSessionIds.has(sessionIdFrom) && liveSessionIds.has(sessionIdTo);

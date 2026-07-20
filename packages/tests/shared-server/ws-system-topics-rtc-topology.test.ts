@@ -1108,6 +1108,7 @@ describe('Rallar system websocket topics RTC topology', () => {
                 group,
                 'worker-a',
             );
+            await workerA.systemTopics.rtcRttRecomputeOutboxWorker?.firstRun;
 
             await workerA.senderSocket.dispatchMessage(
                 newALBroadcastMessage(
@@ -1143,6 +1144,7 @@ describe('Rallar system websocket topics RTC topology', () => {
                 group,
                 'worker-b',
             );
+            await workerB.systemTopics.rtcRttRecomputeOutboxWorker?.firstRun;
 
             for (const rtt of createCentralRttMeasurements(
                 group.activeSessions.map((session) => session.sessionId),
@@ -1174,6 +1176,7 @@ describe('Rallar system websocket topics RTC topology', () => {
                 group,
                 'worker-c',
             );
+            await workerC.systemTopics.rtcRttRecomputeOutboxWorker?.firstRun;
 
             vi.setSystemTime(1_100);
             await workerC.outboxQueueReader.dequeueOutbox(
@@ -1185,6 +1188,9 @@ describe('Rallar system websocket topics RTC topology', () => {
             expect(secondTopology?.version).toBe(2);
             expect(secondTopology?.nextHopsBySessionId?.['session-a'])
                 .toHaveLength(4);
+            workerA.systemTopics.stop();
+            workerB.systemTopics.stop();
+            workerC.systemTopics.stop();
         } finally {
             vi.useRealTimers();
         }
@@ -1349,6 +1355,7 @@ function createTopologyWorker(
     readonly sockets: Map<string, FakeSocket>;
     readonly senderSocket: FakeSocket;
     readonly outboxQueueReader: OutboxQueueReader;
+    readonly systemTopics: ReturnType<typeof initRallarSystemWsTopics>;
 } {
     const server = new JsonWebSocketServer();
     const sockets = createSockets(
@@ -1366,7 +1373,7 @@ function createTopologyWorker(
         server,
         name,
     );
-    initRallarSystemWsTopics(service, {
+    const systemTopics = initRallarSystemWsTopics(service, {
         rtcTopologyOptions: {
             rttRebuildDebounceMs: 100,
         },
@@ -1388,6 +1395,7 @@ function createTopologyWorker(
         sockets,
         senderSocket: sockets.get('session-a')!,
         outboxQueueReader,
+        systemTopics,
     };
 }
 

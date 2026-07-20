@@ -79,6 +79,28 @@ Deno.test('runtime-state expiry starts protected generic eviction when RTC famil
   assert.equal(evictionInitialisations, 1);
 });
 
+Deno.test('runtime-state expiry surfaces specialized corruption while protected generic eviction remains long-running', async () => {
+  const failure = new Error('RTC family cleanup is corrupt');
+  let genericStarted = false;
+  let settled: Readonly<{ status: 'rejected'; error: unknown }> | undefined;
+
+  runRuntimeStateExpiryStartupBarrier({
+    backfillTopologyGenerations: () => Promise.resolve({ advanced: 0 }),
+    initialiseRtcRttReceiptFamilyCleanup: () => Promise.reject(failure),
+    initialiseRuntimeStateExpiryEviction: () => {
+      genericStarted = true;
+      return new Promise<void>(() => {});
+    },
+  }).catch((error) => {
+    settled = { status: 'rejected', error };
+  });
+
+  for (let turn = 0; turn < 5; turn += 1) await Promise.resolve();
+
+  assert.equal(genericStarted, true);
+  assert.deepEqual(settled, { status: 'rejected', error: failure });
+});
+
 Deno.test('runtime-state expiry lifecycle retains, replaces, and stops rejected cleanup handles', async () => {
   const module = await import(
     '../../src/services/runtime-state-expiry-startup.ts'
@@ -117,6 +139,39 @@ Deno.test('runtime-state expiry lifecycle retains, replaces, and stops rejected 
   assert.equal(secondStops, 1);
 });
 
+Deno.test('runtime-state expiry lifecycle generation-fences delayed older startup handles', async () => {
+  const module = await import(
+    '../../src/services/runtime-state-expiry-startup.ts'
+  ) as unknown as Record<string, unknown>;
+  const createLifecycle = module.createRuntimeStateExpiryLifecycle as () => {
+    beginStartupGeneration(): Readonly<{
+      startRtcRttReceiptFamilyCleanup(
+        initialise: () => Readonly<{ firstRun: Promise<number>; stop(): void }>,
+      ): Promise<number>;
+    }>;
+    stop(): void;
+  };
+  const lifecycle = createLifecycle();
+  const delayedOlder = lifecycle.beginStartupGeneration();
+  const newest = lifecycle.beginStartupGeneration();
+  let oldStops = 0;
+  let newStops = 0;
+
+  await delayedOlder.startRtcRttReceiptFamilyCleanup(() => ({
+    firstRun: Promise.resolve(0),
+    stop: () => oldStops += 1,
+  }));
+  await newest.startRtcRttReceiptFamilyCleanup(() => ({
+    firstRun: Promise.resolve(0),
+    stop: () => newStops += 1,
+  }));
+
+  assert.deepEqual({ oldStops, newStops }, { oldStops: 1, newStops: 0 });
+  lifecycle.stop();
+  lifecycle.stop();
+  assert.deepEqual({ oldStops, newStops }, { oldStops: 1, newStops: 1 });
+});
+
 Deno.test('api middleware protects RTC receipt families and starts specialized cleanup', async () => {
   const middlewareSource = await Deno.readTextFile(
     new URL('../../src/middleware.ts', import.meta.url),
@@ -131,6 +186,12 @@ Deno.test('api middleware protects RTC receipt families and starts specialized c
   assert.match(middlewareSource, /createRuntimeStateExpiryLifecycle/);
   assert.match(middlewareSource, /startRtcRttReceiptFamilyCleanup/);
   assert.match(middlewareSource, /shutdownMiddlewareBackgroundTasks/);
+  assert.match(middlewareSource, /registerMiddlewareBackgroundTask/);
+
+  const serverSource = await Deno.readTextFile(
+    new URL('../../src/create-rallar-server.ts', import.meta.url),
+  );
+  assert.match(serverSource, /registerMiddlewareBackgroundTask\(systemTopics\.stop\)/);
 
   const mainSource = await Deno.readTextFile(
     new URL('../../src/main.ts', import.meta.url),
