@@ -1661,6 +1661,75 @@ describe('RTC topology runtime-state repositories', () => {
             .resolves.toMatchObject([{ value: admission }]);
     });
 
+    it.each([
+        { operation: 'insert', expectedRevision: null, version: 2 },
+        { operation: 'update', expectedRevision: 0, version: 1 },
+    ] as const)(
+        'rejects a direct endpoint admission $operation whose domain version differs from its storage guard',
+        async ({ expectedRevision, version }) => {
+            const runtimeRepository = new FakeRuntimeStateRepository();
+            const repository = new RtcRttRepository(runtimeRepository, {
+                now: () => 1,
+            });
+            const admission = {
+                endpointId: 'session-a',
+                peers: [{
+                    peerSessionId: 'session-b',
+                    expiresAtEpochMs: 100,
+                }],
+                version,
+                updatedAtEpochMs: 1,
+            };
+
+            await expect(repository.commitEndpointAdmission(
+                admission,
+                expectedRevision,
+                100,
+            )).rejects.toBeInstanceOf(TypeError);
+            await expect(runtimeRepository.findAllEntries(
+                RTC_RTT_ENDPOINT_ADMISSION_NAMESPACE,
+            )).resolves.toEqual([]);
+        },
+    );
+
+    it.each(['direct', 'list', 'page'] as const)(
+        'fails closed on endpoint domain/storage version corruption before expiry cleanup on %s reads',
+        async (surface) => {
+            const runtimeRepository = new FakeRuntimeStateRepository();
+            const repository = new RtcRttRepository(runtimeRepository, {
+                now: () => 10_000,
+            });
+            const key = repository.endpointAdmissionKey('session-a');
+            await runtimeRepository.upsert(
+                RTC_RTT_ENDPOINT_ADMISSION_NAMESPACE,
+                key,
+                JSON.stringify({
+                    endpointId: 'session-a',
+                    peers: [{
+                        peerSessionId: 'session-b',
+                        expiresAtEpochMs: 9_000,
+                    }],
+                    version: 2,
+                    updatedAtEpochMs: 1,
+                }),
+                9_000,
+            );
+
+            const read = surface === 'direct'
+                ? repository.findEndpointAdmissionEntry('session-a')
+                : surface === 'list'
+                ? repository.listEndpointAdmissionEntries()
+                : repository.listEndpointAdmissionEntriesPage({ limit: 10 });
+            await expect(read).rejects.toMatchObject({
+                code: 'rtc-topology-repository-invariant-corruption',
+            });
+            await expect(runtimeRepository.findEntry(
+                RTC_RTT_ENDPOINT_ADMISSION_NAMESPACE,
+                key,
+            )).resolves.toBeDefined();
+        },
+    );
+
     it('optimistically admits only one of two endpoint-cap races', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         vi.spyOn(runtimeRepository, 'lockKey').mockResolvedValue();
@@ -4279,6 +4348,30 @@ const rttWriteCandidateCorruptions: readonly Readonly<{
         label: 'an invalid endpoint expected revision',
         corrupt: (candidate) => {
             candidate.endpointGuards[0]!.expectedRevision = -1;
+            return candidate;
+        },
+    },
+    ...([0, 1] as const).map((endpointIndex) => ({
+        label: `endpoint ${endpointIndex + 1} insert domain version differing from its storage guard`,
+        corrupt: (candidate: MutableRttWriteCandidate) => {
+            candidate.endpointGuards[endpointIndex]!.value.version = 2;
+            return candidate;
+        },
+    })),
+    ...([0, 1] as const).map((endpointIndex) => ({
+        label: `endpoint ${endpointIndex + 1} update domain version differing from its storage guard`,
+        corrupt: (candidate: MutableRttWriteCandidate) => {
+            candidate.endpointGuards[endpointIndex]!.expectedRevision = 0;
+            candidate.endpointGuards[endpointIndex]!.value.version = 1;
+            return candidate;
+        },
+    })),
+    {
+        label: 'an endpoint update whose next domain version would overflow',
+        corrupt: (candidate) => {
+            candidate.endpointGuards[0]!.expectedRevision =
+                Number.MAX_SAFE_INTEGER - 1;
+            candidate.endpointGuards[0]!.value.version = Number.MAX_SAFE_INTEGER;
             return candidate;
         },
     },

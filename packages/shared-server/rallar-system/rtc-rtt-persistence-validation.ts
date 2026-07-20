@@ -306,6 +306,10 @@ function validateEndpointGuards(
             guard.expireAtTimestamp as number,
         );
         const admission = guard.value as RtcRttEndpointAdmissionContract;
+        validateRtcRttEndpointAdmissionCandidateVersion(
+            admission.version,
+            guard.expectedRevision,
+        );
         if (admission.updatedAtEpochMs !== receipt.acceptedAtEpochMs) {
             throw new TypeError('RTC RTT endpoint admission lifecycle is invalid');
         }
@@ -426,6 +430,48 @@ export function validateRtcRttEndpointAdmission(
     }
 }
 
+export function validateRtcRttEndpointAdmissionCandidateVersion(
+    domainVersion: number,
+    expectedRevision: number | null,
+): void {
+    safeInteger(domainVersion, 1, 'endpoint admission version');
+    validateExpectedRevision(expectedRevision, 'endpoint');
+    const requiredVersion = expectedRevision === null
+        ? 1
+        : expectedRevision + 2;
+    if (
+        !Number.isSafeInteger(requiredVersion) ||
+        domainVersion !== requiredVersion
+    ) {
+        throw new TypeError(
+            'RTC RTT endpoint admission version differs from storage guard',
+        );
+    }
+}
+
+export function validateRtcRttEndpointAdmissionPersistedVersion(
+    domainVersion: number,
+    storageRevision: number,
+): void {
+    safeInteger(domainVersion, 1, 'endpoint admission version');
+    if (
+        !Number.isSafeInteger(storageRevision) ||
+        Object.is(storageRevision, -0) ||
+        storageRevision < 0
+    ) {
+        throw new TypeError('RTC RTT endpoint storage revision is invalid');
+    }
+    const requiredVersion = storageRevision + 1;
+    if (
+        !Number.isSafeInteger(requiredVersion) ||
+        domainVersion !== requiredVersion
+    ) {
+        throw new TypeError(
+            'RTC RTT persisted endpoint version differs from storage revision',
+        );
+    }
+}
+
 function validateExactFamilyExpiry(
     acceptedAtEpochMs: number,
     physicalExpiry: number,
@@ -463,7 +509,10 @@ function validateCommandHash(value: unknown): asserts value is string {
     }
 }
 
-function validateExpectedRevision(value: unknown, authority: string): void {
+function validateExpectedRevision(
+    value: unknown,
+    authority: string,
+): asserts value is number | null {
     if (value === null) return;
     if (
         !Number.isSafeInteger(value) ||

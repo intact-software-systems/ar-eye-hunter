@@ -34,6 +34,8 @@ import {
 import { rtcTopologySemanticEqual } from '../rtc-topology-semantic-equality.ts';
 import {
     RTC_RTT_MUTATION_RETENTION_MS,
+    validateRtcRttEndpointAdmissionCandidateVersion,
+    validateRtcRttEndpointAdmissionPersistedVersion,
     validateRtcRttEndpointAdmission as validatePersistedRtcRttEndpointAdmission,
     validateRtcRttMeasurement as validatePersistedRtcRttMeasurement,
     validateRtcRttMutationReceipt as validatePersistedRtcRttMutationReceipt,
@@ -263,6 +265,10 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
         expireAtTimestamp: number,
     ): Promise<RtcRttConditionalWriteResult> {
         validateEndpointAdmission(admission, admission.endpointId, expireAtTimestamp);
+        validateRtcRttEndpointAdmissionCandidateVersion(
+            admission.version,
+            expectedRevision,
+        );
         const result = expectedRevision === null
             ? await this.putValueIfAbsent(
                 RTC_RTT_ENDPOINT_ADMISSION_NAMESPACE,
@@ -644,6 +650,10 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
         const value = parseValue(entry) as RtcRttEndpointAdmission;
         try {
             validateEndpointAdmission(value, endpointId, entry.expireAtTimestamp);
+            validateRtcRttEndpointAdmissionPersistedVersion(
+                value.version,
+                entry.revision,
+            );
         } catch (error) {
             throw rttCorruption(
                 entry.key,

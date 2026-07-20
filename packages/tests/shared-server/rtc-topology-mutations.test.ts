@@ -482,7 +482,7 @@ describe('RTC topology mutation phases', () => {
             read: {
                 ...emptyRead,
                 endpointAdmissions: [{
-                    entry: { key: 'endpoint=session-a', value: '', expireAtTimestamp: 60_001, updatedTimestamp: 'now', revision: 1 },
+                    entry: { key: 'endpoint=session-a', value: '', expireAtTimestamp: 60_001, updatedTimestamp: 'now', revision: 0 },
                     value: {
                         endpointId: 'session-a',
                         peers: [{ peerSessionId: 'session-c', expiresAtEpochMs: 60_001 }],
