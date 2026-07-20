@@ -955,6 +955,30 @@
       "description": "Bounded two-server load recipe with 12 clients contending across two groups and disconnect/reconnect presence churn."
     },
     {
+      "id": "api-v1-state-write-convergence",
+      "recipe": "tests/api-v1/api-v1-state-write-convergence.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "profiles": ["api-v1-black-box-cluster"],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-state-write-convergence",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API primary",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          },
+          {
+            "name": "Rallar API secondary",
+            "env": "RALLAR_API_BASE_URL_SECONDARY",
+            "default": "http://127.0.0.1:18081"
+          }
+        ]
+      },
+      "description": "Two-server state-write convergence gate for bounded membership, reused-session fencing, topology config receipts, and causal history."
+    },
+    {
       "id": "api-v1-state-medium-scale-churn",
       "recipe": "tests/api-v1/api-v1-state-medium-scale-churn.json",
       "category": "api-v1-black-box",

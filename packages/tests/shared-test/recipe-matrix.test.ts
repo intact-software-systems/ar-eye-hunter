@@ -454,6 +454,171 @@ describe('black-box runner recipe matrix', () => {
         expect(JSON.stringify(recipe)).toContain('topology/reconfigure');
     });
 
+    it('defines two-server API state-write convergence with bounded causal polling', () => {
+        const { entries } = readMatrix();
+        const entry = entries.find(candidate =>
+            candidate.id === 'api-v1-state-write-convergence'
+        );
+
+        expect(entry).toMatchObject({
+            id: 'api-v1-state-write-convergence',
+            recipe: 'tests/api-v1/api-v1-state-write-convergence.json',
+            category: 'api-v1-black-box',
+            mode: 'run',
+            profiles: ['api-v1-black-box-cluster'],
+            expectedExitCode: 0,
+        });
+        if (!entry) return;
+        expect(entry.requires?.httpServices).toHaveLength(2);
+        expect(entry.requires?.playwright).not.toBe(true);
+
+        const recipe = readRecipe(entry.recipe);
+        const steps = recipe.steps as Array<Record<string, unknown>>;
+        const recipeText = JSON.stringify(recipe);
+        for (const contender of ['Primary', 'Secondary']) {
+            const registerName = `register${contender}Contender`;
+            const loginName = `login${contender}Contender`;
+            const deriveName = `derive${contender}ContenderAuthHeader`;
+            const register = steps.find(step => step.name === registerName);
+            const login = steps.find(step => step.name === loginName);
+            expect(steps.indexOf(register!)).toBeLessThan(steps.indexOf(login!));
+            expect(steps.indexOf(login!)).toBeLessThan(
+                steps.indexOf(steps.find(step => step.name === deriveName)!),
+            );
+            expect(register?.request).toMatchObject({
+                method: 'POST',
+                path: '/api/auth/register',
+                outputs: {
+                    [`${contender.toLowerCase()}ContenderClientId`]: 'body.clientId',
+                },
+            });
+            expect(register?.expect).toEqual({
+                status: 201,
+                body: { clientId: 'string' },
+            });
+            expect(login?.request).toMatchObject({
+                method: 'POST',
+                path: '/api/auth/login',
+                outputs: {
+                    [`${contender.toLowerCase()}ContenderAccessToken`]: {
+                        path: 'body.accessToken',
+                        secret: true,
+                    },
+                },
+            });
+            expect(login?.expect).toMatchObject({
+                status: 200,
+                body: { accessToken: 'string', sessionId: 'string' },
+            });
+        }
+        const race = steps.find(step =>
+            step.name === 'raceBoundedMembershipPresenceAndConfig'
+        ) as {
+            type?: string;
+            maxConcurrency?: number;
+            groups?: Array<{ steps?: Array<Record<string, unknown>> }>;
+        };
+        expect(race).toMatchObject({ type: 'parallel', maxConcurrency: 4 });
+        expect(race.groups).toHaveLength(4);
+        expect(new Set(race.groups?.flatMap(group =>
+            (group.steps ?? []).map(step => step.connection)
+        ))).toEqual(new Set(['apiPrimary', 'apiSecondary']));
+        race.groups?.filter(group =>
+            (group.steps?.[0]?.name as string | undefined)?.includes('ContenderMembership')
+        ).forEach(group => {
+            expect(group.steps?.[0]?.expect).toEqual({ statusCode: [200, 403] });
+        });
+        expect(steps.find(step => step.name === 'createBoundedGroup')?.request)
+            .toMatchObject({ body: { maxMembers: 2, joinMode: 'open' } });
+
+        const configNames = [
+            'putInitialTopologyConfig',
+            'deleteTopologyConfig',
+            'putFinalTopologyConfig',
+        ];
+        const configSequence = steps.filter(step =>
+            configNames.includes(String(step.name))
+        );
+        expect(configSequence.map(step => step.name)).toEqual(configNames);
+        expect(configSequence.map(step =>
+            (step.request as { method?: string })?.method
+        )).toEqual(['PUT', 'DELETE', 'PUT']);
+        expect(JSON.stringify(recipe)).not.toContain('/topology/reconfigure');
+        expect(steps.find(step => step.name === 'reconnectReusedSession')?.request)
+            .toMatchObject({
+                path: expect.stringContaining('{reusedSessionId}'),
+                body: { generationId: 'generation-2-{runId}' },
+            });
+        const staleExpiry = steps.find(step => step.name === 'submitStaleExpiryCandidate');
+        expect(staleExpiry?.request).toMatchObject({
+            path: expect.stringContaining('{reusedSessionId}'),
+            body: { generationId: 'generation-1-{runId}' },
+            outputs: {
+                acceptedLifecyclePresenceRevision:
+                    'body.causalRevision.presenceRevision',
+                acceptedLifecycleGenerationId:
+                    'body.activeSessions.0.generationId',
+            },
+        });
+
+        const pollDelays = steps.filter(step =>
+            String(step.name).startsWith('delayBeforeStateConvergencePoll')
+        );
+        expect(pollDelays.map(step =>
+            Number((step.request as { delayMs?: number })?.delayMs)
+        )).toEqual([250, 500, 1000, 2000, 4000]);
+        const polls = steps.filter(step =>
+            String(step.name).startsWith('pollStateConvergenceAttempt')
+        );
+        expect(polls).toHaveLength(5);
+        polls.forEach(step => expect(step).toMatchObject({
+            type: 'parallel',
+            maxConcurrency: 2,
+            nonBlockingFailure: true,
+        }));
+
+        const finalAssertion = steps.find(step =>
+            step.name === 'assertIdenticalFinalStateAndCausalHistory'
+        );
+        expect(finalAssertion).toMatchObject({
+            type: 'assert',
+            actual: {
+                primary: expect.any(Object),
+                secondary: expect.any(Object),
+                causalHistory: expect.any(Object),
+            },
+            expect: {
+                body: expect.any(Object),
+                monotonicPaths: expect.any(Array),
+                missingActualValue: 'MISSING',
+            },
+        });
+        expect(finalAssertion?.expect).toMatchObject({
+            body: {
+                primary: {
+                    groupStateCausalRevision: {
+                        presenceRevision:
+                            '{resultsByName.submitStaleExpiryCandidate.0.actual.body.causalRevision.presenceRevision}',
+                    },
+                    generationId:
+                        '{resultsByName.submitStaleExpiryCandidate.0.actual.body.activeSessions.0.generationId}',
+                    sourceGroupStateCausalRevision:
+                        '{resultsByName.readPrimaryGroupAttempt5.0.actual.body.causalRevision}',
+                },
+                secondary: {
+                    sourceGroupStateCausalRevision:
+                        '{resultsByName.readPrimaryGroupAttempt5.0.actual.body.causalRevision}',
+                },
+            },
+        });
+        for (const field of [
+            '/members/', '/sessions/', '/heartbeat', '/disconnect',
+            'groupStateCausalRevision', 'members', 'generationId',
+            'acceptedVersion', 'config', 'sourceGroupStateCausalRevision',
+            'outboxIds',
+        ]) expect(recipeText + JSON.stringify(finalAssertion)).toContain(field);
+    });
+
     it('defines the isolated 100-client five-group medium-scale state churn gate', () => {
         const { entries } = readMatrix();
         const entry = entries.find(candidate =>

@@ -1,0 +1,1548 @@
+{
+  "variables": {
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    },
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "rallarApiBaseUrlSecondary": {
+      "env": "RALLAR_API_BASE_URL_SECONDARY",
+      "default": "http://127.0.0.1:18081"
+    },
+    "applicationId": {
+      "env": "RALLAR_BB_APPLICATION_ID",
+      "default": "api-v1-convergence-{runId}"
+    },
+    "workspaceId": {
+      "env": "RALLAR_BB_WORKSPACE_ID",
+      "default": "state-write-convergence-{runId}"
+    },
+    "groupId": {
+      "env": "RALLAR_BB_GROUP_ID",
+      "default": "bounded-convergence-{runId}"
+    },
+    "ownerUsername": {
+      "env": "RALLAR_ALICE_USERNAME",
+      "default": "alice"
+    },
+    "ownerPassword": {
+      "env": "RALLAR_ALICE_PASSWORD",
+      "default": "secret",
+      "secret": true
+    },
+    "contenderPassword": {
+      "env": "RALLAR_BB_CONVERGENCE_PASSWORD",
+      "default": "state-write-convergence-password",
+      "secret": true
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "apiPrimary": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrl}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 15000
+    },
+    "apiSecondary": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrlSecondary}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 15000
+    }
+  },
+  "steps": [
+    {
+      "name": "loginOwnerOnPrimary",
+      "type": "http",
+      "connection": "apiPrimary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login",
+        "body": {
+          "username": "{ownerUsername}",
+          "password": "{ownerPassword}"
+        },
+        "outputs": {
+          "ownerClientId": "body.clientId",
+          "ownerAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          },
+          "reusedSessionId": "body.sessionId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveOwnerAuthHeader",
+      "type": "set",
+      "output": "ownerAuthHeader",
+      "secret": true,
+      "redactAs": "ownerAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.ownerAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerPrimaryContender",
+      "type": "http",
+      "connection": "apiPrimary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register",
+        "body": {
+          "username": "convergence-primary-{runId}",
+          "password": "{contenderPassword}",
+          "displayName": "Primary convergence contender {runId}"
+        },
+        "outputs": {
+          "primaryContenderClientId": "body.clientId"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginPrimaryContender",
+      "type": "http",
+      "connection": "apiPrimary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login",
+        "body": {
+          "username": "convergence-primary-{runId}",
+          "password": "{contenderPassword}"
+        },
+        "outputs": {
+          "primaryContenderAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "derivePrimaryContenderAuthHeader",
+      "type": "set",
+      "output": "primaryContenderAuthHeader",
+      "secret": true,
+      "redactAs": "primaryContenderAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.primaryContenderAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerSecondaryContender",
+      "type": "http",
+      "connection": "apiSecondary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register",
+        "body": {
+          "username": "convergence-secondary-{runId}",
+          "password": "{contenderPassword}",
+          "displayName": "Secondary convergence contender {runId}"
+        },
+        "outputs": {
+          "secondaryContenderClientId": "body.clientId"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginSecondaryContender",
+      "type": "http",
+      "connection": "apiSecondary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login",
+        "body": {
+          "username": "convergence-secondary-{runId}",
+          "password": "{contenderPassword}"
+        },
+        "outputs": {
+          "secondaryContenderAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveSecondaryContenderAuthHeader",
+      "type": "set",
+      "output": "secondaryContenderAuthHeader",
+      "secret": true,
+      "redactAs": "secondaryContenderAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.secondaryContenderAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "createBoundedGroup",
+      "type": "http",
+      "connection": "apiPrimary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "requestId": "create-bounded-{groupId}-{runId}",
+          "groupId": "{groupId}",
+          "displayName": "Bounded convergence {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "maxMembers": 2,
+          "createdByPrincipalId": "{ownerClientId}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "causalRevision": {
+            "groupRevision": "integer",
+            "presenceRevision": "integer"
+          },
+          "group": {
+            "groupId": "{groupId}",
+            "joinMode": "open",
+            "maxMembers": 2
+          }
+        }
+      }
+    },
+    {
+      "name": "activateOwnerMembership",
+      "type": "http",
+      "connection": "apiPrimary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{ownerClientId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "requestId": "activate-owner-{groupId}-{runId}",
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "memberCount": 1,
+          "members": [
+            {
+              "principalId": "{ownerClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "connectReusedSessionGenerationOne",
+      "type": "http",
+      "connection": "apiPrimary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{reusedSessionId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "requestId": "connect-generation-1-{reusedSessionId}-{runId}",
+          "generationId": "generation-1-{runId}",
+          "principalId": "{ownerClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "activeSessions": [
+            {
+              "sessionId": "{reusedSessionId}",
+              "generationId": "generation-1-{runId}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "raceBoundedMembershipPresenceAndConfig",
+      "type": "parallel",
+      "maxConcurrency": 4,
+      "timeoutMs": 30000,
+      "groups": [
+        {
+          "name": "primary-membership-contender",
+          "steps": [
+            {
+              "name": "activatePrimaryContenderMembership",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "PUT",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{primaryContenderClientId}",
+                "headers": {
+                  "Authorization": "{primaryContenderAuthHeader}",
+                  "x-client-id": "{primaryContenderClientId}"
+                },
+                "body": {
+                  "requestId": "activate-primary-contender-{groupId}-{runId}",
+                  "status": "active"
+                }
+              },
+              "expect": {
+                "statusCode": [
+                  200,
+                  403
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "secondary-membership-contender",
+          "steps": [
+            {
+              "name": "activateSecondaryContenderMembership",
+              "type": "http",
+              "connection": "apiSecondary",
+              "request": {
+                "method": "PUT",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{secondaryContenderClientId}",
+                "headers": {
+                  "Authorization": "{secondaryContenderAuthHeader}",
+                  "x-client-id": "{secondaryContenderClientId}"
+                },
+                "body": {
+                  "requestId": "activate-secondary-contender-{groupId}-{runId}",
+                  "status": "active"
+                }
+              },
+              "expect": {
+                "statusCode": [
+                  200,
+                  403
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "reused-session-presence-lane",
+          "steps": [
+            {
+              "name": "heartbeatReusedSessionGenerationOne",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "POST",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{reusedSessionId}/heartbeat",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}"
+                },
+                "body": {
+                  "requestId": "heartbeat-generation-1-{reusedSessionId}-{runId}",
+                  "generationId": "generation-1-{runId}",
+                  "principalId": "{ownerClientId}"
+                }
+              },
+              "expect": {
+                "status": 200
+              }
+            },
+            {
+              "name": "disconnectReusedSessionGenerationOne",
+              "type": "http",
+              "connection": "apiSecondary",
+              "request": {
+                "method": "POST",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{reusedSessionId}/disconnect",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}"
+                },
+                "body": {
+                  "requestId": "disconnect-generation-1-{reusedSessionId}-{runId}",
+                  "generationId": "generation-1-{runId}",
+                  "principalId": "{ownerClientId}"
+                }
+              },
+              "expect": {
+                "status": 200
+              }
+            }
+          ]
+        },
+        {
+          "name": "topology-config-lane",
+          "steps": [
+            {
+              "name": "putRacingTopologyConfig",
+              "type": "http",
+              "connection": "apiSecondary",
+              "request": {
+                "method": "PUT",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}"
+                },
+                "body": {
+                  "requestId": "put-racing-config-{groupId}-{runId}",
+                  "config": {
+                    "topologyKind": "tree",
+                    "degreeLimit": 2
+                  }
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "receipt": {
+                    "acceptedVersion": "integer",
+                    "outboxIds": [
+                      "string"
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "reconnectReusedSession",
+      "type": "http",
+      "connection": "apiSecondary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{reusedSessionId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "requestId": "reconnect-generation-2-{reusedSessionId}-{runId}",
+          "generationId": "generation-2-{runId}",
+          "principalId": "{ownerClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "activeSessions": [
+            {
+              "sessionId": "{reusedSessionId}",
+              "generationId": "generation-2-{runId}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "submitStaleExpiryCandidate",
+      "type": "http",
+      "connection": "apiPrimary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{reusedSessionId}/disconnect",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "requestId": "stale-disconnect-generation-1-{reusedSessionId}-{runId}",
+          "generationId": "generation-1-{runId}",
+          "principalId": "{ownerClientId}"
+        },
+        "outputs": {
+          "acceptedLifecyclePresenceRevision": "body.causalRevision.presenceRevision",
+          "acceptedLifecycleGenerationId": "body.activeSessions.0.generationId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "activeSessions": [
+            {
+              "sessionId": "{reusedSessionId}",
+              "generationId": "generation-2-{runId}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "putInitialTopologyConfig",
+      "type": "http",
+      "connection": "apiPrimary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "requestId": "put-initial-config-{groupId}-{runId}",
+          "config": {
+            "topologyKind": "tree",
+            "degreeLimit": 2
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "config": {
+            "version": "integer",
+            "config": {
+              "topologyKind": "tree",
+              "degreeLimit": 2
+            }
+          },
+          "receipt": {
+            "acceptedVersion": "integer",
+            "outboxIds": [
+              "string"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "deleteTopologyConfig",
+      "type": "http",
+      "connection": "apiSecondary",
+      "request": {
+        "method": "DELETE",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}",
+          "Idempotency-Key": "delete-config-{groupId}-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "deleted": true,
+          "receipt": {
+            "acceptedVersion": "integer",
+            "outboxIds": [
+              "string"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "putFinalTopologyConfig",
+      "type": "http",
+      "connection": "apiPrimary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "requestId": "put-final-config-{groupId}-{runId}",
+          "config": {
+            "topologyKind": "mesh",
+            "degreeLimit": 4
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "config": {
+            "version": "integer",
+            "config": {
+              "topologyKind": "mesh",
+              "degreeLimit": 4
+            }
+          },
+          "receipt": {
+            "acceptedVersion": "integer",
+            "outboxIds": [
+              "string"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "delayBeforeStateConvergencePoll1",
+      "type": "set",
+      "output": "stateConvergenceDelay1",
+      "value": {
+        "attempt": 1,
+        "delayMs": 250
+      },
+      "request": {
+        "delayMs": 250
+      }
+    },
+    {
+      "name": "pollStateConvergenceAttempt1",
+      "type": "parallel",
+      "maxConcurrency": 2,
+      "nonBlockingFailure": true,
+      "timeoutMs": 30000,
+      "groups": [
+        {
+          "name": "primary-state-attempt-1",
+          "steps": [
+            {
+              "name": "readPrimaryGroupAttempt1",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "causalRevision": {
+                    "groupRevision": "integer",
+                    "presenceRevision": "integer"
+                  },
+                  "memberCount": 2,
+                  "activeSessions": [
+                    {
+                      "sessionId": "{reusedSessionId}",
+                      "generationId": "generation-2-{runId}"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "readPrimaryTopologyAttempt1",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "config": {
+                    "effective": {
+                      "topologyKind": "mesh",
+                      "degreeLimit": 4
+                    }
+                  },
+                  "snapshot": {
+                    "sourceGroupStateCausalRevision": {
+                      "groupRevision": "integer",
+                      "presenceRevision": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "secondary-state-attempt-1",
+          "steps": [
+            {
+              "name": "readSecondaryGroupAttempt1",
+              "type": "http",
+              "connection": "apiSecondary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "causalRevision": {
+                    "groupRevision": "integer",
+                    "presenceRevision": "integer"
+                  },
+                  "memberCount": 2,
+                  "activeSessions": [
+                    {
+                      "sessionId": "{reusedSessionId}",
+                      "generationId": "generation-2-{runId}"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "readSecondaryTopologyAttempt1",
+              "type": "http",
+              "connection": "apiSecondary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "config": {
+                    "effective": {
+                      "topologyKind": "mesh",
+                      "degreeLimit": 4
+                    }
+                  },
+                  "snapshot": {
+                    "sourceGroupStateCausalRevision": {
+                      "groupRevision": "integer",
+                      "presenceRevision": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "delayBeforeStateConvergencePoll2",
+      "type": "set",
+      "output": "stateConvergenceDelay2",
+      "value": {
+        "attempt": 2,
+        "delayMs": 500
+      },
+      "request": {
+        "delayMs": 500
+      }
+    },
+    {
+      "name": "pollStateConvergenceAttempt2",
+      "type": "parallel",
+      "maxConcurrency": 2,
+      "nonBlockingFailure": true,
+      "timeoutMs": 30000,
+      "groups": [
+        {
+          "name": "primary-state-attempt-2",
+          "steps": [
+            {
+              "name": "readPrimaryGroupAttempt2",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "causalRevision": {
+                    "groupRevision": "integer",
+                    "presenceRevision": "integer"
+                  },
+                  "memberCount": 2,
+                  "activeSessions": [
+                    {
+                      "sessionId": "{reusedSessionId}",
+                      "generationId": "generation-2-{runId}"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "readPrimaryTopologyAttempt2",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "config": {
+                    "effective": {
+                      "topologyKind": "mesh",
+                      "degreeLimit": 4
+                    }
+                  },
+                  "snapshot": {
+                    "sourceGroupStateCausalRevision": {
+                      "groupRevision": "integer",
+                      "presenceRevision": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "secondary-state-attempt-2",
+          "steps": [
+            {
+              "name": "readSecondaryGroupAttempt2",
+              "type": "http",
+              "connection": "apiSecondary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "causalRevision": {
+                    "groupRevision": "integer",
+                    "presenceRevision": "integer"
+                  },
+                  "memberCount": 2,
+                  "activeSessions": [
+                    {
+                      "sessionId": "{reusedSessionId}",
+                      "generationId": "generation-2-{runId}"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "readSecondaryTopologyAttempt2",
+              "type": "http",
+              "connection": "apiSecondary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "config": {
+                    "effective": {
+                      "topologyKind": "mesh",
+                      "degreeLimit": 4
+                    }
+                  },
+                  "snapshot": {
+                    "sourceGroupStateCausalRevision": {
+                      "groupRevision": "integer",
+                      "presenceRevision": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "delayBeforeStateConvergencePoll3",
+      "type": "set",
+      "output": "stateConvergenceDelay3",
+      "value": {
+        "attempt": 3,
+        "delayMs": 1000
+      },
+      "request": {
+        "delayMs": 1000
+      }
+    },
+    {
+      "name": "pollStateConvergenceAttempt3",
+      "type": "parallel",
+      "maxConcurrency": 2,
+      "nonBlockingFailure": true,
+      "timeoutMs": 30000,
+      "groups": [
+        {
+          "name": "primary-state-attempt-3",
+          "steps": [
+            {
+              "name": "readPrimaryGroupAttempt3",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "causalRevision": {
+                    "groupRevision": "integer",
+                    "presenceRevision": "integer"
+                  },
+                  "memberCount": 2,
+                  "activeSessions": [
+                    {
+                      "sessionId": "{reusedSessionId}",
+                      "generationId": "generation-2-{runId}"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "readPrimaryTopologyAttempt3",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "config": {
+                    "effective": {
+                      "topologyKind": "mesh",
+                      "degreeLimit": 4
+                    }
+                  },
+                  "snapshot": {
+                    "sourceGroupStateCausalRevision": {
+                      "groupRevision": "integer",
+                      "presenceRevision": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "secondary-state-attempt-3",
+          "steps": [
+            {
+              "name": "readSecondaryGroupAttempt3",
+              "type": "http",
+              "connection": "apiSecondary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "causalRevision": {
+                    "groupRevision": "integer",
+                    "presenceRevision": "integer"
+                  },
+                  "memberCount": 2,
+                  "activeSessions": [
+                    {
+                      "sessionId": "{reusedSessionId}",
+                      "generationId": "generation-2-{runId}"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "readSecondaryTopologyAttempt3",
+              "type": "http",
+              "connection": "apiSecondary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "config": {
+                    "effective": {
+                      "topologyKind": "mesh",
+                      "degreeLimit": 4
+                    }
+                  },
+                  "snapshot": {
+                    "sourceGroupStateCausalRevision": {
+                      "groupRevision": "integer",
+                      "presenceRevision": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "delayBeforeStateConvergencePoll4",
+      "type": "set",
+      "output": "stateConvergenceDelay4",
+      "value": {
+        "attempt": 4,
+        "delayMs": 2000
+      },
+      "request": {
+        "delayMs": 2000
+      }
+    },
+    {
+      "name": "pollStateConvergenceAttempt4",
+      "type": "parallel",
+      "maxConcurrency": 2,
+      "nonBlockingFailure": true,
+      "timeoutMs": 30000,
+      "groups": [
+        {
+          "name": "primary-state-attempt-4",
+          "steps": [
+            {
+              "name": "readPrimaryGroupAttempt4",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "causalRevision": {
+                    "groupRevision": "integer",
+                    "presenceRevision": "integer"
+                  },
+                  "memberCount": 2,
+                  "activeSessions": [
+                    {
+                      "sessionId": "{reusedSessionId}",
+                      "generationId": "generation-2-{runId}"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "readPrimaryTopologyAttempt4",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "config": {
+                    "effective": {
+                      "topologyKind": "mesh",
+                      "degreeLimit": 4
+                    }
+                  },
+                  "snapshot": {
+                    "sourceGroupStateCausalRevision": {
+                      "groupRevision": "integer",
+                      "presenceRevision": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "secondary-state-attempt-4",
+          "steps": [
+            {
+              "name": "readSecondaryGroupAttempt4",
+              "type": "http",
+              "connection": "apiSecondary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "causalRevision": {
+                    "groupRevision": "integer",
+                    "presenceRevision": "integer"
+                  },
+                  "memberCount": 2,
+                  "activeSessions": [
+                    {
+                      "sessionId": "{reusedSessionId}",
+                      "generationId": "generation-2-{runId}"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "readSecondaryTopologyAttempt4",
+              "type": "http",
+              "connection": "apiSecondary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "config": {
+                    "effective": {
+                      "topologyKind": "mesh",
+                      "degreeLimit": 4
+                    }
+                  },
+                  "snapshot": {
+                    "sourceGroupStateCausalRevision": {
+                      "groupRevision": "integer",
+                      "presenceRevision": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "delayBeforeStateConvergencePoll5",
+      "type": "set",
+      "output": "stateConvergenceDelay5",
+      "value": {
+        "attempt": 5,
+        "delayMs": 4000
+      },
+      "request": {
+        "delayMs": 4000
+      }
+    },
+    {
+      "name": "pollStateConvergenceAttempt5",
+      "type": "parallel",
+      "maxConcurrency": 2,
+      "nonBlockingFailure": true,
+      "timeoutMs": 30000,
+      "groups": [
+        {
+          "name": "primary-state-attempt-5",
+          "steps": [
+            {
+              "name": "readPrimaryGroupAttempt5",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "causalRevision": {
+                    "groupRevision": "integer",
+                    "presenceRevision": "integer"
+                  },
+                  "memberCount": 2,
+                  "activeSessions": [
+                    {
+                      "sessionId": "{reusedSessionId}",
+                      "generationId": "generation-2-{runId}"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "readPrimaryTopologyAttempt5",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "config": {
+                    "effective": {
+                      "topologyKind": "mesh",
+                      "degreeLimit": 4
+                    }
+                  },
+                  "snapshot": {
+                    "sourceGroupStateCausalRevision": {
+                      "groupRevision": "integer",
+                      "presenceRevision": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "secondary-state-attempt-5",
+          "steps": [
+            {
+              "name": "readSecondaryGroupAttempt5",
+              "type": "http",
+              "connection": "apiSecondary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "causalRevision": {
+                    "groupRevision": "integer",
+                    "presenceRevision": "integer"
+                  },
+                  "memberCount": 2,
+                  "activeSessions": [
+                    {
+                      "sessionId": "{reusedSessionId}",
+                      "generationId": "generation-2-{runId}"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "readSecondaryTopologyAttempt5",
+              "type": "http",
+              "connection": "apiSecondary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "config": {
+                    "effective": {
+                      "topologyKind": "mesh",
+                      "degreeLimit": 4
+                    }
+                  },
+                  "snapshot": {
+                    "sourceGroupStateCausalRevision": {
+                      "groupRevision": "integer",
+                      "presenceRevision": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "assertIdenticalFinalStateAndCausalHistory",
+      "type": "assert",
+      "actual": {
+        "primary": {
+          "groupStateCausalRevision": "{resultsByName.readPrimaryGroupAttempt5.0.actual.body.causalRevision}",
+          "members": "{resultsByName.readPrimaryGroupAttempt5.0.actual.body.members}",
+          "generationId": "{resultsByName.readPrimaryGroupAttempt5.0.actual.body.activeSessions.0.generationId}",
+          "acceptedVersion": "{resultsByName.putFinalTopologyConfig.0.actual.body.receipt.acceptedVersion}",
+          "config": "{resultsByName.readPrimaryTopologyAttempt5.0.actual.body.config.effective}",
+          "sourceGroupStateCausalRevision": "{resultsByName.readPrimaryTopologyAttempt5.0.actual.body.snapshot.sourceGroupStateCausalRevision}",
+          "outboxIds": "{resultsByName.putFinalTopologyConfig.0.actual.body.receipt.outboxIds}"
+        },
+        "secondary": {
+          "groupStateCausalRevision": "{resultsByName.readSecondaryGroupAttempt5.0.actual.body.causalRevision}",
+          "members": "{resultsByName.readSecondaryGroupAttempt5.0.actual.body.members}",
+          "generationId": "{resultsByName.readSecondaryGroupAttempt5.0.actual.body.activeSessions.0.generationId}",
+          "acceptedVersion": "{resultsByName.putFinalTopologyConfig.0.actual.body.receipt.acceptedVersion}",
+          "config": "{resultsByName.readSecondaryTopologyAttempt5.0.actual.body.config.effective}",
+          "sourceGroupStateCausalRevision": "{resultsByName.readSecondaryTopologyAttempt5.0.actual.body.snapshot.sourceGroupStateCausalRevision}",
+          "outboxIds": "{resultsByName.putFinalTopologyConfig.0.actual.body.receipt.outboxIds}"
+        },
+        "causalHistory": {
+          "primary": {
+            "groupState": [
+              "{resultsByName.readPrimaryGroupAttempt1.0.actual.body.causalRevision.groupRevision}",
+              "{resultsByName.readPrimaryGroupAttempt2.0.actual.body.causalRevision.groupRevision}",
+              "{resultsByName.readPrimaryGroupAttempt3.0.actual.body.causalRevision.groupRevision}",
+              "{resultsByName.readPrimaryGroupAttempt4.0.actual.body.causalRevision.groupRevision}",
+              "{resultsByName.readPrimaryGroupAttempt5.0.actual.body.causalRevision.groupRevision}"
+            ],
+            "presence": [
+              "{resultsByName.readPrimaryGroupAttempt1.0.actual.body.causalRevision.presenceRevision}",
+              "{resultsByName.readPrimaryGroupAttempt2.0.actual.body.causalRevision.presenceRevision}",
+              "{resultsByName.readPrimaryGroupAttempt3.0.actual.body.causalRevision.presenceRevision}",
+              "{resultsByName.readPrimaryGroupAttempt4.0.actual.body.causalRevision.presenceRevision}",
+              "{resultsByName.readPrimaryGroupAttempt5.0.actual.body.causalRevision.presenceRevision}"
+            ],
+            "topologyGroupState": [
+              "{resultsByName.readPrimaryTopologyAttempt1.0.actual.body.snapshot.sourceGroupStateCausalRevision.groupRevision}",
+              "{resultsByName.readPrimaryTopologyAttempt2.0.actual.body.snapshot.sourceGroupStateCausalRevision.groupRevision}",
+              "{resultsByName.readPrimaryTopologyAttempt3.0.actual.body.snapshot.sourceGroupStateCausalRevision.groupRevision}",
+              "{resultsByName.readPrimaryTopologyAttempt4.0.actual.body.snapshot.sourceGroupStateCausalRevision.groupRevision}",
+              "{resultsByName.readPrimaryTopologyAttempt5.0.actual.body.snapshot.sourceGroupStateCausalRevision.groupRevision}"
+            ]
+          },
+          "secondary": {
+            "groupState": [
+              "{resultsByName.readSecondaryGroupAttempt1.0.actual.body.causalRevision.groupRevision}",
+              "{resultsByName.readSecondaryGroupAttempt2.0.actual.body.causalRevision.groupRevision}",
+              "{resultsByName.readSecondaryGroupAttempt3.0.actual.body.causalRevision.groupRevision}",
+              "{resultsByName.readSecondaryGroupAttempt4.0.actual.body.causalRevision.groupRevision}",
+              "{resultsByName.readSecondaryGroupAttempt5.0.actual.body.causalRevision.groupRevision}"
+            ],
+            "presence": [
+              "{resultsByName.readSecondaryGroupAttempt1.0.actual.body.causalRevision.presenceRevision}",
+              "{resultsByName.readSecondaryGroupAttempt2.0.actual.body.causalRevision.presenceRevision}",
+              "{resultsByName.readSecondaryGroupAttempt3.0.actual.body.causalRevision.presenceRevision}",
+              "{resultsByName.readSecondaryGroupAttempt4.0.actual.body.causalRevision.presenceRevision}",
+              "{resultsByName.readSecondaryGroupAttempt5.0.actual.body.causalRevision.presenceRevision}"
+            ],
+            "topologyGroupState": [
+              "{resultsByName.readSecondaryTopologyAttempt1.0.actual.body.snapshot.sourceGroupStateCausalRevision.groupRevision}",
+              "{resultsByName.readSecondaryTopologyAttempt2.0.actual.body.snapshot.sourceGroupStateCausalRevision.groupRevision}",
+              "{resultsByName.readSecondaryTopologyAttempt3.0.actual.body.snapshot.sourceGroupStateCausalRevision.groupRevision}",
+              "{resultsByName.readSecondaryTopologyAttempt4.0.actual.body.snapshot.sourceGroupStateCausalRevision.groupRevision}",
+              "{resultsByName.readSecondaryTopologyAttempt5.0.actual.body.snapshot.sourceGroupStateCausalRevision.groupRevision}"
+            ]
+          }
+        }
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "body": {
+          "primary": {
+            "groupStateCausalRevision": {
+              "groupRevision": "integer",
+              "presenceRevision": "{resultsByName.submitStaleExpiryCandidate.0.actual.body.causalRevision.presenceRevision}"
+            },
+            "members": "{resultsByName.readPrimaryGroupAttempt5.0.actual.body.members}",
+            "generationId": "{resultsByName.submitStaleExpiryCandidate.0.actual.body.activeSessions.0.generationId}",
+            "acceptedVersion": "integer",
+            "config": "{resultsByName.readPrimaryTopologyAttempt5.0.actual.body.config.effective}",
+            "sourceGroupStateCausalRevision": "{resultsByName.readPrimaryGroupAttempt5.0.actual.body.causalRevision}",
+            "outboxIds": [
+              "string"
+            ]
+          },
+          "secondary": {
+            "groupStateCausalRevision": "{resultsByName.readPrimaryGroupAttempt5.0.actual.body.causalRevision}",
+            "members": "{resultsByName.readPrimaryGroupAttempt5.0.actual.body.members}",
+            "generationId": "generation-2-{runId}",
+            "acceptedVersion": "{resultsByName.putFinalTopologyConfig.0.actual.body.receipt.acceptedVersion}",
+            "config": "{resultsByName.readPrimaryTopologyAttempt5.0.actual.body.config.effective}",
+            "sourceGroupStateCausalRevision": "{resultsByName.readPrimaryGroupAttempt5.0.actual.body.causalRevision}",
+            "outboxIds": "{resultsByName.putFinalTopologyConfig.0.actual.body.receipt.outboxIds}"
+          },
+          "causalHistory": {
+            "primary": {
+              "groupState": [
+                "integer",
+                "integer",
+                "integer",
+                "integer",
+                "integer"
+              ],
+              "presence": [
+                "integer",
+                "integer",
+                "integer",
+                "integer",
+                "integer"
+              ],
+              "topologyGroupState": [
+                "integer",
+                "integer",
+                "integer",
+                "integer",
+                "integer"
+              ]
+            },
+            "secondary": {
+              "groupState": [
+                "integer",
+                "integer",
+                "integer",
+                "integer",
+                "integer"
+              ],
+              "presence": [
+                "integer",
+                "integer",
+                "integer",
+                "integer",
+                "integer"
+              ],
+              "topologyGroupState": [
+                "integer",
+                "integer",
+                "integer",
+                "integer",
+                "integer"
+              ]
+            }
+          }
+        },
+        "monotonicPaths": [
+          "causalHistory.primary.groupState",
+          "causalHistory.primary.presence",
+          "causalHistory.primary.topologyGroupState",
+          "causalHistory.secondary.groupState",
+          "causalHistory.secondary.presence",
+          "causalHistory.secondary.topologyGroupState"
+        ]
+      }
+    }
+  ]
+}

@@ -1,3 +1,8 @@
+import { spawn } from 'node:child_process';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
@@ -8,9 +13,15 @@ import {
     GROUP_TOPOLOGY_CONFIG_NAMESPACE,
     GroupTopologyConfigRepository,
 } from '@shared-server/rallar-system/repositories/GroupTopologyConfigRepository.ts';
-import { StateMutationOutboxRepository } from '@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts';
+import {
+    STATE_MUTATION_OUTBOX_NAMESPACE,
+    StateMutationOutboxRepository,
+} from '@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
-import { GroupTopologyManagementService } from '@shared-server/rallar-system/services/group-topology-management-service.ts';
+import {
+    GroupTopologyManagementService,
+    materializeRtcOverlayTopologyBroadcastMessage,
+} from '@shared-server/rallar-system/services/group-topology-management-service.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
 import {
     RtcTopologyExecutionRepository,
@@ -31,17 +42,48 @@ import type { RtcRttMutationCommand } from '@shared-server/rallar-system/service
 import {
     executeRttMutation as executeRttMutationService,
 } from '@shared-server/rallar-system/services/rtc-rtt-mutation-service.ts';
-import { toRtcTopologyPublicationMessageId } from '@shared-server/rallar-system/rtc-topology-identifiers.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
-import {
-    newALBroadcastMessage,
-    newALRoute,
-} from '@shared/al-contracts/al-contract.ts';
-import { AppTopics } from '@shared/api/api-config.ts';
 
 type PostgresSql = PSqlSql & Readonly<{
     end(): Promise<void>;
 }>;
+type TopologyWorkerInput = Readonly<{
+    command: 'topology-config-put' | 'topology-config-delete';
+    groupRef: GroupRef;
+    atEpochMs: number;
+    traceFilePath: string;
+    barrier: Readonly<{ readyFilePath: string; releaseFilePath: string }>;
+    request: Readonly<Record<string, unknown>>;
+}>;
+type TopologyWorkerOutput = Readonly<{
+    operation: TopologyWorkerInput['command'];
+    requestId: string | null;
+    commandHash: string;
+    attemptCount: number;
+    acceptedStorageRevision: number | null;
+    acceptedCausalRevision: Readonly<Record<string, unknown>> | null;
+    acceptedVersion: number | null;
+    outboxIds: readonly string[];
+    domainStatus: 'applied' | 'no-op' | 'rejected';
+}>;
+type TopologyWorkerTrace = Readonly<{
+    backendPid: number;
+    barrierWaitCount: number;
+    sleeps: readonly Readonly<{ delayMs: number; inTransaction: boolean }>[];
+    phases: readonly Readonly<{
+        component: string;
+        operation: string;
+        status: 'ok' | 'error';
+        attempt: number | null;
+        backoffMs: number | null;
+    }>[];
+}>;
+type TopologyWorkerHandle = Readonly<{ done: Promise<TopologyWorkerOutput> }>;
+
+const ROOT_DENO_CONFIG_PATH = fileURLToPath(new URL('../../../deno.json', import.meta.url));
+const STATE_MUTATION_WORKER_PATH = fileURLToPath(
+    new URL('./fixtures/postgres-expiry-worker.ts', import.meta.url),
+);
 
 type GlobalEnv = Readonly<{
     Deno?: Readonly<{
@@ -409,6 +451,127 @@ describe('Postgres runtime-state conditional-write concurrency', () => {
     );
 
     postgresIt(
+        'rebases independent topology put and delete workers without deleting a newer config',
+        async () => {
+            const databaseUrl = requireDatabaseUrl();
+            const applicationId = `topology-worker-${crypto.randomUUID()}`;
+            const groupRef = {
+                applicationId,
+                workspaceId: 'concurrency',
+                groupId: 'room',
+            };
+            const snapshot = topologyGroupSnapshot(groupRef);
+            const setupSql = await createSql(databaseUrl);
+            const runtime = new PSqlRuntimeStateRepository(setupSql);
+            const groupState = new GroupStateRepository(runtime);
+            const tmpDirPath = await mkdtemp(path.join(tmpdir(), 'rallar-topology-worker-race-'));
+            const putReleaseFilePath = path.join(tmpDirPath, 'put-release');
+            const deleteReleaseFilePath = path.join(tmpDirPath, 'delete-release');
+            const inputs: readonly TopologyWorkerInput[] = [
+                {
+                    command: 'topology-config-put',
+                    groupRef,
+                    atEpochMs: 2,
+                    traceFilePath: path.join(tmpDirPath, 'put-trace.json'),
+                    barrier: {
+                        readyFilePath: path.join(tmpDirPath, 'put-ready.json'),
+                        releaseFilePath: putReleaseFilePath,
+                    },
+                    request: {
+                        config: { topologyKind: 'tree', degreeLimit: 2 },
+                        updatedByPrincipalId: 'owner',
+                        requestId: `${applicationId}-put`,
+                    },
+                },
+                {
+                    command: 'topology-config-delete',
+                    groupRef,
+                    atEpochMs: 3,
+                    traceFilePath: path.join(tmpDirPath, 'delete-trace.json'),
+                    barrier: {
+                        readyFilePath: path.join(tmpDirPath, 'delete-ready.json'),
+                        releaseFilePath: deleteReleaseFilePath,
+                    },
+                    request: {
+                        updatedByPrincipalId: 'owner',
+                        requestId: `${applicationId}-delete`,
+                    },
+                },
+            ];
+            const handles: TopologyWorkerHandle[] = [];
+            try {
+                expect(await groupState.insertGroup(snapshot.group))
+                    .toMatchObject({ status: 'applied' });
+                for (const member of snapshot.members) await groupState.putMember(member);
+                const topology = new GroupTopologyManagementService({
+                    findGroupSnapshotByRef: (ref) => groupState.readSnapshot(ref),
+                    groupStateRepository: groupState,
+                    configRepository: new GroupTopologyConfigRepository(runtime),
+                    topologyService: new RallarRtcTopologyService(),
+                    now: () => 1,
+                    sleep: () => Promise.resolve(),
+                });
+                expect((await topology.putConfig({
+                    groupRef,
+                    config: { topologyKind: 'mesh', degreeLimit: 3 },
+                    updatedByPrincipalId: 'owner',
+                    requestId: `${applicationId}-seed`,
+                })).config.version).toBe(1);
+
+                handles.push(...inputs.map((input) => spawnTopologyWorker(databaseUrl, input)));
+                await Promise.all(inputs.map((input, index) =>
+                    waitForTopologyWorkerBarrier(input.barrier.readyFilePath, handles[index]!)
+                ));
+                await writeFile(deleteReleaseFilePath, 'release', 'utf8');
+                const deleteOutput = await handles[1]!.done;
+                await writeFile(putReleaseFilePath, 'release', 'utf8');
+                const outputs = [await handles[0]!.done, deleteOutput];
+                outputs.forEach(expectCompactTopologyWorkerOutput);
+                expect(outputs.every((output) => output.domainStatus === 'applied')).toBe(true);
+                expect(outputs.map((output) => output.attemptCount).sort()).toEqual([1, 2]);
+                const traces = await Promise.all(inputs.map((input) =>
+                    readTopologyWorkerTrace(input.traceFilePath)
+                ));
+                assertOneTopologyWorkerRebased(outputs, traces);
+                expect(traces.every((trace) =>
+                    trace.sleeps.every((sleep) => !sleep.inTransaction)
+                )).toBe(true);
+
+                const repository = new GroupTopologyConfigRepository(runtime);
+                expect(await repository.findConfig(groupRef)).toMatchObject({
+                    config: { topologyKind: 'tree', degreeLimit: 2 },
+                    updatedByPrincipalId: 'owner',
+                });
+                const generation = await repository.findGenerationEntry(groupRef, 'config');
+                expect(generation?.value.version).toBe(
+                    Math.max(...outputs.map((output) => output.acceptedVersion ?? 0)),
+                );
+                expect([2, 3]).toContain(generation?.value.version);
+                const effectful = outputs.filter((output) => output.outboxIds.length > 0);
+                const outbox = new StateMutationOutboxRepository(runtime);
+                const stored = await Promise.all(effectful.flatMap((output) =>
+                    output.outboxIds.map((outboxId) => outbox.find(outboxId))
+                ));
+                expect(stored).toHaveLength(effectful.length);
+                expect(stored.every((entry) =>
+                    entry?.record.kind === 'group' &&
+                    entry.record.effects.join() === 'rtc-topology-recompute' &&
+                    entry.record.delivery.status === 'pending' &&
+                    entry.record.attempts.last.status === 'never-attempted'
+                )).toBe(true);
+                expect(JSON.stringify(outputs)).not.toMatch(
+                    /DATABASE_URL|accessToken|commandMac|app:app/u,
+                );
+            } finally {
+                await Promise.allSettled(handles.map((handle) => handle.done));
+                await cleanupApplicationRows([setupSql], applicationId);
+                await rm(tmpDirPath, { recursive: true, force: true });
+            }
+        },
+        60_000,
+    );
+
+    postgresIt(
         'revalidates true-overlap config and override writes against one invariant surface',
         async () => {
             const databaseUrl = requireDatabaseUrl();
@@ -697,11 +860,13 @@ describe('Postgres runtime-state conditional-write concurrency', () => {
                 )).toBeUndefined();
                 expect((await concurrentGroups.findGroup(groupRef))?.status)
                     .toBe('archived');
-                const pending = await new StateMutationOutboxRepository(mutationRuntime)
-                    .listPendingPage({ limit: 100 });
-                expect(pending.records.filter(({ record }) =>
-                    record.aggregateRef.applicationId === applicationId
-                )).toHaveLength(0);
+                const [{ count }] = await clients[0]!<{ count: number }[]>`
+                    select count(*)::int as count
+                    from runtime_state_store
+                    where store_namespace = ${STATE_MUTATION_OUTBOX_NAMESPACE}
+                      and store_value like ${`%${applicationId}%`}
+                `;
+                expect(count).toBe(0);
             } finally {
                 await Promise.allSettled(clients.map(async (client) => {
                     await client`
@@ -857,6 +1022,111 @@ async function createSql(databaseUrl: string): Promise<PostgresSql> {
     ) as unknown as PostgresSql;
 }
 
+function spawnTopologyWorker(
+    databaseUrl: string,
+    input: TopologyWorkerInput,
+): TopologyWorkerHandle {
+    const child = spawn(process.env.DENO_BIN ?? 'deno', [
+        'run', '-A', '--unstable-temporal', '--node-modules-dir=none', '--no-lock',
+        '--config', ROOT_DENO_CONFIG_PATH, STATE_MUTATION_WORKER_PATH,
+    ], {
+        cwd: fileURLToPath(new URL('../../../', import.meta.url)),
+        env: {
+            ...process.env,
+            DATABASE_URL: databaseUrl,
+            RALLAR_EXPIRY_WORKER_INPUT: JSON.stringify(input),
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (chunk: string) => stdout += chunk);
+    child.stderr.on('data', (chunk: string) => stderr += chunk);
+    return {
+        done: new Promise<TopologyWorkerOutput>((resolve, reject) => {
+            child.once('error', reject);
+            child.once('close', (code) => {
+                if (code !== 0) {
+                    reject(new Error(`Topology worker failed (${code})\n${stdout}\n${stderr}`));
+                    return;
+                }
+                const lastLine = stdout.trim().split(/\r?\n/u).filter(Boolean).at(-1);
+                if (!lastLine) {
+                    reject(new Error(`Topology worker produced no JSON\n${stderr}`));
+                    return;
+                }
+                try {
+                    resolve(JSON.parse(lastLine) as TopologyWorkerOutput);
+                } catch (error) {
+                    reject(new Error(`Topology worker produced invalid JSON: ${lastLine}`, {
+                        cause: error,
+                    }));
+                }
+            });
+        }),
+    };
+}
+
+async function waitForTopologyWorkerBarrier(
+    readyFilePath: string,
+    handle: TopologyWorkerHandle,
+): Promise<void> {
+    const waitForFile = async (): Promise<void> => {
+        const deadline = Date.now() + 15_000;
+        while (Date.now() < deadline) {
+            try {
+                await readFile(readyFilePath, 'utf8');
+                return;
+            } catch {
+                await new Promise((resolve) => setTimeout(resolve, 10));
+            }
+        }
+        throw new Error(`Timed out waiting for topology worker barrier: ${readyFilePath}`);
+    };
+    await Promise.race([
+        waitForFile(),
+        handle.done.then(() => {
+            throw new Error(`Topology worker exited before barrier: ${readyFilePath}`);
+        }),
+    ]);
+}
+
+async function readTopologyWorkerTrace(traceFilePath: string): Promise<TopologyWorkerTrace> {
+    return JSON.parse(await readFile(traceFilePath, 'utf8')) as TopologyWorkerTrace;
+}
+
+function expectCompactTopologyWorkerOutput(output: TopologyWorkerOutput): void {
+    expect(Object.keys(output).sort()).toEqual([
+        'acceptedCausalRevision', 'acceptedStorageRevision', 'acceptedVersion',
+        'attemptCount', 'commandHash', 'domainStatus', 'operation', 'outboxIds', 'requestId',
+    ]);
+    expect(output.commandHash).toMatch(/^sha256:[0-9a-f]{64}$/u);
+    expect(output.attemptCount).toBeGreaterThanOrEqual(1);
+    expect(output.attemptCount).toBeLessThanOrEqual(3);
+}
+
+function assertOneTopologyWorkerRebased(
+    outputs: readonly TopologyWorkerOutput[],
+    traces: readonly TopologyWorkerTrace[],
+): void {
+    expect(traces.every((trace) => trace.barrierWaitCount === 1)).toBe(true);
+    expect(new Set(traces.map((trace) => trace.backendPid)).size).toBe(2);
+    const loserIndex = outputs.findIndex((output) => output.attemptCount === 2);
+    expect(loserIndex).toBeGreaterThanOrEqual(0);
+    const loser = traces[loserIndex]!;
+    for (const phase of ['mutation.read', 'mutation.compute', 'mutation.validate']) {
+        expect(loser.phases.filter((event) => event.operation === phase)
+            .map((event) => event.attempt)).toEqual([0, 1]);
+    }
+    expect(loser.phases.filter((event) => event.operation === 'mutation.conflict'))
+        .toHaveLength(1);
+    expect(loser.sleeps).toContainEqual({ delayMs: 2, inTransaction: false });
+    expect(traces.flatMap((trace) => trace.phases)
+        .filter((event) => event.operation === 'mutation.conflict')).toHaveLength(1);
+}
+
 class BarrierRuntimeStateRepository extends PSqlRuntimeStateRepository {
     constructor(
         sql: PSqlSql,
@@ -983,22 +1253,11 @@ function topologyPublication(
     snapshot: RallarOverlayTopologySnapshot,
     workId: string,
 ) {
-    const message = newALBroadcastMessage(
-        'rallar-server',
-        newALRoute(
-            AppTopics.overlayTopology,
-            snapshot.groupRef.groupId,
-            `${snapshot.overlayId}:${snapshot.sourceGroupStateCausalRevision.groupRevision}:${snapshot.sourceGroupStateCausalRevision.presenceRevision}:${snapshot.version}`,
-        ),
-        'room',
-        AppTopics.overlayTopology,
+    const createdAtEpochMs = 1;
+    const message = materializeRtcOverlayTopologyBroadcastMessage(
+        topologyGroupSnapshot(snapshot.groupRef),
         snapshot,
-        {
-            groupRef: snapshot.groupRef,
-            minSnapshotVersion: 1,
-            reliability: 'best-effort',
-            ack: 'none',
-        },
+        { workId, createdAtEpochMs },
     );
     return {
         publicationId: `${workId}:${snapshot.sourceGroupStateCausalRevision.groupRevision}:${snapshot.sourceGroupStateCausalRevision.presenceRevision}:${snapshot.version}`,
@@ -1008,14 +1267,8 @@ function topologyPublication(
         overlayVersion: snapshot.version,
         targetGroupSnapshotVersion: 1,
         recipientSessionIds: snapshot.activeSessionIds,
-        message: {
-            ...message,
-            id: {
-                ...message.id,
-                msgId: toRtcTopologyPublicationMessageId(workId),
-            },
-        },
-        createdAtEpochMs: message.id.ts,
+        message,
+        createdAtEpochMs,
     };
 }
 
