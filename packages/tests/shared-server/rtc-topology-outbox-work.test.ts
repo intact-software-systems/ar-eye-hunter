@@ -152,6 +152,7 @@ describe('RTC topology APP_OUTBOX work', () => {
         'invalid-qos-options',
         'invalid-diagnostics',
         'missing-target-workspace',
+        'missing-room-broadcast-group-ref',
     ] as const)(
         'rejects %s work before reading mutable authority or publishing',
         async (defect) => {
@@ -203,6 +204,14 @@ describe('RTC topology APP_OUTBOX work', () => {
                             applicationId: group.group.applicationId,
                             groupId: group.group.groupId,
                         },
+                    },
+                }));
+            } else if (defect === 'missing-room-broadcast-group-ref') {
+                corruptMessage = JSON.parse(JSON.stringify({
+                    ...message,
+                    targets: {
+                        mode: 'broadcast',
+                        scope: 'room',
                     },
                 }));
             } else {

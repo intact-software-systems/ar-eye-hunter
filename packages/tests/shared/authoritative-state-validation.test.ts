@@ -6,6 +6,7 @@ import {
 } from '@shared/api/authoritative-state-validation.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import {
+    createActiveClientInstanceFixture,
     createActiveClientSessionFixture,
     createActiveGroupPresenceSessionFixture,
     createAuditStampFixture,
@@ -191,6 +192,36 @@ describe('authoritative network state validation', () => {
             isOnline: true,
             activeSessionCount: 1,
         }, scope)).toThrow(/instance/);
+    });
+
+    it('rejects duplicate client instance and active-session identities', () => {
+        const client = createClientSnapshotFixture({
+            ...scope,
+            principalId: 'alice',
+        });
+        const instance = createActiveClientInstanceFixture({
+            ...scope,
+            principalId: 'alice',
+            clientInstanceId: 'alice-instance',
+        });
+        expect(() => validateAuthoritativeClientSnapshot({
+            ...client,
+            instances: [instance, instance],
+        }, scope)).toThrow(/duplicate.*instance/i);
+
+        const session = createActiveClientSessionFixture({
+            ...scope,
+            principalId: 'alice',
+            clientInstanceId: instance.clientInstanceId,
+            sessionId: 'alice-session',
+        });
+        expect(() => validateAuthoritativeClientSnapshot({
+            ...client,
+            instances: [instance],
+            activeSessions: [session, session],
+            isOnline: true,
+            activeSessionCount: 2,
+        }, scope)).toThrow(/duplicate.*session/i);
     });
 
     it('rejects a client snapshot whose last-seen aggregate is not canonical', () => {

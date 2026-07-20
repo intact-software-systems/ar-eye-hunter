@@ -126,6 +126,9 @@ function validateTargets(value: unknown): void {
     if (!['room', 'world', 'all'].includes(targets.scope as string)) {
         throw new TypeError('Persisted AL broadcast scope is invalid');
     }
+    if (targets.scope === 'room' && targets.groupRef === undefined) {
+        throw new TypeError('Persisted AL room broadcast group ref is missing');
+    }
     if (targets.groupRef !== undefined) validateCanonicalGroupRef(targets.groupRef);
     optionalStringArray(targets.exceptPeerIds, 'broadcast exclusions');
     optionalSafeInteger(targets.minSnapshotVersion, 1, 'minimum snapshot version');

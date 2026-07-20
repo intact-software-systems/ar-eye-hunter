@@ -494,6 +494,75 @@ describe('convergent group and presence state', () => {
         });
     });
 
+    it('fails closed when persisted active membership exceeds maxMembers', async () => {
+        const runtime = new FakeRuntimeStateRepository();
+        const repository = new GroupStateRepository(runtime);
+        const ref = groupRef('over-capacity-roster');
+        const read = createMutationRead();
+        const group: Group = {
+            ...read.group!.value,
+            ...ref,
+            maxMembers: 1,
+            activeMemberCount: 2,
+        };
+        const owner: GroupMember = {
+            ...read.actorMember!,
+            ...ref,
+        };
+        const member: GroupMember = {
+            ...memberFor('bob'),
+            ...ref,
+        };
+        await repository.putGroup(group);
+        await repository.putMember(owner);
+        await repository.putMember(member);
+
+        await expect(repository.readSnapshot(ref)).rejects.toMatchObject({
+            code: 'group-state-repository-invariant-corruption',
+        });
+    });
+
+    it('fails closed when a persistence list repeats an inactive member', async () => {
+        const runtime = new FakeRuntimeStateRepository();
+        const repository = new GroupStateRepository(runtime);
+        const ref = groupRef('duplicate-invited-member');
+        const read = createMutationRead();
+        const group: Group = {
+            ...read.group!.value,
+            ...ref,
+        };
+        const owner: GroupMember = {
+            ...read.actorMember!,
+            ...ref,
+        };
+        const invited: GroupMember = {
+            ...memberFor('bob'),
+            ...ref,
+            status: 'invited',
+            joined: null,
+            invitedByPrincipalId: 'alice',
+            invitationExpiresAtEpochMs: 10_000,
+        };
+        await repository.putGroup(group);
+        await repository.putMember(owner);
+        await repository.putMember(invited);
+        const findEntriesByPrefix = runtime.findEntriesByPrefix.bind(runtime);
+        vi.spyOn(runtime, 'findEntriesByPrefix').mockImplementation(
+            async (namespace, keyPrefix) => {
+                const entries = await findEntriesByPrefix(namespace, keyPrefix);
+                if (namespace !== 'group-state:members') return entries;
+                const invitedEntry = entries.find((entry) =>
+                    JSON.parse(entry.value).principalId === 'bob'
+                );
+                return invitedEntry ? [...entries, invitedEntry] : entries;
+            },
+        );
+
+        await expect(repository.readSnapshot(ref)).rejects.toMatchObject({
+            code: 'group-state-repository-invariant-corruption',
+        });
+    });
+
     it('fails closed when a direct repository result carries a noncanonical physical key', async () => {
         const runtime = new FakeRuntimeStateRepository();
         const ref = {

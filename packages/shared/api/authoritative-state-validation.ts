@@ -155,6 +155,9 @@ export function validateAuthoritativeClientSnapshot(
             instance.clientInstanceId,
             'ClientSnapshot.instance.clientInstanceId',
         );
+        if (instanceIds.has(instance.clientInstanceId)) {
+            fail('ClientSnapshot has duplicate instances');
+        }
         instanceIds.add(instance.clientInstanceId);
         enumValue(instance.status, ['active', 'revoked', 'retired'],
             'ClientSnapshot.instance.status');
@@ -173,6 +176,7 @@ export function validateAuthoritativeClientSnapshot(
         }
     }
     const sessions = array(snapshot.activeSessions, 'ClientSnapshot.activeSessions');
+    const sessionIds = new Set<string>();
     const activeSessionHeartbeats: Array<{ lastHeartbeatAtEpochMs: number }> = [];
     for (const item of sessions) {
         const session = record(item, 'ClientSnapshot.session');
@@ -182,9 +186,12 @@ export function validateAuthoritativeClientSnapshot(
             session.clientInstanceId,
             'ClientSnapshot.session.clientInstanceId',
         );
-        for (const key of ['sessionId', 'generationId'] as const) {
-            nonEmptyString(session[key], `ClientSnapshot.session.${key}`);
+        nonEmptyString(session.sessionId, 'ClientSnapshot.session.sessionId');
+        nonEmptyString(session.generationId, 'ClientSnapshot.session.generationId');
+        if (sessionIds.has(session.sessionId)) {
+            fail('ClientSnapshot has duplicate active sessions');
         }
+        sessionIds.add(session.sessionId);
         if (!instanceIds.has(session.clientInstanceId)) {
             fail('ClientSnapshot active session instance is missing');
         }

@@ -45,6 +45,64 @@ const SCOPE: StateScope = {
 const BASE_EPOCH_MS = Date.now();
 
 describe('convergent client state', () => {
+    it('fails closed when an active persisted session has no matching instance', async () => {
+        const runtime = new AggregateBarrierRepository();
+        await connect(runtime, 'orphan-session', 'orphan-generation', BASE_EPOCH_MS);
+        const [instance] = await runtime.findAllEntries('client-state:instances');
+        if (!instance) throw new Error('Expected a stored client instance');
+        await runtime.deleteByKey('client-state:instances', instance.key);
+
+        await expect(new ClientStateRepository(runtime).readSnapshot(
+            principalRef('alice'),
+        )).rejects.toBeInstanceOf(ClientStateRepositoryInvariantCorruptionError);
+    });
+
+    it('fails closed when persisted active session ids collide across instances', async () => {
+        const runtime = new AggregateBarrierRepository();
+        await connect(runtime, 'shared-session', 'browser-generation', BASE_EPOCH_MS);
+        await createService(runtime, BASE_EPOCH_MS + 1).upsertInstance(
+            SCOPE,
+            'alice',
+            'phone',
+            { platform: 'web', requestId: 'register-phone' },
+        );
+        const repository = new ClientStateRepository(runtime);
+        const browserSession = await repository.findSession({
+            ...principalRef('alice'),
+            clientInstanceId: 'browser',
+            sessionId: 'shared-session',
+        });
+        if (!browserSession) throw new Error('Expected a stored client session');
+        await repository.insertSession({
+            ...browserSession,
+            clientInstanceId: 'phone',
+            generationId: 'phone-generation',
+            connectionId: null,
+        });
+
+        await expect(repository.readSnapshot(
+            principalRef('alice'),
+        )).rejects.toBeInstanceOf(ClientStateRepositoryInvariantCorruptionError);
+    });
+
+    it('fails closed when a persistence list repeats a client instance', async () => {
+        const runtime = new AggregateBarrierRepository();
+        await connect(runtime, 'instance-session', 'instance-generation', BASE_EPOCH_MS);
+        const findEntriesByPrefix = runtime.findEntriesByPrefix.bind(runtime);
+        vi.spyOn(runtime, 'findEntriesByPrefix').mockImplementation(
+            async (namespace, keyPrefix) => {
+                const entries = await findEntriesByPrefix(namespace, keyPrefix);
+                return namespace === 'client-state:instances'
+                    ? [...entries, ...entries]
+                    : entries;
+            },
+        );
+
+        await expect(new ClientStateRepository(runtime).readSnapshot(
+            principalRef('alice'),
+        )).rejects.toBeInstanceOf(ClientStateRepositoryInvariantCorruptionError);
+    });
+
     it('binds instance and session aggregate audit stamps to the command request id', async () => {
         const runtime = new AggregateBarrierRepository();
         await createService(runtime, BASE_EPOCH_MS).upsertPrincipal(SCOPE, 'alice', {

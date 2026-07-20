@@ -13,6 +13,9 @@ import type {
 } from '@shared/api/client-types.ts';
 import type { StateEventPage } from '@shared/api/state-event-types.ts';
 import {
+    validateAuthoritativeClientSnapshot,
+} from '@shared/api/authoritative-state-validation.ts';
+import {
     toClientSnapshotLastSeenAtEpochMs,
 } from '@shared/api/group-client-views.ts';
 import type { RuntimeStateRepositoryLike } from '../../runtime-state/RuntimeStateRepository.ts';
@@ -475,7 +478,7 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
         activeSessions: readonly ClientSession[],
         stateRevision: number,
     ): ClientSnapshot {
-        return {
+        const snapshot: ClientSnapshot = {
             stateRevision,
             principal,
             instances,
@@ -487,6 +490,10 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
                 activeSessions,
             ),
         };
+        return this.withInvariantError(this.principalKey(principal), () => {
+            validateAuthoritativeClientSnapshot(snapshot, principal);
+            return snapshot;
+        });
     }
 
     private async listClientInstanceEntries(

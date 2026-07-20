@@ -40,4 +40,28 @@ describe('persisted AL message validation', () => {
             },
         })).toThrow(/workspace/);
     });
+
+    it('rejects a room broadcast without a group ref', () => {
+        expect(() => validatePersistedALMessage({
+            id: {
+                v: 2,
+                msgId: 'message-1',
+                ts: 1,
+                senderId: 'server-1',
+            },
+            route: {
+                topicId: 'topic-1',
+                resourceId: 'resource-1',
+                contextId: 'context-1',
+            },
+            targets: {
+                mode: 'broadcast',
+                scope: 'room',
+            },
+            payload: {
+                typeId: 'type-1',
+                resource: '{}',
+            },
+        })).toThrow(/room.*group ref|group ref.*room/i);
+    });
 });

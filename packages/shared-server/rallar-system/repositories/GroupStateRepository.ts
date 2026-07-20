@@ -10,6 +10,9 @@ import type {
     GroupSnapshot,
 } from '@shared/api/group-types.ts';
 import { toGroupSnapshotStateRevision } from '@shared/api/group-client-views.ts';
+import {
+    validateAuthoritativeGroupSnapshot,
+} from '@shared/api/authoritative-state-validation.ts';
 import type { StateEventPage } from '@shared/api/state-event-types.ts';
 import {
     isRuntimeStateConditionalRepositoryLike,
@@ -810,6 +813,8 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
         );
         if (
             group.activeMemberCount !== activeMembers.length ||
+            (group.maxMembers !== null &&
+                activeMembers.length > group.maxMembers) ||
             activeOwners.length !== 1 ||
             activeOwners[0]?.principalId !== group.ownerPrincipalId
         ) {
@@ -819,7 +824,7 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
             );
         }
 
-        return {
+        const snapshot: GroupSnapshot = {
             stateRevision: toGroupSnapshotStateRevision(
                 causalRevision.groupRevision,
                 causalRevision.presenceRevision,
@@ -832,6 +837,17 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
             onlineMemberCount:
                 activeMembers.filter((member) => activePrincipals.has(member.principalId)).length,
         };
+        try {
+            validateAuthoritativeGroupSnapshot(snapshot, group);
+        } catch (error) {
+            throw new GroupStateRepositoryInvariantCorruptionError(
+                this.groupKey(group),
+                error instanceof Error
+                    ? error.message
+                    : 'Stored group snapshot is invalid',
+            );
+        }
+        return snapshot;
     }
 
     private toActiveSessions(

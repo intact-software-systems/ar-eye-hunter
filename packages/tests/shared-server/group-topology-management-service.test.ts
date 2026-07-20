@@ -1252,6 +1252,42 @@ describe('GroupTopologyManagementService', () => {
         );
     });
 
+    it('rejects a compact replay receipt whose requestId differs from its record', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const group = createGroupSnapshot(createGroupRef('workspace-1'));
+        const configRepository = new GroupTopologyConfigRepository(runtimeRepository);
+        const service = createService({ runtimeRepository, group, configRepository });
+        const request = {
+            groupRef: group.group,
+            config: { topologyKind: 'tree' as const },
+            updatedByPrincipalId: 'owner',
+            requestId: 'mismatched-replay-request',
+        };
+        const accepted = await service.putConfig(request);
+        const key = configRepository.mutationKey(group.group, request.requestId);
+        const entry = await runtimeRepository.findEntry(
+            GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE,
+            key,
+        );
+        const record = JSON.parse(entry!.value) as Record<string, unknown>;
+        await runtimeRepository.upsert(
+            GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE,
+            key,
+            JSON.stringify({
+                ...record,
+                receipt: {
+                    ...accepted.receipt,
+                    requestId: 'other-request',
+                },
+            }),
+            NEVER_EXPIRE_AT_TIMESTAMP,
+        );
+
+        await expect(service.putConfig(request)).rejects.toBeInstanceOf(
+            GroupTopologyConfigRepositoryInvariantCorruptionError,
+        );
+    });
+
     it('rejects an attacker-selected compact receipt outboxId at the repository boundary', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const group = createGroupSnapshot(createGroupRef('workspace-1'));

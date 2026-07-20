@@ -1019,6 +1019,14 @@ export function validateGroupTopologyConfigMutationRecord(
             'Topology config receipt commandId differs from requestId',
         );
     }
+    if (
+        (value.receipt as GroupTopologyConfigMutationReceipt).requestId !==
+            value.requestId
+    ) {
+        throw new TypeError(
+            'Topology config receipt requestId differs from record',
+        );
+    }
 }
 
 function validateTopologyConfigReceipt(value: unknown, expectedRef: GroupRef): void {
