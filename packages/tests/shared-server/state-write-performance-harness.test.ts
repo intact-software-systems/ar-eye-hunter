@@ -1,17 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import {
-  RuntimeStateRetryExhaustedError,
-  RuntimeStateWriteConflictError,
-} from '../../shared-server/runtime-state/optimistic-runtime-state-write.ts';
-
-const comparatorModulePath =
-  '../../../scripts/perf/compare-api-v1-state-write-results.mjs';
-const {
   compareStateWriteArtifacts,
   STATE_WRITE_ARTIFACT_SCHEMA_VERSION,
   validateStateWriteArtifact,
-} = await import(comparatorModulePath);
+} from '../../../scripts/perf/compare-api-v1-state-write-results.mjs';
+import {
+  RuntimeStateRetryExhaustedError,
+  RuntimeStateWriteConflictError,
+} from '../../shared-server/runtime-state/optimistic-runtime-state-write.ts';
 
 const MUTATION_MIX = [
   'profile-instance',
@@ -1366,7 +1363,7 @@ describe('API-v1 state-write performance artifact contract', () => {
       expect.arrayContaining([expect.stringContaining('candidate:')]),
     );
 
-    const comparator = await import(comparatorModulePath);
+    const comparator = await import('../../../scripts/perf/compare-api-v1-state-write-results.mjs');
     expect(comparator.isSubstantiveRegressionReason).toBeTypeOf('function');
     expect(comparator.isSubstantiveRegressionReason('a        b')).toBe(false);
     expect(comparator.isSubstantiveRegressionReason('Measured query-plan change')).toBe(true);

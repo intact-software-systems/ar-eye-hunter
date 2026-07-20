@@ -1069,6 +1069,12 @@ function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
 function validateClientCausalRevision(
     revision: Readonly<Record<string, unknown>>,
 ): void {
+    assertExactObjectKeys(revision, [
+        'kind',
+        'stateRevision',
+        'snapshotVersion',
+        'presenceVersion',
+    ], 'client accepted causal revision');
     assertSafeNonNegativeInteger(revision.stateRevision, 'client state revision');
     assertSafeNonNegativeInteger(revision.snapshotVersion, 'client snapshot version');
     assertSafeNonNegativeInteger(revision.presenceVersion, 'client presence version');
@@ -1090,6 +1096,10 @@ function validateGroupCausalRevision(
     if (!isRecord(revision.causalRevision)) {
         throw new TypeError('Invalid group causal revision');
     }
+    assertExactObjectKeys(revision.causalRevision, [
+        'groupRevision',
+        'presenceRevision',
+    ], 'group causal revision');
     assertSafeNonNegativeInteger(
         revision.causalRevision.groupRevision,
         'group causal group revision',

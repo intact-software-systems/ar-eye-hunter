@@ -364,6 +364,136 @@ describe('convergent client state', () => {
         expect(await outboxFor(conflictRuntime, ['different-content'])).toHaveLength(1);
     });
 
+    it('rejects malformed persisted applied receipt revision and outbox correlations on replay', async () => {
+        const request = {
+            username: 'alice',
+            displayName: 'Alice',
+            requestId: 'malformed-applied-replay',
+        } as const;
+
+        for (const variant of [
+            'missing-revision',
+            'divergent-revision',
+            'missing-outbox',
+            'wrong-outbox',
+        ] as const) {
+            const runtime = new AggregateBarrierRepository();
+            const service = createService(runtime, 1_000);
+            await service.upsertPrincipal(SCOPE, 'alice', request);
+            const repository = new ClientStateRepository(runtime);
+            const stored = await repository.findIdempotentClientMutationReceipt(
+                principalRef('alice'),
+                request.requestId,
+            );
+            if (!stored) throw new Error('Expected an applied client receipt');
+            const [entry] = await runtime.findAllEntries('client-state:idempotent');
+            if (!entry) throw new Error('Expected a persisted client receipt');
+            const malformed = {
+                ...stored,
+                receipt: {
+                    ...stored.receipt,
+                    acceptedStorageRevision: variant === 'missing-revision'
+                        ? null
+                        : variant === 'divergent-revision'
+                        ? (stored.receipt.acceptedStorageRevision ?? 0) + 1
+                        : stored.receipt.acceptedStorageRevision,
+                    outboxIds: variant === 'missing-outbox'
+                        ? []
+                        : variant === 'wrong-outbox'
+                        ? ['wrong-outbox']
+                        : stored.receipt.outboxIds,
+                },
+            };
+            await runtime.upsert(
+                'client-state:idempotent',
+                entry.key,
+                JSON.stringify(malformed),
+                Number.MAX_SAFE_INTEGER,
+            );
+
+            await expect(repository.findIdempotentClientMutationReceipt(
+                principalRef('alice'),
+                request.requestId,
+            ), variant).rejects.toBeInstanceOf(ClientStateRepositoryInvariantCorruptionError);
+            await expect(service.upsertPrincipal(
+                SCOPE,
+                'alice',
+                request,
+            ), `replay ${variant}`).rejects.toBeInstanceOf(
+                ClientStateRepositoryInvariantCorruptionError,
+            );
+        }
+    });
+
+    it('rejects malformed persisted no-op receipt revision and outbox correlations on replay', async () => {
+        const request = {
+            username: 'alice',
+            displayName: 'Alice',
+            requestId: 'malformed-no-op-replay',
+        } as const;
+
+        for (const variant of [
+            'missing-revision',
+            'divergent-revision',
+            'unexpected-outbox',
+        ] as const) {
+            const runtime = new AggregateBarrierRepository();
+            const service = createService(runtime, 1_000);
+            await service.upsertPrincipal(SCOPE, 'alice', {
+                ...request,
+                requestId: 'seed-malformed-no-op-replay',
+            });
+            await service.upsertPrincipal(SCOPE, 'alice', request);
+            const repository = new ClientStateRepository(runtime);
+            const stored = await repository.findIdempotentClientMutationReceipt(
+                principalRef('alice'),
+                request.requestId,
+            );
+            expect(stored?.receipt).toMatchObject({
+                outcome: 'no-op',
+                acceptedStorageRevision: 0,
+                eventId: null,
+                outboxIds: [],
+            });
+            if (!stored) throw new Error('Expected a no-op client receipt');
+            const entry = (await runtime.findAllEntries('client-state:idempotent'))
+                .find((candidate) => candidate.value.includes(request.requestId));
+            if (!entry) throw new Error('Expected a persisted no-op client receipt');
+            const malformed = {
+                ...stored,
+                receipt: {
+                    ...stored.receipt,
+                    acceptedStorageRevision: variant === 'missing-revision'
+                        ? null
+                        : variant === 'divergent-revision'
+                        ? (stored.receipt.acceptedStorageRevision ?? 0) + 1
+                        : stored.receipt.acceptedStorageRevision,
+                    outboxIds: variant === 'unexpected-outbox'
+                        ? ['unexpected-outbox']
+                        : stored.receipt.outboxIds,
+                },
+            };
+            await runtime.upsert(
+                'client-state:idempotent',
+                entry.key,
+                JSON.stringify(malformed),
+                Number.MAX_SAFE_INTEGER,
+            );
+
+            await expect(repository.findIdempotentClientMutationReceipt(
+                principalRef('alice'),
+                request.requestId,
+            ), variant).rejects.toBeInstanceOf(ClientStateRepositoryInvariantCorruptionError);
+            await expect(service.upsertPrincipal(
+                SCOPE,
+                'alice',
+                request,
+            ), `replay ${variant}`).rejects.toBeInstanceOf(
+                ClientStateRepositoryInvariantCorruptionError,
+            );
+        }
+    });
+
     it('commits a deterministic outbox intent without direct publication and survives a stop before drain', async () => {
         const runtime = new AggregateBarrierRepository();
         const publisher = createPublisher();

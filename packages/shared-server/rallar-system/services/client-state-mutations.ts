@@ -1861,7 +1861,10 @@ function requireOptionalTimestamp(value: unknown, label: string): void {
     if (value !== undefined) requireTimestamp(value, label);
 }
 
-function requirePositiveSafeInteger(value: unknown, label: string): void {
+function requirePositiveSafeInteger(
+    value: unknown,
+    label: string,
+): asserts value is number {
     requireTimestamp(value, label);
     if ((value as number) < 1) reject(`${label} must be at least 1`);
 }
@@ -1888,7 +1891,10 @@ function requireOptionalEnum(
     if (value !== undefined) requireEnum(value, allowed, label);
 }
 
-function requireStringArray(value: unknown, label: string): void {
+function requireStringArray(
+    value: unknown,
+    label: string,
+): asserts value is readonly string[] {
     if (!Array.isArray(value)) reject(`${label} must be an array`);
     value.forEach((item, index) =>
         requireNonEmptyString(item, `${label}[${index}]`)
@@ -1957,7 +1963,11 @@ function validateSessionCommandRoot(value: Readonly<Record<string, unknown>>): v
     requireNonEmptyString(value.sessionId, 'Client session sessionId');
 }
 
-function validatePrincipalRef(value: unknown, label: string, exact = true): void {
+function validatePrincipalRef(
+    value: unknown,
+    label: string,
+    exact = true,
+): ClientPrincipalRef {
     const ref = requirePlainRecord(value, label);
     if (exact) {
         requireExactKeys(ref, ['applicationId', 'workspaceId', 'principalId'], label);
@@ -1965,6 +1975,11 @@ function validatePrincipalRef(value: unknown, label: string, exact = true): void
     requireNonEmptyString(ref.applicationId, `${label}.applicationId`);
     requireNonEmptyString(ref.workspaceId, `${label}.workspaceId`);
     requireNonEmptyString(ref.principalId, `${label}.principalId`);
+    return {
+        applicationId: ref.applicationId,
+        workspaceId: ref.workspaceId,
+        principalId: ref.principalId,
+    };
 }
 
 function normalizePersistedClientAudit(value: unknown, label: string): AuditStamp {
@@ -2262,20 +2277,49 @@ function validateReceipt(value: unknown, label: string): void {
     requireNonEmptyString(receipt.commandId, `${label}.commandId`);
     requireNullableNonEmptyString(receipt.requestId, `${label}.requestId`);
     requireSha256(receipt.commandHash, `${label}.commandHash`);
-    validatePrincipalRef(receipt.aggregateRef, `${label}.aggregateRef`);
+    const aggregateRef = validatePrincipalRef(
+        receipt.aggregateRef,
+        `${label}.aggregateRef`,
+    );
     requireEnum(receipt.outcome, new Set(['applied', 'no-op']), `${label}.outcome`);
     requirePositiveSafeInteger(receipt.attemptCount, `${label}.attemptCount`);
-    requireNullableTimestamp(
+    if (receipt.acceptedStorageRevision === null) {
+        reject(`${label}.acceptedStorageRevision is required`);
+    }
+    requireTimestamp(
         receipt.acceptedStorageRevision,
         `${label}.acceptedStorageRevision`,
     );
-    for (const field of ['stateRevision', 'snapshotVersion', 'presenceVersion'] as const) {
-        requirePositiveSafeInteger(receipt[field], `${label}.${field}`);
-    }
+    requirePositiveSafeInteger(receipt.stateRevision, `${label}.stateRevision`);
+    requirePositiveSafeInteger(receipt.snapshotVersion, `${label}.snapshotVersion`);
+    requirePositiveSafeInteger(receipt.presenceVersion, `${label}.presenceVersion`);
     requireNullableNonEmptyString(receipt.eventId, `${label}.eventId`);
     requireStringArray(receipt.outboxIds, `${label}.outboxIds`);
     if ((receipt.outcome === 'applied') !== (receipt.eventId !== null)) {
         reject(`${label}.eventId differs from outcome`);
+    }
+    if (receipt.stateRevision !== receipt.acceptedStorageRevision + 1) {
+        reject(`${label}.stateRevision differs from acceptedStorageRevision`);
+    }
+    const expectedOutboxCount = receipt.outcome === 'applied' ? 1 : 0;
+    if (receipt.outboxIds.length !== expectedOutboxCount) {
+        reject(`${label}.outboxIds differs from outcome`);
+    }
+    if (receipt.outcome === 'applied') {
+        const expectedOutboxId = toStateMutationOutboxId({
+            commandId: receipt.commandId,
+            kind: 'client',
+            aggregateRef,
+            acceptedCausalRevision: {
+                kind: 'client',
+                stateRevision: receipt.stateRevision,
+                snapshotVersion: receipt.snapshotVersion,
+                presenceVersion: receipt.presenceVersion,
+            },
+        });
+        if (receipt.outboxIds[0] !== expectedOutboxId) {
+            reject(`${label}.outboxIds differs from accepted causal revision`);
+        }
     }
 }
 

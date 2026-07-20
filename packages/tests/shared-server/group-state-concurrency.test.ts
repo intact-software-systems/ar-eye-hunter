@@ -300,7 +300,7 @@ describe('convergent group and presence state', () => {
                 aggregateRef: ref,
                 outcome: 'no-op',
                 attemptCount: 1,
-                acceptedStorageRevision: null,
+                acceptedStorageRevision: 0,
                 stateRevision: 1,
                 snapshotVersion: 1,
                 causalRevision: { groupRevision: 1, presenceRevision: 0 },
@@ -1106,7 +1106,7 @@ describe('convergent group and presence state', () => {
                 aggregateRef: ref,
                 outcome: 'no-op',
                 attemptCount: 1,
-                acceptedStorageRevision: null,
+                acceptedStorageRevision: 0,
                 stateRevision: 1,
                 snapshotVersion: 1,
                 causalRevision: { groupRevision: 1, presenceRevision: 0 },
@@ -1143,12 +1143,151 @@ describe('convergent group and presence state', () => {
                 ...valid,
                 receipt: { ...valid.receipt, stateRevision: 2 },
             }],
+            ['applied receipt without an accepted storage revision', {
+                ...valid,
+                receipt: {
+                    ...valid.receipt,
+                    outcome: 'applied',
+                    acceptedStorageRevision: null,
+                    eventId: 'event-1',
+                    outboxIds: ['outbox-1'],
+                },
+            }],
+            ['applied receipt without its authoritative outbox effect', {
+                ...valid,
+                receipt: {
+                    ...valid.receipt,
+                    outcome: 'applied',
+                    eventId: 'event-1',
+                },
+            }],
+            ['applied receipt without an authoritative snapshot version', {
+                ...valid,
+                receipt: {
+                    ...valid.receipt,
+                    outcome: 'applied',
+                    snapshotVersion: 0,
+                    eventId: 'event-1',
+                    outboxIds: ['outbox-1'],
+                },
+            }],
             ['applied receipt without an authoritative event', {
                 ...valid,
                 receipt: { ...valid.receipt, outcome: 'applied' },
             }],
+            ['no-op receipt without its accepted predecessor revision', {
+                ...valid,
+                receipt: { ...valid.receipt, acceptedStorageRevision: null },
+            }],
+            ['no-op receipt with a divergent predecessor revision', {
+                ...valid,
+                receipt: { ...valid.receipt, acceptedStorageRevision: 1 },
+            }],
+            ['no-op receipt with an unexpected outbox effect', {
+                ...valid,
+                receipt: { ...valid.receipt, outboxIds: ['outbox-1'] },
+            }],
+            ['no-op receipt without an authoritative snapshot version', {
+                ...valid,
+                receipt: { ...valid.receipt, snapshotVersion: 0 },
+            }],
+            ['no-op receipt with unexpected join-code materialization', {
+                ...valid,
+                receipt: {
+                    ...valid.receipt,
+                    joinCode: 'join-code',
+                    joinCodeExpiresAtEpochMs: 2_000,
+                },
+            }],
+            ['rejected receipt without its accepted predecessor revision', {
+                ...valid,
+                receipt: {
+                    ...valid.receipt,
+                    outcome: 'rejected',
+                    acceptedStorageRevision: null,
+                    rejection: 'rejected',
+                },
+            }],
+            ['rejected receipt with a divergent predecessor revision', {
+                ...valid,
+                receipt: {
+                    ...valid.receipt,
+                    outcome: 'rejected',
+                    acceptedStorageRevision: 1,
+                    rejection: 'rejected',
+                },
+            }],
+            ['rejected receipt with an unexpected outbox effect', {
+                ...valid,
+                receipt: {
+                    ...valid.receipt,
+                    outcome: 'rejected',
+                    outboxIds: ['outbox-1'],
+                    rejection: 'rejected',
+                },
+            }],
+            ['rejected receipt with unexpected join-code materialization', {
+                ...valid,
+                receipt: {
+                    ...valid.receipt,
+                    outcome: 'rejected',
+                    joinCode: 'join-code',
+                    joinCodeExpiresAtEpochMs: 2_000,
+                    rejection: 'rejected',
+                },
+            }],
+            ['absent-group rejection with nonzero authority', {
+                ...valid,
+                receipt: {
+                    ...valid.receipt,
+                    outcome: 'rejected',
+                    acceptedStorageRevision: null,
+                    stateRevision: 1,
+                    snapshotVersion: 0,
+                    causalRevision: { groupRevision: 0, presenceRevision: 1 },
+                    rejection: 'rejected',
+                },
+            }],
             ['legacy identity-free no-event record', legacyIdentityFree],
         ];
+
+        const validRuntime = new FakeRuntimeStateRepository();
+        const validRepository = new GroupStateRepository(validRuntime);
+        await expect(validRepository.insertIdempotentGroupMutationReceipt(
+            ref,
+            requestId,
+            valid,
+        )).resolves.toMatchObject({ status: 'applied', revision: 0 });
+        await expect(validRepository.findIdempotentGroupMutationReceipt(
+            ref,
+            requestId,
+        )).resolves.toEqual(valid);
+
+        const absentRequestId = 'absent-group-rejected-request';
+        const absentRejected: GroupMutationIdempotencyRecord = {
+            ...valid,
+            requestId: absentRequestId,
+            receipt: {
+                ...valid.receipt,
+                commandId: absentRequestId,
+                requestId: absentRequestId,
+                outcome: 'rejected',
+                acceptedStorageRevision: null,
+                stateRevision: 0,
+                snapshotVersion: 0,
+                causalRevision: { groupRevision: 0, presenceRevision: 0 },
+                rejection: 'Group creation rejected',
+            },
+        };
+        await expect(validRepository.insertIdempotentGroupMutationReceipt(
+            ref,
+            absentRequestId,
+            absentRejected,
+        )).resolves.toMatchObject({ status: 'applied', revision: 0 });
+        await expect(validRepository.findIdempotentGroupMutationReceipt(
+            ref,
+            absentRequestId,
+        )).resolves.toEqual(absentRejected);
 
         for (const [label, invalid] of invalidRecords) {
             const insertRepository = new GroupStateRepository(

@@ -127,9 +127,7 @@ function hardenedApiEnv(): Record<string, string> {
   };
 }
 
-function env(values: Record<string, string>): Readonly<{
-  get(key: string): string | undefined;
-}> {
+function env(values: Record<string, string>): Pick<Deno.Env, 'get'> {
   return {
     get(key: string): string | undefined {
       return values[key];

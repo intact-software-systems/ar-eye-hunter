@@ -4002,6 +4002,59 @@ function validateMutationReceipt(
     if ((receipt.outcome === 'rejected') !== (receipt.rejection !== null)) {
         throw new TypeError(`${label} rejection differs from outcome`);
     }
+    if (receipt.outcome === 'applied') {
+        if (receipt.acceptedStorageRevision === null) {
+            throw new TypeError(`${label} acceptedStorageRevision is required when applied`);
+        }
+        requirePositiveSafeInteger(
+            receipt.snapshotVersion,
+            `${label} applied snapshotVersion`,
+        );
+        requirePositiveSafeInteger(
+            causalRevision.groupRevision,
+            `${label} applied groupRevision`,
+        );
+        if (receipt.outboxIds.length !== 1) {
+            throw new TypeError(`${label} outboxIds differs from applied outcome`);
+        }
+        return;
+    }
+    if (receipt.outboxIds.length !== 0) {
+        throw new TypeError(`${label} outboxIds differs from non-applied outcome`);
+    }
+    if (receipt.joinCode !== null || receipt.joinCodeExpiresAtEpochMs !== null) {
+        throw new TypeError(`${label} join-code fields require an applied outcome`);
+    }
+    if (receipt.outcome === 'no-op') {
+        requirePositiveSafeInteger(
+            receipt.snapshotVersion,
+            `${label} no-op snapshotVersion`,
+        );
+        if (
+            receipt.acceptedStorageRevision === null ||
+            causalRevision.groupRevision !== receipt.acceptedStorageRevision + 1
+        ) {
+            throw new TypeError(`${label} no-op revision differs from its predecessor`);
+        }
+        return;
+    }
+    if (receipt.acceptedStorageRevision === null) {
+        if (
+            causalRevision.groupRevision !== 0 ||
+            causalRevision.presenceRevision !== 0 ||
+            receipt.snapshotVersion !== 0
+        ) {
+            throw new TypeError(`${label} absent-group rejection has authority`);
+        }
+        return;
+    }
+    requirePositiveSafeInteger(
+        receipt.snapshotVersion,
+        `${label} rejected snapshotVersion`,
+    );
+    if (causalRevision.groupRevision !== receipt.acceptedStorageRevision + 1) {
+        throw new TypeError(`${label} rejected revision differs from its predecessor`);
+    }
 }
 
 function validateCommandHash(value: unknown, label: string): void {

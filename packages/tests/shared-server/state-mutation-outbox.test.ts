@@ -1515,6 +1515,85 @@ describe('StateMutationOutboxRepository', () => {
         }
     });
 
+    it('rejects extra client accepted-causal-revision fields in builders and persisted reads', async () => {
+        const snapshot = createClientSnapshot(1);
+        const validInput: Extract<
+            CreateStateMutationOutboxRecordInput,
+            { kind: 'client' }
+        > = {
+            commandId: 'client-extra-causal-field',
+            commandHash: TEST_COMMAND_HASH,
+            kind: 'client',
+            aggregateRef: snapshot.principal,
+            acceptedCausalRevision: toClientStateMutationCausalRevision(snapshot),
+            event: { kind: 'none' },
+            effects: ['client-state-sync'],
+            createdAtEpochMs: 1_000,
+        };
+        const valid = createStateMutationOutboxRecord(validInput);
+        const malformedRevision = {
+            ...validInput.acceptedCausalRevision,
+            unexpected: true,
+        };
+
+        expect(() => createStateMutationOutboxRecord({
+            ...validInput,
+            acceptedCausalRevision: malformedRevision,
+        })).toThrow('Invalid state mutation outbox client accepted causal revision fields');
+
+        const runtime = new FakeRuntimeStateRepository();
+        await insertRawOutboxRecord(runtime, {
+            ...valid,
+            acceptedCausalRevision: malformedRevision,
+        }, valid.outboxId);
+        await expect(
+            new StateMutationOutboxRepository(runtime).find(valid.outboxId),
+        ).rejects.toThrow(
+            'Invalid state mutation outbox client accepted causal revision fields',
+        );
+    });
+
+    it('rejects extra group causal-tuple fields in builders and persisted reads', async () => {
+        const snapshot = createGroupSnapshot(1);
+        const validInput: Extract<
+            CreateStateMutationOutboxRecordInput,
+            { kind: 'group' }
+        > = {
+            commandId: 'group-extra-causal-field',
+            commandHash: TEST_COMMAND_HASH,
+            kind: 'group',
+            aggregateRef: snapshot.group,
+            acceptedCausalRevision: toGroupStateMutationCausalRevision(snapshot),
+            event: { kind: 'none' },
+            effects: ['group-state-sync'],
+            createdAtEpochMs: 1_000,
+        };
+        const valid = createStateMutationOutboxRecord(validInput);
+        const malformedRevision = {
+            ...validInput.acceptedCausalRevision,
+            causalRevision: {
+                ...validInput.acceptedCausalRevision.causalRevision,
+                unexpected: true,
+            },
+        };
+
+        expect(() => createStateMutationOutboxRecord({
+            ...validInput,
+            acceptedCausalRevision: malformedRevision,
+        })).toThrow('Invalid state mutation outbox group causal revision fields');
+
+        const runtime = new FakeRuntimeStateRepository();
+        await insertRawOutboxRecord(runtime, {
+            ...valid,
+            acceptedCausalRevision: malformedRevision,
+        }, valid.outboxId);
+        await expect(
+            new StateMutationOutboxRepository(runtime).find(valid.outboxId),
+        ).rejects.toThrow(
+            'Invalid state mutation outbox group causal revision fields',
+        );
+    });
+
     it('rejects prototype-bearing or lossy JSON values before building records', () => {
         const valid = createClientRecord(createClientSnapshot(1), {
             event: { kind: 'client', event: createClientEvent(1) },
