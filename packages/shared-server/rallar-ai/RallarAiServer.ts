@@ -582,7 +582,7 @@ export function createRallarServerAi(
                         actorId: context.senderId,
                         roomId: context.roomId,
                     });
-                    const scope = topicOptions.scope ?? 'room';
+                    const scope = normalizeBroadcastScope(topicOptions.scope);
                     const target: RallarServerAiBroadcastTarget = scope === 'room'
                         ? {
                             scope,
@@ -764,7 +764,7 @@ type RallarServerAiBroadcastTarget =
 function normalizeBroadcastTarget<TValue>(
     input: RallarServerAiBroadcastInput<TValue>,
 ): RallarServerAiBroadcastTarget {
-    const scope = input.scope ?? 'room';
+    const scope = normalizeBroadcastScope(input.scope);
     if (scope !== 'room') {
         return { scope };
     }
@@ -773,6 +773,20 @@ function normalizeBroadcastTarget<TValue>(
         scope,
         groupRef: requireCompleteGroupRef(input.roomRef),
     };
+}
+
+function normalizeBroadcastScope(value: unknown): RallarServerAiBroadcastTarget['scope'] {
+    if (value === undefined) {
+        return 'room';
+    }
+    if (value === 'room' || value === 'world' || value === 'all') {
+        return value;
+    }
+
+    throw new RallarAiError(
+        'invalid-json',
+        'RallarAI broadcast scope must be room, world, or all.',
+    );
 }
 
 function requireCompleteGroupRef(value: unknown): GroupRef {

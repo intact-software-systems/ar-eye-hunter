@@ -342,6 +342,36 @@ describe('Rallar server AI facade', () => {
         }
     });
 
+    it.each([
+        ['unknown string', 'galaxy'],
+        ['number', 7],
+        ['null', null],
+    ])('rejects a %s runtime broadcast scope before publishing', async (_label, invalidScope) => {
+        const fake = createFakeRallar();
+        const provider = createRallarAiMockProvider({ value: { kind: 'spawn' } });
+        const result = createRallarAiJsonResult({
+            request,
+            provider,
+            value: { kind: 'spawn' },
+        });
+        const ai = createRallarServerAi({
+            rallar: fake.rallar,
+            provider,
+        });
+        const invalidInput = {
+            result,
+            scope: invalidScope,
+            fanout: 'outbox' as const,
+        };
+
+        // @ts-expect-error Runtime JavaScript callers can supply invalid scope values.
+        await expect(ai.broadcastJson(invalidInput)).rejects.toMatchObject({
+            code: 'invalid-json',
+        });
+
+        expect(fake.rallar.ws.publish).not.toHaveBeenCalled();
+    });
+
     it('keeps world broadcasts intentionally unscoped', async () => {
         const fake = createFakeRallar();
         const provider = createRallarAiMockProvider({ value: { kind: 'spawn' } });
@@ -396,6 +426,50 @@ describe('Rallar server AI facade', () => {
                 proxy: {},
             },
         )).rejects.toThrow(/complete GroupRef/i);
+        expect(fake.rallar.ws.publish).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        ['unknown string', 'galaxy'],
+        ['number', 7],
+        ['null', null],
+    ])('rejects a %s generation result scope before publishing', async (_label, invalidScope) => {
+        const fake = createFakeRallar();
+        const ai = createRallarServerAi({
+            rallar: fake.rallar,
+            provider: createRallarAiMockProvider({ value: { kind: 'spawn' } }),
+        });
+        const invalidOptions = {
+            scope: invalidScope,
+            resultFanout: 'outbox' as const,
+        };
+        // @ts-expect-error Runtime JavaScript callers can supply invalid scope values.
+        ai.installGenerationTopic(invalidOptions);
+
+        await expect(fake.handlers[0].handler(
+            {
+                payload: request,
+                raw: newALBroadcastMessage(
+                    'peer-1',
+                    newALRoute('room.ai.generate', 'room-1', 'request-1'),
+                    'room',
+                    'rallar.ai.generate-json.request.v1',
+                    request,
+                ),
+                receivedAtEpochMs: 1,
+            },
+            {
+                senderId: 'peer-1',
+                roomId: 'room-1',
+                roomRef: {
+                    applicationId: 'app-1',
+                    workspaceId: 'workspace-1',
+                    groupId: 'room-1',
+                },
+                proxy: {},
+            },
+        )).rejects.toMatchObject({ code: 'invalid-json' });
+
         expect(fake.rallar.ws.publish).not.toHaveBeenCalled();
     });
 

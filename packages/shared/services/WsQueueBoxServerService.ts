@@ -322,11 +322,15 @@ export class WsQueueBoxServerService {
             };
         }
 
-        if (shouldPersistOutbox(this.normalizeOutgoingPolicy(message).effective)) {
+        const dispatchPlan = this.planOutgoingMessage(message);
+        if (dispatchPlan.persist) {
             validatePersistedALMessage(message);
         }
 
-        const result = await this.outboundRuntime.enqueueIfAbsent(message);
+        const result = await this.outboundRuntime.enqueueIfAbsent(
+            message,
+            dispatchPlan,
+        );
         if (
             result.status === 'no-route' &&
             result.reason &&

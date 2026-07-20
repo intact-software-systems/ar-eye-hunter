@@ -54,12 +54,26 @@ describe('WsQueueBoxServerService QoS runtime', () => {
     it('broadcasts volatile targeted broadcast messages directly from the server outbox', async () => {
         const socket = createFakeWsServer();
         const outbox = new shared.InMemoryQueueBox(new Map());
+        let providerEvaluationCount = 0;
         const service = new shared.WsQueueBoxServerService(
             new shared.InMemoryQueueBox(new Map()),
             outbox,
             socket as never,
             'server-1',
             {
+                qosProvider: {
+                    defaultsForMessage: () => {
+                        providerEvaluationCount += 1;
+                        return {
+                            durability: {
+                                algo: providerEvaluationCount === 1
+                                    ? 'volatile'
+                                    : 'local-outbox',
+                                opts: {},
+                            },
+                        };
+                    },
+                },
                 targetResolver: createTargetResolver(),
             },
         );
@@ -89,6 +103,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         expect(socket.sent.map(entry => entry.connectionId).sort()).toEqual(['conn-1', 'conn-3']);
         expect(socket.sent.every(entry => entry.data.id.msgId === msg.id.msgId)).toBe(true);
         expect((outbox as any).data.size).toBe(0);
+        expect(providerEvaluationCount).toBe(1);
     });
 
     it('reports partial live-send failures with recipient and failure counts', async () => {
@@ -265,6 +280,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         expect(stored.audit.expiryTs.epochMilliseconds).toBe(expiresAtMs);
         expect(socket.sent).toHaveLength(0);
 
+        const enqueueIfAbsent = vi.spyOn(outbox, 'enqueueIfAbsent');
         const invalidRoomMessage = shared.newALBroadcastMessage(
             'server-1',
             {
@@ -283,6 +299,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
 
         await expect(service.enqueueOutboxIfAbsent(invalidRoomMessage))
             .rejects.toThrow(/room broadcast group ref/i);
+        expect(enqueueIfAbsent).not.toHaveBeenCalled();
         expect(await outbox.getItem(invalidRoomMessage.route)).toBeUndefined();
         expect(socket.sent).toHaveLength(0);
     });

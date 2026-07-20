@@ -1269,7 +1269,10 @@ describe('GroupTopologyManagementService', () => {
             GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE,
             key,
         );
-        const record = JSON.parse(entry!.value) as Record<string, unknown>;
+        if (!entry) {
+            throw new Error('Expected the compact topology mutation receipt to exist.');
+        }
+        const record = JSON.parse(entry.value) as Record<string, unknown>;
         await runtimeRepository.upsert(
             GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE,
             key,

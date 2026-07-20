@@ -268,7 +268,10 @@ export class ALOutboundMessageRuntime<TPrepared> {
         }
     }
 
-    async enqueueIfAbsent(msg: ALMessage): Promise<ALOutboundEnqueueResult> {
+    async enqueueIfAbsent(
+        msg: ALMessage,
+        dispatchPlan?: ALOutboundDispatchPlan<TPrepared>,
+    ): Promise<ALOutboundEnqueueResult> {
         if (this.disposed) {
             return ALOutboundMessageRuntime.toDisposedEnqueueResult(msg);
         }
@@ -280,7 +283,9 @@ export class ALOutboundMessageRuntime<TPrepared> {
 
         const computed = await this.commitDispatchPlanWithRetry(
             msg,
-            this.input.planOutgoingMessage,
+            dispatchPlan === undefined
+                ? this.input.planOutgoingMessage
+                : () => dispatchPlan,
             'enqueue',
             'immediate',
         );
