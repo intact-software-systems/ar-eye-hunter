@@ -634,18 +634,22 @@ async function acceptRtcRttMeasurementWithPolicy(input: {
             degreeLimit: number;
         }>,
         existingMeasurements: readonly RttMeasurementInfo[],
+        requestedAtEpochMs: number,
     ): RtcRttAcceptanceResult =>
         evaluateRtcRttMeasurement({
             rtt: input.rtt,
             alSenderId: input.alSenderId,
+            requestedAtEpochMs,
             ...policyInputs,
             existingMeasurements,
         });
 
     if (!input.runtimeState) {
+        const requestedAtEpochMs = Date.now();
         const result = evaluate(
             await input.readPolicyInputs(),
             rttRepository.getAllRtt(),
+            requestedAtEpochMs,
         );
         return {
             ...result,

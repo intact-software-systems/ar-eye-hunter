@@ -45,6 +45,7 @@ export function filterRtcRttMeasurementsForGroup(input: {
 export function evaluateRtcRttMeasurement(input: {
     readonly rtt: RttMeasurementInfo;
     readonly alSenderId: string;
+    readonly requestedAtEpochMs: number;
     readonly candidateGroups: readonly GroupSnapshot[];
     readonly overlaySnapshotsByGroupKey: ReadonlyMap<string, RallarOverlayTopologySnapshot>;
     readonly existingMeasurements: readonly RttMeasurementInfo[];
@@ -69,7 +70,14 @@ export function evaluateRtcRttMeasurement(input: {
 
     const sharedActiveGroups = input.candidateGroups.filter((group) =>
         group.group.status === 'active' &&
-        groupIncludesPair(group, rtt.sessionIdFrom, rtt.sessionIdTo)
+        (group.group.expiresAtEpochMs === undefined ||
+            group.group.expiresAtEpochMs > input.requestedAtEpochMs) &&
+        groupIncludesLivePairAt(
+            group,
+            rtt.sessionIdFrom,
+            rtt.sessionIdTo,
+            input.requestedAtEpochMs,
+        )
     );
 
     if (sharedActiveGroups.length === 0) {
@@ -118,6 +126,20 @@ function groupIncludesPair(
 ): boolean {
     const memberIds = new Set(readGroupMemberSessionIds(group));
     return memberIds.has(sessionIdFrom) && memberIds.has(sessionIdTo);
+}
+
+function groupIncludesLivePairAt(
+    group: GroupSnapshot,
+    sessionIdFrom: string,
+    sessionIdTo: string,
+    requestedAtEpochMs: number,
+): boolean {
+    const liveSessionIds = new Set(
+        group.activeSessions
+            .filter((session) => session.expiresAtEpochMs > requestedAtEpochMs)
+            .map((session) => session.sessionId),
+    );
+    return liveSessionIds.has(sessionIdFrom) && liveSessionIds.has(sessionIdTo);
 }
 
 function isReportingPairForGroup(

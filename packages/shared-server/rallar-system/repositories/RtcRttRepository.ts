@@ -10,7 +10,6 @@ import type {
 import {
     isRuntimeStateConditionalRepositoryLike,
     isRuntimeStateOptimisticTransactionalRepositoryLike,
-    isRuntimeStateTransactionalRepositoryLike,
 } from '../../runtime-state/RuntimeStateRepository.ts';
 import {
     RuntimeStateRetryExhaustedError,
@@ -254,7 +253,11 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
         return (await this.findMutationReceiptEntry(receiptId))?.value;
     }
 
-    async findMutationReceiptEntry(
+    /**
+     * Immutable idempotency authority probe. A physically retained receipt is
+     * authoritative until a separate lifecycle-aware cleanup removes it.
+     */
+    async probeMutationReceiptEntry(
         receiptId: string,
     ): Promise<RuntimeStateEntryValue<RtcRttMutationReceipt> | undefined> {
         const entry = await this.runtimeRepository.findEntry(
@@ -263,10 +266,22 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
         );
         if (!entry) return undefined;
         try {
-            return await this.toLiveReceiptEntry(entry, receiptId);
+            return this.toReceiptEntry(entry, receiptId);
         } catch (error) {
-            throw rttCorruption(entry.key, error instanceof Error ? error.message : 'Invalid RTT receipt');
+            throw rttCorruption(
+                entry.key,
+                error instanceof Error ? error.message : 'Invalid RTT receipt',
+            );
         }
+    }
+
+    async findMutationReceiptEntry(
+        receiptId: string,
+    ): Promise<RuntimeStateEntryValue<RtcRttMutationReceipt> | undefined> {
+        const receipt = await this.probeMutationReceiptEntry(receiptId);
+        return receipt && receipt.entry.expireAtTimestamp > this.nowEpochMs()
+            ? receipt
+            : undefined;
     }
 
     async listMutationReceiptEntries(): Promise<
@@ -530,8 +545,17 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
     private async toLiveReceiptEntry(
         entry: RuntimeStateEntry,
         trustedReceiptId?: string,
-        expiryAttempt = 0,
     ): Promise<RuntimeStateEntryValue<RtcRttMutationReceipt> | undefined> {
+        const receipt = this.toReceiptEntry(entry, trustedReceiptId);
+        return entry.expireAtTimestamp > this.nowEpochMs()
+            ? receipt
+            : undefined;
+    }
+
+    private toReceiptEntry(
+        entry: RuntimeStateEntry,
+        trustedReceiptId?: string,
+    ): RuntimeStateEntryValue<RtcRttMutationReceipt> {
         if (trustedReceiptId !== undefined && entry.key !== trustedReceiptId) {
             throw rttCorruption(entry.key, 'RTC RTT receipt differs from trusted slot');
         }
@@ -548,17 +572,7 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
         if (value.receiptId !== entry.key) {
             throw rttCorruption(entry.key, 'RTC RTT receipt differs from physical key');
         }
-        return await this.toLiveVerifiedEntry(
-            RTC_RTT_RECEIPTS_NAMESPACE,
-            entry,
-            value,
-            (replacement, nextAttempt) => this.toLiveReceiptEntry(
-                replacement,
-                trustedReceiptId,
-                nextAttempt,
-            ),
-            expiryAttempt,
-        );
+        return { entry, value };
     }
 
     private async toLiveRecomputeIntentEntry(
@@ -566,6 +580,32 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
         trustedOutboxId?: string,
         expiryAttempt = 0,
     ): Promise<RuntimeStateEntryValue<RtcRttRecomputeIntent> | undefined> {
+        const intent = this.toRecomputeIntentEntry(entry, trustedOutboxId);
+        const receipt = await this.probeMutationReceiptEntry(intent.value.receiptId);
+        if (!receipt) {
+            throw rttCorruption(entry.key, 'RTC RTT recompute intent receipt is missing');
+        }
+        validateIntentAgainstReceipt(intent.value, receipt.value, entry.key);
+        if (entry.expireAtTimestamp !== receipt.entry.expireAtTimestamp) {
+            throw rttCorruption(
+                entry.key,
+                'RTC RTT recompute intent physical expiry differs from receipt',
+            );
+        }
+        const observedAtEpochMs = this.nowEpochMs();
+        if (entry.expireAtTimestamp > observedAtEpochMs) return intent;
+        return await this.cleanupExpiredReceiptIntents(
+            intent,
+            receipt,
+            observedAtEpochMs,
+            expiryAttempt,
+        );
+    }
+
+    private toRecomputeIntentEntry(
+        entry: RuntimeStateEntry,
+        trustedOutboxId?: string,
+    ): RuntimeStateEntryValue<RtcRttRecomputeIntent> {
         if (trustedOutboxId !== undefined && entry.key !== trustedOutboxId) {
             throw rttCorruption(entry.key, 'RTC RTT recompute intent differs from trusted slot');
         }
@@ -582,35 +622,128 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
         if (value.outboxId !== entry.key) {
             throw rttCorruption(entry.key, 'RTC RTT recompute intent differs from physical key');
         }
-        if (entry.expireAtTimestamp <= this.nowEpochMs()) {
-            return await this.toLiveVerifiedEntry(
+        return { entry, value };
+    }
+
+    private async cleanupExpiredReceiptIntents(
+        intent: RuntimeStateEntryValue<RtcRttRecomputeIntent>,
+        receipt: RuntimeStateEntryValue<RtcRttMutationReceipt>,
+        observedAtEpochMs: number,
+        expiryAttempt: number,
+    ): Promise<RuntimeStateEntryValue<RtcRttRecomputeIntent> | undefined> {
+        const runtime = requireOptimisticRuntime(this.runtimeRepository);
+        await waitForRuntimeStateWriteRetry(expiryAttempt as 0 | 1 | 2, {
+            sleep: this.options.sleep,
+        });
+        try {
+            await runtime.begin(async (transaction) => {
+                const [currentReceiptEntry, siblingEntries] = await Promise.all([
+                    transaction.findEntry(
+                        RTC_RTT_RECEIPTS_NAMESPACE,
+                        receipt.value.receiptId,
+                    ),
+                    transaction.findEntriesByPrefix(
+                        RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE,
+                        `${receipt.value.receiptId}:commandHash=`,
+                    ),
+                ]);
+                if (!currentReceiptEntry && siblingEntries.length === 0) return;
+                if (!currentReceiptEntry) {
+                    throw rttCorruption(
+                        intent.entry.key,
+                        'RTC RTT recompute intent receipt is missing',
+                    );
+                }
+                const currentReceipt = this.toReceiptEntry(
+                    currentReceiptEntry,
+                    receipt.value.receiptId,
+                );
+                if (currentReceipt.entry.expireAtTimestamp > observedAtEpochMs) {
+                    throw rttCorruption(
+                        intent.entry.key,
+                        'RTC RTT recompute receipt remains live during intent cleanup',
+                    );
+                }
+                const seenGroupRefs = new Set<string>();
+                const siblings = siblingEntries.map((siblingEntry) => {
+                    const sibling = this.toRecomputeIntentEntry(siblingEntry);
+                    validateIntentAgainstReceipt(
+                        sibling.value,
+                        currentReceipt.value,
+                        sibling.entry.key,
+                    );
+                    if (
+                        sibling.entry.expireAtTimestamp !==
+                            currentReceipt.entry.expireAtTimestamp ||
+                        sibling.entry.expireAtTimestamp > observedAtEpochMs
+                    ) {
+                        throw rttCorruption(
+                            sibling.entry.key,
+                            'RTC RTT recompute sibling is not jointly expired with receipt',
+                        );
+                    }
+                    const groupIdentity = toCanonicalRtcTopologyGroupIdentity(
+                        sibling.value.groupSnapshot.group,
+                    );
+                    if (seenGroupRefs.has(groupIdentity)) {
+                        throw rttCorruption(
+                            sibling.entry.key,
+                            'RTC RTT receipt has duplicate recompute intent group',
+                        );
+                    }
+                    seenGroupRefs.add(groupIdentity);
+                    return sibling;
+                }).sort((left, right) =>
+                    compareRtcTopologyIdentifiers(left.entry.key, right.entry.key)
+                );
+                const expectedGroupRefs = currentReceipt.value.affectedGroupRefs
+                    .map(toCanonicalRtcTopologyGroupIdentity)
+                    .sort(compareRtcTopologyIdentifiers);
+                const actualGroupRefs = [...seenGroupRefs]
+                    .sort(compareRtcTopologyIdentifiers);
+                if (!rtcTopologySemanticEqual(actualGroupRefs, expectedGroupRefs)) {
+                    throw rttCorruption(
+                        currentReceipt.entry.key,
+                        'RTC RTT receipt recompute intent set is incomplete',
+                    );
+                }
+                for (const sibling of siblings) {
+                    const deleted = await transaction.deleteIfRevision(
+                        RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE,
+                        sibling.entry.key,
+                        sibling.entry.revision,
+                    );
+                    if (deleted.status === 'conflict') {
+                        throw new RuntimeStateWriteConflictError();
+                    }
+                }
+                const deletedReceipt = await transaction.deleteIfRevision(
+                    RTC_RTT_RECEIPTS_NAMESPACE,
+                    currentReceipt.entry.key,
+                    currentReceipt.entry.revision,
+                );
+                if (deletedReceipt.status === 'conflict') {
+                    throw new RuntimeStateWriteConflictError();
+                }
+            });
+            return undefined;
+        } catch (error) {
+            if (!(error instanceof RuntimeStateWriteConflictError)) throw error;
+            if (expiryAttempt >= 2) {
+                throw new RuntimeStateRetryExhaustedError(error);
+            }
+            const replacement = await runtime.findEntry(
                 RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE,
-                entry,
-                value,
-                (replacement, nextAttempt) => this.toLiveRecomputeIntentEntry(
-                    replacement,
-                    trustedOutboxId,
-                    nextAttempt,
-                ),
-                expiryAttempt,
+                intent.entry.key,
             );
+            return replacement
+                ? await this.toLiveRecomputeIntentEntry(
+                    replacement,
+                    intent.entry.key,
+                    expiryAttempt + 1,
+                )
+                : undefined;
         }
-        const receipt = await this.findMutationReceiptEntry(value.receiptId);
-        if (!receipt) {
-            throw rttCorruption(entry.key, 'RTC RTT recompute intent receipt is missing');
-        }
-        validateIntentAgainstReceipt(value, receipt.value, entry.key);
-        return await this.toLiveVerifiedEntry(
-            RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE,
-            entry,
-            value,
-            (replacement, nextAttempt) => this.toLiveRecomputeIntentEntry(
-                replacement,
-                trustedOutboxId,
-                nextAttempt,
-            ),
-            expiryAttempt,
-        );
     }
 }
 
@@ -971,7 +1104,7 @@ function requireOptimisticRuntime(
     runtime: RuntimeStateRepositoryLike,
 ): RuntimeStateOptimisticTransactionalRepositoryLike {
     if (!isRuntimeStateOptimisticTransactionalRepositoryLike(runtime)) {
-        throw new Error('RTC RTT migration requires optimistic transactions');
+        throw new Error('RTC RTT repository requires optimistic transactions');
     }
     return runtime;
 }

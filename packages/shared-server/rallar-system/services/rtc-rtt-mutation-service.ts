@@ -32,7 +32,7 @@ export async function readRttMutation(
     repository: RtcRttRepository,
     request: RtcRttStableRequest,
 ): Promise<RtcRttMutationRead> {
-    const receipt = await repository.findMutationReceiptEntry(
+    const receipt = await repository.probeMutationReceiptEntry(
         toRtcRttMutationReceiptId(request.rtt),
     );
     if (receipt) return { receipt };

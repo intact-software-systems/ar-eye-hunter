@@ -65,20 +65,7 @@ export async function migrateLegacyRtcTopologyPublicationKeys(
         RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
     );
     for (const sourcePublication of publications) {
-        const raw = parseValue(sourcePublication);
-        if (!isRecord(raw) || typeof raw.publicationId !== 'string' ||
-            typeof raw.workId !== 'string' || !isRecord(raw.groupRef)) {
-            throw publicationCorruption(sourcePublication.key, 'Legacy publication is invalid');
-        }
-        let publication: RtcTopologyPublication;
-        try {
-            publication = publicationForMigration(raw);
-        } catch (error) {
-            throw publicationCorruption(
-                sourcePublication.key,
-                error instanceof Error ? error.message : 'Legacy publication is invalid',
-            );
-        }
+        const publication = readPublicationForMigration(sourcePublication);
         const destinationPublicationKey = repository.publicationKey(
             publication.groupRef,
             publication.publicationId,
@@ -96,83 +83,145 @@ export async function migrateLegacyRtcTopologyPublicationKeys(
                 'Legacy publication key differs from stored publication id',
             );
         }
-        const sourceClaim = await runtime.findEntry(
-            RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE,
-            publication.workId,
-        );
-        if (!sourceClaim && !sourceIsCanonical) {
-            throw publicationCorruption(sourcePublication.key, 'Legacy work claim is missing');
-        }
-        if (!sourceClaim) continue;
-        let claimedPublicationId: unknown;
-        try {
-            claimedPublicationId = JSON.parse(sourceClaim.value);
-        } catch {
-            throw publicationCorruption(sourceClaim.key, 'Legacy work claim JSON is invalid');
-        }
-        if (claimedPublicationId !== publication.publicationId) {
-            throw publicationCorruption(sourceClaim.key, 'Legacy work claim differs from publication');
-        }
         await runtime.begin(async (transaction) => {
-            const migrated = new RtcTopologyPublicationRepository(
-                transaction,
-                DEFAULT_RTC_TOPOLOGY_PUBLICATION_RETENTION_MS,
-                () => publication.createdAtEpochMs,
+            const currentSource = await transaction.findEntry(
+                RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
+                sourcePublication.key,
             );
-            const destinationClaim = await migrated.findWorkClaimEntry(
+            if (
+                !currentSource ||
+                currentSource.revision !== sourcePublication.revision
+            ) {
+                throw new RuntimeStateWriteConflictError();
+            }
+            const currentPublication = readPublicationForMigration(currentSource);
+            if (!rtcTopologySemanticEqual(currentPublication, publication)) {
+                throw publicationCorruption(
+                    currentSource.key,
+                    'Legacy publication changed before migration',
+                );
+            }
+            const expectedClaim: RtcTopologyPublicationWorkClaim = {
+                groupRef: publication.groupRef,
+                workId: publication.workId,
+                publicationId: publication.publicationId,
+            };
+            const destinationClaimKey = repository.workIndexKey(
                 publication.groupRef,
                 publication.workId,
             );
-            if (destinationClaim) {
-                const expectedClaim: RtcTopologyPublicationWorkClaim = {
-                    groupRef: publication.groupRef,
-                    workId: publication.workId,
-                    publicationId: publication.publicationId,
-                };
-                if (!rtcTopologySemanticEqual(destinationClaim.value, expectedClaim)) {
-                    throw publicationCorruption(
-                        destinationClaim.entry.key,
-                        'Canonical work claim differs from legacy source',
-                    );
-                }
-            } else if (!await migrated.insertWorkClaim(
-                publication,
-                sourceClaim.expireAtTimestamp,
-            )) {
-                throw new RuntimeStateWriteConflictError();
+            const [legacyClaim, destinationClaim] = await Promise.all([
+                transaction.findEntry(
+                    RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE,
+                    publication.workId,
+                ),
+                transaction.findEntry(
+                    RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE,
+                    destinationClaimKey,
+                ),
+            ]);
+            if (!legacyClaim && !destinationClaim && !sourceIsCanonical) {
+                throw publicationCorruption(
+                    currentSource.key,
+                    'Legacy work claim is missing',
+                );
             }
-            const destinationPublication = await migrated.findPublication(
-                publication.groupRef,
-                publication.publicationId,
-            );
-            if (destinationPublication) {
-                if (!rtcTopologySemanticEqual(destinationPublication, publication)) {
+            if (legacyClaim) {
+                readWorkClaimForMigration(legacyClaim, expectedClaim);
+            }
+            if (destinationClaim) {
+                readWorkClaimForMigration(destinationClaim, expectedClaim);
+            }
+            const claimExpiry = destinationClaim?.expireAtTimestamp ??
+                legacyClaim?.expireAtTimestamp ?? currentSource.expireAtTimestamp;
+            if (!destinationClaim) {
+                const inserted = await transaction.insertIfAbsent(
+                    RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE,
+                    destinationClaimKey,
+                    JSON.stringify(expectedClaim),
+                    claimExpiry,
+                );
+                if (inserted.status === 'conflict') {
+                    throw new RuntimeStateWriteConflictError();
+                }
+            } else if (!rtcTopologySemanticEqual(
+                parseValue(destinationClaim),
+                expectedClaim,
+            )) {
+                const updated = await transaction.upsertIfRevision(
+                    RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE,
+                    destinationClaimKey,
+                    JSON.stringify(expectedClaim),
+                    destinationClaim.expireAtTimestamp,
+                    destinationClaim.revision,
+                );
+                if (updated.status === 'conflict') {
+                    throw new RuntimeStateWriteConflictError();
+                }
+            }
+
+            const destinationPublication = sourceIsCanonical
+                ? currentSource
+                : await transaction.findEntry(
+                    RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
+                    destinationPublicationKey,
+                );
+            if (!destinationPublication) {
+                const inserted = await transaction.insertIfAbsent(
+                    RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
+                    destinationPublicationKey,
+                    JSON.stringify(publication),
+                    currentSource.expireAtTimestamp,
+                );
+                if (inserted.status === 'conflict') {
+                    throw new RuntimeStateWriteConflictError();
+                }
+            } else {
+                const destinationValue = readPublicationForMigration(
+                    destinationPublication,
+                );
+                if (!rtcTopologySemanticEqual(destinationValue, publication)) {
                     throw publicationCorruption(
                         destinationPublicationKey,
                         'Canonical publication differs from legacy source',
                     );
                 }
-            } else {
-                await migrated.insertPublication(
+                if (!rtcTopologySemanticEqual(
+                    parseValue(destinationPublication),
                     publication,
-                    sourcePublication.expireAtTimestamp,
-                );
+                )) {
+                    const updated = await transaction.upsertIfRevision(
+                        RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
+                        destinationPublicationKey,
+                        JSON.stringify(publication),
+                        destinationPublication.expireAtTimestamp,
+                        destinationPublication.revision,
+                    );
+                    if (updated.status === 'conflict') {
+                        throw new RuntimeStateWriteConflictError();
+                    }
+                }
             }
-            const deletedPublication = sourceIsCanonical
-                ? { status: 'applied' as const }
-                : await transaction.deleteIfRevision(
+
+            if (!sourceIsCanonical) {
+                const deleted = await transaction.deleteIfRevision(
                     RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
-                    sourcePublication.key,
-                    sourcePublication.revision,
+                    currentSource.key,
+                    currentSource.revision,
                 );
-            const deletedClaim = await transaction.deleteIfRevision(
-                RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE,
-                sourceClaim.key,
-                sourceClaim.revision,
-            );
-            if (deletedPublication.status === 'conflict' ||
-                deletedClaim.status === 'conflict') {
-                throw new RuntimeStateWriteConflictError();
+                if (deleted.status === 'conflict') {
+                    throw new RuntimeStateWriteConflictError();
+                }
+            }
+            if (legacyClaim) {
+                const deleted = await transaction.deleteIfRevision(
+                    RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE,
+                    legacyClaim.key,
+                    legacyClaim.revision,
+                );
+                if (deleted.status === 'conflict') {
+                    throw new RuntimeStateWriteConflictError();
+                }
             }
         });
     }
@@ -711,6 +760,59 @@ function requireOptimisticRuntime(
         throw new Error('RTC topology publication migration requires optimistic transactions');
     }
     return runtime;
+}
+
+function readPublicationForMigration(
+    entry: RuntimeStateEntry,
+): RtcTopologyPublication {
+    const raw = parseValue(entry);
+    if (
+        !isRecord(raw) ||
+        typeof raw.publicationId !== 'string' ||
+        typeof raw.workId !== 'string' ||
+        !isRecord(raw.groupRef)
+    ) {
+        throw publicationCorruption(entry.key, 'Legacy publication is invalid');
+    }
+    try {
+        return publicationForMigration(raw);
+    } catch (error) {
+        throw publicationCorruption(
+            entry.key,
+            error instanceof Error ? error.message : 'Legacy publication is invalid',
+        );
+    }
+}
+
+function readWorkClaimForMigration(
+    entry: RuntimeStateEntry,
+    expected: RtcTopologyPublicationWorkClaim,
+): RtcTopologyPublicationWorkClaim {
+    const raw = parseValue(entry);
+    if (typeof raw === 'string') {
+        if (raw !== expected.publicationId) {
+            throw publicationCorruption(
+                entry.key,
+                'Legacy work claim differs from publication',
+            );
+        }
+        return expected;
+    }
+    try {
+        validateWorkClaim(raw, expected.groupRef);
+    } catch (error) {
+        throw publicationCorruption(
+            entry.key,
+            error instanceof Error ? error.message : 'Legacy work claim is invalid',
+        );
+    }
+    if (!rtcTopologySemanticEqual(raw, expected)) {
+        throw publicationCorruption(
+            entry.key,
+            'Canonical work claim differs from legacy source',
+        );
+    }
+    return expected;
 }
 
 function canonicalPublication(

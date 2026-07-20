@@ -366,6 +366,7 @@ export function computeRttMutation(input: Readonly<{
 
     const acceptance = evaluateRtcRttMeasurement({
         ...authority.command,
+        requestedAtEpochMs: authority.facts.requestedAtEpochMs,
         existingMeasurements: authorityRead.measurements.map(({ value }) => value),
     });
     const affectedGroups = canonicalAffectedGroups(acceptance.affectedGroups);
