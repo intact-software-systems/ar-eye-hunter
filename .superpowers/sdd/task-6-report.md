@@ -782,3 +782,97 @@ report commit `d693507d`.
   domain reads. `git diff --check` and staged `git diff --cached --check`
   passed before the implementation commit.
 - Task 7 and later tasks were not started by this correction.
+
+## Ninth review correction: autonomous delivery and generation-fenced startup
+
+Implementation commit: `f598f7750dd9599d445a0b4a5d77071575c139e4`
+(`fix(rtc): harden replay and delivery lifecycle`), based on reviewed Task 6
+report commit `a874a22a`.
+
+### Corrected behavior
+
+- RTT recompute intent delivery is owned by one stoppable, single-flight
+  background worker. It drains immediately at startup, wakes after accepted
+  writes, polls every second while healthy, and retries indefinitely with the
+  capped `[2, 8, 32, 128, 512, 1000]` ms schedule. Wakes coalesce while a drain
+  is running; stop cancels pending timers and prevents stale in-flight
+  completion from rescheduling. Request handlers no longer await recompute
+  delivery. Exact receipt replay remains effect-free, while retained delivered
+  proofs prevent restart redelivery. Failure observations expose only a fixed
+  message plus bounded safe name/code, and a failing observer cannot disable
+  durable retries.
+- Claimed topology work now reads and validates the immutable execution claim,
+  durable snapshot, and publication before consulting mutable group/config/RTT
+  planning authority. Exact replay fans out the stored winner directly. A
+  claim-miss path alone reads mutable authority and captures publication expiry;
+  an impossible loaded outcome on that path fails closed.
+- Middleware synchronously reserves an expiry-startup generation before
+  initialization. A newer startup invalidates and stops older cleanup ownership;
+  any delayed old handle is stopped immediately, and unload stops both cleanup
+  and system-topic workers idempotently. When specialized receipt-family cleanup
+  rejects, protected generic eviction starts detached and its later rejection is
+  observed separately, so the specialized failure surfaces promptly even when
+  generic eviction is long-running.
+- Explicit legacy topology snapshot migration materializes new canonical rows
+  with `NEVER_EXPIRE_AT_TIMESTAMP`. Existing canonical destinations remain
+  subject to strict non-expiring decode and semantic equality before the legacy
+  source may be removed.
+- RTT authorization and retained-intent validation use the complete active
+  interval `connectedAtEpochMs <= requestedAtEpochMs < expiresAtEpochMs`.
+  Future sessions are rejected, equality at connection time is accepted, and a
+  retry rereads the clock and full authority before re-evaluating the interval.
+- Strict synchronous neutral modules now validate the complete persisted
+  topology publication envelope and complete RTT receipt/intent family. The RTT
+  write seam validates receipt identity/hash/order/retention, full group
+  snapshots, exact measurement and pending-intent bindings before opening the
+  transaction. Publication compute validates the full deterministic envelope,
+  message identity, targets, timestamps, payload snapshot, and recipients.
+  Repository reads reuse the same validators and retain typed corruption
+  translation. The pure modules have no repository imports, async APIs, ambient
+  clock, randomness, or environment access.
+
+### Ninth correction RED evidence
+
+- `npx vitest run packages/tests/shared-server/rtc-topology-runtime-state-repositories.test.ts packages/tests/shared-server/rtc-topology-outbox-work.test.ts packages/tests/shared-server/rtc-topology-mutations.test.ts`
+  collected 290 tests and exited 1 with exactly 9 intended failures and 281
+  passes. The failures demonstrated request-coupled/no-autonomous recompute
+  delivery, missing wake/stop/single-flight ownership, mutable-authority reads
+  before durable replay, expiring canonical migration output, incomplete active
+  interval checks, and persisted candidates reaching a transaction before full
+  neutral validation.
+- `deno test --allow-read --config deno.json test/services/runtime-state-expiry-startup.test.ts`
+  collected 7 tests and exited 1 with exactly 2 intended failures and 5 passes.
+  They demonstrated a delayed older startup retaining cleanup ownership and a
+  specialized failure waiting indefinitely for generic eviction.
+- Before implementation, source assertions also proved that the WebSocket RTT
+  request path called the drainer inline and that middleware did not reserve a
+  startup generation synchronously. Production changes followed those RED
+  checkpoints; no Task 7 work was introduced.
+
+### Ninth correction GREEN, baseline, and architecture evidence
+
+- The final three-file architecture command passed 3/3 files and 291/291 tests.
+  The API startup/lifecycle command passed 7/7 tests. The expanded Task 6 matrix
+  passed 10/10 files and 458/458 tests.
+- `npx vitest run packages/tests/shared-server --reporter=dot
+  --silent=passed-only` passed 58 files with 2 configured-skip files; 960 tests
+  passed and 13 opt-in environment tests were skipped. Full API-v1 Deno tests
+  passed 220/220.
+- `npm run typecheck` passed the root and every workspace typecheck. In
+  `apps/api-v1`, `deno check --config deno.json src/main.ts` passed. Targeted
+  Deno format and lint checks passed for all four changed API source/test files.
+- The live PostgreSQL concurrency command passed 1/1 file and 12/12 tests after
+  the expected sandbox-denied localhost attempt failed its 9 database cases
+  solely with `connect EPERM`; all 3 non-network cases passed on that attempt.
+- Root `npm run test:unit -- --reporter=dot --silent=passed-only` remains
+  explicitly **not claimed as passing**: 445 files passed, 2 were configured
+  skips, and 1 failed; 4,466 tests passed, 13 skipped, and the same 7 untouched
+  `packages/tests/shared-web/rallar-workflow-options-compat.test.ts` baseline
+  tests failed. That file is absent from this correction's diff.
+- Final governed-path scans found no unconditional `.upsert`, `deleteByKey`,
+  `lockKey`, `FOR UPDATE`, or advisory-lock use. WebSocket source contains no
+  direct recompute drainer call; it only wakes the owned worker. The replay
+  branch contains no mutable planning-authority read or expiry-clock capture.
+  `git diff --check` and staged `git diff --cached --check` passed before the
+  implementation commit.
+- Task 7 and later tasks were not started by this correction.
