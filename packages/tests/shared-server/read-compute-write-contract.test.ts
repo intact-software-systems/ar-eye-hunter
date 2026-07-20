@@ -4,72 +4,65 @@ import path from 'node:path';
 import { API } from 'typescript/unstable/sync';
 import * as ts from 'typescript/unstable/ast';
 import { afterAll, describe, expect, it } from 'vitest';
-const repoRoot = process.cwd();
 type Selector =
     | readonly [kind: 'function' | 'method' | 'variable', name: string]
-    | readonly [
-        kind: 'callback',
-        ownerKind: 'function' | 'method',
-        ownerName: string,
-        name: string,
-    ];
+    | readonly [kind: 'callback', ownerKind: 'function' | 'method',
+        ownerName: string, name: string];
 type Branch = readonly [condition: string, side: 'then' | 'else'];
-type CallSpec = string | readonly [name: string, branch: Branch];
+type CallExpectation = Readonly<{
+    name: string; callee: string; arguments?: readonly string[];
+    awaited: boolean; branch?: Branch;
+}>;
+type CallSpec = string | readonly [name: string, branch: Branch] | CallExpectation;
+type ExpectedCall = Partial<CallExpectation> & Pick<CallExpectation, 'name'>;
 type PathContract = Readonly<{
-    family: string;
-    name: string;
-    file: string;
-    owner: Selector;
-    retry: string;
+    family: string; name: string; file: string; owner: Selector; retry: string;
     phases: readonly [CallSpec, CallSpec, CallSpec, CallSpec];
 }>;
 type SeamContract = Readonly<{
-    family: string;
-    file: string;
-    owner: Selector;
-    guards: readonly string[];
+    family: string; file: string; owner: Selector; guards: readonly string[];
     dependent: readonly string[];
+    guardChecks: readonly GuardCheck[];
+}>;
+type GuardCheck = Readonly<{
+    call: CallExpectation; wrapper?: string; binding?: string; condition?: string;
+    terminal?: 'throw' | 'throw-or-return';
 }>;
 type PropertySpec = readonly [name: string, types: readonly string[]];
+type VariantDescriptor = Readonly<{ outcome: string; property?: PropertySpec }>;
 type AtomicMapping = Readonly<{
-    outcome: string;
-    property: PropertySpec;
-    seam: SeamContract;
+    outcome: string; property: PropertySpec; seam: SeamContract;
     calls: readonly CallSpec[];
 }>;
 type ReplayMapping = Readonly<{
-    outcome: string;
-    property: PropertySpec;
-    file: string;
-    owner: Selector;
+    outcome: string; property: PropertySpec; file: string; owner: Selector;
     claim: string;
     calls: readonly CallSpec[];
 }>;
 type EffectContract = Readonly<{
-    family: string;
-    type: readonly [file: string, name: string];
-    passive: readonly string[];
-    atomic: readonly AtomicMapping[];
-    replay?: readonly ReplayMapping[];
+    family: string; type: readonly [file: string, name: string];
+    noExternalEffectOutcomes: readonly string[];
+    noExternalEffectVariants?: readonly VariantDescriptor[];
+    atomic: readonly AtomicMapping[]; replay?: readonly ReplayMapping[];
 }>;
-const clientFile =
-    'packages/shared-server/rallar-system/services/client-state-service.ts';
-const groupFile =
-    'packages/shared-server/rallar-system/services/group-state-service.ts';
-const configFile =
-    'packages/shared-server/rallar-system/services/group-topology-management-service.ts';
-const rtcWorkerFile =
-    'packages/shared-server/rallar-system/services/RtcTopologyOutboxWork.ts';
-const rtcRepositoryFile =
-    'packages/shared-server/rallar-system/repositories/RtcTopologyExecutionRepository.ts';
-const rttFile =
-    'packages/shared-server/rallar-system/services/rtc-rtt-mutation-service.ts';
+const clientFile = 'packages/shared-server/rallar-system/services/client-state-service.ts';
+const groupFile = 'packages/shared-server/rallar-system/services/group-state-service.ts';
+const configFile = 'packages/shared-server/rallar-system/services/group-topology-management-service.ts';
+const rtcWorkerFile = 'packages/shared-server/rallar-system/services/RtcTopologyOutboxWork.ts';
+const rtcRepositoryFile = 'packages/shared-server/rallar-system/repositories/RtcTopologyExecutionRepository.ts';
+const rttFile = 'packages/shared-server/rallar-system/services/rtc-rtt-mutation-service.ts';
 const clientSeam = seam(
     'client mutation', clientFile, ['function', 'writeClientMutation'],
     ['insertPrincipal', 'updatePrincipal'],
     [
         'writeChildCandidate', 'insertIdempotentClientStateWritten',
         'insertForAuthoritativeWrite', 'appendEvent',
+    ],
+    [
+        wrapped('repository.insertPrincipal'),
+        wrapped('repository.updatePrincipal'),
+        wrapped('repository.insertIdempotentClientStateWritten',
+            ['computed.idempotency', 'then']),
     ],
 );
 const groupSeam = seam(
@@ -79,6 +72,21 @@ const groupSeam = seam(
         'insertPresenceAdmission', 'updatePresenceAdmission', 'putMember',
         'insertPresenceSummary', 'insertIdempotentGroupMutationReceipt',
         'insertForAuthoritativeWrite', 'appendEvent',
+    ],
+    [
+        wrapped('repository.insertGroup', ["computed.guard.kind === 'group'", 'then']),
+        wrapped('repository.updateGroup', ["computed.guard.kind === 'group'", 'then']),
+        wrapped('repository.insertPresence', ["computed.guard.kind === 'group'", 'else']),
+        wrapped('repository.updatePresence', ["computed.guard.kind === 'group'", 'else']),
+        wrapped('repository.deletePresence', ["computed.guard.kind === 'group'", 'else']),
+        wrapped('repository.insertPresenceAdmission',
+            ['computed.presenceAdmission', 'then']),
+        wrapped('repository.updatePresenceAdmission',
+            ['computed.presenceAdmission', 'then']),
+        wrapped('repository.insertPresenceSummary',
+            ['computed.initialPresenceSummary', 'then']),
+        wrapped('repository.insertIdempotentGroupMutationReceipt',
+            ['computed.idempotency', 'then']),
     ],
 );
 const configSeam = seam(
@@ -90,16 +98,49 @@ const configSeam = seam(
         'commitInvariantGeneration', 'commitGeneration', 'insertMutationRecord',
         'insertForAuthoritativeWrite',
     ],
+    [
+        checked('new GroupStateRepository(transaction).advanceAuthorityFence',
+            'authorityFence',
+            "authorityFence.status === 'conflict' || authorityFence.revision !== computed.groupAuthorityGuard.entry.revision + 1"),
+        ...['deleteConfig', 'deleteOverride', 'commitConfig', 'commitOverride']
+            .map((name) => checked(`repository.${name}`, 'state',
+                "state.status === 'conflict'",
+                ["computed.outcome === 'write'", 'then'])),
+        checked('repository.commitInvariantGeneration', 'invariantGeneration',
+            "invariantGeneration.status === 'conflict'",
+            ["computed.outcome === 'write'", 'then']),
+        checked('repository.commitGeneration', 'generation',
+            "generation.status === 'conflict'",
+            ["computed.outcome === 'write'", 'then']),
+        checked('repository.insertMutationRecord', 'claimed',
+            "claimed.status === 'conflict'", ['computed.idempotency', 'then']),
+    ],
 );
 const rtcSeam = seam(
     'RTC topology mutation', rtcRepositoryFile,
     ['method', 'writeTopologyMutation'], ['commitSnapshotGuard'],
     ['insertWorkClaim', 'insertPublication'],
+    [
+        checked('snapshots.commitSnapshotGuard', 'guard',
+            "guard.status === 'conflict'"),
+        checked('publications.insertWorkClaim', 'claimed', '!claimed',
+            ['publicationWrite', 'then']),
+    ],
 );
 const rttSeam = seam(
     'RTC RTT mutation', rttFile, ['function', 'writeRttMutation'],
     ['commitEndpointAdmission'],
     ['commitMeasurement', 'insertMutationReceipt', 'insertRecomputeIntent'],
+    [
+        checked('repository.commitEndpointAdmission', 'written',
+            "written.status === 'conflict'", undefined, 'throw-or-return'),
+        checked('repository.commitMeasurement', 'measurement',
+            "measurement.status === 'conflict'"),
+        checked('repository.insertMutationReceipt', 'receipt',
+            "receipt.status === 'conflict'"),
+        checked('repository.insertRecomputeIntent', 'inserted',
+            "inserted.status === 'conflict'"),
+    ],
 );
 const seams = [clientSeam, groupSeam, configSeam, rtcSeam, rttSeam] as const;
 const rtcWorkerOwner = [
@@ -153,8 +194,17 @@ const paths: readonly PathContract[] = [
         owner: rtcWorkerOwner,
         retry: 'attempt < 3',
         phases: [
-            'readTopologyMutation', 'computeTopologyMutation',
-            'validateTopologyMutation', 'writeTopologyMutation',
+            exact('options.executionRepository.readTopologyMutation', [
+                'work.groupSnapshot.group', 'workId',
+            ], true),
+            exact('computeTopologyMutation', [
+                '{ read, candidate: planned.snapshot, publication, facts, }',
+            ], false),
+            exact('validateTopologyMutation', [
+                '{ read, candidate: planned.snapshot, publication, facts, computed, }',
+            ], false),
+            exact('options.executionRepository.writeTopologyMutation',
+                ['computed'], true),
         ],
     },
     {
@@ -189,10 +239,13 @@ const effects: readonly EffectContract[] = [
             'packages/shared-server/rallar-system/services/client-state-mutations.ts',
             'ClientMutationComputed',
         ],
-        passive: ['replay', 'no-op', 'idempotency-conflict'],
+        noExternalEffectOutcomes: ['replay', 'no-op', 'idempotency-conflict'],
         atomic: [{
             outcome: 'write', property: ['outbox', ['ClientMutationOutboxCandidate']],
-            seam: clientSeam, calls: ['insertForAuthoritativeWrite'],
+            seam: clientSeam, calls: [exact(
+                'new StateMutationOutboxRepository(transaction).insertForAuthoritativeWrite',
+                ['createStateMutationOutboxRecord(computed.outbox)'], true,
+            )],
         }],
     },
     {
@@ -201,10 +254,15 @@ const effects: readonly EffectContract[] = [
             'packages/shared-server/rallar-system/services/group-state-mutations.ts',
             'GroupMutationComputed',
         ],
-        passive: ['replay', 'idempotency-conflict', 'no-op', 'rejected'],
+        noExternalEffectOutcomes: [
+            'replay', 'idempotency-conflict', 'no-op', 'rejected',
+        ],
         atomic: [{
             outcome: 'write', property: ['outbox', ['GroupMutationOutboxCandidate']],
-            seam: groupSeam, calls: ['insertForAuthoritativeWrite'],
+            seam: groupSeam, calls: [exact(
+                'new StateMutationOutboxRepository(transaction).insertForAuthoritativeWrite',
+                ['createStateMutationOutboxRecord(computed.outbox)'], true,
+            )],
         }],
     },
     {
@@ -213,12 +271,17 @@ const effects: readonly EffectContract[] = [
             'packages/shared-server/rallar-system/services/group-topology-config-mutations.ts',
             'GroupTopologyConfigMutationComputed',
         ],
-        passive: ['claim', 'no-op', 'replay', 'idempotency-conflict'],
+        noExternalEffectOutcomes: [
+            'claim', 'no-op', 'replay', 'idempotency-conflict',
+        ],
         atomic: [{
             outcome: 'write', property: ['outbox', ['GroupTopologyConfigOutboxInput']],
             seam: configSeam,
-            calls: [under('insertForAuthoritativeWrite',
-                "computed.outcome === 'write'", 'then')],
+            calls: [exact(
+                'new StateMutationOutboxRepository(transaction).insertForAuthoritativeWrite',
+                ['createStateMutationOutboxRecord(computed.outbox)'], true,
+                ["computed.outcome === 'write'", 'then'],
+            )],
         }],
     },
     {
@@ -227,14 +290,22 @@ const effects: readonly EffectContract[] = [
             'packages/shared-server/rallar-system/services/rtc-topology-mutations.ts',
             'RtcTopologyMutationComputed',
         ],
-        passive: ['retry', 'superseded'],
+        noExternalEffectOutcomes: ['retry', 'superseded'],
+        noExternalEffectVariants: [{
+            outcome: 'write', property: ['publication', ['null']],
+        }],
         atomic: [{
             outcome: 'write',
-            property: ['publication', ['RtcTopologyPublication', 'null']],
+            property: ['publication', ['RtcTopologyPublication']],
             seam: rtcSeam,
             calls: [
-                under('insertWorkClaim', 'publicationWrite', 'then'),
-                under('insertPublication', 'publicationWrite', 'then'),
+                exact('publications.insertWorkClaim', [
+                    'receipt', 'publicationWrite.expireAtTimestamp',
+                ], true, ['publicationWrite', 'then']),
+                exact('publications.insertPublication', [
+                    'publicationWrite.publication',
+                    'publicationWrite.expireAtTimestamp',
+                ], true, ['publicationWrite', 'then']),
             ],
         }],
         replay: [{
@@ -244,8 +315,11 @@ const effects: readonly EffectContract[] = [
             owner: rtcWorkerOwner,
             claim: 'read.publicationClaim',
             calls: [
-                under('publish', 'read.publicationClaim', 'then'),
-                under('recordTopologyPublication', 'read.publicationClaim', 'then'),
+                exact('options.publicationFanout.publish',
+                    ['computed.publication'], true,
+                    ['read.publicationClaim', 'then']),
+                exact('options.topologyManagement.recordTopologyPublication',
+                    ['true'], false, ['read.publicationClaim', 'then']),
             ],
         }],
     },
@@ -255,12 +329,14 @@ const effects: readonly EffectContract[] = [
             'packages/shared-server/rallar-system/services/rtc-topology-mutations.ts',
             'RtcRttMutationComputed',
         ],
-        passive: ['replay', 'rejected'],
+        noExternalEffectOutcomes: ['replay', 'rejected'],
         atomic: [{
             outcome: 'write',
             property: ['recomputeIntents', ['readonly RtcRttRecomputeIntent[]']],
             seam: rttSeam,
-            calls: ['insertRecomputeIntent'],
+            calls: [exact('repository.insertRecomputeIntent', [
+                'intent', 'mutationExpireAtTimestamp',
+            ], true)],
         }],
     },
 ];
@@ -270,22 +346,32 @@ const astFiles = [...new Set([
     ...seams.map(({ file }) => file),
     ...pureMutationModules,
 ])];
-const compilerApi = new API();
-const compilerSnapshot = compilerApi.updateSnapshot({
-    openFiles: astFiles.map((file) => path.join(repoRoot, file)),
-});
+const compiler = openCompiler(astFiles.map((file) => path.join(process.cwd(), file)));
+const compilerSnapshot = compiler.snapshot;
 afterAll(() => {
     compilerSnapshot.dispose();
-    compilerApi.close();
+    compiler.api.close();
 });
 describe('read/compute/validate/write implementation contract', () => {
     it('keeps five operation families while guarding both RTC topology paths', () => {
         expect(new Set(paths.map(({ family }) => family)).size).toBe(5);
-        expect(paths.filter(({ family }) => family === rtcSeam.family)
-            .map(({ name }) => name)).toEqual([
-                'RTC topology externally effectful worker path',
-                'RTC topology publication-null internal path',
+        expect(paths.map(({ family, name, file, owner }) =>
+            [family, name, file, owner])).toEqual([
+                [clientSeam.family, 'client effectful path', clientFile,
+                    ['variable', 'executeReceipt']],
+                [groupSeam.family, 'group effectful path', groupFile,
+                    ['variable', 'executeReceipt']],
+                [configSeam.family, 'topology config effectful path', configFile,
+                    ['method', 'executeTopologyConfigMutation']],
+                [rtcSeam.family, 'RTC topology externally effectful worker path',
+                    rtcWorkerFile, rtcWorkerOwner],
+                [rtcSeam.family, 'RTC topology publication-null internal path',
+                    configFile, ['method', 'commitTopologyWithRetry']],
+                [rttSeam.family, 'RTC RTT effectful path', rttFile,
+                    ['function', 'executeRttMutation']],
             ]);
+        expect(effects[0]!.noExternalEffectOutcomes).toContain('no-op');
+        expect(effects[2]!.noExternalEffectOutcomes).toContain('claim');
     });
     it.each(paths)(
         '$name keeps one syntax-aware branch-local read/compute/validate/write path',
@@ -300,23 +386,7 @@ describe('read/compute/validate/write implementation contract', () => {
         (contract) => assertEffect(contract),
     );
     it('commits the publication-bearing RTC worker result before fanout', () => {
-        const external = paths[3]!;
-        const source = repoSource(external.file);
-        const owner = findFunction(source, external.owner);
-        const publication = findCall(source, owner, 'toTopologyPublication');
-        const compute = findCall(source, owner, external.phases[1]);
-        const write = findCall(source, owner, external.phases[3]);
-        const conflict = findIf(owner, "written === 'conflict'");
-        const fanout = findCall(source, owner, 'publish');
-        const recorded = findCall(source, owner, 'recordTopologyPublication');
-        expect(publication.pos).toBeLessThan(compute.pos);
-        expect(compute.pos).toBeLessThan(write.pos);
-        expect(write.pos).toBeLessThan(conflict.pos);
-        expect(hasKind(conflict.thenStatement, ts.SyntaxKind.ContinueStatement))
-            .toBe(true);
-        expect(conflict.end).toBeLessThan(fanout.pos);
-        expect(fanout.pos).toBeLessThan(recorded.pos);
-        expect(normalize(recorded.arguments[0]?.getText(source) ?? '')).toBe('true');
+        assertRtcWorker(repoSource(rtcWorkerFile));
         const internal = findFunction(repoSource(paths[4]!.file), paths[4]!.owner);
         expect(ownedCalls(internal).filter(({ name }) => name === 'publish'))
             .toHaveLength(0);
@@ -325,17 +395,13 @@ describe('read/compute/validate/write implementation contract', () => {
         assertPure(repoSource(file));
     });
     it('rejects phase names hidden in comments, strings, or nested callbacks', () => {
-        withFixture(`
-            async function executeMutation() {
-                for (let attempt = 0; attempt < 3; attempt += 1) {
-                    readMutation();
-                    const text = 'computeMutation()';
-                    // validateMutation();
-                    const unrelated = () => computeMutation();
-                    writeMutation();
-                }
+        withFixture(`async function executeMutation() {
+            for (let attempt = 0; attempt < 3; attempt += 1) {
+                readMutation(); const text = 'computeMutation()';
+                const unrelated = () => computeMutation(); // validateMutation();
+                writeMutation();
             }
-        `, (source) => {
+        }`, (source) => {
             expect(() => assertPath(source, {
                 family: 'fixture', name: 'nested fixture', file: source.fileName,
                 owner: ['function', 'executeMutation'], retry: 'attempt < 3',
@@ -347,73 +413,140 @@ describe('read/compute/validate/write implementation contract', () => {
         });
     });
     it('rejects a new unmapped externally effectful discriminant', () => {
-        withFixture(`
-            type FixtureComputed =
-                | { outcome: 'write'; outbox: Outbox }
-                | { outcome: 'publish-alert'; alert: Alert };
+        withFixture(`type FixtureComputed =
+            | { outcome: 'write'; outbox: Outbox }
+            | { outcome: 'publish-alert'; alert: Alert };
             async function writeFixture(computed: FixtureComputed) {
                 return runtime.begin(async () => {
-                    insertGuard();
-                    insertOutbox(computed);
+                    insertGuard(); await repository.insertOutbox(computed);
                 });
-            }
-        `, (source) => {
+            }`, (source) => {
             expect(() => assertEffect(fixtureEffect(source), source))
                 .toThrow(/publish-alert/);
         });
     });
     it('rejects an effectful discriminant whose atomic writer mapping is removed', () => {
-        withFixture(`
-            type FixtureComputed = { outcome: 'write'; outbox: Outbox };
+        withFixture(`type FixtureComputed = { outcome: 'write'; outbox: Outbox };
             async function writeFixture() {
                 return runtime.begin(async () => insertGuard());
-            }
-        `, (source) => {
+            }`, (source) => {
             expect(() => assertEffect(fixtureEffect(source), source))
                 .toThrow(/insertOutbox/);
+        });
+    });
+    it.each([
+        ['a null publication on the external RTC path',
+            'const computed = computeTopologyMutation({\n                    read,\n                    candidate: planned.snapshot,\n                    publication,\n                    facts,\n                });',
+            'const computed = computeTopologyMutation({\n                    read,\n                    candidate: planned.snapshot,\n                    publication: null,\n                    facts,\n                });', /publication/],
+        ['removed RTC claim-hit replay validation',
+            'validateTopologyMutation({ ...replayInput, computed });',
+            'void computed;', /validateTopologyMutation/],
+        ['substituted RTC replay fanout data', 'publish(computed.publication)',
+            'publish(unrelatedPublication)', /computed\.publication/],
+    ])('rejects %s', (_name, before, after, error) => {
+        withFixture(replaceOnce(readRepo(rtcWorkerFile), before, after), (source) => {
+            expect(() => assertRtcWorker(source)).toThrow(error);
+        });
+    });
+    it('rejects a duplicate effectful discriminant without its outbox', () => {
+        withFixture(`type FixtureComputed =
+                | { outcome: 'write'; outbox: Outbox }
+                | { outcome: 'write'; receipt: Receipt };
+            async function writeFixture(computed: FixtureComputed) {
+                return runtime.begin(async () => {
+                    insertGuard(); await repository.insertOutbox(computed);
+                });
+            }`, (source) => {
+            expect(() => assertEffect(fixtureEffect(source), source))
+                .toThrow(/write|outbox/);
+        });
+    });
+    it.each([
+        ['atomic writer receiver substitution',
+            'await fake.insertOutbox(computed)', /repository\.insertOutbox/],
+        ['an unawaited atomic writer call',
+            'repository.insertOutbox(computed)', /await/],
+    ])('rejects %s', (_name, write, error) => {
+        withFixture(`type FixtureComputed = { outcome: 'write'; outbox: Outbox };
+            async function writeFixture(computed: FixtureComputed) {
+                return runtime.begin(async () => {
+                    await repository.insertGuard(); ${write};
+                });
+            }`, (source) => {
+            expect(() => assertEffect(fixtureEffect(source), source))
+                .toThrow(error);
+        });
+    });
+    it('rejects an unawaited conditional guard', () => {
+        withFixture(`async function writeFixture() {
+            return runtime.begin(async () => repository.insertGuard());
+        }`, (source) => {
+            expect(() => assertSeam(source, seam(
+                'fixture', source.fileName, ['function', 'writeFixture'],
+                ['insertGuard'], [],
+            ))).toThrow(/await/);
+        });
+    });
+    it('rejects removed conditional-guard conflict handling', () => {
+        const mutated = replaceOnce(
+            readRepo(rtcRepositoryFile),
+            "if (guard.status === 'conflict') {",
+            'if (false) {',
+        );
+        withFixture(mutated, (source) => {
+            expect(() => assertSeam(source, rtcSeam)).toThrow(/guard|conflict/);
+        });
+    });
+    it('rejects ambient crypto randomUUID in a pure module', () => {
+        withFixture('export const compute = () => crypto.randomUUID();', (source) => {
+            expect(() => assertPure(source)).toThrow(/randomUUID/);
         });
     });
     it('keeps the architecture inventory synchronized with all guarded paths', () => {
         const architecture = readRepo('packages/shared-server/architecture.md');
         for (const contract of paths) {
             for (const phase of contract.phases) {
-                const name = typeof phase === 'string' ? phase : phase[0];
+                const name = readCallSpec(phase).name;
                 expect(architecture, `${contract.name}: ${name}`)
                     .toContain(`\`${name}\``);
             }
         }
         expect(architecture).toContain('createRtcTopologyWorkHandler');
         expect(architecture).toContain('commitTopologyWithRetry');
+        expect(architecture).toContain('may persist compact authority receipts');
+        expect(architecture).toContain('no external fanout or outbox is required');
     });
 });
-function seam(
-    family: string,
-    file: string,
-    owner: Selector,
-    guards: readonly string[],
-    dependent: readonly string[],
-): SeamContract {
-    return { family, file, owner, guards, dependent };
+function seam(family: string, file: string, owner: Selector,
+    guards: readonly string[], dependent: readonly string[],
+    guardChecks: readonly GuardCheck[] = []): SeamContract {
+    return { family, file, owner, guards, dependent, guardChecks }; }
+function under(name: string, condition: string,
+    side: 'then' | 'else'): CallSpec {
+    return [name, [condition, side]]; }
+function exact(callee: string, arguments_: readonly string[] | undefined,
+    awaited: boolean, branch?: Branch): CallExpectation {
+    return { name: callee.slice(callee.lastIndexOf('.') + 1),
+        callee: normalize(callee), arguments: arguments_?.map(normalize),
+        awaited, branch };
 }
-function under(
-    name: string,
-    condition: string,
-    side: 'then' | 'else',
-): CallSpec {
-    return [name, [condition, side]];
+function wrapped(callee: string, branch?: Branch): GuardCheck {
+    return { call: exact(callee, undefined, true, branch), wrapper: 'requireConditionalWrite' };
+}
+function checked(callee: string, binding: string, condition: string,
+    branch?: Branch, terminal: GuardCheck['terminal'] = 'throw'): GuardCheck {
+    return { call: exact(callee, undefined, true, branch), binding, condition,
+        terminal };
 }
 function fixtureEffect(source: ts.SourceFile): EffectContract {
     return {
-        family: 'fixture',
-        type: [source.fileName, 'FixtureComputed'],
-        passive: [],
+        family: 'fixture', type: [source.fileName, 'FixtureComputed'],
+        noExternalEffectOutcomes: [],
         atomic: [{
             outcome: 'write', property: ['outbox', ['Outbox']],
-            seam: seam(
-                'fixture', source.fileName, ['function', 'writeFixture'],
-                ['insertGuard'], [],
-            ),
-            calls: ['insertOutbox'],
+            seam: seam('fixture', source.fileName, ['function', 'writeFixture'],
+                ['insertGuard'], []),
+            calls: [exact('repository.insertOutbox', ['computed'], true)],
         }],
     };
 }
@@ -429,6 +562,50 @@ function assertPath(source: ts.SourceFile, contract: PathContract): void {
     for (let index = 1; index < calls.length; index += 1) {
         expect(calls[index]!.pos, contract.name).toBeGreaterThan(calls[index - 1]!.pos);
     }
+}
+function assertRtcWorker(source: ts.SourceFile): void {
+    const external = paths[3]!;
+    assertPath(source, external);
+    const owner = findFunction(source, external.owner);
+    const publication = findCall(source, owner, 'toTopologyPublication');
+    const compute = findCall(source, owner, external.phases[1]);
+    const write = findCall(source, owner, external.phases[3]);
+    const conflict = findIf(owner, "written === 'conflict'");
+    const fanout = findCall(source, owner, exact(
+        'options.publicationFanout.publish', ['publication!'], true,
+    ));
+    const recorded = findCall(source, owner, exact(
+        'options.topologyManagement.recordTopologyPublication', ['true'], false,
+    ));
+    expect(publication.pos).toBeLessThan(compute.pos);
+    expect(compute.pos).toBeLessThan(write.pos);
+    expect(write.pos).toBeLessThan(conflict.pos);
+    expect(hasKind(conflict.thenStatement, ts.SyntaxKind.ContinueStatement))
+        .toBe(true);
+    expect(conflict.end).toBeLessThan(fanout.pos);
+    expect(fanout.pos).toBeLessThan(recorded.pos);
+    const replayBranch = ['read.publicationClaim', 'then'] as const;
+    const replayCompute = findCall(source, owner, exact(
+        'computeTopologyMutation', ['replayInput'], false, replayBranch,
+    ));
+    const replayValidate = findCall(source, owner, exact(
+        'validateTopologyMutation', ['{ ...replayInput, computed }'], false,
+        replayBranch,
+    ));
+    const loaded = findIf(owner, "computed.outcome !== 'loaded'");
+    const replayFanout = findCall(source, owner, exact(
+        'options.publicationFanout.publish', ['computed.publication'], true,
+        replayBranch,
+    ));
+    const replayRecorded = findCall(source, owner, exact(
+        'options.topologyManagement.recordTopologyPublication', ['true'], false,
+        replayBranch,
+    ));
+    expect(replayCompute.pos).toBeLessThan(replayValidate.pos);
+    expect(replayValidate.pos).toBeLessThan(loaded.pos);
+    expect(hasKind(loaded.thenStatement, ts.SyntaxKind.ThrowStatement)).toBe(true);
+    expect(loaded.end).toBeLessThan(replayFanout.pos);
+    expect(replayFanout.pos).toBeLessThan(replayRecorded.pos);
 }
 function assertSeam(source: ts.SourceFile, contract: SeamContract): void {
     const owner = findFunction(source, contract.owner);
@@ -446,22 +623,42 @@ function assertSeam(source: ts.SourceFile, contract: SeamContract): void {
         expect(Math.max(...guards.map(({ node }) => node.pos)), contract.family)
             .toBeLessThan(Math.min(...dependent.map(({ node }) => node.pos)));
     }
+    for (const guard of guards) {
+        expect(isAwaited(guard.node), `${contract.family}:${guard.name}: await`)
+            .toBe(true);
+    }
+    for (const check of contract.guardChecks) {
+        assertGuardCheck(source, transaction, check);
+    }
 }
-function assertEffect(
-    contract: EffectContract,
-    provided?: ts.SourceFile,
-): void {
+function assertGuardCheck(source: ts.SourceFile,
+    transaction: ts.FunctionLikeDeclaration, check: GuardCheck): void {
+    const call = findCall(source, transaction, check.call);
+    if (check.wrapper) {
+        expect(hasAncestorCall(call, transaction, check.wrapper), check.wrapper).toBe(true);
+        return;
+    }
+    expect(findAncestorVariable(call, transaction), check.call.callee)
+        .toBe(check.binding);
+    const failure = findIf(transaction, check.condition!);
+    expect(call.pos, check.condition).toBeLessThan(failure.pos);
+    const throws = hasKind(failure.thenStatement, ts.SyntaxKind.ThrowStatement);
+    const returns = hasKind(failure.thenStatement, ts.SyntaxKind.ReturnStatement);
+    expect(throws || (check.terminal === 'throw-or-return' && returns), check.condition)
+        .toBe(true);
+}
+function assertEffect(contract: EffectContract, provided?: ts.SourceFile): void {
     const typeSource = provided ?? repoSource(contract.type[0]);
     const alias = findType(typeSource, contract.type[1]);
-    const categorized = [
-        ...contract.passive,
-        ...contract.atomic.map(({ outcome }) => outcome),
-        ...(contract.replay ?? []).map(({ outcome }) => outcome),
-    ].sort();
-    expect(readOutcomes(alias, typeSource), contract.family).toEqual(categorized);
+    const remaining = [...readVariants(alias, typeSource)];
+    for (const outcome of contract.noExternalEffectOutcomes) {
+        consumeVariant(remaining, { outcome }, contract.family);
+    }
+    for (const mapping of contract.noExternalEffectVariants ?? []) {
+        consumeVariant(remaining, mapping, contract.family);
+    }
     for (const mapping of contract.atomic) {
-        assertProperty(alias, typeSource, mapping.outcome, mapping.property,
-            `${contract.family}:${mapping.outcome}`);
+        consumeVariant(remaining, mapping, contract.family);
         const writerSource = provided ?? repoSource(mapping.seam.file);
         const writer = findFunction(writerSource, mapping.seam.owner);
         const begin = ownedCalls(writer).filter(({ name }) => name === 'begin');
@@ -470,33 +667,13 @@ function assertEffect(
         for (const call of mapping.calls) findCall(writerSource, transaction, call);
     }
     for (const mapping of contract.replay ?? []) {
-        assertProperty(alias, typeSource, mapping.outcome, mapping.property,
-            `${contract.family}:${mapping.outcome}`);
+        consumeVariant(remaining, mapping, contract.family);
         const source = provided ?? repoSource(mapping.file);
         const owner = findFunction(source, mapping.owner);
         findIf(owner, mapping.claim);
         for (const call of mapping.calls) findCall(source, owner, call);
     }
-}
-function assertProperty(
-    alias: ts.TypeAliasDeclaration,
-    source: ts.SourceFile,
-    outcome: string,
-    [property, expected]: PropertySpec,
-    label: string,
-): void {
-    const found = new Set<string>();
-    const branches = ts.isUnionTypeNode(alias.type) ? alias.type.types : [alias.type];
-    for (const branch of branches.filter((node) => hasOutcome(node, source, outcome))) {
-        walk(branch, (node) => {
-            if (
-                isProperty(node) && node.type &&
-                normalize(node.name.getText(source)) === property
-            ) found.add(normalize(node.type.getText(source)));
-            return true;
-        });
-    }
-    expect([...found].sort(), `${label}:${property}`).toEqual([...expected].sort());
+    expect(remaining, `${contract.family}: unmapped alternatives`).toEqual([]);
 }
 function assertPure(source: ts.SourceFile): void {
     const forbidden: string[] = [];
@@ -509,6 +686,7 @@ function assertPure(source: ts.SourceFile): void {
             if (
                 expression === 'Date.now' || expression.startsWith('Temporal.Now.') ||
                 expression === 'Math.random' || expression === 'randomUUID' ||
+                expression.endsWith('.randomUUID') ||
                 expression.endsWith('.begin') || expression.startsWith('performance.') ||
                 /^(?:repository|runtimeRepository)\./.test(expression)
             ) forbidden.push(expression);
@@ -522,22 +700,51 @@ function assertPure(source: ts.SourceFile): void {
     expect(forbidden, source.fileName).toEqual([]);
 }
 type NamedCall = Readonly<{ name: string; node: ts.CallExpression }>;
-function findCall(
-    source: ts.SourceFile,
-    owner: ts.FunctionLikeDeclaration,
-    spec: CallSpec,
-): ts.CallExpression {
-    const [name, expected] = typeof spec === 'string' ? [spec, undefined] : spec;
-    const matches = ownedCalls(owner).filter(({ name: actual, node }) =>
-        actual === name && sameBranches(readBranches(node, owner, source), expected));
-    expect(matches, `${name} in ${owner.getText(source).slice(0, 80)}`).toHaveLength(1);
+function findCall(source: ts.SourceFile, owner: ts.FunctionLikeDeclaration,
+    spec: CallSpec): ts.CallExpression {
+    const expected = readCallSpec(spec);
+    const matches = ownedCalls(owner).filter(({ name, node }) =>
+        name === expected.name &&
+        sameBranches(readBranches(node, owner, source), expected.branch) &&
+        (!expected.callee ||
+            normalize(node.expression.getText(source)) === expected.callee) &&
+        (!expected.arguments || JSON.stringify(node.arguments.map((argument) =>
+            normalize(argument.getText(source)))) ===
+            JSON.stringify(expected.arguments)) &&
+        (expected.awaited === undefined || isAwaited(node) === expected.awaited));
+    const label = `${expected.callee ?? expected.name} ${JSON.stringify(
+        expected.arguments ?? [],
+    )}`;
+    expect(matches, `${label} arguments/await in ${owner.getText(source).slice(0, 80)}`)
+        .toHaveLength(1);
     return matches[0]!.node;
 }
-function readBranches(
-    node: ts.Node,
-    owner: ts.FunctionLikeDeclaration,
-    source: ts.SourceFile,
-): readonly Branch[] {
+function readCallSpec(spec: CallSpec): ExpectedCall {
+    if (typeof spec === 'string') return { name: spec };
+    if (Array.isArray(spec)) return { name: spec[0], branch: spec[1] };
+    return spec as CallExpectation;
+}
+function isAwaited(node: ts.CallExpression): boolean { return ts.isAwaitExpression(node.parent); }
+function hasAncestorCall(node: ts.Node, owner: ts.FunctionLikeDeclaration,
+    callee: string): boolean {
+    let current = node.parent;
+    while (current && current !== owner) {
+        if (ts.isCallExpression(current) && callName(current) === callee) return true;
+        current = current.parent;
+    }
+    return false;
+}
+function findAncestorVariable(node: ts.Node,
+    owner: ts.FunctionLikeDeclaration): string | undefined {
+    let current = node.parent;
+    while (current && current !== owner) {
+        if (ts.isVariableDeclaration(current)) return normalize(current.name.getText());
+        current = current.parent;
+    }
+    return undefined;
+}
+function readBranches(node: ts.Node, owner: ts.FunctionLikeDeclaration,
+    source: ts.SourceFile): readonly Branch[] {
     const result: Branch[] = [];
     let current: ts.Node = node;
     while (current !== owner && current.parent) {
@@ -552,13 +759,9 @@ function readBranches(
     }
     return result.reverse();
 }
-function sameBranches(actual: readonly Branch[], expected?: Branch): boolean {
-    return JSON.stringify(actual) === JSON.stringify(expected ? [expected] : []);
-}
-function nearestLoop(
-    node: ts.Node,
-    owner: ts.FunctionLikeDeclaration,
-): ts.ForStatement {
+function sameBranches(actual: readonly Branch[], expected?: Branch): boolean { return JSON.stringify(actual) === JSON.stringify(expected ? [expected] : []); }
+function nearestLoop(node: ts.Node,
+    owner: ts.FunctionLikeDeclaration): ts.ForStatement {
     let current: ts.Node | undefined = node.parent;
     while (current && current !== owner) {
         if (ts.isForStatement(current)) return current;
@@ -621,31 +824,71 @@ function findType(source: ts.SourceFile, name: string): ts.TypeAliasDeclaration 
     expect(matches, name).toHaveLength(1);
     return matches[0]!;
 }
-function readOutcomes(
-    alias: ts.TypeAliasDeclaration,
-    source: ts.SourceFile,
-): readonly string[] {
-    const outcomes = new Set<string>();
-    walk(alias.type, (node) => {
-        if (
-            isProperty(node) && node.type &&
-            normalize(node.name.getText(source)) === 'outcome'
-        ) readLiterals(node.type).forEach((value) => outcomes.add(value));
-        return true;
+type ActualVariant = Readonly<{
+    outcome: string;
+    properties: ReadonlyMap<string, readonly string[]>;
+}>;
+function readVariants(alias: ts.TypeAliasDeclaration,
+    source: ts.SourceFile): readonly ActualVariant[] {
+    return expandTypeAlternatives(alias.type, source).flatMap((members) => {
+        const properties = new Map<string, string[]>();
+        for (const member of members) {
+            if (!isProperty(member) || !member.type) continue;
+            const name = normalize(member.name.getText(source));
+            const values = properties.get(name) ?? [];
+            values.push(normalize(member.type.getText(source)));
+            properties.set(name, values);
+        }
+        const outcome = members.find((member) =>
+            isProperty(member) && normalize(member.name.getText(source)) === 'outcome');
+        expect(outcome && isProperty(outcome) && outcome.type, alias.name.text)
+            .toBeDefined();
+        return readLiterals((outcome as ts.PropertySignature).type!).map((value) => ({
+            outcome: value,
+            properties,
+        }));
     });
-    return [...outcomes].sort();
 }
-function hasOutcome(node: ts.Node, source: ts.SourceFile, outcome: string): boolean {
-    let found = false;
-    walk(node, (candidate) => {
+function expandTypeAlternatives(node: ts.TypeNode,
+    source: ts.SourceFile): readonly (readonly ts.TypeElement[])[] {
+    if (node.kind === ts.SyntaxKind.ParenthesizedType) {
+        return expandTypeAlternatives((node as ts.ParenthesizedTypeNode).type, source);
+    }
+    if (node.kind === ts.SyntaxKind.TypeReference) {
+        const reference = node as ts.TypeReferenceNode;
         if (
-            isProperty(candidate) && candidate.type &&
-            normalize(candidate.name.getText(source)) === 'outcome' &&
-            readLiterals(candidate.type).includes(outcome)
-        ) found = true;
-        return !found;
+            normalize(reference.typeName.getText(source)) === 'Readonly' &&
+            reference.typeArguments?.length === 1
+        ) return expandTypeAlternatives(reference.typeArguments[0]!, source);
+    }
+    if (ts.isUnionTypeNode(node)) {
+        return node.types.flatMap((type) => expandTypeAlternatives(type, source));
+    }
+    if (node.kind === ts.SyntaxKind.IntersectionType) {
+        return (node as ts.IntersectionTypeNode).types.reduce<
+            readonly (readonly ts.TypeElement[])[]
+        >((left, type) => left.flatMap((members) =>
+            expandTypeAlternatives(type, source).map((right) => [
+                ...members, ...right,
+            ])), [[]]);
+    }
+    if (ts.isTypeLiteralNode(node)) return [node.members];
+    throw new Error(`Unsupported computed variant type: ${node.getText(source)}`);
+}
+function consumeVariant(remaining: ActualVariant[],
+    descriptor: VariantDescriptor, family: string): void {
+    const matches = remaining.flatMap((variant, index) => {
+        if (variant.outcome !== descriptor.outcome) return [];
+        if (!descriptor.property) return [index];
+        const [name, types] = descriptor.property;
+        return JSON.stringify([...(variant.properties.get(name) ?? [])].sort()) ===
+                JSON.stringify([...types].sort())
+            ? [index]
+            : [];
     });
-    return found;
+    expect(matches, `${family}:${descriptor.outcome}:${descriptor.property?.[0] ?? ''}`)
+        .toHaveLength(1);
+    remaining.splice(matches[0]!, 1);
 }
 function readLiterals(node: ts.Node): string[] {
     const values: string[] = [];
@@ -667,16 +910,11 @@ function ownedCalls(owner: ts.FunctionLikeDeclaration): readonly NamedCall[] {
 function allCalls(source: ts.SourceFile): readonly NamedCall[] {
     const calls: NamedCall[] = [];
     walk(source, (node) => {
-        if (ts.isCallExpression(node)) calls.push({ name: callName(node), node });
-        return true;
+        if (ts.isCallExpression(node)) calls.push({ name: callName(node), node }); return true;
     });
-    return calls;
-}
-function requireCalls(
-    calls: readonly NamedCall[],
-    names: readonly string[],
-    label: string,
-): readonly NamedCall[] {
+    return calls; }
+function requireCalls(calls: readonly NamedCall[], names: readonly string[],
+    label: string): readonly NamedCall[] {
     return names.flatMap((name) => {
         const matches = calls.filter((call) => call.name === name);
         expect(matches.length, `${label}:${name}`).toBeGreaterThan(0);
@@ -686,20 +924,15 @@ function requireCalls(
 function callName(call: ts.CallExpression): string {
     if (ts.isIdentifier(call.expression)) return call.expression.text;
     if (ts.isPropertyAccessExpression(call.expression)) return call.expression.name.text;
-    return normalize(call.expression.getText());
-}
-function callCallback(
-    call: ts.CallExpression,
-    source: ts.SourceFile,
-): ts.FunctionLikeDeclaration {
+    return normalize(call.expression.getText()); }
+function callCallback(call: ts.CallExpression,
+    source: ts.SourceFile): ts.FunctionLikeDeclaration {
     const callback = call.arguments[0];
     expect(callback && isFunction(callback), callback?.getText(source)).toBe(true);
     return callback as ts.FunctionLikeDeclaration;
 }
-function walkOwned(
-    owner: ts.FunctionLikeDeclaration,
-    visit: (node: ts.Node) => void,
-): void {
+function walkOwned(owner: ts.FunctionLikeDeclaration,
+    visit: (node: ts.Node) => void): void {
     walk(owner.body ?? owner, (node) => {
         if (node !== owner.body && isFunction(node)) return false;
         visit(node);
@@ -709,8 +942,7 @@ function walkOwned(
 function walk(node: ts.Node, visit: (node: ts.Node) => boolean): void {
     if (!visit(node)) return;
     node.forEachChild((child) => {
-        walk(child, visit);
-        return undefined;
+        walk(child, visit); return undefined;
     });
 }
 function isFunction(node: ts.Node): node is ts.FunctionLikeDeclaration {
@@ -719,12 +951,8 @@ function isFunction(node: ts.Node): node is ts.FunctionLikeDeclaration {
         ts.isGetAccessorDeclaration(node) || ts.isSetAccessorDeclaration(node) ||
         ts.isConstructorDeclaration(node);
 }
-function isProperty(node: ts.Node): node is ts.PropertySignature {
-    return node.kind === ts.SyntaxKind.PropertySignature;
-}
-function within(node: ts.Node, container: ts.Node): boolean {
-    return node.pos >= container.pos && node.end <= container.end;
-}
+function isProperty(node: ts.Node): node is ts.PropertySignature { return node.kind === ts.SyntaxKind.PropertySignature; }
+function within(node: ts.Node, container: ts.Node): boolean { return node.pos >= container.pos && node.end <= container.end; }
 function hasKind(node: ts.Node, kind: ts.SyntaxKind): boolean {
     let found = false;
     walk(node, (candidate) => {
@@ -733,11 +961,9 @@ function hasKind(node: ts.Node, kind: ts.SyntaxKind): boolean {
     });
     return found;
 }
-function normalize(value: string): string {
-    return value.replace(/\s+/g, ' ').trim();
-}
+function normalize(value: string): string { return value.replace(/\s+/g, ' ').replace(/\s*\.\s*/g, '.').trim(); }
 function repoSource(file: string): ts.SourceFile {
-    const absolute = path.join(repoRoot, file);
+    const absolute = path.join(process.cwd(), file);
     const source = compilerSnapshot.getDefaultProjectForFile(absolute)?.program
         .getSourceFile(absolute);
     expect(source, file).toBeDefined();
@@ -746,20 +972,28 @@ function repoSource(file: string): ts.SourceFile {
 function withFixture(source: string, run: (source: ts.SourceFile) => void): void {
     const directory = mkdtempSync(path.join(tmpdir(), 'rallar-write-contract-'));
     const file = path.join(directory, 'fixture.ts');
-    writeFileSync(file, source);
-    const api = new API();
-    const snapshot = api.updateSnapshot({ openFiles: [file] });
+    let compiler: ReturnType<typeof openCompiler> | undefined;
     try {
-        const parsed = snapshot.getDefaultProjectForFile(file)?.program
+        writeFileSync(file, source);
+        compiler = openCompiler([file]);
+        const parsed = compiler.snapshot.getDefaultProjectForFile(file)?.program
             .getSourceFile(file);
         expect(parsed, file).toBeDefined();
         run(parsed!);
     } finally {
-        snapshot.dispose();
-        api.close();
+        compiler?.snapshot.dispose();
+        compiler?.api.close();
         rmSync(directory, { recursive: true, force: true });
     }
 }
-function readRepo(file: string): string {
-    return readFileSync(path.join(repoRoot, file), 'utf8');
+function openCompiler(openFiles: readonly string[]) {
+    const api = new API();
+    try {
+        return { api, snapshot: api.updateSnapshot({ openFiles: [...openFiles] }) };
+    } catch (error) {
+        api.close();
+        throw error;
+    }
 }
+function readRepo(file: string): string { return readFileSync(path.join(process.cwd(), file), 'utf8'); }
+function replaceOnce(source: string, before: string, after: string): string { expect(source.split(before), before).toHaveLength(2); return source.replace(before, after); }

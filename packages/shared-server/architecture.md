@@ -51,9 +51,10 @@ snapshot update and has no external outbox. `commitTopologyWithRetry` owns that
 internal path. The `createRtcTopologyWorkHandler` `onMessage` callback owns the
 externally effectful publication-bearing path and fans out only after
 `writeTopologyMutation` commits. Client no-op idempotency claiming
-may insert only its compact receipt outside `writeClientMutation`; it opens no
-transaction and produces no domain effect. Every externally effectful computed
-variant is matched to its transaction-local outbox insert.
+and topology-config claim outcomes may persist compact authority receipts. They
+have no external effect: no external fanout or outbox is required. This does not
+mean that they perform no database write. Every externally effectful computed
+variant is matched to its transaction-local outbox or publication insert.
 
 ## Mutation Receipt And Outbox Boundary
 
