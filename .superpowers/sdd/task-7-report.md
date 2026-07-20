@@ -14,6 +14,8 @@
   (`fix: complete authoritative boundary validation`).
 - Final read-invariant correction commit: `baf647b4`
   (`fix: close authoritative read invariants`).
+- Receipt replay closure commit: `c00b0c76`
+  (`fix: close mutation receipt replay invariants`).
 - Authoritative client, group, event, topology, overlay, outbox, and mutation
   receipt contracts now require their identity, lifecycle, actor, causal,
   storage-revision, and effect fields. Meaningful absence is represented by a
@@ -300,6 +302,53 @@
 - `deno fmt --check resources/api-v1-openapi.yaml` and `git diff --check`
   each exited 0 before the correction implementation commit.
 
+## Receipt replay and causal-shape closure evidence
+
+- The exact pre-production RED command was
+  `npx vitest run packages/tests/shared-server/client-state-concurrency.test.ts packages/tests/shared-server/group-state-concurrency.test.ts packages/tests/shared-server/state-mutation-outbox.test.ts`.
+  It exited 1 with 5 failing tests and 136 passing tests: malformed persisted
+  client applied/no-op receipts, malformed group receipt outcome correlations,
+  a client accepted-causal revision with an extra outer field, and a group
+  causal tuple with an extra nested field were all incorrectly accepted.
+- Two producer-driven adjacent RED cycles covered the remaining exact
+  correlations. The client canonical-outbox and group authority-shape cases
+  failed 2 tests while 92 passed before their checks were added. Removing only
+  the new predecessor correlations made the divergent-revision regressions
+  fail 3 tests while 91 passed; restoring the correlations made the same
+  selection pass 94/94.
+- Client persisted receipts now require a concrete nonnegative accepted storage
+  revision, require `stateRevision = acceptedStorageRevision + 1`, require one
+  canonical recomputed outbox ID for `applied`, and require no event or outbox
+  effect for `no-op`. Valid revision-zero insert and no-op receipts remain
+  accepted.
+- Group receipts now enforce each producer outcome separately. Applied receipts
+  require concrete accepted authority, positive group/snapshot authority, an
+  event, and one outbox ID. No-op receipts require the exact group predecessor,
+  positive snapshot authority, and no event, outbox, join-code, or rejection.
+  Existing-group rejection binds the group predecessor; absent-group rejection
+  preserves the valid null accepted revision and all-zero authority tuple.
+- State mutation outbox construction and persisted reads now exact-check the
+  four-field client accepted-causal revision and the two-field nested group
+  causal tuple. Unknown fields fail at both boundaries instead of surviving or
+  being projected away.
+- The final directly affected Vitest command passed 7/7 files and 176/176
+  tests. The exact Task 7 Vitest command passed 4/4 files and 59/59 tests. The
+  exact API command passed 43/43 tests, and API Swagger passed 12/12.
+- `npm run typecheck` and the explicit shared, shared-server, and shared-web
+  TypeScript commands all exited 0. The non-governing
+  `packages/tests/tsconfig.json` command remained red with 1,496 diagnostics;
+  filtering the touched receipt/outbox paths reported only the two pre-existing
+  `group-state-concurrency.test.ts` diagnostics at unchanged lines 538 and 740,
+  with no diagnostics in the new tests or changed production files.
+- `git diff --check` and `git diff --cached --check` passed. Added-line scans
+  found no `Reflect` calls, `as any`, `as never`, `as unknown`, or database-lock
+  additions. `state-write-performance-harness.test.ts` and
+  `production-env-hardening.test.ts` are included in `c00b0c76` as intentional
+  restorations and compare byte-for-byte equal to base `f1359859`.
+- The broader `npm run test:unit` and `npm run test:deno` chains were not rerun
+  for this narrow closure; the fresh directly affected, exact Task 7, exact API,
+  Swagger, and compiler gates above are the governing evidence for this commit.
+
 ## Baseline-red checks
 
 - `npx tsc -p packages/tests/tsconfig.json --noEmit` remains red on the
@@ -317,7 +366,7 @@
 
 ## Follow-up
 
-- No Task 7 implementation follow-up is required after `baf647b4`.
+- No Task 7 implementation follow-up is required after `c00b0c76`.
   Repository-wide cleanup of
   the known `packages/tests` TypeScript and API formatter baselines should be
   handled separately so it does not obscure the authoritative-contract change.
