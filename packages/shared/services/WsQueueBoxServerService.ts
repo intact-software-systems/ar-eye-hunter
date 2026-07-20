@@ -9,6 +9,9 @@ import { ResilienceDto } from '../queuebox/DequeueResourceEntryController.ts';
 import { OnWebSocketServerMessageCallback } from './InboxOutboxContracts.ts';
 import { ALMessage } from '../al-contracts/al-contract.ts';
 import {
+    validatePersistedALMessage,
+} from '../al-contracts/al-message-persistence-validation.ts';
+import {
     ALMessageHandlingPlan,
     ALQosInputProvider,
     normalizeALQosPolicy,
@@ -317,6 +320,10 @@ export class WsQueueBoxServerService {
                     message.id.msgId,
                 ),
             };
+        }
+
+        if (shouldPersistOutbox(this.normalizeOutgoingPolicy(message).effective)) {
+            validatePersistedALMessage(message);
         }
 
         const result = await this.outboundRuntime.enqueueIfAbsent(message);

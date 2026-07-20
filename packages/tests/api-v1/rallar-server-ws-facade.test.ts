@@ -342,6 +342,7 @@ describe('RallarServer.ws.publish current behavior', () => {
     it('returns queued-outbox metadata for durable outbox fanout', async () => {
         const { server, service, socket, outbox, qboxEngine } = createServerFacade();
         const enqueue = vi.spyOn(service, 'enqueueOutboxIfAbsent');
+        const groupRef = createGroupSnapshot('room-1', ['peer-1'], 1).group;
         const message = newALBroadcastMessage(
             'server-1',
             newALRoute('app.todo', 'room-1', 'todo-1'),
@@ -349,6 +350,7 @@ describe('RallarServer.ws.publish current behavior', () => {
             'todo.item.updated.v1',
             { title: 'Durable fanout', done: false },
             {
+                groupRef,
                 reliability: 'at-least-once',
                 ack: 'receiver',
             },
@@ -369,6 +371,29 @@ describe('RallarServer.ws.publish current behavior', () => {
         expect((outbox as any).data.size).toBe(1);
         expect(socket.sent).toHaveLength(0);
         expect(qboxEngine.wake).toHaveBeenCalledOnce();
+    });
+
+    it('rejects a durable room broadcast before the router can queue an unscoped envelope', async () => {
+        const { server, socket, outbox, qboxEngine } = createServerFacade();
+        const message = newALBroadcastMessage(
+            'server-1',
+            newALRoute('app.todo', 'room-1', 'todo-invalid-room'),
+            'room',
+            'todo.item.updated.v1',
+            { title: 'Invalid durable fanout', done: false },
+            {
+                reliability: 'at-least-once',
+                ack: 'receiver',
+            },
+        );
+
+        await expect(server.ws.publish(message, 'outbox')).rejects.toThrow(
+            /room broadcast group ref/i,
+        );
+
+        expect(await outbox.getItem(message.route)).toBeUndefined();
+        expect(socket.sent).toHaveLength(0);
+        expect(qboxEngine.wake).not.toHaveBeenCalled();
     });
 
     it('returns none metadata without sending or enqueueing', async () => {

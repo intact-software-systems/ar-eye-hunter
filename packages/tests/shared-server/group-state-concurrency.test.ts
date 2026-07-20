@@ -499,14 +499,15 @@ describe('convergent group and presence state', () => {
         const repository = new GroupStateRepository(runtime);
         const ref = groupRef('over-capacity-roster');
         const read = createMutationRead();
+        requireMutationGroupAndActor(read);
         const group: Group = {
-            ...read.group!.value,
+            ...read.group.value,
             ...ref,
             maxMembers: 1,
             activeMemberCount: 2,
         };
         const owner: GroupMember = {
-            ...read.actorMember!,
+            ...read.actorMember,
             ...ref,
         };
         const member: GroupMember = {
@@ -527,12 +528,13 @@ describe('convergent group and presence state', () => {
         const repository = new GroupStateRepository(runtime);
         const ref = groupRef('duplicate-invited-member');
         const read = createMutationRead();
+        requireMutationGroupAndActor(read);
         const group: Group = {
-            ...read.group!.value,
+            ...read.group.value,
             ...ref,
         };
         const owner: GroupMember = {
-            ...read.actorMember!,
+            ...read.actorMember,
             ...ref,
         };
         const invited: GroupMember = {
@@ -4116,6 +4118,17 @@ function createMutationRead(): GroupMutationRead {
         authorityPresenceSessionEntries: [],
         presenceSummary: null,
     } as GroupMutationRead;
+}
+
+function requireMutationGroupAndActor(
+    read: GroupMutationRead,
+): asserts read is GroupMutationRead & Readonly<{
+    group: NonNullable<GroupMutationRead['group']>;
+    actorMember: GroupMember;
+}> {
+    if (!read.group || !read.actorMember) {
+        throw new Error('Mutation test fixture requires a group and actor member.');
+    }
 }
 
 function storagePart(name: string, value?: string): string {

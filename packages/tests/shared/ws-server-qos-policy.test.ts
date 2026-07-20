@@ -264,6 +264,27 @@ describe('WsQueueBoxServerService QoS runtime', () => {
 
         expect(stored.audit.expiryTs.epochMilliseconds).toBe(expiresAtMs);
         expect(socket.sent).toHaveLength(0);
+
+        const invalidRoomMessage = shared.newALBroadcastMessage(
+            'server-1',
+            {
+                topicId: 'room.chat',
+                resourceId: 'msg-invalid-persisted-room',
+                contextId: 'room-1',
+            },
+            'room',
+            'chat.message.v1',
+            { text: 'must not persist' },
+            {
+                reliability: 'at-least-once',
+                ack: 'receiver',
+            },
+        );
+
+        await expect(service.enqueueOutboxIfAbsent(invalidRoomMessage))
+            .rejects.toThrow(/room broadcast group ref/i);
+        expect(await outbox.getItem(invalidRoomMessage.route)).toBeUndefined();
+        expect(socket.sent).toHaveLength(0);
     });
 
     it('returns no-route for untargeted outbound messages instead of falling back to callbacks', async () => {

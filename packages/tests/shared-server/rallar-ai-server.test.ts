@@ -170,7 +170,11 @@ describe('Rallar server AI facade', () => {
             authorize: ({ action }) => action === 'generate',
         });
 
-        await expect(ai.broadcastJson({ result, actorId: 'peer-1' }))
+        await expect(ai.broadcastJson({
+            result,
+            actorId: 'peer-1',
+            scope: 'world',
+        }))
             .rejects.toMatchObject({ code: 'unauthorized' });
         await expect(ai.persistJson({ result, actorId: 'peer-1' }))
             .rejects.toMatchObject({ code: 'unauthorized' });
@@ -268,7 +272,11 @@ describe('Rallar server AI facade', () => {
         await ai.broadcastJson({
             result,
             actorId: 'host-1',
-            roomId: 'room-1',
+            roomRef: {
+                applicationId: 'app-1',
+                workspaceId: 'workspace-1',
+                groupId: 'room-1',
+            },
             fanout: 'outbox',
         });
 
@@ -284,12 +292,111 @@ describe('Rallar server AI facade', () => {
                     topicId: 'room.ai.generated',
                     contextId: 'room-1',
                 }),
+                targets: expect.objectContaining({
+                    mode: 'broadcast',
+                    scope: 'room',
+                    groupRef: {
+                        applicationId: 'app-1',
+                        workspaceId: 'workspace-1',
+                        groupId: 'room-1',
+                    },
+                }),
                 payload: expect.objectContaining({
                     typeId: 'rallar.ai.generate-json.result.v1',
                 }),
             }),
             'outbox',
         );
+    });
+
+    it('rejects room broadcast input without a canonical workspace GroupRef', async () => {
+        const fake = createFakeRallar();
+        const provider = createRallarAiMockProvider({ value: { kind: 'spawn' } });
+        const result = createRallarAiJsonResult({
+            request,
+            provider,
+            value: { kind: 'spawn' },
+        });
+        const ai = createRallarServerAi({
+            rallar: fake.rallar,
+            provider,
+        });
+        await expect(ai.broadcastJson({
+            result,
+            actorId: 'host-1',
+            scope: 'room',
+            // @ts-expect-error Runtime callers can still omit workspace identity.
+            roomRef: {
+                applicationId: 'app-1',
+                groupId: 'room-1',
+            },
+            fanout: 'outbox',
+        })).rejects.toThrow(/complete GroupRef/i);
+        expect(fake.rallar.ws.publish).not.toHaveBeenCalled();
+
+        if (false) {
+            // @ts-expect-error Default room broadcasts require a complete GroupRef.
+            await ai.broadcastJson({ result, fanout: 'outbox' });
+            // @ts-expect-error Explicit room broadcasts require a complete GroupRef.
+            await ai.broadcastJson({ result, scope: 'room', fanout: 'outbox' });
+        }
+    });
+
+    it('keeps world broadcasts intentionally unscoped', async () => {
+        const fake = createFakeRallar();
+        const provider = createRallarAiMockProvider({ value: { kind: 'spawn' } });
+        const result = createRallarAiJsonResult({
+            request,
+            provider,
+            value: { kind: 'spawn' },
+        });
+        const ai = createRallarServerAi({
+            rallar: fake.rallar,
+            provider,
+        });
+
+        await ai.broadcastJson({ result, scope: 'world' });
+
+        expect(fake.rallar.ws.publish).toHaveBeenCalledWith(
+            expect.objectContaining({
+                route: expect.objectContaining({ contextId: 'world' }),
+                targets: {
+                    mode: 'broadcast',
+                    scope: 'world',
+                },
+            }),
+            undefined,
+        );
+    });
+
+    it('fails closed when a room generation topic lacks canonical workspace context', async () => {
+        const fake = createFakeRallar();
+        const ai = createRallarServerAi({
+            rallar: fake.rallar,
+            provider: createRallarAiMockProvider({ value: { kind: 'spawn' } }),
+        });
+
+        ai.installGenerationTopic({ resultFanout: 'outbox' });
+
+        await expect(fake.handlers[0].handler(
+            {
+                payload: request,
+                raw: newALBroadcastMessage(
+                    'peer-1',
+                    newALRoute('room.ai.generate', 'room-1', 'request-1'),
+                    'room',
+                    'rallar.ai.generate-json.request.v1',
+                    request,
+                ),
+                receivedAtEpochMs: 1,
+            },
+            {
+                senderId: 'peer-1',
+                roomId: 'room-1',
+                proxy: {},
+            },
+        )).rejects.toThrow(/complete GroupRef/i);
+        expect(fake.rallar.ws.publish).not.toHaveBeenCalled();
     });
 
     it('installs WS request/result topic wiring', async () => {
@@ -317,6 +424,11 @@ describe('Rallar server AI facade', () => {
             {
                 senderId: 'peer-1',
                 roomId: 'room-1',
+                roomRef: {
+                    applicationId: 'app-1',
+                    workspaceId: 'workspace-1',
+                    groupId: 'room-1',
+                },
                 proxy: {},
             },
         );
@@ -330,6 +442,15 @@ describe('Rallar server AI facade', () => {
         );
         expect(fake.rallar.ws.publish).toHaveBeenCalledTimes(1);
         const published = fake.rallar.ws.publish.mock.calls[0][0];
+        expect(published.targets).toEqual({
+            mode: 'broadcast',
+            scope: 'room',
+            groupRef: {
+                applicationId: 'app-1',
+                workspaceId: 'workspace-1',
+                groupId: 'room-1',
+            },
+        });
         expect(JSON.parse(published.payload.resource)).toEqual(
             expect.objectContaining({
                 schemaId: 'game-event',

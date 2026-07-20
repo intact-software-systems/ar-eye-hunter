@@ -84,17 +84,27 @@ export type CreateRallarServerAiOptions = Readonly<{
     serverSenderId?: string;
 }>;
 
-export type RallarServerAiBroadcastInput<TValue = unknown> = Readonly<{
+type RallarServerAiBroadcastBase<TValue> = Readonly<{
     result: RallarAiJsonResult<TValue>;
     actorId?: string;
-    roomId?: string;
-    roomRef?: GroupRef;
-    scope?: 'room' | 'world' | 'all';
     topicId?: string;
     typeId?: string;
     resourceId?: string;
     fanout?: RallarServerWsFanout;
 }>;
+
+export type RallarServerAiBroadcastInput<TValue = unknown> =
+    & RallarServerAiBroadcastBase<TValue>
+    & (
+        | Readonly<{
+            scope?: 'room';
+            roomRef: GroupRef;
+        }>
+        | Readonly<{
+            scope: 'world' | 'all';
+            roomRef?: never;
+        }>
+    );
 
 export type RallarServerAiPersistInput<TValue = unknown> = Readonly<{
     result: RallarAiJsonResult<TValue>;
@@ -332,9 +342,12 @@ export function createRallarServerAi(
         broadcastJson: async <TValue = unknown>(
             input: RallarServerAiBroadcastInput<TValue>,
         ): Promise<RallarServerWsPublishResult> => {
+            const target = normalizeBroadcastTarget(input);
             await assertRallarAiAuthorized(options.authorize, {
                 actorId: input.actorId,
-                roomId: input.roomId,
+                roomId: target.scope === 'room'
+                    ? target.groupRef.groupId
+                    : undefined,
                 action: 'broadcast',
                 source: 'server',
                 schemaId: input.result.schemaId,
@@ -359,6 +372,7 @@ export function createRallarServerAi(
                 const message = toResultBroadcastMessage(
                     input,
                     options.serverSenderId ?? DEFAULT_SERVER_SENDER_ID,
+                    target,
                 );
                 const publishResult = await options.rallar.ws.publish(
                     message,
@@ -568,14 +582,24 @@ export function createRallarServerAi(
                         actorId: context.senderId,
                         roomId: context.roomId,
                     });
+                    const scope = topicOptions.scope ?? 'room';
+                    const target: RallarServerAiBroadcastTarget = scope === 'room'
+                        ? {
+                            scope,
+                            groupRef: requireCompleteGroupRef(context.roomRef),
+                        }
+                        : { scope };
                     await options.rallar.ws.publish(
                         toResultBroadcastMessage(
                             {
                                 result,
                                 actorId: context.senderId,
-                                roomId: context.roomId ?? message.raw.route.contextId,
-                                roomRef: context.roomRef,
-                                scope: topicOptions.scope ?? 'room',
+                                ...(target.scope === 'room'
+                                    ? {
+                                        scope: target.scope,
+                                        roomRef: target.groupRef,
+                                    }
+                                    : { scope: target.scope }),
                                 topicId: topicOptions.resultTopicId ??
                                     DEFAULT_AI_RESULT_TOPIC_ID,
                                 typeId: topicOptions.resultTypeId ??
@@ -583,6 +607,7 @@ export function createRallarServerAi(
                                 fanout: topicOptions.resultFanout,
                             },
                             options.serverSenderId ?? DEFAULT_SERVER_SENDER_ID,
+                            target,
                         ),
                         topicOptions.resultFanout,
                     );
@@ -704,9 +729,11 @@ async function generateWithTimeout<TValue, TContext>(
 function toResultBroadcastMessage<TValue>(
     input: RallarServerAiBroadcastInput<TValue>,
     senderId: string,
+    target: RallarServerAiBroadcastTarget = normalizeBroadcastTarget(input),
 ): ALMessage {
-    const scope = input.scope ?? 'room';
-    const contextId = input.roomId ?? (scope === 'room' ? 'room' : scope);
+    const contextId = target.scope === 'room'
+        ? target.groupRef.groupId
+        : target.scope;
     return newALBroadcastMessage(
         senderId,
         newALRoute(
@@ -714,15 +741,61 @@ function toResultBroadcastMessage<TValue>(
             contextId,
             input.resourceId ?? input.result.generationId,
         ),
-        scope,
+        target.scope,
         input.typeId ?? DEFAULT_AI_RESULT_TYPE_ID,
         input.result,
         {
-            groupRef: scope === 'room' ? input.roomRef : undefined,
+            groupRef: target.scope === 'room' ? target.groupRef : undefined,
             reliability: 'at-least-once',
             ack: 'receiver',
         },
     );
+}
+
+type RallarServerAiBroadcastTarget =
+    | Readonly<{
+        scope: 'room';
+        groupRef: GroupRef;
+    }>
+    | Readonly<{
+        scope: 'world' | 'all';
+    }>;
+
+function normalizeBroadcastTarget<TValue>(
+    input: RallarServerAiBroadcastInput<TValue>,
+): RallarServerAiBroadcastTarget {
+    const scope = input.scope ?? 'room';
+    if (scope !== 'room') {
+        return { scope };
+    }
+
+    return {
+        scope,
+        groupRef: requireCompleteGroupRef(input.roomRef),
+    };
+}
+
+function requireCompleteGroupRef(value: unknown): GroupRef {
+    if (
+        !isRecord(value) ||
+        typeof value.applicationId !== 'string' ||
+        value.applicationId.length === 0 ||
+        typeof value.workspaceId !== 'string' ||
+        value.workspaceId.length === 0 ||
+        typeof value.groupId !== 'string' ||
+        value.groupId.length === 0
+    ) {
+        throw new RallarAiError(
+            'invalid-json',
+            'RallarAI room broadcast requires a complete GroupRef.',
+        );
+    }
+
+    return {
+        applicationId: value.applicationId,
+        workspaceId: value.workspaceId,
+        groupId: value.groupId,
+    };
 }
 
 async function emitFailureDiagnostic(
