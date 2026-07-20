@@ -677,3 +677,108 @@ report commit `a41a249e9767cf53456cde3e2582ca9a86c5ff28`.
   source-gated as read-free. `git diff --check` and staged implementation
   `git diff --cached --check` passed before the implementation commit.
 - Task 7 and later tasks were not started by this correction.
+
+## Eighth review correction: immutable expiry, exact retention, and owned cleanup
+
+Implementation commit: `c85269d5ad1b0653d23b1e3afca478b3c8fd9fe3`
+(`fix(rtc): close retained authority lifecycle gaps`), based on reviewed Task 6
+report commit `d693507d`.
+
+### Corrected behavior
+
+- Offline publication migration no longer repairs the physical expiry of an
+  immutable canonical publication or work claim. A semantically equal
+  destination with expiry different from the source is typed corruption and
+  both rows remain intact. Legacy value/message-ID shape is upgraded by
+  expected-revision CAS only when destination and source expiries are exactly
+  equal; bounded attempts still reread and revalidate the complete migration
+  authority.
+- Recompute intents are bound explicitly to receipt direction and measurement
+  version in addition to receipt ID, command hash, acceptance time, group, and
+  pair membership. This keeps the authority rule local even though canonical
+  IDs also encode pair/version today.
+- Receipt and intent physical expiry is exactly
+  `acceptedAtEpochMs + DEFAULT_RTC_RTT_MUTATION_RETENTION_MS`. Raw receipt
+  probes, direct/list/page projections, direct receipt insertion, intent
+  validation, replay, migration, drain, and cleanup reject early or late
+  jointly shifted families. Safe-integer overflow is rejected before a write
+  can claim authority.
+- Specialized cleanup enumerates the union of physical receipt and intent
+  namespaces, including receiptless intents and malformed physical keys. It
+  processes candidates in canonical key order, preserves each corrupt family,
+  continues cleaning unrelated healthy expired families through the existing
+  bounded full-reread optimistic path, then raises
+  `RtcRttReceiptFamilyCleanupError` with the removed-family count and ordered
+  per-family errors. Aggregate details are sanitized and do not expose raw
+  persisted values. Periodic cleanup continues after first-run and later
+  failures without overlapping runs.
+- `initRuntimeStateExpiryEviction(repository, intervalMs?: number)` is restored
+  as a public compatibility overload alongside default and object-options
+  forms. Protected namespace exclusions remain available only through the
+  object form.
+- API startup now owns the specialized cleanup handle before awaiting its
+  first run, stops the previous handle on reinitialization, and exposes an
+  idempotent unload shutdown seam. A specialized corruption still rejects and
+  is logged, but protected generic eviction is initialized first so unrelated
+  namespaces do not lose expiry maintenance.
+- `deno task rtc:migrate-persisted-state` is the explicit operator cutover.
+  It requires `--old-writers-stopped` before opening a database connection,
+  supports a connection-free `--dry-run`, closes the SQL client, and executes
+  snapshot keys, publication/claim keys, RTT measurement keys, then retained
+  intent delivery state. The runbook documents backup, restart, rollback, and
+  the strict no-dual-read/no-mixed-writer boundary.
+
+### Eighth correction RED evidence
+
+- The focused shared RED command collected 249 tests and exited 1 with 27
+  failures and 222 passes. Failures covered two immutable canonical migration
+  expiry collisions; missing-receipt cleanup; reversed intent direction on
+  direct/list/page/sweep; early and late jointly shifted retention across
+  probe, receipt direct/list/page, intent, drain, and sweep; safe-integer
+  overflow; noncanonical receipt insertion; corrupt-family starvation;
+  receiptless orphans; malformed physical rows; and the legacy numeric expiry
+  initializer. Version mismatch was already rejected transitively by
+  canonical IDs on all five surfaces; the explicit local binding was still
+  added and remains covered.
+- The focused API RED command collected 9 tests and exited 1 with 7 failures
+  and 2 passes. It demonstrated the missing operator entrypoint/task/runbook,
+  missing stopped-writer/dry-run/error behavior, generic expiry starvation
+  after specialized corruption, lost/replaced timer ownership, and absent
+  middleware unload shutdown.
+
+### Eighth correction GREEN and baseline evidence
+
+- The focused shared repository/expiry command passed 2/2 files and 249/249
+  tests. After the final aggregate-error sanitization assertion, the repository
+  file passed 242/242. Focused API startup/operator tests passed 9/9.
+- The expanded Task 6 matrix passed 10/10 files and 405/405 tests.
+  `npx vitest run packages/tests/shared-server --reporter=dot
+  --silent=passed-only` passed 58 files with 2 configured-skip files; 945 tests
+  passed and 13 opt-in environment tests were skipped.
+- `npm run typecheck`, focused shared-server and shared-web `tsc` checks,
+  `deno task --config deno.json check`, and the explicit script check all
+  passed. Full API-v1 Deno tests passed 218/218. Deno lint passed for every
+  touched API source/test/script, and those files were formatted. A
+  repository-wide API `deno fmt --check` remains not claimed: it reports 12
+  pre-existing unformatted files outside this correction.
+- The first live PostgreSQL command reached 3 non-network tests and failed the
+  9 database cases solely with localhost `connect EPERM`. The approved local
+  rerun passed 1/1 file and 12/12 tests.
+- With database environment variables removed, the operator dry run exited 0
+  and reported the exact four-step order without connecting. The no-argument
+  command exited 1 at argument parsing with the required acknowledgement
+  error. A PGlite-memory actual cutover exited 0 and completed the same four
+  steps in order.
+- Root `npm run test:unit -- --reporter=dot --silent=passed-only` remains
+  explicitly not claimed as passing: 445 files passed, 2 were configured
+  skips, and 1 failed; 4,451 tests passed, 13 skipped, and the same 7 untouched
+  `packages/tests/shared-web/rallar-workflow-options-compat.test.ts` baseline
+  tests failed. That file is absent from this correction.
+- Targeted corrected-path scans found no unconditional `.upsert`,
+  `deleteByKey`, `lockKey`, `FOR UPDATE`, or advisory-lock use. The general
+  PostgreSQL runtime-state lock method remains the documented out-of-scope
+  interface implementation; this correction changes only its generic expiry
+  initializer compatibility seam. Cleanup write transactions remain free of
+  domain reads. `git diff --check` and staged `git diff --cached --check`
+  passed before the implementation commit.
+- Task 7 and later tasks were not started by this correction.
