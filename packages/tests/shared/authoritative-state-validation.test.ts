@@ -243,4 +243,195 @@ describe('authoritative network state validation', () => {
             }, scope)).toThrow();
         }
     });
+
+    it.each([
+        {
+            defect: 'duplicate members',
+            mutate: (group: ReturnType<typeof createGroupSnapshotFixture>) => ({
+                ...group,
+                members: [group.members[0], group.members[0]],
+            }),
+        },
+        {
+            defect: 'duplicate active sessions',
+            mutate: (group: ReturnType<typeof createGroupSnapshotFixture>) => ({
+                ...group,
+                activeSessions: [group.activeSessions[0], group.activeSessions[0]],
+                onlineMemberCount: 1,
+            }),
+        },
+        {
+            defect: 'a session for a non-active member',
+            mutate: (group: ReturnType<typeof createGroupSnapshotFixture>) => ({
+                ...group,
+                group: { ...group.group, activeMemberCount: 1 },
+                members: [
+                    group.members[0],
+                    {
+                        ...group.members[1],
+                        status: 'removed',
+                        removed: createAuditStampFixture(2, 'alice'),
+                    },
+                ],
+                memberCount: 1,
+            }),
+        },
+        {
+            defect: 'an owner that differs from the active owner member',
+            mutate: (group: ReturnType<typeof createGroupSnapshotFixture>) => ({
+                ...group,
+                group: { ...group.group, ownerPrincipalId: 'bob' },
+            }),
+        },
+        {
+            defect: 'multiple active owner members',
+            mutate: (group: ReturnType<typeof createGroupSnapshotFixture>) => ({
+                ...group,
+                members: [
+                    group.members[0],
+                    { ...group.members[1], role: 'owner' },
+                ],
+            }),
+        },
+        {
+            defect: 'active presence in an inactive group',
+            mutate: (group: ReturnType<typeof createGroupSnapshotFixture>) => ({
+                ...group,
+                group: {
+                    ...group.group,
+                    status: 'archived',
+                    archived: createAuditStampFixture(2, 'alice'),
+                },
+            }),
+        },
+    ])('rejects group snapshots with $defect', ({ mutate }) => {
+        const group = createGroupSnapshotFixture({
+            ...scope,
+            groupId: 'room-aggregate-invariants',
+            sessionIds: ['alice', 'bob'],
+        });
+
+        expect(() => validateAuthoritativeGroupSnapshot(mutate(group), scope))
+            .toThrow();
+    });
+
+    it.each([
+        {
+            defect: 'a noncanonical overlay identity',
+            mutate: (topology: ReturnType<typeof createTopologyFixture>) => ({
+                ...topology,
+                overlayId: 'wrong-overlay',
+            }),
+        },
+        {
+            defect: 'inverted timestamps',
+            mutate: (topology: ReturnType<typeof createTopologyFixture>) => ({
+                ...topology,
+                createdAtEpochMs: 2,
+                updatedAtEpochMs: 1,
+            }),
+        },
+        {
+            defect: 'noncanonical active-session ordering',
+            mutate: (topology: ReturnType<typeof createTopologyFixture>) => ({
+                ...topology,
+                activeSessionIds: ['session-b', 'session-a', 'session-c'],
+            }),
+        },
+        {
+            defect: 'routing keys that omit an active session',
+            mutate: (topology: ReturnType<typeof createTopologyFixture>) => ({
+                ...topology,
+                nextHopsBySessionId: {
+                    'session-a': ['session-b'],
+                    'session-b': ['session-a', 'session-c'],
+                },
+            }),
+        },
+        {
+            defect: 'a self edge',
+            mutate: (topology: ReturnType<typeof createTopologyFixture>) => ({
+                ...topology,
+                nextHopsBySessionId: {
+                    ...topology.nextHopsBySessionId,
+                    'session-a': ['session-a', 'session-b'],
+                },
+            }),
+        },
+        {
+            defect: 'duplicate next hops',
+            mutate: (topology: ReturnType<typeof createTopologyFixture>) => ({
+                ...topology,
+                nextHopsBySessionId: {
+                    ...topology.nextHopsBySessionId,
+                    'session-a': ['session-b', 'session-b'],
+                },
+            }),
+        },
+        {
+            defect: 'nonreciprocal edges',
+            mutate: (topology: ReturnType<typeof createTopologyFixture>) => ({
+                ...topology,
+                nextHopsBySessionId: {
+                    ...topology.nextHopsBySessionId,
+                    'session-b': ['session-c'],
+                },
+            }),
+        },
+        {
+            defect: 'degree-limit violations',
+            mutate: (topology: ReturnType<typeof createTopologyFixture>) => ({
+                ...topology,
+                degreeLimit: 1,
+            }),
+        },
+        {
+            defect: 'a disconnected active graph',
+            mutate: (topology: ReturnType<typeof createTopologyFixture>) => ({
+                ...topology,
+                nextHopsBySessionId: {
+                    'session-a': ['session-b'],
+                    'session-b': ['session-a'],
+                    'session-c': [],
+                },
+            }),
+        },
+        {
+            defect: 'edges on a removed overlay',
+            mutate: (topology: ReturnType<typeof createTopologyFixture>) => ({
+                ...topology,
+                state: 'removed',
+            }),
+        },
+    ])('rejects topology snapshots with $defect', ({ mutate }) => {
+        expect(() => validateAuthoritativeOverlayTopologySnapshot(
+            mutate(createTopologyFixture()),
+            scope,
+        )).toThrow();
+    });
 });
+
+function createTopologyFixture() {
+    return {
+        sourceGroupStateCausalRevision: {
+            groupRevision: 1,
+            presenceRevision: 3,
+        },
+        state: 'active',
+        overlayId: toScopedOverlayId({ ...scope, groupId: 'room-topology' }),
+        groupRef: { ...scope, groupId: 'room-topology' },
+        name: 'room-topology',
+        topology: 'tree',
+        activeSessionIds: ['session-a', 'session-b', 'session-c'],
+        nextHopsBySessionId: {
+            'session-a': ['session-b'],
+            'session-b': ['session-a', 'session-c'],
+            'session-c': ['session-b'],
+        },
+        degreeLimit: 2,
+        version: 1,
+        createdByClientId: 'server',
+        createdAtEpochMs: 1,
+        updatedAtEpochMs: 1,
+    };
+}

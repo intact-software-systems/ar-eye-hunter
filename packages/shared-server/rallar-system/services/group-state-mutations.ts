@@ -1103,12 +1103,10 @@ function validateStoredMember(
         : value.status === 'banned'
         ? 'banned'
         : null;
-    if (lifecycleKey !== null && value[lifecycleKey] === null) {
-        throw new TypeError(`${label} is missing ${lifecycleKey} lifecycle audit`);
-    }
-    if (lifecycleKey === null &&
-        (value.left !== null || value.removed !== null || value.banned !== null)) {
-        throw new TypeError(`${label} active lifecycle fields must be null`);
+    for (const terminal of ['left', 'removed', 'banned'] as const) {
+        if ((terminal === lifecycleKey) !== (value[terminal] !== null)) {
+            throw new TypeError(`${label} terminal lifecycle audits are inconsistent`);
+        }
     }
     if (value.status === 'invited' && value.joined !== null) {
         throw new TypeError(`${label} invited member joined must be null`);

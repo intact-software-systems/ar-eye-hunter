@@ -32,6 +32,8 @@ import {
     type GroupMutationFacts,
     type GroupMutationIdempotencyRecord,
     type GroupMutationRead,
+    normalizePersistedGroupMember,
+    validatePersistedGroupMember,
     validateGroupMutation,
     validateGroupMutationCommand,
     validateGroupPresenceSummary,
@@ -64,6 +66,42 @@ const SCOPE: StateScope = {
 const BASE_EPOCH_MS = Date.now();
 
 describe('convergent group and presence state', () => {
+    it('rejects contradictory persisted terminal member audits', () => {
+        const ref = groupRef('terminal-audit-room');
+        const member = {
+            ...memberFor('alice'),
+            ...ref,
+        };
+        const terminalAudit = auditStamp(2_000, 'alice', 'terminal');
+        const contradictoryMembers = [
+            {
+                ...member,
+                status: 'left',
+                left: terminalAudit,
+                removed: terminalAudit,
+            },
+            {
+                ...member,
+                status: 'removed',
+                removed: terminalAudit,
+                banned: terminalAudit,
+            },
+            {
+                ...member,
+                status: 'banned',
+                banned: terminalAudit,
+                left: terminalAudit,
+            },
+        ];
+
+        for (const contradictoryMember of contradictoryMembers) {
+            expect(() => validatePersistedGroupMember(contradictoryMember, ref))
+                .toThrow(/lifecycle|audit/);
+            expect(() => normalizePersistedGroupMember(contradictoryMember, ref))
+                .toThrow(/lifecycle|audit/);
+        }
+    });
+
     it('refuses to construct a user mutation service without an auth repository', () => {
         expect(() => createGroupStateService({
             runtimeRepository: new GroupBarrierRepository(),

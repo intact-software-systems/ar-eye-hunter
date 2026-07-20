@@ -218,6 +218,7 @@ Deno.test('OpenAPI JSON includes scoped graph and topology management contracts'
     'outboxId',
     'outboxIds',
   ]);
+  assert.deepEqual(topologyReceipt.properties?.eventId, { type: 'null' });
   assert.deepEqual(
     json.components.schemas.GroupTopologyConfigAcceptedCausalRevision.required,
     [
@@ -229,18 +230,25 @@ Deno.test('OpenAPI JSON includes scoped graph and topology management contracts'
       'causalRevision',
     ],
   );
-  assert.ok(
-    json.components.schemas.ReconfigureGroupTopologyResponse.properties?.changed,
-  );
-  assert.ok(
-    json.components.schemas.ReconfigureGroupTopologyResponse.properties?.published,
-  );
-  assert.ok(
-    json.components.schemas.ReconfigureGroupTopologyResponse.properties?.snapshot,
-  );
-  assert.ok(
-    json.components.schemas.ReconfigureGroupTopologyResponse.properties?.config,
-  );
+  const reconfigureResponse = json.components.schemas
+    .ReconfigureGroupTopologyResponse;
+  assert.deepEqual(reconfigureResponse.required, [
+    'groupRef',
+    'overlayId',
+    'changed',
+    'snapshot',
+    'previous',
+    'config',
+    'published',
+  ]);
+  assert.ok(reconfigureResponse.properties?.changed);
+  assert.ok(reconfigureResponse.properties?.published);
+  assert.ok(reconfigureResponse.properties?.snapshot);
+  assert.ok(reconfigureResponse.properties?.config);
+  assert.deepEqual(reconfigureResponse.properties?.previous, {
+    $ref: '#/components/schemas/RallarOverlayTopologySnapshot',
+    nullable: true,
+  });
 
   assertAuthContract(
     'GET scoped global graph',

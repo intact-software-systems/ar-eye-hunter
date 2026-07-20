@@ -5242,8 +5242,7 @@ components:
           allOf:
             - $ref: '#/components/schemas/GroupTopologyConfigAcceptedCausalRevision'
         eventId:
-          type: string
-          nullable: true
+          type: 'null'
         outboxId:
           type: string
           nullable: true
@@ -5291,7 +5290,7 @@ components:
 
     ReconfigureGroupTopologyResponse:
       type: object
-      required: [groupRef, overlayId, changed, snapshot, config, published]
+      required: [groupRef, overlayId, changed, snapshot, previous, config, published]
       properties:
         groupRef:
           $ref: '#/components/schemas/GroupRef'
@@ -5303,6 +5302,7 @@ components:
           $ref: '#/components/schemas/RallarOverlayTopologySnapshot'
         previous:
           $ref: '#/components/schemas/RallarOverlayTopologySnapshot'
+          nullable: true
         config:
           $ref: '#/components/schemas/GroupTopologyConfigView'
         published:

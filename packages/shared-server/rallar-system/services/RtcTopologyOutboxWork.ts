@@ -48,6 +48,7 @@ import {
     materializeRtcOverlayTopologyBroadcastMessage,
     type RtcOverlayTopologyMessageFacts,
 } from './group-topology-management-service.ts';
+import { validatePersistedALMessage } from './al-message-persistence-validation.ts';
 
 export const APP_OUTBOX_RTC_TOPOLOGY_TOPIC = 'app-outbox.rtc-topology';
 
@@ -717,7 +718,7 @@ function readRtcTopologyWorkEnvelope(
     message: ALMessage,
     expectedWorkType: string,
 ): RtcTopologyWorkEnvelope<PersistedRtcTopologyWork> {
-    validatePersistedRtcTopologyALMessage(message);
+    validatePersistedALMessage(message);
     const value: unknown = JSON.parse(message.payload.resource);
     validatePersistedRtcTopologyWorkEnvelope(value, message, expectedWorkType);
     return value;
@@ -737,39 +738,8 @@ function toRtcTopologyExecutionId(
 
 function parsePersistedRtcTopologyALMessage(serialized: string): ALMessage {
     const value: unknown = JSON.parse(serialized);
-    validatePersistedRtcTopologyALMessage(value);
+    validatePersistedALMessage(value);
     return value;
-}
-
-function validatePersistedRtcTopologyALMessage(
-    value: unknown,
-): asserts value is ALMessage {
-    const message = requireWorkRecord(value, 'RTC topology AL message');
-    requireWorkKeys(message, ['id', 'route', 'payload'], [
-        'id', 'route', 'targets', 'forwarding', 'constraints', 'ordering',
-        'delivery', 'actions', 'qos', 'payload', 'audit', 'diagnostics',
-    ], 'RTC topology AL message');
-    const id = requireWorkRecord(message.id, 'RTC topology AL message id');
-    requireWorkKeys(id, ['v', 'msgId', 'ts', 'senderId'], [
-        'v', 'msgId', 'ts', 'senderId', 'sessionId', 'traceId',
-    ], 'RTC topology AL message id');
-    if (id.v !== 2) throw new TypeError('RTC topology AL message version is invalid');
-    requireWorkString(id.msgId, 'RTC topology AL message msgId');
-    requireWorkInteger(id.ts, 'RTC topology AL message timestamp');
-    requireWorkString(id.senderId, 'RTC topology AL message senderId');
-    const route = requireWorkRecord(message.route, 'RTC topology AL message route');
-    requireWorkKeys(route, ['topicId', 'resourceId', 'contextId'], [
-        'topicId', 'resourceId', 'contextId',
-    ], 'RTC topology AL message route');
-    for (const key of ['topicId', 'resourceId', 'contextId'] as const) {
-        requireWorkString(route[key], `RTC topology AL message route ${key}`);
-    }
-    const payload = requireWorkRecord(message.payload, 'RTC topology AL message payload');
-    requireWorkKeys(payload, ['typeId', 'resource'], [
-        'typeId', 'contentType', 'resource',
-    ], 'RTC topology AL message payload');
-    requireWorkString(payload.typeId, 'RTC topology AL message payload typeId');
-    requireWorkString(payload.resource, 'RTC topology AL message payload resource');
 }
 
 function validatePersistedRtcTopologyWorkEnvelope(

@@ -148,6 +148,9 @@ describe('RTC topology APP_OUTBOX work', () => {
         'missing-causal-revision',
         'wrong-sender',
         'wrong-type',
+        'invalid-forwarding',
+        'invalid-qos-options',
+        'invalid-diagnostics',
     ] as const)(
         'rejects %s work before reading mutable authority or publishing',
         async (defect) => {
@@ -170,6 +173,26 @@ describe('RTC topology APP_OUTBOX work', () => {
                     ...message,
                     payload: { ...message.payload, typeId: 'wrong-work-type' },
                 };
+            } else if (defect === 'invalid-forwarding') {
+                corruptMessage = JSON.parse(JSON.stringify({
+                    ...message,
+                    forwarding: { fanoutLimit: 0 },
+                }));
+            } else if (defect === 'invalid-qos-options') {
+                corruptMessage = JSON.parse(JSON.stringify({
+                    ...message,
+                    qos: {
+                        retry: {
+                            algo: 'exp-backoff',
+                            opts: { maxAttempts: -1 },
+                        },
+                    },
+                }));
+            } else if (defect === 'invalid-diagnostics') {
+                corruptMessage = JSON.parse(JSON.stringify({
+                    ...message,
+                    diagnostics: { visitedPeerIds: [''] },
+                }));
             } else {
                 const envelope: unknown = JSON.parse(message.payload.resource);
                 if (!isUnknownRecord(envelope)) {
@@ -1240,7 +1263,7 @@ function createGroupSnapshot(stateRevision: number): GroupSnapshot {
             maxMembers: null,
             maxSessionsPerMember: null,
             metadata: {},
-            activeMemberCount: 0,
+            activeMemberCount: 1,
             ownerPrincipalId: 'owner',
             snapshotVersion: stateRevision,
             metadataVersion: 1,
@@ -1254,9 +1277,23 @@ function createGroupSnapshot(stateRevision: number): GroupSnapshot {
             archived: null,
             deleted: null,
         },
-        members: [],
+        members: [{
+            applicationId,
+            workspaceId,
+            groupId,
+            principalId: 'owner',
+            role: 'owner',
+            status: 'active',
+            joined: createAuditStamp(1),
+            updated: createAuditStamp(stateRevision),
+            left: null,
+            removed: null,
+            banned: null,
+            invitedByPrincipalId: null,
+            invitationExpiresAtEpochMs: null,
+        }],
         activeSessions: [],
-        memberCount: 0,
+        memberCount: 1,
         onlineMemberCount: 0,
     };
 }

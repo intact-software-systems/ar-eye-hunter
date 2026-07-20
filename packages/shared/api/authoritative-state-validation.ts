@@ -2,6 +2,7 @@ import type {
     ClientEvent,
     ClientSnapshot,
 } from './client-types.ts';
+import { toScopedOverlayId } from './api-type-utils.ts';
 import { toGroupSnapshotStateRevision } from './group-client-views.ts';
 import type { GroupEvent, GroupRef, GroupSnapshot } from './group-types.ts';
 import type { RallarOverlayTopologySnapshot } from './overlay-topology.ts';
@@ -278,8 +279,24 @@ export function validateAuthoritativeGroupSnapshot(
         'expiresAtEpochMs', 'emptySinceEpochMs', 'purgeAfterEpochMs',
     ] as const) nullablePositiveInteger(group[key], `GroupSnapshot.group.${key}`);
     const members = array(snapshot.members, 'GroupSnapshot.members');
-    for (const item of members) validateGroupMember(item, ref);
+    const memberIds = new Set<string>();
+    const activeMemberIds = new Set<string>();
+    const activeOwnerIds = new Set<string>();
+    for (const item of members) {
+        validateGroupMember(item, ref);
+        const member = record(item, 'GroupSnapshot.member');
+        nonEmptyString(member.principalId, 'GroupSnapshot.member.principalId');
+        if (memberIds.has(member.principalId)) {
+            fail('GroupSnapshot has duplicate members');
+        }
+        memberIds.add(member.principalId);
+        if (member.status === 'active') {
+            activeMemberIds.add(member.principalId);
+            if (member.role === 'owner') activeOwnerIds.add(member.principalId);
+        }
+    }
     const sessions = array(snapshot.activeSessions, 'GroupSnapshot.activeSessions');
+    const sessionIds = new Set<string>();
     const onlinePrincipalIds = new Set<string>();
     for (const item of sessions) {
         const session = record(item, 'GroupSnapshot.session');
@@ -290,6 +307,14 @@ export function validateAuthoritativeGroupSnapshot(
         ] as const) nonEmptyString(session[key], `GroupSnapshot.session.${key}`);
         const principalId = session.principalId;
         nonEmptyString(principalId, 'GroupSnapshot.session.principalId');
+        nonEmptyString(session.sessionId, 'GroupSnapshot.session.sessionId');
+        if (sessionIds.has(session.sessionId)) {
+            fail('GroupSnapshot has duplicate active sessions');
+        }
+        if (!activeMemberIds.has(principalId)) {
+            fail('GroupSnapshot active session principal is not an active member');
+        }
+        sessionIds.add(session.sessionId);
         positiveInteger(
             session.generationVersion,
             'GroupSnapshot.session.generationVersion',
@@ -314,13 +339,16 @@ export function validateAuthoritativeGroupSnapshot(
     }
     nonNegativeInteger(snapshot.memberCount, 'GroupSnapshot.memberCount');
     nonNegativeInteger(snapshot.onlineMemberCount, 'GroupSnapshot.onlineMemberCount');
-    const activeMemberCount = members.filter((item) =>
-        isRecord(item) && item.status === 'active'
-    ).length;
-    if (snapshot.memberCount !== activeMemberCount ||
-        group.activeMemberCount !== activeMemberCount ||
-        snapshot.onlineMemberCount !== onlinePrincipalIds.size) {
+    if (snapshot.memberCount !== activeMemberIds.size ||
+        group.activeMemberCount !== activeMemberIds.size ||
+        activeOwnerIds.size !== 1 ||
+        !activeOwnerIds.has(group.ownerPrincipalId) ||
+        snapshot.onlineMemberCount !== onlinePrincipalIds.size ||
+        snapshot.onlineMemberCount > snapshot.memberCount) {
         fail('GroupSnapshot aggregate counts are inconsistent');
+    }
+    if (group.status !== 'active' && sessions.length !== 0) {
+        fail('GroupSnapshot inactive group has active presence');
     }
 }
 
@@ -338,7 +366,7 @@ export function validateAuthoritativeOverlayTopologySnapshot(
         topology.sourceGroupStateCausalRevision,
         'RallarOverlayTopologySnapshot.sourceGroupStateCausalRevision',
     );
-    groupRef(
+    const ref = groupRef(
         record(topology.groupRef, 'RallarOverlayTopologySnapshot.groupRef'),
         'RallarOverlayTopologySnapshot.groupRef',
         scope,
@@ -348,6 +376,9 @@ export function validateAuthoritativeOverlayTopologySnapshot(
         fail('RallarOverlayTopologySnapshot.state is invalid');
     }
     nonEmptyString(topology.overlayId, 'RallarOverlayTopologySnapshot.overlayId');
+    if (topology.overlayId !== toScopedOverlayId(ref)) {
+        fail('RallarOverlayTopologySnapshot overlayId is not canonical');
+    }
     nonEmptyString(topology.name, 'RallarOverlayTopologySnapshot.name');
     enumValue(topology.topology, ['star', 'tree', 'mesh'],
         'RallarOverlayTopologySnapshot.topology');
@@ -359,23 +390,46 @@ export function validateAuthoritativeOverlayTopologySnapshot(
         topology.activeSessionIds,
         'RallarOverlayTopologySnapshot.activeSessionIds',
     );
+    assertCanonicalTopologyIdentifiers(
+        activeSessionIds,
+        'RallarOverlayTopologySnapshot.activeSessionIds',
+    );
+    const activeSessionIdSet = new Set(activeSessionIds);
     const nextHops = record(
         topology.nextHopsBySessionId,
         'RallarOverlayTopologySnapshot.nextHopsBySessionId',
     );
-    if (Object.keys(nextHops).some((sessionId) => !activeSessionIds.includes(sessionId))) {
-        fail('RallarOverlayTopologySnapshot next-hop key is not active');
+    const routingSessionIds = Object.keys(nextHops);
+    if (routingSessionIds.length !== activeSessionIds.length ||
+        routingSessionIds.some((sessionId) => !activeSessionIdSet.has(sessionId))) {
+        fail('RallarOverlayTopologySnapshot routing keys differ from active sessions');
     }
     for (const [sessionId, peers] of Object.entries(nextHops)) {
         const peerIds = stringArray(
             peers,
             `RallarOverlayTopologySnapshot.nextHopsBySessionId.${sessionId}`,
         );
-        if (peerIds.some((peerId) => !activeSessionIds.includes(peerId))) {
-            fail('RallarOverlayTopologySnapshot next hop is not active');
+        assertCanonicalTopologyIdentifiers(
+            peerIds,
+            `RallarOverlayTopologySnapshot.nextHopsBySessionId.${sessionId}`,
+        );
+        for (const peerId of peerIds) {
+            if (peerId === sessionId || !activeSessionIdSet.has(peerId)) {
+                fail('RallarOverlayTopologySnapshot next hop identity is invalid');
+            }
+            const reverse = nextHops[peerId];
+            if (!Array.isArray(reverse) || !reverse.includes(sessionId)) {
+                fail('RallarOverlayTopologySnapshot next hops are not reciprocal');
+            }
+        }
+        if (topology.state === 'removed' && peerIds.length !== 0) {
+            fail('RallarOverlayTopologySnapshot removed topology has active edges');
         }
     }
     positiveInteger(topology.degreeLimit, 'RallarOverlayTopologySnapshot.degreeLimit');
+    if (topology.state === 'active') {
+        validateActiveTopologyGraph(nextHops, activeSessionIdSet, topology.degreeLimit);
+    }
     nonNegativeInteger(topology.version, 'RallarOverlayTopologySnapshot.version');
     nonNegativeInteger(
         topology.createdAtEpochMs,
@@ -385,6 +439,53 @@ export function validateAuthoritativeOverlayTopologySnapshot(
         topology.updatedAtEpochMs,
         'RallarOverlayTopologySnapshot.updatedAtEpochMs',
     );
+    if (topology.createdAtEpochMs > topology.updatedAtEpochMs) {
+        fail('RallarOverlayTopologySnapshot timestamps are inverted');
+    }
+}
+
+function assertCanonicalTopologyIdentifiers(
+    values: readonly string[],
+    label: string,
+): void {
+    for (let index = 1; index < values.length; index += 1) {
+        const previous = values[index - 1];
+        const current = values[index];
+        if (previous === undefined || current === undefined || previous >= current) {
+            fail(`${label} is not canonical`);
+        }
+    }
+}
+
+function validateActiveTopologyGraph(
+    nextHops: Readonly<Record<string, unknown>>,
+    activeSessionIds: ReadonlySet<string>,
+    degreeLimit: number,
+): void {
+    for (const peers of Object.values(nextHops)) {
+        if (!Array.isArray(peers) || peers.length > degreeLimit) {
+            fail('RallarOverlayTopologySnapshot degree limit is exceeded');
+        }
+    }
+    if (activeSessionIds.size <= 1) return;
+    const first = activeSessionIds.values().next().value;
+    if (typeof first !== 'string') return;
+    const visited = new Set([first]);
+    const queue = [first];
+    for (let index = 0; index < queue.length; index += 1) {
+        const sessionId = queue[index];
+        if (sessionId === undefined) continue;
+        const peers = nextHops[sessionId];
+        if (!Array.isArray(peers)) continue;
+        for (const peerId of peers) {
+            if (typeof peerId !== 'string' || visited.has(peerId)) continue;
+            visited.add(peerId);
+            queue.push(peerId);
+        }
+    }
+    if (visited.size !== activeSessionIds.size) {
+        fail('RallarOverlayTopologySnapshot active graph is disconnected');
+    }
 }
 
 export function validateAuthoritativeClientSnapshotList(
