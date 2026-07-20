@@ -61,38 +61,63 @@ type WorkerCommandBase = Readonly<{
   barrier: WorkerBarrier;
 }>;
 
+type WorkerMutationRequest<T> = Omit<T, 'requestId'> & Readonly<{
+  requestId: string;
+}>;
+
 type ClientWorkerInput =
   & WorkerCommandBase
   & Readonly<{
-    command: 'client-heartbeat' | 'client-disconnect' | 'client-reconnect';
     principalId: string;
     clientInstanceId: string;
     sessionId: string;
-    request:
-      | HeartbeatClientSessionRequest
-      | DisconnectClientSessionRequest
-      | ConnectClientSessionRequest;
-  }>;
+  }>
+  & (
+    | Readonly<{
+      command: 'client-heartbeat';
+      request: WorkerMutationRequest<HeartbeatClientSessionRequest>;
+    }>
+    | Readonly<{
+      command: 'client-disconnect';
+      request: WorkerMutationRequest<DisconnectClientSessionRequest>;
+    }>
+    | Readonly<{
+      command: 'client-reconnect';
+      request: WorkerMutationRequest<ConnectClientSessionRequest>;
+    }>
+  );
 
 type GroupWorkerInput =
   & WorkerCommandBase
   & Readonly<{
-    command:
-      | 'group-join'
-      | 'group-ban'
-      | 'group-presence-connect'
-      | 'group-presence-heartbeat'
-      | 'group-presence-disconnect';
     groupId: string;
-    targetPrincipalId?: string;
-    sessionId?: string;
-    request:
-      | JoinGroupRequest
-      | BanGroupMemberRequest
-      | ConnectGroupPresenceSessionRequest
-      | HeartbeatGroupPresenceSessionRequest
-      | DisconnectGroupPresenceSessionRequest;
-  }>;
+  }>
+  & (
+    | Readonly<{
+      command: 'group-join';
+      request: WorkerMutationRequest<JoinGroupRequest>;
+    }>
+    | Readonly<{
+      command: 'group-ban';
+      targetPrincipalId: string;
+      request: WorkerMutationRequest<BanGroupMemberRequest>;
+    }>
+    | Readonly<{
+      command: 'group-presence-connect';
+      sessionId: string;
+      request: WorkerMutationRequest<ConnectGroupPresenceSessionRequest>;
+    }>
+    | Readonly<{
+      command: 'group-presence-heartbeat';
+      sessionId: string;
+      request: WorkerMutationRequest<HeartbeatGroupPresenceSessionRequest>;
+    }>
+    | Readonly<{
+      command: 'group-presence-disconnect';
+      sessionId: string;
+      request: WorkerMutationRequest<DisconnectGroupPresenceSessionRequest>;
+    }>
+  );
 
 type TopologyWorkerInput =
   & Readonly<{
@@ -104,11 +129,11 @@ type TopologyWorkerInput =
   & (
     | Readonly<{
       command: 'topology-config-put';
-      request: Omit<PutGroupTopologyConfigInput, 'groupRef'>;
+      request: WorkerMutationRequest<Omit<PutGroupTopologyConfigInput, 'groupRef'>>;
     }>
     | Readonly<{
       command: 'topology-config-delete';
-      request: Omit<DeleteGroupTopologyConfigInput, 'groupRef'>;
+      request: WorkerMutationRequest<Omit<DeleteGroupTopologyConfigInput, 'groupRef'>>;
     }>
   );
 
@@ -126,7 +151,7 @@ type ExpiryWorkerOutput = Readonly<{
 
 type CompactStateMutationWorkerOutput = Readonly<{
   operation: StateMutationWorkerInput['command'];
-  requestId: string | null;
+  requestId: string;
   commandHash: string;
   attemptCount: number;
   acceptedStorageRevision: number | null;
@@ -210,6 +235,7 @@ async function runStateMutationWorker(
   runtimeRepository: BarrierControlledRuntimeStateRepository,
   trace: WorkerTraceState,
 ): Promise<CompactStateMutationWorkerOutput> {
+  requireRequestId(input.request.requestId);
   if (input.command.startsWith('client-')) {
     return await runClientMutation(input as ClientWorkerInput, runtimeRepository, trace);
   }
@@ -224,6 +250,7 @@ async function runClientMutation(
   runtimeRepository: BarrierControlledRuntimeStateRepository,
   trace: WorkerTraceState,
 ): Promise<CompactStateMutationWorkerOutput> {
+  const requestId = requireRequestId(input.request.requestId);
   const service = createClientStateService({
     runtimeRepository,
     createClientStateEventStore: createClientStateEventRepository,
@@ -260,7 +287,6 @@ async function runClientMutation(
     );
   }
 
-  const requestId = requireRequestId(input.request.requestId);
   const stored = await createClientStateRepository(runtimeRepository)
     .findIdempotentClientMutationReceipt(
       { ...input.scope, principalId: input.principalId },
@@ -269,7 +295,7 @@ async function runClientMutation(
   if (!stored) {
     throw new Error(`Client mutation receipt not found: ${requestId}`);
   }
-  return compactClientReceipt(input.command, stored.receipt);
+  return compactClientReceipt(input.command, requestId, stored.receipt);
 }
 
 async function runGroupMutation(
@@ -277,6 +303,7 @@ async function runGroupMutation(
   runtimeRepository: BarrierControlledRuntimeStateRepository,
   trace: WorkerTraceState,
 ): Promise<CompactStateMutationWorkerOutput> {
+  const requestId = requireRequestId(input.request.requestId);
   const service = createTestGroupStateRuntime({
     runtimeRepository,
     createGroupStateEventStore: createGroupStateEventRepository,
@@ -325,7 +352,6 @@ async function runGroupMutation(
   }
 
   if (!receipt) {
-    const requestId = requireRequestId(input.request.requestId);
     receipt = (await createGroupStateRepository(runtimeRepository)
       .findIdempotentGroupMutationReceipt(
         { ...input.scope, groupId: input.groupId },
@@ -335,7 +361,7 @@ async function runGroupMutation(
       throw new Error(`Group mutation receipt not found: ${requestId}`);
     }
   }
-  return compactGroupReceipt(input.command, receipt);
+  return compactGroupReceipt(input.command, requestId, receipt);
 }
 
 async function runTopologyMutation(
@@ -343,6 +369,7 @@ async function runTopologyMutation(
   runtimeRepository: BarrierControlledRuntimeStateRepository,
   trace: WorkerTraceState,
 ): Promise<CompactStateMutationWorkerOutput> {
+  const requestId = requireRequestId(input.request.requestId);
   const groupStateRepository = createGroupStateRepository(runtimeRepository);
   const service = new GroupTopologyManagementService({
     findGroupSnapshotByRef: (ref) => groupStateRepository.readSnapshot(ref),
@@ -365,16 +392,17 @@ async function runTopologyMutation(
       ...input.request,
       groupRef: input.groupRef,
     })).receipt;
-  return compactTopologyReceipt(input.command, receipt);
+  return compactTopologyReceipt(input.command, requestId, receipt);
 }
 
 function compactClientReceipt(
   operation: ClientWorkerInput['command'],
+  requestId: string,
   receipt: ClientMutationReceipt,
 ): CompactStateMutationWorkerOutput {
   return {
     operation,
-    requestId: receipt.requestId,
+    requestId: requireMatchingRequestId(receipt.requestId, requestId),
     commandHash: receipt.commandHash,
     attemptCount: receipt.attemptCount,
     acceptedStorageRevision: receipt.acceptedStorageRevision,
@@ -392,11 +420,12 @@ function compactClientReceipt(
 
 function compactGroupReceipt(
   operation: GroupWorkerInput['command'],
+  requestId: string,
   receipt: GroupMutationReceipt,
 ): CompactStateMutationWorkerOutput {
   return {
     operation,
-    requestId: receipt.requestId,
+    requestId: requireMatchingRequestId(receipt.requestId, requestId),
     commandHash: receipt.commandHash,
     attemptCount: receipt.attemptCount,
     acceptedStorageRevision: receipt.acceptedStorageRevision,
@@ -414,11 +443,12 @@ function compactGroupReceipt(
 
 function compactTopologyReceipt(
   operation: TopologyWorkerInput['command'],
+  requestId: string,
   receipt: GroupTopologyConfigMutationReceipt,
 ): CompactStateMutationWorkerOutput {
   return {
     operation,
-    requestId: receipt.requestId,
+    requestId: requireMatchingRequestId(receipt.requestId, requestId),
     commandHash: receipt.commandHash,
     attemptCount: receipt.attemptCount,
     acceptedStorageRevision: receipt.acceptedStorageRevision,
@@ -573,12 +603,24 @@ function isExpiryWorkerInput(
   return 'mode' in input;
 }
 
-function requireRequestId(requestId: string | undefined): string {
+function requireRequestId(requestId: unknown): string {
   return requireString(requestId, 'requestId');
 }
 
-function requireString(value: string | undefined, label: string): string {
-  if (!value) throw new Error(`${label} is required`);
+function requireMatchingRequestId(
+  actual: string | null,
+  expected: string,
+): string {
+  if (actual !== expected) {
+    throw new Error(`Mutation receipt requestId differs: expected ${expected}`);
+  }
+  return actual;
+}
+
+function requireString(value: unknown, label: string): string {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new Error(`${label} is required`);
+  }
   return value;
 }
 

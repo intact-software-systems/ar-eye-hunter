@@ -26,6 +26,7 @@ import { groupStateMaintenanceRequestId } from "@shared-server/rallar-system/ser
 import {
   STATE_MUTATION_OUTBOX_NAMESPACE,
   StateMutationOutboxRepository,
+  type StoredStateMutationOutboxRecord,
   type StateMutationOutboxRecord,
   toStateMutationOutboxId,
 } from "@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts";
@@ -44,7 +45,15 @@ type PostgresFactory = (
 ) => PostgresSql;
 
 type WorkerInput = Readonly<{
-  command: "client-disconnect" | "client-reconnect" | "group-join" | "group-ban";
+  command:
+    | "client-heartbeat"
+    | "client-disconnect"
+    | "client-reconnect"
+    | "group-join"
+    | "group-ban"
+    | "group-presence-connect"
+    | "group-presence-heartbeat"
+    | "group-presence-disconnect";
   scope: StateScope;
   atEpochMs: number;
   traceFilePath: string;
@@ -58,7 +67,7 @@ type WorkerInput = Readonly<{
 }>;
 type WorkerOutput = Readonly<{
   operation: WorkerInput["command"];
-  requestId: string | null;
+  requestId: string;
   commandHash: string;
   attemptCount: number;
   acceptedStorageRevision: number | null;
@@ -89,6 +98,184 @@ const STATE_MUTATION_WORKER_PATH = fileURLToPath(
 const postgresIt = POSTGRES_INTEGRATION_ENABLED ? it : it.skip;
 
 describe("Postgres presence expiry concurrency", () => {
+  postgresIt(
+    "rejects client and group worker inputs without request ids before mutation",
+    async () => {
+      const databaseUrl = requireDatabaseUrl();
+      const setupSql = await createSql(databaseUrl);
+      const scope = uniqueScope("worker-request-id");
+      const groupRef: GroupRef = { ...scope, groupId: "room-1" };
+      const atEpochMs = Date.now();
+      const sessionRef: ClientSessionRef = {
+        ...scope,
+        principalId: "alice",
+        clientInstanceId: "browser-1",
+        sessionId: "session-1",
+      };
+      const tmpDirPath = await mkdtemp(path.join(tmpdir(), "rallar-worker-request-id-"));
+      const inputs: readonly WorkerInput[] = [
+        {
+          command: "client-heartbeat",
+          scope,
+          atEpochMs: atEpochMs + 1_000,
+          traceFilePath: path.join(tmpDirPath, "client-trace.json"),
+          barrier: {
+            readyFilePath: path.join(tmpDirPath, "client-ready.json"),
+            releaseFilePath: path.join(tmpDirPath, "client-release"),
+          },
+          principalId: sessionRef.principalId,
+          clientInstanceId: sessionRef.clientInstanceId,
+          sessionId: sessionRef.sessionId,
+          request: {
+            generationId: "generation-1",
+            lastHeartbeatAtEpochMs: atEpochMs + 1_000,
+            expiresAtEpochMs: atEpochMs + 61_000,
+            actorPrincipalId: sessionRef.principalId,
+          },
+        },
+        {
+          command: "group-join",
+          scope,
+          groupId: groupRef.groupId,
+          atEpochMs: atEpochMs + 1_000,
+          traceFilePath: path.join(tmpDirPath, "group-trace.json"),
+          barrier: {
+            readyFilePath: path.join(tmpDirPath, "group-ready.json"),
+            releaseFilePath: path.join(tmpDirPath, "group-release"),
+          },
+          request: {
+            actorPrincipalId: "bob",
+            actorSessionId: "bob-session",
+          },
+        },
+      ];
+      const handles: WorkerHandle[] = [];
+
+      try {
+        await seedConnectedClientSession(setupSql, scope, sessionRef, atEpochMs);
+        const setup = createTestGroupStateRuntime({
+          runtimeRepository: toRuntimeRepository(setupSql),
+          createGroupStateEventStore: createGroupStateEventRepository,
+          syncPublisher: createPublisher(),
+          now: () => atEpochMs,
+          sleep: () => Promise.resolve(),
+          serviceId: "postgres-worker-request-id-setup",
+        }).service;
+        await setup.createGroup(scope, {
+          groupId: groupRef.groupId,
+          displayName: "Worker request id",
+          kind: "room",
+          joinMode: "open",
+          maxMembers: 4,
+          createdByPrincipalId: "alice",
+          actorPrincipalId: "alice",
+          actorSessionId: "alice-session",
+          requestId: "worker-request-id-create",
+        });
+        await Promise.all(inputs.map((input) =>
+          writeFile(input.barrier.releaseFilePath, "release", "utf8")
+        ));
+        handles.push(...inputs.map((input) => spawnWorker(databaseUrl, input)));
+
+        for (const handle of handles) {
+          await expect(handle.done).rejects.toThrow("requestId is required");
+        }
+        const clientSession = await createClientStateRepository(setupSql)
+          .findSession(sessionRef);
+        expect(clientSession).toMatchObject({
+          generationId: "generation-1",
+          lastHeartbeatAtEpochMs: atEpochMs,
+          expiresAtEpochMs: atEpochMs + 60_000,
+        });
+        const group = await createGroupStateRepository(setupSql).readSnapshot(groupRef);
+        expect(group?.members.some((member) => member.principalId === "bob"))
+          .toBe(false);
+        const traces = await Promise.all(inputs.map((input) => readTrace(input.traceFilePath)));
+        expect(traces.map((trace) => trace.barrierWaitCount)).toEqual([0, 0]);
+      } finally {
+        await Promise.allSettled(handles.map((handle) => handle.done));
+        await cleanupRuntimeState(setupSql, scope.applicationId);
+        await setupSql.end();
+        await rm(tmpDirPath, { recursive: true, force: true });
+      }
+    },
+    60_000,
+  );
+
+  postgresIt(
+    "rebases independent client heartbeat workers with compact durable receipts",
+    async () => {
+      const databaseUrl = requireDatabaseUrl();
+      const setupSql = await createSql(databaseUrl);
+      const scope = uniqueScope("client-worker-heartbeat");
+      const atEpochMs = Date.now();
+      const sessionRef: ClientSessionRef = {
+        ...scope,
+        principalId: "alice",
+        clientInstanceId: "browser-1",
+        sessionId: "session-1",
+      };
+      const tmpDirPath = await mkdtemp(path.join(tmpdir(), "rallar-client-heartbeat-"));
+      const inputs: readonly WorkerInput[] = [0, 1].map((index) => ({
+        command: "client-heartbeat",
+        scope,
+        atEpochMs: atEpochMs + 1_000 + index,
+        traceFilePath: path.join(tmpDirPath, `heartbeat-${index}-trace.json`),
+        barrier: {
+          readyFilePath: path.join(tmpDirPath, `heartbeat-${index}-ready.json`),
+          releaseFilePath: path.join(tmpDirPath, `heartbeat-${index}-release`),
+        },
+        principalId: sessionRef.principalId,
+        clientInstanceId: sessionRef.clientInstanceId,
+        sessionId: sessionRef.sessionId,
+        request: {
+          generationId: "generation-1",
+          lastHeartbeatAtEpochMs: atEpochMs + 1_000 + index,
+          expiresAtEpochMs: atEpochMs + 61_000 + index,
+          actorPrincipalId: sessionRef.principalId,
+          actorSessionId: sessionRef.sessionId,
+          requestId: `worker-client-heartbeat-${index}`,
+        },
+      }));
+      const handles: WorkerHandle[] = [];
+
+      try {
+        await seedConnectedClientSession(setupSql, scope, sessionRef, atEpochMs);
+        handles.push(...inputs.map((input) => spawnWorker(databaseUrl, input)));
+        await Promise.all(inputs.map((input, index) =>
+          waitForWorkerBarrier(input.barrier.readyFilePath, handles[index]!)
+        ));
+        await writeFile(inputs[0]!.barrier.releaseFilePath, "release", "utf8");
+        const first = await handles[0]!.done;
+        await writeFile(inputs[1]!.barrier.releaseFilePath, "release", "utf8");
+        const outputs = [first, await handles[1]!.done];
+
+        outputs.forEach(expectCompactWorkerOutput);
+        expect(outputs.map((output) => output.attemptCount).sort()).toEqual([1, 2]);
+        const traces = await Promise.all(inputs.map((input) => readTrace(input.traceFilePath)));
+        assertOneWorkerRebased(outputs, traces);
+        expect(await createClientStateRepository(setupSql).findSession(sessionRef))
+          .toMatchObject({
+            generationId: "generation-1",
+            lastHeartbeatAtEpochMs: atEpochMs + 1_001,
+            expiresAtEpochMs: atEpochMs + 61_001,
+          });
+        await expectPendingWorkerOutboxes(
+          toRuntimeRepository(setupSql),
+          outputs,
+          "client",
+          ["client-state-sync"],
+        );
+      } finally {
+        await Promise.allSettled(handles.map((handle) => handle.done));
+        await cleanupRuntimeState(setupSql, scope.applicationId);
+        await setupSql.end();
+        await rm(tmpDirPath, { recursive: true, force: true });
+      }
+    },
+    60_000,
+  );
+
   postgresIt(
     "rebases independent client disconnect and reconnect workers without stale generation loss",
     async () => {
@@ -179,18 +366,12 @@ describe("Postgres presence expiry concurrency", () => {
           generationVersion: 2,
           connectionId: "connection-2",
         });
-        const effectful = outputs.filter((output) => output.outboxIds.length > 0);
-        const outbox = new StateMutationOutboxRepository(toRuntimeRepository(setupSql));
-        const stored = await Promise.all(effectful.flatMap((output) =>
-          output.outboxIds.map((outboxId) => outbox.find(outboxId))
-        ));
-        expect(stored).toHaveLength(effectful.length);
-        expect(stored.every((entry) =>
-          entry?.record.kind === "client" &&
-          entry.record.effects.join() === "client-state-sync" &&
-          entry.record.delivery.status === "pending" &&
-          entry.record.attempts.last.status === "never-attempted"
-        )).toBe(true);
+        await expectPendingWorkerOutboxes(
+          toRuntimeRepository(setupSql),
+          outputs,
+          "client",
+          ["client-state-sync"],
+        );
         expect(JSON.stringify(outputs)).not.toMatch(/DATABASE_URL|accessToken|commandMac|app:app/u);
       } finally {
         await Promise.allSettled(handles.map((handle) => handle.done));
@@ -298,14 +479,12 @@ describe("Postgres presence expiry concurrency", () => {
           .toMatchObject({ status: "active" });
         expect(snapshot?.members.find((member) => member.principalId === "carol"))
           .toMatchObject({ status: "banned" });
-        const requestIds = inputs.map((input) => String(input.request.requestId));
-        const outbox = await findGroupOutboxRecords(setupSql, groupRef, requestIds);
-        expect(outbox).toHaveLength(2);
-        expect(outbox.every((record) =>
-          record.effects.join() === "group-state-sync,group-presence-summary" &&
-          record.delivery.status === "pending" &&
-          record.attempts.last.status === "never-attempted"
-        )).toBe(true);
+        await expectPendingWorkerOutboxes(
+          toRuntimeRepository(setupSql),
+          outputs,
+          "group",
+          ["group-state-sync", "group-presence-summary"],
+        );
       } finally {
         await Promise.allSettled(handles.map((handle) => handle.done));
         await cleanupRuntimeState(setupSql, scope.applicationId);
@@ -314,6 +493,146 @@ describe("Postgres presence expiry concurrency", () => {
       }
     },
     60_000,
+  );
+
+  postgresIt(
+    "runs group presence connect heartbeat and disconnect through independent barrier workers",
+    async () => {
+      const databaseUrl = requireDatabaseUrl();
+      const setupSql = await createSql(databaseUrl);
+      const scope = uniqueScope("group-worker-presence-lifecycle");
+      const groupRef: GroupRef = { ...scope, groupId: "room-1" };
+      const atEpochMs = Date.now();
+      const tmpDirPath = await mkdtemp(path.join(tmpdir(), "rallar-group-presence-worker-"));
+      const principals = ["bob", "carol"] as const;
+      const sessions = ["bob-session", "carol-session"] as const;
+
+      try {
+        const setup = createTestGroupStateRuntime({
+          runtimeRepository: toRuntimeRepository(setupSql),
+          createGroupStateEventStore: createGroupStateEventRepository,
+          syncPublisher: createPublisher(),
+          now: () => atEpochMs,
+          sleep: () => Promise.resolve(),
+          serviceId: "postgres-worker-presence-setup",
+        }).service;
+        await setup.createGroup(scope, {
+          groupId: groupRef.groupId,
+          displayName: "Worker presence lifecycle",
+          kind: "room",
+          joinMode: "open",
+          maxMembers: 4,
+          createdByPrincipalId: "alice",
+          actorPrincipalId: "alice",
+          actorSessionId: "alice-session",
+          requestId: "worker-presence-create",
+        });
+        for (const principalId of principals) {
+          await setup.upsertMember(scope, groupRef.groupId, principalId, {
+            status: "active",
+            actorPrincipalId: principalId,
+            actorSessionId: `${principalId}-session`,
+            requestId: `worker-presence-member-${principalId}`,
+          });
+        }
+
+        const connectInputs: readonly WorkerInput[] = principals.map((principalId, index) => ({
+          command: "group-presence-connect",
+          scope,
+          groupId: groupRef.groupId,
+          sessionId: sessions[index],
+          atEpochMs: atEpochMs + 1_000,
+          traceFilePath: path.join(tmpDirPath, `connect-${index}-trace.json`),
+          barrier: workerBarrier(tmpDirPath, `connect-${index}`),
+          request: {
+            principalId,
+            generationId: `generation-${index}`,
+            connectedAtEpochMs: atEpochMs + 1_000,
+            lastHeartbeatAtEpochMs: atEpochMs + 1_000,
+            expiresAtEpochMs: atEpochMs + 61_000,
+            actorPrincipalId: principalId,
+            actorSessionId: sessions[index],
+            requestId: `worker-presence-connect-${index}`,
+          },
+        }));
+        const connected = await runBarrierWorkerPair(databaseUrl, connectInputs);
+        connected.outputs.forEach(expectCompactWorkerOutput);
+        assertIndependentBarrierWorkers(connected.traces);
+        await expectPendingWorkerOutboxes(
+          toRuntimeRepository(setupSql), connected.outputs, "group",
+          ["group-state-sync", "group-presence-summary"],
+        );
+
+        const heartbeatInputs: readonly WorkerInput[] = principals.map((principalId, index) => ({
+          command: "group-presence-heartbeat",
+          scope,
+          groupId: groupRef.groupId,
+          sessionId: sessions[index],
+          atEpochMs: atEpochMs + 2_000,
+          traceFilePath: path.join(tmpDirPath, `heartbeat-${index}-trace.json`),
+          barrier: workerBarrier(tmpDirPath, `heartbeat-${index}`),
+          request: {
+            principalId,
+            generationId: `generation-${index}`,
+            lastHeartbeatAtEpochMs: atEpochMs + 2_000,
+            expiresAtEpochMs: atEpochMs + 62_000,
+            actorPrincipalId: principalId,
+            actorSessionId: sessions[index],
+            requestId: `worker-presence-heartbeat-${index}`,
+          },
+        }));
+        const heartbeats = await runBarrierWorkerPair(databaseUrl, heartbeatInputs);
+        heartbeats.outputs.forEach(expectCompactWorkerOutput);
+        assertIndependentBarrierWorkers(heartbeats.traces);
+        await expectPendingWorkerOutboxes(
+          toRuntimeRepository(setupSql), heartbeats.outputs, "group",
+          ["group-state-sync", "group-presence-summary"],
+        );
+
+        const disconnectInputs: readonly WorkerInput[] = principals.map((principalId, index) => ({
+          command: "group-presence-disconnect",
+          scope,
+          groupId: groupRef.groupId,
+          sessionId: sessions[index],
+          atEpochMs: atEpochMs + 3_000,
+          traceFilePath: path.join(tmpDirPath, `disconnect-${index}-trace.json`),
+          barrier: workerBarrier(tmpDirPath, `disconnect-${index}`),
+          request: {
+            principalId,
+            generationId: `generation-${index}`,
+            disconnectedAtEpochMs: atEpochMs + 3_000,
+            actorPrincipalId: principalId,
+            actorSessionId: sessions[index],
+            requestId: `worker-presence-disconnect-${index}`,
+          },
+        }));
+        const disconnected = await runBarrierWorkerPair(databaseUrl, disconnectInputs);
+        disconnected.outputs.forEach(expectCompactWorkerOutput);
+        assertIndependentBarrierWorkers(disconnected.traces);
+        await expectPendingWorkerOutboxes(
+          toRuntimeRepository(setupSql), disconnected.outputs, "group",
+          ["group-state-sync", "group-presence-summary"],
+        );
+
+        const repository = createGroupStateRepository(setupSql);
+        for (const [index, sessionId] of sessions.entries()) {
+          expect(await repository.findPresenceEntry({ ...groupRef, sessionId }))
+            .toMatchObject({
+              value: {
+                principalId: principals[index],
+                generationId: `generation-${index}`,
+                status: "disconnected",
+                disconnectedAtEpochMs: atEpochMs + 3_000,
+              },
+            });
+        }
+      } finally {
+        await cleanupRuntimeState(setupSql, scope.applicationId);
+        await setupSql.end();
+        await rm(tmpDirPath, { recursive: true, force: true });
+      }
+    },
+    90_000,
   );
 
   postgresIt(
@@ -1281,6 +1600,50 @@ function spawnWorker(databaseUrl: string, input: WorkerInput): WorkerHandle {
   };
 }
 
+function workerBarrier(
+  tmpDirPath: string,
+  name: string,
+): WorkerInput["barrier"] {
+  return {
+    readyFilePath: path.join(tmpDirPath, `${name}-ready.json`),
+    releaseFilePath: path.join(tmpDirPath, `${name}-release`),
+  };
+}
+
+async function runBarrierWorkerPair(
+  databaseUrl: string,
+  inputs: readonly WorkerInput[],
+): Promise<Readonly<{
+  outputs: readonly WorkerOutput[];
+  traces: readonly WorkerTrace[];
+}>> {
+  expect(inputs).toHaveLength(2);
+  const handles = inputs.map((input) => spawnWorker(databaseUrl, input));
+  try {
+    await Promise.all(inputs.map((input, index) =>
+      waitForWorkerBarrier(input.barrier.readyFilePath, handles[index]!)
+    ));
+    await Promise.all(inputs.map((input) =>
+      writeFile(input.barrier.releaseFilePath, "release", "utf8")
+    ));
+    return {
+      outputs: await Promise.all(handles.map((handle) => handle.done)),
+      traces: await Promise.all(inputs.map((input) => readTrace(input.traceFilePath))),
+    };
+  } finally {
+    await Promise.allSettled(handles.map((handle) => handle.done));
+  }
+}
+
+function assertIndependentBarrierWorkers(traces: readonly WorkerTrace[]): void {
+  expect(traces).toHaveLength(2);
+  expect(traces.every((trace) => trace.barrierWaitCount === 1)).toBe(true);
+  expect(new Set(traces.map((trace) => trace.backendPid)).size).toBe(2);
+  expect(traces.every((trace) =>
+    trace.sleeps.every((sleep) => !sleep.inTransaction)
+  )).toBe(true);
+}
+
 async function waitForWorkerBarrier(readyFilePath: string, handle: WorkerHandle): Promise<void> {
   const waitForFile = async (): Promise<void> => {
     const deadline = Date.now() + 15_000;
@@ -1312,8 +1675,56 @@ function expectCompactWorkerOutput(output: WorkerOutput): void {
     "attemptCount", "commandHash", "domainStatus", "operation", "outboxIds", "requestId",
   ]);
   expect(output.commandHash).toMatch(/^sha256:[0-9a-f]{64}$/u);
+  expect(output.requestId).toMatch(/\S/u);
   expect(output.attemptCount).toBeGreaterThanOrEqual(1);
   expect(output.attemptCount).toBeLessThanOrEqual(3);
+  if (output.domainStatus === "applied") {
+    expect(output.outboxIds).toHaveLength(1);
+    expect(output.outboxIds[0]).toMatch(/\S/u);
+  }
+}
+
+async function expectPendingWorkerOutboxes(
+  runtimeRepository: PSqlRuntimeStateRepository,
+  outputs: readonly WorkerOutput[],
+  kind: "client" | "group",
+  effects: readonly string[],
+): Promise<void> {
+  outputs.forEach((output) => {
+    expect(output.domainStatus).toBe("applied");
+    expect(output.outboxIds).toHaveLength(1);
+    expect(output.outboxIds[0]).toMatch(/\S/u);
+  });
+  const outboxIds = outputs.map((output) => output.outboxIds[0]!);
+  expect(new Set(outboxIds).size).toBe(outboxIds.length);
+  const records = await listAllPendingOutboxes(
+    new StateMutationOutboxRepository(runtimeRepository),
+  );
+  const recordsById = new Map(records.map((stored) => [stored.record.outboxId, stored]));
+  expect(outboxIds.every((outboxId) => recordsById.has(outboxId))).toBe(true);
+  for (const outboxId of outboxIds) {
+    const stored = recordsById.get(outboxId);
+    expect(stored?.record).toMatchObject({
+      outboxId,
+      kind,
+      effects,
+      delivery: { status: "pending" },
+      attempts: { last: { status: "never-attempted" } },
+    });
+  }
+}
+
+async function listAllPendingOutboxes(
+  repository: StateMutationOutboxRepository,
+): Promise<readonly StoredStateMutationOutboxRecord[]> {
+  const records: StoredStateMutationOutboxRecord[] = [];
+  let afterKey: string | undefined;
+  do {
+    const page = await repository.listPendingPage({ afterKey, limit: 100 });
+    records.push(...page.records);
+    afterKey = page.nextAfterKey ?? undefined;
+  } while (afterKey !== undefined);
+  return records;
 }
 
 function assertOneWorkerRebased(outputs: readonly WorkerOutput[], traces: readonly WorkerTrace[]) {

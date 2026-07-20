@@ -474,6 +474,7 @@ describe('black-box runner recipe matrix', () => {
 
         const recipe = readRecipe(entry.recipe);
         const steps = recipe.steps as Array<Record<string, unknown>>;
+        const allSteps = flattenRecipeSteps(steps);
         const recipeText = JSON.stringify(recipe);
         for (const contender of ['Primary', 'Secondary']) {
             const registerName = `register${contender}Contender`;
@@ -523,10 +524,23 @@ describe('black-box runner recipe matrix', () => {
         expect(new Set(race.groups?.flatMap(group =>
             (group.steps ?? []).map(step => step.connection)
         ))).toEqual(new Set(['apiPrimary', 'apiSecondary']));
-        race.groups?.filter(group =>
-            (group.steps?.[0]?.name as string | undefined)?.includes('ContenderMembership')
-        ).forEach(group => {
-            expect(group.steps?.[0]?.expect).toEqual({ statusCode: [200, 403] });
+        const capacityAssertion = steps.find(step =>
+            step.name === 'assertExactlyOneCapacityWinner'
+        );
+        expect(capacityAssertion).toMatchObject({
+            type: 'assert',
+            actual: {
+                statuses: [
+                    '{resultsByName.activatePrimaryContenderMembership.0.actual.statusCode}',
+                    '{resultsByName.activateSecondaryContenderMembership.0.actual.statusCode}',
+                ],
+            },
+            expect: {
+                anyOf: [
+                    { statuses: [200, 403] },
+                    { statuses: [403, 200] },
+                ],
+            },
         });
         expect(steps.find(step => step.name === 'createBoundedGroup')?.request)
             .toMatchObject({ body: { maxMembers: 2, joinMode: 'open' } });
@@ -544,22 +558,63 @@ describe('black-box runner recipe matrix', () => {
             (step.request as { method?: string })?.method
         )).toEqual(['PUT', 'DELETE', 'PUT']);
         expect(JSON.stringify(recipe)).not.toContain('/topology/reconfigure');
-        expect(steps.find(step => step.name === 'reconnectReusedSession')?.request)
+        const reconnect = allSteps.find(step => step.name === 'reconnectReusedSession');
+        expect(reconnect?.request)
             .toMatchObject({
                 path: expect.stringContaining('{reusedSessionId}'),
-                body: { generationId: 'generation-2-{runId}' },
+                body: {
+                    generationId: 'generation-2-{runId}',
+                    expiresAtEpochMs: expect.any(Number),
+                },
+                outputs: {
+                    acceptedLifecyclePresenceRevision:
+                        'body.causalRevision.presenceRevision',
+                    acceptedLifecycleGenerationId:
+                        'body.activeSessions.0.generationId',
+                },
             });
-        const staleExpiry = steps.find(step => step.name === 'submitStaleExpiryCandidate');
-        expect(staleExpiry?.request).toMatchObject({
-            path: expect.stringContaining('{reusedSessionId}'),
-            body: { generationId: 'generation-1-{runId}' },
-            outputs: {
-                acceptedLifecyclePresenceRevision:
-                    'body.causalRevision.presenceRevision',
-                acceptedLifecycleGenerationId:
-                    'body.activeSessions.0.generationId',
-            },
+        expect(steps.find(step => step.name === 'submitStaleExpiryCandidate'))
+            .toBeUndefined();
+        const captureExpiredPresenceAt = steps.find(step =>
+            step.name === 'captureExpiredPresenceAt'
+        );
+        expect(captureExpiredPresenceAt).toMatchObject({
+            type: 'set',
+            output: 'expiredPresenceAtEpochMs',
+            transform: { timestamp: true },
         });
+        expect(steps.find(step => step.name === 'connectReusedSessionGenerationOne')?.request)
+            .toMatchObject({
+                body: {
+                    generationId: 'generation-1-{runId}',
+                    connectedAtEpochMs: '{expiredPresenceAtEpochMs}',
+                    lastHeartbeatAtEpochMs: '{expiredPresenceAtEpochMs}',
+                    expiresAtEpochMs: '{expiredPresenceAtEpochMs}',
+                },
+            });
+        expect(steps.find(step => step.name === 'connectExpiredPresenceProbe')?.request)
+            .toMatchObject({
+                body: {
+                    connectedAtEpochMs: '{expiredPresenceAtEpochMs}',
+                    lastHeartbeatAtEpochMs: '{expiredPresenceAtEpochMs}',
+                    expiresAtEpochMs: '{expiredPresenceAtEpochMs}',
+                },
+            });
+        expect(steps.indexOf(captureExpiredPresenceAt!)).toBeLessThan(
+            steps.indexOf(steps.find(step =>
+                step.name === 'connectReusedSessionGenerationOne'
+            )!),
+        );
+        const backgroundExpiry = steps.find(step =>
+            step.name === 'waitForBackgroundExpiryReconciliation'
+        );
+        expect(backgroundExpiry).toMatchObject({
+            type: 'set',
+            request: { delayMs: expect.any(Number) },
+        });
+        expect(Number((backgroundExpiry?.request as { delayMs?: number })?.delayMs))
+            .toBeGreaterThan(60_000);
+        expect(allSteps.indexOf(reconnect!)).toBeLessThan(allSteps.indexOf(backgroundExpiry!));
 
         const pollDelays = steps.filter(step =>
             String(step.name).startsWith('delayBeforeStateConvergencePoll')
@@ -576,6 +631,27 @@ describe('black-box runner recipe matrix', () => {
             maxConcurrency: 2,
             nonBlockingFailure: true,
         }));
+        for (const server of ['Primary', 'Secondary']) {
+            expect(allSteps.find(step =>
+                step.name === `read${server}DurableConfig`
+            )).toMatchObject({
+                type: 'http',
+                connection: `api${server}`,
+                request: {
+                    method: 'GET',
+                    path: expect.stringContaining('/topology/config'),
+                },
+                expect: {
+                    body: {
+                        durable: {
+                            version:
+                                '{resultsByName.putFinalTopologyConfig.0.actual.body.receipt.acceptedVersion}',
+                            requestId: 'put-final-config-{groupId}-{runId}',
+                        },
+                    },
+                },
+            });
+        }
 
         const finalAssertion = steps.find(step =>
             step.name === 'assertIdenticalFinalStateAndCausalHistory'
@@ -597,26 +673,51 @@ describe('black-box runner recipe matrix', () => {
             body: {
                 primary: {
                     groupStateCausalRevision: {
-                        presenceRevision:
-                            '{resultsByName.submitStaleExpiryCandidate.0.actual.body.causalRevision.presenceRevision}',
+                        presenceRevision: 'integer',
                     },
-                    generationId:
-                        '{resultsByName.submitStaleExpiryCandidate.0.actual.body.activeSessions.0.generationId}',
+                    generationId: 'generation-2-{runId}',
+                    postExpiryGenerationId: 'generation-2-{runId}',
                     sourceGroupStateCausalRevision:
                         '{resultsByName.readPrimaryGroupAttempt5.0.actual.body.causalRevision}',
+                    durableConfigVersion:
+                        '{resultsByName.putFinalTopologyConfig.0.actual.body.receipt.acceptedVersion}',
                 },
                 secondary: {
                     sourceGroupStateCausalRevision:
                         '{resultsByName.readPrimaryGroupAttempt5.0.actual.body.causalRevision}',
+                    durableConfigVersion:
+                        '{resultsByName.putFinalTopologyConfig.0.actual.body.receipt.acceptedVersion}',
+                },
+                causalHistory: {
+                    primary: {
+                        topologyPresence: expect.any(Array),
+                        topologyTuples: expect.any(Array),
+                    },
+                    secondary: {
+                        topologyPresence: expect.any(Array),
+                        topologyTuples: [
+                            '{resultsByName.readPrimaryTopologyAttempt1.0.actual.body.snapshot.sourceGroupStateCausalRevision}',
+                            '{resultsByName.readPrimaryTopologyAttempt2.0.actual.body.snapshot.sourceGroupStateCausalRevision}',
+                            '{resultsByName.readPrimaryTopologyAttempt3.0.actual.body.snapshot.sourceGroupStateCausalRevision}',
+                            '{resultsByName.readPrimaryTopologyAttempt4.0.actual.body.snapshot.sourceGroupStateCausalRevision}',
+                            '{resultsByName.readPrimaryTopologyAttempt5.0.actual.body.snapshot.sourceGroupStateCausalRevision}',
+                        ],
+                    },
                 },
             },
         });
+        expect((finalAssertion?.expect as { monotonicPaths?: unknown }).monotonicPaths)
+            .toEqual(expect.arrayContaining([
+                'causalHistory.primary.topologyPresence',
+                'causalHistory.secondary.topologyPresence',
+            ]));
         for (const field of [
-            '/members/', '/sessions/', '/heartbeat', '/disconnect',
+            '/members/', '/sessions/', '/topology/config',
             'groupStateCausalRevision', 'members', 'generationId',
-            'acceptedVersion', 'config', 'sourceGroupStateCausalRevision',
-            'outboxIds',
+            'postExpiryGenerationId', 'durableConfigVersion', 'config',
+            'sourceGroupStateCausalRevision', 'topologyTuples',
         ]) expect(recipeText + JSON.stringify(finalAssertion)).toContain(field);
+        expect(JSON.stringify(finalAssertion)).not.toContain('outboxIds');
     });
 
     it('defines the isolated 100-client five-group medium-scale state churn gate', () => {

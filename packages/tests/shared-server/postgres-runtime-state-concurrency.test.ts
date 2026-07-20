@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
+import { createGroupStateRepository } from '@shared-server/postgres/rallar-system/createStateRepositories.ts';
 import type { RuntimeStateEntry } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import type { AuditStamp, Group, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import {
@@ -16,6 +17,7 @@ import {
 import {
     STATE_MUTATION_OUTBOX_NAMESPACE,
     StateMutationOutboxRepository,
+    type StoredStateMutationOutboxRecord,
 } from '@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import {
@@ -57,7 +59,7 @@ type TopologyWorkerInput = Readonly<{
 }>;
 type TopologyWorkerOutput = Readonly<{
     operation: TopologyWorkerInput['command'];
-    requestId: string | null;
+    requestId: string;
     commandHash: string;
     attemptCount: number;
     acceptedStorageRevision: number | null;
@@ -99,6 +101,10 @@ type GlobalEnv = Readonly<{
 const POSTGRES_INTEGRATION_ENABLED =
     readEnv('RALLAR_POSTGRES_INTEGRATION') === '1';
 const postgresIt = POSTGRES_INTEGRATION_ENABLED ? it : it.skip;
+const task8PostScenarioIt = POSTGRES_INTEGRATION_ENABLED &&
+        readEnv('RALLAR_TASK8_REPORT_PATH')
+    ? it
+    : it.skip;
 
 type TestExecuteRttMutationInput = Omit<
     Parameters<typeof executeRttMutationService>[0],
@@ -451,6 +457,57 @@ describe('Postgres runtime-state conditional-write concurrency', () => {
     );
 
     postgresIt(
+        'rejects topology worker inputs without request ids before mutation',
+        async () => {
+            const databaseUrl = requireDatabaseUrl();
+            const applicationId = `topology-worker-request-id-${crypto.randomUUID()}`;
+            const groupRef = {
+                applicationId,
+                workspaceId: 'concurrency',
+                groupId: 'room',
+            };
+            const setupSql = await createSql(databaseUrl);
+            const runtime = new PSqlRuntimeStateRepository(setupSql);
+            const groupState = new GroupStateRepository(runtime);
+            const tmpDirPath = await mkdtemp(path.join(tmpdir(), 'rallar-topology-request-id-'));
+            const input: TopologyWorkerInput = {
+                command: 'topology-config-put',
+                groupRef,
+                atEpochMs: 2,
+                traceFilePath: path.join(tmpDirPath, 'trace.json'),
+                barrier: {
+                    readyFilePath: path.join(tmpDirPath, 'ready.json'),
+                    releaseFilePath: path.join(tmpDirPath, 'release'),
+                },
+                request: {
+                    config: { topologyKind: 'tree', degreeLimit: 2 },
+                    updatedByPrincipalId: 'owner',
+                },
+            };
+            let handle: TopologyWorkerHandle | undefined;
+            try {
+                const snapshot = topologyGroupSnapshot(groupRef);
+                expect(await groupState.insertGroup(snapshot.group))
+                    .toMatchObject({ status: 'applied' });
+                for (const member of snapshot.members) await groupState.putMember(member);
+                await writeFile(input.barrier.releaseFilePath, 'release', 'utf8');
+                handle = spawnTopologyWorker(databaseUrl, input);
+
+                await expect(handle.done).rejects.toThrow('requestId is required');
+                expect(await new GroupTopologyConfigRepository(runtime).findConfig(groupRef))
+                    .toBeUndefined();
+                expect((await readTopologyWorkerTrace(input.traceFilePath)).barrierWaitCount)
+                    .toBe(0);
+            } finally {
+                if (handle) await Promise.allSettled([handle.done]);
+                await cleanupApplicationRows([setupSql], applicationId);
+                await rm(tmpDirPath, { recursive: true, force: true });
+            }
+        },
+        60_000,
+    );
+
+    postgresIt(
         'rebases independent topology put and delete workers without deleting a newer config',
         async () => {
             const databaseUrl = requireDatabaseUrl();
@@ -546,19 +603,9 @@ describe('Postgres runtime-state conditional-write concurrency', () => {
                 expect(generation?.value.version).toBe(
                     Math.max(...outputs.map((output) => output.acceptedVersion ?? 0)),
                 );
-                expect([2, 3]).toContain(generation?.value.version);
-                const effectful = outputs.filter((output) => output.outboxIds.length > 0);
-                const outbox = new StateMutationOutboxRepository(runtime);
-                const stored = await Promise.all(effectful.flatMap((output) =>
-                    output.outboxIds.map((outboxId) => outbox.find(outboxId))
-                ));
-                expect(stored).toHaveLength(effectful.length);
-                expect(stored.every((entry) =>
-                    entry?.record.kind === 'group' &&
-                    entry.record.effects.join() === 'rtc-topology-recompute' &&
-                    entry.record.delivery.status === 'pending' &&
-                    entry.record.attempts.last.status === 'never-attempted'
-                )).toBe(true);
+                expect(generation?.value.version).toBe(3);
+                expect(await repository.findConfig(groupRef)).toMatchObject({ version: 3 });
+                await expectPendingTopologyWorkerOutboxes(runtime, outputs);
                 expect(JSON.stringify(outputs)).not.toMatch(
                     /DATABASE_URL|accessToken|commandMac|app:app/u,
                 );
@@ -569,6 +616,86 @@ describe('Postgres runtime-state conditional-write concurrency', () => {
             }
         },
         60_000,
+    );
+
+    task8PostScenarioIt(
+        'binds live maintenance and final topology receipts to Postgres state',
+        async () => {
+            const reportPath = readEnv('RALLAR_TASK8_REPORT_PATH');
+            if (!reportPath) throw new Error('RALLAR_TASK8_REPORT_PATH is required');
+            const report = JSON.parse(await readFile(reportPath, 'utf8')) as {
+                resultsByName?: Record<string, Array<{
+                    actual?: { body?: { receipt?: Record<string, unknown> } };
+                }>>;
+                outputs?: Record<string, unknown>;
+            };
+            const receipt = report.resultsByName?.putFinalTopologyConfig?.[0]
+                ?.actual?.body?.receipt;
+            if (!receipt) throw new Error('Final topology receipt is absent from the report');
+            const outboxIds = receipt.outboxIds;
+            const groupRef = receipt.groupRef;
+            const reusedSessionId = report.outputs?.reusedSessionId;
+            const expiryProbeSessionId = report.outputs?.expiryProbeSessionId;
+            if (
+                !Array.isArray(outboxIds) || outboxIds.length !== 1 ||
+                typeof outboxIds[0] !== 'string' || outboxIds[0].length === 0 ||
+                !isGroupRefRecord(groupRef) ||
+                typeof reusedSessionId !== 'string' || reusedSessionId.length === 0 ||
+                typeof expiryProbeSessionId !== 'string' ||
+                expiryProbeSessionId.length === 0
+            ) {
+                throw new Error('Scenario receipt or presence identity is invalid');
+            }
+
+            const sql = await createSql(requireDatabaseUrl());
+            try {
+                const runtime = new PSqlRuntimeStateRepository(sql);
+                const stored = await new StateMutationOutboxRepository(runtime)
+                    .find(outboxIds[0]);
+                expect(stored?.record).toMatchObject({
+                    outboxId: outboxIds[0],
+                    commandId: receipt.commandId,
+                    commandHash: receipt.commandHash,
+                    kind: 'group',
+                    aggregateRef: groupRef,
+                    effects: ['rtc-topology-recompute'],
+                    delivery: { status: 'delivered' },
+                });
+                const pending = await listAllPendingTopologyOutboxes(
+                    new StateMutationOutboxRepository(runtime),
+                );
+                expect(pending.some((entry) => entry.record.outboxId === outboxIds[0]))
+                    .toBe(false);
+                expect(await new GroupTopologyConfigRepository(runtime).findConfig(groupRef))
+                    .toMatchObject({
+                        version: receipt.acceptedVersion,
+                        requestId: receipt.requestId,
+                        config: receipt.acceptedConfig,
+                    });
+                const groupRepository = createGroupStateRepository(runtime);
+                expect(await groupRepository.findPresenceEntry({
+                    ...groupRef,
+                    sessionId: reusedSessionId,
+                })).toMatchObject({
+                    value: {
+                        sessionId: reusedSessionId,
+                        generationId: expect.stringMatching(/^generation-2-/u),
+                        status: 'active',
+                        disconnectedAtEpochMs: null,
+                    },
+                });
+                await expect(groupRepository.findPresenceEntry({
+                    ...groupRef,
+                    sessionId: expiryProbeSessionId,
+                })).resolves.toBeUndefined();
+                expect((await groupRepository.listEvents(groupRef)).filter((event) =>
+                    event.eventType === 'session-disconnected' && event.reason === 'expired'
+                )).toHaveLength(1);
+            } finally {
+                await sql.end();
+            }
+        },
+        30_000,
     );
 
     postgresIt(
@@ -1103,8 +1230,61 @@ function expectCompactTopologyWorkerOutput(output: TopologyWorkerOutput): void {
         'attemptCount', 'commandHash', 'domainStatus', 'operation', 'outboxIds', 'requestId',
     ]);
     expect(output.commandHash).toMatch(/^sha256:[0-9a-f]{64}$/u);
+    expect(output.requestId).toMatch(/\S/u);
     expect(output.attemptCount).toBeGreaterThanOrEqual(1);
     expect(output.attemptCount).toBeLessThanOrEqual(3);
+    if (output.domainStatus === 'applied') {
+        expect(output.outboxIds).toHaveLength(1);
+        expect(output.outboxIds[0]).toMatch(/\S/u);
+    }
+}
+
+async function expectPendingTopologyWorkerOutboxes(
+    runtime: PSqlRuntimeStateRepository,
+    outputs: readonly TopologyWorkerOutput[],
+): Promise<void> {
+    outputs.forEach((output) => {
+        expect(output.domainStatus).toBe('applied');
+        expect(output.outboxIds).toHaveLength(1);
+        expect(output.outboxIds[0]).toMatch(/\S/u);
+    });
+    const outboxIds = outputs.map((output) => output.outboxIds[0]!);
+    expect(new Set(outboxIds).size).toBe(outboxIds.length);
+    const records = await listAllPendingTopologyOutboxes(
+        new StateMutationOutboxRepository(runtime),
+    );
+    const recordsById = new Map(records.map((stored) => [stored.record.outboxId, stored]));
+    expect(outboxIds.every((outboxId) => recordsById.has(outboxId))).toBe(true);
+    for (const outboxId of outboxIds) {
+        expect(recordsById.get(outboxId)?.record).toMatchObject({
+            outboxId,
+            kind: 'group',
+            effects: ['rtc-topology-recompute'],
+            delivery: { status: 'pending' },
+            attempts: { last: { status: 'never-attempted' } },
+        });
+    }
+}
+
+async function listAllPendingTopologyOutboxes(
+    repository: StateMutationOutboxRepository,
+): Promise<readonly StoredStateMutationOutboxRecord[]> {
+    const records: StoredStateMutationOutboxRecord[] = [];
+    let afterKey: string | undefined;
+    do {
+        const page = await repository.listPendingPage({ afterKey, limit: 100 });
+        records.push(...page.records);
+        afterKey = page.nextAfterKey ?? undefined;
+    } while (afterKey !== undefined);
+    return records;
+}
+
+function isGroupRefRecord(value: unknown): value is GroupRef {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+    const record = value as Record<string, unknown>;
+    return ['applicationId', 'workspaceId', 'groupId'].every((key) =>
+        typeof record[key] === 'string' && record[key].length > 0
+    );
 }
 
 function assertOneTopologyWorkerRebased(
