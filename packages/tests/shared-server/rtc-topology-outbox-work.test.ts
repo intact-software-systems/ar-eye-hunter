@@ -151,6 +151,7 @@ describe('RTC topology APP_OUTBOX work', () => {
         'invalid-forwarding',
         'invalid-qos-options',
         'invalid-diagnostics',
+        'missing-target-workspace',
     ] as const)(
         'rejects %s work before reading mutable authority or publishing',
         async (defect) => {
@@ -192,6 +193,17 @@ describe('RTC topology APP_OUTBOX work', () => {
                 corruptMessage = JSON.parse(JSON.stringify({
                     ...message,
                     diagnostics: { visitedPeerIds: [''] },
+                }));
+            } else if (defect === 'missing-target-workspace') {
+                corruptMessage = JSON.parse(JSON.stringify({
+                    ...message,
+                    targets: {
+                        mode: 'multicast',
+                        groupRef: {
+                            applicationId: group.group.applicationId,
+                            groupId: group.group.groupId,
+                        },
+                    },
                 }));
             } else {
                 const envelope: unknown = JSON.parse(message.payload.resource);

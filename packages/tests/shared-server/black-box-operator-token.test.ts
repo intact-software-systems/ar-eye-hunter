@@ -61,23 +61,28 @@ describe('black-box operator token', () => {
     });
 
     it('rejects wrong scope and audience claims', async () => {
-        const commonClaims = {
-            aud: RALLAR_BLACK_BOX_OPERATOR_TOKEN_AUDIENCE,
-            scope: RALLAR_BLACK_BOX_OPERATOR_TOKEN_SCOPE,
-            sub: 'alice',
+        const wrongScopeToken = await signRallarBlackBoxOperatorToken({
+            secret: 'shared-secret',
+            subject: 'alice',
             sessionId: 'session-1',
-            iat: issuedAtEpochMs,
-            exp: expiresAtEpochMs,
-            jti: 'token-1',
-        };
-        const wrongScopeToken = await signTestOperatorToken(
-            { ...commonClaims, scope: 'wrong-scope' },
-            'shared-secret',
-        );
-        const wrongAudienceToken = await signTestOperatorToken(
-            { ...commonClaims, aud: 'wrong-audience' },
-            'shared-secret',
-        );
+            issuedAtEpochMs,
+            expiresAtEpochMs,
+            tokenId: 'token-1',
+            claims: {
+                scope: 'wrong-scope',
+            },
+        });
+        const wrongAudienceToken = await signRallarBlackBoxOperatorToken({
+            secret: 'shared-secret',
+            subject: 'alice',
+            sessionId: 'session-1',
+            issuedAtEpochMs,
+            expiresAtEpochMs,
+            tokenId: 'token-1',
+            claims: {
+                aud: 'wrong-audience',
+            },
+        });
 
         await expect(
             verifyRallarBlackBoxOperatorToken({
@@ -114,39 +119,3 @@ describe('black-box operator token', () => {
         ).resolves.toEqual({ ok: false, reason: 'bad-signature' });
     });
 });
-
-async function signTestOperatorToken(
-    claims: Readonly<Record<string, unknown>>,
-    secret: string,
-): Promise<string> {
-    const header = encodeBase64UrlJson({ alg: 'HS256', typ: 'JWT' });
-    const payload = encodeBase64UrlJson(claims);
-    const unsignedToken = `${header}.${payload}`;
-    const encoder = new TextEncoder();
-    const key = await crypto.subtle.importKey(
-        'raw',
-        encoder.encode(secret),
-        { name: 'HMAC', hash: 'SHA-256' },
-        false,
-        ['sign'],
-    );
-    const signature = new Uint8Array(await crypto.subtle.sign(
-        'HMAC',
-        key,
-        encoder.encode(unsignedToken),
-    ));
-    return `${unsignedToken}.${encodeBase64UrlBytes(signature)}`;
-}
-
-function encodeBase64UrlJson(value: unknown): string {
-    return encodeBase64UrlBytes(new TextEncoder().encode(JSON.stringify(value)));
-}
-
-function encodeBase64UrlBytes(value: Uint8Array): string {
-    let binary = '';
-    for (const byte of value) binary += String.fromCharCode(byte);
-    return btoa(binary)
-        .replaceAll('+', '-')
-        .replaceAll('/', '_')
-        .replace(/=+$/u, '');
-}

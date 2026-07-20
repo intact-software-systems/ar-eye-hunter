@@ -3,7 +3,10 @@ import type {
     ClientSnapshot,
 } from './client-types.ts';
 import { toScopedOverlayId } from './api-type-utils.ts';
-import { toGroupSnapshotStateRevision } from './group-client-views.ts';
+import {
+    toClientSnapshotLastSeenAtEpochMs,
+    toGroupSnapshotStateRevision,
+} from './group-client-views.ts';
 import type { GroupEvent, GroupRef, GroupSnapshot } from './group-types.ts';
 import type { RallarOverlayTopologySnapshot } from './overlay-topology.ts';
 import type { StateEventPage } from './state-event-types.ts';
@@ -137,11 +140,13 @@ export function validateAuthoritativeClientSnapshot(
     if (principal.status === 'deleted' && principal.deleted === null) {
         fail('ClientSnapshot principal lifecycle is invalid');
     }
+    const principalLastSeenAtEpochMs = principal.lastSeenAtEpochMs;
     nullableNonNegativeInteger(
-        principal.lastSeenAtEpochMs,
+        principalLastSeenAtEpochMs,
         'ClientSnapshot.principal.lastSeenAtEpochMs',
     );
     const instances = array(snapshot.instances, 'ClientSnapshot.instances');
+    const instanceIds = new Set<string>();
     for (const item of instances) {
         const instance = record(item, 'ClientSnapshot.instance');
         exact(instance, CLIENT_INSTANCE_KEYS, 'ClientSnapshot.instance');
@@ -150,6 +155,7 @@ export function validateAuthoritativeClientSnapshot(
             instance.clientInstanceId,
             'ClientSnapshot.instance.clientInstanceId',
         );
+        instanceIds.add(instance.clientInstanceId);
         enumValue(instance.status, ['active', 'revoked', 'retired'],
             'ClientSnapshot.instance.status');
         enumValue(instance.platform, [
@@ -167,13 +173,21 @@ export function validateAuthoritativeClientSnapshot(
         }
     }
     const sessions = array(snapshot.activeSessions, 'ClientSnapshot.activeSessions');
+    const activeSessionHeartbeats: Array<{ lastHeartbeatAtEpochMs: number }> = [];
     for (const item of sessions) {
         const session = record(item, 'ClientSnapshot.session');
         exact(session, CLIENT_SESSION_KEYS, 'ClientSnapshot.session');
         sameClientRef(session, ref, 'ClientSnapshot.session');
-        for (const key of [
-            'clientInstanceId', 'sessionId', 'generationId',
-        ] as const) nonEmptyString(session[key], `ClientSnapshot.session.${key}`);
+        nonEmptyString(
+            session.clientInstanceId,
+            'ClientSnapshot.session.clientInstanceId',
+        );
+        for (const key of ['sessionId', 'generationId'] as const) {
+            nonEmptyString(session[key], `ClientSnapshot.session.${key}`);
+        }
+        if (!instanceIds.has(session.clientInstanceId)) {
+            fail('ClientSnapshot active session instance is missing');
+        }
         positiveInteger(
             session.generationVersion,
             'ClientSnapshot.session.generationVersion',
@@ -205,6 +219,7 @@ export function validateAuthoritativeClientSnapshot(
             heartbeatAt > expiresAt) {
             fail('ClientSnapshot active session timestamps are causally inconsistent');
         }
+        activeSessionHeartbeats.push({ lastHeartbeatAtEpochMs: heartbeatAt });
     }
     nonNegativeInteger(snapshot.activeSessionCount, 'ClientSnapshot.activeSessionCount');
     if (snapshot.activeSessionCount !== sessions.length) {
@@ -214,10 +229,15 @@ export function validateAuthoritativeClientSnapshot(
     if (snapshot.isOnline !== (sessions.length > 0)) {
         fail('ClientSnapshot isOnline is inconsistent');
     }
+    const lastSeenAtEpochMs = snapshot.lastSeenAtEpochMs;
     nullableNonNegativeInteger(
-        snapshot.lastSeenAtEpochMs,
+        lastSeenAtEpochMs,
         'ClientSnapshot.lastSeenAtEpochMs',
     );
+    if (lastSeenAtEpochMs !== toClientSnapshotLastSeenAtEpochMs(
+        principalLastSeenAtEpochMs,
+        activeSessionHeartbeats,
+    )) fail('ClientSnapshot.lastSeenAtEpochMs is inconsistent');
 }
 
 export function validateAuthoritativeGroupSnapshot(
@@ -230,7 +250,8 @@ export function validateAuthoritativeGroupSnapshot(
         'memberCount', 'onlineMemberCount',
     ], 'GroupSnapshot');
     const causal = causalRevision(snapshot.causalRevision, 'GroupSnapshot.causalRevision');
-    nonNegativeInteger(snapshot.stateRevision, 'GroupSnapshot.stateRevision');
+    positiveInteger(snapshot.stateRevision, 'GroupSnapshot.stateRevision');
+    positiveInteger(causal.groupRevision, 'GroupSnapshot.causalRevision.groupRevision');
     if (snapshot.stateRevision !== toGroupSnapshotStateRevision(
         causal.groupRevision,
         causal.presenceRevision,
@@ -346,6 +367,10 @@ export function validateAuthoritativeGroupSnapshot(
         snapshot.onlineMemberCount !== onlinePrincipalIds.size ||
         snapshot.onlineMemberCount > snapshot.memberCount) {
         fail('GroupSnapshot aggregate counts are inconsistent');
+    }
+    if (typeof group.maxMembers === 'number' &&
+        group.activeMemberCount > group.maxMembers) {
+        fail('GroupSnapshot activeMemberCount exceeds maxMembers');
     }
     if (group.status !== 'active' && sessions.length !== 0) {
         fail('GroupSnapshot inactive group has active presence');
@@ -818,7 +843,10 @@ function nullableString(value: unknown, label: string): void {
     if (value !== null) nonEmptyString(value, label);
 }
 
-function nullableNonNegativeInteger(value: unknown, label: string): void {
+function nullableNonNegativeInteger(
+    value: unknown,
+    label: string,
+): asserts value is number | null {
     if (value !== null) nonNegativeInteger(value, label);
 }
 

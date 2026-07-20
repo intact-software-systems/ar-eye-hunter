@@ -204,14 +204,17 @@ function validateQosOptions(aspect: string, value: unknown): void {
 
 function validateCanonicalGroupRef(value: unknown): void {
     const ref = sectionRecord(value, 'group ref');
+    if (!Object.hasOwn(ref, 'workspaceId')) {
+        throw new TypeError('Persisted AL group workspace id is missing');
+    }
     exactAllowedRequired(
         ref,
         ['applicationId', 'workspaceId', 'groupId'],
-        ['applicationId', 'groupId'],
+        ['applicationId', 'workspaceId', 'groupId'],
     );
     nonEmptyString(ref.applicationId, 'group application id');
+    nonEmptyString(ref.workspaceId, 'group workspace id');
     nonEmptyString(ref.groupId, 'group id');
-    optionalNonEmptyString(ref.workspaceId, 'group workspace id');
 }
 
 function sectionRecord(value: unknown, label: string): Record<string, unknown> {

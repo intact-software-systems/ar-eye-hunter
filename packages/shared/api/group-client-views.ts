@@ -1,5 +1,5 @@
 import type { ClientInfo } from './api-config.ts';
-import type { ClientSnapshot } from './client-types.ts';
+import type { ClientSession, ClientSnapshot } from './client-types.ts';
 import type {
     GroupSnapshot,
     GroupStateCausalRevision,
@@ -16,6 +16,18 @@ export function readActiveClientSessionIds(
     }
 
     return snapshot.isOnline ? [snapshot.sessionId] : [];
+}
+
+export function toClientSnapshotLastSeenAtEpochMs(
+    principalLastSeenAtEpochMs: number | null,
+    activeSessions: readonly Pick<ClientSession, 'lastHeartbeatAtEpochMs'>[],
+): number | null {
+    const timestamps = [
+        principalLastSeenAtEpochMs ?? Number.NEGATIVE_INFINITY,
+        ...activeSessions.map((session) => session.lastHeartbeatAtEpochMs),
+    ];
+    const lastSeenAtEpochMs = Math.max(...timestamps);
+    return Number.isFinite(lastSeenAtEpochMs) ? lastSeenAtEpochMs : null;
 }
 
 export function readGroupId(snapshot: AnyGroupPresence): string {

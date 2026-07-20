@@ -12,6 +12,9 @@ import type {
     ClientSnapshot,
 } from '@shared/api/client-types.ts';
 import type { StateEventPage } from '@shared/api/state-event-types.ts';
+import {
+    toClientSnapshotLastSeenAtEpochMs,
+} from '@shared/api/group-client-views.ts';
 import type { RuntimeStateRepositoryLike } from '../../runtime-state/RuntimeStateRepository.ts';
 import type {
     RuntimeStateConditionalDeleteResult,
@@ -434,7 +437,7 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
             isOnline: activeSessions.length > 0,
             presenceState: this.toPresenceState(activeSessions),
             activeSessions,
-            lastSeenAtEpochMs: this.toLastSeenAtEpochMs(
+            lastSeenAtEpochMs: toClientSnapshotLastSeenAtEpochMs(
                 principal.lastSeenAtEpochMs,
                 activeSessions,
             ),
@@ -479,7 +482,7 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
             activeSessions,
             isOnline: activeSessions.length > 0,
             activeSessionCount: activeSessions.length,
-            lastSeenAtEpochMs: this.toLastSeenAtEpochMs(
+            lastSeenAtEpochMs: toClientSnapshotLastSeenAtEpochMs(
                 principal.lastSeenAtEpochMs,
                 activeSessions,
             ),
@@ -653,19 +656,6 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
         }
 
         return 'offline';
-    }
-
-    private toLastSeenAtEpochMs(
-        existing: number | null,
-        sessions: readonly ClientSession[],
-    ): number | null {
-        const timestamps = [
-            existing ?? Number.NEGATIVE_INFINITY,
-            ...sessions.map((session) => session.lastHeartbeatAtEpochMs),
-        ];
-
-        const next = Math.max(...timestamps);
-        return Number.isFinite(next) ? next : null;
     }
 
     private principalKey(ref: ClientPrincipalRef): string {

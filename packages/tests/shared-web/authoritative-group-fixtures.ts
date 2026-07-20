@@ -4,7 +4,11 @@ import type {
     GroupPresenceSession,
     GroupSnapshot,
 } from '@shared/api/group-types.ts';
-import type { ClientSession, ClientSnapshot } from '@shared/api/client-types.ts';
+import type {
+    ClientInstance,
+    ClientSession,
+    ClientSnapshot,
+} from '@shared/api/client-types.ts';
 
 export function createAuditStampFixture(
     atEpochMs: number,
@@ -170,6 +174,30 @@ export function createClientSnapshotFixture(input: Readonly<{
         isOnline: false,
         activeSessionCount: 0,
         lastSeenAtEpochMs: 1,
+    };
+}
+
+export function createActiveClientInstanceFixture(input: Readonly<{
+    applicationId: string;
+    workspaceId: string;
+    principalId: string;
+    clientInstanceId: string;
+}>): ClientInstance {
+    const audit = createAuditStampFixture(1, input.principalId);
+    return {
+        applicationId: input.applicationId,
+        workspaceId: input.workspaceId,
+        principalId: input.principalId,
+        clientInstanceId: input.clientInstanceId,
+        status: 'active',
+        platform: 'web',
+        deviceLabel: null,
+        appVersion: null,
+        userAgent: null,
+        capabilities: [],
+        registered: audit,
+        updated: audit,
+        revoked: null,
     };
 }
 

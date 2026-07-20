@@ -5,6 +5,7 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import {
     createActiveGroupMemberFixture,
     createActiveGroupPresenceSessionFixture,
+    createActiveClientInstanceFixture,
     createActiveClientSessionFixture,
     createClientSnapshotFixture,
     createGroupSnapshotFixture,
@@ -231,6 +232,12 @@ function clientSnapshot(principalId: string): ClientSnapshot {
     return {
         ...snapshot,
         principal: { ...snapshot.principal, snapshotVersion: 2 },
+        instances: [createActiveClientInstanceFixture({
+            applicationId: snapshot.principal.applicationId,
+            workspaceId: snapshot.principal.workspaceId,
+            principalId,
+            clientInstanceId: principalId,
+        })],
         activeSessions: [createActiveClientSessionFixture({
             applicationId: snapshot.principal.applicationId,
             workspaceId: snapshot.principal.workspaceId,

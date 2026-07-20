@@ -173,6 +173,65 @@ describe('authoritative network state validation', () => {
         }, scope)).toThrow(/deviceLabel/);
     });
 
+    it('rejects active client sessions without a matching instance', () => {
+        const client = createClientSnapshotFixture({
+            ...scope,
+            principalId: 'alice',
+        });
+        const session = createActiveClientSessionFixture({
+            ...scope,
+            principalId: 'alice',
+            clientInstanceId: 'missing-instance',
+            sessionId: 'alice-session',
+        });
+
+        expect(() => validateAuthoritativeClientSnapshot({
+            ...client,
+            activeSessions: [session],
+            isOnline: true,
+            activeSessionCount: 1,
+        }, scope)).toThrow(/instance/);
+    });
+
+    it('rejects a client snapshot whose last-seen aggregate is not canonical', () => {
+        const client = createClientSnapshotFixture({
+            ...scope,
+            principalId: 'alice',
+        });
+        const audit = createAuditStampFixture(1, 'alice');
+        const session = {
+            ...createActiveClientSessionFixture({
+                ...scope,
+                principalId: 'alice',
+                clientInstanceId: 'alice-instance',
+                sessionId: 'alice-session',
+            }),
+            lastHeartbeatAtEpochMs: 5,
+        };
+
+        expect(() => validateAuthoritativeClientSnapshot({
+            ...client,
+            instances: [{
+                ...scope,
+                principalId: 'alice',
+                clientInstanceId: 'alice-instance',
+                status: 'active',
+                platform: 'web',
+                deviceLabel: null,
+                appVersion: null,
+                userAgent: null,
+                capabilities: [],
+                registered: audit,
+                updated: audit,
+                revoked: null,
+            }],
+            activeSessions: [session],
+            isOnline: true,
+            activeSessionCount: 1,
+            lastSeenAtEpochMs: 1,
+        }, scope)).toThrow(/lastSeenAtEpochMs/);
+    });
+
     it('rejects malformed group versions, nullable limits, timestamps, and sessions', () => {
         const group = createGroupSnapshotFixture({
             ...scope,
@@ -242,6 +301,44 @@ describe('authoritative network state validation', () => {
                 members: [invalidMember],
             }, scope)).toThrow();
         }
+    });
+
+    it('rejects an over-capacity group snapshot', () => {
+        const group = createGroupSnapshotFixture({
+            ...scope,
+            groupId: 'room-capacity-revisions',
+            sessionIds: ['alice', 'bob'],
+        });
+        expect(() => validateAuthoritativeGroupSnapshot({
+            ...group,
+            group: { ...group.group, maxMembers: 1 },
+        }, scope)).toThrow(/maxMembers|capacity/);
+    });
+
+    it('rejects a zero canonical group revision', () => {
+        const group = createGroupSnapshotFixture({
+            ...scope,
+            groupId: 'room-group-revision',
+            sessionIds: ['alice', 'bob'],
+        });
+        expect(() => validateAuthoritativeGroupSnapshot({
+            ...group,
+            stateRevision: 2,
+            causalRevision: { groupRevision: 0, presenceRevision: 2 },
+        }, scope)).toThrow(/groupRevision|group revision/);
+    });
+
+    it('rejects a zero canonical state revision', () => {
+        const noPresence = createGroupSnapshotFixture({
+            ...scope,
+            groupId: 'room-zero-revision',
+            sessionIds: [],
+        });
+        expect(() => validateAuthoritativeGroupSnapshot({
+            ...noPresence,
+            stateRevision: 0,
+            causalRevision: { groupRevision: 0, presenceRevision: 0 },
+        }, scope)).toThrow(/stateRevision|state revision/);
     });
 
     it.each([
