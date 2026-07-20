@@ -1,5 +1,6 @@
 export type RuntimeStateExpiryStartupBarrierOptions = Readonly<{
   backfillTopologyGenerations: () => Promise<Readonly<{ advanced: number }>>;
+  initialiseRtcRttReceiptFamilyCleanup: () => Promise<void>;
   initialiseRuntimeStateExpiryEviction: () => Promise<void>;
   onGenerationsBackfilled?: (advanced: number) => void;
 }>;
@@ -13,5 +14,6 @@ export async function runRuntimeStateExpiryStartupBarrier(
 ): Promise<void> {
   const { advanced } = await options.backfillTopologyGenerations();
   options.onGenerationsBackfilled?.(advanced);
+  await options.initialiseRtcRttReceiptFamilyCleanup();
   await options.initialiseRuntimeStateExpiryEviction();
 }

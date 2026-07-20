@@ -20,6 +20,7 @@ import {
 } from '../repositories/RtcTopologyPublicationRepository.ts';
 import type { RtcTopologyExecutionRepository } from '../repositories/RtcTopologyExecutionRepository.ts';
 import type { RtcRttRepository } from '../repositories/RtcRttRepository.ts';
+import { RtcTopologyRepositoryInvariantCorruptionError } from '../rtc-topology-errors.ts';
 import {
     toCanonicalRtcTopologyPairIdentity,
 } from '../rtc-topology-identifiers.ts';
@@ -321,19 +322,43 @@ export async function drainRtcRttRecomputeOutbox(input: Readonly<{
     repository: RtcRttRepository;
     publisher: RtcTopologyWorkPublisher;
     debounceMs: number;
+    now?: () => number;
 }>): Promise<number> {
     let delivered = 0;
     for (const entry of await input.repository.listRecomputeIntentEntries()) {
+        if (entry.value.delivery.state === 'delivered') continue;
+        const observedAtEpochMs = input.now?.() ?? Date.now();
+        if (
+            !Number.isSafeInteger(observedAtEpochMs) ||
+            observedAtEpochMs < entry.value.createdAtEpochMs ||
+            observedAtEpochMs > entry.entry.expireAtTimestamp
+        ) {
+            throw new RtcTopologyRepositoryInvariantCorruptionError(
+                entry.entry.key,
+                'RTC RTT recompute delivery time is outside the retained family lifetime',
+            );
+        }
         await input.publisher.enqueueForRtt(
             entry.value.groupSnapshot,
             entry.value.rtt,
             input.debounceMs,
         );
-        const removed = await input.repository.removeRecomputeIntent(
-            entry.value.outboxId,
-            entry.entry.revision,
+        const deliveredAtEpochMs = input.now?.() ?? Date.now();
+        if (
+            !Number.isSafeInteger(deliveredAtEpochMs) ||
+            deliveredAtEpochMs < entry.value.createdAtEpochMs ||
+            deliveredAtEpochMs > entry.entry.expireAtTimestamp
+        ) {
+            throw new RtcTopologyRepositoryInvariantCorruptionError(
+                entry.entry.key,
+                'RTC RTT recompute delivery time is outside the retained family lifetime',
+            );
+        }
+        const marked = await input.repository.markRecomputeIntentDelivered(
+            entry,
+            deliveredAtEpochMs,
         );
-        if (removed.status === 'accepted') delivered += 1;
+        if (marked.status === 'accepted') delivered += 1;
     }
     return delivered;
 }

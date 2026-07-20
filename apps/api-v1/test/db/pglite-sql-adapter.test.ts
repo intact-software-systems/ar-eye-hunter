@@ -164,6 +164,33 @@ Deno.test('PSqlRuntimeStateRepository runs against PGlite SQL adapter', async ()
   });
 });
 
+Deno.test('PSqlRuntimeStateRepository generic expiry preserves protected namespaces', async () => {
+  await withPGliteSql(async (sql) => {
+    const repository = new PSqlRuntimeStateRepository(sql);
+    const protectedNamespaces = [
+      'rtc-rtt:receipts',
+      'rtc-rtt:recompute-outbox',
+    ];
+    await repository.upsert(protectedNamespaces[0], 'receipt', '{}', PAST_MS);
+    await repository.upsert(protectedNamespaces[1], 'intent', '{}', PAST_MS);
+    await repository.upsert('ordinary-expired', 'row', '{}', PAST_MS);
+
+    const deleteAllExpired = repository.deleteAllExpired as unknown as (
+      excludedNamespaces: readonly string[],
+    ) => Promise<number>;
+    assert.equal(await deleteAllExpired.call(repository, protectedNamespaces), 1);
+    assert.notEqual(
+      await repository.findEntry(protectedNamespaces[0], 'receipt'),
+      undefined,
+    );
+    assert.notEqual(
+      await repository.findEntry(protectedNamespaces[1], 'intent'),
+      undefined,
+    );
+    assert.equal(await repository.findEntry('ordinary-expired', 'row'), undefined);
+  });
+});
+
 Deno.test('PGlite topology config mutations converge concurrent CAS transactions with receipts and outboxes', async () => {
   await withPGliteSql(async (sql) => {
     const runtime = new PSqlRuntimeStateRepository(sql);

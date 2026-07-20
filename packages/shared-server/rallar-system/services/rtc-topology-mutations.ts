@@ -293,7 +293,7 @@ export type RtcRttMutationReceipt = Readonly<{
     commandHash: string;
 }>;
 
-export type RtcRttRecomputeIntent = Readonly<{
+type RtcRttRecomputeIntentBase = Readonly<{
     outboxId: string;
     receiptId: string;
     groupSnapshot: GroupSnapshot;
@@ -301,6 +301,18 @@ export type RtcRttRecomputeIntent = Readonly<{
     createdAtEpochMs: number;
     commandHash: string;
 }>;
+
+export type RtcRttRecomputeIntent = RtcRttRecomputeIntentBase & (
+    | Readonly<{
+        delivery: Readonly<{ state: 'pending' }>;
+    }>
+    | Readonly<{
+        delivery: Readonly<{
+            state: 'delivered';
+            deliveredAtEpochMs: number;
+        }>;
+    }>
+);
 
 export class RtcRttMutationIdempotencyConflictError extends Error {
     readonly status = 409;
@@ -475,6 +487,7 @@ export function computeRttMutation(input: Readonly<{
             rtt: authority.command.rtt,
             createdAtEpochMs: authority.facts.requestedAtEpochMs,
             commandHash: input.facts.commandHash,
+            delivery: { state: 'pending' },
         })),
     };
 }

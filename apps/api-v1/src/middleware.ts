@@ -77,6 +77,11 @@ import {
   DEFAULT_RTC_TOPOLOGY_PUBLICATION_RETENTION_MS,
   RtcTopologyPublicationRepository,
 } from '@shared-server/rallar-system/repositories/RtcTopologyPublicationRepository.ts';
+import {
+  initRtcRttReceiptFamilyCleanup,
+  RTC_RTT_PROTECTED_RUNTIME_STATE_NAMESPACES,
+  RtcRttRepository,
+} from '@shared-server/rallar-system/repositories/RtcRttRepository.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/repositories/RtcTopologyExecutionRepository.ts';
 import {
   createRtcTopologyPublicationFanout,
@@ -147,6 +152,7 @@ function initialise(): Middleware {
     clientsRepository,
   });
   const runtimeStateRepository = createRuntimeStateRepository(sql);
+  const rtcRttRepository = new RtcRttRepository(runtimeStateRepository, { now });
   const rtcTopologyPublicationRepository = new RtcTopologyPublicationRepository(
     runtimeStateRepository,
     DEFAULT_RTC_TOPOLOGY_PUBLICATION_RETENTION_MS,
@@ -176,9 +182,20 @@ function initialise(): Middleware {
       backfillAllGroupTopologyConfigGenerations(
         new GroupTopologyConfigRepository(runtimeStateRepository),
       ),
+    initialiseRtcRttReceiptFamilyCleanup: async () => {
+      const cleanup = initRtcRttReceiptFamilyCleanup(rtcRttRepository, {
+        onError: (error) => {
+          console.error('RTC RTT receipt family cleanup failed:', error);
+        },
+      });
+      await cleanup.firstRun;
+    },
     initialiseRuntimeStateExpiryEviction: () =>
       initRuntimeStateExpiryEviction(
         new PSqlRuntimeStateRepository(postgresSql),
+        {
+          excludedNamespaces: RTC_RTT_PROTECTED_RUNTIME_STATE_NAMESPACES,
+        },
       ),
     onGenerationsBackfilled: (advanced) => {
       if (advanced > 0) {

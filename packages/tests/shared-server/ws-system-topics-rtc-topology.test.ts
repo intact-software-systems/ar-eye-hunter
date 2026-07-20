@@ -622,7 +622,11 @@ describe('Rallar system websocket topics RTC topology', () => {
             sessionIdFrom: rtt.sessionIdFrom,
             sessionIdTo: rtt.sessionIdTo,
             measurementVersion: rtt.version,
-            affectedGroupRefs: [],
+            affectedGroupRefs: [{
+                applicationId: group.group.applicationId,
+                workspaceId: group.group.workspaceId,
+                groupId: group.group.groupId,
+            }],
             acceptedAtEpochMs: 1,
             outcome: 'accepted',
             commandHash,

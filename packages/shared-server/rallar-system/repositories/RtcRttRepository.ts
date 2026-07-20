@@ -42,7 +42,12 @@ export const RTC_RTT_LATEST_NAMESPACE = 'rtc-rtt:latest';
 export const RTC_RTT_ENDPOINT_ADMISSION_NAMESPACE = 'rtc-rtt:endpoint-admission';
 export const RTC_RTT_RECEIPTS_NAMESPACE = 'rtc-rtt:receipts';
 export const RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE = 'rtc-rtt:recompute-outbox';
+export const RTC_RTT_PROTECTED_RUNTIME_STATE_NAMESPACES = [
+    RTC_RTT_RECEIPTS_NAMESPACE,
+    RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE,
+] as const;
 export const DEFAULT_RTC_RTT_MUTATION_RETENTION_MS = 24 * 60 * 60 * 1_000;
+export const DEFAULT_RTC_RTT_RECEIPT_FAMILY_CLEANUP_INTERVAL_MS = 60_000;
 
 const DEFAULT_RTC_RTT_TTL_MS = 60_000;
 
@@ -55,6 +60,32 @@ export type RtcRttRepositoryOptions = Readonly<{
 export type RtcRttConditionalWriteResult =
     | Readonly<{ status: 'accepted'; storageRevision: number }>
     | Readonly<{ status: 'conflict' }>;
+
+export type RtcRttReceiptFamilyCleanupHandle = Readonly<{
+    firstRun: Promise<number>;
+    stop(): void;
+}>;
+
+export type RtcRttReceiptFamilyCleanupOptions = Readonly<{
+    intervalMs?: number;
+    schedule?: (callback: () => void, delayMs: number) => unknown;
+    cancel?: (handle: unknown) => void;
+    onError?: (error: unknown) => void;
+}>;
+
+type RtcRttReceiptFamilyCleanupRead = Readonly<{
+    receiptId: string;
+    receiptEntry: RuntimeStateEntry | undefined;
+    siblingEntries: readonly RuntimeStateEntry[];
+}>;
+
+type RtcRttReceiptFamilyCleanupPlan =
+    | Readonly<{ outcome: 'absent' }>
+    | Readonly<{
+        outcome: 'delete';
+        receipt: RuntimeStateEntryValue<RtcRttMutationReceipt>;
+        siblings: readonly RuntimeStateEntryValue<RtcRttRecomputeIntent>[];
+    }>;
 
 export class RtcRttRepository extends RuntimeStateJsonStore {
     constructor(
@@ -235,7 +266,7 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
         intent: RtcRttRecomputeIntent,
         expireAtTimestamp: number,
     ): Promise<RtcRttConditionalWriteResult> {
-        validateRecomputeIntent(intent);
+        validateRecomputeIntent(intent, expireAtTimestamp);
         const result = await this.putValueIfAbsent(
             RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE,
             intent.outboxId,
@@ -312,17 +343,45 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
         return (await this.listRecomputeIntentEntries()).map(({ value }) => value);
     }
 
-    async removeRecomputeIntent(
-        outboxId: string,
-        expectedRevision: number,
+    async markRecomputeIntentDelivered(
+        observed: RuntimeStateEntryValue<RtcRttRecomputeIntent>,
+        deliveredAtEpochMs: number,
     ): Promise<Readonly<{ status: 'accepted' | 'conflict' }>> {
-        const conditional = requireConditionalRuntime(this.runtimeRepository);
-        const deleted = await conditional.deleteIfRevision(
-            RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE,
-            outboxId,
-            expectedRevision,
+        const intent = this.toRecomputeIntentEntry(
+            observed.entry,
+            observed.value.outboxId,
         );
-        return deleted.status === 'applied'
+        if (intent.value.delivery.state !== 'pending') {
+            throw rttCorruption(
+                intent.entry.key,
+                'RTC RTT recompute intent is already delivered',
+            );
+        }
+        if (
+            !Number.isSafeInteger(deliveredAtEpochMs) ||
+            deliveredAtEpochMs < intent.value.createdAtEpochMs ||
+            deliveredAtEpochMs > intent.entry.expireAtTimestamp
+        ) {
+            throw rttCorruption(
+                intent.entry.key,
+                'RTC RTT recompute delivery time is outside the retained family lifetime',
+            );
+        }
+        const conditional = requireConditionalRuntime(this.runtimeRepository);
+        const updated = await conditional.upsertIfRevision(
+            RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE,
+            intent.entry.key,
+            JSON.stringify({
+                ...intent.value,
+                delivery: {
+                    state: 'delivered',
+                    deliveredAtEpochMs,
+                },
+            } satisfies RtcRttRecomputeIntent),
+            intent.entry.expireAtTimestamp,
+            intent.entry.revision,
+        );
+        return updated.status === 'applied'
             ? { status: 'accepted' }
             : { status: 'conflict' };
     }
@@ -432,6 +491,26 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
 
     nowEpochMs(): number {
         return this.options.now?.() ?? Date.now();
+    }
+
+    async cleanupExpiredReceiptFamilies(): Promise<number> {
+        const observedAtEpochMs = this.nowEpochMs();
+        const receiptEntries = await this.runtimeRepository.findAllEntries(
+            RTC_RTT_RECEIPTS_NAMESPACE,
+        );
+        let removed = 0;
+        for (const receiptEntry of receiptEntries) {
+            const receipt = this.toReceiptEntry(receiptEntry);
+            if (receipt.entry.expireAtTimestamp > observedAtEpochMs) continue;
+            if (await this.cleanupExpiredReceiptFamily(
+                receipt.value.receiptId,
+                observedAtEpochMs,
+                0,
+            )) {
+                removed += 1;
+            }
+        }
+        return removed;
     }
 
     private async toLiveMeasurementEntry(
@@ -594,12 +673,12 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
         }
         const observedAtEpochMs = this.nowEpochMs();
         if (entry.expireAtTimestamp > observedAtEpochMs) return intent;
-        return await this.cleanupExpiredReceiptIntents(
-            intent,
-            receipt,
+        await this.cleanupExpiredReceiptFamily(
+            receipt.value.receiptId,
             observedAtEpochMs,
             expiryAttempt,
         );
+        return undefined;
     }
 
     private toRecomputeIntentEntry(
@@ -612,7 +691,7 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
         let value: RtcRttRecomputeIntent;
         try {
             value = parseValue(entry) as RtcRttRecomputeIntent;
-            validateRecomputeIntent(value);
+            validateRecomputeIntent(value, entry.expireAtTimestamp);
         } catch (error) {
             throw rttCorruption(
                 entry.key,
@@ -625,124 +704,307 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
         return { entry, value };
     }
 
-    private async cleanupExpiredReceiptIntents(
-        intent: RuntimeStateEntryValue<RtcRttRecomputeIntent>,
-        receipt: RuntimeStateEntryValue<RtcRttMutationReceipt>,
+    private async cleanupExpiredReceiptFamily(
+        receiptId: string,
         observedAtEpochMs: number,
         expiryAttempt: number,
-    ): Promise<RuntimeStateEntryValue<RtcRttRecomputeIntent> | undefined> {
-        const runtime = requireOptimisticRuntime(this.runtimeRepository);
+    ): Promise<boolean> {
         await waitForRuntimeStateWriteRetry(expiryAttempt as 0 | 1 | 2, {
             sleep: this.options.sleep,
         });
         try {
-            await runtime.begin(async (transaction) => {
-                const [currentReceiptEntry, siblingEntries] = await Promise.all([
-                    transaction.findEntry(
-                        RTC_RTT_RECEIPTS_NAMESPACE,
-                        receipt.value.receiptId,
-                    ),
-                    transaction.findEntriesByPrefix(
-                        RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE,
-                        `${receipt.value.receiptId}:commandHash=`,
-                    ),
-                ]);
-                if (!currentReceiptEntry && siblingEntries.length === 0) return;
-                if (!currentReceiptEntry) {
-                    throw rttCorruption(
-                        intent.entry.key,
-                        'RTC RTT recompute intent receipt is missing',
-                    );
-                }
-                const currentReceipt = this.toReceiptEntry(
-                    currentReceiptEntry,
-                    receipt.value.receiptId,
-                );
-                if (currentReceipt.entry.expireAtTimestamp > observedAtEpochMs) {
-                    throw rttCorruption(
-                        intent.entry.key,
-                        'RTC RTT recompute receipt remains live during intent cleanup',
-                    );
-                }
-                const seenGroupRefs = new Set<string>();
-                const siblings = siblingEntries.map((siblingEntry) => {
-                    const sibling = this.toRecomputeIntentEntry(siblingEntry);
-                    validateIntentAgainstReceipt(
-                        sibling.value,
-                        currentReceipt.value,
-                        sibling.entry.key,
-                    );
-                    if (
-                        sibling.entry.expireAtTimestamp !==
-                            currentReceipt.entry.expireAtTimestamp ||
-                        sibling.entry.expireAtTimestamp > observedAtEpochMs
-                    ) {
-                        throw rttCorruption(
-                            sibling.entry.key,
-                            'RTC RTT recompute sibling is not jointly expired with receipt',
-                        );
-                    }
-                    const groupIdentity = toCanonicalRtcTopologyGroupIdentity(
-                        sibling.value.groupSnapshot.group,
-                    );
-                    if (seenGroupRefs.has(groupIdentity)) {
-                        throw rttCorruption(
-                            sibling.entry.key,
-                            'RTC RTT receipt has duplicate recompute intent group',
-                        );
-                    }
-                    seenGroupRefs.add(groupIdentity);
-                    return sibling;
-                }).sort((left, right) =>
-                    compareRtcTopologyIdentifiers(left.entry.key, right.entry.key)
-                );
-                const expectedGroupRefs = currentReceipt.value.affectedGroupRefs
-                    .map(toCanonicalRtcTopologyGroupIdentity)
-                    .sort(compareRtcTopologyIdentifiers);
-                const actualGroupRefs = [...seenGroupRefs]
-                    .sort(compareRtcTopologyIdentifiers);
-                if (!rtcTopologySemanticEqual(actualGroupRefs, expectedGroupRefs)) {
-                    throw rttCorruption(
-                        currentReceipt.entry.key,
-                        'RTC RTT receipt recompute intent set is incomplete',
-                    );
-                }
-                for (const sibling of siblings) {
-                    const deleted = await transaction.deleteIfRevision(
-                        RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE,
-                        sibling.entry.key,
-                        sibling.entry.revision,
-                    );
-                    if (deleted.status === 'conflict') {
-                        throw new RuntimeStateWriteConflictError();
-                    }
-                }
-                const deletedReceipt = await transaction.deleteIfRevision(
-                    RTC_RTT_RECEIPTS_NAMESPACE,
-                    currentReceipt.entry.key,
-                    currentReceipt.entry.revision,
-                );
-                if (deletedReceipt.status === 'conflict') {
-                    throw new RuntimeStateWriteConflictError();
-                }
-            });
-            return undefined;
+            const read = await this.readExpiredReceiptFamilyCleanup(receiptId);
+            const computed = this.computeExpiredReceiptFamilyCleanup(read);
+            this.validateExpiredReceiptFamilyCleanup(
+                computed,
+                observedAtEpochMs,
+            );
+            return await this.writeExpiredReceiptFamilyCleanup(computed);
         } catch (error) {
             if (!(error instanceof RuntimeStateWriteConflictError)) throw error;
             if (expiryAttempt >= 2) {
                 throw new RuntimeStateRetryExhaustedError(error);
             }
-            const replacement = await runtime.findEntry(
-                RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE,
-                intent.entry.key,
+            return await this.cleanupExpiredReceiptFamily(
+                receiptId,
+                observedAtEpochMs,
+                expiryAttempt + 1,
             );
-            return replacement
-                ? await this.toLiveRecomputeIntentEntry(
-                    replacement,
-                    intent.entry.key,
-                    expiryAttempt + 1,
-                )
-                : undefined;
+        }
+    }
+
+    private async readExpiredReceiptFamilyCleanup(
+        receiptId: string,
+    ): Promise<RtcRttReceiptFamilyCleanupRead> {
+        const runtime = requireOptimisticRuntime(this.runtimeRepository);
+        const [receiptEntry, siblingEntries] = await Promise.all([
+            runtime.findEntry(RTC_RTT_RECEIPTS_NAMESPACE, receiptId),
+            runtime.findEntriesByPrefix(
+                RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE,
+                `${receiptId}:commandHash=`,
+            ),
+        ]);
+        return { receiptId, receiptEntry, siblingEntries };
+    }
+
+    private computeExpiredReceiptFamilyCleanup(
+        read: RtcRttReceiptFamilyCleanupRead,
+    ): RtcRttReceiptFamilyCleanupPlan {
+        if (!read.receiptEntry && read.siblingEntries.length === 0) {
+            return { outcome: 'absent' };
+        }
+        if (!read.receiptEntry) {
+            throw rttCorruption(
+                read.receiptId,
+                'RTC RTT recompute intent receipt is missing',
+            );
+        }
+        const receipt = this.toReceiptEntry(read.receiptEntry, read.receiptId);
+        const siblings = read.siblingEntries.map((entry) =>
+            this.toRecomputeIntentEntry(entry)
+        ).sort((left, right) =>
+            compareRtcTopologyIdentifiers(left.entry.key, right.entry.key)
+        );
+        return { outcome: 'delete', receipt, siblings };
+    }
+
+    private validateExpiredReceiptFamilyCleanup(
+        plan: RtcRttReceiptFamilyCleanupPlan,
+        observedAtEpochMs: number,
+    ): void {
+        if (plan.outcome === 'absent') return;
+        if (plan.receipt.entry.expireAtTimestamp > observedAtEpochMs) {
+            throw rttCorruption(
+                plan.receipt.entry.key,
+                'RTC RTT recompute receipt remains live during intent cleanup',
+            );
+        }
+        const seenGroupRefs = new Set<string>();
+        for (const sibling of plan.siblings) {
+            validateIntentAgainstReceipt(
+                sibling.value,
+                plan.receipt.value,
+                sibling.entry.key,
+            );
+            if (
+                sibling.entry.expireAtTimestamp !==
+                    plan.receipt.entry.expireAtTimestamp ||
+                sibling.entry.expireAtTimestamp > observedAtEpochMs
+            ) {
+                throw rttCorruption(
+                    sibling.entry.key,
+                    'RTC RTT recompute sibling is not jointly expired with receipt',
+                );
+            }
+            const groupIdentity = toCanonicalRtcTopologyGroupIdentity(
+                sibling.value.groupSnapshot.group,
+            );
+            if (seenGroupRefs.has(groupIdentity)) {
+                throw rttCorruption(
+                    sibling.entry.key,
+                    'RTC RTT receipt has duplicate recompute intent group',
+                );
+            }
+            seenGroupRefs.add(groupIdentity);
+        }
+        const expectedGroupRefs = plan.receipt.value.affectedGroupRefs
+            .map(toCanonicalRtcTopologyGroupIdentity)
+            .sort(compareRtcTopologyIdentifiers);
+        const actualGroupRefs = [...seenGroupRefs]
+            .sort(compareRtcTopologyIdentifiers);
+        if (!rtcTopologySemanticEqual(actualGroupRefs, expectedGroupRefs)) {
+            throw rttCorruption(
+                plan.receipt.entry.key,
+                'RTC RTT receipt recompute intent set is incomplete',
+            );
+        }
+    }
+
+    private async writeExpiredReceiptFamilyCleanup(
+        plan: RtcRttReceiptFamilyCleanupPlan,
+    ): Promise<boolean> {
+        if (plan.outcome === 'absent') return false;
+        const runtime = requireOptimisticRuntime(this.runtimeRepository);
+        return await runtime.begin(async (transaction) => {
+            const guardedReceipt = await transaction.upsertIfRevision(
+                RTC_RTT_RECEIPTS_NAMESPACE,
+                plan.receipt.entry.key,
+                plan.receipt.entry.value,
+                plan.receipt.entry.expireAtTimestamp,
+                plan.receipt.entry.revision,
+            );
+            if (guardedReceipt.status === 'conflict') {
+                throw new RuntimeStateWriteConflictError();
+            }
+            for (const sibling of plan.siblings) {
+                const deleted = await transaction.deleteIfRevision(
+                    RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE,
+                    sibling.entry.key,
+                    sibling.entry.revision,
+                );
+                if (deleted.status === 'conflict') {
+                    throw new RuntimeStateWriteConflictError();
+                }
+            }
+            const deletedReceipt = await transaction.deleteIfRevision(
+                RTC_RTT_RECEIPTS_NAMESPACE,
+                plan.receipt.entry.key,
+                guardedReceipt.revision,
+            );
+            if (deletedReceipt.status === 'conflict') {
+                throw new RuntimeStateWriteConflictError();
+            }
+            return true;
+        });
+    }
+}
+
+export function initRtcRttReceiptFamilyCleanup(
+    repository: RtcRttRepository,
+    options: RtcRttReceiptFamilyCleanupOptions = {},
+): RtcRttReceiptFamilyCleanupHandle {
+    const intervalMs = options.intervalMs ??
+        DEFAULT_RTC_RTT_RECEIPT_FAMILY_CLEANUP_INTERVAL_MS;
+    if (!Number.isSafeInteger(intervalMs) || intervalMs < 1) {
+        throw new RangeError('RTC RTT receipt family cleanup interval is invalid');
+    }
+    const schedule = options.schedule ?? ((callback: () => void, delayMs: number) =>
+        setTimeout(callback, delayMs));
+    const cancel = options.cancel ?? ((handle: unknown) =>
+        clearTimeout(handle as ReturnType<typeof setTimeout>));
+    let stopped = false;
+    let scheduledHandle: unknown;
+
+    const run = async (surfaceFailure: boolean): Promise<number> => {
+        try {
+            return await repository.cleanupExpiredReceiptFamilies();
+        } catch (error) {
+            if (surfaceFailure) throw error;
+            options.onError?.(error);
+            return 0;
+        } finally {
+            if (!stopped) {
+                scheduledHandle = schedule(() => {
+                    void run(false);
+                }, intervalMs);
+            }
+        }
+    };
+
+    const firstRun = run(true);
+    return {
+        firstRun,
+        stop: () => {
+            stopped = true;
+            if (scheduledHandle !== undefined) {
+                cancel(scheduledHandle);
+                scheduledHandle = undefined;
+            }
+        },
+    };
+}
+
+export async function migrateLegacyRtcRttRecomputeIntentDeliveryState(
+    repository: RtcRttRepository,
+    options: Readonly<{
+        oldWritersStopped: true;
+        sleep?: (delayMs: number) => Promise<void>;
+    }>,
+): Promise<void> {
+    if (options.oldWritersStopped !== true) {
+        throw new Error(
+            'RTC RTT recompute intent migration requires old writers stopped',
+        );
+    }
+    const runtime = requireOptimisticRuntime(repository.runtimeRepository);
+    const sources = await runtime.findAllEntries(
+        RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE,
+    );
+    for (const source of sources) {
+        let migrated = false;
+        for (let attempt = 0; attempt < 3 && !migrated; attempt += 1) {
+            await waitForRuntimeStateWriteRetry(attempt as 0 | 1 | 2, {
+                sleep: options.sleep,
+            });
+            try {
+                await runtime.begin(async (transaction) => {
+                    const current = await transaction.findEntry(
+                        RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE,
+                        source.key,
+                    );
+                    if (!current) return;
+                    const raw = parseValue(current);
+                    if (isRecord(raw) && Object.hasOwn(raw, 'delivery')) {
+                        try {
+                            validateRecomputeIntent(raw, current.expireAtTimestamp);
+                        } catch (error) {
+                            throw rttCorruption(
+                                current.key,
+                                error instanceof Error
+                                    ? error.message
+                                    : 'Invalid RTC RTT recompute intent',
+                            );
+                        }
+                        return;
+                    }
+                    const legacy = readLegacyRecomputeIntentForMigration(
+                        current,
+                    );
+                    const receiptEntry = await transaction.findEntry(
+                        RTC_RTT_RECEIPTS_NAMESPACE,
+                        legacy.receiptId,
+                    );
+                    if (!receiptEntry) {
+                        throw rttCorruption(
+                            current.key,
+                            'Legacy RTC RTT recompute intent receipt is missing',
+                        );
+                    }
+                    let receipt: RtcRttMutationReceipt;
+                    try {
+                        receipt = parseValue(receiptEntry) as RtcRttMutationReceipt;
+                        validateMutationReceipt(receipt);
+                    } catch (error) {
+                        throw rttCorruption(
+                            receiptEntry.key,
+                            error instanceof Error
+                                ? error.message
+                                : 'Invalid RTC RTT receipt',
+                        );
+                    }
+                    if (
+                        receipt.receiptId !== receiptEntry.key ||
+                        receiptEntry.expireAtTimestamp !== current.expireAtTimestamp
+                    ) {
+                        throw rttCorruption(
+                            current.key,
+                            'Legacy RTC RTT recompute intent family differs from receipt',
+                        );
+                    }
+                    const upgraded = {
+                        ...legacy,
+                        delivery: { state: 'pending' },
+                    } as const satisfies RtcRttRecomputeIntent;
+                    validateRecomputeIntent(upgraded, current.expireAtTimestamp);
+                    validateIntentAgainstReceipt(upgraded, receipt, current.key);
+                    const updated = await transaction.upsertIfRevision(
+                        RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE,
+                        current.key,
+                        JSON.stringify(upgraded),
+                        current.expireAtTimestamp,
+                        current.revision,
+                    );
+                    if (updated.status === 'conflict') {
+                        throw new RuntimeStateWriteConflictError();
+                    }
+                });
+                migrated = true;
+            } catch (error) {
+                if (!(error instanceof RuntimeStateWriteConflictError)) throw error;
+                if (attempt >= 2) {
+                    throw new RuntimeStateRetryExhaustedError(error);
+                }
+            }
         }
     }
 }
@@ -884,7 +1146,8 @@ function validateMutationReceipt(
         !Number.isSafeInteger(value.measurementVersion) || value.measurementVersion < 1 ||
         typeof value.acceptedAtEpochMs !== 'number' ||
         !Number.isSafeInteger(value.acceptedAtEpochMs) || value.acceptedAtEpochMs < 0 ||
-        value.outcome !== 'accepted' || !Array.isArray(value.affectedGroupRefs)
+        value.outcome !== 'accepted' || !Array.isArray(value.affectedGroupRefs) ||
+        value.affectedGroupRefs.length === 0
     ) {
         throw new TypeError('RTC RTT receipt fields are invalid');
     }
@@ -910,14 +1173,78 @@ function validateMutationReceipt(
     }
 }
 
+type LegacyRtcRttRecomputeIntent = Pick<
+    RtcRttRecomputeIntent,
+    | 'outboxId'
+    | 'receiptId'
+    | 'groupSnapshot'
+    | 'rtt'
+    | 'createdAtEpochMs'
+    | 'commandHash'
+>;
+
+function readLegacyRecomputeIntentForMigration(
+    entry: RuntimeStateEntry,
+): LegacyRtcRttRecomputeIntent {
+    try {
+        const value = parseValue(entry);
+        if (!isRecord(value)) {
+            throw new TypeError('Legacy RTC RTT recompute intent is invalid');
+        }
+        assertExactKeys(value, [
+            'outboxId',
+            'receiptId',
+            'groupSnapshot',
+            'rtt',
+            'createdAtEpochMs',
+            'commandHash',
+        ]);
+        validateRecomputeIntentBase(value);
+        return value as LegacyRtcRttRecomputeIntent;
+    } catch (error) {
+        throw rttCorruption(
+            entry.key,
+            error instanceof Error
+                ? error.message
+                : 'Invalid legacy RTC RTT recompute intent',
+        );
+    }
+}
+
 function validateRecomputeIntent(
     value: unknown,
+    physicalExpiry?: number,
 ): asserts value is RtcRttRecomputeIntent {
     if (!isRecord(value)) throw new TypeError('RTC RTT recompute intent is invalid');
     assertExactKeys(value, [
         'outboxId', 'receiptId', 'groupSnapshot', 'rtt', 'createdAtEpochMs',
-        'commandHash',
+        'commandHash', 'delivery',
     ]);
+    validateRecomputeIntentBase(value);
+    if (!isRecord(value.delivery)) {
+        throw new TypeError('RTC RTT recompute delivery state is invalid');
+    }
+    if (value.delivery.state === 'pending') {
+        assertExactKeys(value.delivery, ['state']);
+        return;
+    }
+    if (value.delivery.state !== 'delivered') {
+        throw new TypeError('RTC RTT recompute delivery state is invalid');
+    }
+    assertExactKeys(value.delivery, ['state', 'deliveredAtEpochMs']);
+    const createdAtEpochMs = value.createdAtEpochMs as number;
+    if (
+        typeof value.delivery.deliveredAtEpochMs !== 'number' ||
+        !Number.isSafeInteger(value.delivery.deliveredAtEpochMs) ||
+        value.delivery.deliveredAtEpochMs < createdAtEpochMs ||
+        (physicalExpiry !== undefined &&
+            value.delivery.deliveredAtEpochMs > physicalExpiry)
+    ) {
+        throw new TypeError('RTC RTT recompute delivered time is invalid');
+    }
+}
+
+function validateRecomputeIntentBase(value: Record<string, unknown>): void {
     if (
         typeof value.outboxId !== 'string' || value.outboxId.length === 0 ||
         typeof value.receiptId !== 'string' || value.receiptId.length === 0 ||

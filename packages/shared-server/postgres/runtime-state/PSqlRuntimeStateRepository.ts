@@ -320,13 +320,23 @@ export class PSqlRuntimeStateRepository
         return rows.length;
     }
 
-    async deleteAllExpired(): Promise<number> {
-        const rows = await this.sql<{ store_namespace: string; store_key: string }[]>`
-            delete
-            from runtime_state_store
-            where expire_at_ts <= now()
-            returning store_namespace, store_key
-        `;
+    async deleteAllExpired(
+        excludedNamespaces: readonly string[] = [],
+    ): Promise<number> {
+        const rows = excludedNamespaces.length === 0
+            ? await this.sql<{ store_namespace: string; store_key: string }[]>`
+                delete
+                from runtime_state_store
+                where expire_at_ts <= now()
+                returning store_namespace, store_key
+            `
+            : await this.sql<{ store_namespace: string; store_key: string }[]>`
+                delete
+                from runtime_state_store
+                where expire_at_ts <= now()
+                  and store_namespace not in ${this.sql(excludedNamespaces)}
+                returning store_namespace, store_key
+            `;
 
         return rows.length;
     }
@@ -336,8 +346,13 @@ export { PSqlRuntimeStateRepository as RuntimeStateRepository };
 
 export async function evictExpiredRuntimeStateRows(
     repository: Pick<PSqlRuntimeStateRepository, 'deleteAllExpired'>,
+    options: Readonly<{
+        excludedNamespaces?: readonly string[];
+    }> = {},
 ): Promise<number> {
-    const removed = await repository.deleteAllExpired();
+    const removed = await repository.deleteAllExpired(
+        options.excludedNamespaces ?? [],
+    );
     if (removed > 0) {
         console.log(`Evicted expired runtime_state_store rows: ${removed}`);
     }
@@ -347,13 +362,18 @@ export async function evictExpiredRuntimeStateRows(
 
 export async function initRuntimeStateExpiryEviction(
     repository: Pick<PSqlRuntimeStateRepository, 'deleteAllExpired'>,
-    intervalMs: number = RUNTIME_STATE_EXPIRY_EVICTION_INTERVAL_MS,
+    options: Readonly<{
+        intervalMs?: number;
+        excludedNamespaces?: readonly string[];
+    }> = {},
 ): Promise<void> {
     await tryRunInIntervals(
         async () => {
-            await evictExpiredRuntimeStateRows(repository);
+            await evictExpiredRuntimeStateRows(repository, {
+                excludedNamespaces: options.excludedNamespaces,
+            });
         },
-        intervalMs,
+        options.intervalMs ?? RUNTIME_STATE_EXPIRY_EVICTION_INTERVAL_MS,
     );
 }
 

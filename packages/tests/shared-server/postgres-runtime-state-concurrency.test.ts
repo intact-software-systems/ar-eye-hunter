@@ -24,6 +24,7 @@ import {
 } from '@shared-server/rallar-system/repositories/RtcTopologyPublicationRepository.ts';
 import {
     RTC_RTT_LATEST_NAMESPACE,
+    RTC_RTT_PROTECTED_RUNTIME_STATE_NAMESPACES,
     RtcRttRepository,
 } from '@shared-server/rallar-system/repositories/RtcRttRepository.ts';
 import type { RtcRttMutationCommand } from '@shared-server/rallar-system/services/rtc-topology-mutations.ts';
@@ -167,6 +168,51 @@ describe('Postgres runtime-state conditional-write concurrency', () => {
         });
         expect(endCalls).toBe(1);
     });
+
+    postgresIt(
+        'preserves protected RTC receipt families during generic live expiry',
+        async () => {
+            const sql = await createSql(requireDatabaseUrl());
+            const repository = new PSqlRuntimeStateRepository(sql);
+            const ordinaryNamespace = `runtime-expiry-${crypto.randomUUID()}`;
+            const key = `expiry-${crypto.randomUUID()}`;
+            const expiredAtEpochMs = Date.now() - 1_000;
+            try {
+                for (const namespace of [
+                    ...RTC_RTT_PROTECTED_RUNTIME_STATE_NAMESPACES,
+                    ordinaryNamespace,
+                ]) {
+                    await expect(repository.insertIfAbsent(
+                        namespace,
+                        key,
+                        '{}',
+                        expiredAtEpochMs,
+                    )).resolves.toMatchObject({ status: 'applied' });
+                }
+
+                await expect(repository.deleteAllExpired(
+                    RTC_RTT_PROTECTED_RUNTIME_STATE_NAMESPACES,
+                )).resolves.toBeGreaterThanOrEqual(1);
+                await expect(repository.findEntry(ordinaryNamespace, key))
+                    .resolves.toBeUndefined();
+                for (const namespace of RTC_RTT_PROTECTED_RUNTIME_STATE_NAMESPACES) {
+                    await expect(repository.findEntry(namespace, key))
+                        .resolves.toBeDefined();
+                }
+            } finally {
+                await sql`
+                    delete from runtime_state_store
+                    where store_namespace in ${sql([
+                        ...RTC_RTT_PROTECTED_RUNTIME_STATE_NAMESPACES,
+                        ordinaryNamespace,
+                    ])}
+                      and store_key = ${key}
+                `;
+                await sql.end();
+            }
+        },
+        60_000,
+    );
 
     postgresIt(
         'allows one independent writer to update and delete each revision',
