@@ -10,7 +10,11 @@ import type {
     StoredGroupTopologyConfig,
     StoredGroupTopologyOverride,
 } from '@shared/api/graph-topology-management-types.ts';
-import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import type {
+    GroupRef,
+    GroupSnapshot,
+    GroupStateCausalRevision,
+} from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import * as rttRepository from '@shared/repository/rtt-repository.ts';
@@ -32,10 +36,17 @@ import {
 } from '../repositories/RtcTopologyExecutionRepository.ts';
 import { compareRtcTopologyIdentifiers } from '../rtc-topology-identifiers.ts';
 import {
+    compareGroupCausalRevision,
     readGroupCausalRevision,
     readGroupCreatedByPrincipalId,
     readGroupMemberSessionIds,
 } from '@shared/api/group-client-views.ts';
+import {
+    GroupStateSnapshotIncomparableError,
+} from '@shared/repository/group-state-snapshots-repository.ts';
+import {
+    StateSnapshotRevisionConflictError,
+} from '@shared/repository/state-snapshot-revision.ts';
 import {
     GroupTopologyServerOptions,
     resolveGroupTopologyConfig,
@@ -83,6 +94,7 @@ import {
     computeTopologyMutation,
     validateTopologyMutation,
 } from './rtc-topology-mutations.ts';
+import { rtcTopologySemanticEqual } from '../rtc-topology-semantic-equality.ts';
 
 export class GroupTopologyValidationError extends Error {
     readonly status = 422;
@@ -126,7 +138,10 @@ export type GroupTopologyPublisher = (
 
 export type GroupTopologyGroupSnapshotReader = (
     ref: GroupRef,
-    options?: Readonly<{ minSnapshotVersion?: number }>,
+    options?: Readonly<{
+        minSnapshotVersion?: number;
+        minCausalRevision?: GroupStateCausalRevision;
+    }>,
 ) => GroupSnapshot | undefined | Promise<GroupSnapshot | undefined>;
 
 export type GroupTopologyManagementServiceOptions = Readonly<{
@@ -648,7 +663,15 @@ export class GroupTopologyManagementService {
         requestOptions?: GroupTopologyConfigPatch,
         knownGroup?: GroupSnapshot,
     ): Promise<GroupTopologyPlanningAuthority> {
-        const group = knownGroup ?? await this.findCurrentGroupSnapshot(groupRef);
+        const currentGroup = knownGroup
+            ? await this.findTopologyPlanningGroupSnapshot(
+                groupRef,
+                knownGroup,
+            )
+            : undefined;
+        const group = knownGroup
+            ? selectTopologyPlanningGroup(knownGroup, currentGroup)
+            : await this.findCurrentGroupSnapshot(groupRef);
         const [config, rttMeasurements] = await Promise.all([
             this.readResolvedTopologyConfig(group.group, requestOptions),
             this.readRawRttMeasurements(group),
@@ -1110,8 +1133,26 @@ export class GroupTopologyManagementService {
         return this.options.processRttReader?.() ?? rttRepository.getAllRtt();
     }
 
-    private async findGroupSnapshotByRef(groupRef: GroupRef): Promise<GroupSnapshot | undefined> {
-        return await this.options.findGroupSnapshotByRef(groupRef);
+    private async findGroupSnapshotByRef(
+        groupRef: GroupRef,
+        options?: Readonly<{
+            minSnapshotVersion?: number;
+            minCausalRevision?: GroupStateCausalRevision;
+        }>,
+    ): Promise<GroupSnapshot | undefined> {
+        return await this.options.findGroupSnapshotByRef(groupRef, options);
+    }
+
+    private async findTopologyPlanningGroupSnapshot(
+        groupRef: GroupRef,
+        knownGroup: GroupSnapshot,
+    ): Promise<GroupSnapshot | undefined> {
+        if (this.options.groupStateRepository) {
+            return await this.options.groupStateRepository.readSnapshot(groupRef);
+        }
+        return await this.findGroupSnapshotByRef(groupRef, {
+            minCausalRevision: readGroupCausalRevision(knownGroup),
+        }) ?? await this.findGroupSnapshotByRef(groupRef);
     }
 
     private requireConfigRepository(): GroupTopologyConfigRepository {
@@ -1543,6 +1584,92 @@ function isGroupTopologyActiveAt(
     return snapshot.group.status === 'active' &&
         (snapshot.group.expiresAtEpochMs === null ||
             snapshot.group.expiresAtEpochMs > observedAtEpochMs);
+}
+
+function selectTopologyPlanningGroup(
+    knownGroup: GroupSnapshot,
+    currentGroup: GroupSnapshot | undefined,
+): GroupSnapshot {
+    if (!currentGroup) return knownGroup;
+    const comparison = compareGroupCausalRevision(
+        readGroupCausalRevision(currentGroup),
+        readGroupCausalRevision(knownGroup),
+    );
+    if (comparison === 'dominates') return currentGroup;
+    if (comparison === 'dominated') return knownGroup;
+    if (comparison === 'incomparable') {
+        throw new GroupStateSnapshotIncomparableError(knownGroup.group);
+    }
+    if (
+        !rtcTopologySemanticEqual(currentGroup, knownGroup) &&
+        !isTuplePreservingGroupLivenessReduction(currentGroup, knownGroup)
+    ) {
+        throw new StateSnapshotRevisionConflictError(
+            'Group',
+            knownGroup.stateRevision,
+        );
+    }
+    return currentGroup;
+}
+
+function isTuplePreservingGroupLivenessReduction(
+    currentGroup: GroupSnapshot,
+    knownGroup: GroupSnapshot,
+): boolean {
+    const {
+        activeSessions: currentSessions,
+        onlineMemberCount: _currentOnlineMemberCount,
+        ...currentAuthority
+    } = currentGroup;
+    const {
+        activeSessions: knownSessions,
+        onlineMemberCount: _knownOnlineMemberCount,
+        ...knownAuthority
+    } = knownGroup;
+    if (
+        !rtcTopologySemanticEqual(currentAuthority, knownAuthority) ||
+        !hasConsistentGroupOnlineMemberCount(currentGroup) ||
+        !hasConsistentGroupOnlineMemberCount(knownGroup)
+    ) {
+        return false;
+    }
+
+    const knownSessionsById = new Map(
+        knownSessions.map((session, index) => [
+            session.sessionId,
+            { index, session },
+        ]),
+    );
+    if (
+        knownSessionsById.size !== knownSessions.length ||
+        new Set(currentSessions.map((session) => session.sessionId)).size !==
+            currentSessions.length
+    ) {
+        return false;
+    }
+    let previousKnownIndex = -1;
+    for (const currentSession of currentSessions) {
+        const known = knownSessionsById.get(currentSession.sessionId);
+        if (
+            !known ||
+            known.index <= previousKnownIndex ||
+            !rtcTopologySemanticEqual(currentSession, known.session)
+        ) {
+            return false;
+        }
+        previousKnownIndex = known.index;
+    }
+    return true;
+}
+
+function hasConsistentGroupOnlineMemberCount(snapshot: GroupSnapshot): boolean {
+    const activePrincipalIds = new Set(
+        snapshot.activeSessions.map((session) => session.principalId),
+    );
+    return snapshot.onlineMemberCount === snapshot.members.filter((member) =>
+        member.status === 'active' &&
+        activePrincipalIds.has(member.principalId)
+    ).length;
 }
 
 function canonicalGroupRef(ref: GroupRef): GroupRef {

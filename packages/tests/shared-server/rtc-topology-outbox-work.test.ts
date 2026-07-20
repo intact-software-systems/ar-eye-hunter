@@ -4,7 +4,13 @@ import {
     InMemoryQueueBox,
     type ALMessage,
 } from '@shared/mod.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import type {
+    GroupPresenceSession,
+    GroupPresenceSummary,
+    GroupRef,
+    GroupSnapshot,
+    GroupStateCausalRevision,
+} from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import {
@@ -15,6 +21,7 @@ import {
 } from '@shared-server/rallar-system/services/RtcTopologyOutboxWork.ts';
 import { GroupTopologyManagementService as ConcreteGroupTopologyManagementService } from '@shared-server/rallar-system/services/group-topology-management-service.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import {
     RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
     RtcTopologySnapshotRepository,
@@ -142,6 +149,331 @@ describe('RTC topology APP_OUTBOX work', () => {
             10,
         );
         expect(publish).toHaveBeenCalledOnce();
+    });
+
+    it('plans from the causally newest queued authority without letting older work replace it', async () => {
+        const queue = new InMemoryQueueBox();
+        const runtime = createRtcTopologyOutboxPublisher({
+            outboxQueueReader: new OutboxQueueReader(queue),
+            now: () => 100,
+        });
+        const staleFinderGroup = createGroupSnapshotWithCausalRevision(4, 2);
+        const queuedNewerGroup = createGroupSnapshotWithCausalRevision(7, 6);
+        const queuedOlderGroup = createGroupSnapshotWithCausalRevision(6, 5);
+        await runtime.publisher.enqueueForGroupSnapshot(queuedNewerGroup);
+        await runtime.publisher.enqueueForGroupSnapshot(queuedOlderGroup);
+        const entries = await entriesIn(queue);
+        const newerEntry = entries.find((entry) =>
+            (readWork(entry) as RtcTopologyGroupRevisionWork)
+                .sourceGroupStateRevision === queuedNewerGroup.stateRevision
+        )!;
+        const olderEntry = entries.find((entry) =>
+            (readWork(entry) as RtcTopologyGroupRevisionWork)
+                .sourceGroupStateRevision === queuedOlderGroup.stateRevision
+        )!;
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const topologyRepository = new RtcTopologySnapshotRepository(
+            runtimeRepository,
+        );
+        const topologyManagement = new ConcreteGroupTopologyManagementService({
+            findGroupSnapshotByRef: () => staleFinderGroup,
+            topologyService: new RallarRtcTopologyService({ now: () => 10 }),
+            topologySnapshotRepository: topologyRepository,
+            processRttReader: () => [],
+        });
+        const staleTopology = (await topologyManagement.planGroupTopology(
+            staleFinderGroup,
+            undefined,
+        )).snapshot;
+        expect(await topologyRepository.commitSnapshot({
+            candidate: staleTopology,
+        })).toMatchObject({ status: 'accepted' });
+        const publish = vi.fn().mockResolvedValue(0);
+        const handler = createRtcTopologyWorkHandler({
+            runtime,
+            topologyManagement,
+            executionRepository: new RtcTopologyExecutionRepository(
+                runtimeRepository,
+            ),
+            publicationFanout: {
+                readiness: Promise.resolve(),
+                publish,
+                deliverLocal: () => 0,
+            },
+        });
+
+        await handler.onMessage(
+            JSON.parse(newerEntry.resource),
+            newerEntry,
+        );
+        await handler.onMessage(
+            JSON.parse(olderEntry.resource),
+            olderEntry,
+        );
+
+        expect((await topologyRepository.findSnapshot(
+            queuedNewerGroup.group,
+        ))?.sourceGroupStateCausalRevision).toEqual({
+            groupRevision: 7,
+            presenceRevision: 6,
+        });
+        expect(publish.mock.calls.map(([publication]) =>
+            publication.sourceGroupStateCausalRevision
+        )).toEqual([{
+            groupRevision: 7,
+            presenceRevision: 6,
+        }]);
+        expect(await runtimeRepository.findAllEntries(
+            RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
+        )).toHaveLength(1);
+    });
+
+    it('rejects equal-causal queued and finder authority with different content', async () => {
+        const queue = new InMemoryQueueBox();
+        const runtime = createRtcTopologyOutboxPublisher({
+            outboxQueueReader: new OutboxQueueReader(queue),
+        });
+        const queuedGroup = createGroupSnapshotWithCausalRevision(7, 6);
+        const corruptFinderGroup: GroupSnapshot = {
+            ...queuedGroup,
+            group: {
+                ...queuedGroup.group,
+                displayName: 'equal tuple but different finder authority',
+            },
+        };
+        await runtime.publisher.enqueueForGroupSnapshot(queuedGroup);
+        const [entry] = await entriesIn(queue);
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const topologyManagement = new ConcreteGroupTopologyManagementService({
+            findGroupSnapshotByRef: () => corruptFinderGroup,
+            topologyService: new RallarRtcTopologyService({ now: () => 10 }),
+            topologySnapshotRepository: new RtcTopologySnapshotRepository(
+                runtimeRepository,
+            ),
+            processRttReader: () => [],
+        });
+        const handler = createRtcTopologyWorkHandler({
+            runtime,
+            topologyManagement,
+            executionRepository: new RtcTopologyExecutionRepository(
+                runtimeRepository,
+            ),
+            publicationFanout: {
+                readiness: Promise.resolve(),
+                publish: vi.fn().mockResolvedValue(0),
+                deliverLocal: () => 0,
+            },
+        });
+
+        await expect(handler.onMessage(
+            JSON.parse(entry!.resource),
+            entry!,
+        )).rejects.toMatchObject({
+            name: 'StateSnapshotRevisionConflictError',
+        });
+    });
+
+    it('rejects incomparable queued and finder authority after a lower-bound cache miss', async () => {
+        const queue = new InMemoryQueueBox();
+        const runtime = createRtcTopologyOutboxPublisher({
+            outboxQueueReader: new OutboxQueueReader(queue),
+        });
+        const queuedGroup = createGroupSnapshotWithCausalRevision(2, 1);
+        const incomparableFinderGroup = createGroupSnapshotWithCausalRevision(
+            1,
+            2,
+        );
+        await runtime.publisher.enqueueForGroupSnapshot(queuedGroup);
+        const [entry] = await entriesIn(queue);
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const findGroupSnapshotByRef = vi.fn((
+            _groupRef: GroupRef,
+            options?: Readonly<{
+                minCausalRevision?: GroupStateCausalRevision;
+            }>,
+        ) => options?.minCausalRevision
+            ? undefined
+            : incomparableFinderGroup);
+        const topologyManagement = new ConcreteGroupTopologyManagementService({
+            findGroupSnapshotByRef,
+            topologyService: new RallarRtcTopologyService({ now: () => 10 }),
+            topologySnapshotRepository: new RtcTopologySnapshotRepository(
+                runtimeRepository,
+            ),
+            processRttReader: () => [],
+        });
+        const handler = createRtcTopologyWorkHandler({
+            runtime,
+            topologyManagement,
+            executionRepository: new RtcTopologyExecutionRepository(
+                runtimeRepository,
+            ),
+            publicationFanout: {
+                readiness: Promise.resolve(),
+                publish: vi.fn().mockResolvedValue(0),
+                deliverLocal: () => 0,
+            },
+        });
+
+        await expect(handler.onMessage(
+            JSON.parse(entry!.resource),
+            entry!,
+        )).rejects.toMatchObject({
+            name: 'GroupStateSnapshotIncomparableError',
+        });
+        expect(findGroupSnapshotByRef).toHaveBeenCalledTimes(2);
+    });
+
+    it('prefers durable group authority when cache state masks an incomparable tuple', async () => {
+        const queue = new InMemoryQueueBox();
+        const runtime = createRtcTopologyOutboxPublisher({
+            outboxQueueReader: new OutboxQueueReader(queue),
+        });
+        const queuedGroup = createGroupSnapshotWithCausalRevision(2, 1);
+        const durableGroup = createGroupSnapshotWithCausalRevision(1, 2);
+        await runtime.publisher.enqueueForGroupSnapshot(queuedGroup);
+        const [entry] = await entriesIn(queue);
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const groupStateRepository = new GroupStateRepository(runtimeRepository);
+        await groupStateRepository.putGroup(durableGroup.group);
+        await Promise.all(durableGroup.members.map((member) =>
+            groupStateRepository.putMember(member)
+        ));
+        const presenceSummary: GroupPresenceSummary = {
+            applicationId: durableGroup.group.applicationId,
+            workspaceId: durableGroup.group.workspaceId,
+            groupId: durableGroup.group.groupId,
+            causalRevision: durableGroup.causalRevision,
+            activePrincipalIds: [],
+            activeSessionIds: [],
+            activeSessions: [],
+            activePrincipalCount: 0,
+            activeSessionCount: 0,
+            computedAtEpochMs: 10,
+        };
+        expect(await groupStateRepository.insertPresenceSummary(
+            presenceSummary,
+        )).toMatchObject({ status: 'applied' });
+        const findGroupSnapshotByRef = vi.fn(() => queuedGroup);
+        const topologyManagement = new ConcreteGroupTopologyManagementService({
+            findGroupSnapshotByRef,
+            groupStateRepository,
+            topologyService: new RallarRtcTopologyService({ now: () => 10 }),
+            topologySnapshotRepository: new RtcTopologySnapshotRepository(
+                runtimeRepository,
+            ),
+            processRttReader: () => [],
+        });
+        const handler = createRtcTopologyWorkHandler({
+            runtime,
+            topologyManagement,
+            executionRepository: new RtcTopologyExecutionRepository(
+                runtimeRepository,
+            ),
+            publicationFanout: {
+                readiness: Promise.resolve(),
+                publish: vi.fn().mockResolvedValue(0),
+                deliverLocal: () => 0,
+            },
+        });
+
+        await expect(handler.onMessage(
+            JSON.parse(entry!.resource),
+            entry!,
+        )).rejects.toMatchObject({
+            name: 'GroupStateSnapshotIncomparableError',
+        });
+        expect(findGroupSnapshotByRef).not.toHaveBeenCalled();
+    });
+
+    it('accepts a durable equal-causal liveness reduction as current authority', async () => {
+        const queue = new InMemoryQueueBox();
+        const runtime = createRtcTopologyOutboxPublisher({
+            outboxQueueReader: new OutboxQueueReader(queue),
+        });
+        const baseGroup = createGroupSnapshotWithCausalRevision(1, 1);
+        const expiredSession: GroupPresenceSession = {
+            applicationId: baseGroup.group.applicationId,
+            workspaceId: baseGroup.group.workspaceId,
+            groupId: baseGroup.group.groupId,
+            sessionId: 'expired-session',
+            principalId: 'owner',
+            generationId: 'expired-generation',
+            generationVersion: 1,
+            connectedAtEpochMs: 1,
+            lastHeartbeatAtEpochMs: 1,
+            expiresAtEpochMs: 2,
+            status: 'active',
+            disconnectedAtEpochMs: null,
+            disconnectReason: null,
+        };
+        const queuedGroup: GroupSnapshot = {
+            ...baseGroup,
+            activeSessions: [expiredSession],
+            onlineMemberCount: 1,
+        };
+        await runtime.publisher.enqueueForGroupSnapshot(queuedGroup);
+        const [entry] = await entriesIn(queue);
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const groupStateRepository = new GroupStateRepository(runtimeRepository);
+        await groupStateRepository.putGroup(queuedGroup.group);
+        await Promise.all(queuedGroup.members.map((member) =>
+            groupStateRepository.putMember(member)
+        ));
+        await groupStateRepository.putPresenceSession(expiredSession);
+        const presenceSummary: GroupPresenceSummary = {
+            applicationId: queuedGroup.group.applicationId,
+            workspaceId: queuedGroup.group.workspaceId,
+            groupId: queuedGroup.group.groupId,
+            causalRevision: queuedGroup.causalRevision,
+            activePrincipalIds: ['owner'],
+            activeSessionIds: [expiredSession.sessionId],
+            activeSessions: [expiredSession],
+            activePrincipalCount: 1,
+            activeSessionCount: 1,
+            computedAtEpochMs: 1,
+        };
+        expect(await groupStateRepository.insertPresenceSummary(
+            presenceSummary,
+        )).toMatchObject({ status: 'applied' });
+        await expect(groupStateRepository.readSnapshot(queuedGroup.group))
+            .resolves.toMatchObject({
+                causalRevision: queuedGroup.causalRevision,
+                activeSessions: [],
+                onlineMemberCount: 0,
+            });
+        const findGroupSnapshotByRef = vi.fn(() => queuedGroup);
+        const topologyRepository = new RtcTopologySnapshotRepository(
+            runtimeRepository,
+        );
+        const topologyManagement = new ConcreteGroupTopologyManagementService({
+            findGroupSnapshotByRef,
+            groupStateRepository,
+            topologyService: new RallarRtcTopologyService({ now: () => 10 }),
+            topologySnapshotRepository: topologyRepository,
+            processRttReader: () => [],
+        });
+        const handler = createRtcTopologyWorkHandler({
+            runtime,
+            topologyManagement,
+            executionRepository: new RtcTopologyExecutionRepository(
+                runtimeRepository,
+            ),
+            publicationFanout: {
+                readiness: Promise.resolve(),
+                publish: vi.fn().mockResolvedValue(0),
+                deliverLocal: () => 0,
+            },
+        });
+
+        await expect(handler.onMessage(
+            JSON.parse(entry!.resource),
+            entry!,
+        )).resolves.toBeUndefined();
+        expect((await topologyRepository.findSnapshot(
+            queuedGroup.group,
+        ))?.nextHopsBySessionId).toEqual({});
+        expect(findGroupSnapshotByRef).not.toHaveBeenCalled();
     });
 
     it.each([
@@ -1316,6 +1648,23 @@ function createGroupSnapshot(stateRevision: number): GroupSnapshot {
         activeSessions: [],
         memberCount: 1,
         onlineMemberCount: 0,
+    };
+}
+
+function createGroupSnapshotWithCausalRevision(
+    groupRevision: number,
+    presenceRevision: number,
+): GroupSnapshot {
+    const stateRevision = groupRevision + presenceRevision;
+    const snapshot = createGroupSnapshot(stateRevision);
+    return {
+        ...snapshot,
+        causalRevision: { groupRevision, presenceRevision },
+        group: {
+            ...snapshot.group,
+            snapshotVersion: groupRevision,
+            presenceVersion: presenceRevision,
+        },
     };
 }
 

@@ -236,7 +236,11 @@ export function createRtcTopologyWorkHandler(options: Readonly<{
                     return;
                 }
                 const authority = await options.topologyManagement
-                    .readTopologyPlanningAuthority(work.groupSnapshot.group);
+                    .readTopologyPlanningAuthority(
+                        work.groupSnapshot.group,
+                        undefined,
+                        work.groupSnapshot,
+                    );
                 const group = authority.group;
                 if (
                     work.kind === 'group-revision' &&
