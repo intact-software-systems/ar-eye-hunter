@@ -24,6 +24,10 @@ import {
     GroupTopologyManagementService,
     materializeRtcOverlayTopologyBroadcastMessage,
 } from '@shared-server/rallar-system/services/group-topology-management-service.ts';
+import {
+    groupStateMaintenanceRequestId,
+    type GroupMaintenanceSemanticCommand,
+} from '@shared-server/rallar-system/services/group-state-service.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
 import {
     RtcTopologyExecutionRepository,
@@ -634,18 +638,54 @@ describe('Postgres runtime-state conditional-write concurrency', () => {
             if (!receipt) throw new Error('Final topology receipt is absent from the report');
             const outboxIds = receipt.outboxIds;
             const groupRef = receipt.groupRef;
+            const ownerClientId = report.outputs?.ownerClientId;
             const reusedSessionId = report.outputs?.reusedSessionId;
             const expiryProbeSessionId = report.outputs?.expiryProbeSessionId;
+            const expiredPresenceAtEpochMs = report.outputs?.expiredPresenceAtEpochMs;
+            const expandedRecipe = JSON.parse(await readFile(
+                path.join(path.dirname(reportPath), 'expanded-recipe.json'),
+                'utf8',
+            )) as {
+                recipe?: {
+                    variables?: Record<string, unknown>;
+                    steps?: Array<{
+                        name?: unknown;
+                        request?: { body?: Record<string, unknown> };
+                    }>;
+                };
+            };
+            const runId = expandedRecipe.recipe?.variables?.runId;
+            const expiryProbeGenerationTemplate = expandedRecipe.recipe?.steps?.find((step) =>
+                step.name === 'connectExpiredPresenceProbe'
+            )?.request?.body?.generationId;
+            const reusedGenerationOneTemplate = expandedRecipe.recipe?.steps?.find((step) =>
+                step.name === 'connectReusedSessionGenerationOne'
+            )?.request?.body?.generationId;
             if (
                 !Array.isArray(outboxIds) || outboxIds.length !== 1 ||
                 typeof outboxIds[0] !== 'string' || outboxIds[0].length === 0 ||
                 !isGroupRefRecord(groupRef) ||
+                typeof ownerClientId !== 'string' || ownerClientId.length === 0 ||
                 typeof reusedSessionId !== 'string' || reusedSessionId.length === 0 ||
                 typeof expiryProbeSessionId !== 'string' ||
-                expiryProbeSessionId.length === 0
+                expiryProbeSessionId.length === 0 ||
+                typeof expiredPresenceAtEpochMs !== 'number' ||
+                !Number.isSafeInteger(expiredPresenceAtEpochMs) ||
+                expiredPresenceAtEpochMs <= 0 ||
+                typeof runId !== 'string' || runId.length === 0 ||
+                typeof expiryProbeGenerationTemplate !== 'string' ||
+                typeof reusedGenerationOneTemplate !== 'string'
             ) {
                 throw new Error('Scenario receipt or presence identity is invalid');
             }
+            const expiryProbeGenerationId = expiryProbeGenerationTemplate.replaceAll(
+                '{runId}',
+                runId,
+            );
+            const reusedGenerationOneId = reusedGenerationOneTemplate.replaceAll(
+                '{runId}',
+                runId,
+            );
 
             const sql = await createSql(requireDatabaseUrl());
             try {
@@ -688,9 +728,57 @@ describe('Postgres runtime-state conditional-write concurrency', () => {
                     ...groupRef,
                     sessionId: expiryProbeSessionId,
                 })).resolves.toBeUndefined();
-                expect((await groupRepository.listEvents(groupRef)).filter((event) =>
-                    event.eventType === 'session-disconnected' && event.reason === 'expired'
-                )).toHaveLength(1);
+                const expiryEvents = (await groupRepository.listEvents(groupRef))
+                    .filter((event) =>
+                        event.eventType === 'session-disconnected' &&
+                        event.reason === 'expired'
+                    );
+                expect(expiryEvents).toHaveLength(1);
+                const expiryEvent = expiryEvents[0];
+                if (!expiryEvent) throw new Error('Expiry event is absent from Postgres');
+                expect(expiryEvent).toMatchObject({
+                    ...groupRef,
+                    eventType: 'session-disconnected',
+                    reason: 'expired',
+                    traceId: null,
+                    payload: {},
+                    actor: {
+                        kind: 'service',
+                        serviceId: expect.stringMatching(/\S/u),
+                    },
+                });
+                const expirySemanticCommand: GroupMaintenanceSemanticCommand = {
+                    operation: 'disconnectPresence',
+                    aggregateRef: groupRef,
+                    sessionId: expiryProbeSessionId,
+                    input: {
+                        principalId: ownerClientId,
+                        generationId: expiryProbeGenerationId,
+                        generationVersion: expiredPresenceAtEpochMs,
+                        observedExpiresAtEpochMs: expiredPresenceAtEpochMs,
+                        disconnectedAtEpochMs: expiryEvent.occurredAtEpochMs,
+                        lastHeartbeatAtEpochMs: expiredPresenceAtEpochMs,
+                        expiresAtEpochMs: expiredPresenceAtEpochMs,
+                        actorPrincipalId: null,
+                        actorSessionId: null,
+                        reason: 'expired',
+                        traceId: null,
+                    },
+                };
+                expect(expiryEvent.requestId).toBe(
+                    groupStateMaintenanceRequestId('expiry', expirySemanticCommand),
+                );
+                const reusedGenerationOneCommand: GroupMaintenanceSemanticCommand = {
+                    ...expirySemanticCommand,
+                    sessionId: reusedSessionId,
+                    input: {
+                        ...expirySemanticCommand.input,
+                        generationId: reusedGenerationOneId,
+                    },
+                };
+                expect(expiryEvent.requestId).not.toBe(
+                    groupStateMaintenanceRequestId('expiry', reusedGenerationOneCommand),
+                );
             } finally {
                 await sql.end();
             }
