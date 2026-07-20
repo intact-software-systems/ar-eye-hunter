@@ -2,8 +2,14 @@ import { describe, expect, it, vi } from 'vitest';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import {
     evictExpiredRuntimeStateRows,
+    initRuntimeStateExpiryEviction,
     PSqlRuntimeStateRepository,
 } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
+
+const initWithLegacyNumericInterval: (
+    repository: Parameters<typeof initRuntimeStateExpiryEviction>[0],
+    intervalMs?: number,
+) => Promise<void> = initRuntimeStateExpiryEviction;
 
 describe('runtime state expiry eviction', () => {
     it('deletes expired rows across all runtime_state_store namespaces', async () => {
@@ -68,6 +74,58 @@ describe('runtime state expiry eviction', () => {
             expect(log).not.toHaveBeenCalled();
         } finally {
             log.mockRestore();
+        }
+    });
+
+    it.each([
+        {
+            label: 'legacy numeric interval',
+            input: 123,
+            intervalMs: 123,
+            excludedNamespaces: [],
+        },
+        {
+            label: 'default interval',
+            input: undefined,
+            intervalMs: 60_000,
+            excludedNamespaces: [],
+        },
+        {
+            label: 'options interval and exclusions',
+            input: {
+                intervalMs: 456,
+                excludedNamespaces: ['rtc-rtt:receipts'],
+            },
+            intervalMs: 456,
+            excludedNamespaces: ['rtc-rtt:receipts'],
+        },
+    ] as const)('preserves $label expiry initializer behavior', async ({
+        input,
+        intervalMs,
+        excludedNamespaces,
+    }) => {
+        vi.useFakeTimers();
+        const repository = {
+            deleteAllExpired: vi.fn(async () => 0),
+        };
+        try {
+            const initialised = input === undefined
+                ? initWithLegacyNumericInterval(repository)
+                : typeof input === 'number'
+                ? initWithLegacyNumericInterval(repository, input)
+                : initRuntimeStateExpiryEviction(repository, input);
+            await initialised;
+            expect(repository.deleteAllExpired).toHaveBeenCalledTimes(1);
+            expect(repository.deleteAllExpired)
+                .toHaveBeenLastCalledWith([...excludedNamespaces]);
+
+            await vi.advanceTimersByTimeAsync(intervalMs - 1);
+            expect(repository.deleteAllExpired).toHaveBeenCalledTimes(1);
+            await vi.advanceTimersByTimeAsync(1);
+            expect(repository.deleteAllExpired).toHaveBeenCalledTimes(2);
+        } finally {
+            vi.clearAllTimers();
+            vi.useRealTimers();
         }
     });
 });

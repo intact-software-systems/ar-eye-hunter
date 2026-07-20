@@ -9,8 +9,16 @@ import { createHttpTimingMiddleware } from './services/http-timing-middleware.ts
 import { logDatabaseBackendConfig, logPGliteSchemaInitConfig } from './db/database-config.ts';
 import { logDatabasePubSubConfig } from './db/database-pubsub-config.ts';
 import { assertApiV1ProductionEnv } from '@shared-server/http/production-env-hardening.ts';
+import { shutdownMiddlewareBackgroundTasks } from './middleware.ts';
 
 const app: Hono = new Hono();
+addEventListener('unload', () => {
+  try {
+    shutdownMiddlewareBackgroundTasks();
+  } catch (error) {
+    console.error('Failed to stop middleware background tasks:', error);
+  }
+});
 assertApiV1ProductionEnv(Deno.env);
 const corsOrigins = readCorsOrigins();
 

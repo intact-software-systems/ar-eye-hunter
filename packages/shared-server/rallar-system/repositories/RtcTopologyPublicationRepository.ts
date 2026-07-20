@@ -157,10 +157,16 @@ export async function migrateLegacyRtcTopologyPublicationKeys(
                             );
                         }
                     }
+                    const claimExpiry = currentSource.expireAtTimestamp;
                     if (destinationClaim) {
                         readWorkClaimForMigration(destinationClaim, expectedClaim);
+                        if (destinationClaim.expireAtTimestamp !== claimExpiry) {
+                            throw publicationCorruption(
+                                destinationClaim.key,
+                                'Canonical publication work claim physical expiry differs from legacy source',
+                            );
+                        }
                     }
-                    const claimExpiry = currentSource.expireAtTimestamp;
                     if (!destinationClaim) {
                         const inserted = await transaction.insertIfAbsent(
                             RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE,
@@ -172,7 +178,6 @@ export async function migrateLegacyRtcTopologyPublicationKeys(
                             throw new RuntimeStateWriteConflictError();
                         }
                     } else if (
-                        destinationClaim.expireAtTimestamp !== claimExpiry ||
                         !rtcTopologySemanticEqual(
                             parseValue(destinationClaim),
                             expectedClaim,
@@ -221,7 +226,14 @@ export async function migrateLegacyRtcTopologyPublicationKeys(
                         }
                         if (
                             destinationPublication.expireAtTimestamp !==
-                                currentSource.expireAtTimestamp ||
+                                currentSource.expireAtTimestamp
+                        ) {
+                            throw publicationCorruption(
+                                destinationPublication.key,
+                                'Canonical publication physical expiry differs from legacy source',
+                            );
+                        }
+                        if (
                             !rtcTopologySemanticEqual(
                                 parseValue(destinationPublication),
                                 publication,

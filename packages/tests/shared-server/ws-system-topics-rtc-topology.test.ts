@@ -22,6 +22,7 @@ import { initRallarSystemWsTopics } from '@shared-server/rallar-system/ws-system
 import { createRtcTopologyOutboxPublisher } from '@shared-server/rallar-system/services/RtcTopologyOutboxWork.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
 import {
+    DEFAULT_RTC_RTT_MUTATION_RETENTION_MS,
     RtcRttRepository,
     toRtcRttMutationReceiptId,
 } from '@shared-server/rallar-system/repositories/RtcRttRepository.ts';
@@ -630,7 +631,7 @@ describe('Rallar system websocket topics RTC topology', () => {
             acceptedAtEpochMs: 1,
             outcome: 'accepted',
             commandHash,
-        }, Number.MAX_SAFE_INTEGER);
+        }, 1 + DEFAULT_RTC_RTT_MUTATION_RETENTION_MS);
         const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
         const observeRtt = vi.spyOn(vivaldiService, 'observeRtt').mockClear();
         const queueRttTopologyUpdate = vi.spyOn(

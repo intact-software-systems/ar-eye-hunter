@@ -73,6 +73,34 @@ export type RtcRttReceiptFamilyCleanupOptions = Readonly<{
     onError?: (error: unknown) => void;
 }>;
 
+export type RtcRttReceiptFamilyCleanupFailure = Readonly<{
+    familyId: string;
+    error: Readonly<{
+        name: string;
+        message: string;
+        code?: string;
+    }>;
+}>;
+
+export class RtcRttReceiptFamilyCleanupError
+    extends RtcTopologyRepositoryInvariantCorruptionError {
+    constructor(
+        readonly removedCount: number,
+        readonly failures: readonly RtcRttReceiptFamilyCleanupFailure[],
+    ) {
+        super(
+            'rtc-rtt:receipt-family-cleanup',
+            `RTC RTT receipt family cleanup preserved ${failures.length} corrupt families after removing ${removedCount}`,
+        );
+        this.name = 'RtcRttReceiptFamilyCleanupError';
+    }
+}
+
+type RtcRttReceiptFamilySweepCandidate = Readonly<{
+    familyId: string;
+    malformedIntentKey?: string;
+}>;
+
 type RtcRttReceiptFamilyCleanupRead = Readonly<{
     receiptId: string;
     receiptEntry: RuntimeStateEntry | undefined;
@@ -251,6 +279,7 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
         expireAtTimestamp: number,
     ): Promise<RtcRttConditionalWriteResult> {
         validateMutationReceipt(receipt);
+        validateMutationReceiptPhysicalExpiry(receipt, expireAtTimestamp);
         const result = await this.putValueIfAbsent(
             RTC_RTT_RECEIPTS_NAMESPACE,
             receipt.receiptId,
@@ -495,20 +524,62 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
 
     async cleanupExpiredReceiptFamilies(): Promise<number> {
         const observedAtEpochMs = this.nowEpochMs();
-        const receiptEntries = await this.runtimeRepository.findAllEntries(
-            RTC_RTT_RECEIPTS_NAMESPACE,
-        );
-        let removed = 0;
-        for (const receiptEntry of receiptEntries) {
-            const receipt = this.toReceiptEntry(receiptEntry);
-            if (receipt.entry.expireAtTimestamp > observedAtEpochMs) continue;
-            if (await this.cleanupExpiredReceiptFamily(
-                receipt.value.receiptId,
-                observedAtEpochMs,
-                0,
-            )) {
-                removed += 1;
+        const [receiptEntries, intentEntries] = await Promise.all([
+            this.runtimeRepository.findAllEntries(RTC_RTT_RECEIPTS_NAMESPACE),
+            this.runtimeRepository.findAllEntries(
+                RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE,
+            ),
+        ]);
+        const candidates = new Map<string, RtcRttReceiptFamilySweepCandidate>();
+        for (const entry of receiptEntries) {
+            if (entry.expireAtTimestamp <= observedAtEpochMs) {
+                candidates.set(entry.key, { familyId: entry.key });
             }
+        }
+        for (const entry of intentEntries) {
+            if (entry.expireAtTimestamp > observedAtEpochMs) continue;
+            const markerIndex = entry.key.indexOf(':commandHash=');
+            if (markerIndex <= 0) {
+                candidates.set(entry.key, {
+                    familyId: entry.key,
+                    malformedIntentKey: entry.key,
+                });
+                continue;
+            }
+            const familyId = entry.key.slice(0, markerIndex);
+            if (!candidates.has(familyId)) {
+                candidates.set(familyId, { familyId });
+            }
+        }
+        let removed = 0;
+        const failures: RtcRttReceiptFamilyCleanupFailure[] = [];
+        const orderedCandidates = [...candidates.values()].sort((left, right) =>
+            compareRtcTopologyIdentifiers(left.familyId, right.familyId)
+        );
+        for (const candidate of orderedCandidates) {
+            try {
+                if (candidate.malformedIntentKey !== undefined) {
+                    throw rttCorruption(
+                        candidate.malformedIntentKey,
+                        'RTC RTT recompute intent physical key has invalid shape',
+                    );
+                }
+                if (await this.cleanupExpiredReceiptFamily(
+                    candidate.familyId,
+                    observedAtEpochMs,
+                    0,
+                )) {
+                    removed += 1;
+                }
+            } catch (error) {
+                failures.push({
+                    familyId: candidate.familyId,
+                    error: toCleanupFailureError(error),
+                });
+            }
+        }
+        if (failures.length > 0) {
+            throw new RtcRttReceiptFamilyCleanupError(removed, failures);
         }
         return removed;
     }
@@ -642,6 +713,10 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
         try {
             value = parseValue(entry) as RtcRttMutationReceipt;
             validateMutationReceipt(value);
+            validateMutationReceiptPhysicalExpiry(
+                value,
+                entry.expireAtTimestamp,
+            );
         } catch (error) {
             throw rttCorruption(
                 entry.key,
@@ -964,6 +1039,10 @@ export async function migrateLegacyRtcRttRecomputeIntentDeliveryState(
                     try {
                         receipt = parseValue(receiptEntry) as RtcRttMutationReceipt;
                         validateMutationReceipt(receipt);
+                        validateMutationReceiptPhysicalExpiry(
+                            receipt,
+                            receiptEntry.expireAtTimestamp,
+                        );
                     } catch (error) {
                         throw rttCorruption(
                             receiptEntry.key,
@@ -1173,6 +1252,34 @@ function validateMutationReceipt(
     }
 }
 
+function validateMutationReceiptPhysicalExpiry(
+    receipt: RtcRttMutationReceipt,
+    physicalExpiry: number,
+): void {
+    validateMutationFamilyPhysicalExpiry(
+        receipt.acceptedAtEpochMs,
+        physicalExpiry,
+        'receipt',
+    );
+}
+
+function validateMutationFamilyPhysicalExpiry(
+    acceptedAtEpochMs: number,
+    physicalExpiry: number,
+    authority: 'receipt' | 'recompute intent',
+): void {
+    const expectedExpiry = acceptedAtEpochMs +
+        DEFAULT_RTC_RTT_MUTATION_RETENTION_MS;
+    if (!Number.isSafeInteger(expectedExpiry)) {
+        throw new TypeError(`RTC RTT ${authority} physical expiry overflows retention`);
+    }
+    if (physicalExpiry !== expectedExpiry) {
+        throw new TypeError(
+            `RTC RTT ${authority} physical expiry differs from exact retention`,
+        );
+    }
+}
+
 type LegacyRtcRttRecomputeIntent = Pick<
     RtcRttRecomputeIntent,
     | 'outboxId'
@@ -1221,6 +1328,13 @@ function validateRecomputeIntent(
         'commandHash', 'delivery',
     ]);
     validateRecomputeIntentBase(value);
+    if (physicalExpiry !== undefined) {
+        validateMutationFamilyPhysicalExpiry(
+            value.createdAtEpochMs as number,
+            physicalExpiry,
+            'recompute intent',
+        );
+    }
     if (!isRecord(value.delivery)) {
         throw new TypeError('RTC RTT recompute delivery state is invalid');
     }
@@ -1295,6 +1409,9 @@ function validateIntentAgainstReceipt(
     const groupExpiry = intent.groupSnapshot.group.expiresAtEpochMs;
     if (
         receipt.receiptId !== intent.receiptId ||
+        receipt.sessionIdFrom !== intent.rtt.sessionIdFrom ||
+        receipt.sessionIdTo !== intent.rtt.sessionIdTo ||
+        receipt.measurementVersion !== intent.rtt.version ||
         receipt.commandHash !== intent.commandHash ||
         receipt.acceptedAtEpochMs !== intent.createdAtEpochMs ||
         !receiptIncludesGroup ||
@@ -1412,6 +1529,31 @@ function rttCorruption(
     message: string,
 ): RtcTopologyRepositoryInvariantCorruptionError {
     return new RtcTopologyRepositoryInvariantCorruptionError(storageKey, message);
+}
+
+function toCleanupFailureError(
+    error: unknown,
+): RtcRttReceiptFamilyCleanupFailure['error'] {
+    if (error instanceof RtcTopologyRepositoryInvariantCorruptionError) {
+        return {
+            name: error.name,
+            message: 'RTC RTT receipt family authority is corrupt',
+            code: error.code,
+        };
+    }
+    if (
+        error instanceof RuntimeStateRetryExhaustedError ||
+        error instanceof RuntimeStateWriteConflictError
+    ) {
+        return {
+            name: error.name,
+            message: 'RTC RTT receipt family cleanup exhausted optimistic retries',
+        };
+    }
+    return {
+        name: error instanceof Error ? error.name : 'Error',
+        message: 'RTC RTT receipt family cleanup failed',
+    };
 }
 
 function compact<T>(values: readonly (T | undefined)[]): readonly T[] {

@@ -360,13 +360,26 @@ export async function evictExpiredRuntimeStateRows(
     return removed;
 }
 
+type RuntimeStateExpiryEvictionOptions = Readonly<{
+    intervalMs?: number;
+    excludedNamespaces?: readonly string[];
+}>;
+
+export function initRuntimeStateExpiryEviction(
+    repository: Pick<PSqlRuntimeStateRepository, 'deleteAllExpired'>,
+    intervalMs?: number,
+): Promise<void>;
+export function initRuntimeStateExpiryEviction(
+    repository: Pick<PSqlRuntimeStateRepository, 'deleteAllExpired'>,
+    options?: RuntimeStateExpiryEvictionOptions,
+): Promise<void>;
 export async function initRuntimeStateExpiryEviction(
     repository: Pick<PSqlRuntimeStateRepository, 'deleteAllExpired'>,
-    options: Readonly<{
-        intervalMs?: number;
-        excludedNamespaces?: readonly string[];
-    }> = {},
+    optionsOrInterval: RuntimeStateExpiryEvictionOptions | number = {},
 ): Promise<void> {
+    const options = typeof optionsOrInterval === 'number'
+        ? { intervalMs: optionsOrInterval }
+        : optionsOrInterval;
     await tryRunInIntervals(
         async () => {
             await evictExpiredRuntimeStateRows(repository, {

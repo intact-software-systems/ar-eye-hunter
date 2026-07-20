@@ -6,14 +6,34 @@ concrete game server.
 
 ## Production Hardening
 
-Set `RALLAR_PRODUCTION_HARDENING=1` or `ENVIRONMENT=prod` to make startup fail
-closed when production-only guardrails are missing. The hardened profile
-requires Postgres, exact HTTPS CORS origins, strict state read authorization,
-admin-only registration, `AUTH_STATIC_CLIENTS_MODE=disabled`, Metered TURN, and
-explicit black-box operator-token settings when control tokens are brokered.
+Set `RALLAR_PRODUCTION_HARDENING=1` or `ENVIRONMENT=prod` to make startup fail closed when
+production-only guardrails are missing. The hardened profile requires Postgres, exact HTTPS CORS
+origins, strict state read authorization, admin-only registration,
+`AUTH_STATIC_CLIENTS_MODE=disabled`, Metered TURN, and explicit black-box operator-token settings
+when control tokens are brokered.
 
-See [Production Env Hardening Checklist](../../docs/production-env-hardening-checklist.md)
-and [Environment Variables](../../docs/environment-variables.md).
+See [Production Env Hardening Checklist](../../docs/production-env-hardening-checklist.md) and
+[Environment Variables](../../docs/environment-variables.md).
+
+## RTC persisted-state cutover
+
+The RTC persisted-state migration is an offline cutover. It intentionally has no legacy dual-read
+runtime fallback.
+
+1. Stop every API process and old writer that can mutate RTC topology/runtime state, then take and
+   verify a database backup.
+2. Inspect the fixed migration order without opening a database connection:
+   `deno task rtc:migrate-persisted-state --old-writers-stopped --dry-run`.
+3. With writers still stopped, run `deno task rtc:migrate-persisted-state --old-writers-stopped`.
+   The explicit acknowledgement is required before the operator opens a connection. The command
+   migrates snapshot keys, publication/claim keys, RTT measurement keys, then recompute-intent
+   delivery state, and stops on the first error.
+4. Restart only the current API version and verify startup cleanup and RTC topology traffic before
+   restoring normal service.
+
+Rollback: if migration or verification fails, keep writers stopped, preserve the failed database for
+investigation, restore the pre-cutover backup, and restart the previous API version. Do not roll
+back by enabling mixed old/new writers or a runtime legacy-read path.
 
 ## Rallar Game
 

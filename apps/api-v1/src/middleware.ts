@@ -66,7 +66,10 @@ import {
   initPresenceExpiryReconciliation,
 } from '@shared-server/rallar-system/services/presence-expiry-reconciliation-service.ts';
 import { getApiAppInboxServiceOptions, getApiTimingSink } from './services/timing-service.ts';
-import { runRuntimeStateExpiryStartupBarrier } from './services/runtime-state-expiry-startup.ts';
+import {
+  createRuntimeStateExpiryLifecycle,
+  runRuntimeStateExpiryStartupBarrier,
+} from './services/runtime-state-expiry-startup.ts';
 import { readApiV1DatabasePubSubConfig } from './db/database-pubsub-config.ts';
 import {
   createApiV1QueuePubSubBridge,
@@ -108,6 +111,7 @@ export type Middleware =
 
 let middleware: Middleware | undefined = undefined;
 let groupStateMaintenanceService: GroupStateMaintenanceService | undefined;
+const runtimeStateExpiryLifecycle = createRuntimeStateExpiryLifecycle();
 
 export function getMiddleware(): Middleware {
   if (middleware === undefined) {
@@ -124,8 +128,13 @@ export function getGroupStateMaintenanceService(): GroupStateMaintenanceService 
 }
 
 export function initialiseMiddleware() {
+  shutdownMiddlewareBackgroundTasks();
   middleware = initialise();
   return middleware;
+}
+
+export function shutdownMiddlewareBackgroundTasks(): void {
+  runtimeStateExpiryLifecycle.stop();
 }
 
 function initialise(): Middleware {
@@ -183,12 +192,13 @@ function initialise(): Middleware {
         new GroupTopologyConfigRepository(runtimeStateRepository),
       ),
     initialiseRtcRttReceiptFamilyCleanup: async () => {
-      const cleanup = initRtcRttReceiptFamilyCleanup(rtcRttRepository, {
-        onError: (error) => {
-          console.error('RTC RTT receipt family cleanup failed:', error);
-        },
-      });
-      await cleanup.firstRun;
+      await runtimeStateExpiryLifecycle.startRtcRttReceiptFamilyCleanup(() =>
+        initRtcRttReceiptFamilyCleanup(rtcRttRepository, {
+          onError: (error) => {
+            console.error('RTC RTT receipt family cleanup failed:', error);
+          },
+        })
+      );
     },
     initialiseRuntimeStateExpiryEviction: () =>
       initRuntimeStateExpiryEviction(

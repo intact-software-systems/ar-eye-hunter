@@ -12,14 +12,16 @@ Deno.test('runtime-state expiry waits until all-scope topology generation backfi
       calls.push('backfill');
       return backfill;
     },
-    initialiseRuntimeStateExpiryEviction: async () => {
+    initialiseRuntimeStateExpiryEviction: () => {
       calls.push('eviction');
+      return Promise.resolve();
     },
     onGenerationsBackfilled: (advanced) => {
       calls.push(`advanced:${advanced}`);
     },
-    initialiseRtcRttReceiptFamilyCleanup: async () => {
+    initialiseRtcRttReceiptFamilyCleanup: () => {
       calls.push('rtc-family-cleanup');
+      return Promise.resolve();
     },
   });
 
@@ -44,11 +46,13 @@ Deno.test('runtime-state expiry remains fail-closed when topology generation bac
   await assert.rejects(
     runRuntimeStateExpiryStartupBarrier({
       backfillTopologyGenerations: () => Promise.reject(failure),
-      initialiseRuntimeStateExpiryEviction: async () => {
+      initialiseRuntimeStateExpiryEviction: () => {
         evictionInitialisations += 1;
+        return Promise.resolve();
       },
-      initialiseRtcRttReceiptFamilyCleanup: async () => {
+      initialiseRtcRttReceiptFamilyCleanup: () => {
         rtcCleanupInitialisations += 1;
+        return Promise.resolve();
       },
     }),
     failure,
@@ -57,7 +61,7 @@ Deno.test('runtime-state expiry remains fail-closed when topology generation bac
   assert.equal(evictionInitialisations, 0);
 });
 
-Deno.test('runtime-state expiry does not start generic eviction when RTC family cleanup startup fails', async () => {
+Deno.test('runtime-state expiry starts protected generic eviction when RTC family cleanup reports corruption', async () => {
   const failure = new Error('RTC family cleanup failed');
   let evictionInitialisations = 0;
 
@@ -65,13 +69,52 @@ Deno.test('runtime-state expiry does not start generic eviction when RTC family 
     runRuntimeStateExpiryStartupBarrier({
       backfillTopologyGenerations: () => Promise.resolve({ advanced: 0 }),
       initialiseRtcRttReceiptFamilyCleanup: () => Promise.reject(failure),
-      initialiseRuntimeStateExpiryEviction: async () => {
+      initialiseRuntimeStateExpiryEviction: () => {
         evictionInitialisations += 1;
+        return Promise.resolve();
       },
     }),
     failure,
   );
-  assert.equal(evictionInitialisations, 0);
+  assert.equal(evictionInitialisations, 1);
+});
+
+Deno.test('runtime-state expiry lifecycle retains, replaces, and stops rejected cleanup handles', async () => {
+  const module = await import(
+    '../../src/services/runtime-state-expiry-startup.ts'
+  ) as unknown as Record<string, unknown>;
+  const createLifecycle = module.createRuntimeStateExpiryLifecycle as
+    | (() => {
+      startRtcRttReceiptFamilyCleanup(
+        initialise: () => Readonly<{ firstRun: Promise<number>; stop(): void }>,
+      ): Promise<number>;
+      stop(): void;
+    })
+    | undefined;
+  assert.equal(typeof createLifecycle, 'function');
+  const lifecycle = createLifecycle!();
+  const firstFailure = new Error('corrupt family');
+  let firstStops = 0;
+  let secondStops = 0;
+
+  await assert.rejects(
+    lifecycle.startRtcRttReceiptFamilyCleanup(() => ({
+      firstRun: Promise.reject(firstFailure),
+      stop: () => firstStops += 1,
+    })),
+    firstFailure,
+  );
+  await lifecycle.startRtcRttReceiptFamilyCleanup(() => ({
+    firstRun: Promise.resolve(0),
+    stop: () => secondStops += 1,
+  }));
+  assert.equal(firstStops, 1);
+  assert.equal(secondStops, 0);
+
+  lifecycle.stop();
+  lifecycle.stop();
+  assert.equal(firstStops, 1);
+  assert.equal(secondStops, 1);
 });
 
 Deno.test('api middleware protects RTC receipt families and starts specialized cleanup', async () => {
@@ -85,4 +128,13 @@ Deno.test('api middleware protects RTC receipt families and starts specialized c
     middlewareSource,
     /excludedNamespaces:\s*RTC_RTT_PROTECTED_RUNTIME_STATE_NAMESPACES/,
   );
+  assert.match(middlewareSource, /createRuntimeStateExpiryLifecycle/);
+  assert.match(middlewareSource, /startRtcRttReceiptFamilyCleanup/);
+  assert.match(middlewareSource, /shutdownMiddlewareBackgroundTasks/);
+
+  const mainSource = await Deno.readTextFile(
+    new URL('../../src/main.ts', import.meta.url),
+  );
+  assert.match(mainSource, /shutdownMiddlewareBackgroundTasks/);
+  assert.match(mainSource, /addEventListener\(['"]unload['"]/);
 });
