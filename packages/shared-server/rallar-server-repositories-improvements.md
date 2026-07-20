@@ -3,9 +3,11 @@
 Status: historical hardening log. This document records implementation evidence,
 past risks, and deferred ideas. Use `architecture.md` and
 `rallar-server-repositories.md` for the active server architecture. In
-particular, the current code intentionally uses the simpler AppInbox plus
-QueueBox retry model for state-sync publication; there is no active
-`state-sync-outbox.ts` publication-intent table.
+particular, current client/group/topology-config mutations commit an insert-only
+`StateMutationOutboxRepository` intent with guarded state and compact receipt.
+AppInbox remains command ingress, while restart-safe outbox work owns state-sync
+publication and topology recomputation. Earlier AppInbox-plus-post-commit
+publication descriptions below are retained only as historical context.
 
 This document lists problem areas found while analysing Rallar Server repositories, persistence, caches, and REST/WS
 data flow. It is intentionally separate from the architecture document so the descriptive model and hardening work stay
@@ -1137,26 +1139,30 @@ Remaining risk:
 
 ## 11. Convergent Write Review Supersedes Lock-Based Hardening
 
+Status: implemented for the reviewed client, group, topology-config, topology
+snapshot/publication/execution, and RTT paths.
+
 The July 2026 api-v1 database-writing review superseded earlier advisory-lock
-hardening. Group cleanup and expiry now use optimistic conditional writes;
-future work must not copy residual locks from other domains as precedent.
+hardening. The current paths use `insertIfAbsent`, `upsertIfRevision`, and
+`deleteIfRevision`, with `DEFAULT_RUNTIME_STATE_WRITE_BACKOFF_MS` (`[0, 2, 8]`
+ms), `waitForRuntimeStateWriteRetry`, and
+`RuntimeStateRetryExhaustedError`. Each conflict restarts at `read` and reruns
+the full decision surface.
 
-Required direction:
+Client, group, topology-config, RTC topology, and RTT orchestration now exposes
+direct `read`, `compute`, `validate`, and `write` phases. The `compute` and
+`validate` phases are pure; only `write` opens the transaction, and its
+conditional guard is first. `StateMutationOutboxRepository` makes externally
+effectful outbox rows atomic with guarded state and the compact
+`MutationReceipt` family. Group and presence authority uses
+`GroupStateCausalRevision`; presence uses a per-session guard and does not
+contend on the group row.
 
-- add a required-for-authoritative-state conditional repository capability with
-  conditional insert, expected-revision compare-and-set, and expected-revision
-  conditional delete, implemented by Postgres and test repositories;
-- retry from fresh reads with a bounded budget and rerun authorization, policy,
-  capacity, lifecycle, and invariant checks on every attempt;
-- make client and group aggregate revisions the compare-and-set guard for
-  atomic multi-row mutations;
-- make session and presence lifecycle observations causal so stale heartbeat,
-  disconnect, and expiry work cannot overwrite or delete a newer generation;
-- replace topology, publication-index, and RTT advisory locks with conditional
-  acceptance and immutable insert-if-absent claims; and
-- replace tests that prove lock waiting with tests that prove conflict,
-  rebasing, retry exhaustion, stale-expiry safety, idempotency, and deterministic
-  final convergence across independent Postgres clients.
+No targeted path calls `lockKey`. Tests now prove conflict, rebasing, retry
+exhaustion, stale-expiry safety, idempotency, outbox rollback, and deterministic
+convergence across independent Postgres clients. Historical lock-waiting tests
+and pre-outbox publication ordering are not acceptance evidence and must not be
+copied.
 
 Database row, table, and advisory locks are exceptions requiring explicit human
 approval, a documented invariant and measured need, a bounded critical section,
@@ -1295,7 +1301,40 @@ different destination value. Do not fan out or install a permanent dual read.
 An event already dropped by the historical primary-key collision is impossible
 to reconstruct without a separate authoritative event source.
 
-## Suggested First Proofs
+## 16. Current Contract And Measurement Boundary
+
+Authoritative shared fields are mandatory except documented input or migration
+exceptions. Persisted, replicated, queued, event, snapshot, receipt, outbox,
+and response values are complete; sparse request, query, patch, builder, and
+migration shapes remain separate.
+
+The retained `tmp/perf/api-v1-state-write-task5.json` artifact directly records
+SQL statements and wall-clock production `sql.begin` duration for one warmup,
+three measured runs, concurrency 10, and 700 commands per measured run:
+
+- uncontended: 13000 SQL statements and 3706.0120909999987 ms transaction time;
+- shared/five-group: 13948 statements and 4070.0607589999927 ms; and
+- hot/one-group: 12379 statements and 3891.845030999997 ms.
+
+Those are historical artifact-wide totals, not a current per-operation budget.
+The artifact has no high-level repository-method counter, so a measured
+repository-call total is absent and must not be inferred. Task 6 retained no
+newer candidate performance artifact, and Task 8 retained multi-process
+correctness rather than SQL/transaction counters. A mutation-path or
+concurrency-domain change must create a fresh
+`npm run perf:api-v1:state-write` artifact and pass the comparative result gate
+with `node scripts/perf/compare-api-v1-state-write-results.mjs`.
+
+The separate medium-scale correctness gate remains 100 independently
+authenticated clients, five groups, two Postgres-backed API processes, 10
+client lanes plus 5 control lanes. Never reduce those constants to make a
+change pass.
+
+## Historical Suggested First Proofs
+
+The following list records the original investigation order. It is not the
+current acceptance checklist; use the active testing skill and architecture
+documents for current gates.
 
 1. Multi-workspace isolation test: prove whether state snapshots from workspace A reach a browser connected to workspace
    B.

@@ -54,33 +54,41 @@ Ambiguous legacy rows may be migrated only when their stored value proves the
 target scope and the destination is claimed conditionally; never guess, fan one
 row into multiple scopes, or keep a permanent dual-read fallback.
 
-## Required Target For Database Writes
+## Implemented Convergent Database Writes
 
-This is the mandatory target for new work and for the remediation of client,
-group, topology, publication, RTT, expiry, and idempotency writes:
+Client, group, topology-config, topology publication/execution, and RTT writes
+use the conditional runtime-state operations `insertIfAbsent`,
+`upsertIfRevision`, and `deleteIfRevision`. Each service keeps direct named
+`read`, `compute`, `validate`, and `write` phases. The `compute` and `validate`
+phases are pure; only `write` opens the transaction, and its conditional guard
+is first. A conflict rolls back and restarts at `read`, rerunning authorization,
+policy, capacity, lifecycle, and invariant checks.
+
+The storage rule is:
 
 - create with conditional insert;
 - update with expected-revision compare-and-set;
-- delete or expire with expected-revision conditional delete;
-- retry from a fresh read with a bounded attempt budget;
-- rerun authorization, policy, capacity, lifecycle, and invariant checks on
-  every attempt; and
-- return a typed retry-exhausted outcome rather than falling back to an
-  unconditional write or an unbounded loop.
+- delete or expire with expected-revision conditional delete.
+
+The bounded schedule is
+`DEFAULT_RUNTIME_STATE_WRITE_BACKOFF_MS = [0, 2, 8]`. Every attempt uses
+`waitForRuntimeStateWriteRetry`, with nonzero delays outside the transaction;
+exhaustion raises `RuntimeStateRetryExhaustedError`. There is no unconditional
+or unbounded fallback.
 
 A transaction supplies atomicity for a multi-row commit, but it does not by
-itself prevent lost updates. The transaction must condition the authoritative
-aggregate transition on the revision that the decision observed. An
-idempotency key is an immutable first-writer-wins claim: use conditional insert
-and make a losing writer load the winner.
+itself prevent lost updates. The transaction conditions the authoritative
+transition on the revision that the decision observed. Compact
+`MutationReceipt` records implement immutable first-writer-wins ledger replay.
+Authoritative outbox insertion is different: `StateMutationOutboxRepository`
+inserts inside the guarded transaction, and a collision fails and rolls back
+without loading a winner.
 
-Database row, table, and advisory locks are not the default concurrency model.
-Current advisory-lock implementations are migration debt, including the
-client-session, group-presence, topology-snapshot, publication-index, and RTT
-paths described later in this document. Do not copy or extend them as
-precedent. A lock exception requires explicit human approval, a documented
-invariant and measured need, a bounded critical section, and a review or
-removal condition.
+No targeted client, group, topology-config, topology snapshot/publication/
+execution, or RTT path calls `lockKey`. Historical lock-based implementations
+are evidence of the superseded architecture and must not be copied. A lock
+exception requires explicit human approval, a documented invariant and
+measured need, a bounded critical section, and a review or removal condition.
 
 Expiry is a causal delete, not cleanup after a trustworthy read. A reader that
 saw an expired revision may delete only that revision, so it cannot remove a
@@ -127,10 +135,12 @@ The first committed aggregate row therefore has revision `1`. Group and client
 repositories attach the revision from the aggregate group or principal row to
 direct reads, lists, and pages.
 
-Child-row-only mutations, such as a presence heartbeat that updates a session
-TTL without changing `snapshotVersion`, also touch the aggregate row. This
-ensures that two snapshots with different durable content cannot legitimately
-carry the same `stateRevision`.
+Group authority is the required `GroupStateCausalRevision` tuple
+`{ groupRevision, presenceRevision }`. Metadata and roster changes advance the
+group component. Presence connect, heartbeat, disconnect, and expiry use the
+session row as their guard, advance presence authority through summary
+convergence, and do not contend on the group row. Consumers compare the full
+tuple rather than forcing both domains through one scalar write guard.
 
 ### Revisioned observation
 
@@ -199,36 +209,24 @@ assembling children. If the group is deleted, the validation read returns
 absent and the result is absent. Three consecutive movements produce a
 retryable 503 rather than a torn snapshot.
 
-## Topology Work At The Commit Boundary
+## Mutation Outbox At The Commit Boundary
 
-When an application-inbox group mutation writes an event,
-`AppGroupInboxService` performs these post-commit operations in order:
+Client and group mutation transactions write the conditional guard first, then
+dependent state, compact receipt, one insert-only
+`StateMutationOutboxRepository` record, and the event. The outbox row is atomic
+with the accepted authority. `AppClientInboxService` and
+`AppGroupInboxService` own command ingress and durable completion, not inline
+state-sync or topology publication.
 
-1. Publish the committed group snapshot to `WS_OUTBOX`.
-2. Publish the group event to `WS_OUTBOX`.
-3. Enqueue the exact committed snapshot as `RTC_TOPOLOGY_RECOMPUTE` in
-   `APP_OUTBOX`.
-4. Complete the application-inbox command.
+`StateMutationOutboxWork` drains committed records asynchronously. Client
+records carry `client-state-sync`. Group records carry `group-state-sync` and
+`group-presence-summary`; summary convergence can then enqueue
+`rtc-topology-recompute`. Retry after process death reuses the same compact
+receipt and outbox identity rather than applying the state mutation again.
 
-The group-revision work contract is immutable:
-
-```ts
-type RtcTopologyGroupRevisionWork = {
-  kind: "group-revision";
-  groupSnapshot: GroupSnapshot;
-  sourceGroupStateRevision: number;
-  overlayId: string;
-  requestedAtEpochMs: number;
-};
-```
-
-Its deterministic queue identity contains the fully scoped overlay identity
-and `stateRevision`. Repeating post-commit publication after a partial failure
-therefore converges on the same logical work item.
-
-Production WebSocket group-snapshot callbacks observe and broadcast state but
-do not create topology work. Local `WS_OUTBOX` callbacks never schedule
-topology work.
+The old post-commit order—mutate state, publish directly, then try to enqueue
+topology work—is historical only. It could expose committed state without a
+durable publication intent and must not be copied.
 
 ## RTT Refresh Work
 
@@ -266,13 +264,12 @@ validation, process observation, and durable observation.
 
 Every work item calculates from its embedded snapshot. It must not replace
 revision N with the current cache value N+1. Graph planning occurs outside the
-runtime-state transaction. The current handler validates the predecessor under
-fixed-order advisory topology/work-index locks, retrying calculation at most
-three times when the predecessor moves. That locking is transitional migration
-debt, not the target architecture. The target commit atomically applies
-expected-revision compare-and-set operations to the topology and deterministic
-publication/work-index claims; a conflict persists nothing and triggers a
-fresh read and replan.
+runtime-state transaction. `readTopologyMutation`, `computeTopologyMutation`,
+`validateTopologyMutation`, and `writeTopologyMutation` implement the current
+commit path. The write transaction CAS-guards the snapshot first, then inserts
+the compact work claim and immutable publication. A conflict persists nothing,
+waits according to `[0, 2, 8]` outside the transaction, and restarts at the full
+authority read and replan.
 
 The durable latest-topology repository compares:
 
@@ -444,28 +441,31 @@ notifications only as wake-ups.
   and one exact-key aggregate validation batch.
 - Warm room authorization performs one durable aggregate revision probe; the
   stable snapshot reader runs only after revision movement.
-- Topology planning is outside the transaction. Current execution performs one
-  predecessor read and one advisory-lock validation read; the required target
-  replaces lock waiting with one conditional commit and bounded conflict
-  retries.
+- Topology planning is outside the transaction. Current execution performs a
+  fresh read and one conditional write transaction per accepted attempt;
+  conflicts re-enter the complete read/compute/validate path.
 - Topology fanout performs one encoding and one indexed send per unique
   recipient, with zero connection-wide broadcast scans.
 
-Timing benchmarks are directional machine-local evidence. Repository-call
-counts and algorithmic bounds are the acceptance gates.
+The first three bullets are code/test-proven call-shape bounds, not retained
+runtime call counters. The retained Task 5 performance artifact directly
+counts SQL statements and production transaction duration but does not count
+high-level repository-method calls; no measured repository-call total is
+claimed.
 
-The API-v1 Postgres cluster profile has two complementary black-box workloads:
+The unweakened Postgres medium-scale gate is
+`npm run test:api-v1:black-box:postgres:medium-scale`: 100 independently
+authenticated clients, five groups, two Postgres-backed API processes, 10
+client lanes plus 5 control lanes. Never reduce those constants or the
+operation matrix to make a change pass. The Task 8 retained run completed all
+2,721 assertions and proved cross-process state/topology convergence.
 
-- the two-session topology convergence recipe proves exact revision delivery
-  to WebSockets connected to different servers;
-- the bounded churn recipe runs 12 disposable clients in two concurrent lanes,
-  joins every client to two groups, disconnects and reconnects presence, then
-  verifies 13-member/13-online aggregate snapshots and exact final topology
-  source revisions through the opposite servers.
-
-The churn recipe intentionally stops at 12 clients. It is a deterministic
-contention and convergence gate, not a capacity benchmark; higher session
-counts and dense RTT graph cost remain in `scripts/perf/**` harnesses.
+A mutation-path or concurrency-domain change must also run
+`npm run perf:api-v1:state-write` and pass
+`node scripts/perf/compare-api-v1-state-write-results.mjs <baseline> <candidate>`.
+The comparative result gate validates the artifact and durable receipt/outbox
+linkage before evaluating latency, throughput, SQL/resource counts, transaction
+duration, and retry exhaustion.
 
 ## Deployment And Compatibility
 
@@ -523,6 +523,7 @@ changes and require a coordinated deployment.
 
 Focused concurrency coverage lives in:
 
+- `packages/tests/shared-server/read-compute-write-contract.test.ts`
 - `packages/tests/shared-server/cached-state-services.test.ts`
 - `packages/tests/shared-server/rtc-topology-outbox-work.test.ts`
 - `packages/tests/shared-server/rtc-topology-cluster-transport.test.ts`
@@ -544,3 +545,8 @@ npm run test:rallar:full-stack:postgres:live-rtc-3
 They verify group/member setup, three browser connections, topology
 convergence, multicast delivery, and cleanup against both runtime-state
 backends.
+
+For api-v1 client, group, topology, runtime-state, or database-concurrency
+changes, run the focused files first and then the fixed medium-scale gate. A
+mutation-path or concurrency-domain change also runs the performance gate
+described above.

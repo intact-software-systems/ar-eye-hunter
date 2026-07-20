@@ -64,19 +64,25 @@ rg --files packages/shared packages/shared-web packages/shared-server packages/s
 ## Convergent Persistence Defaults
 
 - Use optimistic compare-and-set writes with bounded retries for authoritative
-  shared state. Create with conditional insert, update with an expected storage
-  revision, and delete or expire with an expected revision.
+  shared state. Runtime-state creation, update, and deletion use
+  `insertIfAbsent`, `upsertIfRevision`, and `deleteIfRevision`.
 - Every retry must re-read current state and rerun authorization, policy,
   capacity, lifecycle, and invariant checks before deriving a new candidate.
   Never retry only the final write of a stale decision.
 - Write the authoritative path as direct named `read`, `compute`, `validate`,
-  and `write` statements. Timing records surround those statements and report
-  transaction duration separately; a timing helper must not own the work in a
-  callback.
+  and `write` statements. The `compute` and `validate` phases are pure; only
+  `write` opens the transaction, and the conditional guard is first. A
+  conflict restarts at `read`. Use `DEFAULT_RUNTIME_STATE_WRITE_BACKOFF_MS`,
+  `waitForRuntimeStateWriteRetry`, and `RuntimeStateRetryExhaustedError` rather
+  than inventing another retry schedule. Timing records surround the direct
+  statements and report transaction duration separately.
 - Insert authoritative outbox intents inside the state/receipt/event
-  transaction with insert-only semantics. Treat any collision as a typed
-  rollback failure without loading a winner. Winner loading belongs only to a
-  separately named non-authoritative/read path.
+  transaction with insert-only semantics. `StateMutationOutboxRepository`
+  makes the outbox rows atomic with the guarded state. Treat any collision as a
+  typed rollback failure without loading a winner. Winner loading belongs only
+  to a separately named non-authoritative/read path. The compact
+  `MutationReceipt` family carries accepted authority, and group effects use
+  `GroupStateCausalRevision`.
 - Hash semantic caller intent before volatile server defaults. Represent
   omission as a mandatory nullable command field, capture random/time material
   once in immutable mandatory facts only after a validated ledger miss, and
@@ -121,6 +127,9 @@ rg --files packages/shared packages/shared-web packages/shared-server packages/s
   liveness with the latest group status and expiry, active membership, and
   connected/unexpired sessions. Archived, deleted, and expired groups expose
   zero live presence without discarding the summary's causal revision.
+- Select the smallest correct concurrency domain. Group presence uses a
+  per-session guard and does not contend on the group row; aggregate metadata
+  and roster changes use the group guard.
 
 ## Validation
 

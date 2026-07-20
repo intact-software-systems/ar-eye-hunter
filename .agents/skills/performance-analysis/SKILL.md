@@ -1,6 +1,6 @@
 ---
 name: performance-analysis
-description: Deep performance audit skill for static analysis, runtime profiling, algorithmic complexity, CPU/memory usage, memory leaks, costly operations, and evidence-backed optimization. Use when asked to review performance, find bottlenecks, analyze efficiency, profile real workloads, or optimize code safely.
+description: Use when reviewing performance, finding bottlenecks, analyzing algorithmic or resource efficiency, profiling representative workloads, investigating memory leaks, or validating an optimization.
 ---
 
 # Performance Analysis Skill
@@ -10,6 +10,16 @@ Use this skill when the user asks for performance analysis, optimization, bottle
 ## Core rule
 
 Treat static analysis as hypothesis generation unless the issue is obvious from code. Do not claim a runtime bottleneck is real until it is supported by profiling, benchmarks, logs, production telemetry, or a clear algorithmic proof.
+
+For an api-v1 state mutation-path or concurrency-domain change, run
+`npm run perf:api-v1:state-write` and require the comparative result gate:
+`node scripts/perf/compare-api-v1-state-write-results.mjs <baseline> <candidate>`.
+Also preserve the medium-scale correctness gate after focused tests: 100
+independently authenticated clients, five groups, two Postgres-backed API
+processes, 10 client lanes plus 5 control lanes; never reduce those constants.
+Repository/SQL call counts and transaction duration may be reported only from
+retained focused-test, trace, or performance artifacts that directly measure
+them. State an uncaptured metric as uncaptured; never estimate it from source.
 
 ## Default workflow
 

@@ -40,17 +40,25 @@ the repo-local Codex plugin under `.agents/skills/**`.
 - Optimistic compare-and-set writes with bounded retries are the default for
   authoritative shared database state. Conditional insert owns creation;
   expected-revision compare-and-set owns updates; expected-revision conditional
-  delete owns deletion and expiry.
+  delete owns deletion and expiry. The runtime-state operations are
+  `insertIfAbsent`, `upsertIfRevision`, and `deleteIfRevision`.
 - Every optimistic retry must re-read and rerun authorization, policy, capacity,
   lifecycle, and invariant checks. Never retry only a stale final write.
-- Keep authoritative mutation control flow as direct, named read, compute,
-  validate, and write statements. Measure those statements before and after;
-  do not hide the work inside timing callback wrappers. Report transaction
-  timing separately when the write owns a transaction.
+- Keep authoritative mutation control flow as direct, named `read`, `compute`,
+  `validate`, and `write` statements. The `compute` and `validate` phases are
+  pure; only the `write` phase opens the transaction, and its conditional guard
+  is first. A conflict restarts at `read`. The shared retry implementation is
+  `DEFAULT_RUNTIME_STATE_WRITE_BACKOFF_MS` (`[0, 2, 8]` ms),
+  `waitForRuntimeStateWriteRetry`, and `RuntimeStateRetryExhaustedError`.
+  Measure the direct statements before and after; do not hide phase work inside
+  timing callback wrappers. Report transaction timing separately.
 - Insert the authoritative outbox intent inside the same transaction as state,
-  idempotency receipt, and event. This path is insert-only: a key collision is
-  a typed failure that rolls back the transaction and never reads a winner.
-  Winner loading is reserved for an explicitly non-authoritative/read path.
+  idempotency receipt, and event. `StateMutationOutboxRepository` makes these
+  outbox rows atomic with the guarded state write. This path is insert-only: a
+  key collision is a typed failure that rolls back the transaction and never
+  reads a winner. Winner loading is reserved for an explicitly
+  non-authoritative/read path. The implemented `MutationReceipt` family is
+  compact authority, and group effects carry `GroupStateCausalRevision`.
 - Preserve caller omission as explicit `null` in the semantic command and hash
   that intent before applying server clock or random defaults. Capture any
   volatile candidate once in mandatory immutable facts only after a validated
@@ -76,7 +84,8 @@ the repo-local Codex plugin under `.agents/skills/**`.
 - Authoritative persisted, replicated, queued, event, snapshot, and response
   contracts use mandatory fields by default. Optional fields require meaningful
   domain absence and consumer tests; sparse request, query, patch, builder, and
-  migration inputs use separate types.
+  migration inputs use separate types. In other words, authoritative shared
+  fields are mandatory except documented input or migration exceptions.
 - Successful authoritative responses must require every field that the service
   always populates, with shared TypeScript, derived response types, OpenAPI
   `required` arrays, serializers, and consumer/schema tests kept in agreement.
@@ -104,6 +113,8 @@ the repo-local Codex plugin under `.agents/skills/**`.
   being active and unexpired, current active membership, and connected,
   unexpired session state. Preserve causal revisions while reporting zero live
   presence for archived, deleted, or expired groups.
+- Group presence mutations use a per-session guard and do not contend on the
+  group row; aggregate metadata and roster mutations use the group guard.
 
 ## Validation
 

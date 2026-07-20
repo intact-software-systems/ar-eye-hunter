@@ -35,23 +35,38 @@
 ## Convergent Database Writes
 
 - Create with conditional insert, update with expected-revision compare-and-set,
-  and delete or expire with expected-revision conditional delete. Never use a
+  and delete with expected-revision conditional delete. Runtime-state code uses
+  `insertIfAbsent`, `upsertIfRevision`, and `deleteIfRevision`. Never use a
   read-derived unconditional upsert for shared authoritative state.
 - On conflict, perform a bounded retry from a fresh read and rerun every
   authorization, policy, capacity, lifecycle, and invariant decision. Return a
-  typed retry-exhausted result or error after the budget is spent.
+  typed retry-exhausted result or error after the budget is spent. The shared
+  implementation is `DEFAULT_RUNTIME_STATE_WRITE_BACKOFF_MS` (`[0, 2, 8]` ms),
+  `waitForRuntimeStateWriteRetry`, and `RuntimeStateRetryExhaustedError`.
+- Keep one visible `read`, `compute`, `validate`, `write` sequence. The
+  `compute` and `validate` functions are pure; only `write` opens the
+  transaction, and its operation-specific conditional guard is the first
+  database statement. A conflict restarts at `read`, never at the stale write.
 - Make expiry cleanup causal: a stale expiry read cannot delete a refreshed value.
 - Make idempotency ledgers immutable per request key with insert-if-absent; the
   loser loads the existing result.
 - For a multi-row aggregate, use a transaction for atomicity and condition the
-  commit on an aggregate revision. A transaction alone does not prevent lost
-  updates.
+  commit on an aggregate revision. `StateMutationOutboxRepository` inserts the
+  outbox rows in the same transaction as state, the compact `MutationReceipt`
+  family, and events. Group causal authority uses `GroupStateCausalRevision`.
+  A transaction alone does not prevent lost updates.
+- Choose the guard by concurrency domain. Group presence uses its per-session
+  guard and does not contend on the group row; group metadata and roster writes
+  use the aggregate group guard.
 - Database row, table, and advisory locks are not the default. A lock requires
   explicit human approval, a documented invariant and measured need, a bounded
   critical section, and a review or removal condition.
 - Prove overlapping writers, stale input, retries, exhaustion, and deterministic
   final convergence. A test that only proves another writer waited for a lock
   is not concurrency correctness evidence for this architecture.
+- Authoritative shared fields are mandatory except documented input or
+  migration exceptions. Keep sparse request/patch/build types separate from
+  persisted, replicated, queued, event, snapshot, receipt, and response types.
 
 ## Testability
 

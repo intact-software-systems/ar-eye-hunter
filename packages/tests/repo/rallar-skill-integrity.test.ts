@@ -16,6 +16,31 @@ const expectedSkills = [
     'rallar-testing',
 ] as const;
 
+const convergentWriteGuidancePaths = [
+    'AGENTS.md',
+    '.agents/skills/rallar-platform/SKILL.md',
+    '.agents/skills/rallar-realtime/SKILL.md',
+    '.agents/skills/rallar-code-writing/SKILL.md',
+    '.agents/skills/rallar-code-writing/references/package-code-style.md',
+    '.agents/skills/rallar-testing/SKILL.md',
+    '.agents/skills/rallar-testing/references/test-commands.md',
+    '.agents/skills/performance-analysis/SKILL.md',
+    'docs/rallar-convergent-state-and-rtc-topology.md',
+    'packages/shared-server/architecture.md',
+    'packages/shared-server/rallar-server-repositories.md',
+    'packages/shared-server/rallar-server-repositories-improvements.md',
+] as const;
+
+const lockFreeAuthoritativeWritePaths = [
+    'packages/shared-server/rallar-system/services/client-state-service.ts',
+    'packages/shared-server/rallar-system/services/group-state-service.ts',
+    'packages/shared-server/rallar-system/repositories/GroupTopologyConfigRepository.ts',
+    'packages/shared-server/rallar-system/repositories/RtcTopologySnapshotRepository.ts',
+    'packages/shared-server/rallar-system/repositories/RtcTopologyPublicationRepository.ts',
+    'packages/shared-server/rallar-system/repositories/RtcTopologyExecutionRepository.ts',
+    'packages/shared-server/rallar-system/repositories/RtcRttRepository.ts',
+] as const;
+
 describe('Rallar repo skill and documentation integrity', () => {
     it('uses one directly discoverable skill tree for the plugin', () => {
         const plugin = readJson('.codex-plugin/plugin.json') as {
@@ -41,6 +66,7 @@ describe('Rallar repo skill and documentation integrity', () => {
 
             expect(frontmatter.name, skillPath).toBe(skillName);
             expect(frontmatter.description.length, skillPath).toBeGreaterThan(20);
+            expect(frontmatter.description, skillPath).toMatch(/^Use when\b/);
 
             for (const reference of source.matchAll(/`(references\/[a-z0-9./-]+\.md)`/g)) {
                 expect(
@@ -290,8 +316,7 @@ describe('Rallar repo skill and documentation integrity', () => {
             'Authoritative persisted, replicated, queued, event, snapshot, and response',
         ]);
         expectAll(convergenceArchitecture, [
-            'Required Target For Database Writes',
-            'Current advisory-lock implementations are migration debt',
+            'Implemented Convergent Database Writes',
             'conditional insert',
             'expected-revision compare-and-set',
             'expected-revision conditional delete',
@@ -300,6 +325,67 @@ describe('Rallar repo skill and documentation integrity', () => {
         expect(testCommands).toContain(
             'npx vitest run packages/tests/repo/rallar-skill-integrity.test.ts',
         );
+    });
+
+    it('codifies the implemented convergent-write vocabulary and doctrine', () => {
+        const guidance = convergentWriteGuidancePaths
+            .map((filePath) => `\n# ${filePath}\n${readRepo(filePath)}`)
+            .join('\n');
+
+        expectAll(guidance, [
+            '`read`',
+            '`compute`',
+            '`validate`',
+            '`write`',
+            '`insertIfAbsent`',
+            '`upsertIfRevision`',
+            '`deleteIfRevision`',
+            '`DEFAULT_RUNTIME_STATE_WRITE_BACKOFF_MS`',
+            '`waitForRuntimeStateWriteRetry`',
+            '`RuntimeStateRetryExhaustedError`',
+            '`StateMutationOutboxRepository`',
+            '`MutationReceipt`',
+            '`GroupStateCausalRevision`',
+        ]);
+        expect(guidance).toMatch(/`compute` and `validate` (?:phases|functions) are pure/i);
+        expect(guidance).toMatch(/only (?:the )?`write` (?:phase )?opens (?:the )?transaction/i);
+        expect(guidance).toMatch(/(?:conditional )?guard (?:is|runs|writes|must be) first/i);
+        expect(guidance).toMatch(/outbox (?:row|intent)s? .*(?:same|atomic).*transaction/i);
+        expect(guidance).toMatch(/conflict .*restart(?:s)? at `read`/i);
+        expect(guidance).toMatch(/presence .*does not contend on the group row/i);
+        expect(guidance).toMatch(
+            /authoritative (?:shared )?fields[\s\S]{0,120}mandatory[\s\S]{0,120}(?:input|migration) exceptions/i,
+        );
+    });
+
+    it('preserves the unweakened medium-scale and state-write performance gates', () => {
+        const testing = readRepo('.agents/skills/rallar-testing/SKILL.md');
+        const testCommands = readRepo(
+            '.agents/skills/rallar-testing/references/test-commands.md',
+        );
+        const performance = readRepo('.agents/skills/performance-analysis/SKILL.md');
+        const guidance = [testing, testCommands, performance].join('\n');
+
+        expectAll(guidance, [
+            'npm run test:api-v1:black-box:postgres:medium-scale',
+            '100 independently authenticated clients',
+            'five groups',
+            'two Postgres-backed API processes',
+            '10 client lanes plus 5 control lanes',
+            'never reduce',
+            'npm run perf:api-v1:state-write',
+            'node scripts/perf/compare-api-v1-state-write-results.mjs',
+        ]);
+        expect(guidance).toMatch(/after focused tests/i);
+        expect(guidance).toMatch(/mutation path|mutation-path/i);
+        expect(guidance).toMatch(/concurrency domain|concurrency-domain/i);
+        expect(guidance).toMatch(/comparative (?:result )?gate/i);
+    });
+
+    it('keeps targeted authoritative repositories free of lockKey calls', () => {
+        for (const filePath of lockFreeAuthoritativeWritePaths) {
+            expect(readRepo(filePath), filePath).not.toContain('.lockKey(');
+        }
     });
 
     it('routes active repo guidance through the canonical skill location', () => {

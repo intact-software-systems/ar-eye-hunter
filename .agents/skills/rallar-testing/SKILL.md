@@ -31,6 +31,15 @@ Read `references/test-commands.md` when choosing commands. Prefer targeted check
   read. For group/summary phase changes, assert explicit read, compute,
   validate, write, transaction, conflict, and backoff timing as applicable,
   including replay paths that skip write and transaction.
+- API-v1 client, group, topology, runtime-state, or database-concurrency work:
+  run focused tests first, then the unweakened
+  `npm run test:api-v1:black-box:postgres:medium-scale` gate. It means 100
+  independently authenticated clients, five groups, two Postgres-backed API
+  processes, 10 client lanes plus 5 control lanes. Never reduce these constants
+  to make a change pass.
+- A mutation-path or concurrency-domain change also requires
+  `npm run perf:api-v1:state-write` and the comparative result gate implemented
+  by `node scripts/perf/compare-api-v1-state-write-results.mjs`.
 - Browser facade changes: include `packages/tests/shared-web` and app builds if game apps consume the surface.
 - Server/middleware changes: include `packages/tests/shared-server`, Deno checks for API apps, and focused restart/routing tests when relevant.
 - REST API additions or behavior changes: add or update Rallar black-box recipes/tests in `packages/shared-test/black-box-runner` alongside the API change, then run the focused black-box command when its required services are available.

@@ -1,6 +1,6 @@
 ---
 name: rallar-code-writing
-description: Use when writing, refactoring, or reviewing package-oriented Rallar TypeScript under packages/**, or app code that consumes or extends package APIs, to follow repo style, functional design, testability, and AI-generated code safety expectations.
+description: Use when writing, refactoring, or reviewing package-oriented Rallar TypeScript under packages/**, or app code that consumes or extends package APIs, especially authoritative state and persistence code.
 ---
 
 # Rallar Code Writing
@@ -46,8 +46,9 @@ rg --files packages/tests packages/shared packages/shared-web packages/shared-se
 ## Database Write Defaults
 
 - Do not implement authoritative state as read, derive, then unconditional
-  upsert. Create with conditional insert; update with expected-revision compare-and-set;
-  delete or expire with expected-revision conditional delete.
+  upsert. Runtime-state creation, update, and deletion use `insertIfAbsent`,
+  `upsertIfRevision`, and `deleteIfRevision`: conditional insert,
+  expected-revision compare-and-set, and expected-revision conditional delete.
 - Treat expiry as deletion: its first authoritative guard is the
   expected-revision conditional delete of the exact observed row. Do not use a
   disconnected/tombstone update as an expiry shortcut; reserve such updates
@@ -56,15 +57,23 @@ rg --files packages/tests packages/shared packages/shared-web packages/shared-se
   decision surface, and rerun authorization, policy, capacity, lifecycle, and invariant checks.
   A retry of only the stale write is incorrect.
 - Express authoritative control flow with direct named read, compute, validate,
-  and write statements. Surround each statement with timing records and report
-  the transaction separately; never put phase work in a timing callback.
+  and write statements: `read`, `compute`, `validate`, then `write`. The
+  `compute` and `validate` phases are pure; only `write` opens the transaction,
+  its conditional guard is first, and a conflict restarts at `read`. Use
+  `DEFAULT_RUNTIME_STATE_WRITE_BACKOFF_MS`,
+  `waitForRuntimeStateWriteRetry`, and `RuntimeStateRetryExhaustedError`.
+  Surround each direct statement with timing records and report the transaction
+  separately.
 - Make idempotency claims with insert-if-absent semantics. The losing writer
   loads the winner; it must not overwrite the ledger. This winner-load rule is
   for the idempotency ledger, not an authoritative outbox write.
 - Insert the outbox intent inside the authoritative state/receipt/event
-  transaction. Use an insert-only repository operation: a collision throws a
-  typed error, rolls everything back, and performs no winner read. Keep any
-  winner-loading convenience on a separately named non-authoritative/read path.
+  transaction. `StateMutationOutboxRepository` makes outbox rows atomic with
+  state, compact `MutationReceipt` authority, and events. Use an insert-only
+  operation: a collision throws a typed error, rolls everything back, and
+  performs no winner read. Keep any winner-loading convenience on a separately
+  named non-authoritative/read path. Group effects carry
+  `GroupStateCausalRevision`.
 - Fail-closed event, outbox, and immutable-identity collisions are terminal at
   queue boundaries. Give their typed errors an explicit 4xx status and never
   retry, reschedule, or regenerate a command after such a collision.
@@ -120,6 +129,8 @@ rg --files packages/tests packages/shared packages/shared-web packages/shared-se
   summary sessions with latest group active/unexpired policy, active membership,
   and connected/unexpired session state. Terminal or expired groups retain their
   causal tuple but report no live presence.
+- Group presence mutations use a per-session guard and do not contend on the
+  group row; group metadata and roster mutations use the aggregate group guard.
 
 ## Shape Decision
 

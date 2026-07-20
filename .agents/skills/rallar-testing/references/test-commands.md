@@ -58,6 +58,41 @@ npm run test:api-v1:black-box:recipes
 Use `memory` for fast local feedback, `postgres` when Postgres is available,
 and `recipes` when validating against an already-running API.
 
+## Convergent State-Write Gates
+
+For any api-v1 client, group, topology, runtime-state, mutation-path, or
+database-concurrency change, run focused tests first and then:
+
+```bash
+npm run test:api-v1:black-box:postgres:medium-scale
+```
+
+This command is one fixed gate: 100 independently authenticated clients, five
+groups, two Postgres-backed API processes, 10 client lanes plus 5 control
+lanes. Never reduce these constants, the operation matrix, or the assertions to
+make a change pass.
+
+A mutation-path or concurrency-domain change also requires a fresh candidate:
+
+```bash
+npm run perf:api-v1:state-write -- \
+  --backend=postgres \
+  --warmup=1 \
+  --runs=3 \
+  --concurrency=10 \
+  --out=tmp/perf/api-v1-state-write-candidate.json
+
+node scripts/perf/compare-api-v1-state-write-results.mjs \
+  tmp/perf/api-v1-state-write-baseline.json \
+  tmp/perf/api-v1-state-write-candidate.json
+```
+
+The comparative result gate must pass. It validates artifact correctness,
+receipts/outbox linkage and retry exhaustion, then compares latency,
+throughput, SQL/row/byte counts, and transaction duration. Record the exact
+artifact paths and command output; do not relabel an older diagnostic artifact
+as the governed candidate.
+
 ## Broader Suites
 
 ```bash

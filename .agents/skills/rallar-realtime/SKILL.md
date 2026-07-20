@@ -36,19 +36,26 @@ rg -n "GroupRef|groupRef|groupId|roomId|createAndSwitch|createAndJoin|joinRoom|w
   observations. Ignore stale observations without failing the consumer, and
   treat equal-revision/different-content data as invariant corruption.
 - Plan and recompute outside transactions, then use compare-and-set writes with bounded retries
-  at the durable boundary. Create with conditional insert, update with expected
-  revision, and delete or expire with an expected revision.
+  at the durable boundary. Runtime-state creation, update, and deletion use
+  `insertIfAbsent`, `upsertIfRevision`, and `deleteIfRevision`.
 - Re-read and re-run authorization, policy, capacity, lifecycle, and invariants
   on every retry. Never reuse a decision derived from a predecessor that lost
   its compare-and-set race.
 - Keep group and summary convergence human-readable as direct named read,
-  compute, validate, and write statements. Record phase timing around each
-  statement, with transaction timing separate; do not pass the phase work into
-  timing callback wrappers.
+  compute, validate, and write statements: `read`, `compute`, `validate`, then
+  `write`. The `compute` and `validate` phases are pure; only `write` opens the
+  transaction, its conditional guard is first, and a conflict restarts at
+  `read`. The implemented retry boundary is
+  `DEFAULT_RUNTIME_STATE_WRITE_BACKOFF_MS` (`[0, 2, 8]` ms),
+  `waitForRuntimeStateWriteRetry`, and `RuntimeStateRetryExhaustedError`.
+  Record phase timing around each direct statement with transaction timing
+  separate.
 - State, idempotency receipt, insert-only outbox intent, and event commit in one
-  authoritative transaction. An outbox collision is a typed rollback failure
-  and must not load a winner. Winner loading is only for an explicitly
-  non-authoritative/read path.
+  authoritative transaction. `StateMutationOutboxRepository` makes the outbox
+  rows atomic with the guarded write. An outbox collision is a typed rollback
+  failure and must not load a winner. Winner loading is only for an explicitly
+  non-authoritative/read path. The compact `MutationReceipt` family and
+  `GroupStateCausalRevision` carry replay and group/presence authority.
 - Preserve omitted public random/time inputs as mandatory `null` command fields
   when hashing idempotent intent. After hashing, validate the ledger before any
   random, clock-default, verifier, or other volatile materialization. Only a
@@ -83,6 +90,8 @@ rg -n "GroupRef|groupRef|groupId|roomId|createAndSwitch|createAndJoin|joinRoom|w
   cache; only canonical summary convergence with an advanced tuple updates that
   cache. Never report committed authoritative success as failure because an
   optional cache observation conflicts.
+- Group presence uses its per-session guard and does not contend on the group
+  row. Group metadata and roster operations use the aggregate group guard.
 - Treat storage-key/value/command relationships as part of those persisted
   shapes. A shape-valid row in the wrong actor, target, owner, director,
   principal-admission, session, summary, or idempotency slot is corruption and
@@ -105,10 +114,11 @@ rg -n "GroupRef|groupRef|groupId|roomId|createAndSwitch|createAndJoin|joinRoom|w
 - Shape-valid effects can still describe the wrong operation. Canonically
   recompute and exactly compare operation-specific guards, dependent rows,
   events, receipts, and outbox intents before the first authoritative write.
-- Database row, table, and advisory locks are not the default. Existing lock-based
-  client-session, group-presence, topology, publication, or RTT code is
-  migration debt rather than precedent. A lock exception requires explicit
-  human approval and documented evidence, scope, and removal conditions.
+- Database row, table, and advisory locks are not the default. The implemented
+  client, group, topology-config, topology publication/execution, and RTT paths
+  no longer use `lockKey`. Historical lock-based versions remain a warning,
+  not precedent. A lock exception requires explicit human approval and
+  documented evidence, scope, and removal conditions.
 - Optimistic and permissive does not mean weak contracts. Require causal fields
   on snapshots and durable work; reserve hard rejection for malformed or
   wrongly scoped data, authorization failures, invariant corruption, resource

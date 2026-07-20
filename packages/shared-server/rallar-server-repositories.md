@@ -6,18 +6,20 @@ This document maps the current Rallar Server data model, persistence repositorie
 
 Rallar Server is both REST HTTP and WebSocket based.
 
-This file inventories current behavior; it is not permission to copy every
-current concurrency mechanism. For authoritative shared state, the required
-architecture is conditional insert, expected-revision compare-and-set update,
-and expected-revision conditional delete with bounded retries from fresh reads.
-Database row, table, and advisory locks are exceptional and require explicit
-human approval. Current lock-based paths are migration candidates, not
-precedent.
+This file inventories current behavior. Authoritative shared state uses
+`insertIfAbsent`, `upsertIfRevision`, and `deleteIfRevision` with bounded
+retries from fresh reads. Database row, table, and advisory locks are
+exceptional and require explicit human approval. Historical lock-based client,
+group, topology, publication, and RTT implementations are not precedent; the
+current targeted paths do not call `lockKey`.
 
 - REST HTTP owns auth, initial state reads, client state mutations, group/room mutations, ICE config, graph reads, and Swagger docs.
 - WebSocket owns live AL messages, RTC signaling, system state snapshot broadcasts, state event broadcasts, dynamic application topics, and server-to-client message fanout.
 - Persistent server state currently uses Postgres through nine physical tables: `runtime_state_store`, `client_state_events`, `group_state_events`, `resource_inbox`, `resource_inbox_results`, `app_data_store`, `crdt_documents`, `crdt_updates`, and `crdt_snapshots`.
-- Process-local caches exist for client snapshots, group snapshots, graphs, RTT, Rallar app-data store instances, WebSocket connections, rate limiters, and repository-manager registrations.
+- Process-local caches exist for client snapshots, group snapshots, graphs,
+  observed topology/RTT values, Rallar app-data store instances, WebSocket
+  connections, rate limiters, and repository-manager registrations. Durable
+  topology/RTT authority remains in runtime state.
 - Browser Rallar gets initial client/group state over REST, then receives live state snapshot messages over WS. The high-level `rallar.rooms.onChange(...)` and `rallar.people.onChange(...)` APIs are driven by the browser state caches. Live state events can be observed through `rallar.rooms.onEvent(...)` and `rallar.people.onEvent(...)`; lower-level WS messages can still be observed with `rallar.messages.ws.onMessage(...)`.
 
 ## Architecture Diagram
@@ -93,6 +95,44 @@ The reusable facade is `packages/shared-server/rallar-facade/RallarServer.ts`.
 - `RallarServer.system` wraps default middleware topics and WS lifecycle installation.
 - `RallarServer.data` wraps generic repository registration and persistent server app-data stores.
 
+## Current Authoritative Mutation Model
+
+The five guarded operation families keep one visible `read`, `compute`,
+`validate`, `write` sequence:
+
+- client: `readClientMutation`, `computeClientMutation`,
+  `validateClientMutation`, `writeClientMutation`;
+- group: `readGroupMutation`, `computeGroupMutation`,
+  `validateGroupMutation`, `writeGroupMutation`;
+- topology config: `readTopologyConfigMutation`,
+  `computeTopologyConfigMutation`, `validateTopologyConfigMutation`,
+  `writeTopologyConfigMutation`;
+- RTC topology: `readTopologyMutation`, `computeTopologyMutation`,
+  `validateTopologyMutation`, `writeTopologyMutation`; and
+- RTT: `readRttMutation`, `computeRttMutation`, `validateRttMutation`,
+  `writeRttMutation`.
+
+The `compute` and `validate` phases are pure. Only `write` opens the
+transaction, its conditional guard is first, and a conflict restarts at
+`read`. Retries use `DEFAULT_RUNTIME_STATE_WRITE_BACKOFF_MS` (`[0, 2, 8]` ms),
+`waitForRuntimeStateWriteRetry`, and `RuntimeStateRetryExhaustedError`.
+
+Client/group/topology-config effects use `StateMutationOutboxRepository`.
+Guarded state, compact `MutationReceipt` authority, the outbox rows, and any
+event commit atomically. RTC topology similarly commits its snapshot guard,
+work claim, and immutable publication atomically; RTT commits endpoint guards,
+measurement, receipt, and recompute intents atomically. The async drainers own
+state-sync publication and topology recomputation after commit.
+
+Concurrency domains are explicit. Client state guards the principal; group
+metadata and roster guard the group; presence guards one session and does not
+contend on the group row. The materialized presence summary converges
+asynchronously and carries `GroupStateCausalRevision` with the group revision.
+
+Authoritative shared fields are mandatory except documented input or migration
+exceptions. Sparse request/query/patch/build types do not weaken persisted,
+replicated, queued, event, snapshot, receipt, or response values.
+
 ## Data Types, Repositories, Persistence, And Cache
 
 | Data | Repository/API | Physical persistence | Cache | Notes |
@@ -106,8 +146,14 @@ The reusable facade is `packages/shared-server/rallar-facade/RallarServer.ts`.
 | Client events | `ClientStateRepository` through `ClientStateEventStore` | `client_state_events` | Live event callbacks, no durable browser event cache | Appended on mutations. Paged by `(snapshot_version, occurred_at_epoch_ms, event_id)`. Broadcast over WS as `client-state.event`; `rallar.people.onEvent(...)` can observe live events, while `data-caches.ts` does not apply event payloads to snapshot caches. |
 | Groups/rooms | `GroupStateRepository` | `runtime_state_store` namespace `group-state:groups` | Group snapshot cache after publish/receive | Group rows can use `purgeAfterEpochMs`; active/deleted/archived status is in the JSON value. |
 | Group members | `GroupStateRepository` | `runtime_state_store` namespace `group-state:members` | Group snapshot cache after publish/receive | Member status and role are durable. |
-| Group presence sessions | `GroupStateRepository` | `runtime_state_store` namespace `group-state:sessions` | Group snapshot cache after publish/receive | Presence rows expire by `expiresAtEpochMs`. Active means `disconnectedAtEpochMs` is absent. |
+| Group presence sessions | `GroupStateRepository` | `runtime_state_store` namespace `group-state:sessions` | Group snapshot cache after publish/receive | Generation-fenced session CAS is the write guard. Presence does not contend on the group row. |
+| Group presence summaries | `GroupStateRepository` / `GroupPresenceSummaryWork` | `runtime_state_store` namespace `group-state:presence-summary` | Group snapshot cache after convergence | Optimistic materialized view with required `GroupStateCausalRevision`; recomputation emits topology work asynchronously. |
 | Group events | `GroupStateRepository` through `GroupStateEventStore` | `group_state_events` | Live event callbacks, no durable browser event cache | Appended on mutations. Paged by `(snapshot_version, occurred_at_epoch_ms, event_id)`. Broadcast over WS as `group-state.event`; `rallar.rooms.onEvent(...)` can observe live events, while `data-caches.ts` does not apply event payloads to snapshot caches. |
+| Client/group/topology mutation receipts | Domain repositories | `runtime_state_store` idempotency namespaces | No logical cache | Compact `MutationReceipt` authority; exact replay returns the winner without storing a full snapshot graph. |
+| State mutation outbox | `StateMutationOutboxRepository` | `runtime_state_store` state-mutation outbox namespace | No logical cache | Insert-only transaction-local intents for client/group state sync, presence-summary convergence, and topology recompute. `StateMutationOutboxWork` drains them after commit. |
+| RTC topology snapshots | `RtcTopologySnapshotRepository` | `runtime_state_store` scoped topology namespace | Process-local observed topology | Expected-revision snapshot CAS; equal authority with different content is corruption. |
+| RTC topology work claims/publications | `RtcTopologyPublicationRepository` / `RtcTopologyExecutionRepository` | `runtime_state_store` scoped receipt/publication namespaces | Loaded on delivery | Snapshot guard, compact work claim, and immutable publication commit atomically. |
+| RTC RTT measurements/admissions/receipts/intents | `RtcRttRepository` | `runtime_state_store` scoped RTT namespaces | Process-local observed RTT/graph values | Endpoint-admission guards precede measurement, compact receipt, and every per-group recompute-intent insert. |
 | WS inbox/outbox entries | `PSqlQueueBox` over `ResourceInboxRepository` | `resource_inbox` | No logical cache; queue engine locks rows | Same table is used for both inbound and outbound queue entries. `ri_type_id` separates `WS_INBOX` and `WS_OUTBOX`. |
 | App inbox results | `ResourceInboxResultsRepository` | `resource_inbox_results` | No logical cache | Stores completed or failed app-inbox results keyed like the originating queue entry so REST callers can wait for durable mutation results. |
 | AL runtime bookkeeping | `createPSqlALRuntimeStores` | `runtime_state_store` under server WS runtime namespaces | Runtime-store objects in process | Used for admission, dedup, ordering, supersedence, sent tracking, pending acks, repair attempts. |
@@ -117,7 +163,6 @@ The reusable facade is `packages/shared-server/rallar-facade/RallarServer.ts`.
 | CRDT snapshots | CRDT log repositories | `crdt_snapshots` | Repository/runtime dependent | Stores compacted snapshot envelopes per document and append sequence. |
 | Generic facade repositories | `RallarServerDataFacade.register/set/lookup/...` | In-memory only unless the registered object persists itself | `RepositoryManager` | This is process-local registry state, not durable data by itself. |
 | Graph snapshots | shared graph repositories and graph services | Process-local cache | Graph cache | Graph HTTP routes read computed graph data; RTT updates can recompute and cache graphs. |
-| RTT measurements | `rtt-repository` | Process-local cache | RTT cache | Updated from WS `rtt` messages; used by Vivaldi/graph services. |
 | ICE config | `readMeteredIceConfig` via route service | External Metered response, not persisted | `LoanedValue` cache | API-v1 caches ICE config for a short period in memory. |
 | Browser custom data | `rallar.data.open(...)` in shared-web | Browser IndexedDB | Observable latest repository cache | Separate from Rallar Server data. BroadcastChannel can sync same-origin tabs when configured. |
 | Browser QueueBox and AL runtime | browser queuebox and AL runtime stores | Browser IndexedDB when supported, else memory | Runtime object caches | Used for WS/RTC client queues and AL dedup/ordering/supersedence state. Expiry eviction exists in browser middleware. |
@@ -138,6 +183,13 @@ Columns used by the adapter:
 - `revision`
 
 It is used by auth, client state, group state, and AL runtime stores. `RuntimeStateJsonStore` stores JSON strings and applies lazy expiry on reads. The API app also starts `initRuntimeStateExpiryEviction(...)`, which periodically deletes expired rows across namespaces.
+
+`RuntimeStateConditionalRepositoryLike` supplies `insertIfAbsent`,
+`upsertIfRevision`, and `deleteIfRevision`; the transactional optimistic
+capability combines those guards with `begin`. Topology config keeps target and
+invariant lifecycle generations. Group presence keeps session generation
+identity plus separate summary presence authority, so stale cleanup cannot
+delete a reconnect and metadata writers do not serialize heartbeats.
 
 The key space is namespace plus encoded keys such as:
 
@@ -301,10 +353,11 @@ Client state routes live in `apps/api-v1/src/routes/client-state-routes.ts`.
 - Disconnect session.
 
 HTTP and lifecycle mutations enter through `AppClientInboxService`, which calls
-`ClientStateService`. The state service writes through `ClientStateRepository`
-inside `runtimeRepository.begin(...)`, appends a durable client event, reads a
-fresh snapshot, and returns a written result. `AppClientInboxService` owns
-publishing that result through `StateSyncPublisher`.
+`ClientStateService`. `readClientMutation`, `computeClientMutation`, and
+`validateClientMutation` run before `writeClientMutation` opens the short
+transaction. The principal guard is first, followed by child rows, compact
+receipt, state-mutation outbox, and event. `AppClientInboxService` completes the
+command; the outbox drainer owns publication.
 
 ### Group/Room State
 
@@ -319,10 +372,12 @@ Group state routes live in `apps/api-v1/src/routes/group-state-routes.ts`.
 - Disconnect group presence session.
 
 HTTP and lifecycle mutations enter through `AppGroupInboxService`, which calls
-`GroupStateService`. The state service writes through `GroupStateRepository`
-inside `runtimeRepository.begin(...)`, appends a durable group event, reads a
-fresh snapshot, and returns a written result. `AppGroupInboxService` owns
-publishing that result through `StateSyncPublisher`.
+`GroupStateService`. `readGroupMutation`, `computeGroupMutation`, and
+`validateGroupMutation` run before `writeGroupMutation` opens the short
+transaction. Metadata/roster mutations guard the group; presence mutations
+guard the session. Receipt, outbox, and event are atomic with accepted state.
+`AppGroupInboxService` completes the command; `StateMutationOutboxWork` owns
+state sync and presence-summary convergence after commit.
 
 ### ICE And Graph
 
@@ -357,11 +412,14 @@ There are two common paths.
 
 State sync path:
 
-1. A REST state mutation commits client/group state.
-2. `StateSyncPublisher` updates the server process snapshot cache.
-3. It enqueues a broadcast AL message with topic `client-state.snapshot`, `client-state.event`, `group-state.snapshot`, or `group-state.event`.
-4. `InboxOutboxEngine` dequeues the outbox entry.
-5. `ws-system-topics.ts` accepts the outbox message and calls `server.broadcast(data)`.
+1. A client/group mutation commits guarded state, compact receipt, event, and
+   `StateMutationOutboxRepository` intent in one transaction.
+2. `StateMutationOutboxWork` loads the committed authority and publishes the
+   state-sync effect idempotently; group work also schedules summary convergence.
+3. `StateSyncPublisher` updates the process snapshot cache and enqueues the AL
+   snapshot/event message into durable WS QueueBox.
+4. `InboxOutboxEngine` dequeues the WS outbox entry.
+5. `ws-system-topics.ts` delivers the scoped message.
 6. Browser `WsQueueBoxClientService` receives the AL message.
 7. `packages/shared-web/browser/data-caches.ts` stores snapshot messages in browser state caches.
 8. `BrowserRallarFacade` observes cache changes and emits `rooms.onChange(...)` and `people.onChange(...)`.
@@ -453,7 +511,9 @@ Browser caches:
 
 ## Key Operational Semantics
 
-- REST state writes are durable before WS state notifications are enqueued.
+- REST state writes commit their durable publication intents atomically; async
+  drainers enqueue WS state notifications and topology recomputation after
+  commit.
 - QueueBox entries are durable in Postgres and processed asynchronously by `InboxOutboxEngine`.
 - State snapshots are cached in process memory and then broadcast over WS.
 - Room-scoped WS fanout depends on an in-memory group snapshot cache to know which active sessions are in the room.
