@@ -299,6 +299,95 @@
   implementation `git diff --cached --check` passed, including the two new
   validator files.
 
+## Final (fourth) review correction: replay purity and complete publication facts
+
+### Scope and implementation commit
+
+- Review-correction base:
+  `879241ddcc526b7b63fccf241cc49ba390135c00`.
+- Implementation commit:
+  `e8ebe59d17ca7a6905dbf5cc69212393fe0de4c7`.
+- Receipt replay now reads and validates the durable receipt first and returns
+  from that receipt alone. Exact replay performs no measurement, admission,
+  list, transaction, conditional-write, delete, or recompute-outbox work;
+  divergent command hashes fail from the receipt alone.
+- RTC topology publication facts are captured once before optimistic attempt
+  zero. The retry loop reuses one deterministic message ID and requested time,
+  and a pure materializer constructs the complete persisted AL candidate
+  without clocks, randomness, or AL builders. The ambient compatibility helper
+  is deprecated and explicitly restricted to non-retry publication paths.
+- Persisted topology snapshots now validate the complete graph invariant on
+  direct, list, page, and publication reads: scoped overlay identity, canonical
+  unique sessions and routes, exact route keys, known non-self reciprocal
+  peers, positive degree limit, connectivity and degree bounds for active
+  graphs, empty edges for retained-session tombstones, and non-inverted
+  timestamps. Production planners canonicalize session order and emit removed
+  snapshots with a positive degree limit.
+- Publications require `targetGroupSnapshotVersion` and bind it exactly to the
+  room broadcast target. Publication ID, route, payload snapshot, recipient
+  set, audit time, message time, and publication time are validated as one
+  immutable contract before cleanup or fanout.
+- The explicit `migrateLegacyRtcTopologyPublicationKeys` offline migration can
+  upgrade true old rows that omit the target-version field. It validates the
+  legacy AL envelope and topology, derives the version from the required room
+  target, and rebinds message/audit time to the publication creation fact.
+  Partial canonical destinations converge, reruns are idempotent, and
+  divergent destinations fail closed. Normal reads still reject the old shape;
+  repository-wide search confirms the value upgrade has no startup or runtime
+  caller outside the explicit migration.
+- A shared collision-safe unordered pair encoder uses exact UTF-16 code-unit
+  order plus a JSON tuple. Weighted RTT graph deduplication and successor work
+  identity both use it, preserving delimiter-bearing and Unicode-lookalike
+  endpoint pairs.
+- The topology-removal conflict proof now distinguishes a rolled-back
+  transaction-local write from an independently committed moved predecessor.
+  The retry rereads both group authority and the committed predecessor before
+  producing the convergent tombstone.
+
+### Final correction RED evidence
+
+- The first four-file review RED command collected 209 tests and exited 1 with
+  3 failed files, 1 passed file, 67 failures, and 142 passes. The failures
+  covered receipt replay authority reads/effects, missing target-version
+  binding, accepted timestamp drift, ambient retry randomness, corrupt graph
+  replay fanout, delimiter pair collisions, and all four persisted topology
+  validation surfaces.
+- The follow-up migration/degree audit RED command collected 110 tests and
+  exited 1 with 8 failures and 102 passes. Four failures showed that the
+  explicit migration could not upgrade real missing-field legacy rows or
+  recover partial destinations; four showed that zero-degree removed snapshots
+  remained readable through direct, list, page, and publication surfaces.
+
+### Final correction GREEN and baseline evidence
+
+- The migration/degree repository file passed 110/110 tests. This includes
+  strict normal-read rejection of the old shape, missing-field value upgrade,
+  claim-only and publication-only destination recovery, idempotent rerun,
+  divergent-destination rejection, positive-degree tombstone acceptance, and
+  zero-degree rejection on all four read surfaces.
+- The four-file focused review command passed 4/4 files and 216/216 tests. The
+  final nine-file Task 6 matrix passed 9/9 files and 261/261 tests.
+- `npx vitest run packages/tests/shared-server --reporter=dot` passed 58 files
+  with 2 configured-skip files; 803 tests passed and 12 environment-gated tests
+  were skipped.
+- `npm run typecheck` passed the root shared check and every workspace
+  typecheck. `deno task check` in `apps/api-v1` passed, and the full
+  `deno task test` passed 210/210 tests.
+- `RALLAR_POSTGRES_INTEGRATION=1 DATABASE_URL=postgres://app:app@localhost:5432/appdb npx vitest run packages/tests/shared-server/postgres-runtime-state-concurrency.test.ts --reporter=dot`
+  passed 1/1 file and 11/11 tests against live PostgreSQL after the expected
+  sandbox-denied localhost attempt was rerun with local database access.
+- The root-wide `npm run test:unit` remains **not claimed as passing**. It
+  completed with 445 passed files, 2 configured-skip files, and 1 failed file;
+  4,309 tests passed, 12 skipped, and 7 failed. The same seven untouched
+  `packages/tests/shared-web/rallar-workflow-options-compat.test.ts` baseline
+  failures concern pre-existing workflow mock argument positions and retry
+  policy expectations.
+- Final scans found no unconditional `.upsert`, `.putValue`, `deleteByKey`,
+  `lockKey`, `putSnapshot`, `FOR UPDATE`, or `pg_advisory` reference in the
+  Task 6 persistence/orchestration paths; pair-identity paths contain neither
+  `localeCompare` nor the former `::` delimiter encoding. `git diff --check`
+  and staged implementation `git diff --cached --check` passed.
+
 ## Environment, performance, and artifacts
 
 - An early sandboxed live PostgreSQL attempt was denied local network access;
