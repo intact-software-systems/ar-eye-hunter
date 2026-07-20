@@ -876,3 +876,92 @@ report commit `a874a22a`.
   `git diff --check` and staged `git diff --cached --check` passed before the
   implementation commit.
 - Task 7 and later tasks were not started by this correction.
+
+## Tenth review correction: complete RTT guards and owned generic expiry
+
+Implementation commit: `e8f573c2d768d6359a76b61028b056b2a11dd835`
+(`fix(rtc): validate guards and own expiry workers`), based on ninth-correction
+report commit `7108b8cae0a52639dba68902f954931cbcab9fd3`.
+
+### Corrected behavior
+
+- The synchronous neutral RTT persistence gate now validates the exact complete
+  write-candidate discriminant and field set before `runtime.begin`. It binds
+  the canonical affected groups, receipt, and mandatory pending intents; exactly
+  two unique endpoint guards in lexical pair order; exact guard/admission/peer
+  fields; safe create/update revisions; endpoint/value/counterpart identities;
+  accepted-time lifecycle; purge coverage; canonical peers; and physical expiry
+  equal to the latest lease. The measurement guard has exact fields, a safe
+  revision, a strict full measurement, a purge time after acceptance, exact
+  receipt pair/version binding, and semantic equality with every intent RTT.
+  Repository measurement and endpoint writes reuse the same pure validators as
+  defense in depth.
+- Offline topology snapshot migration requires one explicit stable
+  `observedAtEpochMs`. Every retry rereads the legacy source and rejects
+  `expireAtTimestamp <= observedAtEpochMs` as typed topology corruption before
+  any canonical insertion. A future retained source may become a permanent
+  canonical snapshot. An existing canonical destination must still decode as
+  non-expiring and be semantically equal before conditional source deletion.
+  The operator script captures the observation once for the whole cutover.
+- Generic runtime-state expiry no longer delegates recurring ownership to the
+  unstoppably scheduled `tryRunInIntervals` promise. Its public initializer now
+  returns `{ firstRun, stop }` for default, numeric-interval, and object-options
+  forms. The worker runs immediately, remains single-flight, owns and cancels
+  its timer, retries failure, stops idempotently, and checks stop after an
+  in-flight completion before scheduling again.
+- One middleware startup generation now owns both the specialized RTT-family
+  cleanup and protected generic eviction handles. Reinitialization and shutdown
+  invalidate and stop both. A handle created by a delayed stale generation is
+  stopped immediately, and replacing a handle in one current generation stops
+  its predecessor. The startup barrier keeps a narrow numeric first-run result;
+  specialized failure still surfaces promptly while generic first-run starts
+  detached and its rejection remains observed.
+
+### Tenth correction RED evidence
+
+- `npx vitest run packages/tests/shared-server/rtc-topology-runtime-state-repositories.test.ts --reporter=dot`
+  collected 273 tests and exited 1 with exactly 20 failures and 253 passes.
+  Seventeen direct write-seam failures showed missing/extra/misordered endpoint
+  guards, wrong identities, unsafe revisions, malformed peer leases/expiry,
+  incomplete measurement guards, lifecycle/purge mismatches, and affected-group
+  divergence entering `runtime.begin` or committing instead of failing
+  preflight. Three migration failures showed boundary/expired legacy rows and a
+  source that expired between retries being promoted to permanent authority.
+- `npx vitest run packages/tests/shared-server/runtime-state-expiry-eviction.test.ts --reporter=dot`
+  collected 8 tests and exited 1 with exactly 4 failures and 4 passes. The
+  default, numeric, and object initializer forms exposed no stoppable handle,
+  and stop during an in-flight run could not prevent the orphan loop from
+  scheduling again.
+- `deno test --allow-read --config deno.json test/services/runtime-state-expiry-startup.test.ts`
+  collected 8 tests and exited 1 with exactly 2 failures and 6 passes. Startup
+  generations could not own generic eviction, and middleware initialized the
+  generic loop outside generation ownership.
+
+### Tenth correction GREEN, baseline, and architecture evidence
+
+- The final repository/mutation/generic-expiry focused command passed 3/3 files
+  and 301/301 tests. The API startup lifecycle command passed 8/8 tests. The
+  expanded Task 6 cross-package matrix, including generic expiry, passed 11/11
+  files and 488/488 tests.
+- `npx vitest run packages/tests/shared-server --reporter=dot
+  --silent=passed-only` passed 58 files with 2 configured-skip files; 983 tests
+  passed and 13 opt-in environment tests were skipped. Full API-v1 Deno tests
+  passed 221/221.
+- `npm run typecheck` passed the root and every workspace typecheck. Focused
+  shared-server `tsc` passed. In `apps/api-v1`, main and migration-script
+  `deno check` passed. Targeted Deno format and lint checks passed all four
+  changed API source/test/script files.
+- The live PostgreSQL concurrency command passed 1/1 file and 12/12 tests.
+- Root `npm run test:unit -- --reporter=dot --silent=passed-only` remains
+  explicitly **not claimed as passing**: 445 files passed, 2 were configured
+  skips, and 1 failed; 4,489 tests passed, 13 skipped, and the same 7 untouched
+  `packages/tests/shared-web/rallar-workflow-options-compat.test.ts` baseline
+  tests failed. That file is absent from this correction's diff.
+- Final scans found no unconditional `.upsert`, `deleteByKey`, `lockKey`,
+  `FOR UPDATE`, or advisory-lock use in the governed paths. The neutral
+  persistence module contains no async/repository/transaction/ambient
+  clock/random/environment access. The generic expiry implementation contains
+  no `tryRunInIntervals`; its tests use the actual exported handle/options and
+  no compatibility casts. `git diff --check` and staged
+  `git diff --cached --check` passed before the implementation commit.
+- Task 7 and later tasks were not started by this correction.
