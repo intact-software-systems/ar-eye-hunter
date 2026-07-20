@@ -77,6 +77,26 @@ describe('auth login service', () => {
         expect(first?.accessToken).not.toBe(second?.accessToken);
     });
 
+    it('returns an explicit null display name when registration omits it', async () => {
+        const registered = await registerAuthUser(
+            {
+                username: 'no-display-name',
+                password: 'secret',
+            },
+            {
+                runtimeRepository: new FakeRuntimeStateRepository(),
+                now: () => 1_234,
+            },
+        );
+
+        expect(registered).toEqual({
+            clientId: expect.any(String),
+            username: 'no-display-name',
+            displayName: null,
+            registeredAtEpochMs: 1_234,
+        });
+    });
+
     it('rejects duplicate usernames including static client reservations', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         await registerAuthUser(

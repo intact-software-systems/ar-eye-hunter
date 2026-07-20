@@ -86,6 +86,23 @@ Deno.test('OpenAPI JSON includes black-box auth support contracts', async () => 
   );
 });
 
+Deno.test('OpenAPI JSON requires an explicit nullable registration display name', async () => {
+  const app = init(new Hono());
+  const response = await app.request('/api/openapi.json');
+  const json = await response.json() as {
+    components: {
+      schemas: Record<string, {
+        required?: string[];
+        properties?: Record<string, { nullable?: boolean }>;
+      }>;
+    };
+  };
+  const registerResponse = json.components.schemas.RegisterResponse;
+
+  assert.ok(registerResponse.required?.includes('displayName'));
+  assert.equal(registerResponse.properties?.displayName?.nullable, true);
+});
+
 Deno.test('OpenAPI JSON exposes mandatory convergent group state fields', async () => {
   const app = init(new Hono());
   const response = await app.request('/api/openapi.json');

@@ -78,7 +78,7 @@ export type LoginResponse = {
 export type RegisterResponse = {
     clientId: PeerId;
     username: string;
-    displayName?: string;
+    displayName: string | null;
     registeredAtEpochMs: number;
 };
 

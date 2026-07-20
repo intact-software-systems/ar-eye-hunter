@@ -27,7 +27,7 @@ import type {
     SerializedGraphInfoSnapshot,
     StoredGroupTopologyConfig,
 } from '@shared/api/graph-topology-management-types.ts';
-import type { OverlayInfo } from '@shared/api/api-config.ts';
+import type { OverlayInfo, RegisterResponse } from '@shared/api/api-config.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { MutationActorInput } from '@shared/api/state-types.ts';
 import type {
@@ -72,6 +72,7 @@ describe('authoritative state contracts', () => {
         expectTypeOf<OptionalKeys<RallarOverlayTopologySnapshot>>()
             .toEqualTypeOf<never>();
         expectTypeOf<OptionalKeys<OverlayInfo>>().toEqualTypeOf<never>();
+        expectTypeOf<OptionalKeys<RegisterResponse>>().toEqualTypeOf<never>();
         expectTypeOf<OptionalKeys<StoredGroupTopologyConfig>>()
             .toEqualTypeOf<never>();
         expectTypeOf<OptionalKeys<GroupTopologyConfigView>>()

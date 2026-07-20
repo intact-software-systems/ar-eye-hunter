@@ -161,7 +161,7 @@ function toRegisterResponse(user: AuthUser): RegisterResponse {
     return {
         clientId: user.clientId,
         username: user.username,
-        displayName: user.displayName,
+        displayName: user.displayName ?? null,
         registeredAtEpochMs: user.createdAtEpochMs,
     };
 }
