@@ -1,5 +1,4 @@
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
-import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RuntimeStateEntryValue } from '../../runtime-state/RuntimeStateJsonStore.ts';
 import { RuntimeStateJsonStore } from '../../runtime-state/RuntimeStateJsonStore.ts';
 import type {
@@ -25,36 +24,26 @@ import type {
     RtcRttRecomputeIntent,
 } from '../services/rtc-topology-mutations.ts';
 import { validatePersistedGroupSnapshot } from '../services/group-snapshot-validation.ts';
-import { compareRtcTopologyIdentifiers } from '../rtc-topology-identifiers.ts';
-import { RtcTopologyRepositoryInvariantCorruptionError } from './RtcTopologySnapshotRepository.ts';
+import { groupStateGroupStorageKey } from '../group-state-storage-keys.ts';
+import { RtcTopologyRepositoryInvariantCorruptionError } from '../rtc-topology-errors.ts';
+import {
+    compareRtcTopologyIdentifiers,
+    toCanonicalRtcTopologyGroupIdentity,
+    toRtcRttMutationReceiptId,
+    toRtcRttRecomputeOutboxId,
+} from '../rtc-topology-identifiers.ts';
+import { rtcTopologySemanticEqual } from '../rtc-topology-semantic-equality.ts';
+
+export {
+    toRtcRttMutationReceiptId,
+    toRtcRttRecomputeOutboxId,
+} from '../rtc-topology-identifiers.ts';
 
 export const RTC_RTT_LATEST_NAMESPACE = 'rtc-rtt:latest';
 export const RTC_RTT_ENDPOINT_ADMISSION_NAMESPACE = 'rtc-rtt:endpoint-admission';
 export const RTC_RTT_RECEIPTS_NAMESPACE = 'rtc-rtt:receipts';
 export const RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE = 'rtc-rtt:recompute-outbox';
 export const DEFAULT_RTC_RTT_MUTATION_RETENTION_MS = 24 * 60 * 60 * 1_000;
-
-export function toRtcRttMutationReceiptId(
-    rtt: Pick<RttMeasurementInfo, 'sessionIdFrom' | 'sessionIdTo' | 'version'>,
-): string {
-    return `pair=${encodeURIComponent(JSON.stringify([
-        ...sortedPair(rtt.sessionIdFrom, rtt.sessionIdTo),
-    ]))}:version=${rtt.version}`;
-}
-
-export function toRtcRttRecomputeOutboxId(
-    receiptId: string,
-    groupRef: GroupRef,
-    commandHash: string,
-): string {
-    return `${receiptId}:commandHash=${encodeURIComponent(commandHash)}:group=${encodeURIComponent(JSON.stringify([
-        groupRef.applicationId,
-        groupRef.workspaceId === undefined
-            ? ['absent']
-            : ['present', groupRef.workspaceId],
-        groupRef.groupId,
-    ]))}`;
-}
 
 const DEFAULT_RTC_RTT_TTL_MS = 60_000;
 
@@ -593,6 +582,24 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
         if (value.outboxId !== entry.key) {
             throw rttCorruption(entry.key, 'RTC RTT recompute intent differs from physical key');
         }
+        if (entry.expireAtTimestamp <= this.nowEpochMs()) {
+            return await this.toLiveVerifiedEntry(
+                RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE,
+                entry,
+                value,
+                (replacement, nextAttempt) => this.toLiveRecomputeIntentEntry(
+                    replacement,
+                    trustedOutboxId,
+                    nextAttempt,
+                ),
+                expiryAttempt,
+            );
+        }
+        const receipt = await this.findMutationReceiptEntry(value.receiptId);
+        if (!receipt) {
+            throw rttCorruption(entry.key, 'RTC RTT recompute intent receipt is missing');
+        }
+        validateIntentAgainstReceipt(value, receipt.value, entry.key);
         return await this.toLiveVerifiedEntry(
             RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE,
             entry,
@@ -636,7 +643,7 @@ export async function migrateLegacyRtcRttMeasurementKeys(
                 value.sessionIdTo,
             );
             if (destination) {
-                if (JSON.stringify(destination) !== JSON.stringify(value)) {
+                if (!rtcTopologySemanticEqual(destination, value)) {
                     throw rttCorruption(
                         destinationKey,
                         'Canonical RTC RTT value differs from legacy source',
@@ -756,7 +763,18 @@ function validateMutationReceipt(
     })) {
         throw new TypeError('RTC RTT receipt identity is invalid');
     }
-    for (const ref of value.affectedGroupRefs) validateCanonicalGroupRef(ref);
+    let previousKey: string | undefined;
+    for (const ref of value.affectedGroupRefs) {
+        validateCanonicalGroupRef(ref);
+        const key = toCanonicalRtcTopologyGroupIdentity(ref);
+        if (
+            previousKey !== undefined &&
+            compareRtcTopologyIdentifiers(previousKey, key) >= 0
+        ) {
+            throw new TypeError('RTC RTT receipt affected group refs are not canonical');
+        }
+        previousKey = key;
+    }
 }
 
 function validateRecomputeIntent(
@@ -795,6 +813,40 @@ function validateRecomputeIntent(
 function validateCommandHash(value: unknown): asserts value is string {
     if (typeof value !== 'string' || !/^sha256:[0-9a-f]{64}$/.test(value)) {
         throw new TypeError('RTC RTT command hash is invalid');
+    }
+}
+
+function validateIntentAgainstReceipt(
+    intent: RtcRttRecomputeIntent,
+    receipt: RtcRttMutationReceipt,
+    storageKey: string,
+): void {
+    const groupKey = groupStateGroupStorageKey(intent.groupSnapshot.group);
+    const receiptIncludesGroup = receipt.affectedGroupRefs.some((ref) =>
+        groupStateGroupStorageKey(ref) === groupKey
+    );
+    const activeSessionIds = new Set(
+        intent.groupSnapshot.activeSessions
+            .filter(({ expiresAtEpochMs }) =>
+                expiresAtEpochMs > intent.createdAtEpochMs
+            )
+            .map(({ sessionId }) => sessionId),
+    );
+    const groupExpiry = intent.groupSnapshot.group.expiresAtEpochMs;
+    if (
+        receipt.receiptId !== intent.receiptId ||
+        receipt.commandHash !== intent.commandHash ||
+        receipt.acceptedAtEpochMs !== intent.createdAtEpochMs ||
+        !receiptIncludesGroup ||
+        intent.groupSnapshot.group.status !== 'active' ||
+        (groupExpiry !== undefined && groupExpiry <= intent.createdAtEpochMs) ||
+        !activeSessionIds.has(receipt.sessionIdFrom) ||
+        !activeSessionIds.has(receipt.sessionIdTo)
+    ) {
+        throw rttCorruption(
+            storageKey,
+            'RTC RTT recompute intent differs from immutable receipt authority',
+        );
     }
 }
 
@@ -886,7 +938,7 @@ function parseValue(entry: RuntimeStateEntry): unknown {
 }
 
 function assertExactKeys(value: Record<string, unknown>, keys: readonly string[]): void {
-    if (JSON.stringify(Object.keys(value).sort()) !== JSON.stringify([...keys].sort())) {
+    if (!rtcTopologySemanticEqual(Object.keys(value).sort(), [...keys].sort())) {
         throw new TypeError('RTC RTT persisted value has invalid keys');
     }
 }

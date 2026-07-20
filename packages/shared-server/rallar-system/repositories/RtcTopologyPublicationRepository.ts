@@ -11,7 +11,6 @@ import type {
     RuntimeStateOptimisticTransactionalRepositoryLike,
 } from '../../runtime-state/RuntimeStateRepository.ts';
 import {
-    isRuntimeStateConditionalRepositoryLike,
     isRuntimeStateOptimisticTransactionalRepositoryLike,
 } from '../../runtime-state/RuntimeStateRepository.ts';
 import { RuntimeStateWriteConflictError } from '../../runtime-state/optimistic-runtime-state-write.ts';
@@ -19,28 +18,19 @@ import {
     decodeGroupStateGroupStorageKey,
     groupStateGroupStorageKey,
 } from '../group-state-storage-keys.ts';
-import {
-    RtcTopologyRepositoryInvariantCorruptionError,
-    validateTopologySnapshot,
-} from './RtcTopologySnapshotRepository.ts';
+import { RtcTopologyRepositoryInvariantCorruptionError } from '../rtc-topology-errors.ts';
+import { toRtcTopologyPublicationMessageId } from '../rtc-topology-identifiers.ts';
+import type { RtcTopologyPublication } from '../rtc-topology-publication-contract.ts';
+import { validateTopologySnapshot } from '../rtc-topology-snapshot-contract.ts';
+import { rtcTopologySemanticEqual } from '../rtc-topology-semantic-equality.ts';
 import { validatePersistedALMessage } from '../services/al-message-persistence-validation.ts';
+
+export type { RtcTopologyPublication } from '../rtc-topology-publication-contract.ts';
 
 export const RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE = 'rtc-topology:publications';
 export const RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE =
     'rtc-topology:publication-work-index';
 export const DEFAULT_RTC_TOPOLOGY_PUBLICATION_RETENTION_MS = 24 * 60 * 60 * 1_000;
-
-export type RtcTopologyPublication = Readonly<{
-    publicationId: string;
-    workId: string;
-    groupRef: GroupRef;
-    sourceGroupStateRevision: number;
-    overlayVersion: number;
-    targetGroupSnapshotVersion: number;
-    recipientSessionIds: readonly string[];
-    message: ALMessage;
-    createdAtEpochMs: number;
-}>;
 
 export type RtcTopologyPublicationWorkClaim = Readonly<{
     groupRef: GroupRef;
@@ -139,7 +129,7 @@ export async function migrateLegacyRtcTopologyPublicationKeys(
                     workId: publication.workId,
                     publicationId: publication.publicationId,
                 };
-                if (JSON.stringify(destinationClaim.value) !== JSON.stringify(expectedClaim)) {
+                if (!rtcTopologySemanticEqual(destinationClaim.value, expectedClaim)) {
                     throw publicationCorruption(
                         destinationClaim.entry.key,
                         'Canonical work claim differs from legacy source',
@@ -156,7 +146,7 @@ export async function migrateLegacyRtcTopologyPublicationKeys(
                 publication.publicationId,
             );
             if (destinationPublication) {
-                if (JSON.stringify(destinationPublication) !== JSON.stringify(publication)) {
+                if (!rtcTopologySemanticEqual(destinationPublication, publication)) {
                     throw publicationCorruption(
                         destinationPublicationKey,
                         'Canonical publication differs from legacy source',
@@ -366,6 +356,11 @@ export class RtcTopologyPublicationRepository extends RuntimeStateJsonStore {
             publication.workId,
         );
         if (!winner) throw new RuntimeStateWriteConflictError();
+        if (!rtcTopologySemanticEqual(winner, publication)) {
+            throw new RtcTopologyPublicationCollisionError(
+                this.workIndexKey(publication.groupRef, publication.workId),
+            );
+        }
         return { publication: winner, inserted: false };
     }
 
@@ -563,11 +558,19 @@ function validatePublication(value: unknown, expectedRef: GroupRef): void {
         value.createdAtEpochMs as number,
     );
     if (
+        (value.message as ALMessage).id.msgId !==
+            toRtcTopologyPublicationMessageId(value.workId as string)
+    ) {
+        throw new TypeError('RTC topology publication message id is not deterministic');
+    }
+    if (
         (snapshot as RallarOverlayTopologySnapshot).sourceGroupStateRevision !==
             value.sourceGroupStateRevision ||
         (snapshot as RallarOverlayTopologySnapshot).version !== value.overlayVersion ||
-        JSON.stringify((snapshot as RallarOverlayTopologySnapshot).activeSessionIds) !==
-            JSON.stringify(value.recipientSessionIds)
+        !rtcTopologySemanticEqual(
+            (snapshot as RallarOverlayTopologySnapshot).activeSessionIds,
+            value.recipientSessionIds,
+        )
     ) {
         throw new TypeError('RTC topology publication message identity is invalid');
     }
@@ -729,21 +732,19 @@ function canonicalPublication(
 function publicationForMigration(
     raw: Record<string, unknown>,
 ): RtcTopologyPublication {
-    if (Object.hasOwn(raw, 'targetGroupSnapshotVersion')) {
-        const publication = canonicalPublication(raw as RtcTopologyPublication);
-        validatePublication(publication, publication.groupRef);
-        return publication;
-    }
-    assertExactKeys(raw, [
+    const hasTarget = Object.hasOwn(raw, 'targetGroupSnapshotVersion');
+    const keys = [
         'publicationId',
         'workId',
         'groupRef',
         'sourceGroupStateRevision',
         'overlayVersion',
+        ...(hasTarget ? ['targetGroupSnapshotVersion'] : []),
         'recipientSessionIds',
         'message',
         'createdAtEpochMs',
-    ]);
+    ];
+    assertExactKeys(raw, keys);
     validatePersistedALMessage(raw.message);
     const message = raw.message;
     if (
@@ -768,15 +769,27 @@ function publicationForMigration(
         message.targets.minSnapshotVersion,
         message.id.ts,
     );
+    const targetGroupSnapshotVersion = hasTarget
+        ? raw.targetGroupSnapshotVersion as number
+        : message.targets.minSnapshotVersion;
+    if (targetGroupSnapshotVersion !== message.targets.minSnapshotVersion) {
+        throw new TypeError('Legacy RTC topology publication target is inconsistent');
+    }
+    const workId = raw.workId as string;
+    const createdAtEpochMs = raw.createdAtEpochMs as number;
     const publication = canonicalPublication({
-        ...(raw as Omit<RtcTopologyPublication, 'targetGroupSnapshotVersion'>),
-        targetGroupSnapshotVersion: message.targets.minSnapshotVersion,
+        ...(raw as unknown as RtcTopologyPublication),
+        targetGroupSnapshotVersion,
         message: {
             ...message,
-            id: { ...message.id, ts: raw.createdAtEpochMs as number },
+            id: {
+                ...message.id,
+                msgId: toRtcTopologyPublicationMessageId(workId),
+                ts: createdAtEpochMs,
+            },
             audit: {
                 ...message.audit,
-                createdTs: raw.createdAtEpochMs as number,
+                createdTs: createdAtEpochMs,
             },
         },
     });
@@ -791,7 +804,7 @@ function sameGroupRef(left: GroupRef, right: GroupRef): boolean {
 }
 
 function assertExactKeys(value: Record<string, unknown>, keys: readonly string[]): void {
-    if (JSON.stringify(Object.keys(value).sort()) !== JSON.stringify([...keys].sort())) {
+    if (!rtcTopologySemanticEqual(Object.keys(value).sort(), [...keys].sort())) {
         throw new TypeError('RTC topology persisted value has invalid keys');
     }
 }

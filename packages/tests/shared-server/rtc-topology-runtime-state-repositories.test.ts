@@ -16,6 +16,7 @@ import {
 import {
     RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
     migrateLegacyRtcTopologySnapshotKeys,
+    decideTopologySnapshot,
     RtcTopologySnapshotRevisionConflictError,
     RtcTopologySnapshotRepository,
 } from '@shared-server/rallar-system/repositories/RtcTopologySnapshotRepository.ts';
@@ -31,8 +32,11 @@ import {
 } from '@shared-server/rallar-system/repositories/RtcTopologyExecutionRepository.ts';
 import {
     computeTopologyMutation,
-    executeRttMutation,
+    type RtcRttMutationCommand,
 } from '@shared-server/rallar-system/services/rtc-topology-mutations.ts';
+import {
+    executeRttMutation as executeRttMutationService,
+} from '@shared-server/rallar-system/services/rtc-rtt-mutation-service.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { hashStateMutationCommand } from '@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts';
 import {
@@ -41,6 +45,23 @@ import {
 } from '@shared-server/rallar-system/services/RtcTopologyOutboxWork.ts';
 import type { ALMessage } from '@shared/mod.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
+
+type TestExecuteRttMutationInput = Omit<
+    Parameters<typeof executeRttMutationService>[0],
+    'request' | 'readCommand'
+> & Readonly<{
+    command: RtcRttMutationCommand;
+    readCommand?: () => RtcRttMutationCommand | Promise<RtcRttMutationCommand>;
+}>;
+
+function executeRttMutation(input: TestExecuteRttMutationInput) {
+    const { command, readCommand, ...rest } = input;
+    return executeRttMutationService({
+        ...rest,
+        request: { rtt: command.rtt, alSenderId: command.alSenderId },
+        readCommand: readCommand ?? (() => command),
+    });
+}
 
 describe('RTC topology runtime-state repositories', () => {
     it('does not expose an unconditional topology snapshot overwrite helper', () => {
@@ -64,6 +85,25 @@ describe('RTC topology runtime-state repositories', () => {
 
         expect(await repository.findSnapshot(groupRef)).toEqual(snapshot);
         expect(runtimeRepository.locks).toEqual([]);
+    });
+
+    it('treats reordered topology object keys as one semantic tuple across decision and CAS', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const repository = new RtcTopologySnapshotRepository(runtimeRepository);
+        const snapshot = createTopologySnapshot(createGroupRef(), 1);
+        const reordered = reorderJsonObjectKeys(snapshot);
+
+        expect(decideTopologySnapshot(snapshot, reordered)).toBe('duplicate');
+        await expect(repository.commitSnapshot({
+            expected: undefined,
+            candidate: snapshot,
+        })).resolves.toMatchObject({ status: 'accepted', observation: 'inserted' });
+        const writes = vi.spyOn(runtimeRepository, 'upsertIfRevision');
+        await expect(repository.commitSnapshot({
+            expected: reordered,
+            candidate: reordered,
+        })).resolves.toMatchObject({ status: 'accepted', observation: 'duplicate' });
+        expect(writes).not.toHaveBeenCalled();
     });
 
     it('lets exactly one snapshot planner claim an absent predecessor without locks', async () => {
@@ -156,7 +196,7 @@ describe('RTC topology runtime-state repositories', () => {
         });
     });
 
-    it('persists immutable topology publications and reuses the first retry result', async () => {
+    it('persists immutable topology publications and rejects a divergent loaded retry', async () => {
         const repository = new RtcTopologyPublicationRepository(
             new FakeRuntimeStateRepository(),
         );
@@ -172,7 +212,7 @@ describe('RTC topology runtime-state repositories', () => {
             activeSessionIds: ['session-b'],
             nextHopsBySessionId: { 'session-b': [] },
         };
-        expect(await repository.putOrLoad({
+        await expect(repository.putOrLoad({
             ...publication,
             recipientSessionIds: ['session-b'],
             message: {
@@ -182,10 +222,23 @@ describe('RTC topology runtime-state repositories', () => {
                     resource: JSON.stringify(retrySnapshot),
                 },
             },
-        })).toEqual({
-            publication,
-            inserted: false,
+        })).rejects.toMatchObject({ code: 'rtc-topology-publication-collision' });
+    });
+
+    it('loads a semantically equal publication retry with reordered object keys', async () => {
+        const repository = new RtcTopologyPublicationRepository(
+            new FakeRuntimeStateRepository(),
+        );
+        const publication = createPublication(
+            createTopologySnapshot(createGroupRef(), 2),
+            'work-reordered-load',
+        );
+
+        await expect(repository.putOrLoad(publication)).resolves.toMatchObject({
+            inserted: true,
         });
+        await expect(repository.putOrLoad(reorderJsonObjectKeys(publication)))
+            .resolves.toEqual({ publication, inserted: false });
     });
 
     it('claims immutable publications without invoking an application lock', async () => {
@@ -287,14 +340,37 @@ describe('RTC topology runtime-state repositories', () => {
             await together;
         };
 
-        const results = await Promise.all([
+        const results = await Promise.allSettled([
             repository.putOrLoad(first),
             repository.putOrLoad(second),
         ]);
 
-        expect(results.filter((result) => result.inserted)).toHaveLength(1);
-        expect(results[0]!.publication).toEqual(results[1]!.publication);
+        expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+        expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+        expect(results.find((result) => result.status === 'rejected'))
+            .toMatchObject({ reason: { code: 'rtc-topology-publication-collision' } });
         expect(runtimeRepository.locks).toEqual([]);
+    });
+
+    it('accepts a reordered expected predecessor in the topology execution compatibility path', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const snapshots = new RtcTopologySnapshotRepository(runtimeRepository);
+        const execution = new RtcTopologyExecutionRepository(runtimeRepository);
+        const first = createTopologySnapshot(createGroupRef(), 1);
+        await snapshots.observeSnapshot(first);
+        const second = {
+            ...first,
+            sourceGroupStateRevision: 2,
+            version: 2,
+            updatedAtEpochMs: 3,
+        };
+        const publication = createPublication(second, 'work-reordered-expected');
+
+        await expect(execution.commit({
+            expected: reorderJsonObjectKeys(first),
+            candidate: second,
+            publication,
+        })).resolves.toMatchObject({ status: 'committed', snapshot: second });
     });
 
     it('atomically accepts topology and publication only for the expected predecessor', async () => {
@@ -633,18 +709,18 @@ describe('RTC topology runtime-state repositories', () => {
                 await runtimeRepository.insertIfAbsent(
                     RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE,
                     repository.workIndexKey(upgraded.groupRef, upgraded.workId),
-                    JSON.stringify({
+                    JSON.stringify(reorderJsonObjectKeys({
                         groupRef: upgraded.groupRef,
                         workId: upgraded.workId,
                         publicationId: upgraded.publicationId,
-                    }),
+                    })),
                     expiry,
                 );
             } else {
                 await runtimeRepository.insertIfAbsent(
                     RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
                     repository.publicationKey(upgraded.groupRef, upgraded.publicationId),
-                    JSON.stringify(upgraded),
+                    JSON.stringify(reorderJsonObjectKeys(upgraded)),
                     expiry,
                 );
             }
@@ -906,6 +982,40 @@ describe('RTC topology runtime-state repositories', () => {
         })).rejects.toThrow('timestamp');
     });
 
+    it.each(['direct', 'list', 'page'] as const)(
+        'rejects a nondeterministic publication message id on the %s surface',
+        async (surface) => {
+            const runtimeRepository = new FakeRuntimeStateRepository();
+            const repository = new RtcTopologyPublicationRepository(runtimeRepository);
+            const publication = createPublication(
+                createTopologySnapshot(createGroupRef(), 1),
+                `work-message-id-${surface}`,
+            );
+            const tampered = {
+                ...publication,
+                message: {
+                    ...publication.message,
+                    id: { ...publication.message.id, msgId: 'random-legacy-message-id' },
+                },
+            };
+            await runtimeRepository.upsert(
+                RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
+                repository.publicationKey(tampered.groupRef, tampered.publicationId),
+                JSON.stringify(tampered),
+                Date.now() + 60_000,
+            );
+
+            const read = surface === 'direct'
+                ? repository.findPublication(tampered.groupRef, tampered.publicationId)
+                : surface === 'list'
+                ? repository.listPublicationEntries()
+                : repository.listPublicationEntriesPage({ limit: 10 });
+            await expect(read).rejects.toMatchObject({
+                code: 'rtc-topology-repository-invariant-corruption',
+            });
+        },
+    );
+
     it('exposes value-verified offline topology key migration only with old writers stopped', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const repository = new RtcTopologySnapshotRepository(runtimeRepository);
@@ -919,6 +1029,12 @@ describe('RTC topology runtime-state repositories', () => {
             RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
             legacyAliasedKey,
             JSON.stringify(snapshot),
+            NEVER_EXPIRE_AT_TIMESTAMP,
+        );
+        await runtimeRepository.insertIfAbsent(
+            RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
+            repository.snapshotKey(explicitSentinel),
+            JSON.stringify(reorderJsonObjectKeys(snapshot)),
             NEVER_EXPIRE_AT_TIMESTAMP,
         );
 
@@ -1257,6 +1373,218 @@ describe('RTC topology runtime-state repositories', () => {
             .toMatchObject([{ value: result.computed.recomputeIntents[0] }]);
     });
 
+    it.each(
+        (['duplicate', 'out-of-order'] as const).flatMap((defect) =>
+            (['direct', 'list', 'page'] as const).map((surface) => ({ defect, surface }))
+        ),
+    )('rejects $defect affected group refs on receipt $surface reads', async ({
+        defect,
+        surface,
+    }) => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const repository = new RtcRttRepository(runtimeRepository, { now: () => 1 });
+        const rtt = {
+            sessionIdFrom: 'session-a', sessionIdTo: 'session-b',
+            rttMs: 1, createdAtEpochMs: 1, version: 1,
+        };
+        const receiptId = toRtcRttMutationReceiptId(rtt);
+        const refA = { applicationId: 'app-1', groupId: 'room-a' };
+        const refB = { applicationId: 'app-1', groupId: 'room-b' };
+        await runtimeRepository.upsert(
+            RTC_RTT_RECEIPTS_NAMESPACE,
+            receiptId,
+            JSON.stringify({
+                receiptId,
+                sessionIdFrom: rtt.sessionIdFrom,
+                sessionIdTo: rtt.sessionIdTo,
+                measurementVersion: rtt.version,
+                affectedGroupRefs: defect === 'duplicate'
+                    ? [refA, refA]
+                    : [refB, refA],
+                acceptedAtEpochMs: 1,
+                outcome: 'accepted',
+                commandHash: `sha256:${'a'.repeat(64)}`,
+            }),
+            86_400_001,
+        );
+
+        const read = surface === 'direct'
+            ? repository.findMutationReceiptEntry(receiptId)
+            : surface === 'list'
+            ? repository.listMutationReceiptEntries()
+            : repository.listMutationReceiptEntriesPage({ limit: 10 });
+        await expect(read).rejects.toMatchObject({
+            code: 'rtc-topology-repository-invariant-corruption',
+        });
+    });
+
+    it.each(
+        ([
+            'missing-receipt',
+            'hash',
+            'time',
+            'group',
+            'inactive-group',
+            'expired-group',
+            'missing-pair-member',
+            'expired-pair-session',
+        ] as const)
+            .flatMap((defect) =>
+                (['direct', 'list', 'page', 'drain'] as const).map((surface) => ({
+                    defect,
+                    surface,
+                }))
+            ),
+    )('fails closed for a $defect recompute intent on $surface before enqueue', async ({
+        defect,
+        surface,
+    }) => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const group = createRttGroupSnapshot(
+            `room-intent-${defect}-${surface}`,
+            ['session-a', 'session-b'],
+        );
+        const seeded = await seedAcceptedRttMutation(runtimeRepository, group);
+        const receiptEntry = await runtimeRepository.findEntry(
+            RTC_RTT_RECEIPTS_NAMESPACE,
+            seeded.receipt.receiptId,
+        );
+        const intentEntry = await runtimeRepository.findEntry(
+            RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE,
+            seeded.intent.outboxId,
+        );
+        let intent = structuredClone(seeded.intent);
+        let outboxId = intent.outboxId;
+        if (defect === 'missing-receipt') {
+            await runtimeRepository.deleteIfRevision(
+                RTC_RTT_RECEIPTS_NAMESPACE,
+                receiptEntry!.key,
+                receiptEntry!.revision,
+            );
+        } else if (defect === 'hash') {
+            const commandHash = `sha256:${'b'.repeat(64)}`;
+            outboxId = toRtcRttRecomputeOutboxId(
+                intent.receiptId,
+                intent.groupSnapshot.group,
+                commandHash,
+            );
+            intent = { ...intent, commandHash, outboxId };
+        } else if (defect === 'time') {
+            intent = { ...intent, createdAtEpochMs: intent.createdAtEpochMs + 1 };
+        } else if (defect === 'group') {
+            await runtimeRepository.upsert(
+                RTC_RTT_RECEIPTS_NAMESPACE,
+                receiptEntry!.key,
+                JSON.stringify({
+                    ...seeded.receipt,
+                    affectedGroupRefs: [{
+                        applicationId: 'app-1',
+                        workspaceId: 'workspace-1',
+                        groupId: 'other-room',
+                    }],
+                }),
+                receiptEntry!.expireAtTimestamp,
+            );
+        } else if (defect === 'inactive-group') {
+            intent = {
+                ...intent,
+                groupSnapshot: {
+                    ...intent.groupSnapshot,
+                    group: {
+                        ...intent.groupSnapshot.group,
+                        status: 'archived',
+                        archived: { atEpochMs: 2, byServiceId: 'test' },
+                    },
+                    activeSessions: [],
+                    onlineMemberCount: 0,
+                },
+            };
+        } else if (defect === 'expired-group') {
+            intent = {
+                ...intent,
+                groupSnapshot: {
+                    ...intent.groupSnapshot,
+                    group: {
+                        ...intent.groupSnapshot.group,
+                        expiresAtEpochMs: intent.createdAtEpochMs,
+                    },
+                },
+            };
+        } else if (defect === 'expired-pair-session') {
+            intent = {
+                ...intent,
+                groupSnapshot: {
+                    ...intent.groupSnapshot,
+                    activeSessions: intent.groupSnapshot.activeSessions.map((session) =>
+                        session.sessionId === intent.rtt.sessionIdFrom
+                            ? {
+                                ...session,
+                                connectedAtEpochMs: 0,
+                                lastHeartbeatAtEpochMs: 0,
+                                expiresAtEpochMs: intent.createdAtEpochMs,
+                            }
+                            : session
+                    ),
+                },
+            };
+        } else {
+            intent = {
+                ...intent,
+                groupSnapshot: createRttGroupSnapshot(
+                    intent.groupSnapshot.group.groupId,
+                    ['session-a'],
+                ),
+            };
+        }
+        if (outboxId !== intentEntry!.key) {
+            await runtimeRepository.deleteIfRevision(
+                RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE,
+                intentEntry!.key,
+                intentEntry!.revision,
+            );
+        }
+        await runtimeRepository.upsert(
+            RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE,
+            outboxId,
+            JSON.stringify(intent),
+            intentEntry!.expireAtTimestamp,
+        );
+        const repository = new RtcRttRepository(runtimeRepository, { now: () => 1 });
+        const enqueueForRtt = vi.fn(async () => {});
+        const read = surface === 'direct'
+            ? repository.findRecomputeIntentEntry(outboxId)
+            : surface === 'list'
+            ? repository.listRecomputeIntentEntries()
+            : surface === 'page'
+            ? repository.listRecomputeIntentEntriesPage({ limit: 10 })
+            : drainRtcRttRecomputeOutbox({
+                repository,
+                publisher: createRttWorkPublisher(enqueueForRtt),
+                debounceMs: 0,
+            });
+
+        await expect(read).rejects.toMatchObject({
+            code: 'rtc-topology-repository-invariant-corruption',
+        });
+        expect(enqueueForRtt).not.toHaveBeenCalled();
+    });
+
+    it('cleans a jointly expired receipt and recompute intent without false corruption', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const group = createRttGroupSnapshot(
+            'room-joint-expiry',
+            ['session-a', 'session-b'],
+        );
+        const seeded = await seedAcceptedRttMutation(runtimeRepository, group);
+        const repository = new RtcRttRepository(runtimeRepository, {
+            now: () => seeded.expireAtTimestamp + 1,
+        });
+
+        await expect(repository.listRecomputeIntentEntries()).resolves.toEqual([]);
+        await expect(repository.findMutationReceipt(seeded.receipt.receiptId))
+            .resolves.toBeUndefined();
+    });
+
     it('replays an accepted RTT after measurement and admission expiry and rejects divergent reuse', async () => {
         let now = 1;
         const runtimeRepository = new FakeRuntimeStateRepository();
@@ -1275,11 +1603,15 @@ describe('RTC topology runtime-state repositories', () => {
             overlaySnapshotsByGroupKey: new Map<string, RallarOverlayTopologySnapshot>(),
             degreeLimit: 1,
         };
+        let readFacts: () => ReturnType<RtcRttRepository['readMutationFacts']> =
+            () => repository.readMutationFacts();
+        let readCommand: (() => typeof command) | undefined;
         const execute = (nextCommand = command) => executeRttMutation({
             repository,
             runtime: runtimeRepository,
             command: nextCommand,
-            readFacts: () => repository.readMutationFacts(),
+            ...(readCommand ? { readCommand } : {}),
+            readFacts,
             sleep: async () => {},
         });
 
@@ -1295,6 +1627,14 @@ describe('RTC topology runtime-state repositories', () => {
         const conditionalUpdates = vi.spyOn(runtimeRepository, 'upsertIfRevision');
         const transactions = vi.spyOn(runtimeRepository, 'begin');
         const conditionalInserts = vi.spyOn(runtimeRepository, 'insertIfAbsent');
+        const policyReads = vi.fn(() => {
+            throw new Error('RTT replay read policy authority');
+        });
+        const lifecycleReads = vi.fn(() => {
+            throw new Error('RTT replay read lifecycle clock');
+        });
+        readCommand = policyReads;
+        readFacts = lifecycleReads;
         now = 12;
         await expect(execute()).resolves.toMatchObject({
             updated: false,
@@ -1308,6 +1648,8 @@ describe('RTC topology runtime-state repositories', () => {
         expect(conditionalUpdates).not.toHaveBeenCalled();
         expect(transactions).not.toHaveBeenCalled();
         expect(conditionalInserts).not.toHaveBeenCalled();
+        expect(policyReads).not.toHaveBeenCalled();
+        expect(lifecycleReads).not.toHaveBeenCalled();
         await expect(execute({
             ...command,
             rtt: { ...command.rtt, rttMs: 2 },
@@ -1324,6 +1666,8 @@ describe('RTC topology runtime-state repositories', () => {
         expect(conditionalUpdates).not.toHaveBeenCalled();
         expect(transactions).not.toHaveBeenCalled();
         expect(conditionalInserts).not.toHaveBeenCalled();
+        expect(policyReads).not.toHaveBeenCalled();
+        expect(lifecycleReads).not.toHaveBeenCalled();
         expect(await runtimeRepository.findAllEntries(RTC_RTT_RECEIPTS_NAMESPACE))
             .toHaveLength(1);
         expect(await runtimeRepository.findAllEntries(RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE))
@@ -1882,6 +2226,47 @@ function createRttWorkPublisher(
     };
 }
 
+async function seedAcceptedRttMutation(
+    runtime: FakeRuntimeStateRepository,
+    group: GroupSnapshot,
+) {
+    const repository = new RtcRttRepository(runtime, { now: () => 1 });
+    const result = await executeRttMutation({
+        repository,
+        runtime,
+        command: {
+            rtt: {
+                sessionIdFrom: 'session-a',
+                sessionIdTo: 'session-b',
+                rttMs: 1,
+                createdAtEpochMs: 1,
+                version: 1,
+            },
+            alSenderId: 'session-a',
+            candidateGroups: [group],
+            overlaySnapshotsByGroupKey: new Map(),
+            degreeLimit: 1,
+        },
+        readFacts: () => ({
+            requestedAtEpochMs: 1,
+            purgeAfterEpochMs: 60_001,
+        }),
+        sleep: async () => {},
+    });
+    if (result.computed.outcome !== 'write') {
+        throw new Error('Expected accepted RTT seed');
+    }
+    const intentEntry = await runtime.findEntry(
+        RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE,
+        result.computed.recomputeIntents[0]!.outboxId,
+    );
+    return {
+        receipt: result.computed.receipt,
+        intent: result.computed.recomputeIntents[0]!,
+        expireAtTimestamp: intentEntry!.expireAtTimestamp,
+    };
+}
+
 function createTopologySnapshot(
     groupRef: GroupRef,
     version: number,
@@ -2062,7 +2447,7 @@ function createPublication(
         message: {
             id: {
                 v: 2,
-                msgId: `message-${workId}`,
+                msgId: JSON.stringify(['rtc-topology-publication', workId]),
                 ts: 10,
                 senderId: 'rallar-server',
             },
@@ -2107,6 +2492,7 @@ function toLegacyPublication(
             ...legacy.message,
             id: {
                 ...legacy.message.id,
+                msgId: `legacy-random-${legacy.workId}`,
                 ts: legacy.createdAtEpochMs + 1,
             },
             audit: {
@@ -2134,6 +2520,10 @@ function toUpgradedLegacyPublication(
             ...legacy.message,
             id: {
                 ...legacy.message.id,
+                msgId: JSON.stringify([
+                    'rtc-topology-publication',
+                    legacy.workId,
+                ]),
                 ts: legacy.createdAtEpochMs,
             },
             audit: {
@@ -2161,4 +2551,16 @@ async function seedLegacyPublicationRows(
         JSON.stringify(publication.publicationId),
         expiry,
     );
+}
+
+function reorderJsonObjectKeys<T>(value: T): T {
+    if (Array.isArray(value)) {
+        return value.map((entry) => reorderJsonObjectKeys(entry)) as T;
+    }
+    if (!value || typeof value !== 'object') return value;
+    return Object.fromEntries(
+        Object.entries(value as Record<string, unknown>)
+            .reverse()
+            .map(([key, entry]) => [key, reorderJsonObjectKeys(entry)]),
+    ) as T;
 }

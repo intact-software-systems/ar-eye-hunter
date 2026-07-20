@@ -158,7 +158,7 @@ export function createRtcTopologyWorkHandler(options: Readonly<{
             const work = workEnvelope.data;
             const workId = toRtcTopologyExecutionId(workEnvelope);
             const publicationFacts: RtcOverlayTopologyMessageFacts = {
-                messageId: JSON.stringify(['rtc-topology-publication', workId]),
+                workId,
                 createdAtEpochMs: work.requestedAtEpochMs,
             };
             for (let attempt = 0; attempt < 3; attempt += 1) {

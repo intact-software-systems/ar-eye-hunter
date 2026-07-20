@@ -21,10 +21,14 @@ import { latestRttById } from '@shared/repository/rtt-repository.ts';
 import { initRallarSystemWsTopics } from '@shared-server/rallar-system/ws-system-topics.ts';
 import { createRtcTopologyOutboxPublisher } from '@shared-server/rallar-system/services/RtcTopologyOutboxWork.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
-import { RtcRttRepository } from '@shared-server/rallar-system/repositories/RtcRttRepository.ts';
+import {
+    RtcRttRepository,
+    toRtcRttMutationReceiptId,
+} from '@shared-server/rallar-system/repositories/RtcRttRepository.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/repositories/RtcTopologySnapshotRepository.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/repositories/RtcTopologyExecutionRepository.ts';
 import { RtcTopologyPublicationRepository } from '@shared-server/rallar-system/repositories/RtcTopologyPublicationRepository.ts';
+import { hashStateMutationCommand } from '@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts';
 import {
     createDisabledRtcTopologyClusterTransport,
     createRtcTopologyPublicationFanout,
@@ -591,7 +595,7 @@ describe('Rallar system websocket topics RTC topology', () => {
         expect(runtimeRepository.locks).toEqual([]);
     });
 
-    it('accepts an exact runtime-state RTT receipt replay without duplicate effects', async () => {
+    it('resolves exact and divergent WS RTT receipt replay before policy, lifecycle, or effects', async () => {
         configureTestCacheRepositories();
         const runtimeRepository = new FakeRuntimeStateRepository();
         const { sockets, topologyService } = createRttHarness(
@@ -607,24 +611,83 @@ describe('Rallar system websocket topics RTC topology', () => {
             createdAtEpochMs: 1,
             version: 1,
         };
-        const durableRtts = new RtcRttRepository(runtimeRepository);
-        const observeRtt = vi.spyOn(vivaldiService, 'observeRtt');
+        const durableRtts = new RtcRttRepository(runtimeRepository, { now: () => 1 });
+        const receiptId = toRtcRttMutationReceiptId(rtt);
+        const commandHash = await hashStateMutationCommand({
+            rtt,
+            alSenderId: 'session-a',
+        });
+        await durableRtts.insertMutationReceipt({
+            receiptId,
+            sessionIdFrom: rtt.sessionIdFrom,
+            sessionIdTo: rtt.sessionIdTo,
+            measurementVersion: rtt.version,
+            affectedGroupRefs: [],
+            acceptedAtEpochMs: 1,
+            outcome: 'accepted',
+            commandHash,
+        }, Number.MAX_SAFE_INTEGER);
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const observeRtt = vi.spyOn(vivaldiService, 'observeRtt').mockClear();
         const queueRttTopologyUpdate = vi.spyOn(
             topologyService,
             'queueRttTopologyUpdate',
-        );
+        ).mockClear();
+        const forbidden = [
+            vi.spyOn(groupStateSnapshotsRepository, 'findGroupStateSnapshotByRef')
+                .mockImplementation(() => {
+                    throw new Error('RTT replay read group policy authority');
+                }),
+            vi.spyOn(RtcTopologySnapshotRepository.prototype, 'findSnapshot')
+                .mockRejectedValue(new Error('RTT replay read topology authority')),
+            vi.spyOn(topologyService, 'readRttReportingDegreeLimit')
+                .mockImplementation(() => {
+                    throw new Error('RTT replay read degree policy');
+                }),
+            vi.spyOn(RtcRttRepository.prototype, 'readMutationFacts')
+                .mockImplementation(() => {
+                    throw new Error('RTT replay read lifecycle clock');
+                }),
+            vi.spyOn(RtcRttRepository.prototype, 'findMeasurementEntry')
+                .mockRejectedValue(new Error('RTT replay read measurement')),
+            vi.spyOn(RtcRttRepository.prototype, 'listMeasurementEntries')
+                .mockRejectedValue(new Error('RTT replay list measurements')),
+            vi.spyOn(RtcRttRepository.prototype, 'findEndpointAdmissionEntry')
+                .mockRejectedValue(new Error('RTT replay read admission')),
+            vi.spyOn(runtimeRepository, 'deleteIfRevision')
+                .mockRejectedValue(new Error('RTT replay cleanup')),
+            vi.spyOn(runtimeRepository, 'begin')
+                .mockRejectedValue(new Error('RTT replay transaction')),
+            vi.spyOn(runtimeRepository, 'insertIfAbsent')
+                .mockRejectedValue(new Error('RTT replay insert')),
+            vi.spyOn(runtimeRepository, 'upsertIfRevision')
+                .mockRejectedValue(new Error('RTT replay update')),
+        ];
+        try {
+            await expect(dispatchRtt(
+                sockets.get('session-a')!,
+                'session-a',
+                rtt,
+                group,
+            )).resolves.toBeUndefined();
+            await expect(dispatchRtt(
+                sockets.get('session-a')!,
+                'session-a',
+                { ...rtt, rttMs: 99 },
+                group,
+            )).resolves.toBeUndefined();
 
-        await dispatchRtt(sockets.get('session-a')!, 'session-a', rtt, group);
-        const first = await durableRtts.findMeasurementEntry('session-a', 'session-b');
-        observeRtt.mockClear();
-        queueRttTopologyUpdate.mockClear();
-
-        await dispatchRtt(sockets.get('session-a')!, 'session-a', rtt, group);
-
-        expect(await durableRtts.findMeasurementEntry('session-a', 'session-b'))
-            .toEqual(first);
-        expect(observeRtt).not.toHaveBeenCalled();
-        expect(queueRttTopologyUpdate).not.toHaveBeenCalled();
+            for (const spy of forbidden) expect(spy).not.toHaveBeenCalled();
+            expect(observeRtt).not.toHaveBeenCalled();
+            expect(queueRttTopologyUpdate).not.toHaveBeenCalled();
+            expect(consoleError).toHaveBeenCalledWith(
+                'Error calling onMessage callback',
+                expect.objectContaining({ code: 'rtc-rtt-idempotency-conflict' }),
+            );
+        } finally {
+            for (const spy of forbidden) spy.mockRestore();
+            consoleError.mockRestore();
+        }
     });
 
     it('debounces and coalesces RTT-triggered overlay topology broadcasts', async () => {

@@ -1,5 +1,6 @@
 import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import { rtcTopologySemanticEqual } from '../rtc-topology-semantic-equality.ts';
 import type {
     RtcTopologyPublication,
     RtcTopologyPublicationRepository,
@@ -188,8 +189,10 @@ function hasExactKeys(
     value: object,
     expectedKeys: readonly string[],
 ): boolean {
-    return JSON.stringify(Object.keys(value).sort()) ===
-        JSON.stringify([...expectedKeys].sort());
+    return rtcTopologySemanticEqual(
+        Object.keys(value).sort(),
+        [...expectedKeys].sort(),
+    );
 }
 
 function canonicalGroupRef(ref: GroupRef): GroupRef {
@@ -208,8 +211,10 @@ function isCanonicalGroupRef(value: unknown): value is GroupRef {
     const expectedKeys = ref.workspaceId === undefined
         ? ['applicationId', 'groupId']
         : ['applicationId', 'workspaceId', 'groupId'];
-    return JSON.stringify(Object.keys(ref).sort()) ===
-            JSON.stringify(expectedKeys.sort()) &&
+    return rtcTopologySemanticEqual(
+        Object.keys(ref).sort(),
+        expectedKeys.sort(),
+    ) &&
         typeof ref.applicationId === 'string' && ref.applicationId.length > 0 &&
         typeof ref.groupId === 'string' && ref.groupId.length > 0 &&
         (ref.workspaceId === undefined || typeof ref.workspaceId === 'string');

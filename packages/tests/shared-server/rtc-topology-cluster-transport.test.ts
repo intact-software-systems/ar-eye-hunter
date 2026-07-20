@@ -8,6 +8,7 @@ import {
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { RtcTopologyPublicationRepository } from '@shared-server/rallar-system/repositories/RtcTopologyPublicationRepository.ts';
+import { toRtcTopologyPublicationMessageId } from '@shared-server/rallar-system/rtc-topology-identifiers.ts';
 import {
     createLocalRtcTopologyClusterBus,
     createLocalRtcTopologyClusterTransport,
@@ -46,7 +47,7 @@ describe('RTC topology cluster publication fanout', () => {
         });
         await Promise.all([fanoutA.readiness, fanoutB.readiness]);
         const snapshot = topologySnapshot(['session-a', 'session-b']);
-        const message = topologyPublicationMessage(snapshot);
+        const message = topologyPublicationMessage(snapshot, 'work-1');
         const publication = {
             publicationId: 'work-1:4:2',
             workId: 'work-1',
@@ -92,7 +93,7 @@ describe('RTC topology cluster publication fanout', () => {
         });
         await fanout.readiness;
         const snapshot = topologySnapshot(['session-b']);
-        const message = topologyPublicationMessage(snapshot);
+        const message = topologyPublicationMessage(snapshot, 'work-legacy');
         const publication = {
             publicationId: 'work-legacy:4:2',
             workId: 'work-legacy',
@@ -149,7 +150,7 @@ describe('RTC topology cluster publication fanout', () => {
             ['work-scoped', absentSnapshot, 'session-absent'],
             ['work-scoped', literalSnapshot, 'session-literal'],
         ] as const) {
-            const message = topologyPublicationMessage(snapshot);
+            const message = topologyPublicationMessage(snapshot, workId);
             await repository.putOrLoad({
                 publicationId,
                 workId,
@@ -242,8 +243,11 @@ function topologySnapshot(activeSessionIds: readonly string[]) {
     });
 }
 
-function topologyPublicationMessage(snapshot: RallarOverlayTopologySnapshot) {
-    return newALBroadcastMessage(
+function topologyPublicationMessage(
+    snapshot: RallarOverlayTopologySnapshot,
+    workId: string,
+) {
+    const message = newALBroadcastMessage(
         'rallar-server',
         newALRoute(
             AppTopics.overlayTopology,
@@ -260,6 +264,13 @@ function topologyPublicationMessage(snapshot: RallarOverlayTopologySnapshot) {
             ack: 'none',
         },
     );
+    return {
+        ...message,
+        id: {
+            ...message.id,
+            msgId: toRtcTopologyPublicationMessageId(workId),
+        },
+    };
 }
 
 function topologySnapshotForGroup(

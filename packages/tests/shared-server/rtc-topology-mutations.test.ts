@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { existsSync, readFileSync } from 'node:fs';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
@@ -14,6 +15,49 @@ const RTT_COMMAND_HASH = `sha256:${'a'.repeat(64)}`;
 const OTHER_RTT_COMMAND_HASH = `sha256:${'b'.repeat(64)}`;
 
 describe('RTC topology mutation phases', () => {
+    it('keeps RTC topology mutation computation synchronous and effect-free', () => {
+        const source = readFileSync(new URL(
+            '../../shared-server/rallar-system/services/rtc-topology-mutations.ts',
+            import.meta.url,
+        ), 'utf8');
+        const forbidden = [
+            /\brepository\b/,
+            /\.begin\s*\(/,
+            /\b(?:Date|Temporal)\b/,
+            /random/i,
+            /(?:Deno|process)\.env/,
+            /hashStateMutationCommand/,
+            /recordRallarTiming|performance\.now/,
+            /\b(?:async|await)\b/,
+        ];
+
+        for (const pattern of forbidden) {
+            expect(source, `forbidden pure-module pattern ${pattern}`).not.toMatch(pattern);
+        }
+    });
+
+    it('owns RTT read-compute-validate-write ordering and transactions in the effectful service', () => {
+        const serviceUrl = new URL(
+            '../../shared-server/rallar-system/services/rtc-rtt-mutation-service.ts',
+            import.meta.url,
+        );
+
+        expect(existsSync(serviceUrl)).toBe(true);
+        if (!existsSync(serviceUrl)) return;
+        const source = readFileSync(serviceUrl, 'utf8');
+        const readIndex = source.indexOf('await readRttMutation(');
+        const computeIndex = source.indexOf('computeRttMutation(');
+        const validateIndex = source.indexOf('validateRttMutation(');
+        const writeIndex = source.indexOf('await writeRttMutation(');
+        expect([readIndex, computeIndex, validateIndex, writeIndex])
+            .toEqual([...new Set([readIndex, computeIndex, validateIndex, writeIndex])]
+                .toSorted((left, right) => left - right));
+        expect(readIndex).toBeGreaterThanOrEqual(0);
+        expect(source.match(/\.begin\s*\(/g)).toHaveLength(1);
+        const writeFunctionIndex = source.indexOf('export async function writeRttMutation');
+        expect(source.indexOf('.begin(')).toBeGreaterThan(writeFunctionIndex);
+    });
+
     it('computes and validates an absent topology guard deterministically from frozen input', () => {
         const groupRef: GroupRef = {
             applicationId: 'app-1',
@@ -510,9 +554,9 @@ describe('RTC topology mutation phases', () => {
             command: {
                 rtt,
                 alSenderId: 'session-a',
-                candidateGroups: [],
-                overlaySnapshotsByGroupKey: new Map(),
-                degreeLimit: 1,
+                candidateGroups: null,
+                overlaySnapshotsByGroupKey: null,
+                degreeLimit: null,
             },
             read: {
                 receipt: {
@@ -525,16 +569,13 @@ describe('RTC topology mutation phases', () => {
                     },
                     value: receipt,
                 },
-                measurement: null,
-                endpointAdmissions: [],
-                measurements: [],
             },
             facts: {
-                requestedAtEpochMs: 2,
-                purgeAfterEpochMs: 60_002,
+                requestedAtEpochMs: null,
+                purgeAfterEpochMs: null,
                 commandHash: RTT_COMMAND_HASH,
             },
-        });
+        }) as unknown as Parameters<typeof computeRttMutation>[0];
 
         expect(computeAndValidateRttTwice(input)).toEqual({
             outcome: 'replay',
@@ -564,9 +605,9 @@ describe('RTC topology mutation phases', () => {
             command: {
                 rtt,
                 alSenderId: 'session-a',
-                candidateGroups: [],
-                overlaySnapshotsByGroupKey: new Map(),
-                degreeLimit: 1,
+                candidateGroups: null,
+                overlaySnapshotsByGroupKey: null,
+                degreeLimit: null,
             },
             read: {
                 receipt: {
@@ -579,6 +620,45 @@ describe('RTC topology mutation phases', () => {
                     },
                     value: receipt,
                 },
+            },
+            facts: {
+                requestedAtEpochMs: null,
+                purgeAfterEpochMs: null,
+                commandHash: RTT_COMMAND_HASH,
+            },
+        }) as unknown as Parameters<typeof computeRttMutation>[0];
+
+        expect(() => computeRttMutation(input)).toThrowError(expect.objectContaining({
+            code: 'rtc-rtt-idempotency-conflict',
+        }));
+        expect(() => computeRttMutation(input)).toThrowError(expect.objectContaining({
+            code: 'rtc-rtt-idempotency-conflict',
+        }));
+    });
+
+    it('emits canonical unique affected refs and one recompute intent per ref', () => {
+        const refA = { applicationId: 'app-1', groupId: 'room-a' };
+        const refB = {
+            applicationId: 'app-1',
+            workspaceId: '_',
+            groupId: 'room-a',
+        };
+        const groupA = rttGroupSnapshot(['session-a', 'session-b'], refA);
+        const groupB = rttGroupSnapshot(['session-a', 'session-b'], refB);
+        const rtt = {
+            sessionIdFrom: 'session-a', sessionIdTo: 'session-b',
+            rttMs: 5, createdAtEpochMs: 2, version: 2,
+        };
+        const computed = computeRttMutation({
+            command: {
+                rtt,
+                alSenderId: 'session-a',
+                candidateGroups: [groupB, groupA, groupA],
+                overlaySnapshotsByGroupKey: new Map(),
+                degreeLimit: 2,
+            },
+            read: {
+                receipt: null,
                 measurement: null,
                 endpointAdmissions: [],
                 measurements: [],
@@ -590,12 +670,12 @@ describe('RTC topology mutation phases', () => {
             },
         });
 
-        expect(() => computeRttMutation(input)).toThrowError(expect.objectContaining({
-            code: 'rtc-rtt-idempotency-conflict',
-        }));
-        expect(() => computeRttMutation(input)).toThrowError(expect.objectContaining({
-            code: 'rtc-rtt-idempotency-conflict',
-        }));
+        expect(computed.outcome).toBe('write');
+        if (computed.outcome !== 'write') throw new Error('Expected write');
+        expect(computed.receipt.affectedGroupRefs).toEqual([refA, refB]);
+        expect(computed.recomputeIntents.map(({ groupSnapshot }) =>
+            groupSnapshot.group
+        )).toEqual([expect.objectContaining(refA), expect.objectContaining(refB)]);
     });
 });
 
@@ -665,8 +745,10 @@ function computeAndValidateRttTwice(
     return first;
 }
 
-function rttGroupSnapshot(sessionIds: readonly string[]): GroupSnapshot {
-    const groupRef = { applicationId: 'app-1', groupId: 'room-1' };
+function rttGroupSnapshot(
+    sessionIds: readonly string[],
+    groupRef: GroupRef = { applicationId: 'app-1', groupId: 'room-1' },
+): GroupSnapshot {
     return {
         stateRevision: 1,
         causalRevision: { groupRevision: 1, presenceRevision: 1 },

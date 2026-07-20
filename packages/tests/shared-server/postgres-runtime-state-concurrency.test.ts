@@ -26,7 +26,11 @@ import {
     RTC_RTT_LATEST_NAMESPACE,
     RtcRttRepository,
 } from '@shared-server/rallar-system/repositories/RtcRttRepository.ts';
-import { executeRttMutation } from '@shared-server/rallar-system/services/rtc-topology-mutations.ts';
+import type { RtcRttMutationCommand } from '@shared-server/rallar-system/services/rtc-topology-mutations.ts';
+import {
+    executeRttMutation as executeRttMutationService,
+} from '@shared-server/rallar-system/services/rtc-rtt-mutation-service.ts';
+import { toRtcTopologyPublicationMessageId } from '@shared-server/rallar-system/rtc-topology-identifiers.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import {
     newALBroadcastMessage,
@@ -52,6 +56,23 @@ type GlobalEnv = Readonly<{
 const POSTGRES_INTEGRATION_ENABLED =
     readEnv('RALLAR_POSTGRES_INTEGRATION') === '1';
 const postgresIt = POSTGRES_INTEGRATION_ENABLED ? it : it.skip;
+
+type TestExecuteRttMutationInput = Omit<
+    Parameters<typeof executeRttMutationService>[0],
+    'request' | 'readCommand'
+> & Readonly<{
+    command: RtcRttMutationCommand;
+    readCommand?: () => RtcRttMutationCommand | Promise<RtcRttMutationCommand>;
+}>;
+
+function executeRttMutation(input: TestExecuteRttMutationInput) {
+    const { command, readCommand, ...rest } = input;
+    return executeRttMutationService({
+        ...rest,
+        request: { rtt: command.rtt, alSenderId: command.alSenderId },
+        readCommand: readCommand ?? (() => command),
+    });
+}
 
 describe('Postgres runtime-state conditional-write concurrency', () => {
     it('closes acquired clients and preserves an acquisition failure', async () => {
@@ -913,7 +934,13 @@ function topologyPublication(
         overlayVersion: snapshot.version,
         targetGroupSnapshotVersion: 1,
         recipientSessionIds: snapshot.activeSessionIds,
-        message,
+        message: {
+            ...message,
+            id: {
+                ...message.id,
+                msgId: toRtcTopologyPublicationMessageId(workId),
+            },
+        },
         createdAtEpochMs: message.id.ts,
     };
 }

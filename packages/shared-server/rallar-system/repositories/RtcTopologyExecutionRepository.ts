@@ -18,6 +18,7 @@ import {
     type RtcTopologyMutationRead,
     validateTopologyMutation,
 } from '../services/rtc-topology-mutations.ts';
+import { rtcTopologySemanticEqual } from '../rtc-topology-semantic-equality.ts';
 
 export type RtcTopologyExecutionCommitResult =
     | Readonly<{
@@ -225,5 +226,5 @@ function sameSnapshot(
     left: RallarOverlayTopologySnapshot | undefined,
     right: RallarOverlayTopologySnapshot | undefined,
 ): boolean {
-    return left === right || JSON.stringify(left) === JSON.stringify(right);
+    return left === right || rtcTopologySemanticEqual(left, right);
 }

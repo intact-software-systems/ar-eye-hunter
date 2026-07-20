@@ -37,7 +37,7 @@ import {
     evaluateRtcRttMeasurement,
     type RtcRttAcceptanceResult,
 } from './services/rtc-rtt-measurement-policy.ts';
-import { executeRttMutation } from './services/rtc-topology-mutations.ts';
+import { executeRttMutation } from './services/rtc-rtt-mutation-service.ts';
 import { GroupTopologyConfigRepository } from './repositories/GroupTopologyConfigRepository.ts';
 import { GroupStateRepository } from './repositories/GroupStateRepository.ts';
 import { RtcRttRepository, type RtcRttRepositoryOptions, } from './repositories/RtcRttRepository.ts';
@@ -570,11 +570,9 @@ function initRttTopic(
                     degreeLimit: rtcTopologyService.readRttReportingDegreeLimit(),
                 };
             };
-            const policyInputs = await readPolicyInputs();
             const acceptance = await acceptRtcRttMeasurementWithPolicy({
                 rtt,
                 alSenderId: data.id.senderId,
-                ...policyInputs,
                 readPolicyInputs,
                 runtimeState,
             });
@@ -622,9 +620,6 @@ type StoredRtcRttAcceptanceResult = RtcRttAcceptanceResult & Readonly<{
 async function acceptRtcRttMeasurementWithPolicy(input: {
     readonly rtt: RttMeasurementInfo;
     readonly alSenderId: string;
-    readonly candidateGroups: readonly GroupSnapshot[];
-    readonly overlaySnapshotsByGroupKey: ReadonlyMap<string, RallarOverlayTopologySnapshot>;
-    readonly degreeLimit: number;
     readonly readPolicyInputs: () => Promise<Readonly<{
         candidateGroups: readonly GroupSnapshot[];
         overlaySnapshotsByGroupKey: ReadonlyMap<string, RallarOverlayTopologySnapshot>;
@@ -633,19 +628,25 @@ async function acceptRtcRttMeasurementWithPolicy(input: {
     readonly runtimeState?: RtcTopologyRuntimeState;
 }): Promise<StoredRtcRttAcceptanceResult> {
     const evaluate = (
+        policyInputs: Readonly<{
+            candidateGroups: readonly GroupSnapshot[];
+            overlaySnapshotsByGroupKey: ReadonlyMap<string, RallarOverlayTopologySnapshot>;
+            degreeLimit: number;
+        }>,
         existingMeasurements: readonly RttMeasurementInfo[],
     ): RtcRttAcceptanceResult =>
         evaluateRtcRttMeasurement({
             rtt: input.rtt,
             alSenderId: input.alSenderId,
-            candidateGroups: input.candidateGroups,
-            overlaySnapshotsByGroupKey: input.overlaySnapshotsByGroupKey,
+            ...policyInputs,
             existingMeasurements,
-            degreeLimit: input.degreeLimit,
         });
 
     if (!input.runtimeState) {
-        const result = evaluate(rttRepository.getAllRtt());
+        const result = evaluate(
+            await input.readPolicyInputs(),
+            rttRepository.getAllRtt(),
+        );
         return {
             ...result,
             updated: result.accepted ? rttRepository.setRtt(input.rtt) : false,
@@ -659,30 +660,18 @@ async function acceptRtcRttMeasurementWithPolicy(input: {
             'RTC RTT persistence requires conditional transactional runtime state',
         );
     }
-    let firstRead = true;
     const executed = await executeRttMutation({
         repository: runtimeRtts,
         runtime,
-        command: {
+        request: {
             rtt: input.rtt,
             alSenderId: input.alSenderId,
-            candidateGroups: input.candidateGroups,
-            overlaySnapshotsByGroupKey: input.overlaySnapshotsByGroupKey,
-            degreeLimit: input.degreeLimit,
         },
         readCommand: async () => {
-            const policyInputs = firstRead
-                ? {
-                    candidateGroups: input.candidateGroups,
-                    overlaySnapshotsByGroupKey: input.overlaySnapshotsByGroupKey,
-                    degreeLimit: input.degreeLimit,
-                }
-                : await input.readPolicyInputs();
-            firstRead = false;
             return {
                 rtt: input.rtt,
                 alSenderId: input.alSenderId,
-                ...policyInputs,
+                ...await input.readPolicyInputs(),
             };
         },
         readFacts: () => runtimeRtts.readMutationFacts(),

@@ -40,6 +40,8 @@ export * from './rallar-system/services/group-state-mutations.ts';
 export * from './rallar-system/services/group-topology-config-service.ts';
 export * from './rallar-system/services/group-topology-management-service.ts';
 export * from './rallar-system/services/rallar-rtc-topology-service.ts';
+export * from './rallar-system/services/rtc-topology-mutations.ts';
+export * from './rallar-system/services/rtc-rtt-mutation-service.ts';
 export * from './rallar-system/services/group-state-snapshot-read-through-cache.ts';
 export * from './rallar-system/services/timing.ts';
 export * from './rallar-system/services/ws-lifecycle-service.ts';

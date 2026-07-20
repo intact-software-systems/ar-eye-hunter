@@ -1,3 +1,6 @@
+import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
+
 /** Exact UTF-16 code-unit order for durable RTC topology identities. */
 export function compareRtcTopologyIdentifiers(
     left: string,
@@ -15,4 +18,40 @@ export function toCanonicalRtcTopologyPairIdentity(
         ? [left, right]
         : [right, left];
     return JSON.stringify([first, second]);
+}
+
+export function toRtcRttMutationReceiptId(
+    rtt: Pick<RttMeasurementInfo, 'sessionIdFrom' | 'sessionIdTo' | 'version'>,
+): string {
+    return `pair=${encodeURIComponent(toCanonicalRtcTopologyPairIdentity(
+        rtt.sessionIdFrom,
+        rtt.sessionIdTo,
+    ))}:version=${rtt.version}`;
+}
+
+export function toRtcRttRecomputeOutboxId(
+    receiptId: string,
+    groupRef: GroupRef,
+    commandHash: string,
+): string {
+    return `${receiptId}:commandHash=${encodeURIComponent(commandHash)}:group=${encodeURIComponent(
+        toCanonicalRtcTopologyGroupIdentity(groupRef),
+    )}`;
+}
+
+export function toCanonicalRtcTopologyGroupIdentity(groupRef: GroupRef): string {
+    return JSON.stringify([
+        groupRef.applicationId,
+        groupRef.workspaceId === undefined
+            ? ['absent']
+            : ['present', groupRef.workspaceId],
+        groupRef.groupId,
+    ]);
+}
+
+export function toRtcTopologyPublicationMessageId(workId: string): string {
+    if (workId.length === 0) {
+        throw new TypeError('RTC topology publication work id is invalid');
+    }
+    return JSON.stringify(['rtc-topology-publication', workId]);
 }

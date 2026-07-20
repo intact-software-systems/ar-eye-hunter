@@ -7,6 +7,7 @@ import {
     type RallarOverlayTopologySnapshot,
     type RallarRtcTopologyKind,
 } from '@shared/api/overlay-topology.ts';
+import { rtcTopologySemanticEqual } from '../rtc-topology-semantic-equality.ts';
 import { normalizeRttReportingDegreeLimit } from '@shared/rtc/rtt-reporting-policy.ts';
 import {
     compareRtcTopologyIdentifiers,
@@ -130,7 +131,7 @@ export function planRallarRtcTopologySnapshot(input: Readonly<{
             : input.previous.updatedAtEpochMs,
     };
     const snapshot = input.previous &&
-            JSON.stringify(candidate) === JSON.stringify(input.previous)
+            rtcTopologySemanticEqual(candidate, input.previous)
         ? input.previous
         : candidate;
     return { snapshot, changed, previous: input.previous };
@@ -231,7 +232,7 @@ export class RallarRtcTopologyService {
             return true;
         }
         if (compareOverlayTopologyCausalTuple(snapshot, current) === 0 &&
-            JSON.stringify(snapshot) !== JSON.stringify(current)) {
+            !rtcTopologySemanticEqual(snapshot, current)) {
             throw new Error(
                 `RTC topology process-cache revision conflict: ${snapshot.overlayId}`,
             );

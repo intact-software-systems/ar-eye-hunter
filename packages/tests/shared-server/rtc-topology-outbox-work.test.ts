@@ -437,8 +437,8 @@ describe('RTC topology APP_OUTBOX work', () => {
         expect(publish).not.toHaveBeenCalled();
     });
 
-    it.each(['id', 'route', 'typeId'] as const)(
-        'fails closed before replay fanout when the durable envelope is missing %s',
+    it.each(['id', 'route', 'typeId', 'msgId'] as const)(
+        'fails closed before replay fanout when the durable envelope has invalid %s',
         async (defect) => {
             const queue = new InMemoryQueueBox();
             const runtime = createRtcTopologyOutboxPublisher({
@@ -480,6 +480,9 @@ describe('RTC topology APP_OUTBOX work', () => {
             };
             if (defect === 'typeId') {
                 delete (publication.message.payload as Record<string, unknown>).typeId;
+            } else if (defect === 'msgId') {
+                (publication.message.id as Record<string, unknown>).msgId =
+                    'tampered-message-id';
             } else {
                 delete publication.message[defect];
             }

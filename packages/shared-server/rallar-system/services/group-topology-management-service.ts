@@ -26,6 +26,7 @@ import { RtcRttRepository } from '../repositories/RtcRttRepository.ts';
 import {
     RtcTopologySnapshotRepository,
 } from '../repositories/RtcTopologySnapshotRepository.ts';
+import { toRtcTopologyPublicationMessageId } from '../rtc-topology-identifiers.ts';
 import {
     RtcTopologyExecutionRepository,
 } from '../repositories/RtcTopologyExecutionRepository.ts';
@@ -1457,13 +1458,13 @@ export function createRtcOverlayTopologyBroadcastMessage(
     snapshot: RallarOverlayTopologySnapshot,
 ): ALMessage {
     return materializeRtcOverlayTopologyBroadcastMessage(group, snapshot, {
-        messageId: crypto.randomUUID(),
+        workId: crypto.randomUUID(),
         createdAtEpochMs: Date.now(),
     });
 }
 
 export type RtcOverlayTopologyMessageFacts = Readonly<{
-    messageId: string;
+    workId: string;
     createdAtEpochMs: number;
 }>;
 
@@ -1477,7 +1478,7 @@ export function materializeRtcOverlayTopologyBroadcastMessage(
     facts: RtcOverlayTopologyMessageFacts,
 ): ALMessage {
     if (
-        facts.messageId.length === 0 ||
+        facts.workId.length === 0 ||
         !Number.isSafeInteger(facts.createdAtEpochMs) ||
         facts.createdAtEpochMs < 0
     ) {
@@ -1486,7 +1487,7 @@ export function materializeRtcOverlayTopologyBroadcastMessage(
     return {
         id: {
             v: 2,
-            msgId: facts.messageId,
+            msgId: toRtcTopologyPublicationMessageId(facts.workId),
             ts: facts.createdAtEpochMs,
             senderId: 'rallar-server',
         },
