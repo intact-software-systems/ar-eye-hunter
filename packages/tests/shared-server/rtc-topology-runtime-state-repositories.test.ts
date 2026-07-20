@@ -23,6 +23,7 @@ import {
     RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
     RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE,
     migrateLegacyRtcTopologyPublicationKeys,
+    type RtcTopologyPublication,
     RtcTopologyPublicationRepository,
 } from '@shared-server/rallar-system/repositories/RtcTopologyPublicationRepository.ts';
 import {
@@ -569,12 +570,13 @@ describe('RTC topology runtime-state repositories', () => {
             createTopologySnapshot(createGroupRef(), 1),
             'legacy-work',
         );
+        const legacyPublication = toLegacyPublication(publication);
+        const upgradedPublication = toUpgradedLegacyPublication(legacyPublication);
         const expiry = Date.now() + 60_000;
-        await repository.putOrLoad(publication);
         await runtimeRepository.upsert(
             RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
             publication.publicationId,
-            JSON.stringify(publication),
+            JSON.stringify(legacyPublication),
             expiry,
         );
         await runtimeRepository.upsert(
@@ -583,6 +585,11 @@ describe('RTC topology runtime-state repositories', () => {
             JSON.stringify(publication.publicationId),
             expiry,
         );
+
+        await expect(repository.findPublication(publication.publicationId))
+            .rejects.toMatchObject({
+                code: 'rtc-topology-repository-invariant-corruption',
+            });
 
         await migrateLegacyRtcTopologyPublicationKeys(repository, {
             oldWritersStopped: true,
@@ -594,7 +601,7 @@ describe('RTC topology runtime-state repositories', () => {
         expect(await repository.findPublicationForWork(
             publication.groupRef,
             publication.workId,
-        )).toEqual(publication);
+        )).toEqual(upgradedPublication);
         expect(await runtimeRepository.findEntry(
             RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
             publication.publicationId,
@@ -603,6 +610,110 @@ describe('RTC topology runtime-state repositories', () => {
             RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE,
             publication.workId,
         )).toBeUndefined();
+    });
+
+    it.each(['claim', 'publication'] as const)(
+        'recovers a %s-only canonical publication migration destination',
+        async (partialDestination) => {
+            const runtimeRepository = new FakeRuntimeStateRepository();
+            const repository = new RtcTopologyPublicationRepository(runtimeRepository);
+            const publication = createPublication(
+                createTopologySnapshot(createGroupRef(), 1),
+                `legacy-partial-${partialDestination}`,
+            );
+            const legacyPublication = toLegacyPublication(publication);
+            const upgraded = toUpgradedLegacyPublication(legacyPublication);
+            const expiry = Date.now() + 60_000;
+            await seedLegacyPublicationRows(
+                runtimeRepository,
+                legacyPublication,
+                expiry,
+            );
+            if (partialDestination === 'claim') {
+                await runtimeRepository.insertIfAbsent(
+                    RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE,
+                    repository.workIndexKey(upgraded.groupRef, upgraded.workId),
+                    JSON.stringify({
+                        groupRef: upgraded.groupRef,
+                        workId: upgraded.workId,
+                        publicationId: upgraded.publicationId,
+                    }),
+                    expiry,
+                );
+            } else {
+                await runtimeRepository.insertIfAbsent(
+                    RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
+                    repository.publicationKey(upgraded.groupRef, upgraded.publicationId),
+                    JSON.stringify(upgraded),
+                    expiry,
+                );
+            }
+
+            await migrateLegacyRtcTopologyPublicationKeys(repository, {
+                oldWritersStopped: true,
+            });
+            await migrateLegacyRtcTopologyPublicationKeys(repository, {
+                oldWritersStopped: true,
+            });
+
+            await expect(repository.findPublicationForWork(
+                upgraded.groupRef,
+                upgraded.workId,
+            )).resolves.toEqual(upgraded);
+        },
+    );
+
+    it('rejects a divergent canonical publication destination during legacy upgrade', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const repository = new RtcTopologyPublicationRepository(runtimeRepository);
+        const publication = createPublication(
+            createTopologySnapshot(createGroupRef(), 1),
+            'legacy-divergent',
+        );
+        const legacyPublication = toLegacyPublication(publication);
+        const upgraded = toUpgradedLegacyPublication(legacyPublication);
+        const divergentSnapshot = {
+            ...JSON.parse(upgraded.message.payload.resource),
+            name: 'divergent destination',
+        };
+        const divergent = {
+            ...upgraded,
+            message: {
+                ...upgraded.message,
+                payload: {
+                    ...upgraded.message.payload,
+                    resource: JSON.stringify(divergentSnapshot),
+                },
+            },
+        };
+        const expiry = Date.now() + 60_000;
+        await seedLegacyPublicationRows(runtimeRepository, legacyPublication, expiry);
+        await runtimeRepository.insertIfAbsent(
+            RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE,
+            repository.workIndexKey(upgraded.groupRef, upgraded.workId),
+            JSON.stringify({
+                groupRef: upgraded.groupRef,
+                workId: upgraded.workId,
+                publicationId: upgraded.publicationId,
+            }),
+            expiry,
+        );
+        await runtimeRepository.insertIfAbsent(
+            RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
+            repository.publicationKey(upgraded.groupRef, upgraded.publicationId),
+            JSON.stringify(divergent),
+            expiry,
+        );
+
+        await expect(migrateLegacyRtcTopologyPublicationKeys(repository, {
+            oldWritersStopped: true,
+        })).rejects.toMatchObject({
+            code: 'rtc-topology-repository-invariant-corruption',
+        });
+        expect(await runtimeRepository.findEntry(
+            RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
+            legacyPublication.publicationId,
+        )).toBeDefined();
     });
 
     it('uses injective topology keys and rejects wrong-slot snapshots before lazy expiry', async () => {
@@ -668,6 +779,131 @@ describe('RTC topology runtime-state repositories', () => {
         await expect(repository.listSnapshotEntries()).resolves.toHaveLength(1);
         await expect(repository.listSnapshotEntriesPage({ limit: 1 })).resolves
             .toHaveLength(1);
+    });
+
+    it('accepts the canonical removed-topology tombstone shape', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const repository = new RtcTopologySnapshotRepository(runtimeRepository);
+        const active = createTopologySnapshot(createGroupRef(), 1);
+        const removed = {
+            ...active,
+            state: 'removed' as const,
+            nextHopsBySessionId: {
+                'session-a': [],
+                'session-b': [],
+            },
+        };
+
+        await expect(repository.observeSnapshot(removed)).resolves.toBe('inserted');
+        await expect(repository.findSnapshot(removed.groupRef)).resolves.toEqual(removed);
+    });
+
+    it.each(topologyInvariantCases().flatMap(({ defect, snapshot }) =>
+        (['direct', 'list', 'page', 'publication'] as const).map((surface) => ({
+            defect,
+            snapshot,
+            surface,
+        }))
+    ))('rejects $defect topology corruption on the $surface surface before effects', async ({
+        defect,
+        snapshot,
+        surface,
+    }) => {
+        vi.useFakeTimers();
+        vi.setSystemTime(10_000);
+        try {
+            const runtimeRepository = new FakeRuntimeStateRepository();
+            if (surface === 'publication') {
+                const repository = new RtcTopologyPublicationRepository(runtimeRepository);
+                const publication = createPublication(snapshot, `work-${defect}`);
+                const key = repository.publicationKey(
+                    publication.groupRef,
+                    publication.publicationId,
+                );
+                await runtimeRepository.upsert(
+                    RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
+                    key,
+                    JSON.stringify(publication),
+                    9_000,
+                );
+
+                await expect(repository.findPublication(
+                    publication.groupRef,
+                    publication.publicationId,
+                )).rejects.toMatchObject({
+                    code: 'rtc-topology-repository-invariant-corruption',
+                });
+                expect(await runtimeRepository.findEntry(
+                    RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
+                    key,
+                )).toBeDefined();
+                return;
+            }
+
+            const repository = new RtcTopologySnapshotRepository(runtimeRepository);
+            const key = repository.snapshotKey(snapshot.groupRef);
+            await runtimeRepository.upsert(
+                RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
+                key,
+                JSON.stringify(snapshot),
+                NEVER_EXPIRE_AT_TIMESTAMP,
+            );
+            const read = surface === 'direct'
+                ? repository.findSnapshot(snapshot.groupRef)
+                : surface === 'list'
+                ? repository.listSnapshotEntries()
+                : repository.listSnapshotEntriesPage({ limit: 10 });
+            await expect(read).rejects.toMatchObject({
+                code: 'rtc-topology-repository-invariant-corruption',
+            });
+            expect(await runtimeRepository.findEntry(
+                RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
+                key,
+            )).toBeDefined();
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('persists a required target snapshot version and binds it to the AL target', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const repository = new RtcTopologyPublicationRepository(runtimeRepository);
+        const snapshot = createTopologySnapshot(createGroupRef(), 1);
+        const base = createPublication(snapshot, 'work-target-version');
+        const publication = {
+            ...base,
+            targetGroupSnapshotVersion: 1,
+        };
+
+        await expect(repository.putOrLoad(publication)).resolves.toMatchObject({
+            publication,
+            inserted: true,
+        });
+        await expect(repository.putOrLoad({
+            ...publication,
+            publicationId: 'work-target-version-mismatch:1:1',
+            workId: 'work-target-version-mismatch',
+            targetGroupSnapshotVersion: 2,
+        })).rejects.toThrow('snapshot version');
+    });
+
+    it('binds persisted publication message timestamps to explicit publication facts', async () => {
+        const repository = new RtcTopologyPublicationRepository(
+            new FakeRuntimeStateRepository(),
+        );
+        const publication = createPublication(
+            createTopologySnapshot(createGroupRef(), 1),
+            'work-explicit-time',
+        );
+
+        await expect(repository.putOrLoad({
+            ...publication,
+            message: {
+                ...publication.message,
+                id: { ...publication.message.id, ts: 11 },
+                audit: { ...publication.message.audit, createdTs: 11 },
+            },
+        })).rejects.toThrow('timestamp');
     });
 
     it('exposes value-verified offline topology key migration only with old writers stopped', async () => {
@@ -1051,11 +1287,27 @@ describe('RTC topology runtime-state repositories', () => {
             updated: true,
             computed: { outcome: 'write' },
         });
+        const receiptReads = vi.spyOn(repository, 'findMutationReceiptEntry');
+        const measurementReads = vi.spyOn(repository, 'findMeasurementEntry');
+        const measurementLists = vi.spyOn(repository, 'listMeasurementEntries');
+        const admissionReads = vi.spyOn(repository, 'findEndpointAdmissionEntry');
+        const conditionalDeletes = vi.spyOn(runtimeRepository, 'deleteIfRevision');
+        const conditionalUpdates = vi.spyOn(runtimeRepository, 'upsertIfRevision');
+        const transactions = vi.spyOn(runtimeRepository, 'begin');
+        const conditionalInserts = vi.spyOn(runtimeRepository, 'insertIfAbsent');
         now = 12;
         await expect(execute()).resolves.toMatchObject({
             updated: false,
             computed: { outcome: 'replay', reason: 'accepted' },
         });
+        expect(receiptReads).toHaveBeenCalledTimes(1);
+        expect(measurementReads).not.toHaveBeenCalled();
+        expect(measurementLists).not.toHaveBeenCalled();
+        expect(admissionReads).not.toHaveBeenCalled();
+        expect(conditionalDeletes).not.toHaveBeenCalled();
+        expect(conditionalUpdates).not.toHaveBeenCalled();
+        expect(transactions).not.toHaveBeenCalled();
+        expect(conditionalInserts).not.toHaveBeenCalled();
         await expect(execute({
             ...command,
             rtt: { ...command.rtt, rttMs: 2 },
@@ -1064,6 +1316,14 @@ describe('RTC topology runtime-state repositories', () => {
             ...command,
             alSenderId: 'session-b',
         })).rejects.toMatchObject({ code: 'rtc-rtt-idempotency-conflict' });
+        expect(receiptReads).toHaveBeenCalledTimes(3);
+        expect(measurementReads).not.toHaveBeenCalled();
+        expect(measurementLists).not.toHaveBeenCalled();
+        expect(admissionReads).not.toHaveBeenCalled();
+        expect(conditionalDeletes).not.toHaveBeenCalled();
+        expect(conditionalUpdates).not.toHaveBeenCalled();
+        expect(transactions).not.toHaveBeenCalled();
+        expect(conditionalInserts).not.toHaveBeenCalled();
         expect(await runtimeRepository.findAllEntries(RTC_RTT_RECEIPTS_NAMESPACE))
             .toHaveLength(1);
         expect(await runtimeRepository.findAllEntries(RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE))
@@ -1650,6 +1910,143 @@ function createTopologySnapshot(
     };
 }
 
+function topologyInvariantCases(): readonly Readonly<{
+    defect: string;
+    snapshot: RallarOverlayTopologySnapshot;
+}>[] {
+    const base = createTopologySnapshot(createGroupRef(), 1);
+    const threeSessionBase: RallarOverlayTopologySnapshot = {
+        ...base,
+        activeSessionIds: ['session-a', 'session-b', 'session-c'],
+        nextHopsBySessionId: {
+            'session-a': ['session-b'],
+            'session-b': ['session-a', 'session-c'],
+            'session-c': ['session-b'],
+        },
+    };
+    const fourSessionBase: RallarOverlayTopologySnapshot = {
+        ...base,
+        activeSessionIds: ['session-a', 'session-b', 'session-c', 'session-d'],
+        nextHopsBySessionId: {
+            'session-a': ['session-b'],
+            'session-b': ['session-a'],
+            'session-c': ['session-d'],
+            'session-d': ['session-c'],
+        },
+    };
+    return [
+        { defect: 'overlay-mismatch', snapshot: { ...base, overlayId: 'wrong-overlay' } },
+        {
+            defect: 'duplicate-active-session',
+            snapshot: { ...base, activeSessionIds: ['session-a', 'session-a', 'session-b'] },
+        },
+        {
+            defect: 'noncanonical-active-session-order',
+            snapshot: { ...base, activeSessionIds: ['session-b', 'session-a'] },
+        },
+        {
+            defect: 'unknown-hop',
+            snapshot: {
+                ...base,
+                nextHopsBySessionId: {
+                    'session-a': ['session-b', 'session-z'],
+                    'session-b': ['session-a'],
+                },
+            },
+        },
+        {
+            defect: 'self-hop',
+            snapshot: {
+                ...base,
+                nextHopsBySessionId: {
+                    'session-a': ['session-a', 'session-b'],
+                    'session-b': ['session-a'],
+                },
+            },
+        },
+        {
+            defect: 'duplicate-hop',
+            snapshot: {
+                ...base,
+                nextHopsBySessionId: {
+                    'session-a': ['session-b', 'session-b'],
+                    'session-b': ['session-a'],
+                },
+            },
+        },
+        {
+            defect: 'noncanonical-hop-order',
+            snapshot: {
+                ...threeSessionBase,
+                nextHopsBySessionId: {
+                    ...threeSessionBase.nextHopsBySessionId,
+                    'session-b': ['session-c', 'session-a'],
+                },
+            },
+        },
+        {
+            defect: 'nonreciprocal-hop',
+            snapshot: {
+                ...base,
+                nextHopsBySessionId: {
+                    'session-a': ['session-b'],
+                    'session-b': [],
+                },
+            },
+        },
+        {
+            defect: 'missing-routing-key',
+            snapshot: {
+                ...base,
+                nextHopsBySessionId: { 'session-a': ['session-b'] },
+            },
+        },
+        {
+            defect: 'unknown-routing-key',
+            snapshot: {
+                ...base,
+                nextHopsBySessionId: {
+                    ...base.nextHopsBySessionId,
+                    'session-z': [],
+                },
+            },
+        },
+        { defect: 'disconnected-graph', snapshot: fourSessionBase },
+        {
+            defect: 'over-degree-graph',
+            snapshot: { ...threeSessionBase, degreeLimit: 1 },
+        },
+        {
+            defect: 'inverted-timestamps',
+            snapshot: { ...base, createdAtEpochMs: 3, updatedAtEpochMs: 2 },
+        },
+        {
+            defect: 'removed-nonempty-edge',
+            snapshot: { ...base, state: 'removed' },
+        },
+        {
+            defect: 'removed-missing-routing-key',
+            snapshot: {
+                ...base,
+                state: 'removed',
+                nextHopsBySessionId: { 'session-a': [] },
+            },
+        },
+        {
+            defect: 'removed-zero-degree-limit',
+            snapshot: {
+                ...base,
+                state: 'removed',
+                nextHopsBySessionId: {
+                    'session-a': [],
+                    'session-b': [],
+                },
+                degreeLimit: 0,
+            },
+        },
+    ];
+}
+
 function createPublication(
     snapshot: RallarOverlayTopologySnapshot,
     workId: string,
@@ -1660,6 +2057,7 @@ function createPublication(
         groupRef: snapshot.groupRef,
         sourceGroupStateRevision: snapshot.sourceGroupStateRevision,
         overlayVersion: snapshot.version,
+        targetGroupSnapshotVersion: 1,
         recipientSessionIds: snapshot.activeSessionIds,
         message: {
             id: {
@@ -1689,4 +2087,78 @@ function createPublication(
         } as unknown as ALMessage,
         createdAtEpochMs: 10,
     };
+}
+
+type LegacyRtcTopologyPublication = Omit<
+    RtcTopologyPublication,
+    'targetGroupSnapshotVersion'
+>;
+
+function toLegacyPublication(
+    publication: RtcTopologyPublication,
+): LegacyRtcTopologyPublication {
+    const {
+        targetGroupSnapshotVersion: _targetGroupSnapshotVersion,
+        ...legacy
+    } = structuredClone(publication);
+    return {
+        ...legacy,
+        message: {
+            ...legacy.message,
+            id: {
+                ...legacy.message.id,
+                ts: legacy.createdAtEpochMs + 1,
+            },
+            audit: {
+                ...legacy.message.audit,
+                createdTs: legacy.createdAtEpochMs + 1,
+            },
+        },
+    };
+}
+
+function toUpgradedLegacyPublication(
+    legacy: LegacyRtcTopologyPublication,
+): RtcTopologyPublication {
+    if (
+        legacy.message.targets?.mode !== 'broadcast' ||
+        legacy.message.targets.minSnapshotVersion === undefined
+    ) {
+        throw new Error('Expected legacy room publication target');
+    }
+    return {
+        ...legacy,
+        targetGroupSnapshotVersion:
+            legacy.message.targets.minSnapshotVersion,
+        message: {
+            ...legacy.message,
+            id: {
+                ...legacy.message.id,
+                ts: legacy.createdAtEpochMs,
+            },
+            audit: {
+                ...legacy.message.audit,
+                createdTs: legacy.createdAtEpochMs,
+            },
+        },
+    };
+}
+
+async function seedLegacyPublicationRows(
+    runtime: FakeRuntimeStateRepository,
+    publication: LegacyRtcTopologyPublication,
+    expiry: number,
+): Promise<void> {
+    await runtime.upsert(
+        RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
+        publication.publicationId,
+        JSON.stringify(publication),
+        expiry,
+    );
+    await runtime.upsert(
+        RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE,
+        publication.workId,
+        JSON.stringify(publication.publicationId),
+        expiry,
+    );
 }

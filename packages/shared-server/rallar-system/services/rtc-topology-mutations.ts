@@ -220,12 +220,16 @@ export type RtcRttMutationCommand = Readonly<{
     degreeLimit: number;
 }>;
 
-export type RtcRttMutationRead = Readonly<{
-    receipt: RuntimeStateEntryValue<RtcRttMutationReceipt> | null;
-    measurement: RuntimeStateEntryValue<RttMeasurementInfo> | null;
-    endpointAdmissions: readonly RuntimeStateEntryValue<RtcRttEndpointAdmission>[];
-    measurements: readonly RuntimeStateEntryValue<RttMeasurementInfo>[];
-}>;
+export type RtcRttMutationRead =
+    | Readonly<{
+        receipt: RuntimeStateEntryValue<RtcRttMutationReceipt>;
+    }>
+    | Readonly<{
+        receipt: null;
+        measurement: RuntimeStateEntryValue<RttMeasurementInfo> | null;
+        endpointAdmissions: readonly RuntimeStateEntryValue<RtcRttEndpointAdmission>[];
+        measurements: readonly RuntimeStateEntryValue<RttMeasurementInfo>[];
+    }>;
 
 export type RtcRttMutationFacts = Readonly<{
     purgeAfterEpochMs: number;
@@ -320,9 +324,13 @@ export function computeRttMutation(input: Readonly<{
             receipt: input.read.receipt.value,
         };
     }
+    const authorityRead = input.read as Extract<
+        RtcRttMutationRead,
+        { receipt: null }
+    >;
     if (
-        input.read.measurement &&
-        input.read.measurement.value.version > input.command.rtt.version
+        authorityRead.measurement &&
+        authorityRead.measurement.value.version > input.command.rtt.version
     ) {
         return {
             outcome: 'rejected',
@@ -331,12 +339,12 @@ export function computeRttMutation(input: Readonly<{
         };
     }
     if (
-        input.read.measurement &&
-        input.read.measurement.value.version === input.command.rtt.version
+        authorityRead.measurement &&
+        authorityRead.measurement.value.version === input.command.rtt.version
     ) {
-        if (!sameMeasurement(input.read.measurement.value, input.command.rtt)) {
+        if (!sameMeasurement(authorityRead.measurement.value, input.command.rtt)) {
             throw new RtcTopologyRepositoryInvariantCorruptionError(
-                input.read.measurement.entry.key,
+                authorityRead.measurement.entry.key,
                 'RTC RTT equal version differs from durable measurement',
             );
         }
@@ -349,7 +357,7 @@ export function computeRttMutation(input: Readonly<{
 
     const acceptance = evaluateRtcRttMeasurement({
         ...input.command,
-        existingMeasurements: input.read.measurements.map(({ value }) => value),
+        existingMeasurements: authorityRead.measurements.map(({ value }) => value),
     });
     if (!acceptance.accepted) {
         return {
@@ -360,7 +368,7 @@ export function computeRttMutation(input: Readonly<{
     }
 
     const admissionByEndpoint = new Map(
-        input.read.endpointAdmissions.map((stored) => [stored.value.endpointId, stored]),
+        authorityRead.endpointAdmissions.map((stored) => [stored.value.endpointId, stored]),
     );
     if (exceedsEndpointAdmissionDegree(
         input.command.rtt,
@@ -387,7 +395,7 @@ export function computeRttMutation(input: Readonly<{
                 peerExpiry.set(peer.peerSessionId, peer.expiresAtEpochMs);
             }
         }
-        for (const peer of peersForEndpoint(endpointId, input.read.measurements)) {
+        for (const peer of peersForEndpoint(endpointId, authorityRead.measurements)) {
             peerExpiry.set(
                 peer.peerSessionId,
                 Math.max(peerExpiry.get(peer.peerSessionId) ?? 0, peer.expiresAtEpochMs),
@@ -431,7 +439,7 @@ export function computeRttMutation(input: Readonly<{
         affectedGroups: acceptance.affectedGroups,
         endpointGuards,
         measurementGuard: {
-            expectedRevision: input.read.measurement?.entry.revision ?? null,
+            expectedRevision: authorityRead.measurement?.entry.revision ?? null,
             value: input.command.rtt,
             purgeAfterEpochMs: input.facts.purgeAfterEpochMs,
         },
@@ -526,11 +534,12 @@ export async function readRttMutation(
     repository: RtcRttRepository,
     command: RtcRttMutationCommand,
 ): Promise<RtcRttMutationRead> {
-    const [receipt, measurement, measurements, ...endpointAdmissions] =
-        await Promise.all([
-        repository.findMutationReceiptEntry(
-            toRtcRttMutationReceiptId(command.rtt),
-        ),
+    const receipt = await repository.findMutationReceiptEntry(
+        toRtcRttMutationReceiptId(command.rtt),
+    );
+    if (receipt) return { receipt };
+
+    const [measurement, measurements, ...endpointAdmissions] = await Promise.all([
         repository.findMeasurementEntry(
             command.rtt.sessionIdFrom,
             command.rtt.sessionIdTo,
@@ -544,7 +553,7 @@ export async function readRttMutation(
         ),
     ]);
     return {
-        receipt: receipt ?? null,
+        receipt: null,
         measurement: measurement ?? null,
         endpointAdmissions: endpointAdmissions.filter((entry): entry is
             NonNullable<typeof entry> => entry !== undefined),

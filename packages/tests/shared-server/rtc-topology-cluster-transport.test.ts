@@ -46,15 +46,17 @@ describe('RTC topology cluster publication fanout', () => {
         });
         await Promise.all([fanoutA.readiness, fanoutB.readiness]);
         const snapshot = topologySnapshot(['session-a', 'session-b']);
+        const message = topologyPublicationMessage(snapshot);
         const publication = {
             publicationId: 'work-1:4:2',
             workId: 'work-1',
             groupRef: snapshot.groupRef,
             sourceGroupStateRevision: 4,
             overlayVersion: 2,
+            targetGroupSnapshotVersion: 1,
             recipientSessionIds: ['session-a', 'session-b'],
-            message: topologyPublicationMessage(snapshot),
-            createdAtEpochMs: Date.now(),
+            message,
+            createdAtEpochMs: message.id.ts,
         };
         await repository.putOrLoad(publication);
 
@@ -90,15 +92,17 @@ describe('RTC topology cluster publication fanout', () => {
         });
         await fanout.readiness;
         const snapshot = topologySnapshot(['session-b']);
+        const message = topologyPublicationMessage(snapshot);
         const publication = {
             publicationId: 'work-legacy:4:2',
             workId: 'work-legacy',
             groupRef: snapshot.groupRef,
             sourceGroupStateRevision: 4,
             overlayVersion: 2,
+            targetGroupSnapshotVersion: 1,
             recipientSessionIds: ['session-b'],
-            message: topologyPublicationMessage(snapshot),
-            createdAtEpochMs: Date.now(),
+            message,
+            createdAtEpochMs: message.id.ts,
         };
         await repository.putOrLoad(publication);
 
@@ -145,15 +149,17 @@ describe('RTC topology cluster publication fanout', () => {
             ['work-scoped', absentSnapshot, 'session-absent'],
             ['work-scoped', literalSnapshot, 'session-literal'],
         ] as const) {
+            const message = topologyPublicationMessage(snapshot);
             await repository.putOrLoad({
                 publicationId,
                 workId,
                 groupRef: snapshot.groupRef,
                 sourceGroupStateRevision: 4,
                 overlayVersion: 2,
+                targetGroupSnapshotVersion: 1,
                 recipientSessionIds: [recipient],
-                message: topologyPublicationMessage(snapshot),
-                createdAtEpochMs: Date.now(),
+                message,
+                createdAtEpochMs: message.id.ts,
             });
         }
 
@@ -198,6 +204,7 @@ describe('RTC topology cluster publication fanout', () => {
             },
             sourceGroupStateRevision: 4,
             overlayVersion: 2,
+            targetGroupSnapshotVersion: 1,
             recipientSessionIds: ['session-a', 'session-a', 'missing-session'],
             message: newALBroadcastMessage(
                 'server-a',

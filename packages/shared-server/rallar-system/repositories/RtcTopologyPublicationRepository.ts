@@ -36,6 +36,7 @@ export type RtcTopologyPublication = Readonly<{
     groupRef: GroupRef;
     sourceGroupStateRevision: number;
     overlayVersion: number;
+    targetGroupSnapshotVersion: number;
     recipientSessionIds: readonly string[];
     message: ALMessage;
     createdAtEpochMs: number;
@@ -74,13 +75,20 @@ export async function migrateLegacyRtcTopologyPublicationKeys(
         RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
     );
     for (const sourcePublication of publications) {
-        const raw = parseValue(sourcePublication) as RtcTopologyPublication;
+        const raw = parseValue(sourcePublication);
         if (!isRecord(raw) || typeof raw.publicationId !== 'string' ||
             typeof raw.workId !== 'string' || !isRecord(raw.groupRef)) {
             throw publicationCorruption(sourcePublication.key, 'Legacy publication is invalid');
         }
-        const publication = canonicalPublication(raw);
-        validatePublication(publication, publication.groupRef);
+        let publication: RtcTopologyPublication;
+        try {
+            publication = publicationForMigration(raw);
+        } catch (error) {
+            throw publicationCorruption(
+                sourcePublication.key,
+                error instanceof Error ? error.message : 'Legacy publication is invalid',
+            );
+        }
         const destinationPublicationKey = repository.publicationKey(
             publication.groupRef,
             publication.publicationId,
@@ -497,6 +505,7 @@ function validatePublication(value: unknown, expectedRef: GroupRef): void {
         'groupRef',
         'sourceGroupStateRevision',
         'overlayVersion',
+        'targetGroupSnapshotVersion',
         'recipientSessionIds',
         'message',
         'createdAtEpochMs',
@@ -517,6 +526,7 @@ function validatePublication(value: unknown, expectedRef: GroupRef): void {
     for (const field of [
         'sourceGroupStateRevision',
         'overlayVersion',
+        'targetGroupSnapshotVersion',
         'createdAtEpochMs',
     ] as const) {
         if (!Number.isSafeInteger(value[field]) || (value[field] as number) < 0) {
@@ -538,10 +548,19 @@ function validatePublication(value: unknown, expectedRef: GroupRef): void {
         throw new TypeError('RTC topology publication message snapshot is invalid');
     }
     validateTopologySnapshot(snapshot, expectedRef);
+    const targets = (value.message as ALMessage).targets;
+    if (
+        targets?.mode !== 'broadcast' ||
+        targets.minSnapshotVersion !== value.targetGroupSnapshotVersion
+    ) {
+        throw new TypeError('RTC topology publication target snapshot version is invalid');
+    }
     validateTopologyPublicationEnvelope(
         value.message,
         expectedRef,
         snapshot as RallarOverlayTopologySnapshot,
+        value.targetGroupSnapshotVersion as number,
+        value.createdAtEpochMs as number,
     );
     if (
         (snapshot as RallarOverlayTopologySnapshot).sourceGroupStateRevision !==
@@ -561,6 +580,8 @@ function validateTopologyPublicationEnvelope(
         RallarOverlayTopologySnapshot,
         'overlayId' | 'sourceGroupStateRevision' | 'version'
     >,
+    targetGroupSnapshotVersion: number,
+    createdAtEpochMs: number,
 ): void {
     if (!message.targets || !message.delivery || !message.audit) {
         throw new TypeError('RTC topology publication is missing builder envelope sections');
@@ -578,13 +599,14 @@ function validateTopologyPublicationEnvelope(
         message.targets.scope !== 'room' ||
         message.targets.groupRef === undefined ||
         !sameGroupRef(message.targets.groupRef, expectedRef) ||
-        message.targets.minSnapshotVersion === undefined ||
+        message.targets.minSnapshotVersion !== targetGroupSnapshotVersion ||
         message.delivery.reliability !== 'best-effort' ||
         message.delivery.ack !== 'none' ||
         message.audit.createdBy !== 'rallar-server' ||
-        message.audit.createdTs !== message.id.ts
+        message.audit.createdTs !== message.id.ts ||
+        message.id.ts !== createdAtEpochMs
     ) {
-        throw new TypeError('RTC topology publication envelope identity is invalid');
+        throw new TypeError('RTC topology publication envelope identity or timestamp is invalid');
     }
 }
 
@@ -702,6 +724,64 @@ function canonicalPublication(
                 groupId: ref.groupId,
             },
     };
+}
+
+function publicationForMigration(
+    raw: Record<string, unknown>,
+): RtcTopologyPublication {
+    if (Object.hasOwn(raw, 'targetGroupSnapshotVersion')) {
+        const publication = canonicalPublication(raw as RtcTopologyPublication);
+        validatePublication(publication, publication.groupRef);
+        return publication;
+    }
+    assertExactKeys(raw, [
+        'publicationId',
+        'workId',
+        'groupRef',
+        'sourceGroupStateRevision',
+        'overlayVersion',
+        'recipientSessionIds',
+        'message',
+        'createdAtEpochMs',
+    ]);
+    validatePersistedALMessage(raw.message);
+    const message = raw.message;
+    if (
+        message.targets?.mode !== 'broadcast' ||
+        message.targets.scope !== 'room' ||
+        message.targets.minSnapshotVersion === undefined
+    ) {
+        throw new TypeError('Legacy RTC topology publication target is invalid');
+    }
+    let snapshot: unknown;
+    try {
+        snapshot = JSON.parse(message.payload.resource);
+    } catch {
+        throw new TypeError('Legacy RTC topology publication snapshot is invalid');
+    }
+    const groupRef = raw.groupRef as GroupRef;
+    validateTopologySnapshot(snapshot, groupRef);
+    validateTopologyPublicationEnvelope(
+        message,
+        groupRef,
+        snapshot,
+        message.targets.minSnapshotVersion,
+        message.id.ts,
+    );
+    const publication = canonicalPublication({
+        ...(raw as Omit<RtcTopologyPublication, 'targetGroupSnapshotVersion'>),
+        targetGroupSnapshotVersion: message.targets.minSnapshotVersion,
+        message: {
+            ...message,
+            id: { ...message.id, ts: raw.createdAtEpochMs as number },
+            audit: {
+                ...message.audit,
+                createdTs: raw.createdAtEpochMs as number,
+            },
+        },
+    });
+    validatePublication(publication, publication.groupRef);
+    return publication;
 }
 
 function sameGroupRef(left: GroupRef, right: GroupRef): boolean {

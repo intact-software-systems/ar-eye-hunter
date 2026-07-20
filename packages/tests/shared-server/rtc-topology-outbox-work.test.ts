@@ -25,6 +25,7 @@ import {
     DEFAULT_RTC_TOPOLOGY_PUBLICATION_RETENTION_MS,
     RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
     RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE,
+    type RtcTopologyPublication,
 } from '@shared-server/rallar-system/repositories/RtcTopologyPublicationRepository.ts';
 import {
     RuntimeStateWriteConflictError,
@@ -186,6 +187,40 @@ describe('RTC topology APP_OUTBOX work', () => {
         )).toBe(true);
     });
 
+    it('uses collision-safe canonical RTT pair identities for successor resources', async () => {
+        const queue = new InMemoryQueueBox();
+        const runtime = createRtcTopologyOutboxPublisher({
+            outboxQueueReader: new OutboxQueueReader(queue),
+            now: () => 1_000,
+        });
+        const group = createGroupSnapshot(3);
+        const composed = '\u00e9';
+        const decomposed = 'e\u0301';
+
+        await runtime.publisher.enqueueForRtt(group, rtt('reserved-a', 'reserved-b', 1), 0);
+        await queue.reserveEntries(
+            OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
+            new Set([EntityStatus.NEW]),
+            1,
+        );
+
+        for (const measurement of [
+            rtt('a', 'b:c', 1),
+            rtt('a:b', 'c', 1),
+            rtt(composed, 'z', 1),
+            rtt(decomposed, 'z', 1),
+            rtt('b:c', 'a', 1),
+        ]) {
+            await runtime.publisher.enqueueForRtt(group, measurement, 0);
+        }
+
+        const resourceIds = (await entriesIn(queue)).map((entry) =>
+            readEnvelope(entry).resourceId
+        );
+        expect(resourceIds).toHaveLength(5);
+        expect(new Set(resourceIds).size).toBe(5);
+    });
+
     it('coalesces RTT work to the newest exact group snapshot and request time', async () => {
         const queue = new InMemoryQueueBox();
         let now = 1_000;
@@ -318,6 +353,82 @@ describe('RTC topology APP_OUTBOX work', () => {
         );
         publish.mockClear();
         currentGroup = createGroupSnapshot(4);
+
+        await expect(handler.onMessage(message, entry, new JsonWebSocketServer()))
+            .rejects.toMatchObject({
+                code: 'rtc-topology-repository-invariant-corruption',
+            });
+        expect(publish).not.toHaveBeenCalled();
+    });
+
+    it('validates a corrupt persisted topology graph before replay fanout', async () => {
+        const queue = new InMemoryQueueBox();
+        const runtime = createRtcTopologyOutboxPublisher({
+            outboxQueueReader: new OutboxQueueReader(queue),
+            now: () => 100,
+        });
+        const group = createGroupSnapshot(3);
+        await runtime.publisher.enqueueForGroupSnapshot(group);
+        const [entry] = await entriesIn(queue);
+        const message = JSON.parse(entry.resource) as ALMessage;
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const topologyManagement = new ConcreteGroupTopologyManagementService({
+            findGroupSnapshotByRef: () => group,
+            topologyService: new RallarRtcTopologyService({ now: () => 10 }),
+            topologySnapshotRepository: new RtcTopologySnapshotRepository(
+                runtimeRepository,
+            ),
+            processRttReader: () => [],
+        });
+        const publish = vi.fn().mockResolvedValue(0);
+        const handler = createRtcTopologyWorkHandler({
+            runtime,
+            topologyManagement,
+            executionRepository: new RtcTopologyExecutionRepository(
+                runtimeRepository,
+            ),
+            publicationFanout: {
+                readiness: Promise.resolve(), publish, deliverLocal: () => 0,
+            },
+        });
+        await handler.onMessage(message, entry, new JsonWebSocketServer());
+        const [publicationEntry] = await runtimeRepository.findAllEntries(
+            RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
+        );
+        const [snapshotEntry] = await runtimeRepository.findAllEntries(
+            RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
+        );
+        const publication = JSON.parse(publicationEntry!.value) as {
+            message: ALMessage;
+        };
+        const snapshot = JSON.parse(publication.message.payload.resource) as
+            RallarOverlayTopologySnapshot;
+        const invalidSnapshot = {
+            ...snapshot,
+            nextHopsBySessionId: { 'unknown-session': [] },
+        };
+        await runtimeRepository.upsert(
+            RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
+            publicationEntry!.key,
+            JSON.stringify({
+                ...publication,
+                message: {
+                    ...publication.message,
+                    payload: {
+                        ...publication.message.payload,
+                        resource: JSON.stringify(invalidSnapshot),
+                    },
+                },
+            }),
+            publicationEntry!.expireAtTimestamp,
+        );
+        await runtimeRepository.upsert(
+            RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
+            snapshotEntry!.key,
+            JSON.stringify(invalidSnapshot),
+            snapshotEntry!.expireAtTimestamp,
+        );
+        publish.mockClear();
 
         await expect(handler.onMessage(message, entry, new JsonWebSocketServer()))
             .rejects.toMatchObject({
@@ -595,26 +706,34 @@ describe('RTC topology APP_OUTBOX work', () => {
                 order.push(`plan:${previous?.sourceGroupStateRevision ?? 0}`);
                 return originalPlan(authority, previous);
             });
+        const readAuthority = vi.spyOn(
+            topologyManagement,
+            'readTopologyPlanningAuthority',
+        );
         let commitCount = 0;
+        const publications: RtcTopologyPublication[] = [];
+        const readTopologyMutation = vi.fn(async () => ({
+            snapshot: commitCount === 0
+                ? null
+                : {
+                    entry: {
+                        key: 'snapshot', value: JSON.stringify(predecessor),
+                        expireAtTimestamp: Number.MAX_SAFE_INTEGER,
+                        updatedTimestamp: 'now', revision: 1,
+                    },
+                    value: predecessor,
+                },
+            publicationClaim: null,
+        }));
         const executionRepository = {
             publicationExpireAtTimestamp: () => Number.MAX_SAFE_INTEGER,
-            readTopologyMutation: async () => ({
-                snapshot: commitCount === 0
-                    ? null
-                    : {
-                        entry: {
-                            key: 'snapshot', value: JSON.stringify(predecessor),
-                            expireAtTimestamp: Number.MAX_SAFE_INTEGER,
-                            updatedTimestamp: 'now', revision: 1,
-                        },
-                        value: predecessor,
-                    },
-                publicationClaim: null,
-            }),
+            readTopologyMutation,
             writeTopologyMutation: async (computed: {
                 snapshotGuard: { candidate: RallarOverlayTopologySnapshot };
+                publication: RtcTopologyPublication;
             }) => {
                 commitCount += 1;
+                publications.push(structuredClone(computed.publication));
                 order.push(`commit:${computed.snapshotGuard.candidate.sourceGroupStateRevision}`);
                 return commitCount === 1
                     ? 'conflict' as const
@@ -633,13 +752,38 @@ describe('RTC topology APP_OUTBOX work', () => {
             },
         });
 
-        await handler.onMessage(
-            JSON.parse(entry.resource),
-            entry,
-            new JsonWebSocketServer(),
-        );
+        const dateNow = vi.spyOn(Date, 'now').mockImplementation(() => {
+            throw new Error('ambient Date.now used during topology mutation');
+        });
+        const randomUuid = vi.spyOn(crypto, 'randomUUID').mockImplementation(() => {
+            throw new Error('ambient random UUID used during topology mutation');
+        });
+        try {
+            await handler.onMessage(
+                JSON.parse(entry.resource),
+                entry,
+                new JsonWebSocketServer(),
+            );
+        } finally {
+            dateNow.mockRestore();
+            randomUuid.mockRestore();
+        }
 
         expect(order).toEqual(['plan:0', 'commit:3', 'plan:2', 'commit:3']);
+        expect(readAuthority).toHaveBeenCalledTimes(2);
+        expect(readTopologyMutation).toHaveBeenCalledTimes(2);
+        expect(publications).toHaveLength(2);
+        expect(publications[1]).toEqual(publications[0]);
+        expect(publications[0]).toMatchObject({
+            createdAtEpochMs: expect.any(Number),
+            message: {
+                id: { msgId: expect.any(String), ts: expect.any(Number) },
+                audit: { createdTs: expect.any(Number) },
+            },
+        });
+        expect(publications[0]!.message.id.ts).toBe(publications[0]!.createdAtEpochMs);
+        expect(publications[0]!.message.audit?.createdTs)
+            .toBe(publications[0]!.createdAtEpochMs);
         expect(publish).toHaveBeenCalledOnce();
     });
 
@@ -794,6 +938,20 @@ function readEnvelope(entry: { resource: string }): {
 } {
     const message = JSON.parse(entry.resource) as ALMessage;
     return JSON.parse(message.payload.resource);
+}
+
+function rtt(
+    sessionIdFrom: string,
+    sessionIdTo: string,
+    version: number,
+) {
+    return {
+        sessionIdFrom,
+        sessionIdTo,
+        rttMs: version,
+        createdAtEpochMs: version,
+        version,
+    };
 }
 
 function createGroupSnapshot(stateRevision: number): GroupSnapshot {

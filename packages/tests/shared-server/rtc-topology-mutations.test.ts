@@ -113,6 +113,7 @@ describe('RTC topology mutation phases', () => {
         const publication = {
             publicationId: 'work-1:2:2', workId: 'work-1', groupRef,
             sourceGroupStateRevision: 2, overlayVersion: 2,
+            targetGroupSnapshotVersion: 1,
             recipientSessionIds: snapshot.activeSessionIds,
             message: { payload: { resource: JSON.stringify(snapshot) } } as never,
             createdAtEpochMs: 2,
@@ -159,6 +160,7 @@ describe('RTC topology mutation phases', () => {
             groupRef,
             sourceGroupStateRevision: 2,
             overlayVersion: 2,
+            targetGroupSnapshotVersion: 1,
             recipientSessionIds: publicationSnapshot.activeSessionIds,
             message: {
                 payload: { resource: JSON.stringify(publicationSnapshot) },
@@ -260,6 +262,7 @@ describe('RTC topology mutation phases', () => {
         const publication = {
             publicationId: 'work-expiry:1:1', workId: 'work-expiry', groupRef,
             sourceGroupStateRevision: 1, overlayVersion: 1,
+            targetGroupSnapshotVersion: 1,
             recipientSessionIds: candidate.activeSessionIds,
             message: { payload: { resource: JSON.stringify(candidate) } } as never,
             createdAtEpochMs: 1,

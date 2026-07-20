@@ -888,31 +888,33 @@ function topologyPublication(
     snapshot: RallarOverlayTopologySnapshot,
     workId: string,
 ) {
+    const message = newALBroadcastMessage(
+        'rallar-server',
+        newALRoute(
+            AppTopics.overlayTopology,
+            snapshot.groupRef.groupId,
+            `${snapshot.overlayId}:${snapshot.sourceGroupStateRevision}:${snapshot.version}`,
+        ),
+        'room',
+        AppTopics.overlayTopology,
+        snapshot,
+        {
+            groupRef: snapshot.groupRef,
+            minSnapshotVersion: 1,
+            reliability: 'best-effort',
+            ack: 'none',
+        },
+    );
     return {
         publicationId: `${workId}:${snapshot.sourceGroupStateRevision}:${snapshot.version}`,
         workId,
         groupRef: snapshot.groupRef,
         sourceGroupStateRevision: snapshot.sourceGroupStateRevision,
         overlayVersion: snapshot.version,
+        targetGroupSnapshotVersion: 1,
         recipientSessionIds: snapshot.activeSessionIds,
-        message: newALBroadcastMessage(
-            'rallar-server',
-            newALRoute(
-                AppTopics.overlayTopology,
-                snapshot.groupRef.groupId,
-                `${snapshot.overlayId}:${snapshot.sourceGroupStateRevision}:${snapshot.version}`,
-            ),
-            'room',
-            AppTopics.overlayTopology,
-            snapshot,
-            {
-                groupRef: snapshot.groupRef,
-                minSnapshotVersion: 1,
-                reliability: 'best-effort',
-                ack: 'none',
-            },
-        ),
-        createdAtEpochMs: 1,
+        message,
+        createdAtEpochMs: message.id.ts,
     };
 }
 

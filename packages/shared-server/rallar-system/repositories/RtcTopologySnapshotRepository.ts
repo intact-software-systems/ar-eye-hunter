@@ -1,9 +1,11 @@
 import type { GroupRef } from '@shared/api/group-types.ts';
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import {
     compareOverlayTopologyCausalTuple,
     type RallarOverlayTopologySnapshot,
 } from '@shared/api/overlay-topology.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
+import { validateGroupTopologyNextHops } from '@shared-graph/group-topology-validation.ts';
 import type { RuntimeStateEntryValue } from '../../runtime-state/RuntimeStateJsonStore.ts';
 import { RuntimeStateJsonStore } from '../../runtime-state/RuntimeStateJsonStore.ts';
 import type {
@@ -26,6 +28,7 @@ import {
     decodeGroupStateGroupStorageKey,
     groupStateGroupStorageKey,
 } from '../group-state-storage-keys.ts';
+import { compareRtcTopologyIdentifiers } from '../rtc-topology-identifiers.ts';
 
 export const RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE = 'rtc-topology:snapshots';
 
@@ -367,7 +370,6 @@ export function validateTopologySnapshot(
     validateGroupRef(value.groupRef, expectedRef);
     for (const field of [
         'sourceGroupStateRevision',
-        'degreeLimit',
         'version',
         'createdAtEpochMs',
         'updatedAtEpochMs',
@@ -375,6 +377,9 @@ export function validateTopologySnapshot(
         if (!Number.isSafeInteger(value[field]) || (value[field] as number) < 0) {
             throw new TypeError(`RTC topology snapshot ${field} is invalid`);
         }
+    }
+    if (!Number.isSafeInteger(value.degreeLimit) || (value.degreeLimit as number) < 1) {
+        throw new TypeError('RTC topology snapshot degreeLimit is invalid');
     }
     if (value.state !== 'active' && value.state !== 'removed') {
         throw new TypeError('RTC topology snapshot state is invalid');
@@ -390,9 +395,70 @@ export function validateTopologySnapshot(
     if (!isStringArray(value.activeSessionIds) || !isRecord(value.nextHopsBySessionId)) {
         throw new TypeError('RTC topology snapshot routing is invalid');
     }
-    for (const peers of Object.values(value.nextHopsBySessionId)) {
+    if (value.overlayId !== toScopedOverlayId(expectedRef)) {
+        throw new TypeError('RTC topology snapshot overlay identity is invalid');
+    }
+    if ((value.createdAtEpochMs as number) > (value.updatedAtEpochMs as number)) {
+        throw new TypeError('RTC topology snapshot timestamps are inverted');
+    }
+    assertCanonicalIdentifiers(value.activeSessionIds, 'active sessions');
+    const activeSessionIds = new Set(value.activeSessionIds);
+    const routeSessionIds = Object.keys(value.nextHopsBySessionId);
+    if (
+        routeSessionIds.length !== activeSessionIds.size ||
+        routeSessionIds.some((sessionId) => !activeSessionIds.has(sessionId))
+    ) {
+        throw new TypeError('RTC topology snapshot routing keys differ from active sessions');
+    }
+    for (const [sessionId, peers] of Object.entries(value.nextHopsBySessionId)) {
         if (!isStringArray(peers)) {
             throw new TypeError('RTC topology snapshot next hops are invalid');
+        }
+        assertCanonicalIdentifiers(peers, `next hops for ${sessionId}`);
+        for (const peerSessionId of peers) {
+            if (
+                peerSessionId === sessionId ||
+                !activeSessionIds.has(peerSessionId)
+            ) {
+                throw new TypeError('RTC topology snapshot next hop identity is invalid');
+            }
+            const reverse = value.nextHopsBySessionId[peerSessionId];
+            if (!Array.isArray(reverse) || !reverse.includes(sessionId)) {
+                throw new TypeError('RTC topology snapshot next hops are not reciprocal');
+            }
+        }
+        if (value.state === 'removed' && peers.length > 0) {
+            throw new TypeError('RTC topology removed snapshot contains active edges');
+        }
+    }
+    if (value.state === 'active') {
+        const validation = validateGroupTopologyNextHops({
+            nextHopsBySessionId: value.nextHopsBySessionId as Readonly<
+                Record<string, readonly string[]>
+            >,
+            activeSessionIds,
+            maxDegree: value.degreeLimit as number,
+            requireConnected: true,
+        });
+        if (!validation.valid) {
+            throw new TypeError(
+                `RTC topology snapshot graph is invalid: ${validation.issues
+                    .map((issue) => issue.code).join(',')}`,
+            );
+        }
+    }
+}
+
+function assertCanonicalIdentifiers(
+    values: readonly string[],
+    label: string,
+): void {
+    if (values.some((value) => value.length === 0)) {
+        throw new TypeError(`RTC topology snapshot ${label} contain an empty identity`);
+    }
+    for (let index = 1; index < values.length; index += 1) {
+        if (compareRtcTopologyIdentifiers(values[index - 1]!, values[index]!) >= 0) {
+            throw new TypeError(`RTC topology snapshot ${label} are not canonical`);
         }
     }
 }

@@ -100,6 +100,29 @@ describe('RallarRtcTopologyService', () => {
         expect(graph.getEdgeAttribute(edge!, 'weight')).toBe(7);
     });
 
+    it('preserves delimiter-colliding and Unicode-lookalike RTT graph edges', () => {
+        const composed = '\u00e9';
+        const decomposed = 'e\u0301';
+        const sessionIds = ['a', 'a::b', 'b::c', 'c', composed, decomposed];
+        const service = new RallarRtcTopologyService({
+            now: () => 100,
+            degreeLimit: sessionIds.length,
+            rttReportingDegreeLimit: sessionIds.length,
+        });
+        const graph = service.createRoomGraph(createGroupSnapshot('room-pairs', sessionIds), [
+            rtt('a', 'b::c', 11, 1),
+            rtt('a::b', 'c', 22, 1),
+            rtt(composed, 'a', 33, 1),
+            rtt(decomposed, 'a', 44, 1),
+            rtt('b::c', 'a', 55, 2),
+        ]);
+
+        expect(edgeWeight(graph, 'a', 'b::c')).toBe(55);
+        expect(edgeWeight(graph, 'a::b', 'c')).toBe(22);
+        expect(edgeWeight(graph, composed, 'a')).toBe(33);
+        expect(edgeWeight(graph, decomposed, 'a')).toBe(44);
+    });
+
     it('orders equal-weight Unicode RTT edges by exact code units', () => {
         const decomposed = 'e\u0301';
         const composed = '\u00e9';
@@ -711,6 +734,30 @@ describe('RallarRtcTopologyService', () => {
 
 function createMemberIds(count: number): readonly string[] {
     return Array.from({ length: count }, (_, index) => `peer-${index + 1}`);
+}
+
+function rtt(
+    sessionIdFrom: string,
+    sessionIdTo: string,
+    rttMs: number,
+    version: number,
+): RttMeasurementInfo {
+    return {
+        sessionIdFrom,
+        sessionIdTo,
+        rttMs,
+        createdAtEpochMs: version,
+        version,
+    };
+}
+
+function edgeWeight(
+    graph: ReturnType<RallarRtcTopologyService['createRoomGraph']>,
+    from: string,
+    to: string,
+): number | undefined {
+    const edge = graph.edge(from, to);
+    return edge === undefined ? undefined : graph.getEdgeAttribute(edge, 'weight');
 }
 
 function createCentralRttMeasurements(

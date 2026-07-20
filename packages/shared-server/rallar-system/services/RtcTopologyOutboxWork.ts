@@ -20,7 +20,9 @@ import {
 } from '../repositories/RtcTopologyPublicationRepository.ts';
 import type { RtcTopologyExecutionRepository } from '../repositories/RtcTopologyExecutionRepository.ts';
 import type { RtcRttRepository } from '../repositories/RtcRttRepository.ts';
-import { compareRtcTopologyIdentifiers } from '../rtc-topology-identifiers.ts';
+import {
+    toCanonicalRtcTopologyPairIdentity,
+} from '../rtc-topology-identifiers.ts';
 import {
     computeTopologyMutation,
     validateTopologyMutation,
@@ -38,8 +40,9 @@ import {
     toAppQueueKey,
 } from './app-inbox-queue-key.ts';
 import {
-    createRtcOverlayTopologyBroadcastMessage,
     type GroupTopologyManagementService,
+    materializeRtcOverlayTopologyBroadcastMessage,
+    type RtcOverlayTopologyMessageFacts,
 } from './group-topology-management-service.ts';
 
 export const APP_OUTBOX_RTC_TOPOLOGY_TOPIC = 'app-outbox.rtc-topology';
@@ -154,6 +157,10 @@ export function createRtcTopologyWorkHandler(options: Readonly<{
             const workEnvelope = readRtcTopologyWorkEnvelope(message);
             const work = workEnvelope.data;
             const workId = toRtcTopologyExecutionId(workEnvelope);
+            const publicationFacts: RtcOverlayTopologyMessageFacts = {
+                messageId: JSON.stringify(['rtc-topology-publication', workId]),
+                createdAtEpochMs: work.requestedAtEpochMs,
+            };
             for (let attempt = 0; attempt < 3; attempt += 1) {
                 const backoffMs = await waitForRuntimeStateWriteRetry(
                     attempt as 0 | 1 | 2,
@@ -207,6 +214,7 @@ export function createRtcTopologyWorkHandler(options: Readonly<{
                         workEnvelope,
                         group,
                         planned.snapshot,
+                        publicationFacts,
                     );
                 const computed = computeTopologyMutation({
                     read,
@@ -478,7 +486,8 @@ function toTopologyPublication(
         RtcTopologyGroupRevisionWork | RtcTopologyRttRefreshWork
     >,
     group: GroupSnapshot,
-    snapshot: Parameters<typeof createRtcOverlayTopologyBroadcastMessage>[1],
+    snapshot: Parameters<typeof materializeRtcOverlayTopologyBroadcastMessage>[1],
+    facts: RtcOverlayTopologyMessageFacts,
 ): RtcTopologyPublication {
     const workId = toRtcTopologyExecutionId(envelope);
     return {
@@ -491,12 +500,14 @@ function toTopologyPublication(
         groupRef: canonicalGroupRef(group.group),
         sourceGroupStateRevision: snapshot.sourceGroupStateRevision,
         overlayVersion: snapshot.version,
+        targetGroupSnapshotVersion: group.group.snapshotVersion,
         recipientSessionIds: snapshot.activeSessionIds,
-        message: createRtcOverlayTopologyBroadcastMessage(
+        message: materializeRtcOverlayTopologyBroadcastMessage(
             group,
             snapshot,
+            facts,
         ),
-        createdAtEpochMs: envelope.data.requestedAtEpochMs,
+        createdAtEpochMs: facts.createdAtEpochMs,
     };
 }
 
@@ -545,10 +556,11 @@ function toRtcTopologyRttSuccessorResourceId(
     stateRevision: number,
     rtt: RttMeasurementInfo,
 ): string {
-    const pair = [rtt.sessionIdFrom, rtt.sessionIdTo]
-        .sort(compareRtcTopologyIdentifiers)
-        .join(':');
-    return `${overlayId}:rtt:${stateRevision}:${pair}:${rtt.version}`;
+    const pair = toCanonicalRtcTopologyPairIdentity(
+        rtt.sessionIdFrom,
+        rtt.sessionIdTo,
+    );
+    return `${overlayId}:rtt:${stateRevision}:pair=${encodeURIComponent(pair)}:${rtt.version}`;
 }
 
 function toRtcTopologyQueueContextId(groupRef: GroupRef): string {

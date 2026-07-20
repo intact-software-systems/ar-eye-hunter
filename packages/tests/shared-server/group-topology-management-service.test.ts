@@ -1925,13 +1925,26 @@ describe('GroupTopologyManagementService', () => {
             await runtimeRepository.upsert(
                 namespace,
                 key,
-                JSON.stringify(moved),
+                JSON.stringify({ ...initial, name: 'transient rolled-back conflict' }),
                 NEVER_EXPIRE_AT_TIMESTAMP,
             );
         };
         const begin = vi.spyOn(runtimeRepository, 'begin');
-        const sleep = vi.fn(async () => {});
-        const service = createService({ runtimeRepository, group: removed, sleep });
+        const readGroup = vi.fn(() => removed);
+        const sleep = vi.fn(async () => {
+            const current = await snapshots.findSnapshotEntry(removed.group);
+            expect(current?.value).toEqual(initial);
+            await expect(snapshots.commitSnapshot({
+                expected: current?.value,
+                candidate: moved,
+            })).resolves.toMatchObject({ status: 'accepted' });
+        });
+        const service = createService({
+            runtimeRepository,
+            group: removed,
+            readGroup,
+            sleep,
+        });
 
         await service.removeGroupTopology(removed);
 
@@ -1940,8 +1953,9 @@ describe('GroupTopologyManagementService', () => {
         expect(await snapshots.findSnapshot(removed.group)).toMatchObject({
             state: 'removed',
             sourceGroupStateRevision: 2,
-            version: 1,
+            version: 2,
         });
+        expect(readGroup).toHaveBeenCalledTimes(2);
         expect(runtimeRepository.locks).toEqual([]);
     });
 
@@ -2041,12 +2055,12 @@ describe('GroupTopologyManagementService', () => {
                 group.group,
                 {
                     'session-a': ['session-b'],
-                    'session-b': ['session-a'],
-                    'session-c': ['session-d'],
-                    'session-d': ['session-c'],
-                    'session-e': [],
+                    'session-b': ['session-a', 'session-c'],
+                    'session-c': ['session-b', 'session-d'],
+                    'session-d': ['session-c', 'session-e'],
+                    'session-e': ['session-d'],
                 },
-                1,
+                2,
             ),
         );
         const rttRepository = new RtcRttRepository(runtimeRepository);
@@ -2122,13 +2136,17 @@ describe('GroupTopologyManagementService', () => {
             'session-a': ['session-b'],
             'session-b': ['session-a'],
         });
+        const invalidWithMissingRoute = {
+            ...invalidSnapshot,
+            activeSessionIds: [...invalidSnapshot.activeSessionIds, 'session-z'],
+        };
         const topologyService = {
             planGroupTopologyAt: vi.fn(() => ({
-                snapshot: invalidSnapshot,
+                snapshot: invalidWithMissingRoute,
                 changed: true,
             })),
             planGroupTopology: vi.fn(() => ({
-                snapshot: invalidSnapshot,
+                snapshot: invalidWithMissingRoute,
                 changed: true,
             })),
             readSnapshot: vi.fn(),
@@ -2681,7 +2699,7 @@ function createTopologySnapshot(
             },
         name: groupRef.groupId,
         topology: 'tree',
-        activeSessionIds: ['session-a', 'session-b', 'session-c', 'session-d', 'session-e'],
+        activeSessionIds: Object.keys(nextHopsBySessionId).sort(),
         nextHopsBySessionId,
         degreeLimit,
         version: 1,
@@ -2696,14 +2714,18 @@ function createInvalidTopologyService(groupRef: GroupRef): RallarRtcTopologyServ
         'session-a': ['session-b'],
         'session-b': ['session-a'],
     });
+    const invalidWithMissingRoute = {
+        ...invalidSnapshot,
+        activeSessionIds: [...invalidSnapshot.activeSessionIds, 'session-z'],
+    };
 
     return {
         planGroupTopologyAt: vi.fn(() => ({
-            snapshot: invalidSnapshot,
+            snapshot: invalidWithMissingRoute,
             changed: true,
         })),
         planGroupTopology: vi.fn(() => ({
-            snapshot: invalidSnapshot,
+            snapshot: invalidWithMissingRoute,
             changed: true,
         })),
         readSnapshot: vi.fn(),

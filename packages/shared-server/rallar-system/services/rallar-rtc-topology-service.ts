@@ -8,7 +8,10 @@ import {
     type RallarRtcTopologyKind,
 } from '@shared/api/overlay-topology.ts';
 import { normalizeRttReportingDegreeLimit } from '@shared/rtc/rtt-reporting-policy.ts';
-import { compareRtcTopologyIdentifiers } from '../rtc-topology-identifiers.ts';
+import {
+    compareRtcTopologyIdentifiers,
+    toCanonicalRtcTopologyPairIdentity,
+} from '../rtc-topology-identifiers.ts';
 import {
     readGroupCreatedAtEpochMs,
     readGroupCreatedByPrincipalId,
@@ -95,7 +98,8 @@ export function planRallarRtcTopologySnapshot(input: Readonly<{
     degreeLimit: number;
     nowEpochMs: number;
 }>): RallarRtcTopologyUpdateResult {
-    const activeSessionIds = readGroupMemberSessionIds(input.group);
+    const activeSessionIds = [...readGroupMemberSessionIds(input.group)]
+        .sort(compareRtcTopologyIdentifiers);
     const name = readGroupDisplayName(input.group);
     const changed = input.previous === undefined ||
         input.previous.topology !== input.topology ||
@@ -922,10 +926,13 @@ function createSortedRttEdges(
             continue;
         }
 
-        const [from, to] = rtt.sessionIdFrom <= rtt.sessionIdTo
+        const [from, to] = compareRtcTopologyIdentifiers(
+                rtt.sessionIdFrom,
+                rtt.sessionIdTo,
+            ) <= 0
             ? [rtt.sessionIdFrom, rtt.sessionIdTo]
             : [rtt.sessionIdTo, rtt.sessionIdFrom];
-        const key = `${from}::${to}`;
+        const key = toCanonicalRtcTopologyPairIdentity(from, to);
         const current = edgeByPair.get(key);
         if (current && current.version >= rtt.version) {
             continue;

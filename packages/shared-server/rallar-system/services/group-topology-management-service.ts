@@ -12,7 +12,7 @@ import type {
 } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
-import { newALBroadcastMessage, newALRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import * as rttRepository from '@shared/repository/rtt-repository.ts';
 import { validateGroupTopologyNextHops } from '@shared-graph/group-topology-validation.ts';
 import { GroupTopologyConfigRepository } from '../repositories/GroupTopologyConfigRepository.ts';
@@ -29,6 +29,7 @@ import {
 import {
     RtcTopologyExecutionRepository,
 } from '../repositories/RtcTopologyExecutionRepository.ts';
+import { compareRtcTopologyIdentifiers } from '../rtc-topology-identifiers.ts';
 import {
     readGroupStateRevision,
     readGroupMemberSessionIds,
@@ -683,7 +684,7 @@ export class GroupTopologyManagementService {
                 ...(previous?.activeSessionIds ?? []),
                 ...readGroupMemberSessionIds(group),
             ]),
-        ];
+        ].sort(compareRtcTopologyIdentifiers);
         const snapshot: RallarOverlayTopologySnapshot = {
             sourceGroupStateRevision: readGroupStateRevision(group),
             state: 'removed',
@@ -695,7 +696,7 @@ export class GroupTopologyManagementService {
             nextHopsBySessionId: Object.fromEntries(
                 activeSessionIds.map((sessionId) => [sessionId, []]),
             ),
-            degreeLimit: previous?.degreeLimit ?? 0,
+            degreeLimit: previous?.degreeLimit ?? 1,
             version: previous?.version ?? 0,
             createdByClientId: previous?.createdByClientId ??
                 group.group.created.byPrincipalId ?? group.group.groupId,
@@ -1447,27 +1448,74 @@ function topologyConfigExecution(
         : { receipt };
 }
 
+/**
+ * @deprecated Compatibility helper for non-retry publication paths only.
+ * Retryable writes must use materializeRtcOverlayTopologyBroadcastMessage.
+ */
 export function createRtcOverlayTopologyBroadcastMessage(
     group: GroupSnapshot,
     snapshot: RallarOverlayTopologySnapshot,
 ): ALMessage {
-    return newALBroadcastMessage(
-        'rallar-server',
-        newALRoute(
-            AppTopics.overlayTopology,
-            group.group.groupId,
-            `${snapshot.overlayId}:${snapshot.sourceGroupStateRevision}:${snapshot.version}`,
-        ),
-        'room',
-        AppTopics.overlayTopology,
-        snapshot,
-        {
-            groupRef: group.group,
+    return materializeRtcOverlayTopologyBroadcastMessage(group, snapshot, {
+        messageId: crypto.randomUUID(),
+        createdAtEpochMs: Date.now(),
+    });
+}
+
+export type RtcOverlayTopologyMessageFacts = Readonly<{
+    messageId: string;
+    createdAtEpochMs: number;
+}>;
+
+/**
+ * Pure persisted-message seam. Retry loops must materialize immutable facts
+ * before attempt zero and reuse those facts for every recomputation.
+ */
+export function materializeRtcOverlayTopologyBroadcastMessage(
+    group: GroupSnapshot,
+    snapshot: RallarOverlayTopologySnapshot,
+    facts: RtcOverlayTopologyMessageFacts,
+): ALMessage {
+    if (
+        facts.messageId.length === 0 ||
+        !Number.isSafeInteger(facts.createdAtEpochMs) ||
+        facts.createdAtEpochMs < 0
+    ) {
+        throw new TypeError('RTC topology publication message facts are invalid');
+    }
+    return {
+        id: {
+            v: 2,
+            msgId: facts.messageId,
+            ts: facts.createdAtEpochMs,
+            senderId: 'rallar-server',
+        },
+        route: {
+            topicId: AppTopics.overlayTopology,
+            contextId: group.group.groupId,
+            resourceId:
+                `${snapshot.overlayId}:${snapshot.sourceGroupStateRevision}:${snapshot.version}`,
+        },
+        targets: {
+            mode: 'broadcast',
+            scope: 'room',
+            groupRef: canonicalGroupRef(group.group),
             minSnapshotVersion: group.group.snapshotVersion,
+        },
+        delivery: {
             reliability: 'best-effort',
             ack: 'none',
         },
-    );
+        payload: {
+            typeId: AppTopics.overlayTopology,
+            contentType: 'application/json',
+            resource: JSON.stringify(snapshot),
+        },
+        audit: {
+            createdBy: 'rallar-server',
+            createdTs: facts.createdAtEpochMs,
+        },
+    };
 }
 
 function isGroupTopologyActiveAt(
