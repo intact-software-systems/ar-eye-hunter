@@ -5075,14 +5075,13 @@ components:
 
     GroupTopologyConfigAcceptedCausalRevision:
       type: object
-      required: [
-        stateRevision,
-        snapshotVersion,
-        metadataVersion,
-        rosterVersion,
-        presenceVersion,
-        causalRevision,
-      ]
+      required:
+        - stateRevision
+        - snapshotVersion
+        - metadataVersion
+        - rosterVersion
+        - presenceVersion
+        - causalRevision
       additionalProperties: false
       properties:
         stateRevision:
