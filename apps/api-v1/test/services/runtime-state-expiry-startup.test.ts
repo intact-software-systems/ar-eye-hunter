@@ -14,7 +14,7 @@ Deno.test('runtime-state expiry waits until all-scope topology generation backfi
     },
     initialiseRuntimeStateExpiryEviction: () => {
       calls.push('eviction');
-      return Promise.resolve();
+      return Promise.resolve(0);
     },
     onGenerationsBackfilled: (advanced) => {
       calls.push(`advanced:${advanced}`);
@@ -48,7 +48,7 @@ Deno.test('runtime-state expiry remains fail-closed when topology generation bac
       backfillTopologyGenerations: () => Promise.reject(failure),
       initialiseRuntimeStateExpiryEviction: () => {
         evictionInitialisations += 1;
-        return Promise.resolve();
+        return Promise.resolve(0);
       },
       initialiseRtcRttReceiptFamilyCleanup: () => {
         rtcCleanupInitialisations += 1;
@@ -71,7 +71,7 @@ Deno.test('runtime-state expiry starts protected generic eviction when RTC famil
       initialiseRtcRttReceiptFamilyCleanup: () => Promise.reject(failure),
       initialiseRuntimeStateExpiryEviction: () => {
         evictionInitialisations += 1;
-        return Promise.resolve();
+        return Promise.resolve(0);
       },
     }),
     failure,
@@ -89,7 +89,7 @@ Deno.test('runtime-state expiry surfaces specialized corruption while protected 
     initialiseRtcRttReceiptFamilyCleanup: () => Promise.reject(failure),
     initialiseRuntimeStateExpiryEviction: () => {
       genericStarted = true;
-      return new Promise<void>(() => {});
+      return new Promise<number>(() => {});
     },
   }).catch((error) => {
     settled = { status: 'rejected', error };
@@ -172,6 +172,50 @@ Deno.test('runtime-state expiry lifecycle generation-fences delayed older startu
   assert.deepEqual({ oldStops, newStops }, { oldStops: 1, newStops: 1 });
 });
 
+Deno.test('runtime-state expiry lifecycle generation-fences and owns generic eviction handles', async () => {
+  const module = await import(
+    '../../src/services/runtime-state-expiry-startup.ts'
+  ) as unknown as Record<string, unknown>;
+  const createLifecycle = module.createRuntimeStateExpiryLifecycle as () => {
+    beginStartupGeneration(): Readonly<{
+      startRuntimeStateExpiryEviction(
+        initialise: () => Readonly<{ firstRun: Promise<number>; stop(): void }>,
+      ): Promise<number>;
+    }>;
+    stop(): void;
+  };
+  const lifecycle = createLifecycle();
+  const delayedOlder = lifecycle.beginStartupGeneration();
+  const newest = lifecycle.beginStartupGeneration();
+  let oldStops = 0;
+  let newStops = 0;
+  let replacementStops = 0;
+
+  await delayedOlder.startRuntimeStateExpiryEviction(() => ({
+    firstRun: Promise.resolve(0),
+    stop: () => oldStops += 1,
+  }));
+  await newest.startRuntimeStateExpiryEviction(() => ({
+    firstRun: Promise.resolve(0),
+    stop: () => newStops += 1,
+  }));
+  assert.deepEqual({ oldStops, newStops }, { oldStops: 1, newStops: 0 });
+
+  const replacement = lifecycle.beginStartupGeneration();
+  assert.equal(newStops, 1);
+  await replacement.startRuntimeStateExpiryEviction(() => ({
+    firstRun: Promise.resolve(0),
+    stop: () => replacementStops += 1,
+  }));
+  lifecycle.stop();
+  lifecycle.stop();
+
+  assert.deepEqual(
+    { oldStops, newStops, replacementStops },
+    { oldStops: 1, newStops: 1, replacementStops: 1 },
+  );
+});
+
 Deno.test('api middleware protects RTC receipt families and starts specialized cleanup', async () => {
   const middlewareSource = await Deno.readTextFile(
     new URL('../../src/middleware.ts', import.meta.url),
@@ -185,6 +229,7 @@ Deno.test('api middleware protects RTC receipt families and starts specialized c
   );
   assert.match(middlewareSource, /createRuntimeStateExpiryLifecycle/);
   assert.match(middlewareSource, /startRtcRttReceiptFamilyCleanup/);
+  assert.match(middlewareSource, /startRuntimeStateExpiryEviction/);
   assert.match(middlewareSource, /shutdownMiddlewareBackgroundTasks/);
   assert.match(middlewareSource, /registerMiddlewareBackgroundTask/);
 

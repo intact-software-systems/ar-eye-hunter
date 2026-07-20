@@ -6,11 +6,6 @@ import {
     PSqlRuntimeStateRepository,
 } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
 
-const initWithLegacyNumericInterval: (
-    repository: Parameters<typeof initRuntimeStateExpiryEviction>[0],
-    intervalMs?: number,
-) => Promise<void> = initRuntimeStateExpiryEviction;
-
 describe('runtime state expiry eviction', () => {
     it('deletes expired rows across all runtime_state_store namespaces', async () => {
         const repository = {
@@ -110,11 +105,9 @@ describe('runtime state expiry eviction', () => {
         };
         try {
             const initialised = input === undefined
-                ? initWithLegacyNumericInterval(repository)
-                : typeof input === 'number'
-                ? initWithLegacyNumericInterval(repository, input)
+                ? initRuntimeStateExpiryEviction(repository)
                 : initRuntimeStateExpiryEviction(repository, input);
-            await initialised;
+            await initialised.firstRun;
             expect(repository.deleteAllExpired).toHaveBeenCalledTimes(1);
             expect(repository.deleteAllExpired)
                 .toHaveBeenLastCalledWith([...excludedNamespaces]);
@@ -123,10 +116,42 @@ describe('runtime state expiry eviction', () => {
             expect(repository.deleteAllExpired).toHaveBeenCalledTimes(1);
             await vi.advanceTimersByTimeAsync(1);
             expect(repository.deleteAllExpired).toHaveBeenCalledTimes(2);
+            initialised.stop();
+            initialised.stop();
+            await vi.advanceTimersByTimeAsync(intervalMs * 2);
+            expect(repository.deleteAllExpired).toHaveBeenCalledTimes(2);
         } finally {
             vi.clearAllTimers();
             vi.useRealTimers();
         }
+    });
+
+    it('does not reschedule generic expiry after stop during an in-flight run', async () => {
+        let release!: (removed: number) => void;
+        const blocked = new Promise<number>((resolve) => release = resolve);
+        const repository = {
+            deleteAllExpired: vi.fn(() => blocked),
+        };
+        const scheduled: Array<Readonly<{
+            callback: () => void | Promise<void>;
+            delayMs: number;
+        }>> = [];
+        const handle = initRuntimeStateExpiryEviction(repository, {
+            intervalMs: 100,
+            schedule: (callback, delayMs) => {
+                scheduled.push({ callback, delayMs });
+                return {};
+            },
+            cancel: () => {},
+        });
+
+        expect(repository.deleteAllExpired).toHaveBeenCalledTimes(1);
+        handle.stop();
+        handle.stop();
+        release(0);
+        await handle.firstRun;
+
+        expect(scheduled).toEqual([]);
     });
 });
 

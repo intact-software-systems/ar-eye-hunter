@@ -229,11 +229,18 @@ export async function migrateLegacyRtcTopologySnapshotKeys(
     repository: RtcTopologySnapshotRepository,
     options: Readonly<{
         oldWritersStopped: true;
+        observedAtEpochMs: number;
         sleep?: (delayMs: number) => Promise<void>;
     }>,
 ): Promise<void> {
     if (options.oldWritersStopped !== true) {
         throw new Error('RTC topology legacy migration requires old writers to be stopped');
+    }
+    if (
+        !Number.isSafeInteger(options.observedAtEpochMs) ||
+        options.observedAtEpochMs < 0
+    ) {
+        throw new TypeError('RTC topology migration observation time is invalid');
     }
     const runtime = requireOptimisticRuntime(repository.runtimeRepository);
     const entries = await repository.runtimeRepository.findAllEntries(
@@ -268,6 +275,12 @@ export async function migrateLegacyRtcTopologySnapshotKeys(
                     if (!current) return;
                     const currentValue = parseSnapshot(current);
                     validateTopologySnapshot(currentValue, value.groupRef);
+                    if (current.expireAtTimestamp <= options.observedAtEpochMs) {
+                        throw topologyCorruption(
+                            current.key,
+                            'RTC topology legacy snapshot expired before migration observation',
+                        );
+                    }
                     const destination = await transaction.findEntry(
                         RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
                         canonicalKey,

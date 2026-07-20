@@ -220,11 +220,13 @@ function initialise(
       console.error('Protected generic runtime-state expiry eviction failed:', error);
     },
     initialiseRuntimeStateExpiryEviction: () =>
-      initRuntimeStateExpiryEviction(
-        new PSqlRuntimeStateRepository(postgresSql),
-        {
-          excludedNamespaces: RTC_RTT_PROTECTED_RUNTIME_STATE_NAMESPACES,
-        },
+      expiryStartupGeneration.startRuntimeStateExpiryEviction(() =>
+        initRuntimeStateExpiryEviction(
+          new PSqlRuntimeStateRepository(postgresSql),
+          {
+            excludedNamespaces: RTC_RTT_PROTECTED_RUNTIME_STATE_NAMESPACES,
+          },
+        )
       ),
     onGenerationsBackfilled: (advanced) => {
       if (advanced > 0) {

@@ -8,7 +8,6 @@ import {
     assertRuntimeStateExpectedRevision,
     assertRuntimeStateUpsertExpectedRevision,
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
-import { tryRunInIntervals } from '@shared/resilience/TryWith.ts';
 import type { PSqlSql, PSqlTransactionSql } from '../PostgresSqlClient.ts';
 
 const RUNTIME_STATE_EXPIRY_EVICTION_INTERVAL_MS = 60_000;
@@ -360,34 +359,130 @@ export async function evictExpiredRuntimeStateRows(
     return removed;
 }
 
-type RuntimeStateExpiryEvictionOptions = Readonly<{
+export type RuntimeStateExpiryEvictionHandle = Readonly<{
+    firstRun: Promise<number>;
+    stop(): void;
+}>;
+
+export type RuntimeStateExpiryEvictionOptions = Readonly<{
     intervalMs?: number;
     excludedNamespaces?: readonly string[];
+    retryIntervalMs?: number;
+    schedule?: (
+        callback: () => void | Promise<void>,
+        delayMs: number,
+    ) => unknown;
+    cancel?: (handle: unknown) => void;
+    onError?: (error: unknown) => void;
 }>;
 
 export function initRuntimeStateExpiryEviction(
     repository: Pick<PSqlRuntimeStateRepository, 'deleteAllExpired'>,
     intervalMs?: number,
-): Promise<void>;
+): RuntimeStateExpiryEvictionHandle;
 export function initRuntimeStateExpiryEviction(
     repository: Pick<PSqlRuntimeStateRepository, 'deleteAllExpired'>,
     options?: RuntimeStateExpiryEvictionOptions,
-): Promise<void>;
-export async function initRuntimeStateExpiryEviction(
+): RuntimeStateExpiryEvictionHandle;
+export function initRuntimeStateExpiryEviction(
+    repository: Pick<PSqlRuntimeStateRepository, 'deleteAllExpired'>,
+    options?: RuntimeStateExpiryEvictionOptions | number,
+): RuntimeStateExpiryEvictionHandle;
+export function initRuntimeStateExpiryEviction(
     repository: Pick<PSqlRuntimeStateRepository, 'deleteAllExpired'>,
     optionsOrInterval: RuntimeStateExpiryEvictionOptions | number = {},
-): Promise<void> {
+): RuntimeStateExpiryEvictionHandle {
     const options = typeof optionsOrInterval === 'number'
         ? { intervalMs: optionsOrInterval }
         : optionsOrInterval;
-    await tryRunInIntervals(
-        async () => {
-            await evictExpiredRuntimeStateRows(repository, {
+    const intervalMs = options.intervalMs ??
+        RUNTIME_STATE_EXPIRY_EVICTION_INTERVAL_MS;
+    const retryIntervalMs = options.retryIntervalMs ?? 10_000;
+    validateExpiryWorkerDelay(intervalMs, 'interval');
+    validateExpiryWorkerDelay(retryIntervalMs, 'retry interval');
+    const schedule = options.schedule ?? ((callback, delayMs) => {
+        const handle = setTimeout(() => void callback(), delayMs);
+        (handle as { unref?: () => void }).unref?.();
+        return handle;
+    });
+    const cancel = options.cancel ?? ((handle: unknown) => {
+        clearTimeout(handle as ReturnType<typeof setTimeout>);
+    });
+    let stopped = false;
+    let running = false;
+    let scheduledHandle: unknown;
+    let failureCount = 0;
+    let firstRunSettled = false;
+    let resolveFirstRun!: (removed: number) => void;
+    let rejectFirstRun!: (error: unknown) => void;
+    const firstRun = new Promise<number>((resolve, reject) => {
+        resolveFirstRun = resolve;
+        rejectFirstRun = reject;
+    });
+    const scheduleRun = (delayMs: number): void => {
+        if (stopped) return;
+        let handle: unknown;
+        handle = schedule(async () => {
+            if (scheduledHandle === handle) scheduledHandle = undefined;
+            await run();
+        }, delayMs);
+        scheduledHandle = handle;
+        (handle as { unref?: () => void }).unref?.();
+    };
+    const run = async (): Promise<void> => {
+        if (stopped || running) return;
+        running = true;
+        let failed = false;
+        try {
+            const removed = await evictExpiredRuntimeStateRows(repository, {
                 excludedNamespaces: options.excludedNamespaces,
             });
+            failureCount = 0;
+            if (!firstRunSettled) {
+                firstRunSettled = true;
+                resolveFirstRun(removed);
+            }
+        } catch (error) {
+            failed = true;
+            failureCount += 1;
+            if (!firstRunSettled) {
+                firstRunSettled = true;
+                rejectFirstRun(error);
+            }
+            try {
+                options.onError?.(error);
+            } catch {
+                // Observability must not disable generic expiry ownership.
+            }
+        } finally {
+            running = false;
+            if (stopped) return;
+            scheduleRun(failed
+                ? Math.min(
+                    retryIntervalMs * 2 ** Math.min(failureCount - 1, 1),
+                    20_000,
+                )
+                : intervalMs);
+        }
+    };
+    void run();
+    return {
+        firstRun,
+        stop: () => {
+            if (stopped) return;
+            stopped = true;
+            if (scheduledHandle !== undefined) {
+                cancel(scheduledHandle);
+                scheduledHandle = undefined;
+            }
         },
-        options.intervalMs ?? RUNTIME_STATE_EXPIRY_EVICTION_INTERVAL_MS,
-    );
+    };
+}
+
+function validateExpiryWorkerDelay(value: number, label: string): void {
+    if (!Number.isSafeInteger(value) || value < 1) {
+        throw new RangeError(`Runtime state expiry ${label} is invalid`);
+    }
 }
 
 function toEntry(row: RuntimeStateRow): RuntimeStateEntry {

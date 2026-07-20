@@ -35,11 +35,14 @@ import {
     RtcTopologyExecutionRepository,
 } from '@shared-server/rallar-system/repositories/RtcTopologyExecutionRepository.ts';
 import {
+    computeRttMutation,
     computeTopologyMutation,
     type RtcRttMutationCommand,
+    type RtcRttMutationComputed,
 } from '@shared-server/rallar-system/services/rtc-topology-mutations.ts';
 import {
     executeRttMutation as executeRttMutationService,
+    writeRttMutation,
 } from '@shared-server/rallar-system/services/rtc-rtt-mutation-service.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { hashStateMutationCommand } from '@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts';
@@ -1350,6 +1353,7 @@ describe('RTC topology runtime-state repositories', () => {
 
         await migrateLegacyRtcTopologySnapshotKeys(repository, {
             oldWritersStopped: true,
+            observedAtEpochMs: 10_000,
         });
 
         expect(repository.snapshotKey(explicitSentinel)).not.toBe(legacyAliasedKey);
@@ -1373,11 +1377,12 @@ describe('RTC topology runtime-state repositories', () => {
             RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
             legacyKey,
             JSON.stringify(snapshot),
-            12_345,
+            20_000,
         );
 
         await migrateLegacyRtcTopologySnapshotKeys(repository, {
             oldWritersStopped: true,
+            observedAtEpochMs: 10_000,
         });
 
         const canonical = await runtimeRepository.findEntry(
@@ -1389,6 +1394,82 @@ describe('RTC topology runtime-state repositories', () => {
         await expect(runtimeRepository.findEntry(
             RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
             legacyKey,
+        )).resolves.toBeUndefined();
+    });
+
+    it.each([
+        { label: 'at the observation boundary', expireAtTimestamp: 10_000 },
+        { label: 'before the observation boundary', expireAtTimestamp: 9_999 },
+    ])('never resurrects a legacy topology snapshot expiring $label', async ({
+        expireAtTimestamp,
+    }) => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const repository = new RtcTopologySnapshotRepository(runtimeRepository);
+        const ref = { ...createGroupRef(), workspaceId: '_' };
+        const snapshot = createTopologySnapshot(ref, 1);
+        const legacyKey = 'app=app-1:ws=_:group=room-1';
+        await runtimeRepository.upsert(
+            RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
+            legacyKey,
+            JSON.stringify(snapshot),
+            expireAtTimestamp,
+        );
+
+        await expect(migrateLegacyRtcTopologySnapshotKeys(repository, {
+            oldWritersStopped: true,
+            observedAtEpochMs: 10_000,
+        })).rejects.toMatchObject({
+            code: 'rtc-topology-repository-invariant-corruption',
+        });
+
+        await expect(runtimeRepository.findEntry(
+            RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
+            repository.snapshotKey(ref),
+        )).resolves.toBeUndefined();
+        await expect(runtimeRepository.findEntry(
+            RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
+            legacyKey,
+        )).resolves.toMatchObject({ expireAtTimestamp });
+    });
+
+    it('revalidates a changed legacy snapshot lifetime against one stable migration observation', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const repository = new RtcTopologySnapshotRepository(runtimeRepository);
+        const ref = { ...createGroupRef(), workspaceId: '_' };
+        const snapshot = createTopologySnapshot(ref, 1);
+        const legacyKey = 'app=app-1:ws=_:group=room-1';
+        await runtimeRepository.upsert(
+            RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
+            legacyKey,
+            JSON.stringify(snapshot),
+            20_000,
+        );
+        const originalBegin = runtimeRepository.begin.bind(runtimeRepository);
+        let attempts = 0;
+        vi.spyOn(runtimeRepository, 'begin').mockImplementation(async (fn) => {
+            attempts += 1;
+            if (attempts === 1) throw new RuntimeStateWriteConflictError();
+            await runtimeRepository.upsert(
+                RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
+                legacyKey,
+                JSON.stringify(snapshot),
+                10_000,
+            );
+            return await originalBegin(fn);
+        });
+
+        await expect(migrateLegacyRtcTopologySnapshotKeys(repository, {
+            oldWritersStopped: true,
+            observedAtEpochMs: 10_000,
+            sleep: async () => {},
+        })).rejects.toMatchObject({
+            code: 'rtc-topology-repository-invariant-corruption',
+        });
+
+        expect(attempts).toBe(2);
+        await expect(runtimeRepository.findEntry(
+            RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
+            repository.snapshotKey(ref),
         )).resolves.toBeUndefined();
     });
 
@@ -1715,6 +1796,28 @@ describe('RTC topology runtime-state repositories', () => {
         expect(await repository.listRecomputeIntentEntriesPage({ limit: 10 }))
             .toMatchObject([{ value: result.computed.recomputeIntents[0] }]);
     });
+
+    it.each(rttWriteCandidateCorruptions)(
+        'rejects $label before opening the RTT write transaction',
+        async ({ corrupt }) => {
+            const runtimeRepository = new FakeRuntimeStateRepository();
+            const begin = vi.spyOn(runtimeRepository, 'begin');
+            const malformed = corrupt(
+                structuredClone(createValidRttWriteCandidate()) as unknown as
+                    MutableRttWriteCandidate,
+            );
+
+            await expect(writeRttMutation(
+                runtimeRepository,
+                { now: () => 2 },
+                malformed as unknown as Extract<
+                    RtcRttMutationComputed,
+                    { outcome: 'write' }
+                >,
+            )).rejects.toBeInstanceOf(TypeError);
+            expect(begin).not.toHaveBeenCalled();
+        },
+    );
 
     it('strictly rejects legacy delivery-less intents until explicit offline migration', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
@@ -4054,6 +4157,217 @@ function createRttGroupSnapshot(
         onlineMemberCount: sessionIds.length,
     };
 }
+
+type MutableRttWriteCandidate = Record<string, unknown> & {
+    affectedGroups: unknown[];
+    endpointGuards: Array<Record<string, unknown> & {
+        endpointId: string;
+        expectedRevision: number | null;
+        expireAtTimestamp: number;
+        value: Record<string, unknown> & {
+            endpointId: string;
+            peers: Array<Record<string, unknown> & {
+                peerSessionId: string;
+                expiresAtEpochMs: number;
+            }>;
+        };
+    }>;
+    measurementGuard: Record<string, unknown> & {
+        expectedRevision: number | null;
+        purgeAfterEpochMs: number;
+        value: Record<string, unknown>;
+    };
+    recomputeIntents: Array<Record<string, unknown> & {
+        rtt: Record<string, unknown>;
+    }>;
+};
+
+function createValidRttWriteCandidate(): Extract<
+    RtcRttMutationComputed,
+    { outcome: 'write' }
+> {
+    const computed = computeRttMutation({
+        command: {
+            rtt: {
+                sessionIdFrom: 'session-a',
+                sessionIdTo: 'session-b',
+                rttMs: 1,
+                createdAtEpochMs: 1,
+                version: 1,
+            },
+            alSenderId: 'session-a',
+            candidateGroups: [
+                createRttGroupSnapshot('room-write-gate', [
+                    'session-a',
+                    'session-b',
+                ]),
+            ],
+            overlaySnapshotsByGroupKey: new Map(),
+            degreeLimit: 1,
+        },
+        read: {
+            receipt: null,
+            measurement: null,
+            endpointAdmissions: [],
+            measurements: [],
+        },
+        facts: {
+            commandHash: `sha256:${'a'.repeat(64)}`,
+            requestedAtEpochMs: 2,
+            purgeAfterEpochMs: 60_002,
+        },
+    });
+    if (computed.outcome !== 'write') throw new Error('Expected RTT write');
+    return computed;
+}
+
+const rttWriteCandidateCorruptions: readonly Readonly<{
+    label: string;
+    corrupt(candidate: MutableRttWriteCandidate): MutableRttWriteCandidate;
+}>[] = [
+    {
+        label: 'a missing endpoint guard field',
+        corrupt: (candidate) => {
+            delete (candidate as Record<string, unknown>).endpointGuards;
+            return candidate;
+        },
+    },
+    {
+        label: 'an extra write-candidate field',
+        corrupt: (candidate) => ({ ...candidate, unexpected: true }),
+    },
+    {
+        label: 'only one endpoint guard',
+        corrupt: (candidate) => ({
+            ...candidate,
+            endpointGuards: candidate.endpointGuards.slice(0, 1),
+        }),
+    },
+    {
+        label: 'an extra endpoint guard',
+        corrupt: (candidate) => ({
+            ...candidate,
+            endpointGuards: [
+                ...candidate.endpointGuards,
+                structuredClone(candidate.endpointGuards[1]!),
+            ],
+        }),
+    },
+    {
+        label: 'endpoint guards outside lexical order',
+        corrupt: (candidate) => ({
+            ...candidate,
+            endpointGuards: [...candidate.endpointGuards].reverse(),
+        }),
+    },
+    {
+        label: 'duplicate endpoint guard identities',
+        corrupt: (candidate) => {
+            candidate.endpointGuards[1]!.endpointId = 'session-a';
+            candidate.endpointGuards[1]!.value.endpointId = 'session-a';
+            return candidate;
+        },
+    },
+    {
+        label: 'an extra endpoint guard field',
+        corrupt: (candidate) => {
+            candidate.endpointGuards[0]!.unexpected = true;
+            return candidate;
+        },
+    },
+    {
+        label: 'an invalid endpoint expected revision',
+        corrupt: (candidate) => {
+            candidate.endpointGuards[0]!.expectedRevision = -1;
+            return candidate;
+        },
+    },
+    {
+        label: 'an endpoint value bound to another identity',
+        corrupt: (candidate) => {
+            candidate.endpointGuards[0]!.value.endpointId = 'session-c';
+            return candidate;
+        },
+    },
+    {
+        label: 'an endpoint value missing the receipt peer',
+        corrupt: (candidate) => {
+            candidate.endpointGuards[0]!.value.peers = [{
+                peerSessionId: 'session-c',
+                expiresAtEpochMs: 60_002,
+            }];
+            return candidate;
+        },
+    },
+    {
+        label: 'an endpoint lease before the measurement purge time',
+        corrupt: (candidate) => {
+            candidate.endpointGuards[0]!.value.peers[0]!.expiresAtEpochMs = 60_001;
+            candidate.endpointGuards[0]!.expireAtTimestamp = 60_001;
+            return candidate;
+        },
+    },
+    {
+        label: 'an endpoint physical expiry differing from its leases',
+        corrupt: (candidate) => {
+            candidate.endpointGuards[0]!.expireAtTimestamp += 1;
+            return candidate;
+        },
+    },
+    {
+        label: 'a missing measurement guard field',
+        corrupt: (candidate) => {
+            delete (candidate.measurementGuard as Record<string, unknown>)
+                .expectedRevision;
+            return candidate;
+        },
+    },
+    {
+        label: 'an extra measurement guard field',
+        corrupt: (candidate) => {
+            candidate.measurementGuard.unexpected = true;
+            return candidate;
+        },
+    },
+    {
+        label: 'an invalid measurement expected revision',
+        corrupt: (candidate) => {
+            candidate.measurementGuard.expectedRevision = -1;
+            return candidate;
+        },
+    },
+    {
+        label: 'a measurement value differing from receipt and intents',
+        corrupt: (candidate) => {
+            candidate.measurementGuard.value = {
+                ...candidate.measurementGuard.value,
+                sessionIdTo: 'session-c',
+            };
+            return candidate;
+        },
+    },
+    {
+        label: 'an intent measurement differing from the measurement guard',
+        corrupt: (candidate) => {
+            candidate.recomputeIntents[0]!.rtt = {
+                ...candidate.recomputeIntents[0]!.rtt,
+                rttMs: 99,
+            };
+            return candidate;
+        },
+    },
+    {
+        label: 'a purge time outside the accepted lifecycle',
+        corrupt: (candidate) => {
+            candidate.measurementGuard.purgeAfterEpochMs = 2;
+            return candidate;
+        },
+    },
+    {
+        label: 'affected groups differing from receipt and intents',
+        corrupt: (candidate) => ({ ...candidate, affectedGroups: [] }),
+    },
+];
 
 function createRttWorkPublisher(
     enqueueForRtt: RtcTopologyWorkPublisher['enqueueForRtt'],

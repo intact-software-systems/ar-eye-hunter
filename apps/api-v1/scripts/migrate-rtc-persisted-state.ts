@@ -41,13 +41,14 @@ if (options.dryRun) {
     const publicationRepository = new RtcTopologyPublicationRepository(runtime);
     const rttRepository = new RtcRttRepository(runtime);
     const oldWritersStopped = options.oldWritersStopped;
+    const observedAtEpochMs = Date.now();
     const result = await executeRtcPersistedStateMigration(options, [
       {
         name: 'snapshot-keys',
         run: () =>
           migrateLegacyRtcTopologySnapshotKeys(
             snapshotRepository,
-            { oldWritersStopped },
+            { oldWritersStopped, observedAtEpochMs },
           ),
       },
       {

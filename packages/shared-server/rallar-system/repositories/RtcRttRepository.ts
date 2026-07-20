@@ -34,6 +34,8 @@ import {
 import { rtcTopologySemanticEqual } from '../rtc-topology-semantic-equality.ts';
 import {
     RTC_RTT_MUTATION_RETENTION_MS,
+    validateRtcRttEndpointAdmission as validatePersistedRtcRttEndpointAdmission,
+    validateRtcRttMeasurement as validatePersistedRtcRttMeasurement,
     validateRtcRttMutationReceipt as validatePersistedRtcRttMutationReceipt,
     validateRtcRttRecomputeIntent as validatePersistedRtcRttRecomputeIntent,
 } from '../rtc-rtt-persistence-validation.ts';
@@ -1151,27 +1153,7 @@ export async function migrateLegacyRtcRttMeasurementKeys(
 }
 
 export function validateMeasurement(value: unknown): asserts value is RttMeasurementInfo {
-    if (!isRecord(value)) throw new TypeError('RTC RTT measurement is invalid');
-    assertExactKeys(value, [
-        'sessionIdFrom',
-        'sessionIdTo',
-        'rttMs',
-        'createdAtEpochMs',
-        'version',
-    ]);
-    if (
-        typeof value.sessionIdFrom !== 'string' || value.sessionIdFrom.length === 0 ||
-        typeof value.sessionIdTo !== 'string' || value.sessionIdTo.length === 0 ||
-        value.sessionIdFrom === value.sessionIdTo ||
-        typeof value.rttMs !== 'number' || !Number.isFinite(value.rttMs) ||
-        value.rttMs <= 0 ||
-        typeof value.createdAtEpochMs !== 'number' ||
-        !Number.isSafeInteger(value.createdAtEpochMs) || value.createdAtEpochMs < 0 ||
-        typeof value.version !== 'number' ||
-        !Number.isSafeInteger(value.version) || value.version < 1
-    ) {
-        throw new TypeError('RTC RTT measurement fields are invalid');
-    }
+    validatePersistedRtcRttMeasurement(value);
 }
 
 export function validateEndpointAdmission(
@@ -1179,39 +1161,11 @@ export function validateEndpointAdmission(
     expectedEndpointId: string,
     physicalExpiry: number,
 ): asserts value is RtcRttEndpointAdmission {
-    if (!isRecord(value)) throw new TypeError('RTC RTT endpoint admission is invalid');
-    assertExactKeys(value, ['endpointId', 'peers', 'version', 'updatedAtEpochMs']);
-    if (
-        value.endpointId !== expectedEndpointId ||
-        typeof value.version !== 'number' ||
-        !Number.isSafeInteger(value.version) || value.version < 1 ||
-        typeof value.updatedAtEpochMs !== 'number' ||
-        !Number.isSafeInteger(value.updatedAtEpochMs) || value.updatedAtEpochMs < 0 ||
-        !Array.isArray(value.peers) || value.peers.length === 0
-    ) {
-        throw new TypeError('RTC RTT endpoint admission fields are invalid');
-    }
-    let previous = '';
-    let latestExpiry = 0;
-    for (const peer of value.peers) {
-        if (!isRecord(peer)) throw new TypeError('RTC RTT endpoint peer is invalid');
-        assertExactKeys(peer, ['peerSessionId', 'expiresAtEpochMs']);
-        if (
-            typeof peer.peerSessionId !== 'string' || peer.peerSessionId.length === 0 ||
-            peer.peerSessionId === expectedEndpointId ||
-            compareRtcTopologyIdentifiers(peer.peerSessionId, previous) <= 0 ||
-            typeof peer.expiresAtEpochMs !== 'number' ||
-            !Number.isSafeInteger(peer.expiresAtEpochMs) ||
-            peer.expiresAtEpochMs <= value.updatedAtEpochMs
-        ) {
-            throw new TypeError('RTC RTT endpoint peer fields are invalid');
-        }
-        previous = peer.peerSessionId;
-        latestExpiry = Math.max(latestExpiry, peer.expiresAtEpochMs as number);
-    }
-    if (physicalExpiry !== latestExpiry) {
-        throw new TypeError('RTC RTT endpoint physical expiry differs from leases');
-    }
+    validatePersistedRtcRttEndpointAdmission(
+        value,
+        expectedEndpointId,
+        physicalExpiry,
+    );
 }
 
 function validateMutationReceipt(
