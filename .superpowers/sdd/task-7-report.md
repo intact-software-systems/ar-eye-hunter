@@ -6,6 +6,8 @@
 - Implementation commit: `118eeb49` (`refactor: require authoritative state fields`).
 - OpenAPI YAML correction commit: `b362586c`
   (`fix: correct authoritative OpenAPI required list`).
+- Completion correction commit: `83fe0648`
+  (`fix: complete authoritative contract hardening`).
 - Authoritative client, group, event, topology, overlay, outbox, and mutation
   receipt contracts now require their identity, lifecycle, actor, causal,
   storage-revision, and effect fields. Meaningful absence is represented by a
@@ -31,6 +33,14 @@
 - OpenAPI required/nullable declarations and lifecycle variants now match the
   hardened TypeScript surface. Compatibility tests cover required fields,
   discriminated group-member lifecycle shapes, and causal topology metadata.
+- Public REST and WebSocket event consumers validate complete canonical event
+  values, exact identity/scope, actor variants, causal values, and event-page
+  cursors before returning or dispatching them.
+- Topology PUT receipts retain the five accepted effective-config scalars.
+  Sparse durable and temporary PUT replay therefore reconstructs the exact
+  accepted result from compact receipt authority without rereading mutable
+  rows or consulting possibly changed process defaults; DELETE receipts carry
+  an explicit `acceptedConfig: null`.
 
 ## Persistence and migration rationale
 
@@ -53,7 +63,7 @@
 
 ## Validation evidence
 
-- `npm run test:unit` passed: 449 files passed, 2 configured-skip files; 4,549
+- `npm run test:unit` passed: 449 files passed, 2 configured-skip files; 4,559
   tests passed and 13 environment-gated tests skipped.
 - `npm run test:deno` passed end to end: API tests 223/223, black-box control
   tests 79/79, Relic server `deno task check`, and shared-test RTC scenarios
@@ -63,6 +73,11 @@
 - `npx tsc -p packages/shared/tsconfig.json --noEmit`,
   `npx tsc -p packages/shared-server/tsconfig.json --noEmit`, and
   `npx tsc -p packages/shared-web/tsconfig.json --noEmit` each passed.
+- The final exact plan-mandated four-file Vitest command passed 4 files and
+  59/59 tests. The completion-correction matrix covering canonical network
+  validation, REST/WS event rejection, exact topology replay, scope cleanup,
+  and affected fixtures passed 197 tests; four opt-in PostgreSQL tests were
+  skipped by configuration.
 - The first report HEAD, `23cf8b17`, did **not** pass the plan-mandated exact
   Vitest command. It exited 1 while collecting
   `rallar-group-docs-compat.test.ts`: `js-yaml` rejected the formatter-produced
@@ -88,9 +103,44 @@
 - `npm --workspace @ar-eye-hunter/shared-web run check:browser-bundles` passed
   every browser bundle budget.
 - `git diff --check` and `git diff --cached --check` passed. Added-line scans
-  found no `as any`, `as never`, `as unknown`, or non-null assertions. The
-  remaining added casts are literal/tuple `as const` narrowing and import
-  aliases, not contract evasions.
+  found no `Reflect` calls, `as any`, `as never`, `as unknown`, or non-null
+  assertions. Added-line lock scans found no row/table/advisory lock usage.
+
+## Completion-correction evidence
+
+- Canonical validator RED: six malformed-value tests failed before the
+  correction while 46 tests passed. GREEN: the validator, REST workflow, and
+  WebSocket event suites passed 52/52 after complete value and identity
+  validation was installed.
+- Sparse replay RED: the two new durable/override replay tests returned values
+  reconstructed from unrelated defaults rather than the accepted authority.
+  GREEN: topology management, config service, and repository suites passed
+  112/112 after receipts gained mandatory compact `acceptedConfig` authority.
+- OpenAPI/docs GREEN: docs compatibility passed 6/6, and API Swagger passed
+  12/12. PUT input uses the sparse patch schema, stored config uses the
+  effective schema, temporary view state uses the stored override schema, and
+  every lifecycle branch constrains its correlated audit/null fields.
+- Scope correction restored `admin-operations-service.test.ts`,
+  `postgres-app-data-concurrency.test.ts`, and
+  `postgres-runtime-state-prefix.test.ts` to their exact `f1359859` content.
+  Task-7-added `Reflect` type evasions were removed from the remaining affected
+  tests; the RallarAI dependency contract now requests only the app-data
+  store's `set` capability used by the facade.
+- Full final gates passed: `npm run test:unit` (4,559/4,559 with 13 configured
+  skips), `npm run test:deno` (API 223/223, control 79/79, shared-test RTC
+  146/146, plus Relic server check), `npm run typecheck`, the three package
+  TypeScript commands, the 43/43 exact API Deno command, browser bundle budgets,
+  touched API format checks, YAML-backed docs parsing, and diff/scope/lock
+  guards.
+- The first correction-wide unit run failed 21 RTC topology tests because one
+  test factory still emitted legacy `metadataVersion: 0`; after making that
+  fixture canonical, its focused suite passed 24/24. A later full run hit one
+  nondeterministic client-state concurrency failure; the isolated suite passed
+  14/14 immediately, and two subsequent full unit runs each passed all 4,559
+  tests. The first correction-wide Deno run failed type-checking one banned
+  member fixture whose spread retained an impossible terminal audit; explicit
+  correlated nulls fixed it, after which the focused test and two full Deno
+  runs passed.
 
 ## OpenAPI YAML correction evidence
 
@@ -118,10 +168,12 @@
 
 - `npx tsc -p packages/tests/tsconfig.json --noEmit` remains red on the
   repository-wide Deno/Emscripten environment and stale test typing baseline.
-  A normalized diagnostic count is 1,484 at this commit versus 1,704 at base
-  `f1359859`: Task 7 reduces the baseline by 220 diagnostics and introduces no
-  newly failing changed-file path. The plan's package and workspace
-  typechecks, which are the governing compilations, all pass.
+  A normalized diagnostic count is 1,490 at correction commit `83fe0648`
+  versus 1,704 at base `f1359859`: Task 7 reduces the baseline by 214
+  diagnostics. The requested restoration of unrelated pre-Task-7 admin/CRDT
+  and PostgreSQL test typing is intentionally visible in this broad
+  non-governing project; the package and workspace typechecks, which are the
+  governing compilations, all pass.
 - `deno fmt --check` under `apps/api-v1` remains red on the same 12 files as
   base `f1359859`. The two Task 7 files that were newly outside the formatter
   (`api-v1-openapi.yaml` and `ws-topic-room-authorizer.test.ts`) were formatted;
@@ -129,6 +181,7 @@
 
 ## Follow-up
 
-- No Task 7 implementation follow-up is required. Repository-wide cleanup of
+- No Task 7 implementation follow-up is required after `83fe0648`.
+  Repository-wide cleanup of
   the known `packages/tests` TypeScript and API formatter baselines should be
   handled separately so it does not obscure the authoritative-contract change.
