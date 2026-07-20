@@ -12,6 +12,8 @@
   (`fix: enforce authoritative aggregate invariants`).
 - Final boundary correction commit: `e953d388`
   (`fix: complete authoritative boundary validation`).
+- Final read-invariant correction commit: `baf647b4`
+  (`fix: close authoritative read invariants`).
 - Authoritative client, group, event, topology, overlay, outbox, and mutation
   receipt contracts now require their identity, lifecycle, actor, causal,
   storage-revision, and effect fields. Meaningful absence is represented by a
@@ -66,6 +68,17 @@
   presence revisions retain their valid zero lower bound.
 - Persisted multicast and room-broadcast AL targets require a workspace-bearing
   `GroupRef` before queued RTC authority reads or publication.
+- Client snapshots reject duplicate instance and active-session identities.
+  Client and group persistence assemblers reuse the shared pure authoritative
+  validators before returning snapshots, so storage corruption cannot bypass
+  public aggregate invariants.
+- Group persistence assembly fails closed when active membership exceeds
+  `maxMembers`; it intentionally does not reinterpret `maxSessionsPerMember`
+  as a read invariant because admission limits may be lowered below existing
+  live sessions.
+- Persisted topology mutation receipts bind both `commandId` and `requestId`
+  to their enclosing record request. Persisted room broadcasts require a
+  complete group ref; world and all broadcast modes remain unchanged.
 
 ## Persistence and migration rationale
 
@@ -235,6 +248,36 @@
   empty output. `git diff --check` passed, and scans found no newly added type
   evasions or database locks.
 
+## Final read-invariant correction evidence
+
+- Exact RED command:
+  `npx vitest run packages/tests/shared/authoritative-state-validation.test.ts packages/tests/shared-server/client-state-concurrency.test.ts packages/tests/shared-server/group-state-concurrency.test.ts packages/tests/shared-server/group-topology-management-service.test.ts packages/tests/shared-server/al-message-persistence-validation.test.ts packages/tests/shared-server/rtc-topology-outbox-work.test.ts`.
+  Before production changes it failed 8 tests while 203 passed: public client
+  duplicate identities; repository missing-instance, duplicate-session, and
+  repeated-instance corruption; over-capacity group assembly; a persisted
+  receipt request mismatch; and direct plus queued room broadcasts without a
+  group ref.
+- The requested adjacent audit found that a repeated inactive member could
+  bypass GroupStateRepository's active-roster checks. Its separate RED run
+  failed 1 test while 74 passed. Reusing the shared pure group snapshot
+  validator at assembly closes that duplicate-identity gap without adding a
+  `maxSessionsPerMember` read invariant.
+- Focused GREEN passed all 6 files and 212/212 tests. Seven directly affected
+  repository, snapshot-cache, replay, RTC outbox, and mutation-outbox suites
+  passed 445/445.
+- The exact Task 7 Vitest command passed 4/4 files and 59/59 tests. The exact
+  API Deno command passed 43/43 tests, and API Swagger passed 12/12.
+- `npm run typecheck` passed the root shared check and every workspace. The
+  explicit shared, shared-server, and shared-web TypeScript commands also
+  exited 0.
+- A fresh full `npm run test:unit` passed 450 files with two configured-skip
+  files: 4,596 tests passed and 13 environment-gated tests skipped. The broader
+  Deno chain was not rerun for this correction; its directly affected exact API
+  and Swagger commands are recorded above.
+- `black-box-operator-token.test.ts` remains byte-for-byte identical to
+  `f1359859`. `git diff --check` and added-line scans found no type evasions,
+  `Reflect` calls, or database locks.
+
 ## OpenAPI YAML correction evidence
 
 - RED on report HEAD `23cf8b17`: the exact four-file Vitest command exited 1
@@ -274,7 +317,7 @@
 
 ## Follow-up
 
-- No Task 7 implementation follow-up is required after `e953d388`.
+- No Task 7 implementation follow-up is required after `baf647b4`.
   Repository-wide cleanup of
   the known `packages/tests` TypeScript and API formatter baselines should be
   handled separately so it does not obscure the authoritative-contract change.
