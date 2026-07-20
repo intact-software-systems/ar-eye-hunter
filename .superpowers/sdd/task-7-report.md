@@ -10,6 +10,8 @@
   (`fix: complete authoritative contract hardening`).
 - Aggregate invariant correction commit: `31a6bb35`
   (`fix: enforce authoritative aggregate invariants`).
+- Final boundary correction commit: `e953d388`
+  (`fix: complete authoritative boundary validation`).
 - Authoritative client, group, event, topology, overlay, outbox, and mutation
   receipt contracts now require their identity, lifecycle, actor, causal,
   storage-revision, and effect fields. Meaningful absence is represented by a
@@ -54,6 +56,16 @@
   accepted result from compact receipt authority without rereading mutable
   rows or consulting possibly changed process defaults; DELETE receipts carry
   an explicit `acceptedConfig: null`.
+- Client snapshots now require every active session to reference a declared
+  client instance and require top-level `lastSeenAtEpochMs` to equal the
+  repository's canonical maximum of principal last-seen and active-session
+  heartbeat time. The repository and public validator share one pure helper
+  for this derivation.
+- Group snapshots now enforce the canonical revision lower bounds used by
+  group snapshot validation and reject active membership above `maxMembers`;
+  presence revisions retain their valid zero lower bound.
+- Persisted multicast and room-broadcast AL targets require a workspace-bearing
+  `GroupRef` before queued RTC authority reads or publication.
 
 ## Persistence and migration rationale
 
@@ -194,6 +206,35 @@
   exactly 1,490 known baseline diagnostics, unchanged from
   `83fe0648`; the fresh regression tests introduced no increase.
 
+## Final boundary-correction evidence
+
+- RED command:
+  `npx vitest run packages/tests/shared/authoritative-state-validation.test.ts packages/tests/shared-server/al-message-persistence-validation.test.ts packages/tests/shared-server/rtc-topology-outbox-work.test.ts`.
+  Before production changes it failed 8 tests while 50 passed: missing client
+  instance membership, divergent client last-seen authority, group capacity,
+  zero group/state revision bounds, direct multicast and broadcast refs without
+  workspaces, and the queued RTC missing-workspace boundary.
+- Focused GREEN passed 4/4 files and 62/62 tests after including
+  `black-box-operator-token.test.ts`. The final focused run, also including the
+  heartbeat fixture exposed by the broad suite, passed 5/5 files and 66/66
+  tests. Four adjacent repository, inbox, and outbox suites passed 375/375.
+- The exact Task 7 Vitest command passed 4/4 files and 59/59 tests. The exact
+  API Deno command passed 43/43 tests, and API Swagger passed 12/12.
+- The first full `npm run test:unit` run correctly rejected the heartbeat
+  test's stale mocked client snapshot because its active session had no matching
+  instance. After adding a canonical active instance to that fixture, the
+  focused heartbeat suite passed 4/4 and a fresh full unit run passed 450 files
+  with two configured-skip files: 4,587 tests passed and 13 environment-gated
+  tests skipped.
+- `npm run test:deno` completed its full `&&`-chained API, black-box control,
+  Relic server, and shared-test RTC gates, reaching the final shared-test result
+  of 146/146 passed. `npm run typecheck` and the explicit shared,
+  shared-server, and shared-web TypeScript commands all exited 0.
+- `black-box-operator-token.test.ts` is byte-for-byte identical to base
+  `f1359859`; `git diff --exit-code f1359859 --` for that path exited 0 with
+  empty output. `git diff --check` passed, and scans found no newly added type
+  evasions or database locks.
+
 ## OpenAPI YAML correction evidence
 
 - RED on report HEAD `23cf8b17`: the exact four-file Vitest command exited 1
@@ -233,7 +274,7 @@
 
 ## Follow-up
 
-- No Task 7 implementation follow-up is required after `31a6bb35`.
+- No Task 7 implementation follow-up is required after `e953d388`.
   Repository-wide cleanup of
   the known `packages/tests` TypeScript and API formatter baselines should be
   handled separately so it does not obscure the authoritative-contract change.
