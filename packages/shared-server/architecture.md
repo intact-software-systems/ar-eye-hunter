@@ -17,6 +17,9 @@ deployment settings around these shared services.
 - `runtime-state/` exposes conditional and transactional capabilities;
   `postgres/` supplies the concrete Postgres adapters.
 
+Persistent authority keeps client/group snapshots in `runtime_state_store`
+and state-event logs in `client_state_events` and `group_state_events`.
+
 ## Implemented Convergent Database Writes
 
 Authoritative runtime-state creation, update, and deletion use
@@ -138,9 +141,13 @@ copied. Database row, table, and advisory lock exceptions require explicit
 human approval, a measured need, a documented invariant, a bounded critical
 section, and a review/removal condition.
 
-Queue claiming (`FOR UPDATE SKIP LOCKED`) and auth-ticket consumption remain
-outside this convergent-write remediation boundary. They are not precedent for
-authoritative state mutation design.
+The exhaustive current exception inventory is in
+`rallar-server-repositories.md`. It covers QueueBox claiming
+(`FOR UPDATE SKIP LOCKED`), WebSocket and agent-session ticket consumption,
+username registration, inbound/outbound AL admission, and CRDT document-row
+coordination, together with the shared Postgres advisory-lock primitive. These
+remain outside this convergent-write remediation boundary and are not precedent
+for authoritative state mutation design.
 
 ## Documentation And Validation
 

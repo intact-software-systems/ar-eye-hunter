@@ -135,8 +135,86 @@ describe('Rallar server storage schema docs', () => {
         expect(docs).toContain('client/group snapshots in `runtime_state_store`');
         expect(docs).toContain('state-event logs in `client_state_events` and `group_state_events`');
     });
+
+    it('inventories every intentional residual database lock with explicit governance', () => {
+        const docs = readWorkspaceFile(
+            'packages/shared-server/rallar-server-repositories.md',
+        );
+        const inventory = readMarkdownSection(
+            docs,
+            'Intentional Residual Database Lock Inventory',
+        );
+
+        for (const [anchor, requiredIdentifiers] of [
+            [
+                'PSqlRuntimeStateRepository.lockKey',
+                ['pg_advisory_xact_lock'],
+            ],
+            [
+                'PSqlQueueBox.reserveEntries',
+                [
+                    'PSqlQueueBox.reserveTimeoutEntries',
+                    'ResourceInboxRepository.findEntriesSkipLocked',
+                    'ResourceInboxRepository.findTimedOutReservedEntriesSkipLocked',
+                    'FOR UPDATE SKIP LOCKED',
+                ],
+            ],
+            [
+                'AuthSessionRepository.consumeWebSocketTicket',
+                ['auth-sessions:ws-tickets'],
+            ],
+            [
+                'AuthSessionRepository.consumeAgentSessionTicket',
+                ['auth-sessions:agent-session-tickets'],
+            ],
+            [
+                'registerAuthUser',
+                ['AuthUserRepository.usernameLockKey'],
+            ],
+            [
+                'PSqlInboundAdmissionBackend',
+                ['ALInboundAdmissionStore', 'lockKey'],
+            ],
+            [
+                'PSqlOutboundAdmissionBackend',
+                ['ALOutboundAdmissionStore', 'lockKey'],
+            ],
+            [
+                'PSqlCrdtLogRepository',
+                ['readDocumentMetadataByKey', 'FOR UPDATE'],
+            ],
+        ] as const) {
+            const entry = readMarkdownSubsection(inventory, anchor);
+
+            expect(entry).toContain('**Purpose and protected invariant.**');
+            expect(entry).toContain('**Bounded critical section.**');
+            expect(entry).toContain('**Review/removal condition.**');
+            for (const identifier of requiredIdentifiers) {
+                expect(entry).toContain(`\`${identifier}\``);
+            }
+        }
+    });
 });
 
 function readWorkspaceFile(path: string): string {
     return readFileSync(resolve(ROOT, path), 'utf8');
+}
+
+function readMarkdownSection(source: string, heading: string): string {
+    return readMarkdownBlock(source, `## ${heading}`, '\n## ');
+}
+
+function readMarkdownSubsection(source: string, identifier: string): string {
+    return readMarkdownBlock(source, `### \`${identifier}\``, '\n### ');
+}
+
+function readMarkdownBlock(source: string, heading: string, nextHeading: string): string {
+    const start = source.indexOf(heading);
+    if (start < 0) {
+        return '';
+    }
+
+    const remainder = source.slice(start);
+    const next = remainder.indexOf(nextHeading, heading.length);
+    return next < 0 ? remainder : remainder.slice(0, next);
 }

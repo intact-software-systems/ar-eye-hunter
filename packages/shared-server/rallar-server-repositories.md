@@ -133,6 +133,167 @@ Authoritative shared fields are mandatory except documented input or migration
 exceptions. Sparse request/query/patch/build types do not weaken persisted,
 replicated, queued, event, snapshot, receipt, or response values.
 
+## Intentional Residual Database Lock Inventory
+
+This is the exhaustive inventory of production database-lock mechanisms that
+remain in `packages/shared-server` after the convergent-write remediation. It
+is descriptive migration debt, not precedent or blanket approval for another
+caller. Retaining an entry requires explicit human approval supported by a
+measured need; each review must consider the removal condition recorded here.
+
+### `PSqlRuntimeStateRepository.lockKey`
+
+**Purpose and protected invariant.** `PSqlRuntimeStateRepository.lockKey`
+implements the shared transaction-scoped `lockKey` primitive with
+`pg_advisory_xact_lock`. For only the callers inventoried below, it prevents two
+transactions for the same encoded namespace/key from crossing a protected
+read-modify-write boundary concurrently.
+
+**Bounded critical section.** The adapter acquires one advisory lock derived
+from one namespace/key after its caller opens `begin`; PostgreSQL releases it
+at that transaction's commit or rollback. The lock has no process-lifetime or
+cross-key scope.
+
+**Review/removal condition.** Do not add callers. Remove `lockKey` from the
+transactional repository interface and Postgres adapter after ticket
+consumption, username registration, and both AL admission stores use proven
+conditional delete/insert/CAS or lease-claim operations. Any retention review
+must measure contention and transaction duration for those remaining callers.
+
+### `PSqlQueueBox.reserveEntries`
+
+**Purpose and protected invariant.** `PSqlQueueBox.reserveEntries` and
+`PSqlQueueBox.reserveTimeoutEntries` use
+`ResourceInboxRepository.findEntriesSkipLocked` and
+`ResourceInboxRepository.findTimedOutReservedEntriesSkipLocked` with
+`FOR UPDATE SKIP LOCKED`. This lets concurrent QueueBox workers claim disjoint
+`resource_inbox` rows without waiting for or double-reserving a row selected by
+another worker.
+
+**Bounded critical section.** Each method opens one transaction, selects at
+most `maxToReserve` ordered rows, changes only those rows to the reserved state,
+and commits before dispatching the returned work. Row locks last only for that
+selection-and-reservation transaction.
+
+**Review/removal condition.** Keep this queue-specific exception only while
+row locking is required for exclusive claims. Replace it after a conditional
+lease-claim design proves equivalent no-duplicate, timeout-recovery, fairness,
+and multi-worker behavior; review sooner if measured lock wait or reservation
+transaction duration breaches the queue budget. Do not copy it into
+authoritative state mutation code.
+
+### `AuthSessionRepository.consumeWebSocketTicket`
+
+**Purpose and protected invariant.**
+`AuthSessionRepository.consumeWebSocketTicket` locks the ticket key in
+`auth-sessions:ws-tickets` so a short-lived WebSocket ticket has at most one
+successful consumer and cannot authorize two socket upgrades.
+
+**Bounded critical section.** One repository transaction locks one ticket key,
+reads and deletes that ticket, validates its referenced auth session, and then
+commits or rolls back. The advisory lock ends with that transaction.
+
+**Review/removal condition.** Replace the lock when a conditional delete or
+atomic delete-and-return operation proves one-winner ticket consumption and
+session validation under concurrent redemption. Reassess retention whenever
+the auth-session storage contract changes or contention is observed.
+
+### `AuthSessionRepository.consumeAgentSessionTicket`
+
+**Purpose and protected invariant.**
+`AuthSessionRepository.consumeAgentSessionTicket` locks the ticket key in
+`auth-sessions:agent-session-tickets` so a short-lived agent-session ticket has
+at most one successful consumer and cannot attach two agents through one
+credential.
+
+**Bounded critical section.** One repository transaction locks one ticket key,
+reads and deletes that ticket, validates its referenced auth session, and then
+commits or rolls back. The advisory lock ends with that transaction.
+
+**Review/removal condition.** Replace the lock when a conditional delete or
+atomic delete-and-return operation proves one-winner ticket consumption and
+session validation under concurrent redemption. Reassess retention whenever
+the agent-session bootstrap contract changes or contention is observed.
+
+### `registerAuthUser`
+
+**Purpose and protected invariant.** `registerAuthUser` uses
+`AuthUserRepository.usernameLockKey` to serialize registration for one
+normalized username. The protected check and writes preserve case-insensitive
+username uniqueness across the username record, client-id record, and configured
+static clients.
+
+**Bounded critical section.** The registration transaction locks one normalized
+username, checks registered and static users, derives the password hash, writes
+the two user indexes, and then commits or rolls back. Its scope is one
+registration, although password derivation currently lengthens the transaction
+and is part of the removal pressure.
+
+**Review/removal condition.** Replace this exception with a conditional
+normalized-username insert or database uniqueness claim that keeps the
+client-id index atomic, with password derivation outside the transaction.
+Review it before increasing password work factors and whenever registration
+latency or lock contention is measured.
+
+### `PSqlInboundAdmissionBackend`
+
+**Purpose and protected invariant.** `PSqlInboundAdmissionBackend` exposes
+`lockKey` to `ALInboundAdmissionStore`. The store serializes a sender-version
+check with its inbound deduplication, ordering, supersedence, durable-effect,
+and version-bump bundle, and serializes ready-effect lease claims so concurrent
+workers cannot both accept the same expected version or claim the same effect.
+
+**Bounded critical section.** Each lock is held inside one backend `write`
+transaction for one sender-version or effect-claim key, from the guarded read
+through the associated runtime-state writes and version bump or lease claim.
+It ends at that transaction's commit or rollback.
+
+**Review/removal condition.** Remove this backend lock callback after inbound
+sender versions and effect claims use conditional CAS/lease operations that
+pass the existing conflict, ordering, supersedence, deduplication, and
+multi-worker effect-delivery tests. Measure contention and transaction duration
+before approving continued retention.
+
+### `PSqlOutboundAdmissionBackend`
+
+**Purpose and protected invariant.** `PSqlOutboundAdmissionBackend` exposes
+`lockKey` to `ALOutboundAdmissionStore`. The store serializes a sender-version
+check with its outbound sent/ack/nack/repair/supersedence and durable-effect
+bundle, and serializes ready-effect lease claims so concurrent workers cannot
+both accept the same expected version or claim the same effect.
+
+**Bounded critical section.** Each lock is held inside one backend `write`
+transaction for one sender-version or effect-claim key, from the guarded read
+through the associated runtime-state writes and version bump or lease claim.
+It ends at that transaction's commit or rollback.
+
+**Review/removal condition.** Remove this backend lock callback after outbound
+sender versions and effect claims use conditional CAS/lease operations that
+pass the existing conflict, supersedence, control-message, repair, and
+multi-worker effect-delivery tests. Measure contention and transaction duration
+before approving continued retention.
+
+### `PSqlCrdtLogRepository`
+
+**Purpose and protected invariant.** `PSqlCrdtLogRepository` calls
+`readDocumentMetadataByKey` with its update mode and issues `FOR UPDATE` on one
+`crdt_documents` row. This serializes per-document append-sequence allocation,
+quota accounting, snapshot accounting, and overwrite restore against concurrent
+document writes.
+
+**Bounded critical section.** Append and snapshot transactions lock one
+document row while they validate document-local policy/quota state and write
+the corresponding update or snapshot plus counters. Overwrite restore locks
+that row through delete and reconstruction of the one supplied document
+bundle. All row locks end at the surrounding transaction's commit or rollback;
+restore duration therefore scales with that bounded bundle.
+
+**Review/removal condition.** Replace the row lock after document revisions,
+conditional counter updates, unique append-sequence ownership, and restore
+fencing prove the same sequencing and quota invariants under concurrent writes.
+Review before raising restore-size limits or when per-document lock wait or
+transaction duration is measurable.
+
 ## Data Types, Repositories, Persistence, And Cache
 
 | Data | Repository/API | Physical persistence | Cache | Notes |
