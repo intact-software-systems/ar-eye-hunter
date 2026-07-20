@@ -40,6 +40,8 @@ rg --files packages/shared packages/shared-web packages/shared-server packages/s
 
 ## Contract Shape And Compatibility
 
+- Authoritative shared fields are mandatory except documented input or
+  migration exceptions.
 - Required fields are the default for every authoritative persisted, replicated, queued, event, snapshot, and response contract.
   Use an optional field only when absence is a meaningful domain state that
   consumers are expected to handle and test. Sparse request, query, patch,

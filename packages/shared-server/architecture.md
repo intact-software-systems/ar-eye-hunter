@@ -47,7 +47,10 @@ The implementation guard covers these exact operation families:
 | RTC RTT mutation | `readRttMutation`, `computeRttMutation`, `validateRttMutation`, `writeRttMutation` | lexically ordered endpoint-admission guards | measurement, compact receipt, every computed recompute intent |
 
 RTC topology's publication-null `write` variant is deliberately an internal
-snapshot update and has no external outbox. Client no-op idempotency claiming
+snapshot update and has no external outbox. `commitTopologyWithRetry` owns that
+internal path. The `createRtcTopologyWorkHandler` `onMessage` callback owns the
+externally effectful publication-bearing path and fans out only after
+`writeTopologyMutation` commits. Client no-op idempotency claiming
 may insert only its compact receipt outside `writeClientMutation`; it opens no
 transaction and produces no domain effect. Every externally effectful computed
 variant is matched to its transaction-local outbox insert.

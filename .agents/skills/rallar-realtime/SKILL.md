@@ -30,6 +30,8 @@ rg -n "GroupRef|groupRef|groupId|roomId|createAndSwitch|createAndJoin|joinRoom|w
 
 ## Rules Of Thumb
 
+- Authoritative shared fields are mandatory except documented input or
+  migration exceptions.
 - Prefer `GroupRef` over bare `groupId` when application/workspace scope matters.
 - Do not trust warm in-memory presence blindly; check expiry and durable read-through paths.
 - Prefer optimistic reconciliation for replicated state. Accept monotonic newer

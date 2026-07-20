@@ -35,8 +35,8 @@ Read `references/test-commands.md` when choosing commands. Prefer targeted check
   run focused tests first, then the unweakened
   `npm run test:api-v1:black-box:postgres:medium-scale` gate. It means 100
   independently authenticated clients, five groups, two Postgres-backed API
-  processes, 10 client lanes plus 5 control lanes. Never reduce these constants
-  to make a change pass.
+  processes, 10 client lanes plus 5 control lanes. Never reduce these constants,
+  the operation matrix, or its assertions to make a change pass.
 - A mutation-path or concurrency-domain change also requires
   `npm run perf:api-v1:state-write` and the comparative result gate implemented
   by `node scripts/perf/compare-api-v1-state-write-results.mjs`.

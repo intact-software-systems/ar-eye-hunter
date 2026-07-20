@@ -28,6 +28,8 @@ rg --files packages/tests packages/shared packages/shared-web packages/shared-se
 
 ## Contract Defaults
 
+- Authoritative shared fields are mandatory except documented input or
+  migration exceptions.
 - Prefer required public and persisted fields. Authoritative persisted,
   replicated, queued, event, snapshot, and response values should be fully
   populated. Optional fields are appropriate only when omission has domain
