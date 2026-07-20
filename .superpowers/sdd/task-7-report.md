@@ -4,6 +4,8 @@
 
 - Base: `f1359859`.
 - Implementation commit: `118eeb49` (`refactor: require authoritative state fields`).
+- OpenAPI YAML correction commit: `b362586c`
+  (`fix: correct authoritative OpenAPI required list`).
 - Authoritative client, group, event, topology, overlay, outbox, and mutation
   receipt contracts now require their identity, lifecycle, actor, causal,
   storage-revision, and effect fields. Meaningful absence is represented by a
@@ -61,13 +63,24 @@
 - `npx tsc -p packages/shared/tsconfig.json --noEmit`,
   `npx tsc -p packages/shared-server/tsconfig.json --noEmit`, and
   `npx tsc -p packages/shared-web/tsconfig.json --noEmit` each passed.
-- The plan-mandated exact Vitest command passed 4 files and 56/56 tests:
-  `authoritative-state-contracts`, `rallar-group-docs-compat`, `data-caches`,
-  and `api-workflows`.
+- The first report HEAD, `23cf8b17`, did **not** pass the plan-mandated exact
+  Vitest command. It exited 1 while collecting
+  `rallar-group-docs-compat.test.ts`: `js-yaml` rejected the formatter-produced
+  multiline flow sequence at `api-v1-openapi.yaml:5085` with
+  `deficient indentation`. The other three files passed 52 tests, but the
+  four-file result was red. Commit `b362586c` replaces only that sequence with
+  valid block-list YAML. A fresh run of the same exact command then passed all
+  4 files and 56/56 tests: `authoritative-state-contracts`,
+  `rallar-group-docs-compat`, `data-caches`, and `api-workflows`.
 - The plan-mandated exact API Deno command passed 43/43 tests across client
   state service, group state service, and graph topology routes.
-- The final PGlite/admin/OpenAPI focused command passed 55/55 tests. A
-  post-format WebSocket authorizer/OpenAPI check passed 15/15 tests.
+- The final PGlite/admin/OpenAPI focused command passed 55/55 tests before the
+  formatting regression. A post-format WebSocket authorizer/OpenAPI Deno check
+  passed 15/15 tests, but that server parser did not exercise `js-yaml` and was
+  insufficient evidence for the documentation compatibility suite. After
+  `b362586c`, a fresh `deno test --allow-env --allow-read
+  test/swagger-routes.test.ts` passed 12/12 tests and the exact js-yaml-backed
+  Vitest command passed as recorded above.
 - Shared-web browser boundary, browser entrypoint, and public API snapshot
   tests passed 3 files and 26/26 tests. The first attempted selection used
   nonexistent legacy filenames and correctly exited with “No test files
@@ -78,6 +91,28 @@
   found no `as any`, `as never`, `as unknown`, or non-null assertions. The
   remaining added casts are literal/tuple `as const` narrowing and import
   aliases, not contract evasions.
+
+## OpenAPI YAML correction evidence
+
+- RED on report HEAD `23cf8b17`: the exact four-file Vitest command exited 1
+  with one failed suite, three passed files, and 52 passed tests because
+  `js-yaml` reported `deficient indentation (5085:7)`.
+- Root cause: `deno fmt` changed the six-item `required` flow sequence for
+  `GroupTopologyConfigAcceptedCausalRevision` into an invalid multiline flow
+  sequence. Nearby OpenAPI schemas use stable YAML block lists.
+- GREEN on `b362586c`: the unchanged parser and required-field assertions in
+  `rallar-group-docs-compat.test.ts` passed as part of the exact four-file
+  command: 4 files and 56/56 tests.
+- A fresh `npm run test:unit` after `b362586c` passed 449 files with 2
+  configured-skip files; 4,549 tests passed and 13 environment-gated tests
+  skipped.
+- `deno test --allow-env --allow-read test/swagger-routes.test.ts` passed
+  12/12 tests.
+- `npx tsc -p packages/shared/tsconfig.json --noEmit`,
+  `npx tsc -p packages/shared-server/tsconfig.json --noEmit`, and
+  `npx tsc -p packages/shared-web/tsconfig.json --noEmit` each exited 0.
+- `deno fmt --check resources/api-v1-openapi.yaml` and `git diff --check`
+  each exited 0 before the correction implementation commit.
 
 ## Baseline-red checks
 
