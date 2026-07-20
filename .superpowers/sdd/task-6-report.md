@@ -965,3 +965,74 @@ report commit `7108b8cae0a52639dba68902f954931cbcab9fd3`.
   no compatibility casts. `git diff --check` and staged
   `git diff --cached --check` passed before the implementation commit.
 - Task 7 and later tasks were not started by this correction.
+
+## Eleventh review correction: endpoint domain/storage version alignment
+
+Implementation commit: `30f7d25a73ffcebb793c67f5e641cf3f4b7b06fd`
+(`fix(rtc): align endpoint and storage versions`), based on reviewed Task 6
+report commit `e20b0dab33ca29a76ce1a4efa49daa248dd8e9a4`.
+
+### Corrected behavior
+
+- The complete synchronous RTT write-candidate gate now binds each of the two
+  endpoint admission domain versions to its optimistic storage guard. A create
+  with `expectedRevision === null` requires domain version `1`; an update
+  guarded by storage revision `r` requires domain version `r + 2`. Unsafe
+  overflow and either endpoint's mismatch fail before `runtime.begin`.
+- Direct repository endpoint commits enforce the same candidate relation as
+  defense in depth. Direct, list, and page reads require every persisted
+  endpoint admission to satisfy `value.version === entry.revision + 1` before
+  expiry cleanup or dependent use. A corrupt expired row therefore raises
+  typed invariant corruption and remains retained for investigation instead of
+  being deleted and hidden.
+- Measurement versions remain external measurement authority and are not tied
+  to runtime-state storage revisions. A production-writer audit found only the
+  Task 6 `writeRttMutation` to `commitEndpointAdmission` path and no endpoint
+  admission legacy migration or alternate writer. The one noncorrupt manually
+  seeded mutation test entry was corrected to the existing version/revision
+  relation; no compatibility escape hatch was added.
+
+### Eleventh correction RED evidence
+
+- Before production changes,
+  `npx vitest run packages/tests/shared-server/rtc-topology-runtime-state-repositories.test.ts --reporter=dot`
+  collected 284 tests and exited 1 with exactly 10 intended failures and 274
+  passes. Four direct write-seam cases showed endpoint one and endpoint two
+  accepting invalid create/update domain versions; one case showed unsafe next
+  version overflow reaching the transaction; two direct repository cases
+  accepted or treated invalid insert/update candidates as ordinary writes or
+  conflicts; and direct/list/page reads deleted or hid an expired row whose
+  domain version differed from storage revision. Every write-seam failure also
+  asserted that `runtime.begin` had not been called, and production edits began
+  only after this RED checkpoint was reported.
+
+### Eleventh correction GREEN, baseline, and architecture evidence
+
+- The final repository/mutation/generic-expiry focused command passed 3/3 files
+  and 311/311 tests. The API startup lifecycle command passed 8/8 tests. The
+  exact expanded Task 6 cross-package matrix passed 11/11 files and 498/498
+  tests.
+- `npx vitest run packages/tests/shared-server --reporter=dot
+  --silent=passed-only` passed 58 files with 2 configured-skip files; 993 tests
+  passed and 13 opt-in environment tests were skipped. Full API-v1 Deno tests
+  passed 221/221.
+- `npm run typecheck` passed the root and every workspace typecheck. Focused
+  shared-server `tsc` passed. In `apps/api-v1`, main and migration-script
+  `deno check` passed.
+- The first live PostgreSQL concurrency attempt reached all 3 non-network tests
+  and failed its 9 database tests solely because sandboxed localhost access
+  returned `connect EPERM`. The approved local-database rerun passed 1/1 file
+  and 12/12 tests.
+- Root `npm run test:unit -- --reporter=dot --silent=passed-only` remains
+  explicitly **not claimed as passing**: 445 files passed, 2 were configured
+  skips, and 1 failed; 4,499 tests passed, 13 skipped, and the same 7 untouched
+  `packages/tests/shared-web/rallar-workflow-options-compat.test.ts` baseline
+  tests failed. That file is absent from this correction's diff.
+- Final governed-path scans found no unconditional `.upsert`, `deleteByKey`,
+  `lockKey`, `FOR UPDATE`, `SKIP LOCKED`, or advisory-lock use. The neutral RTT
+  persistence validator remains synchronous and free of repository,
+  transaction, ambient clock, randomness, and environment dependencies. The
+  correction diff adds no unsafe compatibility cast, `Promise<unknown>`, or
+  expiry-worker lifecycle change. `git diff --check` and staged implementation
+  `git diff --cached --check` passed before the implementation commit.
+- Task 7 and later tasks were not started by this correction.
