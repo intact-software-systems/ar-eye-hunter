@@ -8,6 +8,8 @@
   (`fix: correct authoritative OpenAPI required list`).
 - Completion correction commit: `83fe0648`
   (`fix: complete authoritative contract hardening`).
+- Aggregate invariant correction commit: `31a6bb35`
+  (`fix: enforce authoritative aggregate invariants`).
 - Authoritative client, group, event, topology, overlay, outbox, and mutation
   receipt contracts now require their identity, lifecycle, actor, causal,
   storage-revision, and effect fields. Meaningful absence is represented by a
@@ -33,6 +35,17 @@
 - OpenAPI required/nullable declarations and lifecycle variants now match the
   hardened TypeScript surface. Compatibility tests cover required fields,
   discriminated group-member lifecycle shapes, and causal topology metadata.
+- Canonical network group snapshots now reject duplicate member/session
+  identities, presence for non-active members, owner divergence, non-empty
+  inactive-group presence, and incoherent aggregate counts. Canonical topology
+  snapshots now enforce scoped overlay identity, timestamp order, canonical
+  identifiers and routing keys, reciprocal unique non-self edges, degree and
+  connectivity limits, and empty removed-overlay edges.
+- RTC topology APP_OUTBOX reads now reuse the complete persisted AL envelope
+  validator, including every present optional section and nested QoS option.
+  Persisted group-member validation and legacy normalization both require the
+  terminal audit selected by status and require the other terminal audits to
+  be `null`.
 - Public REST and WebSocket event consumers validate complete canonical event
   values, exact identity/scope, actor variants, causal values, and event-page
   cursors before returning or dispatching them.
@@ -142,6 +155,45 @@
   correlated nulls fixed it, after which the focused test and two full Deno
   runs passed.
 
+## Aggregate-invariant correction evidence
+
+- RED command:
+  `npx vitest run packages/tests/shared/authoritative-state-validation.test.ts packages/tests/shared-server/rtc-topology-outbox-work.test.ts packages/tests/shared-server/group-state-concurrency.test.ts packages/tests/shared-web/rallar-group-docs-compat.test.ts`.
+  It failed 20 tests while 108 passed: five group aggregate cases, ten topology
+  graph/identity cases, three malformed optional AL-envelope cases, one
+  contradictory terminal-audit case, and one OpenAPI parity case.
+- GREEN on implementation commit `31a6bb35`: the same four-file command passed
+  4/4 files and 129/129 tests after an additional multiple-owner regression
+  case was included.
+- The exact Task 7 command passed 4/4 files and 59/59 tests:
+  `npx vitest run packages/tests/shared/authoritative-state-contracts.test.ts packages/tests/shared-web/rallar-group-docs-compat.test.ts packages/tests/shared-web/data-caches.test.ts packages/tests/shared-web/api-workflows.test.ts`.
+- The exact API Deno command passed 43/43 tests:
+  `deno test -A test/services/client-state-service.test.ts test/services/group-state-service.test.ts test/routes/graph-topology-routes.test.ts`.
+  The API Swagger command passed 12/12:
+  `deno test --allow-env --allow-read test/swagger-routes.test.ts`.
+- OpenAPI now requires nullable
+  `ReconfigureGroupTopologyResponse.previous`. The actual TypeScript receipt
+  contract's required-null `GroupTopologyConfigMutationReceipt.eventId` is
+  represented as OpenAPI 3.1 `type: 'null'`; both js-yaml compatibility and API
+  Swagger tests assert the exact shapes.
+- `npm run test:unit` first exposed two noncanonical active-group fixtures in
+  `state-mutation-outbox.test.ts`; both tests were red because the fixture
+  declared an owner but contained no owner member. After canonicalizing that
+  fixture, the focused state-mutation/RTC outbox command passed 72/72 and a
+  fresh full unit run passed 449 files with two configured-skip files: 4,579
+  tests passed and 13 environment-gated tests skipped.
+- `npm run test:deno` passed end to end: API 223/223, black-box control 79/79,
+  Relic server `deno task check`, and shared-test RTC scenarios 146/146.
+- `npm run typecheck`, `npx tsc -p packages/shared/tsconfig.json --noEmit`,
+  `npx tsc -p packages/shared-server/tsconfig.json --noEmit`, and
+  `npx tsc -p packages/shared-web/tsconfig.json --noEmit` all exited 0.
+  `deno fmt --check test/swagger-routes.test.ts resources/api-v1-openapi.yaml`
+  and `git diff --check` also passed.
+- The non-governing
+  `npx tsc -p packages/tests/tsconfig.json --noEmit --pretty false` remained at
+  exactly 1,490 known baseline diagnostics, unchanged from
+  `83fe0648`; the fresh regression tests introduced no increase.
+
 ## OpenAPI YAML correction evidence
 
 - RED on report HEAD `23cf8b17`: the exact four-file Vitest command exited 1
@@ -181,7 +233,7 @@
 
 ## Follow-up
 
-- No Task 7 implementation follow-up is required after `83fe0648`.
+- No Task 7 implementation follow-up is required after `31a6bb35`.
   Repository-wide cleanup of
   the known `packages/tests` TypeScript and API formatter baselines should be
   handled separately so it does not obscure the authoritative-contract change.
