@@ -53,6 +53,20 @@ function rtcProviders(recipe: Record<string, unknown>): string[] {
         .map(connection => connection.provider ?? '');
 }
 
+function flattenRecipeSteps(steps: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
+    return steps.flatMap(step => {
+        const nested = Array.isArray(step.steps)
+            ? flattenRecipeSteps(step.steps as Array<Record<string, unknown>>)
+            : [];
+        const grouped = Array.isArray(step.groups)
+            ? (step.groups as Array<{ steps?: Array<Record<string, unknown>> }>).flatMap(group =>
+                flattenRecipeSteps(group.steps ?? [])
+            )
+            : [];
+        return [step, ...nested, ...grouped];
+    });
+}
+
 describe('black-box runner recipe matrix', () => {
     it('has unique entry ids and artifact names', () => {
         const { entries } = readMatrix();
@@ -458,14 +472,26 @@ describe('black-box runner recipe matrix', () => {
 
         const recipe = readRecipe(entry!.recipe);
         const steps = recipe.steps as Array<Record<string, unknown>>;
+        const generationStart = steps.find(step =>
+            step.name === 'captureClientGenerationStartedAt'
+        );
+        expect(generationStart).toMatchObject({
+            type: 'set',
+            output: 'clientGenerationStartedAtEpochMs',
+            transform: { timestamp: true },
+        });
         const parallel = steps.find(step => step.name === 'runMediumScaleStateChurn') as {
             type?: string;
             maxConcurrency?: number;
+            timeoutMs?: number;
             groups?: Array<{ name?: string; steps?: Array<Record<string, unknown>> }>;
         };
         expect(parallel.type).toBe('parallel');
         expect(parallel.maxConcurrency).toBe(15);
+        expect(parallel.timeoutMs).toBe(300_000);
         expect(parallel.groups).toHaveLength(15);
+        expect(Object.values(recipe.connections as Record<string, { timeoutMs?: number }>)
+            .map(connection => connection.timeoutMs)).toEqual([15_000, 15_000]);
 
         const clientGroups = parallel.groups!.filter(group =>
             group.name?.startsWith('client-lane-')
@@ -481,6 +507,27 @@ describe('black-box runner recipe matrix', () => {
         expect(controlGroups).toHaveLength(5);
         expect(controlGroups.map(group => group.steps?.find(step => step.type === 'loop')?.count))
             .toEqual(Array(5).fill(10));
+        controlGroups.forEach((group, index) => {
+            const label = ['one', 'two', 'three', 'four', 'five'][index]!;
+            const loop = group.steps?.find(step => step.type === 'loop');
+            const operations = loop?.steps as Array<Record<string, unknown>>;
+            for (const operationName of [
+                `put${label}TopologyConfig{loop.iteration}`,
+                `delete${label}TopologyConfig{loop.iteration}`,
+                `putFinal${label}TopologyConfig{loop.iteration}`,
+            ]) {
+                const operation = operations.find(step => step.name === operationName);
+                expect(operation?.expect).toMatchObject({
+                    status: 200,
+                    body: {
+                        receipt: {
+                            acceptedVersion: 'integer',
+                            outboxIds: ['string'],
+                        },
+                    },
+                });
+            }
+        });
 
         const recipeText = JSON.stringify(recipe);
         const groupIds = ['groupOneId', 'groupTwoId', 'groupThreeId', 'groupFourId', 'groupFiveId'];
@@ -508,6 +555,53 @@ describe('black-box runner recipe matrix', () => {
             expect(flow).toMatch(/10\.\d+\.\{loop\.iteration\}\.1/);
         });
 
+        clientLoops.forEach((loop, laneIndex) => {
+            const lane = laneIndex + 1;
+            const flow = flattenRecipeSteps([loop!]);
+            const clientSessionSteps = flow.filter(step => {
+                const request = step.request as { path?: string } | undefined;
+                return request?.path?.includes(`/clients/{lane${lane}ClientId}/`) === true &&
+                    request.path.includes('/sessions/');
+            });
+            const generationFor = (namePrefix: string) =>
+                (clientSessionSteps.find(step => String(step.name).startsWith(namePrefix))
+                    ?.request as { body?: { generationId?: string } } | undefined)
+                    ?.body?.generationId;
+            const connectedAtFor = (namePrefix: string) =>
+                (clientSessionSteps.find(step => String(step.name).startsWith(namePrefix))
+                    ?.request as { body?: { connectedAtEpochMs?: number } } | undefined)
+                    ?.body?.connectedAtEpochMs;
+            expect(generationFor(`connectLane${lane}ClientSession`))
+                .toBe(`lane-${lane}-generation-1-{loop.iteration}-{runId}`);
+            expect(connectedAtFor(`connectLane${lane}ClientSession`))
+                .toBe('{clientGenerationStartedAtEpochMs}');
+            expect(generationFor(`heartbeatLane${lane}ClientSession`))
+                .toBe(`lane-${lane}-generation-1-{loop.iteration}-{runId}`);
+            expect(generationFor(`disconnectLane${lane}ClientSession`))
+                .toBe(`lane-${lane}-generation-1-{loop.iteration}-{runId}`);
+            expect(generationFor(`reconnectLane${lane}ClientSession`))
+                .toBe(`lane-${lane}-generation-2-{loop.iteration}-{runId}`);
+            expect(connectedAtFor(`reconnectLane${lane}ClientSession`))
+                .toBe('{clientGenerationStartedAtEpochMs}');
+            const groupSessionSteps = flow.filter(step => {
+                const request = step.request as { path?: string } | undefined;
+                return request?.path?.includes('/groups/') === true &&
+                    request.path.includes('/sessions/');
+            });
+            for (const step of groupSessionSteps) {
+                const generationId = (step.request as {
+                    body?: { generationId?: string };
+                }).body?.generationId;
+                if (String(step.name).startsWith(`reconnectLane${lane}ToRotatedGroup`)) {
+                    expect(generationId)
+                        .toBe(`lane-${lane}-generation-3-{loop.iteration}-{runId}`);
+                } else {
+                    expect(generationId)
+                        .toBe(`lane-${lane}-generation-2-{loop.iteration}-{runId}`);
+                }
+            }
+        });
+
         const churnIndex = steps.findIndex(step => step.name === 'runMediumScaleStateChurn');
         const afterChurn = steps.slice(churnIndex + 1);
         const pollDelays = afterChurn.filter(step =>
@@ -515,9 +609,10 @@ describe('black-box runner recipe matrix', () => {
         );
         expect(pollDelays.map(step => Number((step.request as { delayMs?: number })?.delayMs)))
             .toEqual([500, 1000, 2000, 4000, 8000]);
-        expect(pollDelays.reduce((total, step) =>
+        const totalPollDelayMs = pollDelays.reduce((total, step) =>
             total + Number((step.request as { delayMs?: number })?.delayMs), 0
-        )).toBeLessThanOrEqual(30_000);
+        );
+        expect(totalPollDelayMs).toBeLessThanOrEqual(30_000);
 
         const pollSteps = afterChurn.filter(step =>
             String(step.name).startsWith('pollConvergenceAttempt')
@@ -528,6 +623,17 @@ describe('black-box runner recipe matrix', () => {
             expect(step.maxConcurrency).toBe(15);
             expect(step.nonBlockingFailure).toBe(true);
             expect((step.groups as unknown[])).toHaveLength(15);
+            const clientReads = (step.groups as Array<{
+                name: string;
+                steps: Array<Record<string, unknown>>;
+            }>).filter(group => group.name.startsWith('last-client-lane-'));
+            expect(clientReads).toHaveLength(10);
+            clientReads.forEach(group => {
+                const request = group.steps[0]?.request as Record<string, unknown>;
+                expect(request.method).toBe('GET');
+                expect(String(request.path)).toMatch(/\/clients\/\{lane\d+ClientId\}\/presence$/);
+                expect(request).not.toHaveProperty('body');
+            });
         });
 
         const firstPollGroups = pollSteps[0].groups as Array<{
@@ -543,10 +649,16 @@ describe('black-box runner recipe matrix', () => {
                 ?.steps[0];
             expect(read?.connection).toBe(lane % 2 === 1 ? 'apiSecondary' : 'apiPrimary');
             expect(String((read?.request as { path?: string })?.path)).toContain(
-                `/clients/{lane${lane}ClientId}`,
+                `/clients/{lane${lane}ClientId}/presence`,
             );
             expect(read?.expect).toMatchObject({
-                body: { principal: { status: 'active' }, isOnline: true },
+                body: {
+                    principalId: `{lane${lane}ClientId}`,
+                    isOnline: true,
+                    activeSessions: [{
+                        generationId: `lane-${lane}-generation-2-10-{runId}`,
+                    }],
+                },
             });
         }
 
@@ -559,9 +671,9 @@ describe('black-box runner recipe matrix', () => {
             expect(primary?.request).toMatchObject({
                 outputs: {
                     [`final${groupId[0].toUpperCase()}${groupId.slice(1)}StateCausalRevision`]:
-                        'body.groupStateCausalRevision',
+                        'body.causalRevision.groupRevision',
                     [`final${groupId[0].toUpperCase()}${groupId.slice(1)}PresenceCausalRevision`]:
-                        'body.groupPresenceCausalRevision',
+                        'body.causalRevision.presenceRevision',
                 },
             });
 
@@ -571,10 +683,12 @@ describe('black-box runner recipe matrix', () => {
             expect(secondary).toMatchObject({ connection: 'apiSecondary' });
             expect(secondary?.expect).toMatchObject({
                 body: {
-                    groupStateCausalRevision:
-                        `{final${groupId[0].toUpperCase()}${groupId.slice(1)}StateCausalRevision}`,
-                    groupPresenceCausalRevision:
-                        `{final${groupId[0].toUpperCase()}${groupId.slice(1)}PresenceCausalRevision}`,
+                    causalRevision: {
+                        groupRevision:
+                            `{final${groupId[0].toUpperCase()}${groupId.slice(1)}StateCausalRevision}`,
+                        presenceRevision:
+                            `{final${groupId[0].toUpperCase()}${groupId.slice(1)}PresenceCausalRevision}`,
+                    },
                 },
             });
 
@@ -585,19 +699,43 @@ describe('black-box runner recipe matrix', () => {
             expect(finalTopology?.expect).toMatchObject({
                 body: {
                     snapshot: {
-                        sourceGroupStateCausalRevision:
-                            `{final${groupId[0].toUpperCase()}${groupId.slice(1)}StateCausalRevision}`,
-                        sourceGroupPresenceCausalRevision:
-                            `{final${groupId[0].toUpperCase()}${groupId.slice(1)}PresenceCausalRevision}`,
+                        sourceGroupStateCausalRevision: {
+                            groupRevision:
+                                `{final${groupId[0].toUpperCase()}${groupId.slice(1)}StateCausalRevision}`,
+                            presenceRevision:
+                                `{final${groupId[0].toUpperCase()}${groupId.slice(1)}PresenceCausalRevision}`,
+                        },
                     },
                     config: {
-                        version: `{final${groupId[0].toUpperCase()}${groupId.slice(1)}ConfigVersion}`,
+                        durable: {
+                            version:
+                                `{final${groupId[0].toUpperCase()}${groupId.slice(1)}ConfigVersion}`,
+                        },
                     },
                 },
             });
             expect((finalTopology?.request as { outputs?: Record<string, unknown> })?.outputs)
-                .toHaveProperty(`final${groupId[0].toUpperCase()}${groupId.slice(1)}TopologyOutboxId`);
+                .not.toHaveProperty(
+                    `final${groupId[0].toUpperCase()}${groupId.slice(1)}TopologyOutboxIds`,
+                );
+
+            const controlLoop = controlGroups.find(group =>
+                group.name === `group-control-lane-${groupIds.indexOf(groupId) + 1}`
+            )?.steps?.find(step => step.type === 'loop');
+            const finalConfig = (controlLoop?.steps as Array<Record<string, unknown>> | undefined)
+                ?.find(step => step.name === `putFinal${groupLabel}TopologyConfig{loop.iteration}`);
+            expect((finalConfig?.request as { outputs?: Record<string, unknown> })?.outputs)
+                .toMatchObject({
+                    [`final${groupId[0].toUpperCase()}${groupId.slice(1)}ConfigVersion`]:
+                        'body.config.version',
+                    [`final${groupId[0].toUpperCase()}${groupId.slice(1)}TopologyOutboxIds`]:
+                        'body.receipt.outboxIds',
+                });
         });
+
+        expect(recipeText).not.toContain('body.groupStateCausalRevision');
+        expect(recipeText).not.toContain('body.groupPresenceCausalRevision');
+        expect(recipeText).not.toContain('body.receipt.outboxId"');
 
         const receipts = afterChurn.find(step =>
             step.name === 'assertFinalBoundedConvergenceAndCausalHistory'
@@ -643,6 +781,26 @@ describe('black-box runner recipe matrix', () => {
             type: 'assert',
             actual: { receipts: expect.any(Object), observedEffects: expect.any(Object) },
             expect: { body: expect.any(Object) },
+        });
+        expect(receiptEffects?.actual).toMatchObject({
+            receipts: {
+                groupOneId: '{finalGroupOneIdTopologyOutboxIds}',
+                groupTwoId: '{finalGroupTwoIdTopologyOutboxIds}',
+                groupThreeId: '{finalGroupThreeIdTopologyOutboxIds}',
+                groupFourId: '{finalGroupFourIdTopologyOutboxIds}',
+                groupFiveId: '{finalGroupFiveIdTopologyOutboxIds}',
+            },
+        });
+        expect(receiptEffects?.expect).toMatchObject({
+            body: {
+                receipts: {
+                    groupOneId: ['string'],
+                    groupTwoId: ['string'],
+                    groupThreeId: ['string'],
+                    groupFourId: ['string'],
+                    groupFiveId: ['string'],
+                },
+            },
         });
     });
 

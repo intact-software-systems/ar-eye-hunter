@@ -480,6 +480,14 @@
       }
     },
     {
+      "name": "captureClientGenerationStartedAt",
+      "type": "set",
+      "output": "clientGenerationStartedAtEpochMs",
+      "transform": {
+        "timestamp": true
+      }
+    },
+    {
       "name": "runMediumScaleStateChurn",
       "type": "parallel",
       "maxConcurrency": 15,
@@ -633,6 +641,8 @@
                     },
                     "body": {
                       "requestId": "lane-1-client-connect-{loop.iteration}-{runId}",
+                      "generationId": "lane-1-generation-1-{loop.iteration}-{runId}",
+                      "connectedAtEpochMs": "{clientGenerationStartedAtEpochMs}",
                       "presenceState": "online",
                       "transport": "ws",
                       "connectionId": "medium-scale-1-{loop.iteration}"
@@ -664,6 +674,7 @@
                             },
                             "body": {
                               "requestId": "lane-1-heartbeat-{loop.iteration}-{runId}",
+                              "generationId": "lane-1-generation-1-{loop.iteration}-{runId}",
                               "presenceState": "online"
                             }
                           },
@@ -719,7 +730,8 @@
                       "x-client-id": "{lane1ClientId}"
                     },
                     "body": {
-                      "requestId": "lane-1-client-disconnect-{loop.iteration}-{runId}"
+                      "requestId": "lane-1-client-disconnect-{loop.iteration}-{runId}",
+                      "generationId": "lane-1-generation-1-{loop.iteration}-{runId}"
                     }
                   },
                   "expect": {
@@ -739,6 +751,8 @@
                     },
                     "body": {
                       "requestId": "lane-1-client-reconnect-{loop.iteration}-{runId}",
+                      "generationId": "lane-1-generation-2-{loop.iteration}-{runId}",
+                      "connectedAtEpochMs": "{clientGenerationStartedAtEpochMs}",
                       "presenceState": "online",
                       "transport": "ws",
                       "connectionId": "medium-scale-reconnect-1-{loop.iteration}"
@@ -781,7 +795,7 @@
                     },
                     "body": {
                       "requestId": "lane-1-presence-{loop.iteration}-{groupOneId}-{runId}",
-                      "generationId": "reconnect-generation-{loop.iteration}-{runId}",
+                      "generationId": "lane-1-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane1ClientId}"
                     }
                   },
@@ -822,7 +836,7 @@
                     },
                     "body": {
                       "requestId": "lane-1-presence-{loop.iteration}-{groupTwoId}-{runId}",
-                      "generationId": "generation-{runId}",
+                      "generationId": "lane-1-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane1ClientId}"
                     }
                   },
@@ -863,7 +877,7 @@
                     },
                     "body": {
                       "requestId": "lane-1-presence-{loop.iteration}-{groupThreeId}-{runId}",
-                      "generationId": "generation-{runId}",
+                      "generationId": "lane-1-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane1ClientId}"
                     }
                   },
@@ -904,7 +918,7 @@
                     },
                     "body": {
                       "requestId": "lane-1-presence-{loop.iteration}-{groupFourId}-{runId}",
-                      "generationId": "generation-{runId}",
+                      "generationId": "lane-1-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane1ClientId}"
                     }
                   },
@@ -945,7 +959,7 @@
                     },
                     "body": {
                       "requestId": "lane-1-presence-{loop.iteration}-{groupFiveId}-{runId}",
-                      "generationId": "generation-{runId}",
+                      "generationId": "lane-1-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane1ClientId}"
                     }
                   },
@@ -966,7 +980,7 @@
                     },
                     "body": {
                       "requestId": "lane-1-group-disconnect-{loop.iteration}-{runId}",
-                      "generationId": "generation-{runId}",
+                      "generationId": "lane-1-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane1ClientId}"
                     }
                   },
@@ -987,7 +1001,7 @@
                     },
                     "body": {
                       "requestId": "lane-1-group-reconnect-{loop.iteration}-{runId}",
-                      "generationId": "reconnect-generation-{loop.iteration}-{runId}",
+                      "generationId": "lane-1-generation-3-{loop.iteration}-{runId}",
                       "principalId": "{lane1ClientId}"
                     }
                   },
@@ -1147,6 +1161,8 @@
                     },
                     "body": {
                       "requestId": "lane-2-client-connect-{loop.iteration}-{runId}",
+                      "generationId": "lane-2-generation-1-{loop.iteration}-{runId}",
+                      "connectedAtEpochMs": "{clientGenerationStartedAtEpochMs}",
                       "presenceState": "online",
                       "transport": "ws",
                       "connectionId": "medium-scale-2-{loop.iteration}"
@@ -1178,6 +1194,7 @@
                             },
                             "body": {
                               "requestId": "lane-2-heartbeat-{loop.iteration}-{runId}",
+                              "generationId": "lane-2-generation-1-{loop.iteration}-{runId}",
                               "presenceState": "online"
                             }
                           },
@@ -1233,7 +1250,8 @@
                       "x-client-id": "{lane2ClientId}"
                     },
                     "body": {
-                      "requestId": "lane-2-client-disconnect-{loop.iteration}-{runId}"
+                      "requestId": "lane-2-client-disconnect-{loop.iteration}-{runId}",
+                      "generationId": "lane-2-generation-1-{loop.iteration}-{runId}"
                     }
                   },
                   "expect": {
@@ -1253,6 +1271,8 @@
                     },
                     "body": {
                       "requestId": "lane-2-client-reconnect-{loop.iteration}-{runId}",
+                      "generationId": "lane-2-generation-2-{loop.iteration}-{runId}",
+                      "connectedAtEpochMs": "{clientGenerationStartedAtEpochMs}",
                       "presenceState": "online",
                       "transport": "ws",
                       "connectionId": "medium-scale-reconnect-2-{loop.iteration}"
@@ -1295,7 +1315,7 @@
                     },
                     "body": {
                       "requestId": "lane-2-presence-{loop.iteration}-{groupTwoId}-{runId}",
-                      "generationId": "reconnect-generation-{loop.iteration}-{runId}",
+                      "generationId": "lane-2-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane2ClientId}"
                     }
                   },
@@ -1336,7 +1356,7 @@
                     },
                     "body": {
                       "requestId": "lane-2-presence-{loop.iteration}-{groupThreeId}-{runId}",
-                      "generationId": "generation-{runId}",
+                      "generationId": "lane-2-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane2ClientId}"
                     }
                   },
@@ -1377,7 +1397,7 @@
                     },
                     "body": {
                       "requestId": "lane-2-presence-{loop.iteration}-{groupFourId}-{runId}",
-                      "generationId": "generation-{runId}",
+                      "generationId": "lane-2-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane2ClientId}"
                     }
                   },
@@ -1418,7 +1438,7 @@
                     },
                     "body": {
                       "requestId": "lane-2-presence-{loop.iteration}-{groupFiveId}-{runId}",
-                      "generationId": "generation-{runId}",
+                      "generationId": "lane-2-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane2ClientId}"
                     }
                   },
@@ -1459,7 +1479,7 @@
                     },
                     "body": {
                       "requestId": "lane-2-presence-{loop.iteration}-{groupOneId}-{runId}",
-                      "generationId": "generation-{runId}",
+                      "generationId": "lane-2-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane2ClientId}"
                     }
                   },
@@ -1480,7 +1500,7 @@
                     },
                     "body": {
                       "requestId": "lane-2-group-disconnect-{loop.iteration}-{runId}",
-                      "generationId": "generation-{runId}",
+                      "generationId": "lane-2-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane2ClientId}"
                     }
                   },
@@ -1501,7 +1521,7 @@
                     },
                     "body": {
                       "requestId": "lane-2-group-reconnect-{loop.iteration}-{runId}",
-                      "generationId": "reconnect-generation-{loop.iteration}-{runId}",
+                      "generationId": "lane-2-generation-3-{loop.iteration}-{runId}",
                       "principalId": "{lane2ClientId}"
                     }
                   },
@@ -1661,6 +1681,8 @@
                     },
                     "body": {
                       "requestId": "lane-3-client-connect-{loop.iteration}-{runId}",
+                      "generationId": "lane-3-generation-1-{loop.iteration}-{runId}",
+                      "connectedAtEpochMs": "{clientGenerationStartedAtEpochMs}",
                       "presenceState": "online",
                       "transport": "ws",
                       "connectionId": "medium-scale-3-{loop.iteration}"
@@ -1692,6 +1714,7 @@
                             },
                             "body": {
                               "requestId": "lane-3-heartbeat-{loop.iteration}-{runId}",
+                              "generationId": "lane-3-generation-1-{loop.iteration}-{runId}",
                               "presenceState": "online"
                             }
                           },
@@ -1747,7 +1770,8 @@
                       "x-client-id": "{lane3ClientId}"
                     },
                     "body": {
-                      "requestId": "lane-3-client-disconnect-{loop.iteration}-{runId}"
+                      "requestId": "lane-3-client-disconnect-{loop.iteration}-{runId}",
+                      "generationId": "lane-3-generation-1-{loop.iteration}-{runId}"
                     }
                   },
                   "expect": {
@@ -1767,6 +1791,8 @@
                     },
                     "body": {
                       "requestId": "lane-3-client-reconnect-{loop.iteration}-{runId}",
+                      "generationId": "lane-3-generation-2-{loop.iteration}-{runId}",
+                      "connectedAtEpochMs": "{clientGenerationStartedAtEpochMs}",
                       "presenceState": "online",
                       "transport": "ws",
                       "connectionId": "medium-scale-reconnect-3-{loop.iteration}"
@@ -1809,7 +1835,7 @@
                     },
                     "body": {
                       "requestId": "lane-3-presence-{loop.iteration}-{groupThreeId}-{runId}",
-                      "generationId": "reconnect-generation-{loop.iteration}-{runId}",
+                      "generationId": "lane-3-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane3ClientId}"
                     }
                   },
@@ -1850,7 +1876,7 @@
                     },
                     "body": {
                       "requestId": "lane-3-presence-{loop.iteration}-{groupFourId}-{runId}",
-                      "generationId": "generation-{runId}",
+                      "generationId": "lane-3-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane3ClientId}"
                     }
                   },
@@ -1891,7 +1917,7 @@
                     },
                     "body": {
                       "requestId": "lane-3-presence-{loop.iteration}-{groupFiveId}-{runId}",
-                      "generationId": "generation-{runId}",
+                      "generationId": "lane-3-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane3ClientId}"
                     }
                   },
@@ -1932,7 +1958,7 @@
                     },
                     "body": {
                       "requestId": "lane-3-presence-{loop.iteration}-{groupOneId}-{runId}",
-                      "generationId": "generation-{runId}",
+                      "generationId": "lane-3-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane3ClientId}"
                     }
                   },
@@ -1973,7 +1999,7 @@
                     },
                     "body": {
                       "requestId": "lane-3-presence-{loop.iteration}-{groupTwoId}-{runId}",
-                      "generationId": "generation-{runId}",
+                      "generationId": "lane-3-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane3ClientId}"
                     }
                   },
@@ -1994,7 +2020,7 @@
                     },
                     "body": {
                       "requestId": "lane-3-group-disconnect-{loop.iteration}-{runId}",
-                      "generationId": "generation-{runId}",
+                      "generationId": "lane-3-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane3ClientId}"
                     }
                   },
@@ -2015,7 +2041,7 @@
                     },
                     "body": {
                       "requestId": "lane-3-group-reconnect-{loop.iteration}-{runId}",
-                      "generationId": "reconnect-generation-{loop.iteration}-{runId}",
+                      "generationId": "lane-3-generation-3-{loop.iteration}-{runId}",
                       "principalId": "{lane3ClientId}"
                     }
                   },
@@ -2175,6 +2201,8 @@
                     },
                     "body": {
                       "requestId": "lane-4-client-connect-{loop.iteration}-{runId}",
+                      "generationId": "lane-4-generation-1-{loop.iteration}-{runId}",
+                      "connectedAtEpochMs": "{clientGenerationStartedAtEpochMs}",
                       "presenceState": "online",
                       "transport": "ws",
                       "connectionId": "medium-scale-4-{loop.iteration}"
@@ -2206,6 +2234,7 @@
                             },
                             "body": {
                               "requestId": "lane-4-heartbeat-{loop.iteration}-{runId}",
+                              "generationId": "lane-4-generation-1-{loop.iteration}-{runId}",
                               "presenceState": "online"
                             }
                           },
@@ -2261,7 +2290,8 @@
                       "x-client-id": "{lane4ClientId}"
                     },
                     "body": {
-                      "requestId": "lane-4-client-disconnect-{loop.iteration}-{runId}"
+                      "requestId": "lane-4-client-disconnect-{loop.iteration}-{runId}",
+                      "generationId": "lane-4-generation-1-{loop.iteration}-{runId}"
                     }
                   },
                   "expect": {
@@ -2281,6 +2311,8 @@
                     },
                     "body": {
                       "requestId": "lane-4-client-reconnect-{loop.iteration}-{runId}",
+                      "generationId": "lane-4-generation-2-{loop.iteration}-{runId}",
+                      "connectedAtEpochMs": "{clientGenerationStartedAtEpochMs}",
                       "presenceState": "online",
                       "transport": "ws",
                       "connectionId": "medium-scale-reconnect-4-{loop.iteration}"
@@ -2323,7 +2355,7 @@
                     },
                     "body": {
                       "requestId": "lane-4-presence-{loop.iteration}-{groupFourId}-{runId}",
-                      "generationId": "reconnect-generation-{loop.iteration}-{runId}",
+                      "generationId": "lane-4-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane4ClientId}"
                     }
                   },
@@ -2364,7 +2396,7 @@
                     },
                     "body": {
                       "requestId": "lane-4-presence-{loop.iteration}-{groupFiveId}-{runId}",
-                      "generationId": "generation-{runId}",
+                      "generationId": "lane-4-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane4ClientId}"
                     }
                   },
@@ -2405,7 +2437,7 @@
                     },
                     "body": {
                       "requestId": "lane-4-presence-{loop.iteration}-{groupOneId}-{runId}",
-                      "generationId": "generation-{runId}",
+                      "generationId": "lane-4-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane4ClientId}"
                     }
                   },
@@ -2446,7 +2478,7 @@
                     },
                     "body": {
                       "requestId": "lane-4-presence-{loop.iteration}-{groupTwoId}-{runId}",
-                      "generationId": "generation-{runId}",
+                      "generationId": "lane-4-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane4ClientId}"
                     }
                   },
@@ -2487,7 +2519,7 @@
                     },
                     "body": {
                       "requestId": "lane-4-presence-{loop.iteration}-{groupThreeId}-{runId}",
-                      "generationId": "generation-{runId}",
+                      "generationId": "lane-4-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane4ClientId}"
                     }
                   },
@@ -2508,7 +2540,7 @@
                     },
                     "body": {
                       "requestId": "lane-4-group-disconnect-{loop.iteration}-{runId}",
-                      "generationId": "generation-{runId}",
+                      "generationId": "lane-4-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane4ClientId}"
                     }
                   },
@@ -2529,7 +2561,7 @@
                     },
                     "body": {
                       "requestId": "lane-4-group-reconnect-{loop.iteration}-{runId}",
-                      "generationId": "reconnect-generation-{loop.iteration}-{runId}",
+                      "generationId": "lane-4-generation-3-{loop.iteration}-{runId}",
                       "principalId": "{lane4ClientId}"
                     }
                   },
@@ -2689,6 +2721,8 @@
                     },
                     "body": {
                       "requestId": "lane-5-client-connect-{loop.iteration}-{runId}",
+                      "generationId": "lane-5-generation-1-{loop.iteration}-{runId}",
+                      "connectedAtEpochMs": "{clientGenerationStartedAtEpochMs}",
                       "presenceState": "online",
                       "transport": "ws",
                       "connectionId": "medium-scale-5-{loop.iteration}"
@@ -2720,6 +2754,7 @@
                             },
                             "body": {
                               "requestId": "lane-5-heartbeat-{loop.iteration}-{runId}",
+                              "generationId": "lane-5-generation-1-{loop.iteration}-{runId}",
                               "presenceState": "online"
                             }
                           },
@@ -2775,7 +2810,8 @@
                       "x-client-id": "{lane5ClientId}"
                     },
                     "body": {
-                      "requestId": "lane-5-client-disconnect-{loop.iteration}-{runId}"
+                      "requestId": "lane-5-client-disconnect-{loop.iteration}-{runId}",
+                      "generationId": "lane-5-generation-1-{loop.iteration}-{runId}"
                     }
                   },
                   "expect": {
@@ -2795,6 +2831,8 @@
                     },
                     "body": {
                       "requestId": "lane-5-client-reconnect-{loop.iteration}-{runId}",
+                      "generationId": "lane-5-generation-2-{loop.iteration}-{runId}",
+                      "connectedAtEpochMs": "{clientGenerationStartedAtEpochMs}",
                       "presenceState": "online",
                       "transport": "ws",
                       "connectionId": "medium-scale-reconnect-5-{loop.iteration}"
@@ -2837,7 +2875,7 @@
                     },
                     "body": {
                       "requestId": "lane-5-presence-{loop.iteration}-{groupFiveId}-{runId}",
-                      "generationId": "reconnect-generation-{loop.iteration}-{runId}",
+                      "generationId": "lane-5-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane5ClientId}"
                     }
                   },
@@ -2878,7 +2916,7 @@
                     },
                     "body": {
                       "requestId": "lane-5-presence-{loop.iteration}-{groupOneId}-{runId}",
-                      "generationId": "generation-{runId}",
+                      "generationId": "lane-5-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane5ClientId}"
                     }
                   },
@@ -2919,7 +2957,7 @@
                     },
                     "body": {
                       "requestId": "lane-5-presence-{loop.iteration}-{groupTwoId}-{runId}",
-                      "generationId": "generation-{runId}",
+                      "generationId": "lane-5-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane5ClientId}"
                     }
                   },
@@ -2960,7 +2998,7 @@
                     },
                     "body": {
                       "requestId": "lane-5-presence-{loop.iteration}-{groupThreeId}-{runId}",
-                      "generationId": "generation-{runId}",
+                      "generationId": "lane-5-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane5ClientId}"
                     }
                   },
@@ -3001,7 +3039,7 @@
                     },
                     "body": {
                       "requestId": "lane-5-presence-{loop.iteration}-{groupFourId}-{runId}",
-                      "generationId": "generation-{runId}",
+                      "generationId": "lane-5-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane5ClientId}"
                     }
                   },
@@ -3022,7 +3060,7 @@
                     },
                     "body": {
                       "requestId": "lane-5-group-disconnect-{loop.iteration}-{runId}",
-                      "generationId": "generation-{runId}",
+                      "generationId": "lane-5-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane5ClientId}"
                     }
                   },
@@ -3043,7 +3081,7 @@
                     },
                     "body": {
                       "requestId": "lane-5-group-reconnect-{loop.iteration}-{runId}",
-                      "generationId": "reconnect-generation-{loop.iteration}-{runId}",
+                      "generationId": "lane-5-generation-3-{loop.iteration}-{runId}",
                       "principalId": "{lane5ClientId}"
                     }
                   },
@@ -3203,6 +3241,8 @@
                     },
                     "body": {
                       "requestId": "lane-6-client-connect-{loop.iteration}-{runId}",
+                      "generationId": "lane-6-generation-1-{loop.iteration}-{runId}",
+                      "connectedAtEpochMs": "{clientGenerationStartedAtEpochMs}",
                       "presenceState": "online",
                       "transport": "ws",
                       "connectionId": "medium-scale-6-{loop.iteration}"
@@ -3234,6 +3274,7 @@
                             },
                             "body": {
                               "requestId": "lane-6-heartbeat-{loop.iteration}-{runId}",
+                              "generationId": "lane-6-generation-1-{loop.iteration}-{runId}",
                               "presenceState": "online"
                             }
                           },
@@ -3289,7 +3330,8 @@
                       "x-client-id": "{lane6ClientId}"
                     },
                     "body": {
-                      "requestId": "lane-6-client-disconnect-{loop.iteration}-{runId}"
+                      "requestId": "lane-6-client-disconnect-{loop.iteration}-{runId}",
+                      "generationId": "lane-6-generation-1-{loop.iteration}-{runId}"
                     }
                   },
                   "expect": {
@@ -3309,6 +3351,8 @@
                     },
                     "body": {
                       "requestId": "lane-6-client-reconnect-{loop.iteration}-{runId}",
+                      "generationId": "lane-6-generation-2-{loop.iteration}-{runId}",
+                      "connectedAtEpochMs": "{clientGenerationStartedAtEpochMs}",
                       "presenceState": "online",
                       "transport": "ws",
                       "connectionId": "medium-scale-reconnect-6-{loop.iteration}"
@@ -3351,7 +3395,7 @@
                     },
                     "body": {
                       "requestId": "lane-6-presence-{loop.iteration}-{groupOneId}-{runId}",
-                      "generationId": "reconnect-generation-{loop.iteration}-{runId}",
+                      "generationId": "lane-6-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane6ClientId}"
                     }
                   },
@@ -3392,7 +3436,7 @@
                     },
                     "body": {
                       "requestId": "lane-6-presence-{loop.iteration}-{groupTwoId}-{runId}",
-                      "generationId": "generation-{runId}",
+                      "generationId": "lane-6-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane6ClientId}"
                     }
                   },
@@ -3433,7 +3477,7 @@
                     },
                     "body": {
                       "requestId": "lane-6-presence-{loop.iteration}-{groupThreeId}-{runId}",
-                      "generationId": "generation-{runId}",
+                      "generationId": "lane-6-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane6ClientId}"
                     }
                   },
@@ -3474,7 +3518,7 @@
                     },
                     "body": {
                       "requestId": "lane-6-presence-{loop.iteration}-{groupFourId}-{runId}",
-                      "generationId": "generation-{runId}",
+                      "generationId": "lane-6-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane6ClientId}"
                     }
                   },
@@ -3515,7 +3559,7 @@
                     },
                     "body": {
                       "requestId": "lane-6-presence-{loop.iteration}-{groupFiveId}-{runId}",
-                      "generationId": "generation-{runId}",
+                      "generationId": "lane-6-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane6ClientId}"
                     }
                   },
@@ -3536,7 +3580,7 @@
                     },
                     "body": {
                       "requestId": "lane-6-group-disconnect-{loop.iteration}-{runId}",
-                      "generationId": "generation-{runId}",
+                      "generationId": "lane-6-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane6ClientId}"
                     }
                   },
@@ -3557,7 +3601,7 @@
                     },
                     "body": {
                       "requestId": "lane-6-group-reconnect-{loop.iteration}-{runId}",
-                      "generationId": "reconnect-generation-{loop.iteration}-{runId}",
+                      "generationId": "lane-6-generation-3-{loop.iteration}-{runId}",
                       "principalId": "{lane6ClientId}"
                     }
                   },
@@ -3717,6 +3761,8 @@
                     },
                     "body": {
                       "requestId": "lane-7-client-connect-{loop.iteration}-{runId}",
+                      "generationId": "lane-7-generation-1-{loop.iteration}-{runId}",
+                      "connectedAtEpochMs": "{clientGenerationStartedAtEpochMs}",
                       "presenceState": "online",
                       "transport": "ws",
                       "connectionId": "medium-scale-7-{loop.iteration}"
@@ -3748,6 +3794,7 @@
                             },
                             "body": {
                               "requestId": "lane-7-heartbeat-{loop.iteration}-{runId}",
+                              "generationId": "lane-7-generation-1-{loop.iteration}-{runId}",
                               "presenceState": "online"
                             }
                           },
@@ -3803,7 +3850,8 @@
                       "x-client-id": "{lane7ClientId}"
                     },
                     "body": {
-                      "requestId": "lane-7-client-disconnect-{loop.iteration}-{runId}"
+                      "requestId": "lane-7-client-disconnect-{loop.iteration}-{runId}",
+                      "generationId": "lane-7-generation-1-{loop.iteration}-{runId}"
                     }
                   },
                   "expect": {
@@ -3823,6 +3871,8 @@
                     },
                     "body": {
                       "requestId": "lane-7-client-reconnect-{loop.iteration}-{runId}",
+                      "generationId": "lane-7-generation-2-{loop.iteration}-{runId}",
+                      "connectedAtEpochMs": "{clientGenerationStartedAtEpochMs}",
                       "presenceState": "online",
                       "transport": "ws",
                       "connectionId": "medium-scale-reconnect-7-{loop.iteration}"
@@ -3865,7 +3915,7 @@
                     },
                     "body": {
                       "requestId": "lane-7-presence-{loop.iteration}-{groupTwoId}-{runId}",
-                      "generationId": "reconnect-generation-{loop.iteration}-{runId}",
+                      "generationId": "lane-7-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane7ClientId}"
                     }
                   },
@@ -3906,7 +3956,7 @@
                     },
                     "body": {
                       "requestId": "lane-7-presence-{loop.iteration}-{groupThreeId}-{runId}",
-                      "generationId": "generation-{runId}",
+                      "generationId": "lane-7-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane7ClientId}"
                     }
                   },
@@ -3947,7 +3997,7 @@
                     },
                     "body": {
                       "requestId": "lane-7-presence-{loop.iteration}-{groupFourId}-{runId}",
-                      "generationId": "generation-{runId}",
+                      "generationId": "lane-7-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane7ClientId}"
                     }
                   },
@@ -3988,7 +4038,7 @@
                     },
                     "body": {
                       "requestId": "lane-7-presence-{loop.iteration}-{groupFiveId}-{runId}",
-                      "generationId": "generation-{runId}",
+                      "generationId": "lane-7-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane7ClientId}"
                     }
                   },
@@ -4029,7 +4079,7 @@
                     },
                     "body": {
                       "requestId": "lane-7-presence-{loop.iteration}-{groupOneId}-{runId}",
-                      "generationId": "generation-{runId}",
+                      "generationId": "lane-7-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane7ClientId}"
                     }
                   },
@@ -4050,7 +4100,7 @@
                     },
                     "body": {
                       "requestId": "lane-7-group-disconnect-{loop.iteration}-{runId}",
-                      "generationId": "generation-{runId}",
+                      "generationId": "lane-7-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane7ClientId}"
                     }
                   },
@@ -4071,7 +4121,7 @@
                     },
                     "body": {
                       "requestId": "lane-7-group-reconnect-{loop.iteration}-{runId}",
-                      "generationId": "reconnect-generation-{loop.iteration}-{runId}",
+                      "generationId": "lane-7-generation-3-{loop.iteration}-{runId}",
                       "principalId": "{lane7ClientId}"
                     }
                   },
@@ -4231,6 +4281,8 @@
                     },
                     "body": {
                       "requestId": "lane-8-client-connect-{loop.iteration}-{runId}",
+                      "generationId": "lane-8-generation-1-{loop.iteration}-{runId}",
+                      "connectedAtEpochMs": "{clientGenerationStartedAtEpochMs}",
                       "presenceState": "online",
                       "transport": "ws",
                       "connectionId": "medium-scale-8-{loop.iteration}"
@@ -4262,6 +4314,7 @@
                             },
                             "body": {
                               "requestId": "lane-8-heartbeat-{loop.iteration}-{runId}",
+                              "generationId": "lane-8-generation-1-{loop.iteration}-{runId}",
                               "presenceState": "online"
                             }
                           },
@@ -4317,7 +4370,8 @@
                       "x-client-id": "{lane8ClientId}"
                     },
                     "body": {
-                      "requestId": "lane-8-client-disconnect-{loop.iteration}-{runId}"
+                      "requestId": "lane-8-client-disconnect-{loop.iteration}-{runId}",
+                      "generationId": "lane-8-generation-1-{loop.iteration}-{runId}"
                     }
                   },
                   "expect": {
@@ -4337,6 +4391,8 @@
                     },
                     "body": {
                       "requestId": "lane-8-client-reconnect-{loop.iteration}-{runId}",
+                      "generationId": "lane-8-generation-2-{loop.iteration}-{runId}",
+                      "connectedAtEpochMs": "{clientGenerationStartedAtEpochMs}",
                       "presenceState": "online",
                       "transport": "ws",
                       "connectionId": "medium-scale-reconnect-8-{loop.iteration}"
@@ -4379,7 +4435,7 @@
                     },
                     "body": {
                       "requestId": "lane-8-presence-{loop.iteration}-{groupThreeId}-{runId}",
-                      "generationId": "reconnect-generation-{loop.iteration}-{runId}",
+                      "generationId": "lane-8-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane8ClientId}"
                     }
                   },
@@ -4420,7 +4476,7 @@
                     },
                     "body": {
                       "requestId": "lane-8-presence-{loop.iteration}-{groupFourId}-{runId}",
-                      "generationId": "generation-{runId}",
+                      "generationId": "lane-8-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane8ClientId}"
                     }
                   },
@@ -4461,7 +4517,7 @@
                     },
                     "body": {
                       "requestId": "lane-8-presence-{loop.iteration}-{groupFiveId}-{runId}",
-                      "generationId": "generation-{runId}",
+                      "generationId": "lane-8-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane8ClientId}"
                     }
                   },
@@ -4502,7 +4558,7 @@
                     },
                     "body": {
                       "requestId": "lane-8-presence-{loop.iteration}-{groupOneId}-{runId}",
-                      "generationId": "generation-{runId}",
+                      "generationId": "lane-8-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane8ClientId}"
                     }
                   },
@@ -4543,7 +4599,7 @@
                     },
                     "body": {
                       "requestId": "lane-8-presence-{loop.iteration}-{groupTwoId}-{runId}",
-                      "generationId": "generation-{runId}",
+                      "generationId": "lane-8-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane8ClientId}"
                     }
                   },
@@ -4564,7 +4620,7 @@
                     },
                     "body": {
                       "requestId": "lane-8-group-disconnect-{loop.iteration}-{runId}",
-                      "generationId": "generation-{runId}",
+                      "generationId": "lane-8-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane8ClientId}"
                     }
                   },
@@ -4585,7 +4641,7 @@
                     },
                     "body": {
                       "requestId": "lane-8-group-reconnect-{loop.iteration}-{runId}",
-                      "generationId": "reconnect-generation-{loop.iteration}-{runId}",
+                      "generationId": "lane-8-generation-3-{loop.iteration}-{runId}",
                       "principalId": "{lane8ClientId}"
                     }
                   },
@@ -4745,6 +4801,8 @@
                     },
                     "body": {
                       "requestId": "lane-9-client-connect-{loop.iteration}-{runId}",
+                      "generationId": "lane-9-generation-1-{loop.iteration}-{runId}",
+                      "connectedAtEpochMs": "{clientGenerationStartedAtEpochMs}",
                       "presenceState": "online",
                       "transport": "ws",
                       "connectionId": "medium-scale-9-{loop.iteration}"
@@ -4776,6 +4834,7 @@
                             },
                             "body": {
                               "requestId": "lane-9-heartbeat-{loop.iteration}-{runId}",
+                              "generationId": "lane-9-generation-1-{loop.iteration}-{runId}",
                               "presenceState": "online"
                             }
                           },
@@ -4831,7 +4890,8 @@
                       "x-client-id": "{lane9ClientId}"
                     },
                     "body": {
-                      "requestId": "lane-9-client-disconnect-{loop.iteration}-{runId}"
+                      "requestId": "lane-9-client-disconnect-{loop.iteration}-{runId}",
+                      "generationId": "lane-9-generation-1-{loop.iteration}-{runId}"
                     }
                   },
                   "expect": {
@@ -4851,6 +4911,8 @@
                     },
                     "body": {
                       "requestId": "lane-9-client-reconnect-{loop.iteration}-{runId}",
+                      "generationId": "lane-9-generation-2-{loop.iteration}-{runId}",
+                      "connectedAtEpochMs": "{clientGenerationStartedAtEpochMs}",
                       "presenceState": "online",
                       "transport": "ws",
                       "connectionId": "medium-scale-reconnect-9-{loop.iteration}"
@@ -4893,7 +4955,7 @@
                     },
                     "body": {
                       "requestId": "lane-9-presence-{loop.iteration}-{groupFourId}-{runId}",
-                      "generationId": "reconnect-generation-{loop.iteration}-{runId}",
+                      "generationId": "lane-9-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane9ClientId}"
                     }
                   },
@@ -4934,7 +4996,7 @@
                     },
                     "body": {
                       "requestId": "lane-9-presence-{loop.iteration}-{groupFiveId}-{runId}",
-                      "generationId": "generation-{runId}",
+                      "generationId": "lane-9-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane9ClientId}"
                     }
                   },
@@ -4975,7 +5037,7 @@
                     },
                     "body": {
                       "requestId": "lane-9-presence-{loop.iteration}-{groupOneId}-{runId}",
-                      "generationId": "generation-{runId}",
+                      "generationId": "lane-9-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane9ClientId}"
                     }
                   },
@@ -5016,7 +5078,7 @@
                     },
                     "body": {
                       "requestId": "lane-9-presence-{loop.iteration}-{groupTwoId}-{runId}",
-                      "generationId": "generation-{runId}",
+                      "generationId": "lane-9-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane9ClientId}"
                     }
                   },
@@ -5057,7 +5119,7 @@
                     },
                     "body": {
                       "requestId": "lane-9-presence-{loop.iteration}-{groupThreeId}-{runId}",
-                      "generationId": "generation-{runId}",
+                      "generationId": "lane-9-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane9ClientId}"
                     }
                   },
@@ -5078,7 +5140,7 @@
                     },
                     "body": {
                       "requestId": "lane-9-group-disconnect-{loop.iteration}-{runId}",
-                      "generationId": "generation-{runId}",
+                      "generationId": "lane-9-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane9ClientId}"
                     }
                   },
@@ -5099,7 +5161,7 @@
                     },
                     "body": {
                       "requestId": "lane-9-group-reconnect-{loop.iteration}-{runId}",
-                      "generationId": "reconnect-generation-{loop.iteration}-{runId}",
+                      "generationId": "lane-9-generation-3-{loop.iteration}-{runId}",
                       "principalId": "{lane9ClientId}"
                     }
                   },
@@ -5259,6 +5321,8 @@
                     },
                     "body": {
                       "requestId": "lane-10-client-connect-{loop.iteration}-{runId}",
+                      "generationId": "lane-10-generation-1-{loop.iteration}-{runId}",
+                      "connectedAtEpochMs": "{clientGenerationStartedAtEpochMs}",
                       "presenceState": "online",
                       "transport": "ws",
                       "connectionId": "medium-scale-10-{loop.iteration}"
@@ -5290,6 +5354,7 @@
                             },
                             "body": {
                               "requestId": "lane-10-heartbeat-{loop.iteration}-{runId}",
+                              "generationId": "lane-10-generation-1-{loop.iteration}-{runId}",
                               "presenceState": "online"
                             }
                           },
@@ -5345,7 +5410,8 @@
                       "x-client-id": "{lane10ClientId}"
                     },
                     "body": {
-                      "requestId": "lane-10-client-disconnect-{loop.iteration}-{runId}"
+                      "requestId": "lane-10-client-disconnect-{loop.iteration}-{runId}",
+                      "generationId": "lane-10-generation-1-{loop.iteration}-{runId}"
                     }
                   },
                   "expect": {
@@ -5365,6 +5431,8 @@
                     },
                     "body": {
                       "requestId": "lane-10-client-reconnect-{loop.iteration}-{runId}",
+                      "generationId": "lane-10-generation-2-{loop.iteration}-{runId}",
+                      "connectedAtEpochMs": "{clientGenerationStartedAtEpochMs}",
                       "presenceState": "online",
                       "transport": "ws",
                       "connectionId": "medium-scale-reconnect-10-{loop.iteration}"
@@ -5407,7 +5475,7 @@
                     },
                     "body": {
                       "requestId": "lane-10-presence-{loop.iteration}-{groupFiveId}-{runId}",
-                      "generationId": "reconnect-generation-{loop.iteration}-{runId}",
+                      "generationId": "lane-10-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane10ClientId}"
                     }
                   },
@@ -5448,7 +5516,7 @@
                     },
                     "body": {
                       "requestId": "lane-10-presence-{loop.iteration}-{groupOneId}-{runId}",
-                      "generationId": "generation-{runId}",
+                      "generationId": "lane-10-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane10ClientId}"
                     }
                   },
@@ -5489,7 +5557,7 @@
                     },
                     "body": {
                       "requestId": "lane-10-presence-{loop.iteration}-{groupTwoId}-{runId}",
-                      "generationId": "generation-{runId}",
+                      "generationId": "lane-10-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane10ClientId}"
                     }
                   },
@@ -5530,7 +5598,7 @@
                     },
                     "body": {
                       "requestId": "lane-10-presence-{loop.iteration}-{groupThreeId}-{runId}",
-                      "generationId": "generation-{runId}",
+                      "generationId": "lane-10-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane10ClientId}"
                     }
                   },
@@ -5571,7 +5639,7 @@
                     },
                     "body": {
                       "requestId": "lane-10-presence-{loop.iteration}-{groupFourId}-{runId}",
-                      "generationId": "generation-{runId}",
+                      "generationId": "lane-10-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane10ClientId}"
                     }
                   },
@@ -5592,7 +5660,7 @@
                     },
                     "body": {
                       "requestId": "lane-10-group-disconnect-{loop.iteration}-{runId}",
-                      "generationId": "generation-{runId}",
+                      "generationId": "lane-10-generation-2-{loop.iteration}-{runId}",
                       "principalId": "{lane10ClientId}"
                     }
                   },
@@ -5613,7 +5681,7 @@
                     },
                     "body": {
                       "requestId": "lane-10-group-reconnect-{loop.iteration}-{runId}",
-                      "generationId": "reconnect-generation-{loop.iteration}-{runId}",
+                      "generationId": "lane-10-generation-3-{loop.iteration}-{runId}",
                       "principalId": "{lane10ClientId}"
                     }
                   },
@@ -5653,7 +5721,13 @@
                     }
                   },
                   "expect": {
-                    "status": 200
+                    "status": 200,
+                    "body": {
+                      "receipt": {
+                        "acceptedVersion": "integer",
+                        "outboxIds": ["string"]
+                      }
+                    }
                   }
                 },
                 {
@@ -5670,7 +5744,13 @@
                     }
                   },
                   "expect": {
-                    "status": 200
+                    "status": 200,
+                    "body": {
+                      "receipt": {
+                        "acceptedVersion": "integer",
+                        "outboxIds": ["string"]
+                      }
+                    }
                   }
                 },
                 {
@@ -5692,11 +5772,18 @@
                       }
                     },
                     "outputs": {
-                      "finalGroupOneIdConfigVersion": "body.config.version"
+                      "finalGroupOneIdConfigVersion": "body.config.version",
+                      "finalGroupOneIdTopologyOutboxIds": "body.receipt.outboxIds"
                     }
                   },
                   "expect": {
-                    "status": 200
+                    "status": 200,
+                    "body": {
+                      "receipt": {
+                        "acceptedVersion": "integer",
+                        "outboxIds": ["string"]
+                      }
+                    }
                   }
                 },
                 {
@@ -5751,7 +5838,13 @@
                     }
                   },
                   "expect": {
-                    "status": 200
+                    "status": 200,
+                    "body": {
+                      "receipt": {
+                        "acceptedVersion": "integer",
+                        "outboxIds": ["string"]
+                      }
+                    }
                   }
                 },
                 {
@@ -5768,7 +5861,13 @@
                     }
                   },
                   "expect": {
-                    "status": 200
+                    "status": 200,
+                    "body": {
+                      "receipt": {
+                        "acceptedVersion": "integer",
+                        "outboxIds": ["string"]
+                      }
+                    }
                   }
                 },
                 {
@@ -5790,11 +5889,18 @@
                       }
                     },
                     "outputs": {
-                      "finalGroupTwoIdConfigVersion": "body.config.version"
+                      "finalGroupTwoIdConfigVersion": "body.config.version",
+                      "finalGroupTwoIdTopologyOutboxIds": "body.receipt.outboxIds"
                     }
                   },
                   "expect": {
-                    "status": 200
+                    "status": 200,
+                    "body": {
+                      "receipt": {
+                        "acceptedVersion": "integer",
+                        "outboxIds": ["string"]
+                      }
+                    }
                   }
                 },
                 {
@@ -5849,7 +5955,13 @@
                     }
                   },
                   "expect": {
-                    "status": 200
+                    "status": 200,
+                    "body": {
+                      "receipt": {
+                        "acceptedVersion": "integer",
+                        "outboxIds": ["string"]
+                      }
+                    }
                   }
                 },
                 {
@@ -5866,7 +5978,13 @@
                     }
                   },
                   "expect": {
-                    "status": 200
+                    "status": 200,
+                    "body": {
+                      "receipt": {
+                        "acceptedVersion": "integer",
+                        "outboxIds": ["string"]
+                      }
+                    }
                   }
                 },
                 {
@@ -5888,11 +6006,18 @@
                       }
                     },
                     "outputs": {
-                      "finalGroupThreeIdConfigVersion": "body.config.version"
+                      "finalGroupThreeIdConfigVersion": "body.config.version",
+                      "finalGroupThreeIdTopologyOutboxIds": "body.receipt.outboxIds"
                     }
                   },
                   "expect": {
-                    "status": 200
+                    "status": 200,
+                    "body": {
+                      "receipt": {
+                        "acceptedVersion": "integer",
+                        "outboxIds": ["string"]
+                      }
+                    }
                   }
                 },
                 {
@@ -5947,7 +6072,13 @@
                     }
                   },
                   "expect": {
-                    "status": 200
+                    "status": 200,
+                    "body": {
+                      "receipt": {
+                        "acceptedVersion": "integer",
+                        "outboxIds": ["string"]
+                      }
+                    }
                   }
                 },
                 {
@@ -5964,7 +6095,13 @@
                     }
                   },
                   "expect": {
-                    "status": 200
+                    "status": 200,
+                    "body": {
+                      "receipt": {
+                        "acceptedVersion": "integer",
+                        "outboxIds": ["string"]
+                      }
+                    }
                   }
                 },
                 {
@@ -5986,11 +6123,18 @@
                       }
                     },
                     "outputs": {
-                      "finalGroupFourIdConfigVersion": "body.config.version"
+                      "finalGroupFourIdConfigVersion": "body.config.version",
+                      "finalGroupFourIdTopologyOutboxIds": "body.receipt.outboxIds"
                     }
                   },
                   "expect": {
-                    "status": 200
+                    "status": 200,
+                    "body": {
+                      "receipt": {
+                        "acceptedVersion": "integer",
+                        "outboxIds": ["string"]
+                      }
+                    }
                   }
                 },
                 {
@@ -6045,7 +6189,13 @@
                     }
                   },
                   "expect": {
-                    "status": 200
+                    "status": 200,
+                    "body": {
+                      "receipt": {
+                        "acceptedVersion": "integer",
+                        "outboxIds": ["string"]
+                      }
+                    }
                   }
                 },
                 {
@@ -6062,7 +6212,13 @@
                     }
                   },
                   "expect": {
-                    "status": 200
+                    "status": 200,
+                    "body": {
+                      "receipt": {
+                        "acceptedVersion": "integer",
+                        "outboxIds": ["string"]
+                      }
+                    }
                   }
                 },
                 {
@@ -6084,11 +6240,18 @@
                       }
                     },
                     "outputs": {
-                      "finalGroupFiveIdConfigVersion": "body.config.version"
+                      "finalGroupFiveIdConfigVersion": "body.config.version",
+                      "finalGroupFiveIdTopologyOutboxIds": "body.receipt.outboxIds"
                     }
                   },
                   "expect": {
-                    "status": 200
+                    "status": 200,
+                    "body": {
+                      "receipt": {
+                        "acceptedVersion": "integer",
+                        "outboxIds": ["string"]
+                      }
+                    }
                   }
                 },
                 {
@@ -6145,7 +6308,7 @@
               "connection": "apiSecondary",
               "request": {
                 "method": "GET",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane1ClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane1ClientId}/presence",
                 "headers": {
                   "Authorization": "{lane1AuthHeader}",
                   "x-client-id": "{lane1ClientId}"
@@ -6154,15 +6317,13 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "principal": {
-                    "principalId": "{lane1ClientId}",
-                    "status": "active"
-                  },
+                  "principalId": "{lane1ClientId}",
                   "isOnline": true,
                   "activeSessions": [
                     {
                       "clientInstanceId": "{lane1InstanceId}",
                       "sessionId": "{lane1SessionId}",
+                      "generationId": "lane-1-generation-2-10-{runId}",
                       "presenceState": "online"
                     }
                   ]
@@ -6180,7 +6341,7 @@
               "connection": "apiPrimary",
               "request": {
                 "method": "GET",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane2ClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane2ClientId}/presence",
                 "headers": {
                   "Authorization": "{lane2AuthHeader}",
                   "x-client-id": "{lane2ClientId}"
@@ -6189,15 +6350,13 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "principal": {
-                    "principalId": "{lane2ClientId}",
-                    "status": "active"
-                  },
+                  "principalId": "{lane2ClientId}",
                   "isOnline": true,
                   "activeSessions": [
                     {
                       "clientInstanceId": "{lane2InstanceId}",
                       "sessionId": "{lane2SessionId}",
+                      "generationId": "lane-2-generation-2-10-{runId}",
                       "presenceState": "online"
                     }
                   ]
@@ -6215,7 +6374,7 @@
               "connection": "apiSecondary",
               "request": {
                 "method": "GET",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane3ClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane3ClientId}/presence",
                 "headers": {
                   "Authorization": "{lane3AuthHeader}",
                   "x-client-id": "{lane3ClientId}"
@@ -6224,15 +6383,13 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "principal": {
-                    "principalId": "{lane3ClientId}",
-                    "status": "active"
-                  },
+                  "principalId": "{lane3ClientId}",
                   "isOnline": true,
                   "activeSessions": [
                     {
                       "clientInstanceId": "{lane3InstanceId}",
                       "sessionId": "{lane3SessionId}",
+                      "generationId": "lane-3-generation-2-10-{runId}",
                       "presenceState": "online"
                     }
                   ]
@@ -6250,7 +6407,7 @@
               "connection": "apiPrimary",
               "request": {
                 "method": "GET",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane4ClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane4ClientId}/presence",
                 "headers": {
                   "Authorization": "{lane4AuthHeader}",
                   "x-client-id": "{lane4ClientId}"
@@ -6259,15 +6416,13 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "principal": {
-                    "principalId": "{lane4ClientId}",
-                    "status": "active"
-                  },
+                  "principalId": "{lane4ClientId}",
                   "isOnline": true,
                   "activeSessions": [
                     {
                       "clientInstanceId": "{lane4InstanceId}",
                       "sessionId": "{lane4SessionId}",
+                      "generationId": "lane-4-generation-2-10-{runId}",
                       "presenceState": "online"
                     }
                   ]
@@ -6285,7 +6440,7 @@
               "connection": "apiSecondary",
               "request": {
                 "method": "GET",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane5ClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane5ClientId}/presence",
                 "headers": {
                   "Authorization": "{lane5AuthHeader}",
                   "x-client-id": "{lane5ClientId}"
@@ -6294,15 +6449,13 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "principal": {
-                    "principalId": "{lane5ClientId}",
-                    "status": "active"
-                  },
+                  "principalId": "{lane5ClientId}",
                   "isOnline": true,
                   "activeSessions": [
                     {
                       "clientInstanceId": "{lane5InstanceId}",
                       "sessionId": "{lane5SessionId}",
+                      "generationId": "lane-5-generation-2-10-{runId}",
                       "presenceState": "online"
                     }
                   ]
@@ -6320,7 +6473,7 @@
               "connection": "apiPrimary",
               "request": {
                 "method": "GET",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane6ClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane6ClientId}/presence",
                 "headers": {
                   "Authorization": "{lane6AuthHeader}",
                   "x-client-id": "{lane6ClientId}"
@@ -6329,15 +6482,13 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "principal": {
-                    "principalId": "{lane6ClientId}",
-                    "status": "active"
-                  },
+                  "principalId": "{lane6ClientId}",
                   "isOnline": true,
                   "activeSessions": [
                     {
                       "clientInstanceId": "{lane6InstanceId}",
                       "sessionId": "{lane6SessionId}",
+                      "generationId": "lane-6-generation-2-10-{runId}",
                       "presenceState": "online"
                     }
                   ]
@@ -6355,7 +6506,7 @@
               "connection": "apiSecondary",
               "request": {
                 "method": "GET",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane7ClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane7ClientId}/presence",
                 "headers": {
                   "Authorization": "{lane7AuthHeader}",
                   "x-client-id": "{lane7ClientId}"
@@ -6364,15 +6515,13 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "principal": {
-                    "principalId": "{lane7ClientId}",
-                    "status": "active"
-                  },
+                  "principalId": "{lane7ClientId}",
                   "isOnline": true,
                   "activeSessions": [
                     {
                       "clientInstanceId": "{lane7InstanceId}",
                       "sessionId": "{lane7SessionId}",
+                      "generationId": "lane-7-generation-2-10-{runId}",
                       "presenceState": "online"
                     }
                   ]
@@ -6390,7 +6539,7 @@
               "connection": "apiPrimary",
               "request": {
                 "method": "GET",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane8ClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane8ClientId}/presence",
                 "headers": {
                   "Authorization": "{lane8AuthHeader}",
                   "x-client-id": "{lane8ClientId}"
@@ -6399,15 +6548,13 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "principal": {
-                    "principalId": "{lane8ClientId}",
-                    "status": "active"
-                  },
+                  "principalId": "{lane8ClientId}",
                   "isOnline": true,
                   "activeSessions": [
                     {
                       "clientInstanceId": "{lane8InstanceId}",
                       "sessionId": "{lane8SessionId}",
+                      "generationId": "lane-8-generation-2-10-{runId}",
                       "presenceState": "online"
                     }
                   ]
@@ -6425,7 +6572,7 @@
               "connection": "apiSecondary",
               "request": {
                 "method": "GET",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane9ClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane9ClientId}/presence",
                 "headers": {
                   "Authorization": "{lane9AuthHeader}",
                   "x-client-id": "{lane9ClientId}"
@@ -6434,15 +6581,13 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "principal": {
-                    "principalId": "{lane9ClientId}",
-                    "status": "active"
-                  },
+                  "principalId": "{lane9ClientId}",
                   "isOnline": true,
                   "activeSessions": [
                     {
                       "clientInstanceId": "{lane9InstanceId}",
                       "sessionId": "{lane9SessionId}",
+                      "generationId": "lane-9-generation-2-10-{runId}",
                       "presenceState": "online"
                     }
                   ]
@@ -6460,7 +6605,7 @@
               "connection": "apiPrimary",
               "request": {
                 "method": "GET",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane10ClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane10ClientId}/presence",
                 "headers": {
                   "Authorization": "{lane10AuthHeader}",
                   "x-client-id": "{lane10ClientId}"
@@ -6469,15 +6614,13 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "principal": {
-                    "principalId": "{lane10ClientId}",
-                    "status": "active"
-                  },
+                  "principalId": "{lane10ClientId}",
                   "isOnline": true,
                   "activeSessions": [
                     {
                       "clientInstanceId": "{lane10InstanceId}",
                       "sessionId": "{lane10SessionId}",
+                      "generationId": "lane-10-generation-2-10-{runId}",
                       "presenceState": "online"
                     }
                   ]
@@ -6501,8 +6644,8 @@
                   "x-client-id": "{ownerClientId}"
                 },
                 "outputs": {
-                  "finalGroupOneIdStateCausalRevision": "body.groupStateCausalRevision",
-                  "finalGroupOneIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+                  "finalGroupOneIdStateCausalRevision": "body.causalRevision.groupRevision",
+                  "finalGroupOneIdPresenceCausalRevision": "body.causalRevision.presenceRevision"
                 }
               },
               "expect": {
@@ -6533,8 +6676,8 @@
                   "x-client-id": "{ownerClientId}"
                 },
                 "outputs": {
-                  "finalGroupTwoIdStateCausalRevision": "body.groupStateCausalRevision",
-                  "finalGroupTwoIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+                  "finalGroupTwoIdStateCausalRevision": "body.causalRevision.groupRevision",
+                  "finalGroupTwoIdPresenceCausalRevision": "body.causalRevision.presenceRevision"
                 }
               },
               "expect": {
@@ -6565,8 +6708,8 @@
                   "x-client-id": "{ownerClientId}"
                 },
                 "outputs": {
-                  "finalGroupThreeIdStateCausalRevision": "body.groupStateCausalRevision",
-                  "finalGroupThreeIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+                  "finalGroupThreeIdStateCausalRevision": "body.causalRevision.groupRevision",
+                  "finalGroupThreeIdPresenceCausalRevision": "body.causalRevision.presenceRevision"
                 }
               },
               "expect": {
@@ -6597,8 +6740,8 @@
                   "x-client-id": "{ownerClientId}"
                 },
                 "outputs": {
-                  "finalGroupFourIdStateCausalRevision": "body.groupStateCausalRevision",
-                  "finalGroupFourIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+                  "finalGroupFourIdStateCausalRevision": "body.causalRevision.groupRevision",
+                  "finalGroupFourIdPresenceCausalRevision": "body.causalRevision.presenceRevision"
                 }
               },
               "expect": {
@@ -6629,8 +6772,8 @@
                   "x-client-id": "{ownerClientId}"
                 },
                 "outputs": {
-                  "finalGroupFiveIdStateCausalRevision": "body.groupStateCausalRevision",
-                  "finalGroupFiveIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+                  "finalGroupFiveIdStateCausalRevision": "body.causalRevision.groupRevision",
+                  "finalGroupFiveIdPresenceCausalRevision": "body.causalRevision.presenceRevision"
                 }
               },
               "expect": {
@@ -6676,7 +6819,7 @@
               "connection": "apiSecondary",
               "request": {
                 "method": "GET",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane1ClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane1ClientId}/presence",
                 "headers": {
                   "Authorization": "{lane1AuthHeader}",
                   "x-client-id": "{lane1ClientId}"
@@ -6685,15 +6828,13 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "principal": {
-                    "principalId": "{lane1ClientId}",
-                    "status": "active"
-                  },
+                  "principalId": "{lane1ClientId}",
                   "isOnline": true,
                   "activeSessions": [
                     {
                       "clientInstanceId": "{lane1InstanceId}",
                       "sessionId": "{lane1SessionId}",
+                      "generationId": "lane-1-generation-2-10-{runId}",
                       "presenceState": "online"
                     }
                   ]
@@ -6711,7 +6852,7 @@
               "connection": "apiPrimary",
               "request": {
                 "method": "GET",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane2ClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane2ClientId}/presence",
                 "headers": {
                   "Authorization": "{lane2AuthHeader}",
                   "x-client-id": "{lane2ClientId}"
@@ -6720,15 +6861,13 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "principal": {
-                    "principalId": "{lane2ClientId}",
-                    "status": "active"
-                  },
+                  "principalId": "{lane2ClientId}",
                   "isOnline": true,
                   "activeSessions": [
                     {
                       "clientInstanceId": "{lane2InstanceId}",
                       "sessionId": "{lane2SessionId}",
+                      "generationId": "lane-2-generation-2-10-{runId}",
                       "presenceState": "online"
                     }
                   ]
@@ -6746,7 +6885,7 @@
               "connection": "apiSecondary",
               "request": {
                 "method": "GET",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane3ClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane3ClientId}/presence",
                 "headers": {
                   "Authorization": "{lane3AuthHeader}",
                   "x-client-id": "{lane3ClientId}"
@@ -6755,15 +6894,13 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "principal": {
-                    "principalId": "{lane3ClientId}",
-                    "status": "active"
-                  },
+                  "principalId": "{lane3ClientId}",
                   "isOnline": true,
                   "activeSessions": [
                     {
                       "clientInstanceId": "{lane3InstanceId}",
                       "sessionId": "{lane3SessionId}",
+                      "generationId": "lane-3-generation-2-10-{runId}",
                       "presenceState": "online"
                     }
                   ]
@@ -6781,7 +6918,7 @@
               "connection": "apiPrimary",
               "request": {
                 "method": "GET",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane4ClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane4ClientId}/presence",
                 "headers": {
                   "Authorization": "{lane4AuthHeader}",
                   "x-client-id": "{lane4ClientId}"
@@ -6790,15 +6927,13 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "principal": {
-                    "principalId": "{lane4ClientId}",
-                    "status": "active"
-                  },
+                  "principalId": "{lane4ClientId}",
                   "isOnline": true,
                   "activeSessions": [
                     {
                       "clientInstanceId": "{lane4InstanceId}",
                       "sessionId": "{lane4SessionId}",
+                      "generationId": "lane-4-generation-2-10-{runId}",
                       "presenceState": "online"
                     }
                   ]
@@ -6816,7 +6951,7 @@
               "connection": "apiSecondary",
               "request": {
                 "method": "GET",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane5ClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane5ClientId}/presence",
                 "headers": {
                   "Authorization": "{lane5AuthHeader}",
                   "x-client-id": "{lane5ClientId}"
@@ -6825,15 +6960,13 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "principal": {
-                    "principalId": "{lane5ClientId}",
-                    "status": "active"
-                  },
+                  "principalId": "{lane5ClientId}",
                   "isOnline": true,
                   "activeSessions": [
                     {
                       "clientInstanceId": "{lane5InstanceId}",
                       "sessionId": "{lane5SessionId}",
+                      "generationId": "lane-5-generation-2-10-{runId}",
                       "presenceState": "online"
                     }
                   ]
@@ -6851,7 +6984,7 @@
               "connection": "apiPrimary",
               "request": {
                 "method": "GET",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane6ClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane6ClientId}/presence",
                 "headers": {
                   "Authorization": "{lane6AuthHeader}",
                   "x-client-id": "{lane6ClientId}"
@@ -6860,15 +6993,13 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "principal": {
-                    "principalId": "{lane6ClientId}",
-                    "status": "active"
-                  },
+                  "principalId": "{lane6ClientId}",
                   "isOnline": true,
                   "activeSessions": [
                     {
                       "clientInstanceId": "{lane6InstanceId}",
                       "sessionId": "{lane6SessionId}",
+                      "generationId": "lane-6-generation-2-10-{runId}",
                       "presenceState": "online"
                     }
                   ]
@@ -6886,7 +7017,7 @@
               "connection": "apiSecondary",
               "request": {
                 "method": "GET",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane7ClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane7ClientId}/presence",
                 "headers": {
                   "Authorization": "{lane7AuthHeader}",
                   "x-client-id": "{lane7ClientId}"
@@ -6895,15 +7026,13 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "principal": {
-                    "principalId": "{lane7ClientId}",
-                    "status": "active"
-                  },
+                  "principalId": "{lane7ClientId}",
                   "isOnline": true,
                   "activeSessions": [
                     {
                       "clientInstanceId": "{lane7InstanceId}",
                       "sessionId": "{lane7SessionId}",
+                      "generationId": "lane-7-generation-2-10-{runId}",
                       "presenceState": "online"
                     }
                   ]
@@ -6921,7 +7050,7 @@
               "connection": "apiPrimary",
               "request": {
                 "method": "GET",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane8ClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane8ClientId}/presence",
                 "headers": {
                   "Authorization": "{lane8AuthHeader}",
                   "x-client-id": "{lane8ClientId}"
@@ -6930,15 +7059,13 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "principal": {
-                    "principalId": "{lane8ClientId}",
-                    "status": "active"
-                  },
+                  "principalId": "{lane8ClientId}",
                   "isOnline": true,
                   "activeSessions": [
                     {
                       "clientInstanceId": "{lane8InstanceId}",
                       "sessionId": "{lane8SessionId}",
+                      "generationId": "lane-8-generation-2-10-{runId}",
                       "presenceState": "online"
                     }
                   ]
@@ -6956,7 +7083,7 @@
               "connection": "apiSecondary",
               "request": {
                 "method": "GET",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane9ClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane9ClientId}/presence",
                 "headers": {
                   "Authorization": "{lane9AuthHeader}",
                   "x-client-id": "{lane9ClientId}"
@@ -6965,15 +7092,13 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "principal": {
-                    "principalId": "{lane9ClientId}",
-                    "status": "active"
-                  },
+                  "principalId": "{lane9ClientId}",
                   "isOnline": true,
                   "activeSessions": [
                     {
                       "clientInstanceId": "{lane9InstanceId}",
                       "sessionId": "{lane9SessionId}",
+                      "generationId": "lane-9-generation-2-10-{runId}",
                       "presenceState": "online"
                     }
                   ]
@@ -6991,7 +7116,7 @@
               "connection": "apiPrimary",
               "request": {
                 "method": "GET",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane10ClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane10ClientId}/presence",
                 "headers": {
                   "Authorization": "{lane10AuthHeader}",
                   "x-client-id": "{lane10ClientId}"
@@ -7000,15 +7125,13 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "principal": {
-                    "principalId": "{lane10ClientId}",
-                    "status": "active"
-                  },
+                  "principalId": "{lane10ClientId}",
                   "isOnline": true,
                   "activeSessions": [
                     {
                       "clientInstanceId": "{lane10InstanceId}",
                       "sessionId": "{lane10SessionId}",
+                      "generationId": "lane-10-generation-2-10-{runId}",
                       "presenceState": "online"
                     }
                   ]
@@ -7032,8 +7155,8 @@
                   "x-client-id": "{ownerClientId}"
                 },
                 "outputs": {
-                  "finalGroupOneIdStateCausalRevision": "body.groupStateCausalRevision",
-                  "finalGroupOneIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+                  "finalGroupOneIdStateCausalRevision": "body.causalRevision.groupRevision",
+                  "finalGroupOneIdPresenceCausalRevision": "body.causalRevision.presenceRevision"
                 }
               },
               "expect": {
@@ -7064,8 +7187,8 @@
                   "x-client-id": "{ownerClientId}"
                 },
                 "outputs": {
-                  "finalGroupTwoIdStateCausalRevision": "body.groupStateCausalRevision",
-                  "finalGroupTwoIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+                  "finalGroupTwoIdStateCausalRevision": "body.causalRevision.groupRevision",
+                  "finalGroupTwoIdPresenceCausalRevision": "body.causalRevision.presenceRevision"
                 }
               },
               "expect": {
@@ -7096,8 +7219,8 @@
                   "x-client-id": "{ownerClientId}"
                 },
                 "outputs": {
-                  "finalGroupThreeIdStateCausalRevision": "body.groupStateCausalRevision",
-                  "finalGroupThreeIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+                  "finalGroupThreeIdStateCausalRevision": "body.causalRevision.groupRevision",
+                  "finalGroupThreeIdPresenceCausalRevision": "body.causalRevision.presenceRevision"
                 }
               },
               "expect": {
@@ -7128,8 +7251,8 @@
                   "x-client-id": "{ownerClientId}"
                 },
                 "outputs": {
-                  "finalGroupFourIdStateCausalRevision": "body.groupStateCausalRevision",
-                  "finalGroupFourIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+                  "finalGroupFourIdStateCausalRevision": "body.causalRevision.groupRevision",
+                  "finalGroupFourIdPresenceCausalRevision": "body.causalRevision.presenceRevision"
                 }
               },
               "expect": {
@@ -7160,8 +7283,8 @@
                   "x-client-id": "{ownerClientId}"
                 },
                 "outputs": {
-                  "finalGroupFiveIdStateCausalRevision": "body.groupStateCausalRevision",
-                  "finalGroupFiveIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+                  "finalGroupFiveIdStateCausalRevision": "body.causalRevision.groupRevision",
+                  "finalGroupFiveIdPresenceCausalRevision": "body.causalRevision.presenceRevision"
                 }
               },
               "expect": {
@@ -7207,7 +7330,7 @@
               "connection": "apiSecondary",
               "request": {
                 "method": "GET",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane1ClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane1ClientId}/presence",
                 "headers": {
                   "Authorization": "{lane1AuthHeader}",
                   "x-client-id": "{lane1ClientId}"
@@ -7216,15 +7339,13 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "principal": {
-                    "principalId": "{lane1ClientId}",
-                    "status": "active"
-                  },
+                  "principalId": "{lane1ClientId}",
                   "isOnline": true,
                   "activeSessions": [
                     {
                       "clientInstanceId": "{lane1InstanceId}",
                       "sessionId": "{lane1SessionId}",
+                      "generationId": "lane-1-generation-2-10-{runId}",
                       "presenceState": "online"
                     }
                   ]
@@ -7242,7 +7363,7 @@
               "connection": "apiPrimary",
               "request": {
                 "method": "GET",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane2ClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane2ClientId}/presence",
                 "headers": {
                   "Authorization": "{lane2AuthHeader}",
                   "x-client-id": "{lane2ClientId}"
@@ -7251,15 +7372,13 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "principal": {
-                    "principalId": "{lane2ClientId}",
-                    "status": "active"
-                  },
+                  "principalId": "{lane2ClientId}",
                   "isOnline": true,
                   "activeSessions": [
                     {
                       "clientInstanceId": "{lane2InstanceId}",
                       "sessionId": "{lane2SessionId}",
+                      "generationId": "lane-2-generation-2-10-{runId}",
                       "presenceState": "online"
                     }
                   ]
@@ -7277,7 +7396,7 @@
               "connection": "apiSecondary",
               "request": {
                 "method": "GET",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane3ClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane3ClientId}/presence",
                 "headers": {
                   "Authorization": "{lane3AuthHeader}",
                   "x-client-id": "{lane3ClientId}"
@@ -7286,15 +7405,13 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "principal": {
-                    "principalId": "{lane3ClientId}",
-                    "status": "active"
-                  },
+                  "principalId": "{lane3ClientId}",
                   "isOnline": true,
                   "activeSessions": [
                     {
                       "clientInstanceId": "{lane3InstanceId}",
                       "sessionId": "{lane3SessionId}",
+                      "generationId": "lane-3-generation-2-10-{runId}",
                       "presenceState": "online"
                     }
                   ]
@@ -7312,7 +7429,7 @@
               "connection": "apiPrimary",
               "request": {
                 "method": "GET",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane4ClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane4ClientId}/presence",
                 "headers": {
                   "Authorization": "{lane4AuthHeader}",
                   "x-client-id": "{lane4ClientId}"
@@ -7321,15 +7438,13 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "principal": {
-                    "principalId": "{lane4ClientId}",
-                    "status": "active"
-                  },
+                  "principalId": "{lane4ClientId}",
                   "isOnline": true,
                   "activeSessions": [
                     {
                       "clientInstanceId": "{lane4InstanceId}",
                       "sessionId": "{lane4SessionId}",
+                      "generationId": "lane-4-generation-2-10-{runId}",
                       "presenceState": "online"
                     }
                   ]
@@ -7347,7 +7462,7 @@
               "connection": "apiSecondary",
               "request": {
                 "method": "GET",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane5ClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane5ClientId}/presence",
                 "headers": {
                   "Authorization": "{lane5AuthHeader}",
                   "x-client-id": "{lane5ClientId}"
@@ -7356,15 +7471,13 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "principal": {
-                    "principalId": "{lane5ClientId}",
-                    "status": "active"
-                  },
+                  "principalId": "{lane5ClientId}",
                   "isOnline": true,
                   "activeSessions": [
                     {
                       "clientInstanceId": "{lane5InstanceId}",
                       "sessionId": "{lane5SessionId}",
+                      "generationId": "lane-5-generation-2-10-{runId}",
                       "presenceState": "online"
                     }
                   ]
@@ -7382,7 +7495,7 @@
               "connection": "apiPrimary",
               "request": {
                 "method": "GET",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane6ClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane6ClientId}/presence",
                 "headers": {
                   "Authorization": "{lane6AuthHeader}",
                   "x-client-id": "{lane6ClientId}"
@@ -7391,15 +7504,13 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "principal": {
-                    "principalId": "{lane6ClientId}",
-                    "status": "active"
-                  },
+                  "principalId": "{lane6ClientId}",
                   "isOnline": true,
                   "activeSessions": [
                     {
                       "clientInstanceId": "{lane6InstanceId}",
                       "sessionId": "{lane6SessionId}",
+                      "generationId": "lane-6-generation-2-10-{runId}",
                       "presenceState": "online"
                     }
                   ]
@@ -7417,7 +7528,7 @@
               "connection": "apiSecondary",
               "request": {
                 "method": "GET",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane7ClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane7ClientId}/presence",
                 "headers": {
                   "Authorization": "{lane7AuthHeader}",
                   "x-client-id": "{lane7ClientId}"
@@ -7426,15 +7537,13 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "principal": {
-                    "principalId": "{lane7ClientId}",
-                    "status": "active"
-                  },
+                  "principalId": "{lane7ClientId}",
                   "isOnline": true,
                   "activeSessions": [
                     {
                       "clientInstanceId": "{lane7InstanceId}",
                       "sessionId": "{lane7SessionId}",
+                      "generationId": "lane-7-generation-2-10-{runId}",
                       "presenceState": "online"
                     }
                   ]
@@ -7452,7 +7561,7 @@
               "connection": "apiPrimary",
               "request": {
                 "method": "GET",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane8ClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane8ClientId}/presence",
                 "headers": {
                   "Authorization": "{lane8AuthHeader}",
                   "x-client-id": "{lane8ClientId}"
@@ -7461,15 +7570,13 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "principal": {
-                    "principalId": "{lane8ClientId}",
-                    "status": "active"
-                  },
+                  "principalId": "{lane8ClientId}",
                   "isOnline": true,
                   "activeSessions": [
                     {
                       "clientInstanceId": "{lane8InstanceId}",
                       "sessionId": "{lane8SessionId}",
+                      "generationId": "lane-8-generation-2-10-{runId}",
                       "presenceState": "online"
                     }
                   ]
@@ -7487,7 +7594,7 @@
               "connection": "apiSecondary",
               "request": {
                 "method": "GET",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane9ClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane9ClientId}/presence",
                 "headers": {
                   "Authorization": "{lane9AuthHeader}",
                   "x-client-id": "{lane9ClientId}"
@@ -7496,15 +7603,13 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "principal": {
-                    "principalId": "{lane9ClientId}",
-                    "status": "active"
-                  },
+                  "principalId": "{lane9ClientId}",
                   "isOnline": true,
                   "activeSessions": [
                     {
                       "clientInstanceId": "{lane9InstanceId}",
                       "sessionId": "{lane9SessionId}",
+                      "generationId": "lane-9-generation-2-10-{runId}",
                       "presenceState": "online"
                     }
                   ]
@@ -7522,7 +7627,7 @@
               "connection": "apiPrimary",
               "request": {
                 "method": "GET",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane10ClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane10ClientId}/presence",
                 "headers": {
                   "Authorization": "{lane10AuthHeader}",
                   "x-client-id": "{lane10ClientId}"
@@ -7531,15 +7636,13 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "principal": {
-                    "principalId": "{lane10ClientId}",
-                    "status": "active"
-                  },
+                  "principalId": "{lane10ClientId}",
                   "isOnline": true,
                   "activeSessions": [
                     {
                       "clientInstanceId": "{lane10InstanceId}",
                       "sessionId": "{lane10SessionId}",
+                      "generationId": "lane-10-generation-2-10-{runId}",
                       "presenceState": "online"
                     }
                   ]
@@ -7563,8 +7666,8 @@
                   "x-client-id": "{ownerClientId}"
                 },
                 "outputs": {
-                  "finalGroupOneIdStateCausalRevision": "body.groupStateCausalRevision",
-                  "finalGroupOneIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+                  "finalGroupOneIdStateCausalRevision": "body.causalRevision.groupRevision",
+                  "finalGroupOneIdPresenceCausalRevision": "body.causalRevision.presenceRevision"
                 }
               },
               "expect": {
@@ -7595,8 +7698,8 @@
                   "x-client-id": "{ownerClientId}"
                 },
                 "outputs": {
-                  "finalGroupTwoIdStateCausalRevision": "body.groupStateCausalRevision",
-                  "finalGroupTwoIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+                  "finalGroupTwoIdStateCausalRevision": "body.causalRevision.groupRevision",
+                  "finalGroupTwoIdPresenceCausalRevision": "body.causalRevision.presenceRevision"
                 }
               },
               "expect": {
@@ -7627,8 +7730,8 @@
                   "x-client-id": "{ownerClientId}"
                 },
                 "outputs": {
-                  "finalGroupThreeIdStateCausalRevision": "body.groupStateCausalRevision",
-                  "finalGroupThreeIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+                  "finalGroupThreeIdStateCausalRevision": "body.causalRevision.groupRevision",
+                  "finalGroupThreeIdPresenceCausalRevision": "body.causalRevision.presenceRevision"
                 }
               },
               "expect": {
@@ -7659,8 +7762,8 @@
                   "x-client-id": "{ownerClientId}"
                 },
                 "outputs": {
-                  "finalGroupFourIdStateCausalRevision": "body.groupStateCausalRevision",
-                  "finalGroupFourIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+                  "finalGroupFourIdStateCausalRevision": "body.causalRevision.groupRevision",
+                  "finalGroupFourIdPresenceCausalRevision": "body.causalRevision.presenceRevision"
                 }
               },
               "expect": {
@@ -7691,8 +7794,8 @@
                   "x-client-id": "{ownerClientId}"
                 },
                 "outputs": {
-                  "finalGroupFiveIdStateCausalRevision": "body.groupStateCausalRevision",
-                  "finalGroupFiveIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+                  "finalGroupFiveIdStateCausalRevision": "body.causalRevision.groupRevision",
+                  "finalGroupFiveIdPresenceCausalRevision": "body.causalRevision.presenceRevision"
                 }
               },
               "expect": {
@@ -7738,7 +7841,7 @@
               "connection": "apiSecondary",
               "request": {
                 "method": "GET",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane1ClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane1ClientId}/presence",
                 "headers": {
                   "Authorization": "{lane1AuthHeader}",
                   "x-client-id": "{lane1ClientId}"
@@ -7747,15 +7850,13 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "principal": {
-                    "principalId": "{lane1ClientId}",
-                    "status": "active"
-                  },
+                  "principalId": "{lane1ClientId}",
                   "isOnline": true,
                   "activeSessions": [
                     {
                       "clientInstanceId": "{lane1InstanceId}",
                       "sessionId": "{lane1SessionId}",
+                      "generationId": "lane-1-generation-2-10-{runId}",
                       "presenceState": "online"
                     }
                   ]
@@ -7773,7 +7874,7 @@
               "connection": "apiPrimary",
               "request": {
                 "method": "GET",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane2ClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane2ClientId}/presence",
                 "headers": {
                   "Authorization": "{lane2AuthHeader}",
                   "x-client-id": "{lane2ClientId}"
@@ -7782,15 +7883,13 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "principal": {
-                    "principalId": "{lane2ClientId}",
-                    "status": "active"
-                  },
+                  "principalId": "{lane2ClientId}",
                   "isOnline": true,
                   "activeSessions": [
                     {
                       "clientInstanceId": "{lane2InstanceId}",
                       "sessionId": "{lane2SessionId}",
+                      "generationId": "lane-2-generation-2-10-{runId}",
                       "presenceState": "online"
                     }
                   ]
@@ -7808,7 +7907,7 @@
               "connection": "apiSecondary",
               "request": {
                 "method": "GET",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane3ClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane3ClientId}/presence",
                 "headers": {
                   "Authorization": "{lane3AuthHeader}",
                   "x-client-id": "{lane3ClientId}"
@@ -7817,15 +7916,13 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "principal": {
-                    "principalId": "{lane3ClientId}",
-                    "status": "active"
-                  },
+                  "principalId": "{lane3ClientId}",
                   "isOnline": true,
                   "activeSessions": [
                     {
                       "clientInstanceId": "{lane3InstanceId}",
                       "sessionId": "{lane3SessionId}",
+                      "generationId": "lane-3-generation-2-10-{runId}",
                       "presenceState": "online"
                     }
                   ]
@@ -7843,7 +7940,7 @@
               "connection": "apiPrimary",
               "request": {
                 "method": "GET",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane4ClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane4ClientId}/presence",
                 "headers": {
                   "Authorization": "{lane4AuthHeader}",
                   "x-client-id": "{lane4ClientId}"
@@ -7852,15 +7949,13 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "principal": {
-                    "principalId": "{lane4ClientId}",
-                    "status": "active"
-                  },
+                  "principalId": "{lane4ClientId}",
                   "isOnline": true,
                   "activeSessions": [
                     {
                       "clientInstanceId": "{lane4InstanceId}",
                       "sessionId": "{lane4SessionId}",
+                      "generationId": "lane-4-generation-2-10-{runId}",
                       "presenceState": "online"
                     }
                   ]
@@ -7878,7 +7973,7 @@
               "connection": "apiSecondary",
               "request": {
                 "method": "GET",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane5ClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane5ClientId}/presence",
                 "headers": {
                   "Authorization": "{lane5AuthHeader}",
                   "x-client-id": "{lane5ClientId}"
@@ -7887,15 +7982,13 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "principal": {
-                    "principalId": "{lane5ClientId}",
-                    "status": "active"
-                  },
+                  "principalId": "{lane5ClientId}",
                   "isOnline": true,
                   "activeSessions": [
                     {
                       "clientInstanceId": "{lane5InstanceId}",
                       "sessionId": "{lane5SessionId}",
+                      "generationId": "lane-5-generation-2-10-{runId}",
                       "presenceState": "online"
                     }
                   ]
@@ -7913,7 +8006,7 @@
               "connection": "apiPrimary",
               "request": {
                 "method": "GET",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane6ClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane6ClientId}/presence",
                 "headers": {
                   "Authorization": "{lane6AuthHeader}",
                   "x-client-id": "{lane6ClientId}"
@@ -7922,15 +8015,13 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "principal": {
-                    "principalId": "{lane6ClientId}",
-                    "status": "active"
-                  },
+                  "principalId": "{lane6ClientId}",
                   "isOnline": true,
                   "activeSessions": [
                     {
                       "clientInstanceId": "{lane6InstanceId}",
                       "sessionId": "{lane6SessionId}",
+                      "generationId": "lane-6-generation-2-10-{runId}",
                       "presenceState": "online"
                     }
                   ]
@@ -7948,7 +8039,7 @@
               "connection": "apiSecondary",
               "request": {
                 "method": "GET",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane7ClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane7ClientId}/presence",
                 "headers": {
                   "Authorization": "{lane7AuthHeader}",
                   "x-client-id": "{lane7ClientId}"
@@ -7957,15 +8048,13 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "principal": {
-                    "principalId": "{lane7ClientId}",
-                    "status": "active"
-                  },
+                  "principalId": "{lane7ClientId}",
                   "isOnline": true,
                   "activeSessions": [
                     {
                       "clientInstanceId": "{lane7InstanceId}",
                       "sessionId": "{lane7SessionId}",
+                      "generationId": "lane-7-generation-2-10-{runId}",
                       "presenceState": "online"
                     }
                   ]
@@ -7983,7 +8072,7 @@
               "connection": "apiPrimary",
               "request": {
                 "method": "GET",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane8ClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane8ClientId}/presence",
                 "headers": {
                   "Authorization": "{lane8AuthHeader}",
                   "x-client-id": "{lane8ClientId}"
@@ -7992,15 +8081,13 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "principal": {
-                    "principalId": "{lane8ClientId}",
-                    "status": "active"
-                  },
+                  "principalId": "{lane8ClientId}",
                   "isOnline": true,
                   "activeSessions": [
                     {
                       "clientInstanceId": "{lane8InstanceId}",
                       "sessionId": "{lane8SessionId}",
+                      "generationId": "lane-8-generation-2-10-{runId}",
                       "presenceState": "online"
                     }
                   ]
@@ -8018,7 +8105,7 @@
               "connection": "apiSecondary",
               "request": {
                 "method": "GET",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane9ClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane9ClientId}/presence",
                 "headers": {
                   "Authorization": "{lane9AuthHeader}",
                   "x-client-id": "{lane9ClientId}"
@@ -8027,15 +8114,13 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "principal": {
-                    "principalId": "{lane9ClientId}",
-                    "status": "active"
-                  },
+                  "principalId": "{lane9ClientId}",
                   "isOnline": true,
                   "activeSessions": [
                     {
                       "clientInstanceId": "{lane9InstanceId}",
                       "sessionId": "{lane9SessionId}",
+                      "generationId": "lane-9-generation-2-10-{runId}",
                       "presenceState": "online"
                     }
                   ]
@@ -8053,7 +8138,7 @@
               "connection": "apiPrimary",
               "request": {
                 "method": "GET",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane10ClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane10ClientId}/presence",
                 "headers": {
                   "Authorization": "{lane10AuthHeader}",
                   "x-client-id": "{lane10ClientId}"
@@ -8062,15 +8147,13 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "principal": {
-                    "principalId": "{lane10ClientId}",
-                    "status": "active"
-                  },
+                  "principalId": "{lane10ClientId}",
                   "isOnline": true,
                   "activeSessions": [
                     {
                       "clientInstanceId": "{lane10InstanceId}",
                       "sessionId": "{lane10SessionId}",
+                      "generationId": "lane-10-generation-2-10-{runId}",
                       "presenceState": "online"
                     }
                   ]
@@ -8094,8 +8177,8 @@
                   "x-client-id": "{ownerClientId}"
                 },
                 "outputs": {
-                  "finalGroupOneIdStateCausalRevision": "body.groupStateCausalRevision",
-                  "finalGroupOneIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+                  "finalGroupOneIdStateCausalRevision": "body.causalRevision.groupRevision",
+                  "finalGroupOneIdPresenceCausalRevision": "body.causalRevision.presenceRevision"
                 }
               },
               "expect": {
@@ -8126,8 +8209,8 @@
                   "x-client-id": "{ownerClientId}"
                 },
                 "outputs": {
-                  "finalGroupTwoIdStateCausalRevision": "body.groupStateCausalRevision",
-                  "finalGroupTwoIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+                  "finalGroupTwoIdStateCausalRevision": "body.causalRevision.groupRevision",
+                  "finalGroupTwoIdPresenceCausalRevision": "body.causalRevision.presenceRevision"
                 }
               },
               "expect": {
@@ -8158,8 +8241,8 @@
                   "x-client-id": "{ownerClientId}"
                 },
                 "outputs": {
-                  "finalGroupThreeIdStateCausalRevision": "body.groupStateCausalRevision",
-                  "finalGroupThreeIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+                  "finalGroupThreeIdStateCausalRevision": "body.causalRevision.groupRevision",
+                  "finalGroupThreeIdPresenceCausalRevision": "body.causalRevision.presenceRevision"
                 }
               },
               "expect": {
@@ -8190,8 +8273,8 @@
                   "x-client-id": "{ownerClientId}"
                 },
                 "outputs": {
-                  "finalGroupFourIdStateCausalRevision": "body.groupStateCausalRevision",
-                  "finalGroupFourIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+                  "finalGroupFourIdStateCausalRevision": "body.causalRevision.groupRevision",
+                  "finalGroupFourIdPresenceCausalRevision": "body.causalRevision.presenceRevision"
                 }
               },
               "expect": {
@@ -8222,8 +8305,8 @@
                   "x-client-id": "{ownerClientId}"
                 },
                 "outputs": {
-                  "finalGroupFiveIdStateCausalRevision": "body.groupStateCausalRevision",
-                  "finalGroupFiveIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+                  "finalGroupFiveIdStateCausalRevision": "body.causalRevision.groupRevision",
+                  "finalGroupFiveIdPresenceCausalRevision": "body.causalRevision.presenceRevision"
                 }
               },
               "expect": {
@@ -8269,7 +8352,7 @@
               "connection": "apiSecondary",
               "request": {
                 "method": "GET",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane1ClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane1ClientId}/presence",
                 "headers": {
                   "Authorization": "{lane1AuthHeader}",
                   "x-client-id": "{lane1ClientId}"
@@ -8278,15 +8361,13 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "principal": {
-                    "principalId": "{lane1ClientId}",
-                    "status": "active"
-                  },
+                  "principalId": "{lane1ClientId}",
                   "isOnline": true,
                   "activeSessions": [
                     {
                       "clientInstanceId": "{lane1InstanceId}",
                       "sessionId": "{lane1SessionId}",
+                      "generationId": "lane-1-generation-2-10-{runId}",
                       "presenceState": "online"
                     }
                   ]
@@ -8304,7 +8385,7 @@
               "connection": "apiPrimary",
               "request": {
                 "method": "GET",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane2ClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane2ClientId}/presence",
                 "headers": {
                   "Authorization": "{lane2AuthHeader}",
                   "x-client-id": "{lane2ClientId}"
@@ -8313,15 +8394,13 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "principal": {
-                    "principalId": "{lane2ClientId}",
-                    "status": "active"
-                  },
+                  "principalId": "{lane2ClientId}",
                   "isOnline": true,
                   "activeSessions": [
                     {
                       "clientInstanceId": "{lane2InstanceId}",
                       "sessionId": "{lane2SessionId}",
+                      "generationId": "lane-2-generation-2-10-{runId}",
                       "presenceState": "online"
                     }
                   ]
@@ -8339,7 +8418,7 @@
               "connection": "apiSecondary",
               "request": {
                 "method": "GET",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane3ClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane3ClientId}/presence",
                 "headers": {
                   "Authorization": "{lane3AuthHeader}",
                   "x-client-id": "{lane3ClientId}"
@@ -8348,15 +8427,13 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "principal": {
-                    "principalId": "{lane3ClientId}",
-                    "status": "active"
-                  },
+                  "principalId": "{lane3ClientId}",
                   "isOnline": true,
                   "activeSessions": [
                     {
                       "clientInstanceId": "{lane3InstanceId}",
                       "sessionId": "{lane3SessionId}",
+                      "generationId": "lane-3-generation-2-10-{runId}",
                       "presenceState": "online"
                     }
                   ]
@@ -8374,7 +8451,7 @@
               "connection": "apiPrimary",
               "request": {
                 "method": "GET",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane4ClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane4ClientId}/presence",
                 "headers": {
                   "Authorization": "{lane4AuthHeader}",
                   "x-client-id": "{lane4ClientId}"
@@ -8383,15 +8460,13 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "principal": {
-                    "principalId": "{lane4ClientId}",
-                    "status": "active"
-                  },
+                  "principalId": "{lane4ClientId}",
                   "isOnline": true,
                   "activeSessions": [
                     {
                       "clientInstanceId": "{lane4InstanceId}",
                       "sessionId": "{lane4SessionId}",
+                      "generationId": "lane-4-generation-2-10-{runId}",
                       "presenceState": "online"
                     }
                   ]
@@ -8409,7 +8484,7 @@
               "connection": "apiSecondary",
               "request": {
                 "method": "GET",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane5ClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane5ClientId}/presence",
                 "headers": {
                   "Authorization": "{lane5AuthHeader}",
                   "x-client-id": "{lane5ClientId}"
@@ -8418,15 +8493,13 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "principal": {
-                    "principalId": "{lane5ClientId}",
-                    "status": "active"
-                  },
+                  "principalId": "{lane5ClientId}",
                   "isOnline": true,
                   "activeSessions": [
                     {
                       "clientInstanceId": "{lane5InstanceId}",
                       "sessionId": "{lane5SessionId}",
+                      "generationId": "lane-5-generation-2-10-{runId}",
                       "presenceState": "online"
                     }
                   ]
@@ -8444,7 +8517,7 @@
               "connection": "apiPrimary",
               "request": {
                 "method": "GET",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane6ClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane6ClientId}/presence",
                 "headers": {
                   "Authorization": "{lane6AuthHeader}",
                   "x-client-id": "{lane6ClientId}"
@@ -8453,15 +8526,13 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "principal": {
-                    "principalId": "{lane6ClientId}",
-                    "status": "active"
-                  },
+                  "principalId": "{lane6ClientId}",
                   "isOnline": true,
                   "activeSessions": [
                     {
                       "clientInstanceId": "{lane6InstanceId}",
                       "sessionId": "{lane6SessionId}",
+                      "generationId": "lane-6-generation-2-10-{runId}",
                       "presenceState": "online"
                     }
                   ]
@@ -8479,7 +8550,7 @@
               "connection": "apiSecondary",
               "request": {
                 "method": "GET",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane7ClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane7ClientId}/presence",
                 "headers": {
                   "Authorization": "{lane7AuthHeader}",
                   "x-client-id": "{lane7ClientId}"
@@ -8488,15 +8559,13 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "principal": {
-                    "principalId": "{lane7ClientId}",
-                    "status": "active"
-                  },
+                  "principalId": "{lane7ClientId}",
                   "isOnline": true,
                   "activeSessions": [
                     {
                       "clientInstanceId": "{lane7InstanceId}",
                       "sessionId": "{lane7SessionId}",
+                      "generationId": "lane-7-generation-2-10-{runId}",
                       "presenceState": "online"
                     }
                   ]
@@ -8514,7 +8583,7 @@
               "connection": "apiPrimary",
               "request": {
                 "method": "GET",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane8ClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane8ClientId}/presence",
                 "headers": {
                   "Authorization": "{lane8AuthHeader}",
                   "x-client-id": "{lane8ClientId}"
@@ -8523,15 +8592,13 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "principal": {
-                    "principalId": "{lane8ClientId}",
-                    "status": "active"
-                  },
+                  "principalId": "{lane8ClientId}",
                   "isOnline": true,
                   "activeSessions": [
                     {
                       "clientInstanceId": "{lane8InstanceId}",
                       "sessionId": "{lane8SessionId}",
+                      "generationId": "lane-8-generation-2-10-{runId}",
                       "presenceState": "online"
                     }
                   ]
@@ -8549,7 +8616,7 @@
               "connection": "apiSecondary",
               "request": {
                 "method": "GET",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane9ClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane9ClientId}/presence",
                 "headers": {
                   "Authorization": "{lane9AuthHeader}",
                   "x-client-id": "{lane9ClientId}"
@@ -8558,15 +8625,13 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "principal": {
-                    "principalId": "{lane9ClientId}",
-                    "status": "active"
-                  },
+                  "principalId": "{lane9ClientId}",
                   "isOnline": true,
                   "activeSessions": [
                     {
                       "clientInstanceId": "{lane9InstanceId}",
                       "sessionId": "{lane9SessionId}",
+                      "generationId": "lane-9-generation-2-10-{runId}",
                       "presenceState": "online"
                     }
                   ]
@@ -8584,7 +8649,7 @@
               "connection": "apiPrimary",
               "request": {
                 "method": "GET",
-                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane10ClientId}",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane10ClientId}/presence",
                 "headers": {
                   "Authorization": "{lane10AuthHeader}",
                   "x-client-id": "{lane10ClientId}"
@@ -8593,15 +8658,13 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "principal": {
-                    "principalId": "{lane10ClientId}",
-                    "status": "active"
-                  },
+                  "principalId": "{lane10ClientId}",
                   "isOnline": true,
                   "activeSessions": [
                     {
                       "clientInstanceId": "{lane10InstanceId}",
                       "sessionId": "{lane10SessionId}",
+                      "generationId": "lane-10-generation-2-10-{runId}",
                       "presenceState": "online"
                     }
                   ]
@@ -8625,8 +8688,8 @@
                   "x-client-id": "{ownerClientId}"
                 },
                 "outputs": {
-                  "finalGroupOneIdStateCausalRevision": "body.groupStateCausalRevision",
-                  "finalGroupOneIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+                  "finalGroupOneIdStateCausalRevision": "body.causalRevision.groupRevision",
+                  "finalGroupOneIdPresenceCausalRevision": "body.causalRevision.presenceRevision"
                 }
               },
               "expect": {
@@ -8657,8 +8720,8 @@
                   "x-client-id": "{ownerClientId}"
                 },
                 "outputs": {
-                  "finalGroupTwoIdStateCausalRevision": "body.groupStateCausalRevision",
-                  "finalGroupTwoIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+                  "finalGroupTwoIdStateCausalRevision": "body.causalRevision.groupRevision",
+                  "finalGroupTwoIdPresenceCausalRevision": "body.causalRevision.presenceRevision"
                 }
               },
               "expect": {
@@ -8689,8 +8752,8 @@
                   "x-client-id": "{ownerClientId}"
                 },
                 "outputs": {
-                  "finalGroupThreeIdStateCausalRevision": "body.groupStateCausalRevision",
-                  "finalGroupThreeIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+                  "finalGroupThreeIdStateCausalRevision": "body.causalRevision.groupRevision",
+                  "finalGroupThreeIdPresenceCausalRevision": "body.causalRevision.presenceRevision"
                 }
               },
               "expect": {
@@ -8721,8 +8784,8 @@
                   "x-client-id": "{ownerClientId}"
                 },
                 "outputs": {
-                  "finalGroupFourIdStateCausalRevision": "body.groupStateCausalRevision",
-                  "finalGroupFourIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+                  "finalGroupFourIdStateCausalRevision": "body.causalRevision.groupRevision",
+                  "finalGroupFourIdPresenceCausalRevision": "body.causalRevision.presenceRevision"
                 }
               },
               "expect": {
@@ -8753,8 +8816,8 @@
                   "x-client-id": "{ownerClientId}"
                 },
                 "outputs": {
-                  "finalGroupFiveIdStateCausalRevision": "body.groupStateCausalRevision",
-                  "finalGroupFiveIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+                  "finalGroupFiveIdStateCausalRevision": "body.causalRevision.groupRevision",
+                  "finalGroupFiveIdPresenceCausalRevision": "body.causalRevision.presenceRevision"
                 }
               },
               "expect": {
@@ -8779,24 +8842,84 @@
         "finalPollStatus": "{resultsByName.pollConvergenceAttempt5.0.status}",
         "causalHistory": {
           "groupOne": {
-            "state": ["{resultsByName.readoneGroupThroughPrimary.0.actual.body.groupStateCausalRevision}", "{resultsByName.readoneGroupThroughPrimary.1.actual.body.groupStateCausalRevision}", "{resultsByName.readoneGroupThroughPrimary.2.actual.body.groupStateCausalRevision}", "{resultsByName.readoneGroupThroughPrimary.3.actual.body.groupStateCausalRevision}", "{resultsByName.readoneGroupThroughPrimary.4.actual.body.groupStateCausalRevision}"],
-            "presence": ["{resultsByName.readoneGroupThroughPrimary.0.actual.body.groupPresenceCausalRevision}", "{resultsByName.readoneGroupThroughPrimary.1.actual.body.groupPresenceCausalRevision}", "{resultsByName.readoneGroupThroughPrimary.2.actual.body.groupPresenceCausalRevision}", "{resultsByName.readoneGroupThroughPrimary.3.actual.body.groupPresenceCausalRevision}", "{resultsByName.readoneGroupThroughPrimary.4.actual.body.groupPresenceCausalRevision}"]
+            "state": [
+              "{resultsByName.readoneGroupThroughPrimary.0.actual.body.causalRevision.groupRevision}",
+              "{resultsByName.readoneGroupThroughPrimary.1.actual.body.causalRevision.groupRevision}",
+              "{resultsByName.readoneGroupThroughPrimary.2.actual.body.causalRevision.groupRevision}",
+              "{resultsByName.readoneGroupThroughPrimary.3.actual.body.causalRevision.groupRevision}",
+              "{resultsByName.readoneGroupThroughPrimary.4.actual.body.causalRevision.groupRevision}"
+            ],
+            "presence": [
+              "{resultsByName.readoneGroupThroughPrimary.0.actual.body.causalRevision.presenceRevision}",
+              "{resultsByName.readoneGroupThroughPrimary.1.actual.body.causalRevision.presenceRevision}",
+              "{resultsByName.readoneGroupThroughPrimary.2.actual.body.causalRevision.presenceRevision}",
+              "{resultsByName.readoneGroupThroughPrimary.3.actual.body.causalRevision.presenceRevision}",
+              "{resultsByName.readoneGroupThroughPrimary.4.actual.body.causalRevision.presenceRevision}"
+            ]
           },
           "groupTwo": {
-            "state": ["{resultsByName.readtwoGroupThroughPrimary.0.actual.body.groupStateCausalRevision}", "{resultsByName.readtwoGroupThroughPrimary.1.actual.body.groupStateCausalRevision}", "{resultsByName.readtwoGroupThroughPrimary.2.actual.body.groupStateCausalRevision}", "{resultsByName.readtwoGroupThroughPrimary.3.actual.body.groupStateCausalRevision}", "{resultsByName.readtwoGroupThroughPrimary.4.actual.body.groupStateCausalRevision}"],
-            "presence": ["{resultsByName.readtwoGroupThroughPrimary.0.actual.body.groupPresenceCausalRevision}", "{resultsByName.readtwoGroupThroughPrimary.1.actual.body.groupPresenceCausalRevision}", "{resultsByName.readtwoGroupThroughPrimary.2.actual.body.groupPresenceCausalRevision}", "{resultsByName.readtwoGroupThroughPrimary.3.actual.body.groupPresenceCausalRevision}", "{resultsByName.readtwoGroupThroughPrimary.4.actual.body.groupPresenceCausalRevision}"]
+            "state": [
+              "{resultsByName.readtwoGroupThroughPrimary.0.actual.body.causalRevision.groupRevision}",
+              "{resultsByName.readtwoGroupThroughPrimary.1.actual.body.causalRevision.groupRevision}",
+              "{resultsByName.readtwoGroupThroughPrimary.2.actual.body.causalRevision.groupRevision}",
+              "{resultsByName.readtwoGroupThroughPrimary.3.actual.body.causalRevision.groupRevision}",
+              "{resultsByName.readtwoGroupThroughPrimary.4.actual.body.causalRevision.groupRevision}"
+            ],
+            "presence": [
+              "{resultsByName.readtwoGroupThroughPrimary.0.actual.body.causalRevision.presenceRevision}",
+              "{resultsByName.readtwoGroupThroughPrimary.1.actual.body.causalRevision.presenceRevision}",
+              "{resultsByName.readtwoGroupThroughPrimary.2.actual.body.causalRevision.presenceRevision}",
+              "{resultsByName.readtwoGroupThroughPrimary.3.actual.body.causalRevision.presenceRevision}",
+              "{resultsByName.readtwoGroupThroughPrimary.4.actual.body.causalRevision.presenceRevision}"
+            ]
           },
           "groupThree": {
-            "state": ["{resultsByName.readthreeGroupThroughPrimary.0.actual.body.groupStateCausalRevision}", "{resultsByName.readthreeGroupThroughPrimary.1.actual.body.groupStateCausalRevision}", "{resultsByName.readthreeGroupThroughPrimary.2.actual.body.groupStateCausalRevision}", "{resultsByName.readthreeGroupThroughPrimary.3.actual.body.groupStateCausalRevision}", "{resultsByName.readthreeGroupThroughPrimary.4.actual.body.groupStateCausalRevision}"],
-            "presence": ["{resultsByName.readthreeGroupThroughPrimary.0.actual.body.groupPresenceCausalRevision}", "{resultsByName.readthreeGroupThroughPrimary.1.actual.body.groupPresenceCausalRevision}", "{resultsByName.readthreeGroupThroughPrimary.2.actual.body.groupPresenceCausalRevision}", "{resultsByName.readthreeGroupThroughPrimary.3.actual.body.groupPresenceCausalRevision}", "{resultsByName.readthreeGroupThroughPrimary.4.actual.body.groupPresenceCausalRevision}"]
+            "state": [
+              "{resultsByName.readthreeGroupThroughPrimary.0.actual.body.causalRevision.groupRevision}",
+              "{resultsByName.readthreeGroupThroughPrimary.1.actual.body.causalRevision.groupRevision}",
+              "{resultsByName.readthreeGroupThroughPrimary.2.actual.body.causalRevision.groupRevision}",
+              "{resultsByName.readthreeGroupThroughPrimary.3.actual.body.causalRevision.groupRevision}",
+              "{resultsByName.readthreeGroupThroughPrimary.4.actual.body.causalRevision.groupRevision}"
+            ],
+            "presence": [
+              "{resultsByName.readthreeGroupThroughPrimary.0.actual.body.causalRevision.presenceRevision}",
+              "{resultsByName.readthreeGroupThroughPrimary.1.actual.body.causalRevision.presenceRevision}",
+              "{resultsByName.readthreeGroupThroughPrimary.2.actual.body.causalRevision.presenceRevision}",
+              "{resultsByName.readthreeGroupThroughPrimary.3.actual.body.causalRevision.presenceRevision}",
+              "{resultsByName.readthreeGroupThroughPrimary.4.actual.body.causalRevision.presenceRevision}"
+            ]
           },
           "groupFour": {
-            "state": ["{resultsByName.readfourGroupThroughPrimary.0.actual.body.groupStateCausalRevision}", "{resultsByName.readfourGroupThroughPrimary.1.actual.body.groupStateCausalRevision}", "{resultsByName.readfourGroupThroughPrimary.2.actual.body.groupStateCausalRevision}", "{resultsByName.readfourGroupThroughPrimary.3.actual.body.groupStateCausalRevision}", "{resultsByName.readfourGroupThroughPrimary.4.actual.body.groupStateCausalRevision}"],
-            "presence": ["{resultsByName.readfourGroupThroughPrimary.0.actual.body.groupPresenceCausalRevision}", "{resultsByName.readfourGroupThroughPrimary.1.actual.body.groupPresenceCausalRevision}", "{resultsByName.readfourGroupThroughPrimary.2.actual.body.groupPresenceCausalRevision}", "{resultsByName.readfourGroupThroughPrimary.3.actual.body.groupPresenceCausalRevision}", "{resultsByName.readfourGroupThroughPrimary.4.actual.body.groupPresenceCausalRevision}"]
+            "state": [
+              "{resultsByName.readfourGroupThroughPrimary.0.actual.body.causalRevision.groupRevision}",
+              "{resultsByName.readfourGroupThroughPrimary.1.actual.body.causalRevision.groupRevision}",
+              "{resultsByName.readfourGroupThroughPrimary.2.actual.body.causalRevision.groupRevision}",
+              "{resultsByName.readfourGroupThroughPrimary.3.actual.body.causalRevision.groupRevision}",
+              "{resultsByName.readfourGroupThroughPrimary.4.actual.body.causalRevision.groupRevision}"
+            ],
+            "presence": [
+              "{resultsByName.readfourGroupThroughPrimary.0.actual.body.causalRevision.presenceRevision}",
+              "{resultsByName.readfourGroupThroughPrimary.1.actual.body.causalRevision.presenceRevision}",
+              "{resultsByName.readfourGroupThroughPrimary.2.actual.body.causalRevision.presenceRevision}",
+              "{resultsByName.readfourGroupThroughPrimary.3.actual.body.causalRevision.presenceRevision}",
+              "{resultsByName.readfourGroupThroughPrimary.4.actual.body.causalRevision.presenceRevision}"
+            ]
           },
           "groupFive": {
-            "state": ["{resultsByName.readfiveGroupThroughPrimary.0.actual.body.groupStateCausalRevision}", "{resultsByName.readfiveGroupThroughPrimary.1.actual.body.groupStateCausalRevision}", "{resultsByName.readfiveGroupThroughPrimary.2.actual.body.groupStateCausalRevision}", "{resultsByName.readfiveGroupThroughPrimary.3.actual.body.groupStateCausalRevision}", "{resultsByName.readfiveGroupThroughPrimary.4.actual.body.groupStateCausalRevision}"],
-            "presence": ["{resultsByName.readfiveGroupThroughPrimary.0.actual.body.groupPresenceCausalRevision}", "{resultsByName.readfiveGroupThroughPrimary.1.actual.body.groupPresenceCausalRevision}", "{resultsByName.readfiveGroupThroughPrimary.2.actual.body.groupPresenceCausalRevision}", "{resultsByName.readfiveGroupThroughPrimary.3.actual.body.groupPresenceCausalRevision}", "{resultsByName.readfiveGroupThroughPrimary.4.actual.body.groupPresenceCausalRevision}"]
+            "state": [
+              "{resultsByName.readfiveGroupThroughPrimary.0.actual.body.causalRevision.groupRevision}",
+              "{resultsByName.readfiveGroupThroughPrimary.1.actual.body.causalRevision.groupRevision}",
+              "{resultsByName.readfiveGroupThroughPrimary.2.actual.body.causalRevision.groupRevision}",
+              "{resultsByName.readfiveGroupThroughPrimary.3.actual.body.causalRevision.groupRevision}",
+              "{resultsByName.readfiveGroupThroughPrimary.4.actual.body.causalRevision.groupRevision}"
+            ],
+            "presence": [
+              "{resultsByName.readfiveGroupThroughPrimary.0.actual.body.causalRevision.presenceRevision}",
+              "{resultsByName.readfiveGroupThroughPrimary.1.actual.body.causalRevision.presenceRevision}",
+              "{resultsByName.readfiveGroupThroughPrimary.2.actual.body.causalRevision.presenceRevision}",
+              "{resultsByName.readfiveGroupThroughPrimary.3.actual.body.causalRevision.presenceRevision}",
+              "{resultsByName.readfiveGroupThroughPrimary.4.actual.body.causalRevision.presenceRevision}"
+            ]
           }
         }
       },
@@ -8805,19 +8928,39 @@
         "body": {
           "finalPollStatus": "SUCCESS",
           "causalHistory": {
-            "groupOne": { "state": ["integer", "integer", "integer", "integer", "integer"], "presence": ["integer", "integer", "integer", "integer", "integer"] },
-            "groupTwo": { "state": ["integer", "integer", "integer", "integer", "integer"], "presence": ["integer", "integer", "integer", "integer", "integer"] },
-            "groupThree": { "state": ["integer", "integer", "integer", "integer", "integer"], "presence": ["integer", "integer", "integer", "integer", "integer"] },
-            "groupFour": { "state": ["integer", "integer", "integer", "integer", "integer"], "presence": ["integer", "integer", "integer", "integer", "integer"] },
-            "groupFive": { "state": ["integer", "integer", "integer", "integer", "integer"], "presence": ["integer", "integer", "integer", "integer", "integer"] }
+            "groupOne": {
+              "state": ["integer", "integer", "integer", "integer", "integer"],
+              "presence": ["integer", "integer", "integer", "integer", "integer"]
+            },
+            "groupTwo": {
+              "state": ["integer", "integer", "integer", "integer", "integer"],
+              "presence": ["integer", "integer", "integer", "integer", "integer"]
+            },
+            "groupThree": {
+              "state": ["integer", "integer", "integer", "integer", "integer"],
+              "presence": ["integer", "integer", "integer", "integer", "integer"]
+            },
+            "groupFour": {
+              "state": ["integer", "integer", "integer", "integer", "integer"],
+              "presence": ["integer", "integer", "integer", "integer", "integer"]
+            },
+            "groupFive": {
+              "state": ["integer", "integer", "integer", "integer", "integer"],
+              "presence": ["integer", "integer", "integer", "integer", "integer"]
+            }
           }
         },
         "monotonicPaths": [
-          "causalHistory.groupOne.state", "causalHistory.groupOne.presence",
-          "causalHistory.groupTwo.state", "causalHistory.groupTwo.presence",
-          "causalHistory.groupThree.state", "causalHistory.groupThree.presence",
-          "causalHistory.groupFour.state", "causalHistory.groupFour.presence",
-          "causalHistory.groupFive.state", "causalHistory.groupFive.presence"
+          "causalHistory.groupOne.state",
+          "causalHistory.groupOne.presence",
+          "causalHistory.groupTwo.state",
+          "causalHistory.groupTwo.presence",
+          "causalHistory.groupThree.state",
+          "causalHistory.groupThree.presence",
+          "causalHistory.groupFour.state",
+          "causalHistory.groupFour.presence",
+          "causalHistory.groupFive.state",
+          "causalHistory.groupFive.presence"
         ]
       }
     },
@@ -8833,8 +8976,8 @@
           "x-client-id": "{ownerClientId}"
         },
         "outputs": {
-          "secondaryGroupOneIdStateCausalRevision": "body.groupStateCausalRevision",
-          "secondaryGroupOneIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+          "secondaryGroupOneIdStateCausalRevision": "body.causalRevision.groupRevision",
+          "secondaryGroupOneIdPresenceCausalRevision": "body.causalRevision.presenceRevision"
         }
       },
       "expect": {
@@ -8842,8 +8985,10 @@
         "body": {
           "memberCount": 101,
           "onlineMemberCount": 101,
-          "groupStateCausalRevision": "{finalGroupOneIdStateCausalRevision}",
-          "groupPresenceCausalRevision": "{finalGroupOneIdPresenceCausalRevision}",
+          "causalRevision": {
+            "groupRevision": "{finalGroupOneIdStateCausalRevision}",
+            "presenceRevision": "{finalGroupOneIdPresenceCausalRevision}"
+          },
           "group": {
             "groupId": "{groupOneId}"
           }
@@ -8866,7 +9011,6 @@
           "publish": true
         },
         "outputs": {
-          "finalGroupOneIdTopologyOutboxId": "body.receipt.outboxId",
           "finalGroupOneIdTopologySnapshotVersion": "body.snapshot.version"
         }
       },
@@ -8874,8 +9018,10 @@
         "status": 200,
         "body": {
           "snapshot": {
-            "sourceGroupStateCausalRevision": "{finalGroupOneIdStateCausalRevision}",
-            "sourceGroupPresenceCausalRevision": "{finalGroupOneIdPresenceCausalRevision}",
+            "sourceGroupStateCausalRevision": {
+              "groupRevision": "{finalGroupOneIdStateCausalRevision}",
+              "presenceRevision": "{finalGroupOneIdPresenceCausalRevision}"
+            },
             "groupRef": {
               "applicationId": "{applicationId}",
               "workspaceId": "{workspaceId}",
@@ -8883,7 +9029,9 @@
             }
           },
           "config": {
-            "version": "{finalGroupOneIdConfigVersion}"
+            "durable": {
+              "version": "{finalGroupOneIdConfigVersion}"
+            }
           }
         }
       }
@@ -8900,8 +9048,8 @@
           "x-client-id": "{ownerClientId}"
         },
         "outputs": {
-          "secondaryGroupTwoIdStateCausalRevision": "body.groupStateCausalRevision",
-          "secondaryGroupTwoIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+          "secondaryGroupTwoIdStateCausalRevision": "body.causalRevision.groupRevision",
+          "secondaryGroupTwoIdPresenceCausalRevision": "body.causalRevision.presenceRevision"
         }
       },
       "expect": {
@@ -8909,8 +9057,10 @@
         "body": {
           "memberCount": 101,
           "onlineMemberCount": 101,
-          "groupStateCausalRevision": "{finalGroupTwoIdStateCausalRevision}",
-          "groupPresenceCausalRevision": "{finalGroupTwoIdPresenceCausalRevision}",
+          "causalRevision": {
+            "groupRevision": "{finalGroupTwoIdStateCausalRevision}",
+            "presenceRevision": "{finalGroupTwoIdPresenceCausalRevision}"
+          },
           "group": {
             "groupId": "{groupTwoId}"
           }
@@ -8933,7 +9083,6 @@
           "publish": true
         },
         "outputs": {
-          "finalGroupTwoIdTopologyOutboxId": "body.receipt.outboxId",
           "finalGroupTwoIdTopologySnapshotVersion": "body.snapshot.version"
         }
       },
@@ -8941,8 +9090,10 @@
         "status": 200,
         "body": {
           "snapshot": {
-            "sourceGroupStateCausalRevision": "{finalGroupTwoIdStateCausalRevision}",
-            "sourceGroupPresenceCausalRevision": "{finalGroupTwoIdPresenceCausalRevision}",
+            "sourceGroupStateCausalRevision": {
+              "groupRevision": "{finalGroupTwoIdStateCausalRevision}",
+              "presenceRevision": "{finalGroupTwoIdPresenceCausalRevision}"
+            },
             "groupRef": {
               "applicationId": "{applicationId}",
               "workspaceId": "{workspaceId}",
@@ -8950,7 +9101,9 @@
             }
           },
           "config": {
-            "version": "{finalGroupTwoIdConfigVersion}"
+            "durable": {
+              "version": "{finalGroupTwoIdConfigVersion}"
+            }
           }
         }
       }
@@ -8967,8 +9120,8 @@
           "x-client-id": "{ownerClientId}"
         },
         "outputs": {
-          "secondaryGroupThreeIdStateCausalRevision": "body.groupStateCausalRevision",
-          "secondaryGroupThreeIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+          "secondaryGroupThreeIdStateCausalRevision": "body.causalRevision.groupRevision",
+          "secondaryGroupThreeIdPresenceCausalRevision": "body.causalRevision.presenceRevision"
         }
       },
       "expect": {
@@ -8976,8 +9129,10 @@
         "body": {
           "memberCount": 101,
           "onlineMemberCount": 101,
-          "groupStateCausalRevision": "{finalGroupThreeIdStateCausalRevision}",
-          "groupPresenceCausalRevision": "{finalGroupThreeIdPresenceCausalRevision}",
+          "causalRevision": {
+            "groupRevision": "{finalGroupThreeIdStateCausalRevision}",
+            "presenceRevision": "{finalGroupThreeIdPresenceCausalRevision}"
+          },
           "group": {
             "groupId": "{groupThreeId}"
           }
@@ -9000,7 +9155,6 @@
           "publish": true
         },
         "outputs": {
-          "finalGroupThreeIdTopologyOutboxId": "body.receipt.outboxId",
           "finalGroupThreeIdTopologySnapshotVersion": "body.snapshot.version"
         }
       },
@@ -9008,8 +9162,10 @@
         "status": 200,
         "body": {
           "snapshot": {
-            "sourceGroupStateCausalRevision": "{finalGroupThreeIdStateCausalRevision}",
-            "sourceGroupPresenceCausalRevision": "{finalGroupThreeIdPresenceCausalRevision}",
+            "sourceGroupStateCausalRevision": {
+              "groupRevision": "{finalGroupThreeIdStateCausalRevision}",
+              "presenceRevision": "{finalGroupThreeIdPresenceCausalRevision}"
+            },
             "groupRef": {
               "applicationId": "{applicationId}",
               "workspaceId": "{workspaceId}",
@@ -9017,7 +9173,9 @@
             }
           },
           "config": {
-            "version": "{finalGroupThreeIdConfigVersion}"
+            "durable": {
+              "version": "{finalGroupThreeIdConfigVersion}"
+            }
           }
         }
       }
@@ -9034,8 +9192,8 @@
           "x-client-id": "{ownerClientId}"
         },
         "outputs": {
-          "secondaryGroupFourIdStateCausalRevision": "body.groupStateCausalRevision",
-          "secondaryGroupFourIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+          "secondaryGroupFourIdStateCausalRevision": "body.causalRevision.groupRevision",
+          "secondaryGroupFourIdPresenceCausalRevision": "body.causalRevision.presenceRevision"
         }
       },
       "expect": {
@@ -9043,8 +9201,10 @@
         "body": {
           "memberCount": 101,
           "onlineMemberCount": 101,
-          "groupStateCausalRevision": "{finalGroupFourIdStateCausalRevision}",
-          "groupPresenceCausalRevision": "{finalGroupFourIdPresenceCausalRevision}",
+          "causalRevision": {
+            "groupRevision": "{finalGroupFourIdStateCausalRevision}",
+            "presenceRevision": "{finalGroupFourIdPresenceCausalRevision}"
+          },
           "group": {
             "groupId": "{groupFourId}"
           }
@@ -9067,7 +9227,6 @@
           "publish": true
         },
         "outputs": {
-          "finalGroupFourIdTopologyOutboxId": "body.receipt.outboxId",
           "finalGroupFourIdTopologySnapshotVersion": "body.snapshot.version"
         }
       },
@@ -9075,8 +9234,10 @@
         "status": 200,
         "body": {
           "snapshot": {
-            "sourceGroupStateCausalRevision": "{finalGroupFourIdStateCausalRevision}",
-            "sourceGroupPresenceCausalRevision": "{finalGroupFourIdPresenceCausalRevision}",
+            "sourceGroupStateCausalRevision": {
+              "groupRevision": "{finalGroupFourIdStateCausalRevision}",
+              "presenceRevision": "{finalGroupFourIdPresenceCausalRevision}"
+            },
             "groupRef": {
               "applicationId": "{applicationId}",
               "workspaceId": "{workspaceId}",
@@ -9084,7 +9245,9 @@
             }
           },
           "config": {
-            "version": "{finalGroupFourIdConfigVersion}"
+            "durable": {
+              "version": "{finalGroupFourIdConfigVersion}"
+            }
           }
         }
       }
@@ -9101,8 +9264,8 @@
           "x-client-id": "{ownerClientId}"
         },
         "outputs": {
-          "secondaryGroupFiveIdStateCausalRevision": "body.groupStateCausalRevision",
-          "secondaryGroupFiveIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+          "secondaryGroupFiveIdStateCausalRevision": "body.causalRevision.groupRevision",
+          "secondaryGroupFiveIdPresenceCausalRevision": "body.causalRevision.presenceRevision"
         }
       },
       "expect": {
@@ -9110,8 +9273,10 @@
         "body": {
           "memberCount": 101,
           "onlineMemberCount": 101,
-          "groupStateCausalRevision": "{finalGroupFiveIdStateCausalRevision}",
-          "groupPresenceCausalRevision": "{finalGroupFiveIdPresenceCausalRevision}",
+          "causalRevision": {
+            "groupRevision": "{finalGroupFiveIdStateCausalRevision}",
+            "presenceRevision": "{finalGroupFiveIdPresenceCausalRevision}"
+          },
           "group": {
             "groupId": "{groupFiveId}"
           }
@@ -9134,7 +9299,6 @@
           "publish": true
         },
         "outputs": {
-          "finalGroupFiveIdTopologyOutboxId": "body.receipt.outboxId",
           "finalGroupFiveIdTopologySnapshotVersion": "body.snapshot.version"
         }
       },
@@ -9142,8 +9306,10 @@
         "status": 200,
         "body": {
           "snapshot": {
-            "sourceGroupStateCausalRevision": "{finalGroupFiveIdStateCausalRevision}",
-            "sourceGroupPresenceCausalRevision": "{finalGroupFiveIdPresenceCausalRevision}",
+            "sourceGroupStateCausalRevision": {
+              "groupRevision": "{finalGroupFiveIdStateCausalRevision}",
+              "presenceRevision": "{finalGroupFiveIdPresenceCausalRevision}"
+            },
             "groupRef": {
               "applicationId": "{applicationId}",
               "workspaceId": "{workspaceId}",
@@ -9151,7 +9317,9 @@
             }
           },
           "config": {
-            "version": "{finalGroupFiveIdConfigVersion}"
+            "durable": {
+              "version": "{finalGroupFiveIdConfigVersion}"
+            }
           }
         }
       }
@@ -9166,7 +9334,19 @@
         "headers": { "Authorization": "{ownerAuthHeader}", "x-client-id": "{ownerClientId}" },
         "outputs": { "observedGroupOneIdTopologySnapshotVersion": "body.snapshot.version" }
       },
-      "expect": { "status": 200, "body": { "snapshot": { "version": "{finalGroupOneIdTopologySnapshotVersion}", "groupRef": { "applicationId": "{applicationId}", "workspaceId": "{workspaceId}", "groupId": "{groupOneId}" } } } }
+      "expect": {
+        "status": 200,
+        "body": {
+          "snapshot": {
+            "version": "{finalGroupOneIdTopologySnapshotVersion}",
+            "groupRef": {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "groupId": "{groupOneId}"
+            }
+          }
+        }
+      }
     },
     {
       "name": "observetwoPublishedTopologyEffect",
@@ -9178,7 +9358,19 @@
         "headers": { "Authorization": "{ownerAuthHeader}", "x-client-id": "{ownerClientId}" },
         "outputs": { "observedGroupTwoIdTopologySnapshotVersion": "body.snapshot.version" }
       },
-      "expect": { "status": 200, "body": { "snapshot": { "version": "{finalGroupTwoIdTopologySnapshotVersion}", "groupRef": { "applicationId": "{applicationId}", "workspaceId": "{workspaceId}", "groupId": "{groupTwoId}" } } } }
+      "expect": {
+        "status": 200,
+        "body": {
+          "snapshot": {
+            "version": "{finalGroupTwoIdTopologySnapshotVersion}",
+            "groupRef": {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "groupId": "{groupTwoId}"
+            }
+          }
+        }
+      }
     },
     {
       "name": "observethreePublishedTopologyEffect",
@@ -9190,7 +9382,19 @@
         "headers": { "Authorization": "{ownerAuthHeader}", "x-client-id": "{ownerClientId}" },
         "outputs": { "observedGroupThreeIdTopologySnapshotVersion": "body.snapshot.version" }
       },
-      "expect": { "status": 200, "body": { "snapshot": { "version": "{finalGroupThreeIdTopologySnapshotVersion}", "groupRef": { "applicationId": "{applicationId}", "workspaceId": "{workspaceId}", "groupId": "{groupThreeId}" } } } }
+      "expect": {
+        "status": 200,
+        "body": {
+          "snapshot": {
+            "version": "{finalGroupThreeIdTopologySnapshotVersion}",
+            "groupRef": {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "groupId": "{groupThreeId}"
+            }
+          }
+        }
+      }
     },
     {
       "name": "observefourPublishedTopologyEffect",
@@ -9202,7 +9406,19 @@
         "headers": { "Authorization": "{ownerAuthHeader}", "x-client-id": "{ownerClientId}" },
         "outputs": { "observedGroupFourIdTopologySnapshotVersion": "body.snapshot.version" }
       },
-      "expect": { "status": 200, "body": { "snapshot": { "version": "{finalGroupFourIdTopologySnapshotVersion}", "groupRef": { "applicationId": "{applicationId}", "workspaceId": "{workspaceId}", "groupId": "{groupFourId}" } } } }
+      "expect": {
+        "status": 200,
+        "body": {
+          "snapshot": {
+            "version": "{finalGroupFourIdTopologySnapshotVersion}",
+            "groupRef": {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "groupId": "{groupFourId}"
+            }
+          }
+        }
+      }
     },
     {
       "name": "observefivePublishedTopologyEffect",
@@ -9214,18 +9430,30 @@
         "headers": { "Authorization": "{ownerAuthHeader}", "x-client-id": "{ownerClientId}" },
         "outputs": { "observedGroupFiveIdTopologySnapshotVersion": "body.snapshot.version" }
       },
-      "expect": { "status": 200, "body": { "snapshot": { "version": "{finalGroupFiveIdTopologySnapshotVersion}", "groupRef": { "applicationId": "{applicationId}", "workspaceId": "{workspaceId}", "groupId": "{groupFiveId}" } } } }
+      "expect": {
+        "status": 200,
+        "body": {
+          "snapshot": {
+            "version": "{finalGroupFiveIdTopologySnapshotVersion}",
+            "groupRef": {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "groupId": "{groupFiveId}"
+            }
+          }
+        }
+      }
     },
     {
       "name": "assertPublishedTopologyEffectsMatchReceipts",
       "type": "assert",
       "actual": {
         "receipts": {
-          "groupOneId": "{finalGroupOneIdTopologyOutboxId}",
-          "groupTwoId": "{finalGroupTwoIdTopologyOutboxId}",
-          "groupThreeId": "{finalGroupThreeIdTopologyOutboxId}",
-          "groupFourId": "{finalGroupFourIdTopologyOutboxId}",
-          "groupFiveId": "{finalGroupFiveIdTopologyOutboxId}"
+          "groupOneId": "{finalGroupOneIdTopologyOutboxIds}",
+          "groupTwoId": "{finalGroupTwoIdTopologyOutboxIds}",
+          "groupThreeId": "{finalGroupThreeIdTopologyOutboxIds}",
+          "groupFourId": "{finalGroupFourIdTopologyOutboxIds}",
+          "groupFiveId": "{finalGroupFiveIdTopologyOutboxIds}"
         },
         "observedEffects": {
           "groupOneId": "{observedGroupOneIdTopologySnapshotVersion}",
@@ -9290,11 +9518,11 @@
       "expect": {
         "body": {
           "receipts": {
-            "groupOneId": "string",
-            "groupTwoId": "string",
-            "groupThreeId": "string",
-            "groupFourId": "string",
-            "groupFiveId": "string"
+            "groupOneId": ["string"],
+            "groupTwoId": ["string"],
+            "groupThreeId": ["string"],
+            "groupFourId": ["string"],
+            "groupFiveId": ["string"]
           },
           "observedEffects": {
             "groupOneId": "{finalGroupOneIdTopologySnapshotVersion}",
