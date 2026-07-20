@@ -134,6 +134,10 @@ type DurableEvidence = {
   receiptCommandIds: string[];
   outboxIntents: Array<{ intentId: string; commandId: string; intentKind: string }>;
 };
+type ProductionReceiptEvidence = {
+  commandId: string;
+  outboxIds: readonly string[];
+};
 type RunSample = {
   runIndex: number;
   durationMs: number;
@@ -1290,7 +1294,7 @@ async function queryDurableEvidence(
   const receiptResults = await mapWithConcurrency(
     acceptedCommands,
     25,
-    async (command): Promise<string | undefined> => {
+    async (command): Promise<ProductionReceiptEvidence | undefined> => {
       const clientIndex = Number(
         command.commandId.slice(command.commandId.lastIndexOf(':') + 1),
       );
@@ -1299,49 +1303,58 @@ async function queryDurableEvidence(
       }
       const productionCommandIds = productionCommandIdsForRaw(command);
 
-      const validReceipts = command.kind === 'profile-instance'
-        ? await Promise.all(productionCommandIds.map(async (requestId) =>
-          isValidProductionReceipt(
-            await clients.findIdempotentClientMutationReceipt(
-              { ...scope, principalId: `client-${clientIndex}` },
-              requestId,
-            ),
+      if (command.kind === 'profile-instance') {
+        const receipts = await Promise.all(productionCommandIds.map(async (requestId) =>
+          await clients.findIdempotentClientMutationReceipt(
+            { ...scope, principalId: `client-${clientIndex}` },
             requestId,
           )
-        ))
-        : command.kind === 'topology-source'
-        ? [isValidatedTopologyReceipt(
-          await topology.findMutationRecord(
-            { ...scope, groupId: `group-${clientIndex % groupCount}` },
-            command.commandId,
-          ),
+        ));
+        if (!receipts.every((receipt, index) =>
+          isValidProductionReceipt(receipt, productionCommandIds[index]!))) {
+          return undefined;
+        }
+        return {
+          commandId: command.commandId,
+          outboxIds: receipts.flatMap((receipt) => receipt?.receipt.outboxIds ?? []),
+        };
+      }
+      if (command.kind === 'topology-source') {
+        const receipt = await topology.findMutationRecord(
           { ...scope, groupId: `group-${clientIndex % groupCount}` },
           command.commandId,
-        )]
-        : [isValidatedReceiptIdentity(
-          await groups.findIdempotentGroupMutationReceipt(
-            { ...scope, groupId: `group-${clientIndex % groupCount}` },
-            command.commandId,
-          ),
+        );
+        if (!isValidatedTopologyReceipt(
+          receipt,
+          { ...scope, groupId: `group-${clientIndex % groupCount}` },
           command.commandId,
-        )];
-      if (validReceipts.length > 0 && validReceipts.every(Boolean)) {
-        return command.commandId;
+        )) {
+          return undefined;
+        }
+        return {
+          commandId: command.commandId,
+          outboxIds: receipt?.receipt.outboxIds ?? [],
+        };
       }
-      return undefined;
+      const receipt = await groups.findIdempotentGroupMutationReceipt(
+        { ...scope, groupId: `group-${clientIndex % groupCount}` },
+        command.commandId,
+      );
+      if (!isValidatedReceiptIdentity(receipt, command.commandId)) return undefined;
+      return {
+        commandId: command.commandId,
+        outboxIds: receipt?.receipt.outboxIds ?? [],
+      };
     },
   );
-  const receiptCommandIds = receiptResults.filter(
-    (commandId): commandId is string => commandId !== undefined,
+  const receipts = receiptResults.filter(
+    (receipt): receipt is ProductionReceiptEvidence => receipt !== undefined,
   );
-
-  const productionRecords: StateMutationOutboxRecord[] = [];
-  let afterKey: string | undefined;
-  do {
-    const page = await outbox.listPendingPage({ afterKey, limit: 1_000 });
-    productionRecords.push(...page.records.map(({ record }) => record));
-    afterKey = page.nextAfterKey ?? undefined;
-  } while (afterKey !== undefined);
+  const receiptCommandIds = receipts.map((receipt) => receipt.commandId);
+  const productionRecords = await readReferencedProductionOutboxRecords(
+    outbox,
+    receipts.flatMap((receipt) => receipt.outboxIds),
+  );
 
   const outboxIntents = projectProductionOutboxEvidence(commands, productionRecords);
   return {
@@ -1350,6 +1363,18 @@ async function queryDurableEvidence(
       left.intentId.localeCompare(right.intentId)
     ),
   };
+}
+
+export async function readReferencedProductionOutboxRecords(
+  repository: Pick<StateMutationOutboxRepository, 'find'>,
+  outboxIds: readonly string[],
+): Promise<StateMutationOutboxRecord[]> {
+  const stored = await mapWithConcurrency(
+    [...new Set(outboxIds)],
+    25,
+    async (outboxId) => await repository.find(outboxId),
+  );
+  return stored.flatMap((entry) => entry ? [entry.record] : []);
 }
 
 function productionCommandIdsForRaw(command: RawCommand): readonly string[] {

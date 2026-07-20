@@ -259,6 +259,36 @@ describe('API-v1 state-write performance artifact contract', () => {
     }]);
   });
 
+  it('loads only receipt-referenced outboxes without scanning unrelated legacy rows', async () => {
+    const bench = await import(
+      '../../../scripts/perf/api-v1-state-write-concurrency-bench.ts'
+    ) as Record<string, (...args: any[]) => any>;
+    const requested: string[] = [];
+    const referenced = {
+      outboxId: 'current-run-outbox',
+      commandId: 'current-run:membership:0',
+      effects: ['group-state-sync'],
+    };
+    const repository = {
+      find: async (outboxId: string) => {
+        requested.push(outboxId);
+        return outboxId === referenced.outboxId
+          ? { record: referenced, storageRevision: 0 }
+          : undefined;
+      },
+      listPendingPage: () => {
+        throw new Error('unrelated legacy outbox rows must not be scanned');
+      },
+    };
+
+    expect(bench.readReferencedProductionOutboxRecords).toBeTypeOf('function');
+    await expect(bench.readReferencedProductionOutboxRecords(
+      repository,
+      ['current-run-outbox', 'missing-outbox', 'current-run-outbox'],
+    )).resolves.toEqual([referenced]);
+    expect(requested).toEqual(['current-run-outbox', 'missing-outbox']);
+  });
+
   it('does not count an ID-matching but contract-incomplete production receipt', async () => {
     const bench = await import(
       '../../../scripts/perf/api-v1-state-write-concurrency-bench.ts'
