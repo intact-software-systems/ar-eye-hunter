@@ -48,14 +48,15 @@ describe('API-v1 state-write performance artifact contract', () => {
     expect(source).not.toContain('STATE_WRITE_BENCH_OUTBOX');
   });
 
-  it('governs the current producer as complete Task 5 production evidence', () => {
+  it('governs the current producer as the Task 10 post-remediation candidate', () => {
     const source = readFileSync(
       new URL('../../../scripts/perf/api-v1-state-write-concurrency-bench.ts', import.meta.url),
       'utf8',
     );
 
-    expect(source).toContain("governance: 'task5-production-evidence'");
+    expect(source).toContain("governance: 'task10-post-remediation-candidate'");
     expect(source).toContain('presenceSplitFromGroupAggregate: true');
+    expect(source).not.toContain("governance: 'task5-production-evidence'");
     expect(source).not.toContain("governance: 'task4-production-evidence-diagnostic'");
     expect(source).not.toContain("dbwFindings.push('DBW-06', 'DBW-12')");
     expect(source).not.toContain("'production-return:topology-config'");

@@ -341,7 +341,7 @@ async function main(): Promise<void> {
       },
       features: {
          presenceSplitFromGroupAggregate: true,
-         governance: 'task5-production-evidence',
+         governance: 'task10-post-remediation-candidate',
          evidence:
            'Production receipts, mutation outbox records, and exact retry timings including topology config mutations',
       },
