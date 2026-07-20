@@ -392,11 +392,54 @@
   `ws-server-qos-policy.test.ts` Temporal diagnostic; the new RallarAI, router,
   queue, and persisted-validator code introduced none.
 - Task-7-added non-null assertions in the two group-state persistence tests
-  were replaced with explicit fixture narrowing. `git diff --check` and
-  staged `git diff --cached --check` passed; added-line scans found no
-  `Reflect` calls, `as any`, `as never`, `as unknown`, non-null assertions, or
-  database locks. The two intentional restoration files remain byte-for-byte
-  equal to base `f1359859`.
+  were replaced with explicit fixture narrowing. A later review correctly
+  found one additional Task-7-added `entry!.value` in the topology compact
+  receipt test; implementation commit `b77855b5` replaces it with an explicit
+  missing-entry failure before reading `entry.value`.
+
+## Runtime decision-boundary closure evidence
+
+- The pre-production RED command was
+  `npx vitest run packages/tests/shared/ws-server-qos-policy.test.ts packages/tests/shared-server/rallar-ai-server.test.ts`.
+  It exited 1 with 6 failing tests and 27 passing tests. The alternating QoS
+  provider was evaluated twice, and a supplemental single-test run observed
+  the malformed room broadcast return `enqueued` instead of
+  `sent-immediate`. Direct RallarAI broadcast published unknown-string and
+  numeric scopes, while generated-result forwarding published unknown-string,
+  numeric, and null scopes. Direct null already failed only incidentally by
+  defaulting to room and then failing the missing-room-ref check.
+- `WsQueueBoxServerService.enqueueOutboxIfAbsent` now computes one exact
+  dispatch plan per operation, validates the message when that same plan is
+  durable, and passes the plan object into `ALOutboundMessageRuntime`. Retry
+  reads reuse that object, so mutable QoS providers cannot change persistence
+  after validation. The regression asserts one provider evaluation, immediate
+  delivery for its volatile plan, no outbox row, and no outbox repository call
+  for an invalid durable plan. The router regression continues to prove an
+  invalid durable plan cannot wake the outbox engine.
+- Both runtime RallarAI scope inputs now use the same explicit normalizer.
+  Only `room`, `world`, and `all` are accepted; omitted scope retains the room
+  default. Direct broadcast and generated-result forwarding tests cover
+  `galaxy`, a number, and null and prove no publish/outbox fanout occurs.
+  A source audit found no remaining raw runtime scope branch in
+  `RallarAiServer`; all downstream branches consume the normalized target.
+- Final focused queue/runtime/router/RallarAI/topology verification passed 7/7
+  files and 161/161 tests. The exact Task 7 command passed 59/59, the exact API
+  Deno command passed 43/43, and Swagger passed 12/12. `npm run typecheck` and
+  explicit shared and shared-server TypeScript checks exited 0. A fresh full
+  `npm run test:unit` passed 450 files with two configured-skip files: 4,610
+  tests passed and 13 environment-gated tests skipped.
+- The non-governing `packages/tests/tsconfig.json` check remained at exactly
+  1,496 baseline diagnostics. Touched-path filtering found only the existing
+  `ws-server-qos-policy.test.ts` Temporal diagnostic; the RallarAI and topology
+  tests added none. `git diff --check` and staged `git diff --cached --check`
+  passed. Added-line scans found no `Reflect` calls, `as any`, `as never`,
+  `as unknown`, non-null assertions, or database locks. The three intentional
+  restoration files remain byte-for-byte equal to base `f1359859`.
+- A non-governing `deno fmt --check` over the six touched package/test files
+  failed because all six use the repository's established four-space package
+  formatting rather than Deno's default two-space formatting; it proposed
+  whole-file rewrites. No bulk formatting was applied, and `git diff --check`
+  is clean.
 
 ## Baseline-red checks
 
@@ -415,7 +458,7 @@
 
 ## Follow-up
 
-- No Task 7 implementation follow-up is required after `0b962673`.
+- No Task 7 implementation follow-up is required after `b77855b5`.
   Repository-wide cleanup of
   the known `packages/tests` TypeScript and API formatter baselines should be
   handled separately so it does not obscure the authoritative-contract change.
