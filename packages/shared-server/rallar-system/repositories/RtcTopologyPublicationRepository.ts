@@ -1,5 +1,5 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import type { GroupRef } from '@shared/api/group-types.ts';
+import type { GroupRef, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import type { RuntimeStateEntryValue } from '../../runtime-state/RuntimeStateJsonStore.ts';
 import { RuntimeStateJsonStore } from '../../runtime-state/RuntimeStateJsonStore.ts';
 import type {
@@ -30,6 +30,8 @@ import { validateTopologySnapshot } from '../rtc-topology-snapshot-contract.ts';
 import { rtcTopologySemanticEqual } from '../rtc-topology-semantic-equality.ts';
 import { validatePersistedALMessage } from '../services/al-message-persistence-validation.ts';
 import { validateRtcTopologyPublication } from '../rtc-topology-publication-validation.ts';
+import { hashStateMutationCommand } from './StateMutationOutboxRepository.ts';
+import { RtcTopologySnapshotRepository } from './RtcTopologySnapshotRepository.ts';
 
 export type { RtcTopologyPublication } from '../rtc-topology-publication-contract.ts';
 export { toRtcTopologyPublicationId } from '../rtc-topology-identifiers.ts';
@@ -40,10 +42,67 @@ export const RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE =
 export const DEFAULT_RTC_TOPOLOGY_PUBLICATION_RETENTION_MS = 24 * 60 * 60 * 1_000;
 
 export type RtcTopologyPublicationWorkClaim = Readonly<{
+    kind: 'rtc-topology-execution-receipt';
+    schemaVersion: 1;
     groupRef: GroupRef;
     workId: string;
+    commandId: string;
+    requestId: string;
+    commandHash: string;
     publicationId: string;
+    outcome: 'accepted';
+    attemptCount: number;
+    acceptedCausalRevision: GroupStateCausalRevision;
+    acceptedStorageRevision: number;
+    eventId: null;
+    outboxIds: readonly string[];
 }>;
+
+export type RtcTopologyExecutionReceiptFacts = Readonly<{
+    commandHash: string;
+    attemptCount: number;
+    acceptedStorageRevision: number;
+}>;
+
+export type RtcTopologyClaimedPublication = Readonly<{
+    claim: RuntimeStateEntryValue<RtcTopologyPublicationWorkClaim>;
+    publication: RtcTopologyPublication;
+}>;
+
+export async function hashRtcTopologyExecutionCommand(
+    publication: RtcTopologyPublication,
+): Promise<string> {
+    validateRtcTopologyPublication(publication, publication.groupRef);
+    return await hashStateMutationCommand({
+        kind: 'rtc-topology-execution',
+        schemaVersion: 1,
+        publication,
+    });
+}
+
+export function createRtcTopologyExecutionReceipt(
+    publication: RtcTopologyPublication,
+    facts: RtcTopologyExecutionReceiptFacts,
+): RtcTopologyPublicationWorkClaim {
+    const receipt: RtcTopologyPublicationWorkClaim = {
+        kind: 'rtc-topology-execution-receipt',
+        schemaVersion: 1,
+        groupRef: publication.groupRef,
+        workId: publication.workId,
+        commandId: publication.workId,
+        requestId: publication.workId,
+        commandHash: facts.commandHash,
+        publicationId: publication.publicationId,
+        outcome: 'accepted',
+        attemptCount: facts.attemptCount,
+        acceptedCausalRevision: publication.sourceGroupStateCausalRevision,
+        acceptedStorageRevision: facts.acceptedStorageRevision,
+        eventId: null,
+        outboxIds: [publication.publicationId],
+    };
+    validateWorkClaim(receipt, publication.groupRef);
+    return receipt;
+}
 
 export type PutRtcTopologyPublicationResult = Readonly<{
     publication: RtcTopologyPublication;
@@ -76,6 +135,14 @@ export async function migrateLegacyRtcTopologyPublicationKeys(
     );
     for (const sourcePublication of publications) {
         const publication = readPublicationForMigration(sourcePublication);
+        const migrationClaim = createRtcTopologyExecutionReceipt(publication, {
+            commandHash: await hashRtcTopologyExecutionCommand(publication),
+            attemptCount: 1,
+            // Legacy publication claims predate the snapshot CAS receipt. Zero
+            // is the explicit migration sentinel; no live storage revision is
+            // fabricated or used to authorize a new write.
+            acceptedStorageRevision: 0,
+        });
         const destinationPublicationKey = repository.publicationKey(
             publication.groupRef,
             publication.publicationId,
@@ -109,6 +176,7 @@ export async function migrateLegacyRtcTopologyPublicationKeys(
                             transaction,
                             repository,
                             publication,
+                            migrationClaim,
                             sourceIsCanonical,
                             sourcePublication.expireAtTimestamp,
                         );
@@ -123,11 +191,6 @@ export async function migrateLegacyRtcTopologyPublicationKeys(
                             'Legacy publication changed before migration',
                         );
                     }
-                    const expectedClaim: RtcTopologyPublicationWorkClaim = {
-                        groupRef: publication.groupRef,
-                        workId: publication.workId,
-                        publicationId: publication.publicationId,
-                    };
                     const destinationClaimKey = repository.workIndexKey(
                         publication.groupRef,
                         publication.workId,
@@ -142,14 +205,14 @@ export async function migrateLegacyRtcTopologyPublicationKeys(
                             destinationClaimKey,
                         ),
                     ]);
-                    if (!legacyClaim && !destinationClaim && !sourceIsCanonical) {
+                    if (!legacyClaim && !destinationClaim) {
                         throw publicationCorruption(
                             currentSource.key,
-                            'Legacy work claim is missing',
+                            'Publication work claim is missing',
                         );
                     }
                     if (legacyClaim) {
-                        readWorkClaimForMigration(legacyClaim, expectedClaim);
+                        readWorkClaimForMigration(legacyClaim, migrationClaim);
                         if (
                             legacyClaim.expireAtTimestamp !==
                                 currentSource.expireAtTimestamp
@@ -161,8 +224,12 @@ export async function migrateLegacyRtcTopologyPublicationKeys(
                         }
                     }
                     const claimExpiry = currentSource.expireAtTimestamp;
+                    let destinationClaimIsCanonical = false;
                     if (destinationClaim) {
-                        readWorkClaimForMigration(destinationClaim, expectedClaim);
+                        destinationClaimIsCanonical = readWorkClaimForMigration(
+                            destinationClaim,
+                            migrationClaim,
+                        );
                         if (destinationClaim.expireAtTimestamp !== claimExpiry) {
                             throw publicationCorruption(
                                 destinationClaim.key,
@@ -171,25 +238,26 @@ export async function migrateLegacyRtcTopologyPublicationKeys(
                         }
                     }
                     if (!destinationClaim) {
+                        if (!legacyClaim) {
+                            throw publicationCorruption(
+                                currentSource.key,
+                                'Publication work claim source is missing',
+                            );
+                        }
                         const inserted = await transaction.insertIfAbsent(
                             RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE,
                             destinationClaimKey,
-                            JSON.stringify(expectedClaim),
+                            JSON.stringify(migrationClaim),
                             claimExpiry,
                         );
                         if (inserted.status === 'conflict') {
                             throw new RuntimeStateWriteConflictError();
                         }
-                    } else if (
-                        !rtcTopologySemanticEqual(
-                            parseValue(destinationClaim),
-                            expectedClaim,
-                        )
-                    ) {
+                    } else if (!destinationClaimIsCanonical) {
                         const updated = await transaction.upsertIfRevision(
                             RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE,
                             destinationClaimKey,
-                            JSON.stringify(expectedClaim),
+                            JSON.stringify(migrationClaim),
                             claimExpiry,
                             destinationClaim.revision,
                         );
@@ -358,11 +426,24 @@ export class RtcTopologyPublicationRepository extends RuntimeStateJsonStore {
             }
             const claim = matches[0]?.value;
             return claim
-                ? await this.findPublication(claim.groupRef, claim.publicationId)
+                ? (await this.findClaimedPublicationForWork(
+                    claim.groupRef,
+                    claim.workId,
+                ))?.publication
                 : undefined;
         }
         const groupRef = groupRefOrWorkId;
-        const workId = maybeWorkId!;
+        if (maybeWorkId === undefined) {
+            throw new TypeError('RTC topology work id is required');
+        }
+        return (await this.findClaimedPublicationForWork(groupRef, maybeWorkId))
+            ?.publication;
+    }
+
+    async findClaimedPublicationForWork(
+        groupRef: GroupRef,
+        workId: string,
+    ): Promise<RtcTopologyClaimedPublication | undefined> {
         const claim = await this.findWorkClaimEntry(groupRef, workId);
         if (!claim) return undefined;
         const publication = await this.findPublication(
@@ -375,7 +456,25 @@ export class RtcTopologyPublicationRepository extends RuntimeStateJsonStore {
                 'RTC topology work claim publication is missing or mismatched',
             );
         }
-        return publication;
+        if (
+            !rtcTopologySemanticEqual(
+                claim.value.acceptedCausalRevision,
+                publication.sourceGroupStateCausalRevision,
+            ) || claim.value.outboxIds[0] !== publication.publicationId
+        ) {
+            throw publicationCorruption(
+                claim.entry.key,
+                'RTC topology execution receipt effects differ from publication',
+            );
+        }
+        const commandHash = await hashRtcTopologyExecutionCommand(publication);
+        if (claim.value.commandHash !== commandHash) {
+            throw publicationCorruption(
+                claim.entry.key,
+                'RTC topology execution receipt command hash differs from publication',
+            );
+        }
+        return { claim, publication };
     }
 
     async findWorkClaimEntry(
@@ -440,16 +539,51 @@ export class RtcTopologyPublicationRepository extends RuntimeStateJsonStore {
 
     async putOrLoad(
         publication: RtcTopologyPublication,
+        receiptFacts: RtcTopologyExecutionReceiptFacts,
     ): Promise<PutRtcTopologyPublicationResult> {
         // Compatibility seam with explicit optimistic first-writer semantics.
         // It never overwrites either immutable row and never retries a conflict.
         validateRtcTopologyPublication(publication, publication.groupRef);
+        if (
+            receiptFacts.commandHash !==
+                await hashRtcTopologyExecutionCommand(publication)
+        ) {
+            throw new TypeError(
+                'RTC topology execution receipt command hash is invalid',
+            );
+        }
         const runtime = requireOptimisticRuntime(this.runtimeRepository);
         const expireAtTimestamp = this.now() + this.retentionMs;
         const inserted = await runtime.begin(async (transaction) => {
             const repository = this.withRepository(transaction);
+            const existing = await repository.findClaimedPublicationForWork(
+                publication.groupRef,
+                publication.workId,
+            );
+            if (existing) return false;
+            const snapshots = new RtcTopologySnapshotRepository(transaction);
+            const guardedSnapshot = await snapshots.findSnapshotEntry(
+                publication.groupRef,
+            );
+            if (
+                !guardedSnapshot ||
+                guardedSnapshot.entry.revision !==
+                    receiptFacts.acceptedStorageRevision
+            ) {
+                throw new RuntimeStateWriteConflictError();
+            }
+            const guard = await snapshots.commitSnapshotGuard(
+                guardedSnapshot.value,
+                guardedSnapshot.entry.revision,
+            );
+            if (guard.status === 'conflict') {
+                throw new RuntimeStateWriteConflictError();
+            }
             const claimed = await repository.insertWorkClaim(
-                publication,
+                createRtcTopologyExecutionReceipt(publication, {
+                    ...receiptFacts,
+                    acceptedStorageRevision: guard.storageRevision,
+                }),
                 expireAtTimestamp,
             );
             if (!claimed) return false;
@@ -474,17 +608,13 @@ export class RtcTopologyPublicationRepository extends RuntimeStateJsonStore {
     }
 
     async insertWorkClaim(
-        publication: RtcTopologyPublication,
+        claim: RtcTopologyPublicationWorkClaim,
         expireAtTimestamp: number,
     ): Promise<boolean> {
-        const claim: RtcTopologyPublicationWorkClaim = {
-            groupRef: publication.groupRef,
-            workId: publication.workId,
-            publicationId: publication.publicationId,
-        };
+        validateWorkClaim(claim, claim.groupRef);
         const result = await this.putValueIfAbsent(
             RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE,
-            this.workIndexKey(publication.groupRef, publication.workId),
+            this.workIndexKey(claim.groupRef, claim.workId),
             claim,
             expireAtTimestamp,
         );
@@ -533,7 +663,7 @@ export class RtcTopologyPublicationRepository extends RuntimeStateJsonStore {
             trustedPublicationId,
             entry.key,
         );
-        const value = parseValue(entry) as RtcTopologyPublication;
+        const value = parseValue(entry);
         try {
             validateRtcTopologyPublication(value, decoded.groupRef);
         } catch (error) {
@@ -559,7 +689,7 @@ export class RtcTopologyPublicationRepository extends RuntimeStateJsonStore {
     ): Promise<RuntimeStateEntryValue<RtcTopologyPublicationWorkClaim> | undefined> {
         const decoded = decodeChildKey(entry.key, 'work');
         assertTrustedSlot(decoded, trustedRef, trustedWorkId, entry.key);
-        const value = parseValue(entry) as RtcTopologyPublicationWorkClaim;
+        const value = parseValue(entry);
         try {
             validateWorkClaim(value, decoded.groupRef);
         } catch (error) {
@@ -589,15 +719,50 @@ export class RtcTopologyPublicationRepository extends RuntimeStateJsonStore {
     }
 }
 
-function validateWorkClaim(value: unknown, expectedRef: GroupRef): void {
+function validateWorkClaim(
+    value: unknown,
+    expectedRef: GroupRef,
+): asserts value is RtcTopologyPublicationWorkClaim {
     if (!isRecord(value)) throw new TypeError('RTC topology work claim is invalid');
-    assertExactKeys(value, ['groupRef', 'workId', 'publicationId']);
+    assertExactKeys(value, [
+        'kind', 'schemaVersion', 'groupRef', 'workId', 'commandId', 'requestId',
+        'commandHash', 'publicationId', 'outcome', 'attemptCount',
+        'acceptedCausalRevision', 'acceptedStorageRevision', 'eventId',
+        'outboxIds',
+    ]);
     validateGroupRef(value.groupRef, expectedRef);
     if (
+        value.kind !== 'rtc-topology-execution-receipt' ||
+        value.schemaVersion !== 1 || value.outcome !== 'accepted' ||
         typeof value.workId !== 'string' || value.workId.length === 0 ||
-        typeof value.publicationId !== 'string' || value.publicationId.length === 0
+        value.commandId !== value.workId || value.requestId !== value.workId ||
+        typeof value.commandHash !== 'string' ||
+        !/^sha256:[0-9a-f]{64}$/u.test(value.commandHash) ||
+        typeof value.publicationId !== 'string' || value.publicationId.length === 0 ||
+        !Number.isSafeInteger(value.attemptCount) || Number(value.attemptCount) < 1 ||
+        !Number.isSafeInteger(value.acceptedStorageRevision) ||
+        Number(value.acceptedStorageRevision) < 0 || value.eventId !== null ||
+        !Array.isArray(value.outboxIds) || value.outboxIds.length !== 1 ||
+        value.outboxIds[0] !== value.publicationId
     ) {
         throw new TypeError('RTC topology work claim identity is invalid');
+    }
+    validateCausalRevision(value.acceptedCausalRevision);
+}
+
+function validateCausalRevision(
+    value: unknown,
+): asserts value is GroupStateCausalRevision {
+    if (!isRecord(value)) {
+        throw new TypeError('RTC topology work claim causal revision is invalid');
+    }
+    assertExactKeys(value, ['groupRevision', 'presenceRevision']);
+    if (
+        !Number.isSafeInteger(value.groupRevision) || Number(value.groupRevision) < 0 ||
+        !Number.isSafeInteger(value.presenceRevision) ||
+        Number(value.presenceRevision) < 0
+    ) {
+        throw new TypeError('RTC topology work claim causal revision is invalid');
     }
 }
 
@@ -693,6 +858,7 @@ async function validateCompletedPublicationMigration(
     transaction: RuntimeStateOptimisticTransactionalRepositoryLike,
     repository: RtcTopologyPublicationRepository,
     publication: RtcTopologyPublication,
+    expectedClaim: RtcTopologyPublicationWorkClaim,
     sourceIsCanonical: boolean,
     expectedExpireAtTimestamp: number,
 ): Promise<void> {
@@ -702,11 +868,6 @@ async function validateCompletedPublicationMigration(
             'Canonical publication disappeared during migration',
         );
     }
-    const expectedClaim: RtcTopologyPublicationWorkClaim = {
-        groupRef: publication.groupRef,
-        workId: publication.workId,
-        publicationId: publication.publicationId,
-    };
     const destinationPublicationKey = repository.publicationKey(
         publication.groupRef,
         publication.publicationId,
@@ -745,11 +906,10 @@ async function validateCompletedPublicationMigration(
             'Concurrent publication migration winner physical expiry differs from source',
         );
     }
-    readWorkClaimForMigration(destinationClaim, expectedClaim);
-    if (!rtcTopologySemanticEqual(parseValue(destinationClaim), expectedClaim)) {
+    if (!readWorkClaimForMigration(destinationClaim, expectedClaim)) {
         throw publicationCorruption(
             destinationClaim.key,
-            'Concurrent publication migration claim is not canonical',
+            'Concurrent publication migration left a legacy work claim',
         );
     }
     const destinationValue = readPublicationForMigration(destinationPublication);
@@ -789,32 +949,49 @@ function readPublicationForMigration(
 function readWorkClaimForMigration(
     entry: RuntimeStateEntry,
     expected: RtcTopologyPublicationWorkClaim,
-): RtcTopologyPublicationWorkClaim {
+): boolean {
     const raw = parseValue(entry);
     if (typeof raw === 'string') {
         if (raw !== expected.publicationId) {
             throw publicationCorruption(
                 entry.key,
-                'Legacy work claim differs from publication',
+                'Legacy work claim differs from publication source',
             );
         }
-        return expected;
+        return false;
     }
     try {
         validateWorkClaim(raw, expected.groupRef);
-    } catch (error) {
-        throw publicationCorruption(
-            entry.key,
-            error instanceof Error ? error.message : 'Legacy work claim is invalid',
-        );
+        if (
+            raw.workId !== expected.workId ||
+            raw.publicationId !== expected.publicationId ||
+            !rtcTopologySemanticEqual(raw, expected)
+        ) {
+            throw new TypeError('Canonical work claim differs from legacy source');
+        }
+        return true;
+    } catch (canonicalError) {
+        try {
+            if (!isRecord(raw)) throw canonicalError;
+            assertExactKeys(raw, ['groupRef', 'workId', 'publicationId']);
+            validateGroupRef(raw.groupRef, expected.groupRef);
+            if (
+                raw.workId !== expected.workId ||
+                raw.publicationId !== expected.publicationId
+            ) throw canonicalError;
+            return false;
+        } catch (legacyError) {
+            const error = legacyError === canonicalError
+                ? canonicalError
+                : legacyError;
+            throw publicationCorruption(
+                entry.key,
+                error instanceof Error
+                    ? error.message
+                    : 'Legacy work claim is invalid',
+            );
+        }
     }
-    if (!rtcTopologySemanticEqual(raw, expected)) {
-        throw publicationCorruption(
-            entry.key,
-            'Canonical work claim differs from legacy source',
-        );
-    }
-    return expected;
 }
 
 function canonicalPublication(
@@ -823,13 +1000,11 @@ function canonicalPublication(
     const ref = publication.groupRef;
     return {
         ...publication,
-        groupRef: ref.workspaceId === undefined
-            ? { applicationId: ref.applicationId, groupId: ref.groupId }
-            : {
-                applicationId: ref.applicationId,
-                workspaceId: ref.workspaceId,
-                groupId: ref.groupId,
-            },
+        groupRef: {
+            applicationId: ref.applicationId,
+            workspaceId: ref.workspaceId,
+            groupId: ref.groupId,
+        },
     };
 }
 
@@ -841,7 +1016,7 @@ function publicationForMigration(
         'publicationId',
         'workId',
         'groupRef',
-        'sourceGroupStateRevision',
+        'sourceGroupStateCausalRevision',
         'overlayVersion',
         ...(hasTarget ? ['targetGroupSnapshotVersion'] : []),
         'recipientSessionIds',
@@ -864,19 +1039,36 @@ function publicationForMigration(
     } catch {
         throw new TypeError('Legacy RTC topology publication snapshot is invalid');
     }
-    const groupRef = raw.groupRef as GroupRef;
+    const groupRef = readMigrationGroupRef(raw.groupRef);
     validateTopologySnapshot(snapshot, groupRef);
-    const targetGroupSnapshotVersion = hasTarget
-        ? raw.targetGroupSnapshotVersion as number
+    const targetGroupSnapshotVersion: unknown = hasTarget
+        ? raw.targetGroupSnapshotVersion
         : message.targets.minSnapshotVersion;
+    if (
+        !Number.isSafeInteger(targetGroupSnapshotVersion) ||
+        Number(targetGroupSnapshotVersion) < 0
+    ) {
+        throw new TypeError('Legacy RTC topology publication target is invalid');
+    }
     if (targetGroupSnapshotVersion !== message.targets.minSnapshotVersion) {
         throw new TypeError('Legacy RTC topology publication target is inconsistent');
     }
-    const workId = raw.workId as string;
-    const createdAtEpochMs = raw.createdAtEpochMs as number;
-    const publication = canonicalPublication({
-        ...(raw as unknown as RtcTopologyPublication),
+    const workId = raw.workId;
+    if (typeof workId !== 'string' || workId.length === 0) {
+        throw new TypeError('Legacy RTC topology publication work id is invalid');
+    }
+    const createdAtEpochMs = raw.createdAtEpochMs;
+    if (!Number.isSafeInteger(createdAtEpochMs) || Number(createdAtEpochMs) < 0) {
+        throw new TypeError('Legacy RTC topology publication created time is invalid');
+    }
+    const candidate = {
+        publicationId: raw.publicationId,
+        workId,
+        groupRef,
+        sourceGroupStateCausalRevision: raw.sourceGroupStateCausalRevision,
+        overlayVersion: raw.overlayVersion,
         targetGroupSnapshotVersion,
+        recipientSessionIds: raw.recipientSessionIds,
         message: {
             ...message,
             id: {
@@ -889,9 +1081,29 @@ function publicationForMigration(
                 createdTs: createdAtEpochMs,
             },
         },
-    });
-    validateRtcTopologyPublication(publication, publication.groupRef);
-    return publication;
+        createdAtEpochMs,
+    };
+    validateRtcTopologyPublication(candidate, groupRef);
+    return canonicalPublication(candidate);
+}
+
+function readMigrationGroupRef(value: unknown): GroupRef {
+    if (!isRecord(value)) {
+        throw new TypeError('Legacy RTC topology publication groupRef is invalid');
+    }
+    assertExactKeys(value, ['applicationId', 'workspaceId', 'groupId']);
+    if (
+        typeof value.applicationId !== 'string' || value.applicationId.length === 0 ||
+        typeof value.workspaceId !== 'string' ||
+        typeof value.groupId !== 'string' || value.groupId.length === 0
+    ) {
+        throw new TypeError('Legacy RTC topology publication groupRef is invalid');
+    }
+    return {
+        applicationId: value.applicationId,
+        workspaceId: value.workspaceId,
+        groupId: value.groupId,
+    };
 }
 
 function sameGroupRef(left: GroupRef, right: GroupRef): boolean {

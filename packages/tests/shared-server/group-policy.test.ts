@@ -1,12 +1,13 @@
 import {describe, expect, it} from 'vitest';
 import type {
+    AuditStamp,
     Group,
     GroupMember,
-    GroupPolicyReasonCode,
     GroupPresenceSession,
     GroupSnapshot,
-} from '@shared/mod.ts';
-import {GROUP_POLICY_REASON_CODES} from '@shared/mod.ts';
+} from '@shared/api/group-types.ts';
+import type { GroupPolicyReasonCode } from '@shared/api/group-policy-types.ts';
+import {GROUP_POLICY_REASON_CODES} from '@shared/api/group-policy-types.ts';
 import {
     canActivateGroupMember,
     canChangeGroupLifecycle,
@@ -376,7 +377,7 @@ describe('group policy helpers', () => {
                 canJoinGroup({snapshot: snapshot({status: 'deleted'}), actor: actor('carol')}),
             ),
             expectCode(canJoinGroup({
-                snapshot: snapshot({status: 'paused' as Group['status']}),
+                snapshot: withInvalidGroupStatus(snapshot(), 'paused'),
                 actor: actor('carol'),
             })),
             expectCode(canJoinGroup({snapshot: snapshot({maxMembers: 1}), actor: actor('carol')})),
@@ -452,32 +453,57 @@ function snapshot(
 ): GroupSnapshot {
     const members = options.members ?? [member('alice', {role: 'owner'})];
     const activeSessions = options.activeSessions ?? [];
-    const group: Group = {
+    const common = {
         applicationId: 'app-1',
         workspaceId: 'workspace-1',
         groupId: 'room-1',
-        displayName: 'Room 1',
-        kind: 'room',
-        status: 'active',
-        joinMode: 'open',
-        maxMembers: options.maxMembers,
-        maxSessionsPerMember: options.maxSessionsPerMember,
-        metadata: {},
+        slug: options.slug ?? null,
+        displayName: options.displayName ?? 'Room 1',
+        description: options.description ?? null,
+        kind: options.kind ?? 'room',
+        joinMode: options.joinMode ?? 'open',
+        maxMembers: options.maxMembers ?? null,
+        maxSessionsPerMember: options.maxSessionsPerMember ?? null,
+        metadata: options.metadata ?? {},
         snapshotVersion: options.snapshotVersion ?? 1,
-        metadataVersion: 1,
-        rosterVersion: 1,
-        presenceVersion: 1,
-        created: {atEpochMs: 1, byServiceId: 'test'},
-        updated: {atEpochMs: 1, byServiceId: 'test'},
-        ...options,
+        metadataVersion: options.metadataVersion ?? 1,
+        rosterVersion: options.rosterVersion ?? 1,
+        presenceVersion: options.presenceVersion ?? 1,
+        created: options.created ?? audit(1),
+        updated: options.updated ?? audit(1),
+        expiresAtEpochMs: options.expiresAtEpochMs ?? null,
+        emptySinceEpochMs: options.emptySinceEpochMs ?? null,
+        purgeAfterEpochMs: options.purgeAfterEpochMs ?? null,
         activeMemberCount: options.activeMemberCount ??
             members.filter((entry) => entry.status === 'active').length,
         ownerPrincipalId: options.ownerPrincipalId ?? members.find((entry) =>
             entry.status === 'active' && entry.role === 'owner'
         )?.principalId ?? 'alice',
     };
+    const group: Group = options.status === 'archived'
+        ? {
+            ...common,
+            status: 'archived',
+            archived: options.archived ?? audit(1),
+            deleted: null,
+        }
+        : options.status === 'deleted'
+        ? {
+            ...common,
+            status: 'deleted',
+            archived: options.archived ?? null,
+            deleted: options.deleted ?? audit(1),
+        }
+        : {
+            ...common,
+            status: 'active',
+            archived: null,
+            deleted: null,
+        };
 
     return {
+        stateRevision: 1,
+        causalRevision: {groupRevision: 1, presenceRevision: 1},
         group,
         members,
         activeSessions,
@@ -486,21 +512,44 @@ function snapshot(
     };
 }
 
+function withInvalidGroupStatus(
+    value: GroupSnapshot,
+    status: string,
+): GroupSnapshot {
+    Reflect.set(value.group, 'status', status);
+    return value;
+}
+
 function member(
     principalId: string,
     options: Partial<GroupMember> = {},
 ): GroupMember {
-    return {
+    const common = {
         applicationId: 'app-1',
         workspaceId: 'workspace-1',
         groupId: 'room-1',
         principalId,
         role: options.role ?? 'member',
-        status: options.status ?? 'active',
-        joined: {atEpochMs: 1, byServiceId: 'test'},
-        updated: {atEpochMs: 1, byServiceId: 'test'},
-        invitedByPrincipalId: options.invitedByPrincipalId,
-        invitationExpiresAtEpochMs: options.invitationExpiresAtEpochMs,
+        joined: options.joined ?? audit(1),
+        updated: options.updated ?? audit(1),
+        invitedByPrincipalId: options.invitedByPrincipalId ?? null,
+        invitationExpiresAtEpochMs: options.invitationExpiresAtEpochMs ?? null,
+    };
+    if (options.status === 'left') {
+        return {...common, status: 'left', left: options.left ?? audit(1), removed: null, banned: null};
+    }
+    if (options.status === 'removed') {
+        return {...common, status: 'removed', left: null, removed: options.removed ?? audit(1), banned: null};
+    }
+    if (options.status === 'banned') {
+        return {...common, status: 'banned', left: null, removed: null, banned: options.banned ?? audit(1)};
+    }
+    return {
+        ...common,
+        status: options.status === 'invited' ? 'invited' : 'active',
+        left: null,
+        removed: null,
+        banned: null,
     };
 }
 
@@ -509,15 +558,40 @@ function session(
     principalId: string,
     options: Partial<GroupPresenceSession> = {},
 ): GroupPresenceSession {
-    return {
+    const common = {
         applicationId: 'app-1',
         workspaceId: 'workspace-1',
         groupId: 'room-1',
         sessionId,
         principalId,
-        connectedAtEpochMs: 1,
-        lastHeartbeatAtEpochMs: NOW,
-        expiresAtEpochMs: NOW + 1_000,
-        ...options,
+        generationId: options.generationId ?? `${sessionId}-generation`,
+        generationVersion: options.generationVersion ?? 1,
+        connectedAtEpochMs: options.connectedAtEpochMs ?? 1,
+        lastHeartbeatAtEpochMs: options.lastHeartbeatAtEpochMs ?? NOW,
+        expiresAtEpochMs: options.expiresAtEpochMs ?? NOW + 1_000,
+    };
+    if (options.status === 'disconnected') {
+        return {
+            ...common,
+            status: 'disconnected',
+            disconnectedAtEpochMs: options.disconnectedAtEpochMs ?? NOW,
+            disconnectReason: options.disconnectReason ?? 'disconnected',
+        };
+    }
+    return {
+        ...common,
+        status: 'active',
+        disconnectedAtEpochMs: null,
+        disconnectReason: null,
+    };
+}
+
+function audit(atEpochMs: number): AuditStamp {
+    return {
+        atEpochMs,
+        actor: {kind: 'service', serviceId: 'test'},
+        reason: null,
+        traceId: null,
+        requestId: null,
     };
 }

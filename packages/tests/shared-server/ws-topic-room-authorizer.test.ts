@@ -4,7 +4,13 @@ import {
     newALEventRoute,
     newALMulticastMessage,
 } from '@shared/al-contracts/al-contract.ts';
-import type { GroupPresenceSummary, GroupSnapshot } from '@shared/api/group-types.ts';
+import type {
+    AuditStamp,
+    Group,
+    GroupMember,
+    GroupPresenceSummary,
+    GroupSnapshot,
+} from '@shared/api/group-types.ts';
 import {
     findGroupStateSnapshotByRef,
     setGroupStateSnapshot,
@@ -353,6 +359,7 @@ describe('createGroupRoomWsAuthorizer', () => {
         if (!stored) throw new Error('Expected persisted room session');
         expect(await groupRepository.updatePresence({
             ...stored.value,
+            status: 'disconnected',
             disconnectedAtEpochMs: 1_000,
             disconnectReason: 'client-disconnect',
         }, stored.entry.revision)).toMatchObject({ status: 'applied' });
@@ -405,10 +412,7 @@ describe('createGroupRoomWsAuthorizer', () => {
             );
             const snapshot: GroupSnapshot = {
                 ...group,
-                group: {
-                    ...group.group,
-                    status,
-                },
+                group: withGroupStatus(group.group, status),
             };
             const authorizer = createGroupRoomWsAuthorizer({
                 findGroupSnapshotById: () => snapshot,
@@ -639,17 +643,20 @@ function withoutActiveSessions(snapshot: GroupSnapshot): GroupSnapshot {
 
 function withMemberStatus(
     snapshot: GroupSnapshot,
-    status: GroupSnapshot['members'][number]['status'],
+    status: 'removed' | 'banned',
 ): GroupSnapshot {
-    if (status === 'active') {
-        return snapshot;
+    const target = snapshot.members[0];
+    if (!target) {
+        throw new Error('Expected member fixture');
     }
-    const target = snapshot.members[0]!;
-    const fixtureOwner = {
+    const fixtureOwner: GroupMember = {
         ...target,
         principalId: 'fixture-owner',
-        role: 'owner' as const,
-        status: 'active' as const,
+        role: 'owner',
+        status: 'active',
+        left: null,
+        removed: null,
+        banned: null,
     };
     return {
         ...snapshot,
@@ -658,14 +665,28 @@ function withMemberStatus(
             ownerPrincipalId: fixtureOwner.principalId,
             activeMemberCount: 1,
         },
-        members: [...snapshot.members.map((member) => ({
-            ...member,
-            role: 'member' as const,
-            status,
-            ...(status === 'left' || status === 'removed' || status === 'banned'
-                ? { [status]: member.updated }
-                : {}),
-        })), fixtureOwner],
+        members: [
+            ...snapshot.members.map((member): GroupMember =>
+                status === 'removed'
+                    ? {
+                        ...member,
+                        role: 'member',
+                        status: 'removed',
+                        left: null,
+                        removed: member.updated,
+                        banned: null,
+                    }
+                    : {
+                        ...member,
+                        role: 'member',
+                        status: 'banned',
+                        left: null,
+                        removed: null,
+                        banned: member.updated,
+                    }
+            ),
+            fixtureOwner,
+        ],
         memberCount: 1,
     };
 }
@@ -714,32 +735,44 @@ function createGroupSnapshot(
     groupId: string,
     applicationId: string,
     workspaceId: string,
-    sessionIds: readonly string[],
+    sessionIds: readonly [string, ...string[]],
     snapshotVersion: number,
     expiresAtEpochMs = 4_000_000_000_000,
 ): GroupSnapshot {
+    const created = createAuditStamp(1);
+    const updated = createAuditStamp(snapshotVersion);
     return {
+        stateRevision: snapshotVersion,
+        causalRevision: {
+            groupRevision: snapshotVersion,
+            presenceRevision: snapshotVersion,
+        },
         group: {
             applicationId,
             workspaceId,
             groupId,
+            slug: null,
             displayName: groupId,
+            description: null,
             kind: 'room',
             status: 'active',
+            archived: null,
+            deleted: null,
             joinMode: 'open',
+            maxMembers: null,
+            maxSessionsPerMember: null,
             metadata: {},
             snapshotVersion,
             metadataVersion: 1,
             rosterVersion: 1,
             presenceVersion: snapshotVersion,
-            ownerPrincipalId: sessionIds[0]!,
+            ownerPrincipalId: sessionIds[0],
             activeMemberCount: sessionIds.length,
-            created: {
-                atEpochMs: 1,
-            },
-            updated: {
-                atEpochMs: snapshotVersion,
-            },
+            created,
+            updated,
+            expiresAtEpochMs: null,
+            emptySinceEpochMs: null,
+            purgeAfterEpochMs: null,
         },
         members: sessionIds.map((sessionId, index) => ({
             applicationId,
@@ -748,12 +781,13 @@ function createGroupSnapshot(
             principalId: sessionId,
             role: index === 0 ? 'owner' : 'member',
             status: 'active',
-            joined: {
-                atEpochMs: 1,
-            },
-            updated: {
-                atEpochMs: snapshotVersion,
-            },
+            joined: created,
+            updated,
+            invitedByPrincipalId: null,
+            invitationExpiresAtEpochMs: null,
+            left: null,
+            removed: null,
+            banned: null,
         })),
         activeSessions: sessionIds.map((sessionId) => ({
             applicationId,
@@ -763,11 +797,41 @@ function createGroupSnapshot(
             principalId: sessionId,
             generationId: `generation-${sessionId}`,
             generationVersion: 1,
+            status: 'active',
+            disconnectedAtEpochMs: null,
+            disconnectReason: null,
             connectedAtEpochMs: 1,
             lastHeartbeatAtEpochMs: snapshotVersion,
             expiresAtEpochMs,
         })),
         memberCount: sessionIds.length,
         onlineMemberCount: sessionIds.length,
+    };
+}
+
+function withGroupStatus(group: Group, status: 'archived' | 'deleted'): Group {
+    if (status === 'archived') {
+        return {
+            ...group,
+            status: 'archived',
+            archived: group.updated,
+            deleted: null,
+        };
+    }
+    return {
+        ...group,
+        status: 'deleted',
+        archived: null,
+        deleted: group.updated,
+    };
+}
+
+function createAuditStamp(atEpochMs: number): AuditStamp {
+    return {
+        atEpochMs,
+        actor: { kind: 'service', serviceId: 'test' },
+        reason: null,
+        traceId: null,
+        requestId: null,
     };
 }

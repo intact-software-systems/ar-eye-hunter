@@ -2,6 +2,17 @@ import { describe, expect, it } from 'vitest';
 import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
+import type {
+    ClientInstance,
+    ClientPrincipal,
+    ClientSession,
+} from '@shared/api/client-types.ts';
+import type {
+    AuditStamp,
+    Group,
+    GroupMember,
+    GroupPresenceSession,
+} from '@shared/api/group-types.ts';
 
 describe('runtime-state hierarchical prefix isolation', () => {
     it('keeps sibling workspace identifiers isolated', async () => {
@@ -61,47 +72,143 @@ const principalRef = (principalId: string) => ({ ...scope('workspace'), principa
 const instanceRef = (principalId: string, clientInstanceId: string) => ({ ...principalRef(principalId), clientInstanceId });
 const groupRef = (groupId: string) => ({ ...scope('workspace'), groupId });
 
-const clientPrincipal = (workspaceId: string, principalId: string) => ({ ...scope(workspaceId), principalId, presenceVersion: 1 }) as never;
-const clientInstance = (principalId: string, clientInstanceId: string) => ({ ...instanceRef(principalId, clientInstanceId), presenceVersion: 1 }) as never;
-const clientSession = (principalId: string, clientInstanceId: string, sessionId: string) => ({ ...instanceRef(principalId, clientInstanceId), sessionId, expiresAtEpochMs: Date.now() + 60_000 }) as never;
-const group = (workspaceId: string, groupId: string) => ({
-    ...scope(workspaceId),
-    groupId,
-    displayName: groupId,
-    kind: 'room',
-    status: 'active',
-    joinMode: 'open',
-    metadata: {},
-    ownerPrincipalId: 'owner',
-    activeMemberCount: 1,
-    snapshotVersion: 1,
-    metadataVersion: 1,
-    rosterVersion: 1,
-    presenceVersion: 0,
-    created: auditStamp,
-    updated: auditStamp,
-}) as never;
-const groupMember = (
+function clientPrincipal(
+    workspaceId: string,
+    principalId: string,
+): ClientPrincipal {
+    return {
+        ...scope(workspaceId),
+        principalId,
+        username: principalId,
+        displayName: null,
+        avatarUrl: null,
+        authProvider: null,
+        externalSubjectId: null,
+        status: 'active',
+        roles: [],
+        metadata: {},
+        snapshotVersion: 1,
+        profileVersion: 1,
+        presenceVersion: 1,
+        created: auditStamp,
+        updated: auditStamp,
+        disabled: null,
+        deleted: null,
+        lastSeenAtEpochMs: null,
+    };
+}
+
+function clientInstance(
+    principalId: string,
+    clientInstanceId: string,
+): ClientInstance {
+    return {
+        ...instanceRef(principalId, clientInstanceId),
+        platform: 'unknown',
+        deviceLabel: null,
+        appVersion: null,
+        userAgent: null,
+        capabilities: [],
+        status: 'active',
+        registered: auditStamp,
+        updated: auditStamp,
+        revoked: null,
+    };
+}
+
+function clientSession(
+    principalId: string,
+    clientInstanceId: string,
+    sessionId: string,
+): ClientSession {
+    return {
+        ...instanceRef(principalId, clientInstanceId),
+        sessionId,
+        generationId: `${sessionId}-generation`,
+        generationVersion: 1,
+        status: 'active',
+        presenceState: 'online',
+        transport: 'ws',
+        connectionId: null,
+        authenticatedAtEpochMs: 1,
+        connectedAtEpochMs: 1,
+        lastHeartbeatAtEpochMs: 1,
+        expiresAtEpochMs: 4_102_444_800_000,
+        disconnectedAtEpochMs: null,
+        disconnectReason: null,
+    };
+}
+
+function group(workspaceId: string, groupId: string): Group {
+    return {
+        ...scope(workspaceId),
+        groupId,
+        slug: null,
+        displayName: groupId,
+        description: null,
+        kind: 'room',
+        status: 'active',
+        joinMode: 'open',
+        maxMembers: null,
+        maxSessionsPerMember: null,
+        metadata: {},
+        ownerPrincipalId: 'owner',
+        activeMemberCount: 1,
+        snapshotVersion: 1,
+        metadataVersion: 1,
+        rosterVersion: 1,
+        presenceVersion: 0,
+        created: auditStamp,
+        updated: auditStamp,
+        expiresAtEpochMs: null,
+        emptySinceEpochMs: null,
+        purgeAfterEpochMs: null,
+        archived: null,
+        deleted: null,
+    };
+}
+
+function groupMember(
     groupId: string,
     principalId: string,
     workspaceId = 'workspace',
-) => ({
-    ...scope(workspaceId),
-    groupId,
-    principalId,
-    role: 'owner',
-    status: 'active',
-    joined: auditStamp,
-    updated: auditStamp,
-}) as never;
-const groupSession = (groupId: string, sessionId: string) => ({
-    ...groupRef(groupId),
-    sessionId,
-    principalId: 'alice',
-    generationId: `${sessionId}-generation`,
-    generationVersion: 1,
-    connectedAtEpochMs: 1,
-    lastHeartbeatAtEpochMs: 1,
-    expiresAtEpochMs: 4_102_444_800_000,
-}) as never;
-const auditStamp = { atEpochMs: 1, byServiceId: 'hierarchy-prefix-test' } as const;
+): GroupMember {
+    return {
+        ...scope(workspaceId),
+        groupId,
+        principalId,
+        role: 'owner',
+        status: 'active',
+        joined: auditStamp,
+        updated: auditStamp,
+        left: null,
+        removed: null,
+        banned: null,
+        invitedByPrincipalId: null,
+        invitationExpiresAtEpochMs: null,
+    };
+}
+
+function groupSession(groupId: string, sessionId: string): GroupPresenceSession {
+    return {
+        ...groupRef(groupId),
+        sessionId,
+        principalId: 'alice',
+        generationId: `${sessionId}-generation`,
+        generationVersion: 1,
+        status: 'active',
+        connectedAtEpochMs: 1,
+        lastHeartbeatAtEpochMs: 1,
+        expiresAtEpochMs: 4_102_444_800_000,
+        disconnectedAtEpochMs: null,
+        disconnectReason: null,
+    };
+}
+
+const auditStamp: AuditStamp = {
+    atEpochMs: 1,
+    actor: { kind: 'service', serviceId: 'hierarchy-prefix-test' },
+    reason: null,
+    traceId: null,
+    requestId: null,
+};

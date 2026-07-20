@@ -445,15 +445,15 @@ function toOwnerDetails(
     snapshot: GroupSnapshot,
 ): GroupSpaStatisticsResponse['owner'] | undefined {
     if (
-        snapshot.group.maxMembers === undefined &&
-        snapshot.group.maxSessionsPerMember === undefined
+        snapshot.group.maxMembers === null &&
+        snapshot.group.maxSessionsPerMember === null
     ) {
         return undefined;
     }
 
     return {
-        maxMembers: snapshot.group.maxMembers,
-        maxSessionsPerMember: snapshot.group.maxSessionsPerMember,
+        maxMembers: snapshot.group.maxMembers ?? undefined,
+        maxSessionsPerMember: snapshot.group.maxSessionsPerMember ?? undefined,
     };
 }
 

@@ -1,7 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { AppTopics, type ClientInfo } from '@shared/api/api-config.ts';
-import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
+import type {
+    AuditStamp,
+    ClientEvent,
+    ClientSnapshot,
+} from '@shared/api/client-types.ts';
 import type { GroupEvent, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import {
@@ -132,6 +136,61 @@ describe('browser data caches state scope filtering', () => {
             groupStateSnapshotsRepository.getAllGroupStateSnapshots()
                 .map((snapshot) => snapshot.group.groupId),
         ).toEqual(['room-b']);
+    });
+
+    it('recovers incomparable group tuples through a durable reread before RTC recomputation', async () => {
+        const manager: Parameters<typeof dataCaches.hydrateStateCaches>[0] =
+            createWebRtcGroupManager();
+        const acceptUpdate = vi.spyOn(manager, 'acceptGroupUpdate');
+        const clientData: ClientInfo = {
+            clientId: 'alice',
+            sessionId: 'session-a',
+            isOnline: true,
+        };
+        const current = {
+            ...createGroupSnapshot(
+                'room-a',
+                DEFAULT_STATE_APPLICATION_ID,
+                DEFAULT_STATE_WORKSPACE_ID,
+                ['session-a'],
+                2,
+            ),
+            stateRevision: 3,
+            causalRevision: { groupRevision: 2, presenceRevision: 1 },
+        } satisfies GroupSnapshot;
+        const incomparable = {
+            ...current,
+            stateRevision: 3,
+            causalRevision: { groupRevision: 1, presenceRevision: 2 },
+        } satisfies GroupSnapshot;
+        const recovered = createGroupSnapshot(
+            'room-a',
+            DEFAULT_STATE_APPLICATION_ID,
+            DEFAULT_STATE_WORKSPACE_ID,
+            ['session-a'],
+            3,
+        );
+        const rereadGroupSnapshots = vi.fn(async () => [recovered]);
+
+        await dataCaches.hydrateStateCaches(
+            manager,
+            clientData,
+            [],
+            [current],
+        );
+        acceptUpdate.mockClear();
+
+        await dataCaches.hydrateStateCaches(
+            manager,
+            clientData,
+            [],
+            [incomparable],
+            { rereadGroupSnapshots },
+        );
+        expect(rereadGroupSnapshots).toHaveBeenCalledOnce();
+        expect(acceptUpdate).toHaveBeenCalledWith(recovered);
+        expect(groupStateSnapshotsRepository.findGroupStateSnapshotByRef(current.group))
+            .toEqual(recovered);
     });
 
     it('retains RTC connections when the current session leaves an active snapshot', async () => {
@@ -341,7 +400,7 @@ describe('browser data caches state scope filtering', () => {
         const unsubscribe = dataCaches.onStateCacheChange(listener);
 
         dataCaches.initialise(
-            webSocketQueueBox as never,
+            webSocketQueueBox,
             manager,
             clientData,
         );
@@ -378,8 +437,10 @@ describe('browser data caches state scope filtering', () => {
         unsubscribe();
     });
 
-    it('applies group directory websocket snapshots to the room cache', async () => {
-        const manager = createWebRtcGroupManager();
+    it('retains durable incomparable recovery across initialise and hydrate', async () => {
+        const manager: Parameters<typeof dataCaches.initialise>[1] =
+            createWebRtcGroupManager();
+        const recompute = vi.spyOn(manager, 'ensureAllGroupsConnected');
         const clientData: ClientInfo = {
             clientId: 'alice',
             sessionId: 'session-a',
@@ -398,19 +459,46 @@ describe('browser data caches state scope filtering', () => {
         };
         const listener = vi.fn();
         const unsubscribe = dataCaches.onStateCacheChange(listener);
-        const groupSnapshot = createGroupSnapshot(
+        const current = {
+            ...createGroupSnapshot(
+                'room-a',
+                DEFAULT_STATE_APPLICATION_ID,
+                DEFAULT_STATE_WORKSPACE_ID,
+                ['session-b'],
+                2,
+            ),
+            stateRevision: 3,
+            causalRevision: { groupRevision: 2, presenceRevision: 1 },
+        } satisfies GroupSnapshot;
+        const incoming = {
+            ...current,
+            causalRevision: { groupRevision: 1, presenceRevision: 2 },
+        } satisfies GroupSnapshot;
+        const recovered = createGroupSnapshot(
             'room-a',
             DEFAULT_STATE_APPLICATION_ID,
             DEFAULT_STATE_WORKSPACE_ID,
             ['session-b'],
-            2,
+            3,
         );
+        const rereadGroupSnapshots = vi.fn(async () => [recovered]);
+        const cacheOptions = { rereadGroupSnapshots };
 
         dataCaches.initialise(
-            webSocketQueueBox as never,
+            webSocketQueueBox,
             manager,
             clientData,
+            cacheOptions,
         );
+        await dataCaches.hydrateStateCaches(
+            manager,
+            clientData,
+            [],
+            [current],
+            cacheOptions,
+        );
+        recompute.mockClear();
+        listener.mockClear();
 
         await onInboxMessage?.(
             newALBroadcastMessage(
@@ -422,16 +510,18 @@ describe('browser data caches state scope filtering', () => {
                 ),
                 'all',
                 AppTopics.groupDirectorySnapshot,
-                groupSnapshot,
+                incoming,
             ),
         );
 
         expect(groupStateSnapshotsRepository.getAllGroupStateSnapshots()).toEqual([
-            groupSnapshot,
+            recovered,
         ]);
+        expect(rereadGroupSnapshots).toHaveBeenCalledOnce();
+        expect(recompute).toHaveBeenCalledOnce();
         expect(listener).toHaveBeenCalledWith({
             clients: [],
-            groups: [groupSnapshot],
+            groups: [recovered],
         });
         expect(manager.acceptGroupUpdate).not.toHaveBeenCalled();
 
@@ -464,10 +554,17 @@ describe('browser data caches state scope filtering', () => {
             2,
         );
         const topology: RallarOverlayTopologySnapshot = {
-            sourceGroupStateRevision: 1,
+            sourceGroupStateCausalRevision: {
+                groupRevision: 1,
+                presenceRevision: 1,
+            },
             state: 'active',
             overlayId: toScopedOverlayId(groupSnapshot.group),
-            groupRef: groupSnapshot.group,
+            groupRef: {
+                applicationId: groupSnapshot.group.applicationId,
+                workspaceId: groupSnapshot.group.workspaceId,
+                groupId: groupSnapshot.group.groupId,
+            },
             name: 'room-a',
             topology: 'tree',
             activeSessionIds: ['session-a', 'session-b'],
@@ -483,7 +580,7 @@ describe('browser data caches state scope filtering', () => {
         };
 
         dataCaches.initialise(
-            webSocketQueueBox as never,
+            webSocketQueueBox,
             manager,
             clientData,
         );
@@ -503,7 +600,7 @@ describe('browser data caches state scope filtering', () => {
 
         expect(findOverlayById(topology.overlayId)).toMatchObject({
             overlayId: topology.overlayId,
-            groupRef: groupSnapshot.group,
+            groupRef: topology.groupRef,
             topology: 'tree',
             nextHopSessionIds: ['session-b'],
             overlayVersion: 1,
@@ -512,7 +609,10 @@ describe('browser data caches state scope filtering', () => {
 
         const removed = {
             ...topology,
-            sourceGroupStateRevision: 2,
+            sourceGroupStateCausalRevision: {
+                groupRevision: 2,
+                presenceRevision: 2,
+            },
             state: 'removed' as const,
             nextHopsBySessionId: {
                 'session-a': [],
@@ -580,7 +680,7 @@ describe('browser data caches state scope filtering', () => {
         );
 
         dataCaches.initialise(
-            webSocketQueueBox as never,
+            webSocketQueueBox,
             manager,
             clientData,
         );
@@ -663,18 +763,21 @@ function createClientSnapshot(
             workspaceId,
             principalId,
             username: principalId,
+            displayName: null,
+            avatarUrl: null,
+            authProvider: null,
+            externalSubjectId: null,
             status: 'active',
             roles: [],
             metadata: {},
             snapshotVersion,
             profileVersion: snapshotVersion,
             presenceVersion: 1,
-            created: {
-                atEpochMs: 1,
-            },
-            updated: {
-                atEpochMs: snapshotVersion,
-            },
+            created: auditStamp(1),
+            updated: auditStamp(snapshotVersion),
+            disabled: null,
+            deleted: null,
+            lastSeenAtEpochMs: snapshotVersion,
         },
         instances: [],
         activeSessions: [{
@@ -684,12 +787,17 @@ function createClientSnapshot(
             clientInstanceId: `${principalId}-instance`,
             sessionId,
             status: 'active',
+            generationId: `generation-${snapshotVersion}`,
+            generationVersion: snapshotVersion,
             presenceState: 'online',
             transport: 'ws',
             authenticatedAtEpochMs: 1,
             connectedAtEpochMs: 1,
             lastHeartbeatAtEpochMs: snapshotVersion,
             expiresAtEpochMs: 60_000,
+            connectionId: null,
+            disconnectedAtEpochMs: null,
+            disconnectReason: null,
         }],
         isOnline: true,
         activeSessionCount: 1,
@@ -704,8 +812,12 @@ function createGroupSnapshot(
     sessionIds: readonly string[],
     snapshotVersion: number,
 ): GroupSnapshot {
+    const ownerPrincipalId = sessionIds[0];
+    if (!ownerPrincipalId) {
+        throw new TypeError('Group fixture requires an owner');
+    }
     return {
-        stateRevision: snapshotVersion,
+        stateRevision: snapshotVersion * 2,
         causalRevision: {
             groupRevision: snapshotVersion,
             presenceRevision: snapshotVersion,
@@ -714,35 +826,43 @@ function createGroupSnapshot(
             applicationId,
             workspaceId,
             groupId,
+            slug: null,
             displayName: groupId,
+            description: null,
             kind: 'room',
             status: 'active',
             joinMode: 'open',
+            maxMembers: null,
+            maxSessionsPerMember: null,
             metadata: {},
             snapshotVersion,
             metadataVersion: 1,
             rosterVersion: 1,
             presenceVersion: snapshotVersion,
-            created: {
-                atEpochMs: 1,
-            },
-            updated: {
-                atEpochMs: snapshotVersion,
-            },
+            created: auditStamp(1),
+            updated: auditStamp(snapshotVersion),
+            archived: null,
+            deleted: null,
+            expiresAtEpochMs: null,
+            emptySinceEpochMs: null,
+            purgeAfterEpochMs: null,
+            activeMemberCount: sessionIds.length,
+            ownerPrincipalId,
         },
-        members: sessionIds.map((sessionId) => ({
+        members: sessionIds.map((sessionId, index) => ({
             applicationId,
             workspaceId,
             groupId,
             principalId: sessionId,
-            role: 'member',
+            role: index === 0 ? 'owner' : 'member',
             status: 'active',
-            joined: {
-                atEpochMs: 1,
-            },
-            updated: {
-                atEpochMs: snapshotVersion,
-            },
+            joined: auditStamp(1),
+            updated: auditStamp(snapshotVersion),
+            left: null,
+            removed: null,
+            banned: null,
+            invitedByPrincipalId: null,
+            invitationExpiresAtEpochMs: null,
         })),
         activeSessions: sessionIds.map((sessionId) => ({
             applicationId,
@@ -750,9 +870,14 @@ function createGroupSnapshot(
             groupId,
             sessionId,
             principalId: sessionId,
+            generationId: `generation-${snapshotVersion}`,
+            generationVersion: snapshotVersion,
+            status: 'active',
             connectedAtEpochMs: 1,
             lastHeartbeatAtEpochMs: snapshotVersion,
             expiresAtEpochMs: 60_000,
+            disconnectedAtEpochMs: null,
+            disconnectReason: null,
         })),
         memberCount: sessionIds.length,
         onlineMemberCount: sessionIds.length,
@@ -770,12 +895,17 @@ function createGroupEvent(
         eventId,
         eventType: 'member-joined',
         snapshotVersion: 1,
+        causalRevision: { groupRevision: 1, presenceRevision: 1 },
         occurredAtEpochMs: 1,
         actor: {
+            kind: 'session',
             principalId: 'alice',
             sessionId: 'session-a',
         },
+        reason: null,
+        traceId: null,
         requestId: 'request-1',
+        payload: {},
     };
 }
 
@@ -790,11 +920,27 @@ function createClientEvent(
         eventId,
         eventType: 'session-connected',
         snapshotVersion: 1,
+        clientInstanceId: `${principalId}-instance`,
+        sessionId: 'session-a',
         occurredAtEpochMs: 1,
         actor: {
+            kind: 'session',
             principalId,
             sessionId: 'session-a',
         },
+        reason: null,
+        traceId: null,
         requestId: 'request-2',
+        payload: {},
+    };
+}
+
+function auditStamp(atEpochMs: number): AuditStamp {
+    return {
+        atEpochMs,
+        actor: { kind: 'service', serviceId: 'test' },
+        reason: null,
+        traceId: null,
+        requestId: null,
     };
 }

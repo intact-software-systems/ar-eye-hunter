@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
     installRallarGameAuthorityServer,
     type RallarGameAuthorityServerRallarFacade,
-} from '@shared-server/mod.ts';
+} from '@shared-server/game/authority-server.ts';
 import {
     createRallarGameAuthorityEnvelope,
     type RallarGameAuthorityEnvelope,
@@ -344,7 +344,11 @@ function createFakeServerRallar() {
                         subscription.selector.topicId === 'game.authority' &&
                         subscription.selector.typeId === typeId
                     )
-                    .map((subscription) => subscription.handler(message, context)),
+                    .map((subscription) => Reflect.apply(
+                        subscription.handler,
+                        undefined,
+                        [message, context],
+                    )),
             );
         },
     };

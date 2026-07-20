@@ -10,11 +10,13 @@ import {
     readGroupStateRevision,
 } from '@shared/api/group-client-views.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-state-validation.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
 import type { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import type { RtcTopologyPublicationFanout } from '../pubsub/RtcTopologyClusterTransport.ts';
 import {
+    hashRtcTopologyExecutionCommand,
     type RtcTopologyPublication,
     toRtcTopologyPublicationId,
 } from '../repositories/RtcTopologyPublicationRepository.ts';
@@ -33,6 +35,7 @@ import { recordRallarTiming, type RallarTimingSink } from './timing.ts';
 import { AppOutboxType } from './AppOutboxService.ts';
 import {
     COALESCED_APP_OUTBOX_WORK_FIELD,
+    type CoalescedAppOutboxWorkMetadata,
     type CoalescedAppOutboxWorkData,
     CoalescedAppOutboxWorkService,
 } from './CoalescedAppOutboxWorkService.ts';
@@ -110,6 +113,12 @@ type RtcTopologyWorkEnvelope<T extends object> = Readonly<{
     data: T;
 }>;
 
+type PersistedRtcTopologyWork =
+    & (RtcTopologyGroupRevisionWork | RtcTopologyRttRefreshWork)
+    & Readonly<{
+        [COALESCED_APP_OUTBOX_WORK_FIELD]?: CoalescedAppOutboxWorkMetadata;
+    }>;
+
 type CreateRtcTopologyWorkRuntimeOptions = Readonly<{
     service: CoalescedAppOutboxWorkService;
     outboxQueueReader: OutboxQueueReader;
@@ -131,7 +140,7 @@ export function createRtcTopologyOutboxPublisher(options: Readonly<{
     return createRtcTopologyWorkRuntime({
         service: new CoalescedAppOutboxWorkService(
             options.outboxQueueReader,
-            senderId,
+            toAppQueueCreatedBy(senderId),
             options.now,
         ),
         outboxQueueReader: options.outboxQueueReader,
@@ -155,7 +164,10 @@ export function createRtcTopologyWorkHandler(options: Readonly<{
 }>): OnMessageCallback {
     return {
         onMessage: async (message: ALMessage, _entry: ResourceEntry) => {
-            const workEnvelope = readRtcTopologyWorkEnvelope(message);
+            const workEnvelope = readRtcTopologyWorkEnvelope(
+                message,
+                options.runtime.workType,
+            );
             const work = workEnvelope.data;
             const workId = toRtcTopologyExecutionId(workEnvelope);
             const publicationFacts: RtcOverlayTopologyMessageFacts = {
@@ -184,7 +196,11 @@ export function createRtcTopologyWorkHandler(options: Readonly<{
                         read,
                         candidate: null,
                         publication: null,
-                        facts: { publicationExpireAtTimestamp: null },
+                        facts: {
+                            publicationExpireAtTimestamp: null,
+                            commandHash: null,
+                            attemptCount: null,
+                        },
                     } as const;
                     const computeStarted = performance.now();
                     const computed = computeTopologyMutation(replayInput);
@@ -227,10 +243,6 @@ export function createRtcTopologyWorkHandler(options: Readonly<{
                 ) {
                     return;
                 }
-                const facts = {
-                    publicationExpireAtTimestamp: options.executionRepository
-                        .publicationExpireAtTimestamp(),
-                } as const;
                 const planned = options.topologyManagement
                     .planTopologyFromAuthority(authority, read.snapshot?.value);
                 recordTopologyExecutionPhase(
@@ -249,6 +261,12 @@ export function createRtcTopologyWorkHandler(options: Readonly<{
                     planned.snapshot,
                     publicationFacts,
                 );
+                const facts = {
+                    publicationExpireAtTimestamp: options.executionRepository
+                        .publicationExpireAtTimestamp(),
+                    commandHash: await hashRtcTopologyExecutionCommand(publication),
+                    attemptCount: attempt + 1,
+                };
                 const computed = computeTopologyMutation({
                     read,
                     candidate: planned.snapshot,
@@ -637,7 +655,7 @@ function createRtcTopologyWorkRuntime(
                     sourceGroupStateRevision,
                 ),
             contextId: toRtcTopologyQueueContextId(group.group),
-            senderId: options.senderId,
+            senderId: toAppQueueCreatedBy(options.senderId),
             data: {
                 kind: 'group-revision',
                 overlayId,
@@ -656,8 +674,11 @@ function createRtcTopologyWorkRuntime(
             ),
         );
         options.wake?.();
-        const winnerMessage = JSON.parse(winner.resource) as ALMessage;
-        const winnerEnvelope = readRtcTopologyWorkEnvelope(winnerMessage);
+        const winnerMessage = parsePersistedRtcTopologyALMessage(winner.resource);
+        const winnerEnvelope = readRtcTopologyWorkEnvelope(
+            winnerMessage,
+            options.workType,
+        );
         if (winnerEnvelope.data.kind !== 'group-revision') {
             throw new TypeError(
                 'RTC topology group enqueue resolved non-group work',
@@ -694,28 +715,191 @@ function createRtcTopologyWorkRuntime(
 
 function readRtcTopologyWorkEnvelope(
     message: ALMessage,
-): RtcTopologyWorkEnvelope<
-    RtcTopologyGroupRevisionWork | RtcTopologyRttRefreshWork
-> {
-    return JSON.parse(message.payload.resource) as RtcTopologyWorkEnvelope<
-        RtcTopologyGroupRevisionWork | RtcTopologyRttRefreshWork
-    >;
+    expectedWorkType: string,
+): RtcTopologyWorkEnvelope<PersistedRtcTopologyWork> {
+    validatePersistedRtcTopologyALMessage(message);
+    const value: unknown = JSON.parse(message.payload.resource);
+    validatePersistedRtcTopologyWorkEnvelope(value, message, expectedWorkType);
+    return value;
 }
 
 function toRtcTopologyExecutionId(
-    envelope: RtcTopologyWorkEnvelope<
-        RtcTopologyGroupRevisionWork | RtcTopologyRttRefreshWork
-    >,
+    envelope: RtcTopologyWorkEnvelope<PersistedRtcTopologyWork>,
 ): string {
-    const metadata = (envelope.data as Record<string, unknown>)[
-        COALESCED_APP_OUTBOX_WORK_FIELD
-    ] as { generation?: number } | undefined;
+    const metadata = envelope.data[COALESCED_APP_OUTBOX_WORK_FIELD];
     return [
         envelope.topicId,
         envelope.contextId,
         envelope.resourceId,
         metadata?.generation ?? 0,
     ].join(':');
+}
+
+function parsePersistedRtcTopologyALMessage(serialized: string): ALMessage {
+    const value: unknown = JSON.parse(serialized);
+    validatePersistedRtcTopologyALMessage(value);
+    return value;
+}
+
+function validatePersistedRtcTopologyALMessage(
+    value: unknown,
+): asserts value is ALMessage {
+    const message = requireWorkRecord(value, 'RTC topology AL message');
+    requireWorkKeys(message, ['id', 'route', 'payload'], [
+        'id', 'route', 'targets', 'forwarding', 'constraints', 'ordering',
+        'delivery', 'actions', 'qos', 'payload', 'audit', 'diagnostics',
+    ], 'RTC topology AL message');
+    const id = requireWorkRecord(message.id, 'RTC topology AL message id');
+    requireWorkKeys(id, ['v', 'msgId', 'ts', 'senderId'], [
+        'v', 'msgId', 'ts', 'senderId', 'sessionId', 'traceId',
+    ], 'RTC topology AL message id');
+    if (id.v !== 2) throw new TypeError('RTC topology AL message version is invalid');
+    requireWorkString(id.msgId, 'RTC topology AL message msgId');
+    requireWorkInteger(id.ts, 'RTC topology AL message timestamp');
+    requireWorkString(id.senderId, 'RTC topology AL message senderId');
+    const route = requireWorkRecord(message.route, 'RTC topology AL message route');
+    requireWorkKeys(route, ['topicId', 'resourceId', 'contextId'], [
+        'topicId', 'resourceId', 'contextId',
+    ], 'RTC topology AL message route');
+    for (const key of ['topicId', 'resourceId', 'contextId'] as const) {
+        requireWorkString(route[key], `RTC topology AL message route ${key}`);
+    }
+    const payload = requireWorkRecord(message.payload, 'RTC topology AL message payload');
+    requireWorkKeys(payload, ['typeId', 'resource'], [
+        'typeId', 'contentType', 'resource',
+    ], 'RTC topology AL message payload');
+    requireWorkString(payload.typeId, 'RTC topology AL message payload typeId');
+    requireWorkString(payload.resource, 'RTC topology AL message payload resource');
+}
+
+function validatePersistedRtcTopologyWorkEnvelope(
+    value: unknown,
+    message: ALMessage,
+    expectedWorkType: string,
+): asserts value is RtcTopologyWorkEnvelope<PersistedRtcTopologyWork> {
+    const envelope = requireWorkRecord(value, 'RTC topology work envelope');
+    requireWorkKeys(envelope, [
+        'type', 'topicId', 'resourceId', 'contextId', 'senderId', 'data',
+    ], [
+        'type', 'topicId', 'resourceId', 'contextId', 'senderId', 'data',
+    ], 'RTC topology work envelope');
+    requireWorkString(envelope.type, 'RTC topology work type');
+    requireWorkString(envelope.topicId, 'RTC topology work topicId');
+    requireWorkString(envelope.resourceId, 'RTC topology work resourceId');
+    requireWorkString(envelope.contextId, 'RTC topology work contextId');
+    requireWorkString(envelope.senderId, 'RTC topology work senderId');
+    const queueKey = toAppQueueKey({
+        topicId: envelope.topicId,
+        resourceId: envelope.resourceId,
+        contextId: envelope.contextId,
+    });
+    if (
+        envelope.senderId !== message.id.senderId ||
+        envelope.type !== expectedWorkType ||
+        message.payload.typeId !== expectedWorkType ||
+        envelope.type !== message.payload.typeId ||
+        queueKey.topicId !== message.route.topicId ||
+        queueKey.resourceId !== message.route.resourceId ||
+        queueKey.contextId !== message.route.contextId
+    ) throw new TypeError('RTC topology work envelope differs from its AL route');
+    const work = requireWorkRecord(envelope.data, 'RTC topology work data');
+    const common = [
+        'kind', 'overlayId', 'groupSnapshot', 'requestedAtEpochMs',
+    ];
+    const variant = work.kind === 'group-revision'
+        ? ['sourceGroupStateRevision']
+        : work.kind === 'rtt-refresh'
+        ? ['requestedGroupStateRevision', 'requestedRttVersion']
+        : null;
+    if (!variant) throw new TypeError('RTC topology work kind is invalid');
+    const allowed = [...common, ...variant, COALESCED_APP_OUTBOX_WORK_FIELD];
+    requireWorkKeys(work, [...common, ...variant], allowed, 'RTC topology work data');
+    requireWorkString(work.overlayId, 'RTC topology work overlayId');
+    requireWorkInteger(work.requestedAtEpochMs, 'RTC topology work requestedAtEpochMs');
+    validateAuthoritativeGroupSnapshot(work.groupSnapshot);
+    if (work.overlayId !== toScopedOverlayId(work.groupSnapshot.group)) {
+        throw new TypeError('RTC topology work overlayId differs from group scope');
+    }
+    if (envelope.contextId !== toRtcTopologyQueueContextId(work.groupSnapshot.group)) {
+        throw new TypeError('RTC topology work context differs from group scope');
+    }
+    const stateRevision = readGroupStateRevision(work.groupSnapshot);
+    if (work.kind === 'group-revision') {
+        requireWorkInteger(
+            work.sourceGroupStateRevision,
+            'RTC topology work sourceGroupStateRevision',
+        );
+        if (work.sourceGroupStateRevision !== stateRevision) {
+            throw new TypeError('RTC topology work source revision differs from snapshot');
+        }
+    } else {
+        requireWorkInteger(
+            work.requestedGroupStateRevision,
+            'RTC topology work requestedGroupStateRevision',
+        );
+        requireWorkInteger(work.requestedRttVersion, 'RTC topology work requestedRttVersion');
+        if (work.requestedGroupStateRevision !== stateRevision) {
+            throw new TypeError('RTC topology RTT work revision differs from snapshot');
+        }
+    }
+    if (Object.hasOwn(work, COALESCED_APP_OUTBOX_WORK_FIELD)) {
+        validateCoalescedWorkMetadata(work[COALESCED_APP_OUTBOX_WORK_FIELD]);
+    } else if (work.kind === 'rtt-refresh') {
+        throw new TypeError('RTC topology RTT work coalescing metadata is required');
+    }
+}
+
+function validateCoalescedWorkMetadata(value: unknown): void {
+    const metadata = requireWorkRecord(value, 'RTC topology coalescing metadata');
+    requireWorkKeys(metadata, [
+        'generation', 'requestedAtEpochMs', 'dueAtEpochMs', 'reasons',
+    ], [
+        'generation', 'requestedAtEpochMs', 'dueAtEpochMs', 'reasons',
+    ], 'RTC topology coalescing metadata');
+    requireWorkInteger(metadata.generation, 'RTC topology coalescing generation');
+    requireWorkInteger(
+        metadata.requestedAtEpochMs,
+        'RTC topology coalescing requestedAtEpochMs',
+    );
+    requireWorkInteger(metadata.dueAtEpochMs, 'RTC topology coalescing dueAtEpochMs');
+    if (!Array.isArray(metadata.reasons) ||
+        metadata.reasons.some((reason) => typeof reason !== 'string' || reason.length === 0)) {
+        throw new TypeError('RTC topology coalescing reasons are invalid');
+    }
+}
+
+function requireWorkRecord(value: unknown, label: string): Record<string, unknown> {
+    if (!isWorkRecord(value)) throw new TypeError(`${label} must be an object`);
+    return value;
+}
+
+function isWorkRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function requireWorkKeys(
+    value: Record<string, unknown>,
+    required: readonly string[],
+    allowed: readonly string[],
+    label: string,
+): void {
+    const missing = required.find((key) => !Object.hasOwn(value, key));
+    if (missing) throw new TypeError(`${label} is missing ${missing}`);
+    const allowedKeys = new Set(allowed);
+    const unexpected = Object.keys(value).find((key) => !allowedKeys.has(key));
+    if (unexpected) throw new TypeError(`${label} has unexpected ${unexpected}`);
+}
+
+function requireWorkString(value: unknown, label: string): asserts value is string {
+    if (typeof value !== 'string' || value.length === 0) {
+        throw new TypeError(`${label} is invalid`);
+    }
+}
+
+function requireWorkInteger(value: unknown, label: string): asserts value is number {
+    if (!Number.isSafeInteger(value) || Number(value) < 0) {
+        throw new TypeError(`${label} is invalid`);
+    }
 }
 
 function toTopologyPublication(
@@ -730,12 +914,14 @@ function toTopologyPublication(
     return {
         publicationId: toRtcTopologyPublicationId({
             workId,
-            sourceGroupStateRevision: snapshot.sourceGroupStateRevision,
+            sourceGroupStateCausalRevision:
+                snapshot.sourceGroupStateCausalRevision,
             overlayVersion: snapshot.version,
         }),
         workId,
         groupRef: canonicalGroupRef(group.group),
-        sourceGroupStateRevision: snapshot.sourceGroupStateRevision,
+        sourceGroupStateCausalRevision:
+            snapshot.sourceGroupStateCausalRevision,
         overlayVersion: snapshot.version,
         targetGroupSnapshotVersion: group.group.snapshotVersion,
         recipientSessionIds: snapshot.activeSessionIds,
@@ -805,13 +991,11 @@ function toRtcTopologyQueueContextId(groupRef: GroupRef): string {
 }
 
 function canonicalGroupRef(ref: GroupRef): GroupRef {
-    return ref.workspaceId === undefined
-        ? { applicationId: ref.applicationId, groupId: ref.groupId }
-        : {
-            applicationId: ref.applicationId,
-            workspaceId: ref.workspaceId,
-            groupId: ref.groupId,
-        };
+    return {
+        applicationId: ref.applicationId,
+        workspaceId: ref.workspaceId,
+        groupId: ref.groupId,
+    };
 }
 
 function recordTopologyExecutionPhase(

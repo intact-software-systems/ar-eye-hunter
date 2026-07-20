@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import { createGroupSnapshotFixture } from './authoritative-group-fixtures.ts';
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
 
 const mocks = vi.hoisted(() => {
@@ -498,56 +499,10 @@ function createGroupSnapshot(
 ): GroupSnapshot {
     const applicationId = scope.applicationId ?? 'app-1';
     const workspaceId = scope.workspaceId ?? 'workspace-1';
-    return {
-        group: {
-            applicationId,
-            workspaceId,
-            groupId,
-            displayName: groupId,
-            kind: 'room',
-            status: 'active',
-            joinMode: 'open',
-            metadata: {},
-            snapshotVersion: 1,
-            metadataVersion: 0,
-            rosterVersion: 1,
-            presenceVersion: 1,
-            created: {
-                atEpochMs: 1,
-                byPrincipalId: 'creator',
-            },
-            updated: {
-                atEpochMs: 1,
-                byPrincipalId: 'creator',
-            },
-        },
-        members: sessionIds.map((sessionId) => ({
-            applicationId,
-            workspaceId,
-            groupId,
-            principalId: sessionId,
-            role: 'member',
-            status: 'active',
-            joined: {
-                atEpochMs: 1,
-                byPrincipalId: 'creator',
-            },
-            updated: {
-                atEpochMs: 1,
-                byPrincipalId: 'creator',
-            },
-        })),
-        activeSessions: sessionIds.map((sessionId) => ({
-            applicationId,
-            workspaceId,
-            groupId,
-            sessionId,
-            principalId: sessionId,
-            connectedAtEpochMs: 1,
-            lastHeartbeatAtEpochMs: 1,
-            expiresAtEpochMs: 60_000,
-        })),
-        memberCount: sessionIds.length,
-        onlineMemberCount: sessionIds.length,
-    };
+    return createGroupSnapshotFixture({
+        applicationId,
+        workspaceId,
+        groupId,
+        sessionIds,
+    });
 }

@@ -29,7 +29,13 @@ import {
 import { groupEventWorkspaceKey } from '@shared-server/postgres/rallar-system/group-event-workspace-key.ts';
 import { createGroupStateEventRepository } from '@shared-server/postgres/rallar-system/createStateRepositories.ts';
 import type { ClientEvent } from '@shared/api/client-types.ts';
-import type { Group, GroupEvent, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import type {
+  AuditStamp,
+  Group,
+  GroupEvent,
+  GroupRef,
+  GroupSnapshot,
+} from '@shared/api/group-types.ts';
 import {
   RALLAR_CRDT_OPERATION_VERSION,
   RALLAR_CRDT_PROTOCOL_VERSION,
@@ -51,13 +57,17 @@ const PAST_INSTANT = Temporal.Instant.from('2000-01-01T00:00:00.000Z');
 const CREATED_TS = Temporal.PlainDateTime.from('2026-06-01T12:00:00');
 
 function groupFixture(ref: GroupRef, displayName: string): Group {
-  const audit = { atEpochMs: 1, byServiceId: 'pglite-hierarchy-test' } as const;
+  const audit = canonicalAuditStamp(1);
   return {
     ...ref,
+    slug: null,
     displayName,
+    description: null,
     kind: 'room',
     status: 'active',
     joinMode: 'open',
+    maxMembers: null,
+    maxSessionsPerMember: null,
     metadata: {},
     activeMemberCount: 1,
     ownerPrincipalId: 'alice',
@@ -67,6 +77,11 @@ function groupFixture(ref: GroupRef, displayName: string): Group {
     presenceVersion: 0,
     created: audit,
     updated: audit,
+    expiresAtEpochMs: null,
+    emptySinceEpochMs: null,
+    purgeAfterEpochMs: null,
+    archived: null,
+    deleted: null,
   };
 }
 
@@ -310,8 +325,9 @@ Deno.test('PGlite topology authority fence rejects an archive overlapping the st
       ...current.value,
       status: 'archived',
       snapshotVersion: current.value.snapshotVersion + 1,
-      updated: { atEpochMs: 2, byPrincipalId: 'owner' },
-      archived: { atEpochMs: 2, byPrincipalId: 'owner' },
+      updated: canonicalAuditStamp(2),
+      archived: canonicalAuditStamp(2),
+      deleted: null,
     };
     assert.equal(
       (await groupState.updateGroup(archived, current.entry.revision)).status,
@@ -428,19 +444,50 @@ Deno.test('PGlite runtime-state hierarchy isolates sibling key segments', async 
     const runtime = new PSqlRuntimeStateRepository(sql);
     const clients = new ClientStateRepository(runtime);
     const groups = new GroupStateRepository(runtime);
+    const audit = canonicalAuditStamp(1);
 
     assert.equal((await clients.insertPrincipal({
       applicationId: 'app',
       workspaceId: 'foo',
       principalId: 'alice',
+      username: 'alice',
+      displayName: null,
+      avatarUrl: null,
+      authProvider: null,
+      externalSubjectId: null,
+      roles: [],
+      metadata: {},
+      status: 'active',
+      snapshotVersion: 1,
+      profileVersion: 1,
       presenceVersion: 1,
-    } as never)).status, 'applied');
+      created: audit,
+      updated: audit,
+      lastSeenAtEpochMs: null,
+      disabled: null,
+      deleted: null,
+    })).status, 'applied');
     assert.equal((await clients.insertPrincipal({
       applicationId: 'app',
       workspaceId: 'foobar',
       principalId: 'bob',
+      username: 'bob',
+      displayName: null,
+      avatarUrl: null,
+      authProvider: null,
+      externalSubjectId: null,
+      roles: [],
+      metadata: {},
+      status: 'active',
+      snapshotVersion: 1,
+      profileVersion: 1,
       presenceVersion: 1,
-    } as never)).status, 'applied');
+      created: audit,
+      updated: audit,
+      lastSeenAtEpochMs: null,
+      disabled: null,
+      deleted: null,
+    })).status, 'applied');
     await groups.putGroup(groupFixture({
       applicationId: 'app',
       workspaceId: 'foo',
@@ -469,6 +516,7 @@ Deno.test('PGlite group-state reads fail closed on a directly seeded legacy wron
   await withPGliteSql(async (sql) => {
     const ref = {
       applicationId: 'pglite-legacy-scope-app',
+      workspaceId: 'main',
       groupId: 'pglite-legacy-scope-group',
     };
     const storedGroup = {
@@ -493,7 +541,7 @@ Deno.test('PGlite group-state reads fail closed on a directly seeded legacy wron
         store_namespace, store_key, store_value, expire_at_ts
       ) values (
         'group-state:groups',
-        'app=pglite-legacy-scope-app:ws=_:group=pglite-legacy-scope-group',
+        'app=pglite-legacy-scope-app:ws=main:group=pglite-legacy-scope-group',
         ${JSON.stringify(storedGroup)},
         ${new Date(FUTURE_MS)}
       )
@@ -506,11 +554,20 @@ Deno.test('PGlite group-state reads fail closed on a directly seeded legacy wron
       const read of [
         () => repository.findGroup(ref),
         () => repository.readSnapshot(ref),
-        () => repository.listGroups({ applicationId: ref.applicationId }),
-        () => repository.listSnapshots({ applicationId: ref.applicationId }),
+        () => repository.listGroups({
+          applicationId: ref.applicationId,
+          workspaceId: ref.workspaceId,
+        }),
+        () => repository.listSnapshots({
+          applicationId: ref.applicationId,
+          workspaceId: ref.workspaceId,
+        }),
         () =>
           repository.listSnapshotsPage(
-            { applicationId: ref.applicationId },
+            {
+              applicationId: ref.applicationId,
+              workspaceId: ref.workspaceId,
+            },
             { limit: 10 },
           ),
       ]
@@ -720,7 +777,7 @@ Deno.test('PSql state event repositories page by snapshot cursor order', async (
       ['client-late-snapshot', 'client-filtered'],
     );
     assert.equal(secondClientPage.hasMore, false);
-    assert.equal(filteredClientPage.events[0].reason, undefined);
+    assert.equal(filteredClientPage.events[0].reason, null);
     assert.deepEqual(filteredClientPage.nextCursor, {
       snapshotVersion: 40,
       occurredAtEpochMs: 4_000,
@@ -799,7 +856,7 @@ Deno.test('PSql state event repositories page by snapshot cursor order', async (
       ['group-late-snapshot', 'group-duplicate'],
     );
     assert.equal(secondGroupPage.hasMore, false);
-    assert.equal(secondGroupPage.events[1]?.reason, undefined);
+    assert.equal(secondGroupPage.events[1]?.reason, null);
     assert.deepEqual(secondGroupPage.nextCursor, {
       snapshotVersion: 40,
       occurredAtEpochMs: 4_000,
@@ -812,18 +869,18 @@ Deno.test('PSql state event repositories page by snapshot cursor order', async (
   });
 });
 
-Deno.test('PSql group events isolate absent and explicit sentinel workspaces without event-id loss', async () => {
+Deno.test('PSql group events isolate ordinary and sentinel workspaces without event-id loss', async () => {
   await withPGliteSql(async (sql) => {
     const repository = new PSqlGroupStateEventRepository(sql);
-    const absentRef = {
+    const ordinaryRef = {
       applicationId: 'group-event-scope-app',
+      workspaceId: 'main',
       groupId: 'shared-group',
     };
-    const explicitSentinelRef = { ...absentRef, workspaceId: '_' };
-    const absentEvent = createGroupStateEvent('shared-event', 1_000, 1, 'group-updated', {
-      ...absentRef,
-      workspaceId: undefined,
-      reason: 'absent',
+    const explicitSentinelRef = { ...ordinaryRef, workspaceId: '_' };
+    const ordinaryEvent = createGroupStateEvent('shared-event', 1_000, 1, 'group-updated', {
+      ...ordinaryRef,
+      reason: 'ordinary',
     });
     const explicitSentinelEvent = createGroupStateEvent(
       'shared-event',
@@ -836,12 +893,12 @@ Deno.test('PSql group events isolate absent and explicit sentinel workspaces wit
       },
     );
 
-    await repository.appendGroupEvent(absentEvent);
+    await repository.appendGroupEvent(ordinaryEvent);
     await repository.appendGroupEvent(explicitSentinelEvent);
 
     for (
       const [ref, expected] of [
-        [absentRef, JSON.parse(JSON.stringify(absentEvent)) as GroupEvent],
+        [ordinaryRef, ordinaryEvent],
         [explicitSentinelRef, explicitSentinelEvent],
       ] as const
     ) {
@@ -856,9 +913,9 @@ Deno.test('PSql group events isolate absent and explicit sentinel workspaces wit
     const rows = await sql<{ workspace_key: string }[]>`
       select workspace_key
       from group_state_events
-      where application_id = ${absentRef.applicationId}
-        and group_id = ${absentRef.groupId}
-        and event_id = ${absentEvent.eventId}
+      where application_id = ${ordinaryRef.applicationId}
+        and group_id = ${ordinaryRef.groupId}
+        and event_id = ${ordinaryEvent.eventId}
       order by workspace_key
     `;
     assert.equal(rows.length, 2);
@@ -945,12 +1002,13 @@ Deno.test('PGlite group event collision rolls back the authoritative mutation tr
 Deno.test('PSql group event reads fail closed on a legacy wrong-scope payload', async () => {
   await withPGliteSql(async (sql) => {
     const repository = new PSqlGroupStateEventRepository(sql);
-    const absentRef = {
+    const expectedRef = {
       applicationId: 'legacy-group-event-app',
+      workspaceId: 'main',
       groupId: 'legacy-group-event-group',
     };
     const corruptEvent = createGroupStateEvent('legacy-event', 1_000, 1, 'group-updated', {
-      ...absentRef,
+      ...expectedRef,
       workspaceId: '_',
     });
     await sql`
@@ -958,7 +1016,8 @@ Deno.test('PSql group event reads fail closed on a legacy wrong-scope payload', 
         application_id, workspace_key, group_id, event_id, event_type,
         snapshot_version, occurred_at_epoch_ms, event_json
       ) values (
-        ${absentRef.applicationId}, '_', ${absentRef.groupId},
+        ${expectedRef.applicationId}, ${groupEventWorkspaceKey(expectedRef.workspaceId)},
+        ${expectedRef.groupId},
         ${corruptEvent.eventId}, ${corruptEvent.eventType},
         ${corruptEvent.snapshotVersion}, ${corruptEvent.occurredAtEpochMs},
         ${JSON.stringify(corruptEvent)}
@@ -967,15 +1026,110 @@ Deno.test('PSql group event reads fail closed on a legacy wrong-scope payload', 
 
     for (
       const read of [
-        () => repository.listGroupEvents(absentRef),
-        () => repository.listRecentGroupEvents(absentRef),
-        () => repository.listGroupEventPage(absentRef, { limit: 10 }),
+        () => repository.listGroupEvents(expectedRef),
+        () => repository.listRecentGroupEvents(expectedRef),
+        () => repository.listGroupEventPage(expectedRef, { limit: 10 }),
       ]
     ) {
       await assert.rejects(read, (error) =>
         error instanceof Error &&
         'code' in error &&
         error.code === 'group-state-event-repository-invariant-corruption');
+    }
+  });
+});
+
+Deno.test('PSql group event reads normalize the f135 legacy contract at the storage boundary', async () => {
+  await withPGliteSql(async (sql) => {
+    const repository = new PSqlGroupStateEventRepository(sql);
+    const ref = {
+      applicationId: 'legacy-group-event-normalization-app',
+      workspaceId: 'main',
+      groupId: 'legacy-group-event-normalization-group',
+    };
+    const eventType: GroupEvent['eventType'] = 'group-updated';
+    const legacyEvent = {
+      applicationId: ref.applicationId,
+      groupId: ref.groupId,
+      eventId: 'legacy-normalized-event',
+      eventType,
+      snapshotVersion: 7,
+      occurredAtEpochMs: 1_000,
+      actor: { principalId: 'alice' },
+    };
+    await sql`
+      insert into group_state_events (
+        application_id, workspace_key, group_id, event_id, event_type,
+        snapshot_version, occurred_at_epoch_ms, event_json
+      ) values (
+        ${ref.applicationId}, ${groupEventWorkspaceKey(ref.workspaceId)},
+        ${ref.groupId}, ${legacyEvent.eventId}, ${legacyEvent.eventType},
+        ${legacyEvent.snapshotVersion}, ${legacyEvent.occurredAtEpochMs},
+        ${JSON.stringify(legacyEvent)}
+      )
+    `;
+
+    const expected: GroupEvent = {
+      ...legacyEvent,
+      workspaceId: ref.workspaceId,
+      causalRevision: { groupRevision: 7, presenceRevision: 0 },
+      actor: { kind: 'principal', principalId: 'alice' },
+      reason: null,
+      traceId: null,
+      requestId: null,
+      payload: {},
+    };
+    assert.deepEqual(await repository.listGroupEvents(ref), [expected]);
+    assert.deepEqual(await repository.listRecentGroupEvents(ref), [expected]);
+    assert.deepEqual(
+      (await repository.listGroupEventPage(ref, { limit: 1 })).events,
+      [expected],
+    );
+  });
+});
+
+Deno.test('PSql group event reads reject explicit null legacy identities and payloads', async () => {
+  await withPGliteSql(async (sql) => {
+    const repository = new PSqlGroupStateEventRepository(sql);
+    for (const [suffix, defect] of [
+      ['workspace', { workspaceId: null }],
+      ['payload', { payload: null }],
+    ] as const) {
+      const ref = {
+        applicationId: 'legacy-group-event-null-app',
+        workspaceId: 'main',
+        groupId: `legacy-group-event-null-${suffix}`,
+      };
+      const event = {
+        applicationId: ref.applicationId,
+        workspaceId: ref.workspaceId,
+        groupId: ref.groupId,
+        eventId: `legacy-null-${suffix}`,
+        eventType: 'group-updated',
+        snapshotVersion: 1,
+        occurredAtEpochMs: 1_000,
+        actor: { principalId: 'alice' },
+        ...defect,
+      };
+      await sql`
+        insert into group_state_events (
+          application_id, workspace_key, group_id, event_id, event_type,
+          snapshot_version, occurred_at_epoch_ms, event_json
+        ) values (
+          ${ref.applicationId}, ${groupEventWorkspaceKey(ref.workspaceId)},
+          ${ref.groupId}, ${event.eventId}, ${event.eventType},
+          ${event.snapshotVersion}, ${event.occurredAtEpochMs},
+          ${JSON.stringify(event)}
+        )
+      `;
+
+      await assert.rejects(
+        () => repository.listGroupEvents(ref),
+        (error) =>
+          error instanceof Error &&
+          'code' in error &&
+          error.code === 'group-state-event-repository-invariant-corruption',
+      );
     }
   });
 });
@@ -1479,8 +1633,13 @@ function topologyGroupSnapshot(groupRef: GroupRef): GroupSnapshot {
       principalId: 'owner',
       role: 'owner',
       status: 'active',
-      joined: { atEpochMs: 1, byPrincipalId: 'owner' },
-      updated: { atEpochMs: 1, byPrincipalId: 'owner' },
+      joined: canonicalAuditStamp(1),
+      updated: canonicalAuditStamp(1),
+      left: null,
+      removed: null,
+      banned: null,
+      invitedByPrincipalId: null,
+      invitationExpiresAtEpochMs: null,
     }],
     activeSessions: [],
     memberCount: 1,
@@ -1533,8 +1692,13 @@ function createClientStateEvent(
     clientInstanceId: 'instance-1',
     sessionId: 'session-1',
     actor: {
+      kind: 'service',
       serviceId: 'pglite-test',
     },
+    reason: null,
+    traceId: null,
+    requestId: null,
+    payload: {},
     ...overrides,
   };
 }
@@ -1553,11 +1717,30 @@ function createGroupStateEvent(
     eventId,
     eventType,
     snapshotVersion,
+    causalRevision: {
+      groupRevision: snapshotVersion,
+      presenceRevision: 0,
+    },
     occurredAtEpochMs,
     actor: {
+      kind: 'service',
       serviceId: 'pglite-test',
     },
+    reason: null,
+    traceId: null,
+    requestId: null,
+    payload: {},
     ...overrides,
+  };
+}
+
+function canonicalAuditStamp(atEpochMs: number): AuditStamp {
+  return {
+    atEpochMs,
+    actor: { kind: 'service', serviceId: 'pglite-test' },
+    reason: null,
+    traceId: null,
+    requestId: null,
   };
 }
 

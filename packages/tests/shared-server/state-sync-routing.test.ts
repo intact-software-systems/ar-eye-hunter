@@ -3,6 +3,7 @@ import { newALBroadcastMessage, newALEventRoute } from '@shared/al-contracts/al-
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type {
+    AuditStamp,
     GroupEvent,
     GroupMember,
     GroupMemberStatus,
@@ -206,21 +207,29 @@ function createClientSnapshot(
     principalId: string,
     sessionId: string,
 ): ClientSnapshot {
+    const audit = createAuditStamp();
     return {
+        stateRevision: 1,
         principal: {
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
             principalId,
             username: principalId,
             displayName: principalId,
+            avatarUrl: null,
+            authProvider: null,
+            externalSubjectId: null,
             status: 'active',
+            disabled: null,
+            deleted: null,
             roles: [],
             metadata: {},
             profileVersion: 1,
             presenceVersion: 1,
             snapshotVersion: 1,
-            created: { atEpochMs: 1, byServiceId: 'test' },
-            updated: { atEpochMs: 1, byServiceId: 'test' },
+            created: audit,
+            updated: audit,
+            lastSeenAtEpochMs: NOW,
         },
         instances: [],
         activeSessions: [
@@ -230,9 +239,14 @@ function createClientSnapshot(
                 principalId,
                 clientInstanceId: 'browser',
                 sessionId,
+                generationId: `${sessionId}-generation`,
+                generationVersion: 1,
                 status: 'active',
+                disconnectedAtEpochMs: null,
+                disconnectReason: null,
                 presenceState: 'online',
                 transport: 'ws',
+                connectionId: sessionId,
                 authenticatedAtEpochMs: 1,
                 connectedAtEpochMs: 1,
                 lastHeartbeatAtEpochMs: NOW,
@@ -241,6 +255,7 @@ function createClientSnapshot(
         ],
         isOnline: true,
         activeSessionCount: 1,
+        lastSeenAtEpochMs: NOW,
     };
 }
 
@@ -251,22 +266,37 @@ function createGroupSnapshot(
         status: GroupMemberStatus;
     }>[],
 ): GroupSnapshot {
+    const activeMembers = members.filter((member) => member.status === 'active');
+    const audit = createAuditStamp();
     return {
+        stateRevision: 1,
+        causalRevision: { groupRevision: 1, presenceRevision: members.length },
         group: {
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
             groupId: 'room-1',
+            slug: null,
             displayName: 'room-1',
+            description: null,
             kind: 'room',
             status: 'active',
+            archived: null,
+            deleted: null,
             joinMode: 'open',
+            maxMembers: null,
+            maxSessionsPerMember: null,
             metadata: {},
+            activeMemberCount: activeMembers.length,
+            ownerPrincipalId: 'alice',
             snapshotVersion: 1,
             metadataVersion: 1,
             rosterVersion: 1,
             presenceVersion: members.length,
-            created: { atEpochMs: 1, byServiceId: 'test' },
-            updated: { atEpochMs: 1, byServiceId: 'test' },
+            created: audit,
+            updated: audit,
+            expiresAtEpochMs: null,
+            emptySinceEpochMs: null,
+            purgeAfterEpochMs: null,
         },
         members: members.map(toGroupMember),
         activeSessions: members.map(toGroupPresenceSession),
@@ -281,16 +311,28 @@ function toGroupMember(
         status: GroupMemberStatus;
     }>,
 ): GroupMember {
-    return {
+    const role: GroupMember['role'] = 'member';
+    const common = {
         applicationId: 'app-1',
         workspaceId: 'workspace-1',
         groupId: 'room-1',
         principalId: input.principalId,
-        role: 'member',
-        status: input.status,
-        joined: { atEpochMs: 1, byServiceId: 'test' },
-        updated: { atEpochMs: 1, byServiceId: 'test' },
+        role,
+        joined: createAuditStamp(),
+        updated: createAuditStamp(),
+        invitedByPrincipalId: null,
+        invitationExpiresAtEpochMs: null,
     };
+    if (input.status === 'left') {
+        return { ...common, status: 'left', left: createAuditStamp(), removed: null, banned: null };
+    }
+    if (input.status === 'removed') {
+        return { ...common, status: 'removed', left: null, removed: createAuditStamp(), banned: null };
+    }
+    if (input.status === 'banned') {
+        return { ...common, status: 'banned', left: null, removed: null, banned: createAuditStamp() };
+    }
+    return { ...common, status: input.status, left: null, removed: null, banned: null };
 }
 
 function toGroupPresenceSession(
@@ -305,6 +347,11 @@ function toGroupPresenceSession(
         groupId: 'room-1',
         principalId: input.principalId,
         sessionId: input.sessionId,
+        generationId: `${input.sessionId}-generation`,
+        generationVersion: 1,
+        status: 'active',
+        disconnectedAtEpochMs: null,
+        disconnectReason: null,
         connectedAtEpochMs: 1,
         lastHeartbeatAtEpochMs: NOW,
         expiresAtEpochMs: NOW + 60_000,
@@ -319,7 +366,22 @@ function createGroupEvent(eventId: string): GroupEvent {
         eventId,
         eventType: 'group-updated',
         snapshotVersion: 2,
+        causalRevision: { groupRevision: 2, presenceRevision: 1 },
         occurredAtEpochMs: NOW,
-        actor: { serviceId: 'test' },
+        actor: { kind: 'service', serviceId: 'test' },
+        reason: null,
+        traceId: null,
+        requestId: null,
+        payload: {},
+    };
+}
+
+function createAuditStamp(): AuditStamp {
+    return {
+        atEpochMs: 1,
+        actor: { kind: 'service', serviceId: 'test' },
+        reason: null,
+        traceId: null,
+        requestId: null,
     };
 }

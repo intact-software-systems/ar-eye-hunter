@@ -156,9 +156,9 @@ export function resolveGroupTopologyConfig(
 
     return {
         serverDefaults,
-        durable: input.durable,
-        temporary: input.temporary,
-        requestOptions: input.requestOptions,
+        durable: input.durable ?? null,
+        temporary: input.temporary ?? null,
+        requestOptions: input.requestOptions ?? null,
         effective,
     };
 }

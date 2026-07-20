@@ -471,7 +471,7 @@ Deno.test('presence transitions maintain emptySinceEpochMs deterministically', a
       reason: 'left',
     }),
   );
-  assert.equal(ownerDisconnected.group.emptySinceEpochMs, undefined);
+  assert.equal(ownerDisconnected.group.emptySinceEpochMs, null);
 
   const empty = snapshotFromGroupStateWritten(
     await service.disconnectPresenceSession(TEST_SCOPE, 'group-1', 'member-session', {
@@ -482,7 +482,7 @@ Deno.test('presence transitions maintain emptySinceEpochMs deterministically', a
       reason: 'left',
     }),
   );
-  assert.equal(empty.group.emptySinceEpochMs, undefined);
+  assert.equal(empty.group.emptySinceEpochMs, null);
 
   const reconnected = snapshotFromGroupStateWritten(
     await service.connectPresenceSession(TEST_SCOPE, 'group-1', 'owner-session', {
@@ -493,7 +493,7 @@ Deno.test('presence transitions maintain emptySinceEpochMs deterministically', a
       expiresAtEpochMs: REFRESHED_EXPIRES_AT_EPOCH_MS,
     }),
   );
-  assert.equal(reconnected.group.emptySinceEpochMs, undefined);
+  assert.equal(reconnected.group.emptySinceEpochMs, null);
 });
 
 Deno.test('expired presence sessions mark groups empty without purging durable state', async () => {
@@ -522,7 +522,7 @@ Deno.test('expired presence sessions mark groups empty without purging durable s
     throw new Error('Expected expired presence session to be disconnected');
   }
   const expired = snapshotFromGroupStateWritten(written);
-  assert.equal(expired.group.emptySinceEpochMs, undefined);
+  assert.equal(expired.group.emptySinceEpochMs, null);
   assert.equal(expired.group.purgeAfterEpochMs, INITIAL_EXPIRES_AT_EPOCH_MS);
 
   const durableSnapshot = await readSnapshot(service);

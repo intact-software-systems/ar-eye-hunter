@@ -1,4 +1,9 @@
-import type { Group, GroupMember, GroupPresenceSession } from '@shared/api/group-types.ts';
+import type {
+    AuditStamp,
+    Group,
+    GroupMember,
+    GroupPresenceSession,
+} from '@shared/api/group-types.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 import type { StateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
@@ -134,9 +139,14 @@ function createGroup(groupId: string, ownerPrincipalId: string): Group {
         groupId,
         slug: groupId,
         displayName: groupId,
+        description: null,
         kind: 'room',
         status: 'active',
+        archived: null,
+        deleted: null,
         joinMode: 'open',
+        maxMembers: null,
+        maxSessionsPerMember: null,
         metadata: {},
         activeMemberCount: 1,
         ownerPrincipalId,
@@ -144,8 +154,11 @@ function createGroup(groupId: string, ownerPrincipalId: string): Group {
         metadataVersion: 1,
         rosterVersion: 1,
         presenceVersion: 1,
-        created: { atEpochMs: 1, byServiceId: 'perf' },
-        updated: { atEpochMs: 1, byServiceId: 'perf' },
+        created: createAuditStamp(1),
+        updated: createAuditStamp(1),
+        expiresAtEpochMs: null,
+        emptySinceEpochMs: null,
+        purgeAfterEpochMs: null,
     };
 }
 
@@ -156,8 +169,13 @@ function createMember(groupId: string, principalId: string): GroupMember {
         principalId,
         role: 'owner',
         status: 'active',
-        joined: { atEpochMs: 1, byServiceId: 'perf' },
-        updated: { atEpochMs: 1, byServiceId: 'perf' },
+        joined: createAuditStamp(1),
+        updated: createAuditStamp(1),
+        invitedByPrincipalId: null,
+        invitationExpiresAtEpochMs: null,
+        left: null,
+        removed: null,
+        banned: null,
     };
 }
 
@@ -173,9 +191,22 @@ function createPresenceSession(
         sessionId,
         generationId: `${sessionId}:generation-1`,
         generationVersion: 1_700_000_000_000,
+        status: 'active',
         connectedAtEpochMs: 1_700_000_000_000,
         lastHeartbeatAtEpochMs: 1_700_000_000_000,
         expiresAtEpochMs: 4_102_444_821_000,
+        disconnectedAtEpochMs: null,
+        disconnectReason: null,
+    };
+}
+
+function createAuditStamp(atEpochMs: number): AuditStamp {
+    return {
+        atEpochMs,
+        actor: { kind: 'service', serviceId: 'perf' },
+        reason: null,
+        traceId: null,
+        requestId: null,
     };
 }
 

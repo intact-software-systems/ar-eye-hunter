@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { newALEventRoute, newALMulticastMessage } from '@shared/al-contracts/al-contract.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import type { AuditStamp, GroupMember, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { GroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
 import { createCachedGroupStateService } from '@shared-server/rallar-system/services/cached-group-state-service.ts';
 import { createApiV1RoomWsAuthorizer } from '../../src/services/ws-topic-room-authorizer.ts';
@@ -107,16 +107,23 @@ Deno.test('API room authorization observes remote bans and deletion across warm 
   };
 
   assert.equal(await authorizer(input), true);
-  current = {
+  const bannedSnapshot: GroupSnapshot = {
     ...createSnapshot(),
     stateRevision: 4,
     causalRevision: { groupRevision: 3, presenceRevision: 1 },
-    members: createSnapshot().members.map((member) => ({
+    group: {
+      ...createSnapshot().group,
+      snapshotVersion: 3,
+      activeMemberCount: 0,
+    },
+    members: createSnapshot().members.map((member): GroupMember => ({
       ...member,
-      status: 'banned' as const,
+      status: 'banned',
+      banned: auditStamp(3),
     })),
   };
-  await serverA.observeSnapshot(current);
+  current = bannedSnapshot;
+  await serverA.observeSnapshot(bannedSnapshot);
 
   assert.notEqual(await authorizer(input), true);
   current = undefined;
@@ -174,10 +181,14 @@ function createSnapshot(): GroupSnapshot {
       applicationId: 'app-1',
       workspaceId: 'workspace-1',
       groupId: 'group-1',
+      slug: null,
       displayName: 'Group 1',
+      description: null,
       kind: 'room',
       status: 'active',
       joinMode: 'open',
+      maxMembers: null,
+      maxSessionsPerMember: null,
       metadata: {},
       snapshotVersion: 2,
       metadataVersion: 1,
@@ -185,8 +196,13 @@ function createSnapshot(): GroupSnapshot {
       presenceVersion: 1,
       activeMemberCount: 1,
       ownerPrincipalId: 'alice',
-      created: { atEpochMs: 1 },
-      updated: { atEpochMs: 2 },
+      created: auditStamp(1),
+      updated: auditStamp(2),
+      expiresAtEpochMs: null,
+      emptySinceEpochMs: null,
+      purgeAfterEpochMs: null,
+      archived: null,
+      deleted: null,
     },
     members: [{
       applicationId: 'app-1',
@@ -195,8 +211,13 @@ function createSnapshot(): GroupSnapshot {
       principalId: 'alice',
       role: 'owner',
       status: 'active',
-      joined: { atEpochMs: 1 },
-      updated: { atEpochMs: 2 },
+      joined: auditStamp(1),
+      updated: auditStamp(2),
+      left: null,
+      removed: null,
+      banned: null,
+      invitedByPrincipalId: null,
+      invitationExpiresAtEpochMs: null,
     }],
     activeSessions: [{
       applicationId: 'app-1',
@@ -206,11 +227,24 @@ function createSnapshot(): GroupSnapshot {
       sessionId: 'session-1',
       generationId: 'generation-1',
       generationVersion: 1,
+      status: 'active',
       connectedAtEpochMs: 1,
       lastHeartbeatAtEpochMs: 2,
       expiresAtEpochMs: Date.now() + 60_000,
+      disconnectedAtEpochMs: null,
+      disconnectReason: null,
     }],
     memberCount: 1,
     onlineMemberCount: 1,
+  };
+}
+
+function auditStamp(atEpochMs: number): AuditStamp {
+  return {
+    atEpochMs,
+    actor: { kind: 'service', serviceId: 'test' },
+    reason: null,
+    traceId: null,
+    requestId: null,
   };
 }

@@ -17,8 +17,8 @@ import {
     readGroupCreatedAtEpochMs,
     readGroupCreatedByPrincipalId,
     readGroupDisplayName,
+    readGroupCausalRevision,
     readGroupMemberSessionIds,
-    readGroupStateRevision,
 } from '@shared/api/group-client-views.ts';
 import { ReconfigAlgo } from '@shared-graph/algo-props.ts';
 import { createGroupMesh, type GlobalMeshArgs, } from '@shared-graph/graphs-mesh-service.ts';
@@ -83,7 +83,7 @@ export type RallarRtcTopologyMetrics = Readonly<{
 export type RallarRtcTopologyUpdateResult = Readonly<{
     snapshot: RallarOverlayTopologySnapshot;
     changed: boolean;
-    previous?: RallarOverlayTopologySnapshot;
+    previous: RallarOverlayTopologySnapshot | null;
 }>;
 
 export type RallarRtcTopologyUpdateOptions = Readonly<{
@@ -111,7 +111,7 @@ export function planRallarRtcTopologySnapshot(input: Readonly<{
             input.nextHopsBySessionId,
         );
     const candidate: RallarOverlayTopologySnapshot = {
-        sourceGroupStateRevision: readGroupStateRevision(input.group),
+        sourceGroupStateCausalRevision: readGroupCausalRevision(input.group),
         state: 'active',
         overlayId: toScopedOverlayId(input.group.group),
         groupRef: canonicalGroupRef(input.group.group),
@@ -134,17 +134,15 @@ export function planRallarRtcTopologySnapshot(input: Readonly<{
             rtcTopologySemanticEqual(candidate, input.previous)
         ? input.previous
         : candidate;
-    return { snapshot, changed, previous: input.previous };
+    return { snapshot, changed, previous: input.previous ?? null };
 }
 
 function canonicalGroupRef(ref: GroupRef): GroupRef {
-    return ref.workspaceId === undefined
-        ? { applicationId: ref.applicationId, groupId: ref.groupId }
-        : {
-            applicationId: ref.applicationId,
-            workspaceId: ref.workspaceId,
-            groupId: ref.groupId,
-        };
+    return {
+        applicationId: ref.applicationId,
+        workspaceId: ref.workspaceId,
+        groupId: ref.groupId,
+    };
 }
 
 export type RallarRtcTopologyRttQueueResult = Readonly<{
@@ -227,14 +225,22 @@ export class RallarRtcTopologyService {
 
     observeTopologySnapshot(snapshot: RallarOverlayTopologySnapshot): boolean {
         const current = this.snapshotsByOverlayId.get(snapshot.overlayId);
-        if (!current || compareOverlayTopologyCausalTuple(snapshot, current) > 0) {
+        const comparison = current
+            ? compareOverlayTopologyCausalTuple(snapshot, current)
+            : null;
+        if (!current || comparison === 'dominates') {
             this.snapshotsByOverlayId.set(snapshot.overlayId, snapshot);
             return true;
         }
-        if (compareOverlayTopologyCausalTuple(snapshot, current) === 0 &&
+        if (comparison === 'equal' &&
             !rtcTopologySemanticEqual(snapshot, current)) {
             throw new Error(
                 `RTC topology process-cache revision conflict: ${snapshot.overlayId}`,
+            );
+        }
+        if (comparison === 'incomparable') {
+            throw new Error(
+                `RTC topology process-cache causal conflict: ${snapshot.overlayId}`,
             );
         }
         return false;

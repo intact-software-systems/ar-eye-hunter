@@ -87,6 +87,9 @@ import {
 } from '@shared-server/rallar-system/repositories/RtcRttRepository.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/repositories/RtcTopologyExecutionRepository.ts';
 import {
+  initRtcTopologyScalarRecomputeWorker,
+} from '@shared-server/rallar-system/repositories/RtcTopologyScalarAuthorityMigration.ts';
+import {
   createRtcTopologyPublicationFanout,
   type RtcTopologyPublicationFanout,
 } from '@shared-server/rallar-system/pubsub/RtcTopologyClusterTransport.ts';
@@ -315,6 +318,22 @@ function initialise(
         wake: wakeQueueEngine,
         now,
       });
+      const scalarRecomputeWorker = initRtcTopologyScalarRecomputeWorker({
+        runtime: runtimeStateRepository,
+        process: async (groupRef, requestId) => {
+          const group = await groupsRepository.readSnapshot(groupRef);
+          // A missing authoritative group aggregate is terminal: without it no
+          // current membership/presence topology can be computed or published.
+          if (!group) return 'group-absent-terminal';
+          await topologyOutbox.publisher.enqueueForStateMutation(group, requestId);
+          return 'enqueued';
+        },
+        onError: (error) => {
+          console.error('Failed to drain RTC topology scalar recompute requests:', error);
+        },
+      });
+      registerMiddlewareBackgroundTask(scalarRecomputeWorker.stop);
+      void scalarRecomputeWorker.firstRun.catch(() => undefined);
       return {
         repository: new StateMutationOutboxRepository(runtimeStateRepository),
         readClientSnapshot: (ref) => clientsRepository.readSnapshot(ref),

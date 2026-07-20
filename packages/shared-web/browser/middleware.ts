@@ -285,9 +285,20 @@ export async function initialiseMiddleware(
         )
     );
 
-    cache.initialise(webSocketQueueBox, webRtcGroupManager, clientData, {
+    const rereadGroupSnapshots = async () =>
+        (await refreshStateSnapshots(options.scope, {
+            command: toCommandOptions(options),
+        })).groups;
+    const stateCacheOptions = {
         scope: options.scope,
-    });
+        rereadGroupSnapshots,
+    };
+    cache.initialise(
+        webSocketQueueBox,
+        webRtcGroupManager,
+        clientData,
+        stateCacheOptions,
+    );
 
     const {
         clients: clientSnapshots,
@@ -301,7 +312,7 @@ export async function initialiseMiddleware(
         clientData,
         clientSnapshots,
         groupSnapshots,
-        { scope: options.scope },
+        stateCacheOptions,
     );
 
     const heartbeatHandle = await heartbeat.initHeartbeat(clientData, {

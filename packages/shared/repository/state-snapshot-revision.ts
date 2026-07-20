@@ -2,13 +2,15 @@ export type StateSnapshotRevisionDecision =
     | 'inserted'
     | 'advanced'
     | 'duplicate'
-    | 'stale';
+    | 'stale'
+    | 'incomparable';
 
 export type StateSnapshotObservation =
     | 'inserted'
     | 'advanced'
     | 'duplicate'
-    | 'stale';
+    | 'stale'
+    | 'incomparable';
 
 export function toStateSnapshotObservation(
     decision: StateSnapshotRevisionDecision,

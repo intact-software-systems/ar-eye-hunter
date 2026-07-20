@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type {
+    AuditStamp,
     ClientInstance,
     ClientPrincipal,
     ClientSession,
@@ -212,18 +213,20 @@ function createClientSnapshot(
         principalId,
         username: principalId,
         displayName: principalId,
+        avatarUrl: null,
+        authProvider: null,
+        externalSubjectId: null,
         status: 'active',
+        disabled: null,
+        deleted: null,
         roles: [],
         metadata: {},
         snapshotVersion,
         profileVersion: snapshotVersion,
         presenceVersion: snapshotVersion,
-        created: {
-            atEpochMs: 1,
-        },
-        updated: {
-            atEpochMs: snapshotVersion,
-        },
+        created: audit(1),
+        updated: audit(snapshotVersion),
+        lastSeenAtEpochMs: snapshotVersion,
     };
     const instance: ClientInstance = {
         applicationId,
@@ -231,14 +234,14 @@ function createClientSnapshot(
         principalId,
         clientInstanceId: `${principalId}-instance`,
         status: 'active',
+        revoked: null,
         platform: 'web',
+        deviceLabel: null,
+        appVersion: null,
+        userAgent: null,
         capabilities: [],
-        registered: {
-            atEpochMs: 1,
-        },
-        updated: {
-            atEpochMs: snapshotVersion,
-        },
+        registered: audit(1),
+        updated: audit(snapshotVersion),
     };
     const session: ClientSession = {
         applicationId,
@@ -246,21 +249,37 @@ function createClientSnapshot(
         principalId,
         clientInstanceId: instance.clientInstanceId,
         sessionId: `${principalId}-${workspaceId}-session`,
+        generationId: `${principalId}-${workspaceId}-generation`,
+        generationVersion: 1,
         status: 'active',
         presenceState: 'online',
         transport: 'ws',
+        connectionId: null,
         authenticatedAtEpochMs: 1,
         connectedAtEpochMs: 1,
         lastHeartbeatAtEpochMs: snapshotVersion,
         expiresAtEpochMs,
+        disconnectedAtEpochMs: null,
+        disconnectReason: null,
     };
 
     return {
+        stateRevision: snapshotVersion,
         principal,
         instances: [instance],
         activeSessions: [session],
         isOnline: true,
         activeSessionCount: 1,
         lastSeenAtEpochMs: snapshotVersion,
+    };
+}
+
+function audit(atEpochMs: number): AuditStamp {
+    return {
+        atEpochMs,
+        actor: { kind: 'service', serviceId: 'test' },
+        reason: null,
+        traceId: null,
+        requestId: null,
     };
 }

@@ -3521,31 +3521,65 @@ components:
 
     AuditStamp:
       type: object
-      required: [atEpochMs]
+      required: [atEpochMs, actor, reason, traceId, requestId]
       properties:
         atEpochMs:
           type: integer
           format: int64
-        byPrincipalId:
-          type: string
-        bySessionId:
-          type: string
-        byServiceId:
-          type: string
+        actor:
+          $ref: '#/components/schemas/MutationActor'
         reason:
           type: string
+          nullable: true
         traceId:
           type: string
+          nullable: true
         requestId:
           type: string
+          nullable: true
 
-    EventActor:
+    MutationActor:
+      oneOf:
+        - $ref: '#/components/schemas/PrincipalMutationActor'
+        - $ref: '#/components/schemas/SessionMutationActor'
+        - $ref: '#/components/schemas/ServiceMutationActor'
+      discriminator:
+        propertyName: kind
+        mapping:
+          principal: '#/components/schemas/PrincipalMutationActor'
+          session: '#/components/schemas/SessionMutationActor'
+          service: '#/components/schemas/ServiceMutationActor'
+
+    PrincipalMutationActor:
       type: object
+      required: [kind, principalId]
       properties:
+        kind:
+          type: string
+          enum: [principal]
         principalId:
           type: string
+
+    SessionMutationActor:
+      type: object
+      required: [kind, sessionId, principalId]
+      properties:
+        kind:
+          type: string
+          enum: [session]
         sessionId:
           type: string
+
+        principalId:
+          type: string
+
+    ServiceMutationActor:
+      type: object
+      required: [kind, serviceId]
+      properties:
+        kind:
+          type: string
+          enum: [service]
         serviceId:
           type: string
 
@@ -3556,7 +3590,11 @@ components:
         - workspaceId
         - principalId
         - username
+        - displayName
+        - avatarUrl
         - status
+        - authProvider
+        - externalSubjectId
         - roles
         - metadata
         - snapshotVersion
@@ -3564,6 +3602,18 @@ components:
         - presenceVersion
         - created
         - updated
+        - disabled
+        - deleted
+        - lastSeenAtEpochMs
+      discriminator:
+        propertyName: status
+      oneOf:
+        - properties:
+            status: { type: string, enum: [active] }
+        - properties:
+            status: { type: string, enum: [disabled] }
+        - properties:
+            status: { type: string, enum: [deleted] }
       properties:
         applicationId:
           type: string
@@ -3575,15 +3625,19 @@ components:
           type: string
         displayName:
           type: string
+          nullable: true
         avatarUrl:
           type: string
+          nullable: true
         status:
           type: string
           enum: [active, disabled, deleted]
         authProvider:
           type: string
+          nullable: true
         externalSubjectId:
           type: string
+          nullable: true
         roles:
           type: array
           items:
@@ -3606,11 +3660,14 @@ components:
           $ref: '#/components/schemas/AuditStamp'
         disabled:
           $ref: '#/components/schemas/AuditStamp'
+          nullable: true
         deleted:
           $ref: '#/components/schemas/AuditStamp'
+          nullable: true
         lastSeenAtEpochMs:
           type: integer
           format: int64
+          nullable: true
 
     ClientInstance:
       type: object
@@ -3621,9 +3678,22 @@ components:
         - clientInstanceId
         - status
         - platform
+        - deviceLabel
+        - appVersion
+        - userAgent
         - capabilities
         - registered
         - updated
+        - revoked
+      discriminator:
+        propertyName: status
+      oneOf:
+        - properties:
+            status: { type: string, enum: [active] }
+        - properties:
+            status: { type: string, enum: [revoked] }
+        - properties:
+            status: { type: string, enum: [retired] }
       properties:
         applicationId:
           type: string
@@ -3641,10 +3711,13 @@ components:
           enum: [web, ios, android, desktop, server, unknown]
         deviceLabel:
           type: string
+          nullable: true
         appVersion:
           type: string
+          nullable: true
         userAgent:
           type: string
+          nullable: true
         capabilities:
           type: array
           items:
@@ -3655,6 +3728,7 @@ components:
           $ref: '#/components/schemas/AuditStamp'
         revoked:
           $ref: '#/components/schemas/AuditStamp'
+          nullable: true
 
     ClientSession:
       type: object
@@ -3664,13 +3738,27 @@ components:
         - principalId
         - clientInstanceId
         - sessionId
+        - generationId
+        - generationVersion
         - status
         - presenceState
         - transport
+        - connectionId
         - authenticatedAtEpochMs
         - connectedAtEpochMs
         - lastHeartbeatAtEpochMs
         - expiresAtEpochMs
+        - disconnectedAtEpochMs
+        - disconnectReason
+      discriminator:
+        propertyName: status
+      oneOf:
+        - properties:
+            status: { type: string, enum: [active] }
+        - properties:
+            status: { type: string, enum: [disconnected] }
+        - properties:
+            status: { type: string, enum: [expired] }
       properties:
         applicationId:
           type: string
@@ -3682,6 +3770,11 @@ components:
           type: string
         sessionId:
           type: string
+        generationId:
+          type: string
+        generationVersion:
+          type: integer
+          format: int64
         status:
           type: string
           enum: [active, disconnected, expired]
@@ -3693,6 +3786,7 @@ components:
           enum: [ws, http, rtc, unknown]
         connectionId:
           type: string
+          nullable: true
         authenticatedAtEpochMs:
           type: integer
           format: int64
@@ -3708,8 +3802,10 @@ components:
         disconnectedAtEpochMs:
           type: integer
           format: int64
+          nullable: true
         disconnectReason:
           type: string
+          nullable: true
 
     ClientPresenceSnapshot:
       type: object
@@ -3721,6 +3817,7 @@ components:
         - isOnline
         - presenceState
         - activeSessions
+        - lastSeenAtEpochMs
       properties:
         applicationId:
           type: string
@@ -3743,16 +3840,22 @@ components:
         lastSeenAtEpochMs:
           type: integer
           format: int64
+          nullable: true
 
     ClientSnapshot:
       type: object
       required:
+        - stateRevision
         - principal
         - instances
         - activeSessions
         - isOnline
         - activeSessionCount
+        - lastSeenAtEpochMs
       properties:
+        stateRevision:
+          type: integer
+          format: int64
         principal:
           $ref: '#/components/schemas/ClientPrincipal'
         instances:
@@ -3771,6 +3874,7 @@ components:
         lastSeenAtEpochMs:
           type: integer
           format: int64
+          nullable: true
 
     ClientEvent:
       type: object
@@ -3781,8 +3885,14 @@ components:
         - eventId
         - eventType
         - snapshotVersion
+        - clientInstanceId
+        - sessionId
         - occurredAtEpochMs
         - actor
+        - reason
+        - traceId
+        - requestId
+        - payload
       properties:
         applicationId:
           type: string
@@ -3812,19 +3922,24 @@ components:
           format: int64
         clientInstanceId:
           type: string
+          nullable: true
         sessionId:
           type: string
+          nullable: true
         occurredAtEpochMs:
           type: integer
           format: int64
         actor:
-          $ref: '#/components/schemas/EventActor'
+          $ref: '#/components/schemas/MutationActor'
         reason:
           type: string
+          nullable: true
         traceId:
           type: string
+          nullable: true
         requestId:
           type: string
+          nullable: true
         payload:
           type: object
           additionalProperties: true
@@ -3866,10 +3981,14 @@ components:
         - applicationId
         - workspaceId
         - groupId
+        - slug
         - displayName
+        - description
         - kind
         - status
         - joinMode
+        - maxMembers
+        - maxSessionsPerMember
         - metadata
         - activeMemberCount
         - ownerPrincipalId
@@ -3879,6 +3998,20 @@ components:
         - presenceVersion
         - created
         - updated
+        - archived
+        - deleted
+        - expiresAtEpochMs
+        - emptySinceEpochMs
+        - purgeAfterEpochMs
+      discriminator:
+        propertyName: status
+      oneOf:
+        - properties:
+            status: { type: string, enum: [active] }
+        - properties:
+            status: { type: string, enum: [archived] }
+        - properties:
+            status: { type: string, enum: [deleted] }
       properties:
         applicationId:
           type: string
@@ -3888,10 +4021,12 @@ components:
           type: string
         slug:
           type: string
+          nullable: true
         displayName:
           type: string
         description:
           type: string
+          nullable: true
         kind:
           type: string
           enum: [party, room, team, custom]
@@ -3904,9 +4039,11 @@ components:
         maxMembers:
           type: integer
           format: int64
+          nullable: true
         maxSessionsPerMember:
           type: integer
           format: int64
+          nullable: true
         metadata:
           type: object
           additionalProperties: true
@@ -3934,17 +4071,22 @@ components:
           $ref: '#/components/schemas/AuditStamp'
         archived:
           $ref: '#/components/schemas/AuditStamp'
+          nullable: true
         deleted:
           $ref: '#/components/schemas/AuditStamp'
+          nullable: true
         expiresAtEpochMs:
           type: integer
           format: int64
+          nullable: true
         emptySinceEpochMs:
           type: integer
           format: int64
+          nullable: true
         purgeAfterEpochMs:
           type: integer
           format: int64
+          nullable: true
 
     GroupMember:
       type: object
@@ -3957,6 +4099,39 @@ components:
         - status
         - joined
         - updated
+        - left
+        - removed
+        - banned
+        - invitedByPrincipalId
+        - invitationExpiresAtEpochMs
+      discriminator:
+        propertyName: status
+      oneOf:
+        - properties:
+            status: { type: string, enum: [invited] }
+            joined: { nullable: true, enum: [null] }
+        - properties:
+            status: { type: string, enum: [active] }
+            joined:
+              $ref: '#/components/schemas/AuditStamp'
+        - properties:
+            status: { type: string, enum: [left] }
+            joined:
+              allOf:
+                - $ref: '#/components/schemas/AuditStamp'
+              nullable: true
+        - properties:
+            status: { type: string, enum: [removed] }
+            joined:
+              allOf:
+                - $ref: '#/components/schemas/AuditStamp'
+              nullable: true
+        - properties:
+            status: { type: string, enum: [banned] }
+            joined:
+              allOf:
+                - $ref: '#/components/schemas/AuditStamp'
+              nullable: true
       properties:
         applicationId:
           type: string
@@ -3973,20 +4148,27 @@ components:
           type: string
           enum: [invited, active, left, removed, banned]
         joined:
-          $ref: '#/components/schemas/AuditStamp'
+          allOf:
+            - $ref: '#/components/schemas/AuditStamp'
+          nullable: true
         updated:
           $ref: '#/components/schemas/AuditStamp'
         left:
           $ref: '#/components/schemas/AuditStamp'
+          nullable: true
         removed:
           $ref: '#/components/schemas/AuditStamp'
+          nullable: true
         banned:
           $ref: '#/components/schemas/AuditStamp'
+          nullable: true
         invitedByPrincipalId:
           type: string
+          nullable: true
         invitationExpiresAtEpochMs:
           type: integer
           format: int64
+          nullable: true
 
     GroupPresenceSession:
       type: object
@@ -3996,11 +4178,21 @@ components:
         - groupId
         - sessionId
         - principalId
+        - status
         - generationId
         - generationVersion
         - connectedAtEpochMs
         - lastHeartbeatAtEpochMs
         - expiresAtEpochMs
+        - disconnectedAtEpochMs
+        - disconnectReason
+      discriminator:
+        propertyName: status
+      oneOf:
+        - properties:
+            status: { type: string, enum: [active] }
+        - properties:
+            status: { type: string, enum: [disconnected] }
       properties:
         applicationId:
           type: string
@@ -4012,6 +4204,9 @@ components:
           type: string
         principalId:
           type: string
+        status:
+          type: string
+          enum: [active, disconnected]
         generationId:
           type: string
         generationVersion:
@@ -4030,8 +4225,10 @@ components:
         disconnectedAtEpochMs:
           type: integer
           format: int64
+          nullable: true
         disconnectReason:
           type: string
+          nullable: true
 
     GroupStateCausalRevision:
       type: object
@@ -4089,8 +4286,13 @@ components:
         - eventId
         - eventType
         - snapshotVersion
+        - causalRevision
         - occurredAtEpochMs
         - actor
+        - reason
+        - traceId
+        - requestId
+        - payload
       properties:
         applicationId:
           type: string
@@ -4121,17 +4323,22 @@ components:
         snapshotVersion:
           type: integer
           format: int64
+        causalRevision:
+          $ref: '#/components/schemas/GroupStateCausalRevision'
         occurredAtEpochMs:
           type: integer
           format: int64
         actor:
-          $ref: '#/components/schemas/EventActor'
+          $ref: '#/components/schemas/MutationActor'
         reason:
           type: string
+          nullable: true
         traceId:
           type: string
+          nullable: true
         requestId:
           type: string
+          nullable: true
         payload:
           type: object
           additionalProperties: true
@@ -4673,25 +4880,53 @@ components:
         meshParamK:
           $ref: '#/components/schemas/GroupTopologyPositiveInteger'
 
+    EffectiveGroupTopologyConfig:
+      type: object
+      required:
+        - topologyKind
+        - degreeLimit
+        - treeMinSize
+        - meshMinSize
+        - meshParamK
+      properties:
+        topologyKind:
+          $ref: '#/components/schemas/GroupTopologyKindSetting'
+        degreeLimit:
+          $ref: '#/components/schemas/GroupTopologyPositiveInteger'
+        treeMinSize:
+          $ref: '#/components/schemas/GroupTopologyPositiveInteger'
+        meshMinSize:
+          $ref: '#/components/schemas/GroupTopologyPositiveInteger'
+        meshParamK:
+          $ref: '#/components/schemas/GroupTopologyPositiveInteger'
+
     GroupTopologyConfigView:
       type: object
+      required:
+        - serverDefaults
+        - durable
+        - temporary
+        - requestOptions
+        - effective
       properties:
         serverDefaults:
-          $ref: '#/components/schemas/GroupTopologyConfigPatch'
+          $ref: '#/components/schemas/EffectiveGroupTopologyConfig'
         durable:
-          type: object
-          additionalProperties: true
+          $ref: '#/components/schemas/StoredGroupTopologyConfig'
+          nullable: true
         temporary:
           type: object
+          nullable: true
           additionalProperties: true
         requestOptions:
           $ref: '#/components/schemas/GroupTopologyConfigPatch'
+          nullable: true
         effective:
-          $ref: '#/components/schemas/GroupTopologyConfigPatch'
+          $ref: '#/components/schemas/EffectiveGroupTopologyConfig'
 
     GroupTopologyManagementView:
       type: object
-      required: [groupRef, overlayId, config]
+      required: [groupRef, overlayId, snapshot, config, pending]
       properties:
         groupRef:
           $ref: '#/components/schemas/GroupRef'
@@ -4699,12 +4934,26 @@ components:
           type: string
         snapshot:
           $ref: '#/components/schemas/RallarOverlayTopologySnapshot'
+          nullable: true
         config:
           $ref: '#/components/schemas/GroupTopologyConfigView'
+        pending:
+          type: object
+          nullable: true
+          required: [reconfigureQueued, dueAtEpochMs]
+          properties:
+            reconfigureQueued:
+              type: boolean
+            dueAtEpochMs:
+              type: integer
+              format: int64
+              nullable: true
 
     RallarOverlayTopologySnapshot:
       type: object
       required:
+        - sourceGroupStateCausalRevision
+        - state
         - overlayId
         - groupRef
         - name
@@ -4717,6 +4966,11 @@ components:
         - createdAtEpochMs
         - updatedAtEpochMs
       properties:
+        sourceGroupStateCausalRevision:
+          $ref: '#/components/schemas/GroupStateCausalRevision'
+        state:
+          type: string
+          enum: [active, removed]
         overlayId:
           type: string
         groupRef:
@@ -4758,7 +5012,7 @@ components:
         requestId:
           type: string
         config:
-          $ref: '#/components/schemas/GroupTopologyConfigPatch'
+          $ref: '#/components/schemas/EffectiveGroupTopologyConfig'
 
     PutGroupTopologyOverrideRequest:
       type: object
@@ -4781,15 +5035,14 @@ components:
 
     StoredGroupTopologyConfig:
       type: object
-      required: [
-        groupRef,
-        config,
-        version,
-        createdAtEpochMs,
-        updatedAtEpochMs,
-        updatedByPrincipalId,
-        requestId,
-      ]
+      required:
+        - groupRef
+        - config
+        - version
+        - createdAtEpochMs
+        - updatedAtEpochMs
+        - updatedByPrincipalId
+        - requestId
       properties:
         groupRef:
           $ref: '#/components/schemas/GroupRef'
@@ -4822,7 +5075,14 @@ components:
 
     GroupTopologyConfigAcceptedCausalRevision:
       type: object
-      required: [stateRevision, snapshotVersion, metadataVersion, rosterVersion, presenceVersion]
+      required: [
+        stateRevision,
+        snapshotVersion,
+        metadataVersion,
+        rosterVersion,
+        presenceVersion,
+        causalRevision,
+      ]
       additionalProperties: false
       properties:
         stateRevision:
@@ -4845,27 +5105,35 @@ components:
           type: integer
           format: int64
           minimum: 0
+        causalRevision:
+          $ref: '#/components/schemas/GroupStateCausalRevision'
 
     GroupTopologyConfigMutationReceipt:
       type: object
-      required: [
-        commandId,
-        commandHash,
-        operation,
-        outcome,
-        groupRef,
-        target,
-        acceptedVersion,
-        acceptedStorageRevision,
-        acceptedCreatedAtEpochMs,
-        acceptedUpdatedAtEpochMs,
-        acceptedExpiresAtEpochMs,
-        acceptedCausalRevision,
-        outboxId,
-      ]
+      required:
+        - commandId
+        - requestId
+        - commandHash
+        - operation
+        - outcome
+        - attemptCount
+        - groupRef
+        - target
+        - acceptedVersion
+        - acceptedStorageRevision
+        - acceptedCreatedAtEpochMs
+        - acceptedUpdatedAtEpochMs
+        - acceptedExpiresAtEpochMs
+        - acceptedCausalRevision
+        - eventId
+        - outboxId
+        - outboxIds
       properties:
         commandId:
           type: string
+        requestId:
+          type: string
+          nullable: true
         commandHash:
           type: string
           pattern: '^sha256:[0-9a-f]{64}$'
@@ -4875,6 +5143,10 @@ components:
         outcome:
           type: string
           enum: [applied, no-op]
+        attemptCount:
+          type: integer
+          format: int64
+          minimum: 1
         groupRef:
           $ref: '#/components/schemas/GroupRef'
         target:
@@ -4903,9 +5175,16 @@ components:
           nullable: true
           allOf:
             - $ref: '#/components/schemas/GroupTopologyConfigAcceptedCausalRevision'
+        eventId:
+          type: string
+          nullable: true
         outboxId:
           type: string
           nullable: true
+        outboxIds:
+          type: array
+          items:
+            type: string
 
     PutGroupTopologyConfigResponse:
       type: object

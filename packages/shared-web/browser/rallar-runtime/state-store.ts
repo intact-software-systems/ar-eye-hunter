@@ -201,7 +201,7 @@ export function createRallarStateStore(
                 return {
                     principalId: member.principalId,
                     username: client?.principal.username ?? member.principalId,
-                    displayName: client?.principal.displayName,
+                    displayName: client?.principal.displayName ?? undefined,
                     role: member.role,
                     status: member.status,
                     isOwner: member.role === 'owner',
@@ -376,7 +376,7 @@ function toPerson(snapshot: ClientSnapshot): RallarPerson {
     return {
         principalId: snapshot.principal.principalId,
         username: snapshot.principal.username,
-        displayName: snapshot.principal.displayName,
+        displayName: snapshot.principal.displayName ?? undefined,
         isOnline: snapshot.isOnline,
         activeSessionCount: snapshot.activeSessionCount,
         activeSessionIds,

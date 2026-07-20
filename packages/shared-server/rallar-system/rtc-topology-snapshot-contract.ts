@@ -15,7 +15,8 @@ export type RtcTopologySnapshotObservation =
     | 'inserted'
     | 'advanced'
     | 'duplicate'
-    | 'stale';
+    | 'stale'
+    | 'incomparable';
 
 export function decideTopologySnapshot(
     current: RallarOverlayTopologySnapshot | undefined,
@@ -23,16 +24,17 @@ export function decideTopologySnapshot(
 ): RtcTopologySnapshotObservation {
     if (!current) return 'inserted';
     const tupleComparison = compareTopologyTuple(incoming, current);
-    if (tupleComparison > 0) return 'advanced';
-    if (tupleComparison < 0) return 'stale';
+    if (tupleComparison === 'dominates') return 'advanced';
+    if (tupleComparison === 'dominated') return 'stale';
+    if (tupleComparison === 'incomparable') return 'incomparable';
     if (rtcTopologySemanticEqual(current, incoming)) return 'duplicate';
     throw new RtcTopologySnapshotRevisionConflictError(incoming.groupRef);
 }
 
 export function compareTopologyTuple(
-    left: Pick<RallarOverlayTopologySnapshot, 'sourceGroupStateRevision' | 'version'>,
-    right: Pick<RallarOverlayTopologySnapshot, 'sourceGroupStateRevision' | 'version'>,
-): number {
+    left: Pick<RallarOverlayTopologySnapshot, 'sourceGroupStateCausalRevision' | 'version'>,
+    right: Pick<RallarOverlayTopologySnapshot, 'sourceGroupStateCausalRevision' | 'version'>,
+): 'equal' | 'dominates' | 'dominated' | 'incomparable' {
     return compareOverlayTopologyCausalTuple(left, right);
 }
 
@@ -42,7 +44,7 @@ export function validateTopologySnapshot(
 ): asserts value is RallarOverlayTopologySnapshot {
     if (!isRecord(value)) throw new TypeError('RTC topology snapshot is invalid');
     assertExactKeys(value, [
-        'sourceGroupStateRevision',
+        'sourceGroupStateCausalRevision',
         'state',
         'overlayId',
         'groupRef',
@@ -57,8 +59,8 @@ export function validateTopologySnapshot(
         'updatedAtEpochMs',
     ]);
     validateGroupRef(value.groupRef, expectedRef);
+    validateGroupStateCausalRevision(value.sourceGroupStateCausalRevision);
     for (const field of [
-        'sourceGroupStateRevision',
         'version',
         'createdAtEpochMs',
         'updatedAtEpochMs',
@@ -135,12 +137,21 @@ export function validateTopologySnapshot(
     }
 }
 
+function validateGroupStateCausalRevision(value: unknown): void {
+    if (!isRecord(value)) {
+        throw new TypeError('RTC topology source causal revision is invalid');
+    }
+    assertExactKeys(value, ['groupRevision', 'presenceRevision']);
+    for (const field of ['groupRevision', 'presenceRevision'] as const) {
+        if (!Number.isSafeInteger(value[field]) || Number(value[field]) < 0) {
+            throw new TypeError(`RTC topology source ${field} is invalid`);
+        }
+    }
+}
+
 function validateGroupRef(value: unknown, expected: GroupRef): void {
     if (!isRecord(value)) throw new TypeError('RTC topology groupRef is invalid');
-    const expectedKeys = expected.workspaceId === undefined
-        ? ['applicationId', 'groupId']
-        : ['applicationId', 'workspaceId', 'groupId'];
-    assertExactKeys(value, expectedKeys);
+    assertExactKeys(value, ['applicationId', 'workspaceId', 'groupId']);
     if (
         value.applicationId !== expected.applicationId ||
         value.workspaceId !== expected.workspaceId ||

@@ -25,10 +25,13 @@ import {
     RtcTopologySnapshotRepository,
 } from '@shared-server/rallar-system/repositories/RtcTopologySnapshotRepository.ts';
 import {
+    createRtcTopologyExecutionReceipt,
     RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
     RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE,
+    hashRtcTopologyExecutionCommand,
     migrateLegacyRtcTopologyPublicationKeys,
     type RtcTopologyPublication,
+    type RtcTopologyPublicationWorkClaim,
     RtcTopologyPublicationRepository,
 } from '@shared-server/rallar-system/repositories/RtcTopologyPublicationRepository.ts';
 import {
@@ -149,11 +152,17 @@ describe('RTC topology runtime-state repositories', () => {
         const groupRef = createGroupRef();
         const revision2 = {
             ...createTopologySnapshot(groupRef, 1),
-            sourceGroupStateRevision: 2,
+            sourceGroupStateCausalRevision: {
+                groupRevision: 2,
+                presenceRevision: 2,
+            },
         };
         const revision1WithHigherOverlayVersion = {
             ...createTopologySnapshot(groupRef, 9),
-            sourceGroupStateRevision: 1,
+            sourceGroupStateCausalRevision: {
+                groupRevision: 1,
+                presenceRevision: 1,
+            },
         };
 
         expect(await repository.observeSnapshot(revision2)).toBe('inserted');
@@ -175,7 +184,10 @@ describe('RTC topology runtime-state repositories', () => {
         const revision1 = createTopologySnapshot(groupRef, 1);
         const revision2 = {
             ...createTopologySnapshot(groupRef, 2),
-            sourceGroupStateRevision: 2,
+            sourceGroupStateCausalRevision: {
+                groupRevision: 2,
+                presenceRevision: 2,
+            },
         };
 
         await expect(repository.commitSnapshot({
@@ -210,7 +222,8 @@ describe('RTC topology runtime-state repositories', () => {
         const snapshot = createTopologySnapshot(createGroupRef(), 2);
         const publication = createPublication(snapshot, 'work-1');
 
-        expect(await repository.putOrLoad(publication)).toEqual({
+        expect(await putOrLoadTopologyPublication(repository, publication, snapshot))
+            .toEqual({
             publication,
             inserted: true,
         });
@@ -219,7 +232,7 @@ describe('RTC topology runtime-state repositories', () => {
             activeSessionIds: ['session-b'],
             nextHopsBySessionId: { 'session-b': [] },
         };
-        await expect(repository.putOrLoad({
+        await expect(putOrLoadTopologyPublication(repository, {
             ...publication,
             recipientSessionIds: ['session-b'],
             message: {
@@ -229,22 +242,30 @@ describe('RTC topology runtime-state repositories', () => {
                     resource: JSON.stringify(retrySnapshot),
                 },
             },
-        })).rejects.toMatchObject({ code: 'rtc-topology-publication-collision' });
+        }, snapshot)).rejects.toMatchObject({
+            code: 'rtc-topology-publication-collision',
+        });
     });
 
     it('loads a semantically equal publication retry with reordered object keys', async () => {
         const repository = new RtcTopologyPublicationRepository(
             new FakeRuntimeStateRepository(),
         );
+        const snapshot = createTopologySnapshot(createGroupRef(), 2);
         const publication = createPublication(
-            createTopologySnapshot(createGroupRef(), 2),
+            snapshot,
             'work-reordered-load',
         );
 
-        await expect(repository.putOrLoad(publication)).resolves.toMatchObject({
+        await expect(putOrLoadTopologyPublication(repository, publication, snapshot))
+            .resolves.toMatchObject({
             inserted: true,
         });
-        await expect(repository.putOrLoad(reorderJsonObjectKeys(publication)))
+        await expect(putOrLoadTopologyPublication(
+            repository,
+            reorderJsonObjectKeys(publication),
+            snapshot,
+        ))
             .resolves.toEqual({ publication, inserted: false });
     });
 
@@ -254,12 +275,11 @@ describe('RTC topology runtime-state repositories', () => {
             new Error('targeted publication locks are forbidden'),
         );
         const repository = new RtcTopologyPublicationRepository(runtimeRepository);
-        const publication = createPublication(
-            createTopologySnapshot(createGroupRef(), 1),
-            'work-no-lock',
-        );
+        const snapshot = createTopologySnapshot(createGroupRef(), 1);
+        const publication = createPublication(snapshot, 'work-no-lock');
 
-        await expect(repository.putOrLoad(publication)).resolves.toEqual({
+        await expect(putOrLoadTopologyPublication(repository, publication, snapshot))
+            .resolves.toEqual({
             publication,
             inserted: true,
         });
@@ -269,17 +289,18 @@ describe('RTC topology runtime-state repositories', () => {
     it('accepts documented optional AL envelope sections on durable publications', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const repository = new RtcTopologyPublicationRepository(runtimeRepository);
-        const base = createPublication(
-            createTopologySnapshot(createGroupRef(), 1),
-            'work-optional-envelope',
-        );
+        const snapshot = createTopologySnapshot(createGroupRef(), 1);
+        const base = createPublication(snapshot, 'work-optional-envelope');
         const publication = {
             ...base,
             message: {
                 ...base.message,
                 id: { ...base.message.id, sessionId: 'session-a', traceId: 'trace-1' },
                 targets: {
-                    ...base.message.targets,
+                    mode: 'broadcast' as const,
+                    scope: 'room' as const,
+                    groupRef: snapshot.groupRef,
+                    minSnapshotVersion: 1,
                     exceptPeerIds: ['session-z'],
                 },
                 forwarding: {
@@ -290,7 +311,8 @@ describe('RTC topology runtime-state repositories', () => {
                 constraints: { ttlHops: 4, expiresAtMs: 1_000 },
                 ordering: { orderingKey: 'room-1', epoch: 1, seq: 2 },
                 delivery: {
-                    ...base.message.delivery,
+                    reliability: 'best-effort' as const,
+                    ack: 'none' as const,
                     ownership: 'shared' as const,
                 },
                 actions: { corrId: 'corr-1', replyToMsgId: 'reply-1' },
@@ -305,10 +327,12 @@ describe('RTC topology runtime-state repositories', () => {
                     },
                 },
                 diagnostics: { visitedPeerIds: ['session-a'] },
+                audit: { createdBy: 'rallar-server', createdTs: 10 },
             },
-        };
+        } satisfies RtcTopologyPublication;
 
-        await expect(repository.putOrLoad(publication)).resolves.toMatchObject({
+        await expect(putOrLoadTopologyPublication(repository, publication, snapshot))
+            .resolves.toMatchObject({
             inserted: true,
             publication,
         });
@@ -346,10 +370,26 @@ describe('RTC topology runtime-state repositories', () => {
             if (waiting === 2) release();
             await together;
         };
+        const seeded = await new RtcTopologySnapshotRepository(runtimeRepository)
+            .commitSnapshotGuard(
+                createTopologySnapshot(createGroupRef(), 1),
+                null,
+            );
+        if (seeded.status !== 'accepted') {
+            throw new Error('Expected topology race snapshot seed');
+        }
 
         const results = await Promise.allSettled([
-            repository.putOrLoad(first),
-            repository.putOrLoad(second),
+            putOrLoadTopologyPublication(
+                repository,
+                first,
+                createTopologySnapshot(createGroupRef(), 1),
+            ),
+            putOrLoadTopologyPublication(
+                repository,
+                second,
+                createTopologySnapshot(createGroupRef(), 1),
+            ),
         ]);
 
         expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
@@ -367,7 +407,10 @@ describe('RTC topology runtime-state repositories', () => {
         await snapshots.observeSnapshot(first);
         const second = {
             ...first,
-            sourceGroupStateRevision: 2,
+            sourceGroupStateCausalRevision: {
+                groupRevision: 2,
+                presenceRevision: 2,
+            },
             version: 2,
             updatedAtEpochMs: 3,
         };
@@ -477,7 +520,11 @@ describe('RTC topology runtime-state repositories', () => {
             read: { snapshot: null, publicationClaim: null },
             candidate: snapshot,
             publication,
-            facts: { publicationExpireAtTimestamp: 100 },
+            facts: {
+                publicationExpireAtTimestamp: 100,
+                commandHash: `sha256:${'a'.repeat(64)}`,
+                attemptCount: 1,
+            },
         });
         if (computed.outcome !== 'write') throw new Error('Expected write');
 
@@ -592,6 +639,68 @@ describe('RTC topology runtime-state repositories', () => {
             vi.useRealTimers();
         }
     });
+
+    it.each([
+        'legacy',
+        'missing',
+        'extra',
+        'hash',
+        'attempt',
+        'causal',
+        'storage',
+        'event',
+        'outbox',
+    ] as const)(
+        'fails closed on a %s topology execution receipt before changing authority',
+        async (defect) => {
+            const runtimeRepository = new FakeRuntimeStateRepository();
+            const snapshots = new RtcTopologySnapshotRepository(runtimeRepository);
+            const publications = new RtcTopologyPublicationRepository(
+                runtimeRepository,
+            );
+            const snapshot = createTopologySnapshot(createGroupRef(), 1);
+            const publication = createPublication(
+                snapshot,
+                `work-corrupt-receipt-${defect}`,
+            );
+            const guard = await snapshots.commitSnapshotGuard(snapshot, null);
+            if (guard.status !== 'accepted') {
+                throw new Error('Expected topology snapshot seed to be accepted');
+            }
+            const receipt = createRtcTopologyExecutionReceipt(publication, {
+                commandHash: await hashRtcTopologyExecutionCommand(publication),
+                attemptCount: 1,
+                acceptedStorageRevision: guard.storageRevision,
+            });
+            const corrupted = corruptTopologyExecutionReceipt(receipt, defect);
+            const expireAtTimestamp = Date.now() + 60_000;
+            await runtimeRepository.upsert(
+                RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
+                publications.publicationKey(
+                    publication.groupRef,
+                    publication.publicationId,
+                ),
+                JSON.stringify(publication),
+                expireAtTimestamp,
+            );
+            await runtimeRepository.upsert(
+                RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE,
+                publications.workIndexKey(publication.groupRef, publication.workId),
+                JSON.stringify(corrupted),
+                expireAtTimestamp,
+            );
+            const snapshotWrites = vi.spyOn(runtimeRepository, 'upsertIfRevision');
+            const inserts = vi.spyOn(runtimeRepository, 'insertIfAbsent');
+
+            await expect(new RtcTopologyExecutionRepository(runtimeRepository)
+                .readTopologyMutation(publication.groupRef, publication.workId))
+                .rejects.toMatchObject({
+                    code: 'rtc-topology-repository-invariant-corruption',
+                });
+            expect(snapshotWrites).not.toHaveBeenCalled();
+            expect(inserts).not.toHaveBeenCalled();
+        },
+    );
 
     it('rejects incomplete persisted topology envelopes before cleanup on every read surface', async () => {
         vi.useFakeTimers();
@@ -712,12 +821,16 @@ describe('RTC topology runtime-state repositories', () => {
         await expect(Promise.all([
             migrateLegacyRtcTopologyPublicationKeys(repository, {
                 oldWritersStopped: true,
-                sleep: async (delayMs: number) => sleeps.push(delayMs),
-            } as Parameters<typeof migrateLegacyRtcTopologyPublicationKeys>[1]),
+                sleep: async (delayMs: number) => {
+                    sleeps.push(delayMs);
+                },
+            }),
             migrateLegacyRtcTopologyPublicationKeys(repository, {
                 oldWritersStopped: true,
-                sleep: async (delayMs: number) => sleeps.push(delayMs),
-            } as Parameters<typeof migrateLegacyRtcTopologyPublicationKeys>[1]),
+                sleep: async (delayMs: number) => {
+                    sleeps.push(delayMs);
+                },
+            }),
         ])).resolves.toEqual([undefined, undefined]);
 
         expect(sleeps).toEqual([]);
@@ -837,8 +950,10 @@ describe('RTC topology runtime-state repositories', () => {
 
         await expect(migrateLegacyRtcTopologyPublicationKeys(repository, {
             oldWritersStopped: true,
-            sleep: async (delayMs: number) => sleeps.push(delayMs),
-        } as Parameters<typeof migrateLegacyRtcTopologyPublicationKeys>[1]))
+            sleep: async (delayMs: number) => {
+                sleeps.push(delayMs);
+            },
+        }))
             .rejects.toMatchObject({
                 code: 'runtime-state-write-conflict',
                 attempts: 3,
@@ -1264,35 +1379,34 @@ describe('RTC topology runtime-state repositories', () => {
             targetGroupSnapshotVersion: 1,
         };
 
-        await expect(repository.putOrLoad(publication)).resolves.toMatchObject({
+        await expect(putOrLoadTopologyPublication(repository, publication, snapshot))
+            .resolves.toMatchObject({
             publication,
             inserted: true,
         });
-        await expect(repository.putOrLoad({
+        await expect(putOrLoadTopologyPublication(repository, {
             ...publication,
-            publicationId: 'work-target-version-mismatch:1:1',
+            publicationId: 'work-target-version-mismatch:1:1:1',
             workId: 'work-target-version-mismatch',
             targetGroupSnapshotVersion: 2,
-        })).rejects.toThrow('snapshot version');
+        }, snapshot)).rejects.toThrow('snapshot version');
     });
 
     it('binds persisted publication message timestamps to explicit publication facts', async () => {
         const repository = new RtcTopologyPublicationRepository(
             new FakeRuntimeStateRepository(),
         );
-        const publication = createPublication(
-            createTopologySnapshot(createGroupRef(), 1),
-            'work-explicit-time',
-        );
+        const snapshot = createTopologySnapshot(createGroupRef(), 1);
+        const publication = createPublication(snapshot, 'work-explicit-time');
 
-        await expect(repository.putOrLoad({
+        await expect(putOrLoadTopologyPublication(repository, {
             ...publication,
             message: {
                 ...publication.message,
                 id: { ...publication.message.id, ts: 11 },
                 audit: { ...publication.message.audit, createdTs: 11 },
             },
-        })).rejects.toThrow('timestamp');
+        }, snapshot)).rejects.toThrow('timestamp');
     });
 
     it.each(['direct', 'list', 'page'] as const)(
@@ -1837,11 +1951,18 @@ describe('RTC topology runtime-state repositories', () => {
         expect(result.computed.receipt.commandHash).toBe(expectedCommandHash);
         expect(Object.keys(result.computed.receipt).sort()).toEqual([
             'acceptedAtEpochMs',
+            'acceptedStorageRevision',
             'affectedGroupRefs',
+            'aggregateRef',
+            'attemptCount',
             'commandHash',
+            'commandId',
+            'eventId',
             'measurementVersion',
+            'outboxIds',
             'outcome',
             'receiptId',
+            'requestId',
             'sessionIdFrom',
             'sessionIdTo',
         ]);
@@ -2216,14 +2337,19 @@ describe('RTC topology runtime-state repositories', () => {
                 receiptEntry!.expireAtTimestamp,
             );
         } else if (defect === 'inactive-group') {
+            const activeGroup = intent.groupSnapshot.group;
+            if (activeGroup.status !== 'active') {
+                throw new Error('Expected active group fixture');
+            }
             intent = {
                 ...intent,
                 groupSnapshot: {
                     ...intent.groupSnapshot,
                     group: {
-                        ...intent.groupSnapshot.group,
+                        ...activeGroup,
                         status: 'archived',
-                        archived: { atEpochMs: 2, byServiceId: 'test' },
+                        archived: createServiceAuditStamp(2, 'test'),
+                        deleted: null,
                     },
                     activeSessions: [],
                     onlineMemberCount: 0,
@@ -2684,20 +2810,36 @@ describe('RTC topology runtime-state repositories', () => {
             rtt: baseRtt,
             alSenderId: 'session-a',
         });
+        const affectedGroupRef = {
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+            groupId: 'room-retained-replay',
+        };
         await runtimeRepository.insertIfAbsent(
             RTC_RTT_RECEIPTS_NAMESPACE,
             receiptId,
             JSON.stringify({
                 receiptId,
+                commandId: receiptId,
+                requestId: receiptId,
                 sessionIdFrom: baseRtt.sessionIdFrom,
                 sessionIdTo: baseRtt.sessionIdTo,
+                aggregateRef: {
+                    sessionIdFrom: baseRtt.sessionIdFrom,
+                    sessionIdTo: baseRtt.sessionIdTo,
+                },
                 measurementVersion: baseRtt.version,
-                affectedGroupRefs: [{
-                    applicationId: 'app-1',
-                    groupId: 'room-retained-replay',
-                }],
+                affectedGroupRefs: [affectedGroupRef],
                 acceptedAtEpochMs: 1,
                 outcome: 'accepted',
+                attemptCount: 1,
+                acceptedStorageRevision: 0,
+                eventId: null,
+                outboxIds: [toRtcRttRecomputeOutboxId(
+                    receiptId,
+                    affectedGroupRef,
+                    commandHash,
+                )],
                 commandHash,
             }),
             1 + DEFAULT_RTC_RTT_MUTATION_RETENTION_MS,
@@ -4173,6 +4315,26 @@ function createGroupRef(): GroupRef {
     };
 }
 
+function createPrincipalAuditStamp(atEpochMs: number, principalId: string) {
+    return {
+        atEpochMs,
+        actor: { kind: 'principal' as const, principalId },
+        reason: null,
+        traceId: null,
+        requestId: null,
+    };
+}
+
+function createServiceAuditStamp(atEpochMs: number, serviceId: string) {
+    return {
+        atEpochMs,
+        actor: { kind: 'service' as const, serviceId },
+        reason: null,
+        traceId: null,
+        requestId: null,
+    };
+}
+
 function createRttGroupSnapshot(
     groupId: string,
     sessionIds: readonly string[],
@@ -4186,19 +4348,28 @@ function createRttGroupSnapshot(
             applicationId,
             workspaceId,
             groupId,
+            slug: null,
             displayName: groupId,
+            description: null,
             kind: 'room',
             status: 'active',
             joinMode: 'open',
+            maxMembers: null,
+            maxSessionsPerMember: null,
             metadata: {},
             snapshotVersion: 1,
             metadataVersion: 1,
             rosterVersion: 1,
             presenceVersion: 1,
             activeMemberCount: sessionIds.length,
-            ownerPrincipalId: sessionIds[0]!,
-            created: { atEpochMs: 1, byPrincipalId: 'owner' },
-            updated: { atEpochMs: 1, byPrincipalId: 'owner' },
+            ownerPrincipalId: sessionIds[0] ?? 'owner',
+            created: createPrincipalAuditStamp(1, 'owner'),
+            updated: createPrincipalAuditStamp(1, 'owner'),
+            expiresAtEpochMs: null,
+            emptySinceEpochMs: null,
+            purgeAfterEpochMs: null,
+            archived: null,
+            deleted: null,
         },
         members: sessionIds.map((sessionId, index) => ({
             applicationId,
@@ -4207,8 +4378,13 @@ function createRttGroupSnapshot(
             principalId: sessionId,
             role: index === 0 ? 'owner' as const : 'member' as const,
             status: 'active' as const,
-            joined: { atEpochMs: 1, byPrincipalId: 'owner' },
-            updated: { atEpochMs: 1, byPrincipalId: 'owner' },
+            joined: createPrincipalAuditStamp(1, 'owner'),
+            updated: createPrincipalAuditStamp(1, 'owner'),
+            invitedByPrincipalId: null,
+            invitationExpiresAtEpochMs: null,
+            left: null,
+            removed: null,
+            banned: null,
         })),
         activeSessions: sessionIds.map((sessionId) => ({
             applicationId,
@@ -4221,6 +4397,9 @@ function createRttGroupSnapshot(
             connectedAtEpochMs: 1,
             lastHeartbeatAtEpochMs: 1,
             expiresAtEpochMs: 60_001,
+            status: 'active' as const,
+            disconnectedAtEpochMs: null,
+            disconnectReason: null,
         })),
         memberCount: sessionIds.length,
         onlineMemberCount: sessionIds.length,
@@ -4282,6 +4461,7 @@ function createValidRttWriteCandidate(): Extract<
         },
         facts: {
             commandHash: `sha256:${'a'.repeat(64)}`,
+            attemptCount: 1,
             requestedAtEpochMs: 2,
             purgeAfterEpochMs: 60_002,
         },
@@ -4568,7 +4748,10 @@ function createTopologySnapshot(
     version: number,
 ): RallarOverlayTopologySnapshot {
     return {
-        sourceGroupStateRevision: version,
+        sourceGroupStateCausalRevision: {
+            groupRevision: version,
+            presenceRevision: version,
+        },
         state: 'active',
         overlayId: JSON.stringify([
             groupRef.applicationId,
@@ -4732,11 +4915,13 @@ function createPublication(
     snapshot: RallarOverlayTopologySnapshot,
     workId: string,
 ) {
+    const sourceRevision = snapshot.sourceGroupStateCausalRevision;
     return {
-        publicationId: `${workId}:${snapshot.sourceGroupStateRevision}:${snapshot.version}`,
+        publicationId:
+            `${workId}:${sourceRevision.groupRevision}:${sourceRevision.presenceRevision}:${snapshot.version}`,
         workId,
         groupRef: snapshot.groupRef,
-        sourceGroupStateRevision: snapshot.sourceGroupStateRevision,
+        sourceGroupStateCausalRevision: sourceRevision,
         overlayVersion: snapshot.version,
         targetGroupSnapshotVersion: 1,
         recipientSessionIds: snapshot.activeSessionIds,
@@ -4750,7 +4935,8 @@ function createPublication(
             route: {
                 topicId: AppTopics.overlayTopology,
                 contextId: snapshot.groupRef.groupId,
-                resourceId: `${snapshot.overlayId}:${snapshot.sourceGroupStateRevision}:${snapshot.version}`,
+                resourceId:
+                    `${snapshot.overlayId}:${sourceRevision.groupRevision}:${sourceRevision.presenceRevision}:${snapshot.version}`,
             },
             payload: {
                 typeId: AppTopics.overlayTopology,
@@ -4847,6 +5033,78 @@ async function seedLegacyPublicationRows(
         JSON.stringify(publication.publicationId),
         expiry,
     );
+}
+
+async function putOrLoadTopologyPublication(
+    repository: RtcTopologyPublicationRepository,
+    publication: RtcTopologyPublication,
+    snapshot: RallarOverlayTopologySnapshot,
+) {
+    const snapshots = new RtcTopologySnapshotRepository(
+        repository.runtimeRepository,
+    );
+    let stored = await snapshots.findSnapshotEntry(snapshot.groupRef);
+    if (!stored) {
+        const seeded = await snapshots.commitSnapshotGuard(snapshot, null);
+        if (seeded.status !== 'accepted') {
+            throw new Error('Expected topology snapshot fixture seed');
+        }
+        stored = await snapshots.findSnapshotEntry(snapshot.groupRef);
+    }
+    if (!stored) throw new Error('Expected durable topology snapshot fixture');
+    return await repository.putOrLoad(publication, {
+        commandHash: await hashRtcTopologyExecutionCommand(publication),
+        attemptCount: 1,
+        acceptedStorageRevision: stored.entry.revision,
+    });
+}
+
+function corruptTopologyExecutionReceipt(
+    receipt: RtcTopologyPublicationWorkClaim,
+    defect:
+        | 'legacy'
+        | 'missing'
+        | 'extra'
+        | 'hash'
+        | 'attempt'
+        | 'causal'
+        | 'storage'
+        | 'event'
+        | 'outbox',
+): unknown {
+    if (defect === 'legacy') {
+        return {
+            groupRef: receipt.groupRef,
+            workId: receipt.workId,
+            publicationId: receipt.publicationId,
+        };
+    }
+    if (defect === 'missing') {
+        const { eventId: _eventId, ...missingEventId } = receipt;
+        return missingEventId;
+    }
+    if (defect === 'extra') return { ...receipt, snapshot: null };
+    if (defect === 'hash') {
+        return { ...receipt, commandHash: `sha256:${'0'.repeat(64)}` };
+    }
+    if (defect === 'attempt') return { ...receipt, attemptCount: 0 };
+    if (defect === 'causal') {
+        return {
+            ...receipt,
+            acceptedCausalRevision: {
+                ...receipt.acceptedCausalRevision,
+                groupRevision: receipt.acceptedCausalRevision.groupRevision + 1,
+            },
+        };
+    }
+    if (defect === 'storage') {
+        return {
+            ...receipt,
+            acceptedStorageRevision: receipt.acceptedStorageRevision + 1,
+        };
+    }
+    if (defect === 'event') return { ...receipt, eventId: 'unexpected-event' };
+    return { ...receipt, outboxIds: [] };
 }
 
 function reorderJsonObjectKeys<T>(value: T): T {

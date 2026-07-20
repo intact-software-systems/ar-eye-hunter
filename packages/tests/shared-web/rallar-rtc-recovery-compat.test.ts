@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import {
+    createActiveGroupMemberFixture,
+    createActiveGroupPresenceSessionFixture,
+    createGroupSnapshotFixture,
+} from './authoritative-group-fixtures.ts';
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
 import {
     newALRoute,
@@ -880,58 +885,12 @@ function createGroupSnapshot(
 ): GroupSnapshot {
     const applicationId = scope.applicationId ?? 'app-1';
     const workspaceId = scope.workspaceId ?? 'workspace-1';
-    return {
-        group: {
-            applicationId,
-            workspaceId,
-            groupId,
-            displayName: groupId,
-            kind: 'room',
-            status: 'active',
-            joinMode: 'open',
-            metadata: {},
-            snapshotVersion: 1,
-            metadataVersion: 0,
-            rosterVersion: 1,
-            presenceVersion: 1,
-            created: {
-                atEpochMs: 1,
-                byPrincipalId: 'creator',
-            },
-            updated: {
-                atEpochMs: 1,
-                byPrincipalId: 'creator',
-            },
-        },
-        members: sessionIds.map((sessionId) => ({
-            applicationId,
-            workspaceId,
-            groupId,
-            principalId: sessionId,
-            role: 'member',
-            status: 'active',
-            joined: {
-                atEpochMs: 1,
-                byPrincipalId: 'creator',
-            },
-            updated: {
-                atEpochMs: 1,
-                byPrincipalId: 'creator',
-            },
-        })),
-        activeSessions: sessionIds.map((sessionId) => ({
-            applicationId,
-            workspaceId,
-            groupId,
-            sessionId,
-            principalId: sessionId,
-            connectedAtEpochMs: 1,
-            lastHeartbeatAtEpochMs: 1,
-            expiresAtEpochMs: 60_000,
-        })),
-        memberCount: sessionIds.length,
-        onlineMemberCount: sessionIds.length,
-    };
+    return createGroupSnapshotFixture({
+        applicationId,
+        workspaceId,
+        groupId,
+        sessionIds,
+    });
 }
 
 function createDirectorGroupSnapshot(
@@ -944,48 +903,33 @@ function createDirectorGroupSnapshot(
     }>,
 ): GroupSnapshot {
     const snapshot = createGroupSnapshot('room-1', ['session-1']);
-    const activeSessions = [
-        {
-            ...snapshot.activeSessions[0],
-            principalId: 'principal-1',
-            sessionId: 'session-1',
-        },
-    ];
-    const members = [
-        {
-            ...snapshot.members[0],
-            principalId: 'principal-1',
-            role: 'owner' as const,
-        },
-    ];
+    const activeSessions: GroupSnapshot['activeSessions'][number][] = [{
+        ...snapshot.activeSessions[0],
+        principalId: 'principal-1',
+        sessionId: 'session-1',
+    }];
+    const members: GroupSnapshot['members'][number][] = [{
+        ...snapshot.members[0],
+        principalId: 'principal-1',
+        role: 'owner',
+    }];
 
     if (appointment) {
-        activeSessions.push({
+        activeSessions.push(createActiveGroupPresenceSessionFixture({
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
             groupId: 'room-1',
             principalId: appointment.principalId,
             sessionId: appointment.sessionId,
-            connectedAtEpochMs: 1,
-            lastHeartbeatAtEpochMs: 1,
-            expiresAtEpochMs: 60_000,
-        });
-        members.push({
+        }));
+        members.push(createActiveGroupMemberFixture({
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
             groupId: 'room-1',
             principalId: appointment.principalId,
             role: 'member',
-            status: 'active',
-            joined: {
-                atEpochMs: 1,
-                byPrincipalId: 'principal-1',
-            },
-            updated: {
-                atEpochMs: 1,
-                byPrincipalId: 'principal-1',
-            },
-        });
+            actorPrincipalId: 'principal-1',
+        }));
     }
 
     return {
@@ -994,7 +938,7 @@ function createDirectorGroupSnapshot(
             ...snapshot.group,
             created: {
                 ...snapshot.group.created,
-                byPrincipalId: 'principal-1',
+                actor: { kind: 'principal', principalId: 'principal-1' },
             },
             metadata: appointment
                 ? {

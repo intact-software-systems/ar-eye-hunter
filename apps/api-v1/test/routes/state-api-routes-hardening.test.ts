@@ -1,8 +1,16 @@
 import assert from 'node:assert/strict';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
-import type { GroupEvent, GroupSnapshot } from '@shared/api/group-types.ts';
+import type {
+  AuditStamp,
+  ClientEvent,
+  ClientSnapshot,
+} from '@shared/api/client-types.ts';
+import type {
+  GroupEvent,
+  GroupMember,
+  GroupSnapshot,
+} from '@shared/api/group-types.ts';
 import type { StateEventPage } from '@shared/api/state-event-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-policy.ts';
@@ -1327,19 +1335,26 @@ function createClientSnapshot(principalId: string): ClientSnapshot {
       principalId,
       username: principalId,
       displayName: principalId,
+      avatarUrl: null,
+      authProvider: null,
+      externalSubjectId: null,
       status: 'active',
       roles: [],
       metadata: {},
       snapshotVersion: 1,
       profileVersion: 1,
       presenceVersion: 0,
-      created: { atEpochMs: 1, byServiceId: 'test' },
-      updated: { atEpochMs: 1, byServiceId: 'test' },
+      created: testAuditStamp(1),
+      updated: testAuditStamp(1),
+      disabled: null,
+      deleted: null,
+      lastSeenAtEpochMs: null,
     },
     instances: [],
     activeSessions: [],
     isOnline: false,
     activeSessionCount: 0,
+    lastSeenAtEpochMs: null,
   };
 }
 
@@ -1353,10 +1368,14 @@ function createGroupSnapshot(
     group: {
       ...TEST_SCOPE,
       groupId,
+      slug: null,
       displayName: groupId,
+      description: null,
       kind: 'room',
       status: 'active',
       joinMode: 'open',
+      maxMembers: null,
+      maxSessionsPerMember: null,
       metadata: {},
       activeMemberCount: activePrincipalIds.length,
       ownerPrincipalId: activePrincipalIds[0] ?? 'alice',
@@ -1364,19 +1383,29 @@ function createGroupSnapshot(
       metadataVersion: 1,
       rosterVersion: 1,
       presenceVersion: 0,
-      created: { atEpochMs: 1, byServiceId: 'test' },
-      updated: { atEpochMs: 1, byServiceId: 'test' },
+      created: testAuditStamp(1),
+      updated: testAuditStamp(1),
+      expiresAtEpochMs: null,
+      emptySinceEpochMs: null,
+      purgeAfterEpochMs: null,
+      archived: null,
+      deleted: null,
     },
-    members: activePrincipalIds.map((principalId) => ({
+    members: activePrincipalIds.map((principalId): GroupMember => ({
       ...TEST_SCOPE,
       groupId,
       principalId,
       role: principalId === activePrincipalIds[0]
-        ? 'owner' as const
-        : 'member' as const,
-      status: 'active' as const,
-      joined: { atEpochMs: 1, byServiceId: 'test' },
-      updated: { atEpochMs: 1, byServiceId: 'test' },
+        ? 'owner'
+        : 'member',
+      status: 'active',
+      joined: testAuditStamp(1),
+      updated: testAuditStamp(1),
+      left: null,
+      removed: null,
+      banned: null,
+      invitedByPrincipalId: null,
+      invitationExpiresAtEpochMs: null,
     })),
     activeSessions: [],
     memberCount: activePrincipalIds.length,
@@ -1393,19 +1422,66 @@ function createGroupSnapshotWithMember(
     groupId,
     status === 'active' ? [principalId] : [],
   );
+  const role: GroupMember['role'] = 'member';
+  const common = {
+    ...TEST_SCOPE,
+    groupId,
+    principalId,
+    role,
+    updated: testAuditStamp(1),
+    invitedByPrincipalId: null,
+    invitationExpiresAtEpochMs: null,
+  };
+  let member: GroupMember;
+  if (status === 'invited') {
+    member = {
+      ...common,
+      status,
+      joined: null,
+      left: null,
+      removed: null,
+      banned: null,
+    };
+  } else if (status === 'active') {
+    member = {
+      ...common,
+      status,
+      joined: testAuditStamp(1),
+      left: null,
+      removed: null,
+      banned: null,
+    };
+  } else if (status === 'left') {
+    member = {
+      ...common,
+      status,
+      joined: testAuditStamp(1),
+      left: testAuditStamp(1),
+      removed: null,
+      banned: null,
+    };
+  } else if (status === 'removed') {
+    member = {
+      ...common,
+      status,
+      joined: testAuditStamp(1),
+      left: null,
+      removed: testAuditStamp(1),
+      banned: null,
+    };
+  } else {
+    member = {
+      ...common,
+      status,
+      joined: testAuditStamp(1),
+      left: null,
+      removed: null,
+      banned: testAuditStamp(1),
+    };
+  }
   return {
     ...snapshot,
-    members: [
-      {
-        ...TEST_SCOPE,
-        groupId,
-        principalId,
-        role: 'member',
-        status,
-        joined: { atEpochMs: 1, byServiceId: 'test' },
-        updated: { atEpochMs: 1, byServiceId: 'test' },
-      },
-    ],
+    members: [member],
     memberCount: status === 'active' ? 1 : 0,
     onlineMemberCount: 0,
   };
@@ -1421,6 +1497,8 @@ function createDeletedGroupSnapshot(
     group: {
       ...snapshot.group,
       status: 'deleted',
+      archived: null,
+      deleted: testAuditStamp(2),
     },
   };
 }
@@ -1433,7 +1511,13 @@ function createClientEvent(eventId: string): ClientEvent {
     eventType: 'principal-updated',
     snapshotVersion: 1,
     occurredAtEpochMs: 1,
-    actor: { serviceId: 'test' },
+    clientInstanceId: null,
+    sessionId: null,
+    actor: { kind: 'service', serviceId: 'test' },
+    reason: null,
+    traceId: null,
+    requestId: null,
+    payload: {},
   };
 }
 
@@ -1444,7 +1528,22 @@ function createGroupEvent(eventId: string): GroupEvent {
     eventId,
     eventType: 'group-updated',
     snapshotVersion: 1,
+    causalRevision: { groupRevision: 1, presenceRevision: 0 },
     occurredAtEpochMs: 1,
-    actor: { serviceId: 'test' },
+    actor: { kind: 'service', serviceId: 'test' },
+    reason: null,
+    traceId: null,
+    requestId: null,
+    payload: {},
+  };
+}
+
+function testAuditStamp(atEpochMs: number): AuditStamp {
+  return {
+    atEpochMs,
+    actor: { kind: 'service', serviceId: 'test' },
+    reason: null,
+    traceId: null,
+    requestId: null,
   };
 }

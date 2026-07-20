@@ -15,7 +15,11 @@ import type {
     GroupStateCausalRevision,
     GroupStatus,
 } from '@shared/api/group-types.ts';
-import { toGroupSnapshotStateRevision } from '@shared/api/group-client-views.ts';
+import {
+    compareGroupCausalRevision,
+    toGroupSnapshotStateRevision,
+} from '@shared/api/group-client-views.ts';
+import type { MutationActor } from '@shared/api/mutation-actor.ts';
 import type { RuntimeStateEntryValue } from '../../runtime-state/RuntimeStateJsonStore.ts';
 import {
     canActivateGroupMember,
@@ -48,6 +52,12 @@ import {
     groupStatePresenceSessionStorageKey,
     groupStatePresenceSummaryStorageKey,
 } from '../group-state-storage-keys.ts';
+import { toStateMutationOutboxId } from '../repositories/StateMutationOutboxRepository.ts';
+import { validateGroupEvent } from '../persisted-group-event.ts';
+export {
+    normalizePersistedGroupEvent,
+    validatePersistedGroupEvent,
+} from '../persisted-group-event.ts';
 
 const DEFAULT_GROUP_SESSION_TTL_MS = 24 * 60 * 60 * 1_000;
 const DEFAULT_GROUP_INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
@@ -191,13 +201,17 @@ export type GroupMutationCommand =
 
 export type GroupMutationReceipt = Readonly<{
     commandId: string;
+    requestId: string | null;
     commandHash: string;
+    aggregateRef: GroupRef;
     outcome: 'applied' | 'no-op' | 'rejected';
+    attemptCount: number;
+    acceptedStorageRevision: number | null;
     stateRevision: number;
     snapshotVersion: number;
     causalRevision: GroupStateCausalRevision;
-    event: Readonly<{ kind: 'none' }> |
-        Readonly<{ kind: 'group'; event: GroupEvent }>;
+    eventId: string | null;
+    outboxIds: readonly string[];
     joinCode: string | null;
     joinCodeExpiresAtEpochMs: number | null;
     rejection: string | null;
@@ -235,6 +249,7 @@ export type GroupMutationFacts = Readonly<{
     serviceId: string;
     eventId: string;
     commandHash: string;
+    attemptCount: number;
     resolvedJoinCode: string | null;
     joinCodeVerifier: string | null;
     internalAuthority: 'none' | 'expiry' | 'session-cleanup';
@@ -312,6 +327,7 @@ export type GroupMutationOutboxCandidate = Readonly<{
     acceptedCausalRevision: Readonly<{
         kind: 'group';
         stateRevision: number;
+        causalRevision: GroupStateCausalRevision;
         snapshotVersion: number;
         metadataVersion: number;
         rosterVersion: number;
@@ -723,9 +739,7 @@ export function validateGroupMutation(input: Readonly<{
         if (input.computed.outbox.commandHash !== input.facts.commandHash) {
             throw new TypeError('Group mutation outbox hash differs from facts');
         }
-        if (!jsonEquals(input.computed.event, receipt.event.kind === 'group'
-            ? receipt.event.event
-            : null)) {
+        if (input.computed.event.eventId !== receipt.eventId) {
             throw new TypeError('Group mutation receipt event differs from write event');
         }
         if (input.computed.guard.kind === 'presence' && input.computed.members.length > 0) {
@@ -954,7 +968,7 @@ function validateRuntimeEntryValue<T>(
     }
 }
 
-function validateStoredGroup(group: Group, ref: GroupRef): void {
+function validateStoredGroup(group: unknown, ref: GroupRef): asserts group is Group {
     const value = requireRecord(group, 'Stored group value');
     assertExactKeys(value, [
         'applicationId', 'workspaceId', 'groupId', 'slug', 'displayName',
@@ -965,20 +979,23 @@ function validateStoredGroup(group: Group, ref: GroupRef): void {
         'expiresAtEpochMs', 'emptySinceEpochMs', 'purgeAfterEpochMs',
     ], 'Stored group value');
     assertRequiredKeys(value, [
-        'applicationId', 'groupId', 'displayName', 'kind', 'status', 'joinMode',
-        'metadata', 'activeMemberCount', 'ownerPrincipalId', 'snapshotVersion',
-        'metadataVersion', 'rosterVersion', 'presenceVersion', 'created', 'updated',
+        'applicationId', 'workspaceId', 'groupId', 'slug', 'displayName',
+        'description', 'kind', 'status', 'joinMode', 'maxMembers',
+        'maxSessionsPerMember', 'metadata', 'activeMemberCount',
+        'ownerPrincipalId', 'snapshotVersion', 'metadataVersion', 'rosterVersion',
+        'presenceVersion', 'created', 'updated', 'archived', 'deleted',
+        'expiresAtEpochMs', 'emptySinceEpochMs', 'purgeAfterEpochMs',
     ], 'Stored group value');
-    validateScopedValue(group, ref, 'Stored group');
-    optionalNonEmptyString(value.slug, 'Stored group slug');
+    validateScopedRecord(value, ref, 'Stored group');
+    nullableNonEmptyString(value.slug, 'Stored group slug');
     requireNonEmptyString(value.displayName, 'Stored group displayName');
-    optionalNonEmptyString(value.description, 'Stored group description');
+    nullableNonEmptyString(value.description, 'Stored group description');
     requireOneOf(value.kind, ['party', 'room', 'team', 'custom'], 'Stored group kind');
     requireOneOf(value.status, ['active', 'archived', 'deleted'], 'Stored group status');
     requireOneOf(value.joinMode, ['invite-only', 'code', 'open'],
         'Stored group joinMode');
-    optionalPositiveSafeInteger(value.maxMembers, 'Stored group maxMembers');
-    optionalPositiveSafeInteger(value.maxSessionsPerMember,
+    nullablePositiveSafeInteger(value.maxMembers, 'Stored group maxMembers');
+    nullablePositiveSafeInteger(value.maxSessionsPerMember,
         'Stored group maxSessionsPerMember');
     requireRecord(value.metadata, 'Stored group metadata');
     requirePositiveSafeInteger(value.activeMemberCount, 'Stored group activeMemberCount');
@@ -989,19 +1006,24 @@ function validateStoredGroup(group: Group, ref: GroupRef): void {
     requireNonNegativeSafeInteger(value.presenceVersion, 'Stored group presenceVersion');
     validateAuditStamp(value.created, 'Stored group created');
     validateAuditStamp(value.updated, 'Stored group updated');
-    if (value.archived !== undefined) validateAuditStamp(value.archived,
+    if (value.archived !== null) validateAuditStamp(value.archived,
         'Stored group archived');
-    if (value.deleted !== undefined) validateAuditStamp(value.deleted,
+    if (value.deleted !== null) validateAuditStamp(value.deleted,
         'Stored group deleted');
-    if (value.status === 'archived' && value.archived === undefined) {
-        throw new TypeError('Stored archived group is missing lifecycle audit');
+    if (value.status === 'active' &&
+        (value.archived !== null || value.deleted !== null)) {
+        throw new TypeError('Stored active group lifecycle fields must be null');
     }
-    if (value.status === 'deleted' && value.deleted === undefined) {
+    if (value.status === 'archived' &&
+        (value.archived === null || value.deleted !== null)) {
+        throw new TypeError('Stored archived group lifecycle fields are invalid');
+    }
+    if (value.status === 'deleted' && value.deleted === null) {
         throw new TypeError('Stored deleted group is missing lifecycle audit');
     }
-    optionalPositiveSafeInteger(value.expiresAtEpochMs, 'Stored group expiresAtEpochMs');
-    optionalPositiveSafeInteger(value.emptySinceEpochMs, 'Stored group emptySinceEpochMs');
-    optionalPositiveSafeInteger(value.purgeAfterEpochMs, 'Stored group purgeAfterEpochMs');
+    nullablePositiveSafeInteger(value.expiresAtEpochMs, 'Stored group expiresAtEpochMs');
+    nullablePositiveSafeInteger(value.emptySinceEpochMs, 'Stored group emptySinceEpochMs');
+    nullablePositiveSafeInteger(value.purgeAfterEpochMs, 'Stored group purgeAfterEpochMs');
 }
 
 function validateMemberReadPair(
@@ -1048,7 +1070,11 @@ function mutationTargetSessionId(command: GroupMutationCommand): string | null {
         : null;
 }
 
-function validateStoredMember(member: GroupMember, ref: GroupRef, label: string): void {
+function validateStoredMember(
+    member: unknown,
+    ref: GroupRef,
+    label: string,
+): asserts member is GroupMember {
     const value = requireRecord(member, `${label} value`);
     assertExactKeys(value, [
         'applicationId', 'workspaceId', 'groupId', 'principalId', 'role', 'status',
@@ -1056,17 +1082,19 @@ function validateStoredMember(member: GroupMember, ref: GroupRef, label: string)
         'invitationExpiresAtEpochMs',
     ], `${label} value`);
     assertRequiredKeys(value, [
-        'applicationId', 'groupId', 'principalId', 'role', 'status', 'joined', 'updated',
+        'applicationId', 'workspaceId', 'groupId', 'principalId', 'role', 'status',
+        'joined', 'updated', 'left', 'removed', 'banned',
+        'invitedByPrincipalId', 'invitationExpiresAtEpochMs',
     ], `${label} value`);
-    validateScopedValue(member, ref, label);
+    validateScopedRecord(value, ref, label);
     requireNonEmptyString(value.principalId, `${label} principalId`);
     requireOneOf(value.role, ['owner', 'admin', 'member'], `${label} role`);
     requireOneOf(value.status, ['invited', 'active', 'left', 'removed', 'banned'],
         `${label} status`);
-    validateAuditStamp(value.joined, `${label} joined`);
+    if (value.joined !== null) validateAuditStamp(value.joined, `${label} joined`);
     validateAuditStamp(value.updated, `${label} updated`);
     for (const key of ['left', 'removed', 'banned'] as const) {
-        if (value[key] !== undefined) validateAuditStamp(value[key], `${label} ${key}`);
+        if (value[key] !== null) validateAuditStamp(value[key], `${label} ${key}`);
     }
     const lifecycleKey = value.status === 'left'
         ? 'left'
@@ -1075,96 +1103,306 @@ function validateStoredMember(member: GroupMember, ref: GroupRef, label: string)
         : value.status === 'banned'
         ? 'banned'
         : null;
-    if (lifecycleKey !== null && value[lifecycleKey] === undefined) {
+    if (lifecycleKey !== null && value[lifecycleKey] === null) {
         throw new TypeError(`${label} is missing ${lifecycleKey} lifecycle audit`);
     }
-    optionalNonEmptyString(value.invitedByPrincipalId, `${label} invitedByPrincipalId`);
-    optionalPositiveSafeInteger(value.invitationExpiresAtEpochMs,
+    if (lifecycleKey === null &&
+        (value.left !== null || value.removed !== null || value.banned !== null)) {
+        throw new TypeError(`${label} active lifecycle fields must be null`);
+    }
+    if (value.status === 'invited' && value.joined !== null) {
+        throw new TypeError(`${label} invited member joined must be null`);
+    }
+    if (value.status === 'active' && value.joined === null) {
+        throw new TypeError(`${label} active member joined is required`);
+    }
+    nullableNonEmptyString(value.invitedByPrincipalId, `${label} invitedByPrincipalId`);
+    nullablePositiveSafeInteger(value.invitationExpiresAtEpochMs,
         `${label} invitationExpiresAtEpochMs`);
 }
 
 function validatePresenceSession(
-    session: GroupPresenceSession,
+    session: unknown,
     ref: GroupRef,
     label: string,
-): void {
+): asserts session is GroupPresenceSession {
     const value = requireRecord(session, `${label} value`);
     assertExactKeys(value, [
         'applicationId', 'workspaceId', 'groupId', 'sessionId', 'principalId',
         'generationId', 'generationVersion', 'connectedAtEpochMs',
         'lastHeartbeatAtEpochMs', 'expiresAtEpochMs', 'disconnectedAtEpochMs',
-        'disconnectReason',
+        'disconnectReason', 'status',
     ], `${label} value`);
     assertRequiredKeys(value, [
-        'applicationId', 'groupId', 'sessionId', 'principalId', 'generationId',
+        'applicationId', 'workspaceId', 'groupId', 'sessionId', 'principalId',
+        'generationId', 'status',
         'generationVersion', 'connectedAtEpochMs', 'lastHeartbeatAtEpochMs',
-        'expiresAtEpochMs',
+        'expiresAtEpochMs', 'disconnectedAtEpochMs', 'disconnectReason',
     ], `${label} value`);
-    validateScopedValue(session, ref, label);
+    validateScopedRecord(value, ref, label);
     requireNonEmptyString(value.sessionId, `${label} sessionId`);
     requireNonEmptyString(value.principalId, `${label} principalId`);
     requireNonEmptyString(value.generationId, `${label} generationId`);
-    validateStoredGeneration(session);
+    requirePositiveSafeInteger(value.connectedAtEpochMs,
+        'Stored presence connectedAtEpochMs');
+    requirePositiveSafeInteger(value.generationVersion,
+        'Stored presence generationVersion');
+    if (value.generationVersion !== value.connectedAtEpochMs) {
+        throw new TypeError('Stored presence generation order is ambiguous');
+    }
     requirePositiveSafeInteger(value.lastHeartbeatAtEpochMs,
         `${label} lastHeartbeatAtEpochMs`);
     requirePositiveSafeInteger(value.expiresAtEpochMs, `${label} expiresAtEpochMs`);
-    if ((value.lastHeartbeatAtEpochMs as number) < session.connectedAtEpochMs ||
-        (value.expiresAtEpochMs as number) < (value.lastHeartbeatAtEpochMs as number)) {
+    if (value.lastHeartbeatAtEpochMs < value.connectedAtEpochMs ||
+        value.expiresAtEpochMs < value.lastHeartbeatAtEpochMs) {
         throw new TypeError(`${label} timestamps are causally inconsistent`);
     }
-    optionalPositiveSafeInteger(value.disconnectedAtEpochMs,
+    requireOneOf(value.status, ['active', 'disconnected'], `${label} status`);
+    nullablePositiveSafeInteger(value.disconnectedAtEpochMs,
         `${label} disconnectedAtEpochMs`);
-    optionalNonEmptyString(value.disconnectReason, `${label} disconnectReason`);
-    if (value.disconnectedAtEpochMs !== undefined &&
-        (value.disconnectedAtEpochMs as number) < (value.lastHeartbeatAtEpochMs as number)) {
+    nullableNonEmptyString(value.disconnectReason, `${label} disconnectReason`);
+    if (value.disconnectedAtEpochMs !== null &&
+        value.disconnectedAtEpochMs < value.lastHeartbeatAtEpochMs) {
         throw new TypeError(`${label} disconnect predates heartbeat`);
     }
-    if ((value.disconnectedAtEpochMs === undefined) !==
-        (value.disconnectReason === undefined)) {
+    if (value.status === 'active' &&
+        (value.disconnectedAtEpochMs !== null || value.disconnectReason !== null)) {
+        throw new TypeError(`${label} active disconnect fields must be null`);
+    }
+    if (value.status === 'disconnected' &&
+        (value.disconnectedAtEpochMs === null || value.disconnectReason === null)) {
         throw new TypeError(`${label} disconnect lifecycle fields differ`);
     }
+}
+
+export function normalizePersistedGroup(
+    value: unknown,
+    ref: GroupRef,
+): Group {
+    const legacy = requireRecord(value, 'Stored group value');
+    assertExactKeys(legacy, [
+        'applicationId', 'workspaceId', 'groupId', 'slug', 'displayName',
+        'description', 'kind', 'status', 'joinMode', 'maxMembers',
+        'maxSessionsPerMember', 'metadata', 'activeMemberCount',
+        'ownerPrincipalId', 'snapshotVersion', 'metadataVersion', 'rosterVersion',
+        'presenceVersion', 'created', 'updated', 'archived', 'deleted',
+        'expiresAtEpochMs', 'emptySinceEpochMs', 'purgeAfterEpochMs',
+    ], 'Stored group value');
+    const canonical: unknown = {
+        applicationId: legacy.applicationId,
+        workspaceId: persistedOrDefault(legacy, 'workspaceId', ref.workspaceId),
+        groupId: legacy.groupId,
+        slug: persistedOrDefault(legacy, 'slug', null),
+        displayName: legacy.displayName,
+        description: persistedOrDefault(legacy, 'description', null),
+        kind: legacy.kind,
+        status: legacy.status,
+        joinMode: legacy.joinMode,
+        maxMembers: persistedOrDefault(legacy, 'maxMembers', null),
+        maxSessionsPerMember: persistedOrDefault(
+            legacy,
+            'maxSessionsPerMember',
+            null,
+        ),
+        metadata: legacy.metadata,
+        activeMemberCount: legacy.activeMemberCount,
+        ownerPrincipalId: legacy.ownerPrincipalId,
+        snapshotVersion: legacy.snapshotVersion,
+        metadataVersion: legacy.metadataVersion,
+        rosterVersion: legacy.rosterVersion,
+        presenceVersion: legacy.presenceVersion,
+        created: normalizePersistedGroupAudit(legacy.created, 'Stored group created'),
+        updated: normalizePersistedGroupAudit(legacy.updated, 'Stored group updated'),
+        archived: normalizeOptionalPersistedGroupAudit(
+            legacy,
+            'archived',
+            'Stored group archived',
+        ),
+        deleted: normalizeOptionalPersistedGroupAudit(
+            legacy,
+            'deleted',
+            'Stored group deleted',
+        ),
+        expiresAtEpochMs: persistedOrDefault(legacy, 'expiresAtEpochMs', null),
+        emptySinceEpochMs: persistedOrDefault(legacy, 'emptySinceEpochMs', null),
+        purgeAfterEpochMs: persistedOrDefault(legacy, 'purgeAfterEpochMs', null),
+    };
+    validatePersistedGroup(canonical, ref);
+    return canonical;
+}
+
+export function normalizePersistedGroupMember(
+    value: unknown,
+    ref: GroupRef,
+): GroupMember {
+    const legacy = requireRecord(value, 'Stored group member');
+    assertExactKeys(legacy, [
+        'applicationId', 'workspaceId', 'groupId', 'principalId', 'role', 'status',
+        'joined', 'updated', 'left', 'removed', 'banned', 'invitedByPrincipalId',
+        'invitationExpiresAtEpochMs',
+    ], 'Stored group member');
+    const status = legacy.status;
+    const joined = status === 'invited'
+        ? null
+        : Object.hasOwn(legacy, 'joined')
+        ? normalizeNullablePersistedGroupAudit(legacy.joined, 'Stored member joined')
+        : null;
+    const canonical: unknown = {
+        applicationId: legacy.applicationId,
+        workspaceId: persistedOrDefault(legacy, 'workspaceId', ref.workspaceId),
+        groupId: legacy.groupId,
+        principalId: legacy.principalId,
+        role: legacy.role,
+        status,
+        joined,
+        updated: normalizePersistedGroupAudit(legacy.updated, 'Stored member updated'),
+        left: normalizeOptionalPersistedGroupAudit(legacy, 'left', 'Stored member left'),
+        removed: normalizeOptionalPersistedGroupAudit(
+            legacy,
+            'removed',
+            'Stored member removed',
+        ),
+        banned: normalizeOptionalPersistedGroupAudit(
+            legacy,
+            'banned',
+            'Stored member banned',
+        ),
+        invitedByPrincipalId: persistedOrDefault(
+            legacy,
+            'invitedByPrincipalId',
+            null,
+        ),
+        invitationExpiresAtEpochMs: persistedOrDefault(
+            legacy,
+            'invitationExpiresAtEpochMs',
+            null,
+        ),
+    };
+    validatePersistedGroupMember(canonical, ref);
+    return canonical;
+}
+
+export function normalizePersistedGroupPresenceSession(
+    value: unknown,
+    ref: GroupRef,
+): GroupPresenceSession {
+    const legacy = requireRecord(value, 'Stored group presence session');
+    assertExactKeys(legacy, [
+        'applicationId', 'workspaceId', 'groupId', 'sessionId', 'principalId',
+        'generationId', 'generationVersion', 'status', 'connectedAtEpochMs',
+        'lastHeartbeatAtEpochMs', 'expiresAtEpochMs', 'disconnectedAtEpochMs',
+        'disconnectReason',
+    ], 'Stored group presence session');
+    const disconnectedAtEpochMs = persistedOrDefault(
+        legacy,
+        'disconnectedAtEpochMs',
+        null,
+    );
+    const disconnectReason = persistedOrDefault(legacy, 'disconnectReason', null);
+    const canonical: unknown = {
+        applicationId: legacy.applicationId,
+        workspaceId: persistedOrDefault(legacy, 'workspaceId', ref.workspaceId),
+        groupId: legacy.groupId,
+        sessionId: legacy.sessionId,
+        principalId: legacy.principalId,
+        generationId: legacy.generationId,
+        generationVersion: legacy.generationVersion,
+        status: Object.hasOwn(legacy, 'status')
+            ? legacy.status
+            : disconnectedAtEpochMs === null
+            ? 'active'
+            : 'disconnected',
+        connectedAtEpochMs: legacy.connectedAtEpochMs,
+        lastHeartbeatAtEpochMs: legacy.lastHeartbeatAtEpochMs,
+        expiresAtEpochMs: legacy.expiresAtEpochMs,
+        disconnectedAtEpochMs,
+        disconnectReason,
+    };
+    validatePersistedGroupPresenceSession(canonical, ref);
+    return canonical;
+}
+
+export function normalizePersistedGroupPresenceSummary(
+    value: unknown,
+    ref: GroupRef,
+): GroupPresenceSummary {
+    const legacy = requireRecord(value, 'Stored presence summary value');
+    assertExactKeys(legacy, [
+        'applicationId', 'workspaceId', 'groupId', 'causalRevision',
+        'activePrincipalIds', 'activeSessionIds', 'activeSessions',
+        'activePrincipalCount', 'activeSessionCount', 'computedAtEpochMs',
+    ], 'Stored presence summary value');
+    if (!Array.isArray(legacy.activeSessions)) {
+        throw new TypeError('Stored presence summary activeSessions is invalid');
+    }
+    const activeSessions = legacy.activeSessions.map((session) =>
+        normalizePersistedGroupPresenceSession(session, ref)
+    );
+    const canonical: unknown = {
+        ...legacy,
+        workspaceId: persistedOrDefault(legacy, 'workspaceId', ref.workspaceId),
+        activeSessions,
+    };
+    validatePersistedGroupPresenceSummary(canonical, ref);
+    return canonical;
+}
+
+export function normalizePersistedGroupPresenceAdmission(
+    value: unknown,
+    ref: GroupRef,
+): GroupPresenceAdmission {
+    const legacy = requireRecord(value, 'Presence admission');
+    assertExactKeys(legacy, [
+        'applicationId', 'workspaceId', 'groupId', 'principalId',
+        'admittedSessions', 'updatedAtEpochMs',
+    ], 'Presence admission');
+    const canonical: unknown = {
+        ...legacy,
+        workspaceId: persistedOrDefault(legacy, 'workspaceId', ref.workspaceId),
+    };
+    validatePersistedGroupPresenceAdmission(canonical, ref);
+    return canonical;
 }
 
 export function validatePersistedGroup(
     value: unknown,
     ref: GroupRef,
 ): asserts value is Group {
-    validateStoredGroup(value as Group, ref);
+    validateStoredGroup(value, ref);
 }
 
 export function validatePersistedGroupMember(
     value: unknown,
     ref: GroupRef,
 ): asserts value is GroupMember {
-    validateStoredMember(value as GroupMember, ref, 'Stored group member');
+    validateStoredMember(value, ref, 'Stored group member');
 }
 
 export function validatePersistedGroupPresenceSession(
     value: unknown,
     ref: GroupRef,
 ): asserts value is GroupPresenceSession {
-    validatePresenceSession(
-        value as GroupPresenceSession,
-        ref,
-        'Stored group presence session',
-    );
+    validatePresenceSession(value, ref, 'Stored group presence session');
 }
 
 export function validatePersistedGroupPresenceSummary(
     value: unknown,
     ref: GroupRef,
 ): asserts value is GroupPresenceSummary {
-    validatePresenceSummaryValue(value as GroupPresenceSummary, ref);
+    validatePresenceSummaryValue(value, ref);
 }
 
 export function validatePersistedGroupPresenceAdmission(
     value: unknown,
     ref: GroupRef,
 ): asserts value is GroupPresenceAdmission {
-    validatePresenceAdmission(value as GroupPresenceAdmission, ref);
+    validatePresenceAdmission(value, ref);
 }
 
-function validatePresenceSummaryValue(summary: GroupPresenceSummary, ref: GroupRef): void {
+function validatePresenceSummaryValue(
+    summary: unknown,
+    ref: GroupRef,
+): asserts summary is GroupPresenceSummary {
     const value = requireRecord(summary, 'Stored presence summary value');
     assertExactKeys(value, [
         'applicationId', 'workspaceId', 'groupId', 'causalRevision',
@@ -1172,46 +1410,48 @@ function validatePresenceSummaryValue(summary: GroupPresenceSummary, ref: GroupR
         'activePrincipalCount', 'activeSessionCount', 'computedAtEpochMs',
     ], 'Stored presence summary value');
     assertRequiredKeys(value, [
-        'applicationId', 'groupId', 'causalRevision', 'activePrincipalIds',
+        'applicationId', 'workspaceId', 'groupId', 'causalRevision', 'activePrincipalIds',
         'activeSessionIds', 'activeSessions', 'activePrincipalCount',
         'activeSessionCount', 'computedAtEpochMs',
     ], 'Stored presence summary value');
-    validateScopedValue(summary, ref, 'Stored presence summary');
-    validateCausalRevision(summary.causalRevision, 'Stored presence summary');
-    if (!Array.isArray(summary.activePrincipalIds) ||
-        !Array.isArray(summary.activeSessionIds) ||
-        !Array.isArray(summary.activeSessions)) {
+    validateScopedRecord(value, ref, 'Stored presence summary');
+    validateCausalRevision(value.causalRevision, 'Stored presence summary');
+    if (!Array.isArray(value.activePrincipalIds) ||
+        !Array.isArray(value.activeSessionIds) ||
+        !Array.isArray(value.activeSessions)) {
         throw new TypeError('Stored presence summary collections must be arrays');
     }
-    for (const principalId of summary.activePrincipalIds) {
+    for (const principalId of value.activePrincipalIds) {
         requireNonEmptyString(principalId, 'Stored presence summary principalId');
     }
-    for (const sessionId of summary.activeSessionIds) {
+    for (const sessionId of value.activeSessionIds) {
         requireNonEmptyString(sessionId, 'Stored presence summary sessionId');
     }
-    for (const session of summary.activeSessions) {
+    const activeSessions: GroupPresenceSession[] = [];
+    for (const session of value.activeSessions) {
         validatePresenceSession(session, ref, 'Stored presence summary session');
+        activeSessions.push(session);
     }
-    requireNonNegativeSafeInteger(summary.activePrincipalCount,
+    requireNonNegativeSafeInteger(value.activePrincipalCount,
         'Stored presence summary activePrincipalCount');
-    requireNonNegativeSafeInteger(summary.activeSessionCount,
+    requireNonNegativeSafeInteger(value.activeSessionCount,
         'Stored presence summary activeSessionCount');
-    requirePositiveSafeInteger(summary.computedAtEpochMs,
+    requirePositiveSafeInteger(value.computedAtEpochMs,
         'Stored presence summary computedAtEpochMs');
-    const canonicalSessions = summary.activeSessions.toSorted((left, right) =>
+    const canonicalSessions = activeSessions.toSorted((left, right) =>
         left.sessionId.localeCompare(right.sessionId) ||
         left.generationVersion - right.generationVersion
     );
     const canonicalPrincipals = [...new Set(
-        summary.activeSessions.map((session) => session.principalId),
+        activeSessions.map((session) => session.principalId),
     )].toSorted();
-    if (summary.activePrincipalCount !== summary.activePrincipalIds.length ||
-        summary.activeSessionCount !== summary.activeSessionIds.length ||
-        summary.activeSessionCount !== summary.activeSessions.length ||
-        !jsonEquals(summary.activePrincipalIds, canonicalPrincipals) ||
-        !jsonEquals(summary.activeSessions, canonicalSessions) ||
-        !jsonEquals(summary.activeSessionIds,
-            summary.activeSessions.map((session) => session.sessionId))) {
+    if (value.activePrincipalCount !== value.activePrincipalIds.length ||
+        value.activeSessionCount !== value.activeSessionIds.length ||
+        value.activeSessionCount !== activeSessions.length ||
+        !jsonEquals(value.activePrincipalIds, canonicalPrincipals) ||
+        !jsonEquals(activeSessions, canonicalSessions) ||
+        !jsonEquals(value.activeSessionIds,
+            activeSessions.map((session) => session.sessionId))) {
         throw new TypeError('Stored presence summary facts are inconsistent');
     }
 }
@@ -1243,11 +1483,14 @@ export function validateGroupMutationIdempotencyRecord(
             'Stored group idempotency receipt command differs from request identity',
         );
     }
-    if (receipt.event.kind === 'group' &&
-        (receipt.event.event.requestId !== value.requestId ||
-            receipt.event.event.snapshotVersion !== receipt.snapshotVersion)) {
+    if (
+        receipt.requestId !== value.requestId ||
+        receipt.aggregateRef.applicationId !== ref.applicationId ||
+        receipt.aggregateRef.workspaceId !== ref.workspaceId ||
+        receipt.aggregateRef.groupId !== ref.groupId
+    ) {
         throw new TypeError(
-            'Stored group idempotency receipt event differs from request identity',
+            'Stored group idempotency receipt differs from request identity',
         );
     }
 }
@@ -1436,10 +1679,8 @@ function validateComputedWrite(
     if (computed.event.eventId !== facts.eventId ||
         computed.event.occurredAtEpochMs !== facts.nowEpochMs ||
         (computed.event.requestId ?? null) !== command.requestId ||
-        (computed.event.actor.principalId ?? null) !==
-            command.input.actorPrincipalId ||
-        (computed.event.actor.sessionId ?? null) !== command.input.actorSessionId ||
-        computed.event.actor.serviceId !== facts.serviceId) {
+        actorPrincipalId(computed.event.actor) !== command.input.actorPrincipalId ||
+        actorSessionId(computed.event.actor) !== command.input.actorSessionId) {
         throw new TypeError(
             'Group mutation computed event identity differs from command and facts',
         );
@@ -1531,11 +1772,11 @@ function validateComputedOutbox(
         'Group mutation computed outbox causal revision',
     );
     assertExactKeys(revision, [
-        'kind', 'stateRevision', 'snapshotVersion', 'metadataVersion',
+        'kind', 'stateRevision', 'causalRevision', 'snapshotVersion', 'metadataVersion',
         'rosterVersion', 'presenceVersion',
     ], 'Group mutation computed outbox causal revision');
     assertRequiredKeys(revision, [
-        'kind', 'stateRevision', 'snapshotVersion', 'metadataVersion',
+        'kind', 'stateRevision', 'causalRevision', 'snapshotVersion', 'metadataVersion',
         'rosterVersion', 'presenceVersion',
     ], 'Group mutation computed outbox causal revision');
     if (revision.kind !== 'group') {
@@ -1548,10 +1789,25 @@ function validateComputedOutbox(
         requireNonNegativeSafeInteger(revision[key],
             `Group mutation computed outbox ${key}`);
     }
+    const causalRevision = requireRecord(
+        revision.causalRevision,
+        'Group mutation computed outbox causal tuple',
+    );
+    assertExactKeys(causalRevision, [
+        'groupRevision',
+        'presenceRevision',
+    ], 'Group mutation computed outbox causal tuple');
+    for (const key of ['groupRevision', 'presenceRevision']) {
+        requireNonNegativeSafeInteger(
+            causalRevision[key],
+            `Group mutation computed outbox causal ${key}`,
+        );
+    }
     const group = computed.guard.kind === 'group'
         ? computed.guard.value
         : requireGroup(read, command.aggregateRef).value;
     if (revision.stateRevision !== computed.receipt.stateRevision ||
+        !jsonEquals(causalRevision, computed.receipt.causalRevision) ||
         revision.snapshotVersion !== group.snapshotVersion ||
         revision.presenceVersion !== computed.receipt.causalRevision.presenceRevision) {
         throw new TypeError('Group mutation computed outbox revision differs from receipt');
@@ -1636,7 +1892,7 @@ export function computeGroupPresenceSummary(input: Readonly<{
     }
     const summary: GroupPresenceSummary = {
         applicationId: ref.applicationId,
-        ...(ref.workspaceId === undefined ? {} : { workspaceId: ref.workspaceId }),
+        workspaceId: ref.workspaceId,
         groupId: ref.groupId,
         causalRevision: {
             groupRevision,
@@ -1710,7 +1966,7 @@ export function validateGroupPresenceSummary(input: Readonly<{
             'Group presence summary computed result');
         const expectedSummary: GroupPresenceSummary = {
             applicationId: ref.applicationId,
-            ...(ref.workspaceId === undefined ? {} : { workspaceId: ref.workspaceId }),
+            workspaceId: ref.workspaceId,
             groupId: ref.groupId,
             causalRevision: {
                 groupRevision,
@@ -1734,11 +1990,11 @@ export function validateGroupPresenceSummary(input: Readonly<{
             summary.causalRevision,
             read.current.value.causalRevision,
         );
-        if (computed.outcome === 'write' && comparison <= 0) {
+        if (computed.outcome === 'write' && comparison !== 'dominates') {
             throw new TypeError('Group presence summary write must advance its causal tuple');
         }
         if (
-            comparison === 0 &&
+            comparison === 'equal' &&
             !jsonEquals(summaryContent(summary), summaryContent(read.current.value))
         ) {
             throw new TypeError('Equal group presence summary tuple has different content');
@@ -1752,7 +2008,7 @@ function deriveGroupPresenceSummaryContent(
     nowEpochMs: number,
 ): ReturnType<typeof summaryContent> {
     const groupActive = read.group.value.status === 'active' &&
-        (read.group.value.expiresAtEpochMs === undefined ||
+        (read.group.value.expiresAtEpochMs === null ||
             read.group.value.expiresAtEpochMs > nowEpochMs);
     const activeMemberIds = new Set(read.members
         .map((stored) => stored.value)
@@ -1767,7 +2023,7 @@ function deriveGroupPresenceSummaryContent(
         ? read.presenceSessions.map(({ value }) => value).filter((session) =>
             activeMemberIds.has(session.principalId) &&
             admitted.has(admissionIdentity(session.principalId, session)) &&
-            session.disconnectedAtEpochMs === undefined &&
+            session.disconnectedAtEpochMs === null &&
             session.expiresAtEpochMs > nowEpochMs
         )
         : [])
@@ -1896,16 +2152,14 @@ function computeCreate(
     const audit = auditStamp(command, facts, command.input.createdByPrincipalId);
     const group: Group = {
         ...command.aggregateRef,
-        ...(command.input.slug === null ? {} : { slug: command.input.slug }),
+        slug: command.input.slug,
         displayName: command.input.displayName,
-        ...(command.input.description === null ? {} : { description: command.input.description }),
+        description: command.input.description,
         kind: command.input.kind,
         status: 'active',
         joinMode: command.input.joinMode,
-        ...(command.input.maxMembers === null ? {} : { maxMembers: command.input.maxMembers }),
-        ...(command.input.maxSessionsPerMember === null
-            ? {}
-            : { maxSessionsPerMember: command.input.maxSessionsPerMember }),
+        maxMembers: command.input.maxMembers,
+        maxSessionsPerMember: command.input.maxSessionsPerMember,
         metadata: cloneRecord(command.input.metadata),
         activeMemberCount: 1,
         ownerPrincipalId: command.input.createdByPrincipalId,
@@ -1915,12 +2169,11 @@ function computeCreate(
         presenceVersion: 0,
         created: audit,
         updated: audit,
-        ...(command.input.expiresAtEpochMs === null
-            ? {}
-            : { expiresAtEpochMs: command.input.expiresAtEpochMs }),
-        ...(command.input.purgeAfterEpochMs === null
-            ? {}
-            : { purgeAfterEpochMs: command.input.purgeAfterEpochMs }),
+        archived: null,
+        deleted: null,
+        expiresAtEpochMs: command.input.expiresAtEpochMs,
+        emptySinceEpochMs: null,
+        purgeAfterEpochMs: command.input.purgeAfterEpochMs,
     };
     const owner: GroupMember = {
         ...command.aggregateRef,
@@ -1929,6 +2182,11 @@ function computeCreate(
         status: 'active',
         joined: audit,
         updated: audit,
+        left: null,
+        removed: null,
+        banned: null,
+        invitedByPrincipalId: null,
+        invitationExpiresAtEpochMs: null,
     };
     const summary: GroupPresenceSummary = {
         ...command.aggregateRef,
@@ -1964,15 +2222,12 @@ function computeUpdate(
     const audit = auditStamp(command, facts, command.input.actorPrincipalId ?? undefined);
     const current = stored.value;
     const status = command.input.status ?? current.status;
-    const next: Group = withoutUndefined({
+    const next = transitionGroupLifecycle({
         ...current,
-        ...(command.input.slug === null ? {} : { slug: command.input.slug }),
+        slug: command.input.slug ?? current.slug,
         displayName: command.input.displayName ?? current.displayName,
-        ...(command.input.description === null
-            ? {}
-            : { description: command.input.description }),
+        description: command.input.description ?? current.description,
         kind: command.input.kind ?? current.kind,
-        status,
         joinMode: command.input.joinMode ?? current.joinMode,
         maxMembers: command.input.maxMembers ?? current.maxMembers,
         maxSessionsPerMember:
@@ -1983,13 +2238,11 @@ function computeUpdate(
         snapshotVersion: current.snapshotVersion + 1,
         metadataVersion: current.metadataVersion + 1,
         updated: audit,
-        ...(status === 'archived' ? { archived: audit } : {}),
-        ...(status === 'deleted' ? { deleted: audit } : {}),
         expiresAtEpochMs: command.input.expiresAtEpochMs ?? current.expiresAtEpochMs,
         emptySinceEpochMs: command.input.emptySinceEpochMs ?? current.emptySinceEpochMs,
         purgeAfterEpochMs: command.input.purgeAfterEpochMs ?? current.purgeAfterEpochMs,
-    });
-    if (next.maxMembers !== undefined && next.maxMembers < next.activeMemberCount) {
+    }, status, audit);
+    if (next.maxMembers !== null && next.maxMembers < next.activeMemberCount) {
         throw new GroupMutationRejectedError(
             'Group maxMembers cannot be lower than activeMemberCount.',
         );
@@ -2075,15 +2328,12 @@ function computeJoin(
         status: 'active',
         joined: existing?.joined ?? audit,
         updated: audit,
-        ...(existing?.left ? { left: existing.left } : {}),
-        ...(existing?.removed ? { removed: existing.removed } : {}),
-        ...(existing?.banned ? { banned: existing.banned } : {}),
-        ...(existing?.invitedByPrincipalId
-            ? { invitedByPrincipalId: existing.invitedByPrincipalId }
-            : {}),
-        ...(existing?.invitationExpiresAtEpochMs === undefined
-            ? {}
-            : { invitationExpiresAtEpochMs: existing.invitationExpiresAtEpochMs }),
+        left: null,
+        removed: null,
+        banned: null,
+        invitedByPrincipalId: existing?.invitedByPrincipalId ?? null,
+        invitationExpiresAtEpochMs:
+            existing?.invitationExpiresAtEpochMs ?? null,
     };
     return memberWrite(command, read, facts, [member], 'member-joined');
 }
@@ -2106,14 +2356,12 @@ function computeInvite(
         principalId: command.targetPrincipalId,
         role: existing?.role ?? 'member',
         status: 'invited',
-        joined: existing?.joined ?? audit,
+        joined: null,
         updated: audit,
-        ...(existing?.left ? { left: existing.left } : {}),
-        ...(existing?.removed ? { removed: existing.removed } : {}),
-        ...(existing?.banned ? { banned: existing.banned } : {}),
-        ...(command.input.actorPrincipalId
-            ? { invitedByPrincipalId: command.input.actorPrincipalId }
-            : {}),
+        left: null,
+        removed: null,
+        banned: null,
+        invitedByPrincipalId: command.input.actorPrincipalId,
         invitationExpiresAtEpochMs: command.input.invitationExpiresAtEpochMs ??
             facts.nowEpochMs + DEFAULT_GROUP_INVITE_TTL_MS,
     };
@@ -2130,12 +2378,10 @@ function computeRevokeInvite(
     const existing = findTargetMember(read);
     if (existing?.status !== 'invited') return noOp(command, read, facts);
     const audit = auditStamp(command, facts, command.input.actorPrincipalId ?? undefined);
-    return memberWrite(command, read, facts, [{
+    return memberWrite(command, read, facts, [transitionMemberLifecycle({
         ...existing,
-        status: 'left',
         updated: audit,
-        left: audit,
-    }], 'member-left');
+    }, 'left', audit)], 'member-left');
 }
 
 function computeRotateJoinCode(
@@ -2205,8 +2451,13 @@ function computeGovernedMember(
         principalId: command.targetPrincipalId,
         role: 'member',
         status: 'left',
-        joined: audit,
+        joined: null,
         updated: audit,
+        left: audit,
+        removed: null,
+        banned: null,
+        invitedByPrincipalId: null,
+        invitationExpiresAtEpochMs: null,
     };
     const status = command.operation === 'banGroupMember'
         ? 'banned'
@@ -2231,15 +2482,11 @@ function computeGovernedMember(
     }
     if (base.status === status && base.role === role) return noOp(command, read, facts);
     assertNotLastOwner(requireGroup(read, command.aggregateRef).value, base, status, role);
-    const member: GroupMember = {
+    const member = transitionMemberLifecycle({
         ...base,
         role,
-        status,
         updated: audit,
-        ...(status === 'left' ? { left: audit } : {}),
-        ...(status === 'removed' ? { removed: audit } : {}),
-        ...(status === 'banned' ? { banned: audit } : {}),
-    };
+    }, status, audit);
     const eventType: GroupEventType = command.operation === 'banGroupMember'
         ? 'member-banned'
         : command.operation === 'unbanGroupMember'
@@ -2326,33 +2573,21 @@ function computeUpsertMember(
     const existing = findTargetMember(read);
     const audit = auditStamp(command, facts,
         command.input.actorPrincipalId ?? command.targetPrincipalId);
-    const member: GroupMember = {
+    const member = transitionMemberLifecycle({
         ...command.aggregateRef,
         principalId: command.targetPrincipalId,
         role: command.input.role ?? existing?.role ?? 'member',
-        status: command.input.status,
         joined: existing?.joined ?? audit,
         updated: audit,
-        ...(command.input.status === 'left' ? { left: audit } : existing?.left
-            ? { left: existing.left }
-            : {}),
-        ...(command.input.status === 'removed' ? { removed: audit } : existing?.removed
-            ? { removed: existing.removed }
-            : {}),
-        ...(command.input.status === 'banned' ? { banned: audit } : existing?.banned
-            ? { banned: existing.banned }
-            : {}),
-        ...(command.input.invitedByPrincipalId
-            ? { invitedByPrincipalId: command.input.invitedByPrincipalId }
-            : existing?.invitedByPrincipalId
-            ? { invitedByPrincipalId: existing.invitedByPrincipalId }
-            : {}),
-        ...(command.input.invitationExpiresAtEpochMs !== null
-            ? { invitationExpiresAtEpochMs: command.input.invitationExpiresAtEpochMs }
-            : existing?.invitationExpiresAtEpochMs !== undefined
-            ? { invitationExpiresAtEpochMs: existing.invitationExpiresAtEpochMs }
-            : {}),
-    };
+        left: existing?.left ?? null,
+        removed: existing?.removed ?? null,
+        banned: existing?.banned ?? null,
+        invitedByPrincipalId:
+            command.input.invitedByPrincipalId ?? existing?.invitedByPrincipalId ?? null,
+        invitationExpiresAtEpochMs:
+            command.input.invitationExpiresAtEpochMs ??
+            existing?.invitationExpiresAtEpochMs ?? null,
+    }, command.input.status, audit);
     if (existing && jsonEquals(existing, member)) return noOp(command, read, facts);
     assertNotLastOwner(requireGroup(read, command.aggregateRef).value,
         existing, member.status, member.role);
@@ -2403,7 +2638,7 @@ function computeConnectPresence(
         ] as const;
         const order = compareGenerationOrder(incomingOrder, currentOrder);
         if (order < 0) return noOp(command, read, facts);
-        if (order === 0 && existing.value.disconnectedAtEpochMs !== undefined) {
+        if (order === 0 && existing.value.disconnectedAtEpochMs !== null) {
             return noOp(command, read, facts);
         }
         if (
@@ -2442,6 +2677,9 @@ function computeConnectPresence(
         expiresAtEpochMs: sameGeneration
             ? Math.max(existing.value.expiresAtEpochMs, expiresAt)
             : expiresAt,
+        status: 'active',
+        disconnectedAtEpochMs: null,
+        disconnectReason: null,
     };
     if (existing && jsonEquals(existing.value, session)) return noOp(command, read, facts);
     const admission = admissionForConnect(command, read, session, facts);
@@ -2461,7 +2699,7 @@ function computeHeartbeatPresence(
     assertPresenceAuthority(command, existing.value.principalId, facts);
     if (
         existing.value.generationId !== command.input.generationId ||
-        existing.value.disconnectedAtEpochMs !== undefined
+        existing.value.disconnectedAtEpochMs !== null
     ) return noOp(command, read, facts);
     if (!isExactlyAdmitted(read.targetAdmission?.value, existing.value)) {
         return noOp(command, read, facts);
@@ -2508,7 +2746,7 @@ function computeDisconnectPresence(
             existing.value.generationVersion !== command.input.generationVersion) ||
         (command.input.observedExpiresAtEpochMs !== null &&
             existing.value.expiresAtEpochMs !== command.input.observedExpiresAtEpochMs) ||
-        existing.value.disconnectedAtEpochMs !== undefined
+        existing.value.disconnectedAtEpochMs !== null
     ) return noOp(command, read, facts);
     const disconnectedAt = command.input.disconnectedAtEpochMs ?? facts.nowEpochMs;
     if (disconnectedAt < existing.value.lastHeartbeatAtEpochMs) {
@@ -2527,6 +2765,7 @@ function computeDisconnectPresence(
     }
     const session: GroupPresenceSession = {
         ...existing.value,
+        status: 'disconnected',
         disconnectedAtEpochMs: disconnectedAt,
         disconnectReason: command.input.reason ?? 'closed',
     };
@@ -2681,12 +2920,43 @@ function writeResult(
         : requireGroup(read, command.aggregateRef).entry.revision + 1;
     const presenceRevision = read.presenceSummary?.value.causalRevision.presenceRevision ?? 0;
     const causalRevision = { groupRevision, presenceRevision };
-    const event = newGroupEvent(input.eventType, group, command, facts);
+    const event = newGroupEvent(
+        input.eventType,
+        group,
+        causalRevision,
+        command,
+        facts,
+    );
+    const outbox: GroupMutationOutboxCandidate = {
+        kind: 'group',
+        aggregateRef: command.aggregateRef,
+        commandId: command.commandId,
+        commandHash: facts.commandHash,
+        createdAtEpochMs: facts.nowEpochMs,
+        acceptedCausalRevision: {
+            kind: 'group',
+            stateRevision: toGroupSnapshotStateRevision(
+                causalRevision.groupRevision,
+                causalRevision.presenceRevision,
+            ),
+            causalRevision,
+            snapshotVersion: group.snapshotVersion,
+            metadataVersion: group.metadataVersion,
+            rosterVersion: group.rosterVersion,
+            presenceVersion: causalRevision.presenceRevision,
+        },
+        effects: ['group-state-sync', 'group-presence-summary'],
+        event: { kind: 'group', event },
+    };
     const receipt = receiptFor(command, facts, {
         outcome: 'applied',
         causalRevision,
         snapshotVersion: group.snapshotVersion,
-        event: { kind: 'group', event },
+        acceptedStorageRevision: input.guard.operation === 'insert'
+            ? 0
+            : input.guard.expectedRevision + 1,
+        eventId: event.eventId,
+        outboxIds: [toStateMutationOutboxId(outbox)],
         rejection: null,
     });
     const idempotency = command.requestId === null ? null : {
@@ -2704,26 +2974,7 @@ function writeResult(
         event,
         receipt,
         idempotency,
-        outbox: {
-            kind: 'group',
-            aggregateRef: command.aggregateRef,
-            commandId: command.commandId,
-            commandHash: facts.commandHash,
-            createdAtEpochMs: facts.nowEpochMs,
-            acceptedCausalRevision: {
-                kind: 'group',
-                stateRevision: toGroupSnapshotStateRevision(
-                    causalRevision.groupRevision,
-                    causalRevision.presenceRevision,
-                ),
-                snapshotVersion: group.snapshotVersion,
-                metadataVersion: group.metadataVersion,
-                rosterVersion: group.rosterVersion,
-                presenceVersion: causalRevision.presenceRevision,
-            },
-            effects: ['group-state-sync', 'group-presence-summary'],
-            event: { kind: 'group', event },
-        },
+        outbox,
     };
 }
 
@@ -2740,7 +2991,9 @@ function noOp(
             outcome: 'no-op',
             causalRevision,
             snapshotVersion: stored.value.snapshotVersion,
-            event: { kind: 'none' },
+            acceptedStorageRevision: stored.entry.revision,
+            eventId: null,
+            outboxIds: [],
             rejection: null,
         }),
     };
@@ -2759,7 +3012,9 @@ function rejected(
             outcome: 'rejected',
             causalRevision,
             snapshotVersion: read.group?.value.snapshotVersion ?? 0,
-            event: { kind: 'none' },
+            acceptedStorageRevision: read.group?.entry.revision ?? null,
+            eventId: null,
+            outboxIds: [],
             rejection: message,
         }),
     };
@@ -2772,7 +3027,9 @@ function receiptFor(
         outcome: GroupMutationReceipt['outcome'];
         causalRevision: GroupStateCausalRevision;
         snapshotVersion: number;
-        event: GroupMutationReceipt['event'];
+        acceptedStorageRevision: number | null;
+        eventId: string | null;
+        outboxIds: readonly string[];
         rejection: string | null;
     }>,
 ): GroupMutationReceipt {
@@ -2781,15 +3038,20 @@ function receiptFor(
         : null;
     return {
         commandId: command.commandId,
+        requestId: command.requestId,
         commandHash: facts.commandHash,
+        aggregateRef: command.aggregateRef,
         outcome: input.outcome,
+        attemptCount: facts.attemptCount,
+        acceptedStorageRevision: input.acceptedStorageRevision,
         stateRevision: toGroupSnapshotStateRevision(
             input.causalRevision.groupRevision,
             input.causalRevision.presenceRevision,
         ),
         snapshotVersion: input.snapshotVersion,
         causalRevision: input.causalRevision,
-        event: input.event,
+        eventId: input.eventId,
+        outboxIds: input.outboxIds,
         joinCode: joinCode?.joinCode ?? null,
         joinCodeExpiresAtEpochMs: joinCode?.expiresAtEpochMs ?? null,
         rejection: input.rejection,
@@ -2804,7 +3066,11 @@ function currentCausalRevision(read: GroupMutationRead): GroupStateCausalRevisio
 }
 
 function toPolicySnapshot(read: GroupMutationRead, nowEpochMs: number): GroupSnapshot {
-    const stored = requireGroup(read, { applicationId: '', groupId: '' });
+    const stored = requireGroup(read, {
+        applicationId: '',
+        workspaceId: '',
+        groupId: '',
+    });
     const members = [
         read.actorMember,
         read.targetMember,
@@ -2818,13 +3084,13 @@ function toPolicySnapshot(read: GroupMutationRead, nowEpochMs: number): GroupSna
             ) === index
         );
     const targetSessions = read.targetPresence &&
-        read.targetPresence.value.disconnectedAtEpochMs === undefined &&
+        read.targetPresence.value.disconnectedAtEpochMs === null &&
         read.targetPresence.value.expiresAtEpochMs > nowEpochMs &&
         isExactlyAdmitted(read.targetAdmission?.value, read.targetPresence.value)
         ? [read.targetPresence.value]
         : [];
     const authoritySessions = read.authorityPresenceSessions.filter((session) =>
-        session.disconnectedAtEpochMs === undefined &&
+        session.disconnectedAtEpochMs === null &&
         session.expiresAtEpochMs > nowEpochMs &&
         (
             isExactlyAdmitted(read.authorityAdmission?.value, session) ||
@@ -2966,7 +3232,7 @@ function admissionForConnect(
         connectedAtEpochMs: session.connectedAtEpochMs,
     }].toSorted((left, right) => left.sessionId.localeCompare(right.sessionId));
     const cap = requireGroup(read, command.aggregateRef).value.maxSessionsPerMember;
-    if (cap !== undefined && admittedSessions.length > cap) {
+    if (cap !== null && admittedSessions.length > cap) {
         throw new GroupPolicyDeniedError({
             allowed: false,
             code: 'member-session-limit-reached',
@@ -3050,7 +3316,7 @@ function commandRefForAdmission(
 ): GroupRef & Readonly<{ principalId: string }> {
     return {
         applicationId: member.applicationId,
-        ...(member.workspaceId === undefined ? {} : { workspaceId: member.workspaceId }),
+        workspaceId: member.workspaceId,
         groupId: member.groupId,
         principalId: member.principalId,
     };
@@ -3069,33 +3335,33 @@ function isExactlyAdmitted(
 }
 
 function validatePresenceAdmission(
-    admission: GroupPresenceAdmission,
+    admission: unknown,
     ref?: GroupRef,
-): void {
+): asserts admission is GroupPresenceAdmission {
     const value = requireRecord(admission, 'Presence admission');
     assertExactKeys(value, [
         'applicationId', 'workspaceId', 'groupId', 'principalId',
         'admittedSessions', 'updatedAtEpochMs',
     ], 'Presence admission');
     assertRequiredKeys(value, [
-        'applicationId', 'groupId', 'principalId', 'admittedSessions',
+        'applicationId', 'workspaceId', 'groupId', 'principalId', 'admittedSessions',
         'updatedAtEpochMs',
     ], 'Presence admission');
-    if (ref) validateScopedValue(admission, ref, 'Presence admission');
-    requireNonEmptyString(admission.principalId, 'Presence admission principalId');
-    requirePositiveSafeInteger(admission.updatedAtEpochMs,
+    if (ref) validateScopedRecord(value, ref, 'Presence admission');
+    requireNonEmptyString(value.principalId, 'Presence admission principalId');
+    requirePositiveSafeInteger(value.updatedAtEpochMs,
         'Presence admission updatedAtEpochMs');
-    if (!Array.isArray(admission.admittedSessions)) {
+    if (!Array.isArray(value.admittedSessions)) {
         throw new TypeError('Presence admission sessions must be an array');
     }
-    const canonical = admission.admittedSessions.toSorted((left, right) =>
-        left.sessionId.localeCompare(right.sessionId)
-    );
-    if (!jsonEquals(canonical, admission.admittedSessions)) {
-        throw new TypeError('Presence admission sessions must be canonically sorted');
-    }
+    const sessionIdentities: Array<Readonly<{
+        sessionId: string;
+        generationId: string;
+        generationVersion: number;
+        connectedAtEpochMs: number;
+    }>> = [];
     const sessionIds = new Set<string>();
-    for (const session of admission.admittedSessions) {
+    for (const session of value.admittedSessions) {
         const sessionValue = requireRecord(session, 'Presence admission session');
         assertExactKeys(sessionValue, [
             'sessionId', 'generationId', 'generationVersion', 'connectedAtEpochMs',
@@ -3103,19 +3369,31 @@ function validatePresenceAdmission(
         assertRequiredKeys(sessionValue, [
             'sessionId', 'generationId', 'generationVersion', 'connectedAtEpochMs',
         ], 'Presence admission session');
-        requireNonEmptyString(session.sessionId, 'Presence admission sessionId');
-        requireNonEmptyString(session.generationId, 'Presence admission generationId');
-        requirePositiveSafeInteger(session.generationVersion,
+        requireNonEmptyString(sessionValue.sessionId, 'Presence admission sessionId');
+        requireNonEmptyString(sessionValue.generationId, 'Presence admission generationId');
+        requirePositiveSafeInteger(sessionValue.generationVersion,
             'Presence admission generationVersion');
-        requirePositiveSafeInteger(session.connectedAtEpochMs,
+        requirePositiveSafeInteger(sessionValue.connectedAtEpochMs,
             'Presence admission connectedAtEpochMs');
-        if (session.generationVersion !== session.connectedAtEpochMs) {
+        if (sessionValue.generationVersion !== sessionValue.connectedAtEpochMs) {
             throw new TypeError('Presence admission generation version is ambiguous');
         }
-        if (sessionIds.has(session.sessionId)) {
+        if (sessionIds.has(sessionValue.sessionId)) {
             throw new TypeError('Presence admission sessionId must be unique');
         }
-        sessionIds.add(session.sessionId);
+        sessionIds.add(sessionValue.sessionId);
+        sessionIdentities.push({
+            sessionId: sessionValue.sessionId,
+            generationId: sessionValue.generationId,
+            generationVersion: sessionValue.generationVersion,
+            connectedAtEpochMs: sessionValue.connectedAtEpochMs,
+        });
+    }
+    const canonical = sessionIdentities.toSorted((left, right) =>
+        left.sessionId.localeCompare(right.sessionId)
+    );
+    if (!jsonEquals(canonical, sessionIdentities)) {
+        throw new TypeError('Presence admission sessions must be canonically sorted');
     }
 }
 
@@ -3132,11 +3410,21 @@ function admissionIdentity(
 }
 
 function validateStoredGeneration(session: GroupPresenceSession): void {
-    requirePositiveSafeInteger(session.connectedAtEpochMs,
+    validateStoredGenerationValues(
+        session.connectedAtEpochMs,
+        session.generationVersion,
+    );
+}
+
+function validateStoredGenerationValues(
+    connectedAtEpochMs: unknown,
+    generationVersion: unknown,
+): void {
+    requirePositiveSafeInteger(connectedAtEpochMs,
         'Stored presence connectedAtEpochMs');
-    requirePositiveSafeInteger(session.generationVersion,
+    requirePositiveSafeInteger(generationVersion,
         'Stored presence generationVersion');
-    if (session.generationVersion !== session.connectedAtEpochMs) {
+    if (generationVersion !== connectedAtEpochMs) {
         throw new TypeError('Stored presence generation order is ambiguous');
     }
 }
@@ -3184,45 +3472,127 @@ function auditStamp(
 ): AuditStamp {
     return {
         atEpochMs: facts.nowEpochMs,
-        ...(command.input.actorPrincipalId ?? fallbackPrincipalId
-            ? { byPrincipalId: command.input.actorPrincipalId ?? fallbackPrincipalId }
-            : {}),
-        ...(command.input.actorSessionId
-            ? { bySessionId: command.input.actorSessionId }
-            : {}),
-        byServiceId: facts.serviceId,
-        ...(command.input.reason ? { reason: command.input.reason } : {}),
-        ...(command.input.traceId ? { traceId: command.input.traceId } : {}),
-        ...(command.requestId ? { requestId: command.requestId } : {}),
+        actor: mutationActor(command, facts, fallbackPrincipalId),
+        reason: command.input.reason,
+        traceId: command.input.traceId,
+        requestId: command.requestId,
     };
+}
+
+function mutationActor(
+    command: GroupMutationCommand,
+    facts: GroupMutationFacts,
+    fallbackPrincipalId?: string,
+): MutationActor {
+    const principalId = command.input.actorPrincipalId ?? fallbackPrincipalId;
+    if (command.input.actorSessionId !== null) {
+        if (!principalId) {
+            throw new GroupMutationRejectedError(
+                'A session actor requires a principal identity.',
+            );
+        }
+        return {
+            kind: 'session',
+            sessionId: command.input.actorSessionId,
+            principalId,
+        };
+    }
+    if (principalId) return { kind: 'principal', principalId };
+    return { kind: 'service', serviceId: facts.serviceId };
+}
+
+function actorPrincipalId(actor: MutationActor): string | null {
+    return actor.kind === 'service' ? null : actor.principalId;
+}
+
+function actorSessionId(actor: MutationActor): string | null {
+    return actor.kind === 'session' ? actor.sessionId : null;
+}
+
+function transitionGroupLifecycle(
+    group: Group,
+    status: GroupStatus,
+    audit: AuditStamp,
+): Group {
+    if (status === 'active') {
+        return { ...group, status, archived: null, deleted: null };
+    }
+    if (status === 'archived') {
+        return {
+            ...group,
+            status,
+            archived: group.archived ?? audit,
+            deleted: null,
+        };
+    }
+    return {
+        ...group,
+        status,
+        archived: group.archived,
+        deleted: group.deleted ?? audit,
+    };
+}
+
+function transitionMemberLifecycle(
+    member: Omit<GroupMember, 'status' | 'left' | 'removed' | 'banned'> &
+        Readonly<{
+            left: AuditStamp | null;
+            removed: AuditStamp | null;
+            banned: AuditStamp | null;
+        }>,
+    status: GroupMemberStatus,
+    audit: AuditStamp,
+): GroupMember {
+    if (status === 'invited') {
+        return {
+            ...member,
+            status,
+            joined: null,
+            left: null,
+            removed: null,
+            banned: null,
+        };
+    }
+    if (status === 'active') {
+        return {
+            ...member,
+            status,
+            joined: member.joined ?? audit,
+            left: null,
+            removed: null,
+            banned: null,
+        };
+    }
+    if (status === 'left') {
+        return { ...member, status, left: audit, removed: null, banned: null };
+    }
+    if (status === 'removed') {
+        return { ...member, status, left: null, removed: audit, banned: null };
+    }
+    return { ...member, status, left: null, removed: null, banned: audit };
 }
 
 function newGroupEvent(
     eventType: GroupEventType,
     group: Group,
+    causalRevision: GroupStateCausalRevision,
     command: GroupMutationCommand,
     facts: GroupMutationFacts,
 ): GroupEvent {
     return {
         applicationId: group.applicationId,
-        ...(group.workspaceId ? { workspaceId: group.workspaceId } : {}),
+        workspaceId: group.workspaceId,
         groupId: group.groupId,
         eventId: facts.eventId,
         eventType,
         snapshotVersion: group.snapshotVersion,
+        causalRevision,
         occurredAtEpochMs: facts.nowEpochMs,
-        actor: {
-            ...(command.input.actorPrincipalId
-                ? { principalId: command.input.actorPrincipalId }
-                : {}),
-            ...(command.input.actorSessionId
-                ? { sessionId: command.input.actorSessionId }
-                : {}),
-            serviceId: facts.serviceId,
-        },
-        ...(command.input.reason ? { reason: command.input.reason } : {}),
-        ...(command.input.traceId ? { traceId: command.input.traceId } : {}),
-        ...(command.requestId ? { requestId: command.requestId } : {}),
+        actor: mutationActor(command, facts),
+        reason: command.input.reason,
+        traceId: command.input.traceId,
+        requestId: command.requestId,
+        payload: {},
     };
 }
 
@@ -3295,29 +3665,19 @@ function summaryContent(summary: GroupPresenceSummary): Readonly<{
     };
 }
 
-export function compareGroupCausalRevision(
-    left: GroupStateCausalRevision,
-    right: GroupStateCausalRevision,
-): -1 | 0 | 1 {
-    const leftAtLeast = left.groupRevision >= right.groupRevision &&
-        left.presenceRevision >= right.presenceRevision;
-    const rightAtLeast = right.groupRevision >= left.groupRevision &&
-        right.presenceRevision >= left.presenceRevision;
-    if (leftAtLeast && rightAtLeast) return 0;
-    if (leftAtLeast) return 1;
-    if (rightAtLeast) return -1;
-    throw new TypeError('Group causal revisions are incomparable');
-}
+export { compareGroupCausalRevision };
 
 function validateFacts(facts: GroupMutationFacts): void {
     requireJsonSafe(facts, 'Group mutation facts');
     assertExactKeys(facts as unknown as Record<string, unknown>, [
         'nowEpochMs', 'serviceId', 'eventId', 'commandHash', 'resolvedJoinCode',
         'joinCodeVerifier', 'internalAuthority', 'authenticatedAuthority',
+        'attemptCount',
     ], 'Group mutation facts');
     if (!Number.isSafeInteger(facts.nowEpochMs) || facts.nowEpochMs < 0) {
         throw new TypeError('Group mutation timestamp is invalid');
     }
+    requirePositiveSafeInteger(facts.attemptCount, 'Group mutation attemptCount');
     requireNonEmptyString(facts.serviceId, 'Group mutation serviceId');
     requireNonEmptyString(facts.eventId, 'Group mutation eventId');
     if (!/^sha256:[0-9a-f]{64}$/.test(facts.commandHash)) {
@@ -3443,22 +3803,127 @@ function validateScopedValue(
     }
 }
 
-function validateAuditStamp(value: unknown, label: string): void {
-    const audit = requireRecord(value, label);
-    assertExactKeys(audit, [
-        'atEpochMs', 'byPrincipalId', 'bySessionId', 'byServiceId', 'reason',
-        'traceId', 'requestId',
-    ], label);
-    assertRequiredKeys(audit, ['atEpochMs'], label);
-    requireNonNegativeSafeInteger(audit.atEpochMs, `${label} atEpochMs`);
-    for (const key of [
-        'byPrincipalId', 'bySessionId', 'byServiceId', 'reason', 'traceId', 'requestId',
-    ]) {
-        optionalNonEmptyString(audit[key], `${label} ${key}`);
+function validateScopedRecord(
+    value: Readonly<Record<string, unknown>>,
+    ref: GroupRef,
+    label: string,
+): void {
+    requireNonEmptyString(value.applicationId, `${label} applicationId`);
+    requireNonEmptyString(value.workspaceId, `${label} workspaceId`);
+    requireNonEmptyString(value.groupId, `${label} groupId`);
+    if (
+        value.applicationId !== ref.applicationId ||
+        value.workspaceId !== ref.workspaceId ||
+        value.groupId !== ref.groupId
+    ) {
+        throw new TypeError(`${label} scope differs from mutation group`);
     }
 }
 
-function validateCausalRevision(value: unknown, label: string): void {
+function persistedOrDefault(
+    value: Readonly<Record<string, unknown>>,
+    key: string,
+    fallback: unknown,
+): unknown {
+    return Object.hasOwn(value, key) ? value[key] : fallback;
+}
+
+function normalizeOptionalPersistedGroupAudit(
+    value: Readonly<Record<string, unknown>>,
+    key: string,
+    label: string,
+): AuditStamp | null {
+    return Object.hasOwn(value, key)
+        ? normalizeNullablePersistedGroupAudit(value[key], label)
+        : null;
+}
+
+function normalizeNullablePersistedGroupAudit(
+    value: unknown,
+    label: string,
+): AuditStamp | null {
+    return value === null ? null : normalizePersistedGroupAudit(value, label);
+}
+
+function normalizePersistedGroupAudit(value: unknown, label: string): AuditStamp {
+    const legacy = requireRecord(value, label);
+    assertExactKeys(legacy, [
+        'atEpochMs', 'actor', 'byPrincipalId', 'bySessionId', 'byServiceId',
+        'reason', 'traceId', 'requestId',
+    ], label);
+    const canonical: unknown = {
+        atEpochMs: legacy.atEpochMs,
+        actor: Object.hasOwn(legacy, 'actor')
+            ? legacy.actor
+            : normalizePersistedGroupActor(legacy, `${label} actor`),
+        reason: persistedOrDefault(legacy, 'reason', null),
+        traceId: persistedOrDefault(legacy, 'traceId', null),
+        requestId: persistedOrDefault(legacy, 'requestId', null),
+    };
+    validateAuditStamp(canonical, label);
+    return canonical;
+}
+
+function normalizePersistedGroupActor(
+    legacy: Readonly<Record<string, unknown>>,
+    label: string,
+): MutationActor {
+    let canonical: unknown;
+    if (Object.hasOwn(legacy, 'bySessionId')) {
+        canonical = {
+            kind: 'session',
+            sessionId: legacy.bySessionId,
+            principalId: legacy.byPrincipalId,
+        };
+    } else if (Object.hasOwn(legacy, 'byPrincipalId')) {
+        canonical = { kind: 'principal', principalId: legacy.byPrincipalId };
+    } else {
+        canonical = { kind: 'service', serviceId: legacy.byServiceId };
+    }
+    validateMutationActor(canonical, label);
+    return canonical;
+}
+
+function validateAuditStamp(
+    value: unknown,
+    label: string,
+): asserts value is AuditStamp {
+    const audit = requireRecord(value, label);
+    assertExactKeys(audit, [
+        'atEpochMs', 'actor', 'reason', 'traceId', 'requestId',
+    ], label);
+    assertRequiredKeys(audit, [
+        'atEpochMs', 'actor', 'reason', 'traceId', 'requestId',
+    ], label);
+    requireNonNegativeSafeInteger(audit.atEpochMs, `${label} atEpochMs`);
+    validateMutationActor(audit.actor, `${label} actor`);
+    nullableNonEmptyString(audit.reason, `${label} reason`);
+    nullableNonEmptyString(audit.traceId, `${label} traceId`);
+    nullableNonEmptyString(audit.requestId, `${label} requestId`);
+}
+
+function validateMutationActor(
+    value: unknown,
+    label: string,
+): asserts value is MutationActor {
+    const actor = requireRecord(value, label);
+    requireOneOf(actor.kind, ['principal', 'session', 'service'], `${label} kind`);
+    const keys = actor.kind === 'principal'
+        ? ['kind', 'principalId']
+        : actor.kind === 'session'
+        ? ['kind', 'sessionId', 'principalId']
+        : ['kind', 'serviceId'];
+    assertExactKeys(actor, keys, label);
+    assertRequiredKeys(actor, keys, label);
+    for (const key of keys.filter((key) => key !== 'kind')) {
+        requireNonEmptyString(actor[key], `${label} ${key}`);
+    }
+}
+
+function validateCausalRevision(
+    value: unknown,
+    label: string,
+): asserts value is GroupStateCausalRevision {
     const revision = requireRecord(value, `${label} causalRevision`);
     assertExactKeys(revision, ['groupRevision', 'presenceRevision'],
         `${label} causalRevision`);
@@ -3477,40 +3942,50 @@ function validateMutationReceipt(
 ): void {
     const receipt = requireRecord(value, label);
     assertExactKeys(receipt, [
-        'commandId', 'commandHash', 'outcome', 'stateRevision', 'snapshotVersion',
-        'causalRevision', 'event', 'joinCode', 'joinCodeExpiresAtEpochMs',
-        'rejection',
+        'commandId', 'requestId', 'commandHash', 'aggregateRef', 'outcome',
+        'attemptCount', 'acceptedStorageRevision', 'stateRevision',
+        'snapshotVersion', 'causalRevision', 'eventId', 'outboxIds', 'joinCode',
+        'joinCodeExpiresAtEpochMs', 'rejection',
     ], label);
     assertRequiredKeys(receipt, [
-        'commandId', 'commandHash', 'outcome', 'stateRevision', 'snapshotVersion',
-        'causalRevision', 'event', 'joinCode', 'joinCodeExpiresAtEpochMs',
-        'rejection',
+        'commandId', 'requestId', 'commandHash', 'aggregateRef', 'outcome',
+        'attemptCount', 'acceptedStorageRevision', 'stateRevision',
+        'snapshotVersion', 'causalRevision', 'eventId', 'outboxIds', 'joinCode',
+        'joinCodeExpiresAtEpochMs', 'rejection',
     ], label);
     requireNonEmptyString(receipt.commandId, `${label} commandId`);
+    nullableNonEmptyString(receipt.requestId, `${label} requestId`);
     validateCommandHash(receipt.commandHash, `${label} commandHash`);
+    const aggregateRef = receipt.aggregateRef;
+    validateGroupRef(aggregateRef);
+    validateScopedValue(aggregateRef, ref, `${label} aggregateRef`);
     requireOneOf(receipt.outcome, ['applied', 'no-op', 'rejected'],
         `${label} outcome`);
+    requirePositiveSafeInteger(receipt.attemptCount, `${label} attemptCount`);
+    if (receipt.acceptedStorageRevision !== null) {
+        requireNonNegativeSafeInteger(
+            receipt.acceptedStorageRevision,
+            `${label} acceptedStorageRevision`,
+        );
+    }
     requireNonNegativeSafeInteger(receipt.stateRevision, `${label} stateRevision`);
     requireNonNegativeSafeInteger(receipt.snapshotVersion, `${label} snapshotVersion`);
-    validateCausalRevision(receipt.causalRevision, label);
-    const causalRevision = receipt.causalRevision as GroupStateCausalRevision;
+    const causalRevision = receipt.causalRevision;
+    validateCausalRevision(causalRevision, label);
     if (receipt.stateRevision !== toGroupSnapshotStateRevision(
         causalRevision.groupRevision,
         causalRevision.presenceRevision,
     )) {
         throw new TypeError(`${label} stateRevision differs from causalRevision`);
     }
-    const event = requireRecord(receipt.event, `${label} event`);
-    requireOneOf(event.kind, ['none', 'group'], `${label} event kind`);
-    if (event.kind === 'none') {
-        assertExactKeys(event, ['kind'], `${label} event`);
-        assertRequiredKeys(event, ['kind'], `${label} event`);
-    } else {
-        assertExactKeys(event, ['kind', 'event'], `${label} event`);
-        assertRequiredKeys(event, ['kind', 'event'], `${label} event`);
-        validateGroupEvent(event.event, ref, `${label} event`);
+    nullableNonEmptyString(receipt.eventId, `${label} eventId`);
+    if (!Array.isArray(receipt.outboxIds)) {
+        throw new TypeError(`${label} outboxIds is invalid`);
     }
-    if ((receipt.outcome === 'applied') !== (event.kind === 'group')) {
+    for (const outboxId of receipt.outboxIds) {
+        requireNonEmptyString(outboxId, `${label} outboxId`);
+    }
+    if ((receipt.outcome === 'applied') !== (receipt.eventId !== null)) {
         throw new TypeError(`${label} event differs from outcome`);
     }
     if (receipt.joinCode !== null) {
@@ -3531,60 +4006,18 @@ function validateMutationReceipt(
     }
 }
 
-export function validatePersistedGroupEvent(
-    value: unknown,
-    ref: GroupRef,
-): asserts value is GroupEvent {
-    validateGroupEvent(value, ref, 'Stored group event');
-}
-
-function validateGroupEvent(value: unknown, ref: GroupRef, label: string): void {
-    const event = requireRecord(value, label);
-    assertExactKeys(event, [
-        'applicationId', 'workspaceId', 'groupId', 'eventId', 'eventType',
-        'snapshotVersion', 'occurredAtEpochMs', 'actor', 'reason', 'traceId',
-        'requestId', 'payload',
-    ], label);
-    assertRequiredKeys(event, [
-        'applicationId', 'groupId', 'eventId', 'eventType', 'snapshotVersion',
-        'occurredAtEpochMs', 'actor',
-    ], label);
-    validateScopedValue(event as unknown as GroupRef, ref, label);
-    requireNonEmptyString(event.eventId, `${label} eventId`);
-    requireOneOf(event.eventType, [
-        'group-created', 'group-updated', 'group-archived', 'group-deleted',
-        'member-invited', 'member-joined', 'member-left', 'member-removed',
-        'member-banned', 'member-unbanned', 'member-role-changed',
-        'ownership-transferred', 'session-connected', 'session-heartbeat',
-        'session-disconnected',
-    ], `${label} eventType`);
-    requireNonNegativeSafeInteger(event.snapshotVersion, `${label} snapshotVersion`);
-    requireNonNegativeSafeInteger(event.occurredAtEpochMs, `${label} occurredAtEpochMs`);
-    const actor = requireRecord(event.actor, `${label} actor`);
-    assertExactKeys(actor, ['principalId', 'sessionId', 'serviceId'], `${label} actor`);
-    for (const key of ['principalId', 'sessionId', 'serviceId']) {
-        optionalNonEmptyString(actor[key], `${label} actor ${key}`);
-    }
-    optionalNonEmptyString(event.reason, `${label} reason`);
-    optionalNonEmptyString(event.traceId, `${label} traceId`);
-    optionalNonEmptyString(event.requestId, `${label} requestId`);
-    if (event.payload !== undefined) requireRecord(event.payload, `${label} payload`);
-}
-
 function validateCommandHash(value: unknown, label: string): void {
     if (typeof value !== 'string' || !/^sha256:[0-9a-f]{64}$/.test(value)) {
         throw new TypeError(`${label} is invalid`);
     }
 }
 
-function validateGroupRef(value: unknown): void {
+function validateGroupRef(value: unknown): asserts value is GroupRef {
     const ref = requireRecord(value, 'Group mutation aggregateRef');
     assertExactKeys(ref, ['applicationId', 'workspaceId', 'groupId'],
         'Group mutation aggregateRef');
     requireNonEmptyString(ref.applicationId, 'Group applicationId');
-    if (ref.workspaceId !== undefined) {
-        requireNonEmptyString(ref.workspaceId, 'Group workspaceId');
-    }
+    requireNonEmptyString(ref.workspaceId, 'Group workspaceId');
     requireNonEmptyString(ref.groupId, 'Group groupId');
 }
 
@@ -3734,6 +4167,11 @@ function optionalNonEmptyString(value: unknown, label: string): void {
     if (value !== undefined) requireNonEmptyString(value, label);
 }
 
+function nullableNonEmptyString(value: unknown, label: string): void {
+    if (value === null) return;
+    requireNonEmptyString(value, label);
+}
+
 function requireNonNegativeSafeInteger(value: unknown, label: string): asserts value is number {
     if (!Number.isSafeInteger(value) || (value as number) < 0) {
         throw new TypeError(`${label} must be a non-negative safe integer`);
@@ -3742,6 +4180,13 @@ function requireNonNegativeSafeInteger(value: unknown, label: string): asserts v
 
 function optionalPositiveSafeInteger(value: unknown, label: string): void {
     if (value !== undefined) requirePositiveSafeInteger(value, label);
+}
+
+function nullablePositiveSafeInteger(
+    value: unknown,
+    label: string,
+): asserts value is number | null {
+    if (value !== null) requirePositiveSafeInteger(value, label);
 }
 
 function requireJsonSafe(value: unknown, label: string): void {

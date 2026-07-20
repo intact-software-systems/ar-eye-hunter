@@ -1,5 +1,8 @@
 import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
-import type { GroupRef } from '@shared/api/group-types.ts';
+import type {
+    GroupRef,
+    GroupStateCausalRevision,
+} from '@shared/api/group-types.ts';
 import { rtcTopologySemanticEqual } from '../rtc-topology-semantic-equality.ts';
 import type {
     RtcTopologyPublication,
@@ -20,7 +23,7 @@ export type RtcTopologyPublicationNotificationV2 = Readonly<{
     publisherId: string;
     groupRef: GroupRef;
     publicationId: string;
-    sourceGroupStateRevision: number;
+    sourceGroupStateCausalRevision: GroupStateCausalRevision;
 }>;
 
 export type RtcTopologyPublicationNotification =
@@ -125,8 +128,15 @@ export function createRtcTopologyPublicationFanout(options: Readonly<{
                     notification.groupRef,
                     notification.publicationId,
                 );
-            if (!publication || publication.sourceGroupStateRevision !==
-                notification.sourceGroupStateRevision) {
+            if (!publication || (
+                notification.v === 1
+                    ? publication.sourceGroupStateCausalRevision.groupRevision !==
+                        notification.sourceGroupStateRevision
+                    : !rtcTopologySemanticEqual(
+                        publication.sourceGroupStateCausalRevision,
+                        notification.sourceGroupStateCausalRevision,
+                    )
+            )) {
                 return;
             }
             deliverLocal(publication);
@@ -143,7 +153,8 @@ export function createRtcTopologyPublicationFanout(options: Readonly<{
                 publisherId: options.publisherId,
                 groupRef: canonicalGroupRef(publication.groupRef),
                 publicationId: publication.publicationId,
-                sourceGroupStateRevision: publication.sourceGroupStateRevision,
+                sourceGroupStateCausalRevision:
+                    publication.sourceGroupStateCausalRevision,
             });
             return localRecipientCount;
         },
@@ -153,36 +164,46 @@ export function createRtcTopologyPublicationFanout(options: Readonly<{
 export function isRtcTopologyPublicationNotification(
     value: unknown,
 ): value is RtcTopologyPublicationNotification {
-    if (!value || typeof value !== 'object') {
+    if (!isObjectRecord(value)) {
         return false;
     }
-    const notification = value as Readonly<{
-        v?: unknown;
-        publisherId?: unknown;
-        groupRef?: unknown;
-        publicationId?: unknown;
-        sourceGroupStateRevision?: unknown;
-    }>;
+    const notification = value;
     const commonFieldsAreValid =
         typeof notification.publisherId === 'string' &&
         notification.publisherId.length > 0 &&
         typeof notification.publicationId === 'string' &&
-        notification.publicationId.length > 0 &&
-        typeof notification.sourceGroupStateRevision === 'number' &&
-        Number.isSafeInteger(notification.sourceGroupStateRevision) &&
-        notification.sourceGroupStateRevision >= 0;
+        notification.publicationId.length > 0;
     if (!commonFieldsAreValid) return false;
     if (notification.v === 1) {
-        return hasExactKeys(notification, [
+        return typeof notification.sourceGroupStateRevision === 'number' &&
+            Number.isSafeInteger(notification.sourceGroupStateRevision) &&
+            notification.sourceGroupStateRevision >= 0 &&
+            hasExactKeys(notification, [
             'v', 'publisherId', 'publicationId', 'sourceGroupStateRevision',
-        ]);
+            ]);
     }
     return notification.v === 2 &&
+        isGroupStateCausalRevision(
+            notification.sourceGroupStateCausalRevision,
+        ) &&
         hasExactKeys(notification, [
             'v', 'publisherId', 'groupRef', 'publicationId',
-            'sourceGroupStateRevision',
+            'sourceGroupStateCausalRevision',
         ]) &&
         isCanonicalGroupRef(notification.groupRef);
+}
+
+function isGroupStateCausalRevision(
+    value: unknown,
+): value is GroupStateCausalRevision {
+    if (!isObjectRecord(value)) {
+        return false;
+    }
+    return hasExactKeys(value, ['groupRevision', 'presenceRevision']) &&
+        Number.isSafeInteger(value.groupRevision) &&
+        Number(value.groupRevision) >= 0 &&
+        Number.isSafeInteger(value.presenceRevision) &&
+        Number(value.presenceRevision) >= 0;
 }
 
 function hasExactKeys(
@@ -196,26 +217,27 @@ function hasExactKeys(
 }
 
 function canonicalGroupRef(ref: GroupRef): GroupRef {
-    return ref.workspaceId === undefined
-        ? { applicationId: ref.applicationId, groupId: ref.groupId }
-        : {
-            applicationId: ref.applicationId,
-            workspaceId: ref.workspaceId,
-            groupId: ref.groupId,
-        };
+    return {
+        applicationId: ref.applicationId,
+        workspaceId: ref.workspaceId,
+        groupId: ref.groupId,
+    };
 }
 
 function isCanonicalGroupRef(value: unknown): value is GroupRef {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-    const ref = value as Partial<GroupRef>;
-    const expectedKeys = ref.workspaceId === undefined
-        ? ['applicationId', 'groupId']
-        : ['applicationId', 'workspaceId', 'groupId'];
+    if (!isObjectRecord(value)) return false;
+    const expectedKeys = ['applicationId', 'workspaceId', 'groupId'];
     return rtcTopologySemanticEqual(
-        Object.keys(ref).sort(),
+        Object.keys(value).sort(),
         expectedKeys.sort(),
     ) &&
-        typeof ref.applicationId === 'string' && ref.applicationId.length > 0 &&
-        typeof ref.groupId === 'string' && ref.groupId.length > 0 &&
-        (ref.workspaceId === undefined || typeof ref.workspaceId === 'string');
+        typeof value.applicationId === 'string' && value.applicationId.length > 0 &&
+        typeof value.groupId === 'string' && value.groupId.length > 0 &&
+        typeof value.workspaceId === 'string';
+}
+
+function isObjectRecord(
+    value: unknown,
+): value is Readonly<Record<string, unknown>> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

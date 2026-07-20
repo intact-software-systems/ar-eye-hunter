@@ -1,7 +1,7 @@
 import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
 import type { ClientSessionRef } from "@shared/api/client-types.ts";
-import type { Group, GroupEvent, GroupRef } from "@shared/api/group-types.ts";
+import type { AuditStamp, Group, GroupEvent, GroupRef } from "@shared/api/group-types.ts";
 import { toGroupSnapshotStateRevision } from "@shared/api/group-client-views.ts";
 import type { StateScope } from "@shared/api/state-types.ts";
 import { NEVER_EXPIRE_AT_TIMESTAMP } from "@shared/persistence/PersistenceProvider.ts";
@@ -25,7 +25,7 @@ import {
 } from "@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts";
 
 const POSTGRES_INTEGRATION_ENABLED =
-  Deno.env.get("RALLAR_POSTGRES_INTEGRATION") === "1";
+  process.env.RALLAR_POSTGRES_INTEGRATION === "1";
 
 type PostgresSql =
   & PSqlSql
@@ -544,6 +544,7 @@ describe("Postgres presence expiry concurrency", () => {
         .applicationId;
       const absentGroup = groupFixture({
         applicationId,
+        workspaceId: "workspace-default",
         groupId: "shared-group",
       }, "Absent workspace");
       const explicitSentinelGroup = groupFixture({
@@ -561,7 +562,10 @@ describe("Postgres presence expiry concurrency", () => {
         expect(await repository.findGroup(explicitSentinelGroup)).toEqual(
           explicitSentinelGroup,
         );
-        expect(await repository.listGroups({ applicationId })).toEqual([
+        expect(await repository.listGroups({
+          applicationId,
+          workspaceId: "workspace-default",
+        })).toEqual([
           absentGroup,
         ]);
         expect(await repository.listGroups({
@@ -581,9 +585,19 @@ describe("Postgres presence expiry concurrency", () => {
           eventId: "shared-event",
           eventType: "group-updated",
           snapshotVersion,
+          causalRevision: {
+            groupRevision: snapshotVersion,
+            presenceRevision: 0,
+          },
           occurredAtEpochMs: Date.now() + snapshotVersion,
-          actor: { serviceId: "postgres-group-event-key-test" },
+          actor: {
+            kind: "service",
+            serviceId: "postgres-group-event-key-test",
+          },
           reason,
+          traceId: null,
+          requestId: null,
+          payload: {},
         });
         const absentEvent = eventFor(absentGroup, "absent", 1);
         const explicitSentinelEvent = eventFor(
@@ -621,16 +635,25 @@ describe("Postgres presence expiry concurrency", () => {
 });
 
 function groupFixture(ref: GroupRef, displayName: string): Group {
-  const audit = {
+  const audit: AuditStamp = {
     atEpochMs: Date.now(),
-    byServiceId: "postgres-group-key-test",
-  } as const;
+    actor: { kind: "service", serviceId: "postgres-group-key-test" },
+    reason: null,
+    traceId: null,
+    requestId: null,
+  };
   return {
     ...ref,
+    slug: null,
     displayName,
+    description: null,
     kind: "room",
     status: "active",
+    archived: null,
+    deleted: null,
     joinMode: "open",
+    maxMembers: null,
+    maxSessionsPerMember: null,
     metadata: {},
     activeMemberCount: 1,
     ownerPrincipalId: "alice",
@@ -638,6 +661,9 @@ function groupFixture(ref: GroupRef, displayName: string): Group {
     metadataVersion: 1,
     rosterVersion: 1,
     presenceVersion: 0,
+    expiresAtEpochMs: null,
+    emptySinceEpochMs: null,
+    purgeAfterEpochMs: null,
     created: audit,
     updated: audit,
   };
@@ -907,7 +933,7 @@ function createPublisher(): StateSyncPublisher {
 }
 
 function requireDatabaseUrl(): string {
-  const databaseUrl = Deno.env.get("DATABASE_URL");
+  const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {
     throw new Error(
       "DATABASE_URL is required when RALLAR_POSTGRES_INTEGRATION=1",

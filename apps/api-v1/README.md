@@ -26,10 +26,16 @@ runtime fallback.
    `deno task rtc:migrate-persisted-state --old-writers-stopped --dry-run`.
 3. With writers still stopped, run `deno task rtc:migrate-persisted-state --old-writers-stopped`.
    The explicit acknowledgement is required before the operator opens a connection. The command
-   migrates snapshot keys, publication/claim keys, RTT measurement keys, then recompute-intent
-   delivery state, and stops on the first error.
+   first invalidates every legacy scalar topology dependency family and writes a deterministic
+   durable recompute request in the same conditional transaction. It then migrates snapshot keys,
+   publication/claim keys, RTT measurement keys, and recompute-intent delivery state, stopping on
+   the first error.
 4. Restart only the current API version and verify startup cleanup and RTC topology traffic before
-   restoring normal service.
+   restoring normal service. Startup drains the durable recompute requests into idempotent topology
+   work. The owned single-flight worker retries transient failures and polls while the process is
+   live; a failed enqueue leaves its request durable for both autonomous retry and restart recovery.
+   A successful enqueue is acknowledged with compare-and-set deletion, making exact deterministic
+   replays safe.
 
 Rollback: if migration or verification fails, keep writers stopped, preserve the failed database for
 investigation, restore the pre-cutover backup, and restart the previous API version. Do not roll

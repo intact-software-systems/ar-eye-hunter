@@ -138,6 +138,8 @@ Deno.test('PSqlAdminOperationsStatsReader fails closed on complete-contract viol
   const keyPrefix = 'app=app-1:ws=workspace-1';
   const missingUpdated = canonicalGroupRuntimeValue(`${keyPrefix}:group=missing-updated`);
   delete missingUpdated.updated;
+  const missingExpiry = canonicalGroupRuntimeValue(`${keyPrefix}:group=missing-expiry`);
+  delete missingExpiry.expiresAtEpochMs;
 
   for (
     const input of [
@@ -154,12 +156,10 @@ Deno.test('PSqlAdminOperationsStatsReader fails closed on complete-contract viol
         value: canonicalGroupRuntimeValue(`${keyPrefix}:group=wrong-status`, { status: 1 }),
       },
       {
-        label: 'null group expiry',
+        label: 'missing group expiry',
         namespace: 'group-state:groups',
-        key: `${keyPrefix}:group=null-expiry`,
-        value: canonicalGroupRuntimeValue(`${keyPrefix}:group=null-expiry`, {
-          expiresAtEpochMs: null,
-        }),
+        key: `${keyPrefix}:group=missing-expiry`,
+        value: missingExpiry,
       },
       {
         label: 'wrong member role primitive',
@@ -216,7 +216,9 @@ Deno.test('PSqlAdminOperationsStatsReader counts canonical valid group expiries 
       await insertRawRuntimeState(sql, {
         namespace: 'group-state:groups',
         key,
-        value: canonicalGroupRuntimeValue(key, { expiresAtEpochMs }),
+        value: canonicalGroupRuntimeValue(key, {
+          expiresAtEpochMs: expiresAtEpochMs ?? null,
+        }),
       });
     }
     const reader = new PSqlAdminOperationsStatsReader(sql, { now: () => nowEpochMs });
@@ -946,7 +948,7 @@ Deno.test('PSqlAdminOperationsStatsReader keeps colon-bearing identities distinc
 
 Deno.test('PSqlAdminOperationsStatsReader fails closed on corrupt global group rows', async () => {
   await withPGliteSql(async (sql) => {
-    await insertRuntimeState(sql, {
+    await insertRawRuntimeState(sql, {
       namespace: 'group-state:members',
       key: 'app=ops-global-corrupt:ws=_:group=room:member=alice',
       value: {
@@ -1350,7 +1352,12 @@ async function insertRawRuntimeState(
 
 const CANONICAL_AUDIT = Object.freeze({
   atEpochMs: 1_700_000_000_000,
-  byPrincipalId: 'admin-test-owner',
+  actor: Object.freeze({
+    kind: 'principal',
+    principalId: 'admin-test-owner',
+  }),
+  reason: null,
+  traceId: null,
   requestId: 'admin-test-request',
 });
 
@@ -1361,10 +1368,14 @@ function canonicalGroupRuntimeValue(
   const identity = decodeGroupStateGroupStorageKey(key);
   const value: Record<string, unknown> = {
     ...identity,
+    slug: null,
     displayName: identity.groupId,
+    description: null,
     kind: 'room',
     status: 'active',
     joinMode: 'open',
+    maxMembers: null,
+    maxSessionsPerMember: null,
     metadata: {},
     activeMemberCount: 1,
     ownerPrincipalId: 'admin-test-owner',
@@ -1374,12 +1385,17 @@ function canonicalGroupRuntimeValue(
     presenceVersion: 0,
     created: CANONICAL_AUDIT,
     updated: CANONICAL_AUDIT,
+    archived: null,
+    deleted: null,
+    expiresAtEpochMs: null,
+    emptySinceEpochMs: null,
+    purgeAfterEpochMs: null,
     ...overrides,
   };
-  if (value.status === 'archived' && value.archived === undefined) {
+  if (value.status === 'archived' && !Object.hasOwn(overrides, 'archived')) {
     value.archived = CANONICAL_AUDIT;
   }
-  if (value.status === 'deleted' && value.deleted === undefined) {
+  if (value.status === 'deleted' && !Object.hasOwn(overrides, 'deleted')) {
     value.deleted = CANONICAL_AUDIT;
   }
   return value;
@@ -1395,13 +1411,23 @@ function canonicalMemberRuntimeValue(
     status: 'active',
     joined: CANONICAL_AUDIT,
     updated: CANONICAL_AUDIT,
+    left: null,
+    removed: null,
+    banned: null,
+    invitedByPrincipalId: null,
+    invitationExpiresAtEpochMs: null,
     ...overrides,
   };
-  if (value.status === 'left' && value.left === undefined) value.left = CANONICAL_AUDIT;
-  if (value.status === 'removed' && value.removed === undefined) {
+  if (value.status === 'invited' && !Object.hasOwn(overrides, 'joined')) value.joined = null;
+  if (value.status === 'left' && !Object.hasOwn(overrides, 'left')) {
+    value.left = CANONICAL_AUDIT;
+  }
+  if (value.status === 'removed' && !Object.hasOwn(overrides, 'removed')) {
     value.removed = CANONICAL_AUDIT;
   }
-  if (value.status === 'banned' && value.banned === undefined) value.banned = CANONICAL_AUDIT;
+  if (value.status === 'banned' && !Object.hasOwn(overrides, 'banned')) {
+    value.banned = CANONICAL_AUDIT;
+  }
   return value;
 }
 
@@ -1419,12 +1445,24 @@ function canonicalSessionRuntimeValue(
     principalId: 'admin-test-owner',
     generationId: `${identity.sessionId}-generation`,
     generationVersion: connectedAtEpochMs,
+    status: 'active',
     connectedAtEpochMs,
     lastHeartbeatAtEpochMs: connectedAtEpochMs,
     expiresAtEpochMs: connectedAtEpochMs + 60_000,
+    disconnectedAtEpochMs: null,
+    disconnectReason: null,
     ...overrides,
   };
-  if (value.disconnectedAtEpochMs !== undefined && value.disconnectReason === undefined) {
+  if (
+    value.disconnectedAtEpochMs !== null &&
+    !Object.hasOwn(overrides, 'status')
+  ) {
+    value.status = 'disconnected';
+  }
+  if (
+    value.disconnectedAtEpochMs !== null &&
+    !Object.hasOwn(overrides, 'disconnectReason')
+  ) {
     value.disconnectReason = 'admin-test-disconnect';
   }
   return value;

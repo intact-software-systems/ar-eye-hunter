@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import {
+    createActiveGroupMemberFixture,
+    createActiveGroupPresenceSessionFixture,
+    createGroupSnapshotFixture,
+} from './authoritative-group-fixtures.ts';
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
 import {
     newALRoute,
@@ -112,6 +117,7 @@ const mocks = vi.hoisted(() => {
                 _displayName?: unknown,
                 _principalId?: unknown,
                 _sessionId?: unknown,
+                _generationId?: unknown,
                 _scope?: unknown,
                 _policies?: unknown,
             ) => Promise.reject(new Error('create not mocked')),
@@ -121,6 +127,7 @@ const mocks = vi.hoisted(() => {
                 _roomId?: unknown,
                 _principalId?: unknown,
                 _sessionId?: unknown,
+                _generationId?: unknown,
                 _scope?: unknown,
                 _policies?: unknown,
             ) => Promise.reject(new Error('join not mocked')),
@@ -130,6 +137,7 @@ const mocks = vi.hoisted(() => {
                 _roomId?: unknown,
                 _principalId?: unknown,
                 _sessionId?: unknown,
+                _generationId?: unknown,
                 _scope?: unknown,
                 _policies?: unknown,
             ) => Promise.reject(new Error('leave not mocked')),
@@ -190,6 +198,7 @@ const mocks = vi.hoisted(() => {
                 _roomId?: unknown,
                 _principalId?: unknown,
                 _sessionId?: unknown,
+                _generationId?: unknown,
                 _scope?: unknown,
                 _policies?: unknown,
             ) => Promise.reject(new Error('room invite accept not mocked')),
@@ -533,33 +542,39 @@ describe('Rallar workflow options compatibility', () => {
             maxAttempts: 3,
         });
 
-        const policies = mocks.joinStateGroup.mock.calls[0]?.[4] as {
-            command?: {
-                maxAttempts?: number;
-                shouldRetry?: (error: unknown, attempt: number) => boolean;
-            };
-        };
-        expect(policies.command?.maxAttempts).toBe(3);
+        const policies = requireRecord(
+            mocks.joinStateGroup.mock.calls[0]?.[5],
+            'join workflow policies',
+        );
+        const command = requireRecord(
+            policies.command,
+            'join workflow command policies',
+        );
+        const shouldRetry = command.shouldRetry;
+        if (typeof shouldRetry !== 'function') {
+            throw new TypeError('Expected join workflow retry policy');
+        }
+        expect(command.maxAttempts).toBe(3);
         expect(
-            policies.command?.shouldRetry?.(
+            shouldRetry(
                 Object.assign(new Error('server busy'), { status: 503 }),
                 1,
             ),
         ).toBe(true);
         expect(
-            policies.command?.shouldRetry?.(
+            shouldRetry(
                 Object.assign(new Error('rate limited'), { status: 429 }),
                 1,
             ),
         ).toBe(true);
         expect(
-            policies.command?.shouldRetry?.(
+            shouldRetry(
                 Object.assign(new Error('bad request'), { status: 400 }),
                 1,
             ),
         ).toBe(false);
         expect(
-            policies.command?.shouldRetry?.(
+            shouldRetry(
                 Object.assign(new Error('conflict'), { status: 409 }),
                 1,
             ),
@@ -635,12 +650,15 @@ describe('Rallar workflow options compatibility', () => {
 
         await facade.rooms.join('room-1');
 
-        const policies = mocks.joinStateGroup.mock.calls[0]?.[4] as {
-            command?: {
-                maxAttempts?: number;
-            };
-        };
-        expect(policies.command?.maxAttempts).toBe(4);
+        const policies = requireRecord(
+            mocks.joinStateGroup.mock.calls[0]?.[5],
+            'join workflow policies',
+        );
+        const command = requireRecord(
+            policies.command,
+            'join workflow command policies',
+        );
+        expect(command.maxAttempts).toBe(4);
     });
 
     it('joins rooms from object input using roomId or roomRef', async () => {
@@ -673,7 +691,7 @@ describe('Rallar workflow options compatibility', () => {
 
         expect(mocks.joinStateGroup.mock.calls[0]?.[0]).toBe('room-id');
         expect(mocks.joinStateGroup.mock.calls[1]?.[0]).toBe('room-ref');
-        expect(mocks.joinStateGroup.mock.calls[1]?.[3]).toEqual({
+        expect(mocks.joinStateGroup.mock.calls[1]?.[4]).toEqual({
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
         });
@@ -692,7 +710,7 @@ describe('Rallar workflow options compatibility', () => {
             joinCode: 'code-1',
         });
 
-        expect(mocks.joinStateGroup.mock.calls[0]?.[5]).toEqual({
+        expect(mocks.joinStateGroup.mock.calls[0]?.[6]).toEqual({
             inviteToken: 'invite-1',
             joinCode: 'code-1',
         });
@@ -834,6 +852,7 @@ describe('Rallar workflow options compatibility', () => {
             'principal-1',
             'session-1',
             undefined,
+            undefined,
             {},
             undefined,
         );
@@ -841,6 +860,7 @@ describe('Rallar workflow options compatibility', () => {
             'old-room',
             'principal-1',
             'session-1',
+            undefined,
             {
                 applicationId: 'app-1',
                 workspaceId: 'workspace-1',
@@ -971,6 +991,7 @@ describe('Rallar workflow options compatibility', () => {
             'Custom Room',
             'principal-1',
             'session-1',
+            undefined,
             scope,
             {
                 command: {
@@ -1100,6 +1121,7 @@ describe('Rallar workflow options compatibility', () => {
             'room-1',
             'principal-1',
             'session-1',
+            undefined,
             scope,
             policies,
         );
@@ -1410,58 +1432,12 @@ function createGroupSnapshot(
 ): GroupSnapshot {
     const applicationId = scope.applicationId ?? 'app-1';
     const workspaceId = scope.workspaceId ?? 'workspace-1';
-    return {
-        group: {
-            applicationId,
-            workspaceId,
-            groupId,
-            displayName: groupId,
-            kind: 'room',
-            status: 'active',
-            joinMode: 'open',
-            metadata: {},
-            snapshotVersion: 1,
-            metadataVersion: 0,
-            rosterVersion: 1,
-            presenceVersion: 1,
-            created: {
-                atEpochMs: 1,
-                byPrincipalId: 'creator',
-            },
-            updated: {
-                atEpochMs: 1,
-                byPrincipalId: 'creator',
-            },
-        },
-        members: sessionIds.map((sessionId) => ({
-            applicationId,
-            workspaceId,
-            groupId,
-            principalId: sessionId,
-            role: 'member',
-            status: 'active',
-            joined: {
-                atEpochMs: 1,
-                byPrincipalId: 'creator',
-            },
-            updated: {
-                atEpochMs: 1,
-                byPrincipalId: 'creator',
-            },
-        })),
-        activeSessions: sessionIds.map((sessionId) => ({
-            applicationId,
-            workspaceId,
-            groupId,
-            sessionId,
-            principalId: sessionId,
-            connectedAtEpochMs: 1,
-            lastHeartbeatAtEpochMs: 1,
-            expiresAtEpochMs: 60_000,
-        })),
-        memberCount: sessionIds.length,
-        onlineMemberCount: sessionIds.length,
-    };
+    return createGroupSnapshotFixture({
+        applicationId,
+        workspaceId,
+        groupId,
+        sessionIds,
+    });
 }
 
 function createDirectorGroupSnapshot(
@@ -1474,48 +1450,33 @@ function createDirectorGroupSnapshot(
     }>,
 ): GroupSnapshot {
     const snapshot = createGroupSnapshot('room-1', ['session-1']);
-    const activeSessions = [
-        {
-            ...snapshot.activeSessions[0],
-            principalId: 'principal-1',
-            sessionId: 'session-1',
-        },
-    ];
-    const members = [
-        {
-            ...snapshot.members[0],
-            principalId: 'principal-1',
-            role: 'owner' as const,
-        },
-    ];
+    const activeSessions: GroupSnapshot['activeSessions'][number][] = [{
+        ...snapshot.activeSessions[0],
+        principalId: 'principal-1',
+        sessionId: 'session-1',
+    }];
+    const members: GroupSnapshot['members'][number][] = [{
+        ...snapshot.members[0],
+        principalId: 'principal-1',
+        role: 'owner',
+    }];
 
     if (appointment) {
-        activeSessions.push({
+        activeSessions.push(createActiveGroupPresenceSessionFixture({
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
             groupId: 'room-1',
             principalId: appointment.principalId,
             sessionId: appointment.sessionId,
-            connectedAtEpochMs: 1,
-            lastHeartbeatAtEpochMs: 1,
-            expiresAtEpochMs: 60_000,
-        });
-        members.push({
+        }));
+        members.push(createActiveGroupMemberFixture({
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
             groupId: 'room-1',
             principalId: appointment.principalId,
             role: 'member',
-            status: 'active',
-            joined: {
-                atEpochMs: 1,
-                byPrincipalId: 'principal-1',
-            },
-            updated: {
-                atEpochMs: 1,
-                byPrincipalId: 'principal-1',
-            },
-        });
+            actorPrincipalId: 'principal-1',
+        }));
     }
 
     return {
@@ -1524,7 +1485,7 @@ function createDirectorGroupSnapshot(
             ...snapshot.group,
             created: {
                 ...snapshot.group.created,
-                byPrincipalId: 'principal-1',
+                actor: { kind: 'principal', principalId: 'principal-1' },
             },
             metadata: appointment
                 ? {
@@ -1556,6 +1517,17 @@ function createDeferred<T>(): {
     });
 
     return { promise, resolve, reject };
+}
+
+function requireRecord(value: unknown, label: string): Record<string, unknown> {
+    if (!isUnknownRecord(value)) {
+        throw new TypeError(`${label} must be an object`);
+    }
+    return value;
+}
+
+function isUnknownRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function createMediaTrack(

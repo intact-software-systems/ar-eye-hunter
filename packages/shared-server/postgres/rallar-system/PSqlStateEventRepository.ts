@@ -9,9 +9,22 @@ import type { StateEventListQuery } from '@shared-server/rallar-system/state-eve
 import { DEFAULT_STATE_EVENT_LIST_LIMIT } from '@shared-server/rallar-system/state-event-listing.ts';
 import type { PSqlSql } from '../PostgresSqlClient.ts';
 import { groupEventWorkspaceKey } from './group-event-workspace-key.ts';
-import { validatePersistedGroupEvent } from '@shared-server/rallar-system/services/group-state-mutations.ts';
+import {
+    normalizePersistedGroupEvent,
+    validatePersistedGroupEvent,
+} from '@shared-server/rallar-system/services/group-state-mutations.ts';
+import {
+    normalizePersistedClientEvent,
+    validatePersistedClientEvent,
+} from '@shared-server/rallar-system/services/client-state-mutations.ts';
 
 type ClientStateEventRow = Readonly<{
+    event_id: string;
+    event_type: string;
+    snapshot_version: number | string;
+    occurred_at_epoch_ms: number | string;
+    client_instance_id: string | null;
+    session_id: string | null;
     event_json: string;
 }>;
 
@@ -44,6 +57,7 @@ export class PSqlClientStateEventRepository implements ClientStateEventStore {
     constructor(private readonly sql: PSqlSql) {}
 
     async appendClientEvent(event: ClientEvent): Promise<void> {
+        assertCompleteClientEvent(event, event);
         await this.sql`
             insert into client_state_events (application_id,
                                              workspace_key,
@@ -74,7 +88,8 @@ export class PSqlClientStateEventRepository implements ClientStateEventStore {
         ref: ClientPrincipalRef,
     ): Promise<readonly ClientEvent[]> {
         const rows = await this.sql<ClientStateEventRow[]>`
-            select event_json
+            select event_id, event_type, snapshot_version, occurred_at_epoch_ms,
+                   client_instance_id, session_id, event_json
             from client_state_events
             where application_id = ${ref.applicationId}
               and workspace_key = ${toWorkspaceKey(ref.workspaceId)}
@@ -82,7 +97,7 @@ export class PSqlClientStateEventRepository implements ClientStateEventStore {
             order by snapshot_version, occurred_at_epoch_ms, event_id
         `;
 
-        return rows.map(toClientEvent);
+        return rows.map((row) => toValidatedClientEvent(row, ref));
     }
 
     async listRecentClientEvents(
@@ -92,7 +107,7 @@ export class PSqlClientStateEventRepository implements ClientStateEventStore {
         const limit = query.limit ?? DEFAULT_STATE_EVENT_LIST_LIMIT;
         const rows = await this.queryRecentClientRows(ref, query, limit);
 
-        return rows.map(toClientEvent);
+        return rows.map((row) => toValidatedClientEvent(row, ref));
     }
 
     async listClientEventPage(
@@ -101,7 +116,7 @@ export class PSqlClientStateEventRepository implements ClientStateEventStore {
     ): Promise<StateEventPage<ClientEvent>> {
         const limit = query.limit ?? DEFAULT_STATE_EVENT_LIST_LIMIT;
         const rows = await this.queryClientPageRows(ref, query, limit + 1);
-        const eventsPlusOne = rows.map(toClientEvent);
+        const eventsPlusOne = rows.map((row) => toValidatedClientEvent(row, ref));
         const events = eventsPlusOne.slice(0, limit);
         const lastEvent = events.at(-1);
 
@@ -124,7 +139,8 @@ export class PSqlClientStateEventRepository implements ClientStateEventStore {
 
         if (eventTypes && after) {
             return await this.sql<ClientStateEventRow[]>`
-                select event_json
+                select event_id, event_type, snapshot_version, occurred_at_epoch_ms,
+                       client_instance_id, session_id, event_json
                 from client_state_events
                 where application_id = ${ref.applicationId}
                   and workspace_key = ${toWorkspaceKey(ref.workspaceId)}
@@ -139,7 +155,8 @@ export class PSqlClientStateEventRepository implements ClientStateEventStore {
 
         if (eventTypes) {
             return await this.sql<ClientStateEventRow[]>`
-                select event_json
+                select event_id, event_type, snapshot_version, occurred_at_epoch_ms,
+                       client_instance_id, session_id, event_json
                 from client_state_events
                 where application_id = ${ref.applicationId}
                   and workspace_key = ${toWorkspaceKey(ref.workspaceId)}
@@ -152,7 +169,8 @@ export class PSqlClientStateEventRepository implements ClientStateEventStore {
 
         if (after) {
             return await this.sql<ClientStateEventRow[]>`
-                select event_json
+                select event_id, event_type, snapshot_version, occurred_at_epoch_ms,
+                       client_instance_id, session_id, event_json
                 from client_state_events
                 where application_id = ${ref.applicationId}
                   and workspace_key = ${toWorkspaceKey(ref.workspaceId)}
@@ -165,7 +183,8 @@ export class PSqlClientStateEventRepository implements ClientStateEventStore {
         }
 
         return await this.sql<ClientStateEventRow[]>`
-            select event_json
+            select event_id, event_type, snapshot_version, occurred_at_epoch_ms,
+                   client_instance_id, session_id, event_json
             from client_state_events
             where application_id = ${ref.applicationId}
               and workspace_key = ${toWorkspaceKey(ref.workspaceId)}
@@ -186,9 +205,12 @@ export class PSqlClientStateEventRepository implements ClientStateEventStore {
 
         if (eventTypes) {
             return await this.sql<ClientStateEventRow[]>`
-                select event_json
+                select event_id, event_type, snapshot_version, occurred_at_epoch_ms,
+                       client_instance_id, session_id, event_json
                 from (
-                    select event_json, snapshot_version, occurred_at_epoch_ms, event_id
+                    select event_json, event_type, snapshot_version,
+                           occurred_at_epoch_ms, event_id, client_instance_id,
+                           session_id
                     from client_state_events
                     where application_id = ${ref.applicationId}
                       and workspace_key = ${toWorkspaceKey(ref.workspaceId)}
@@ -202,9 +224,12 @@ export class PSqlClientStateEventRepository implements ClientStateEventStore {
         }
 
         return await this.sql<ClientStateEventRow[]>`
-            select event_json
+            select event_id, event_type, snapshot_version, occurred_at_epoch_ms,
+                   client_instance_id, session_id, event_json
             from (
-                select event_json, snapshot_version, occurred_at_epoch_ms, event_id
+                select event_json, event_type, snapshot_version,
+                       occurred_at_epoch_ms, event_id, client_instance_id,
+                       session_id
                 from client_state_events
                 where application_id = ${ref.applicationId}
                   and workspace_key = ${toWorkspaceKey(ref.workspaceId)}
@@ -397,12 +422,46 @@ function toWorkspaceKey(workspaceId: string | undefined): string {
     return workspaceId ?? DEFAULT_WORKSPACE_KEY;
 }
 
-function toClientEvent(row: ClientStateEventRow): ClientEvent {
-    return JSON.parse(row.event_json) as ClientEvent;
+export class ClientStateEventRepositoryInvariantCorruptionError extends Error {
+    readonly code = 'client-state-event-repository-invariant-corruption';
+
+    constructor(message: string) {
+        super(message);
+        this.name = 'ClientStateEventRepositoryInvariantCorruptionError';
+    }
 }
 
-function toGroupEvent(row: GroupStateEventRow): GroupEvent {
-    return JSON.parse(row.event_json) as GroupEvent;
+function toValidatedClientEvent(
+    row: ClientStateEventRow,
+    expected: ClientPrincipalRef,
+): ClientEvent {
+    let event: ClientEvent;
+    try {
+        event = normalizePersistedClientEvent(
+            JSON.parse(row.event_json),
+            expected,
+        );
+    } catch (error) {
+        throw new ClientStateEventRepositoryInvariantCorruptionError(
+            error instanceof Error ? error.message : 'Stored client event JSON is invalid',
+        );
+    }
+    if (
+        event.applicationId !== expected.applicationId ||
+        event.workspaceId !== expected.workspaceId ||
+        event.principalId !== expected.principalId ||
+        event.eventId !== row.event_id ||
+        event.eventType !== row.event_type ||
+        event.snapshotVersion !== Number(row.snapshot_version) ||
+        event.occurredAtEpochMs !== Number(row.occurred_at_epoch_ms) ||
+        event.clientInstanceId !== row.client_instance_id ||
+        event.sessionId !== row.session_id
+    ) {
+        throw new ClientStateEventRepositoryInvariantCorruptionError(
+            'Stored client event identity differs from its physical columns',
+        );
+    }
+    return event;
 }
 
 export class GroupStateEventRepositoryInvariantCorruptionError extends Error {
@@ -420,8 +479,8 @@ function toValidatedGroupEvent(
 ): GroupEvent {
     let event: GroupEvent;
     try {
-        event = toGroupEvent(row);
-        validatePersistedGroupEvent(event, expected);
+        const decoded: unknown = JSON.parse(row.event_json);
+        event = normalizePersistedGroupEvent(decoded, expected);
     } catch (error) {
         throw new GroupStateEventRepositoryInvariantCorruptionError(
             error instanceof Error ? error.message : 'Stored group event JSON is invalid',
@@ -441,6 +500,19 @@ function toValidatedGroupEvent(
         );
     }
     return event;
+}
+
+function assertCompleteClientEvent(
+    event: unknown,
+    expected: ClientPrincipalRef,
+): asserts event is ClientEvent {
+    try {
+        validatePersistedClientEvent(event, expected);
+    } catch (error) {
+        throw new ClientStateEventRepositoryInvariantCorruptionError(
+            error instanceof Error ? error.message : 'Stored client event is invalid',
+        );
+    }
 }
 
 function assertCompleteGroupEvent(event: unknown, expected: GroupRef): asserts event is GroupEvent {

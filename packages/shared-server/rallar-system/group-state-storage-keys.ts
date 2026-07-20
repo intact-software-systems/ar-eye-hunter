@@ -1,4 +1,5 @@
 import type { GroupRef } from '@shared/api/group-types.ts';
+import { DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 
 type GroupMemberStorageRef = GroupRef & Readonly<{ principalId: string }>;
 type GroupSessionStorageRef = GroupRef & Readonly<{ sessionId: string }>;
@@ -42,10 +43,13 @@ export function decodeGroupStateGroupStorageKey(storageKey: string): GroupRef {
     const groupId = decodeKeyPart(parts[2], 'group');
     const ref: GroupRef = {
         applicationId,
-        ...(workspaceId === undefined ? {} : { workspaceId }),
+        workspaceId: workspaceId ?? DEFAULT_STATE_WORKSPACE_ID,
         groupId,
     };
-    if (groupStateGroupStorageKey(ref) !== storageKey) {
+    const canonicalStorageKey = workspaceId === undefined
+        ? [keyPart('app', applicationId), 'ws=_', keyPart('group', groupId)].join(':')
+        : groupStateGroupStorageKey(ref);
+    if (canonicalStorageKey !== storageKey) {
         throw new TypeError('Group-state group storage key is not canonical');
     }
     return ref;
@@ -150,7 +154,14 @@ function decodeChildStorageKey<Name extends string>(
     const value = decodeKeyPart(parts[3], partName);
     const decoded = { ...ref, [propertyName]: value } as GroupRef &
         Readonly<Record<Name, string>>;
-    if (canonicalKeyFor(decoded) !== storageKey) {
+    const canonicalStorageKey = canonicalKeyFor(decoded);
+    const normalizedStorageKey = parts[1] === 'ws=_'
+        ? canonicalStorageKey.replace(
+            `:ws=${encodeURIComponent(DEFAULT_STATE_WORKSPACE_ID)}:`,
+            ':ws=_:',
+        )
+        : canonicalStorageKey;
+    if (normalizedStorageKey !== storageKey) {
         throw new TypeError(`Group-state ${partName} storage key is not canonical`);
     }
     return decoded;

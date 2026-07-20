@@ -901,7 +901,7 @@ function isActiveGroupMemberRow(row: RuntimeStateRow): boolean {
 
 function isActiveGroupSessionRow(row: RuntimeStateRow, nowEpochMs: number): boolean {
   const value = readRuntimeStateValue(row);
-  return value.disconnectedAtEpochMs === undefined &&
+  return value.disconnectedAtEpochMs === null &&
     isFutureEpochMs(value.expiresAtEpochMs, nowEpochMs);
 }
 

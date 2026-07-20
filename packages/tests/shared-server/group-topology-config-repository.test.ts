@@ -34,7 +34,7 @@ describe('group topology config repository', () => {
             new FakeRuntimeStateRepository(),
         );
         const refs: readonly GroupRef[] = [
-            { applicationId: 'app:key', groupId: 'room:key' },
+            { applicationId: 'app:key', workspaceId: '', groupId: 'room:key' },
             { applicationId: 'app:key', workspaceId: '_', groupId: 'room:key' },
             { applicationId: 'app:key', workspaceId: 'a:b', groupId: 'room:key' },
             { applicationId: 'app:key', workspaceId: 'a%3Ab', groupId: 'room:key' },
@@ -60,16 +60,17 @@ describe('group topology config repository', () => {
             .toBe(refs.length);
     });
 
-    it('accepts an absent workspace and canonically omits it from stored values', async () => {
+    it('retains the required workspace in stored values', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const repository = new GroupTopologyConfigRepository(runtimeRepository);
         const groupRef: GroupRef = {
             applicationId: 'app-1',
+            workspaceId: 'workspace-1',
             groupId: 'room-1',
         };
         const config = {
             groupRef,
-            config: { topologyKind: 'tree' as const },
+            config: createEffectiveConfig('tree'),
             version: 1,
             createdAtEpochMs: 1,
             updatedAtEpochMs: 1,
@@ -88,15 +89,16 @@ describe('group topology config repository', () => {
         );
         expect(JSON.parse(entry!.value).groupRef).toEqual({
             applicationId: 'app-1',
+            workspaceId: 'workspace-1',
             groupId: 'room-1',
         });
     });
 
-    it('decodes canonical optional-workspace sources consistently for list and page boundaries', async () => {
+    it('decodes canonical required-workspace sources consistently for list and page boundaries', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const repository = new GroupTopologyConfigRepository(runtimeRepository);
         const refs: readonly GroupRef[] = [
-            { applicationId: 'app-1', groupId: 'room-1' },
+            { applicationId: 'app-1', workspaceId: 'workspace-empty', groupId: 'room-1' },
             { applicationId: 'app-1', workspaceId: '_', groupId: 'room-1' },
             { applicationId: 'app-1', workspaceId: 'a:b', groupId: 'room-1' },
             { applicationId: 'app-1', workspaceId: 'a%3Ab', groupId: 'room-1' },
@@ -494,7 +496,7 @@ describe('group topology config repository', () => {
                 seed: (repository: GroupTopologyConfigRepository) =>
                     repository.commitConfig({
                         groupRef,
-                        config: { topologyKind: 'tree' },
+                        config: createEffectiveConfig('tree'),
                         version: 1,
                         createdAtEpochMs: 1,
                         updatedAtEpochMs: 1,
@@ -510,7 +512,7 @@ describe('group topology config repository', () => {
                 seed: (repository: GroupTopologyConfigRepository) =>
                     repository.commitOverride({
                         groupRef,
-                        config: { topologyKind: 'tree' },
+                        config: createEffectiveConfig('tree'),
                         version: 1,
                         createdAtEpochMs: 1,
                         updatedAtEpochMs: 1,
@@ -531,9 +533,11 @@ describe('group topology config repository', () => {
                         commandHash,
                         receipt: {
                             commandId: 'mutation-boundary',
+                            requestId: 'mutation-boundary',
                             commandHash,
                             operation: 'deleteConfig',
                             outcome: 'no-op',
+                            attemptCount: 1,
                             groupRef,
                             target: 'config',
                             acceptedVersion: 0,
@@ -542,7 +546,9 @@ describe('group topology config repository', () => {
                             acceptedUpdatedAtEpochMs: null,
                             acceptedExpiresAtEpochMs: null,
                             acceptedCausalRevision: null,
+                            eventId: null,
                             outboxId: null,
+                            outboxIds: [],
                         },
                     }),
                 read: (repository: GroupTopologyConfigRepository) =>
@@ -686,7 +692,7 @@ describe('group topology config repository', () => {
         const groupRef = createGroupRef('workspace-1');
         const first = {
             groupRef,
-            config: { topologyKind: 'tree' as const },
+            config: createEffectiveConfig('tree'),
             version: 1,
             createdAtEpochMs: 1,
             updatedAtEpochMs: 1,
@@ -695,7 +701,7 @@ describe('group topology config repository', () => {
         };
         const second = {
             ...first,
-            config: { topologyKind: 'mesh' as const },
+            config: createEffectiveConfig('mesh'),
             version: 2,
             updatedAtEpochMs: 2,
             requestId: 'config-2',
@@ -751,9 +757,11 @@ describe('group topology config repository', () => {
                 commandHash,
                 receipt: {
                     commandId: 'different-request',
+                    requestId,
                     commandHash,
                     operation: 'deleteConfig',
                     outcome: 'no-op',
+                    attemptCount: 1,
                     groupRef,
                     target: 'config',
                     acceptedVersion: 0,
@@ -762,7 +770,9 @@ describe('group topology config repository', () => {
                     acceptedUpdatedAtEpochMs: null,
                     acceptedExpiresAtEpochMs: null,
                     acceptedCausalRevision: null,
+                    eventId: null,
                     outboxId: null,
+                    outboxIds: [],
                 },
             }),
             NEVER_EXPIRE_AT_TIMESTAMP,
@@ -784,7 +794,6 @@ describe('group topology config repository', () => {
                 outcome: 'applied',
                 acceptedVersion: 1,
                 acceptedStorageRevision: null,
-                outboxId: 'state-mutation-invalid',
             },
             message: 'applied receipt is incomplete',
         },
@@ -794,7 +803,6 @@ describe('group topology config repository', () => {
                 outcome: 'applied',
                 acceptedVersion: 0,
                 acceptedStorageRevision: 0,
-                outboxId: 'state-mutation-invalid',
             },
             message: 'applied receipt is incomplete',
         },
@@ -813,9 +821,11 @@ describe('group topology config repository', () => {
                 commandHash,
                 receipt: {
                     commandId: requestId,
+                    requestId,
                     commandHash,
                     operation: 'deleteConfig',
                     outcome: 'no-op',
+                    attemptCount: 1,
                     groupRef,
                     target: 'config',
                     acceptedVersion: 0,
@@ -824,7 +834,9 @@ describe('group topology config repository', () => {
                     acceptedUpdatedAtEpochMs: null,
                     acceptedExpiresAtEpochMs: null,
                     acceptedCausalRevision: null,
+                    eventId: null,
                     outboxId: null,
+                    outboxIds: [],
                     ...receipt,
                 },
             }),
@@ -852,9 +864,11 @@ describe('group topology config repository', () => {
                     commandHash,
                     receipt: {
                         commandId: requestId,
+                        requestId,
                         commandHash,
                         operation,
                         outcome: 'no-op',
+                        attemptCount: 1,
                         groupRef,
                         target: operation === 'putConfig' ? 'config' : 'override',
                         acceptedVersion: 1,
@@ -865,7 +879,9 @@ describe('group topology config repository', () => {
                             ? 6_000
                             : null,
                         acceptedCausalRevision: null,
+                        eventId: null,
                         outboxId: null,
+                        outboxIds: [],
                     },
                 }),
                 NEVER_EXPIRE_AT_TIMESTAMP,
@@ -900,11 +916,21 @@ describe('group topology config repository', () => {
         const commandHash = `sha256:${'c'.repeat(64)}`;
         const acceptedCausalRevision = {
             stateRevision: 2,
+            causalRevision: { groupRevision: 2, presenceRevision: 0 },
             snapshotVersion: 1,
             metadataVersion: 1,
             rosterVersion: 1,
             presenceVersion: 0,
         };
+        const outboxId = toStateMutationOutboxId({
+            commandId: requestId,
+            kind: 'group',
+            aggregateRef: groupRef,
+            acceptedCausalRevision: {
+                kind: 'group',
+                ...acceptedCausalRevision,
+            },
+        });
         await runtimeRepository.insertIfAbsent(
             GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE,
             repository.mutationKey(groupRef, requestId),
@@ -914,9 +940,11 @@ describe('group topology config repository', () => {
                 commandHash,
                 receipt: {
                     commandId: requestId,
+                    requestId,
                     commandHash,
                     operation: 'putConfig',
                     outcome: 'applied',
+                    attemptCount: 1,
                     groupRef,
                     target: 'config',
                     acceptedVersion: 1,
@@ -925,15 +953,9 @@ describe('group topology config repository', () => {
                     acceptedUpdatedAtEpochMs: 1,
                     acceptedExpiresAtEpochMs: null,
                     acceptedCausalRevision,
-                    outboxId: toStateMutationOutboxId({
-                        commandId: requestId,
-                        kind: 'group',
-                        aggregateRef: groupRef,
-                        acceptedCausalRevision: {
-                            kind: 'group',
-                            ...acceptedCausalRevision,
-                        },
-                    }),
+                    eventId: null,
+                    outboxId,
+                    outboxIds: [outboxId],
                     ...receipt,
                 },
             }),
@@ -1124,6 +1146,7 @@ describe('group topology config repository', () => {
         const repository = new GroupTopologyConfigRepository(runtimeRepository);
         const absentRef: GroupRef = {
             applicationId: 'app-1',
+            workspaceId: '',
             groupId: 'room-1',
         };
         const sentinelRef: GroupRef = { ...absentRef, workspaceId: '_' };
@@ -1449,7 +1472,7 @@ describe('group topology config repository', () => {
             const groupRef = createGroupRef('workspace-1');
             const stale = {
                 groupRef,
-                config: { topologyKind: 'tree' as const },
+                config: createEffectiveConfig('tree'),
                 version: 1,
                 createdAtEpochMs: 1,
                 updatedAtEpochMs: 1,
@@ -1459,7 +1482,7 @@ describe('group topology config repository', () => {
             };
             const refreshed = {
                 ...stale,
-                config: { topologyKind: 'mesh' as const },
+                config: createEffectiveConfig('mesh'),
                 version: 2,
                 updatedAtEpochMs: 2_000,
                 requestId: 'override-refreshed',
@@ -1511,7 +1534,7 @@ describe('group topology config repository', () => {
             const durable = {
                 groupRef,
                 config: {
-                    topologyKind: 'tree' as const,
+                    ...createEffectiveConfig('tree'),
                     degreeLimit: 3,
                 },
                 version: 1,
@@ -1524,14 +1547,14 @@ describe('group topology config repository', () => {
                 ...durable,
                 groupRef: sameGroupOtherWorkspace,
                 config: {
-                    topologyKind: 'mesh' as const,
+                    ...createEffectiveConfig('mesh'),
                     degreeLimit: 6,
                 },
             };
             const override = {
                 ...durable,
                 config: {
-                    topologyKind: 'star' as const,
+                    ...createEffectiveConfig('star'),
                 },
                 version: 2,
                 expiresAtEpochMs: 1_500,
@@ -1574,6 +1597,18 @@ function createGroupRef(workspaceId: string): GroupRef {
         applicationId: 'app-1',
         workspaceId,
         groupId: 'room-1',
+    };
+}
+
+function createEffectiveConfig(
+    topologyKind: 'auto' | 'star' | 'tree' | 'mesh',
+) {
+    return {
+        topologyKind,
+        degreeLimit: 5,
+        treeMinSize: 5,
+        meshMinSize: 16,
+        meshParamK: 2,
     };
 }
 

@@ -326,6 +326,7 @@ function createGroupPresenceSummaryOutbox(
                 computed.summary.causalRevision.groupRevision,
                 computed.summary.causalRevision.presenceRevision,
             ),
+            causalRevision: computed.summary.causalRevision,
             snapshotVersion: group.snapshotVersion,
             metadataVersion: group.metadataVersion,
             rosterVersion: group.rosterVersion,

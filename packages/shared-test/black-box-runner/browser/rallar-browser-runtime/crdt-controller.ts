@@ -24,6 +24,7 @@ import type {
     BlackBoxRallarRoomRef,
 } from './contracts.ts';
 import type { BlackBoxRallarGenerationPort } from './ports.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 
 export type BlackBoxRallarCrdtLease = Readonly<{
     generation: number;
@@ -271,12 +272,12 @@ export function createBlackBoxRallarCrdtController(
         return handle;
     }
 
-    function crdtRoomRef(input: BlackBoxRallarCrdtOpenInput): BlackBoxRallarRoomRef | undefined {
+    function crdtRoomRef(input: BlackBoxRallarCrdtOpenInput): GroupRef | undefined {
         const explicit = input.roomRef ?? (optionalRecord(input.rallar?.roomRef) as BlackBoxRallarRoomRef | undefined);
         if (explicit?.applicationId && explicit.groupId) {
             return {
                 applicationId: String(explicit.applicationId),
-                ...(explicit.workspaceId !== undefined ? { workspaceId: String(explicit.workspaceId) } : {}),
+                workspaceId: String(explicit.workspaceId ?? DEFAULT_WORKSPACE_ID),
                 groupId: String(explicit.groupId),
             };
         }
@@ -297,7 +298,7 @@ export function createBlackBoxRallarCrdtController(
 
         return {
             applicationId,
-            ...(workspaceId !== undefined ? { workspaceId } : {}),
+            workspaceId: workspaceId ?? DEFAULT_WORKSPACE_ID,
             groupId: roomId,
         };
     }

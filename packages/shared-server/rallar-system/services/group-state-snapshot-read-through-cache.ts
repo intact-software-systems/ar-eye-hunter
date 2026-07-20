@@ -3,6 +3,7 @@ import type {
     GroupSnapshot,
     GroupStateCausalRevision,
 } from '@shared/api/group-types.ts';
+import { DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import {
     compareGroupCausalRevision,
     readGroupCausalRevision,
@@ -196,7 +197,9 @@ function fromGroupStateSnapshotRepositoryKey(key: string): GroupRef {
 
     return {
         applicationId,
-        workspaceId: workspaceId === '' ? undefined : workspaceId,
+        workspaceId: workspaceId === ''
+            ? DEFAULT_STATE_WORKSPACE_ID
+            : workspaceId,
         groupId,
     };
 }

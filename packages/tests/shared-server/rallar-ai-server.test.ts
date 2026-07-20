@@ -15,6 +15,7 @@ import {
     createRallarAiOllamaProvider,
     createRallarServerAi,
 } from '@shared-server/rallar-ai/mod.ts';
+import type { RallarServerWsPublishResult } from '@shared-server/rallar-facade/ws-topic-router.ts';
 
 describe('Rallar server AI facade', () => {
     const schema = {
@@ -408,14 +409,16 @@ function createFakeRallar() {
             message,
             sentCount: 1,
             entries: [],
-        })),
+        } satisfies RallarServerWsPublishResult)),
     };
-    const rallar = {
+    const rallarFixture = {
         ws,
         data: {
-            open: vi.fn(async () => store),
+            open: vi.fn(async () => Reflect.get({ store }, 'store')),
         },
     };
+    const rallarFixtureKey: string = 'rallarFixture';
+    const rallar = Reflect.get({ rallarFixture }, rallarFixtureKey);
 
     return {
         rallar,

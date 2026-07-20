@@ -30,6 +30,7 @@ import {
 } from '@shared-server/rallar-system/services/AppClientInboxService.ts';
 import {
     AppGroupInboxService,
+    type AppInboxEnqueueInput,
     AppInboxType,
     type GroupCreateAppInboxPayload,
     type GroupMemberUpsertAppInboxPayload,
@@ -542,7 +543,7 @@ async function processCreateGroup(
     groupId: string,
 ): Promise<ResourceEntry> {
     const requestId = `create-${groupId}`;
-    const input = {
+    const input: AppInboxEnqueueInput<GroupCreateAppInboxPayload> = {
         type: AppInboxType.GROUP_CREATE,
         resourceId: requestId,
         contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${groupId}`,
@@ -671,7 +672,7 @@ async function processUpsertGroupMember(
     principalId: string,
 ): Promise<ResourceEntry> {
     const requestId = `join-${principalId}-${groupId}`;
-    const input = {
+    const input: AppInboxEnqueueInput<GroupMemberUpsertAppInboxPayload> = {
         type: AppInboxType.GROUP_MEMBER_UPSERT,
         resourceId: requestId,
         contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${groupId}`,

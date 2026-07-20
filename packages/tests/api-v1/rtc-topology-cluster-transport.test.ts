@@ -24,7 +24,10 @@ describe('API-v1 RTC topology PostgreSQL cluster transport', () => {
                 groupId: 'room-1',
             },
             publicationId: 'work-1:4:2',
-            sourceGroupStateRevision: 4,
+            sourceGroupStateCausalRevision: {
+                groupRevision: 4,
+                presenceRevision: 2,
+            },
         };
         const receive = vi.fn();
 

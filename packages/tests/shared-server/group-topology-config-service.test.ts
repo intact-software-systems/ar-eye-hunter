@@ -4,6 +4,7 @@ import type {
     PutGroupTopologyConfigRequest,
     PutGroupTopologyOverrideRequest,
 } from '@shared/api/graph-topology-management-types.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import {
     DEFAULT_GROUP_TOPOLOGY_OVERRIDE_TTL_MS,
     GroupTopologyConfigValidationError,
@@ -58,6 +59,7 @@ describe('group topology config service', () => {
                 requestedAtEpochMs: 1_000,
                 policyNowEpochMs: 1_000,
                 commandHash: `sha256:${'a'.repeat(64)}`,
+                attemptCount: 1,
                 isPlatformAdmin: false,
                 resolvedOverrideExpiresAtEpochMs: null,
                 deleteTarget: null,
@@ -102,7 +104,7 @@ describe('group topology config service', () => {
         }, {
             groupRef: input.command.aggregateRef,
             requestId: input.command.requestId,
-        })).toThrow('Topology config receipt outbox identity is invalid');
+        })).toThrow('Topology config receipt outboxIds are invalid');
     });
 
     it.each(['putConfig', 'putOverride'] as const)(
@@ -118,9 +120,11 @@ describe('group topology config service', () => {
                     commandHash,
                     receipt: {
                         commandId: requestId,
+                        requestId,
                         commandHash,
                         operation,
                         outcome: 'no-op',
+                        attemptCount: 1,
                         groupRef,
                         target: operation === 'putConfig' ? 'config' : 'override',
                         acceptedVersion: 1,
@@ -131,7 +135,9 @@ describe('group topology config service', () => {
                             ? 6_000
                             : null,
                         acceptedCausalRevision: null,
+                        eventId: null,
                         outboxId: null,
+                        outboxIds: [],
                     },
                 }, { groupRef, requestId })
             ).toThrow('Topology config PUT receipt must be applied');
@@ -166,6 +172,7 @@ describe('group topology config service', () => {
                 requestedAtEpochMs: 1_000,
                 policyNowEpochMs: 7_000,
                 commandHash: `sha256:${'8'.repeat(64)}`,
+                attemptCount: 1,
                 isPlatformAdmin: false,
                 resolvedOverrideExpiresAtEpochMs: 6_000,
                 deleteTarget: null,
@@ -240,17 +247,24 @@ describe('group topology config service', () => {
             config: {
                 topologyKind: 'tree' as const,
                 degreeLimit: 4,
+                treeMinSize: 6,
+                meshMinSize: 16,
+                meshParamK: 2,
             },
             version: 1,
             createdAtEpochMs: 1,
             updatedAtEpochMs: 1,
             updatedByPrincipalId: 'owner',
+            requestId: 'durable-config',
         };
         const temporary = {
             ...durable,
             config: {
                 topologyKind: 'mesh' as const,
+                degreeLimit: 4,
+                treeMinSize: 6,
                 meshMinSize: 20,
+                meshParamK: 2,
             },
             version: 2,
             expiresAtEpochMs: 10_000,
@@ -364,17 +378,23 @@ function createGroupRef() {
     };
 }
 
-function createGroupSnapshot() {
+function createGroupSnapshot(): GroupSnapshot {
     const groupRef = createGroupRef();
     return {
         stateRevision: 1,
         causalRevision: { groupRevision: 1, presenceRevision: 0 },
         group: {
             ...groupRef,
+            slug: null,
             displayName: 'Room 1',
+            description: null,
             kind: 'room' as const,
             status: 'active' as const,
+            archived: null,
+            deleted: null,
             joinMode: 'open' as const,
+            maxMembers: null,
+            maxSessionsPerMember: null,
             metadata: {},
             snapshotVersion: 1,
             metadataVersion: 0,
@@ -382,16 +402,48 @@ function createGroupSnapshot() {
             presenceVersion: 0,
             activeMemberCount: 1,
             ownerPrincipalId: 'owner',
-            created: { atEpochMs: 1, byPrincipalId: 'owner' },
-            updated: { atEpochMs: 1, byPrincipalId: 'owner' },
+            expiresAtEpochMs: null,
+            emptySinceEpochMs: null,
+            purgeAfterEpochMs: null,
+            created: {
+                atEpochMs: 1,
+                actor: { kind: 'principal', principalId: 'owner' },
+                reason: null,
+                traceId: null,
+                requestId: null,
+            },
+            updated: {
+                atEpochMs: 1,
+                actor: { kind: 'principal', principalId: 'owner' },
+                reason: null,
+                traceId: null,
+                requestId: null,
+            },
         },
         members: [{
             ...groupRef,
             principalId: 'owner',
             role: 'owner' as const,
             status: 'active' as const,
-            joined: { atEpochMs: 1, byPrincipalId: 'owner' },
-            updated: { atEpochMs: 1, byPrincipalId: 'owner' },
+            invitedByPrincipalId: null,
+            invitationExpiresAtEpochMs: null,
+            left: null,
+            removed: null,
+            banned: null,
+            joined: {
+                atEpochMs: 1,
+                actor: { kind: 'principal', principalId: 'owner' },
+                reason: null,
+                traceId: null,
+                requestId: null,
+            },
+            updated: {
+                atEpochMs: 1,
+                actor: { kind: 'principal', principalId: 'owner' },
+                reason: null,
+                traceId: null,
+                requestId: null,
+            },
         }],
         activeSessions: [],
         memberCount: 1,

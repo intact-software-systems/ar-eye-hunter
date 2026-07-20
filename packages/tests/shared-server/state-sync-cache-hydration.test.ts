@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
 import {
     findClientStateSnapshotByPrincipalId,
 } from '@shared/repository/client-state-snapshots-repository.ts';
@@ -35,44 +35,81 @@ describe('state sync cache hydration', () => {
 });
 
 function createClientSnapshot(principalId: string): ClientSnapshot {
+    const audit: AuditStamp = {
+        atEpochMs: 1,
+        actor: { kind: 'service', serviceId: 'test' },
+        reason: null,
+        traceId: null,
+        requestId: null,
+    };
     return {
+        stateRevision: 1,
         principal: {
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
             principalId,
             username: principalId,
             displayName: principalId,
+            avatarUrl: null,
+            authProvider: null,
+            externalSubjectId: null,
             status: 'active',
+            disabled: null,
+            deleted: null,
+            roles: [],
+            metadata: {},
             profileVersion: 1,
             presenceVersion: 0,
             snapshotVersion: 1,
-            created: { atEpochMs: 1, byServiceId: 'test' },
-            updated: { atEpochMs: 1, byServiceId: 'test' },
+            created: audit,
+            updated: audit,
+            lastSeenAtEpochMs: null,
         },
         instances: [],
         activeSessions: [],
-        instanceCount: 0,
+        isOnline: false,
         activeSessionCount: 0,
+        lastSeenAtEpochMs: null,
     };
 }
 
 function createGroupSnapshot(groupId: string): GroupSnapshot {
+    const audit: AuditStamp = {
+        atEpochMs: 1,
+        actor: { kind: 'service', serviceId: 'test' },
+        reason: null,
+        traceId: null,
+        requestId: null,
+    };
     return {
+        stateRevision: 1,
+        causalRevision: { groupRevision: 1, presenceRevision: 0 },
         group: {
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
             groupId,
+            slug: null,
             displayName: groupId,
+            description: null,
             kind: 'room',
             status: 'active',
+            archived: null,
+            deleted: null,
             joinMode: 'open',
+            maxMembers: null,
+            maxSessionsPerMember: null,
             metadata: {},
+            activeMemberCount: 0,
+            ownerPrincipalId: 'owner',
             snapshotVersion: 1,
             metadataVersion: 1,
             rosterVersion: 1,
             presenceVersion: 0,
-            created: { atEpochMs: 1, byServiceId: 'test' },
-            updated: { atEpochMs: 1, byServiceId: 'test' },
+            created: audit,
+            updated: audit,
+            expiresAtEpochMs: null,
+            emptySinceEpochMs: null,
+            purgeAfterEpochMs: null,
         },
         members: [],
         activeSessions: [],

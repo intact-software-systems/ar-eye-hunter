@@ -84,7 +84,7 @@ export type RegisterAuthorisedWsClientInput = Readonly<{
 
 export type ClientMutationWritten = Readonly<{
     snapshot: ClientSnapshot;
-    event?: ClientEvent;
+    event: ClientEvent | null;
 }>;
 
 export type ClientStateWritten = Readonly<{
@@ -170,6 +170,7 @@ export type ClientStateServiceDependencies = Readonly<{
 type ClientMutationExecution = Readonly<{
     receipt: ClientMutationReceipt;
     source: 'write' | 'replay' | 'no-op';
+    event: ClientEvent | null;
 }>;
 
 export function createClientStateService(
@@ -189,7 +190,7 @@ export function createClientStateService(
         mutationAtEpochMs: number = now(),
     ): Promise<ClientMutationExecution> => {
         validateClientMutationCommand(command);
-        const facts: ClientMutationFacts = {
+        const stableFacts: Omit<ClientMutationFacts, 'attemptCount'> = {
             nowEpochMs: mutationAtEpochMs,
             serviceId: dependencies.serviceId,
             eventId: randomId(),
@@ -202,6 +203,10 @@ export function createClientStateService(
             attempt < DEFAULT_RUNTIME_STATE_WRITE_ATTEMPTS;
             attempt++
         ) {
+            const facts: ClientMutationFacts = {
+                ...stableFacts,
+                attemptCount: attempt + 1,
+            };
             const backoffMs = await waitForRuntimeStateWriteRetry(
                 attempt as 0 | 1 | 2,
                 { sleep: dependencies.sleep },
@@ -286,7 +291,15 @@ export function createClientStateService(
                     }
                 }
                 if (computed.outcome !== 'write') {
-                    return { receipt: computed.receipt, source: computed.outcome };
+                    return {
+                        receipt: computed.receipt,
+                        source: computed.outcome,
+                        event: await readClientReceiptEvent(
+                            repositoryFor(runtimeRepository),
+                            command.aggregateRef,
+                            computed.receipt.eventId,
+                        ),
+                    };
                 }
 
                 activePhase = 'write';
@@ -317,7 +330,7 @@ export function createClientStateService(
                     backoffMs,
                 );
                 phaseRecorded = true;
-                return { receipt: written, source: 'write' };
+                return { receipt: written, source: 'write', event: computed.event };
             } catch (error) {
                 if (activePhase === 'write' && transactionStarted !== undefined) {
                     recordMutationPhase(
@@ -356,7 +369,7 @@ export function createClientStateService(
     const executeCompatible = async (
         command: ClientMutationCommand,
     ): Promise<ClientStateWritten> => {
-        const { receipt } = await executeReceipt(command);
+        const execution = await executeReceipt(command);
         const snapshot = await repositoryFor(runtimeRepository).readSnapshot(
             command.aggregateRef,
         );
@@ -369,9 +382,7 @@ export function createClientStateService(
             status: 'ok',
             result: Either.ofRight({
                 snapshot,
-                ...(receipt.event.kind === 'client'
-                    ? { event: receipt.event.event }
-                    : {}),
+                event: execution.event,
             }),
         };
     };
@@ -531,7 +542,7 @@ export function createClientStateService(
             const sessions = (await repositoryFor(runtimeRepository).listAllSessions())
                 .filter((session) =>
                     session.status === 'active' &&
-                    session.disconnectedAtEpochMs === undefined &&
+                    session.disconnectedAtEpochMs === null &&
                     session.expiresAtEpochMs <= atEpochMs
                 )
                 .map(toClientSessionExpiryCandidate);
@@ -540,7 +551,6 @@ export function createClientStateService(
                 const command = toExpiryCommand(candidate);
                 const execution = await executeReceipt(command, atEpochMs);
                 if (execution.source !== 'write') continue;
-                const receipt = execution.receipt;
                 const snapshot = await repositoryFor(runtimeRepository).readSnapshot(
                     command.aggregateRef,
                 );
@@ -549,9 +559,7 @@ export function createClientStateService(
                     status: 'ok',
                     result: Either.ofRight({
                         snapshot,
-                        ...(receipt.event.kind === 'client'
-                            ? { event: receipt.event.event }
-                            : {}),
+                        event: execution.event,
                     }),
                 });
             }
@@ -564,6 +572,22 @@ export function createClientStateService(
         dependencies.timing,
         dependencies.serviceId,
     );
+}
+
+async function readClientReceiptEvent(
+    repository: ClientStateRepository,
+    ref: ClientPrincipalRef,
+    eventId: string | null,
+): Promise<ClientEvent | null> {
+    if (eventId === null) return null;
+    const event = (await repository.listEvents(ref))
+        .find((candidate) => candidate.eventId === eventId);
+    if (!event) {
+        throw new ClientMutationRejectedError(
+            `Client mutation receipt event not found: ${eventId}`,
+        );
+    }
+    return event;
 }
 
 async function readClientMutation(
@@ -834,9 +858,7 @@ function toExpiryCommand(session: ClientSessionExpiryCandidate): ClientMutationC
         operation: 'expireSession',
         aggregateRef: {
             applicationId: session.applicationId,
-            ...(session.workspaceId === null ? {} : {
-                workspaceId: session.workspaceId,
-            }),
+            workspaceId: session.workspaceId,
             principalId: session.principalId,
         },
         clientInstanceId: session.clientInstanceId,

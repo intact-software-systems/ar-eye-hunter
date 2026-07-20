@@ -372,7 +372,6 @@ describe('AppGroupInboxService authenticated authority', () => {
                 request: {
                     principalId: 'victim',
                     generationId: 'victim-generation',
-                    generationVersion: harness.nowEpochMs,
                     lastHeartbeatAtEpochMs: harness.nowEpochMs + 1_000,
                     expiresAtEpochMs: harness.nowEpochMs + 61_000,
                     actorPrincipalId: 'victim',
@@ -493,7 +492,7 @@ describe('AppGroupInboxService authenticated authority', () => {
             GroupUpdateAppInboxPayload,
             GroupStateWritten
         >(harness.service, harness.reader, harness.sessions.owner, targetInput);
-        expect(initialNoOp.right?.result.right?.event).toBeUndefined();
+        expect(initialNoOp.right?.result.right?.event).toBeNull();
 
         await processAuthenticated<GroupUpdateAppInboxPayload, GroupStateWritten>(
             harness.service,

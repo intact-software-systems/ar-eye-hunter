@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { ClientInfo, OverlayInfo } from '@shared/api/api-config.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import type {
+    AuditStamp,
+    GroupMember,
+    GroupPresenceSession,
+    GroupSnapshot,
+} from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
@@ -393,7 +398,7 @@ describe('WebRtcGroupManager', () => {
         expect(manager.rttReportingPeerIds({ degreeLimit: 1 })).toEqual(['peer-c']);
     });
 
-    it('ignores provisional star overlays for RTT bootstrap selection', async () => {
+    it('uses complete star overlays for RTT bootstrap selection', async () => {
         const groupCache = new LatestRepository<string, GroupSnapshot>();
         const clientCache = new LatestRepository<string, ClientInfo>();
         const overlayCache = new LatestRepository<string, OverlayInfo>();
@@ -415,10 +420,13 @@ describe('WebRtcGroupManager', () => {
             clientCache.set(peerId, createClientInfo(peerId, true));
         }
 
-        overlayCache.set(toScopedOverlayId(group.group), createOverlayInfo(group, ['peer-a']));
+        overlayCache.set(toScopedOverlayId(group.group), {
+            ...createOverlayInfo(group, ['peer-a']),
+            topology: 'star',
+        });
         await manager.acceptGroupUpdate(group);
 
-        expect(manager.rttReportingPeerIds({ degreeLimit: 1 })).toEqual(['peer-c']);
+        expect(manager.rttReportingPeerIds({ degreeLimit: 1 })).toEqual(['peer-a']);
     });
 
     it('uses server-compatible per-group bootstrap candidates for RTT reporting', async () => {
@@ -640,58 +648,86 @@ function createGroupSnapshot(
 ): GroupSnapshot {
     const applicationId = scope.applicationId ?? 'app-1';
     const workspaceId = scope.workspaceId ?? 'workspace-1';
+    const ownerPrincipalId = memberSessionIds[0];
+    if (ownerPrincipalId === undefined) {
+        throw new Error('Group fixture requires an owner session');
+    }
 
     return {
+        stateRevision: membershipVersion,
+        causalRevision: {
+            groupRevision: membershipVersion,
+            presenceRevision: membershipVersion,
+        },
         group: {
             applicationId,
             workspaceId,
             groupId,
+            slug: groupId,
             displayName: groupId,
+            description: null,
             kind: 'room',
             status: 'active',
+            archived: null,
+            deleted: null,
             joinMode: 'open',
+            maxMembers: null,
+            maxSessionsPerMember: null,
             metadata: {},
+            activeMemberCount: memberSessionIds.length,
+            ownerPrincipalId,
             snapshotVersion: membershipVersion,
             metadataVersion: 0,
             rosterVersion: membershipVersion,
             presenceVersion: 0,
-            created: {
-                atEpochMs: 1,
-                byPrincipalId: 'creator',
-            },
-            updated: {
-                atEpochMs: membershipVersion,
-                byPrincipalId: 'creator',
-            },
+            created: createAuditStamp(1, ownerPrincipalId),
+            updated: createAuditStamp(membershipVersion, ownerPrincipalId),
+            expiresAtEpochMs: null,
+            emptySinceEpochMs: null,
+            purgeAfterEpochMs: null,
         },
-        members: memberSessionIds.map((sessionId) => ({
+        members: memberSessionIds.map((sessionId): GroupMember => ({
             applicationId,
             workspaceId,
             groupId,
             principalId: sessionId,
-            role: 'member',
+            role: sessionId === ownerPrincipalId ? 'owner' : 'member',
             status: 'active',
-            joined: {
-                atEpochMs: 1,
-                byPrincipalId: 'creator',
-            },
-            updated: {
-                atEpochMs: membershipVersion,
-                byPrincipalId: 'creator',
-            },
+            joined: createAuditStamp(1, ownerPrincipalId),
+            updated: createAuditStamp(membershipVersion, ownerPrincipalId),
+            invitedByPrincipalId: null,
+            invitationExpiresAtEpochMs: null,
+            left: null,
+            removed: null,
+            banned: null,
         })),
-        activeSessions: memberSessionIds.map((sessionId) => ({
+        activeSessions: memberSessionIds.map((sessionId): GroupPresenceSession => ({
             applicationId,
             workspaceId,
             groupId,
             sessionId,
             principalId: sessionId,
+            generationId: `generation-${sessionId}`,
+            generationVersion: membershipVersion,
+            status: 'active',
             connectedAtEpochMs: 1,
             lastHeartbeatAtEpochMs: membershipVersion,
             expiresAtEpochMs: membershipVersion + 60_000,
+            disconnectedAtEpochMs: null,
+            disconnectReason: null,
         })),
         memberCount: memberSessionIds.length,
         onlineMemberCount: memberSessionIds.length,
+    };
+}
+
+function createAuditStamp(atEpochMs: number, principalId: string): AuditStamp {
+    return {
+        atEpochMs,
+        actor: { kind: 'principal', principalId },
+        reason: null,
+        traceId: null,
+        requestId: null,
     };
 }
 
@@ -704,10 +740,13 @@ function createOverlayInfo(
         overlayId: toScopedOverlayId(group.group),
         groupRef: group.group,
         topology: 'tree',
+        sourceGroupStateCausalRevision: group.causalRevision,
+        state: 'active',
         name: group.group.displayName,
-        createdByClientId: group.group.created.byPrincipalId,
+        createdByClientId: group.group.ownerPrincipalId,
         createdAtEpochMs: group.group.created.atEpochMs,
         nextHopSessionIds,
+        degreeLimit: Math.max(1, nextHopSessionIds.length),
         overlayVersion,
         updatedAtEpochMs: overlayVersion,
     };

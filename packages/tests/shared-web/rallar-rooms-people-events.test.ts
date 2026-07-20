@@ -3,6 +3,11 @@ import { AppTopics } from '@shared/api/api-config.ts';
 import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupEvent, GroupSnapshot } from '@shared/api/group-types.ts';
 import {
+    createActiveClientSessionFixture,
+    createClientSnapshotFixture,
+    createGroupSnapshotFixture,
+} from './authoritative-group-fixtures.ts';
+import {
     newALBroadcastMessage,
     newALEventRoute,
 } from '@shared/al-contracts/al-contract.ts';
@@ -95,8 +100,14 @@ const mocks = vi.hoisted(() => {
             (_groupId?: unknown, _scope?: unknown, _options?: unknown) =>
                 Promise.reject(new Error('group event page not mocked')),
         ),
-        refreshStateSnapshots: vi.fn((_scope?: unknown, _policies?: unknown) =>
-            Promise.resolve({ clients: [], groups: [] })
+        refreshStateSnapshots: vi.fn(
+            (
+                _scope?: unknown,
+                _policies?: unknown,
+            ): Promise<{
+                clients: readonly ClientSnapshot[];
+                groups: readonly GroupSnapshot[];
+            }> => Promise.resolve({ clients: [], groups: [] }),
         ),
         readSession: vi.fn(() => session),
         clientRepositoryMissing: vi.fn((_value?: unknown): unknown => {
@@ -892,12 +903,17 @@ function createGroupEvent(
         eventId,
         eventType,
         snapshotVersion: scope.snapshotVersion ?? 1,
+        causalRevision: { groupRevision: 1, presenceRevision: 1 },
         occurredAtEpochMs: scope.occurredAtEpochMs ?? 1,
         actor: {
+            kind: 'session',
             principalId: 'alice',
             sessionId: 'session-1',
         },
+        reason: null,
+        traceId: null,
         requestId: `request-${eventId}`,
+        payload: {},
     };
 }
 
@@ -923,10 +939,14 @@ function createClientEvent(
         snapshotVersion: scope.snapshotVersion ?? 1,
         occurredAtEpochMs: scope.occurredAtEpochMs ?? 1,
         actor: {
+            kind: 'session',
             principalId,
             sessionId: `${principalId}-session`,
         },
+        reason: null,
+        traceId: null,
         requestId: `request-${eventId}`,
+        payload: {},
     };
 }
 
@@ -940,42 +960,23 @@ function createClientSnapshot(
 ): ClientSnapshot {
     const applicationId = scope.applicationId ?? 'app-1';
     const workspaceId = scope.workspaceId ?? 'workspace-1';
+    const snapshot = createClientSnapshotFixture({
+        applicationId,
+        workspaceId,
+        principalId,
+    });
     return {
+        ...snapshot,
         principal: {
-            applicationId,
-            workspaceId,
-            principalId,
-            username: principalId,
-            status: 'active',
-            roles: [],
-            metadata: {},
-            snapshotVersion: 1,
-            profileVersion: 1,
-            presenceVersion: 1,
-            created: {
-                atEpochMs: 1,
-                byPrincipalId: principalId,
-            },
-            updated: {
-                atEpochMs: 1,
-                byPrincipalId: principalId,
-            },
+            ...snapshot.principal,
         },
-        instances: [],
-        activeSessions: [{
+        activeSessions: [createActiveClientSessionFixture({
             applicationId,
             workspaceId,
             principalId,
             clientInstanceId: `${principalId}-instance`,
             sessionId,
-            status: 'active',
-            presenceState: 'online',
-            transport: 'ws',
-            authenticatedAtEpochMs: 1,
-            connectedAtEpochMs: 1,
-            lastHeartbeatAtEpochMs: 1,
-            expiresAtEpochMs: 60_000,
-        }],
+        })],
         isOnline: true,
         activeSessionCount: 1,
         lastSeenAtEpochMs: 1,
@@ -992,56 +993,10 @@ function createGroupSnapshot(
 ): GroupSnapshot {
     const applicationId = scope.applicationId ?? 'app-1';
     const workspaceId = scope.workspaceId ?? 'workspace-1';
-    return {
-        group: {
-            applicationId,
-            workspaceId,
-            groupId,
-            displayName: groupId,
-            kind: 'room',
-            status: 'active',
-            joinMode: 'open',
-            metadata: {},
-            snapshotVersion: 1,
-            metadataVersion: 0,
-            rosterVersion: 1,
-            presenceVersion: 1,
-            created: {
-                atEpochMs: 1,
-                byPrincipalId: 'creator',
-            },
-            updated: {
-                atEpochMs: 1,
-                byPrincipalId: 'creator',
-            },
-        },
-        members: sessionIds.map((sessionId) => ({
-            applicationId,
-            workspaceId,
-            groupId,
-            principalId: sessionId,
-            role: 'member',
-            status: 'active',
-            joined: {
-                atEpochMs: 1,
-                byPrincipalId: 'creator',
-            },
-            updated: {
-                atEpochMs: 1,
-                byPrincipalId: 'creator',
-            },
-        })),
-        activeSessions: sessionIds.map((sessionId) => ({
-            applicationId,
-            workspaceId,
-            groupId,
-            sessionId,
-            principalId: sessionId,
-            connectedAtEpochMs: 1,
-            lastHeartbeatAtEpochMs: 1,
-            expiresAtEpochMs: 60_000,
-        })),
-        memberCount: sessionIds.length,
-        onlineMemberCount: sessionIds.length,
-    };
+    return createGroupSnapshotFixture({
+        applicationId,
+        workspaceId,
+        groupId,
+        sessionIds,
+    });
 }

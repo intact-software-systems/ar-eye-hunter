@@ -1,12 +1,14 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import type {
+    AuditStamp as ClientAuditStamp,
     ClientEvent,
     ClientInstance,
     ClientPrincipal,
     ClientSession,
 } from '@shared/api/client-types.ts';
 import type {
+    AuditStamp as GroupAuditStamp,
     Group,
     GroupEvent,
     GroupMember,
@@ -15,6 +17,11 @@ import type {
 } from '@shared/api/group-types.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
+import {
+    groupStateGroupStorageKey,
+    groupStateMemberStorageKey,
+    groupStatePresenceSessionStorageKey,
+} from '@shared-server/rallar-system/group-state-storage-keys.ts';
 import {
     InMemoryClientStateEventStore,
     InMemoryGroupStateEventStore,
@@ -41,6 +48,58 @@ describe('ClientStateRepository', () => {
             .toBe(false);
         expect(Object.hasOwn(Object.getPrototypeOf(clientRepository), 'removeSession'))
             .toBe(false);
+    });
+
+    it('normalizes explicit pre-contract client rows at the persisted boundary', async () => {
+        const repository = new FakeRuntimeStateRepository();
+        const clientRepository = new ClientStateRepository(repository, {
+            events: new InMemoryClientStateEventStore(),
+        });
+        const canonical = createClientPrincipal();
+        const legacy = {
+            applicationId: canonical.applicationId,
+            principalId: canonical.principalId,
+            username: canonical.username,
+            status: canonical.status,
+            roles: canonical.roles,
+            metadata: canonical.metadata,
+            snapshotVersion: canonical.snapshotVersion,
+            profileVersion: canonical.profileVersion,
+            presenceVersion: canonical.presenceVersion,
+            created: { atEpochMs: 1, byServiceId: 'seed' },
+            updated: { atEpochMs: 2, byServiceId: 'seed' },
+        };
+        await repository.upsert(
+            'client-state:principals',
+            'app=app-1:ws=workspace-1:principal=principal-1',
+            JSON.stringify(legacy),
+            NEVER_EXPIRE_AT_TIMESTAMP,
+        );
+
+        await expect(clientRepository.findPrincipal(canonical)).resolves.toEqual({
+            ...canonical,
+            displayName: null,
+            created: createClientAuditStamp(1),
+            updated: createClientAuditStamp(2),
+        });
+    });
+
+    it('fails closed when a client row identity differs from its canonical slot', async () => {
+        const repository = new FakeRuntimeStateRepository();
+        const clientRepository = new ClientStateRepository(repository, {
+            events: new InMemoryClientStateEventStore(),
+        });
+        const expected = createClientPrincipal();
+        await repository.upsert(
+            'client-state:principals',
+            'app=app-1:ws=workspace-1:principal=principal-1',
+            JSON.stringify(createClientPrincipal('principal-2')),
+            NEVER_EXPIRE_AT_TIMESTAMP,
+        );
+
+        await expect(clientRepository.findPrincipal(expected)).rejects.toThrow(
+            'Stored client principal identity differs from its canonical slot',
+        );
     });
 
     it('stores durable client records, expires sessions, and assembles snapshots', async () => {
@@ -202,7 +261,7 @@ describe('ClientStateRepository', () => {
             }
             await updateClientInstance(clientRepository, {
                 ...createClientInstance('instance-a'),
-                platform: 'native',
+                platform: 'desktop',
             }, 0);
             await updateClientPrincipal(clientRepository, {
                 ...principal,
@@ -215,7 +274,7 @@ describe('ClientStateRepository', () => {
         expect(snapshot).toMatchObject({
             stateRevision: 2,
             principal: { displayName: 'Current principal' },
-            instances: [{ platform: 'native' }],
+            instances: [{ platform: 'desktop' }],
         });
     });
 
@@ -490,6 +549,123 @@ async function insertClientSession(
 }
 
 describe('GroupStateRepository', () => {
+    it('normalizes f135 legacy group rows and preserves their raw authority fence', async () => {
+        const repository = new FakeRuntimeStateRepository();
+        const groupRepository = new GroupStateRepository(repository);
+        const ref = {
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+            groupId: 'legacy-group',
+        };
+        const legacyAudit = { atEpochMs: 1, byServiceId: 'seed' };
+        const legacyGroup = {
+            applicationId: ref.applicationId,
+            groupId: ref.groupId,
+            displayName: 'Legacy group',
+            kind: 'room',
+            status: 'active',
+            joinMode: 'open',
+            metadata: {},
+            activeMemberCount: 1,
+            ownerPrincipalId: 'owner',
+            snapshotVersion: 1,
+            metadataVersion: 1,
+            rosterVersion: 1,
+            presenceVersion: 0,
+            created: legacyAudit,
+            updated: legacyAudit,
+        };
+        const legacyMember = {
+            applicationId: ref.applicationId,
+            groupId: ref.groupId,
+            principalId: 'owner',
+            role: 'owner',
+            status: 'active',
+            joined: legacyAudit,
+            updated: legacyAudit,
+        };
+        const legacySession = {
+            applicationId: ref.applicationId,
+            groupId: ref.groupId,
+            principalId: 'owner',
+            sessionId: 'session-1',
+            generationId: 'generation-1',
+            generationVersion: 1,
+            connectedAtEpochMs: 1,
+            lastHeartbeatAtEpochMs: 1,
+            expiresAtEpochMs: 60_000,
+        };
+        await repository.upsert(
+            'group-state:groups',
+            groupStateGroupStorageKey(ref),
+            JSON.stringify(legacyGroup),
+            NEVER_EXPIRE_AT_TIMESTAMP,
+        );
+        await repository.upsert(
+            'group-state:members',
+            groupStateMemberStorageKey({ ...ref, principalId: 'owner' }),
+            JSON.stringify(legacyMember),
+            NEVER_EXPIRE_AT_TIMESTAMP,
+        );
+        await repository.upsert(
+            'group-state:sessions',
+            groupStatePresenceSessionStorageKey({
+                ...ref,
+                sessionId: 'session-1',
+            }),
+            JSON.stringify(legacySession),
+            NEVER_EXPIRE_AT_TIMESTAMP,
+        );
+
+        await expect(groupRepository.findGroup(ref)).resolves.toMatchObject({
+            ...ref,
+            slug: null,
+            archived: null,
+            deleted: null,
+            created: createGroupAuditStamp(1),
+        });
+        await expect(groupRepository.findMember({ ...ref, principalId: 'owner' }))
+            .resolves.toMatchObject({ ...ref, status: 'active' });
+        await expect(groupRepository.findPresenceSession({
+            ...ref,
+            sessionId: 'session-1',
+        })).resolves.toMatchObject({
+            ...ref,
+            status: 'active',
+            disconnectedAtEpochMs: null,
+            disconnectReason: null,
+        });
+
+        const guarded = await groupRepository.readSnapshotWithAuthorityGuard(ref);
+        if (!guarded) throw new Error('Expected legacy authoritative snapshot');
+        await expect(groupRepository.advanceAuthorityFence(guarded.authorityGuard))
+            .resolves.toEqual({ status: 'applied', revision: 1 });
+    });
+
+    it('rejects explicit null and wrong-slot persisted group identities', async () => {
+        const repository = new FakeRuntimeStateRepository();
+        const groupRepository = new GroupStateRepository(repository);
+        const expected = createGroup('expected-group');
+        await repository.upsert(
+            'group-state:groups',
+            groupStateGroupStorageKey(expected),
+            JSON.stringify({ ...expected, workspaceId: null }),
+            NEVER_EXPIRE_AT_TIMESTAMP,
+        );
+        await expect(groupRepository.findGroup(expected)).rejects.toThrow(
+            /workspaceId/,
+        );
+        await repository.upsert(
+            'group-state:groups',
+            groupStateGroupStorageKey(expected),
+            JSON.stringify(createGroup('wrong-group')),
+            NEVER_EXPIRE_AT_TIMESTAMP,
+        );
+        await expect(groupRepository.findGroup(expected)).rejects.toThrow(
+            /scope differs|identity differs/,
+        );
+    });
+
     it('stores groups by scope, supports slug lookup, and assembles group snapshots', async () => {
         const repository = new FakeRuntimeStateRepository();
         const eventStore = new InMemoryGroupStateEventStore();
@@ -506,8 +682,7 @@ describe('GroupStateRepository', () => {
         });
         const disconnectedSession = createGroupSession('principal-b', 'session-b', {
             expiresAtEpochMs: now + 60_000,
-            disconnectedAtEpochMs: now - 10,
-            disconnectReason: 'closed',
+            disconnected: { atEpochMs: now - 10, reason: 'closed' },
         });
         const expiredSession = createGroupSession('principal-c', 'session-c', {
             expiresAtEpochMs: now - 1,
@@ -1113,14 +1288,20 @@ function createClientPrincipal(principalId = 'principal-1'): ClientPrincipal {
         principalId,
         username: principalId,
         displayName: principalId,
+        avatarUrl: null,
+        authProvider: null,
+        externalSubjectId: null,
         status: 'active',
+        disabled: null,
+        deleted: null,
         roles: ['member'],
         metadata: {},
         snapshotVersion: 3,
         profileVersion: 1,
         presenceVersion: 2,
-        created: { atEpochMs: 1, byServiceId: 'seed' },
-        updated: { atEpochMs: 2, byServiceId: 'seed' },
+        created: createClientAuditStamp(1),
+        updated: createClientAuditStamp(2),
+        lastSeenAtEpochMs: null,
     };
 }
 
@@ -1134,17 +1315,32 @@ function createClientInstance(
         principalId,
         clientInstanceId,
         status: 'active',
+        revoked: null,
         platform: 'web',
+        deviceLabel: null,
+        appVersion: null,
+        userAgent: null,
         capabilities: ['rtc'],
-        registered: { atEpochMs: 1, byServiceId: 'seed' },
-        updated: { atEpochMs: 2, byServiceId: 'seed' },
+        registered: createClientAuditStamp(1),
+        updated: createClientAuditStamp(2),
     };
 }
 
 function createClientSession(
     clientInstanceId: string,
     sessionId: string,
-    overrides: Partial<ClientSession> = {},
+    overrides: Partial<Pick<
+        ClientSession,
+        | 'principalId'
+        | 'generationId'
+        | 'generationVersion'
+        | 'presenceState'
+        | 'connectionId'
+        | 'authenticatedAtEpochMs'
+        | 'connectedAtEpochMs'
+        | 'lastHeartbeatAtEpochMs'
+        | 'expiresAtEpochMs'
+    >> = {},
 ): ClientSession {
     return {
         applicationId: 'app-1',
@@ -1152,13 +1348,18 @@ function createClientSession(
         principalId: 'principal-1',
         clientInstanceId,
         sessionId,
+        generationId: `generation-${sessionId}`,
+        generationVersion: 10,
         status: 'active',
         presenceState: 'online',
         transport: 'ws',
+        connectionId: null,
         authenticatedAtEpochMs: 10,
         connectedAtEpochMs: 20,
         lastHeartbeatAtEpochMs: 30,
         expiresAtEpochMs: Date.now() + 60_000,
+        disconnectedAtEpochMs: null,
+        disconnectReason: null,
         ...overrides,
     };
 }
@@ -1179,7 +1380,11 @@ function createClientEvent(
         sessionId: 'session-a',
         snapshotVersion,
         occurredAtEpochMs,
-        actor: { serviceId: 'seed' },
+        actor: { kind: 'service', serviceId: 'seed' },
+        reason: null,
+        traceId: null,
+        requestId: null,
+        payload: {},
     };
 }
 
@@ -1190,9 +1395,14 @@ function createGroup(groupId = 'group-1'): Group {
         groupId,
         slug: groupId === 'group-1' ? 'party-1' : groupId,
         displayName: groupId === 'group-1' ? 'Party 1' : groupId,
+        description: null,
         kind: 'party',
         status: 'active',
+        archived: null,
+        deleted: null,
         joinMode: 'invite-only',
+        maxMembers: null,
+        maxSessionsPerMember: null,
         metadata: {},
         activeMemberCount: 1,
         ownerPrincipalId: ownerPrincipalIdFor(groupId),
@@ -1200,8 +1410,11 @@ function createGroup(groupId = 'group-1'): Group {
         metadataVersion: 1,
         rosterVersion: 2,
         presenceVersion: 3,
-        created: { atEpochMs: 1, byServiceId: 'seed' },
-        updated: { atEpochMs: 2, byServiceId: 'seed' },
+        created: createGroupAuditStamp(1),
+        updated: createGroupAuditStamp(2),
+        expiresAtEpochMs: null,
+        emptySinceEpochMs: null,
+        purgeAfterEpochMs: null,
     };
 }
 
@@ -1210,20 +1423,40 @@ function createGroupMember(
     status: GroupMember['status'],
     groupId = 'group-1',
 ): GroupMember {
-    const updated = { atEpochMs: 2, byServiceId: 'seed' } as const;
-    return {
+    const updated = createGroupAuditStamp(2);
+    const role: GroupMember['role'] = principalId === ownerPrincipalIdFor(groupId)
+        ? 'owner'
+        : 'member';
+    const base = {
         applicationId: 'app-1',
         workspaceId: 'workspace-1',
         groupId,
         principalId,
-        role: principalId === ownerPrincipalIdFor(groupId) ? 'owner' : 'member',
-        status,
-        joined: { atEpochMs: 1, byServiceId: 'seed' },
+        role,
+        joined: createGroupAuditStamp(1),
         updated,
-        ...(status === 'left' || status === 'removed' || status === 'banned'
-            ? { [status]: updated }
-            : {}),
+        invitedByPrincipalId: null,
+        invitationExpiresAtEpochMs: null,
     };
+    switch (status) {
+        case 'invited':
+            return {
+                ...base,
+                status,
+                joined: null,
+                left: null,
+                removed: null,
+                banned: null,
+            };
+        case 'active':
+            return { ...base, status, left: null, removed: null, banned: null };
+        case 'left':
+            return { ...base, status, left: updated, removed: null, banned: null };
+        case 'removed':
+            return { ...base, status, left: null, removed: updated, banned: null };
+        case 'banned':
+            return { ...base, status, left: null, removed: null, banned: updated };
+    }
 }
 
 async function putGroupFixture(
@@ -1237,13 +1470,18 @@ async function putGroupFixture(
 function createGroupOwner(group: Group): GroupMember {
     return {
         applicationId: group.applicationId,
-        ...(group.workspaceId === undefined ? {} : { workspaceId: group.workspaceId }),
+        workspaceId: group.workspaceId,
         groupId: group.groupId,
         principalId: group.ownerPrincipalId,
         role: 'owner',
         status: 'active',
-        joined: { atEpochMs: 1, byServiceId: 'seed' },
-        updated: { atEpochMs: 2, byServiceId: 'seed' },
+        joined: createGroupAuditStamp(1),
+        updated: createGroupAuditStamp(2),
+        invitedByPrincipalId: null,
+        invitationExpiresAtEpochMs: null,
+        left: null,
+        removed: null,
+        banned: null,
     };
 }
 
@@ -1258,20 +1496,42 @@ function ownerPrincipalIdFor(groupId: string): string {
 function createGroupSession(
     principalId: string,
     sessionId: string,
-    overrides: Partial<GroupPresenceSession> = {},
+    overrides: Readonly<{
+        groupId?: string;
+        generationId?: string;
+        generationVersion?: number;
+        connectedAtEpochMs?: number;
+        lastHeartbeatAtEpochMs?: number;
+        expiresAtEpochMs?: number;
+        disconnected?: Readonly<{ atEpochMs: number; reason: string }>;
+    }> = {},
 ): GroupPresenceSession {
-    return {
+    const connectedAtEpochMs = overrides.connectedAtEpochMs ?? 10;
+    const base = {
         applicationId: 'app-1',
         workspaceId: 'workspace-1',
-        groupId: 'group-1',
+        groupId: overrides.groupId ?? 'group-1',
         principalId,
         sessionId,
-        generationId: `generation-${sessionId}`,
-        generationVersion: overrides.connectedAtEpochMs ?? 10,
-        connectedAtEpochMs: 10,
-        lastHeartbeatAtEpochMs: 20,
-        expiresAtEpochMs: Date.now() + 60_000,
-        ...overrides,
+        generationId: overrides.generationId ?? `generation-${sessionId}`,
+        generationVersion: overrides.generationVersion ?? connectedAtEpochMs,
+        connectedAtEpochMs,
+        lastHeartbeatAtEpochMs: overrides.lastHeartbeatAtEpochMs ?? 20,
+        expiresAtEpochMs: overrides.expiresAtEpochMs ?? Date.now() + 60_000,
+    };
+    if (overrides.disconnected !== undefined) {
+        return {
+            ...base,
+            status: 'disconnected',
+            disconnectedAtEpochMs: overrides.disconnected.atEpochMs,
+            disconnectReason: overrides.disconnected.reason,
+        };
+    }
+    return {
+        ...base,
+        status: 'active',
+        disconnectedAtEpochMs: null,
+        disconnectReason: null,
     };
 }
 
@@ -1311,8 +1571,36 @@ function createGroupEvent(
         eventId,
         eventType: 'session-connected',
         snapshotVersion,
+        causalRevision: {
+            groupRevision: snapshotVersion,
+            presenceRevision: snapshotVersion,
+        },
         occurredAtEpochMs,
-        actor: { serviceId: 'seed' },
+        actor: { kind: 'service', serviceId: 'seed' },
+        reason: null,
+        traceId: null,
+        requestId: null,
+        payload: {},
+    };
+}
+
+function createClientAuditStamp(atEpochMs: number): ClientAuditStamp {
+    return {
+        atEpochMs,
+        actor: { kind: 'service', serviceId: 'seed' },
+        reason: null,
+        traceId: null,
+        requestId: null,
+    };
+}
+
+function createGroupAuditStamp(atEpochMs: number): GroupAuditStamp {
+    return {
+        atEpochMs,
+        actor: { kind: 'service', serviceId: 'seed' },
+        reason: null,
+        traceId: null,
+        requestId: null,
     };
 }
 

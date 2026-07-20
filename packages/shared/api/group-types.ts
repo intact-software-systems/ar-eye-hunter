@@ -1,3 +1,5 @@
+import type { MutationActor } from './mutation-actor.ts';
+
 export type ApplicationId = string;
 export type WorkspaceId = string;
 export type GroupId = string;
@@ -29,17 +31,15 @@ export type GroupJoinMode =
 
 export type AuditStamp = Readonly<{
     atEpochMs: number;
-    byPrincipalId?: PrincipalId;
-    bySessionId?: SessionId;
-    byServiceId?: string;
-    reason?: string;
-    traceId?: string;
-    requestId?: string;
+    actor: MutationActor;
+    reason: string | null;
+    traceId: string | null;
+    requestId: string | null;
 }>;
 
 export type GroupScope = Readonly<{
     applicationId: ApplicationId;
-    workspaceId?: WorkspaceId;
+    workspaceId: WorkspaceId;
 }>;
 
 export type GroupRef =
@@ -48,17 +48,16 @@ export type GroupRef =
     groupId: GroupId;
 }>;
 
-export type Group =
+type GroupBase =
     & GroupRef
     & Readonly<{
-    slug?: string;
+    slug: string | null;
     displayName: string;
-    description?: string;
+    description: string | null;
     kind: 'party' | 'room' | 'team' | 'custom';
-    status: GroupStatus;
     joinMode: GroupJoinMode;
-    maxMembers?: number;
-    maxSessionsPerMember?: number;
+    maxMembers: number | null;
+    maxSessionsPerMember: number | null;
     metadata: Record<string, unknown>;
 
     /** Guarded roster facts maintained with every authoritative group write. */
@@ -72,32 +71,71 @@ export type Group =
 
     created: AuditStamp;
     updated: AuditStamp;
-    archived?: AuditStamp;
-    deleted?: AuditStamp;
-
-    expiresAtEpochMs?: number;
-    emptySinceEpochMs?: number;
-    purgeAfterEpochMs?: number;
+    expiresAtEpochMs: number | null;
+    emptySinceEpochMs: number | null;
+    purgeAfterEpochMs: number | null;
 }>;
 
-export type GroupMember =
+export type Group = GroupBase & (
+    | Readonly<{ status: 'active'; archived: null; deleted: null }>
+    | Readonly<{ status: 'archived'; archived: AuditStamp; deleted: null }>
+    | Readonly<{
+        status: 'deleted';
+        archived: AuditStamp | null;
+        deleted: AuditStamp;
+    }>
+);
+
+type GroupMemberBase =
     & GroupRef
     & Readonly<{
     principalId: PrincipalId;
     role: GroupRole;
-    status: GroupMemberStatus;
-
-    joined: AuditStamp;
+    joined: AuditStamp | null;
     updated: AuditStamp;
-    left?: AuditStamp;
-    removed?: AuditStamp;
-    banned?: AuditStamp;
-
-    invitedByPrincipalId?: PrincipalId;
-    invitationExpiresAtEpochMs?: number;
+    invitedByPrincipalId: PrincipalId | null;
+    invitationExpiresAtEpochMs: number | null;
 }>;
 
-export type GroupPresenceSession =
+export type GroupMember = GroupMemberBase & (
+    | Readonly<{
+        status: 'invited';
+        joined: null;
+        left: null;
+        removed: null;
+        banned: null;
+    }>
+    | Readonly<{
+        status: 'active';
+        joined: AuditStamp;
+        left: null;
+        removed: null;
+        banned: null;
+    }>
+    | Readonly<{
+        status: 'left';
+        joined: AuditStamp | null;
+        left: AuditStamp;
+        removed: AuditStamp | null;
+        banned: AuditStamp | null;
+    }>
+    | Readonly<{
+        status: 'removed';
+        joined: AuditStamp | null;
+        left: AuditStamp | null;
+        removed: AuditStamp;
+        banned: AuditStamp | null;
+    }>
+    | Readonly<{
+        status: 'banned';
+        joined: AuditStamp | null;
+        left: AuditStamp | null;
+        removed: AuditStamp | null;
+        banned: AuditStamp;
+    }>
+);
+
+type GroupPresenceSessionBase =
     & GroupRef
     & Readonly<{
     sessionId: SessionId;
@@ -110,9 +148,20 @@ export type GroupPresenceSession =
     lastHeartbeatAtEpochMs: number;
     expiresAtEpochMs: number;
 
-    disconnectedAtEpochMs?: number;
-    disconnectReason?: string;
 }>;
+
+export type GroupPresenceSession = GroupPresenceSessionBase & (
+    | Readonly<{
+        status: 'active';
+        disconnectedAtEpochMs: null;
+        disconnectReason: null;
+    }>
+    | Readonly<{
+        status: 'disconnected';
+        disconnectedAtEpochMs: number;
+        disconnectReason: string;
+    }>
+);
 
 export type GroupStateCausalRevision = Readonly<{
     groupRevision: number;
@@ -186,14 +235,11 @@ export type GroupEvent =
     eventId: string;
     eventType: GroupEventType;
     snapshotVersion: number;
+    causalRevision: GroupStateCausalRevision;
     occurredAtEpochMs: number;
-    actor: {
-        principalId?: PrincipalId;
-        sessionId?: SessionId;
-        serviceId?: string;
-    };
-    reason?: string;
-    traceId?: string;
-    requestId?: string;
-    payload?: Record<string, unknown>;
+    actor: MutationActor;
+    reason: string | null;
+    traceId: string | null;
+    requestId: string | null;
+    payload: Record<string, unknown>;
 }>;

@@ -1,6 +1,9 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
-import type { GroupRef } from '@shared/api/group-types.ts';
+import type {
+    GroupRef,
+    GroupStateCausalRevision,
+} from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import {
     toRtcTopologyPublicationId,
@@ -21,7 +24,7 @@ export function validateRtcTopologyPublication(
         'publicationId',
         'workId',
         'groupRef',
-        'sourceGroupStateRevision',
+        'sourceGroupStateCausalRevision',
         'overlayVersion',
         'targetGroupSnapshotVersion',
         'recipientSessionIds',
@@ -31,20 +34,19 @@ export function validateRtcTopologyPublication(
     validateExactGroupRef(publication.groupRef, expectedRef);
     nonEmptyString(publication.publicationId, 'publication id');
     nonEmptyString(publication.workId, 'work id');
-    for (const field of [
-        'sourceGroupStateRevision',
-        'overlayVersion',
-        'targetGroupSnapshotVersion',
-        'createdAtEpochMs',
-    ] as const) {
-        safeInteger(publication[field], 0, field);
-    }
+    const overlayVersion = publication.overlayVersion;
+    const targetGroupSnapshotVersion = publication.targetGroupSnapshotVersion;
+    const createdAtEpochMs = publication.createdAtEpochMs;
+    safeInteger(overlayVersion, 0, 'overlayVersion');
+    safeInteger(targetGroupSnapshotVersion, 0, 'targetGroupSnapshotVersion');
+    safeInteger(createdAtEpochMs, 0, 'createdAtEpochMs');
+    causalRevision(publication.sourceGroupStateCausalRevision);
     if (
         publication.publicationId !== toRtcTopologyPublicationId({
-            workId: publication.workId as string,
-            sourceGroupStateRevision:
-                publication.sourceGroupStateRevision as number,
-            overlayVersion: publication.overlayVersion as number,
+            workId: publication.workId,
+            sourceGroupStateCausalRevision:
+                publication.sourceGroupStateCausalRevision,
+            overlayVersion,
         })
     ) {
         throw new TypeError('RTC topology publication id is not deterministic');
@@ -70,18 +72,20 @@ export function validateRtcTopologyPublication(
         message,
         expectedRef,
         snapshot,
-        publication.targetGroupSnapshotVersion as number,
-        publication.createdAtEpochMs as number,
+        targetGroupSnapshotVersion,
+        createdAtEpochMs,
     );
     if (
         message.id.msgId !==
-            toRtcTopologyPublicationMessageId(publication.workId as string)
+            toRtcTopologyPublicationMessageId(publication.workId)
     ) {
         throw new TypeError('RTC topology publication message id is not deterministic');
     }
     if (
-        snapshot.sourceGroupStateRevision !==
-            publication.sourceGroupStateRevision ||
+        !rtcTopologySemanticEqual(
+            snapshot.sourceGroupStateCausalRevision,
+            publication.sourceGroupStateCausalRevision,
+        ) ||
         snapshot.version !== publication.overlayVersion ||
         !rtcTopologySemanticEqual(
             snapshot.activeSessionIds,
@@ -107,7 +111,8 @@ function validateEnvelope(
         );
     }
     const expectedResourceId =
-        `${snapshot.overlayId}:${snapshot.sourceGroupStateRevision}:${snapshot.version}`;
+        `${snapshot.overlayId}:${snapshot.sourceGroupStateCausalRevision.groupRevision}:` +
+        `${snapshot.sourceGroupStateCausalRevision.presenceRevision}:${snapshot.version}`;
     if (
         message.targets.mode !== 'broadcast' ||
         message.targets.minSnapshotVersion !== targetGroupSnapshotVersion
@@ -182,8 +187,21 @@ function nonEmptyString(value: unknown, label: string): asserts value is string 
     }
 }
 
-function safeInteger(value: unknown, minimum: number, label: string): void {
+function safeInteger(
+    value: unknown,
+    minimum: number,
+    label: string,
+): asserts value is number {
     if (!Number.isSafeInteger(value) || (value as number) < minimum) {
         throw new TypeError(`RTC topology ${label} is invalid`);
     }
+}
+
+function causalRevision(
+    value: unknown,
+): asserts value is GroupStateCausalRevision {
+    const revision = record(value, 'RTC topology source causal revision');
+    exactKeys(revision, ['groupRevision', 'presenceRevision']);
+    safeInteger(revision.groupRevision, 0, 'source group revision');
+    safeInteger(revision.presenceRevision, 0, 'source presence revision');
 }

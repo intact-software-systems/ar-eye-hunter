@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import type { Group, GroupMember, GroupPresenceSession, GroupSnapshot } from '@shared/mod.ts';
+import type {
+  AuditStamp,
+  Group,
+  GroupMember,
+  GroupPresenceSession,
+  GroupSnapshot,
+} from '@shared/mod.ts';
 import {
   authorizeRelicCommand,
   authorizeRelicReset,
@@ -114,34 +120,46 @@ function env(values: Record<string, string>): Pick<Deno.Env, 'get'> {
 }
 
 function snapshot(
-  options:
-    & Partial<Group>
-    & Readonly<{
-      members?: readonly GroupMember[];
-      activeSessions?: readonly GroupPresenceSession[];
-    }> = {},
+  options: Readonly<{
+    members?: readonly GroupMember[];
+    activeSessions?: readonly GroupPresenceSession[];
+  }> = {},
 ): GroupSnapshot {
+  const members = options.members ?? [member('alice', { role: 'owner' })];
+  const activeSessions = options.activeSessions ?? [];
+  const groupRevision = 1;
+  const presenceRevision = activeSessions.length;
   const group: Group = {
     applicationId: 'rallar-server',
     workspaceId: 'default',
     groupId: 'room-1',
+    slug: null,
     displayName: 'Room 1',
+    description: null,
     kind: 'room',
     status: 'active',
     joinMode: 'open',
+    maxMembers: null,
+    maxSessionsPerMember: null,
     metadata: {},
-    snapshotVersion: options.snapshotVersion ?? 1,
+    activeMemberCount: members.length,
+    ownerPrincipalId: 'alice',
+    snapshotVersion: groupRevision,
     metadataVersion: 1,
     rosterVersion: 1,
-    presenceVersion: 1,
-    created: { atEpochMs: 1, byServiceId: 'test' },
-    updated: { atEpochMs: 1, byServiceId: 'test' },
-    ...options,
+    presenceVersion: presenceRevision,
+    created: auditStamp,
+    updated: auditStamp,
+    expiresAtEpochMs: null,
+    emptySinceEpochMs: null,
+    purgeAfterEpochMs: null,
+    archived: null,
+    deleted: null,
   };
-  const members = options.members ?? [member('alice', { role: 'owner' })];
-  const activeSessions = options.activeSessions ?? [];
 
   return {
+    stateRevision: groupRevision + presenceRevision,
+    causalRevision: { groupRevision, presenceRevision },
     group,
     members,
     activeSessions,
@@ -152,7 +170,7 @@ function snapshot(
 
 function member(
   principalId: string,
-  options: Partial<GroupMember> = {},
+  options: Readonly<{ role?: GroupMember['role'] }> = {},
 ): GroupMember {
   return {
     applicationId: 'rallar-server',
@@ -160,16 +178,20 @@ function member(
     groupId: 'room-1',
     principalId,
     role: options.role ?? 'member',
-    status: options.status ?? 'active',
-    joined: { atEpochMs: 1, byServiceId: 'test' },
-    updated: { atEpochMs: 1, byServiceId: 'test' },
+    status: 'active',
+    joined: auditStamp,
+    updated: auditStamp,
+    left: null,
+    removed: null,
+    banned: null,
+    invitedByPrincipalId: null,
+    invitationExpiresAtEpochMs: null,
   };
 }
 
 function session(
   sessionId: string,
   principalId: string,
-  options: Partial<GroupPresenceSession> = {},
 ): GroupPresenceSession {
   return {
     applicationId: 'rallar-server',
@@ -177,9 +199,21 @@ function session(
     groupId: 'room-1',
     sessionId,
     principalId,
+    generationId: `${sessionId}-generation`,
+    generationVersion: 1,
+    status: 'active',
     connectedAtEpochMs: 1,
     lastHeartbeatAtEpochMs: 1,
     expiresAtEpochMs: Date.now() + 60_000,
-    ...options,
+    disconnectedAtEpochMs: null,
+    disconnectReason: null,
   };
 }
+
+const auditStamp: AuditStamp = {
+  atEpochMs: 1,
+  actor: { kind: 'service', serviceId: 'test' },
+  reason: null,
+  traceId: null,
+  requestId: null,
+};

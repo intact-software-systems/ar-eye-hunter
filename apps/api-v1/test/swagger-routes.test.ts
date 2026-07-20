@@ -200,9 +200,11 @@ Deno.test('OpenAPI JSON includes scoped graph and topology management contracts'
     .GroupTopologyConfigMutationReceipt;
   assert.deepEqual(topologyReceipt.required, [
     'commandId',
+    'requestId',
     'commandHash',
     'operation',
     'outcome',
+    'attemptCount',
     'groupRef',
     'target',
     'acceptedVersion',
@@ -211,7 +213,9 @@ Deno.test('OpenAPI JSON includes scoped graph and topology management contracts'
     'acceptedUpdatedAtEpochMs',
     'acceptedExpiresAtEpochMs',
     'acceptedCausalRevision',
+    'eventId',
     'outboxId',
+    'outboxIds',
   ]);
   assert.deepEqual(
     json.components.schemas.GroupTopologyConfigAcceptedCausalRevision.required,
@@ -221,6 +225,7 @@ Deno.test('OpenAPI JSON includes scoped graph and topology management contracts'
       'metadataVersion',
       'rosterVersion',
       'presenceVersion',
+      'causalRevision',
     ],
   );
   assert.ok(

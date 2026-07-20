@@ -3,7 +3,7 @@ import { AppTopics } from '@shared/api/api-config.ts';
 import type { ALOutboundEnqueueStatus } from '@shared/alm/ALOutboundMessageRuntime.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
-import type { GroupEvent, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { AuditStamp, GroupEvent, GroupSnapshot } from '@shared/api/group-types.ts';
 import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
@@ -250,6 +250,7 @@ function createClientSnapshot(
     principalId: string,
     sessionIds: readonly string[],
 ): ClientSnapshot {
+    const audit = createAuditStamp();
     return {
         stateRevision: 1,
         principal: {
@@ -258,14 +259,20 @@ function createClientSnapshot(
             principalId,
             username: principalId,
             displayName: principalId,
+            avatarUrl: null,
+            authProvider: null,
+            externalSubjectId: null,
             status: 'active',
+            disabled: null,
+            deleted: null,
             roles: [],
             metadata: {},
             profileVersion: 1,
             presenceVersion: sessionIds.length,
             snapshotVersion: 1,
-            created: { atEpochMs: 1, byServiceId: 'test' },
-            updated: { atEpochMs: 1, byServiceId: 'test' },
+            created: audit,
+            updated: audit,
+            lastSeenAtEpochMs: sessionIds.length > 0 ? 1 : null,
         },
         instances: [],
         activeSessions: sessionIds.map((sessionId) => ({
@@ -274,9 +281,14 @@ function createClientSnapshot(
             principalId,
             clientInstanceId: 'browser',
             sessionId,
+            generationId: `${sessionId}-generation`,
+            generationVersion: 1,
             status: 'active',
+            disconnectedAtEpochMs: null,
+            disconnectReason: null,
             presenceState: 'online',
             transport: 'ws',
+            connectionId: sessionId,
             authenticatedAtEpochMs: 1,
             connectedAtEpochMs: 1,
             lastHeartbeatAtEpochMs: 1,
@@ -284,6 +296,7 @@ function createClientSnapshot(
         })),
         isOnline: sessionIds.length > 0,
         activeSessionCount: sessionIds.length,
+        lastSeenAtEpochMs: sessionIds.length > 0 ? 1 : null,
     };
 }
 
@@ -291,23 +304,36 @@ function createGroupSnapshot(
     groupId: string,
     sessionIds: readonly string[],
 ): GroupSnapshot {
+    const audit = createAuditStamp();
     return {
         stateRevision: 1,
+        causalRevision: { groupRevision: 1, presenceRevision: sessionIds.length },
         group: {
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
             groupId,
+            slug: null,
             displayName: groupId,
+            description: null,
             kind: 'room',
             status: 'active',
+            archived: null,
+            deleted: null,
             joinMode: 'open',
+            maxMembers: null,
+            maxSessionsPerMember: null,
             metadata: {},
+            activeMemberCount: sessionIds.length,
+            ownerPrincipalId: 'owner',
             snapshotVersion: 1,
             metadataVersion: 1,
             rosterVersion: 1,
             presenceVersion: sessionIds.length,
-            created: { atEpochMs: 1, byServiceId: 'test' },
-            updated: { atEpochMs: 1, byServiceId: 'test' },
+            created: audit,
+            updated: audit,
+            expiresAtEpochMs: null,
+            emptySinceEpochMs: null,
+            purgeAfterEpochMs: null,
         },
         members: sessionIds.map((sessionId) => ({
             applicationId: 'app-1',
@@ -316,8 +342,13 @@ function createGroupSnapshot(
             principalId: sessionId,
             role: 'member',
             status: 'active',
-            joined: { atEpochMs: 1, byServiceId: 'test' },
-            updated: { atEpochMs: 1, byServiceId: 'test' },
+            joined: audit,
+            updated: audit,
+            invitedByPrincipalId: null,
+            invitationExpiresAtEpochMs: null,
+            left: null,
+            removed: null,
+            banned: null,
         })),
         activeSessions: sessionIds.map((sessionId) => ({
             applicationId: 'app-1',
@@ -325,6 +356,11 @@ function createGroupSnapshot(
             groupId,
             sessionId,
             principalId: sessionId,
+            generationId: `${sessionId}-generation`,
+            generationVersion: 1,
+            status: 'active',
+            disconnectedAtEpochMs: null,
+            disconnectReason: null,
             connectedAtEpochMs: 1,
             lastHeartbeatAtEpochMs: 1,
             expiresAtEpochMs: 60_000,
@@ -342,9 +378,22 @@ function createGroupEvent(groupId: string, eventId: string): GroupEvent {
         eventId,
         eventType: 'group-updated',
         snapshotVersion: 2,
+        causalRevision: { groupRevision: 2, presenceRevision: 1 },
         occurredAtEpochMs: 2,
-        actor: {
-            serviceId: 'test',
-        },
+        actor: { kind: 'service', serviceId: 'test' },
+        reason: null,
+        traceId: null,
+        requestId: null,
+        payload: {},
+    };
+}
+
+function createAuditStamp(): AuditStamp {
+    return {
+        atEpochMs: 1,
+        actor: { kind: 'service', serviceId: 'test' },
+        reason: null,
+        traceId: null,
+        requestId: null,
     };
 }

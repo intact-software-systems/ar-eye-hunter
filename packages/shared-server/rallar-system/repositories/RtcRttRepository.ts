@@ -1295,7 +1295,7 @@ function validateIntentAgainstReceipt(
         receipt.acceptedAtEpochMs !== intent.createdAtEpochMs ||
         !receiptIncludesGroup ||
         intent.groupSnapshot.group.status !== 'active' ||
-        (groupExpiry !== undefined && groupExpiry <= intent.createdAtEpochMs) ||
+        (groupExpiry !== null && groupExpiry <= intent.createdAtEpochMs) ||
         !activeSessionIds.has(receipt.sessionIdFrom) ||
         !activeSessionIds.has(receipt.sessionIdTo)
     ) {

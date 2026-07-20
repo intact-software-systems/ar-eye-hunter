@@ -9,8 +9,11 @@ export type {
     GroupTopologyConfigMutationOperation,
     GroupTopologyConfigMutationReceipt,
 } from '@shared/api/graph-topology-management-types.ts';
-import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import { toGroupSnapshotStateRevision } from '@shared/api/group-client-views.ts';
+import type {
+    GroupRef,
+    GroupSnapshot,
+    GroupStateCausalRevision,
+} from '@shared/api/group-types.ts';
 import type { RuntimeStateEntryValue } from '../../runtime-state/RuntimeStateJsonStore.ts';
 import type { GroupStateAuthorityGuard } from '../repositories/GroupStateRepository.ts';
 import {
@@ -20,6 +23,7 @@ import {
 } from '../group-policy.ts';
 import {
     type GroupTopologyServerOptions,
+    readDefaultGroupTopologyConfig,
     resolveGroupTopologyConfig,
     resolveOverrideExpiresAtEpochMs,
     validateGroupTopologyConfigPatch,
@@ -99,6 +103,7 @@ export type GroupTopologyConfigMutationStableFacts = Readonly<{
 export type GroupTopologyConfigMutationFacts =
     GroupTopologyConfigMutationStableFacts & Readonly<{
         policyNowEpochMs: number;
+        attemptCount: number;
     }>;
 
 export type GroupTopologyConfigOutboxInput = Extract<
@@ -236,9 +241,10 @@ export function validateTopologyConfigMutation(input: Readonly<{
             throw new TypeError('Topology config receipt hash differs from facts');
         }
         if (input.computed.idempotency !== null) {
+            const requestId = requireTopologyConfigRequestId(input.command);
             validateGroupTopologyConfigMutationRecord(input.computed.idempotency, {
                 groupRef: input.command.aggregateRef,
-                requestId: input.command.requestId!,
+                requestId,
             });
         }
     }
@@ -267,9 +273,10 @@ export function probeTopologyConfigMutationIdempotency(
     }> {
     if (!read.idempotency) return { outcome: 'miss' };
     const record = read.idempotency.value;
+    const requestId = requireTopologyConfigRequestId(command);
     validateGroupTopologyConfigMutationRecord(record, {
         groupRef: command.aggregateRef,
-        requestId: command.requestId!,
+        requestId,
     });
     if (record.commandHash !== commandHash) {
         return {
@@ -328,9 +335,14 @@ function computePutConfig(input: Readonly<{
     const { command, read, facts } = input;
     const current = read.config;
     const generation = read.configGeneration;
+    const patch = requireTopologyConfigPatch(command);
     const config: StoredGroupTopologyConfig = {
         groupRef: copyGroupRef(command.aggregateRef),
-        config: normalizeGroupTopologyConfigPatch(command.input.config!),
+        config: {
+            ...readDefaultGroupTopologyConfig(input.serverDefaults),
+            ...(current?.value.config ?? {}),
+            ...normalizeGroupTopologyConfigPatch(patch),
+        },
         version: nextTopologyConfigVersion(current?.value.version, generation),
         createdAtEpochMs: current?.value.createdAtEpochMs ??
             facts.requestedAtEpochMs,
@@ -369,12 +381,17 @@ function computePutOverride(input: Readonly<{
     const { command, read, facts } = input;
     const current = read.override;
     const generation = read.overrideGeneration;
+    const patch = requireTopologyConfigPatch(command);
     if (facts.resolvedOverrideExpiresAtEpochMs === null) {
         throw new TypeError('Topology override expiry fact is required');
     }
     const override: StoredGroupTopologyOverride = {
         groupRef: copyGroupRef(command.aggregateRef),
-        config: normalizeGroupTopologyConfigPatch(command.input.config!),
+        config: {
+            ...readDefaultGroupTopologyConfig(input.serverDefaults),
+            ...(read.config?.value.config ?? {}),
+            ...normalizeGroupTopologyConfigPatch(patch),
+        },
         version: nextTopologyConfigVersion(current?.value.version, generation),
         createdAtEpochMs: current?.value.createdAtEpochMs ??
             facts.requestedAtEpochMs,
@@ -421,7 +438,7 @@ function computeDelete(
         current.value.version === deleteTarget.version &&
         current.value.updatedAtEpochMs === deleteTarget.updatedAtEpochMs &&
         (target === 'config' ||
-            (current.value as StoredGroupTopologyOverride).expiresAtEpochMs ===
+            input.read.override?.value.expiresAtEpochMs ===
                 deleteTarget.expiresAtEpochMs),
     );
     if (!targetStillCurrent) {
@@ -444,28 +461,43 @@ function computeDelete(
         if (input.command.requestId === null) {
             return { outcome: 'no-op', receipt, result };
         }
+        const idempotency = recordFor(input.command, input.facts, receipt);
+        if (idempotency === null) {
+            throw new TypeError('Topology config claim idempotency is required');
+        }
         return {
             outcome: 'claim',
             groupAuthorityGuard: input.read.groupAuthorityGuard,
             receipt,
             result,
-            idempotency: recordFor(input.command, input.facts, receipt)!,
+            idempotency,
         };
+    }
+    if (current === null) {
+        throw new TypeError('Topology config delete target is unavailable');
     }
     resolveGroupTopologyConfig({
         serverOptions: input.serverDefaults,
         durable: target === 'config' ? undefined : input.read.config?.value,
         temporary: target === 'override' ? undefined : input.read.override?.value,
     });
-    return writeResult(input, {
-        target,
-        operation: 'delete',
-        expectedRevision: current!.entry.revision,
-        value: null,
-    } as TopologyConfigWriteGuard, generation, Math.max(
-        current!.value.version,
+    const guard: TopologyConfigWriteGuard = target === 'config'
+        ? {
+            target: 'config',
+            operation: 'delete',
+            expectedRevision: current.entry.revision,
+            value: null,
+        }
+        : {
+            target: 'override',
+            operation: 'delete',
+            expectedRevision: current.entry.revision,
+            value: null,
+        };
+    return writeResult(input, guard, generation, Math.max(
+        current.value.version,
         generation?.value.version ?? 0,
-    ) + 1, current!.entry.revision);
+    ) + 1, current.entry.revision);
 }
 
 function writeResult(
@@ -481,10 +513,8 @@ function writeResult(
 ): Extract<GroupTopologyConfigMutationComputed, { outcome: 'write' }> {
     const accepted = input.read.groupSnapshot;
     const acceptedCausalRevision = {
-        stateRevision: toGroupSnapshotStateRevision(
-            accepted.causalRevision.groupRevision + 1,
-            accepted.causalRevision.presenceRevision,
-        ),
+        stateRevision: accepted.stateRevision,
+        causalRevision: accepted.causalRevision,
         snapshotVersion: accepted.group.snapshotVersion,
         metadataVersion: accepted.group.metadataVersion,
         rosterVersion: accepted.group.rosterVersion,
@@ -575,9 +605,11 @@ function receiptFor(
 ): GroupTopologyConfigMutationReceipt {
     return {
         commandId: command.commandId,
+        requestId: command.requestId,
         commandHash: facts.commandHash,
         operation: command.operation,
         outcome: input.outcome,
+        attemptCount: facts.attemptCount,
         groupRef: copyGroupRef(command.aggregateRef),
         target: input.target,
         acceptedVersion: input.acceptedVersion,
@@ -586,7 +618,9 @@ function receiptFor(
         acceptedUpdatedAtEpochMs: input.acceptedUpdatedAtEpochMs,
         acceptedExpiresAtEpochMs: input.acceptedExpiresAtEpochMs,
         acceptedCausalRevision: input.acceptedCausalRevision,
+        eventId: null,
         outboxId: input.outboxId,
+        outboxIds: input.outboxId === null ? [] : [input.outboxId],
     };
 }
 
@@ -608,31 +642,54 @@ function resultFromTopologyConfigReceipt(
     receipt: GroupTopologyConfigMutationReceipt,
 ): GroupTopologyConfigMutationAcceptedResult {
     if (receipt.operation === 'putConfig') {
+        const patch = requireTopologyConfigPatch(command);
         return {
             kind: 'config',
             config: {
                 groupRef: copyGroupRef(command.aggregateRef),
-                config: normalizeGroupTopologyConfigPatch(command.input.config!),
+                config: {
+                    ...readDefaultGroupTopologyConfig(),
+                    ...normalizeGroupTopologyConfigPatch(patch),
+                },
                 version: receipt.acceptedVersion,
-                createdAtEpochMs: receipt.acceptedCreatedAtEpochMs!,
-                updatedAtEpochMs: receipt.acceptedUpdatedAtEpochMs!,
+                createdAtEpochMs: requireAcceptedTimestamp(
+                    receipt.acceptedCreatedAtEpochMs,
+                    'created',
+                ),
+                updatedAtEpochMs: requireAcceptedTimestamp(
+                    receipt.acceptedUpdatedAtEpochMs,
+                    'updated',
+                ),
                 updatedByPrincipalId: command.input.updatedByPrincipalId,
                 requestId: command.requestId,
             },
         };
     }
     if (receipt.operation === 'putOverride') {
+        const patch = requireTopologyConfigPatch(command);
         return {
             kind: 'override',
             override: {
                 groupRef: copyGroupRef(command.aggregateRef),
-                config: normalizeGroupTopologyConfigPatch(command.input.config!),
+                config: {
+                    ...readDefaultGroupTopologyConfig(),
+                    ...normalizeGroupTopologyConfigPatch(patch),
+                },
                 version: receipt.acceptedVersion,
-                createdAtEpochMs: receipt.acceptedCreatedAtEpochMs!,
-                updatedAtEpochMs: receipt.acceptedUpdatedAtEpochMs!,
+                createdAtEpochMs: requireAcceptedTimestamp(
+                    receipt.acceptedCreatedAtEpochMs,
+                    'created',
+                ),
+                updatedAtEpochMs: requireAcceptedTimestamp(
+                    receipt.acceptedUpdatedAtEpochMs,
+                    'updated',
+                ),
                 updatedByPrincipalId: command.input.updatedByPrincipalId,
                 requestId: command.requestId,
-                expiresAtEpochMs: receipt.acceptedExpiresAtEpochMs!,
+                expiresAtEpochMs: requireAcceptedTimestamp(
+                    receipt.acceptedExpiresAtEpochMs,
+                    'expiry',
+                ),
             },
         };
     }
@@ -683,10 +740,38 @@ function validateTopologyConfigCommand(
     );
     const isPut = command.operation === 'putConfig' ||
         command.operation === 'putOverride';
-    if (isPut) validateGroupTopologyConfigPatch(command.input.config!);
+    if (isPut) validateGroupTopologyConfigPatch(requireTopologyConfigPatch(command));
     if (isPut !== (command.input.config !== null)) {
         throw new TypeError('Topology config command patch does not match operation');
     }
+}
+
+function requireTopologyConfigPatch(
+    command: GroupTopologyConfigMutationCommand,
+): GroupTopologyConfigPatch {
+    if (command.input.config === null) {
+        throw new TypeError('Topology config command patch is required');
+    }
+    return command.input.config;
+}
+
+function requireTopologyConfigRequestId(
+    command: GroupTopologyConfigMutationCommand,
+): string {
+    if (command.requestId === null) {
+        throw new TypeError('Topology config request id is required');
+    }
+    return command.requestId;
+}
+
+function requireAcceptedTimestamp(
+    value: number | null,
+    label: string,
+): number {
+    if (value === null) {
+        throw new TypeError(`Topology config accepted ${label} time is required`);
+    }
+    return value;
 }
 
 function validateTopologyConfigRead(
@@ -812,6 +897,7 @@ function validateTopologyConfigFacts(
 ): void {
     validateStorageRevision(facts.requestedAtEpochMs, 'request fact time');
     validateStorageRevision(facts.policyNowEpochMs, 'policy fact time');
+    validatePositiveInteger(facts.attemptCount, 'attempt fact count');
     if (!/^sha256:[0-9a-f]{64}$/.test(facts.commandHash)) {
         throw new TypeError('Topology config command hash is invalid');
     }
@@ -930,9 +1016,11 @@ function validateTopologyConfigReceipt(value: unknown, expectedRef: GroupRef): v
     if (!isRecord(value)) throw new TypeError('Topology config receipt is invalid');
     validateExactKeys(value, [
         'commandId',
+        'requestId',
         'commandHash',
         'operation',
         'outcome',
+        'attemptCount',
         'groupRef',
         'target',
         'acceptedVersion',
@@ -941,9 +1029,15 @@ function validateTopologyConfigReceipt(value: unknown, expectedRef: GroupRef): v
         'acceptedUpdatedAtEpochMs',
         'acceptedExpiresAtEpochMs',
         'acceptedCausalRevision',
+        'eventId',
         'outboxId',
+        'outboxIds',
     ], 'Topology config receipt');
     requireString(value.commandId, 'Topology config receipt commandId');
+    if (value.requestId !== null) {
+        requireString(value.requestId, 'Topology config receipt requestId');
+    }
+    validatePositiveInteger(value.attemptCount, 'Topology config receipt attemptCount');
     if (!/^sha256:[0-9a-f]{64}$/.test(String(value.commandHash))) {
         throw new TypeError('Topology config receipt hash is invalid');
     }
@@ -985,6 +1079,17 @@ function validateTopologyConfigReceipt(value: unknown, expectedRef: GroupRef): v
         if (value[field] !== null) validateStorageRevision(value[field], label);
     }
     if (value.outboxId !== null) requireString(value.outboxId, 'Topology config outboxId');
+    if (value.eventId !== null) {
+        throw new TypeError('Topology config receipt eventId must be null');
+    }
+    if (
+        !Array.isArray(value.outboxIds) ||
+        value.outboxIds.some((outboxId) => typeof outboxId !== 'string') ||
+        value.outboxIds.length !== (value.outboxId === null ? 0 : 1) ||
+        (value.outboxId !== null && value.outboxIds[0] !== value.outboxId)
+    ) {
+        throw new TypeError('Topology config receipt outboxIds are invalid');
+    }
     if (
         value.outcome === 'applied' &&
         (
@@ -1009,6 +1114,7 @@ function validateTopologyConfigReceipt(value: unknown, expectedRef: GroupRef): v
         }
         validateExactKeys(value.acceptedCausalRevision, [
             'stateRevision',
+            'causalRevision',
             'snapshotVersion',
             'metadataVersion',
             'rosterVersion',
@@ -1026,6 +1132,10 @@ function validateTopologyConfigReceipt(value: unknown, expectedRef: GroupRef): v
                 `Topology config accepted causal revision ${field}`,
             );
         }
+        validateCausalRevision(
+            value.acceptedCausalRevision.causalRevision,
+            'Topology config accepted causal revision tuple',
+        );
         const expectedOutboxId = toStateMutationOutboxId({
             commandId: String(value.commandId),
             kind: 'group',
@@ -1033,6 +1143,14 @@ function validateTopologyConfigReceipt(value: unknown, expectedRef: GroupRef): v
             acceptedCausalRevision: {
                 kind: 'group',
                 stateRevision: Number(value.acceptedCausalRevision.stateRevision),
+                causalRevision: {
+                    groupRevision: Number(
+                        value.acceptedCausalRevision.causalRevision.groupRevision,
+                    ),
+                    presenceRevision: Number(
+                        value.acceptedCausalRevision.causalRevision.presenceRevision,
+                    ),
+                },
                 snapshotVersion: Number(value.acceptedCausalRevision.snapshotVersion),
                 metadataVersion: Number(value.acceptedCausalRevision.metadataVersion),
                 rosterVersion: Number(value.acceptedCausalRevision.rosterVersion),
@@ -1092,7 +1210,7 @@ export function normalizeGroupTopologyConfigPatch(
 function copyGroupRef(ref: GroupRef): GroupRef {
     return {
         applicationId: ref.applicationId,
-        ...(ref.workspaceId === undefined ? {} : { workspaceId: ref.workspaceId }),
+        workspaceId: ref.workspaceId,
         groupId: ref.groupId,
     };
 }
@@ -1104,6 +1222,21 @@ function validateGroupRef(value: unknown, label: string): void {
         requireString(value.workspaceId, `${label} workspaceId`);
     }
     requireString(value.groupId, `${label} groupId`);
+}
+
+function validateCausalRevision(
+    value: unknown,
+    label: string,
+): asserts value is GroupStateCausalRevision {
+    if (!isRecord(value)) {
+        throw new TypeError(`${label} is invalid`);
+    }
+    validateExactKeys(value, [
+        'groupRevision',
+        'presenceRevision',
+    ], label);
+    validateStorageRevision(value.groupRevision, `${label} groupRevision`);
+    validateStorageRevision(value.presenceRevision, `${label} presenceRevision`);
 }
 
 function sameGroupRef(left: GroupRef, right: GroupRef): boolean {

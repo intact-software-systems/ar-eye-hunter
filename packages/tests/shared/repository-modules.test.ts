@@ -1,9 +1,14 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { OverlayInfo, RttMeasurementInfo, } from '@shared/api/api-config.ts';
-import type { ClientSnapshot } from '@shared/api/client-types.ts';
+import type { ClientSession, ClientSnapshot } from '@shared/api/client-types.ts';
 import { readClientVersion, readGroupVersion } from '@shared/api/group-client-views.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import type {
+    AuditStamp,
+    GroupMember,
+    GroupPresenceSession,
+    GroupSnapshot,
+} from '@shared/api/group-types.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import {
     configureClientStateSnapshotRepository,
@@ -380,21 +385,26 @@ describe('repository modules', () => {
         createAndSetStarOverlays([group]);
 
         expect(findOverlayById(overlayId)).toEqual({
-            sourceGroupStateRevision: group.stateRevision,
+            sourceGroupStateCausalRevision: group.causalRevision,
             state: 'active',
             overlayId,
             groupRef: group.group,
             topology: 'star',
             name: 'Alpha',
-            createdByClientId: 'owner',
+            createdByClientId: 'self',
             createdAtEpochMs: 1,
             nextHopSessionIds: ['self', 'peer-a', 'peer-b'],
+            degreeLimit: 2,
             overlayVersion: 2,
             updatedAtEpochMs: 2,
         });
 
+        const currentOverlay = findOverlayById(overlayId);
+        if (currentOverlay === undefined) {
+            throw new Error('Expected seeded overlay');
+        }
         const staleOverlay = {
-            ...(findOverlayById(overlayId) as OverlayInfo),
+            ...currentOverlay,
             nextHopSessionIds: ['peer-z'],
             overlayVersion: 1,
         };
@@ -422,13 +432,23 @@ describe('repository modules', () => {
 
         try {
             const first = {
-                sourceGroupStateRevision: 1,
+                sourceGroupStateCausalRevision: {
+                    groupRevision: 1,
+                    presenceRevision: 1,
+                },
                 state: 'active',
                 overlayId: 'group-1',
+                groupRef: {
+                    applicationId: 'app-1',
+                    workspaceId: 'workspace-1',
+                    groupId: 'group-1',
+                },
+                topology: 'star',
                 name: 'Alpha',
                 createdByClientId: 'owner',
                 createdAtEpochMs: 1,
                 nextHopSessionIds: ['self'],
+                degreeLimit: 1,
                 overlayVersion: 1,
                 updatedAtEpochMs: 1,
             } satisfies OverlayInfo;
@@ -461,19 +481,32 @@ describe('repository modules', () => {
     it('orders revisioned overlays by source group revision and retains removal tombstones', () => {
         const first = {
             overlayId: 'overlay-1',
-            sourceGroupStateRevision: 2,
+            sourceGroupStateCausalRevision: {
+                groupRevision: 2,
+                presenceRevision: 2,
+            },
             state: 'active',
+            groupRef: {
+                applicationId: 'app-1',
+                workspaceId: 'workspace-1',
+                groupId: 'group-1',
+            },
+            topology: 'star',
             name: 'Room',
             createdByClientId: 'owner',
             createdAtEpochMs: 1,
             nextHopSessionIds: ['peer-a'],
+            degreeLimit: 1,
             overlayVersion: 1,
             updatedAtEpochMs: 2,
         } satisfies OverlayInfo;
         setOverlayById(first.overlayId, first);
         setOverlayById(first.overlayId, {
             ...first,
-            sourceGroupStateRevision: 1,
+            sourceGroupStateCausalRevision: {
+                groupRevision: 1,
+                presenceRevision: 1,
+            },
             overlayVersion: 99,
             nextHopSessionIds: ['stale-peer'],
         });
@@ -481,7 +514,10 @@ describe('repository modules', () => {
 
         const removed = {
             ...first,
-            sourceGroupStateRevision: 3,
+            sourceGroupStateCausalRevision: {
+                groupRevision: 3,
+                presenceRevision: 3,
+            },
             state: 'removed',
             nextHopSessionIds: [],
         } satisfies OverlayInfo;
@@ -534,20 +570,25 @@ function createClientSnapshot(
 ): ClientSnapshot {
     const applicationId = 'app-1';
     const workspaceId = 'workspace-1';
-    const activeSessions = sessionId
+    const activeSessions: readonly ClientSession[] = sessionId
         ? [{
             applicationId,
             workspaceId,
             principalId,
             clientInstanceId: `${principalId}-instance`,
             sessionId,
-            status: 'active' as const,
-            presenceState: 'online' as const,
-            transport: 'ws' as const,
+            generationId: `${sessionId}:generation-1`,
+            generationVersion: version,
+            status: 'active',
+            presenceState: 'online',
+            transport: 'ws',
+            connectionId: null,
             authenticatedAtEpochMs: version,
             connectedAtEpochMs: version,
             lastHeartbeatAtEpochMs: version,
             expiresAtEpochMs: version + 60_000,
+            disconnectedAtEpochMs: null,
+            disconnectReason: null,
         }]
         : [];
 
@@ -558,21 +599,21 @@ function createClientSnapshot(
             workspaceId,
             principalId,
             username: principalId,
+            displayName: null,
+            avatarUrl: null,
+            authProvider: null,
+            externalSubjectId: null,
             status: 'active',
+            disabled: null,
+            deleted: null,
             roles: [],
             metadata: {},
             snapshotVersion: version,
             profileVersion: 0,
             presenceVersion: version,
-            created: {
-                atEpochMs: 1,
-                byPrincipalId: principalId,
-            },
-            updated: {
-                atEpochMs: version,
-                byPrincipalId: principalId,
-            },
-            lastSeenAtEpochMs: sessionId ? version : undefined,
+            created: createPrincipalAuditStamp(1, principalId),
+            updated: createPrincipalAuditStamp(version, principalId),
+            lastSeenAtEpochMs: sessionId ? version : null,
         },
         instances: sessionId
             ? [{
@@ -581,22 +622,20 @@ function createClientSnapshot(
                 principalId,
                 clientInstanceId: `${principalId}-instance`,
                 status: 'active',
+                revoked: null,
                 platform: 'web',
+                deviceLabel: null,
+                appVersion: null,
+                userAgent: null,
                 capabilities: [],
-                registered: {
-                    atEpochMs: 1,
-                    byPrincipalId: principalId,
-                },
-                updated: {
-                    atEpochMs: version,
-                    byPrincipalId: principalId,
-                },
+                registered: createPrincipalAuditStamp(1, principalId),
+                updated: createPrincipalAuditStamp(version, principalId),
             }]
             : [],
         activeSessions,
         isOnline: activeSessions.length > 0,
         activeSessionCount: activeSessions.length,
-        lastSeenAtEpochMs: sessionId ? version : undefined,
+        lastSeenAtEpochMs: sessionId ? version : null,
     };
 }
 
@@ -612,6 +651,10 @@ function createGroupSnapshot(
 ): GroupSnapshot {
     const applicationId = scope.applicationId ?? 'app-1';
     const workspaceId = scope.workspaceId ?? 'workspace-1';
+    const ownerPrincipalId = memberSessionIds[0];
+    if (ownerPrincipalId === undefined) {
+        throw new Error('Group fixture requires an owner session');
+    }
 
     return {
         stateRevision: membershipVersion,
@@ -623,41 +666,51 @@ function createGroupSnapshot(
             applicationId,
             workspaceId,
             groupId,
+            slug: groupId,
             displayName,
+            description: null,
             kind: 'room',
             status: 'active',
+            archived: null,
+            deleted: null,
             joinMode: 'open',
+            maxMembers: null,
+            maxSessionsPerMember: null,
             metadata: {},
+            activeMemberCount: memberSessionIds.length,
+            ownerPrincipalId,
             snapshotVersion: membershipVersion,
             metadataVersion: 0,
             rosterVersion: membershipVersion,
             presenceVersion: 0,
-            created: {
-                atEpochMs: 1,
-                byPrincipalId: 'owner',
-            },
-            updated: {
-                atEpochMs: membershipVersion,
-                byPrincipalId: 'owner',
-            },
+            created: createPrincipalAuditStamp(1, ownerPrincipalId),
+            updated: createPrincipalAuditStamp(
+                membershipVersion,
+                ownerPrincipalId,
+            ),
+            expiresAtEpochMs: null,
+            emptySinceEpochMs: null,
+            purgeAfterEpochMs: null,
         },
-        members: memberSessionIds.map((sessionId) => ({
+        members: memberSessionIds.map((sessionId): GroupMember => ({
             applicationId,
             workspaceId,
             groupId,
             principalId: sessionId,
-            role: 'member' as const,
-            status: 'active' as const,
-            joined: {
-                atEpochMs: 1,
-                byPrincipalId: 'owner',
-            },
-            updated: {
-                atEpochMs: membershipVersion,
-                byPrincipalId: 'owner',
-            },
+            role: sessionId === ownerPrincipalId ? 'owner' : 'member',
+            status: 'active',
+            joined: createPrincipalAuditStamp(1, ownerPrincipalId),
+            updated: createPrincipalAuditStamp(
+                membershipVersion,
+                ownerPrincipalId,
+            ),
+            invitedByPrincipalId: null,
+            invitationExpiresAtEpochMs: null,
+            left: null,
+            removed: null,
+            banned: null,
         })),
-        activeSessions: memberSessionIds.map((sessionId) => ({
+        activeSessions: memberSessionIds.map((sessionId): GroupPresenceSession => ({
             applicationId,
             workspaceId,
             groupId,
@@ -665,12 +718,28 @@ function createGroupSnapshot(
             principalId: sessionId,
             generationId: `generation-${sessionId}`,
             generationVersion: 1,
+            status: 'active',
             connectedAtEpochMs: 1,
             lastHeartbeatAtEpochMs: membershipVersion,
             expiresAtEpochMs: membershipVersion + 60_000,
+            disconnectedAtEpochMs: null,
+            disconnectReason: null,
         })),
         memberCount: memberSessionIds.length,
         onlineMemberCount: memberSessionIds.length,
+    };
+}
+
+function createPrincipalAuditStamp(
+    atEpochMs: number,
+    principalId: string,
+): AuditStamp {
+    return {
+        atEpochMs,
+        actor: { kind: 'principal', principalId },
+        reason: null,
+        traceId: null,
+        requestId: null,
     };
 }
 

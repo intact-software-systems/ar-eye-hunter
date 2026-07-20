@@ -1,10 +1,19 @@
 import { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics, ClientInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
-import { isGroupActive, isSessionInGroup } from '@shared/api/group-client-views.ts';
+import {
+    compareGroupCausalRevision,
+    isGroupActive,
+    isSessionInGroup,
+} from '@shared/api/group-client-views.ts';
 import { type RallarOverlayTopologySnapshot, toOverlayInfoForSession, } from '@shared/api/overlay-topology.ts';
 import type { ClientSnapshot as ClientStateSnapshot } from '@shared/api/client-types.ts';
 import type { GroupSnapshot as GroupStateSnapshot } from '@shared/api/group-types.ts';
+import {
+    parseAuthoritativeClientSnapshot,
+    parseAuthoritativeGroupSnapshot,
+    parseAuthoritativeOverlayTopologySnapshot,
+} from '@shared/api/authoritative-state-validation.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID, type StateScope, } from '@shared/api/state-types.ts';
 import { GraphInfoSnapshot } from '@shared-graph/shared-graph-types.ts';
 import * as graphsRepository from '@shared-graph/repository/graphs-repository.ts';
@@ -13,7 +22,7 @@ import * as groupStateSnapshotsRepository from '@shared/repository/group-state-s
 import * as overlaysRepository from '@shared/repository/overlays-repository.ts';
 import { ObservableValueEventType } from '@shared/cache/RepositoryInterfaces.ts';
 import { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
-import { WsQueueBoxClientService } from '@shared/services/WsQueueBoxClientService.ts';
+import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
 import { QRtcSignalingMessage } from '@shared/webrtc/QRtcSignalingContracts.ts';
 
 export type StateCacheChange = Readonly<{
@@ -27,6 +36,16 @@ export type StateCacheChangeListener = (
 
 export type StateCacheScopeOptions = Readonly<{
     scope?: StateScope;
+    rereadGroupSnapshots?: (
+        scope: StateScope,
+    ) => Promise<readonly GroupStateSnapshot[]>;
+}>;
+
+export type StateCacheInboxSource = Readonly<{
+    onAllInboxMessagesDo(
+        callback: OnMessageCallback,
+        forceUpdate?: boolean,
+    ): unknown;
 }>;
 
 const stateCacheChangeListeners = new Set<StateCacheChangeListener>();
@@ -37,6 +56,9 @@ let stateRepositoryObserverContext:
     webRtcGroupManager: WebRtcGroupManager;
     sessionId: string;
     scope: StateScope;
+    rereadGroupSnapshots?: (
+        scope: StateScope,
+    ) => Promise<readonly GroupStateSnapshot[]>;
 }>
     | undefined;
 
@@ -50,13 +72,18 @@ export function onStateCacheChange(
 }
 
 export function initialise(
-    webSocketQueueBox: WsQueueBoxClientService,
+    webSocketQueueBox: StateCacheInboxSource,
     webRtcGroupManager: WebRtcGroupManager,
     myOwnClientData: ClientInfo,
     options: StateCacheScopeOptions = {},
 ) {
     const initialScope = resolveStateCacheScope(options);
-    installStateRepositoryObservers(webRtcGroupManager, myOwnClientData, initialScope);
+    installStateRepositoryObservers(
+        webRtcGroupManager,
+        myOwnClientData,
+        initialScope,
+        options,
+    );
 
     webSocketQueueBox
         .onAllInboxMessagesDo(
@@ -78,9 +105,10 @@ export function initialise(
 
                         case AppTopics.clientStateSnapshot: {
                             const scope = readActiveStateCacheScope(initialScope);
-                            const clientSnapshot = JSON.parse(
+                            const clientSnapshot = parseAuthoritativeClientSnapshot(
                                 data.payload.resource,
-                            ) as ClientStateSnapshot;
+                                scope,
+                            );
                             acceptClientStateSnapshots([clientSnapshot], scope);
                             await clientStateSnapshotsRepository
                                 .waitForClientStateSnapshotChangesIdle();
@@ -90,10 +118,17 @@ export function initialise(
 
                         case AppTopics.groupStateSnapshot: {
                             const scope = readActiveStateCacheScope(initialScope);
-                            const groupSnapshot = JSON.parse(
+                            const groupSnapshot = parseAuthoritativeGroupSnapshot(
                                 data.payload.resource,
-                            ) as GroupStateSnapshot;
-                            acceptGroupStateSnapshots([groupSnapshot], scope);
+                                scope,
+                            );
+                            await acceptGroupStateSnapshotsOrRecompute(
+                                [groupSnapshot],
+                                scope,
+                                webRtcGroupManager,
+                                stateRepositoryObserverContext
+                                    ?.rereadGroupSnapshots,
+                            );
                             await groupStateSnapshotsRepository
                                 .waitForGroupStateSnapshotChangesIdle();
                             await waitForStateRepositoryObserverTasks();
@@ -101,10 +136,17 @@ export function initialise(
                         }
                         case AppTopics.groupDirectorySnapshot: {
                             const scope = readActiveStateCacheScope(initialScope);
-                            const groupSnapshot = JSON.parse(
+                            const groupSnapshot = parseAuthoritativeGroupSnapshot(
                                 data.payload.resource,
-                            ) as GroupStateSnapshot;
-                            acceptGroupStateSnapshots([groupSnapshot], scope);
+                                scope,
+                            );
+                            await acceptGroupStateSnapshotsOrRecompute(
+                                [groupSnapshot],
+                                scope,
+                                webRtcGroupManager,
+                                stateRepositoryObserverContext
+                                    ?.rereadGroupSnapshots,
+                            );
                             await groupStateSnapshotsRepository
                                 .waitForGroupStateSnapshotChangesIdle();
                             await waitForStateRepositoryObserverTasks();
@@ -142,9 +184,10 @@ export function initialise(
                             break;
                         }
                         case AppTopics.overlayTopology: {
-                            const topology = JSON.parse(
+                            const topology = parseAuthoritativeOverlayTopologySnapshot(
                                 data.payload.resource,
-                            ) as RallarOverlayTopologySnapshot;
+                                readActiveStateCacheScope(initialScope),
+                            );
 
                             overlaysRepository.setOverlayById(
                                 topology.overlayId,
@@ -174,9 +217,19 @@ export async function hydrateStateCaches(
     options: StateCacheScopeOptions = {},
 ): Promise<void> {
     const scope = resolveStateCacheScope(options);
-    installStateRepositoryObservers(webRtcGroupManager, myOwnClientData, scope);
+    installStateRepositoryObservers(
+        webRtcGroupManager,
+        myOwnClientData,
+        scope,
+        options,
+    );
     acceptClientStateSnapshots(clientSnapshots, scope);
-    acceptGroupStateSnapshots(groupSnapshots, scope);
+    await acceptGroupStateSnapshotsOrRecompute(
+        groupSnapshots,
+        scope,
+        webRtcGroupManager,
+        options.rereadGroupSnapshots,
+    );
     await Promise.all([
         clientStateSnapshotsRepository.waitForClientStateSnapshotChangesIdle(),
         groupStateSnapshotsRepository.waitForGroupStateSnapshotChangesIdle(),
@@ -202,15 +255,60 @@ function acceptGroupStateSnapshots(
     );
 }
 
+async function acceptGroupStateSnapshotsOrRecompute(
+    snapshots: readonly GroupStateSnapshot[],
+    scope: StateScope,
+    webRtcGroupManager: WebRtcGroupManager,
+    rereadGroupSnapshots?: (
+        scope: StateScope,
+    ) => Promise<readonly GroupStateSnapshot[]>,
+): Promise<boolean> {
+    try {
+        return acceptGroupStateSnapshots(snapshots, scope);
+    } catch (error) {
+        if (
+            error instanceof
+                groupStateSnapshotsRepository.GroupStateSnapshotIncomparableError
+        ) {
+            if (!rereadGroupSnapshots) {
+                throw error;
+            }
+            const reread = await rereadGroupSnapshots(scope);
+            acceptGroupStateSnapshots(reread, scope);
+            const accepted = snapshots.filter((snapshot) =>
+                isGroupSnapshotInScope(snapshot, scope)
+            );
+            for (const incoming of accepted) {
+                const recovered = groupStateSnapshotsRepository
+                    .findGroupStateSnapshotByRef(incoming.group);
+                if (
+                    !recovered ||
+                    !['equal', 'dominates'].includes(compareGroupCausalRevision(
+                        recovered.causalRevision,
+                        incoming.causalRevision,
+                    ))
+                ) {
+                    throw error;
+                }
+            }
+            return true;
+        }
+        throw error;
+    }
+}
+
 function installStateRepositoryObservers(
     webRtcGroupManager: WebRtcGroupManager,
     myOwnClientData: ClientInfo,
     scope: StateScope,
+    options: StateCacheScopeOptions,
 ): void {
     if (
         stateRepositoryObserverContext?.webRtcGroupManager === webRtcGroupManager &&
         stateRepositoryObserverContext.sessionId === myOwnClientData.sessionId &&
-        isSameStateScope(stateRepositoryObserverContext.scope, scope)
+        isSameStateScope(stateRepositoryObserverContext.scope, scope) &&
+        stateRepositoryObserverContext.rereadGroupSnapshots ===
+            options.rereadGroupSnapshots
     ) {
         return;
     }
@@ -220,6 +318,7 @@ function installStateRepositoryObservers(
         webRtcGroupManager,
         sessionId: myOwnClientData.sessionId,
         scope,
+        rereadGroupSnapshots: options.rereadGroupSnapshots,
     };
 
     const unsubscribeClient = clientStateSnapshotsRepository

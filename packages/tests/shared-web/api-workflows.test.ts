@@ -2,6 +2,11 @@ import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from 'v
 import type { ClientInfo } from '@shared/api/api-config.ts';
 import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupEvent, GroupSnapshot } from '@shared/api/group-types.ts';
+import {
+    createActiveGroupPresenceSessionFixture,
+    createClientSnapshotFixture,
+    createGroupSnapshotFixture,
+} from './authoritative-group-fixtures.ts';
 import type {
     GroupTopologyConfigAcceptedCausalRevision,
 } from '@shared/api/graph-topology-management-types.ts';
@@ -1299,7 +1304,7 @@ describe('state API workflows', () => {
                 url ===
                     '/api/state/apps/ar-eye-hunter/workspaces/default/clients/principal-1/instances/principal-1/sessions/session-1'
             ) {
-                return jsonResponse(clientSnapshot('principal-1'));
+                return jsonResponse(clientSnapshot('principal-1', 'ar-eye-hunter'));
             }
 
             if (
@@ -1307,7 +1312,7 @@ describe('state API workflows', () => {
                 url ===
                     '/api/state/apps/ar-eye-hunter/workspaces/default/groups/group-1/sessions/session-1/heartbeat'
             ) {
-                return jsonResponse(groupSnapshot('group-1'));
+                return jsonResponse(groupSnapshot('group-1', 'ar-eye-hunter'));
             }
 
             return notFoundResponse();
@@ -1315,7 +1320,7 @@ describe('state API workflows', () => {
 
         const result = await refreshStateHeartbeat(
             clientData,
-            [groupSnapshot('group-1')],
+            [groupSnapshot('group-1', 'ar-eye-hunter')],
             {
                 generationId: 'generation-1',
                 scope: {
@@ -1704,10 +1709,17 @@ function clientEvent(
         eventId,
         eventType,
         snapshotVersion: 1,
+        clientInstanceId: null,
+        sessionId: null,
         occurredAtEpochMs: 1,
         actor: {
+            kind: 'service',
             serviceId: 'test',
         },
+        reason: null,
+        traceId: null,
+        requestId: null,
+        payload: {},
     };
 }
 
@@ -1722,64 +1734,55 @@ function groupEvent(
         eventId,
         eventType,
         snapshotVersion: 1,
+        causalRevision: { groupRevision: 1, presenceRevision: 1 },
         occurredAtEpochMs: 1,
         actor: {
+            kind: 'service',
             serviceId: 'test',
         },
+        reason: null,
+        traceId: null,
+        requestId: null,
+        payload: {},
     };
 }
 
-function clientSnapshot(principalId: string): ClientSnapshot {
+function clientSnapshot(
+    principalId: string,
+    applicationId = 'rallar-server',
+): ClientSnapshot {
+    const snapshot = createClientSnapshotFixture({
+        applicationId,
+        workspaceId: 'default',
+        principalId,
+    });
     return {
-        principal: {
-            principalId,
-            applicationId: 'ar-eye-hunter',
-            workspaceId: 'default',
-            username: principalId,
-            status: 'active',
-            roles: [],
-            metadata: {},
-            snapshotVersion: 2,
-            profileVersion: 1,
-            presenceVersion: 1,
-            created: { atEpochMs: 1 },
-            updated: { atEpochMs: 1 },
-        },
-        instances: [],
-        activeSessions: [],
-        isOnline: true,
-        activeSessionCount: 1,
+        ...snapshot,
+        principal: { ...snapshot.principal, snapshotVersion: 2 },
+        isOnline: false,
+        activeSessionCount: 0,
     };
 }
 
-function groupSnapshot(groupId: string): GroupSnapshot {
+function groupSnapshot(
+    groupId: string,
+    applicationId = 'rallar-server',
+): GroupSnapshot {
+    const snapshot = createGroupSnapshotFixture({
+        applicationId,
+        workspaceId: 'default',
+        groupId,
+        sessionIds: [],
+    });
     return {
-        stateRevision: 2,
-        causalRevision: {
-            groupRevision: 1,
-            presenceRevision: 1,
-        },
+        ...snapshot,
         group: {
-            applicationId: 'ar-eye-hunter',
-            workspaceId: 'default',
-            groupId,
+            ...snapshot.group,
             slug: groupId,
-            displayName: groupId,
-            kind: 'room',
-            status: 'active',
             joinMode: 'invite-only',
-            metadata: {},
             snapshotVersion: 3,
             metadataVersion: 1,
-            rosterVersion: 1,
-            presenceVersion: 1,
-            created: { atEpochMs: 1 },
-            updated: { atEpochMs: 1 },
         },
-        members: [],
-        activeSessions: [],
-        memberCount: 0,
-        onlineMemberCount: 0,
     };
 }
 
@@ -1790,16 +1793,24 @@ function groupSnapshotWithActiveSession(
     const snapshot = groupSnapshot(groupId);
     return {
         ...snapshot,
+        stateRevision: snapshot.stateRevision + 1,
+        causalRevision: {
+            ...snapshot.causalRevision,
+            presenceRevision: snapshot.causalRevision.presenceRevision + 1,
+        },
+        group: {
+            ...snapshot.group,
+            presenceVersion: snapshot.group.presenceVersion + 1,
+        },
         activeSessions: [{
-            applicationId: snapshot.group.applicationId,
-            workspaceId: snapshot.group.workspaceId,
-            groupId,
-            principalId: 'principal-1',
-            sessionId: 'session-1',
+            ...createActiveGroupPresenceSessionFixture({
+                applicationId: snapshot.group.applicationId,
+                workspaceId: snapshot.group.workspaceId,
+                groupId,
+                principalId: 'principal-1',
+                sessionId: 'session-1',
+            }),
             generationId,
-            generationVersion: 1,
-            connectedAtEpochMs: 1,
-            lastHeartbeatAtEpochMs: 1,
             expiresAtEpochMs: 121_000,
         }],
         onlineMemberCount: 1,

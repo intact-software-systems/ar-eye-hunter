@@ -24,8 +24,13 @@ import {
 import { latestRttById, setRtt } from '@shared/repository/rtt-repository.ts';
 import { createRtt } from './helpers.ts';
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';
-import type { ClientSnapshot } from '@shared/api/client-types.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import type { ClientSession, ClientSnapshot } from '@shared/api/client-types.ts';
+import type {
+    AuditStamp,
+    GroupMember,
+    GroupPresenceSession,
+    GroupSnapshot,
+} from '@shared/api/group-types.ts';
 
 describe('shared-graph group graph services', () => {
     beforeEach(() => {
@@ -250,46 +255,54 @@ function createClientStateSnapshot(
         workspaceId: 'ws',
     },
 ): ClientSnapshot {
-    const activeSessions = sessionIds.map((sessionId) => ({
+    const activeSessions = sessionIds.map((sessionId): ClientSession => ({
         applicationId: scope.applicationId,
         workspaceId: scope.workspaceId,
         principalId,
         clientInstanceId: principalId,
         sessionId,
-        status: 'active' as const,
-        presenceState: 'online' as const,
-        transport: 'ws' as const,
+        generationId: `generation-${sessionId}`,
+        generationVersion: 1,
+        status: 'active',
+        presenceState: 'online',
+        transport: 'ws',
+        connectionId: null,
         authenticatedAtEpochMs: 1,
         connectedAtEpochMs: 1,
         lastHeartbeatAtEpochMs: 1,
         expiresAtEpochMs: 1000,
+        disconnectedAtEpochMs: null,
+        disconnectReason: null,
     }));
 
     return {
+        stateRevision: 1,
         principal: {
             applicationId: scope.applicationId,
             workspaceId: scope.workspaceId,
             principalId,
             username: principalId,
             displayName: principalId,
+            avatarUrl: null,
+            authProvider: null,
+            externalSubjectId: null,
             status: 'active',
+            disabled: null,
+            deleted: null,
             roles: [],
             metadata: {},
             snapshotVersion: 1,
             profileVersion: 1,
             presenceVersion: 1,
-            created: {
-                atEpochMs: 1,
-            },
-            updated: {
-                atEpochMs: 1,
-            },
+            created: createAuditStamp(1, principalId),
+            updated: createAuditStamp(1, principalId),
+            lastSeenAtEpochMs: activeSessions.length > 0 ? 1 : null,
         },
         instances: [],
         activeSessions,
         isOnline: activeSessions.length > 0,
         activeSessionCount: activeSessions.length,
-        lastSeenAtEpochMs: activeSessions.length > 0 ? 1 : undefined,
+        lastSeenAtEpochMs: activeSessions.length > 0 ? 1 : null,
     };
 }
 
@@ -297,56 +310,83 @@ function createGroupStateSnapshot(
     groupId: string,
     sessionIds: readonly string[],
 ): GroupSnapshot {
-    const activeSessions = sessionIds.map((sessionId) => ({
+    const ownerPrincipalId = sessionIds[0];
+    if (ownerPrincipalId === undefined) {
+        throw new Error('Group fixture requires an owner session');
+    }
+    const activeSessions = sessionIds.map((sessionId): GroupPresenceSession => ({
         applicationId: 'app',
         workspaceId: 'ws',
         groupId,
         sessionId,
         principalId: sessionId,
+        generationId: `generation-${sessionId}`,
+        generationVersion: 1,
+        status: 'active',
         connectedAtEpochMs: 1,
         lastHeartbeatAtEpochMs: 1,
         expiresAtEpochMs: 1000,
+        disconnectedAtEpochMs: null,
+        disconnectReason: null,
     }));
 
     return {
+        stateRevision: 3,
+        causalRevision: { groupRevision: 3, presenceRevision: 1 },
         group: {
             applicationId: 'app',
             workspaceId: 'ws',
             groupId,
+            slug: groupId,
             displayName: groupId,
+            description: null,
             kind: 'room',
             status: 'active',
+            archived: null,
+            deleted: null,
             joinMode: 'invite-only',
+            maxMembers: null,
+            maxSessionsPerMember: null,
             metadata: {},
+            activeMemberCount: sessionIds.length,
+            ownerPrincipalId,
             snapshotVersion: 3,
             metadataVersion: 1,
             rosterVersion: 1,
             presenceVersion: 1,
-            created: {
-                atEpochMs: 1,
-                byPrincipalId: 'owner',
-            },
-            updated: {
-                atEpochMs: 1,
-                byPrincipalId: 'owner',
-            },
+            created: createAuditStamp(1, ownerPrincipalId),
+            updated: createAuditStamp(1, ownerPrincipalId),
+            expiresAtEpochMs: null,
+            emptySinceEpochMs: null,
+            purgeAfterEpochMs: null,
         },
-        members: sessionIds.map((principalId, index) => ({
+        members: sessionIds.map((principalId, index): GroupMember => ({
             applicationId: 'app',
             workspaceId: 'ws',
             groupId,
             principalId,
             role: index === 0 ? 'owner' : 'member',
             status: 'active',
-            joined: {
-                atEpochMs: 1,
-            },
-            updated: {
-                atEpochMs: 1,
-            },
+            joined: createAuditStamp(1, ownerPrincipalId),
+            updated: createAuditStamp(1, ownerPrincipalId),
+            invitedByPrincipalId: null,
+            invitationExpiresAtEpochMs: null,
+            left: null,
+            removed: null,
+            banned: null,
         })),
         activeSessions,
         memberCount: sessionIds.length,
         onlineMemberCount: sessionIds.length,
+    };
+}
+
+function createAuditStamp(atEpochMs: number, principalId: string): AuditStamp {
+    return {
+        atEpochMs,
+        actor: { kind: 'principal', principalId },
+        reason: null,
+        traceId: null,
+        requestId: null,
     };
 }

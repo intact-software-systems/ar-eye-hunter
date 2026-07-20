@@ -12,7 +12,11 @@ if (false) {
     createRallarMatchResult({
         resultId: 'result-type-server',
         matchId: 'match-1',
-        roomRef: { applicationId: 'app-1', groupId: 'room-1' },
+        roomRef: {
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+            groupId: 'room-1',
+        },
         protocol: 'example.match.v1',
         authority: { kind: 'server', id: 'server-1', epoch: 1 },
         // @ts-expect-error Browser-safe result creation cannot mint server-validated trust.
@@ -26,7 +30,11 @@ if (false) {
     createRallarMatchResult({
         resultId: 'result-type-room',
         matchId: 'match-1',
-        roomRef: { applicationId: 'app-1', groupId: 'room-1' },
+        roomRef: {
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+            groupId: 'room-1',
+        },
         protocol: 'example.match.v1',
         authority: { kind: 'server', id: 'server-1', epoch: 1 },
         trust: 'room-trusted',
@@ -333,23 +341,31 @@ describe('Rallar match shared helpers', () => {
         };
         const roomOneKey = createRallarMatchResultIdempotencyKey({
             ...input,
-            roomRef: { applicationId: 'app-1', groupId: 'room-1' },
+            roomRef: {
+                applicationId: 'app-1',
+                workspaceId: 'workspace-1',
+                groupId: 'room-1',
+            },
         });
         const roomTwoKey = createRallarMatchResultIdempotencyKey({
             ...input,
-            roomRef: { applicationId: 'app-1', groupId: 'room-2' },
+            roomRef: {
+                applicationId: 'app-1',
+                workspaceId: 'workspace-1',
+                groupId: 'room-2',
+            },
         });
-        const emptyWorkspaceKey = createRallarMatchResultIdempotencyKey({
+        const workspaceTwoKey = createRallarMatchResultIdempotencyKey({
             ...input,
             roomRef: {
                 applicationId: 'app-1',
-                workspaceId: '',
+                workspaceId: 'workspace-2',
                 groupId: 'room-1',
             },
         });
 
         expect(roomOneKey).not.toBe(roomTwoKey);
-        expect(roomOneKey).toBe(emptyWorkspaceKey);
+        expect(roomOneKey).not.toBe(workspaceTwoKey);
     });
 
     it('reports generic match diagnostics', () => {

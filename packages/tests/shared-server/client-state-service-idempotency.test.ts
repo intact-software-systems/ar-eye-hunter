@@ -468,7 +468,7 @@ describe('ClientStateService command idempotency', () => {
                 connectedAtEpochMs: 200,
             }],
         });
-        expect(delayedOlder.result.right?.event).toBeUndefined();
+        expect(delayedOlder.result.right?.event).toBeNull();
         expect(delayedOlder.result.right?.snapshot.activeSessions).toEqual([
             expect.objectContaining({
                 generationId: 'generation-b',
@@ -524,7 +524,7 @@ describe('ClientStateService command idempotency', () => {
                 requestId: 'rest-missing-ordered-fact',
             },
         );
-        expect(missingOrderedFact.result.right?.event).toBeUndefined();
+        expect(missingOrderedFact.result.right?.event).toBeNull();
         expect(missingOrderedFact.result.right?.snapshot.activeSessions).toEqual(
             expect.arrayContaining([
                 expect.objectContaining({
@@ -639,7 +639,7 @@ describe('ClientStateService command idempotency', () => {
             },
         );
 
-        expect(lateDisconnect.result.right?.event).toBeUndefined();
+        expect(lateDisconnect.result.right?.event).toBeNull();
         const repository = new ClientStateRepository(runtimeRepository);
         expect(
             await repository.findSession({
@@ -700,7 +700,7 @@ describe('ClientStateService command idempotency', () => {
             },
         );
 
-        expect(lateHeartbeat.result.right?.event).toBeUndefined();
+        expect(lateHeartbeat.result.right?.event).toBeNull();
         expect(lateHeartbeat.result.right?.snapshot.activeSessions).toHaveLength(0);
 
         const repository = new ClientStateRepository(runtimeRepository);

@@ -13,7 +13,7 @@ import {
     type ALMessage,
 } from '@shared/mod.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
@@ -281,7 +281,7 @@ describe('Rallar system websocket topics RTC topology', () => {
         expect(topologyService.readSnapshot(group)).toBeUndefined();
         expect(await topologyRepository.findSnapshot(group.group)).toMatchObject({
             state: 'removed',
-            sourceGroupStateRevision: archivedGroup.stateRevision,
+            sourceGroupStateCausalRevision: archivedGroup.causalRevision,
             updatedAtEpochMs: archivedGroup.group.updated.atEpochMs,
         });
         expect(topologyService.readMetrics()).toMatchObject({
@@ -620,8 +620,14 @@ describe('Rallar system websocket topics RTC topology', () => {
         });
         await durableRtts.insertMutationReceipt({
             receiptId,
+            commandId: receiptId,
+            requestId: receiptId,
             sessionIdFrom: rtt.sessionIdFrom,
             sessionIdTo: rtt.sessionIdTo,
+            aggregateRef: {
+                sessionIdFrom: rtt.sessionIdFrom,
+                sessionIdTo: rtt.sessionIdTo,
+            },
             measurementVersion: rtt.version,
             affectedGroupRefs: [{
                 applicationId: group.group.applicationId,
@@ -630,6 +636,10 @@ describe('Rallar system websocket topics RTC topology', () => {
             }],
             acceptedAtEpochMs: 1,
             outcome: 'accepted',
+            attemptCount: 1,
+            acceptedStorageRevision: 0,
+            eventId: null,
+            outboxIds: [],
             commandHash,
         }, 1 + DEFAULT_RTC_RTT_MUTATION_RETENTION_MS);
         const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -1442,6 +1452,16 @@ function createResilience(): ResilienceDto {
     );
 }
 
+function audit(atEpochMs: number): AuditStamp {
+    return {
+        atEpochMs,
+        actor: { kind: 'principal', principalId: 'owner' },
+        reason: null,
+        traceId: null,
+        requestId: null,
+    };
+}
+
 function createClientSnapshot(sessionId: string): ClientSnapshot {
     return {
         stateRevision: 1,
@@ -1450,15 +1470,18 @@ function createClientSnapshot(sessionId: string): ClientSnapshot {
             workspaceId: 'workspace-1',
             principalId: sessionId,
             username: sessionId,
+            displayName: null,
+            avatarUrl: null,
+            authProvider: null,
+            externalSubjectId: null,
             status: 'active',
+            disabled: null,
+            deleted: null,
             roles: [],
             metadata: {},
-            created: {
-                atEpochMs: 1,
-            },
-            updated: {
-                atEpochMs: 1,
-            },
+            created: audit(1),
+            updated: audit(1),
+            lastSeenAtEpochMs: 1,
             profileVersion: 1,
             presenceVersion: 1,
             snapshotVersion: 1,
@@ -1470,13 +1493,18 @@ function createClientSnapshot(sessionId: string): ClientSnapshot {
                 principalId: sessionId,
                 sessionId,
                 clientInstanceId: `${sessionId}-instance`,
+                generationId: `${sessionId}-generation`,
+                generationVersion: 1,
                 status: 'active',
                 transport: 'ws',
                 presenceState: 'online',
+                connectionId: null,
                 connectedAtEpochMs: 1,
                 authenticatedAtEpochMs: 1,
                 lastHeartbeatAtEpochMs: 1,
                 expiresAtEpochMs: Date.now() + 60_000,
+                disconnectedAtEpochMs: null,
+                disconnectReason: null,
             },
         ],
         instances: [],
@@ -1503,10 +1531,16 @@ function createGroupSnapshot(
             applicationId,
             workspaceId,
             groupId,
+            slug: null,
             displayName: groupId,
+            description: null,
             kind: 'room',
             status: 'active',
+            archived: null,
+            deleted: null,
             joinMode: 'open',
+            maxMembers: null,
+            maxSessionsPerMember: null,
             metadata: {},
             snapshotVersion: 1,
             metadataVersion: 1,
@@ -1514,14 +1548,11 @@ function createGroupSnapshot(
             presenceVersion: 0,
             activeMemberCount: memberSessionIds.length,
             ownerPrincipalId: memberSessionIds[0]!,
-            created: {
-                atEpochMs: 1,
-                byPrincipalId: 'owner',
-            },
-            updated: {
-                atEpochMs: 1,
-                byPrincipalId: 'owner',
-            },
+            expiresAtEpochMs: null,
+            emptySinceEpochMs: null,
+            purgeAfterEpochMs: null,
+            created: audit(1),
+            updated: audit(1),
         },
         members: memberSessionIds.map((sessionId, index) => ({
             applicationId,
@@ -1530,14 +1561,13 @@ function createGroupSnapshot(
             principalId: sessionId,
             role: index === 0 ? 'owner' : 'member',
             status: 'active',
-            joined: {
-                atEpochMs: 1,
-                byPrincipalId: 'owner',
-            },
-            updated: {
-                atEpochMs: 1,
-                byPrincipalId: 'owner',
-            },
+            invitedByPrincipalId: null,
+            invitationExpiresAtEpochMs: null,
+            left: null,
+            removed: null,
+            banned: null,
+            joined: audit(1),
+            updated: audit(1),
         })),
         activeSessions: memberSessionIds.map((sessionId) => ({
             applicationId,
@@ -1550,6 +1580,9 @@ function createGroupSnapshot(
             connectedAtEpochMs: 1,
             lastHeartbeatAtEpochMs: 1,
             expiresAtEpochMs: Date.now() + 60_000,
+            status: 'active',
+            disconnectedAtEpochMs: null,
+            disconnectReason: null,
         })),
         memberCount: memberSessionIds.length,
         onlineMemberCount: memberSessionIds.length,
@@ -1560,10 +1593,7 @@ function createInactiveGroupSnapshot(
     snapshot: GroupSnapshot,
     status: 'archived' | 'deleted',
 ): GroupSnapshot {
-    const audit = {
-        atEpochMs: 2,
-        byPrincipalId: 'owner',
-    };
+    const lifecycleAudit = audit(2);
 
     return {
         ...snapshot,
@@ -1572,14 +1602,23 @@ function createInactiveGroupSnapshot(
             ...snapshot.causalRevision,
             groupRevision: snapshot.causalRevision.groupRevision + 1,
         },
-        group: {
-            ...snapshot.group,
-            status,
-            snapshotVersion: snapshot.group.snapshotVersion + 1,
-            updated: audit,
-            archived: status === 'archived' ? audit : snapshot.group.archived,
-            deleted: status === 'deleted' ? audit : snapshot.group.deleted,
-        },
+        group: status === 'archived'
+            ? {
+                ...snapshot.group,
+                status: 'archived',
+                snapshotVersion: snapshot.group.snapshotVersion + 1,
+                updated: lifecycleAudit,
+                archived: lifecycleAudit,
+                deleted: null,
+            }
+            : {
+                ...snapshot.group,
+                status: 'deleted',
+                snapshotVersion: snapshot.group.snapshotVersion + 1,
+                updated: lifecycleAudit,
+                archived: snapshot.group.archived,
+                deleted: lifecycleAudit,
+            },
         activeSessions: [],
         onlineMemberCount: 0,
     };

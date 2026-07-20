@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
 
 describe('RallarRtcTopologyService', () => {
     it('creates scoped star topology for groups below tree size', () => {
@@ -482,6 +482,10 @@ describe('RallarRtcTopologyService', () => {
         const second = service.updateGroupTopology({
             ...group,
             stateRevision: 2,
+            causalRevision: {
+                ...group.causalRevision,
+                groupRevision: 2,
+            },
             group: {
                 ...group.group,
                 snapshotVersion: 2,
@@ -492,7 +496,10 @@ describe('RallarRtcTopologyService', () => {
         expect(second.changed).toBe(false);
         expect(second.snapshot).not.toBe(first.snapshot);
         expect(second.snapshot.version).toBe(first.snapshot.version);
-        expect(second.snapshot.sourceGroupStateRevision).toBe(2);
+        expect(second.snapshot.sourceGroupStateCausalRevision).toEqual({
+            groupRevision: 2,
+            presenceRevision: 0,
+        });
     });
 
     it('republishes tree topology when RTT measurements change next hops', () => {
@@ -792,30 +799,40 @@ function createGroupSnapshot(
 ): GroupSnapshot {
     const applicationId = 'app-1';
     const workspaceId = 'workspace-1';
+    const ownerPrincipalId = memberSessionIds[0];
+    if (!ownerPrincipalId) {
+        throw new Error('Expected at least one member session fixture');
+    }
 
     return {
         stateRevision: 1,
+        causalRevision: { groupRevision: 1, presenceRevision: 0 },
         group: {
             applicationId,
             workspaceId,
             groupId,
+            slug: null,
             displayName: groupId,
+            description: null,
             kind: 'room',
             status: 'active',
+            archived: null,
+            deleted: null,
             joinMode: 'open',
+            maxMembers: null,
+            maxSessionsPerMember: null,
             metadata: {},
+            activeMemberCount: memberSessionIds.length,
+            ownerPrincipalId,
             snapshotVersion: 1,
             metadataVersion: 0,
             rosterVersion: 1,
             presenceVersion: 0,
-            created: {
-                atEpochMs: 1,
-                byPrincipalId: 'owner',
-            },
-            updated: {
-                atEpochMs: 1,
-                byPrincipalId: 'owner',
-            },
+            expiresAtEpochMs: null,
+            emptySinceEpochMs: null,
+            purgeAfterEpochMs: null,
+            created: audit(1),
+            updated: audit(1),
         },
         members: memberSessionIds.map((sessionId) => ({
             applicationId,
@@ -824,14 +841,13 @@ function createGroupSnapshot(
             principalId: sessionId,
             role: 'member',
             status: 'active',
-            joined: {
-                atEpochMs: 1,
-                byPrincipalId: 'owner',
-            },
-            updated: {
-                atEpochMs: 1,
-                byPrincipalId: 'owner',
-            },
+            invitedByPrincipalId: null,
+            invitationExpiresAtEpochMs: null,
+            left: null,
+            removed: null,
+            banned: null,
+            joined: audit(1),
+            updated: audit(1),
         })),
         activeSessions: memberSessionIds.map((sessionId) => ({
             applicationId,
@@ -839,11 +855,26 @@ function createGroupSnapshot(
             groupId,
             sessionId,
             principalId: sessionId,
+            generationId: `${sessionId}-generation`,
+            generationVersion: 1,
             connectedAtEpochMs: 1,
             lastHeartbeatAtEpochMs: 1,
             expiresAtEpochMs: 60_000,
+            status: 'active',
+            disconnectedAtEpochMs: null,
+            disconnectReason: null,
         })),
         memberCount: memberSessionIds.length,
         onlineMemberCount: memberSessionIds.length,
+    };
+}
+
+function audit(atEpochMs: number): AuditStamp {
+    return {
+        atEpochMs,
+        actor: { kind: 'principal', principalId: 'owner' },
+        reason: null,
+        traceId: null,
+        requestId: null,
     };
 }

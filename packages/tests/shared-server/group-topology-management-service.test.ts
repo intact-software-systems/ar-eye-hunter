@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { AppTopics } from '@shared/api/api-config.ts';
-import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { AuditStamp, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { EffectiveGroupTopologyConfig } from '@shared/api/graph-topology-management-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import {
@@ -37,6 +38,7 @@ import {
 } from '@shared-server/rallar-system/repositories/GroupTopologyConfigRepository.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+import type { RuntimeStateEntry } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 
 describe('GroupTopologyManagementService', () => {
     it.each([
@@ -54,9 +56,10 @@ describe('GroupTopologyManagementService', () => {
                 group: {
                     ...snapshot.group,
                     status: 'archived',
+                    deleted: null,
                     snapshotVersion: snapshot.group.snapshotVersion + 1,
-                    updated: { atEpochMs: 2, byPrincipalId: 'owner' },
-                    archived: { atEpochMs: 2, byPrincipalId: 'owner' },
+                    updated: audit(2),
+                    archived: audit(2),
                 },
             }),
         },
@@ -76,20 +79,20 @@ describe('GroupTopologyManagementService', () => {
                     ownerPrincipalId: 'session-b',
                     snapshotVersion: snapshot.group.snapshotVersion + 1,
                     rosterVersion: snapshot.group.rosterVersion + 1,
-                    updated: { atEpochMs: 2, byPrincipalId: 'owner' },
+                    updated: audit(2),
                 },
                 members: snapshot.members.map((member) =>
                     member.principalId === 'owner'
                         ? {
                             ...member,
                             role: 'member' as const,
-                            updated: { atEpochMs: 2, byPrincipalId: 'owner' },
+                            updated: audit(2),
                         }
                         : member.principalId === 'session-b'
                         ? {
                             ...member,
                             role: 'owner' as const,
-                            updated: { atEpochMs: 2, byPrincipalId: 'owner' },
+                            updated: audit(2),
                         }
                         : member
                 ),
@@ -109,9 +112,10 @@ describe('GroupTopologyManagementService', () => {
                 group: {
                     ...snapshot.group,
                     status: 'archived',
+                    deleted: null,
                     snapshotVersion: snapshot.group.snapshotVersion + 1,
-                    updated: { atEpochMs: 2, byPrincipalId: 'owner' },
-                    archived: { atEpochMs: 2, byPrincipalId: 'owner' },
+                    updated: audit(2),
+                    archived: audit(2),
                 },
             }),
         },
@@ -516,7 +520,7 @@ describe('GroupTopologyManagementService', () => {
             });
 
             await expect(service.readConfig(group.group)).resolves.toMatchObject({
-                temporary: undefined,
+                temporary: null,
             });
             await expect(configRepository.findGenerationEntry(group.group, 'override'))
                 .resolves.toMatchObject({ value: { version: 7 } });
@@ -572,7 +576,7 @@ describe('GroupTopologyManagementService', () => {
 
         const result = await service.putConfig({
             groupRef: group.group,
-            config: { topologyKind: 'mesh' },
+            config: effectiveTopologyConfig('mesh'),
             updatedByPrincipalId: 'owner',
             requestId: 'generation-retry',
         });
@@ -606,7 +610,7 @@ describe('GroupTopologyManagementService', () => {
         const currentConfig = await configRepository.findConfigEntry(group.group);
         expect(await configRepository.commitConfig({
             ...seeded.config,
-            config: { topologyKind: 'mesh' },
+            config: effectiveTopologyConfig('mesh'),
             version: 2,
             updatedAtEpochMs: seeded.config.updatedAtEpochMs + 1,
             requestId: 'split-read-winner',
@@ -625,7 +629,10 @@ describe('GroupTopologyManagementService', () => {
 
         const result = await service.putConfig({
             groupRef: group.group,
-            config: { degreeLimit: 4 },
+            config: {
+                ...effectiveTopologyConfig('tree'),
+                degreeLimit: 4,
+            },
             updatedByPrincipalId: 'owner',
             requestId: 'split-read-retry',
         });
@@ -658,7 +665,10 @@ describe('GroupTopologyManagementService', () => {
         );
         expect(await configRepository.commitOverride({
             ...seeded.config,
-            config: { degreeLimit: 4 },
+            config: {
+                ...effectiveTopologyConfig('tree'),
+                degreeLimit: 4,
+            },
             version: 1,
             requestId: null,
             expiresAtEpochMs: seeded.config.updatedAtEpochMs + 60_000,
@@ -755,9 +765,10 @@ describe('GroupTopologyManagementService', () => {
                     group: {
                         ...group.group,
                         status: 'archived',
+                        deleted: null,
                         snapshotVersion: group.group.snapshotVersion + 1,
-                        updated: { atEpochMs: 2, byPrincipalId: 'owner' },
-                        archived: { atEpochMs: 2, byPrincipalId: 'owner' },
+                        updated: audit(2),
+                        archived: audit(2),
                     },
                 });
             },
@@ -780,10 +791,16 @@ describe('GroupTopologyManagementService', () => {
         const invariantRepository = new GroupTopologyConfigRepository(invariantRuntime);
         await invariantRepository.commitConfig({
             ...topologyConfig(group.group, 1, 'tree', 'degree-winner'),
+            config: {
+                ...effectiveTopologyConfig('tree'),
+                degreeLimit: 2,
+            },
         }, null);
         await invariantRepository.commitOverride({
             ...topologyConfig(group.group, 1, 'tree', 'degree-override'),
-            config: { degreeLimit: 2 },
+            config: {
+                ...effectiveTopologyConfig('tree'),
+            },
             expiresAtEpochMs: Date.now() + 60_000,
         }, null);
         const invariantService = createService({
@@ -832,7 +849,7 @@ describe('GroupTopologyManagementService', () => {
             denial: { code: 'group-not-active' },
         });
         await expect(service.readConfig(group.group)).resolves.toMatchObject({
-            durable: undefined,
+            durable: null,
         });
     });
 
@@ -1021,7 +1038,7 @@ describe('GroupTopologyManagementService', () => {
             config: { topologyKind: 'mesh' },
         })).rejects.toBeInstanceOf(GroupTopologyConfigIdempotencyConflictError);
         expect((await configRepository.findConfig(group.group))?.config)
-            .toEqual({ topologyKind: 'tree' });
+            .toMatchObject({ topologyKind: 'tree' });
     });
 
     it('does not materialize clock facts for replay or conflicting request reuse', async () => {
@@ -1336,9 +1353,10 @@ describe('GroupTopologyManagementService', () => {
             group: {
                 ...group.group,
                 status: 'archived',
+                deleted: null,
                 snapshotVersion: group.group.snapshotVersion + 1,
-                updated: { atEpochMs: 2, byPrincipalId: 'owner' },
-                archived: { atEpochMs: 2, byPrincipalId: 'owner' },
+                updated: audit(2),
+                archived: audit(2),
             },
         });
         await expect(service.putConfig(request)).rejects.toMatchObject({ status: 403 });
@@ -1350,20 +1368,20 @@ describe('GroupTopologyManagementService', () => {
                 ownerPrincipalId: 'session-b',
                 snapshotVersion: group.group.snapshotVersion + 2,
                 rosterVersion: group.group.rosterVersion + 1,
-                updated: { atEpochMs: 3, byPrincipalId: 'owner' },
+                updated: audit(3),
             },
             members: group.members.map((member) =>
                 member.principalId === 'owner'
                     ? {
                         ...member,
                         role: 'member' as const,
-                        updated: { atEpochMs: 3, byPrincipalId: 'owner' },
+                        updated: audit(3),
                     }
                     : member.principalId === 'session-b'
                     ? {
                         ...member,
                         role: 'owner' as const,
-                        updated: { atEpochMs: 3, byPrincipalId: 'owner' },
+                        updated: audit(3),
                     }
                     : member
             ),
@@ -1537,7 +1555,8 @@ describe('GroupTopologyManagementService', () => {
         const result = await service.planGroupTopology(group, previous);
 
         expect(result.previous).toBe(previous);
-        expect(result.snapshot.sourceGroupStateRevision).toBe(group.stateRevision);
+        expect(result.snapshot.sourceGroupStateCausalRevision)
+            .toEqual(group.causalRevision);
         expect(await snapshots.findSnapshot(group.group)).toEqual(previous);
         expect(topologyService.readSnapshot(group)).toBeUndefined();
     });
@@ -1568,13 +1587,16 @@ describe('GroupTopologyManagementService', () => {
     it('uses the immutable group update time for a planned removal tombstone', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const active = createGroupSnapshot(createGroupRef('workspace-1'));
-        const group = {
+        const group: GroupSnapshot = {
             ...active,
             stateRevision: 2,
+            causalRevision: { groupRevision: 2, presenceRevision: 0 },
             group: {
                 ...active.group,
-                status: 'deleted' as const,
-                updated: { atEpochMs: 123, byPrincipalId: 'owner' },
+                status: 'deleted',
+                archived: null,
+                deleted: audit(123),
+                updated: audit(123),
             },
         };
         const service = createService({
@@ -1587,7 +1609,10 @@ describe('GroupTopologyManagementService', () => {
 
         expect(result.snapshot).toMatchObject({
             state: 'removed',
-            sourceGroupStateRevision: 2,
+            sourceGroupStateCausalRevision: {
+                groupRevision: 2,
+                presenceRevision: 0,
+            },
             updatedAtEpochMs: 123,
         });
         expect(
@@ -1608,7 +1633,7 @@ describe('GroupTopologyManagementService', () => {
 
         expect(view.groupRef).toEqual(group.group);
         expect(view.overlayId).toBe(JSON.stringify(['app-1', 'workspace-1', 'room-1']));
-        expect(view.snapshot).toBeUndefined();
+        expect(view.snapshot).toBeNull();
         expect(view.config.effective).toEqual({
             topologyKind: 'auto',
             degreeLimit: 5,
@@ -1626,7 +1651,7 @@ describe('GroupTopologyManagementService', () => {
         await configRepository.commitConfig({
             groupRef: group.group,
             config: {
-                topologyKind: 'tree',
+                ...effectiveTopologyConfig('tree'),
                 degreeLimit: 4,
             },
             version: 1,
@@ -1713,7 +1738,10 @@ describe('GroupTopologyManagementService', () => {
                 'session-a': ['session-b'],
                 'session-b': ['session-a'],
             }),
-            sourceGroupStateRevision: 2,
+            sourceGroupStateCausalRevision: {
+                groupRevision: 2,
+                presenceRevision: 0,
+            },
         };
         const topologySnapshotRepository = new RtcTopologySnapshotRepository(
             runtimeRepository,
@@ -1771,8 +1799,10 @@ describe('GroupTopologyManagementService', () => {
             group: {
                 ...active.group,
                 status: 'deleted',
+                archived: null,
+                deleted: audit(2),
                 snapshotVersion: 2,
-                updated: { atEpochMs: 2, byPrincipalId: 'owner' },
+                updated: audit(2),
             },
         };
         const begin = vi.spyOn(runtimeRepository, 'begin');
@@ -1790,7 +1820,12 @@ describe('GroupTopologyManagementService', () => {
         const base = createGroupSnapshot(createGroupRef('workspace-1'));
         const staleRemoval = {
             ...base,
-            group: { ...base.group, status: 'deleted' as const },
+            group: {
+                ...base.group,
+                status: 'deleted' as const,
+                archived: null,
+                deleted: audit(1),
+            },
         };
         const currentGroup = { ...base, stateRevision: 2 };
         const current = {
@@ -1798,7 +1833,10 @@ describe('GroupTopologyManagementService', () => {
                 'session-a': ['session-b'],
                 'session-b': ['session-a'],
             }),
-            sourceGroupStateRevision: 2,
+            sourceGroupStateCausalRevision: {
+                groupRevision: 2,
+                presenceRevision: 0,
+            },
             version: 2,
         };
         const snapshots = new RtcTopologySnapshotRepository(runtimeRepository);
@@ -1819,8 +1857,9 @@ describe('GroupTopologyManagementService', () => {
             group: {
                 ...base.group,
                 status: 'deleted',
-                deleted: { atEpochMs: 2, byPrincipalId: 'owner' },
-                updated: { atEpochMs: 2, byPrincipalId: 'owner' },
+                archived: null,
+                deleted: audit(2),
+                updated: audit(2),
             },
         };
         const expired: GroupSnapshot = {
@@ -1831,7 +1870,7 @@ describe('GroupTopologyManagementService', () => {
                 ...base.group,
                 snapshotVersion: 2,
                 expiresAtEpochMs: 100,
-                updated: { atEpochMs: 2, byPrincipalId: 'owner' },
+                updated: audit(2),
             },
         };
         const snapshots = new RtcTopologySnapshotRepository(runtimeRepository);
@@ -1845,7 +1884,10 @@ describe('GroupTopologyManagementService', () => {
 
         expect(await snapshots.findSnapshot(expired.group)).toMatchObject({
             state: 'removed',
-            sourceGroupStateRevision: 2,
+            sourceGroupStateCausalRevision: {
+                groupRevision: 2,
+                presenceRevision: 0,
+            },
         });
     });
 
@@ -1857,8 +1899,9 @@ describe('GroupTopologyManagementService', () => {
             group: {
                 ...base.group,
                 status: 'deleted',
-                deleted: { atEpochMs: 2, byPrincipalId: 'owner' },
-                updated: { atEpochMs: 2, byPrincipalId: 'owner' },
+                archived: null,
+                deleted: audit(2),
+                updated: audit(2),
             },
         };
         const currentGroup: GroupSnapshot = {
@@ -1867,9 +1910,11 @@ describe('GroupTopologyManagementService', () => {
             causalRevision: { ...staleRemoval.causalRevision, groupRevision: 2 },
             group: {
                 ...staleRemoval.group,
+                status: 'deleted',
+                archived: null,
                 snapshotVersion: 2,
-                deleted: { atEpochMs: 3, byPrincipalId: 'owner' },
-                updated: { atEpochMs: 3, byPrincipalId: 'owner' },
+                deleted: audit(3),
+                updated: audit(3),
             },
         };
         const current = createTopologySnapshot(base.group, {
@@ -1884,7 +1929,10 @@ describe('GroupTopologyManagementService', () => {
 
         expect(await snapshots.findSnapshot(currentGroup.group)).toMatchObject({
             state: 'removed',
-            sourceGroupStateRevision: 2,
+            sourceGroupStateCausalRevision: {
+                groupRevision: 2,
+                presenceRevision: 0,
+            },
         });
         expect(runtimeRepository.locks).toEqual([]);
     });
@@ -1900,8 +1948,8 @@ describe('GroupTopologyManagementService', () => {
                 ...base.group,
                 status: 'deleted',
                 snapshotVersion: 2,
-                deleted: { atEpochMs: 2, byPrincipalId: 'owner' },
-                updated: { atEpochMs: 2, byPrincipalId: 'owner' },
+                deleted: audit(2),
+                updated: audit(2),
             },
         };
         const initial = createTopologySnapshot(base.group, {
@@ -1952,7 +2000,10 @@ describe('GroupTopologyManagementService', () => {
         expect(sleep).toHaveBeenCalledWith(2);
         expect(await snapshots.findSnapshot(removed.group)).toMatchObject({
             state: 'removed',
-            sourceGroupStateRevision: 2,
+            sourceGroupStateCausalRevision: {
+                groupRevision: 2,
+                presenceRevision: 0,
+            },
             version: 2,
         });
         expect(readGroup).toHaveBeenCalledTimes(2);
@@ -1962,14 +2013,24 @@ describe('GroupTopologyManagementService', () => {
     it('replans outside the transaction when the durable predecessor moves', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const baseGroup = createGroupSnapshot(createGroupRef('workspace-1'));
-        const group = { ...baseGroup, stateRevision: 3 };
+        const group = {
+            ...baseGroup,
+            stateRevision: 3,
+            causalRevision: {
+                groupRevision: 3,
+                presenceRevision: 0,
+            },
+        };
         const previous = createTopologySnapshot(group.group, {
             'session-a': ['session-b'],
             'session-b': ['session-a'],
         });
         const moved = {
             ...previous,
-            sourceGroupStateRevision: 2,
+            sourceGroupStateCausalRevision: {
+                groupRevision: 2,
+                presenceRevision: 0,
+            },
             version: 2,
             updatedAtEpochMs: 3,
         };
@@ -2014,7 +2075,10 @@ describe('GroupTopologyManagementService', () => {
 
         expect(begin).toHaveBeenCalledTimes(2);
         expect(planGroupTopology).toHaveBeenCalledTimes(2);
-        expect(result.snapshot.sourceGroupStateRevision).toBe(3);
+        expect(result.snapshot.sourceGroupStateCausalRevision).toEqual({
+            groupRevision: 3,
+            presenceRevision: 0,
+        });
         expect(result.previous).toEqual(moved);
         expect(result.published).toBe(true);
         expect(publisher).toHaveBeenCalledTimes(1);
@@ -2219,7 +2283,7 @@ describe('GroupTopologyManagementService', () => {
         const existingConfig = {
             groupRef: group.group,
             config: {
-                topologyKind: 'tree' as const,
+                ...effectiveTopologyConfig('tree'),
             },
             version: 1,
             createdAtEpochMs: 1,
@@ -2248,7 +2312,7 @@ describe('GroupTopologyManagementService', () => {
         const existingOverride = {
             ...existingConfig,
             config: {
-                topologyKind: 'mesh' as const,
+                ...effectiveTopologyConfig('mesh'),
             },
             requestId: 'existing-override',
             expiresAtEpochMs: Date.now() + 60_000,
@@ -2280,7 +2344,7 @@ describe('GroupTopologyManagementService', () => {
         await configRepository.commitConfig({
             groupRef: group.group,
             config: {
-                topologyKind: 'tree',
+                ...effectiveTopologyConfig('tree'),
                 degreeLimit: 3,
             },
             version: 1,
@@ -2409,7 +2473,7 @@ describe('GroupTopologyManagementService', () => {
 
             expect(planGroupTopology).not.toHaveBeenCalled();
             expect(await service.readOverride(group.group)).toBeUndefined();
-            expect((await service.readConfig(group.group)).durable).toBeUndefined();
+            expect((await service.readConfig(group.group)).durable).toBeNull();
         } finally {
             vi.useRealTimers();
         }
@@ -2516,17 +2580,12 @@ function topologyConfig(
     requestId: string,
 ) {
     return {
-        groupRef: groupRef.workspaceId === undefined
-            ? {
-                applicationId: groupRef.applicationId,
-                groupId: groupRef.groupId,
-            }
-            : {
-                applicationId: groupRef.applicationId,
-                workspaceId: groupRef.workspaceId,
-                groupId: groupRef.groupId,
-            },
-        config: { topologyKind },
+        groupRef: {
+            applicationId: groupRef.applicationId,
+            workspaceId: groupRef.workspaceId,
+            groupId: groupRef.groupId,
+        },
+        config: effectiveTopologyConfig(topologyKind),
         version,
         createdAtEpochMs: 1,
         updatedAtEpochMs: version,
@@ -2539,7 +2598,7 @@ function returnFirstEntryAs(
     runtime: FakeRuntimeStateRepository,
     namespace: string,
     key: string,
-    entry: Awaited<ReturnType<FakeRuntimeStateRepository['findEntry']>>,
+    entry: Readonly<{ entry: RuntimeStateEntry; value: unknown }> | undefined,
 ): void {
     const findEntry = runtime.findEntry.bind(runtime);
     let first = true;
@@ -2618,6 +2677,28 @@ function createGroupRef(workspaceId: string): GroupRef {
     };
 }
 
+function audit(atEpochMs: number): AuditStamp {
+    return {
+        atEpochMs,
+        actor: { kind: 'principal', principalId: 'owner' },
+        reason: null,
+        traceId: null,
+        requestId: null,
+    };
+}
+
+function effectiveTopologyConfig(
+    topologyKind: EffectiveGroupTopologyConfig['topologyKind'] = 'auto',
+): EffectiveGroupTopologyConfig {
+    return {
+        topologyKind,
+        degreeLimit: 5,
+        treeMinSize: 5,
+        meshMinSize: 16,
+        meshParamK: 2,
+    };
+}
+
 function createGroupSnapshot(groupRef: GroupRef): GroupSnapshot {
     const sessionIds = ['session-a', 'session-b', 'session-c', 'session-d', 'session-e'];
     return {
@@ -2625,10 +2706,16 @@ function createGroupSnapshot(groupRef: GroupRef): GroupSnapshot {
         causalRevision: { groupRevision: 1, presenceRevision: 0 },
         group: {
             ...groupRef,
+            slug: null,
             displayName: groupRef.groupId,
+            description: null,
             kind: 'room',
             status: 'active',
+            archived: null,
+            deleted: null,
             joinMode: 'open',
+            maxMembers: null,
+            maxSessionsPerMember: null,
             metadata: {},
             snapshotVersion: 1,
             metadataVersion: 1,
@@ -2636,28 +2723,24 @@ function createGroupSnapshot(groupRef: GroupRef): GroupSnapshot {
             presenceVersion: 0,
             activeMemberCount: sessionIds.length,
             ownerPrincipalId: 'owner',
-            created: {
-                atEpochMs: 1,
-                byPrincipalId: 'owner',
-            },
-            updated: {
-                atEpochMs: 1,
-                byPrincipalId: 'owner',
-            },
+            expiresAtEpochMs: null,
+            emptySinceEpochMs: null,
+            purgeAfterEpochMs: null,
+            created: audit(1),
+            updated: audit(1),
         },
         members: sessionIds.map((sessionId, index) => ({
             ...groupRef,
             principalId: index === 0 ? 'owner' : sessionId,
             role: index === 0 ? 'owner' : 'member',
             status: 'active',
-            joined: {
-                atEpochMs: 1,
-                byPrincipalId: 'owner',
-            },
-            updated: {
-                atEpochMs: 1,
-                byPrincipalId: 'owner',
-            },
+            invitedByPrincipalId: null,
+            invitationExpiresAtEpochMs: null,
+            left: null,
+            removed: null,
+            banned: null,
+            joined: audit(1),
+            updated: audit(1),
         })),
         activeSessions: sessionIds.map((sessionId, index) => ({
             ...groupRef,
@@ -2668,6 +2751,9 @@ function createGroupSnapshot(groupRef: GroupRef): GroupSnapshot {
             connectedAtEpochMs: 1,
             lastHeartbeatAtEpochMs: 1,
             expiresAtEpochMs: 60_000,
+            status: 'active',
+            disconnectedAtEpochMs: null,
+            disconnectReason: null,
         })),
         memberCount: sessionIds.length,
         onlineMemberCount: sessionIds.length,
@@ -2679,24 +2765,23 @@ function createTopologySnapshot(
     nextHopsBySessionId: Record<string, readonly string[]>,
     degreeLimit = 5,
 ): RallarOverlayTopologySnapshot {
+    const canonicalGroupRef: GroupRef = {
+        applicationId: groupRef.applicationId,
+        workspaceId: groupRef.workspaceId,
+        groupId: groupRef.groupId,
+    };
     return {
-        sourceGroupStateRevision: 1,
+        sourceGroupStateCausalRevision: {
+            groupRevision: 1,
+            presenceRevision: 0,
+        },
         state: 'active',
         overlayId: JSON.stringify([
             groupRef.applicationId,
             groupRef.workspaceId ?? '',
             groupRef.groupId,
         ]),
-        groupRef: groupRef.workspaceId === undefined
-            ? {
-                applicationId: groupRef.applicationId,
-                groupId: groupRef.groupId,
-            }
-            : {
-                applicationId: groupRef.applicationId,
-                workspaceId: groupRef.workspaceId,
-                groupId: groupRef.groupId,
-            },
+        groupRef: canonicalGroupRef,
         name: groupRef.groupId,
         topology: 'tree',
         activeSessionIds: Object.keys(nextHopsBySessionId).sort(),

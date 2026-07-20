@@ -30,9 +30,11 @@ export function readGroupCreatedByPrincipalId(
     snapshot: AnyGroupPresence,
 ): string {
     const owner = snapshot.members.find((member) => member.role === 'owner');
-    return owner?.principalId ??
-        snapshot.group.created.byPrincipalId ??
-        snapshot.group.groupId;
+    if (owner) return owner.principalId;
+    const actor = snapshot.group.created.actor;
+    return actor.kind === 'principal' || actor.kind === 'session'
+        ? actor.principalId
+        : actor.serviceId;
 }
 
 export function readGroupCreatedAtEpochMs(snapshot: AnyGroupPresence): number {
@@ -76,7 +78,7 @@ export type GroupCausalRevisionOrder =
     | 'equal'
     | 'dominates'
     | 'dominated'
-    | 'concurrent';
+    | 'incomparable';
 
 /** Compare the authoritative group/presence tuple as a partial order. */
 export function compareGroupCausalRevision(
@@ -92,7 +94,7 @@ export function compareGroupCausalRevision(
     if (groupComparison === 0 && presenceComparison === 0) return 'equal';
     if (groupComparison >= 0 && presenceComparison >= 0) return 'dominates';
     if (groupComparison <= 0 && presenceComparison <= 0) return 'dominated';
-    return 'concurrent';
+    return 'incomparable';
 }
 
 export function readClientVersion(snapshot: ClientSnapshot): number {

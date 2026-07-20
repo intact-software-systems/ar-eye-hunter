@@ -1,6 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { describe, expect, it, vi } from 'vitest';
-import type { GroupEvent, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { AuditStamp, GroupEvent, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
@@ -565,7 +565,11 @@ describe('AppInboxService', () => {
             },
         );
 
-        const input = {
+        const requestId = written.event.requestId;
+        if (requestId === null) {
+            throw new Error('Expected group creation request id');
+        }
+        const input: AppInboxEnqueueInput<GroupCreateAppInboxPayload> = {
             type: AppInboxType.GROUP_CREATE,
             resourceId: crypto.randomUUID(),
             contextId:
@@ -579,7 +583,7 @@ describe('AppInboxService', () => {
                     kind: 'room' as const,
                     joinMode: 'open' as const,
                     createdByPrincipalId: written.snapshot.members[0].principalId,
-                    requestId: written.event.requestId,
+                    requestId,
                 },
             },
         };
@@ -700,15 +704,13 @@ describe('AppInboxService', () => {
         expect(groupStateService.prepareMutation).not.toHaveBeenCalled();
     });
 
-    it('does not publish state sync or derived outbox work without a mutation event', async () => {
+    it('does not publish state sync directly after a durable mutation', async () => {
         const queue = new TestResourceInbox();
         const reader = new InboxQueueReader(queue);
         const results = new TestResourceInboxResults();
         const written = createGroupWritten('group-without-event');
         const groupStateService = createGroupStateServiceStub({
-            createGroup: vi.fn(async () =>
-                createGroupStateWritten({ ...written, event: undefined })
-            ),
+            createGroup: vi.fn(async () => createGroupStateWritten(written)),
         });
         const publisher = {
             publishClientSnapshot: vi.fn(async () => undefined),
@@ -1012,18 +1014,17 @@ describe('AppInboxService', () => {
         expect(disconnected.right?.outcome).toBe('applied');
         expect(updated.right?.result.right?.event?.eventType).toBe('group-updated');
         expect(member.right?.result.right?.event?.eventType).toBe('member-joined');
-        expect(connected.right?.event.kind === 'group' &&
-            connected.right.event.event.eventType).toBe(
+        expect(connected.right?.eventId).toEqual(expect.any(String));
+        expect(heartbeat.right?.eventId).toEqual(expect.any(String));
+        expect(disconnected.right?.eventId).toEqual(expect.any(String));
+        const persistedEventTypes = (
+            await eventStore.listGroupEvents({ ...SCOPE, groupId: 'mutation-room' })
+        ).map((event) => event.eventType);
+        expect(persistedEventTypes).toEqual(expect.arrayContaining([
             'session-connected',
-        );
-        expect(heartbeat.right?.event.kind === 'group' &&
-            heartbeat.right.event.event.eventType).toBe(
             'session-heartbeat',
-        );
-        expect(disconnected.right?.event.kind === 'group' &&
-            disconnected.right.event.event.eventType).toBe(
             'session-disconnected',
-        );
+        ]));
         expect(publisher.publishGroupSnapshot).not.toHaveBeenCalled();
         expect(publisher.publishGroupEvent).not.toHaveBeenCalled();
 
@@ -2111,31 +2112,35 @@ function createGroupStateWritten(written: GroupWritten): GroupStateWritten {
 }
 
 function createGroupWritten(groupId: string): GroupWritten {
+    const audit = createAuditStamp();
     const snapshot: GroupSnapshot = {
+        stateRevision: 1,
+        causalRevision: { groupRevision: 1, presenceRevision: 0 },
         group: {
             ...SCOPE,
             groupId,
+            slug: null,
             displayName: groupId,
+            description: null,
             kind: 'room',
             status: 'active',
+            archived: null,
+            deleted: null,
             joinMode: 'open',
+            maxMembers: null,
+            maxSessionsPerMember: null,
             metadata: {},
+            activeMemberCount: 1,
+            ownerPrincipalId: '3e1be4ce-9a29-47bb-9d63-ef7752d31234',
             snapshotVersion: 1,
             metadataVersion: 1,
             rosterVersion: 1,
             presenceVersion: 0,
-            created: {
-                atEpochMs: 1,
-                byPrincipalId: '3e1be4ce-9a29-47bb-9d63-ef7752d31234',
-                byServiceId: 'server-12345678',
-                requestId: 'create-group-request-1',
-            },
-            updated: {
-                atEpochMs: 1,
-                byPrincipalId: '3e1be4ce-9a29-47bb-9d63-ef7752d31234',
-                byServiceId: 'server-12345678',
-                requestId: 'create-group-request-1',
-            },
+            created: audit,
+            updated: audit,
+            expiresAtEpochMs: null,
+            emptySinceEpochMs: null,
+            purgeAfterEpochMs: null,
         },
         members: [
             {
@@ -2144,18 +2149,13 @@ function createGroupWritten(groupId: string): GroupWritten {
                 principalId: '3e1be4ce-9a29-47bb-9d63-ef7752d31234',
                 role: 'owner',
                 status: 'active',
-                joined: {
-                    atEpochMs: 1,
-                    byPrincipalId: '3e1be4ce-9a29-47bb-9d63-ef7752d31234',
-                    byServiceId: 'server-12345678',
-                    requestId: 'create-group-request-1',
-                },
-                updated: {
-                    atEpochMs: 1,
-                    byPrincipalId: '3e1be4ce-9a29-47bb-9d63-ef7752d31234',
-                    byServiceId: 'server-12345678',
-                    requestId: 'create-group-request-1',
-                },
+                joined: audit,
+                updated: audit,
+                invitedByPrincipalId: null,
+                invitationExpiresAtEpochMs: null,
+                left: null,
+                removed: null,
+                banned: null,
             },
         ],
         activeSessions: [],
@@ -2168,17 +2168,34 @@ function createGroupWritten(groupId: string): GroupWritten {
         eventId: 'event-1',
         eventType: 'group-created',
         snapshotVersion: snapshot.group.snapshotVersion,
+        causalRevision: snapshot.causalRevision,
         occurredAtEpochMs: 1,
         requestId: 'create-group-request-1',
         actor: {
+            kind: 'principal',
             principalId: snapshot.members[0].principalId,
-            serviceId: 'server-12345678',
         },
+        reason: null,
+        traceId: null,
+        payload: {},
     };
 
     return {
         snapshot,
         event,
+    };
+}
+
+function createAuditStamp(): AuditStamp {
+    return {
+        atEpochMs: 1,
+        actor: {
+            kind: 'principal',
+            principalId: '3e1be4ce-9a29-47bb-9d63-ef7752d31234',
+        },
+        reason: null,
+        traceId: null,
+        requestId: 'create-group-request-1',
     };
 }
 

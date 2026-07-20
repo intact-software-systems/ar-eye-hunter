@@ -1,5 +1,6 @@
 import { toGroupSnapshotStateRevision } from '@shared/api/group-client-views.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import { DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import {
     validatePersistedGroup,
     validatePersistedGroupMember,
@@ -81,7 +82,7 @@ export function validatePersistedGroupSnapshot(
         if (
             sessionIds.has(session.sessionId) ||
             !activeMembers.has(session.principalId) ||
-            session.disconnectedAtEpochMs !== undefined
+            session.disconnectedAtEpochMs !== null
         ) {
             throw new TypeError('Stored group snapshot active session is inconsistent');
         }
@@ -105,13 +106,13 @@ function canonicalGroupRef(group: Record<string, unknown>): GroupRef {
     ) {
         throw new TypeError('Stored group snapshot group identity is invalid');
     }
-    return group.workspaceId === undefined
-        ? { applicationId: group.applicationId, groupId: group.groupId }
-        : {
-            applicationId: group.applicationId,
-            workspaceId: group.workspaceId as string,
-            groupId: group.groupId,
-        };
+    return {
+        applicationId: group.applicationId,
+        workspaceId: typeof group.workspaceId === 'string'
+            ? group.workspaceId
+            : DEFAULT_STATE_WORKSPACE_ID,
+        groupId: group.groupId,
+    };
 }
 
 function requireRecord(value: unknown, label: string): Record<string, unknown> {

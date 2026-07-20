@@ -28,7 +28,11 @@ import type { AppGroupInboxService } from '@shared-server/rallar-system/services
 import type { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
 import type { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';
-import { GroupSnapshot } from '@shared/api/group-types.ts';
+import type {
+    AuditStamp,
+    GroupMember,
+    GroupSnapshot,
+} from '@shared/api/group-types.ts';
 
 describe('createRallarMiddleware', () => {
     it('constructs queuebox runtime services around supplied repositories', () => {
@@ -101,7 +105,7 @@ describe('createRallarMiddleware', () => {
             clientsRepository: {} as ClientStateRepository,
             groupsRepository: {} as GroupStateRepository,
         });
-        const onMessage = vi.fn(async () => undefined);
+        const onMessage = vi.fn(async (_message: unknown) => undefined);
         const message = newALUntargetedMessage(
             'api-v1',
             newALRoute('app-inbox.group-state', 'group-1', 'request-1'),
@@ -142,7 +146,7 @@ describe('createRallarMiddleware', () => {
             clientsRepository: {} as ClientStateRepository,
             groupsRepository: {} as GroupStateRepository,
         });
-        const onMessage = vi.fn(async () => undefined);
+        const onMessage = vi.fn(async (_message: unknown) => undefined);
         const message = newALUntargetedMessage(
             'api-v1',
             newALRoute('app-outbox.rtc-topology', 'group-1', 'group-1'),
@@ -802,24 +806,30 @@ function createClientSnapshot(
     snapshotVersion: number,
     expiresAtEpochMs = 4_000_000_000_000,
 ): ClientSnapshot {
+    const created = createAuditStamp(1, principalId);
+    const updated = createAuditStamp(snapshotVersion, principalId);
     return {
+        stateRevision: snapshotVersion,
         principal: {
             applicationId,
             workspaceId,
             principalId,
             username: principalId,
+            displayName: principalId,
+            avatarUrl: null,
+            authProvider: null,
+            externalSubjectId: null,
             status: 'active',
+            disabled: null,
+            deleted: null,
             roles: [],
             metadata: {},
             snapshotVersion,
             profileVersion: snapshotVersion,
             presenceVersion: 1,
-            created: {
-                atEpochMs: 1,
-            },
-            updated: {
-                atEpochMs: snapshotVersion,
-            },
+            created,
+            updated,
+            lastSeenAtEpochMs: snapshotVersion,
         },
         instances: [],
         activeSessions: [
@@ -829,9 +839,14 @@ function createClientSnapshot(
                 principalId,
                 clientInstanceId: `${principalId}-instance`,
                 sessionId,
+                generationId: `${sessionId}-generation`,
+                generationVersion: 1,
                 status: 'active',
+                disconnectedAtEpochMs: null,
+                disconnectReason: null,
                 presenceState: 'online',
                 transport: 'ws',
+                connectionId: sessionId,
                 authenticatedAtEpochMs: 1,
                 connectedAtEpochMs: 1,
                 lastHeartbeatAtEpochMs: snapshotVersion,
@@ -848,63 +863,135 @@ function createGroupSnapshot(
     groupId: string,
     applicationId: string,
     workspaceId: string,
-    members: Readonly<
+    members: readonly [
         {
             principalId: string;
             sessionId: string;
             status: 'active' | 'removed';
-        }
-    >,
+        },
+        ...Array<{
+            principalId: string;
+            sessionId: string;
+            status: 'active' | 'removed';
+        }>,
+    ],
     snapshotVersion: number,
     expiresAtEpochMs = 4_000_000_000_000,
 ): GroupSnapshot {
     const activeMembers = members.filter((member) => member.status === 'active');
+    const created = createAuditStamp(1, 'system');
+    const updated = createAuditStamp(snapshotVersion, 'system');
     return {
+        stateRevision: snapshotVersion,
+        causalRevision: {
+            groupRevision: snapshotVersion,
+            presenceRevision: snapshotVersion,
+        },
         group: {
             applicationId,
             workspaceId,
             groupId,
+            slug: null,
             displayName: groupId,
+            description: null,
             kind: 'room',
             status: 'active',
+            archived: null,
+            deleted: null,
             joinMode: 'open',
+            maxMembers: null,
+            maxSessionsPerMember: null,
             metadata: {},
+            activeMemberCount: activeMembers.length,
+            ownerPrincipalId: members[0].principalId,
             snapshotVersion,
             metadataVersion: 1,
             rosterVersion: 1,
             presenceVersion: snapshotVersion,
-            created: {
-                atEpochMs: 1,
-            },
-            updated: {
-                atEpochMs: snapshotVersion,
-            },
+            created,
+            updated,
+            expiresAtEpochMs: null,
+            emptySinceEpochMs: null,
+            purgeAfterEpochMs: null,
         },
-        members: members.map((member) => ({
+        members: members.map((member) => createGroupMember(
             applicationId,
             workspaceId,
             groupId,
-            principalId: member.principalId,
-            role: 'member',
-            status: member.status,
-            joined: {
-                atEpochMs: 1,
-            },
-            updated: {
-                atEpochMs: snapshotVersion,
-            },
-        })),
+            member,
+            snapshotVersion,
+        )),
         activeSessions: activeMembers.map((member) => ({
             applicationId,
             workspaceId,
             groupId,
             sessionId: member.sessionId,
             principalId: member.principalId,
+            generationId: `${member.sessionId}-generation`,
+            generationVersion: 1,
+            status: 'active',
+            disconnectedAtEpochMs: null,
+            disconnectReason: null,
             connectedAtEpochMs: 1,
             lastHeartbeatAtEpochMs: snapshotVersion,
             expiresAtEpochMs,
         })),
         memberCount: activeMembers.length,
         onlineMemberCount: activeMembers.length,
+    };
+}
+
+function createGroupMember(
+    applicationId: string,
+    workspaceId: string,
+    groupId: string,
+    member: Readonly<{
+        principalId: string;
+        sessionId: string;
+        status: 'active' | 'removed';
+    }>,
+    snapshotVersion: number,
+): GroupMember {
+    if (member.status === 'active') {
+        return {
+            applicationId,
+            workspaceId,
+            groupId,
+            principalId: member.principalId,
+            role: 'member',
+            joined: createAuditStamp(1, member.principalId),
+            updated: createAuditStamp(snapshotVersion, member.principalId),
+            invitedByPrincipalId: null,
+            invitationExpiresAtEpochMs: null,
+            status: 'active',
+            left: null,
+            removed: null,
+            banned: null,
+        };
+    }
+    return {
+        applicationId,
+        workspaceId,
+        groupId,
+        principalId: member.principalId,
+        role: 'member',
+        joined: createAuditStamp(1, member.principalId),
+        updated: createAuditStamp(snapshotVersion, member.principalId),
+        invitedByPrincipalId: null,
+        invitationExpiresAtEpochMs: null,
+        status: 'removed',
+        left: null,
+        removed: createAuditStamp(snapshotVersion, 'system'),
+        banned: null,
+    };
+}
+
+function createAuditStamp(atEpochMs: number, principalId: string): AuditStamp {
+    return {
+        atEpochMs,
+        actor: { kind: 'principal', principalId },
+        reason: null,
+        traceId: null,
+        requestId: null,
     };
 }

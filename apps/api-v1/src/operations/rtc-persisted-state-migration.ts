@@ -1,4 +1,5 @@
 export const RTC_PERSISTED_STATE_MIGRATION_STEPS = [
+  'topology-scalar-authority',
   'snapshot-keys',
   'publication-keys',
   'rtt-keys',

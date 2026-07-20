@@ -52,6 +52,13 @@ export type GroupStateSnapshotChangeListener = (
     change: GroupStateSnapshotChange,
 ) => void | Promise<void>;
 
+export class GroupStateSnapshotIncomparableError extends Error {
+    constructor(readonly groupRef: GroupRef) {
+        super('Group snapshot causal tuple is incomparable');
+        this.name = 'GroupStateSnapshotIncomparableError';
+    }
+}
+
 export const groupStateSnapshotRepositoryToken = newObservableLatestRepositoryToken<
     string,
     GroupSnapshot
@@ -199,6 +206,9 @@ export function setGroupStateSnapshot(
     manager?: RepositoryManager,
 ): boolean {
     const decision = writeGroupStateSnapshot(snapshot, manager);
+    if (decision === 'incomparable') {
+        throw new GroupStateSnapshotIncomparableError(snapshot.group);
+    }
     return decision === 'inserted' || decision === 'advanced';
 }
 
@@ -249,7 +259,8 @@ function decideGroupSnapshotCausalRevision(
         readGroupCausalRevision(current),
     );
     if (order === 'dominates') return 'advanced';
-    if (order === 'dominated' || order === 'concurrent') return 'stale';
+    if (order === 'dominated') return 'stale';
+    if (order === 'incomparable') return 'incomparable';
     if (jsonEquals(current, incoming)) return 'duplicate';
 
     throw new StateSnapshotRevisionConflictError(

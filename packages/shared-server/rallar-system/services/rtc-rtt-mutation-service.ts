@@ -171,6 +171,7 @@ export async function executeRttMutation(
             };
             facts = {
                 commandHash,
+                attemptCount: attempt + 1,
                 requestedAtEpochMs: null,
                 purgeAfterEpochMs: null,
             };
@@ -179,7 +180,11 @@ export async function executeRttMutation(
             if (!sameRttRequest(command, stableRequest)) {
                 throw new TypeError('RTC RTT retry changed the stable request payload');
             }
-            facts = { ...await input.readFacts(), commandHash };
+            facts = {
+                ...await input.readFacts(),
+                commandHash,
+                attemptCount: attempt + 1,
+            };
         }
 
         const computeStarted = performance.now();

@@ -61,6 +61,8 @@ describe('black-box operator token', () => {
     });
 
     it('rejects wrong scope and audience claims', async () => {
+        const wrongScopeClaims = {};
+        Reflect.set(wrongScopeClaims, 'scope', 'wrong-scope');
         const wrongScopeToken = await signRallarBlackBoxOperatorToken({
             secret: 'shared-secret',
             subject: 'alice',
@@ -68,10 +70,10 @@ describe('black-box operator token', () => {
             issuedAtEpochMs,
             expiresAtEpochMs,
             tokenId: 'token-1',
-            claims: {
-                scope: 'wrong-scope',
-            },
+            claims: wrongScopeClaims,
         });
+        const wrongAudienceClaims = {};
+        Reflect.set(wrongAudienceClaims, 'aud', 'wrong-audience');
         const wrongAudienceToken = await signRallarBlackBoxOperatorToken({
             secret: 'shared-secret',
             subject: 'alice',
@@ -79,9 +81,7 @@ describe('black-box operator token', () => {
             issuedAtEpochMs,
             expiresAtEpochMs,
             tokenId: 'token-1',
-            claims: {
-                aud: 'wrong-audience',
-            },
+            claims: wrongAudienceClaims,
         });
 
         await expect(

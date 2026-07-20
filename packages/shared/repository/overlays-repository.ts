@@ -6,11 +6,12 @@ import {
 import type { GroupRef } from '@shared/api/group-types.ts';
 import {
     type AnyGroupPresence,
+    compareGroupCausalRevision,
+    readGroupCausalRevision,
     readGroupCreatedAtEpochMs,
     readGroupCreatedByPrincipalId,
     readGroupDisplayName,
     readGroupMemberSessionIds,
-    readGroupStateRevision,
     readGroupUpdatedAtEpochMs,
     readGroupVersion,
 } from '@shared/api/group-client-views.ts';
@@ -74,7 +75,7 @@ export function configureOverlayRepository(
         {
             ...options,
             equals: (left, right) =>
-                compareOverlayInfoTuple(left, right) === 0 &&
+                compareOverlayInfoTuple(left, right) === 'equal' &&
                 JSON.stringify(left) === JSON.stringify(right),
         },
         manager,
@@ -212,16 +213,20 @@ export function setOverlayById(
     }
 
     const comparison = compareOverlayInfoTuple(overlay, current);
-    if (comparison > 0) {
+    if (comparison === 'dominates') {
         console.log(`Received updated overlay details: ${JSON.stringify(overlay)}`);
         repository.set(id, overlay);
         return;
     }
 
-    if (comparison === 0) {
+    if (comparison === 'equal') {
         if (JSON.stringify(overlay) === JSON.stringify(current)) {
             return;
         }
+        throw new OverlayRevisionConflictError(id);
+    }
+
+    if (comparison === 'incomparable') {
         throw new OverlayRevisionConflictError(id);
     }
 
@@ -241,13 +246,20 @@ export function getAllOverlays(
 }
 
 export function compareOverlayInfoTuple(
-    left: Pick<OverlayInfo, 'sourceGroupStateRevision' | 'overlayVersion'>,
-    right: Pick<OverlayInfo, 'sourceGroupStateRevision' | 'overlayVersion'>,
-): number {
-    if (left.sourceGroupStateRevision !== right.sourceGroupStateRevision) {
-        return left.sourceGroupStateRevision - right.sourceGroupStateRevision;
+    left: Pick<OverlayInfo, 'sourceGroupStateCausalRevision' | 'overlayVersion'>,
+    right: Pick<OverlayInfo, 'sourceGroupStateCausalRevision' | 'overlayVersion'>,
+): 'equal' | 'dominates' | 'dominated' | 'incomparable' {
+    const sourceOrder = compareGroupCausalRevision(
+        left.sourceGroupStateCausalRevision,
+        right.sourceGroupStateCausalRevision,
+    );
+    if (sourceOrder !== 'equal') {
+        return sourceOrder;
     }
-    return left.overlayVersion - right.overlayVersion;
+    if (left.overlayVersion === right.overlayVersion) return 'equal';
+    return left.overlayVersion > right.overlayVersion
+        ? 'dominates'
+        : 'dominated';
 }
 
 function toOverlayRepositoryChange(
@@ -267,7 +279,7 @@ function toOverlayRepositoryChange(
 
 function toStarOverlay(group: AnyGroupPresence): OverlayInfo {
     return {
-        sourceGroupStateRevision: readGroupStateRevision(group),
+        sourceGroupStateCausalRevision: readGroupCausalRevision(group),
         state: 'active',
         name: readGroupDisplayName(group),
         overlayId: toScopedOverlayId(group.group),
@@ -276,6 +288,7 @@ function toStarOverlay(group: AnyGroupPresence): OverlayInfo {
         createdByClientId: readGroupCreatedByPrincipalId(group),
         createdAtEpochMs: readGroupCreatedAtEpochMs(group),
         nextHopSessionIds: readGroupMemberSessionIds(group),
+        degreeLimit: Math.max(1, readGroupMemberSessionIds(group).length - 1),
         overlayVersion: readGroupVersion(group),
         updatedAtEpochMs: readGroupUpdatedAtEpochMs(group),
     };

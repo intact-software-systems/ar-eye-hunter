@@ -16,7 +16,7 @@ import {
 
 type StateSyncScope = Readonly<{
     applicationId: string;
-    workspaceId?: string;
+    workspaceId: string;
 }>;
 
 export type StateSyncRoutingOptions = Readonly<{

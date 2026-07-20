@@ -1,5 +1,6 @@
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import { compareGroupCausalRevision } from '@shared/api/group-client-views.ts';
 import {
     DEFAULT_RUNTIME_STATE_WRITE_ATTEMPTS,
     RuntimeStateRetryExhaustedError,
@@ -436,13 +437,23 @@ async function enqueueStateMutationOutboxDelivery(
     senderId: string,
 ): Promise<number> {
     const record = plan.stored.record;
-    const snapshot = plan.snapshot!;
+    const snapshot = plan.snapshot;
+    if (snapshot === null) {
+        throw new Error(
+            `State mutation outbox snapshot is unavailable for ${record.outboxId}`,
+        );
+    }
     const acceptedSnapshotRevision =
         record.acceptedCausalRevision.stateRevision;
     const effectiveSnapshotRevisions: number[] = [];
     if (record.kind === 'client') {
+        if (!('principal' in snapshot)) {
+            throw new Error(
+                `Client outbox resolved a group snapshot: ${record.outboxId}`,
+            );
+        }
         if (record.effects.includes('client-state-sync')) {
-            const clientSnapshot = snapshot as ClientSnapshot;
+            const clientSnapshot = snapshot;
             const result = await stateSyncPublisher.publishClientSnapshot(
                 clientSnapshot,
                 senderId,
@@ -475,7 +486,12 @@ async function enqueueStateMutationOutboxDelivery(
         return Math.min(...effectiveSnapshotRevisions);
     }
 
-    let groupSnapshot = snapshot as GroupSnapshot;
+    if (!('group' in snapshot)) {
+        throw new Error(
+            `Group outbox resolved a client snapshot: ${record.outboxId}`,
+        );
+    }
+    let groupSnapshot = snapshot;
     const convergesPresenceSummary = record.effects.includes(
         'group-presence-summary',
     );
@@ -514,6 +530,7 @@ async function enqueueStateMutationOutboxDelivery(
             );
         }
         groupSnapshot = refreshed;
+        assertGroupSnapshotCompatible(record, groupSnapshot);
     }
     if (record.effects.includes('group-state-sync')) {
         const result = await stateSyncPublisher.publishGroupSnapshot(
@@ -648,12 +665,18 @@ function assertGroupSnapshotCompatible(
         throw new Error(`Group outbox snapshot has the wrong aggregate ref: ${record.outboxId}`);
     }
     if (
+        !['equal', 'dominates'].includes(compareGroupCausalRevision(
+            snapshot.causalRevision,
+            accepted.causalRevision,
+        )) ||
         snapshot.group.snapshotVersion < accepted.snapshotVersion ||
         snapshot.group.metadataVersion < accepted.metadataVersion ||
         snapshot.group.rosterVersion < accepted.rosterVersion ||
         snapshot.group.presenceVersion < accepted.presenceVersion
     ) {
-        throw new Error(`Group outbox snapshot has an older causal tuple: ${record.outboxId}`);
+        throw new Error(
+            `Group outbox snapshot has an older or incomparable causal tuple: ${record.outboxId}`,
+        );
     }
     if (record.event.kind === 'group') {
         const event = record.event.event;
@@ -661,7 +684,11 @@ function assertGroupSnapshotCompatible(
             event.applicationId !== record.aggregateRef.applicationId ||
             event.workspaceId !== record.aggregateRef.workspaceId ||
             event.groupId !== record.aggregateRef.groupId ||
-            event.snapshotVersion !== accepted.snapshotVersion
+            event.snapshotVersion !== accepted.snapshotVersion ||
+            compareGroupCausalRevision(
+                event.causalRevision,
+                accepted.causalRevision,
+            ) !== 'equal'
         ) {
             throw new Error(`Group outbox event does not match its intent: ${record.outboxId}`);
         }

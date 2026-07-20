@@ -83,7 +83,7 @@ export type GroupWritten = Readonly<{
 
 export type GroupMutationWritten = Readonly<{
     snapshot: GroupSnapshot;
-    event?: GroupEvent;
+    event: GroupEvent | null;
 }>;
 
 export type GroupStateWritten = Readonly<{
@@ -93,7 +93,7 @@ export type GroupStateWritten = Readonly<{
 
 export type GroupJoinCodeMutationWritten =
     & GroupJoinCodeResponse
-    & Readonly<{ event?: GroupEvent }>;
+    & Readonly<{ event: GroupEvent | null }>;
 
 export type GroupJoinCodeWritten = Readonly<{
     status: 'ok' | 'error';
@@ -379,6 +379,7 @@ export class GroupMutationIdempotencyConflictError extends Error {
 type GroupMutationExecution = Readonly<{
     receipt: GroupMutationReceipt;
     source: 'write' | 'replay' | 'no-op' | 'rejected';
+    event: GroupEvent | null;
 }>;
 
 export function createGroupStateRuntime(
@@ -408,7 +409,7 @@ export function createGroupStateRuntime(
     ): Promise<GroupMutationExecution> => {
         validateGroupMutationCommand(command);
         const commandHash = await hashStateMutationCommand(command);
-        let facts: GroupMutationFacts | undefined;
+        let stableFacts: Omit<GroupMutationFacts, 'attemptCount'> | undefined;
         let lastConflict: RuntimeStateWriteConflictError | undefined;
         for (let attempt = 0; attempt < DEFAULT_RUNTIME_STATE_WRITE_ATTEMPTS; attempt += 1) {
             const backoffMs = await waitForRuntimeStateWriteRetry(
@@ -447,9 +448,9 @@ export function createGroupStateRuntime(
                     resolvedFromIdempotency = true;
                     computed = idempotency;
                 } else {
-                    if (!facts) {
+                    if (!stableFacts) {
                         const resolvedJoinCode = resolveCommandJoinCode(command, randomId);
-                        facts = {
+                        stableFacts = {
                             nowEpochMs: mutationAtEpochMs ?? now(),
                             serviceId: dependencies.serviceId,
                             eventId: randomId(),
@@ -460,6 +461,10 @@ export function createGroupStateRuntime(
                             authenticatedAuthority,
                         };
                     }
+                    const facts: GroupMutationFacts = {
+                        ...stableFacts,
+                        attemptCount: attempt + 1,
+                    };
                     computed = computeGroupMutation({ command, read, facts });
                 }
                 recordMutationPhase(
@@ -488,9 +493,13 @@ export function createGroupStateRuntime(
                         );
                     }
                 } else {
-                    if (!facts) {
+                    if (!stableFacts) {
                         throw new TypeError('Group mutation facts were not materialized');
                     }
+                    const facts: GroupMutationFacts = {
+                        ...stableFacts,
+                        attemptCount: attempt + 1,
+                    };
                     validateGroupMutation({ command, read, facts, computed });
                 }
                 recordMutationPhase(
@@ -512,7 +521,15 @@ export function createGroupStateRuntime(
                     );
                 }
                 if (computed.outcome !== 'write') {
-                    return { receipt: computed.receipt, source: computed.outcome };
+                    return {
+                        receipt: computed.receipt,
+                        source: computed.outcome,
+                        event: await readGroupReceiptEvent(
+                            repositoryFor(runtime),
+                            command.aggregateRef,
+                            computed.receipt.eventId,
+                        ),
+                    };
                 }
 
                 activePhase = 'write';
@@ -540,7 +557,7 @@ export function createGroupStateRuntime(
                     backoffMs,
                 );
                 dependencies.wakeStateMutationOutbox?.();
-                return { receipt: written, source: 'write' };
+                return { receipt: written, source: 'write', event: computed.event };
             } catch (error) {
                 if (activePhase === 'write' && transactionStarted !== undefined) {
                     recordMutationPhase(
@@ -606,9 +623,7 @@ export function createGroupStateRuntime(
             status: command.operation === 'createGroup' ? 'created' : 'ok',
             result: Either.ofRight({
                 snapshot,
-                ...(execution.receipt.event.kind === 'group'
-                    ? { event: execution.receipt.event.event }
-                    : {}),
+                event: execution.event,
             }),
         };
     };
@@ -812,9 +827,7 @@ export function createGroupStateRuntime(
                     joinCode: execution.receipt.joinCode,
                     expiresAtEpochMs: execution.receipt.joinCodeExpiresAtEpochMs,
                     snapshot,
-                    ...(execution.receipt.event.kind === 'group'
-                        ? { event: execution.receipt.event.event }
-                        : {}),
+                    event: execution.event,
                 }),
             };
         },
@@ -922,7 +935,7 @@ export function createGroupStateRuntime(
             const sessions = (await repositoryFor(runtime).listAllPresenceSessions())
                 .filter((session) =>
                     session.sessionId === sessionId &&
-                    session.disconnectedAtEpochMs === undefined
+                    session.disconnectedAtEpochMs === null
                 );
             const written: GroupStateWritten[] = [];
             for (const session of sessions) {
@@ -939,7 +952,7 @@ export function createGroupStateRuntime(
         expireExpiredPresenceSessions: async (atEpochMs) => {
             const candidates = (await repositoryFor(runtime).listAllPresenceSessions())
                 .filter((session) =>
-                    session.disconnectedAtEpochMs === undefined &&
+                    session.disconnectedAtEpochMs === null &&
                     session.expiresAtEpochMs <= atEpochMs
                 );
             const written: GroupStateWritten[] = [];
@@ -955,9 +968,7 @@ export function createGroupStateRuntime(
                     status: 'ok',
                     result: Either.ofRight({
                         snapshot,
-                        ...(execution.receipt.event.kind === 'group'
-                            ? { event: execution.receipt.event.event }
-                            : {}),
+                        event: execution.event,
                     }),
                 });
             }
@@ -973,6 +984,22 @@ export function createGroupStateRuntime(
         ),
         maintenance,
     };
+}
+
+async function readGroupReceiptEvent(
+    repository: GroupStateRepository,
+    ref: GroupRef,
+    eventId: string | null,
+): Promise<GroupEvent | null> {
+    if (eventId === null) return null;
+    const event = (await repository.listEvents(ref))
+        .find((candidate) => candidate.eventId === eventId);
+    if (!event) {
+        throw new NonRetryableException(
+            `Group mutation receipt event not found: ${eventId}`,
+        );
+    }
+    return event;
 }
 
 export function createGroupStateService(
@@ -1875,7 +1902,7 @@ function toExpiryCommand(
         operation: 'disconnectPresence',
         aggregateRef: {
             applicationId: session.applicationId,
-            ...(session.workspaceId ? { workspaceId: session.workspaceId } : {}),
+            workspaceId: session.workspaceId,
             groupId: session.groupId,
         },
         sessionId: session.sessionId,
@@ -1905,9 +1932,7 @@ function toSessionCleanupCommand(
         operation: 'disconnectPresence',
         aggregateRef: {
             applicationId: session.applicationId,
-            ...(session.workspaceId === undefined
-                ? {}
-                : { workspaceId: session.workspaceId }),
+            workspaceId: session.workspaceId,
             groupId: session.groupId,
         },
         sessionId: session.sessionId,

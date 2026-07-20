@@ -2,14 +2,17 @@ import type {
     AuditStamp,
     ClientEvent,
     ClientInstance,
+    ClientInstanceRef,
     ClientPlatform,
     ClientPresenceState,
     ClientPrincipal,
     ClientPrincipalRef,
     ClientPrincipalStatus,
     ClientSession,
+    ClientSessionRef,
     ClientTransport,
 } from '@shared/api/client-types.ts';
+import type { MutationActor } from '@shared/api/mutation-actor.ts';
 import type { RuntimeStateEntryValue } from '../../runtime-state/RuntimeStateJsonStore.ts';
 import type {
     ConnectClientSessionRequest,
@@ -18,6 +21,7 @@ import type {
     UpsertClientInstanceRequest,
     UpsertClientPrincipalRequest,
 } from '@shared/api/state-types.ts';
+import { toStateMutationOutboxId } from '../repositories/StateMutationOutboxRepository.ts';
 
 type NullableActorInput = Readonly<{
     actorPrincipalId: string | null;
@@ -116,14 +120,17 @@ export type ClientMutationCommand =
 
 export type ClientMutationReceipt = Readonly<{
     commandId: string;
+    requestId: string | null;
     commandHash: string;
+    aggregateRef: ClientPrincipalRef;
     outcome: 'applied' | 'no-op';
+    attemptCount: number;
+    acceptedStorageRevision: number | null;
     stateRevision: number;
     snapshotVersion: number;
     presenceVersion: number;
-    event:
-        | Readonly<{ kind: 'none' }>
-        | Readonly<{ kind: 'client'; event: ClientEvent }>;
+    eventId: string | null;
+    outboxIds: readonly string[];
 }>;
 
 export type ClientMutationIdempotencyRecord = Readonly<{
@@ -144,6 +151,7 @@ export type ClientMutationFacts = Readonly<{
     serviceId: string;
     eventId: string;
     commandHash: string;
+    attemptCount: number;
 }>;
 
 type ConditionalCandidate<T> =
@@ -527,6 +535,223 @@ export function validateClientMutationRequest(
     }
 }
 
+export function normalizePersistedClientPrincipal(
+    value: unknown,
+    expected: ClientPrincipalRef,
+): ClientPrincipal {
+    const legacy = requirePlainRecord(value, 'Stored client principal');
+    requireAllowedKeys(
+        legacy,
+        [],
+        CLIENT_PRINCIPAL_PERSISTED_KEYS,
+        'Stored client principal',
+    );
+    const canonical = {
+        applicationId: legacy.applicationId,
+        workspaceId: persistedClientOrDefault(
+            legacy,
+            'workspaceId',
+            expected.workspaceId,
+        ),
+        principalId: legacy.principalId,
+        username: legacy.username,
+        displayName: legacy.displayName ?? null,
+        avatarUrl: legacy.avatarUrl ?? null,
+        status: legacy.status,
+        authProvider: legacy.authProvider ?? null,
+        externalSubjectId: legacy.externalSubjectId ?? null,
+        roles: legacy.roles,
+        metadata: legacy.metadata,
+        snapshotVersion: legacy.snapshotVersion,
+        profileVersion: legacy.profileVersion,
+        presenceVersion: legacy.presenceVersion,
+        created: normalizePersistedClientAudit(legacy.created, 'Stored client principal.created'),
+        updated: normalizePersistedClientAudit(legacy.updated, 'Stored client principal.updated'),
+        disabled: legacy.disabled === undefined || legacy.disabled === null
+            ? null
+            : normalizePersistedClientAudit(
+                legacy.disabled,
+                'Stored client principal.disabled',
+            ),
+        deleted: legacy.deleted === undefined || legacy.deleted === null
+            ? null
+            : normalizePersistedClientAudit(
+                legacy.deleted,
+                'Stored client principal.deleted',
+            ),
+        lastSeenAtEpochMs: legacy.lastSeenAtEpochMs ?? null,
+    };
+    validatePersistedClientPrincipal(canonical, expected);
+    return canonical;
+}
+
+export function normalizePersistedClientInstance(
+    value: unknown,
+    expected: ClientInstanceRef,
+): ClientInstance {
+    const legacy = requirePlainRecord(value, 'Stored client instance');
+    requireAllowedKeys(
+        legacy,
+        [],
+        CLIENT_INSTANCE_PERSISTED_KEYS,
+        'Stored client instance',
+    );
+    const canonical = {
+        applicationId: legacy.applicationId,
+        workspaceId: persistedClientOrDefault(
+            legacy,
+            'workspaceId',
+            expected.workspaceId,
+        ),
+        principalId: legacy.principalId,
+        clientInstanceId: legacy.clientInstanceId,
+        status: legacy.status,
+        platform: legacy.platform,
+        deviceLabel: legacy.deviceLabel ?? null,
+        appVersion: legacy.appVersion ?? null,
+        userAgent: legacy.userAgent ?? null,
+        capabilities: legacy.capabilities,
+        registered: normalizePersistedClientAudit(
+            legacy.registered,
+            'Stored client instance.registered',
+        ),
+        updated: normalizePersistedClientAudit(
+            legacy.updated,
+            'Stored client instance.updated',
+        ),
+        revoked: legacy.revoked === undefined || legacy.revoked === null
+            ? null
+            : normalizePersistedClientAudit(
+                legacy.revoked,
+                'Stored client instance.revoked',
+            ),
+    };
+    validatePersistedClientInstance(canonical, expected);
+    return canonical;
+}
+
+export function normalizePersistedClientSession(
+    value: unknown,
+    expected: ClientSessionRef,
+): ClientSession {
+    const legacy = requirePlainRecord(value, 'Stored client session');
+    requireAllowedKeys(
+        legacy,
+        [],
+        CLIENT_SESSION_PERSISTED_KEYS,
+        'Stored client session',
+    );
+    const canonical = {
+        applicationId: legacy.applicationId,
+        workspaceId: persistedClientOrDefault(
+            legacy,
+            'workspaceId',
+            expected.workspaceId,
+        ),
+        principalId: legacy.principalId,
+        clientInstanceId: legacy.clientInstanceId,
+        sessionId: legacy.sessionId,
+        generationId: legacy.generationId,
+        generationVersion: legacy.generationVersion,
+        status: legacy.status,
+        presenceState: legacy.presenceState,
+        transport: legacy.transport,
+        connectionId: legacy.connectionId ?? null,
+        authenticatedAtEpochMs: legacy.authenticatedAtEpochMs,
+        connectedAtEpochMs: legacy.connectedAtEpochMs,
+        lastHeartbeatAtEpochMs: legacy.lastHeartbeatAtEpochMs,
+        expiresAtEpochMs: legacy.expiresAtEpochMs,
+        disconnectedAtEpochMs: legacy.disconnectedAtEpochMs ?? null,
+        disconnectReason: legacy.disconnectReason ?? null,
+    };
+    validatePersistedClientSession(canonical, expected);
+    return canonical;
+}
+
+export function normalizePersistedClientEvent(
+    value: unknown,
+    expected: ClientPrincipalRef,
+): ClientEvent {
+    const legacy = requirePlainRecord(value, 'Stored client event');
+    requireAllowedKeys(
+        legacy,
+        [],
+        CLIENT_EVENT_PERSISTED_KEYS,
+        'Stored client event',
+    );
+    const canonical = {
+        applicationId: legacy.applicationId,
+        workspaceId: persistedClientOrDefault(
+            legacy,
+            'workspaceId',
+            expected.workspaceId,
+        ),
+        principalId: legacy.principalId,
+        eventId: legacy.eventId,
+        eventType: legacy.eventType,
+        snapshotVersion: legacy.snapshotVersion,
+        clientInstanceId: legacy.clientInstanceId ?? null,
+        sessionId: legacy.sessionId ?? null,
+        occurredAtEpochMs: legacy.occurredAtEpochMs,
+        actor: normalizePersistedMutationActor(legacy.actor, 'Stored client event.actor'),
+        reason: legacy.reason ?? null,
+        traceId: legacy.traceId ?? null,
+        requestId: legacy.requestId ?? null,
+        payload: persistedClientOrDefault(legacy, 'payload', {}),
+    };
+    validatePersistedClientEvent(canonical, expected);
+    return canonical;
+}
+
+export function validatePersistedClientPrincipal(
+    value: unknown,
+    expected?: ClientPrincipalRef,
+): asserts value is ClientPrincipal {
+    validatePrincipal(value, 'Stored client principal');
+    if (expected && !samePrincipalRef(value, expected)) {
+        reject('Stored client principal identity differs from its canonical slot');
+    }
+}
+
+export function validatePersistedClientInstance(
+    value: unknown,
+    expected?: ClientInstanceRef,
+): asserts value is ClientInstance {
+    validateInstance(value, 'Stored client instance');
+    if (
+        expected &&
+        (!samePrincipalRef(value, expected) ||
+            value.clientInstanceId !== expected.clientInstanceId)
+    ) {
+        reject('Stored client instance identity differs from its canonical slot');
+    }
+}
+
+export function validatePersistedClientSession(
+    value: unknown,
+    expected?: ClientSessionRef,
+): asserts value is ClientSession {
+    validateSession(value, 'Stored client session');
+    if (
+        expected &&
+        (!samePrincipalRef(value, expected) ||
+            value.clientInstanceId !== expected.clientInstanceId ||
+            value.sessionId !== expected.sessionId)
+    ) {
+        reject('Stored client session identity differs from its canonical slot');
+    }
+}
+
+export function validatePersistedClientEvent(
+    value: unknown,
+    expected?: ClientPrincipalRef,
+): asserts value is ClientEvent {
+    validateClientEvent(value, 'Stored client event');
+    if (expected && !samePrincipalRef(value, expected)) {
+        reject('Stored client event identity differs from its requested aggregate');
+    }
+}
+
 export function computeClientMutation(input: Readonly<{
     command: ClientMutationCommand;
     read: ClientMutationRead;
@@ -735,7 +960,13 @@ function computeInstance(
         return noOpReceipt(command, read, facts);
     }
     const nextPrincipal = read.principal
-        ? bumpPrincipal(principal, command.input, facts, 'profile')
+        ? bumpPrincipal(
+            principal,
+            command.input,
+            facts,
+            command.requestId,
+            'profile',
+        )
         : principal;
     return effectful(
         command,
@@ -781,7 +1012,14 @@ function computeConnect(
     const instance = read.instance?.value ?? defaultInstance(command, principal, facts);
     const session = activeSession(command, principal, existing, facts);
     const nextPrincipal = read.principal
-        ? bumpPrincipal(principal, command.input, facts, 'presence', session.lastHeartbeatAtEpochMs)
+        ? bumpPrincipal(
+            principal,
+            command.input,
+            facts,
+            command.requestId,
+            'presence',
+            session.lastHeartbeatAtEpochMs,
+        )
         : principal;
     return effectful(
         command,
@@ -819,7 +1057,7 @@ function computeHeartbeat(
     const principal = requirePrincipal(read, command);
     const existing = requireSession(read, command);
     if (existing.generationId !== command.input.generationId ||
-        existing.status !== 'active' || existing.disconnectedAtEpochMs !== undefined) {
+        existing.status !== 'active' || existing.disconnectedAtEpochMs !== null) {
         return noOpReceipt(command, read, facts, false);
     }
     const heartbeatAt = command.input.lastHeartbeatAtEpochMs ?? facts.nowEpochMs;
@@ -840,6 +1078,7 @@ function computeHeartbeat(
         principal,
         command.input,
         facts,
+        command.requestId,
         'presence',
         heartbeatAt,
     );
@@ -858,7 +1097,7 @@ function computeDisconnect(
     const principal = requirePrincipal(read, command);
     const existing = requireSession(read, command);
     if (existing.generationId !== command.input.generationId ||
-        existing.status !== 'active' || existing.disconnectedAtEpochMs !== undefined) {
+        existing.status !== 'active' || existing.disconnectedAtEpochMs !== null) {
         return noOpReceipt(command, read, facts, false);
     }
     const heartbeatAt = Math.max(
@@ -885,6 +1124,7 @@ function computeDisconnect(
         principal,
         command.input,
         facts,
+        command.requestId,
         'presence',
         disconnectedAt,
     );
@@ -904,7 +1144,7 @@ function computeExpiry(
         existing.generationId !== command.input.generationId ||
         existing.generationVersion !== command.input.generationVersion ||
         existing.expiresAtEpochMs !== command.input.observedExpiresAtEpochMs ||
-        existing.status !== 'active' || existing.disconnectedAtEpochMs !== undefined ||
+        existing.status !== 'active' || existing.disconnectedAtEpochMs !== null ||
         existing.expiresAtEpochMs > command.input.expiresAtEpochMs) {
         return noOpReceipt(command, read, facts, false);
     }
@@ -918,6 +1158,7 @@ function computeExpiry(
         principal,
         command.input,
         facts,
+        command.requestId,
         'presence',
         command.input.expiresAtEpochMs,
     );
@@ -939,14 +1180,36 @@ function effectful(
 ): ClientMutationComputed {
     const stateRevision = read.principal ? read.principal.entry.revision + 2 : 1;
     const event = toEvent(command, principal, facts, eventType, clientInstanceId, sessionId);
-    const receipt: ClientMutationReceipt = {
+    const outbox: ClientMutationOutboxCandidate = {
+        kind: 'client',
+        aggregateRef: command.aggregateRef,
         commandId: command.commandId,
         commandHash: facts.commandHash,
+        createdAtEpochMs: facts.nowEpochMs,
+        acceptedCausalRevision: {
+            kind: 'client',
+            stateRevision,
+            snapshotVersion: principal.snapshotVersion,
+            presenceVersion: principal.presenceVersion,
+        },
+        effects: ['client-state-sync'],
+        event: { kind: 'client', event },
+    };
+    const receipt: ClientMutationReceipt = {
+        commandId: command.commandId,
+        requestId: command.requestId,
+        commandHash: facts.commandHash,
+        aggregateRef: command.aggregateRef,
         outcome: 'applied',
+        attemptCount: facts.attemptCount,
+        acceptedStorageRevision: read.principal
+            ? read.principal.entry.revision + 1
+            : 0,
         stateRevision,
         snapshotVersion: principal.snapshotVersion,
         presenceVersion: principal.presenceVersion,
-        event: { kind: 'client', event },
+        eventId: event.eventId,
+        outboxIds: [toStateMutationOutboxId(outbox)],
     };
     return {
         outcome: 'write',
@@ -962,21 +1225,7 @@ function effectful(
             commandHash: facts.commandHash,
             receipt,
         },
-        outbox: {
-            kind: 'client',
-            aggregateRef: command.aggregateRef,
-            commandId: command.commandId,
-            commandHash: facts.commandHash,
-            createdAtEpochMs: facts.nowEpochMs,
-            acceptedCausalRevision: {
-                kind: 'client',
-                stateRevision,
-                snapshotVersion: principal.snapshotVersion,
-                presenceVersion: principal.presenceVersion,
-            },
-            effects: ['client-state-sync'],
-            event: { kind: 'client', event },
-        },
+        outbox,
     };
 }
 
@@ -997,12 +1246,17 @@ function noOpReceipt(
         persistIdempotency,
         receipt: {
             commandId: command.commandId,
+            requestId: command.requestId,
             commandHash: facts.commandHash,
+            aggregateRef: command.aggregateRef,
             outcome: 'no-op',
+            attemptCount: facts.attemptCount,
+            acceptedStorageRevision: read.principal.entry.revision,
             stateRevision: (read.principal?.entry.revision ?? -1) + 1,
             snapshotVersion: principal.snapshotVersion,
             presenceVersion: principal.presenceVersion,
-            event: { kind: 'none' },
+            eventId: null,
+            outboxIds: [],
         },
     };
 }
@@ -1014,18 +1268,16 @@ function toPrincipal(
 ): ClientPrincipal {
     const audit = toAudit(command, facts);
     const status = command.input.status ?? existing?.status ?? 'active';
-    return {
+    const base = {
         applicationId: command.aggregateRef.applicationId,
-        ...(command.aggregateRef.workspaceId === undefined
-            ? {} : { workspaceId: command.aggregateRef.workspaceId }),
+        workspaceId: command.aggregateRef.workspaceId,
         principalId: command.aggregateRef.principalId,
         username: command.input.username,
-        ...(toOptional('displayName', command.input.displayName, existing?.displayName)),
-        ...(toOptional('avatarUrl', command.input.avatarUrl, existing?.avatarUrl)),
-        status,
-        ...(toOptional('authProvider', command.input.authProvider, existing?.authProvider)),
-        ...(toOptional('externalSubjectId', command.input.externalSubjectId,
-            existing?.externalSubjectId)),
+        displayName: command.input.displayName ?? existing?.displayName ?? null,
+        avatarUrl: command.input.avatarUrl ?? existing?.avatarUrl ?? null,
+        authProvider: command.input.authProvider ?? existing?.authProvider ?? null,
+        externalSubjectId:
+            command.input.externalSubjectId ?? existing?.externalSubjectId ?? null,
         roles: command.input.roles ?? existing?.roles ?? [],
         metadata: { ...(command.input.metadata ?? existing?.metadata ?? {}) },
         snapshotVersion: existing ? existing.snapshotVersion + 1 : 1,
@@ -1033,12 +1285,25 @@ function toPrincipal(
         presenceVersion: existing?.presenceVersion ?? 1,
         created: existing?.created ?? audit,
         updated: audit,
-        ...(status === 'disabled' ? { disabled: audit } :
-            existing?.disabled ? { disabled: existing.disabled } : {}),
-        ...(status === 'deleted' ? { deleted: audit } :
-            existing?.deleted ? { deleted: existing.deleted } : {}),
-        ...(toOptional('lastSeenAtEpochMs', command.input.lastSeenAtEpochMs,
-            existing?.lastSeenAtEpochMs)),
+        lastSeenAtEpochMs:
+            command.input.lastSeenAtEpochMs ?? existing?.lastSeenAtEpochMs ?? null,
+    };
+    if (status === 'active') {
+        return { ...base, status, disabled: null, deleted: null };
+    }
+    if (status === 'disabled') {
+        return {
+            ...base,
+            status,
+            disabled: existing?.disabled ?? audit,
+            deleted: null,
+        };
+    }
+    return {
+        ...base,
+        status,
+        disabled: existing?.disabled ?? null,
+        deleted: existing?.deleted ?? audit,
     };
 }
 
@@ -1053,6 +1318,9 @@ function defaultPrincipal(command: ClientMutationCommand, facts: ClientMutationF
         ...command.aggregateRef,
         username,
         displayName: connectInput?.principalDisplayName ?? username,
+        avatarUrl: null,
+        authProvider: null,
+        externalSubjectId: null,
         status: 'active',
         roles: connectInput?.principalRoles ?? [],
         metadata: {},
@@ -1061,6 +1329,9 @@ function defaultPrincipal(command: ClientMutationCommand, facts: ClientMutationF
         presenceVersion: 1,
         created: audit,
         updated: audit,
+        disabled: null,
+        deleted: null,
+        lastSeenAtEpochMs: null,
     };
 }
 
@@ -1071,20 +1342,19 @@ function toInstance(
 ): ClientInstance {
     const audit = toAudit(command, facts);
     const status = command.input.status ?? existing?.status ?? 'active';
-    return {
+    const base = {
         ...command.aggregateRef,
         clientInstanceId: command.clientInstanceId,
-        status,
         platform: command.input.platform ?? existing?.platform ?? 'unknown',
-        ...(toOptional('deviceLabel', command.input.deviceLabel, existing?.deviceLabel)),
-        ...(toOptional('appVersion', command.input.appVersion, existing?.appVersion)),
-        ...(toOptional('userAgent', command.input.userAgent, existing?.userAgent)),
+        deviceLabel: command.input.deviceLabel ?? existing?.deviceLabel ?? null,
+        appVersion: command.input.appVersion ?? existing?.appVersion ?? null,
+        userAgent: command.input.userAgent ?? existing?.userAgent ?? null,
         capabilities: command.input.capabilities ?? existing?.capabilities ?? [],
         registered: existing?.registered ?? audit,
         updated: audit,
-        ...(status === 'revoked' ? { revoked: audit } :
-            existing?.revoked ? { revoked: existing.revoked } : {}),
     };
+    if (status === 'active') return { ...base, status, revoked: null };
+    return { ...base, status, revoked: existing?.revoked ?? audit };
 }
 
 function defaultInstance(
@@ -1097,19 +1367,20 @@ function defaultInstance(
     const audit = toAudit(command, facts);
     return {
         applicationId: principal.applicationId,
-        ...(principal.workspaceId === undefined ? {} : { workspaceId: principal.workspaceId }),
+        workspaceId: principal.workspaceId,
         principalId: principal.principalId,
         clientInstanceId: command.clientInstanceId,
         status: 'active',
         platform: command.input.instancePlatform ??
             (command.operation === 'connectAuthorisedWsSession' ? 'web' : 'unknown'),
-        ...(command.input.instanceUserAgent === null ? {} : {
-            userAgent: command.input.instanceUserAgent,
-        }),
+        deviceLabel: null,
+        appVersion: null,
+        userAgent: command.input.instanceUserAgent,
         capabilities: command.input.instanceCapabilities ??
             (command.input.transport ? [command.input.transport] : []),
         registered: audit,
         updated: audit,
+        revoked: null,
     };
 }
 
@@ -1125,7 +1396,7 @@ function activeSession(
     const heartbeatAt = command.input.lastHeartbeatAtEpochMs ?? connectedAt;
     return {
         applicationId: principal.applicationId,
-        ...(principal.workspaceId === undefined ? {} : { workspaceId: principal.workspaceId }),
+        workspaceId: principal.workspaceId,
         principalId: principal.principalId,
         clientInstanceId: command.clientInstanceId,
         sessionId: command.sessionId,
@@ -1134,14 +1405,14 @@ function activeSession(
         status: 'active',
         presenceState: command.input.presenceState ?? 'online',
         transport: command.input.transport ?? 'unknown',
-        ...(command.input.connectionId === null ? {} : {
-            connectionId: command.input.connectionId,
-        }),
+        connectionId: command.input.connectionId,
         authenticatedAtEpochMs: command.input.authenticatedAtEpochMs ?? connectedAt,
         connectedAtEpochMs: connectedAt,
         lastHeartbeatAtEpochMs: heartbeatAt,
         expiresAtEpochMs: command.input.expiresAtEpochMs ??
             heartbeatAt + 24 * 60 * 60 * 1000,
+        disconnectedAtEpochMs: null,
+        disconnectReason: null,
     };
 }
 
@@ -1149,6 +1420,7 @@ function bumpPrincipal(
     principal: ClientPrincipal,
     input: NullableActorInput,
     facts: ClientMutationFacts,
+    requestId: string | null,
     domain: 'profile' | 'presence',
     lastSeenAtEpochMs?: number,
 ): ClientPrincipal {
@@ -1157,7 +1429,7 @@ function bumpPrincipal(
         snapshotVersion: principal.snapshotVersion + 1,
         profileVersion: principal.profileVersion + (domain === 'profile' ? 1 : 0),
         presenceVersion: principal.presenceVersion + (domain === 'presence' ? 1 : 0),
-        updated: toAuditInput(input, principal, facts),
+        updated: toAuditInput(input, principal, facts, requestId),
         ...(lastSeenAtEpochMs === undefined ? {} : {
             lastSeenAtEpochMs: Math.max(
                 principal.lastSeenAtEpochMs ?? Number.NEGATIVE_INFINITY,
@@ -1180,18 +1452,14 @@ function toEvent(
         eventId: facts.eventId,
         eventType,
         snapshotVersion: principal.snapshotVersion,
-        ...(clientInstanceId === undefined ? {} : { clientInstanceId }),
-        ...(sessionId === undefined ? {} : { sessionId }),
+        clientInstanceId: clientInstanceId ?? null,
+        sessionId: sessionId ?? null,
         occurredAtEpochMs: facts.nowEpochMs,
-        actor: {
-            principalId: command.input.actorPrincipalId ?? principal.principalId,
-            ...(command.input.actorSessionId === null
-                ? {} : { sessionId: command.input.actorSessionId }),
-            serviceId: facts.serviceId,
-        },
-        ...(command.input.reason === null ? {} : { reason: command.input.reason }),
-        ...(command.input.traceId === null ? {} : { traceId: command.input.traceId }),
-        ...(command.requestId === null ? {} : { requestId: command.requestId }),
+        actor: toMutationActor(command.input, principal, facts),
+        reason: command.input.reason,
+        traceId: command.input.traceId,
+        requestId: command.requestId,
+        payload: {},
     };
 }
 
@@ -1207,13 +1475,29 @@ function toAuditInput(
 ): AuditStamp {
     return {
         atEpochMs: facts.nowEpochMs,
-        byPrincipalId: input.actorPrincipalId ?? ref.principalId,
-        ...(input.actorSessionId === null ? {} : { bySessionId: input.actorSessionId }),
-        byServiceId: facts.serviceId,
-        ...(input.reason === null ? {} : { reason: input.reason }),
-        ...(input.traceId === null ? {} : { traceId: input.traceId }),
-        ...(requestId === null ? {} : { requestId }),
+        actor: toMutationActor(input, ref, facts),
+        reason: input.reason,
+        traceId: input.traceId,
+        requestId,
     };
+}
+
+function toMutationActor(
+    input: NullableActorInput,
+    ref: ClientPrincipalRef,
+    facts: ClientMutationFacts,
+): MutationActor {
+    if (input.actorSessionId !== null) {
+        return {
+            kind: 'session',
+            sessionId: input.actorSessionId,
+            principalId: input.actorPrincipalId ?? ref.principalId,
+        };
+    }
+    if (input.actorPrincipalId !== null) {
+        return { kind: 'principal', principalId: input.actorPrincipalId };
+    }
+    return { kind: 'service', serviceId: facts.serviceId };
 }
 
 function requirePrincipal(read: ClientMutationRead, command: ClientMutationCommand): ClientPrincipal {
@@ -1383,6 +1667,33 @@ const DISCONNECT_TIMESTAMP_FIELDS = [
 const RAW_ACTOR_KEYS = [
     'actorPrincipalId', 'actorSessionId', 'reason', 'traceId', 'requestId',
 ] as const;
+const CLIENT_AUDIT_PERSISTED_KEYS = [
+    'atEpochMs', 'actor', 'reason', 'traceId', 'requestId',
+    'byPrincipalId', 'bySessionId', 'byServiceId',
+] as const;
+const CLIENT_PRINCIPAL_PERSISTED_KEYS = [
+    'applicationId', 'workspaceId', 'principalId', 'username', 'displayName',
+    'avatarUrl', 'status', 'authProvider', 'externalSubjectId', 'roles',
+    'metadata', 'snapshotVersion', 'profileVersion', 'presenceVersion',
+    'created', 'updated', 'disabled', 'deleted', 'lastSeenAtEpochMs',
+] as const;
+const CLIENT_INSTANCE_PERSISTED_KEYS = [
+    'applicationId', 'workspaceId', 'principalId', 'clientInstanceId', 'status',
+    'platform', 'deviceLabel', 'appVersion', 'userAgent', 'capabilities',
+    'registered', 'updated', 'revoked',
+] as const;
+const CLIENT_SESSION_PERSISTED_KEYS = [
+    'applicationId', 'workspaceId', 'principalId', 'clientInstanceId',
+    'sessionId', 'generationId', 'generationVersion', 'status', 'presenceState',
+    'transport', 'connectionId', 'authenticatedAtEpochMs', 'connectedAtEpochMs',
+    'lastHeartbeatAtEpochMs', 'expiresAtEpochMs', 'disconnectedAtEpochMs',
+    'disconnectReason',
+] as const;
+const CLIENT_EVENT_PERSISTED_KEYS = [
+    'applicationId', 'workspaceId', 'principalId', 'eventId', 'eventType',
+    'snapshotVersion', 'clientInstanceId', 'sessionId', 'occurredAtEpochMs',
+    'actor', 'reason', 'traceId', 'requestId', 'payload',
+] as const;
 const RAW_PRINCIPAL_REQUEST_KEYS = [
     'username', 'displayName', 'avatarUrl', 'status', 'authProvider',
     'externalSubjectId', 'roles', 'metadata', 'lastSeenAtEpochMs', ...RAW_ACTOR_KEYS,
@@ -1539,7 +1850,10 @@ function requireTimestamp(value: unknown, label: string): asserts value is numbe
     }
 }
 
-function requireNullableTimestamp(value: unknown, label: string): void {
+function requireNullableTimestamp(
+    value: unknown,
+    label: string,
+): asserts value is number | null {
     if (value !== null) requireTimestamp(value, label);
 }
 
@@ -1646,52 +1960,102 @@ function validateSessionCommandRoot(value: Readonly<Record<string, unknown>>): v
 function validatePrincipalRef(value: unknown, label: string, exact = true): void {
     const ref = requirePlainRecord(value, label);
     if (exact) {
-        requireAllowedKeys(
-            ref,
-            ['applicationId', 'principalId'],
-            ['applicationId', 'workspaceId', 'principalId'],
-            label,
-        );
+        requireExactKeys(ref, ['applicationId', 'workspaceId', 'principalId'], label);
     }
     requireNonEmptyString(ref.applicationId, `${label}.applicationId`);
-    requireOptionalNonEmptyString(ref.workspaceId, `${label}.workspaceId`);
+    requireNonEmptyString(ref.workspaceId, `${label}.workspaceId`);
     requireNonEmptyString(ref.principalId, `${label}.principalId`);
 }
 
-function validateAudit(value: unknown, label: string): void {
+function normalizePersistedClientAudit(value: unknown, label: string): AuditStamp {
     const audit = requirePlainRecord(value, label);
+    requireAllowedKeys(audit, [], CLIENT_AUDIT_PERSISTED_KEYS, label);
+    const canonical = {
+        atEpochMs: audit.atEpochMs,
+        actor: audit.actor === undefined
+            ? normalizePersistedMutationActor({
+                principalId: audit.byPrincipalId,
+                sessionId: audit.bySessionId,
+                serviceId: audit.byServiceId,
+            }, `${label}.actor`)
+            : normalizePersistedMutationActor(audit.actor, `${label}.actor`),
+        reason: audit.reason ?? null,
+        traceId: audit.traceId ?? null,
+        requestId: audit.requestId ?? null,
+    };
+    validateAudit(canonical, label);
+    return canonical;
+}
+
+function persistedClientOrDefault(
+    value: Readonly<Record<string, unknown>>,
+    key: string,
+    fallback: unknown,
+): unknown {
+    return Object.hasOwn(value, key) ? value[key] : fallback;
+}
+
+function normalizePersistedMutationActor(
+    value: unknown,
+    label: string,
+): MutationActor {
+    const actor = requirePlainRecord(value, label);
+    if (actor.kind !== undefined) {
+        validateMutationActor(actor, label);
+        return actor;
+    }
     requireAllowedKeys(
+        actor,
+        [],
+        ['principalId', 'sessionId', 'serviceId'],
+        label,
+    );
+    let canonical: MutationActor;
+    if (actor.sessionId !== undefined) {
+        requireNonEmptyString(actor.sessionId, `${label}.sessionId`);
+        requireNonEmptyString(actor.principalId, `${label}.principalId`);
+        canonical = {
+            kind: 'session',
+            sessionId: actor.sessionId,
+            principalId: actor.principalId,
+        };
+    } else if (actor.principalId !== undefined) {
+        requireNonEmptyString(actor.principalId, `${label}.principalId`);
+        canonical = { kind: 'principal', principalId: actor.principalId };
+    } else {
+        requireNonEmptyString(actor.serviceId, `${label}.serviceId`);
+        canonical = { kind: 'service', serviceId: actor.serviceId };
+    }
+    validateMutationActor(canonical, label);
+    return canonical;
+}
+
+function validateAudit(value: unknown, label: string): asserts value is AuditStamp {
+    const audit = requirePlainRecord(value, label);
+    requireExactKeys(
         audit,
-        ['atEpochMs'],
-        [
-            'atEpochMs', 'byPrincipalId', 'bySessionId', 'byServiceId',
-            'reason', 'traceId', 'requestId',
-        ],
+        ['atEpochMs', 'actor', 'reason', 'traceId', 'requestId'],
         label,
     );
     requireTimestamp(audit.atEpochMs, `${label}.atEpochMs`);
-    for (const field of ['byPrincipalId', 'bySessionId', 'byServiceId'] as const) {
-        requireOptionalNonEmptyString(audit[field], `${label}.${field}`);
-    }
+    validateMutationActor(audit.actor, `${label}.actor`);
     for (const field of ['reason', 'traceId', 'requestId'] as const) {
-        requireOptionalString(audit[field], `${label}.${field}`);
-    }
-    if (
-        audit.byPrincipalId === undefined &&
-        audit.bySessionId === undefined &&
-        audit.byServiceId === undefined
-    ) {
-        reject(`${label} requires an actor identity`);
+        requireNullableString(audit[field], `${label}.${field}`);
     }
 }
 
-function validatePrincipal(value: unknown, label: string): void {
+function validatePrincipal(
+    value: unknown,
+    label: string,
+): asserts value is ClientPrincipal {
     const principal = requirePlainRecord(value, label);
     requireAllowedKeys(
         principal,
         [
-            'applicationId', 'principalId', 'username', 'status', 'roles', 'metadata',
-            'snapshotVersion', 'profileVersion', 'presenceVersion', 'created', 'updated',
+            'applicationId', 'workspaceId', 'principalId', 'username', 'displayName',
+            'avatarUrl', 'status', 'authProvider', 'externalSubjectId', 'roles',
+            'metadata', 'snapshotVersion', 'profileVersion', 'presenceVersion',
+            'created', 'updated', 'disabled', 'deleted', 'lastSeenAtEpochMs',
         ],
         [
             'applicationId', 'workspaceId', 'principalId', 'username', 'displayName',
@@ -1708,7 +2072,7 @@ function validatePrincipal(value: unknown, label: string): void {
             'displayName', 'avatarUrl', 'authProvider', 'externalSubjectId',
         ] as const
     ) {
-        requireOptionalString(principal[field], `${label}.${field}`);
+        requireNullableString(principal[field], `${label}.${field}`);
     }
     requireEnum(principal.status, CLIENT_PRINCIPAL_STATUSES, `${label}.status`);
     requireStringArray(principal.roles, `${label}.roles`);
@@ -1718,18 +2082,33 @@ function validatePrincipal(value: unknown, label: string): void {
     }
     validateAudit(principal.created, `${label}.created`);
     validateAudit(principal.updated, `${label}.updated`);
-    if (principal.disabled !== undefined) validateAudit(principal.disabled, `${label}.disabled`);
-    if (principal.deleted !== undefined) validateAudit(principal.deleted, `${label}.deleted`);
-    requireOptionalTimestamp(principal.lastSeenAtEpochMs, `${label}.lastSeenAtEpochMs`);
+    if (principal.disabled !== null) validateAudit(principal.disabled, `${label}.disabled`);
+    if (principal.deleted !== null) validateAudit(principal.deleted, `${label}.deleted`);
+    requireNullableTimestamp(principal.lastSeenAtEpochMs, `${label}.lastSeenAtEpochMs`);
+    if (principal.status === 'active' &&
+        (principal.disabled !== null || principal.deleted !== null)) {
+        reject(`${label} active lifecycle fields must be null`);
+    }
+    if (principal.status === 'disabled' &&
+        (principal.disabled === null || principal.deleted !== null)) {
+        reject(`${label} disabled lifecycle fields are invalid`);
+    }
+    if (principal.status === 'deleted' && principal.deleted === null) {
+        reject(`${label} deleted lifecycle audit is required`);
+    }
 }
 
-function validateInstance(value: unknown, label: string): void {
+function validateInstance(
+    value: unknown,
+    label: string,
+): asserts value is ClientInstance {
     const instance = requirePlainRecord(value, label);
     requireAllowedKeys(
         instance,
         [
-            'applicationId', 'principalId', 'clientInstanceId', 'status', 'platform',
-            'capabilities', 'registered', 'updated',
+            'applicationId', 'workspaceId', 'principalId', 'clientInstanceId', 'status',
+            'platform', 'deviceLabel', 'appVersion', 'userAgent', 'capabilities',
+            'registered', 'updated', 'revoked',
         ],
         [
             'applicationId', 'workspaceId', 'principalId', 'clientInstanceId', 'status',
@@ -1743,23 +2122,30 @@ function validateInstance(value: unknown, label: string): void {
     requireEnum(instance.status, CLIENT_INSTANCE_STATUSES, `${label}.status`);
     requireEnum(instance.platform, CLIENT_PLATFORMS, `${label}.platform`);
     for (const field of ['deviceLabel', 'appVersion', 'userAgent'] as const) {
-        requireOptionalString(instance[field], `${label}.${field}`);
+        requireNullableString(instance[field], `${label}.${field}`);
     }
     requireStringArray(instance.capabilities, `${label}.capabilities`);
     validateAudit(instance.registered, `${label}.registered`);
     validateAudit(instance.updated, `${label}.updated`);
-    if (instance.revoked !== undefined) validateAudit(instance.revoked, `${label}.revoked`);
+    if (instance.revoked !== null) validateAudit(instance.revoked, `${label}.revoked`);
+    if ((instance.status === 'active') !== (instance.revoked === null)) {
+        reject(`${label} revoked lifecycle field differs from status`);
+    }
 }
 
-function validateSession(value: unknown, label: string): void {
+function validateSession(
+    value: unknown,
+    label: string,
+): asserts value is ClientSession {
     const session = requirePlainRecord(value, label);
     requireAllowedKeys(
         session,
         [
-            'applicationId', 'principalId', 'clientInstanceId', 'sessionId',
+            'applicationId', 'workspaceId', 'principalId', 'clientInstanceId', 'sessionId',
             'generationId', 'generationVersion', 'status', 'presenceState', 'transport',
+            'connectionId',
             'authenticatedAtEpochMs', 'connectedAtEpochMs', 'lastHeartbeatAtEpochMs',
-            'expiresAtEpochMs',
+            'expiresAtEpochMs', 'disconnectedAtEpochMs', 'disconnectReason',
         ],
         [
             'applicationId', 'workspaceId', 'principalId', 'clientInstanceId',
@@ -1778,7 +2164,7 @@ function validateSession(value: unknown, label: string): void {
     requireEnum(session.status, CLIENT_SESSION_STATUSES, `${label}.status`);
     requireEnum(session.presenceState, CLIENT_PRESENCE_STATES, `${label}.presenceState`);
     requireEnum(session.transport, CLIENT_TRANSPORTS, `${label}.transport`);
-    requireOptionalNonEmptyString(session.connectionId, `${label}.connectionId`);
+    requireNullableNonEmptyString(session.connectionId, `${label}.connectionId`);
     for (
         const field of [
             'authenticatedAtEpochMs', 'connectedAtEpochMs', 'lastHeartbeatAtEpochMs',
@@ -1787,19 +2173,21 @@ function validateSession(value: unknown, label: string): void {
     ) {
         requireTimestamp(session[field], `${label}.${field}`);
     }
-    requireOptionalTimestamp(session.disconnectedAtEpochMs, `${label}.disconnectedAtEpochMs`);
-    requireOptionalString(session.disconnectReason, `${label}.disconnectReason`);
-    if (session.status === 'active' && session.disconnectedAtEpochMs !== undefined) {
-        reject(`${label} active status cannot have disconnectedAtEpochMs`);
+    requireNullableTimestamp(session.disconnectedAtEpochMs, `${label}.disconnectedAtEpochMs`);
+    requireNullableNonEmptyString(session.disconnectReason, `${label}.disconnectReason`);
+    if (session.status === 'active' &&
+        (session.disconnectedAtEpochMs !== null || session.disconnectReason !== null)) {
+        reject(`${label} active disconnect fields must be null`);
     }
-    if (session.status !== 'active' && session.disconnectedAtEpochMs === undefined) {
-        reject(`${label} terminal status requires disconnectedAtEpochMs`);
+    if (session.status !== 'active' &&
+        (session.disconnectedAtEpochMs === null || session.disconnectReason === null)) {
+        reject(`${label} terminal status requires disconnect fields`);
     }
     const authenticatedAt = session.authenticatedAtEpochMs as number;
     const connectedAt = session.connectedAtEpochMs as number;
     const heartbeatAt = session.lastHeartbeatAtEpochMs as number;
     const expiresAt = session.expiresAtEpochMs as number;
-    const disconnectedAt = session.disconnectedAtEpochMs as number | undefined;
+    const disconnectedAt = session.disconnectedAtEpochMs;
     if (authenticatedAt > connectedAt) {
         reject(`${label}.authenticatedAtEpochMs must not follow connectedAtEpochMs`);
     }
@@ -1809,7 +2197,7 @@ function validateSession(value: unknown, label: string): void {
     if (heartbeatAt > expiresAt) {
         reject(`${label}.expiresAtEpochMs must not predate lastHeartbeatAtEpochMs`);
     }
-    if (disconnectedAt !== undefined && disconnectedAt < heartbeatAt) {
+    if (disconnectedAt !== null && disconnectedAt < heartbeatAt) {
         reject(`${label}.disconnectedAtEpochMs must not predate lastHeartbeatAtEpochMs`);
     }
 }
@@ -1844,13 +2232,14 @@ function validateClientMutationFacts(facts: unknown): void {
     const value = requirePlainRecord(facts, 'Client mutation facts');
     requireExactKeys(
         value,
-        ['nowEpochMs', 'serviceId', 'eventId', 'commandHash'],
+        ['nowEpochMs', 'serviceId', 'eventId', 'commandHash', 'attemptCount'],
         'Client mutation facts',
     );
     requireTimestamp(value.nowEpochMs, 'Client mutation facts.nowEpochMs');
     requireNonEmptyString(value.serviceId, 'Client mutation facts.serviceId');
     requireNonEmptyString(value.eventId, 'Client mutation facts.eventId');
     requireSha256(value.commandHash, 'Client mutation facts.commandHash');
+    requirePositiveSafeInteger(value.attemptCount, 'Client mutation facts.attemptCount');
 }
 
 function requireSha256(value: unknown, label: string): void {
@@ -1864,18 +2253,30 @@ function validateReceipt(value: unknown, label: string): void {
     requireExactKeys(
         receipt,
         [
-            'commandId', 'commandHash', 'outcome', 'stateRevision',
-            'snapshotVersion', 'presenceVersion', 'event',
+            'commandId', 'requestId', 'commandHash', 'aggregateRef', 'outcome',
+            'attemptCount', 'acceptedStorageRevision', 'stateRevision',
+            'snapshotVersion', 'presenceVersion', 'eventId', 'outboxIds',
         ],
         label,
     );
     requireNonEmptyString(receipt.commandId, `${label}.commandId`);
+    requireNullableNonEmptyString(receipt.requestId, `${label}.requestId`);
     requireSha256(receipt.commandHash, `${label}.commandHash`);
+    validatePrincipalRef(receipt.aggregateRef, `${label}.aggregateRef`);
     requireEnum(receipt.outcome, new Set(['applied', 'no-op']), `${label}.outcome`);
+    requirePositiveSafeInteger(receipt.attemptCount, `${label}.attemptCount`);
+    requireNullableTimestamp(
+        receipt.acceptedStorageRevision,
+        `${label}.acceptedStorageRevision`,
+    );
     for (const field of ['stateRevision', 'snapshotVersion', 'presenceVersion'] as const) {
         requirePositiveSafeInteger(receipt[field], `${label}.${field}`);
     }
-    validateEventEnvelope(receipt.event, `${label}.event`);
+    requireNullableNonEmptyString(receipt.eventId, `${label}.eventId`);
+    requireStringArray(receipt.outboxIds, `${label}.outboxIds`);
+    if ((receipt.outcome === 'applied') !== (receipt.eventId !== null)) {
+        reject(`${label}.eventId differs from outcome`);
+    }
 }
 
 function validateEventEnvelope(value: unknown, label: string): void {
@@ -1889,14 +2290,13 @@ function validateEventEnvelope(value: unknown, label: string): void {
     validateClientEvent(envelope.event, `${label}.event`);
 }
 
-function validateClientEvent(value: unknown, label: string): void {
+function validateClientEvent(
+    value: unknown,
+    label: string,
+): asserts value is ClientEvent {
     const event = requirePlainRecord(value, label);
-    requireAllowedKeys(
+    requireExactKeys(
         event,
-        [
-            'applicationId', 'principalId', 'eventId', 'eventType',
-            'snapshotVersion', 'occurredAtEpochMs', 'actor',
-        ],
         [
             'applicationId', 'workspaceId', 'principalId', 'eventId', 'eventType',
             'snapshotVersion', 'clientInstanceId', 'sessionId', 'occurredAtEpochMs',
@@ -1908,29 +2308,38 @@ function validateClientEvent(value: unknown, label: string): void {
     requireNonEmptyString(event.eventId, `${label}.eventId`);
     requireEnum(event.eventType, CLIENT_EVENT_TYPES, `${label}.eventType`);
     requirePositiveSafeInteger(event.snapshotVersion, `${label}.snapshotVersion`);
-    requireOptionalNonEmptyString(event.clientInstanceId, `${label}.clientInstanceId`);
-    requireOptionalNonEmptyString(event.sessionId, `${label}.sessionId`);
+    requireNullableNonEmptyString(event.clientInstanceId, `${label}.clientInstanceId`);
+    requireNullableNonEmptyString(event.sessionId, `${label}.sessionId`);
     requireTimestamp(event.occurredAtEpochMs, `${label}.occurredAtEpochMs`);
-    const actor = requirePlainRecord(event.actor, `${label}.actor`);
-    requireAllowedKeys(
-        actor,
-        [],
-        ['principalId', 'sessionId', 'serviceId'],
-        `${label}.actor`,
-    );
-    for (const field of ['principalId', 'sessionId', 'serviceId'] as const) {
-        requireOptionalNonEmptyString(actor[field], `${label}.actor.${field}`);
-    }
-    if (
-        actor.principalId === undefined && actor.sessionId === undefined &&
-        actor.serviceId === undefined
-    ) {
-        reject(`${label}.actor requires an identity`);
-    }
+    validateMutationActor(event.actor, `${label}.actor`);
     for (const field of ['reason', 'traceId', 'requestId'] as const) {
-        requireOptionalString(event[field], `${label}.${field}`);
+        requireNullableString(event[field], `${label}.${field}`);
     }
-    if (event.payload !== undefined) requireJsonRecord(event.payload, `${label}.payload`);
+    requireJsonRecord(event.payload, `${label}.payload`);
+}
+
+function validateMutationActor(
+    value: unknown,
+    label: string,
+): asserts value is MutationActor {
+    const actor = requirePlainRecord(value, label);
+    if (actor.kind === 'principal') {
+        requireExactKeys(actor, ['kind', 'principalId'], label);
+        requireNonEmptyString(actor.principalId, `${label}.principalId`);
+        return;
+    }
+    if (actor.kind === 'session') {
+        requireExactKeys(actor, ['kind', 'sessionId', 'principalId'], label);
+        requireNonEmptyString(actor.sessionId, `${label}.sessionId`);
+        requireNonEmptyString(actor.principalId, `${label}.principalId`);
+        return;
+    }
+    if (actor.kind === 'service') {
+        requireExactKeys(actor, ['kind', 'serviceId'], label);
+        requireNonEmptyString(actor.serviceId, `${label}.serviceId`);
+        return;
+    }
+    reject(`${label}.kind is invalid`);
 }
 
 export function validateClientMutationIdempotencyRecord(
@@ -1946,7 +2355,11 @@ function validateIdempotencyRecord(value: unknown, label: string): void {
     requireSha256(record.commandHash, `${label}.commandHash`);
     validateReceipt(record.receipt, `${label}.receipt`);
     const receipt = record.receipt as ClientMutationReceipt;
-    if (receipt.commandHash !== record.commandHash) {
+    if (
+        receipt.commandHash !== record.commandHash ||
+        receipt.requestId !== record.requestId ||
+        receipt.commandId !== record.requestId
+    ) {
         reject(`${label} receipt hash differs`);
     }
 }

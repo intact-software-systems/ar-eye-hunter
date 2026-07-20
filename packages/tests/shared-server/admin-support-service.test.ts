@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
-import type { GroupEvent, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import type {
+  AuditStamp,
+  GroupEvent,
+  GroupRef,
+  GroupSnapshot,
+} from '@shared/api/group-types.ts';
 import type { AdminSupportExplainRequestRequest } from '@shared/api/admin-support-types.ts';
 import type { RallarCrdtDocumentMetadata, RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
 import type { Key } from '@shared/queuebox/ResourceEntry.ts';
@@ -185,7 +190,14 @@ describe('AdminSupportService', () => {
       clientInstanceId: 'device-1',
       sessionId: 'client-session-1',
       occurredAtEpochMs: NOW_EPOCH_MS - 4_000,
-      actor: { principalId: 'player-1', sessionId: 'client-session-1' },
+      actor: {
+        kind: 'session',
+        principalId: 'player-1',
+        sessionId: 'client-session-1',
+      },
+      reason: null,
+      traceId: null,
+      requestId: null,
       payload: { token: 'timeline-secret' },
     }];
     const service = createService({
@@ -296,8 +308,16 @@ describe('AdminSupportService', () => {
       eventId: 'group-event-1',
       eventType: 'session-connected',
       snapshotVersion: 7,
+      causalRevision: { groupRevision: 7, presenceRevision: 3 },
       occurredAtEpochMs: NOW_EPOCH_MS - 6_000,
-      actor: { principalId: 'player-1', sessionId: 'group-session-1' },
+      actor: {
+        kind: 'session',
+        principalId: 'player-1',
+        sessionId: 'group-session-1',
+      },
+      reason: null,
+      traceId: null,
+      requestId: null,
       payload: { accessToken: 'group-secret' },
     }];
     const topologyView = {
@@ -456,11 +476,12 @@ describe('AdminSupportService', () => {
           calls.push(['readDocumentMetadata', ref]);
           return metadata;
         },
-        verifyIntegrity: async (ref: RallarCrdtDocumentRef) => {
+        verifyIntegrity: async (ref) => {
           calls.push(['verifyIntegrity', ref]);
           return {
             valid: false,
             issues: [{
+              path: 'records[2]',
               code: 'sequence-gap',
               message: 'Missing append sequence.',
             }],
@@ -470,7 +491,7 @@ describe('AdminSupportService', () => {
             bundleHash: 'bundle-hash',
           };
         },
-        exportDebugBundle: async (ref: RallarCrdtDocumentRef, options: unknown) => {
+        exportDebugBundle: async (ref, options) => {
           calls.push(['exportDebugBundle', ref, options]);
           return {
             format: 'rallar.crdt.debug-bundle.v1',
@@ -487,8 +508,13 @@ describe('AdminSupportService', () => {
                 updateId: 'update-1',
                 document: ref,
                 replicaId: 'replica-1',
+                lamport: 1,
+                parents: [],
+                schemaVersion: 1,
+                operationVersion: 1,
                 createdAtEpochMs: NOW_EPOCH_MS - 2_000,
                 payload: {
+                  kind: 'batch',
                   operations: [{
                     kind: 'register.set',
                     path: ['token'],
@@ -685,20 +711,28 @@ function createAdminSession(): AuthSession {
 }
 
 function createClientSnapshot(): ClientSnapshot {
+  const created = createAuditStamp(NOW_EPOCH_MS - 30_000);
+  const updated = createAuditStamp(NOW_EPOCH_MS - 2_000);
   return {
+    stateRevision: 4,
     principal: {
       ...SCOPE,
       principalId: 'player-1',
       username: 'player-1',
       displayName: 'Player 1',
+      avatarUrl: null,
+      authProvider: null,
+      externalSubjectId: null,
       status: 'active',
+      disabled: null,
+      deleted: null,
       roles: ['player'],
       metadata: {},
       snapshotVersion: 4,
       profileVersion: 1,
       presenceVersion: 3,
-      created: { atEpochMs: NOW_EPOCH_MS - 30_000 },
-      updated: { atEpochMs: NOW_EPOCH_MS - 2_000 },
+      created,
+      updated,
       lastSeenAtEpochMs: NOW_EPOCH_MS - 500,
     },
     instances: [{
@@ -706,17 +740,25 @@ function createClientSnapshot(): ClientSnapshot {
       principalId: 'player-1',
       clientInstanceId: 'device-1',
       status: 'active',
+      revoked: null,
       platform: 'web',
+      deviceLabel: 'Browser',
+      appVersion: null,
+      userAgent: null,
       capabilities: ['ws'],
-      registered: { atEpochMs: NOW_EPOCH_MS - 20_000 },
-      updated: { atEpochMs: NOW_EPOCH_MS - 2_000 },
+      registered: createAuditStamp(NOW_EPOCH_MS - 20_000),
+      updated,
     }],
     activeSessions: [{
       ...SCOPE,
       principalId: 'player-1',
       clientInstanceId: 'device-1',
       sessionId: 'client-session-1',
+      generationId: 'client-session-generation-1',
+      generationVersion: 1,
       status: 'active',
+      disconnectedAtEpochMs: null,
+      disconnectReason: null,
       presenceState: 'online',
       transport: 'ws',
       connectionId: 'connection-1',
@@ -732,38 +774,73 @@ function createClientSnapshot(): ClientSnapshot {
 }
 
 function createGroupSnapshot(groupRef: GroupRef): GroupSnapshot {
+  const created = createAuditStamp(NOW_EPOCH_MS - 30_000);
+  const updated = createAuditStamp(NOW_EPOCH_MS - 2_000);
   return {
+    stateRevision: 7,
+    causalRevision: { groupRevision: 7, presenceRevision: 3 },
     group: {
       ...groupRef,
+      slug: null,
       displayName: 'Room 1',
+      description: null,
       kind: 'room',
       status: 'active',
+      archived: null,
+      deleted: null,
       joinMode: 'open',
+      maxMembers: null,
+      maxSessionsPerMember: null,
       metadata: {},
+      activeMemberCount: 1,
+      ownerPrincipalId: 'player-1',
       snapshotVersion: 7,
       metadataVersion: 1,
       rosterVersion: 2,
       presenceVersion: 3,
-      created: { atEpochMs: NOW_EPOCH_MS - 30_000 },
-      updated: { atEpochMs: NOW_EPOCH_MS - 2_000 },
+      created,
+      updated,
+      expiresAtEpochMs: null,
+      emptySinceEpochMs: null,
+      purgeAfterEpochMs: null,
     },
     members: [{
       ...groupRef,
       principalId: 'player-1',
       role: 'member',
       status: 'active',
-      joined: { atEpochMs: NOW_EPOCH_MS - 20_000 },
-      updated: { atEpochMs: NOW_EPOCH_MS - 2_000 },
+      joined: createAuditStamp(NOW_EPOCH_MS - 20_000),
+      updated,
+      invitedByPrincipalId: null,
+      invitationExpiresAtEpochMs: null,
+      left: null,
+      removed: null,
+      banned: null,
     }],
     activeSessions: [{
       ...groupRef,
       principalId: 'player-1',
       sessionId: 'group-session-1',
+      generationId: 'group-session-generation-1',
+      generationVersion: 1,
+      status: 'active',
+      disconnectedAtEpochMs: null,
+      disconnectReason: null,
       connectedAtEpochMs: NOW_EPOCH_MS - 9_000,
       lastHeartbeatAtEpochMs: NOW_EPOCH_MS - 500,
       expiresAtEpochMs: NOW_EPOCH_MS + 60_000,
     }],
     memberCount: 1,
     onlineMemberCount: 1,
+  };
+}
+
+function createAuditStamp(atEpochMs: number): AuditStamp {
+  return {
+    atEpochMs,
+    actor: { kind: 'service', serviceId: 'test' },
+    reason: null,
+    traceId: null,
+    requestId: null,
   };
 }

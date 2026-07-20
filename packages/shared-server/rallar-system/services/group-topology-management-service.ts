@@ -32,7 +32,8 @@ import {
 } from '../repositories/RtcTopologyExecutionRepository.ts';
 import { compareRtcTopologyIdentifiers } from '../rtc-topology-identifiers.ts';
 import {
-    readGroupStateRevision,
+    readGroupCausalRevision,
+    readGroupCreatedByPrincipalId,
     readGroupMemberSessionIds,
 } from '@shared/api/group-client-views.ts';
 import {
@@ -197,7 +198,7 @@ export type DeleteGroupTopologyConfigResult = Readonly<{
 
 export type ReconcileGroupTopologyResult = Readonly<{
     snapshot: RallarOverlayTopologySnapshot;
-    previous?: RallarOverlayTopologySnapshot;
+    previous: RallarOverlayTopologySnapshot | null;
     changed: boolean;
 }>;
 
@@ -226,8 +227,9 @@ export class GroupTopologyManagementService {
         return {
             groupRef,
             overlayId: toScopedOverlayId(groupRef),
-            snapshot,
+            snapshot: snapshot ?? null,
             config: await this.readConfig(groupRef),
+            pending: null,
         };
     }
 
@@ -412,7 +414,11 @@ export class GroupTopologyManagementService {
                             deleteTarget: deleteTarget ?? null,
                         };
                     }
-                    facts = { ...stableFacts, policyNowEpochMs };
+                    facts = {
+                        ...stableFacts,
+                        policyNowEpochMs,
+                        attemptCount: attempt + 1,
+                    };
                     computed = computeTopologyConfigMutation({
                         command,
                         read,
@@ -687,7 +693,7 @@ export class GroupTopologyManagementService {
             ]),
         ].sort(compareRtcTopologyIdentifiers);
         const snapshot: RallarOverlayTopologySnapshot = {
-            sourceGroupStateRevision: readGroupStateRevision(group),
+            sourceGroupStateCausalRevision: readGroupCausalRevision(group),
             state: 'removed',
             overlayId: toScopedOverlayId(group.group),
             groupRef: canonicalGroupRef(group.group),
@@ -700,7 +706,7 @@ export class GroupTopologyManagementService {
             degreeLimit: previous?.degreeLimit ?? 1,
             version: previous?.version ?? 0,
             createdByClientId: previous?.createdByClientId ??
-                group.group.created.byPrincipalId ?? group.group.groupId,
+                readGroupCreatedByPrincipalId(group),
             createdAtEpochMs: previous?.createdAtEpochMs ??
                 group.group.created.atEpochMs,
             updatedAtEpochMs: group.group.updated.atEpochMs,
@@ -708,7 +714,7 @@ export class GroupTopologyManagementService {
         this.validateTopology(snapshot);
         return {
             snapshot,
-            previous,
+            previous: previous ?? null,
             changed: previous?.state !== 'removed',
         };
     }
@@ -851,7 +857,11 @@ export class GroupTopologyManagementService {
                 read,
                 candidate: planned.snapshot,
                 publication: null,
-                facts: { publicationExpireAtTimestamp: null },
+                facts: {
+                    publicationExpireAtTimestamp: null,
+                    commandHash: null,
+                    attemptCount: null,
+                },
             } as const;
             const computed = computeTopologyMutation(mutationInput);
             this.recordTopologyMutationPhase(
@@ -943,7 +953,11 @@ export class GroupTopologyManagementService {
                 },
                 candidate: result.snapshot,
                 publication: null,
-                facts: { publicationExpireAtTimestamp: null },
+                facts: {
+                    publicationExpireAtTimestamp: null,
+                    commandHash: null,
+                    attemptCount: null,
+                },
             } as const;
             const computed = computeTopologyMutation(mutationInput);
             this.recordTopologyMutationPhase(
@@ -1495,7 +1509,10 @@ export function materializeRtcOverlayTopologyBroadcastMessage(
             topicId: AppTopics.overlayTopology,
             contextId: group.group.groupId,
             resourceId:
-                `${snapshot.overlayId}:${snapshot.sourceGroupStateRevision}:${snapshot.version}`,
+                `${snapshot.overlayId}:` +
+                `${snapshot.sourceGroupStateCausalRevision.groupRevision}:` +
+                `${snapshot.sourceGroupStateCausalRevision.presenceRevision}:` +
+                `${snapshot.version}`,
         },
         targets: {
             mode: 'broadcast',
@@ -1524,16 +1541,14 @@ function isGroupTopologyActiveAt(
     observedAtEpochMs: number,
 ): boolean {
     return snapshot.group.status === 'active' &&
-        (snapshot.group.expiresAtEpochMs === undefined ||
+        (snapshot.group.expiresAtEpochMs === null ||
             snapshot.group.expiresAtEpochMs > observedAtEpochMs);
 }
 
 function canonicalGroupRef(ref: GroupRef): GroupRef {
-    return ref.workspaceId === undefined
-        ? { applicationId: ref.applicationId, groupId: ref.groupId }
-        : {
-            applicationId: ref.applicationId,
-            workspaceId: ref.workspaceId,
-            groupId: ref.groupId,
-        };
+    return {
+        applicationId: ref.applicationId,
+        workspaceId: ref.workspaceId,
+        groupId: ref.groupId,
+    };
 }

@@ -145,10 +145,16 @@ function createGroupEvent(
         eventId,
         eventType: 'group-updated',
         snapshotVersion,
-        occurredAtEpochMs,
-        actor: {
-            serviceId: 'test',
+        causalRevision: {
+            groupRevision: snapshotVersion,
+            presenceRevision: snapshotVersion,
         },
+        occurredAtEpochMs,
+        actor: { kind: 'service', serviceId: 'test' },
+        reason: null,
+        traceId: null,
+        requestId: null,
+        payload: {},
     };
 }
 
@@ -163,9 +169,13 @@ function createClientEvent(
         eventType: 'principal-updated',
         snapshotVersion,
         occurredAtEpochMs,
-        actor: {
-            serviceId: 'test',
-        },
+        actor: { kind: 'service', serviceId: 'test' },
+        reason: null,
+        traceId: null,
+        requestId: null,
+        clientInstanceId: null,
+        sessionId: null,
+        payload: {},
     };
 }
 

@@ -3,6 +3,7 @@ import type {
     BlackBoxRallarRoomRef,
     BlackBoxRallarSendInput,
 } from './contracts.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 
 export type BlackBoxRallarSessionIdentity = Readonly<{
     clientId: string;
@@ -50,11 +51,11 @@ type ConnectionConfig = Readonly<{
 
 const DEFAULT_WORKSPACE_ID = 'default';
 
-function normalizedRoomRef(roomRef: BlackBoxRallarRoomRef | undefined): BlackBoxRallarRoomRef | undefined {
+function normalizedRoomRef(roomRef: BlackBoxRallarRoomRef | undefined): GroupRef | undefined {
     return roomRef
         ? {
               applicationId: roomRef.applicationId,
-              workspaceId: roomRef.workspaceId,
+              workspaceId: roomRef.workspaceId ?? DEFAULT_WORKSPACE_ID,
               groupId: roomRef.groupId,
           }
         : undefined;
@@ -63,7 +64,7 @@ function normalizedRoomRef(roomRef: BlackBoxRallarRoomRef | undefined): BlackBox
 export function blackBoxRallarRoomRefOf(
     config: ConnectionConfig,
     input?: BlackBoxRallarSendInput,
-): BlackBoxRallarRoomRef | undefined {
+): GroupRef | undefined {
     const explicit = input?.roomRef ?? config.rallar.roomRef ?? config.roomRef;
     if (explicit?.applicationId && explicit.groupId) {
         return normalizedRoomRef(explicit);
@@ -91,7 +92,7 @@ export function blackBoxRallarRoomRefOf(
 
     return {
         applicationId: String(applicationId),
-        ...(workspaceId !== undefined ? { workspaceId: String(workspaceId) } : {}),
+        workspaceId: String(workspaceId ?? DEFAULT_WORKSPACE_ID),
         groupId: String(roomId),
     };
 }

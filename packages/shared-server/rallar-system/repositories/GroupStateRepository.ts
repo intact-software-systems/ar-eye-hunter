@@ -24,12 +24,18 @@ import {
 } from '../../runtime-state/RuntimeStateJsonStore.ts';
 import {
     type GroupMutationIdempotencyRecord,
+    normalizePersistedGroup,
+    normalizePersistedGroupMember,
+    normalizePersistedGroupPresenceAdmission,
+    normalizePersistedGroupPresenceSession,
+    normalizePersistedGroupPresenceSummary,
     validateGroupMutationIdempotencyRecord,
     validatePersistedGroup,
     validatePersistedGroupMember,
     validatePersistedGroupPresenceAdmission,
     validatePersistedGroupPresenceSession,
     validatePersistedGroupPresenceSummary,
+    validatePersistedGroupEvent,
 } from '@shared-server/rallar-system/services/group-state-mutations.ts';
 import type { GroupSnapshotPage, GroupSnapshotPageOptions } from '@shared-server/rallar-system/services/group-state-service.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
@@ -149,15 +155,15 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
     async findGroupEntry(
         ref: GroupRef,
     ): Promise<RuntimeStateEntryValue<Group> | undefined> {
-        const stored = await this.getEntryValue<Group>(
+        const stored = await this.getEntryValue<unknown>(
             GROUPS_NAMESPACE,
             this.groupKey(ref),
         );
-        if (stored) assertStoredGroup(stored, ref);
-        return stored;
+        return stored ? canonicalStoredGroup(stored, ref) : undefined;
     }
 
     async insertGroup(group: Group): Promise<RuntimeStateConditionalWriteResult> {
+        validatePersistedGroup(group, group);
         return await this.putValueIfAbsent(
             GROUPS_NAMESPACE,
             this.groupKey(group),
@@ -170,6 +176,7 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
         group: Group,
         expectedRevision: number,
     ): Promise<RuntimeStateConditionalWriteResult> {
+        validatePersistedGroup(group, group);
         return await this.putValueIfRevision(
             GROUPS_NAMESPACE,
             this.groupKey(group),
@@ -204,6 +211,7 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
     }
 
     async putGroup(group: Group): Promise<void> {
+        validatePersistedGroup(group, group);
         await this.putValue(
             GROUPS_NAMESPACE,
             this.groupKey(group),
@@ -243,62 +251,62 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
     }
 
     async listGroups(scope: GroupScope): Promise<readonly Group[]> {
-        const stored = await this.listEntryValues<Group>(
+        const stored = await this.listEntryValues<unknown>(
             GROUPS_NAMESPACE,
             this.groupStateScopeChildPrefix(scope),
         );
-        return stored.map((entry) => {
-            assertStoredGroup(entry, scope);
-            return entry.value;
-        });
+        return stored.map((entry) => canonicalStoredGroup(entry, scope).value);
     }
 
     async listSnapshots(scope: GroupScope): Promise<readonly GroupSnapshot[]> {
         const observedAtEpochMs = Date.now();
         const keyPrefix = this.groupStateScopeChildPrefix(scope);
-        const groupsBefore = await this.listEntryValues<Group>(
+        const groupsBeforeRaw = await this.listEntryValues<unknown>(
             GROUPS_NAMESPACE,
             keyPrefix,
         );
-        const [memberEntries, summaryEntries, sessionEntries] = await Promise.all([
-            this.listEntryValues<GroupMember>(MEMBERS_NAMESPACE, keyPrefix),
-            this.listEntryValues<GroupPresenceSummary>(
+        const [memberEntriesRaw, summaryEntriesRaw, sessionEntriesRaw] = await Promise.all([
+            this.listEntryValues<unknown>(MEMBERS_NAMESPACE, keyPrefix),
+            this.listEntryValues<unknown>(
                 PRESENCE_SUMMARIES_NAMESPACE,
                 keyPrefix,
             ),
-            this.listEntryValues<GroupPresenceSession>(SESSIONS_NAMESPACE, keyPrefix),
+            this.listEntryValues<unknown>(SESSIONS_NAMESPACE, keyPrefix),
         ]);
-        const groupsAfter = await this.listEntryValues<Group>(
+        const groupsAfterRaw = await this.listEntryValues<unknown>(
             GROUPS_NAMESPACE,
             keyPrefix,
         );
-        for (const stored of [...groupsBefore, ...groupsAfter]) {
-            assertStoredGroup(stored, scope);
-        }
-        for (const stored of memberEntries) {
+        const groupsBefore = groupsBeforeRaw.map((stored) =>
+            canonicalStoredGroup(stored, scope)
+        );
+        const groupsAfter = groupsAfterRaw.map((stored) =>
+            canonicalStoredGroup(stored, scope)
+        );
+        const memberEntries = memberEntriesRaw.map((stored) => {
             assertDecodedScope(
                 decodeStoredKey(stored.entry.key, decodeGroupStateMemberStorageKey),
                 scope,
                 stored.entry.key,
             );
-            assertStoredMember(stored);
-        }
-        for (const stored of summaryEntries) {
+            return canonicalStoredMember(stored);
+        });
+        const summaryEntries = summaryEntriesRaw.map((stored) => {
             const decoded = decodeStoredKey(
                 stored.entry.key,
                 decodeGroupStateGroupStorageKey,
             );
             assertDecodedScope(decoded, scope, stored.entry.key);
-            assertStoredSummary(stored, decoded);
-        }
-        for (const stored of sessionEntries) {
+            return canonicalStoredSummary(stored, decoded);
+        });
+        const sessionEntries = sessionEntriesRaw.map((stored) => {
             const decoded = decodeStoredKey(
                 stored.entry.key,
                 decodeGroupStatePresenceSessionStorageKey,
             );
             assertDecodedScope(decoded, scope, stored.entry.key);
-            assertStoredSession(stored);
-        }
+            return canonicalStoredSession(stored);
+        });
         const members = memberEntries.map(({ value }) => value);
         const summaries = summaryEntries.map(({ value }) => value);
         const sessions = sessionEntries.map(({ value }) => value);
@@ -373,15 +381,18 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
 
             for (const entry of groupEntries) {
                 afterKey = entry.key;
-                const group = await this.toLiveValue<Group>(
+                const groupValue = await this.toLiveValue<unknown>(
                     GROUPS_NAMESPACE,
                     entry,
                 );
 
-                if (group === undefined) {
+                if (groupValue === undefined) {
                     continue;
                 }
-                assertStoredGroup({ entry, value: group }, scope);
+                const group = canonicalStoredGroup(
+                    { entry, value: groupValue },
+                    scope,
+                ).value;
 
                 if (pageGroups.length === limit) {
                     hasMore = true;
@@ -409,13 +420,13 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
                 return { entry, group, members, summary: summary?.value, sessions };
             }),
         );
-        const groupsAfter = await this.listEntryValuesByKeys<Group>(
+        const groupsAfterRaw = await this.listEntryValuesByKeys<unknown>(
             GROUPS_NAMESPACE,
             pageGroups.map(({ entry }) => entry.key),
         );
-        for (const stored of groupsAfter) {
-            assertStoredGroup(stored, scope);
-        }
+        const groupsAfter = groupsAfterRaw.map((stored) =>
+            canonicalStoredGroup(stored, scope)
+        );
         const afterByKey = new Map(
             groupsAfter.map((stored) => [stored.entry.key, stored]),
         );
@@ -464,6 +475,7 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
     }
 
     async putMember(member: GroupMember): Promise<void> {
+        validatePersistedGroupMember(member, member);
         await this.putValue(MEMBERS_NAMESPACE, this.memberKey(member), member);
     }
 
@@ -476,12 +488,11 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
     async findMemberEntry(
         ref: GroupRef & Readonly<{ principalId: string }>,
     ): Promise<RuntimeStateEntryValue<GroupMember> | undefined> {
-        const stored = await this.getEntryValue<GroupMember>(
+        const stored = await this.getEntryValue<unknown>(
             MEMBERS_NAMESPACE,
             this.memberKey(ref),
         );
-        if (stored) assertStoredMember(stored, ref);
-        return stored;
+        return stored ? canonicalStoredMember(stored, ref) : undefined;
     }
 
     async listMembers(ref: GroupRef): Promise<readonly GroupMember[]> {
@@ -491,12 +502,11 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
     async listMemberEntries(
         ref: GroupRef,
     ): Promise<readonly RuntimeStateEntryValue<GroupMember>[]> {
-        const stored = await this.listEntryValues<GroupMember>(
+        const stored = await this.listEntryValues<unknown>(
             MEMBERS_NAMESPACE,
             this.memberPrefix(ref),
         );
-        for (const entry of stored) assertStoredMember(entry, ref);
-        return stored;
+        return stored.map((entry) => canonicalStoredMember(entry, ref));
     }
 
     async removeMember(
@@ -506,6 +516,7 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
     }
 
     async putPresenceSession(session: GroupPresenceSession): Promise<void> {
+        validatePersistedGroupPresenceSession(session, session);
         await this.putValue(
             SESSIONS_NAMESPACE,
             this.sessionKey(session),
@@ -520,17 +531,17 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
     async findPresenceEntry(
         ref: GroupRef & Readonly<{ sessionId: string }>,
     ): Promise<RuntimeStateEntryValue<GroupPresenceSession> | undefined> {
-        const stored = await this.getEntryValue<GroupPresenceSession>(
+        const stored = await this.getEntryValue<unknown>(
             SESSIONS_NAMESPACE,
             this.sessionKey(ref),
         );
-        if (stored) assertStoredSession(stored, ref);
-        return stored;
+        return stored ? canonicalStoredSession(stored, ref) : undefined;
     }
 
     async insertPresence(
         session: GroupPresenceSession,
     ): Promise<RuntimeStateConditionalWriteResult> {
+        validatePersistedGroupPresenceSession(session, session);
         return await this.putValueIfAbsent(
             SESSIONS_NAMESPACE,
             this.sessionKey(session),
@@ -546,6 +557,7 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
         session: GroupPresenceSession,
         expectedRevision: number,
     ): Promise<RuntimeStateConditionalWriteResult> {
+        validatePersistedGroupPresenceSession(session, session);
         return await this.putValueIfRevision(
             SESSIONS_NAMESPACE,
             this.sessionKey(session),
@@ -584,28 +596,27 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
     async listPresenceSessionEntries(
         ref: GroupRef,
     ): Promise<readonly RuntimeStateEntryValue<GroupPresenceSession>[]> {
-        const stored = await this.listEntryValues<GroupPresenceSession>(
+        const stored = await this.listEntryValues<unknown>(
             SESSIONS_NAMESPACE,
             this.sessionPrefix(ref),
         );
-        for (const entry of stored) assertStoredSession(entry, ref);
-        return stored;
+        return stored.map((entry) => canonicalStoredSession(entry, ref));
     }
 
     async findPresenceAdmissionEntry(
         ref: GroupRef & Readonly<{ principalId: string }>,
     ): Promise<RuntimeStateEntryValue<GroupPresenceAdmission> | undefined> {
-        const stored = await this.getEntryValue<GroupPresenceAdmission>(
+        const stored = await this.getEntryValue<unknown>(
             PRESENCE_ADMISSIONS_NAMESPACE,
             this.presenceAdmissionKey(ref),
         );
-        if (stored) assertStoredAdmission(stored, ref);
-        return stored;
+        return stored ? canonicalStoredAdmission(stored, ref) : undefined;
     }
 
     async insertPresenceAdmission(
         admission: GroupPresenceAdmission,
     ): Promise<RuntimeStateConditionalWriteResult> {
+        validatePersistedGroupPresenceAdmission(admission, admission);
         return await this.putValueIfAbsent(
             PRESENCE_ADMISSIONS_NAMESPACE,
             this.presenceAdmissionKey(admission),
@@ -617,6 +628,7 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
         admission: GroupPresenceAdmission,
         expectedRevision: number,
     ): Promise<RuntimeStateConditionalWriteResult> {
+        validatePersistedGroupPresenceAdmission(admission, admission);
         return await this.putValueIfRevision(
             PRESENCE_ADMISSIONS_NAMESPACE,
             this.presenceAdmissionKey(admission),
@@ -635,18 +647,16 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
     async listPresenceAdmissionEntries(
         ref: GroupRef,
     ): Promise<readonly RuntimeStateEntryValue<GroupPresenceAdmission>[]> {
-        const stored = await this.listEntryValues<GroupPresenceAdmission>(
+        const stored = await this.listEntryValues<unknown>(
             PRESENCE_ADMISSIONS_NAMESPACE,
             this.presenceAdmissionPrefix(ref),
         );
-        for (const entry of stored) assertStoredAdmission(entry, ref);
-        return stored;
+        return stored.map((entry) => canonicalStoredAdmission(entry, ref));
     }
 
     async listAllPresenceSessions(): Promise<readonly GroupPresenceSession[]> {
-        const stored = await this.listEntryValues<GroupPresenceSession>(SESSIONS_NAMESPACE);
-        for (const entry of stored) assertStoredSession(entry);
-        return stored.map(({ value }) => value);
+        const stored = await this.listEntryValues<unknown>(SESSIONS_NAMESPACE);
+        return stored.map((entry) => canonicalStoredSession(entry).value);
     }
 
     async removePresenceSession(
@@ -658,17 +668,17 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
     async findPresenceSummaryEntry(
         ref: GroupRef,
     ): Promise<RuntimeStateEntryValue<GroupPresenceSummary> | undefined> {
-        const stored = await this.getEntryValue<GroupPresenceSummary>(
+        const stored = await this.getEntryValue<unknown>(
             PRESENCE_SUMMARIES_NAMESPACE,
             this.groupKey(ref),
         );
-        if (stored) assertStoredSummary(stored, ref);
-        return stored;
+        return stored ? canonicalStoredSummary(stored, ref) : undefined;
     }
 
     async insertPresenceSummary(
         summary: GroupPresenceSummary,
     ): Promise<RuntimeStateConditionalWriteResult> {
+        validatePersistedGroupPresenceSummary(summary, summary);
         return await this.putValueIfAbsent(
             PRESENCE_SUMMARIES_NAMESPACE,
             this.groupKey(summary),
@@ -680,6 +690,7 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
         summary: GroupPresenceSummary,
         expectedRevision: number,
     ): Promise<RuntimeStateConditionalWriteResult> {
+        validatePersistedGroupPresenceSummary(summary, summary);
         return await this.putValueIfRevision(
             PRESENCE_SUMMARIES_NAMESPACE,
             this.groupKey(summary),
@@ -690,6 +701,7 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
     }
 
     async appendEvent(event: GroupEvent): Promise<void> {
+        validatePersistedGroupEvent(event, event);
         await this.events.appendGroupEvent(event);
     }
 
@@ -759,7 +771,7 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
         observedAtEpochMs: number,
     ): GroupSnapshot {
         const groupAllowsLivePresence = group.status === 'active' &&
-            (group.expiresAtEpochMs === undefined ||
+            (group.expiresAtEpochMs === null ||
                 group.expiresAtEpochMs > observedAtEpochMs);
         const activeMemberIds = new Set(
             members.filter((member) => member.status === 'active')
@@ -778,7 +790,7 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
                         authoritative.principalId === session.principalId &&
                         authoritative.generationId === session.generationId &&
                         authoritative.generationVersion === session.generationVersion &&
-                        authoritative.disconnectedAtEpochMs === undefined &&
+                        authoritative.disconnectedAtEpochMs === null &&
                         isLogicallyActiveSession(
                             authoritative.expiresAtEpochMs,
                             observedAtEpochMs,
@@ -828,7 +840,7 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
     ): readonly GroupPresenceSession[] {
         return sessions.filter(
             (session) =>
-                session.disconnectedAtEpochMs === undefined &&
+                session.disconnectedAtEpochMs === null &&
                 isLogicallyActiveSession(
                     session.expiresAtEpochMs,
                     observedAtEpochMs,
@@ -896,10 +908,10 @@ function assertGroupRefIdentity(
     }
 }
 
-function assertStoredGroup(
-    stored: RuntimeStateEntryValue<Group>,
+function canonicalStoredGroup(
+    stored: RuntimeStateEntryValue<unknown>,
     expectedScope: GroupScope,
-): void {
+): RuntimeStateEntryValue<Group> {
     let decoded: GroupRef;
     try {
         decoded = decodeGroupStateGroupStorageKey(stored.entry.key);
@@ -918,25 +930,26 @@ function assertStoredGroup(
             'Stored group key differs from the requested scope',
         );
     }
-    if ('groupId' in expectedScope) {
-        assertGroupRefIdentity(decoded, expectedScope as GroupRef, stored.entry.key);
+    if (isGroupRef(expectedScope)) {
+        assertGroupRefIdentity(decoded, expectedScope, stored.entry.key);
     }
-    assertCompletePersistedValue(
+    const value = normalizeCompletePersistedValue(
         stored.value,
         decoded,
         stored.entry.key,
-        validatePersistedGroup,
+        normalizePersistedGroup,
         'Stored group value is invalid',
     );
-    assertGroupRefIdentity(stored.value, decoded, stored.entry.key);
+    assertGroupRefIdentity(value, decoded, stored.entry.key);
+    return { entry: stored.entry, value };
 }
 
 function toGroupStateAuthorityGuard(
     ref: GroupRef,
     stored: RuntimeStateEntryValue<Group>,
 ): GroupStateAuthorityGuard {
-    assertStoredGroup(stored, ref);
-    assertAuthorityFencePhysicalExpiry(stored);
+    const canonical = canonicalStoredGroup(stored, ref);
+    assertAuthorityFencePhysicalExpiry(canonical);
     return {
         groupRef: { ...ref },
         entry: { ...stored.entry },
@@ -965,7 +978,14 @@ function assertGroupStateAuthorityGuard(
     }
     let value: Group;
     try {
-        value = JSON.parse(entry.value) as Group;
+        const parsed: unknown = JSON.parse(entry.value);
+        value = normalizeCompletePersistedValue(
+            parsed,
+            guard.groupRef,
+            entry.key,
+            normalizePersistedGroup,
+            'Stored authority-fence group value is invalid',
+        );
     } catch (error) {
         throw new GroupStateRepositoryInvariantCorruptionError(
             entry.key,
@@ -975,7 +995,6 @@ function assertGroupStateAuthorityGuard(
         );
     }
     const stored = { entry, value };
-    assertStoredGroup(stored, guard.groupRef);
     assertAuthorityFencePhysicalExpiry(stored);
     return stored;
 }
@@ -993,111 +1012,119 @@ function assertAuthorityFencePhysicalExpiry(
     }
 }
 
-function assertStoredMember(
-    stored: RuntimeStateEntryValue<GroupMember>,
+function canonicalStoredMember(
+    stored: RuntimeStateEntryValue<unknown>,
     expected?: GroupRef & Readonly<{ principalId?: string }>,
-): void {
+): RuntimeStateEntryValue<GroupMember> {
     const decoded = decodeStoredKey(
         stored.entry.key,
         decodeGroupStateMemberStorageKey,
     );
     assertTrustedGroupRef(decoded, expected, stored.entry.key);
-    assertCompletePersistedValue(
+    const value = normalizeCompletePersistedValue(
         stored.value,
         decoded,
         stored.entry.key,
-        validatePersistedGroupMember,
+        normalizePersistedGroupMember,
         'Stored group member value is invalid',
     );
-    assertGroupRefIdentity(stored.value, decoded, stored.entry.key);
-    if (stored.value.principalId !== decoded.principalId ||
+    assertGroupRefIdentity(value, decoded, stored.entry.key);
+    if (value.principalId !== decoded.principalId ||
         (expected?.principalId !== undefined &&
             decoded.principalId !== expected.principalId)) {
         throwIdentityCorruption(stored.entry.key, 'member principal');
     }
+    return { entry: stored.entry, value };
 }
 
-function assertStoredSession(
-    stored: RuntimeStateEntryValue<GroupPresenceSession>,
+function canonicalStoredSession(
+    stored: RuntimeStateEntryValue<unknown>,
     expected?: GroupRef & Readonly<{ sessionId?: string }>,
-): void {
+): RuntimeStateEntryValue<GroupPresenceSession> {
     const decoded = decodeStoredKey(
         stored.entry.key,
         decodeGroupStatePresenceSessionStorageKey,
     );
     assertTrustedGroupRef(decoded, expected, stored.entry.key);
-    assertCompletePersistedValue(
+    const value = normalizeCompletePersistedValue(
         stored.value,
         decoded,
         stored.entry.key,
-        validatePersistedGroupPresenceSession,
+        normalizePersistedGroupPresenceSession,
         'Stored group presence session value is invalid',
     );
-    assertGroupRefIdentity(stored.value, decoded, stored.entry.key);
-    if (stored.value.sessionId !== decoded.sessionId ||
+    assertGroupRefIdentity(value, decoded, stored.entry.key);
+    if (value.sessionId !== decoded.sessionId ||
         (expected?.sessionId !== undefined && decoded.sessionId !== expected.sessionId)) {
         throwIdentityCorruption(stored.entry.key, 'presence session');
     }
+    return { entry: stored.entry, value };
 }
 
-function assertStoredAdmission(
-    stored: RuntimeStateEntryValue<GroupPresenceAdmission>,
+function canonicalStoredAdmission(
+    stored: RuntimeStateEntryValue<unknown>,
     expected?: GroupRef & Readonly<{ principalId?: string }>,
-): void {
+): RuntimeStateEntryValue<GroupPresenceAdmission> {
     const decoded = decodeStoredKey(
         stored.entry.key,
         decodeGroupStatePresenceAdmissionStorageKey,
     );
     assertTrustedGroupRef(decoded, expected, stored.entry.key);
-    assertCompletePersistedValue(
+    const value = normalizeCompletePersistedValue(
         stored.value,
         decoded,
         stored.entry.key,
-        validatePersistedGroupPresenceAdmission,
+        normalizePersistedGroupPresenceAdmission,
         'Stored group presence admission value is invalid',
     );
-    assertGroupRefIdentity(stored.value, decoded, stored.entry.key);
-    if (stored.value.principalId !== decoded.principalId ||
+    assertGroupRefIdentity(value, decoded, stored.entry.key);
+    if (value.principalId !== decoded.principalId ||
         (expected?.principalId !== undefined &&
             decoded.principalId !== expected.principalId)) {
         throwIdentityCorruption(stored.entry.key, 'presence admission principal');
     }
+    return { entry: stored.entry, value };
 }
 
-function assertStoredSummary(
-    stored: RuntimeStateEntryValue<GroupPresenceSummary>,
+function canonicalStoredSummary(
+    stored: RuntimeStateEntryValue<unknown>,
     expected: GroupRef,
-): void {
+): RuntimeStateEntryValue<GroupPresenceSummary> {
     const decoded = decodeStoredKey(
         stored.entry.key,
         decodeGroupStateGroupStorageKey,
     );
     assertTrustedGroupRef(decoded, expected, stored.entry.key);
-    assertCompletePersistedValue(
+    const value = normalizeCompletePersistedValue(
         stored.value,
         decoded,
         stored.entry.key,
-        validatePersistedGroupPresenceSummary,
+        normalizePersistedGroupPresenceSummary,
         'Stored group presence summary value is invalid',
     );
-    assertGroupRefIdentity(stored.value, decoded, stored.entry.key);
+    assertGroupRefIdentity(value, decoded, stored.entry.key);
+    return { entry: stored.entry, value };
 }
 
-function assertCompletePersistedValue<T>(
+function normalizeCompletePersistedValue<T>(
     value: unknown,
     ref: GroupRef,
     storageKey: string,
-    validate: (value: unknown, ref: GroupRef) => asserts value is T,
+    normalize: (value: unknown, ref: GroupRef) => T,
     fallback: string,
-): void {
+): T {
     try {
-        validate(value, ref);
+        return normalize(value, ref);
     } catch (error) {
         throw new GroupStateRepositoryInvariantCorruptionError(
             storageKey,
             error instanceof Error ? error.message : fallback,
         );
     }
+}
+
+function isGroupRef(value: GroupScope): value is GroupRef {
+    return 'groupId' in value && typeof value.groupId === 'string';
 }
 
 function assertStoredIdempotency(

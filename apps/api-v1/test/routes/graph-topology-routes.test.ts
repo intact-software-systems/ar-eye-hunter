@@ -460,19 +460,28 @@ function createGroupSnapshot(
     group: {
       ...TEST_SCOPE,
       groupId,
+      slug: null,
       displayName: groupId,
+      description: null,
       kind: 'room',
       status: 'active',
       joinMode: 'open',
+      maxMembers: null,
+      maxSessionsPerMember: null,
       metadata: {},
       snapshotVersion: 1,
       metadataVersion: 0,
       rosterVersion: 1,
       presenceVersion: 0,
       activeMemberCount: memberPrincipalIds.length,
-      ownerPrincipalId: memberPrincipalIds[0] ?? 'owner',
-      created: { atEpochMs: 1, byPrincipalId: 'owner' },
-      updated: { atEpochMs: 1, byPrincipalId: 'owner' },
+      ownerPrincipalId: 'owner',
+      created: createPrincipalAuditStamp(1, 'owner'),
+      updated: createPrincipalAuditStamp(1, 'owner'),
+      expiresAtEpochMs: null,
+      emptySinceEpochMs: null,
+      purgeAfterEpochMs: null,
+      archived: null,
+      deleted: null,
     },
     members: memberPrincipalIds.map((principalId, index) => ({
       ...TEST_SCOPE,
@@ -480,8 +489,13 @@ function createGroupSnapshot(
       principalId,
       role: index === 0 ? 'owner' : 'member',
       status: 'active',
-      joined: { atEpochMs: 1, byPrincipalId: 'owner' },
-      updated: { atEpochMs: 1, byPrincipalId: 'owner' },
+      joined: createPrincipalAuditStamp(1, 'owner'),
+      updated: createPrincipalAuditStamp(1, 'owner'),
+      invitedByPrincipalId: null,
+      invitationExpiresAtEpochMs: null,
+      left: null,
+      removed: null,
+      banned: null,
     })),
     activeSessions: memberPrincipalIds.map((principalId) => ({
       ...TEST_SCOPE,
@@ -493,9 +507,22 @@ function createGroupSnapshot(
       connectedAtEpochMs: 1,
       lastHeartbeatAtEpochMs: 1,
       expiresAtEpochMs: 60_000,
+      status: 'active',
+      disconnectedAtEpochMs: null,
+      disconnectReason: null,
     })),
     memberCount: memberPrincipalIds.length,
     onlineMemberCount: memberPrincipalIds.length,
+  };
+}
+
+function createPrincipalAuditStamp(atEpochMs: number, principalId: string) {
+  return {
+    atEpochMs,
+    actor: { kind: 'principal' as const, principalId },
+    reason: null,
+    traceId: null,
+    requestId: null,
   };
 }
 

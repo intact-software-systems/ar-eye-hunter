@@ -71,14 +71,26 @@ function fixture(): Readonly<{ group: Group; owner: GroupMember }> {
         workspaceId: 'authority-fence-workspace',
         groupId: 'authority-fence-room',
     };
-    const audit = { atEpochMs: 1, byPrincipalId: 'owner' } as const;
+    const audit = {
+        atEpochMs: 1,
+        actor: { kind: 'principal', principalId: 'owner' },
+        reason: null,
+        traceId: null,
+        requestId: null,
+    } satisfies Group['created'];
     return {
         group: {
             ...ref,
+            slug: null,
             displayName: 'Authority fence room',
+            description: null,
             kind: 'room',
             status: 'active',
+            archived: null,
+            deleted: null,
             joinMode: 'open',
+            maxMembers: null,
+            maxSessionsPerMember: null,
             metadata: {},
             activeMemberCount: 1,
             ownerPrincipalId: 'owner',
@@ -88,6 +100,9 @@ function fixture(): Readonly<{ group: Group; owner: GroupMember }> {
             presenceVersion: 0,
             created: audit,
             updated: audit,
+            expiresAtEpochMs: null,
+            emptySinceEpochMs: null,
+            purgeAfterEpochMs: null,
         },
         owner: {
             ...ref,
@@ -96,6 +111,11 @@ function fixture(): Readonly<{ group: Group; owner: GroupMember }> {
             status: 'active',
             joined: audit,
             updated: audit,
+            invitedByPrincipalId: null,
+            invitationExpiresAtEpochMs: null,
+            left: null,
+            removed: null,
+            banned: null,
         },
     };
 }

@@ -13,12 +13,19 @@ export const RTC_RTT_MUTATION_RETENTION_MS = 24 * 60 * 60 * 1_000;
 
 type RtcRttMutationReceiptContract = Readonly<{
     receiptId: string;
+    commandId: string;
+    requestId: string;
     sessionIdFrom: string;
     sessionIdTo: string;
+    aggregateRef: Readonly<{ sessionIdFrom: string; sessionIdTo: string }>;
     measurementVersion: number;
     affectedGroupRefs: readonly GroupRef[];
     acceptedAtEpochMs: number;
     outcome: 'accepted';
+    attemptCount: number;
+    acceptedStorageRevision: number;
+    eventId: null;
+    outboxIds: readonly string[];
     commandHash: string;
 }>;
 
@@ -50,22 +57,53 @@ export function validateRtcRttMutationReceipt(
 ): asserts value is RtcRttMutationReceiptContract {
     const receipt = record(value, 'RTC RTT receipt');
     exactKeys(receipt, [
-        'receiptId', 'sessionIdFrom', 'sessionIdTo', 'measurementVersion',
-        'affectedGroupRefs', 'acceptedAtEpochMs', 'outcome', 'commandHash',
+        'receiptId', 'commandId', 'requestId', 'sessionIdFrom', 'sessionIdTo',
+        'aggregateRef', 'measurementVersion', 'affectedGroupRefs',
+        'acceptedAtEpochMs', 'outcome', 'attemptCount',
+        'acceptedStorageRevision', 'eventId', 'outboxIds', 'commandHash',
     ]);
     nonEmptyString(receipt.receiptId, 'receipt id');
+    nonEmptyString(receipt.commandId, 'receipt command id');
+    nonEmptyString(receipt.requestId, 'receipt request id');
     nonEmptyString(receipt.sessionIdFrom, 'receipt source session');
     nonEmptyString(receipt.sessionIdTo, 'receipt target session');
     if (receipt.sessionIdFrom === receipt.sessionIdTo) {
         throw new TypeError('RTC RTT receipt pair is invalid');
+    }
+    const aggregateRef = record(receipt.aggregateRef, 'receipt aggregate ref');
+    exactKeys(aggregateRef, ['sessionIdFrom', 'sessionIdTo']);
+    if (
+        aggregateRef.sessionIdFrom !== receipt.sessionIdFrom ||
+        aggregateRef.sessionIdTo !== receipt.sessionIdTo
+    ) {
+        throw new TypeError('RTC RTT receipt aggregate ref is invalid');
     }
     safeInteger(receipt.measurementVersion, 1, 'receipt measurement version');
     safeInteger(receipt.acceptedAtEpochMs, 0, 'receipt accepted time');
     if (receipt.outcome !== 'accepted') {
         throw new TypeError('RTC RTT receipt outcome is invalid');
     }
+    safeInteger(receipt.attemptCount, 1, 'receipt attempt count');
+    safeInteger(
+        receipt.acceptedStorageRevision,
+        0,
+        'receipt accepted storage revision',
+    );
+    if (receipt.eventId !== null) {
+        throw new TypeError('RTC RTT receipt event id must be null');
+    }
+    if (
+        !Array.isArray(receipt.outboxIds) ||
+        receipt.outboxIds.some((outboxId) =>
+            typeof outboxId !== 'string' || outboxId.length === 0
+        )
+    ) {
+        throw new TypeError('RTC RTT receipt outbox ids are invalid');
+    }
     validateCommandHash(receipt.commandHash);
     if (
+        receipt.commandId !== receipt.receiptId ||
+        receipt.requestId !== receipt.receiptId ||
         receipt.receiptId !== toRtcRttMutationReceiptId({
             sessionIdFrom: receipt.sessionIdFrom as string,
             sessionIdTo: receipt.sessionIdTo as string,
@@ -353,7 +391,7 @@ function validateIntentAgainstReceipt(
         receipt.acceptedAtEpochMs !== intent.createdAtEpochMs ||
         !receiptIncludesGroup ||
         intent.groupSnapshot.group.status !== 'active' ||
-        (groupExpiry !== undefined && groupExpiry <= intent.createdAtEpochMs) ||
+        (groupExpiry !== null && groupExpiry <= intent.createdAtEpochMs) ||
         !activeSessionIds.has(receipt.sessionIdFrom) ||
         !activeSessionIds.has(receipt.sessionIdTo)
     ) {

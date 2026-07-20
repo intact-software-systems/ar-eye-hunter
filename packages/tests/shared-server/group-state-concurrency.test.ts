@@ -1,5 +1,6 @@
 import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 import type {
+    AuditStamp,
     Group,
     GroupMember,
     GroupPresenceAdmission,
@@ -117,9 +118,10 @@ describe('convergent group and presence state', () => {
     it('encodes canonical group storage keys including workspace absence and reserved IDs', () => {
         const ref = {
             applicationId: 'app/one',
+            workspaceId: 'workspace/one',
             groupId: 'group:one',
         };
-        const groupKey = 'app=app%2Fone:ws=_:group=group%3Aone';
+        const groupKey = 'app=app%2Fone:ws=workspace%2Fone:group=group%3Aone';
         expect(groupStateGroupStorageKey(ref)).toBe(groupKey);
         expect(groupStatePresenceSummaryStorageKey(ref)).toBe(groupKey);
         expect(groupStateMemberStorageKey({ ...ref, principalId: 'p/a' }))
@@ -137,12 +139,13 @@ describe('convergent group and presence state', () => {
     it('keeps the legacy absent-workspace key while encoding every present workspace injectively', () => {
         const absentRef = {
             applicationId: 'app/one',
+            workspaceId: 'workspace/default',
             groupId: 'group:one',
         };
         const explicitSentinelRef = { ...absentRef, workspaceId: '_' };
 
         expect(groupStateScopeStorageKey(absentRef))
-            .toBe('app=app%2Fone:ws=_');
+            .toBe('app=app%2Fone:ws=workspace%2Fdefault');
         expect(groupStateScopeStorageKey(explicitSentinelRef))
             .toBe('app=app%2Fone:ws=%5F');
 
@@ -178,11 +181,11 @@ describe('convergent group and presence state', () => {
             expect(explicitSentinelKeys[index]).not.toBe(absentKeys[index]);
         }
 
-        const workspaceValues = [undefined, '_', '%5F', 'a:b', 'a%b', 'a/b'];
+        const workspaceValues = ['', '_', '%5F', 'a:b', 'a%b', 'a/b'];
         const scopeKeys = workspaceValues.map((workspaceId) =>
             groupStateScopeStorageKey({
                 applicationId: 'app/one',
-                ...(workspaceId === undefined ? {} : { workspaceId }),
+                workspaceId,
             })
         );
         expect(new Set(scopeKeys).size).toBe(workspaceValues.length);
@@ -216,18 +219,17 @@ describe('convergent group and presence state', () => {
     it('rejects noncanonical percent aliases for every derived child key on direct, list, and snapshot reads', async () => {
         const ref = {
             applicationId: 'canonical-child-app',
+            workspaceId: 'canonical-child-workspace',
             groupId: 'canonical-child-group',
         };
         const group: Group = {
             ...createMutationRead().group!.value,
             ...ref,
-            workspaceId: undefined,
             activeMemberCount: 1,
         };
         const member: GroupMember = {
             ...createMutationRead().actorMember!,
             ...ref,
-            workspaceId: undefined,
             principalId: 'alice',
         };
         const session: GroupPresenceSession = {
@@ -239,6 +241,9 @@ describe('convergent group and presence state', () => {
             connectedAtEpochMs: 1_000,
             lastHeartbeatAtEpochMs: 1_000,
             expiresAtEpochMs: 10_000,
+            status: 'active',
+            disconnectedAtEpochMs: null,
+            disconnectReason: null,
         };
         const admission: GroupPresenceAdmission = {
             ...ref,
@@ -252,12 +257,17 @@ describe('convergent group and presence state', () => {
             commandHash: `sha256:${'1'.repeat(64)}`,
             receipt: {
                 commandId: 'request',
+                requestId: 'request',
                 commandHash: `sha256:${'1'.repeat(64)}`,
+                aggregateRef: ref,
                 outcome: 'no-op',
+                attemptCount: 1,
+                acceptedStorageRevision: null,
                 stateRevision: 1,
                 snapshotVersion: 1,
                 causalRevision: { groupRevision: 1, presenceRevision: 0 },
-                event: { kind: 'none' },
+                eventId: null,
+                outboxIds: [],
                 joinCode: null,
                 joinCodeExpiresAtEpochMs: null,
                 rejection: null,
@@ -362,9 +372,15 @@ describe('convergent group and presence state', () => {
         const snapshotRepository = new GroupStateRepository(snapshotRuntime);
         for (const read of [
             () => snapshotRepository.readSnapshot(ref),
-            () => snapshotRepository.listSnapshots({ applicationId: ref.applicationId }),
+            () => snapshotRepository.listSnapshots({
+                applicationId: ref.applicationId,
+                workspaceId: ref.workspaceId,
+            }),
             () => snapshotRepository.listSnapshotsPage(
-                { applicationId: ref.applicationId },
+                {
+                    applicationId: ref.applicationId,
+                    workspaceId: ref.workspaceId,
+                },
                 { limit: 10 },
             ),
         ]) {
@@ -381,7 +397,7 @@ describe('convergent group and presence state', () => {
         const absentGroup: Group = {
             ...base,
             applicationId: 'boundary-app',
-            workspaceId: undefined,
+            workspaceId: 'workspace-default',
             groupId: 'boundary-group',
             slug: 'absent-workspace',
             displayName: 'Absent workspace',
@@ -399,7 +415,10 @@ describe('convergent group and presence state', () => {
         expect(await repository.findGroup(absentGroup)).toEqual(absentGroup);
         expect(await repository.findGroup(explicitSentinelGroup))
             .toEqual(explicitSentinelGroup);
-        expect(await repository.listGroups({ applicationId: 'boundary-app' }))
+        expect(await repository.listGroups({
+            applicationId: 'boundary-app',
+            workspaceId: 'workspace-default',
+        }))
             .toEqual([absentGroup]);
         expect(await repository.listGroups({
             applicationId: 'boundary-app',
@@ -412,6 +431,7 @@ describe('convergent group and presence state', () => {
         const repository = new GroupStateRepository(runtime);
         const absentRef = {
             applicationId: 'legacy-boundary-app',
+            workspaceId: 'legacy-workspace',
             groupId: 'legacy-boundary-group',
         };
         const explicitSentinelGroup: Group = {
@@ -440,12 +460,12 @@ describe('convergent group and presence state', () => {
         const runtime = new FakeRuntimeStateRepository();
         const ref = {
             applicationId: 'physical-key-app',
+            workspaceId: 'physical-key-workspace',
             groupId: 'physical-key-group',
         };
         const group: Group = {
             ...createMutationRead().group!.value,
             ...ref,
-            workspaceId: undefined,
         };
         vi.spyOn(runtime, 'findEntry').mockResolvedValue({
             key: 'app=other:ws=_:group=other',
@@ -464,7 +484,10 @@ describe('convergent group and presence state', () => {
     it('fails closed instead of filtering a wrong-scope group from list and page reads', async () => {
         const runtime = new FakeRuntimeStateRepository();
         const repository = new GroupStateRepository(runtime);
-        const absentScope = { applicationId: 'legacy-list-app' };
+        const absentScope = {
+            applicationId: 'legacy-list-app',
+            workspaceId: 'legacy-list-workspace',
+        };
         const explicitSentinelGroup: Group = {
             ...createMutationRead().group!.value,
             ...absentScope,
@@ -497,6 +520,7 @@ describe('convergent group and presence state', () => {
     it('fails closed on wrong member, session, admission, and summary read slots', async () => {
         const ref = {
             applicationId: 'corrupt-child-app',
+            workspaceId: 'corrupt-child-workspace',
             groupId: 'corrupt-child-group',
         };
         const cases = [
@@ -527,6 +551,9 @@ describe('convergent group and presence state', () => {
                     connectedAtEpochMs: 1_000,
                     lastHeartbeatAtEpochMs: 1_000,
                     expiresAtEpochMs: 10_000,
+                    status: 'active',
+                    disconnectedAtEpochMs: null,
+                    disconnectReason: null,
                 } satisfies GroupPresenceSession,
                 reads: (repository: GroupStateRepository) => [
                     () => repository.findPresenceSession({ ...ref, sessionId: 'session-1' }),
@@ -594,22 +621,24 @@ describe('convergent group and presence state', () => {
     it('rejects canonically keyed incomplete persisted rows at every public read boundary', async () => {
         const ref = {
             applicationId: 'incomplete-contract-app',
+            workspaceId: 'incomplete-contract-workspace',
             groupId: 'incomplete-contract-group',
         };
         const completeGroup: Group = {
             ...createMutationRead().group!.value,
             ...ref,
-            workspaceId: undefined,
             activeMemberCount: 1,
             ownerPrincipalId: 'alice',
         };
         const completeMember: GroupMember = {
             ...createMutationRead().actorMember!,
             ...ref,
-            workspaceId: undefined,
             principalId: 'alice',
             role: 'owner',
             status: 'active',
+            left: null,
+            removed: null,
+            banned: null,
         };
         const incompleteGroup = structuredClone(completeGroup) as Record<string, unknown>;
         delete incompleteGroup.joinMode;
@@ -625,11 +654,20 @@ describe('convergent group and presence state', () => {
         for (const read of [
             () => groupRepository.findGroup(ref),
             () => groupRepository.findGroupEntry(ref),
-            () => groupRepository.listGroups({ applicationId: ref.applicationId }),
+            () => groupRepository.listGroups({
+                applicationId: ref.applicationId,
+                workspaceId: ref.workspaceId,
+            }),
             () => groupRepository.readSnapshot(ref),
-            () => groupRepository.listSnapshots({ applicationId: ref.applicationId }),
+            () => groupRepository.listSnapshots({
+                applicationId: ref.applicationId,
+                workspaceId: ref.workspaceId,
+            }),
             () => groupRepository.listSnapshotsPage(
-                { applicationId: ref.applicationId },
+                {
+                    applicationId: ref.applicationId,
+                    workspaceId: ref.workspaceId,
+                },
                 { limit: 10 },
             ),
         ]) {
@@ -685,9 +723,15 @@ describe('convergent group and presence state', () => {
             () => sessionRepository.listPresenceSessionEntries(ref),
             () => sessionRepository.listAllPresenceSessions(),
             () => sessionRepository.readSnapshot(ref),
-            () => sessionRepository.listSnapshots({ applicationId: ref.applicationId }),
+            () => sessionRepository.listSnapshots({
+                applicationId: ref.applicationId,
+                workspaceId: ref.workspaceId,
+            }),
             () => sessionRepository.listSnapshotsPage(
-                { applicationId: ref.applicationId },
+                {
+                    applicationId: ref.applicationId,
+                    workspaceId: ref.workspaceId,
+                },
                 { limit: 10 },
             ),
         ]) {
@@ -712,9 +756,15 @@ describe('convergent group and presence state', () => {
                     () => repository.listMembers(ref),
                     () => repository.listMemberEntries(ref),
                     () => repository.readSnapshot(ref),
-                    () => repository.listSnapshots({ applicationId: ref.applicationId }),
+                    () => repository.listSnapshots({
+                        applicationId: ref.applicationId,
+                        workspaceId: ref.workspaceId,
+                    }),
                     () => repository.listSnapshotsPage(
-                        { applicationId: ref.applicationId },
+                        {
+                            applicationId: ref.applicationId,
+                            workspaceId: ref.workspaceId,
+                        },
                         { limit: 10 },
                     ),
                 ],
@@ -751,9 +801,15 @@ describe('convergent group and presence state', () => {
                 reads: (repository: GroupStateRepository) => [
                     () => repository.findPresenceSummaryEntry(ref),
                     () => repository.readSnapshot(ref),
-                    () => repository.listSnapshots({ applicationId: ref.applicationId }),
+                    () => repository.listSnapshots({
+                        applicationId: ref.applicationId,
+                        workspaceId: ref.workspaceId,
+                    }),
                     () => repository.listSnapshotsPage(
-                        { applicationId: ref.applicationId },
+                        {
+                            applicationId: ref.applicationId,
+                            workspaceId: ref.workspaceId,
+                        },
                         { limit: 10 },
                     ),
                 ],
@@ -786,13 +842,17 @@ describe('convergent group and presence state', () => {
     it('wraps non-object and invalid-JSON stored rows as typed repository corruption', async () => {
         const ref = {
             applicationId: 'malformed-json-app',
+            workspaceId: 'malformed-json-workspace',
             groupId: 'malformed-json-group',
         };
         const key = groupStateGroupStorageKey(ref);
         for (const [value, read] of [
             ['null', (repository: GroupStateRepository) => repository.findGroup(ref)],
             ['{not-json', (repository: GroupStateRepository) =>
-                repository.listGroups({ applicationId: ref.applicationId })],
+                repository.listGroups({
+                    applicationId: ref.applicationId,
+                    workspaceId: ref.workspaceId,
+                })],
         ] as const) {
             const runtime = new FakeRuntimeStateRepository();
             await runtime.upsert(
@@ -813,12 +873,12 @@ describe('convergent group and presence state', () => {
         const repository = new GroupStateRepository(runtime);
         const ref = {
             applicationId: 'snapshot-child-app',
+            workspaceId: 'snapshot-child-workspace',
             groupId: 'snapshot-child-group',
         };
         const group: Group = {
             ...createMutationRead().group!.value,
             ...ref,
-            workspaceId: undefined,
         };
         const wrongScopeMember: GroupMember = {
             ...createMutationRead().actorMember!,
@@ -840,6 +900,7 @@ describe('convergent group and presence state', () => {
 
         await expect(repository.listSnapshots({
             applicationId: ref.applicationId,
+            workspaceId: ref.workspaceId,
         })).rejects.toMatchObject({
             code: 'group-state-repository-invariant-corruption',
         });
@@ -850,6 +911,7 @@ describe('convergent group and presence state', () => {
             .toHaveProperty('aggregateRef').toEqualTypeOf<GroupRef>();
         const ref = {
             applicationId: 'legacy-receipt-app',
+            workspaceId: 'legacy-receipt-workspace',
             groupId: 'legacy-receipt-group',
         };
         const requestId = 'legacy-request';
@@ -921,6 +983,7 @@ describe('convergent group and presence state', () => {
     it('enforces the exact compact idempotency contract on insert and both read APIs', async () => {
         const ref = {
             applicationId: 'exact-receipt-app',
+            workspaceId: 'exact-receipt-workspace',
             groupId: 'exact-receipt-group',
         };
         const requestId = 'exact-request';
@@ -931,12 +994,17 @@ describe('convergent group and presence state', () => {
             commandHash,
             receipt: {
                 commandId: requestId,
+                requestId,
                 commandHash,
+                aggregateRef: ref,
                 outcome: 'no-op',
+                attemptCount: 1,
+                acceptedStorageRevision: null,
                 stateRevision: 1,
                 snapshotVersion: 1,
                 causalRevision: { groupRevision: 1, presenceRevision: 0 },
-                event: { kind: 'none' },
+                eventId: null,
+                outboxIds: [],
                 joinCode: null,
                 joinCodeExpiresAtEpochMs: null,
                 rejection: null,
@@ -1045,7 +1113,7 @@ describe('convergent group and presence state', () => {
                 ...command.aggregateRef, workspaceId: 'workspace:two',
             } }],
             ['expiry', { ...command, aggregateRef: {
-                ...command.aggregateRef, workspaceId: undefined,
+                ...command.aggregateRef, workspaceId: '',
             } }],
             ['expiry', { ...command, aggregateRef: {
                 ...command.aggregateRef, groupId: 'group:two',
@@ -1395,12 +1463,17 @@ describe('convergent group and presence state', () => {
             commandHash: facts.commandHash,
             receipt: {
                 commandId: targetCommand.commandId,
+                requestId: targetCommand.requestId,
                 commandHash: facts.commandHash,
+                aggregateRef: targetCommand.aggregateRef,
                 outcome: 'no-op' as const,
+                attemptCount: 1,
+                acceptedStorageRevision: null,
                 stateRevision: 1_000_000,
                 snapshotVersion: 1,
                 causalRevision: { groupRevision: 1, presenceRevision: 0 },
-                event: { kind: 'none' as const },
+                eventId: null,
+                outboxIds: [],
                 joinCode: null,
                 joinCodeExpiresAtEpochMs: null,
                 rejection: null,
@@ -1927,7 +2000,9 @@ describe('convergent group and presence state', () => {
                 read,
                 facts,
                 computed: malformed as never,
-            }), label).toThrow(/canonical|deterministic|projection|operation/i);
+            }), label).toThrow(
+                /canonical|deterministic|projection|operation|unexpected key/i,
+            );
         }
     });
 
@@ -2096,6 +2171,27 @@ describe('convergent group and presence state', () => {
         expect(snapshot.group.snapshotVersion).toBe(
             2 + results.filter((result) => result.status === 'fulfilled').length,
         );
+    });
+
+    it('does not fabricate join authority for invites or direct terminal governance', async () => {
+        const runtime = new GroupBarrierRepository();
+        await seedOpenGroup(runtime, 'nullable-join-room');
+        const service = createService(runtime, 2_000);
+        await service.upsertMember(SCOPE, 'nullable-join-room', 'bob', {
+            status: 'invited',
+            actorPrincipalId: 'alice',
+            requestId: 'invite-without-join',
+        });
+        await service.banGroupMember(SCOPE, 'nullable-join-room', 'carol', {
+            actorPrincipalId: 'alice',
+            requestId: 'direct-ban-without-join',
+        });
+
+        const snapshot = await requireSnapshot(runtime, 'nullable-join-room');
+        expect(snapshot.members.find((member) => member.principalId === 'bob'))
+            .toMatchObject({ status: 'invited', joined: null });
+        expect(snapshot.members.find((member) => member.principalId === 'carol'))
+            .toMatchObject({ status: 'banned', joined: null });
     });
 
     it('rebases ownership transfer versus target removal without losing a winner', async () => {
@@ -2364,7 +2460,10 @@ describe('convergent group and presence state', () => {
             expect(outbox).toHaveLength(1);
             expect(outbox[0]).toMatchObject({
                 commandHash: idempotency?.commandHash,
-                event: idempotency?.receipt.event,
+                event: {
+                    kind: 'group',
+                    event: { eventId: idempotency?.receipt.eventId },
+                },
             });
         }
     });
@@ -2624,7 +2723,7 @@ describe('convergent group and presence state', () => {
         expect(retainedSession).toMatchObject({
             generationId: 'expiry-rollback-generation',
         });
-        expect(retainedSession?.disconnectedAtEpochMs).toBeUndefined();
+        expect(retainedSession?.disconnectedAtEpochMs).toBeNull();
         expect((await repository.listEvents(ref)).filter((event) =>
             event.eventType === 'session-disconnected'
         )).toEqual([]);
@@ -2651,7 +2750,7 @@ describe('convergent group and presence state', () => {
         );
         runtime.resetGuards();
         runtime.failNextPresenceDelete(3);
-        const sleep = vi.fn(() => Promise.resolve());
+        const sleep = vi.fn((_delayMs: number) => Promise.resolve());
 
         await expect(createMaintenance(
             runtime,
@@ -2752,7 +2851,7 @@ describe('convergent group and presence state', () => {
             generationId: 'generation-2',
             generationVersion: BASE_EPOCH_MS + 3_001,
         });
-        expect(reconnected?.disconnectedAtEpochMs).toBeUndefined();
+        expect(reconnected?.disconnectedAtEpochMs).toBeNull();
     });
 
     it('converges generation and heartbeat order for AB and BA delivery', async () => {
@@ -3061,6 +3160,9 @@ describe('convergent group and presence state', () => {
                 connectedAtEpochMs: observedAtEpochMs - 5_000,
                 lastHeartbeatAtEpochMs: observedAtEpochMs - 1_000,
                 expiresAtEpochMs: observedAtEpochMs + 60_000,
+                status: 'active',
+                disconnectedAtEpochMs: null,
+                disconnectReason: null,
             };
             expect(await repository.updatePresenceSummary({
                 ...ref,
@@ -3072,22 +3174,24 @@ describe('convergent group and presence state', () => {
                 activeSessionCount: 1,
                 computedAtEpochMs: observedAtEpochMs - 500,
             }, summary.entry.revision)).toMatchObject({ status: 'applied' });
-            const lifecycleAudit = {
-                atEpochMs: observedAtEpochMs - 1_000,
-                byPrincipalId: 'alice',
-                requestId: `lifecycle-${testCase.groupId}`,
-            };
+            const lifecycleAudit = auditStamp(
+                observedAtEpochMs - 1_000,
+                'alice',
+                `lifecycle-${testCase.groupId}`,
+            );
             const group: Group = testCase.status === 'archived'
                 ? {
                     ...stored.value,
                     status: 'archived',
                     archived: lifecycleAudit,
+                    deleted: null,
                     updated: lifecycleAudit,
                 }
                 : testCase.status === 'deleted'
                 ? {
                     ...stored.value,
                     status: 'deleted',
+                    archived: null,
                     deleted: lifecycleAudit,
                     updated: lifecycleAudit,
                 }
@@ -3157,6 +3261,9 @@ describe('convergent group and presence state', () => {
                 connectedAtEpochMs: observedAtEpochMs - 5_000,
                 lastHeartbeatAtEpochMs: observedAtEpochMs - 1_000,
                 expiresAtEpochMs: observedAtEpochMs + 60_000,
+                status: 'active',
+                disconnectedAtEpochMs: null,
+                disconnectReason: null,
             };
             const presenceRevision = 40 + index;
             expect(await repository.updatePresenceSummary({
@@ -3185,6 +3292,7 @@ describe('convergent group and presence state', () => {
             } else if (testCase.latest === 'disconnected') {
                 await repository.putPresenceSession({
                     ...summarizedSession,
+                    status: 'disconnected',
                     disconnectedAtEpochMs: observedAtEpochMs - 500,
                     disconnectReason: 'client-disconnect',
                 });
@@ -3423,7 +3531,7 @@ describe('convergent group and presence state', () => {
         const runtime = new GroupBarrierRepository();
         await seedOpenGroup(runtime, 'retry-exhaustion-room');
         runtime.failNextGroupCas(3);
-        const sleep = vi.fn(() => Promise.resolve());
+        const sleep = vi.fn((_delayMs: number) => Promise.resolve());
         await expect(createService(runtime, 2_000, undefined, sleep).updateGroup(
             SCOPE,
             'retry-exhaustion-room',
@@ -3689,19 +3797,34 @@ function createMutationCommand(
     } as GroupMutationCommand;
 }
 
+function auditStamp(
+    atEpochMs: number,
+    principalId: string,
+    requestId: string | null,
+): AuditStamp {
+    return {
+        atEpochMs,
+        actor: { kind: 'principal', principalId },
+        reason: null,
+        traceId: null,
+        requestId,
+    };
+}
+
 function createMutationRead(): GroupMutationRead {
-    const audit = {
-        atEpochMs: 1_000,
-        byPrincipalId: 'alice',
-        byServiceId: 'group-service',
-        requestId: 'seed',
-    } as const;
+    const audit = auditStamp(1_000, 'alice', 'seed');
     const group = {
         ...groupRef('pure-room'),
+        slug: null,
         displayName: 'Before',
+        description: null,
         kind: 'room' as const,
         status: 'active' as const,
+        archived: null,
+        deleted: null,
         joinMode: 'open' as const,
+        maxMembers: null,
+        maxSessionsPerMember: null,
         metadata: {},
         activeMemberCount: 1,
         ownerPrincipalId: 'alice',
@@ -3709,6 +3832,9 @@ function createMutationRead(): GroupMutationRead {
         metadataVersion: 1,
         rosterVersion: 1,
         presenceVersion: 0,
+        expiresAtEpochMs: null,
+        emptySinceEpochMs: null,
+        purgeAfterEpochMs: null,
         created: audit,
         updated: audit,
     };
@@ -3717,6 +3843,11 @@ function createMutationRead(): GroupMutationRead {
         principalId: 'alice',
         role: 'owner' as const,
         status: 'active' as const,
+        invitedByPrincipalId: null,
+        invitationExpiresAtEpochMs: null,
+        left: null,
+        removed: null,
+        banned: null,
         joined: audit,
         updated: audit,
     };
@@ -3791,17 +3922,17 @@ function rekey<T>(stored: ReturnType<typeof storedEntry<T>>, key: string) {
 }
 
 function memberFor(principalId: string): GroupMember {
-    const audit = {
-        atEpochMs: 1_000,
-        byPrincipalId: 'alice',
-        byServiceId: 'group-service',
-        requestId: 'seed',
-    };
+    const audit = auditStamp(1_000, 'alice', 'seed');
     return {
         ...groupRef('pure-room'),
         principalId,
         role: 'member',
         status: 'active',
+        invitedByPrincipalId: null,
+        invitationExpiresAtEpochMs: null,
+        left: null,
+        removed: null,
+        banned: null,
         joined: audit,
         updated: audit,
     };
@@ -3833,6 +3964,9 @@ function presenceFor(
         connectedAtEpochMs: 1_000,
         lastHeartbeatAtEpochMs: 1_000,
         expiresAtEpochMs: 10_000,
+        status: 'active',
+        disconnectedAtEpochMs: null,
+        disconnectReason: null,
     };
 }
 
@@ -3842,6 +3976,7 @@ function createMutationFacts(): GroupMutationFacts {
         serviceId: 'group-service',
         eventId: 'event-1',
         commandHash: `sha256:${'a'.repeat(64)}`,
+        attemptCount: 1,
         resolvedJoinCode: null,
         joinCodeVerifier: null,
         internalAuthority: 'none',
@@ -3869,7 +4004,7 @@ class GroupBarrierRepository extends FakeRuntimeStateRepository {
     private admissionReadsRemaining = 0;
     private admissionReadsArrived = 0;
     private releaseAdmissionReads: (() => void) | undefined;
-    private transactionTail: Promise<void> = Promise.resolve();
+    private barrierTransactionTail: Promise<void> = Promise.resolve();
     private outboxConflictsRemaining = 0;
     private presenceSummaryConflictsRemaining = 0;
     private groupConflictsRemaining = 0;
@@ -3964,8 +4099,8 @@ class GroupBarrierRepository extends FakeRuntimeStateRepository {
         fn: (repository: RuntimeStateOptimisticTransactionalRepositoryLike) => Promise<T>,
     ): Promise<T> {
         let release!: () => void;
-        const previous = this.transactionTail;
-        this.transactionTail = new Promise<void>((resolve) => {
+        const previous = this.barrierTransactionTail;
+        this.barrierTransactionTail = new Promise<void>((resolve) => {
             release = resolve;
         });
         await previous;

@@ -11,7 +11,7 @@ export function isClientSnapshotSessionLive(
     atEpochMs: number = Date.now(),
 ): boolean {
     return session.status === 'active' &&
-        session.disconnectedAtEpochMs === undefined &&
+        session.disconnectedAtEpochMs === null &&
         session.expiresAtEpochMs > atEpochMs;
 }
 
@@ -19,7 +19,7 @@ export function isGroupSnapshotSessionLive(
     session: GroupPresenceSession,
     atEpochMs: number = Date.now(),
 ): boolean {
-    return session.disconnectedAtEpochMs === undefined &&
+    return session.disconnectedAtEpochMs === null &&
         session.expiresAtEpochMs > atEpochMs;
 }
 

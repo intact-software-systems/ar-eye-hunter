@@ -1,4 +1,5 @@
 import type { GroupRef } from '@shared/api/group-types.ts';
+import { DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import type {
     StoredGroupTopologyConfig,
     StoredGroupTopologyOverride,
@@ -557,9 +558,9 @@ function storedTopologyGroupRef(value: unknown): GroupRef {
     }
     return {
         applicationId: candidate.applicationId,
-        ...(candidate.workspaceId === undefined
-            ? {}
-            : { workspaceId: candidate.workspaceId as string }),
+        workspaceId: typeof candidate.workspaceId === 'string'
+            ? candidate.workspaceId
+            : DEFAULT_STATE_WORKSPACE_ID,
         groupId: candidate.groupId,
     };
 }

@@ -1,6 +1,12 @@
 import type { AuthSession, ClientInfo } from '@shared/api/api-config.ts';
 import type { ClientSnapshot as ClientStateSnapshot } from '@shared/api/client-types.ts';
 import type { GroupSnapshot as GroupStateSnapshot } from '@shared/api/group-types.ts';
+import {
+    validateAuthoritativeClientSnapshot,
+    validateAuthoritativeClientSnapshotList,
+    validateAuthoritativeGroupSnapshot,
+    validateAuthoritativeGroupSnapshotList,
+} from '@shared/api/authoritative-state-validation.ts';
 import type {
     BanGroupMemberRequest,
     CreateGroupRequest,
@@ -141,10 +147,11 @@ export async function refreshStateSnapshots(
         )
         .run();
 
-    return {
-        clients: requireWorkflowResult(results, 'clients') as ClientStateSnapshot[],
-        groups: requireWorkflowResult(results, 'groups') as GroupStateSnapshot[],
-    };
+    const clients: unknown = requireWorkflowResult(results, 'clients');
+    const groups: unknown = requireWorkflowResult(results, 'groups');
+    validateAuthoritativeClientSnapshotList(clients, scope);
+    validateAuthoritativeGroupSnapshotList(groups, scope);
+    return { clients, groups };
 }
 
 export async function createAndJoinStateGroup(
@@ -897,18 +904,23 @@ export async function refreshStateHeartbeat(
         )
         .run();
 
+    const client: unknown = requireWorkflowResult(results, 'client');
+    validateAuthoritativeClientSnapshot(client, scope);
+    const groups: GroupStateSnapshot[] = [];
+    const missingGroups: GroupStateSnapshot[] = [];
+    for (const snapshot of joinedGroups) {
+        const result: unknown = results.get(`group:${snapshot.group.groupId}`);
+        if (result === undefined) {
+            missingGroups.push(snapshot);
+            continue;
+        }
+        validateAuthoritativeGroupSnapshot(result, scope);
+        groups.push(result);
+    }
     return {
-        client: requireWorkflowResult(results, 'client') as ClientStateSnapshot,
-        groups: joinedGroups
-            .map((snapshot) =>
-                results.get(`group:${snapshot.group.groupId}`) as
-                    | GroupStateSnapshot
-                    | undefined
-            )
-            .filter(isDefined),
-        missingGroups: joinedGroups.filter((snapshot) =>
-            results.get(`group:${snapshot.group.groupId}`) === undefined
-        ),
+        client,
+        groups,
+        missingGroups,
         heartbeatAtEpochMs,
         expiresAtEpochMs,
     };

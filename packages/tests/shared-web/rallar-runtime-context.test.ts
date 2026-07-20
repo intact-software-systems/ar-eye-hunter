@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import { createGroupSnapshotFixture } from './authoritative-group-fixtures.ts';
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
 import { createRallarBrowserFacadeRuntimeContext } from '@shared-web/browser/rallar-runtime-context.ts';
 
@@ -119,27 +120,19 @@ describe('Rallar browser facade runtime context', () => {
 });
 
 function createGroupSnapshot(groupId: string): GroupSnapshot {
+    const snapshot = createGroupSnapshotFixture({
+        applicationId: 'app-1',
+        workspaceId: 'workspace-1',
+        groupId,
+        sessionIds: [],
+    });
     return {
+        ...snapshot,
         group: {
-            applicationId: 'app-1',
-            workspaceId: 'workspace-1',
-            groupId,
+            ...snapshot.group,
             displayName: 'Room',
-            kind: 'room',
-            status: 'active',
-            joinMode: 'open',
-            metadata: {},
-            snapshotVersion: 1,
             metadataVersion: 1,
-            rosterVersion: 1,
-            presenceVersion: 1,
-            created: { atEpochMs: 1 },
-            updated: { atEpochMs: 1 },
         },
-        members: [],
-        activeSessions: [],
-        memberCount: 0,
-        onlineMemberCount: 0,
     };
 }
 

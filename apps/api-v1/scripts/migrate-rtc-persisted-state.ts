@@ -14,6 +14,9 @@ import {
   RtcRttRepository,
 } from '@shared-server/rallar-system/repositories/RtcRttRepository.ts';
 import {
+  invalidateLegacyScalarRtcTopologyAuthority,
+} from '@shared-server/rallar-system/repositories/RtcTopologyScalarAuthorityMigration.ts';
+import {
   executeRtcPersistedStateMigration,
   parseRtcPersistedStateMigrationArgs,
   RTC_PERSISTED_STATE_MIGRATION_STEPS,
@@ -42,7 +45,20 @@ if (options.dryRun) {
     const rttRepository = new RtcRttRepository(runtime);
     const oldWritersStopped = options.oldWritersStopped;
     const observedAtEpochMs = Date.now();
+    const scalarAuthorityMigrationId = 'api-v1-group-causal-tuple-v1';
     const result = await executeRtcPersistedStateMigration(options, [
+      {
+        name: 'topology-scalar-authority',
+        run: () =>
+          invalidateLegacyScalarRtcTopologyAuthority(
+            runtime,
+            {
+              oldWritersStopped,
+              migrationId: scalarAuthorityMigrationId,
+              observedAtEpochMs,
+            },
+          ).then(() => undefined),
+      },
       {
         name: 'snapshot-keys',
         run: () =>

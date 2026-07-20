@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type {
+    AuditStamp,
     Group,
     GroupMember,
     GroupPresenceSummary,
@@ -71,7 +72,7 @@ describe('GroupStateSnapshotReadThroughCache', () => {
             ...revisionTwo,
             stateRevision: 99,
             causalRevision: { groupRevision: 3, presenceRevision: 1 },
-        })).toBe('stale');
+        })).toBe('incomparable');
         expect(cache.observe(revisionTwo)).toBe('duplicate');
         expect(() => cache.observe({
             ...revisionTwo,
@@ -111,6 +112,7 @@ describe('GroupStateSnapshotReadThroughCache', () => {
                 if (!stored) throw new Error('Expected persisted session');
                 const committed = await repository.updatePresence({
                     ...stored.value,
+                    status: 'disconnected',
                     disconnectedAtEpochMs: 2_000,
                     disconnectReason: 'client-disconnect',
                 }, stored.entry.revision);
@@ -250,8 +252,13 @@ function createGroupSnapshot(
             principalId: 'alice',
             role: 'owner',
             status: 'active',
-            joined: { atEpochMs: 1 },
-            updated: { atEpochMs: snapshotVersion },
+            invitedByPrincipalId: null,
+            invitationExpiresAtEpochMs: null,
+            left: null,
+            removed: null,
+            banned: null,
+            joined: audit(1),
+            updated: audit(snapshotVersion),
         },
         ...sessionIds.map((sessionId) => ({
             applicationId: 'app-1',
@@ -260,18 +267,29 @@ function createGroupSnapshot(
             principalId: `principal-${sessionId}`,
             role: 'member' as const,
             status: 'active' as const,
-            joined: { atEpochMs: 1 },
-            updated: { atEpochMs: snapshotVersion },
+            invitedByPrincipalId: null,
+            invitationExpiresAtEpochMs: null,
+            left: null,
+            removed: null,
+            banned: null,
+            joined: audit(1),
+            updated: audit(snapshotVersion),
         })),
     ];
     const group: Group = {
         applicationId: 'app-1',
         workspaceId: 'workspace-1',
         groupId: 'group-1',
+        slug: null,
         displayName: 'Group 1',
+        description: null,
         kind: 'room',
         status: 'active',
+        archived: null,
+        deleted: null,
         joinMode: 'open',
+        maxMembers: null,
+        maxSessionsPerMember: null,
         metadata: {},
         activeMemberCount: members.length,
         ownerPrincipalId: 'alice',
@@ -279,8 +297,11 @@ function createGroupSnapshot(
         metadataVersion: 1,
         rosterVersion: 1,
         presenceVersion: snapshotVersion,
-        created: { atEpochMs: 1 },
-        updated: { atEpochMs: snapshotVersion },
+        expiresAtEpochMs: null,
+        emptySinceEpochMs: null,
+        purgeAfterEpochMs: null,
+        created: audit(1),
+        updated: audit(snapshotVersion),
     };
     const activeSessions: GroupPresenceSession[] = sessionIds.map(
         (sessionId) => ({
@@ -294,6 +315,9 @@ function createGroupSnapshot(
             connectedAtEpochMs: 1,
             lastHeartbeatAtEpochMs: snapshotVersion,
             expiresAtEpochMs: 4_000_000_000_000,
+            status: 'active',
+            disconnectedAtEpochMs: null,
+            disconnectReason: null,
         }),
     );
 
@@ -308,5 +332,15 @@ function createGroupSnapshot(
         activeSessions,
         memberCount: members.length,
         onlineMemberCount: sessionIds.length,
+    };
+}
+
+function audit(atEpochMs: number): AuditStamp {
+    return {
+        atEpochMs,
+        actor: { kind: 'service', serviceId: 'test' },
+        reason: null,
+        traceId: null,
+        requestId: null,
     };
 }

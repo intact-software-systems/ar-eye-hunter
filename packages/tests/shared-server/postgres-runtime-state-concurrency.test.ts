@@ -3,7 +3,7 @@ import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvid
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
 import type { RuntimeStateEntry } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
-import type { Group, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { AuditStamp, Group, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import {
     GROUP_TOPOLOGY_CONFIG_NAMESPACE,
     GroupTopologyConfigRepository,
@@ -678,9 +678,10 @@ describe('Postgres runtime-state conditional-write concurrency', () => {
                 const archived: Group = {
                     ...current!.value,
                     status: 'archived',
+                    deleted: null,
                     snapshotVersion: current!.value.snapshotVersion + 1,
-                    updated: { atEpochMs: 2, byPrincipalId: 'owner' },
-                    archived: { atEpochMs: 2, byPrincipalId: 'owner' },
+                    updated: audit(2),
+                    archived: audit(2),
                 };
                 expect(await concurrentGroups.updateGroup(
                     archived,
@@ -889,16 +890,32 @@ function createReadBarrier(parties: number): () => Promise<void> {
     };
 }
 
+function audit(atEpochMs: number): AuditStamp {
+    return {
+        atEpochMs,
+        actor: { kind: 'principal', principalId: 'owner' },
+        reason: null,
+        traceId: null,
+        requestId: null,
+    };
+}
+
 function topologyGroupSnapshot(groupRef: GroupRef): GroupSnapshot {
     return {
         stateRevision: 1,
         causalRevision: { groupRevision: 1, presenceRevision: 0 },
         group: {
             ...groupRef,
+            slug: null,
             displayName: 'Topology concurrency room',
+            description: null,
             kind: 'room',
             status: 'active',
+            archived: null,
+            deleted: null,
             joinMode: 'open',
+            maxMembers: null,
+            maxSessionsPerMember: null,
             metadata: {},
             snapshotVersion: 1,
             metadataVersion: 1,
@@ -906,16 +923,24 @@ function topologyGroupSnapshot(groupRef: GroupRef): GroupSnapshot {
             presenceVersion: 0,
             activeMemberCount: 1,
             ownerPrincipalId: 'owner',
-            created: { atEpochMs: 1, byPrincipalId: 'owner' },
-            updated: { atEpochMs: 1, byPrincipalId: 'owner' },
+            expiresAtEpochMs: null,
+            emptySinceEpochMs: null,
+            purgeAfterEpochMs: null,
+            created: audit(1),
+            updated: audit(1),
         },
         members: [{
             ...groupRef,
             principalId: 'owner',
             role: 'owner',
             status: 'active',
-            joined: { atEpochMs: 1, byPrincipalId: 'owner' },
-            updated: { atEpochMs: 1, byPrincipalId: 'owner' },
+            invitedByPrincipalId: null,
+            invitationExpiresAtEpochMs: null,
+            left: null,
+            removed: null,
+            banned: null,
+            joined: audit(1),
+            updated: audit(1),
         }],
         activeSessions: [],
         memberCount: 1,
@@ -931,7 +956,10 @@ function topologyExecutionFixture(
     publication: ReturnType<typeof topologyPublication>;
 }> {
     const candidate: RallarOverlayTopologySnapshot = {
-        sourceGroupStateRevision: 1,
+        sourceGroupStateCausalRevision: {
+            groupRevision: 1,
+            presenceRevision: 0,
+        },
         state: 'active',
         overlayId: JSON.stringify([groupRef.applicationId, groupRef.workspaceId ?? '', groupRef.groupId]),
         groupRef,
@@ -960,7 +988,7 @@ function topologyPublication(
         newALRoute(
             AppTopics.overlayTopology,
             snapshot.groupRef.groupId,
-            `${snapshot.overlayId}:${snapshot.sourceGroupStateRevision}:${snapshot.version}`,
+            `${snapshot.overlayId}:${snapshot.sourceGroupStateCausalRevision.groupRevision}:${snapshot.sourceGroupStateCausalRevision.presenceRevision}:${snapshot.version}`,
         ),
         'room',
         AppTopics.overlayTopology,
@@ -973,10 +1001,10 @@ function topologyPublication(
         },
     );
     return {
-        publicationId: `${workId}:${snapshot.sourceGroupStateRevision}:${snapshot.version}`,
+        publicationId: `${workId}:${snapshot.sourceGroupStateCausalRevision.groupRevision}:${snapshot.sourceGroupStateCausalRevision.presenceRevision}:${snapshot.version}`,
         workId,
         groupRef: snapshot.groupRef,
-        sourceGroupStateRevision: snapshot.sourceGroupStateRevision,
+        sourceGroupStateCausalRevision: snapshot.sourceGroupStateCausalRevision,
         overlayVersion: snapshot.version,
         targetGroupSnapshotVersion: 1,
         recipientSessionIds: snapshot.activeSessionIds,
@@ -1008,8 +1036,13 @@ function rttGroupSnapshot(
             principalId: sessionId,
             role: index === 0 ? 'owner' as const : 'member' as const,
             status: 'active' as const,
-            joined: { atEpochMs: 1, byPrincipalId: 'owner' },
-            updated: { atEpochMs: 1, byPrincipalId: 'owner' },
+            invitedByPrincipalId: null,
+            invitationExpiresAtEpochMs: null,
+            left: null,
+            removed: null,
+            banned: null,
+            joined: audit(1),
+            updated: audit(1),
         })),
         activeSessions: sessionIds.map((sessionId) => ({
             ...groupRef,
@@ -1020,6 +1053,9 @@ function rttGroupSnapshot(
             connectedAtEpochMs: 1,
             lastHeartbeatAtEpochMs: 1,
             expiresAtEpochMs: 60_001,
+            status: 'active' as const,
+            disconnectedAtEpochMs: null,
+            disconnectReason: null,
         })),
         memberCount: sessionIds.length,
         onlineMemberCount: sessionIds.length,

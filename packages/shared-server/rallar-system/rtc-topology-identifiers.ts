@@ -1,5 +1,5 @@
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
-import type { GroupRef } from '@shared/api/group-types.ts';
+import type { GroupRef, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 
 /** Exact UTF-16 code-unit order for durable RTC topology identities. */
 export function compareRtcTopologyIdentifiers(
@@ -58,12 +58,13 @@ export function toRtcTopologyPublicationMessageId(workId: string): string {
 
 export function toRtcTopologyPublicationId(input: Readonly<{
     workId: string;
-    sourceGroupStateRevision: number;
+    sourceGroupStateCausalRevision: GroupStateCausalRevision;
     overlayVersion: number;
 }>): string {
     return [
         input.workId,
-        input.sourceGroupStateRevision,
+        input.sourceGroupStateCausalRevision.groupRevision,
+        input.sourceGroupStateCausalRevision.presenceRevision,
         input.overlayVersion,
     ].join(':');
 }

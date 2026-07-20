@@ -70,7 +70,7 @@ export function evaluateRtcRttMeasurement(input: {
 
     const sharedActiveGroups = input.candidateGroups.filter((group) =>
         group.group.status === 'active' &&
-        (group.group.expiresAtEpochMs === undefined ||
+        (group.group.expiresAtEpochMs === null ||
             group.group.expiresAtEpochMs > input.requestedAtEpochMs) &&
         groupIncludesLivePairAt(
             group,

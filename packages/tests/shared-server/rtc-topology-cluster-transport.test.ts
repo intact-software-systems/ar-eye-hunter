@@ -7,7 +7,13 @@ import {
 } from '@shared/mod.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
-import { RtcTopologyPublicationRepository } from '@shared-server/rallar-system/repositories/RtcTopologyPublicationRepository.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
+import {
+    hashRtcTopologyExecutionCommand,
+    RtcTopologyPublicationRepository,
+    type RtcTopologyPublication,
+} from '@shared-server/rallar-system/repositories/RtcTopologyPublicationRepository.ts';
+import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/repositories/RtcTopologySnapshotRepository.ts';
 import { toRtcTopologyPublicationMessageId } from '@shared-server/rallar-system/rtc-topology-identifiers.ts';
 import {
     createLocalRtcTopologyClusterBus,
@@ -19,9 +25,8 @@ import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 
 describe('RTC topology cluster publication fanout', () => {
     it('loads a durable publication and delivers only to local recipients on every server', async () => {
-        const repository = new RtcTopologyPublicationRepository(
-            new FakeRuntimeStateRepository(),
-        );
+        const runtime = new FakeRuntimeStateRepository();
+        const repository = new RtcTopologyPublicationRepository(runtime);
         const bus = createLocalRtcTopologyClusterBus();
         const serverA = new JsonWebSocketServer();
         const serverB = new JsonWebSocketServer();
@@ -49,17 +54,20 @@ describe('RTC topology cluster publication fanout', () => {
         const snapshot = topologySnapshot(['session-a', 'session-b']);
         const message = topologyPublicationMessage(snapshot, 'work-1');
         const publication = {
-            publicationId: 'work-1:4:2',
+            publicationId: 'work-1:4:0:2',
             workId: 'work-1',
             groupRef: snapshot.groupRef,
-            sourceGroupStateRevision: 4,
+            sourceGroupStateCausalRevision: {
+                groupRevision: 4,
+                presenceRevision: 0,
+            },
             overlayVersion: 2,
             targetGroupSnapshotVersion: 1,
             recipientSessionIds: ['session-a', 'session-b'],
             message,
             createdAtEpochMs: message.id.ts,
         };
-        await repository.putOrLoad(publication);
+        await putOrLoadPublication(repository, runtime, snapshot, publication);
 
         expect(await fanoutA.publish(publication)).toBe(1);
 
@@ -77,9 +85,8 @@ describe('RTC topology cluster publication fanout', () => {
     });
 
     it('accepts exact legacy v1 notifications through validated global lookup', async () => {
-        const repository = new RtcTopologyPublicationRepository(
-            new FakeRuntimeStateRepository(),
-        );
+        const runtime = new FakeRuntimeStateRepository();
+        const repository = new RtcTopologyPublicationRepository(runtime);
         const bus = createLocalRtcTopologyClusterBus();
         const transport = createLocalRtcTopologyClusterTransport(bus);
         const server = new JsonWebSocketServer();
@@ -95,17 +102,20 @@ describe('RTC topology cluster publication fanout', () => {
         const snapshot = topologySnapshot(['session-b']);
         const message = topologyPublicationMessage(snapshot, 'work-legacy');
         const publication = {
-            publicationId: 'work-legacy:4:2',
+            publicationId: 'work-legacy:4:0:2',
             workId: 'work-legacy',
             groupRef: snapshot.groupRef,
-            sourceGroupStateRevision: 4,
+            sourceGroupStateCausalRevision: {
+                groupRevision: 4,
+                presenceRevision: 0,
+            },
             overlayVersion: 2,
             targetGroupSnapshotVersion: 1,
             recipientSessionIds: ['session-b'],
             message,
             createdAtEpochMs: message.id.ts,
         };
-        await repository.putOrLoad(publication);
+        await putOrLoadPublication(repository, runtime, snapshot, publication);
 
         await transport.publish('rallar_rtc_topology_publication', {
             v: 1,
@@ -124,10 +134,9 @@ describe('RTC topology cluster publication fanout', () => {
         })).toBe(false);
     });
 
-    it('uses v2 scope to distinguish absent workspace from literal underscore', async () => {
-        const repository = new RtcTopologyPublicationRepository(
-            new FakeRuntimeStateRepository(),
-        );
+    it('uses v2 scope to distinguish required workspace values', async () => {
+        const runtime = new FakeRuntimeStateRepository();
+        const repository = new RtcTopologyPublicationRepository(runtime);
         const bus = createLocalRtcTopologyClusterBus();
         const transport = createLocalRtcTopologyClusterTransport(bus);
         const server = new JsonWebSocketServer();
@@ -139,23 +148,28 @@ describe('RTC topology cluster publication fanout', () => {
             publisherId: 'server-b', repository, transport, server,
         });
         await fanout.readiness;
-        const absentRef = { applicationId: 'app-1', groupId: 'room-1' };
+        const absentRef = {
+            applicationId: 'app-1', workspaceId: 'workspace-absent', groupId: 'room-1',
+        };
         const literalRef = {
             applicationId: 'app-1', workspaceId: '_', groupId: 'room-1',
         };
         const absentSnapshot = topologySnapshotForGroup(['session-absent'], absentRef);
         const literalSnapshot = topologySnapshotForGroup(['session-literal'], literalRef);
-        const publicationId = 'work-scoped:4:2';
+        const publicationId = 'work-scoped:4:0:2';
         for (const [workId, snapshot, recipient] of [
             ['work-scoped', absentSnapshot, 'session-absent'],
             ['work-scoped', literalSnapshot, 'session-literal'],
         ] as const) {
             const message = topologyPublicationMessage(snapshot, workId);
-            await repository.putOrLoad({
+            await putOrLoadPublication(repository, runtime, snapshot, {
                 publicationId,
                 workId,
                 groupRef: snapshot.groupRef,
-                sourceGroupStateRevision: 4,
+                sourceGroupStateCausalRevision: {
+                    groupRevision: 4,
+                    presenceRevision: 0,
+                },
                 overlayVersion: 2,
                 targetGroupSnapshotVersion: 1,
                 recipientSessionIds: [recipient],
@@ -169,7 +183,10 @@ describe('RTC topology cluster publication fanout', () => {
             publisherId: 'server-a',
             groupRef: literalRef,
             publicationId,
-            sourceGroupStateRevision: 4,
+            sourceGroupStateCausalRevision: {
+                groupRevision: 4,
+                presenceRevision: 0,
+            },
         });
 
         expect(absentSocket.sent).toHaveLength(0);
@@ -196,14 +213,17 @@ describe('RTC topology cluster publication fanout', () => {
         });
         await fanout.readiness;
         const publication = {
-            publicationId: 'work-1:4:2',
+            publicationId: 'work-1:4:0:2',
             workId: 'work-1',
             groupRef: {
                 applicationId: 'app-1',
                 workspaceId: 'workspace-1',
                 groupId: 'room-1',
             },
-            sourceGroupStateRevision: 4,
+            sourceGroupStateCausalRevision: {
+                groupRevision: 4,
+                presenceRevision: 0,
+            },
             overlayVersion: 2,
             targetGroupSnapshotVersion: 1,
             recipientSessionIds: ['session-a', 'session-a', 'missing-session'],
@@ -212,7 +232,12 @@ describe('RTC topology cluster publication fanout', () => {
                 newALRoute('overlay-topology', 'room-1', 'publication-1'),
                 'room',
                 'overlay-topology',
-                { sourceGroupStateRevision: 4 },
+                {
+                    sourceGroupStateCausalRevision: {
+                        groupRevision: 4,
+                        presenceRevision: 0,
+                    },
+                },
             ),
             createdAtEpochMs: Date.now(),
         };
@@ -223,6 +248,25 @@ describe('RTC topology cluster publication fanout', () => {
         expect(broadcast).not.toHaveBeenCalled();
     });
 });
+
+async function putOrLoadPublication(
+    repository: RtcTopologyPublicationRepository,
+    runtime: FakeRuntimeStateRepository,
+    snapshot: RallarOverlayTopologySnapshot,
+    publication: RtcTopologyPublication,
+) {
+    const snapshots = new RtcTopologySnapshotRepository(runtime);
+    await snapshots.observeSnapshot(snapshot);
+    const accepted = await snapshots.findSnapshotEntry(snapshot.groupRef);
+    if (!accepted) {
+        throw new Error('Expected accepted topology snapshot fixture');
+    }
+    return await repository.putOrLoad(publication, {
+        commandHash: await hashRtcTopologyExecutionCommand(publication),
+        attemptCount: 1,
+        acceptedStorageRevision: accepted.entry.revision,
+    });
+}
 
 class FakeSocket {
     readonly readyState = WebSocket.OPEN;
@@ -252,7 +296,7 @@ function topologyPublicationMessage(
         newALRoute(
             AppTopics.overlayTopology,
             snapshot.groupRef.groupId,
-            `${snapshot.overlayId}:${snapshot.sourceGroupStateRevision}:${snapshot.version}`,
+            `${snapshot.overlayId}:${snapshot.sourceGroupStateCausalRevision.groupRevision}:${snapshot.sourceGroupStateCausalRevision.presenceRevision}:${snapshot.version}`,
         ),
         'room',
         AppTopics.overlayTopology,
@@ -264,25 +308,24 @@ function topologyPublicationMessage(
             ack: 'none',
         },
     );
-    return {
+    return JSON.parse(JSON.stringify({
         ...message,
         id: {
             ...message.id,
             msgId: toRtcTopologyPublicationMessageId(workId),
         },
-    };
+    }));
 }
 
 function topologySnapshotForGroup(
     activeSessionIds: readonly string[],
-    groupRef: Readonly<{
-        applicationId: string;
-        workspaceId?: string;
-        groupId: string;
-    }>,
-) {
+    groupRef: GroupRef,
+): RallarOverlayTopologySnapshot {
     return {
-        sourceGroupStateRevision: 4,
+        sourceGroupStateCausalRevision: {
+            groupRevision: 4,
+            presenceRevision: 0,
+        },
         state: 'active' as const,
         overlayId: JSON.stringify([
             groupRef.applicationId, groupRef.workspaceId ?? '', groupRef.groupId,

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { ClientSession, ClientSnapshot } from '@shared/api/client-types.ts';
 import type {
+    AuditStamp,
     GroupEvent,
     GroupMember,
     GroupPresenceSession,
@@ -429,6 +430,8 @@ function createService(input: TestServiceInput): SpaStatisticsService {
                             isOnline: clients[ref.principalId]?.isOnline ?? false,
                             presenceState: clients[ref.principalId]?.isOnline ? 'online' : 'offline',
                             activeSessions: clients[ref.principalId]?.activeSessions ?? [],
+                            lastSeenAtEpochMs:
+                                clients[ref.principalId]?.lastSeenAtEpochMs ?? null,
                         }
                         : undefined,
                 ),
@@ -446,18 +449,14 @@ function createService(input: TestServiceInput): SpaStatisticsService {
             },
             readSnapshot: (ref) =>
                 Promise.resolve(groups.find((group) => group.group.groupId === ref.groupId)),
+            listEvents: (ref) => Promise.resolve(Array.from(
+                { length: groupEventCounts[ref.groupId] ?? 0 },
+                (_, index) => createGroupEvent(ref.groupId, index),
+            )),
             listRecentEvents: (ref, query) =>
                 Promise.resolve(Array.from(
                     { length: Math.min(groupEventCounts[ref.groupId] ?? 0, query.limit ?? 20) },
-                    (_, index) => ({
-                        ...TEST_SCOPE,
-                        groupId: ref.groupId,
-                        eventId: `${ref.groupId}-event-${index}`,
-                        eventType: 'session-connected' as const,
-                        snapshotVersion: index + 1,
-                        occurredAtEpochMs: NOW_EPOCH_MS + index,
-                        actor: {},
-                    }),
+                    (_, index) => createGroupEvent(ref.groupId, index),
                 )),
         },
         wsStatus: () => ({
@@ -488,12 +487,17 @@ function createClientSnapshot(
     principalId: string,
     sessionIds: readonly string[],
 ): ClientSnapshot {
+    const audit = createAuditStamp();
     const sessions: readonly ClientSession[] = sessionIds.map((sessionId) => ({
         ...TEST_SCOPE,
         principalId,
         clientInstanceId: `${principalId}-instance`,
         sessionId,
+        generationId: `${sessionId}-generation`,
+        generationVersion: 1,
         status: 'active',
+        disconnectedAtEpochMs: null,
+        disconnectReason: null,
         presenceState: 'online',
         transport: 'ws',
         connectionId: sessionId,
@@ -504,19 +508,25 @@ function createClientSnapshot(
     }));
 
     return {
+        stateRevision: 1,
         principal: {
             ...TEST_SCOPE,
             principalId,
             username: principalId,
             displayName: principalId,
+            avatarUrl: null,
+            authProvider: null,
+            externalSubjectId: null,
             status: 'active',
+            disabled: null,
+            deleted: null,
             roles: [],
             metadata: {},
             snapshotVersion: 1,
             profileVersion: 1,
             presenceVersion: 1,
-            created: { atEpochMs: NOW_EPOCH_MS },
-            updated: { atEpochMs: NOW_EPOCH_MS },
+            created: audit,
+            updated: audit,
             lastSeenAtEpochMs: NOW_EPOCH_MS,
         },
         instances: [],
@@ -532,14 +542,20 @@ function createGroupSnapshot(
     members: readonly (readonly [string, GroupRole])[],
     sessions: readonly (readonly [string, string])[] = [],
 ): GroupSnapshot {
+    const audit = createAuditStamp();
     const groupMembers: readonly GroupMember[] = members.map(([principalId, role]) => ({
         ...TEST_SCOPE,
         groupId,
         principalId,
         role,
         status: 'active',
-        joined: { atEpochMs: NOW_EPOCH_MS },
-        updated: { atEpochMs: NOW_EPOCH_MS },
+        joined: audit,
+        updated: audit,
+        invitedByPrincipalId: null,
+        invitationExpiresAtEpochMs: null,
+        left: null,
+        removed: null,
+        banned: null,
     }));
     const activeSessions: readonly GroupPresenceSession[] = sessions.map((
         [principalId, sessionId],
@@ -548,30 +564,75 @@ function createGroupSnapshot(
         groupId,
         principalId,
         sessionId,
+        generationId: `${sessionId}-generation`,
+        generationVersion: 1,
+        status: 'active',
+        disconnectedAtEpochMs: null,
+        disconnectReason: null,
         connectedAtEpochMs: NOW_EPOCH_MS,
         lastHeartbeatAtEpochMs: NOW_EPOCH_MS,
         expiresAtEpochMs: NOW_EPOCH_MS + 60_000,
     }));
 
     return {
+        stateRevision: 1,
+        causalRevision: { groupRevision: 1, presenceRevision: 1 },
         group: {
             ...TEST_SCOPE,
             groupId,
+            slug: null,
             displayName: `Room ${groupId}`,
+            description: null,
             kind: 'room',
             status: 'active',
+            archived: null,
+            deleted: null,
             joinMode: 'invite-only',
+            maxMembers: null,
+            maxSessionsPerMember: null,
             metadata: {},
+            activeMemberCount: groupMembers.length,
+            ownerPrincipalId: 'owner',
             snapshotVersion: 1,
             metadataVersion: 1,
             rosterVersion: 1,
             presenceVersion: 1,
-            created: { atEpochMs: NOW_EPOCH_MS },
-            updated: { atEpochMs: NOW_EPOCH_MS },
+            created: audit,
+            updated: audit,
+            expiresAtEpochMs: null,
+            emptySinceEpochMs: null,
+            purgeAfterEpochMs: null,
         },
         members: groupMembers,
         activeSessions,
         memberCount: groupMembers.length,
         onlineMemberCount: new Set(activeSessions.map((session) => session.principalId)).size,
+    };
+}
+
+function createAuditStamp(): AuditStamp {
+    return {
+        atEpochMs: NOW_EPOCH_MS,
+        actor: { kind: 'service', serviceId: 'test' },
+        reason: null,
+        traceId: null,
+        requestId: null,
+    };
+}
+
+function createGroupEvent(groupId: string, index: number): GroupEvent {
+    return {
+        ...TEST_SCOPE,
+        groupId,
+        eventId: `${groupId}-event-${index}`,
+        eventType: 'session-connected',
+        snapshotVersion: index + 1,
+        causalRevision: { groupRevision: index + 1, presenceRevision: index + 1 },
+        occurredAtEpochMs: NOW_EPOCH_MS + index,
+        actor: { kind: 'service', serviceId: 'test' },
+        reason: null,
+        traceId: null,
+        requestId: null,
+        payload: {},
     };
 }

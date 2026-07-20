@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
-import type { GroupEvent, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { AuditStamp, GroupEvent, GroupSnapshot } from '@shared/api/group-types.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
@@ -609,14 +609,14 @@ describe('StateMutationOutboxRepository', () => {
                 name: 'client actor',
                 kind: 'client',
                 mutate: (event) => ({ ...event, actor: undefined }),
-                error: 'Client outbox event actor is required',
+                error: 'Client outbox event fields are invalid',
                 builderError: 'State mutation outbox input must be JSON-safe',
             },
             {
                 name: 'client empty actor',
                 kind: 'client',
                 mutate: (event) => ({ ...event, actor: {} }),
-                error: 'Client outbox event actor identity is required',
+                error: 'Client outbox event actor shape is invalid',
             },
             {
                 name: 'group event object',
@@ -650,7 +650,7 @@ describe('StateMutationOutboxRepository', () => {
                     ...event,
                     actor: { serviceId: '' },
                 }),
-                error: 'Invalid group outbox event actor serviceId',
+                error: 'Group outbox event actor shape is invalid',
             },
         ];
 
@@ -932,7 +932,7 @@ describe('StateMutationOutboxRepository', () => {
                         },
                     },
                 }),
-                error: 'Invalid client outbox event actor principalId',
+                error: 'Client outbox event actor shape is invalid',
             },
             {
                 name: 'blank actor service id',
@@ -946,7 +946,7 @@ describe('StateMutationOutboxRepository', () => {
                         },
                     },
                 }),
-                error: 'Invalid client outbox event actor serviceId',
+                error: 'Client outbox event actor shape is invalid',
             },
             {
                 name: 'numeric actor service id',
@@ -960,7 +960,7 @@ describe('StateMutationOutboxRepository', () => {
                         },
                     },
                 }),
-                error: 'Invalid client outbox event actor serviceId',
+                error: 'Client outbox event actor shape is invalid',
             },
             {
                 name: 'object actor service id',
@@ -974,7 +974,7 @@ describe('StateMutationOutboxRepository', () => {
                         },
                     },
                 }),
-                error: 'Invalid client outbox event actor serviceId',
+                error: 'Client outbox event actor shape is invalid',
             },
             {
                 name: 'object request id',
@@ -1222,7 +1222,7 @@ describe('StateMutationOutboxRepository', () => {
                         },
                     },
                 }),
-                error: 'Invalid client outbox event actor serviceId',
+                error: 'Client outbox event actor shape is invalid',
             },
             {
                 name: 'blank actor service id',
@@ -1236,7 +1236,7 @@ describe('StateMutationOutboxRepository', () => {
                         },
                     },
                 }),
-                error: 'Invalid client outbox event actor serviceId',
+                error: 'Client outbox event actor shape is invalid',
             },
             {
                 name: 'object actor service id',
@@ -1250,7 +1250,7 @@ describe('StateMutationOutboxRepository', () => {
                         },
                     },
                 }),
-                error: 'Invalid client outbox event actor serviceId',
+                error: 'Client outbox event actor shape is invalid',
             },
             {
                 name: 'array actor service id',
@@ -1264,7 +1264,7 @@ describe('StateMutationOutboxRepository', () => {
                         },
                     },
                 }),
-                error: 'Invalid client outbox event actor serviceId',
+                error: 'Client outbox event actor shape is invalid',
             },
             {
                 name: 'numeric retry error',
@@ -2884,7 +2884,11 @@ function createWork(
 
 function createStateSyncPublisher() {
     return {
-        publishClientSnapshot: vi.fn(async () => undefined),
+        publishClientSnapshot: vi.fn(async (
+            _snapshot: ClientSnapshot,
+            _senderId?: string,
+            _deliveryId?: string,
+        ) => undefined),
         publishClientEvent: vi.fn(async () => undefined),
         publishGroupSnapshot: vi.fn(async () => undefined),
         publishGroupEvent: vi.fn(async () => undefined),
@@ -2892,6 +2896,8 @@ function createStateSyncPublisher() {
 }
 
 function createClientSnapshot(stateRevision: number): ClientSnapshot {
+    const created = createAuditStamp(1);
+    const updated = createAuditStamp(stateRevision);
     return {
         stateRevision,
         principal: {
@@ -2900,19 +2906,26 @@ function createClientSnapshot(stateRevision: number): ClientSnapshot {
             principalId: 'alice',
             username: 'alice',
             displayName: 'Alice',
+            avatarUrl: null,
+            authProvider: null,
+            externalSubjectId: null,
             status: 'active',
+            disabled: null,
+            deleted: null,
             roles: [],
             metadata: {},
             snapshotVersion: stateRevision,
             profileVersion: stateRevision,
             presenceVersion: stateRevision,
-            created: { atEpochMs: 1, byServiceId: 'test' },
-            updated: { atEpochMs: stateRevision, byServiceId: 'test' },
+            created,
+            updated,
+            lastSeenAtEpochMs: null,
         },
         instances: [],
         activeSessions: [],
         isOnline: false,
         activeSessionCount: 0,
+        lastSeenAtEpochMs: null,
     };
 }
 
@@ -2925,29 +2938,51 @@ function createClientEvent(snapshotVersion: number): ClientEvent {
         eventType: 'principal-updated',
         snapshotVersion,
         occurredAtEpochMs: snapshotVersion,
-        actor: { serviceId: 'test' },
+        actor: { kind: 'service', serviceId: 'test' },
+        reason: null,
+        traceId: null,
         requestId: 'command-1',
+        clientInstanceId: null,
+        sessionId: null,
+        payload: {},
     };
 }
 
 function createGroupSnapshot(stateRevision: number): GroupSnapshot {
+    const created = createAuditStamp(1);
+    const updated = createAuditStamp(stateRevision);
     return {
         stateRevision,
+        causalRevision: {
+            groupRevision: stateRevision,
+            presenceRevision: 0,
+        },
         group: {
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
             groupId: 'room-1',
+            slug: null,
             displayName: 'Room 1',
+            description: null,
             kind: 'room',
             status: 'active',
+            archived: null,
+            deleted: null,
             joinMode: 'open',
+            maxMembers: null,
+            maxSessionsPerMember: null,
             metadata: {},
+            activeMemberCount: 0,
+            ownerPrincipalId: 'owner',
             snapshotVersion: stateRevision,
             metadataVersion: stateRevision,
             rosterVersion: stateRevision,
-            presenceVersion: stateRevision,
-            created: { atEpochMs: 1, byServiceId: 'test' },
-            updated: { atEpochMs: stateRevision, byServiceId: 'test' },
+            presenceVersion: 0,
+            created,
+            updated,
+            expiresAtEpochMs: null,
+            emptySinceEpochMs: null,
+            purgeAfterEpochMs: null,
         },
         members: [],
         activeSessions: [],
@@ -2964,9 +2999,26 @@ function createGroupEvent(snapshotVersion: number): GroupEvent {
         eventId: `group-event-${snapshotVersion}`,
         eventType: 'group-updated',
         snapshotVersion,
+        causalRevision: {
+            groupRevision: snapshotVersion,
+            presenceRevision: 0,
+        },
         occurredAtEpochMs: snapshotVersion,
-        actor: { serviceId: 'test' },
+        actor: { kind: 'service', serviceId: 'test' },
+        reason: null,
+        traceId: null,
         requestId: 'group-command-1',
+        payload: {},
+    };
+}
+
+function createAuditStamp(atEpochMs: number): AuditStamp {
+    return {
+        atEpochMs,
+        actor: { kind: 'service', serviceId: 'test' },
+        reason: null,
+        traceId: null,
+        requestId: null,
     };
 }
 

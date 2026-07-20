@@ -7,7 +7,10 @@ import type {
     ConnectClientSessionRequest,
     StateScope,
 } from '@shared/api/state-types.ts';
-import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
+import {
+    ClientStateRepository,
+    ClientStateRepositoryInvariantCorruptionError,
+} from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
 import { STATE_MUTATION_OUTBOX_NAMESPACE } from '@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts';
 import {
     ClientMutationIdempotencyConflictError,
@@ -42,6 +45,36 @@ const SCOPE: StateScope = {
 const BASE_EPOCH_MS = Date.now();
 
 describe('convergent client state', () => {
+    it('binds instance and session aggregate audit stamps to the command request id', async () => {
+        const runtime = new AggregateBarrierRepository();
+        await createService(runtime, BASE_EPOCH_MS).upsertPrincipal(SCOPE, 'alice', {
+            username: 'alice',
+            requestId: 'audit-seed',
+        });
+        await createService(runtime, BASE_EPOCH_MS + 1).upsertInstance(
+            SCOPE,
+            'alice',
+            'browser',
+            { platform: 'web', requestId: 'audit-instance' },
+        );
+        expect((await snapshot(runtime, 'alice')).principal.updated.requestId)
+            .toBe('audit-instance');
+
+        await createService(runtime, BASE_EPOCH_MS + 2).connectSession(
+            SCOPE,
+            'alice',
+            'browser',
+            'session-a',
+            {
+                generationId: 'audit-generation',
+                connectedAtEpochMs: BASE_EPOCH_MS + 2,
+                requestId: 'audit-session',
+            },
+        );
+        expect((await snapshot(runtime, 'alice')).principal.updated.requestId)
+            .toBe('audit-session');
+    });
+
     it('keeps principal profile and instance registration across an aggregate CAS race', async () => {
         const runtime = new AggregateBarrierRepository();
         const seed = createService(runtime, 1_000);
@@ -365,6 +398,7 @@ describe('convergent client state', () => {
             serviceId: 'client-service',
             eventId: 'event-1',
             commandHash: `sha256:${'a'.repeat(64)}`,
+            attemptCount: 1,
         });
 
         const first = computeClientMutation({ command, read, facts });
@@ -652,12 +686,22 @@ describe('convergent client state', () => {
             invalidComputed.session.operation === 'none') {
             throw new Error('Expected a session write');
         }
-        invalidComputed.session.value.expiresAtEpochMs =
-            invalidComputed.session.value.lastHeartbeatAtEpochMs - 1;
+        const invalidSessionValue = {
+            ...invalidComputed.session.value,
+            expiresAtEpochMs:
+                invalidComputed.session.value.lastHeartbeatAtEpochMs - 1,
+        };
+        const invalidSessionComputed = {
+            ...invalidComputed,
+            session: {
+                ...invalidComputed.session,
+                value: invalidSessionValue,
+            },
+        };
         expect(() => validateClientMutation({
             command: validConnect,
             read: { idempotency: null, principal: null, instance: null, session: null },
-            computed: invalidComputed,
+            computed: invalidSessionComputed,
             facts: validFacts(),
         })).toThrow(ClientMutationRejectedError);
 
@@ -703,7 +747,7 @@ describe('convergent client state', () => {
                 expiresAtEpochMs: BASE_EPOCH_MS + 60_000,
                 requestId: 'reject-corrupt-stored-session',
             },
-        )).rejects.toMatchObject({ status: 400 });
+        )).rejects.toBeInstanceOf(ClientStateRepositoryInvariantCorruptionError);
         expect([...runtime.data.entries()]).toEqual(corruptBefore);
     });
 
@@ -841,6 +885,7 @@ function validFacts(): ClientMutationFacts {
         serviceId: 'client-service',
         eventId: 'event-1',
         commandHash: `sha256:${'a'.repeat(64)}`,
+        attemptCount: 1,
     };
 }
 
@@ -868,7 +913,7 @@ class AggregateBarrierRepository extends FakeRuntimeStateRepository {
     private principalReadsRemaining = 0;
     private principalReadsArrived = 0;
     private releasePrincipalReads: (() => void) | undefined;
-    private transactionTail: Promise<void> = Promise.resolve();
+    private aggregateTransactionTail: Promise<void> = Promise.resolve();
     private outboxConflictsRemaining = 0;
 
     failNextOutboxInsert(): void {
@@ -904,8 +949,8 @@ class AggregateBarrierRepository extends FakeRuntimeStateRepository {
         fn: (repository: RuntimeStateOptimisticTransactionalRepositoryLike) => Promise<T>,
     ): Promise<T> {
         let release!: () => void;
-        const previous = this.transactionTail;
-        this.transactionTail = new Promise<void>((resolve) => {
+        const previous = this.aggregateTransactionTail;
+        this.aggregateTransactionTail = new Promise<void>((resolve) => {
             release = resolve;
         });
         await previous;

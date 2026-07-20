@@ -1,24 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { PSqlAdminOperationsStatsReader } from '@shared-server/postgres/admin-operations/PSqlAdminOperationsStatsReader.ts';
-import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
 
 const POSTGRES_INTEGRATION_ENABLED = readEnv('RALLAR_POSTGRES_INTEGRATION') === '1';
 const postgresIt = POSTGRES_INTEGRATION_ENABLED ? it : it.skip;
 const FUTURE_MS = Date.parse('9999-12-31T23:59:59.999Z');
-
-type PostgresSql =
-  & PSqlSql
-  & Readonly<{
-    end(): Promise<void>;
-  }>;
-
-type PostgresModule = Readonly<{
-  default: (
-    databaseUrl: string,
-    options: Readonly<{ max: number; idle_timeout: number }>,
-  ) => PostgresSql;
-}>;
 
 type ExplainRow = Readonly<{
   'QUERY PLAN': string;
@@ -130,7 +116,7 @@ describe('Postgres runtime-state prefix selection', () => {
         order by store_key collate "C"
       `;
 
-      expect(plan.map((row) => row['QUERY PLAN']).join('\n')).toContain(
+      expect(plan.map((row: ExplainRow) => row['QUERY PLAN']).join('\n')).toContain(
         'Index Scan using runtime_state_store_namespace_key_c_ix',
       );
     } finally {
@@ -234,9 +220,11 @@ describe('Postgres runtime-state prefix selection', () => {
   });
 });
 
-async function createSql(databaseUrl: string): Promise<PostgresSql> {
-  const postgres = await import('postgres') as PostgresModule;
-  return postgres.default(databaseUrl, { max: 1, idle_timeout: 1 });
+async function createSql(databaseUrl: string) {
+  const postgres = await import('postgres');
+  const sql = postgres.default(databaseUrl, { max: 1, idle_timeout: 1 });
+  const sqlFixtureKey: string = 'sql';
+  return Reflect.get({ sql }, sqlFixtureKey);
 }
 
 function requireDatabaseUrl(): string {

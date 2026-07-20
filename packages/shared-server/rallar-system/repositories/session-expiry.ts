@@ -6,7 +6,7 @@ export const STATE_SESSION_PURGE_GRACE_MSECS = 24 * 60 * 60 * 1000;
 
 export type ClientSessionExpiryCandidate = Readonly<{
     applicationId: string;
-    workspaceId: string | null;
+    workspaceId: string;
     principalId: string;
     clientInstanceId: string;
     sessionId: string;
@@ -20,7 +20,7 @@ export function toClientSessionExpiryCandidate(
 ): ClientSessionExpiryCandidate {
     return {
         applicationId: session.applicationId,
-        workspaceId: session.workspaceId ?? null,
+        workspaceId: session.workspaceId,
         principalId: session.principalId,
         clientInstanceId: session.clientInstanceId,
         sessionId: session.sessionId,
@@ -32,7 +32,7 @@ export function toClientSessionExpiryCandidate(
 
 export function toSessionPurgeAfterEpochMs(
     expiresAtEpochMs: number,
-    disconnectedAtEpochMs?: number,
+    disconnectedAtEpochMs?: number | null,
 ): number {
     const logicalExpiry = Math.max(expiresAtEpochMs, disconnectedAtEpochMs ?? 0);
 

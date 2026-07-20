@@ -9,7 +9,12 @@ import {
     readRallarGroupDirectorFromSnapshot,
     resolveRallarGroupDirectorAppointmentEligibility,
 } from '@shared/api/group-director.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import type {
+    AuditStamp,
+    GroupMember,
+    GroupPresenceSession,
+    GroupSnapshot,
+} from '@shared/api/group-types.ts';
 
 describe('Rallar group director metadata', () => {
     it('creates appointments with incremented epochs and preserves metadata', () => {
@@ -191,6 +196,7 @@ describe('Rallar group director metadata', () => {
     it('denies inactive members', () => {
         const snapshot = createPolicySnapshot({
             members: [
+                { principalId: 'owner-1', role: 'owner', status: 'active' },
                 { principalId: 'member-1', role: 'member', status: 'left' },
             ],
             activeSessions: [
@@ -216,21 +222,34 @@ function createSnapshot(
     appointment: ReturnType<typeof createRallarGroupDirectorAppointment>,
 ): GroupSnapshot {
     return {
+        stateRevision: 1,
+        causalRevision: { groupRevision: 1, presenceRevision: 1 },
         group: {
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
             groupId: 'room-1',
+            slug: 'room-1',
             displayName: 'room-1',
+            description: null,
             kind: 'room',
             status: 'active',
+            archived: null,
+            deleted: null,
             joinMode: 'open',
+            maxMembers: null,
+            maxSessionsPerMember: null,
             metadata: { rallarDirector: appointment },
+            activeMemberCount: 1,
+            ownerPrincipalId: 'principal-1',
             snapshotVersion: 1,
             metadataVersion: 1,
             rosterVersion: 1,
             presenceVersion: 1,
-            created: { atEpochMs: 1, byPrincipalId: 'principal-1' },
-            updated: { atEpochMs: 1, byPrincipalId: 'principal-1' },
+            created: createAuditStamp(1, 'principal-1'),
+            updated: createAuditStamp(1, 'principal-1'),
+            expiresAtEpochMs: null,
+            emptySinceEpochMs: null,
+            purgeAfterEpochMs: null,
         },
         members: [{
             applicationId: 'app-1',
@@ -239,8 +258,13 @@ function createSnapshot(
             principalId: 'principal-1',
             role: 'owner',
             status: 'active',
-            joined: { atEpochMs: 1, byPrincipalId: 'principal-1' },
-            updated: { atEpochMs: 1, byPrincipalId: 'principal-1' },
+            joined: createAuditStamp(1, 'principal-1'),
+            updated: createAuditStamp(1, 'principal-1'),
+            invitedByPrincipalId: null,
+            invitationExpiresAtEpochMs: null,
+            left: null,
+            removed: null,
+            banned: null,
         }],
         activeSessions: [{
             applicationId: 'app-1',
@@ -248,9 +272,14 @@ function createSnapshot(
             groupId: 'room-1',
             principalId: 'principal-1',
             sessionId: 'session-1',
+            generationId: 'generation-session-1',
+            generationVersion: 1,
+            status: 'active',
             connectedAtEpochMs: 1,
             lastHeartbeatAtEpochMs: 1,
             expiresAtEpochMs: 60_000,
+            disconnectedAtEpochMs: null,
+            disconnectReason: null,
         }],
         memberCount: 1,
         onlineMemberCount: 1,
@@ -280,45 +309,107 @@ function createPolicySnapshot(
             now: 1,
         })
         : undefined;
+    const owner = input.members.find((member) =>
+        member.role === 'owner' && member.status === 'active'
+    );
+    if (owner === undefined) {
+        throw new Error('Policy fixture requires an active owner');
+    }
+    const activeMemberCount = input.members.filter((member) =>
+        member.status === 'active'
+    ).length;
 
     return {
+        stateRevision: 1,
+        causalRevision: { groupRevision: 1, presenceRevision: 1 },
         group: {
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
             groupId: 'room-1',
+            slug: 'room-1',
             displayName: 'room-1',
+            description: null,
             kind: 'room',
             status: 'active',
+            archived: null,
+            deleted: null,
             joinMode: 'open',
+            maxMembers: null,
+            maxSessionsPerMember: null,
             metadata: appointment ? { rallarDirector: appointment } : {},
+            activeMemberCount,
+            ownerPrincipalId: owner.principalId,
             snapshotVersion: 1,
             metadataVersion: 1,
             rosterVersion: 1,
             presenceVersion: 1,
-            created: { atEpochMs: 1, byPrincipalId: 'owner-1' },
-            updated: { atEpochMs: 1, byPrincipalId: 'owner-1' },
+            created: createAuditStamp(1, owner.principalId),
+            updated: createAuditStamp(1, owner.principalId),
+            expiresAtEpochMs: null,
+            emptySinceEpochMs: null,
+            purgeAfterEpochMs: null,
         },
-        members: input.members.map((member) => ({
-            applicationId: 'app-1',
-            workspaceId: 'workspace-1',
-            groupId: 'room-1',
-            principalId: member.principalId,
-            role: member.role,
-            status: member.status,
-            joined: { atEpochMs: 1, byPrincipalId: 'owner-1' },
-            updated: { atEpochMs: 1, byPrincipalId: 'owner-1' },
-        })),
-        activeSessions: input.activeSessions.map((session) => ({
+        members: input.members.map((member) => createMember(member, owner.principalId)),
+        activeSessions: input.activeSessions.map((session): GroupPresenceSession => ({
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
             groupId: 'room-1',
             principalId: session.principalId,
             sessionId: session.sessionId,
+            generationId: `generation-${session.sessionId}`,
+            generationVersion: 1,
+            status: 'active',
             connectedAtEpochMs: 1,
             lastHeartbeatAtEpochMs: 1,
             expiresAtEpochMs: 60_000,
+            disconnectedAtEpochMs: null,
+            disconnectReason: null,
         })),
         memberCount: input.members.length,
         onlineMemberCount: input.activeSessions.length,
     };
+}
+
+function createAuditStamp(atEpochMs: number, principalId: string): AuditStamp {
+    return {
+        atEpochMs,
+        actor: { kind: 'principal', principalId },
+        reason: null,
+        traceId: null,
+        requestId: null,
+    };
+}
+
+function createMember(
+    member: Readonly<{
+        principalId: string;
+        role: 'owner' | 'admin' | 'member';
+        status: 'invited' | 'active' | 'left' | 'removed' | 'banned';
+    }>,
+    actorPrincipalId: string,
+): GroupMember {
+    const base = {
+        applicationId: 'app-1',
+        workspaceId: 'workspace-1',
+        groupId: 'room-1',
+        principalId: member.principalId,
+        role: member.role,
+        joined: createAuditStamp(1, actorPrincipalId),
+        updated: createAuditStamp(1, actorPrincipalId),
+        invitedByPrincipalId: null,
+        invitationExpiresAtEpochMs: null,
+    };
+    const terminal = createAuditStamp(1, actorPrincipalId);
+    switch (member.status) {
+        case 'invited':
+            return { ...base, status: 'invited', left: null, removed: null, banned: null };
+        case 'active':
+            return { ...base, status: 'active', left: null, removed: null, banned: null };
+        case 'left':
+            return { ...base, status: 'left', left: terminal, removed: null, banned: null };
+        case 'removed':
+            return { ...base, status: 'removed', left: null, removed: terminal, banned: null };
+        case 'banned':
+            return { ...base, status: 'banned', left: null, removed: null, banned: terminal };
+    }
 }

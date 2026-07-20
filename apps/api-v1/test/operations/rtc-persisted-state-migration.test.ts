@@ -30,7 +30,13 @@ Deno.test('RTC persisted-state migration requires explicit stopped-writer acknow
 Deno.test('RTC persisted-state migration dry run reports safe order without writes', async () => {
   const migration = await loadMigrationModule();
   const calls: string[] = [];
-  const actions = ['snapshot-keys', 'publication-keys', 'rtt-keys', 'intent-delivery']
+  const actions = [
+    'topology-scalar-authority',
+    'snapshot-keys',
+    'publication-keys',
+    'rtt-keys',
+    'intent-delivery',
+  ]
     .map((name) => ({
       name,
       run: () => {
@@ -48,6 +54,7 @@ Deno.test('RTC persisted-state migration dry run reports safe order without writ
   assert.deepEqual(result, {
     dryRun: true,
     completedSteps: [
+      'topology-scalar-authority',
       'snapshot-keys',
       'publication-keys',
       'rtt-keys',
@@ -65,6 +72,13 @@ Deno.test('RTC persisted-state migration runs in order and stops after an error'
     migration.executeRtcPersistedStateMigration(
       { oldWritersStopped: true, dryRun: false },
       [
+        {
+          name: 'topology-scalar-authority',
+          run: () => {
+            calls.push('topology-scalar-authority');
+            return Promise.resolve();
+          },
+        },
         {
           name: 'snapshot-keys',
           run: () => {
@@ -90,7 +104,11 @@ Deno.test('RTC persisted-state migration runs in order and stops after an error'
     ),
     failure,
   );
-  assert.deepEqual(calls, ['snapshot-keys', 'publication-keys']);
+  assert.deepEqual(calls, [
+    'topology-scalar-authority',
+    'snapshot-keys',
+    'publication-keys',
+  ]);
 });
 
 Deno.test('RTC migration operator task and runbook expose dry-run and cutover acknowledgement', async () => {
@@ -104,15 +122,25 @@ Deno.test('RTC migration operator task and runbook expose dry-run and cutover ac
     new URL('../../scripts/migrate-rtc-persisted-state.ts', import.meta.url),
   );
   assert.match(script, /oldWritersStopped/);
+  assert.match(script, /invalidateLegacyScalarRtcTopologyAuthority/);
   assert.match(script, /migrateLegacyRtcTopologySnapshotKeys/);
   assert.match(script, /migrateLegacyRtcTopologyPublicationKeys/);
   assert.match(script, /migrateLegacyRtcRttMeasurementKeys/);
   assert.match(script, /migrateLegacyRtcRttRecomputeIntentDeliveryState/);
   const readme = await Deno.readTextFile(new URL('../../README.md', import.meta.url));
+  const middleware = await Deno.readTextFile(
+    new URL('../../src/middleware.ts', import.meta.url),
+  );
   assert.match(readme, /rtc:migrate-persisted-state/);
   assert.match(readme, /--old-writers-stopped/);
   assert.match(readme, /backup/i);
   assert.match(readme, /rollback/i);
+  assert.match(readme, /durable recompute request/i);
+  assert.match(readme, /restart/i);
+  assert.match(middleware, /initRtcTopologyScalarRecomputeWorker/);
+  assert.match(middleware, /enqueueForStateMutation/);
+  assert.match(middleware, /group-absent-terminal/);
+  assert.match(middleware, /registerMiddlewareBackgroundTask/);
 });
 
 async function loadMigrationModule(): Promise<MigrationModule> {

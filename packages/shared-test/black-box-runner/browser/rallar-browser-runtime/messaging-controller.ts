@@ -1,4 +1,5 @@
 import type { RallarFacade, RallarRealtimeLaneHealth, RallarRealtimeSendResult } from '@shared-web/browser/rallar.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import type {
     BlackBoxRallarConnectionConfig,
     BlackBoxRallarEvent,
@@ -70,7 +71,7 @@ export type CreateBlackBoxRallarMessagingControllerOptions = BlackBoxRallarGener
         laneIdOf(config: BlackBoxRallarConnectionConfig): string;
         typeIdOf(config: BlackBoxRallarConnectionConfig): string;
         topicIdOf(config: BlackBoxRallarConnectionConfig): string | undefined;
-        roomRefOf(config: BlackBoxRallarConnectionConfig, input?: BlackBoxRallarSendInput): BlackBoxRallarRoomRef | undefined;
+        roomRefOf(config: BlackBoxRallarConnectionConfig, input?: BlackBoxRallarSendInput): GroupRef | undefined;
         scopeDiagnostics(config: BlackBoxRallarConnectionConfig, input?: BlackBoxRallarSendInput): ScopeDiagnostics;
         toOptionalNumber(value: unknown): number | undefined;
         readHealth(config: BlackBoxRallarConnectionConfig): readonly RallarRealtimeLaneHealth[];

@@ -5,10 +5,13 @@ import type {
 } from '../../runtime-state/RuntimeStateRepository.ts';
 import { RuntimeStateWriteConflictError } from '../../runtime-state/optimistic-runtime-state-write.ts';
 import {
+    createRtcTopologyExecutionReceipt,
     DEFAULT_RTC_TOPOLOGY_PUBLICATION_RETENTION_MS,
+    hashRtcTopologyExecutionCommand,
     type RtcTopologyPublication,
     RtcTopologyPublicationRepository,
 } from './RtcTopologyPublicationRepository.ts';
+import { RtcTopologyRepositoryInvariantCorruptionError } from '../rtc-topology-errors.ts';
 import {
     RtcTopologySnapshotRepository,
 } from './RtcTopologySnapshotRepository.ts';
@@ -74,15 +77,30 @@ export class RtcTopologyExecutionRepository {
     ): Promise<RtcTopologyMutationRead> {
         const snapshots = new RtcTopologySnapshotRepository(this.runtimeRepository);
         const publications = this.publications(this.runtimeRepository);
-        const [snapshot, publication] = await Promise.all([
+        const [snapshot, claimedPublication] = await Promise.all([
             snapshots.findSnapshotEntry(groupRef),
             workId === null
                 ? Promise.resolve(undefined)
-                : publications.findPublicationForWork(groupRef, workId),
+                : publications.findClaimedPublicationForWork(groupRef, workId),
         ]);
+        if (
+            claimedPublication &&
+            claimedPublication.claim.value.acceptedStorageRevision !==
+                snapshot?.entry.revision
+        ) {
+            throw new RtcTopologyRepositoryInvariantCorruptionError(
+                claimedPublication.claim.entry.key,
+                'RTC topology execution receipt storage revision differs from snapshot',
+            );
+        }
         return {
             snapshot: snapshot ?? null,
-            publicationClaim: publication ? { publication } : null,
+            publicationClaim: claimedPublication
+                ? {
+                    receipt: claimedPublication.claim.value,
+                    publication: claimedPublication.publication,
+                }
+                : null,
         };
     }
 
@@ -102,8 +120,16 @@ export class RtcTopologyExecutionRepository {
                 }
                 if (publicationWrite) {
                     const publications = this.publications(transaction);
-                    const claimed = await publications.insertWorkClaim(
+                    const receipt = createRtcTopologyExecutionReceipt(
                         publicationWrite.publication,
+                        {
+                            commandHash: publicationWrite.commandHash,
+                            attemptCount: publicationWrite.attemptCount,
+                            acceptedStorageRevision: guard.storageRevision,
+                        },
+                    );
+                    const claimed = await publications.insertWorkClaim(
+                        receipt,
                         publicationWrite.expireAtTimestamp,
                     );
                     if (!claimed) throw new RuntimeStateWriteConflictError();
@@ -136,25 +162,30 @@ export class RtcTopologyExecutionRepository {
             return { status: 'retry', current: read.snapshot?.value };
         }
         const candidate = read.publicationClaim ? null : input.candidate;
+        const facts = read.publicationClaim
+            ? {
+                publicationExpireAtTimestamp: null,
+                commandHash: null,
+                attemptCount: null,
+            } as const
+            : {
+                publicationExpireAtTimestamp: this.publicationExpireAtTimestamp(),
+                commandHash: await hashRtcTopologyExecutionCommand(
+                    input.publication,
+                ),
+                attemptCount: 1,
+            } as const;
         const computed = computeTopologyMutation({
             read,
             candidate,
             publication: read.publicationClaim ? null : input.publication,
-            facts: {
-                publicationExpireAtTimestamp: read.publicationClaim
-                    ? null
-                    : this.publicationExpireAtTimestamp(),
-            },
+            facts,
         });
         validateTopologyMutation({
             read,
             candidate,
             publication: read.publicationClaim ? null : input.publication,
-            facts: {
-                publicationExpireAtTimestamp: computed.outcome === 'write'
-                    ? computed.publicationExpireAtTimestamp
-                    : null,
-            },
+            facts,
             computed,
         });
         if (computed.outcome === 'retry') {
@@ -204,6 +235,8 @@ function requirePublicationWrite(
 ): Readonly<{
     publication: RtcTopologyPublication;
     expireAtTimestamp: number;
+    commandHash: string;
+    attemptCount: number;
 }> | null {
     if (computed.publication === null) {
         if (computed.publicationExpireAtTimestamp !== null) {
@@ -220,7 +253,12 @@ function requirePublicationWrite(
     ) {
         throw new TypeError('RTC topology publication expiry is invalid');
     }
-    return { publication: computed.publication, expireAtTimestamp };
+    return {
+        publication: computed.publication,
+        expireAtTimestamp,
+        commandHash: computed.commandHash,
+        attemptCount: computed.attemptCount,
+    };
 }
 
 function sameSnapshot(

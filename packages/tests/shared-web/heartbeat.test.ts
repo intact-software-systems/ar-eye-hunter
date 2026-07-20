@@ -2,6 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthSession, ClientInfo } from '@shared/api/api-config.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import {
+    createActiveGroupMemberFixture,
+    createActiveGroupPresenceSessionFixture,
+    createActiveClientSessionFixture,
+    createClientSnapshotFixture,
+    createGroupSnapshotFixture,
+} from './authoritative-group-fixtures.ts';
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import { initHeartbeat } from '@shared-web/browser/heartbeat.ts';
 import { toCreateWsUrl } from '@shared-web/browser/middleware.ts';
@@ -216,23 +223,21 @@ function textResponse(body: string, status: number): Response {
 }
 
 function clientSnapshot(principalId: string): ClientSnapshot {
+    const snapshot = createClientSnapshotFixture({
+        applicationId: 'ar-eye-hunter',
+        workspaceId: 'default',
+        principalId,
+    });
     return {
-        principal: {
+        ...snapshot,
+        principal: { ...snapshot.principal, snapshotVersion: 2 },
+        activeSessions: [createActiveClientSessionFixture({
+            applicationId: snapshot.principal.applicationId,
+            workspaceId: snapshot.principal.workspaceId,
             principalId,
-            applicationId: 'ar-eye-hunter',
-            workspaceId: 'default',
-            username: principalId,
-            status: 'active',
-            roles: [],
-            metadata: {},
-            snapshotVersion: 2,
-            profileVersion: 1,
-            presenceVersion: 1,
-            created: { atEpochMs: 1 },
-            updated: { atEpochMs: 1 },
-        },
-        instances: [],
-        activeSessions: [],
+            clientInstanceId: principalId,
+            sessionId: 'session-1',
+        })],
         isOnline: true,
         activeSessionCount: 1,
     };
@@ -245,44 +250,38 @@ function groupSnapshot(
     principalId: string,
     sessionId: string,
 ): GroupSnapshot {
+    const snapshot = createGroupSnapshotFixture({
+        applicationId,
+        workspaceId,
+        groupId,
+        sessionIds: [],
+    });
     return {
+        ...snapshot,
         group: {
-            applicationId,
-            workspaceId,
-            groupId,
+            ...snapshot.group,
             slug: groupId,
-            displayName: groupId,
-            kind: 'room',
-            status: 'active',
             joinMode: 'invite-only',
-            metadata: {},
             snapshotVersion: 3,
             metadataVersion: 1,
-            rosterVersion: 1,
-            presenceVersion: 1,
-            created: { atEpochMs: 1 },
-            updated: { atEpochMs: 1 },
+            activeMemberCount: 1,
+            ownerPrincipalId: principalId,
         },
-        members: [{
+        members: [createActiveGroupMemberFixture({
             applicationId,
             workspaceId,
             groupId,
             principalId,
             role: 'member',
-            status: 'active',
-            joined: { atEpochMs: 1 },
-            updated: { atEpochMs: 1 },
-        }],
-        activeSessions: [{
+            actorPrincipalId: principalId,
+        })],
+        activeSessions: [createActiveGroupPresenceSessionFixture({
             applicationId,
             workspaceId,
             groupId,
             sessionId,
             principalId,
-            connectedAtEpochMs: 1,
-            lastHeartbeatAtEpochMs: 1,
-            expiresAtEpochMs: 60_000,
-        }],
+        })],
         memberCount: 1,
         onlineMemberCount: 1,
     };

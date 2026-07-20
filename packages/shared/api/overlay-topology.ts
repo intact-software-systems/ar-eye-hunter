@@ -1,10 +1,14 @@
 import type { OverlayInfo, OverlayId } from './api-config.ts';
-import type { GroupRef } from './group-types.ts';
+import {
+    compareGroupCausalRevision,
+    type GroupCausalRevisionOrder,
+} from './group-client-views.ts';
+import type { GroupRef, GroupStateCausalRevision } from './group-types.ts';
 
 export type RallarRtcTopologyKind = 'star' | 'tree' | 'mesh';
 
 export type RallarOverlayTopologySnapshot = Readonly<{
-    sourceGroupStateRevision: number;
+    sourceGroupStateCausalRevision: GroupStateCausalRevision;
     state: 'active' | 'removed';
     overlayId: OverlayId;
     groupRef: GroupRef;
@@ -20,13 +24,18 @@ export type RallarOverlayTopologySnapshot = Readonly<{
 }>;
 
 export function compareOverlayTopologyCausalTuple(
-    left: Pick<RallarOverlayTopologySnapshot, 'sourceGroupStateRevision' | 'version'>,
-    right: Pick<RallarOverlayTopologySnapshot, 'sourceGroupStateRevision' | 'version'>,
-): number {
-    if (left.sourceGroupStateRevision !== right.sourceGroupStateRevision) {
-        return left.sourceGroupStateRevision - right.sourceGroupStateRevision;
+    left: Pick<RallarOverlayTopologySnapshot, 'sourceGroupStateCausalRevision' | 'version'>,
+    right: Pick<RallarOverlayTopologySnapshot, 'sourceGroupStateCausalRevision' | 'version'>,
+): GroupCausalRevisionOrder {
+    const sourceOrder = compareGroupCausalRevision(
+        left.sourceGroupStateCausalRevision,
+        right.sourceGroupStateCausalRevision,
+    );
+    if (sourceOrder !== 'equal') {
+        return sourceOrder;
     }
-    return left.version - right.version;
+    if (left.version === right.version) return 'equal';
+    return left.version > right.version ? 'dominates' : 'dominated';
 }
 
 export function toOverlayInfoForSession(
@@ -34,7 +43,8 @@ export function toOverlayInfoForSession(
     sessionId: string,
 ): OverlayInfo {
     return {
-        sourceGroupStateRevision: snapshot.sourceGroupStateRevision,
+        sourceGroupStateCausalRevision:
+            snapshot.sourceGroupStateCausalRevision,
         state: snapshot.state,
         overlayId: snapshot.overlayId,
         groupRef: snapshot.groupRef,

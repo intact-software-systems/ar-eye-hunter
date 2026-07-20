@@ -1,4 +1,7 @@
-import { GroupRef } from '@shared/api/group-types.ts';
+import type {
+    GroupRef,
+    GroupStateCausalRevision,
+} from '@shared/api/group-types.ts';
 
 export type ApiConfig = {
     readonly apiBaseUrl: string;
@@ -115,16 +118,16 @@ export type GroupId = string;
 export type OverlayId = string;
 
 export type OverlayInfo = {
-    readonly sourceGroupStateRevision: number;
+    readonly sourceGroupStateCausalRevision: GroupStateCausalRevision;
     readonly state: 'active' | 'removed';
     readonly overlayId: OverlayId;
-    readonly groupRef?: GroupRef;
-    readonly topology?: 'star' | 'tree' | 'mesh';
+    readonly groupRef: GroupRef;
+    readonly topology: 'star' | 'tree' | 'mesh';
     readonly name: string;
     readonly createdByClientId: string;
     readonly createdAtEpochMs: number;
     readonly nextHopSessionIds: readonly string[];
-    readonly degreeLimit?: number;
+    readonly degreeLimit: number;
     readonly overlayVersion: number;
     readonly updatedAtEpochMs: number;
 };

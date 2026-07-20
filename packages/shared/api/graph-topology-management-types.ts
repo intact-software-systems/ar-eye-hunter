@@ -1,4 +1,4 @@
-import type { GroupRef } from './group-types.ts';
+import type { GroupRef, GroupStateCausalRevision } from './group-types.ts';
 import type { RallarOverlayTopologySnapshot } from './overlay-topology.ts';
 
 export type SerializedWeightedGraphNode = Readonly<{
@@ -66,7 +66,7 @@ export type EffectiveGroupTopologyConfig = Required<GroupTopologyConfigPatch>;
 
 export type StoredGroupTopologyConfig = Readonly<{
     groupRef: GroupRef;
-    config: GroupTopologyConfigPatch;
+    config: EffectiveGroupTopologyConfig;
     version: number;
     createdAtEpochMs: number;
     updatedAtEpochMs: number;
@@ -86,6 +86,7 @@ export type GroupTopologyConfigMutationOperation =
 
 export type GroupTopologyConfigAcceptedCausalRevision = Readonly<{
     stateRevision: number;
+    causalRevision: GroupStateCausalRevision;
     snapshotVersion: number;
     metadataVersion: number;
     rosterVersion: number;
@@ -94,9 +95,11 @@ export type GroupTopologyConfigAcceptedCausalRevision = Readonly<{
 
 export type GroupTopologyConfigMutationReceipt = Readonly<{
     commandId: string;
+    requestId: string | null;
     commandHash: string;
     operation: GroupTopologyConfigMutationOperation;
     outcome: 'applied' | 'no-op';
+    attemptCount: number;
     groupRef: GroupRef;
     target: 'config' | 'override';
     acceptedVersion: number;
@@ -105,26 +108,29 @@ export type GroupTopologyConfigMutationReceipt = Readonly<{
     acceptedUpdatedAtEpochMs: number | null;
     acceptedExpiresAtEpochMs: number | null;
     acceptedCausalRevision: GroupTopologyConfigAcceptedCausalRevision | null;
+    eventId: null;
+    /** Compatibility mirror for existing API consumers; outboxIds is canonical. */
     outboxId: string | null;
+    outboxIds: readonly string[];
 }>;
 
 export type GroupTopologyConfigView = Readonly<{
     serverDefaults: EffectiveGroupTopologyConfig;
-    durable?: StoredGroupTopologyConfig;
-    temporary?: StoredGroupTopologyOverride;
-    requestOptions?: GroupTopologyConfigPatch;
+    durable: StoredGroupTopologyConfig | null;
+    temporary: StoredGroupTopologyOverride | null;
+    requestOptions: GroupTopologyConfigPatch | null;
     effective: EffectiveGroupTopologyConfig;
 }>;
 
 export type GroupTopologyManagementView = Readonly<{
     groupRef: GroupRef;
     overlayId: string;
-    snapshot?: RallarOverlayTopologySnapshot;
+    snapshot: RallarOverlayTopologySnapshot | null;
     config: GroupTopologyConfigView;
-    pending?: Readonly<{
+    pending: Readonly<{
         reconfigureQueued: boolean;
-        dueAtEpochMs?: number;
-    }>;
+        dueAtEpochMs: number | null;
+    }> | null;
 }>;
 
 export type PutGroupTopologyConfigRequest = Readonly<{
@@ -150,7 +156,7 @@ export type ReconfigureGroupTopologyResponse = Readonly<{
     overlayId: string;
     changed: boolean;
     snapshot: RallarOverlayTopologySnapshot;
-    previous?: RallarOverlayTopologySnapshot;
+    previous: RallarOverlayTopologySnapshot | null;
     config: GroupTopologyConfigView;
     published: boolean;
 }>;

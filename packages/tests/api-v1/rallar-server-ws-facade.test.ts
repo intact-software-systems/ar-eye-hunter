@@ -9,7 +9,12 @@ import {
     WsQueueBoxServerService,
     type WsServerTargetResolver,
 } from '@shared/mod.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import type {
+    AuditStamp,
+    GroupMember,
+    GroupPresenceSession,
+    GroupSnapshot,
+} from '@shared/api/group-types.ts';
 import { createRallarServerFacade } from '@shared-server/rallar-facade/RallarServer.ts';
 import { RallarServerWsFacade } from '@shared-server/rallar-facade/ws-topic-router.ts';
 import { createGroupRoomWsAuthorizer } from '@shared-server/rallar-system/services/ws-topic-room-authorizer.ts';
@@ -557,56 +562,84 @@ function createGroupSnapshot(
     sessionIds: readonly string[],
     snapshotVersion: number,
 ): GroupSnapshot {
+    const ownerPrincipalId = sessionIds[0];
+    if (ownerPrincipalId === undefined) {
+        throw new Error('Group fixture requires an owner session');
+    }
     return {
+        stateRevision: snapshotVersion,
+        causalRevision: {
+            groupRevision: snapshotVersion,
+            presenceRevision: snapshotVersion,
+        },
         group: {
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
             groupId,
+            slug: groupId,
             displayName: groupId,
+            description: null,
             kind: 'room',
             status: 'active',
+            archived: null,
+            deleted: null,
             joinMode: 'open',
+            maxMembers: null,
+            maxSessionsPerMember: null,
             metadata: {},
+            activeMemberCount: sessionIds.length,
+            ownerPrincipalId,
             snapshotVersion,
             metadataVersion: 1,
             rosterVersion: 1,
             presenceVersion: snapshotVersion,
-            created: {
-                atEpochMs: 1,
-                byPrincipalId: 'peer-1',
-            },
-            updated: {
-                atEpochMs: snapshotVersion,
-                byPrincipalId: 'peer-1',
-            },
+            created: createAuditStamp(1, ownerPrincipalId),
+            updated: createAuditStamp(snapshotVersion, ownerPrincipalId),
+            expiresAtEpochMs: null,
+            emptySinceEpochMs: null,
+            purgeAfterEpochMs: null,
         },
-        members: sessionIds.map((sessionId) => ({
+        members: sessionIds.map((sessionId): GroupMember => ({
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
             groupId,
             principalId: sessionId,
-            role: 'member',
+            role: sessionId === ownerPrincipalId ? 'owner' : 'member',
             status: 'active',
-            joined: {
-                atEpochMs: 1,
-                byPrincipalId: sessionId,
-            },
-            updated: {
-                atEpochMs: snapshotVersion,
-                byPrincipalId: sessionId,
-            },
+            joined: createAuditStamp(1, ownerPrincipalId),
+            updated: createAuditStamp(snapshotVersion, ownerPrincipalId),
+            invitedByPrincipalId: null,
+            invitationExpiresAtEpochMs: null,
+            left: null,
+            removed: null,
+            banned: null,
         })),
-        activeSessions: sessionIds.map((sessionId) => ({
+        activeSessions: sessionIds.map((sessionId): GroupPresenceSession => ({
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
             groupId,
             sessionId,
             principalId: sessionId,
+            generationId: `generation-${sessionId}`,
+            generationVersion: snapshotVersion,
+            status: 'active',
             connectedAtEpochMs: 1,
             lastHeartbeatAtEpochMs: snapshotVersion,
             expiresAtEpochMs: 60_000,
+            disconnectedAtEpochMs: null,
+            disconnectReason: null,
         })),
         memberCount: sessionIds.length,
         onlineMemberCount: sessionIds.length,
+    };
+}
+
+function createAuditStamp(atEpochMs: number, principalId: string): AuditStamp {
+    return {
+        atEpochMs,
+        actor: { kind: 'principal', principalId },
+        reason: null,
+        traceId: null,
+        requestId: null,
     };
 }

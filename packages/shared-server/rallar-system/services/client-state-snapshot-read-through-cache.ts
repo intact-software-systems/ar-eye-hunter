@@ -1,4 +1,5 @@
 import type { ClientPrincipalRef, ClientSnapshot, } from '@shared/api/client-types.ts';
+import { DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import {
     readClientStateRevision,
     readClientVersion,
@@ -192,7 +193,9 @@ function fromClientStateSnapshotRepositoryKey(key: string): ClientPrincipalRef {
 
     return {
         applicationId,
-        workspaceId: workspaceId === '' ? undefined : workspaceId,
+        workspaceId: workspaceId === ''
+            ? DEFAULT_STATE_WORKSPACE_ID
+            : workspaceId,
         principalId,
     };
 }

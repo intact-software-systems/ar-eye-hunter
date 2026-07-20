@@ -1,4 +1,5 @@
 import type { AuthSession, LoginResponse } from '@shared/api/api-config.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RtcDataChannelLaneConfig } from '@shared/services/WebRtcConnectionService.ts';
 import {
     createRallarFacade,
@@ -279,7 +280,7 @@ function createBlackBoxRallarRuntimeInstallation(
     function roomRefOf(
         config: BlackBoxRallarConnectionConfig,
         input?: BlackBoxRallarSendInput,
-    ): BlackBoxRallarRoomRef | undefined {
+    ): GroupRef | undefined {
         return blackBoxRallarRoomRefOf(config, input);
     }
 

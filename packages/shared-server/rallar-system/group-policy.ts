@@ -177,7 +177,7 @@ export function canConnectGroupPresenceSession(
     }
 
     const cap = input.snapshot.group.maxSessionsPerMember;
-    if (cap !== undefined) {
+    if (cap !== null) {
         const liveSessions = input.snapshot.activeSessions.filter((session) =>
             session.principalId === principalId && isLiveSession(session, input.nowEpochMs)
         );
@@ -221,7 +221,7 @@ export function canMutateActiveGroup(
 export function shouldPlanGroupPurge(
     input: ShouldPlanGroupPurgeInput,
 ): boolean {
-    return input.group.purgeAfterEpochMs !== undefined &&
+    return input.group.purgeAfterEpochMs !== null &&
         input.group.purgeAfterEpochMs <= input.nowEpochMs;
 }
 
@@ -436,7 +436,7 @@ function canUseInvite(
     }
 
     if (
-        member.invitationExpiresAtEpochMs !== undefined &&
+        member.invitationExpiresAtEpochMs !== null &&
         input.nowEpochMs !== undefined &&
         member.invitationExpiresAtEpochMs <= input.nowEpochMs
     ) {
@@ -490,7 +490,7 @@ function requireActiveGroup(
         return deny('group-not-active', 'Group is not active.');
     }
     if (
-        group.expiresAtEpochMs !== undefined &&
+        group.expiresAtEpochMs !== null &&
         nowEpochMs !== undefined &&
         group.expiresAtEpochMs <= nowEpochMs
     ) {
@@ -505,7 +505,7 @@ function wouldExceedMemberCap(
     member: GroupMember | undefined,
 ): boolean {
     const cap = snapshot.group.maxMembers;
-    if (cap === undefined || member?.status === 'active') {
+    if (cap === null || member?.status === 'active') {
         return false;
     }
 
@@ -552,7 +552,7 @@ function isInviteExpired(
     member: GroupMember,
     nowEpochMs: number | undefined,
 ): boolean {
-    return member.invitationExpiresAtEpochMs !== undefined &&
+    return member.invitationExpiresAtEpochMs !== null &&
         nowEpochMs !== undefined &&
         member.invitationExpiresAtEpochMs <= nowEpochMs;
 }
@@ -598,7 +598,7 @@ function isLiveSession(
     session: GroupPresenceSession,
     nowEpochMs: number | undefined,
 ): boolean {
-    return session.disconnectedAtEpochMs === undefined &&
+    return session.disconnectedAtEpochMs === null &&
         (nowEpochMs === undefined || session.expiresAtEpochMs > nowEpochMs);
 }
 

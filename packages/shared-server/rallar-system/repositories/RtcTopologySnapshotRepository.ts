@@ -215,13 +215,11 @@ function canonicalSnapshot(
     const ref = snapshot.groupRef;
     return {
         ...snapshot,
-        groupRef: ref.workspaceId === undefined
-            ? { applicationId: ref.applicationId, groupId: ref.groupId }
-            : {
-                applicationId: ref.applicationId,
-                workspaceId: ref.workspaceId,
-                groupId: ref.groupId,
-            },
+        groupRef: {
+            applicationId: ref.applicationId,
+            workspaceId: ref.workspaceId,
+            groupId: ref.groupId,
+        },
     };
 }
 
@@ -362,13 +360,40 @@ function decodeSnapshotEntry(
 
 function parseSnapshot(entry: RuntimeStateEntry): RallarOverlayTopologySnapshot {
     try {
-        return JSON.parse(entry.value) as RallarOverlayTopologySnapshot;
+        const value: unknown = JSON.parse(entry.value);
+        validateTopologySnapshot(value, valueGroupRef(value));
+        return value;
     } catch (error) {
         throw topologyCorruption(
             entry.key,
             error instanceof Error ? error.message : 'RTC topology JSON is invalid',
         );
     }
+}
+
+function valueGroupRef(value: unknown): GroupRef {
+    if (!isUnknownRecord(value)) {
+        throw new TypeError('RTC topology snapshot is invalid');
+    }
+    const groupRef = Object.hasOwn(value, 'groupRef')
+        ? value.groupRef
+        : undefined;
+    if (!isUnknownRecord(groupRef)) {
+        throw new TypeError('RTC topology groupRef is invalid');
+    }
+    const { applicationId, workspaceId, groupId } = groupRef;
+    if (
+        typeof applicationId !== 'string' || applicationId.length === 0 ||
+        typeof workspaceId !== 'string' || workspaceId.length === 0 ||
+        typeof groupId !== 'string' || groupId.length === 0
+    ) {
+        throw new TypeError('RTC topology groupRef is invalid');
+    }
+    return { applicationId, workspaceId, groupId };
+}
+
+function isUnknownRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function legacySnapshotKey(ref: GroupRef): string {

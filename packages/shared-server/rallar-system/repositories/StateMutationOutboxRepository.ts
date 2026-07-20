@@ -9,9 +9,12 @@ import type {
     GroupEventType,
     GroupRef,
     GroupSnapshot,
+    GroupStateCausalRevision,
 } from '@shared/api/group-types.ts';
+import { toGroupSnapshotStateRevision } from '@shared/api/group-client-views.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { RuntimeStateJsonStore } from '../../runtime-state/RuntimeStateJsonStore.ts';
+import { normalizePersistedGroupEvent } from '../persisted-group-event.ts';
 import type {
     RuntimeStateOptimisticTransactionalRepositoryLike,
 } from '../../runtime-state/RuntimeStateRepository.ts';
@@ -73,6 +76,7 @@ export type ClientStateMutationCausalRevision = Readonly<{
 export type GroupStateMutationCausalRevision = Readonly<{
     kind: 'group';
     stateRevision: number;
+    causalRevision: GroupStateCausalRevision;
     snapshotVersion: number;
     metadataVersion: number;
     rosterVersion: number;
@@ -291,16 +295,16 @@ export class StateMutationOutboxRepository extends RuntimeStateJsonStore {
     async find(
         outboxId: string,
     ): Promise<StoredStateMutationOutboxRecord | undefined> {
-        const stored = await this.getEntryValue<StateMutationOutboxRecord>(
+        const stored = await this.getEntryValue<unknown>(
             STATE_MUTATION_OUTBOX_NAMESPACE,
             toStateMutationOutboxKey(outboxId),
         );
         if (!stored) {
             return undefined;
         }
-        validateStateMutationOutboxRecord(stored.value);
+        const record = decodePersistedStateMutationOutboxRecord(stored.value);
         return {
-            record: stored.value,
+            record,
             storageRevision: stored.entry.revision,
         };
     }
@@ -324,14 +328,14 @@ export class StateMutationOutboxRepository extends RuntimeStateJsonStore {
 
             for (const entry of entries) {
                 afterKey = entry.key;
-                const record = await this.toLiveValue<StateMutationOutboxRecord>(
+                const value = await this.toLiveValue<unknown>(
                     STATE_MUTATION_OUTBOX_NAMESPACE,
                     entry,
                 );
-                if (!record) {
+                if (!value) {
                     continue;
                 }
-                validateStateMutationOutboxRecord(record);
+                const record = decodePersistedStateMutationOutboxRecord(value);
                 if (record.delivery.status !== 'delivered') {
                     pending.push({
                         record,
@@ -436,7 +440,7 @@ export function toStateMutationOutboxId(
         commandId: input.commandId,
         kind: input.kind,
         aggregateRef: input.aggregateRef,
-        acceptedCausalRevision: input.acceptedCausalRevision,
+        acceptedCausalRevision: toStateMutationOutboxIdentityRevision(input),
     }))}`;
 }
 
@@ -472,6 +476,7 @@ export function toGroupStateMutationCausalRevision(
     return {
         kind: 'group',
         stateRevision: snapshot.stateRevision,
+        causalRevision: snapshot.causalRevision,
         snapshotVersion: snapshot.group.snapshotVersion,
         metadataVersion: snapshot.group.metadataVersion,
         rosterVersion: snapshot.group.rosterVersion,
@@ -631,7 +636,9 @@ function validateStateMutationOutboxEvent(
     }
 }
 
-function validateStateMutationOutboxRecord(record: unknown): void {
+function validateStateMutationOutboxRecord(
+    record: unknown,
+): asserts record is StateMutationOutboxRecord {
     if (!isObjectRecordValue(record)) {
         throw new TypeError('State mutation outbox record is required');
     }
@@ -838,6 +845,11 @@ function validateClientEvent(
     if (!isRecord(event)) {
         throw new TypeError('Client outbox event is required');
     }
+    assertExactEventKeys(event, [
+        'applicationId', 'workspaceId', 'principalId', 'eventId', 'eventType',
+        'snapshotVersion', 'clientInstanceId', 'sessionId', 'occurredAtEpochMs',
+        'actor', 'reason', 'traceId', 'requestId', 'payload',
+    ], 'Client');
     if (!isNonEmptyString(event.eventId)) {
         throw new TypeError('Client outbox event eventId is required');
     }
@@ -852,14 +864,20 @@ function validateClientEvent(
         'client event snapshot version',
     );
     validateEventActor(event.actor, 'Client');
-    validateOptionalEventString(
+    validateNullableEventString(
         event.clientInstanceId,
         'Client',
         'clientInstanceId',
     );
-    validateOptionalEventString(event.sessionId, 'Client', 'sessionId');
-    validateOptionalEventMetadata(event, 'Client');
-    validateClientRef(event as ClientEvent);
+    validateNullableEventString(event.sessionId, 'Client', 'sessionId');
+    validateRequiredEventMetadata(event, 'Client');
+    if (
+        !isNonEmptyString(event.applicationId) ||
+        !isNonEmptyString(event.workspaceId) ||
+        !isNonEmptyString(event.principalId)
+    ) {
+        throw new TypeError('Invalid client outbox event aggregate ref');
+    }
     if (
         event.applicationId !== record.aggregateRef.applicationId ||
         event.workspaceId !== record.aggregateRef.workspaceId ||
@@ -886,6 +904,11 @@ function validateGroupEvent(
     if (!isRecord(event)) {
         throw new TypeError('Group outbox event is required');
     }
+    assertExactEventKeys(event, [
+        'applicationId', 'workspaceId', 'groupId', 'eventId', 'eventType',
+        'snapshotVersion', 'causalRevision', 'occurredAtEpochMs', 'actor',
+        'reason', 'traceId', 'requestId', 'payload',
+    ], 'Group');
     if (!isNonEmptyString(event.eventId)) {
         throw new TypeError('Group outbox event eventId is required');
     }
@@ -900,8 +923,14 @@ function validateGroupEvent(
         'group event snapshot version',
     );
     validateEventActor(event.actor, 'Group');
-    validateOptionalEventMetadata(event, 'Group');
-    validateGroupRef(event as GroupEvent);
+    validateRequiredEventMetadata(event, 'Group');
+    if (
+        !isNonEmptyString(event.applicationId) ||
+        !isNonEmptyString(event.workspaceId) ||
+        !isNonEmptyString(event.groupId)
+    ) {
+        throw new TypeError('Invalid group aggregate ref');
+    }
     if (
         event.applicationId !== record.aggregateRef.applicationId ||
         event.workspaceId !== record.aggregateRef.workspaceId ||
@@ -914,6 +943,17 @@ function validateGroupEvent(
     if (event.snapshotVersion !== record.acceptedCausalRevision.snapshotVersion) {
         throw new TypeError(
             'Group outbox event does not match its accepted version',
+        );
+    }
+    if (
+        !isRecord(event.causalRevision) ||
+        event.causalRevision.groupRevision !==
+            record.acceptedCausalRevision.causalRevision.groupRevision ||
+        event.causalRevision.presenceRevision !==
+            record.acceptedCausalRevision.causalRevision.presenceRevision
+    ) {
+        throw new TypeError(
+            'Group outbox event does not match its accepted causal revision',
         );
     }
 }
@@ -949,44 +989,63 @@ function validateEventActor(
     if (!isRecord(actor)) {
         throw new TypeError(`${kind} outbox event actor is required`);
     }
-    const fields = ['principalId', 'sessionId', 'serviceId'] as const;
-    if (fields.every((field) => actor[field] === undefined)) {
-        throw new TypeError(`${kind} outbox event actor identity is required`);
+    const expectedKeys = actor.kind === 'principal'
+        ? ['kind', 'principalId']
+        : actor.kind === 'session'
+        ? ['kind', 'sessionId', 'principalId']
+        : actor.kind === 'service'
+        ? ['kind', 'serviceId']
+        : null;
+    if (expectedKeys === null ||
+        !sameStringArray(Object.keys(actor).sort(), expectedKeys.toSorted())) {
+        throw new TypeError(`${kind} outbox event actor shape is invalid`);
     }
-    for (const field of fields) {
-        const value = actor[field];
-        if (value !== undefined && !isNonEmptyString(value)) {
-            throw new TypeError(
-                `Invalid ${kind.toLowerCase()} outbox event actor ${field}`,
-            );
+    for (const field of expectedKeys) {
+        if (field !== 'kind' && !isNonEmptyString(actor[field])) {
+            throw new TypeError(`Invalid ${kind.toLowerCase()} outbox event actor`);
         }
     }
 }
 
-function validateOptionalEventMetadata(
+function validateRequiredEventMetadata(
     event: Readonly<Record<string, unknown>>,
     kind: 'Client' | 'Group',
 ): void {
     for (const field of ['reason', 'traceId', 'requestId'] as const) {
-        validateOptionalEventString(event[field], kind, field);
+        validateNullableEventString(event[field], kind, field);
     }
-    if (event.payload !== undefined && !isRecord(event.payload)) {
+    if (!isRecord(event.payload)) {
         throw new TypeError(
             `Invalid ${kind.toLowerCase()} outbox event payload`,
         );
     }
 }
 
-function validateOptionalEventString(
+function validateNullableEventString(
     value: unknown,
     kind: 'Client' | 'Group',
     field: string,
 ): void {
-    if (value !== undefined && !isNonEmptyString(value)) {
+    if (value !== null && !isNonEmptyString(value)) {
         throw new TypeError(
             `Invalid ${kind.toLowerCase()} outbox event ${field}`,
         );
     }
+}
+
+function assertExactEventKeys(
+    value: Readonly<Record<string, unknown>>,
+    expected: readonly string[],
+    kind: 'Client' | 'Group',
+): void {
+    if (!sameStringArray(Object.keys(value).sort(), expected.toSorted())) {
+        throw new TypeError(`${kind} outbox event fields are invalid`);
+    }
+}
+
+function sameStringArray(left: readonly string[], right: readonly string[]): boolean {
+    return left.length === right.length &&
+        left.every((value, index) => value === right[index]);
 }
 
 function isObjectValue(value: unknown): value is object {
@@ -1018,18 +1077,157 @@ function validateClientCausalRevision(
 function validateGroupCausalRevision(
     revision: Readonly<Record<string, unknown>>,
 ): void {
+    assertExactObjectKeys(revision, [
+        'kind',
+        'stateRevision',
+        'causalRevision',
+        'snapshotVersion',
+        'metadataVersion',
+        'rosterVersion',
+        'presenceVersion',
+    ], 'group accepted causal revision');
     assertSafeNonNegativeInteger(revision.stateRevision, 'group state revision');
+    if (!isRecord(revision.causalRevision)) {
+        throw new TypeError('Invalid group causal revision');
+    }
+    assertSafeNonNegativeInteger(
+        revision.causalRevision.groupRevision,
+        'group causal group revision',
+    );
+    assertSafeNonNegativeInteger(
+        revision.causalRevision.presenceRevision,
+        'group causal presence revision',
+    );
     assertSafeNonNegativeInteger(revision.snapshotVersion, 'group snapshot version');
     assertSafeNonNegativeInteger(revision.metadataVersion, 'group metadata version');
     assertSafeNonNegativeInteger(revision.rosterVersion, 'group roster version');
     assertSafeNonNegativeInteger(revision.presenceVersion, 'group presence version');
+    if (
+        revision.stateRevision !== toGroupSnapshotStateRevision(
+            revision.causalRevision.groupRevision,
+            revision.causalRevision.presenceRevision,
+        ) ||
+        revision.presenceVersion !== revision.causalRevision.presenceRevision
+    ) {
+        throw new TypeError('Contradictory group accepted causal revision');
+    }
+}
+
+function decodePersistedStateMutationOutboxRecord(
+    value: unknown,
+): StateMutationOutboxRecord {
+    let canonical = value;
+    if (
+        isRecord(value) &&
+        value.kind === 'group' &&
+        isRecord(value.acceptedCausalRevision) &&
+        !Object.prototype.hasOwnProperty.call(
+            value.acceptedCausalRevision,
+            'causalRevision',
+        )
+    ) {
+        const accepted = value.acceptedCausalRevision;
+        assertSafeNonNegativeInteger(
+            accepted.stateRevision,
+            'legacy group state revision',
+        );
+        assertSafeNonNegativeInteger(
+            accepted.presenceVersion,
+            'legacy group presence version',
+        );
+        const groupRevision = accepted.stateRevision - accepted.presenceVersion;
+        assertSafeNonNegativeInteger(
+            groupRevision,
+            'derived legacy group revision',
+        );
+        canonical = {
+            ...value,
+            acceptedCausalRevision: {
+                ...accepted,
+                causalRevision: {
+                    groupRevision,
+                    presenceRevision: accepted.presenceVersion,
+                },
+            },
+        };
+    }
+    if (
+        isRecord(canonical) && canonical.kind === 'group' &&
+        isRecord(canonical.event) && canonical.event.kind === 'group' &&
+        isLegacyGroupEventValue(canonical.event.event)
+    ) {
+        validateGroupRef(canonical.aggregateRef);
+        canonical = {
+            ...canonical,
+            event: {
+                kind: 'group',
+                event: normalizePersistedGroupEvent(
+                    canonical.event.event,
+                    canonical.aggregateRef,
+                ),
+            },
+        };
+    }
+    validateStateMutationOutboxRecord(canonical);
+    return canonical;
+}
+
+function isLegacyGroupEventValue(value: unknown): boolean {
+    if (!isRecord(value)) return false;
+    if (
+        [
+            'workspaceId', 'causalRevision', 'reason', 'traceId', 'requestId',
+            'payload',
+        ].some((key) => !Object.hasOwn(value, key))
+    ) {
+        return true;
+    }
+    return isRecord(value.actor) && !Object.hasOwn(value.actor, 'kind') &&
+        (
+            isNonEmptyString(value.actor.principalId) ||
+            isNonEmptyString(value.actor.sessionId) ||
+            isNonEmptyString(value.actor.serviceId)
+        );
+}
+
+function toStateMutationOutboxIdentityRevision(
+    input: StateMutationOutboxIdentityInput,
+): ClientStateMutationCausalRevision | Readonly<{
+    kind: 'group';
+    stateRevision: number;
+    snapshotVersion: number;
+    metadataVersion: number;
+    rosterVersion: number;
+    presenceVersion: number;
+}> {
+    if (input.kind === 'client') {
+        return input.acceptedCausalRevision;
+    }
+    return {
+        kind: 'group',
+        stateRevision: input.acceptedCausalRevision.stateRevision,
+        snapshotVersion: input.acceptedCausalRevision.snapshotVersion,
+        metadataVersion: input.acceptedCausalRevision.metadataVersion,
+        rosterVersion: input.acceptedCausalRevision.rosterVersion,
+        presenceVersion: input.acceptedCausalRevision.presenceVersion,
+    };
+}
+
+function assertExactObjectKeys(
+    value: Readonly<Record<string, unknown>>,
+    expected: readonly string[],
+    label: string,
+): void {
+    if (!sameStringArray(Object.keys(value).sort(), expected.toSorted())) {
+        throw new TypeError(`Invalid state mutation outbox ${label} fields`);
+    }
 }
 
 function validateClientRef(ref: unknown): asserts ref is ClientPrincipalRef {
     if (
         !isRecord(ref) ||
         !isNonEmptyString(ref.applicationId) ||
-        (ref.workspaceId !== undefined && !isNonEmptyString(ref.workspaceId)) ||
+        !isNonEmptyString(ref.workspaceId) ||
         !isNonEmptyString(ref.principalId)
     ) {
         throw new TypeError('Invalid client aggregate ref');
@@ -1040,7 +1238,7 @@ function validateGroupRef(ref: unknown): asserts ref is GroupRef {
     if (
         !isRecord(ref) ||
         !isNonEmptyString(ref.applicationId) ||
-        (ref.workspaceId !== undefined && !isNonEmptyString(ref.workspaceId)) ||
+        !isNonEmptyString(ref.workspaceId) ||
         !isNonEmptyString(ref.groupId)
     ) {
         throw new TypeError('Invalid group aggregate ref');

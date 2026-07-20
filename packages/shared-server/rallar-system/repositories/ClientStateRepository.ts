@@ -24,6 +24,17 @@ import {
 import type {
     ClientMutationIdempotencyRecord,
 } from '@shared-server/rallar-system/services/client-state-mutations.ts';
+import {
+    normalizePersistedClientEvent,
+    normalizePersistedClientInstance,
+    normalizePersistedClientPrincipal,
+    normalizePersistedClientSession,
+    validateClientMutationIdempotencyRecord,
+    validatePersistedClientEvent,
+    validatePersistedClientInstance,
+    validatePersistedClientPrincipal,
+    validatePersistedClientSession,
+} from '@shared-server/rallar-system/services/client-state-mutations.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { isLogicallyActiveSession, toSessionPurgeAfterEpochMs } from './session-expiry.ts';
 import { type ClientStateEventStore, defaultClientStateEventStoreFor } from './StateEventStore.ts';
@@ -39,6 +50,15 @@ export type ClientStateRepositoryOptions = Readonly<{
     events?: ClientStateEventStore;
 }>;
 
+export class ClientStateRepositoryInvariantCorruptionError extends Error {
+    readonly code = 'client-state-repository-invariant-corruption';
+
+    constructor(readonly storageKey: string, message: string) {
+        super(`${message}: ${storageKey}`);
+        this.name = 'ClientStateRepositoryInvariantCorruptionError';
+    }
+}
+
 export class ClientStateRepository extends RuntimeStateJsonStore {
     private readonly events: ClientStateEventStore;
 
@@ -50,12 +70,30 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
         this.events = options.events ?? defaultClientStateEventStoreFor(repository);
     }
 
+    protected override async toLiveEntryValue<T>(
+        namespace: string,
+        entry: import('../../runtime-state/RuntimeStateRepository.ts').RuntimeStateEntry,
+    ): Promise<RuntimeStateEntryValue<T> | undefined> {
+        try {
+            return await super.toLiveEntryValue<T>(namespace, entry);
+        } catch (error) {
+            if (error instanceof SyntaxError) {
+                throw new ClientStateRepositoryInvariantCorruptionError(
+                    entry.key,
+                    `Stored client-state JSON is invalid: ${error.message}`,
+                );
+            }
+            throw error;
+        }
+    }
+
     async insertIdempotentClientStateWritten(
         ref: ClientPrincipalRef,
         requestId: string,
         record: ClientMutationIdempotencyRecord,
         purgeAfterEpochMs: number = NEVER_EXPIRE_AT_TIMESTAMP,
     ): Promise<RuntimeStateConditionalWriteResult> {
+        this.assertCanonicalIdempotencyRecord(record, ref, requestId);
         return await this.putValueIfAbsent(
             IDEMPOTENT_NAMESPACE,
             this.idempotentClientKey(ref, requestId),
@@ -68,43 +106,43 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
         ref: ClientPrincipalRef,
         requestId: string,
     ): Promise<ClientMutationIdempotencyRecord | undefined> {
-        return await this.getValue<ClientMutationIdempotencyRecord>(
-            IDEMPOTENT_NAMESPACE,
-            this.idempotentClientKey(ref, requestId),
-        );
+        return (await this.findIdempotentClientMutationReceiptEntry(ref, requestId))
+            ?.value;
     }
 
     async findIdempotentClientMutationReceiptEntry(
         ref: ClientPrincipalRef,
         requestId: string,
     ): Promise<RuntimeStateEntryValue<ClientMutationIdempotencyRecord> | undefined> {
-        return await this.getEntryValue<ClientMutationIdempotencyRecord>(
+        const stored = await this.getEntryValue<unknown>(
             IDEMPOTENT_NAMESPACE,
             this.idempotentClientKey(ref, requestId),
         );
+        return stored
+            ? this.toIdempotencyEntry(stored, { ...ref, requestId })
+            : undefined;
     }
 
     async findPrincipal(
         ref: ClientPrincipalRef,
     ): Promise<ClientPrincipal | undefined> {
-        return await this.getValue<ClientPrincipal>(
-            PRINCIPALS_NAMESPACE,
-            this.principalKey(ref),
-        );
+        return (await this.findPrincipalEntry(ref))?.value;
     }
 
     async findPrincipalEntry(
         ref: ClientPrincipalRef,
     ): Promise<RuntimeStateEntryValue<ClientPrincipal> | undefined> {
-        return await this.getEntryValue<ClientPrincipal>(
+        const stored = await this.getEntryValue<unknown>(
             PRINCIPALS_NAMESPACE,
             this.principalKey(ref),
         );
+        return stored ? this.toPrincipalEntry(stored, ref) : undefined;
     }
 
     async insertPrincipal(
         principal: ClientPrincipal,
     ): Promise<RuntimeStateConditionalWriteResult> {
+        validatePersistedClientPrincipal(principal, principal);
         return await this.putValueIfAbsent(
             PRINCIPALS_NAMESPACE,
             this.principalKey(principal),
@@ -116,6 +154,7 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
         principal: ClientPrincipal,
         expectedRevision: number,
     ): Promise<RuntimeStateConditionalWriteResult> {
+        validatePersistedClientPrincipal(principal, principal);
         return await this.putValueIfRevision(
             PRINCIPALS_NAMESPACE,
             this.principalKey(principal),
@@ -128,43 +167,40 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
     async listPrincipals(
         scope: ClientScope,
     ): Promise<readonly ClientPrincipal[]> {
-        return await this.listValues<ClientPrincipal>(
+        const stored = await this.listEntryValues<unknown>(
             PRINCIPALS_NAMESPACE,
             this.scopeChildPrefix(scope),
         );
+        return stored.map((entry) => this.toPrincipalEntry(entry, scope).value);
     }
 
     async listSnapshots(
         scope: ClientScope,
     ): Promise<readonly ClientSnapshot[]> {
         const keyPrefix = this.scopeChildPrefix(scope);
-        const principalsBefore = await this.listEntryValues<ClientPrincipal>(
+        const principalsBefore = (await this.listEntryValues<unknown>(
             PRINCIPALS_NAMESPACE,
             keyPrefix,
-        );
+        )).map((entry) => this.toPrincipalEntry(entry, scope));
         const [instances, sessions] = await Promise.all([
-            this.listValues<ClientInstance>(
-                INSTANCES_NAMESPACE,
-                keyPrefix,
-            ),
-            this.listValues<ClientSession>(
-                SESSIONS_NAMESPACE,
-                keyPrefix,
-            ),
+            this.listClientInstanceEntries(keyPrefix, scope),
+            this.listClientSessionEntries(keyPrefix, scope),
         ]);
-        const principalsAfter = await this.listEntryValues<ClientPrincipal>(
+        const principalsAfter = (await this.listEntryValues<unknown>(
             PRINCIPALS_NAMESPACE,
             keyPrefix,
-        );
+        )).map((entry) => this.toPrincipalEntry(entry, scope));
         const instancesByPrincipalId = new Map<string, ClientInstance[]>();
-        for (const instance of instances) {
+        for (const { value: instance } of instances) {
             const current = instancesByPrincipalId.get(instance.principalId) ?? [];
             current.push(instance);
             instancesByPrincipalId.set(instance.principalId, current);
         }
 
         const activeSessionsByPrincipalId = new Map<string, ClientSession[]>();
-        for (const session of this.toActiveSessions(sessions)) {
+        for (const session of this.toActiveSessions(
+            sessions.map((entry) => entry.value),
+        )) {
             const current = activeSessionsByPrincipalId.get(session.principalId) ?? [];
             current.push(session);
             activeSessionsByPrincipalId.set(session.principalId, current);
@@ -206,24 +242,23 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
     async findInstance(
         ref: ClientInstanceRef,
     ): Promise<ClientInstance | undefined> {
-        return await this.getValue<ClientInstance>(
-            INSTANCES_NAMESPACE,
-            this.instanceKey(ref),
-        );
+        return (await this.findInstanceEntry(ref))?.value;
     }
 
     async findInstanceEntry(
         ref: ClientInstanceRef,
     ): Promise<RuntimeStateEntryValue<ClientInstance> | undefined> {
-        return await this.getEntryValue<ClientInstance>(
+        const stored = await this.getEntryValue<unknown>(
             INSTANCES_NAMESPACE,
             this.instanceKey(ref),
         );
+        return stored ? this.toInstanceEntry(stored, ref) : undefined;
     }
 
     async insertInstance(
         instance: ClientInstance,
     ): Promise<RuntimeStateConditionalWriteResult> {
+        validatePersistedClientInstance(instance, instance);
         return await this.putValueIfAbsent(
             INSTANCES_NAMESPACE,
             this.instanceKey(instance),
@@ -235,6 +270,7 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
         instance: ClientInstance,
         expectedRevision: number,
     ): Promise<RuntimeStateConditionalWriteResult> {
+        validatePersistedClientInstance(instance, instance);
         return await this.putValueIfRevision(
             INSTANCES_NAMESPACE,
             this.instanceKey(instance),
@@ -247,10 +283,10 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
     async listInstances(
         ref: ClientPrincipalRef,
     ): Promise<readonly ClientInstance[]> {
-        return await this.listValues<ClientInstance>(
-            INSTANCES_NAMESPACE,
+        return (await this.listClientInstanceEntries(
             this.principalChildPrefix(ref),
-        );
+            ref,
+        )).map((entry) => entry.value);
     }
 
     async deleteInstance(
@@ -267,6 +303,7 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
     async insertSession(
         session: ClientSession,
     ): Promise<RuntimeStateConditionalWriteResult> {
+        validatePersistedClientSession(session, session);
         return await this.putValueIfAbsent(
             SESSIONS_NAMESPACE,
             this.sessionKey(session),
@@ -279,25 +316,24 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
     }
 
     async findSession(ref: ClientSessionRef): Promise<ClientSession | undefined> {
-        return await this.getValue<ClientSession>(
-            SESSIONS_NAMESPACE,
-            this.sessionKey(ref),
-        );
+        return (await this.findSessionEntry(ref))?.value;
     }
 
     async findSessionEntry(
         ref: ClientSessionRef,
     ): Promise<RuntimeStateEntryValue<ClientSession> | undefined> {
-        return await this.getEntryValue<ClientSession>(
+        const stored = await this.getEntryValue<unknown>(
             SESSIONS_NAMESPACE,
             this.sessionKey(ref),
         );
+        return stored ? this.toSessionEntry(stored, ref) : undefined;
     }
 
     async updateSession(
         session: ClientSession,
         expectedRevision: number,
     ): Promise<RuntimeStateConditionalWriteResult> {
+        validatePersistedClientSession(session, session);
         return await this.putValueIfRevision(
             SESSIONS_NAMESPACE,
             this.sessionKey(session),
@@ -313,23 +349,23 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
     async listSessions(
         ref: ClientInstanceRef,
     ): Promise<readonly ClientSession[]> {
-        return await this.listValues<ClientSession>(
-            SESSIONS_NAMESPACE,
+        return (await this.listClientSessionEntries(
             this.instanceChildPrefix(ref),
-        );
+            ref,
+        )).map((entry) => entry.value);
     }
 
     async listSessionsForPrincipal(
         ref: ClientPrincipalRef,
     ): Promise<readonly ClientSession[]> {
-        return await this.listValues<ClientSession>(
-            SESSIONS_NAMESPACE,
+        return (await this.listClientSessionEntries(
             this.principalChildPrefix(ref),
-        );
+            ref,
+        )).map((entry) => entry.value);
     }
 
     async listAllSessions(): Promise<readonly ClientSession[]> {
-        return await this.listValues<ClientSession>(SESSIONS_NAMESPACE);
+        return (await this.listClientSessionEntries()).map((entry) => entry.value);
     }
 
     async deleteSession(
@@ -344,30 +380,38 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
     }
 
     async appendEvent(event: ClientEvent): Promise<void> {
+        validatePersistedClientEvent(event, event);
         await this.events.appendClientEvent(event);
     }
 
     async listEvents(ref: ClientPrincipalRef): Promise<readonly ClientEvent[]> {
-        return await this.events.listClientEvents(ref);
+        return (await this.events.listClientEvents(ref)).map((event) =>
+            this.toClientEvent(event, ref)
+        );
     }
 
     async listRecentEvents(
         ref: ClientPrincipalRef,
         query: StateEventListQuery = {},
     ): Promise<readonly ClientEvent[]> {
-        return this.events.listRecentClientEvents
+        const events = this.events.listRecentClientEvents
             ? await this.events.listRecentClientEvents(ref, query)
             : filterStateEventsForList(
                 await this.events.listClientEvents(ref),
                 query,
             );
+        return events.map((event) => this.toClientEvent(event, ref));
     }
 
     async listEventPage(
         ref: ClientPrincipalRef,
         query: StateEventListQuery = {},
     ): Promise<StateEventPage<ClientEvent>> {
-        return await this.events.listClientEventPage(ref, query);
+        const page = await this.events.listClientEventPage(ref, query);
+        return {
+            ...page,
+            events: page.events.map((event) => this.toClientEvent(event, ref)),
+        };
     }
 
     async readPresenceSnapshot(
@@ -404,10 +448,7 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
         return await readStableStateSnapshot({
             snapshotKey: principalKey,
             readAggregate: async () =>
-                await this.getEntryValue<ClientPrincipal>(
-                    PRINCIPALS_NAMESPACE,
-                    principalKey,
-                ),
+                await this.findPrincipalEntry(ref),
             readChildren: async () => {
                 const [instances, sessions] = await Promise.all([
                     this.listInstances(ref),
@@ -445,13 +486,153 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
         };
     }
 
+    private async listClientInstanceEntries(
+        keyPrefix?: string,
+        expected?: ClientScope | ClientPrincipalRef,
+    ): Promise<readonly RuntimeStateEntryValue<ClientInstance>[]> {
+        const stored = await this.listEntryValues<unknown>(
+            INSTANCES_NAMESPACE,
+            keyPrefix,
+        );
+        return stored.map((entry) => this.toInstanceEntry(entry, expected));
+    }
+
+    private async listClientSessionEntries(
+        keyPrefix?: string,
+        expected?: ClientScope | ClientPrincipalRef | ClientInstanceRef,
+    ): Promise<readonly RuntimeStateEntryValue<ClientSession>[]> {
+        const stored = await this.listEntryValues<unknown>(
+            SESSIONS_NAMESPACE,
+            keyPrefix,
+        );
+        return stored.map((entry) => this.toSessionEntry(entry, expected));
+    }
+
+    private toPrincipalEntry(
+        stored: RuntimeStateEntryValue<unknown>,
+        expected: ClientScope | ClientPrincipalRef,
+    ): RuntimeStateEntryValue<ClientPrincipal> {
+        return this.withInvariantError(stored.entry.key, () => {
+            const keyRef = decodeClientPrincipalKey(stored.entry.key);
+            assertExpectedClientIdentity(keyRef, expected, 'principal');
+            const value = normalizePersistedClientPrincipal(stored.value, keyRef);
+            if (this.principalKey(value) !== stored.entry.key) {
+                throw new TypeError(
+                    'Stored client principal identity differs from its canonical slot',
+                );
+            }
+            return { entry: stored.entry, value };
+        });
+    }
+
+    private toInstanceEntry(
+        stored: RuntimeStateEntryValue<unknown>,
+        expected?: ClientScope | ClientPrincipalRef | ClientInstanceRef,
+    ): RuntimeStateEntryValue<ClientInstance> {
+        return this.withInvariantError(stored.entry.key, () => {
+            const keyRef = decodeClientInstanceKey(stored.entry.key);
+            if (expected) assertExpectedClientIdentity(keyRef, expected, 'instance');
+            const value = normalizePersistedClientInstance(stored.value, keyRef);
+            if (this.instanceKey(value) !== stored.entry.key) {
+                throw new TypeError(
+                    'Stored client instance identity differs from its canonical slot',
+                );
+            }
+            return { entry: stored.entry, value };
+        });
+    }
+
+    private toSessionEntry(
+        stored: RuntimeStateEntryValue<unknown>,
+        expected?: ClientScope | ClientPrincipalRef | ClientInstanceRef | ClientSessionRef,
+    ): RuntimeStateEntryValue<ClientSession> {
+        return this.withInvariantError(stored.entry.key, () => {
+            const keyRef = decodeClientSessionKey(stored.entry.key);
+            if (expected) assertExpectedClientIdentity(keyRef, expected, 'session');
+            const value = normalizePersistedClientSession(stored.value, keyRef);
+            if (this.sessionKey(value) !== stored.entry.key) {
+                throw new TypeError(
+                    'Stored client session identity differs from its canonical slot',
+                );
+            }
+            return { entry: stored.entry, value };
+        });
+    }
+
+    private toIdempotencyEntry(
+        stored: RuntimeStateEntryValue<unknown>,
+        expected: ClientPrincipalRef & Readonly<{ requestId: string }>,
+    ): RuntimeStateEntryValue<ClientMutationIdempotencyRecord> {
+        return this.withInvariantError(stored.entry.key, () => {
+            const keyRef = decodeClientIdempotencyKey(stored.entry.key);
+            assertExpectedClientIdentity(keyRef, expected, 'idempotency');
+            if (keyRef.requestId !== expected.requestId) {
+                throw new TypeError(
+                    'Stored client idempotency identity differs from its canonical slot',
+                );
+            }
+            validateClientMutationIdempotencyRecord(stored.value);
+            this.assertCanonicalIdempotencyRecord(
+                stored.value,
+                keyRef,
+                keyRef.requestId,
+            );
+            return { entry: stored.entry, value: stored.value };
+        });
+    }
+
+    private assertCanonicalIdempotencyRecord(
+        record: ClientMutationIdempotencyRecord,
+        ref: ClientPrincipalRef,
+        requestId: string,
+    ): void {
+        validateClientMutationIdempotencyRecord(record);
+        if (
+            record.requestId !== requestId ||
+            record.receipt.requestId !== requestId ||
+            record.receipt.commandId !== requestId ||
+            record.receipt.aggregateRef.applicationId !== ref.applicationId ||
+            record.receipt.aggregateRef.workspaceId !== ref.workspaceId ||
+            record.receipt.aggregateRef.principalId !== ref.principalId
+        ) {
+            throw new TypeError(
+                'Stored client idempotency identity differs from its canonical slot',
+            );
+        }
+    }
+
+    private toClientEvent(
+        event: unknown,
+        expected: ClientPrincipalRef,
+    ): ClientEvent {
+        return this.withInvariantError(this.principalKey(expected), () =>
+            normalizePersistedClientEvent(event, expected)
+        );
+    }
+
+    private withInvariantError<T>(storageKey: string, read: () => T): T {
+        try {
+            return read();
+        } catch (error) {
+            if (error instanceof ClientStateRepositoryInvariantCorruptionError) {
+                throw error;
+            }
+            throw new ClientStateRepositoryInvariantCorruptionError(
+                storageKey,
+                error instanceof Error
+                    ? error.message
+                    : 'Stored client-state value is invalid',
+            );
+        }
+    }
+
     private toActiveSessions(
         sessions: readonly ClientSession[],
     ): readonly ClientSession[] {
         return sessions.filter(
             (session) =>
                 session.status === 'active' &&
-                session.disconnectedAtEpochMs === undefined &&
+                session.disconnectedAtEpochMs === null &&
                 isLogicallyActiveSession(session.expiresAtEpochMs),
         );
     }
@@ -475,16 +656,16 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
     }
 
     private toLastSeenAtEpochMs(
-        existing: number | undefined,
+        existing: number | null,
         sessions: readonly ClientSession[],
-    ): number | undefined {
+    ): number | null {
         const timestamps = [
             existing ?? Number.NEGATIVE_INFINITY,
             ...sessions.map((session) => session.lastHeartbeatAtEpochMs),
         ];
 
         const next = Math.max(...timestamps);
-        return Number.isFinite(next) ? next : undefined;
+        return Number.isFinite(next) ? next : null;
     }
 
     private principalKey(ref: ClientPrincipalRef): string {
@@ -518,6 +699,114 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
     private sessionKey(ref: ClientSessionRef): string {
         return [this.instanceKey(ref), this.idKey('session', ref.sessionId)].join(
             ':',
+        );
+    }
+}
+
+function decodeClientPrincipalKey(key: string): ClientPrincipalRef {
+    const values = decodeClientKey(
+        key,
+        ['app', 'ws', 'principal'],
+    );
+    const applicationId = decodedClientKeyPart(values, 0);
+    const workspaceId = decodedClientKeyPart(values, 1);
+    const principalId = decodedClientKeyPart(values, 2);
+    return { applicationId, workspaceId, principalId };
+}
+
+function decodeClientInstanceKey(key: string): ClientInstanceRef {
+    const values = decodeClientKey(key, ['app', 'ws', 'principal', 'instance']);
+    const applicationId = decodedClientKeyPart(values, 0);
+    const workspaceId = decodedClientKeyPart(values, 1);
+    const principalId = decodedClientKeyPart(values, 2);
+    const clientInstanceId = decodedClientKeyPart(values, 3);
+    return { applicationId, workspaceId, principalId, clientInstanceId };
+}
+
+function decodeClientSessionKey(key: string): ClientSessionRef {
+    const values = decodeClientKey(
+        key,
+        ['app', 'ws', 'principal', 'instance', 'session'],
+    );
+    const applicationId = decodedClientKeyPart(values, 0);
+    const workspaceId = decodedClientKeyPart(values, 1);
+    const principalId = decodedClientKeyPart(values, 2);
+    const clientInstanceId = decodedClientKeyPart(values, 3);
+    const sessionId = decodedClientKeyPart(values, 4);
+    return {
+        applicationId,
+        workspaceId,
+        principalId,
+        clientInstanceId,
+        sessionId,
+    };
+}
+
+function decodeClientIdempotencyKey(
+    key: string,
+): ClientPrincipalRef & Readonly<{ requestId: string }> {
+    const values = decodeClientKey(
+        key,
+        ['app', 'ws', 'principal', 'request'],
+    );
+    const applicationId = decodedClientKeyPart(values, 0);
+    const workspaceId = decodedClientKeyPart(values, 1);
+    const principalId = decodedClientKeyPart(values, 2);
+    const requestId = decodedClientKeyPart(values, 3);
+    return { applicationId, workspaceId, principalId, requestId };
+}
+
+function decodeClientKey(
+    key: string,
+    names: readonly string[],
+): readonly string[] {
+    const segments = key.split(':');
+    if (segments.length !== names.length) {
+        throw new TypeError('Stored client-state key is not canonical');
+    }
+    const values = names.map((name, index) => {
+        const prefix = `${name}=`;
+        const segment = segments[index];
+        if (!segment?.startsWith(prefix)) {
+            throw new TypeError('Stored client-state key is not canonical');
+        }
+        const encoded = segment.slice(prefix.length);
+        const decoded = decodeURIComponent(encoded);
+        if (decoded.length === 0 || encodeURIComponent(decoded) !== encoded) {
+            throw new TypeError('Stored client-state key is not canonical');
+        }
+        return decoded;
+    });
+    return values;
+}
+
+function decodedClientKeyPart(values: readonly string[], index: number): string {
+    const value = values[index];
+    if (value === undefined) {
+        throw new TypeError('Stored client-state key is not canonical');
+    }
+    return value;
+}
+
+function assertExpectedClientIdentity(
+    actual: ClientScope | ClientPrincipalRef | ClientInstanceRef | ClientSessionRef,
+    expected: ClientScope | ClientPrincipalRef | ClientInstanceRef | ClientSessionRef,
+    label: string,
+): void {
+    if (
+        actual.applicationId !== expected.applicationId ||
+        actual.workspaceId !== expected.workspaceId ||
+        ('principalId' in expected &&
+            (!('principalId' in actual) ||
+                actual.principalId !== expected.principalId)) ||
+        ('clientInstanceId' in expected &&
+            (!('clientInstanceId' in actual) ||
+                actual.clientInstanceId !== expected.clientInstanceId)) ||
+        ('sessionId' in expected &&
+            (!('sessionId' in actual) || actual.sessionId !== expected.sessionId))
+    ) {
+        throw new TypeError(
+            `Stored client ${label} identity differs from its canonical slot`,
         );
     }
 }

@@ -1,5 +1,6 @@
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
+import type { MutationActor } from '@shared/api/mutation-actor.ts';
 import type { GroupEvent, GroupSnapshot } from '@shared/api/group-types.ts';
 import { newALBroadcastMessage, newALEventRoute } from '@shared/al-contracts/al-contract.ts';
 import type { ALOutboundEnqueueResult } from '@shared/alm/ALOutboundMessageRuntime.ts';
@@ -69,7 +70,7 @@ export function createWsStateSyncPublisher(
                 .findClientStateSnapshotByPrincipalId(event.principalId);
             await enqueueBroadcast(
                 wsQBoxServerService,
-                senderId ?? event.actor.principalId ?? event.actor.serviceId ?? options.serverId,
+                senderId ?? mutationActorSenderId(event.actor),
                 AppTopics.clientStateEvent,
                 event.principalId,
                 event.eventId,
@@ -124,7 +125,7 @@ export function createWsStateSyncPublisher(
             );
             await enqueueBroadcast(
                 wsQBoxServerService,
-                senderId ?? event.actor.principalId ?? event.actor.serviceId ?? options.serverId,
+                senderId ?? mutationActorSenderId(event.actor),
                 AppTopics.groupStateEvent,
                 event.groupId,
                 event.eventId,
@@ -306,6 +307,10 @@ function hasActiveClientSessions(snapshot: ClientSnapshot): boolean {
 function hasActiveGroupSessions(snapshot: GroupSnapshot): boolean {
     return snapshot.activeSessions.length > 0 ||
         snapshot.onlineMemberCount > 0;
+}
+
+function mutationActorSenderId(actor: MutationActor): string {
+    return actor.kind === 'service' ? actor.serviceId : actor.principalId;
 }
 
 function fnv1a64(value: string): string {

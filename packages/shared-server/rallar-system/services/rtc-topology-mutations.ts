@@ -10,6 +10,7 @@ import {
     toRtcRttRecomputeOutboxId,
 } from '../rtc-topology-identifiers.ts';
 import type { RtcTopologyPublication } from '../rtc-topology-publication-contract.ts';
+import type { RtcTopologyPublicationWorkClaim } from '../repositories/RtcTopologyPublicationRepository.ts';
 import { validateRtcTopologyPublication } from '../rtc-topology-publication-validation.ts';
 import {
     compareTopologyTuple,
@@ -27,6 +28,7 @@ import {
 } from './rtc-rtt-measurement-policy.ts';
 
 export type RtcTopologyPublicationClaim = Readonly<{
+    receipt: RtcTopologyPublicationWorkClaim;
     publication: RtcTopologyPublication;
 }>;
 
@@ -42,9 +44,17 @@ export type RtcTopologyMutationInput = Readonly<{
     facts: RtcTopologyMutationFacts;
 }>;
 
-export type RtcTopologyMutationFacts = Readonly<{
-    publicationExpireAtTimestamp: number | null;
-}>;
+export type RtcTopologyMutationFacts =
+    | Readonly<{
+        publicationExpireAtTimestamp: null;
+        commandHash: null;
+        attemptCount: null;
+    }>
+    | Readonly<{
+        publicationExpireAtTimestamp: number;
+        commandHash: string;
+        attemptCount: number;
+    }>;
 
 export type RtcTopologyMutationComputed =
     | Readonly<{
@@ -54,7 +64,9 @@ export type RtcTopologyMutationComputed =
     }>
     | Readonly<{
         outcome: 'retry';
-        reason: 'publication-ahead-of-snapshot';
+        reason:
+            | 'publication-ahead-of-snapshot'
+            | 'incomparable-causal-revision';
     }>
     | Readonly<{
         outcome: 'superseded';
@@ -72,6 +84,8 @@ export type RtcTopologyMutationComputed =
             | Readonly<{
                 publication: RtcTopologyPublication;
                 publicationExpireAtTimestamp: number;
+                commandHash: string;
+                attemptCount: number;
             }>
             | Readonly<{
                 publication: null;
@@ -86,7 +100,8 @@ export function computeTopologyMutation(
     if (input.read.publicationClaim) {
         if (
             input.candidate !== null || input.publication !== null ||
-            input.facts.publicationExpireAtTimestamp !== null
+            input.facts.publicationExpireAtTimestamp !== null ||
+            input.facts.commandHash !== null || input.facts.attemptCount !== null
         ) {
             throw new TypeError(
                 'RTC topology publication replay must not include mutable planning input',
@@ -101,20 +116,26 @@ export function computeTopologyMutation(
         const storedSnapshot = input.read.snapshot.value;
         const publicationSnapshot = assertPublicationSelfConsistent(storedPublication);
         const relation = compareTopologyTuple(publicationSnapshot, storedSnapshot);
-        if (relation > 0) {
+        if (relation === 'dominates') {
             return {
                 outcome: 'retry',
                 reason: 'publication-ahead-of-snapshot',
             };
         }
         if (
-            relation === 0 &&
+            relation === 'equal' &&
             !rtcTopologySemanticEqual(publicationSnapshot, storedSnapshot)
         ) {
             throw new RtcTopologyRepositoryInvariantCorruptionError(
                 storedPublication.publicationId,
                 'RTC topology publication equal causal tuple differs from durable snapshot',
             );
+        }
+        if (relation === 'incomparable') {
+            return {
+                outcome: 'retry',
+                reason: 'incomparable-causal-revision',
+            };
         }
         return {
             outcome: 'loaded',
@@ -132,6 +153,12 @@ export function computeTopologyMutation(
     const observation = decideTopologySnapshot(current, input.candidate);
     if (observation === 'stale') {
         return { outcome: 'superseded', current: current! };
+    }
+    if (observation === 'incomparable') {
+        return {
+            outcome: 'retry',
+            reason: 'incomparable-causal-revision',
+        };
     }
     validatePublicationExpiryFact(input.publication, input.facts);
     const write = {
@@ -154,10 +181,15 @@ export function computeTopologyMutation(
     if (publicationExpireAtTimestamp === null) {
         throw new TypeError('RTC topology publication expiry fact is invalid');
     }
+    if (input.facts.commandHash === null || input.facts.attemptCount === null) {
+        throw new TypeError('RTC topology execution receipt facts are invalid');
+    }
     return {
         ...write,
         publication: input.publication,
         publicationExpireAtTimestamp,
+        commandHash: input.facts.commandHash,
+        attemptCount: input.facts.attemptCount,
     };
 }
 
@@ -176,7 +208,10 @@ function assertPublicationSelfConsistent(
     if (
         !snapshot.groupRef ||
         !sameGroupRef(publication.groupRef, snapshot.groupRef) ||
-        publication.sourceGroupStateRevision !== snapshot.sourceGroupStateRevision ||
+        !rtcTopologySemanticEqual(
+            publication.sourceGroupStateCausalRevision,
+            snapshot.sourceGroupStateCausalRevision,
+        ) ||
         publication.overlayVersion !== snapshot.version ||
         !rtcTopologySemanticEqual(
             publication.recipientSessionIds,
@@ -201,8 +236,10 @@ export function validateTopologyMutation(
     if (
         input.publication &&
         (!sameGroupRef(input.publication.groupRef, input.candidate.groupRef) ||
-            input.publication.sourceGroupStateRevision !==
-                input.candidate.sourceGroupStateRevision ||
+            !rtcTopologySemanticEqual(
+                input.publication.sourceGroupStateCausalRevision,
+                input.candidate.sourceGroupStateCausalRevision,
+            ) ||
             input.publication.overlayVersion !== input.candidate.version)
     ) {
         throw new TypeError('RTC topology publication differs from candidate identity');
@@ -262,6 +299,7 @@ export type RtcRttMutationFacts = (
     | RtcRttMutationLifecycleFacts
 ) & Readonly<{
     commandHash: string;
+    attemptCount: number;
 }>;
 
 export type RtcRttMutationLifecycleFacts = Readonly<{
@@ -304,12 +342,19 @@ export type RtcRttMutationComputed =
 
 export type RtcRttMutationReceipt = Readonly<{
     receiptId: string;
+    commandId: string;
+    requestId: string;
     sessionIdFrom: string;
     sessionIdTo: string;
+    aggregateRef: Readonly<{ sessionIdFrom: string; sessionIdTo: string }>;
     measurementVersion: number;
     affectedGroupRefs: readonly GroupRef[];
     acceptedAtEpochMs: number;
     outcome: 'accepted';
+    attemptCount: number;
+    acceptedStorageRevision: number;
+    eventId: null;
+    outboxIds: readonly string[];
     commandHash: string;
 }>;
 
@@ -476,6 +521,19 @@ export function computeRttMutation(input: Readonly<{
     const affectedGroupRefs = affectedGroups.map((group) =>
         canonicalGroupRef(group.group)
     );
+    const recomputeIntents = affectedGroups.map((group): RtcRttRecomputeIntent => ({
+        outboxId: toRtcRttRecomputeOutboxId(
+            receiptId,
+            group.group,
+            input.facts.commandHash,
+        ),
+        receiptId,
+        groupSnapshot: group,
+        rtt: authority.command.rtt,
+        createdAtEpochMs: authority.facts.requestedAtEpochMs,
+        commandHash: input.facts.commandHash,
+        delivery: { state: 'pending' },
+    }));
     return {
         outcome: 'write',
         reason: 'accepted',
@@ -488,27 +546,26 @@ export function computeRttMutation(input: Readonly<{
         },
         receipt: {
             receiptId,
+            commandId: receiptId,
+            requestId: receiptId,
             sessionIdFrom: authority.command.rtt.sessionIdFrom,
             sessionIdTo: authority.command.rtt.sessionIdTo,
+            aggregateRef: {
+                sessionIdFrom: authority.command.rtt.sessionIdFrom,
+                sessionIdTo: authority.command.rtt.sessionIdTo,
+            },
             measurementVersion: authority.command.rtt.version,
             affectedGroupRefs,
             acceptedAtEpochMs: authority.facts.requestedAtEpochMs,
             outcome: 'accepted',
+            attemptCount: input.facts.attemptCount,
+            acceptedStorageRevision:
+                (authorityRead.measurement?.entry.revision ?? -1) + 1,
+            eventId: null,
+            outboxIds: recomputeIntents.map((intent) => intent.outboxId),
             commandHash: input.facts.commandHash,
         },
-        recomputeIntents: affectedGroups.map((group) => ({
-            outboxId: toRtcRttRecomputeOutboxId(
-                receiptId,
-                group.group,
-                input.facts.commandHash,
-            ),
-            receiptId,
-            groupSnapshot: group,
-            rtt: authority.command.rtt,
-            createdAtEpochMs: authority.facts.requestedAtEpochMs,
-            commandHash: input.facts.commandHash,
-            delivery: { state: 'pending' },
-        })),
+        recomputeIntents,
     };
 }
 
@@ -567,6 +624,9 @@ export function validateRttMutationFacts(facts: RtcRttMutationFacts): void {
     if (!/^sha256:[0-9a-f]{64}$/.test(facts.commandHash)) {
         throw new TypeError('RTC RTT command hash fact is invalid');
     }
+    if (!Number.isSafeInteger(facts.attemptCount) || facts.attemptCount < 1) {
+        throw new TypeError('RTC RTT attempt count fact is invalid');
+    }
     if (facts.requestedAtEpochMs === null || facts.purgeAfterEpochMs === null) {
         if (facts.requestedAtEpochMs !== null || facts.purgeAfterEpochMs !== null) {
             throw new TypeError('RTC RTT lifecycle facts must be jointly absent');
@@ -588,13 +648,11 @@ export function validateRttMutationFacts(facts: RtcRttMutationFacts): void {
 }
 
 function canonicalGroupRef(ref: GroupRef): GroupRef {
-    return ref.workspaceId === undefined
-        ? { applicationId: ref.applicationId, groupId: ref.groupId }
-        : {
-            applicationId: ref.applicationId,
-            workspaceId: ref.workspaceId,
-            groupId: ref.groupId,
-        };
+    return {
+        applicationId: ref.applicationId,
+        workspaceId: ref.workspaceId,
+        groupId: ref.groupId,
+    };
 }
 
 function canonicalAffectedGroups(
@@ -711,7 +769,10 @@ function validatePublicationExpiryFact(
 ): void {
     const expiresAt = facts.publicationExpireAtTimestamp;
     if (publication === null) {
-        if (expiresAt !== null) {
+        if (
+            expiresAt !== null || facts.commandHash !== null ||
+            facts.attemptCount !== null
+        ) {
             throw new TypeError(
                 'RTC topology publication expiry must be null without publication',
             );
@@ -720,7 +781,10 @@ function validatePublicationExpiryFact(
     }
     if (
         expiresAt === null || !Number.isSafeInteger(expiresAt) ||
-        expiresAt <= publication.createdAtEpochMs
+        expiresAt <= publication.createdAtEpochMs ||
+        typeof facts.commandHash !== 'string' ||
+        !/^sha256:[0-9a-f]{64}$/u.test(facts.commandHash) ||
+        !Number.isSafeInteger(facts.attemptCount) || facts.attemptCount < 1
     ) {
         throw new TypeError('RTC topology publication expiry fact is invalid');
     }

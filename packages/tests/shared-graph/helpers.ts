@@ -1,6 +1,11 @@
 import { UndirectedGraph } from 'graphology';
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import type {
+    AuditStamp,
+    GroupMember,
+    GroupPresenceSession,
+    GroupSnapshot,
+} from '@shared/api/group-types.ts';
 import { DEFAULT_GRAPH_PROP } from '@shared-graph/algo-props.ts';
 import {
     type EdgeProp,
@@ -45,58 +50,86 @@ export function createGroupSnapshot(
 ): GroupSnapshot {
     const applicationId = 'app-1';
     const workspaceId = 'workspace-1';
+    const ownerPrincipalId = memberSessionIds[0];
+    if (ownerPrincipalId === undefined) {
+        throw new Error('Group fixture requires an owner session');
+    }
 
     return {
+        stateRevision: membershipVersion,
+        causalRevision: {
+            groupRevision: membershipVersion,
+            presenceRevision: membershipVersion,
+        },
         group: {
             applicationId,
             workspaceId,
             groupId,
+            slug: groupId,
             displayName: groupId,
+            description: null,
             kind: 'room',
             status: 'active',
+            archived: null,
+            deleted: null,
             joinMode: 'open',
+            maxMembers: null,
+            maxSessionsPerMember: null,
             metadata: {},
+            activeMemberCount: memberSessionIds.length,
+            ownerPrincipalId,
             snapshotVersion: membershipVersion,
             metadataVersion: 0,
             rosterVersion: membershipVersion,
             presenceVersion: 0,
-            created: {
-                atEpochMs: 1,
-                byPrincipalId: 'owner',
-            },
-            updated: {
-                atEpochMs: membershipVersion,
-                byPrincipalId: 'owner',
-            },
+            created: createAuditStamp(1, ownerPrincipalId),
+            updated: createAuditStamp(membershipVersion, ownerPrincipalId),
+            expiresAtEpochMs: null,
+            emptySinceEpochMs: null,
+            purgeAfterEpochMs: null,
         },
-        members: memberSessionIds.map((sessionId) => ({
+        members: memberSessionIds.map((sessionId): GroupMember => ({
             applicationId,
             workspaceId,
             groupId,
             principalId: sessionId,
-            role: 'member',
+            role: sessionId === ownerPrincipalId ? 'owner' : 'member',
             status: 'active',
-            joined: {
-                atEpochMs: 1,
-                byPrincipalId: 'owner',
-            },
-            updated: {
-                atEpochMs: membershipVersion,
-                byPrincipalId: 'owner',
-            },
+            joined: createAuditStamp(1, ownerPrincipalId),
+            updated: createAuditStamp(membershipVersion, ownerPrincipalId),
+            invitedByPrincipalId: null,
+            invitationExpiresAtEpochMs: null,
+            left: null,
+            removed: null,
+            banned: null,
         })),
-        activeSessions: memberSessionIds.map((sessionId) => ({
+        activeSessions: memberSessionIds.map((sessionId): GroupPresenceSession => ({
             applicationId,
             workspaceId,
             groupId,
             sessionId,
             principalId: sessionId,
+            generationId: `generation-${sessionId}`,
+            generationVersion: membershipVersion,
+            status: 'active',
             connectedAtEpochMs: 1,
             lastHeartbeatAtEpochMs: membershipVersion,
             expiresAtEpochMs: membershipVersion + 60_000,
+            disconnectedAtEpochMs: null,
+            disconnectReason: null,
         })),
         memberCount: memberSessionIds.length,
         onlineMemberCount: memberSessionIds.length,
+    };
+}
+
+function createAuditStamp(atEpochMs: number, principalId: string): AuditStamp {
+    return {
+        atEpochMs,
+        actor: { kind: 'principal', principalId },
+        reason: null,
+        traceId: null,
+        requestId: null,
     };
 }
 
