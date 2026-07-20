@@ -572,3 +572,108 @@ based on reviewed Task 6 report commit `2f4a7126`.
   semantic equality. `git diff --check` and staged implementation
   `git diff --cached --check` passed.
 - Task 7 and later tasks were not started by this correction.
+
+## Seventh review correction: retained delivery proofs and specialized family cleanup
+
+Implementation commit: `5b829134611dc8f74c1953c4ce41e3df9739f196`
+(`fix(rtc): retain delivery proofs across cleanup`), based on reviewed Task 6
+report commit `a41a249e9767cf53456cde3e2582ca9a86c5ff28`.
+
+### Corrected behavior
+
+- Every authoritative RTT recompute intent now has a mandatory nested delivery
+  discriminant: either `{ state: 'pending' }` or
+  `{ state: 'delivered', deliveredAtEpochMs }`. Normal reads reject the former
+  delivery-less legacy shape. The explicit old-writers-stopped migration is the
+  only compatibility path and upgrades an exact legacy intent to `pending`
+  with bounded optimistic retries.
+- The drainer skips retained delivered proofs. It preflights the family
+  lifetime, performs the idempotent enqueue, captures the successful delivery
+  time outside any transaction, then compare-and-set transitions the observed
+  pending intent to delivered without changing identity or physical expiry.
+  Concurrent drainers may both reach the idempotent enqueue, but only one
+  delivery-state CAS applies and subsequent/restarted drains do not enqueue the
+  retained proof again.
+- Receipt and intent namespaces are excluded from generic runtime-state expiry.
+  A dedicated stoppable periodic initializer performs their cleanup first at
+  API startup; generic eviction starts only after topology-generation backfill
+  and the first specialized cleanup succeed. Initial failures reject the
+  startup barrier, later failures are surfaced through the injected error
+  callback, and neither path silently permits generic deletion of protected
+  rows.
+- Specialized cleanup captures one time fact, then executes explicit
+  read, compute, validate, and write phases. Receipt and sibling reads and all
+  exact-set, receipt-binding, delivery-shape, and joint-expiry validation occur
+  outside the transaction. The write-only transaction first CAS-guards the
+  receipt revision as the family aggregate, conditionally deletes the observed
+  siblings, and deletes the guarded receipt. A conflict rolls the transaction
+  back, waits on the shared `[0, 2, 8]` schedule outside the transaction, and
+  rereads the complete family. Missing, extra, duplicate, live,
+  mismatched-expiry, or corrupt families fail closed and remain retained.
+- Generic PostgreSQL expiry accepts caller-owned namespace exclusions and
+  emits distinct safe SQL for empty and nonempty exclusion sets. PGlite and
+  live PostgreSQL coverage prove that ordinary expired rows are removed while
+  the protected receipt and recompute-intent namespaces remain untouched.
+- Concurrent legacy publication migration now owns a complete bounded retry
+  attempt. Every attempt rereads source and destination authority. A vanished
+  source is successful only when one semantically and physically exact
+  canonical publication/claim winner remains and no legacy claim remains;
+  divergent values or physical expiry are typed corruption, while conditional
+  conflicts retry and three conflicts raise the typed retry-exhausted error.
+- A source/order architecture gate protects the specialized cleanup boundary:
+  read, compute, validate, and write calls must remain ordered, the write seam
+  must own the transaction, no domain read may occur inside it, and the receipt
+  CAS guard must precede conditional deletes. No row, table, or advisory lock
+  was added.
+
+### Seventh correction RED evidence
+
+- The initial five-file Vitest command collected 256 tests and exited 1 with
+  20 failures and 236 passes. Failures covered concurrent/exhausted publication
+  migration, mandatory delivery shape and explicit legacy migration, retained
+  restart proofs, delivery-time bounds, concurrent/no-repeat drain behavior,
+  complete and partial multi-intent families, safe specialized sweeping,
+  initializer lifecycle, and generic namespace exclusions.
+- The initial focused api-v1 Deno command collected 25 tests and exited 1 with
+  4 failures and 21 passes. It demonstrated incorrect startup ordering,
+  generic eviction starting after specialized-cleanup failure, missing
+  middleware protection, and PGlite generic deletion of protected rows.
+- The pre-commit architecture audit added two more REDs. The filtered command
+  exited 1 with exactly 2 failures: cleanup still read domain state inside
+  `begin`, and the delivery proof recorded a pre-enqueue clock value. The
+  read/compute/validate plus write-only aggregate-guard refactor and
+  post-success delivery timestamp made both pass.
+- A final adversarial publication RED resolved instead of rejecting when a
+  simulated concurrent winner had a divergent physical expiry. Exact
+  publication and claim expiry validation made the same test reject with typed
+  invariant corruption.
+
+### Seventh correction GREEN, baseline, and architecture evidence
+
+- The final five-file focused command passed 5/5 files and 259/259 tests. The
+  expanded ten-file Task 6 cross-package matrix passed 10/10 files and 362/362
+  tests.
+- `npx vitest run packages/tests/shared-server --reporter=dot
+  --silent=passed-only` passed 58 files with 2 configured-skip files; 902 tests
+  passed and 13 opt-in environment tests were skipped.
+- `npm run typecheck` passed the root and every workspace typecheck. In
+  `apps/api-v1`, `deno task --config deno.json check` passed and
+  `deno task --config deno.json test` passed 213/213 tests.
+- The live PostgreSQL concurrency command passed 1/1 file and 12/12 tests,
+  including direct proof that generic expiry preserves both protected RTC
+  namespaces while deleting an ordinary expired row. The first sandboxed
+  attempt reached the non-network tests and failed the database cases only with
+  localhost `connect EPERM`; the approved local-database rerun passed fully.
+- Root-wide `npm run test:unit -- --reporter=dot --silent=passed-only` remains
+  explicitly **not claimed as passing**: 445 files passed, 2 were configured
+  skips, and 1 failed; 4,408 tests passed, 13 skipped, and the same 7 tests
+  failed in the untouched
+  `packages/tests/shared-web/rallar-workflow-options-compat.test.ts` baseline.
+  That file is absent from this correction's diff.
+- Targeted scans found no `.upsert`, `deleteByKey`, `lockKey`, `FOR UPDATE`, or
+  advisory-lock use in the changed Task 6 production paths. The only
+  transaction-local domain reads found in `RtcRttRepository` belong to the
+  explicit old-writers-stopped migration; the runtime cleanup write seam is
+  source-gated as read-free. `git diff --check` and staged implementation
+  `git diff --cached --check` passed before the implementation commit.
+- Task 7 and later tasks were not started by this correction.
