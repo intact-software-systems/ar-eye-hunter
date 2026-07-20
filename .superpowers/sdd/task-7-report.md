@@ -16,6 +16,8 @@
   (`fix: close authoritative read invariants`).
 - Receipt replay closure commit: `c00b0c76`
   (`fix: close mutation receipt replay invariants`).
+- Producer-boundary closure commit: `0b962673`
+  (`fix: close persisted AL producer boundary`).
 - Authoritative client, group, event, topology, overlay, outbox, and mutation
   receipt contracts now require their identity, lifecycle, actor, causal,
   storage-revision, and effect fields. Meaningful absence is represented by a
@@ -81,6 +83,16 @@
 - Persisted topology mutation receipts bind both `commandId` and `requestId`
   to their enclosing record request. Persisted room broadcasts require a
   complete group ref; world and all broadcast modes remain unchanged.
+- RallarAI server broadcast input is now a discriminated contract: default or
+  explicit room scope requires a complete workspace-bearing `GroupRef`, while
+  world and all scope intentionally carry no room ref. Runtime callers and
+  room generation-topic forwarding are validated before publication, and the
+  canonical group ID owns the room route context.
+- The complete persisted AL envelope validator now lives at a dependency-safe
+  shared AL boundary. The former shared-server module re-exports it for import
+  compatibility, and `WsQueueBoxServerService` invokes it for durable outbound
+  policy before any QueueBox enqueue. Live-only messages remain outside the
+  persistence validator.
 
 ## Persistence and migration rationale
 
@@ -349,6 +361,43 @@
   for this narrow closure; the fresh directly affected, exact Task 7, exact API,
   Swagger, and compiler gates above are the governing evidence for this commit.
 
+## Persisted AL producer-boundary closure evidence
+
+- The exact pre-production RED command was
+  `npx vitest run packages/tests/shared-server/rallar-ai-server.test.ts packages/tests/shared/ws-server-qos-policy.test.ts packages/tests/api-v1/rallar-server-ws-facade.test.ts`.
+  It exited 1 with 5 failing tests and 36 passing tests: RallarAI did not derive
+  the route context from its canonical room ref, accepted an incomplete
+  workspace ref, forwarded a room generation result without a ref, and both
+  the direct queue service and router persisted a room broadcast without a
+  canonical target.
+- The same focused command passed 41/41 after the correction. The final
+  validator/RallarAI/queue/router/state-sync/RTC-outbox selection passed 6/6
+  files and 81/81 tests. The RallarAI shared, browser, and server selection
+  passed 36/36, and the receipt/outbox Task 7 selection passed 173/173.
+- A producer audit found no direct shared-server `WS_OUTBOX` repository write:
+  router and state-sync persistence both enter through
+  `WsQueueBoxServerService.enqueueOutboxIfAbsent`. RallarAI now constructs a
+  canonical target, topology publication already supplies one, and legacy
+  router/game room helpers cannot persist an unscoped envelope because the
+  generic boundary rejects it. State sync uses intentional `all` scope.
+- A fresh `npm run test:unit` passed 450 files with two configured-skip files:
+  4,604 tests passed and 13 environment-gated tests skipped. The exact Task 7
+  command passed 59/59, the exact API Deno command passed 43/43, and Swagger
+  passed 12/12.
+- `npm run typecheck` and explicit shared, shared-server, and shared-web
+  TypeScript commands all exited 0. The non-governing
+  `packages/tests/tsconfig.json` command remained at exactly 1,496 baseline
+  diagnostics. Touched-path filtering reported only the two existing
+  `group-state-concurrency.test.ts` union diagnostics and the existing
+  `ws-server-qos-policy.test.ts` Temporal diagnostic; the new RallarAI, router,
+  queue, and persisted-validator code introduced none.
+- Task-7-added non-null assertions in the two group-state persistence tests
+  were replaced with explicit fixture narrowing. `git diff --check` and
+  staged `git diff --cached --check` passed; added-line scans found no
+  `Reflect` calls, `as any`, `as never`, `as unknown`, non-null assertions, or
+  database locks. The two intentional restoration files remain byte-for-byte
+  equal to base `f1359859`.
+
 ## Baseline-red checks
 
 - `npx tsc -p packages/tests/tsconfig.json --noEmit` remains red on the
@@ -366,7 +415,7 @@
 
 ## Follow-up
 
-- No Task 7 implementation follow-up is required after `c00b0c76`.
+- No Task 7 implementation follow-up is required after `0b962673`.
   Repository-wide cleanup of
   the known `packages/tests` TypeScript and API formatter baselines should be
   handled separately so it does not obscure the authoritative-contract change.
