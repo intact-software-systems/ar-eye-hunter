@@ -26,7 +26,7 @@ type SeamContract = Readonly<{
 }>;
 type GuardCheck = Readonly<{
     call: CallExpectation; wrapper?: string; binding?: string; condition?: string;
-    terminal?: 'throw' | 'throw-or-return';
+    terminal?: 'throw' | 'throw-or-return'; protects?: CallExpectation;
 }>;
 type PropertySpec = readonly [name: string, types: readonly string[]];
 type VariantDescriptor = Readonly<{ outcome: string; property?: PropertySpec }>;
@@ -101,17 +101,17 @@ const configSeam = seam(
     [
         checked('new GroupStateRepository(transaction).advanceAuthorityFence',
             'authorityFence',
-            "authorityFence.status === 'conflict' || authorityFence.revision !== computed.groupAuthorityGuard.entry.revision + 1"),
+            "authorityFence.status === 'conflict' || authorityFence.revision !== computed.groupAuthorityGuard.entry.revision + 1", undefined, 'throw', exact('repository.deleteConfig', undefined, true, ["computed.outcome === 'write'", 'then'])),
         ...['deleteConfig', 'deleteOverride', 'commitConfig', 'commitOverride']
             .map((name) => checked(`repository.${name}`, 'state',
                 "state.status === 'conflict'",
-                ["computed.outcome === 'write'", 'then'])),
+                ["computed.outcome === 'write'", 'then'], 'throw', exact('repository.commitInvariantGeneration', undefined, true, ["computed.outcome === 'write'", 'then']))),
         checked('repository.commitInvariantGeneration', 'invariantGeneration',
             "invariantGeneration.status === 'conflict'",
-            ["computed.outcome === 'write'", 'then']),
+            ["computed.outcome === 'write'", 'then'], 'throw', exact('repository.commitGeneration', undefined, true, ["computed.outcome === 'write'", 'then'])),
         checked('repository.commitGeneration', 'generation',
             "generation.status === 'conflict'",
-            ["computed.outcome === 'write'", 'then']),
+            ["computed.outcome === 'write'", 'then'], 'throw', exact('new StateMutationOutboxRepository(transaction).insertForAuthoritativeWrite', undefined, true, ["computed.outcome === 'write'", 'then'])),
         checked('repository.insertMutationRecord', 'claimed',
             "claimed.status === 'conflict'", ['computed.idempotency', 'then']),
     ],
@@ -122,9 +122,9 @@ const rtcSeam = seam(
     ['insertWorkClaim', 'insertPublication'],
     [
         checked('snapshots.commitSnapshotGuard', 'guard',
-            "guard.status === 'conflict'"),
+            "guard.status === 'conflict'", undefined, 'throw', exact('publications.insertWorkClaim', undefined, true, ['publicationWrite', 'then'])),
         checked('publications.insertWorkClaim', 'claimed', '!claimed',
-            ['publicationWrite', 'then']),
+            ['publicationWrite', 'then'], 'throw', exact('publications.insertPublication', undefined, true, ['publicationWrite', 'then'])),
     ],
 );
 const rttSeam = seam(
@@ -133,11 +133,11 @@ const rttSeam = seam(
     ['commitMeasurement', 'insertMutationReceipt', 'insertRecomputeIntent'],
     [
         checked('repository.commitEndpointAdmission', 'written',
-            "written.status === 'conflict'", undefined, 'throw-or-return'),
+            "written.status === 'conflict'", undefined, 'throw-or-return', exact('repository.commitMeasurement', undefined, true)),
         checked('repository.commitMeasurement', 'measurement',
-            "measurement.status === 'conflict'"),
+            "measurement.status === 'conflict'", undefined, 'throw', exact('repository.insertMutationReceipt', undefined, true)),
         checked('repository.insertMutationReceipt', 'receipt',
-            "receipt.status === 'conflict'"),
+            "receipt.status === 'conflict'", undefined, 'throw', exact('repository.insertRecomputeIntent', undefined, true)),
         checked('repository.insertRecomputeIntent', 'inserted',
             "inserted.status === 'conflict'"),
     ],
@@ -497,6 +497,16 @@ describe('read/compute/validate/write implementation contract', () => {
             expect(() => assertSeam(source, rtcSeam)).toThrow(/guard|conflict/);
         });
     });
+    it('rejects an RTC guard failure branch after its protected write', () => {
+        const failure = "                if (guard.status === 'conflict') {\n                    throw new RuntimeStateWriteConflictError();\n                }\n";
+        const marker = "                    if (!claimed) throw new RuntimeStateWriteConflictError();";
+        const mutated = replaceOnce(replaceOnce(
+            readRepo(rtcRepositoryFile), failure, '',
+        ), marker, `${failure}${marker}`);
+        withFixture(mutated, (source) => {
+            expect(() => assertSeam(source, rtcSeam)).toThrow(/insertWorkClaim|protected/);
+        });
+    });
     it('rejects ambient crypto randomUUID in a pure module', () => {
         withFixture('export const compute = () => crypto.randomUUID();', (source) => {
             expect(() => assertPure(source)).toThrow(/randomUUID/);
@@ -534,9 +544,10 @@ function wrapped(callee: string, branch?: Branch): GuardCheck {
     return { call: exact(callee, undefined, true, branch), wrapper: 'requireConditionalWrite' };
 }
 function checked(callee: string, binding: string, condition: string,
-    branch?: Branch, terminal: GuardCheck['terminal'] = 'throw'): GuardCheck {
+    branch?: Branch, terminal: GuardCheck['terminal'] = 'throw',
+    protects?: CallExpectation): GuardCheck {
     return { call: exact(callee, undefined, true, branch), binding, condition,
-        terminal };
+        terminal, protects };
 }
 function fixtureEffect(source: ts.SourceFile): EffectContract {
     return {
@@ -646,6 +657,8 @@ function assertGuardCheck(source: ts.SourceFile,
     const returns = hasKind(failure.thenStatement, ts.SyntaxKind.ReturnStatement);
     expect(throws || (check.terminal === 'throw-or-return' && returns), check.condition)
         .toBe(true);
+    if (check.protects) expect(failure.end, `${check.protects.callee}: protected`)
+        .toBeLessThan(findCall(source, transaction, check.protects).pos);
 }
 function assertEffect(contract: EffectContract, provided?: ts.SourceFile): void {
     const typeSource = provided ?? repoSource(contract.type[0]);
