@@ -101,7 +101,13 @@ instance. Presence-session mutations bypass the aggregate lane, and separate
 service instances or processes retain independent lanes. Every queued effect
 still runs the complete bounded retry from a fresh read; the lane does not
 replace database CAS and is not authorization, persistence, or correctness
-authority.
+authority. When an actual group or topology-config write has a queued local
+successor, the lane adds a best-effort 3 ms post-write scheduling handoff after
+the transaction has completed. Handoffs are eligible for actual writes, never
+replay, no-op, or rejected outcomes. A handoff failure cannot change the
+completed mutation result. The delay is separate from the `[0, 2, 8]` retry
+schedule and is not a cross-process ordering guarantee; the governed database
+benchmark must show whether it suppresses enough observed contention.
 
 Snapshot assembly treats presence summaries as optimistic hints. At one
 observation time it intersects the summary with the latest active/unexpired

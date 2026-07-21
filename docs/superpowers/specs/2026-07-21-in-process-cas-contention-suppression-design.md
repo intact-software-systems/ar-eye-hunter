@@ -18,9 +18,11 @@ Database CAS remains the only correctness and authority boundary.
 1. Add a per-service, per-aggregate FIFO lane. This is the selected approach.
    It removes same-instance thundering herds while preserving independent lanes
    and normal CAS conflicts between service instances and processes.
-2. Add jitter, longer delays, or more retries. This could reduce collisions but
-   would change the immutable retry contract and could hide rather than remove
-   avoidable same-instance contention.
+2. Add retry jitter, longer retry delays, or more attempts. This could reduce
+   collisions but would change the immutable retry contract and could hide
+   rather than remove avoidable same-instance contention. A distinct
+   post-success lane handoff was later retained as a bounded experiment; it is
+   not part of the retry schedule.
 3. Serialize in PostgreSQL or through process-global state. Database locks are
    outside the approved architecture, while process-global coordination would
    make independently constructed service stacks appear more coordinated than
@@ -47,6 +49,24 @@ does not release the lane early because its database work may still be active.
 Skipped aborted effects and rejected effects both participate in normal tail
 cleanup. A read-only pending-key count supports lifecycle diagnostics and tests.
 
+After an eligible successful effect, a lane with a queued same-key successor
+may await a package-internal 3 ms scheduling handoff. Eligibility is decided
+from the internal execution result: group and topology services select only an
+actual `write`, never replay, no-op, rejected, or receipt-claim outcomes. The
+handoff starts only after the effect and its transaction complete. Its timer is
+dedicated and separate from retry sleep injection. A handoff or eligibility
+predicate failure is isolated so handoff failure cannot change the completed
+mutation result.
+
+The 3 ms value is a bounded best-effort experiment, not a fairness proof. In
+the deterministic model, a 2 ms handoff lost when the database conflict became
+observable 0.5 ms after the winner registered its handoff: the local successor
+ran at 2 ms before the retry at 2.5 ms. A 3 ms handoff gave that retry priority
+for conflict-observation lag below 1 ms. Larger database-pool, event-loop, or
+process scheduling lag can still reverse the order, so the governed real
+benchmark is the falsifier and the handoff is not a cross-process ordering
+guarantee.
+
 ## Service integration
 
 Each `GroupStateService` instance creates one lane. Aggregate-backed commands
@@ -54,12 +74,14 @@ use the canonical scoped group key and enter the lane before the retry loop.
 The presence operations `connectPresence`, `heartbeatPresence`, and
 `disconnectPresence` bypass the aggregate lane because their authority guard is
 the per-session presence row. This preserves the Task 4 contention split.
+Only executions whose internal source is `write` request the 3 ms handoff.
 
 Each `GroupTopologyManagementService` instance creates a separate lane.
 `putConfig`, `deleteConfig`, `putOverride`, and `deleteOverride` enter it through
 the shared topology-config mutation executor, keyed by scoped group. Topology
 reads, RTC publication/snapshot work, RTT writes, and client-state writes remain
-unchanged.
+unchanged. The topology executor carries a mandatory internal source so replay
+of a previously applied receipt cannot be mistaken for a new write.
 
 Lanes are not shared between separately constructed service instances. The API
 composition and the benchmark therefore retain real inter-instance CAS races.
@@ -83,11 +105,16 @@ TDD coverage will prove:
 - distinct-key concurrency;
 - successor progress and map cleanup after rejection;
 - pre-acquisition abort skips the effect and cleans the key;
+- lone success, rejection, abort, distinct-key-only work, replay, no-op, and
+  domain rejection do not request a handoff;
+- handoff failure cannot reject an already completed effect;
 - same-service aggregate mutations are suppressed before repository work;
 - separate service instances still overlap, conflict, perform the unchanged
   bounded retry, and converge through CAS;
 - presence mutation work is not blocked behind an aggregate mutation lane;
-- topology config/override mutations receive the same per-instance behavior.
+- topology config/override mutations receive the same per-instance behavior;
+- a 0.5 ms conflict-observation lag rejects a 2 ms handoff and admits the
+  bounded 3 ms experiment, without claiming remote ordering.
 
 Focused group/topology suites, architecture contract tests, shared-server
 typechecking, and the repository style scan follow implementation. The exact
