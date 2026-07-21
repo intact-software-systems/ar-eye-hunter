@@ -242,7 +242,7 @@ export class StateMutationOutboxRepository extends RuntimeStateJsonStore {
         validateInitialStateMutationOutboxRecord(record);
         const inserted = await this.putValueIfAbsent(
             STATE_MUTATION_OUTBOX_NAMESPACE,
-            toStateMutationOutboxKey(record.outboxId),
+            stateMutationOutboxStorageKey(record.outboxId),
             record,
             NEVER_EXPIRE_AT_TIMESTAMP,
         );
@@ -260,7 +260,7 @@ export class StateMutationOutboxRepository extends RuntimeStateJsonStore {
     ): Promise<PutStateMutationOutboxResult> {
         validateStateMutationOutboxRecord(record);
         validateInitialStateMutationOutboxRecord(record);
-        const key = toStateMutationOutboxKey(record.outboxId);
+        const key = stateMutationOutboxStorageKey(record.outboxId);
         const inserted = await this.putValueIfAbsent(
             STATE_MUTATION_OUTBOX_NAMESPACE,
             key,
@@ -297,7 +297,7 @@ export class StateMutationOutboxRepository extends RuntimeStateJsonStore {
     ): Promise<StoredStateMutationOutboxRecord | undefined> {
         const stored = await this.getEntryValue<unknown>(
             STATE_MUTATION_OUTBOX_NAMESPACE,
-            toStateMutationOutboxKey(outboxId),
+            stateMutationOutboxStorageKey(outboxId),
         );
         if (!stored) {
             return undefined;
@@ -388,7 +388,7 @@ export class StateMutationOutboxRepository extends RuntimeStateJsonStore {
             validateDeliveryTransition(current.record, input);
             const written = await transactional.putValueIfRevision(
                 STATE_MUTATION_OUTBOX_NAMESPACE,
-                toStateMutationOutboxKey(input.outboxId),
+                stateMutationOutboxStorageKey(input.outboxId),
                 record,
                 NEVER_EXPIRE_AT_TIMESTAMP,
                 input.expectedStorageRevision,
@@ -1455,7 +1455,7 @@ function assertSafeNonNegativeInteger(
     }
 }
 
-function toStateMutationOutboxKey(outboxId: string): string {
+export function stateMutationOutboxStorageKey(outboxId: string): string {
     return `${STATE_MUTATION_OUTBOX_KEY_PREFIX}${outboxId}`;
 }
 

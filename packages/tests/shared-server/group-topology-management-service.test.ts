@@ -2,7 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { AppTopics } from '@shared/api/api-config.ts';
 import { toScopedGroupKey } from '@shared/api/api-type-utils.ts';
 import type { AuditStamp, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import type { EffectiveGroupTopologyConfig } from '@shared/api/graph-topology-management-types.ts';
+import type {
+    EffectiveGroupTopologyConfig,
+    GroupTopologyConfigMutationReceipt,
+} from '@shared/api/graph-topology-management-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import {
@@ -17,7 +20,9 @@ import {
     GroupTopologyValidationError,
 } from '@shared-server/rallar-system/services/group-topology-management-service.ts';
 import {
+    createStateMutationOutboxRecord,
     STATE_MUTATION_OUTBOX_NAMESPACE,
+    StateMutationOutboxCollisionError,
     StateMutationOutboxRepository,
 } from '@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
@@ -39,7 +44,21 @@ import {
 } from '@shared-server/rallar-system/repositories/GroupTopologyConfigRepository.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
-import type { RuntimeStateEntry } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+import type {
+    RuntimeStateEntry,
+    RuntimeStateOptimisticTransactionalRepositoryLike,
+} from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+import {
+    isRuntimeStateGuardedBatchRepositoryLike,
+    type RuntimeStateGuardedBatch,
+    type RuntimeStateGuardedBatchEffect,
+    type RuntimeStateGuardedBatchEffectResult,
+    type RuntimeStateGuardedBatchGuard,
+    type RuntimeStateGuardedBatchGuardResult,
+    type RuntimeStateGuardedBatchResult,
+    validateRuntimeStateGuardedBatch,
+    validateRuntimeStateGuardedBatchResult,
+} from '@shared-server/runtime-state/RuntimeStateGuardedBatch.ts';
 
 const mutationLaneProbe = vi.hoisted(() => ({
     observer: undefined as MutationLaneProbeObserver | undefined,
@@ -77,6 +96,600 @@ vi.mock(
 );
 
 describe('GroupTopologyManagementService', () => {
+    it('guarded topology config selects the capability from inside begin', async () => {
+        const runtimeRepository = new GuardedBatchFakeRuntimeStateRepository();
+        const group = createGroupSnapshot(createGroupRef('guarded-capability'));
+        const service = createService({ runtimeRepository, group, now: () => 1_000 });
+
+        expect(isRuntimeStateGuardedBatchRepositoryLike(runtimeRepository)).toBe(false);
+        await expect(service.putConfig({
+            groupRef: group.group,
+            config: { topologyKind: 'tree' },
+            updatedByPrincipalId: 'owner',
+            requestId: 'guarded-capability',
+        })).resolves.toMatchObject({ config: { version: 1 } });
+
+        expect(runtimeRepository.beginCount).toBe(1);
+        expect(runtimeRepository.batches).toHaveLength(1);
+        expect(runtimeRepository.batches[0]?.effects.map(({ effectId }) => effectId))
+            .toEqual([
+                'target',
+                'invariant-generation',
+                'target-generation',
+                'receipt',
+                'outbox',
+            ]);
+    });
+
+    it('validates every guarded descriptor before opening the transaction', async () => {
+        const runtimeRepository = new GuardedBatchFakeRuntimeStateRepository();
+        const group = createGroupSnapshot(createGroupRef('guarded-prevalidation'));
+        const configRepository = new GroupTopologyConfigRepository(runtimeRepository);
+        const service = createService({
+            runtimeRepository,
+            group,
+            configRepository,
+            now: () => 1_000,
+        });
+        await service.putConfig({
+            groupRef: group.group,
+            config: { topologyKind: 'tree' },
+            updatedByPrincipalId: 'owner',
+            requestId: 'guarded-prevalidation-seed',
+        });
+        const generationIdentity = [
+            GROUP_TOPOLOGY_CONFIG_GENERATION_NAMESPACE,
+            configRepository.generationKey(group.group, 'config'),
+        ].join('::');
+        const generation = runtimeRepository.data.get(generationIdentity);
+        if (!generation) throw new Error('Expected seeded topology generation.');
+        runtimeRepository.data.set(generationIdentity, {
+            ...generation,
+            revision: Number.MAX_SAFE_INTEGER,
+        });
+        runtimeRepository.beginCount = 0;
+        runtimeRepository.batches.length = 0;
+
+        await expect(service.putConfig({
+            groupRef: group.group,
+            config: { topologyKind: 'mesh' },
+            updatedByPrincipalId: 'owner',
+            requestId: 'guarded-prevalidation-rejected',
+        })).rejects.toThrow('effect 2 expected revision is invalid');
+        expect(runtimeRepository.beginCount).toBe(0);
+        expect(runtimeRepository.batches).toEqual([]);
+    });
+
+    it('omits the optional receipt effect for a requestless topology write', async () => {
+        const runtimeRepository = new GuardedBatchFakeRuntimeStateRepository();
+        const group = createGroupSnapshot(createGroupRef('guarded-requestless'));
+        const service = createService({
+            runtimeRepository,
+            group,
+            now: () => 1_000,
+        });
+
+        const result = await service.putConfig({
+            groupRef: group.group,
+            config: { topologyKind: 'tree' },
+            updatedByPrincipalId: 'owner',
+        });
+
+        expect(result.receipt.requestId).toBeNull();
+        expect(runtimeRepository.batches).toHaveLength(1);
+        expect(runtimeRepository.batches[0]!.effects.map(({ effectId }) => effectId))
+            .toEqual([
+                'target',
+                'invariant-generation',
+                'target-generation',
+                'outbox',
+            ]);
+    });
+
+    it('materializes exact guarded descriptors for every topology write', async () => {
+        const runtimeRepository = new GuardedBatchFakeRuntimeStateRepository();
+        const group = createGroupSnapshot(createGroupRef('guarded-descriptors'));
+        const configRepository = new GroupTopologyConfigRepository(runtimeRepository);
+        const nowEpochMs = Date.now();
+        const service = createService({
+            runtimeRepository,
+            group,
+            configRepository,
+            now: () => nowEpochMs,
+        });
+
+        const insertedConfig = await service.putConfig({
+            groupRef: group.group,
+            config: { topologyKind: 'tree' },
+            updatedByPrincipalId: 'owner',
+            requestId: 'config-insert',
+        });
+        const updatedConfig = await service.putConfig({
+            groupRef: group.group,
+            config: { topologyKind: 'mesh' },
+            updatedByPrincipalId: 'owner',
+            requestId: 'config-update',
+        });
+        const deletedConfig = await service.deleteConfig({
+            groupRef: group.group,
+            updatedByPrincipalId: 'owner',
+            requestId: 'config-delete',
+        });
+        const insertedOverride = await service.putOverride({
+            groupRef: group.group,
+            config: { degreeLimit: 3 },
+            expiresAtEpochMs: nowEpochMs + 60_000,
+            updatedByPrincipalId: 'owner',
+            requestId: 'override-insert',
+        });
+        const updatedOverride = await service.putOverride({
+            groupRef: group.group,
+            config: { degreeLimit: 4 },
+            expiresAtEpochMs: nowEpochMs + 120_000,
+            updatedByPrincipalId: 'owner',
+            requestId: 'override-update',
+        });
+        const deletedOverride = await service.deleteOverride({
+            groupRef: group.group,
+            updatedByPrincipalId: 'owner',
+            requestId: 'override-delete',
+        });
+
+        expect(runtimeRepository.batches).toHaveLength(6);
+        expectExactTopologyWriteBatch(runtimeRepository.batches[0]!, {
+            group,
+            repository: configRepository,
+            authorityExpectedRevision: 0,
+            target: {
+                effectId: 'target',
+                operation: 'insert',
+                namespace: GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+                key: configRepository.configKey(group.group),
+                value: JSON.stringify(insertedConfig.config),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP,
+            },
+            invariantExpectedRevision: null,
+            invariantVersion: 1,
+            generationExpectedRevision: null,
+            generationTarget: 'config',
+            generationVersion: 1,
+            receipt: insertedConfig.receipt,
+            requestId: 'config-insert',
+            createdAtEpochMs: nowEpochMs,
+        });
+        expectExactTopologyWriteBatch(runtimeRepository.batches[1]!, {
+            group,
+            repository: configRepository,
+            authorityExpectedRevision: 1,
+            target: {
+                effectId: 'target',
+                operation: 'update',
+                namespace: GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+                key: configRepository.configKey(group.group),
+                expectedRevision: 0,
+                value: JSON.stringify(updatedConfig.config),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP,
+            },
+            invariantExpectedRevision: 0,
+            invariantVersion: 2,
+            generationExpectedRevision: 0,
+            generationTarget: 'config',
+            generationVersion: 2,
+            receipt: updatedConfig.receipt,
+            requestId: 'config-update',
+            createdAtEpochMs: nowEpochMs,
+        });
+        expectExactTopologyWriteBatch(runtimeRepository.batches[2]!, {
+            group,
+            repository: configRepository,
+            authorityExpectedRevision: 2,
+            target: {
+                effectId: 'target',
+                operation: 'delete',
+                namespace: GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+                key: configRepository.configKey(group.group),
+                expectedRevision: 1,
+            },
+            invariantExpectedRevision: 1,
+            invariantVersion: 3,
+            generationExpectedRevision: 1,
+            generationTarget: 'config',
+            generationVersion: 3,
+            receipt: deletedConfig.receipt,
+            requestId: 'config-delete',
+            createdAtEpochMs: nowEpochMs,
+        });
+        expectExactTopologyWriteBatch(runtimeRepository.batches[3]!, {
+            group,
+            repository: configRepository,
+            authorityExpectedRevision: 3,
+            target: {
+                effectId: 'target',
+                operation: 'insert',
+                namespace: GROUP_TOPOLOGY_OVERRIDE_NAMESPACE,
+                key: configRepository.overrideKey(group.group),
+                value: JSON.stringify(insertedOverride.override),
+                expireAtTimestamp: nowEpochMs + 60_000,
+            },
+            invariantExpectedRevision: 2,
+            invariantVersion: 4,
+            generationExpectedRevision: null,
+            generationTarget: 'override',
+            generationVersion: 1,
+            receipt: insertedOverride.receipt,
+            requestId: 'override-insert',
+            createdAtEpochMs: nowEpochMs,
+        });
+        expectExactTopologyWriteBatch(runtimeRepository.batches[4]!, {
+            group,
+            repository: configRepository,
+            authorityExpectedRevision: 4,
+            target: {
+                effectId: 'target',
+                operation: 'update',
+                namespace: GROUP_TOPOLOGY_OVERRIDE_NAMESPACE,
+                key: configRepository.overrideKey(group.group),
+                expectedRevision: 0,
+                value: JSON.stringify(updatedOverride.override),
+                expireAtTimestamp: nowEpochMs + 120_000,
+            },
+            invariantExpectedRevision: 3,
+            invariantVersion: 5,
+            generationExpectedRevision: 0,
+            generationTarget: 'override',
+            generationVersion: 2,
+            receipt: updatedOverride.receipt,
+            requestId: 'override-update',
+            createdAtEpochMs: nowEpochMs,
+        });
+        expectExactTopologyWriteBatch(runtimeRepository.batches[5]!, {
+            group,
+            repository: configRepository,
+            authorityExpectedRevision: 5,
+            target: {
+                effectId: 'target',
+                operation: 'delete',
+                namespace: GROUP_TOPOLOGY_OVERRIDE_NAMESPACE,
+                key: configRepository.overrideKey(group.group),
+                expectedRevision: 1,
+            },
+            invariantExpectedRevision: 4,
+            invariantVersion: 6,
+            generationExpectedRevision: 1,
+            generationTarget: 'override',
+            generationVersion: 3,
+            receipt: deletedOverride.receipt,
+            requestId: 'override-delete',
+            createdAtEpochMs: nowEpochMs,
+        });
+    });
+
+    it('batches an absent-delete claim but never batches its replay or a no-op', async () => {
+        const runtimeRepository = new GuardedBatchFakeRuntimeStateRepository();
+        const group = createGroupSnapshot(createGroupRef('guarded-claim'));
+        const configRepository = new GroupTopologyConfigRepository(runtimeRepository);
+        const service = createService({
+            runtimeRepository,
+            group,
+            configRepository,
+            now: () => 1_000,
+        });
+        const request = {
+            groupRef: group.group,
+            updatedByPrincipalId: 'owner',
+            requestId: 'absent-delete-claim',
+        } as const;
+
+        const claimed = await service.deleteConfig(request);
+        expect(claimed).toMatchObject({
+            deleted: false,
+            receipt: { outcome: 'no-op', outboxId: null },
+        });
+        expect(runtimeRepository.beginCount).toBe(1);
+        expect(runtimeRepository.batches).toEqual([{
+            guard: exactTopologyAuthorityGuard(group, 0),
+            effects: [{
+                effectId: 'receipt',
+                operation: 'insert',
+                namespace: GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE,
+                key: configRepository.mutationKey(group.group, request.requestId),
+                value: JSON.stringify({
+                    groupRef: copyTestGroupRef(group.group),
+                    requestId: request.requestId,
+                    commandHash: claimed.receipt.commandHash,
+                    receipt: claimed.receipt,
+                }),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP,
+            }],
+        }]);
+
+        await expect(service.deleteConfig(request)).resolves.toEqual(claimed);
+        await expect(service.deleteConfig({
+            groupRef: group.group,
+            updatedByPrincipalId: 'owner',
+        })).resolves.toMatchObject({
+            deleted: false,
+            receipt: { outcome: 'no-op', outboxId: null },
+        });
+        expect(runtimeRepository.beginCount).toBe(1);
+        expect(runtimeRepository.batches).toHaveLength(1);
+    });
+
+    it.each([
+        'guard',
+        'target',
+        'invariant-generation',
+        'target-generation',
+        'receipt',
+    ] as const)(
+        'rolls back and fully retries a guarded %s conflict',
+        async (conflictTarget) => {
+            const runtimeRepository = new GuardedBatchFakeRuntimeStateRepository();
+            const group = createGroupSnapshot(
+                createGroupRef(`guarded-conflict-${conflictTarget}`),
+            );
+            const configRepository = new GroupTopologyConfigRepository(
+                runtimeRepository,
+            );
+            const targetKey = configRepository.configKey(group.group);
+            const authorityKey = groupStateGroupStorageKey(group.group);
+            let targetReads = 0;
+            let authorityReads = 0;
+            const findEntry = runtimeRepository.findEntry.bind(runtimeRepository);
+            runtimeRepository.findEntry = async (namespace, key) => {
+                if (
+                    namespace === GROUP_TOPOLOGY_CONFIG_NAMESPACE &&
+                    key === targetKey
+                ) {
+                    targetReads += 1;
+                }
+                if (namespace === 'group-state:groups' && key === authorityKey) {
+                    authorityReads += 1;
+                }
+                return await findEntry(namespace, key);
+            };
+            runtimeRepository.forceNextConflict(conflictTarget);
+            const now = vi.fn(() => 1_000);
+            const sleep = vi.fn(async () => {
+                expect(runtimeRepository.activeTransactionDepth).toBe(0);
+            });
+            const wakeStateMutationOutbox = vi.fn();
+            const service = createService({
+                runtimeRepository,
+                group,
+                configRepository,
+                now,
+                sleep,
+                wakeStateMutationOutbox,
+            });
+
+            const result = await service.putConfig({
+                groupRef: group.group,
+                config: { topologyKind: 'tree' },
+                updatedByPrincipalId: 'owner',
+                requestId: `retry-${conflictTarget}`,
+            });
+
+            expect(result.receipt.attemptCount).toBe(2);
+            expect(runtimeRepository.beginCount).toBe(2);
+            expect(runtimeRepository.batches).toHaveLength(2);
+            expect(sleep).toHaveBeenCalledTimes(1);
+            expect(sleep).toHaveBeenCalledWith(2);
+            expect(now).toHaveBeenCalledTimes(2);
+            expect(targetReads).toBeGreaterThanOrEqual(2);
+            expect(authorityReads).toBeGreaterThanOrEqual(2);
+            expect(runtimeRepository.activeTransactionDepth).toBe(0);
+            expect((await runtimeRepository.findEntry(
+                'group-state:groups',
+                authorityKey,
+            ))?.revision).toBe(1);
+            expect((await configRepository.findConfigEntry(group.group))?.entry.revision)
+                .toBe(0);
+            expect(await configRepository.findMutationRecord(
+                group.group,
+                `retry-${conflictTarget}`,
+            )).toMatchObject({ receipt: result.receipt });
+            expect((await new StateMutationOutboxRepository(runtimeRepository)
+                .listPendingPage({ limit: 10 })).records).toHaveLength(1);
+            expect(wakeStateMutationOutbox).toHaveBeenCalledTimes(1);
+        },
+    );
+
+    it('keeps a guarded outbox conflict terminal and rolls every sibling back', async () => {
+        const runtimeRepository = new GuardedBatchFakeRuntimeStateRepository();
+        const group = createGroupSnapshot(createGroupRef('guarded-outbox-conflict'));
+        const configRepository = new GroupTopologyConfigRepository(runtimeRepository);
+        const now = vi.fn(() => 1_000);
+        const sleep = vi.fn(async () => {
+            throw new Error('terminal outbox conflict must not retry');
+        });
+        const wakeStateMutationOutbox = vi.fn();
+        const service = createService({
+            runtimeRepository,
+            group,
+            configRepository,
+            now,
+            sleep,
+            wakeStateMutationOutbox,
+        });
+        const before = new Map(runtimeRepository.data);
+        runtimeRepository.forceNextConflict('outbox');
+
+        await expect(service.putConfig({
+            groupRef: group.group,
+            config: { topologyKind: 'tree' },
+            updatedByPrincipalId: 'owner',
+            requestId: 'terminal-outbox-conflict',
+        })).rejects.toBeInstanceOf(StateMutationOutboxCollisionError);
+
+        expect(runtimeRepository.beginCount).toBe(1);
+        expect(runtimeRepository.batches).toHaveLength(1);
+        expect(runtimeRepository.activeTransactionDepth).toBe(0);
+        expect(runtimeRepository.data).toEqual(before);
+        expect(await configRepository.findConfig(group.group)).toBeUndefined();
+        expect(await configRepository.findInvariantGenerationEntry(group.group))
+            .toBeUndefined();
+        expect(await configRepository.findGenerationEntry(group.group, 'config'))
+            .toBeUndefined();
+        expect(await configRepository.findMutationRecord(
+            group.group,
+            'terminal-outbox-conflict',
+        )).toBeUndefined();
+        expect((await new StateMutationOutboxRepository(runtimeRepository)
+            .listPendingPage({ limit: 10 })).records).toEqual([]);
+        expect(now).toHaveBeenCalledTimes(1);
+        expect(sleep).not.toHaveBeenCalled();
+        expect(wakeStateMutationOutbox).not.toHaveBeenCalled();
+    });
+
+    it('leaves guarded and sequential topology mutations logically equivalent', async () => {
+        const guardedRuntime = new GuardedBatchFakeRuntimeStateRepository();
+        const fallbackRuntime = new FakeRuntimeStateRepository();
+        const guardedGroup = createGroupSnapshot(
+            createGroupRef('guarded-fallback-equivalence'),
+        );
+        const fallbackGroup = createGroupSnapshot(
+            createGroupRef('guarded-fallback-equivalence'),
+        );
+        const nowEpochMs = Date.now();
+        const guardedWake = vi.fn();
+        const fallbackWake = vi.fn();
+        const guarded = createService({
+            runtimeRepository: guardedRuntime,
+            group: guardedGroup,
+            now: () => nowEpochMs,
+            wakeStateMutationOutbox: guardedWake,
+        });
+        const fallback = createService({
+            runtimeRepository: fallbackRuntime,
+            group: fallbackGroup,
+            now: () => nowEpochMs,
+            wakeStateMutationOutbox: fallbackWake,
+        });
+
+        const guardedResults = await runTopologyEquivalenceSequence(
+            guarded,
+            guardedGroup.group,
+            nowEpochMs,
+        );
+        const fallbackResults = await runTopologyEquivalenceSequence(
+            fallback,
+            fallbackGroup.group,
+            nowEpochMs,
+        );
+
+        expect(guardedResults).toEqual(fallbackResults);
+        expect(logicalRuntimeStateRows(guardedRuntime))
+            .toEqual(logicalRuntimeStateRows(fallbackRuntime));
+        expect(guardedRuntime.batches).toHaveLength(7);
+        expect(guardedWake).toHaveBeenCalledTimes(6);
+        expect(fallbackWake).toHaveBeenCalledTimes(6);
+    });
+
+    it('converges independent guarded services after one loser retry', async () => {
+        const runtimeRepository = new GuardedBatchFakeRuntimeStateRepository();
+        runtimeRepository.serializeTransactions = true;
+        const group = createGroupSnapshot(createGroupRef('guarded-convergence'));
+        const configRepository = new GroupTopologyConfigRepository(runtimeRepository);
+        const firstNow = vi.fn(() => 1_000);
+        const secondNow = vi.fn(() => 2_000);
+        const sleep = vi.fn(async () => {
+            expect(runtimeRepository.activeTransactionDepth).toBe(0);
+        });
+        const firstWake = vi.fn();
+        const secondWake = vi.fn();
+        const first = createService({
+            runtimeRepository,
+            group,
+            now: firstNow,
+            sleep,
+            wakeStateMutationOutbox: firstWake,
+        });
+        const second = createService({
+            runtimeRepository,
+            group,
+            now: secondNow,
+            sleep,
+            wakeStateMutationOutbox: secondWake,
+        });
+        await Promise.all([
+            first.readConfig(group.group),
+            second.readConfig(group.group),
+        ]);
+        await blockFirstReadsTogether(
+            runtimeRepository,
+            GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+            configRepository.configKey(group.group),
+            2,
+        );
+        await blockFirstReadsTogether(
+            runtimeRepository,
+            GROUP_TOPOLOGY_CONFIG_INVARIANT_GENERATION_NAMESPACE,
+            configRepository.invariantGenerationKey(group.group),
+            2,
+            2,
+        );
+
+        const results = await Promise.all([
+            first.putConfig({
+                groupRef: group.group,
+                config: { topologyKind: 'tree' },
+                updatedByPrincipalId: 'owner',
+                requestId: 'guarded-convergence-first',
+            }),
+            second.putConfig({
+                groupRef: group.group,
+                config: { topologyKind: 'mesh' },
+                updatedByPrincipalId: 'owner',
+                requestId: 'guarded-convergence-second',
+            }),
+        ]);
+
+        expect(results.map(({ config }) => config.version).sort()).toEqual([1, 2]);
+        expect(results.map(({ receipt }) => receipt.attemptCount).sort())
+            .toEqual([1, 2]);
+        expect(runtimeRepository.beginCount).toBe(3);
+        expect(runtimeRepository.batches).toHaveLength(3);
+        expect(sleep).toHaveBeenCalledTimes(1);
+        expect(sleep).toHaveBeenCalledWith(2);
+        expect(firstNow.mock.calls.length + secondNow.mock.calls.length).toBe(3);
+        expect(runtimeRepository.activeTransactionDepth).toBe(0);
+        expect(firstWake).toHaveBeenCalledTimes(1);
+        expect(secondWake).toHaveBeenCalledTimes(1);
+
+        const winningResult = results.find(({ config }) => config.version === 2)!;
+        const storedConfig = await configRepository.findConfigEntry(group.group);
+        expect(storedConfig).toMatchObject({
+            entry: { revision: 1 },
+            value: winningResult.config,
+        });
+        expect(await configRepository.findInvariantGenerationEntry(group.group))
+            .toMatchObject({ entry: { revision: 1 }, value: { version: 2 } });
+        expect(await configRepository.findGenerationEntry(group.group, 'config'))
+            .toMatchObject({ entry: { revision: 1 }, value: { version: 2 } });
+        expect((await runtimeRepository.findEntry(
+            'group-state:groups',
+            groupStateGroupStorageKey(group.group),
+        ))?.revision).toBe(2);
+        await expect(Promise.all([
+            configRepository.findMutationRecord(
+                group.group,
+                'guarded-convergence-first',
+            ),
+            configRepository.findMutationRecord(
+                group.group,
+                'guarded-convergence-second',
+            ),
+        ])).resolves.toEqual([
+            expect.objectContaining({ receipt: results[0]!.receipt }),
+            expect.objectContaining({ receipt: results[1]!.receipt }),
+        ]);
+        const pending = await new StateMutationOutboxRepository(runtimeRepository)
+            .listPendingPage({ limit: 10 });
+        expect(pending.records.map(({ record }) => record.outboxId).sort())
+            .toEqual(results.map(({ receipt }) => receipt.outboxId).sort());
+    });
+
     it.each([
         {
             label: 'archives the group',
@@ -2727,6 +3340,468 @@ describe('GroupTopologyManagementService', () => {
     });
 });
 
+async function runTopologyEquivalenceSequence(
+    service: GroupTopologyManagementService,
+    groupRef: GroupRef,
+    nowEpochMs: number,
+): Promise<readonly unknown[]> {
+    const insertedConfig = await service.putConfig({
+        groupRef,
+        config: { topologyKind: 'tree' },
+        updatedByPrincipalId: 'owner',
+        requestId: 'equivalent-config-insert',
+    });
+    const updatedConfig = await service.putConfig({
+        groupRef,
+        config: { topologyKind: 'mesh' },
+        updatedByPrincipalId: 'owner',
+        requestId: 'equivalent-config-update',
+    });
+    const insertedOverride = await service.putOverride({
+        groupRef,
+        config: { degreeLimit: 3 },
+        expiresAtEpochMs: nowEpochMs + 60_000,
+        updatedByPrincipalId: 'owner',
+        requestId: 'equivalent-override-insert',
+    });
+    const updatedOverride = await service.putOverride({
+        groupRef,
+        config: { degreeLimit: 4 },
+        expiresAtEpochMs: nowEpochMs + 120_000,
+        updatedByPrincipalId: 'owner',
+        requestId: 'equivalent-override-update',
+    });
+    const deletedOverride = await service.deleteOverride({
+        groupRef,
+        updatedByPrincipalId: 'owner',
+        requestId: 'equivalent-override-delete',
+    });
+    const deletedConfig = await service.deleteConfig({
+        groupRef,
+        updatedByPrincipalId: 'owner',
+        requestId: 'equivalent-config-delete',
+    });
+    const claimRequest = {
+        groupRef,
+        updatedByPrincipalId: 'owner',
+        requestId: 'equivalent-absent-delete',
+    } as const;
+    const claimed = await service.deleteConfig(claimRequest);
+    const replayed = await service.deleteConfig(claimRequest);
+    return [
+        insertedConfig,
+        updatedConfig,
+        insertedOverride,
+        updatedOverride,
+        deletedOverride,
+        deletedConfig,
+        claimed,
+        replayed,
+    ];
+}
+
+function logicalRuntimeStateRows(
+    repository: FakeRuntimeStateRepository,
+): readonly Readonly<{
+    identity: string;
+    key: string;
+    value: string;
+    expireAtTimestamp: number;
+    revision: number;
+}>[] {
+    return [...repository.data.entries()]
+        .map(([identity, entry]) => ({
+            identity,
+            key: entry.key,
+            value: entry.value,
+            expireAtTimestamp: entry.expireAtTimestamp,
+            revision: entry.revision,
+        }))
+        .sort((left, right) => left.identity.localeCompare(right.identity));
+}
+
+type ExactTopologyWriteBatchInput = Readonly<{
+    group: GroupSnapshot;
+    repository: GroupTopologyConfigRepository;
+    authorityExpectedRevision: number;
+    target: RuntimeStateGuardedBatchEffect;
+    invariantExpectedRevision: number | null;
+    invariantVersion: number;
+    generationExpectedRevision: number | null;
+    generationTarget: 'config' | 'override';
+    generationVersion: number;
+    receipt: GroupTopologyConfigMutationReceipt;
+    requestId: string;
+    createdAtEpochMs: number;
+}>;
+
+function exactTopologyAuthorityGuard(
+    group: GroupSnapshot,
+    expectedRevision: number,
+): RuntimeStateGuardedBatchGuard {
+    return {
+        operation: 'update',
+        namespace: 'group-state:groups',
+        key: groupStateGroupStorageKey(group.group),
+        expectedRevision,
+        value: JSON.stringify(group.group),
+        expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP,
+    };
+}
+
+function expectExactTopologyWriteBatch(
+    batch: RuntimeStateGuardedBatch,
+    input: ExactTopologyWriteBatchInput,
+): void {
+    if (input.receipt.outboxId === null) {
+        throw new Error('Expected topology write receipt to own an outbox ID.');
+    }
+    if (input.receipt.acceptedCausalRevision === null) {
+        throw new Error('Expected topology write receipt to carry a causal revision.');
+    }
+    const groupRef = copyTestGroupRef(input.group.group);
+    const invariantGeneration: RuntimeStateGuardedBatchEffect =
+        input.invariantExpectedRevision === null
+            ? {
+                effectId: 'invariant-generation',
+                operation: 'insert',
+                namespace: GROUP_TOPOLOGY_CONFIG_INVARIANT_GENERATION_NAMESPACE,
+                key: input.repository.invariantGenerationKey(input.group.group),
+                value: JSON.stringify({
+                    groupRef,
+                    version: input.invariantVersion,
+                }),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP,
+            }
+            : {
+                effectId: 'invariant-generation',
+                operation: 'update',
+                namespace: GROUP_TOPOLOGY_CONFIG_INVARIANT_GENERATION_NAMESPACE,
+                key: input.repository.invariantGenerationKey(input.group.group),
+                expectedRevision: input.invariantExpectedRevision,
+                value: JSON.stringify({
+                    groupRef,
+                    version: input.invariantVersion,
+                }),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP,
+            };
+    const generation: RuntimeStateGuardedBatchEffect =
+        input.generationExpectedRevision === null
+            ? {
+                effectId: 'target-generation',
+                operation: 'insert',
+                namespace: GROUP_TOPOLOGY_CONFIG_GENERATION_NAMESPACE,
+                key: input.repository.generationKey(
+                    input.group.group,
+                    input.generationTarget,
+                ),
+                value: JSON.stringify({
+                    groupRef,
+                    target: input.generationTarget,
+                    version: input.generationVersion,
+                }),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP,
+            }
+            : {
+                effectId: 'target-generation',
+                operation: 'update',
+                namespace: GROUP_TOPOLOGY_CONFIG_GENERATION_NAMESPACE,
+                key: input.repository.generationKey(
+                    input.group.group,
+                    input.generationTarget,
+                ),
+                expectedRevision: input.generationExpectedRevision,
+                value: JSON.stringify({
+                    groupRef,
+                    target: input.generationTarget,
+                    version: input.generationVersion,
+                }),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP,
+            };
+    const receiptRecord = {
+        groupRef,
+        requestId: input.requestId,
+        commandHash: input.receipt.commandHash,
+        receipt: input.receipt,
+    };
+    const outbox = createStateMutationOutboxRecord({
+        kind: 'group',
+        aggregateRef: groupRef,
+        commandId: input.requestId,
+        commandHash: input.receipt.commandHash,
+        createdAtEpochMs: input.createdAtEpochMs,
+        acceptedCausalRevision: {
+            kind: 'group',
+            ...input.receipt.acceptedCausalRevision,
+        },
+        effects: ['rtc-topology-recompute'],
+        event: { kind: 'none' },
+    });
+
+    expect(batch).toEqual({
+        guard: exactTopologyAuthorityGuard(
+            input.group,
+            input.authorityExpectedRevision,
+        ),
+        effects: [
+            input.target,
+            invariantGeneration,
+            generation,
+            {
+                effectId: 'receipt',
+                operation: 'insert',
+                namespace: GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE,
+                key: input.repository.mutationKey(
+                    input.group.group,
+                    input.requestId,
+                ),
+                value: JSON.stringify(receiptRecord),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP,
+            },
+            {
+                effectId: 'outbox',
+                operation: 'insert',
+                namespace: STATE_MUTATION_OUTBOX_NAMESPACE,
+                key: `intent:${input.receipt.outboxId}`,
+                value: JSON.stringify(outbox),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP,
+            },
+        ],
+    });
+}
+
+function copyTestGroupRef(ref: GroupRef): GroupRef {
+    return {
+        applicationId: ref.applicationId,
+        workspaceId: ref.workspaceId,
+        groupId: ref.groupId,
+    };
+}
+
+class GuardedBatchFakeRuntimeStateRepository extends FakeRuntimeStateRepository {
+    readonly batches: RuntimeStateGuardedBatch[] = [];
+    beginCount = 0;
+    private transactionDepth = 0;
+    private readonly forcedConflicts: string[] = [];
+
+    get activeTransactionDepth(): number {
+        return this.transactionDepth;
+    }
+
+    forceNextConflict(target: 'guard' | string): void {
+        this.forcedConflicts.push(target);
+    }
+
+    get runtimeStateGuardedBatchCapability(): boolean {
+        return this.transactionDepth > 0;
+    }
+
+    override async begin<T>(
+        fn: (
+            repository: RuntimeStateOptimisticTransactionalRepositoryLike,
+        ) => Promise<T>,
+    ): Promise<T> {
+        this.beginCount += 1;
+        return await super.begin(async () => {
+            this.transactionDepth += 1;
+            try {
+                return await fn(this);
+            } finally {
+                this.transactionDepth -= 1;
+            }
+        });
+    }
+
+    async executeGuardedBatch(
+        input: RuntimeStateGuardedBatch,
+    ): Promise<RuntimeStateGuardedBatchResult> {
+        if (!this.runtimeStateGuardedBatchCapability) {
+            throw new Error('Guarded batch fake requires an active transaction.');
+        }
+        const batch = validateRuntimeStateGuardedBatch(input);
+        this.batches.push(batch);
+        const guard = this.consumeForcedConflict('guard')
+            ? guardedBatchGuardConflict(batch.guard)
+            : await applyGuardedBatchGuard(this, batch.guard);
+        if (guard.status === 'conflict') {
+            return validateRuntimeStateGuardedBatchResult(batch, {
+                guard,
+                effects: batch.effects.map((effect) => ({
+                    status: 'skipped',
+                    effectId: effect.effectId,
+                    operation: effect.operation,
+                    namespace: effect.namespace,
+                    key: effect.key,
+                    reason: 'guard-conflict',
+                })),
+            });
+        }
+        const effects: RuntimeStateGuardedBatchEffectResult[] = [];
+        for (const effect of batch.effects) {
+            effects.push(this.consumeForcedConflict(effect.effectId)
+                ? guardedBatchEffectConflict(effect)
+                : await applyGuardedBatchEffect(this, effect));
+        }
+        return validateRuntimeStateGuardedBatchResult(batch, { guard, effects });
+    }
+
+    private consumeForcedConflict(target: string): boolean {
+        const index = this.forcedConflicts.indexOf(target);
+        if (index < 0) return false;
+        this.forcedConflicts.splice(index, 1);
+        return true;
+    }
+}
+
+function guardedBatchGuardConflict(
+    guard: RuntimeStateGuardedBatchGuard,
+): RuntimeStateGuardedBatchGuardResult {
+    return {
+        status: 'conflict',
+        operation: guard.operation,
+        namespace: guard.namespace,
+        key: guard.key,
+        reason: 'condition-not-met',
+    };
+}
+
+function guardedBatchEffectConflict(
+    effect: RuntimeStateGuardedBatchEffect,
+): RuntimeStateGuardedBatchEffectResult {
+    if (effect.operation === 'put') {
+        throw new Error('Guarded batch put effects cannot be forced to conflict.');
+    }
+    return {
+        status: 'conflict',
+        effectId: effect.effectId,
+        operation: effect.operation,
+        namespace: effect.namespace,
+        key: effect.key,
+        reason: 'condition-not-met',
+    };
+}
+
+async function applyGuardedBatchGuard(
+    repository: FakeRuntimeStateRepository,
+    guard: RuntimeStateGuardedBatchGuard,
+): Promise<RuntimeStateGuardedBatchGuardResult> {
+    const result = guard.operation === 'insert'
+        ? await repository.insertIfAbsent(
+            guard.namespace,
+            guard.key,
+            guard.value,
+            guard.expireAtTimestamp,
+        )
+        : guard.operation === 'update'
+        ? await repository.upsertIfRevision(
+            guard.namespace,
+            guard.key,
+            guard.value,
+            guard.expireAtTimestamp,
+            guard.expectedRevision,
+        )
+        : await repository.deleteIfRevision(
+            guard.namespace,
+            guard.key,
+            guard.expectedRevision,
+        );
+    if (result.status === 'conflict') {
+        return {
+            status: 'conflict',
+            operation: guard.operation,
+            namespace: guard.namespace,
+            key: guard.key,
+            reason: 'condition-not-met',
+        };
+    }
+    return guard.operation === 'delete'
+        ? {
+            status: 'applied',
+            operation: guard.operation,
+            namespace: guard.namespace,
+            key: guard.key,
+            matchedRevision: guard.expectedRevision,
+        }
+        : {
+            status: 'applied',
+            operation: guard.operation,
+            namespace: guard.namespace,
+            key: guard.key,
+            resultingRevision: result.revision,
+        };
+}
+
+async function applyGuardedBatchEffect(
+    repository: FakeRuntimeStateRepository,
+    effect: RuntimeStateGuardedBatchEffect,
+): Promise<RuntimeStateGuardedBatchEffectResult> {
+    if (effect.operation === 'put') {
+        await repository.upsert(
+            effect.namespace,
+            effect.key,
+            effect.value,
+            effect.expireAtTimestamp,
+        );
+        const stored = await repository.findEntry(effect.namespace, effect.key);
+        if (!stored) throw new Error('Guarded batch fake put result is missing.');
+        return {
+            status: 'applied',
+            effectId: effect.effectId,
+            operation: effect.operation,
+            namespace: effect.namespace,
+            key: effect.key,
+            resultingRevision: stored.revision,
+        };
+    }
+    const result = effect.operation === 'insert'
+        ? await repository.insertIfAbsent(
+            effect.namespace,
+            effect.key,
+            effect.value,
+            effect.expireAtTimestamp,
+        )
+        : effect.operation === 'update'
+        ? await repository.upsertIfRevision(
+            effect.namespace,
+            effect.key,
+            effect.value,
+            effect.expireAtTimestamp,
+            effect.expectedRevision,
+        )
+        : await repository.deleteIfRevision(
+            effect.namespace,
+            effect.key,
+            effect.expectedRevision,
+        );
+    if (result.status === 'conflict') {
+        return {
+            status: 'conflict',
+            effectId: effect.effectId,
+            operation: effect.operation,
+            namespace: effect.namespace,
+            key: effect.key,
+            reason: 'condition-not-met',
+        };
+    }
+    return effect.operation === 'delete'
+        ? {
+            status: 'applied',
+            effectId: effect.effectId,
+            operation: effect.operation,
+            namespace: effect.namespace,
+            key: effect.key,
+            matchedRevision: effect.expectedRevision,
+        }
+        : {
+            status: 'applied',
+            effectId: effect.effectId,
+            operation: effect.operation,
+            namespace: effect.namespace,
+            key: effect.key,
+            resultingRevision: result.revision,
+        };
+}
+
 function createService(options: {
     readonly runtimeRepository: FakeRuntimeStateRepository;
     readonly group: GroupSnapshot;
@@ -2901,8 +3976,10 @@ async function blockFirstReadsTogether(
     namespace: string,
     key: string,
     count: number,
+    skip: number = 0,
 ): Promise<void> {
     const findEntry = runtime.findEntry.bind(runtime);
+    let seen = 0;
     let waiting = 0;
     let release!: () => void;
     const barrier = new Promise<void>((resolve) => {
@@ -2913,6 +3990,7 @@ async function blockFirstReadsTogether(
         if (
             candidateNamespace === namespace &&
             candidateKey === key &&
+            ++seen > skip &&
             waiting < count
         ) {
             waiting += 1;

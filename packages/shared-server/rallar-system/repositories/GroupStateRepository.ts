@@ -25,6 +25,9 @@ import {
     RuntimeStateJsonStore,
     type RuntimeStateEntryValue,
 } from '../../runtime-state/RuntimeStateJsonStore.ts';
+import type {
+    RuntimeStateGuardedBatchUpdate,
+} from '../../runtime-state/RuntimeStateGuardedBatch.ts';
 import {
     type GroupMutationIdempotencyRecord,
     normalizePersistedGroup,
@@ -198,18 +201,18 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
     async advanceAuthorityFence(
         guard: GroupStateAuthorityGuard,
     ): Promise<RuntimeStateConditionalWriteResult> {
-        const stored = assertGroupStateAuthorityGuard(guard);
+        const descriptor = materializeGroupStateAuthorityGuard(guard);
         if (!isRuntimeStateConditionalRepositoryLike(this.repository)) {
             throw new TypeError(
                 'Group authority fences require a conditional runtime-state repository',
             );
         }
         return await this.repository.upsertIfRevision(
-            GROUPS_NAMESPACE,
-            stored.entry.key,
-            stored.entry.value,
-            stored.entry.expireAtTimestamp,
-            stored.entry.revision,
+            descriptor.namespace,
+            descriptor.key,
+            descriptor.value,
+            descriptor.expireAtTimestamp,
+            descriptor.expectedRevision,
         );
     }
 
@@ -905,6 +908,20 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
     ): string {
         return groupStatePresenceAdmissionStorageKey(ref);
     }
+}
+
+export function materializeGroupStateAuthorityGuard(
+    guard: GroupStateAuthorityGuard,
+): RuntimeStateGuardedBatchUpdate {
+    const stored = assertGroupStateAuthorityGuard(guard);
+    return {
+        operation: 'update',
+        namespace: GROUPS_NAMESPACE,
+        key: stored.entry.key,
+        expectedRevision: stored.entry.revision,
+        value: stored.entry.value,
+        expireAtTimestamp: stored.entry.expireAtTimestamp,
+    };
 }
 
 function assertGroupRefIdentity(

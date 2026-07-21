@@ -20,14 +20,29 @@ import type {
 } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import * as rttRepository from '@shared/repository/rtt-repository.ts';
 import { validateGroupTopologyNextHops } from '@shared-graph/group-topology-validation.ts';
-import { GroupTopologyConfigRepository } from '../repositories/GroupTopologyConfigRepository.ts';
-import { GroupStateRepository } from '../repositories/GroupStateRepository.ts';
+import {
+    GROUP_TOPOLOGY_CONFIG_GENERATION_NAMESPACE,
+    GROUP_TOPOLOGY_CONFIG_INVARIANT_GENERATION_NAMESPACE,
+    GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE,
+    GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+    GROUP_TOPOLOGY_OVERRIDE_NAMESPACE,
+    GroupTopologyConfigRepository,
+} from '../repositories/GroupTopologyConfigRepository.ts';
+import {
+    GroupStateRepository,
+    materializeGroupStateAuthorityGuard,
+} from '../repositories/GroupStateRepository.ts';
 import {
     createStateMutationOutboxRecord,
     hashStateMutationCommand,
+    STATE_MUTATION_OUTBOX_NAMESPACE,
+    StateMutationOutboxCollisionError,
     StateMutationOutboxRepository,
+    stateMutationOutboxStorageKey,
+    type StateMutationOutboxRecord,
 } from '../repositories/StateMutationOutboxRepository.ts';
 import { RtcRttRepository } from '../repositories/RtcRttRepository.ts';
 import {
@@ -81,6 +96,13 @@ import {
 import type {
     RuntimeStateOptimisticTransactionalRepositoryLike,
 } from '../../runtime-state/RuntimeStateRepository.ts';
+import {
+    isRuntimeStateGuardedBatchRepositoryLike,
+    type RuntimeStateGuardedBatch,
+    type RuntimeStateGuardedBatchEffect,
+    validateRuntimeStateGuardedBatch,
+    validateRuntimeStateGuardedBatchResult,
+} from '../../runtime-state/RuntimeStateGuardedBatch.ts';
 import {
     isRuntimeStateConditionalRepositoryLike,
     isRuntimeStateTransactionalRepositoryLike,
@@ -1417,6 +1439,170 @@ type WriteTopologyConfigMutationResult =
     }>
     | Readonly<{ status: 'conflict' }>;
 
+type MaterializedTopologyConfigGuardedBatch = Readonly<{
+    batch: RuntimeStateGuardedBatch;
+    outbox: StateMutationOutboxRecord | null;
+}>;
+
+function materializeTopologyConfigGuardedBatch(
+    runtime: RuntimeStateOptimisticTransactionalRepositoryLike,
+    computed: Extract<
+        GroupTopologyConfigMutationComputed,
+        { outcome: 'write' | 'claim' }
+    >,
+): MaterializedTopologyConfigGuardedBatch {
+    const repository = new GroupTopologyConfigRepository(runtime);
+    const effects: RuntimeStateGuardedBatchEffect[] = [];
+    let outbox: StateMutationOutboxRecord | null = null;
+
+    if (computed.outcome === 'write') {
+        effects.push(materializeTopologyTargetEffect(repository, computed));
+        effects.push(materializeTopologyInsertOrUpdateEffect({
+            effectId: 'invariant-generation',
+            namespace: GROUP_TOPOLOGY_CONFIG_INVARIANT_GENERATION_NAMESPACE,
+            key: repository.invariantGenerationKey(computed.receipt.groupRef),
+            value: computed.invariantGenerationGuard.value,
+            expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP,
+            expectedRevision: computed.invariantGenerationGuard.expectedRevision,
+        }));
+        effects.push(materializeTopologyInsertOrUpdateEffect({
+            effectId: 'target-generation',
+            namespace: GROUP_TOPOLOGY_CONFIG_GENERATION_NAMESPACE,
+            key: repository.generationKey(
+                computed.receipt.groupRef,
+                computed.generationGuard.value.target,
+            ),
+            value: computed.generationGuard.value,
+            expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP,
+            expectedRevision: computed.generationGuard.expectedRevision,
+        }));
+    }
+
+    if (computed.idempotency) {
+        effects.push({
+            effectId: 'receipt',
+            operation: 'insert',
+            namespace: GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE,
+            key: repository.mutationKey(
+                computed.idempotency.groupRef,
+                computed.idempotency.requestId,
+            ),
+            value: serializeTopologyBatchValue(computed.idempotency),
+            expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP,
+        });
+    }
+
+    if (computed.outcome === 'write') {
+        outbox = createStateMutationOutboxRecord(computed.outbox);
+        effects.push({
+            effectId: 'outbox',
+            operation: 'insert',
+            namespace: STATE_MUTATION_OUTBOX_NAMESPACE,
+            key: stateMutationOutboxStorageKey(outbox.outboxId),
+            value: serializeTopologyBatchValue(outbox),
+            expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP,
+        });
+    }
+
+    return {
+        batch: validateRuntimeStateGuardedBatch({
+            guard: materializeGroupStateAuthorityGuard(
+                computed.groupAuthorityGuard,
+            ),
+            effects,
+        }),
+        outbox,
+    };
+}
+
+function materializeTopologyTargetEffect(
+    repository: GroupTopologyConfigRepository,
+    computed: Extract<GroupTopologyConfigMutationComputed, { outcome: 'write' }>,
+): RuntimeStateGuardedBatchEffect {
+    const guard = computed.guard;
+    const namespace = guard.target === 'config'
+        ? GROUP_TOPOLOGY_CONFIG_NAMESPACE
+        : GROUP_TOPOLOGY_OVERRIDE_NAMESPACE;
+    const key = guard.target === 'config'
+        ? repository.configKey(computed.receipt.groupRef)
+        : repository.overrideKey(computed.receipt.groupRef);
+    if (guard.operation === 'delete') {
+        return {
+            effectId: 'target',
+            operation: 'delete',
+            namespace,
+            key,
+            expectedRevision: guard.expectedRevision,
+        };
+    }
+    if (guard.operation === 'insert') {
+        if (guard.expectedRevision !== null) {
+            throw new TypeError('Topology insert guard has an existing revision');
+        }
+        return {
+            effectId: 'target',
+            operation: 'insert',
+            namespace,
+            key,
+            value: serializeTopologyBatchValue(guard.value),
+            expireAtTimestamp: guard.target === 'config'
+                ? NEVER_EXPIRE_AT_TIMESTAMP
+                : guard.value.expiresAtEpochMs,
+        };
+    }
+    if (guard.expectedRevision === null) {
+        throw new TypeError('Topology update guard is missing its revision');
+    }
+    return {
+        effectId: 'target',
+        operation: 'update',
+        namespace,
+        key,
+        expectedRevision: guard.expectedRevision,
+        value: serializeTopologyBatchValue(guard.value),
+        expireAtTimestamp: guard.target === 'config'
+            ? NEVER_EXPIRE_AT_TIMESTAMP
+            : guard.value.expiresAtEpochMs,
+    };
+}
+
+function materializeTopologyInsertOrUpdateEffect(input: Readonly<{
+    effectId: string;
+    namespace: string;
+    key: string;
+    value: unknown;
+    expireAtTimestamp: number;
+    expectedRevision: number | null;
+}>): RuntimeStateGuardedBatchEffect {
+    const value = serializeTopologyBatchValue(input.value);
+    return input.expectedRevision === null
+        ? {
+            effectId: input.effectId,
+            operation: 'insert',
+            namespace: input.namespace,
+            key: input.key,
+            value,
+            expireAtTimestamp: input.expireAtTimestamp,
+        }
+        : {
+            effectId: input.effectId,
+            operation: 'update',
+            namespace: input.namespace,
+            key: input.key,
+            expectedRevision: input.expectedRevision,
+            value,
+            expireAtTimestamp: input.expireAtTimestamp,
+        };
+}
+
+function serializeTopologyBatchValue(value: unknown): string {
+    const serialized = JSON.stringify(value);
+    if (typeof serialized !== 'string') {
+        throw new TypeError('Topology batch value is not JSON serializable');
+    }
+    return serialized;
+}
+
 async function writeTopologyConfigMutation(
     runtime: RuntimeStateOptimisticTransactionalRepositoryLike,
     computed: Extract<
@@ -1424,8 +1610,34 @@ async function writeTopologyConfigMutation(
         { outcome: 'write' | 'claim' }
     >,
 ): Promise<WriteTopologyConfigMutationResult> {
+    const materialized = materializeTopologyConfigGuardedBatch(runtime, computed);
     try {
         return await runtime.begin(async (transaction) => {
+            if (isRuntimeStateGuardedBatchRepositoryLike(transaction)) {
+                const result = validateRuntimeStateGuardedBatchResult(
+                    materialized.batch,
+                    await transaction.executeGuardedBatch(materialized.batch),
+                );
+                if (result.guard.status === 'conflict') {
+                    throw new RuntimeStateWriteConflictError();
+                }
+                for (const effect of result.effects) {
+                    if (effect.status === 'applied') continue;
+                    if (effect.effectId === 'outbox') {
+                        if (!materialized.outbox) {
+                            throw new TypeError(
+                                'Topology batch outbox result has no materialized record',
+                            );
+                        }
+                        throw new StateMutationOutboxCollisionError(
+                            materialized.outbox.outboxId,
+                        );
+                    }
+                    throw new RuntimeStateWriteConflictError();
+                }
+                return { status: 'accepted', receipt: computed.receipt } as const;
+            }
+
             const repository = new GroupTopologyConfigRepository(transaction);
             const authorityFence = await new GroupStateRepository(transaction)
                 .advanceAuthorityFence(computed.groupAuthorityGuard);
@@ -1487,10 +1699,11 @@ async function writeTopologyConfigMutation(
             }
 
             if (computed.outcome === 'write') {
+                if (!materialized.outbox) {
+                    throw new TypeError('Topology write outbox was not materialized');
+                }
                 await new StateMutationOutboxRepository(transaction)
-                    .insertForAuthoritativeWrite(
-                        createStateMutationOutboxRecord(computed.outbox),
-                    );
+                    .insertForAuthoritativeWrite(materialized.outbox);
             }
             return { status: 'accepted', receipt: computed.receipt } as const;
         });
