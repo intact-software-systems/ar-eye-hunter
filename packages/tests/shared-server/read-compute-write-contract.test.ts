@@ -47,10 +47,12 @@ type EffectContract = Readonly<{
 }>;
 const clientFile = 'packages/shared-server/rallar-system/services/client-state-service.ts';
 const groupFile = 'packages/shared-server/rallar-system/services/group-state-service.ts';
+const groupWriteFile = groupFile.replace('-service', '-guarded-batch');
 const configFile = 'packages/shared-server/rallar-system/services/group-topology-management-service.ts';
 const rtcWorkerFile = 'packages/shared-server/rallar-system/services/RtcTopologyOutboxWork.ts';
 const rtcRepositoryFile = 'packages/shared-server/rallar-system/repositories/RtcTopologyExecutionRepository.ts';
 const rttFile = 'packages/shared-server/rallar-system/services/rtc-rtt-mutation-service.ts';
+const guardedCapability = 'isRuntimeStateGuardedBatchRepositoryLike(transaction)';
 const clientSeam = seam(
     'client mutation', clientFile, ['function', 'writeClientMutation'],
     ['insertPrincipal', 'updatePrincipal'],
@@ -66,7 +68,7 @@ const clientSeam = seam(
     ],
 );
 const groupSeam = seam(
-    'group mutation', groupFile, ['function', 'writeGroupMutation'],
+    'group mutation', groupWriteFile, ['function', 'writeGroupMutation'],
     ['insertGroup', 'updateGroup', 'insertPresence', 'updatePresence', 'deletePresence'],
     [
         'insertPresenceAdmission', 'updatePresenceAdmission', 'putMember',
@@ -79,12 +81,9 @@ const groupSeam = seam(
         wrapped('repository.insertPresence', ["computed.guard.kind === 'group'", 'else']),
         wrapped('repository.updatePresence', ["computed.guard.kind === 'group'", 'else']),
         wrapped('repository.deletePresence', ["computed.guard.kind === 'group'", 'else']),
-        wrapped('repository.insertPresenceAdmission',
-            ['computed.presenceAdmission', 'then']),
-        wrapped('repository.updatePresenceAdmission',
-            ['computed.presenceAdmission', 'then']),
-        wrapped('repository.insertPresenceSummary',
-            ['computed.initialPresenceSummary', 'then']),
+        wrapped('repository.insertPresenceAdmission', ['computed.presenceAdmission', 'then']),
+        wrapped('repository.updatePresenceAdmission', ['computed.presenceAdmission', 'then']),
+        wrapped('repository.insertPresenceSummary', ['computed.initialPresenceSummary', 'then']),
         wrapped('repository.insertIdempotentGroupMutationReceipt',
             ['computed.idempotency', 'then']),
     ],
@@ -261,7 +260,7 @@ const effects: readonly EffectContract[] = [
             outcome: 'write', property: ['outbox', ['GroupMutationOutboxCandidate']],
             seam: groupSeam, calls: [exact(
                 'new StateMutationOutboxRepository(transaction).insertForAuthoritativeWrite',
-                ['createStateMutationOutboxRecord(computed.outbox)'], true,
+                ['materialized.outbox'], true,
             )],
         }],
     },
@@ -279,7 +278,7 @@ const effects: readonly EffectContract[] = [
             seam: configSeam,
             calls: [exact(
                 'new StateMutationOutboxRepository(transaction).insertForAuthoritativeWrite',
-                ['createStateMutationOutboxRecord(computed.outbox)'], true,
+                ['materialized.outbox'], true,
                 ["computed.outcome === 'write'", 'then'],
             )],
         }],
@@ -625,7 +624,8 @@ function assertSeam(source: ts.SourceFile, contract: SeamContract): void {
     expect(allCalls(source).filter(({ name }) => name === 'begin'), contract.family)
         .toHaveLength(1);
     const transaction = callCallback(ownedBegin[0]!.node, source);
-    const calls = ownedCalls(transaction);
+    const calls = ownedCalls(transaction).filter(({ node }) =>
+        !readBranches(node, transaction, source).flat().includes(guardedCapability));
     const guards = requireCalls(calls, contract.guards, `${contract.family}: guard`);
     const dependent = requireCalls(
         calls, contract.dependent, `${contract.family}: dependent`,

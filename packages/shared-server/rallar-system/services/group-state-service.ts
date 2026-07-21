@@ -43,17 +43,12 @@ import type {
 import type { RuntimeStateEntryValue } from '../../runtime-state/RuntimeStateJsonStore.ts';
 import {
     DEFAULT_RUNTIME_STATE_WRITE_ATTEMPTS,
-    requireConditionalWrite,
     RuntimeStateRetryExhaustedError,
     RuntimeStateWriteConflictError,
     waitForRuntimeStateWriteRetry,
 } from '../../runtime-state/optimistic-runtime-state-write.ts';
 import { GroupStateRepository } from '../repositories/GroupStateRepository.ts';
-import {
-    createStateMutationOutboxRecord,
-    hashStateMutationCommand,
-    StateMutationOutboxRepository,
-} from '../repositories/StateMutationOutboxRepository.ts';
+import { hashStateMutationCommand } from '../repositories/StateMutationOutboxRepository.ts';
 import type { GroupStateEventStore } from '../repositories/StateEventStore.ts';
 import type {
     AuthSessionRepository,
@@ -74,6 +69,7 @@ import {
 import {
     createInProcessMutationLane,
 } from './in-process-mutation-lane.ts';
+import { writeGroupMutation } from './group-state-guarded-batch.ts';
 import {
     recordRallarTiming,
     type RallarTimingSink,
@@ -1570,72 +1566,6 @@ async function readGroupMutation(
         authorityPresenceSessionEntries,
         presenceSummary: presenceSummary ?? null,
     };
-}
-
-async function writeGroupMutation(
-    runtime: RuntimeStateOptimisticTransactionalRepositoryLike,
-    repositoryFor: (
-        target: RuntimeStateOptimisticTransactionalRepositoryLike,
-    ) => GroupStateRepository,
-    computed: Extract<GroupMutationComputed, { outcome: 'write' }>,
-): Promise<GroupMutationReceipt> {
-    return await runtime.begin(async (transaction) => {
-        const repository = repositoryFor(transaction);
-
-        // Aggregate/session ownership is always the first database statement.
-        if (computed.guard.kind === 'group') {
-            requireConditionalWrite(computed.guard.operation === 'insert'
-                ? await repository.insertGroup(computed.guard.value)
-                : await repository.updateGroup(
-                    computed.guard.value,
-                    computed.guard.expectedRevision,
-                ));
-        } else {
-            requireConditionalWrite(computed.guard.operation === 'insert'
-                ? await repository.insertPresence(computed.guard.value)
-                : computed.guard.operation === 'update'
-                ? await repository.updatePresence(
-                    computed.guard.value,
-                    computed.guard.expectedRevision,
-                )
-                : await repository.deletePresence(
-                    computed.guard.value,
-                    computed.guard.expectedRevision,
-                ));
-        }
-
-        if (computed.presenceAdmission) {
-            requireConditionalWrite(computed.presenceAdmission.operation === 'insert'
-                ? await repository.insertPresenceAdmission(
-                    computed.presenceAdmission.value,
-                )
-                : await repository.updatePresenceAdmission(
-                    computed.presenceAdmission.value,
-                    computed.presenceAdmission.expectedRevision,
-                ));
-        }
-
-        for (const member of computed.members) await repository.putMember(member);
-        if (computed.initialPresenceSummary) {
-            requireConditionalWrite(
-                await repository.insertPresenceSummary(computed.initialPresenceSummary),
-            );
-        }
-        if (computed.idempotency) {
-            requireConditionalWrite(
-                await repository.insertIdempotentGroupMutationReceipt(
-                    computed.outbox.aggregateRef,
-                    computed.idempotency.requestId,
-                    computed.idempotency,
-                ),
-            );
-        }
-        await new StateMutationOutboxRepository(transaction).insertForAuthoritativeWrite(
-            createStateMutationOutboxRecord(computed.outbox),
-        );
-        await repository.appendEvent(computed.event);
-        return computed.receipt;
-    });
 }
 
 function toCreateCommand(
