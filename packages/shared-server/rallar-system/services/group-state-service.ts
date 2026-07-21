@@ -35,7 +35,6 @@ import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryCont
 import {
     DEFAULT_RALLAR_GROUP_DIRECTOR_HEARTBEAT_TTL_MS,
     normalizeRallarGroupDirectorHeartbeatTtlMs,
-    readRallarGroupDirectorAppointment,
 } from '@shared/api/group-director.ts';
 import type {
     RuntimeStateOptimisticTransactionalRepositoryLike,
@@ -66,6 +65,7 @@ import {
     validateGroupMutation,
     validateGroupMutationCommand,
 } from './group-state-mutations.ts';
+import { readGroupMutation } from './group-state-mutation-read.ts';
 import {
     createInProcessMutationLane,
 } from './in-process-mutation-lane.ts';
@@ -1431,141 +1431,6 @@ function canonicalJson(value: unknown): string {
         .sort(([left], [right]) => left.localeCompare(right))
         .map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry)}`)
         .join(',')}}`;
-}
-
-async function readGroupMutation(
-    repository: GroupStateRepository,
-    command: GroupMutationCommand,
-): Promise<GroupMutationRead> {
-    const presenceSessionId = 'sessionId' in command
-        ? command.sessionId
-        : command.operation === 'appointDirector'
-        ? command.input.actorSessionId
-        : null;
-    const [idempotency, group, targetPresence, presenceSummary] = await Promise.all([
-        command.requestId === null
-            ? Promise.resolve(undefined)
-            : repository.findIdempotentGroupMutationReceiptEntry(
-                command.aggregateRef,
-                command.requestId,
-            ),
-        repository.findGroupEntry(command.aggregateRef),
-        presenceSessionId
-            ? repository.findPresenceEntry({
-                ...command.aggregateRef,
-                sessionId: presenceSessionId,
-            })
-            : Promise.resolve(undefined),
-        repository.findPresenceSummaryEntry(command.aggregateRef),
-    ]);
-    const actorPrincipalId = command.input.actorPrincipalId;
-    const targetPrincipalId = 'targetPrincipalId' in command
-        ? command.targetPrincipalId
-        : command.operation === 'connectPresence'
-        ? command.input.principalId
-        : command.operation === 'heartbeatPresence' ||
-                command.operation === 'disconnectPresence'
-        ? command.input.principalId ?? actorPrincipalId
-        : actorPrincipalId;
-    const ownerPrincipalId = group?.value.ownerPrincipalId;
-    const director = readRallarGroupDirectorAppointment(group?.value.metadata);
-    const [actorMemberEntry, targetMemberEntry, targetAdmission, authorityMemberEntry,
-        authorityAdmission, directorMemberEntry, directorAdmission] = await Promise.all([
-        actorPrincipalId
-            ? repository.findMemberEntry({
-                ...command.aggregateRef,
-                principalId: actorPrincipalId,
-            })
-            : Promise.resolve(undefined),
-        targetPrincipalId && targetPrincipalId !== actorPrincipalId
-            ? repository.findMemberEntry({
-                ...command.aggregateRef,
-                principalId: targetPrincipalId,
-            })
-            : Promise.resolve(undefined),
-        targetPrincipalId
-            ? repository.findPresenceAdmissionEntry({
-                ...command.aggregateRef,
-                principalId: targetPrincipalId,
-            })
-            : Promise.resolve(undefined),
-        command.operation === 'appointDirector' && ownerPrincipalId &&
-                ownerPrincipalId !== actorPrincipalId &&
-                ownerPrincipalId !== targetPrincipalId
-            ? repository.findMemberEntry({
-                ...command.aggregateRef,
-                principalId: ownerPrincipalId,
-            })
-            : Promise.resolve(undefined),
-        command.operation === 'appointDirector' && ownerPrincipalId
-            ? repository.findPresenceAdmissionEntry({
-                ...command.aggregateRef,
-                principalId: ownerPrincipalId,
-            })
-            : Promise.resolve(undefined),
-        command.operation === 'appointDirector' && director &&
-                director.principalId !== actorPrincipalId &&
-                director.principalId !== targetPrincipalId &&
-                director.principalId !== ownerPrincipalId
-            ? repository.findMemberEntry({
-                ...command.aggregateRef,
-                principalId: director.principalId,
-            })
-            : Promise.resolve(undefined),
-        command.operation === 'appointDirector' && director
-            ? repository.findPresenceAdmissionEntry({
-                ...command.aggregateRef,
-                principalId: director.principalId,
-            })
-            : Promise.resolve(undefined),
-    ]);
-    const authorityPresenceSessionEntries = await Promise.all(
-        [
-            ...(authorityAdmission?.value.admittedSessions ?? []),
-            ...(directorAdmission?.value.admittedSessions ?? []),
-        ].map((session) =>
-            repository.findPresenceEntry({
-                ...command.aggregateRef,
-                sessionId: session.sessionId,
-            })
-        ),
-    ).then((sessions) => sessions.filter(
-        (session): session is NonNullable<typeof session> => session !== undefined,
-    ));
-    const resolvedTargetMemberEntry = targetPrincipalId === actorPrincipalId
-        ? actorMemberEntry
-        : targetMemberEntry;
-    const resolvedAuthorityMemberEntry = ownerPrincipalId === actorPrincipalId
-        ? actorMemberEntry
-        : ownerPrincipalId === targetPrincipalId
-        ? targetMemberEntry
-        : authorityMemberEntry;
-    const resolvedDirectorMemberEntry = director?.principalId === actorPrincipalId
-        ? actorMemberEntry
-        : director?.principalId === targetPrincipalId
-        ? targetMemberEntry
-        : director?.principalId === ownerPrincipalId
-        ? authorityMemberEntry
-        : directorMemberEntry;
-    return {
-        idempotency: idempotency ?? null,
-        group: group ?? null,
-        actorMember: actorMemberEntry?.value ?? null,
-        targetMember: resolvedTargetMemberEntry?.value ?? null,
-        authorityMember: resolvedAuthorityMemberEntry?.value ?? null,
-        directorMember: resolvedDirectorMemberEntry?.value ?? null,
-        actorMemberEntry: actorMemberEntry ?? null,
-        targetMemberEntry: resolvedTargetMemberEntry ?? null,
-        authorityMemberEntry: resolvedAuthorityMemberEntry ?? null,
-        directorMemberEntry: resolvedDirectorMemberEntry ?? null,
-        targetPresence: targetPresence ?? null,
-        targetAdmission: targetAdmission ?? null,
-        authorityAdmission: authorityAdmission ?? null,
-        directorAdmission: directorAdmission ?? null,
-        authorityPresenceSessions: authorityPresenceSessionEntries.map(({ value }) => value),
-        authorityPresenceSessionEntries,
-        presenceSummary: presenceSummary ?? null,
-    };
 }
 
 function toCreateCommand(

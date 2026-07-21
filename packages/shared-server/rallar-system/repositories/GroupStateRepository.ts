@@ -10,9 +10,6 @@ import type {
     GroupSnapshot,
 } from '@shared/api/group-types.ts';
 import { toGroupSnapshotStateRevision } from '@shared/api/group-client-views.ts';
-import {
-    validateAuthoritativeGroupSnapshot,
-} from '@shared/api/authoritative-state-validation.ts';
 import type { StateEventPage } from '@shared/api/state-event-types.ts';
 import {
     isRuntimeStateConditionalRepositoryLike,
@@ -45,10 +42,25 @@ import {
 } from '@shared-server/rallar-system/services/group-state-mutations.ts';
 import type { GroupSnapshotPage, GroupSnapshotPageOptions } from '@shared-server/rallar-system/services/group-state-service.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
-import { isLogicallyActiveSession, toSessionPurgeAfterEpochMs } from './session-expiry.ts';
+import { toSessionPurgeAfterEpochMs } from './session-expiry.ts';
 import { defaultGroupStateEventStoreFor, type GroupStateEventStore } from './StateEventStore.ts';
 import { filterStateEventsForList, type StateEventListQuery } from '../state-event-listing.ts';
 import { readStableStateSnapshot } from './state-snapshot-read.ts';
+import { readGroupStateAuthorityBatch } from './group-state-authority-batch-read.ts';
+import { assembleGroupStateSnapshot } from './group-state-snapshot-assembly.ts';
+import {
+    readGroupStateMutationExactEntries,
+    type GroupStateMutationExactReadInput,
+    type GroupStateMutationExactReadResult,
+} from './group-state-mutation-exact-read.ts';
+import {
+    GROUPS_NAMESPACE,
+    IDEMPOTENT_NAMESPACE,
+    MEMBERS_NAMESPACE,
+    PRESENCE_ADMISSIONS_NAMESPACE,
+    PRESENCE_SUMMARIES_NAMESPACE,
+    SESSIONS_NAMESPACE,
+} from './group-state-runtime-namespaces.ts';
 import {
     decodeGroupStateGroupStorageKey,
     decodeGroupStateIdempotencyStorageKey,
@@ -62,13 +74,6 @@ import {
     groupStatePresenceSessionStorageKey,
     groupStateScopeStorageKey,
 } from '../group-state-storage-keys.ts';
-
-const GROUPS_NAMESPACE = 'group-state:groups';
-const MEMBERS_NAMESPACE = 'group-state:members';
-const SESSIONS_NAMESPACE = 'group-state:sessions';
-const PRESENCE_SUMMARIES_NAMESPACE = 'group-state:presence-summaries';
-const PRESENCE_ADMISSIONS_NAMESPACE = 'group-state:presence-admissions';
-const IDEMPOTENT_NAMESPACE = 'group-state:idempotent';
 
 export type GroupStateRepositoryOptions = Readonly<{
     events?: GroupStateEventStore;
@@ -103,6 +108,45 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
     ) {
         super(repository);
         this.events = options.events ?? defaultGroupStateEventStoreFor(repository);
+    }
+
+    async readMutationExactEntries(
+        input: GroupStateMutationExactReadInput,
+    ): Promise<GroupStateMutationExactReadResult> {
+        return await readGroupStateMutationExactEntries(
+            this.repository,
+            input,
+            async (namespace, entry) =>
+                await this.toLiveEntryValue<unknown>(namespace, entry),
+            {
+                group: (entry) => canonicalStoredGroup(entry, input.aggregateRef),
+                presenceSummary: (entry) =>
+                    canonicalStoredSummary(entry, input.aggregateRef),
+                idempotency: (requestId, entry) => {
+                    const stored = entry as RuntimeStateEntryValue<
+                        GroupMutationIdempotencyRecord
+                    >;
+                    assertStoredIdempotency(stored, {
+                        ...input.aggregateRef,
+                        requestId,
+                    });
+                    return stored;
+                },
+                member: (principalId, entry) => canonicalStoredMember(entry, {
+                    ...input.aggregateRef,
+                    principalId,
+                }),
+                presenceSession: (sessionId, entry) =>
+                    canonicalStoredSession(entry, {
+                        ...input.aggregateRef,
+                        sessionId,
+                    }),
+                admission: (principalId, entry) => canonicalStoredAdmission(entry, {
+                    ...input.aggregateRef,
+                    principalId,
+                }),
+            },
+        );
     }
 
     protected override async toLiveEntryValue<T>(
@@ -743,6 +787,36 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
     ): Promise<GroupStateAuthoritativeSnapshot | undefined> {
         const observedAtEpochMs = Date.now();
         const groupKey = this.groupKey(ref);
+        const batch = await readGroupStateAuthorityBatch(
+            this.repository,
+            ref,
+            async (namespace, entry) =>
+                await this.toLiveEntryValue<unknown>(namespace, entry),
+        );
+        if (batch.status === 'stable') {
+            if (batch.group === undefined) return undefined;
+            const stored = canonicalStoredGroup(batch.group, ref);
+            const members = batch.members.map((entry) =>
+                canonicalStoredMember(entry, ref).value
+            );
+            const summary = batch.summary === undefined
+                ? undefined
+                : canonicalStoredSummary(batch.summary, ref).value;
+            const sessions = batch.sessions.map((entry) =>
+                canonicalStoredSession(entry, ref).value
+            );
+            return {
+                snapshot: this.toSnapshot(
+                    stored.value,
+                    members,
+                    summary,
+                    sessions,
+                    stored.entry.revision + 1,
+                    observedAtEpochMs,
+                ),
+                authorityGuard: toGroupStateAuthorityGuard(ref, stored),
+            };
+        }
         return await readStableStateSnapshot({
             snapshotKey: groupKey,
             readAggregate: async () => await this.findGroupEntry(ref),
@@ -776,93 +850,19 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
         groupRevision: number,
         observedAtEpochMs: number,
     ): GroupSnapshot {
-        const groupAllowsLivePresence = group.status === 'active' &&
-            (group.expiresAtEpochMs === null ||
-                group.expiresAtEpochMs > observedAtEpochMs);
-        const activeMemberIds = new Set(
-            members.filter((member) => member.status === 'active')
-                .map((member) => member.principalId),
-        );
-        const sourceSessions = summary?.activeSessions ?? [];
-        const authoritativeSessionsById = new Map(
-            authoritativeSessions.map((session) => [session.sessionId, session]),
-        );
-        const activeSessions = groupAllowsLivePresence
-            ? this.toActiveSessions(sourceSessions, observedAtEpochMs)
-                .filter((session) => activeMemberIds.has(session.principalId))
-                .filter((session) => {
-                    const authoritative = authoritativeSessionsById.get(session.sessionId);
-                    return authoritative !== undefined &&
-                        authoritative.principalId === session.principalId &&
-                        authoritative.generationId === session.generationId &&
-                        authoritative.generationVersion === session.generationVersion &&
-                        authoritative.disconnectedAtEpochMs === null &&
-                        isLogicallyActiveSession(
-                            authoritative.expiresAtEpochMs,
-                            observedAtEpochMs,
-                        );
-                })
-            : [];
-        const presenceRevision = summary?.causalRevision.presenceRevision ?? 0;
-        const causalRevision = { groupRevision, presenceRevision };
-        const activePrincipals = new Set(
-            activeSessions.map((session) => session.principalId),
-        );
-        const activeMembers = members.filter(
-            (member) => member.status === 'active',
-        );
-        const activeOwners = activeMembers.filter((member) =>
-            member.role === 'owner'
-        );
-        if (
-            group.activeMemberCount !== activeMembers.length ||
-            (group.maxMembers !== null &&
-                activeMembers.length > group.maxMembers) ||
-            activeOwners.length !== 1 ||
-            activeOwners[0]?.principalId !== group.ownerPrincipalId
-        ) {
-            throw new GroupStateRepositoryInvariantCorruptionError(
-                this.groupKey(group),
-                'Stored group roster facts are inconsistent',
-            );
-        }
-
-        const snapshot: GroupSnapshot = {
-            stateRevision: toGroupSnapshotStateRevision(
-                causalRevision.groupRevision,
-                causalRevision.presenceRevision,
-            ),
-            causalRevision,
-            group: { ...group, presenceVersion: presenceRevision },
-            members,
-            activeSessions,
-            memberCount: activeMembers.length,
-            onlineMemberCount:
-                activeMembers.filter((member) => activePrincipals.has(member.principalId)).length,
-        };
-        try {
-            validateAuthoritativeGroupSnapshot(snapshot, group);
-        } catch (error) {
-            throw new GroupStateRepositoryInvariantCorruptionError(
-                this.groupKey(group),
-                error instanceof Error
-                    ? error.message
-                    : 'Stored group snapshot is invalid',
-            );
-        }
-        return snapshot;
-    }
-
-    private toActiveSessions(
-        sessions: readonly GroupPresenceSession[],
-        observedAtEpochMs: number,
-    ): readonly GroupPresenceSession[] {
-        return sessions.filter(
-            (session) =>
-                session.disconnectedAtEpochMs === null &&
-                isLogicallyActiveSession(
-                    session.expiresAtEpochMs,
-                    observedAtEpochMs,
+        return assembleGroupStateSnapshot(
+            {
+                group,
+                members,
+                summary,
+                authoritativeSessions,
+                groupRevision,
+                observedAtEpochMs,
+            },
+            (storageKey, message) =>
+                new GroupStateRepositoryInvariantCorruptionError(
+                    storageKey,
+                    message,
                 ),
         );
     }

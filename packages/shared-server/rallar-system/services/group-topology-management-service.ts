@@ -76,7 +76,6 @@ import {
     type GroupTopologyConfigMutationCommand,
     type GroupTopologyConfigMutationComputed,
     type GroupTopologyConfigMutationFacts,
-    type GroupTopologyConfigMutationRead,
     type GroupTopologyConfigMutationReceipt,
     type GroupTopologyConfigMutationStableFacts,
     normalizeGroupTopologyConfigPatch,
@@ -84,6 +83,10 @@ import {
     validateTopologyConfigMutation,
     validateTopologyConfigMutationIdempotency,
 } from './group-topology-config-mutations.ts';
+import {
+    readTopologyConfigMutation,
+    sameTopologyInvariantGeneration,
+} from './group-topology-config-mutation-read.ts';
 import {
     backfillGroupTopologyConfigGenerationsForRef,
 } from './group-topology-config-generation-backfill.ts';
@@ -1329,55 +1332,6 @@ export class GroupTopologyManagementService {
     }
 }
 
-async function readTopologyConfigMutation(
-    repository: GroupTopologyConfigRepository,
-    groupStateRepository: GroupStateRepository,
-    command: GroupTopologyConfigMutationCommand,
-): Promise<GroupTopologyConfigMutationRead> {
-    const invariantBefore = await repository.findInvariantGenerationEntry(
-        command.aggregateRef,
-    );
-    const [
-        config,
-        override,
-        configGeneration,
-        overrideGeneration,
-        idempotency,
-        groupObservation,
-    ] = await Promise.all([
-        repository.findConfigEntry(command.aggregateRef),
-        repository.findOverrideEntry(command.aggregateRef),
-        repository.findGenerationEntry(command.aggregateRef, 'config'),
-        repository.findGenerationEntry(command.aggregateRef, 'override'),
-        command.requestId === null
-            ? Promise.resolve(undefined)
-            : repository.findMutationRecordEntry(
-                command.aggregateRef,
-                command.requestId,
-            ),
-        groupStateRepository.readSnapshotWithAuthorityGuard(command.aggregateRef),
-    ]);
-    const invariantAfter = await repository.findInvariantGenerationEntry(
-        command.aggregateRef,
-    );
-    if (!groupObservation) {
-        throw new Error(`Group snapshot not found: ${command.aggregateRef.groupId}`);
-    }
-    if (!sameTopologyInvariantGeneration(invariantBefore, invariantAfter)) {
-        throw new RuntimeStateWriteConflictError();
-    }
-    return {
-        config: config ?? null,
-        override: override ?? null,
-        configGeneration: configGeneration ?? null,
-        overrideGeneration: overrideGeneration ?? null,
-        invariantGeneration: invariantAfter ?? null,
-        idempotency: idempotency ?? null,
-        groupSnapshot: groupObservation.snapshot,
-        groupAuthorityGuard: groupObservation.authorityGuard,
-    };
-}
-
 async function readConsistentTopologyConfigPair(
     repository: GroupTopologyConfigRepository,
     groupRef: GroupRef,
@@ -1403,15 +1357,6 @@ async function readConsistentTopologyConfigPair(
     throw new RuntimeStateRetryExhaustedError(
         lastConflict ?? new RuntimeStateWriteConflictError(),
     );
-}
-
-function sameTopologyInvariantGeneration(
-    left: Awaited<ReturnType<GroupTopologyConfigRepository['findInvariantGenerationEntry']>>,
-    right: Awaited<ReturnType<GroupTopologyConfigRepository['findInvariantGenerationEntry']>>,
-): boolean {
-    if (!left || !right) return left === right;
-    return left.entry.revision === right.entry.revision &&
-        left.value.version === right.value.version;
 }
 
 function requireOptimisticTopologyRuntime(

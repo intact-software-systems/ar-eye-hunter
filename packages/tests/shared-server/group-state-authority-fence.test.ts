@@ -1,8 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { Group, GroupMember, GroupRef } from '@shared/api/group-types.ts';
+import type {
+    RuntimeStateEntry,
+} from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import {
     GroupStateRepository,
 } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
+import {
+    groupStateGroupStorageKey,
+    groupStateMemberStorageKey,
+} from '@shared-server/rallar-system/group-state-storage-keys.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 
 describe('GroupStateRepository authority fence', () => {
@@ -63,7 +70,140 @@ describe('GroupStateRepository authority fence', () => {
         );
         expect(after!.snapshot.group).toEqual(before!.snapshot.group);
     });
+
+    it('uses one dense batch read as the authority snapshot on capable repositories', async () => {
+        const runtime = new BatchReadRuntimeStateRepository();
+        const repository = new GroupStateRepository(runtime);
+        const { group, owner } = fixture();
+        await repository.insertGroup(group);
+        await repository.putMember(owner);
+        const expiredMember = {
+            ...owner,
+            principalId: 'expired-member',
+            role: 'member',
+        } as const satisfies GroupMember;
+        await repository.putMember(expiredMember);
+        const expiredMemberKey = groupStateMemberStorageKey(expiredMember);
+        const expiredEntry = await runtime.findEntry(
+            'group-state:members',
+            expiredMemberKey,
+        );
+        await runtime.upsert(
+            'group-state:members',
+            expiredMemberKey,
+            expiredEntry!.value,
+            Date.now() - 1,
+        );
+        const fallbackRuntime = cloneRuntime(runtime);
+        const expected = await new GroupStateRepository(fallbackRuntime)
+            .readSnapshotWithAuthorityGuard(group);
+        runtime.rejectLegacyReads = true;
+
+        const observation = await repository.readSnapshotWithAuthorityGuard(group);
+        const groupKey = groupStateGroupStorageKey(group);
+
+        expect(runtime.batchReadCalls).toEqual([[
+            {
+                selectorId: 'group',
+                kind: 'key',
+                namespace: 'group-state:groups',
+                key: groupKey,
+            },
+            {
+                selectorId: 'members',
+                kind: 'prefix',
+                namespace: 'group-state:members',
+                keyPrefix: `${groupKey}:`,
+            },
+            {
+                selectorId: 'presence-summary',
+                kind: 'key',
+                namespace: 'group-state:presence-summaries',
+                key: groupKey,
+            },
+            {
+                selectorId: 'presence-sessions',
+                kind: 'prefix',
+                namespace: 'group-state:sessions',
+                keyPrefix: `${groupKey}:`,
+            },
+        ]]);
+        expect(observation).toEqual(expected);
+        expect(observation?.snapshot.members).toEqual([owner]);
+        expect(
+            [...runtime.data.values()].some((entry) => entry.key === expiredMemberKey),
+        ).toBe(false);
+    });
 });
+
+type BatchReadSelector =
+    | Readonly<{
+        selectorId: string;
+        kind: 'key';
+        namespace: string;
+        key: string;
+    }>
+    | Readonly<{
+        selectorId: string;
+        kind: 'prefix';
+        namespace: string;
+        keyPrefix: string;
+    }>;
+
+class BatchReadRuntimeStateRepository extends FakeRuntimeStateRepository {
+    readonly runtimeStateReadBatchCapability = true as const;
+    readonly runtimeStateReadBatchConsistency = 'single-database-snapshot' as const;
+    readonly batchReadCalls: BatchReadSelector[][] = [];
+    rejectLegacyReads = false;
+
+    override findEntry(
+        namespace: string,
+        key: string,
+    ): Promise<RuntimeStateEntry | undefined> {
+        if (this.rejectLegacyReads) throw new Error('legacy findEntry called');
+        return super.findEntry(namespace, key);
+    }
+
+    override findEntriesByPrefix(
+        namespace: string,
+        keyPrefix: string,
+    ): Promise<readonly RuntimeStateEntry[]> {
+        if (this.rejectLegacyReads) {
+            throw new Error('legacy findEntriesByPrefix called');
+        }
+        return super.findEntriesByPrefix(namespace, keyPrefix);
+    }
+
+    async readRuntimeStateBatch(
+        selectors: readonly BatchReadSelector[],
+    ): Promise<readonly Readonly<{
+        selectorId: string;
+        entries: readonly RuntimeStateEntry[];
+    }>[]> {
+        this.batchReadCalls.push(selectors.map((selector) => ({ ...selector })));
+        const snapshot = cloneRuntime(this);
+        return await Promise.all(selectors.map(async (selector) => ({
+            selectorId: selector.selectorId,
+            entries: selector.kind === 'key'
+                ? [await snapshot.findEntry(selector.namespace, selector.key)]
+                    .filter((entry): entry is RuntimeStateEntry => entry !== undefined)
+                : await snapshot.findEntriesByPrefix(
+                    selector.namespace,
+                    selector.keyPrefix,
+                ),
+        })));
+    }
+}
+
+function cloneRuntime(
+    source: FakeRuntimeStateRepository,
+): FakeRuntimeStateRepository {
+    const clone = new FakeRuntimeStateRepository();
+    for (const [key, entry] of source.data) {
+        clone.data.set(key, { ...entry });
+    }
+    return clone;
+}
 
 function fixture(): Readonly<{ group: Group; owner: GroupMember }> {
     const ref: GroupRef = {

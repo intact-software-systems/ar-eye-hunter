@@ -33,6 +33,7 @@ import {
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import {
     groupStateGroupStorageKey,
+    groupStateIdempotencyStorageKey,
     groupStateMemberStorageKey,
 } from '@shared-server/rallar-system/group-state-storage-keys.ts';
 import {
@@ -43,6 +44,9 @@ import {
     GROUP_TOPOLOGY_OVERRIDE_NAMESPACE,
 } from '@shared-server/rallar-system/repositories/GroupTopologyConfigRepository.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
+import {
+    ReadBatchFakeRuntimeStateRepository,
+} from './read-batch-fake-runtime-state-repository.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import type {
     RuntimeStateEntry,
@@ -96,6 +100,72 @@ vi.mock(
 );
 
 describe('GroupTopologyManagementService', () => {
+    it('batches the exact topology-config mutation read slots', async () => {
+        const runtimeRepository = new ReadBatchFakeRuntimeStateRepository();
+        const group = createGroupSnapshot(createGroupRef('mutation-read-batch'));
+        const configRepository = new GroupTopologyConfigRepository(runtimeRepository);
+        const service = createService({
+            runtimeRepository,
+            group,
+            configRepository,
+            now: () => 1_000,
+        });
+
+        await service.putConfig({
+            groupRef: group.group,
+            config: { topologyKind: 'tree' },
+            updatedByPrincipalId: 'owner',
+            requestId: 'mutation-read-batch',
+        });
+
+        const mutationCalls = runtimeRepository.readBatchCalls.filter((selectors) =>
+            selectors.some(({ selectorId }) =>
+                selectorId === 'topology-invariant'
+            )
+        );
+        expect(mutationCalls).toEqual([[
+            {
+                selectorId: 'topology-invariant',
+                kind: 'key',
+                namespace: GROUP_TOPOLOGY_CONFIG_INVARIANT_GENERATION_NAMESPACE,
+                key: configRepository.invariantGenerationKey(group.group),
+            },
+            {
+                selectorId: 'topology-config',
+                kind: 'key',
+                namespace: GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+                key: configRepository.configKey(group.group),
+            },
+            {
+                selectorId: 'topology-override',
+                kind: 'key',
+                namespace: GROUP_TOPOLOGY_OVERRIDE_NAMESPACE,
+                key: configRepository.overrideKey(group.group),
+            },
+            {
+                selectorId: 'topology-generation-config',
+                kind: 'key',
+                namespace: GROUP_TOPOLOGY_CONFIG_GENERATION_NAMESPACE,
+                key: configRepository.generationKey(group.group, 'config'),
+            },
+            {
+                selectorId: 'topology-generation-override',
+                kind: 'key',
+                namespace: GROUP_TOPOLOGY_CONFIG_GENERATION_NAMESPACE,
+                key: configRepository.generationKey(group.group, 'override'),
+            },
+            {
+                selectorId: 'topology-idempotency',
+                kind: 'key',
+                namespace: GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE,
+                key: groupStateIdempotencyStorageKey(
+                    group.group,
+                    'mutation-read-batch',
+                ),
+            },
+        ]]);
+    });
+
     it('guarded topology config selects the capability from inside begin', async () => {
         const runtimeRepository = new GuardedBatchFakeRuntimeStateRepository();
         const group = createGroupSnapshot(createGroupRef('guarded-capability'));

@@ -19,7 +19,16 @@ import {
     validateRuntimeStateGuardedBatch,
     validateRuntimeStateGuardedBatchResult,
 } from '@shared-server/runtime-state/RuntimeStateGuardedBatch.ts';
+import type {
+    RuntimeStateReadBatchSelection,
+    RuntimeStateReadBatchSelector,
+} from '@shared-server/runtime-state/RuntimeStateReadBatch.ts';
 import type { PSqlSql, PSqlTransactionSql } from '../PostgresSqlClient.ts';
+import { readPSqlRuntimeStateBatch } from './PSqlRuntimeStateReadBatch.ts';
+import {
+    toExclusivePrefixEnd,
+    toPgDate,
+} from './PSqlRuntimeStateSqlValues.ts';
 
 const RUNTIME_STATE_EXPIRY_EVICTION_INTERVAL_MS = 60_000;
 
@@ -67,6 +76,15 @@ export class PSqlRuntimeStateRepository
 
     get runtimeStateGuardedBatchCapability(): boolean {
         return this.sqlState.kind === 'transaction';
+    }
+
+    readonly runtimeStateReadBatchCapability = true as const;
+    readonly runtimeStateReadBatchConsistency = 'single-database-snapshot' as const;
+
+    async readRuntimeStateBatch(
+        selectors: readonly RuntimeStateReadBatchSelector[],
+    ): Promise<readonly RuntimeStateReadBatchSelection[]> {
+        return await readPSqlRuntimeStateBatch(this.sql, selectors);
     }
 
     async begin<T>(
@@ -1086,25 +1104,4 @@ function requireSavepointSql(
     }
 
     return candidate as RuntimeStateSavepointSql;
-}
-
-function toExclusivePrefixEnd(prefix: string): string {
-    if (prefix.length === 0) {
-        throw new Error('Runtime state prefix must not be empty.');
-    }
-
-    const lastIndex = prefix.length - 1;
-    const lastCode = prefix.charCodeAt(lastIndex);
-    if (lastCode >= 0xffff) {
-        throw new Error(`Runtime state prefix has no safe upper bound: ${prefix}`);
-    }
-    return `${prefix.slice(0, lastIndex)}${String.fromCharCode(lastCode + 1)}`;
-}
-
-function toPgDate(timestamp: number): Date {
-    if (!Number.isFinite(timestamp)) {
-        throw new Error('expireAtTimestamp must be a finite number');
-    }
-
-    return new Date(timestamp);
 }
