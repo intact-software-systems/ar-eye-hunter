@@ -199,6 +199,18 @@ export type ALPersistedOutboundEffect<TPrepared> = Readonly<{
     expireAtTimestamp: number;
 }>;
 
+export type ALOutboundEffectSettlement =
+    | Readonly<{
+    effectId: string;
+    status: 'completed';
+}>
+    | Readonly<{
+    effectId: string;
+    status: 'rescheduled';
+    retryAtMs: number;
+    lastError?: string;
+}>;
+
 export type ALOutboundCommitBundle<TPrepared> = Readonly<{
     senderId: string;
     expectedVersion?: number;
@@ -273,6 +285,11 @@ export interface ALOutboundAdmissionStore extends ALReadyable {
         leaseMs: number,
         nowMs?: number,
     ): Promise<readonly ALPersistedOutboundEffect<TPrepared>[]>;
+
+    settleClaimedEffects?(
+        workerId: string,
+        settlements: readonly ALOutboundEffectSettlement[],
+    ): Promise<void>;
 
     completeEffect(
         effectId: string,
@@ -654,13 +671,48 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
         effectId: string,
         workerId: string,
     ): Promise<void> {
-        await this.backend.write(async tx => {
-            const current = await tx.get<ALPersistedOutboundEffect<unknown>>(this.toEffectKey(effectId));
-            if (!current || current.leaseOwner !== workerId) {
-                return;
-            }
+        await this.settleClaimedEffects(workerId, [{
+            effectId,
+            status: 'completed',
+        }]);
+    }
 
-            await tx.remove(this.toEffectKey(effectId));
+    async settleClaimedEffects(
+        workerId: string,
+        settlements: readonly ALOutboundEffectSettlement[],
+    ): Promise<void> {
+        if (settlements.length === 0) {
+            return;
+        }
+
+        const updatedAtMs = Date.now();
+        await this.backend.write(async tx => {
+            for (const settlement of settlements) {
+                const key = this.toEffectKey(settlement.effectId);
+                const current = await tx.get<ALPersistedOutboundEffect<unknown>>(key);
+                if (!current || current.leaseOwner !== workerId) {
+                    continue;
+                }
+
+                if (settlement.status === 'completed') {
+                    await tx.remove(key);
+                    continue;
+                }
+
+                await tx.set(
+                    key,
+                    {
+                        ...current,
+                        status: 'pending',
+                        retryAtMs: settlement.retryAtMs,
+                        leaseOwner: undefined,
+                        leaseUntilMs: undefined,
+                        lastError: settlement.lastError,
+                        updatedAtMs,
+                    } satisfies ALPersistedOutboundEffect<unknown>,
+                    current.expireAtTimestamp,
+                );
+            }
         });
     }
 
@@ -670,26 +722,12 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
         retryAtMs: number,
         lastError?: string,
     ): Promise<void> {
-        await this.backend.write(async tx => {
-            const current = await tx.get<ALPersistedOutboundEffect<unknown>>(this.toEffectKey(effectId));
-            if (!current || current.leaseOwner !== workerId) {
-                return;
-            }
-
-            await tx.set(
-                this.toEffectKey(effectId),
-                {
-                    ...current,
-                    status: 'pending',
-                    retryAtMs,
-                    leaseOwner: undefined,
-                    leaseUntilMs: undefined,
-                    lastError,
-                    updatedAtMs: Date.now(),
-                } satisfies ALPersistedOutboundEffect<unknown>,
-                current.expireAtTimestamp,
-            );
-        });
+        await this.settleClaimedEffects(workerId, [{
+            effectId,
+            status: 'rescheduled',
+            retryAtMs,
+            lastError,
+        }]);
     }
 
     async peekNextEffectReadyAt(

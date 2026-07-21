@@ -1,4 +1,7 @@
-import { OverlayInfo } from '@shared/api/api-config.ts';
+import {
+    type OverlayInfo,
+    type OverlayProvenance,
+} from '@shared/api/api-config.ts';
 import {
     isOverlayForGroupRef,
     toScopedOverlayId,
@@ -241,13 +244,32 @@ export function getAllOverlays(
 }
 
 export function compareOverlayInfoTuple(
-    left: Pick<OverlayInfo, 'sourceGroupStateRevision' | 'overlayVersion'>,
-    right: Pick<OverlayInfo, 'sourceGroupStateRevision' | 'overlayVersion'>,
+    left: Pick<
+        OverlayInfo,
+        'sourceGroupStateRevision' | 'provenance' | 'overlayVersion'
+    >,
+    right: Pick<
+        OverlayInfo,
+        'sourceGroupStateRevision' | 'provenance' | 'overlayVersion'
+    >,
 ): number {
+    if (left.provenance !== right.provenance) {
+        return overlayProvenanceRank(left.provenance) -
+            overlayProvenanceRank(right.provenance);
+    }
     if (left.sourceGroupStateRevision !== right.sourceGroupStateRevision) {
         return left.sourceGroupStateRevision - right.sourceGroupStateRevision;
     }
     return left.overlayVersion - right.overlayVersion;
+}
+
+function overlayProvenanceRank(provenance: OverlayProvenance): number {
+    switch (provenance) {
+        case 'group-fallback':
+            return 0;
+        case 'topology-snapshot':
+            return 1;
+    }
 }
 
 function toOverlayRepositoryChange(
@@ -268,6 +290,7 @@ function toOverlayRepositoryChange(
 function toStarOverlay(group: AnyGroupPresence): OverlayInfo {
     return {
         sourceGroupStateRevision: readGroupStateRevision(group),
+        provenance: 'group-fallback',
         state: 'active',
         name: readGroupDisplayName(group),
         overlayId: toScopedOverlayId(group.group),

@@ -80,6 +80,7 @@ export class WebRtcOverlayMulticastManager {
         this.qosProvider = options.qosProvider;
         this.outboundRuntime = new ALOutboundMessageRuntime<ALMessage>(
             {
+                diagnosticsRuntime: 'rtc-overlay',
                 stores: options.outboundStores,
                 outbox: this.outbox,
                 toOutboxEntry: (msg) =>
@@ -608,7 +609,6 @@ export class WebRtcOverlayMulticastManager {
             return {
                 status: 'not-ready',
                 reason,
-                retryAfterMs: 50,
             };
         }
 
@@ -617,7 +617,6 @@ export class WebRtcOverlayMulticastManager {
             return {
                 status: 'not-ready',
                 reason: `RTC channel for peer ${peerId} is ${health.readyState}`,
-                retryAfterMs: 50,
             };
         }
 

@@ -620,7 +620,7 @@ describe('WebRtc overlay services', () => {
         expect(await reserveRtcOutbox(queue)).toHaveLength(0);
     });
 
-    it('keeps durable rtc send effects retryable when dequeue cannot find a channel', async () => {
+    it('backs off durable rtc send effects while dequeue cannot find a channel', async () => {
         vi.useFakeTimers();
 
         const queue = new InMemoryQueueBox(new Map());
@@ -690,7 +690,14 @@ describe('WebRtc overlay services', () => {
         expect(connectionService.readPeer).toHaveBeenCalledWith('peer-1');
         expect(storedEntry.status).toBe(EntityStatus.COMPLETED);
 
+        await vi.advanceTimersByTimeAsync(50);
+        expect(connectionService.readPeer).toHaveBeenCalledTimes(2);
+
         peer.channel = createOpenRtcChannel();
+        await vi.advanceTimersByTimeAsync(50);
+
+        expect(peer.channel.send).not.toHaveBeenCalled();
+
         await vi.advanceTimersByTimeAsync(50);
 
         expect(peer.channel.send).toHaveBeenCalledOnce();
@@ -815,6 +822,9 @@ function createOverlayContext(
             onlineMemberCount: memberSessionIds.length,
         },
         overlay: {
+            sourceGroupStateRevision: 1,
+            provenance: 'topology-snapshot' as const,
+            state: 'active' as const,
             overlayId: groupId,
             name: 'Group 1',
             createdByClientId: 'owner',

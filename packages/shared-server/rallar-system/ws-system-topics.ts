@@ -14,6 +14,10 @@ import * as rttRepository from '@shared/repository/rtt-repository.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
 import type { QRtcSignalingMessage } from '@shared/webrtc/QRtcSignalingContracts.ts';
+import {
+    emitRtcSignalingTrace,
+    withRtcSignalingServerForwardedTiming,
+} from '@shared/webrtc/RtcSignalingTrace.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 import { computeGlobalGraphAndCacheIt } from '@shared-graph/group-graphs-create-service.ts';
 import * as vivaldiService from '@shared-graph/vivaldi-service.ts';
@@ -667,9 +671,9 @@ function initRtcSignalingTopic(wsQBoxServerService: WsQueueBoxServerService): vo
                 return Promise.reject('Invalid signaling message:');
             }
 
-            console.log(`Received signaling message: ${JSON.stringify(msg)}`);
-
-            server.send(msg.toId, data);
+            const forwarded = withRtcSignalingServerForwardedTiming(data);
+            const traced = emitRtcSignalingTrace(forwarded, 'server-forwarded');
+            server.send(msg.toId, traced.message);
 
             return Promise.resolve();
         },

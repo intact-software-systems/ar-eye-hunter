@@ -636,6 +636,9 @@ function createGroupSnapshot(memberSessionIds: readonly string[]) {
 
 function createOverlayInfo(nextHopSessionIds: readonly string[]) {
     return {
+        sourceGroupStateRevision: 1,
+        provenance: 'topology-snapshot' as const,
+        state: 'active' as const,
         overlayId: 'group-1',
         name: 'Group 1',
         createdByClientId: 'owner',

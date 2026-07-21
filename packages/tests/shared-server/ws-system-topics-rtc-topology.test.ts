@@ -9,9 +9,15 @@ import {
     ResilienceDto,
     newALBroadcastMessage,
     newALEventRoute,
+    newALUnicastMessage,
     WsQueueBoxServerService,
     type ALMessage,
 } from '@shared/mod.ts';
+import {
+    QRtcSignalingChannel,
+    QRtcSignalingMsgType,
+    QRtcSignalingType,
+} from '@shared/webrtc/QRtcSignalingContracts.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
@@ -34,6 +40,67 @@ import { configureTestCacheRepositories } from '../cache-repository-config.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 
 describe('Rallar system websocket topics RTC topology', () => {
+    it('carries server receive and forward timing on RTC signaling messages', async () => {
+        configureTestCacheRepositories();
+
+        const server = new JsonWebSocketServer();
+        const senderSocket = new FakeSocket();
+        const targetSocket = new FakeSocket();
+        server.addConnection(new ConnectionContext('session-a', senderSocket as never));
+        server.addConnection(new ConnectionContext('session-b', targetSocket as never));
+
+        const service = new WsQueueBoxServerService(
+            new InMemoryQueueBox(new Map()),
+            new InMemoryQueueBox(new Map()),
+            server,
+            'server-1',
+        );
+        initRallarSystemWsTopics(service);
+        const message = newALUnicastMessage(
+            'session-a',
+            newALEventRoute(AppTopics.rtcSignaling, 'session-b', 'rtc-signal-1'),
+            'session-b',
+            AppTopics.rtcSignaling,
+            {
+                channel: QRtcSignalingChannel.RtcSignal,
+                type: QRtcSignalingMsgType.Signal,
+                fromId: 'session-a',
+                toId: 'session-b',
+                sessionId: 'session-a',
+                token: 'NOT_CREATED_YET',
+                signalType: QRtcSignalingType.Offer,
+                payload: {
+                    description: {
+                        type: 'offer',
+                        sdp: 'secret-sdp',
+                    },
+                    candidate: null,
+                },
+            },
+        );
+
+        await senderSocket.dispatchMessage(message);
+
+        const forwarded = targetSocket.sent.find(
+            (candidate) => candidate.id.msgId === message.id.msgId,
+        );
+        expect(forwarded).toMatchObject({
+            id: message.id,
+            route: message.route,
+            diagnostics: {
+                wsRelayTiming: {
+                    receivedAtEpochMs: expect.any(Number),
+                    forwardedAtEpochMs: expect.any(Number),
+                },
+            },
+        });
+        expect(
+            forwarded!.diagnostics!.wsRelayTiming!.receivedAtEpochMs,
+        ).toBeLessThanOrEqual(
+            forwarded!.diagnostics!.wsRelayTiming!.forwardedAtEpochMs,
+        );
+    });
+
     it('broadcasts overlay topology after accepted group snapshots', async () => {
         configureTestCacheRepositories();
 

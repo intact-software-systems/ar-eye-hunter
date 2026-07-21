@@ -35,6 +35,12 @@ import {
     ALOutboundSupersedenceTrackingPlan,
 } from '../alm/ALOutboundMessageRuntime.ts';
 import { Either } from '@shared/resilience/Either.ts';
+import {
+    emitRtcSignalingTrace,
+    type RtcSignalingTraceOptions,
+    withRtcSignalingServerForwardedTiming,
+    withRtcSignalingServerReceivedTiming,
+} from '../webrtc/RtcSignalingTrace.ts';
 
 export type WsServerResolvedRecipient = Readonly<{
     peerId: string;
@@ -88,6 +94,7 @@ export type WsQueueBoxServerServiceOptions = Readonly<{
     inboundStores?: ALInboundRuntimeStores;
     outboundStores?: ALOutboundRuntimeStores;
     outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
+    rtcSignalingTrace?: RtcSignalingTraceOptions;
 }>;
 
 type WsServerPreparedMessage = Readonly<{
@@ -122,6 +129,7 @@ export class WsQueueBoxServerService {
     private readonly outboundRuntime: ALOutboundMessageRuntime<WsServerPreparedMessage>;
     private readonly qosProvider?: ALQosInputProvider;
     private readonly targetResolver: WsServerTargetResolver;
+    private readonly rtcSignalingTrace: RtcSignalingTraceOptions;
 
     constructor(
         public readonly inbox: QueueBoxResourceEntryRepository,
@@ -132,11 +140,13 @@ export class WsQueueBoxServerService {
     ) {
         this.qosProvider = options.qosProvider;
         this.targetResolver = options.targetResolver ?? {};
+        this.rtcSignalingTrace = options.rtcSignalingTrace ?? {};
 
         this.outboundRuntime = new ALOutboundMessageRuntime<
             WsServerPreparedMessage
         >(
             {
+                diagnosticsRuntime: 'ws-server',
                 stores: options.outboundStores,
                 diagnostics: options.outboundDiagnostics,
                 outbox: this.outbox,
@@ -224,8 +234,16 @@ export class WsQueueBoxServerService {
             name,
             {
                 onMessage: async (ctx: ConnectionContext, data: unknown, _) => {
-                    const message = data as ALMessage;
-                    await this.handleIncomingServerMessage(message, ctx.id);
+                    const received = withRtcSignalingServerReceivedTiming(
+                        data as ALMessage,
+                        this.rtcSignalingTrace.nowMs?.() ?? Date.now(),
+                    );
+                    const traced = emitRtcSignalingTrace(
+                        received,
+                        'server-inbox-received',
+                        this.rtcSignalingTrace,
+                    );
+                    await this.handleIncomingServerMessage(traced.message, ctx.id);
                 },
             },
         );
@@ -638,13 +656,22 @@ export class WsQueueBoxServerService {
             `Forwarding WS server message ${message.id.msgId} (${message.payload.typeId}) from ${fromPeerId} to ${nextHopPeerIds.join(', ')}`,
         );
 
+        const forwarded = withRtcSignalingServerForwardedTiming(
+            message,
+            this.rtcSignalingTrace.nowMs?.() ?? Date.now(),
+        );
+        const traced = emitRtcSignalingTrace(
+            forwarded,
+            'server-forwarded',
+            this.rtcSignalingTrace,
+        );
         let sent = 0;
-        const encoded = this.tryEncodeDirectMessage(message);
+        const encoded = this.tryEncodeDirectMessage(traced.message);
         if (!encoded) {
             return Promise.resolve();
         }
         for (const peerId of nextHopPeerIds) {
-            sent += this.sendToResolvedPeer(peerId, message, encoded);
+            sent += this.sendToResolvedPeer(peerId, traced.message, encoded);
         }
 
         if (sent === 0) {

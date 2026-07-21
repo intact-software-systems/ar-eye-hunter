@@ -379,6 +379,7 @@ describe('repository modules', () => {
 
         expect(findOverlayById(overlayId)).toEqual({
             sourceGroupStateRevision: group.stateRevision,
+            provenance: 'group-fallback',
             state: 'active',
             overlayId,
             groupRef: group.group,
@@ -421,6 +422,7 @@ describe('repository modules', () => {
         try {
             const first = {
                 sourceGroupStateRevision: 1,
+                provenance: 'topology-snapshot',
                 state: 'active',
                 overlayId: 'group-1',
                 name: 'Alpha',
@@ -460,6 +462,7 @@ describe('repository modules', () => {
         const first = {
             overlayId: 'overlay-1',
             sourceGroupStateRevision: 2,
+            provenance: 'topology-snapshot',
             state: 'active',
             name: 'Room',
             createdByClientId: 'owner',
@@ -489,6 +492,55 @@ describe('repository modules', () => {
 
         setOverlayById(first.overlayId, first);
         expect(findOverlayById(first.overlayId)).toBeUndefined();
+    });
+
+    it('retains authoritative topology across fallback revisions', () => {
+        const authoritative = {
+            provenance: 'topology-snapshot',
+            overlayId: 'overlay-1',
+            sourceGroupStateRevision: 30,
+            state: 'active',
+            topology: 'tree',
+            name: 'Room',
+            createdByClientId: 'owner',
+            createdAtEpochMs: 1,
+            nextHopSessionIds: ['peer-a'],
+            overlayVersion: 16,
+            updatedAtEpochMs: 16,
+        } satisfies OverlayInfo;
+        const fallback = {
+            ...authoritative,
+            provenance: 'group-fallback',
+            topology: 'star',
+            nextHopSessionIds: ['peer-a', 'peer-b', 'peer-c'],
+            overlayVersion: 30,
+            updatedAtEpochMs: 30,
+        } satisfies OverlayInfo;
+
+        setOverlayById(fallback.overlayId, fallback);
+        setOverlayById(authoritative.overlayId, authoritative);
+        expect(findOverlayById(authoritative.overlayId)).toEqual(authoritative);
+
+        setOverlayById(fallback.overlayId, fallback);
+        expect(findOverlayById(authoritative.overlayId)).toEqual(authoritative);
+
+        const nextRevisionFallback = {
+            ...fallback,
+            sourceGroupStateRevision: 31,
+            overlayVersion: 31,
+        };
+        setOverlayById(nextRevisionFallback.overlayId, nextRevisionFallback);
+        expect(findOverlayById(authoritative.overlayId)).toEqual(authoritative);
+
+        const nextAuthoritative = {
+            ...authoritative,
+            sourceGroupStateRevision: 31,
+            overlayVersion: 17,
+        };
+        setOverlayById(nextAuthoritative.overlayId, nextAuthoritative);
+        expect(findOverlayById(authoritative.overlayId)).toEqual(
+            nextAuthoritative,
+        );
     });
 
     it('normalizes RTT pair keys and keeps only newer measurements', () => {

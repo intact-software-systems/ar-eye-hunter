@@ -896,6 +896,12 @@ function createBlackBoxRallarRuntimeInstallation(
             await rallar.connect({
                 timeoutMs: config.rallar.timeoutMs,
                 dataChannelLanes: config.rallar.dataChannelLanes,
+                outboundDiagnostics: event =>
+                    emitDiagnostic(
+                        config,
+                        'rallar.browser.al.outbound_runtime',
+                        event,
+                    ),
             });
             context.assertCurrent();
             emitConnectPhaseCompleted(config, phase, {

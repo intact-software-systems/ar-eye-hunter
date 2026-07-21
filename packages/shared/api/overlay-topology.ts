@@ -35,6 +35,7 @@ export function toOverlayInfoForSession(
 ): OverlayInfo {
     return {
         sourceGroupStateRevision: snapshot.sourceGroupStateRevision,
+        provenance: 'topology-snapshot',
         state: snapshot.state,
         overlayId: snapshot.overlayId,
         groupRef: snapshot.groupRef,

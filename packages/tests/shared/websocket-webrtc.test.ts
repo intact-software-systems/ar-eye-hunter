@@ -17,6 +17,7 @@ import {
 } from '@shared/webrtc/QRtcSignalingContracts.ts';
 import { WsRtcSignalingTransport } from '@shared/webrtc/WsRtcSignalingTransport.ts';
 import { WsRtcSignalingTransportUsingWsQBox } from '@shared/webrtc/WsRtcSignalingTransportUsingWsQBox.ts';
+import type { RtcSignalingTraceEvent } from '@shared/webrtc/RtcSignalingTrace.ts';
 
 describe('JsonWebSocketClient', () => {
     afterEach(() => {
@@ -581,6 +582,81 @@ describe('WsRtcSignalingTransportUsingWsQBox', () => {
         await transport.send(createSignalingPayload());
 
         expect(wakeOutbox).toHaveBeenCalledOnce();
+    });
+
+    it('emits correlated enqueue and RTC dispatch trace stages', async () => {
+        const qbox = createQboxHarness();
+        const events: RtcSignalingTraceEvent[] = [];
+        let now = 1_010;
+        const transport = new WsRtcSignalingTransportUsingWsQBox(
+            qbox.service as never,
+            'rtc',
+            undefined,
+            {
+                nowMs: () => now,
+                emit: (event) => events.push(event),
+            },
+        );
+        const payload = createSignalingPayload();
+
+        await transport.send(payload);
+        const enqueued = qbox.enqueueOutboxIfAbsent.mock.calls[0][0] as ALMessage;
+
+        await transport.connect({
+            sessionId: 'session-1',
+            token: 'token-1',
+            callbacks: {
+                onOpen: async () => undefined,
+                onClose: async () => undefined,
+                onError: async () => undefined,
+                onMessage: async () => undefined,
+            },
+        });
+        now = 1_040;
+        await qbox.inboxCallback?.onMessage(enqueued, {} as never);
+
+        expect(events.map((event) => event.stage)).toEqual([
+            'client-outbox-enqueued',
+            'rtc-dispatched',
+        ]);
+        expect(events.map((event) => event.messageId)).toEqual([
+            enqueued.id.msgId,
+            enqueued.id.msgId,
+        ]);
+    });
+});
+
+describe('WsQueueBoxClientService RTC signaling trace', () => {
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it('emits sender-send and target-receive stages with one message id', async () => {
+        const socket = createReconnectSocketHarness();
+        const events: RtcSignalingTraceEvent[] = [];
+        let now = 1_020;
+        const service = createWsQueueBoxService(socket.client, {
+            rtcSignalingTrace: {
+                nowMs: () => now,
+                emit: (event) => events.push(event),
+            },
+        });
+        const message = createEnvelope('rtc', createSignalingPayload());
+        service.enableDefaultCallbacks();
+
+        await service.enqueueOutboxIfAbsent(message);
+        now = 1_030;
+        await (service as unknown as {
+            handleIncomingWsMessage(message: ALMessage): Promise<void>;
+        }).handleIncomingWsMessage(message);
+
+        expect(events.map((event) => event.stage)).toEqual([
+            'client-outbox-sent',
+            'client-inbox-received',
+        ]);
+        expect(events.every((event) => event.messageId === message.id.msgId))
+            .toBe(true);
+        expect(JSON.stringify(events)).not.toContain('payload');
     });
 });
 

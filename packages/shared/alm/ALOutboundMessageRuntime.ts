@@ -12,6 +12,7 @@ import type {
     ALOutboundAdmissionStore,
     ALOutboundCommitBundle,
     ALOutboundDurableEffectWrite,
+    ALOutboundEffectSettlement,
     ALOutboundMessageReadDto,
     ALOutboundRepairHint,
     ALPersistedOutboundEffect,
@@ -23,6 +24,13 @@ import {
     trackOutboundPendingAckSnapshot,
 } from './ALOutboundAdmissionStore.ts';
 import { resolveExplicitOutboundMessageExpireAtMs } from './ALMessageExpiry.ts';
+import {
+    createOutboundEffectDrainAccumulator,
+    type ALOutboundEffectDrainComposition,
+    recordOutboundEffectClaim,
+    recordOutboundEffectOutcome,
+    snapshotOutboundEffectDrainComposition,
+} from './ALOutboundRuntimeDiagnostics.ts';
 import type {
     ALOutboundPendingAckSnapshot,
     ALOutboundRepairAttemptSnapshot,
@@ -31,6 +39,14 @@ import type {
 } from './ALRuntimeStateStores.ts';
 
 export type ALOutboundDispatchPhase = 'immediate' | 'dequeue';
+
+export type ALOutboundComputeIntent = 'enqueue' | 'dequeue' | 'repair';
+
+export type ALOutboundFinalizationMode =
+    | 'background-existing-drain'
+    | 'awaited-existing-drain'
+    | 'awaited-new-drain'
+    | 'deferred';
 
 export type ALOutboundPreparedSendStatus = 'sent' | 'no-targets' | 'not-ready';
 
@@ -89,6 +105,7 @@ export type ALOutboundDispatchPlan<TPrepared> = Readonly<{
 }>;
 
 export type ALOutboundMessageRuntimeInput<TPrepared> = Readonly<{
+    diagnosticsRuntime: string;
     outbox: QueueBoxResourceEntryRepository;
     toOutboxEntry: (msg: ALMessage) => ResourceEntry;
     readMessageFromEntry: (entry: ResourceEntry) => ALMessage;
@@ -113,16 +130,30 @@ export type ALOutboundRuntimeStores = Readonly<{
     stateStore?: ALOutboundRuntimeStateStore;
 }>;
 
+export type ALOutboundRuntimeMessageDiagnostics = Readonly<{
+    msgId: string;
+    senderId?: string;
+    resourceId?: string;
+}>;
+
+type ALOutboundRuntimeDiagnosticsContext = Readonly<{
+    runtime: string;
+}>;
+
 export type ALOutboundRuntimeDiagnosticsEvent =
-    | Readonly<{
+    & ALOutboundRuntimeDiagnosticsContext
+    & (
+        | Readonly<{
     kind: 'sender-queue-wait';
     senderId: string;
+    message: ALOutboundRuntimeMessageDiagnostics;
     queued: boolean;
     durationMs: number;
 }>
     | Readonly<{
     kind: 'browser-lock-wait';
     senderId: string;
+    message: ALOutboundRuntimeMessageDiagnostics;
     lockName: string;
     available: boolean;
     durationMs: number;
@@ -130,11 +161,12 @@ export type ALOutboundRuntimeDiagnosticsEvent =
     | Readonly<{
     kind: 'browser-lock-hold';
     senderId: string;
+    message: ALOutboundRuntimeMessageDiagnostics;
     lockName: string;
     available: boolean;
     durationMs: number;
 }>
-    | Readonly<{
+    | (Readonly<{
     kind: 'effect-drain';
     workerId: string;
     durationMs: number;
@@ -142,7 +174,26 @@ export type ALOutboundRuntimeDiagnosticsEvent =
     completedCount: number;
     rescheduledCount: number;
     skippedExpiredCount: number;
-}>;
+    messages: readonly ALOutboundRuntimeMessageDiagnostics[];
+}> & ALOutboundEffectDrainComposition)
+    | Readonly<{
+    kind: 'outbound-finalization';
+    message: ALOutboundRuntimeMessageDiagnostics;
+    intent: ALOutboundComputeIntent;
+    phase: ALOutboundDispatchPhase;
+    resultStatus: ALOutboundEnqueueStatus;
+    mode: ALOutboundFinalizationMode;
+    hadActiveDrain: boolean;
+    durationMs: number;
+}>
+    );
+
+type ALOutboundRuntimeDiagnosticsEventInput =
+    ALOutboundRuntimeDiagnosticsEvent extends infer TEvent
+        ? TEvent extends ALOutboundRuntimeDiagnosticsEvent
+            ? Omit<TEvent, 'runtime'>
+        : never
+        : never;
 
 export type ALOutboundRuntimeDiagnosticsSink = (
     event: ALOutboundRuntimeDiagnosticsEvent,
@@ -175,8 +226,6 @@ export type ALOutboundEnqueueResult = Readonly<{
     entries: readonly ResourceEntry[];
     reason?: string;
 }>;
-
-type ALOutboundComputeIntent = 'enqueue' | 'dequeue' | 'repair';
 
 type ALOutboundComputeDependencies = Readonly<{
     toOutboxEntry: (msg: ALMessage) => ResourceEntry;
@@ -353,7 +402,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
         options: CommitDispatchOptions<TPrepared> = {},
     ): Promise<ALOutboundComputedDto<TPrepared>> {
         const result = await this.withSenderCommitQueue(
-            msg.id.senderId,
+            msg,
             async () => await this.commitDispatchPlanWithRetryNow(
                 msg,
                 planner,
@@ -363,8 +412,33 @@ export class ALOutboundMessageRuntime<TPrepared> {
             ),
         );
 
-        if (result.committed && !options.deferEffectDrain) {
-            await this.finalizeCommittedOutbound();
+        if (result.committed) {
+            const finalizationStartedAtMs = this.readNowMs();
+            const hadActiveDrain = this.effectDrainPromise !== undefined;
+            let mode: ALOutboundFinalizationMode;
+
+            if (options.deferEffectDrain) {
+                mode = 'deferred';
+            } else if (result.computed.status === 'enqueued' && hadActiveDrain) {
+                mode = 'background-existing-drain';
+                this.requestEffectDrain();
+            } else {
+                mode = hadActiveDrain
+                    ? 'awaited-existing-drain'
+                    : 'awaited-new-drain';
+                await this.finalizeCommittedOutbound();
+            }
+
+            this.emitDiagnostics({
+                kind: 'outbound-finalization',
+                message: this.toMessageDiagnostics(msg),
+                intent,
+                phase,
+                resultStatus: result.computed.status,
+                mode,
+                hadActiveDrain,
+                durationMs: this.elapsedSince(finalizationStartedAtMs),
+            });
         }
 
         return result.computed;
@@ -693,26 +767,54 @@ export class ALOutboundMessageRuntime<TPrepared> {
         let completedCount = 0;
         let rescheduledCount = 0;
         let skippedExpiredCount = 0;
+        const effectComposition = this.input.diagnostics
+            ? createOutboundEffectDrainAccumulator()
+            : undefined;
+        const messagesById = new Map<
+            string,
+            ALOutboundRuntimeMessageDiagnostics
+        >();
         try {
             while (true) {
                 if (this.disposed) {
                     break;
                 }
 
+                const claimStartedAtMs = this.readNowMs();
                 const claimed = await this.admissionStore.claimReadyEffects<TPrepared>(
                     this.effectWorkerId,
                     ALOutboundMessageRuntime.MAX_EFFECT_BATCH,
                     ALOutboundMessageRuntime.EFFECT_LEASE_MS,
-                    this.readNowMs(),
+                    claimStartedAtMs,
                 );
                 if (claimed.length === 0) {
                     break;
                 }
                 claimedCount += claimed.length;
+                let rescheduledInBatch = false;
+                const settlements: ALOutboundEffectSettlement[] = [];
 
                 for (const effect of claimed) {
+                    if (effectComposition) {
+                        recordOutboundEffectClaim(
+                            effectComposition,
+                            effect,
+                            claimStartedAtMs,
+                        );
+                    }
                     if (this.disposed) {
                         break;
+                    }
+
+                    if (this.input.diagnostics) {
+                        const message = this.toEffectMessageDiagnostics(effect);
+                        const existing = messagesById.get(message.msgId);
+                        messagesById.set(
+                            message.msgId,
+                            existing
+                                ? { ...message, ...existing }
+                                : message,
+                        );
                     }
 
                     try {
@@ -721,31 +823,65 @@ export class ALOutboundMessageRuntime<TPrepared> {
                         }
                         const runResult = await this.runDurableEffect(effect);
                         if (runResult.status === 'reschedule') {
-                            await this.admissionStore.rescheduleEffect(
-                                effect.effectId,
-                                this.effectWorkerId,
-                                runResult.readyAtMs,
-                                runResult.reason,
-                            );
-                            rescheduledCount += 1;
+                            settlements.push({
+                                effectId: effect.effectId,
+                                status: 'rescheduled',
+                                retryAtMs: runResult.readyAtMs,
+                                lastError: runResult.reason,
+                            });
+                            rescheduledInBatch = true;
                             continue;
                         }
 
-                        await this.admissionStore.completeEffect(effect.effectId, this.effectWorkerId);
-                        completedCount += 1;
+                        settlements.push({
+                            effectId: effect.effectId,
+                            status: 'completed',
+                        });
                     } catch (error) {
                         if (this.disposed) {
                             break;
                         }
 
-                        await this.admissionStore.rescheduleEffect(
-                            effect.effectId,
-                            this.effectWorkerId,
-                            this.readNowMs() + this.toEffectRetryDelayMs(effect.attempts),
-                            ALOutboundMessageRuntime.toErrorMessage(error),
-                        );
-                        rescheduledCount += 1;
+                        settlements.push({
+                            effectId: effect.effectId,
+                            status: 'rescheduled',
+                            retryAtMs: this.readNowMs() +
+                                this.toEffectRetryDelayMs(effect.attempts),
+                            lastError: ALOutboundMessageRuntime.toErrorMessage(error),
+                        });
+                        rescheduledInBatch = true;
                     }
+                }
+
+                const settled = await this.settleClaimedEffectBatch(
+                    claimed,
+                    settlements,
+                );
+                const effectsById = new Map(
+                    claimed.map(effect => [effect.effectId, effect]),
+                );
+                for (const settlement of settled) {
+                    const effect = effectsById.get(settlement.effectId);
+                    if (effect && effectComposition) {
+                        recordOutboundEffectOutcome(
+                            effectComposition,
+                            effect,
+                            settlement.status,
+                        );
+                    }
+                }
+                rescheduledInBatch ||= settled.some(
+                    settlement => settlement.status === 'rescheduled',
+                );
+                completedCount += settled.filter(
+                    settlement => settlement.status === 'completed',
+                ).length;
+                rescheduledCount += settled.filter(
+                    settlement => settlement.status === 'rescheduled',
+                ).length;
+
+                if (rescheduledInBatch) {
+                    break;
                 }
             }
 
@@ -759,15 +895,79 @@ export class ALOutboundMessageRuntime<TPrepared> {
             }
         } finally {
             this.runningEffectDrain = false;
-            this.emitDiagnostics({
-                kind: 'effect-drain',
-                workerId: this.effectWorkerId,
-                durationMs: this.elapsedSince(startedAtMs),
-                claimedCount,
-                completedCount,
-                rescheduledCount,
-                skippedExpiredCount,
+            if (effectComposition) {
+                this.emitDiagnostics({
+                    kind: 'effect-drain',
+                    workerId: this.effectWorkerId,
+                    durationMs: this.elapsedSince(startedAtMs),
+                    claimedCount,
+                    completedCount,
+                    rescheduledCount,
+                    skippedExpiredCount,
+                    messages: [...messagesById.values()],
+                    ...snapshotOutboundEffectDrainComposition(effectComposition),
+                });
+            }
+        }
+    }
+
+    private async settleClaimedEffectBatch(
+        claimed: readonly ALPersistedOutboundEffect<TPrepared>[],
+        settlements: readonly ALOutboundEffectSettlement[],
+    ): Promise<readonly ALOutboundEffectSettlement[]> {
+        const settleClaimedEffects = this.admissionStore.settleClaimedEffects?.bind(
+            this.admissionStore,
+        );
+        if (!settleClaimedEffects) {
+            for (const settlement of settlements) {
+                if (settlement.status === 'completed') {
+                    await this.admissionStore.completeEffect(
+                        settlement.effectId,
+                        this.effectWorkerId,
+                    );
+                    continue;
+                }
+                await this.admissionStore.rescheduleEffect(
+                    settlement.effectId,
+                    this.effectWorkerId,
+                    settlement.retryAtMs,
+                    settlement.lastError,
+                );
+            }
+            return settlements;
+        }
+
+        try {
+            await settleClaimedEffects(
+                this.effectWorkerId,
+                settlements,
+            );
+            return settlements;
+        } catch (error) {
+            if (this.disposed) {
+                return [];
+            }
+
+            const claimedById = new Map(claimed.map(effect => [effect.effectId, effect]));
+            const reason = ALOutboundMessageRuntime.toErrorMessage(error);
+            const retries = settlements.map((settlement): ALOutboundEffectSettlement => {
+                if (settlement.status === 'rescheduled') {
+                    return settlement;
+                }
+
+                const attempts = claimedById.get(settlement.effectId)?.attempts ?? 0;
+                return {
+                    effectId: settlement.effectId,
+                    status: 'rescheduled',
+                    retryAtMs: this.readNowMs() + this.toEffectRetryDelayMs(attempts),
+                    lastError: reason,
+                };
             });
+            await settleClaimedEffects(
+                this.effectWorkerId,
+                retries,
+            );
+            return retries;
         }
     }
 
@@ -1158,9 +1358,11 @@ export class ALOutboundMessageRuntime<TPrepared> {
     }
 
     private async withSenderCommitQueue<T>(
-        senderId: string,
+        message: ALMessage,
         task: () => Promise<T>,
     ): Promise<T> {
+        const senderId = message.id.senderId;
+        const messageDiagnostics = this.toMessageDiagnostics(message);
         const existing = this.commitQueuesBySenderId.get(senderId);
         const previous = existing ?? Promise.resolve();
         const waitStartedAtMs = this.readNowMs();
@@ -1175,12 +1377,17 @@ export class ALOutboundMessageRuntime<TPrepared> {
         this.emitDiagnostics({
             kind: 'sender-queue-wait',
             senderId,
+            message: messageDiagnostics,
             queued: existing !== undefined,
             durationMs: this.elapsedSince(waitStartedAtMs),
         });
 
         try {
-            return await this.withCrossContextCommitLock(senderId, task);
+            return await this.withCrossContextCommitLock(
+                senderId,
+                messageDiagnostics,
+                task,
+            );
         } finally {
             release?.();
             if (this.commitQueuesBySenderId.get(senderId) === tail) {
@@ -1191,6 +1398,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
 
     private async withCrossContextCommitLock<T>(
         senderId: string,
+        message: ALOutboundRuntimeMessageDiagnostics,
         task: () => Promise<T>,
     ): Promise<T> {
         const lockName = `rallar:al-outbound-commit:${senderId}`;
@@ -1199,6 +1407,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
             this.emitDiagnostics({
                 kind: 'browser-lock-wait',
                 senderId,
+                message,
                 lockName,
                 available: false,
                 durationMs: 0,
@@ -1210,6 +1419,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
                 this.emitDiagnostics({
                     kind: 'browser-lock-hold',
                     senderId,
+                    message,
                     lockName,
                     available: false,
                     durationMs: this.elapsedSince(holdStartedAtMs),
@@ -1225,6 +1435,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
                 this.emitDiagnostics({
                     kind: 'browser-lock-wait',
                     senderId,
+                    message,
                     lockName,
                     available: true,
                     durationMs: this.elapsedSince(waitStartedAtMs),
@@ -1236,6 +1447,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
                     this.emitDiagnostics({
                         kind: 'browser-lock-hold',
                         senderId,
+                        message,
                         lockName,
                         available: true,
                         durationMs: this.elapsedSince(holdStartedAtMs),
@@ -1253,12 +1465,33 @@ export class ALOutboundMessageRuntime<TPrepared> {
         return Math.max(0, this.readNowMs() - startedAtMs);
     }
 
-    private emitDiagnostics(event: ALOutboundRuntimeDiagnosticsEvent): void {
+    private emitDiagnostics(event: ALOutboundRuntimeDiagnosticsEventInput): void {
         try {
-            this.input.diagnostics?.(event);
+            this.input.diagnostics?.({
+                ...event,
+                runtime: this.input.diagnosticsRuntime,
+            } as ALOutboundRuntimeDiagnosticsEvent);
         } catch (error) {
             console.error('AL outbound runtime diagnostics sink failed', error);
         }
+    }
+
+    private toMessageDiagnostics(
+        message: ALMessage,
+    ): ALOutboundRuntimeMessageDiagnostics {
+        return {
+            msgId: message.id.msgId,
+            senderId: message.id.senderId,
+            resourceId: message.route.resourceId,
+        };
+    }
+
+    private toEffectMessageDiagnostics(
+        effect: ALPersistedOutboundEffect<TPrepared>,
+    ): ALOutboundRuntimeMessageDiagnostics {
+        return 'msg' in effect.payload
+            ? this.toMessageDiagnostics(effect.payload.msg)
+            : { msgId: effect.payload.msgId };
     }
 
     private readBrowserLockManager(): BrowserLockManager | undefined {
