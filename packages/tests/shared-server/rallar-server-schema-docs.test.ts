@@ -139,20 +139,12 @@ describe('Rallar server storage schema docs', () => {
     it('documents in-process mutation lanes as conflict suppression rather than authority', () => {
         const architecture = readWorkspaceFile('packages/shared-server/architecture.md')
             .replace(/\s+/g, ' ');
-        const design = readWorkspaceFile(
-            'docs/superpowers/specs/2026-07-21-in-process-cas-contention-suppression-design.md',
-        ).replace(/\s+/g, ' ');
         const repositories = readWorkspaceFile(
             'packages/shared-server/rallar-server-repositories.md',
         ).replace(/\s+/g, ' ');
 
         expect(architecture).toContain('per-service in-process FIFO lane');
         expect(architecture).toContain('does not replace database CAS');
-        expect(architecture).toContain('best-effort 3 ms post-write scheduling handoff');
-        expect(architecture).toContain('actual writes, never replay, no-op, or rejected outcomes');
-        expect(architecture).toContain('not a cross-process ordering guarantee');
-        expect(design).toContain('conflict-observation lag below 1 ms');
-        expect(design).toContain('handoff failure cannot change the completed mutation result');
         expect(repositories).toContain('not a correctness or authorization authority');
         expect(repositories).toContain('not a database-lock substitute or precedent');
     });

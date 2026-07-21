@@ -73,7 +73,6 @@ import {
 } from './group-state-mutations.ts';
 import {
     createInProcessMutationLane,
-    waitForInProcessMutationHandoff,
 } from './in-process-mutation-lane.ts';
 import {
     recordRallarTiming,
@@ -404,9 +403,7 @@ export function createGroupStateRuntime(
     ) => new GroupStateRepository(target, {
         events: dependencies.createGroupStateEventStore?.(target),
     });
-    const aggregateMutationLane = createInProcessMutationLane({
-        postSuccessHandoff: waitForInProcessMutationHandoff,
-    });
+    const aggregateMutationLane = createInProcessMutationLane();
 
     const executeReceiptWithRetry = async (
         command: GroupMutationCommand,
@@ -625,7 +622,6 @@ export function createGroupStateRuntime(
         return aggregateMutationLane.run(
             toScopedGroupKey(command.aggregateRef),
             execute,
-            { shouldHandoff: (execution) => execution.source === 'write' },
         );
     };
 

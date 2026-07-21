@@ -18,11 +18,9 @@ Database CAS remains the only correctness and authority boundary.
 1. Add a per-service, per-aggregate FIFO lane. This is the selected approach.
    It removes same-instance thundering herds while preserving independent lanes
    and normal CAS conflicts between service instances and processes.
-2. Add retry jitter, longer retry delays, or more attempts. This could reduce
-   collisions but would change the immutable retry contract and could hide
-   rather than remove avoidable same-instance contention. A distinct
-   post-success lane handoff was later retained as a bounded experiment; it is
-   not part of the retry schedule.
+2. Add jitter, longer delays, or more retries. This could reduce collisions but
+   would change the immutable retry contract and could hide rather than remove
+   avoidable same-instance contention.
 3. Serialize in PostgreSQL or through process-global state. Database locks are
    outside the approved architecture, while process-global coordination would
    make independently constructed service stacks appear more coordinated than
@@ -49,24 +47,6 @@ does not release the lane early because its database work may still be active.
 Skipped aborted effects and rejected effects both participate in normal tail
 cleanup. A read-only pending-key count supports lifecycle diagnostics and tests.
 
-After an eligible successful effect, a lane with a queued same-key successor
-may await a package-internal 3 ms scheduling handoff. Eligibility is decided
-from the internal execution result: group and topology services select only an
-actual `write`, never replay, no-op, rejected, or receipt-claim outcomes. The
-handoff starts only after the effect and its transaction complete. Its timer is
-dedicated and separate from retry sleep injection. A handoff or eligibility
-predicate failure is isolated so handoff failure cannot change the completed
-mutation result.
-
-The 3 ms value is a bounded best-effort experiment, not a fairness proof. In
-the deterministic model, a 2 ms handoff lost when the database conflict became
-observable 0.5 ms after the winner registered its handoff: the local successor
-ran at 2 ms before the retry at 2.5 ms. A 3 ms handoff gave that retry priority
-for conflict-observation lag below 1 ms. Larger database-pool, event-loop, or
-process scheduling lag can still reverse the order, so the governed real
-benchmark is the falsifier and the handoff is not a cross-process ordering
-guarantee.
-
 ## Service integration
 
 Each `GroupStateService` instance creates one lane. Aggregate-backed commands
@@ -74,14 +54,12 @@ use the canonical scoped group key and enter the lane before the retry loop.
 The presence operations `connectPresence`, `heartbeatPresence`, and
 `disconnectPresence` bypass the aggregate lane because their authority guard is
 the per-session presence row. This preserves the Task 4 contention split.
-Only executions whose internal source is `write` request the 3 ms handoff.
 
 Each `GroupTopologyManagementService` instance creates a separate lane.
 `putConfig`, `deleteConfig`, `putOverride`, and `deleteOverride` enter it through
 the shared topology-config mutation executor, keyed by scoped group. Topology
 reads, RTC publication/snapshot work, RTT writes, and client-state writes remain
-unchanged. The topology executor carries a mandatory internal source so replay
-of a previously applied receipt cannot be mistaken for a new write.
+unchanged.
 
 Lanes are not shared between separately constructed service instances. The API
 composition and the benchmark therefore retain real inter-instance CAS races.
@@ -105,16 +83,11 @@ TDD coverage will prove:
 - distinct-key concurrency;
 - successor progress and map cleanup after rejection;
 - pre-acquisition abort skips the effect and cleans the key;
-- lone success, rejection, abort, distinct-key-only work, replay, no-op, and
-  domain rejection do not request a handoff;
-- handoff failure cannot reject an already completed effect;
 - same-service aggregate mutations are suppressed before repository work;
 - separate service instances still overlap, conflict, perform the unchanged
   bounded retry, and converge through CAS;
 - presence mutation work is not blocked behind an aggregate mutation lane;
-- topology config/override mutations receive the same per-instance behavior;
-- a 0.5 ms conflict-observation lag rejects a 2 ms handoff and admits the
-  bounded 3 ms experiment, without claiming remote ordering.
+- topology config/override mutations receive the same per-instance behavior.
 
 Focused group/topology suites, architecture contract tests, shared-server
 typechecking, and the repository style scan follow implementation. The exact
@@ -128,3 +101,47 @@ passes.
 Shared-server architecture guidance must describe the lane as optional
 same-process conflict suppression and explicitly forbid treating it as a
 correctness authority, a substitute for CAS, or precedent for database locks.
+
+## Rejected fixed-handoff experiment (2026-07-21)
+
+A follow-up experiment delayed a queued local successor for 3 ms after each
+eligible successful write. It was intended to let an already-conflicted remote
+stack complete its retry. The governed PostgreSQL result rejected that design:
+
+| workload | FIFO lane only | 3 ms handoff | result |
+| --- | ---: | ---: | --- |
+| uncontended | 2100 accepted, 0 exhausted, 765.645/s | 2100 accepted, 0 exhausted, 768.911/s | noise |
+| shared | 2020 accepted, 80 exhausted, 453 conflicts, 581.865/s | 2061 accepted, 39 exhausted, 463 conflicts, 561.441/s | slower, still exhausts |
+| hot | 1849 accepted, 251 exhausted, 332 conflicts, 286.527/s | 1956 accepted, 144 exhausted, 576 conflicts, 193.148/s | 32.6% lower throughput |
+
+Shared duration increased from `3471.595` to `3670.912` ms. Hot duration
+increased from `6453.138` to `10126.934` ms; hot SQL statements increased
+`12710 -> 14081`, rows `91256 -> 112247`, and serialized bytes
+`103681283 -> 127608727`. The handoff artifact is preserved as
+`tmp/perf/api-v1-state-write-handoff-3ms.json` with SHA-256
+`8047b9bbb13028f04a14b4faa0c73209a5890c9adea148c0c0eb10269ebcba99`.
+The producer also overwrote the candidate path with the same bytes, so the
+pre-handoff comparison above uses the immutable metrics recorded in the task
+report rather than claiming a still-present per-command artifact.
+
+A deterministic two-lane, 20-command-per-lane model then compared no handoff,
+every-write handoff, and a proposed quota of two eligible local successes per
+handoff. It retained three attempts and `[0, 2, 8]`, a 0.5 ms conflict
+observation lag, and nonzero measured-shape work stages: 1.2 ms reread, 0.1 ms
+authorization/compute, 0.1 ms validation, and 2 ms transaction. Every conflict
+reran read and validation, and no retry or handoff delay occurred in a
+transaction.
+
+| policy | accepted / exhausted | conflicts / reads | elapsed | handoffs | remote commit before successor CAS |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| none | 40 / 0 | 19 / 59 | 127 ms | 0 | n/a |
+| every write | 40 / 0 | 39 / 79 | 243 ms | 38 | 0 / 38 |
+| quota two | 40 / 0 | 19 / 59 | 154 ms | 18 | 9 / 18 |
+
+Quota two bounded each local commit streak at two and used nine handoffs per
+stack, but failed the required cross-stack ordering in half its handoff
+windows. The timer let the retry start; it did not cover the peer's complete
+reread, reauthorization, revalidation, and CAS commit. Both the every-write
+and quota variants are therefore rejected and are not shipping behavior. The
+original per-service FIFO lane remains because it suppresses only avoidable
+same-instance overlap and adds no timing policy.

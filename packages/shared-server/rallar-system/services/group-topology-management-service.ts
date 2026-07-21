@@ -86,11 +86,7 @@ import {
     isRuntimeStateTransactionalRepositoryLike,
 } from '../../runtime-state/RuntimeStateRepository.ts';
 import { recordRallarTiming, type RallarTimingSink } from './timing.ts';
-import {
-    createInProcessMutationLane,
-    type InProcessMutationLane,
-    waitForInProcessMutationHandoff,
-} from './in-process-mutation-lane.ts';
+import { createInProcessMutationLane } from './in-process-mutation-lane.ts';
 import {
     RallarRtcTopologyService,
     type RallarRtcTopologyUpdateResult,
@@ -227,7 +223,6 @@ export type ReconcileGroupTopologyResult = Readonly<{
 
 type GroupTopologyConfigMutationExecution = Readonly<{
     receipt: GroupTopologyConfigMutationReceipt;
-    source: 'write' | 'claim' | 'replay' | 'no-op';
     config?: StoredGroupTopologyConfig;
     override?: StoredGroupTopologyOverride;
 }>;
@@ -237,13 +232,9 @@ export class GroupTopologyManagementService {
         string,
         Promise<void>
     >();
-    private readonly configMutationLane: InProcessMutationLane;
+    private readonly configMutationLane = createInProcessMutationLane();
 
-    constructor(private readonly options: GroupTopologyManagementServiceOptions) {
-        this.configMutationLane = createInProcessMutationLane({
-            postSuccessHandoff: waitForInProcessMutationHandoff,
-        });
-    }
+    constructor(private readonly options: GroupTopologyManagementServiceOptions) {}
 
     recordTopologyPublication(published: boolean): void {
         this.options.topologyService.recordTopologyPublishResult(published);
@@ -371,7 +362,6 @@ export class GroupTopologyManagementService {
         return this.configMutationLane.run(
             toScopedGroupKey(command.aggregateRef),
             () => this.executeTopologyConfigMutationWithRetry(command),
-            { shouldHandoff: (execution) => execution.source === 'write' },
         );
     }
 
@@ -1520,15 +1510,14 @@ function topologyConfigExecution(
     >,
 ): Readonly<{
     receipt: GroupTopologyConfigMutationReceipt;
-    source: 'write' | 'claim' | 'replay' | 'no-op';
     config?: StoredGroupTopologyConfig;
     override?: StoredGroupTopologyOverride;
 }> {
     return computed.result.kind === 'config'
-        ? { receipt, source: computed.outcome, config: computed.result.config }
+        ? { receipt, config: computed.result.config }
         : computed.result.kind === 'override'
-        ? { receipt, source: computed.outcome, override: computed.result.override }
-        : { receipt, source: computed.outcome };
+        ? { receipt, override: computed.result.override }
+        : { receipt };
 }
 
 /**

@@ -43,7 +43,6 @@ import type { RuntimeStateEntry } from '@shared-server/runtime-state/RuntimeStat
 
 const mutationLaneProbe = vi.hoisted(() => ({
     observer: undefined as MutationLaneProbeObserver | undefined,
-    handoff: undefined as (() => Promise<void>) | undefined,
 }));
 
 vi.mock(
@@ -56,12 +55,8 @@ vi.mock(
         >();
         return {
             ...original,
-            waitForInProcessMutationHandoff: () =>
-                mutationLaneProbe.handoff?.() ?? Promise.resolve(),
-            createInProcessMutationLane: (
-                ...laneOptions: Parameters<typeof original.createInProcessMutationLane>
-            ) => {
-                const lane = original.createInProcessMutationLane(...laneOptions);
+            createInProcessMutationLane: () => {
+                const lane = original.createInProcessMutationLane();
                 return {
                     ...lane,
                     run: <TResult>(
@@ -390,163 +385,6 @@ describe('GroupTopologyManagementService', () => {
             .resolves.toMatchObject({ value: { version: 2 } });
         await expect(configRepository.findConfig(distinctGroup.group))
             .resolves.toMatchObject({ version: 1 });
-    });
-
-    it('hands off after a written config while a distinct group progresses', async () => {
-        const runtimeRepository = new FakeRuntimeStateRepository();
-        runtimeRepository.serializeTransactions = true;
-        const group = createGroupSnapshot(createGroupRef('handoff-config-lane'));
-        const distinctGroup = createGroupSnapshot(createGroupRef('handoff-config-distinct'));
-        const configRepository = new GroupTopologyConfigRepository(runtimeRepository);
-        const timingEvents: RallarTimingEvent[] = [];
-        const firstWriteRecorded = testDeferred<void>();
-        const handoffScheduled = testDeferred<void>();
-        const handoffRelease = testDeferred<void>();
-        const service = createService({
-            runtimeRepository,
-            group,
-            additionalGroups: [distinctGroup],
-            configRepository,
-            now: () => 1_000,
-            timing: (event) => {
-                timingEvents.push(event);
-                if (
-                    event.requestId === 'handoff-config-first' &&
-                    event.operation === 'mutation.write'
-                ) {
-                    firstWriteRecorded.resolve(undefined);
-                }
-            },
-        });
-        await Promise.all([
-            service.readConfig(group.group),
-            service.readConfig(distinctGroup.group),
-        ]);
-        const heldReads = holdReadsFor(
-            runtimeRepository,
-            GROUP_TOPOLOGY_CONFIG_NAMESPACE,
-            configRepository.configKey(group.group),
-        );
-        const lane = observeMutationLane(toScopedGroupKey(group.group));
-        mutationLaneProbe.handoff = async () => {
-            handoffScheduled.resolve(undefined);
-            await handoffRelease.promise;
-        };
-
-        let readsReleased = false;
-        let handoffReleased = false;
-        const first = service.putConfig({
-            groupRef: group.group,
-            config: { topologyKind: 'tree' },
-            updatedByPrincipalId: 'owner',
-            requestId: 'handoff-config-first',
-        });
-        let second: ReturnType<typeof service.putOverride> | undefined;
-        try {
-            await heldReads.firstArrival;
-            second = service.putOverride({
-                groupRef: group.group,
-                config: { degreeLimit: 4 },
-                expiresAtEpochMs: 61_000,
-                updatedByPrincipalId: 'owner',
-                requestId: 'handoff-config-second',
-            });
-            await lane.secondEntry;
-            heldReads.release();
-            readsReleased = true;
-
-            const transition = await Promise.race([
-                handoffScheduled.promise.then(() => 'handoff' as const),
-                lane.secondEffectStart.then(() => 'successor' as const),
-            ]);
-            expect(transition).toBe('handoff');
-            await firstWriteRecorded.promise;
-            expect(lane.effectStartCount()).toBe(1);
-
-            const distinct = await service.putConfig({
-                groupRef: distinctGroup.group,
-                config: { topologyKind: 'mesh' },
-                updatedByPrincipalId: 'owner',
-                requestId: 'handoff-config-distinct',
-            });
-            expect(distinct.config).toMatchObject({ version: 1 });
-            expect(lane.effectStartCount()).toBe(1);
-
-            handoffRelease.resolve(undefined);
-            handoffReleased = true;
-            const [configResult, overrideResult] = await Promise.all([first, second]);
-            expect(configResult).toMatchObject({ config: { version: 1 } });
-            expect(overrideResult).toMatchObject({ override: { version: 1 } });
-            expect(timingEvents.filter((event) => event.operation === 'mutation.conflict'))
-                .toEqual([]);
-        } finally {
-            mutationLaneProbe.handoff = undefined;
-            lane.stop();
-            if (!readsReleased) heldReads.release();
-            if (!handoffReleased) handoffRelease.resolve(undefined);
-            await Promise.allSettled([first, ...(second ? [second] : [])]);
-        }
-    });
-
-    it('does not hand off after replaying an applied topology receipt', async () => {
-        const runtimeRepository = new FakeRuntimeStateRepository();
-        runtimeRepository.serializeTransactions = true;
-        const group = createGroupSnapshot(createGroupRef('handoff-config-replay'));
-        const configRepository = new GroupTopologyConfigRepository(runtimeRepository);
-        const service = createService({
-            runtimeRepository,
-            group,
-            configRepository,
-            now: () => 1_000,
-        });
-        await service.readConfig(group.group);
-        const replayRequest = {
-            groupRef: group.group,
-            config: { topologyKind: 'tree' as const },
-            updatedByPrincipalId: 'owner',
-            requestId: 'handoff-config-replay-request',
-        };
-        const firstResult = await service.putConfig(replayRequest);
-        const heldReads = holdReadsFor(
-            runtimeRepository,
-            GROUP_TOPOLOGY_CONFIG_NAMESPACE,
-            configRepository.configKey(group.group),
-        );
-        const lane = observeMutationLane(toScopedGroupKey(group.group));
-        const handoff = vi.fn(() => Promise.resolve());
-        mutationLaneProbe.handoff = handoff;
-        const replay = service.putConfig(replayRequest);
-        let successor: ReturnType<typeof service.putOverride> | undefined;
-        let readsReleased = false;
-        try {
-            await heldReads.firstArrival;
-            successor = service.putOverride({
-                groupRef: group.group,
-                config: { degreeLimit: 4 },
-                expiresAtEpochMs: 61_000,
-                updatedByPrincipalId: 'owner',
-                requestId: 'handoff-config-replay-successor',
-            });
-            await lane.secondEntry;
-            heldReads.release();
-            readsReleased = true;
-            const [replayResult, successorResult] = await Promise.all([
-                replay,
-                successor,
-            ]);
-
-            expect(firstResult.receipt).toEqual(replayResult.receipt);
-            expect(successorResult.override).toMatchObject({ version: 1 });
-            expect(handoff).not.toHaveBeenCalled();
-        } finally {
-            mutationLaneProbe.handoff = undefined;
-            lane.stop();
-            if (!readsReleased) heldReads.release();
-            await Promise.allSettled([
-                replay,
-                ...(successor ? [successor] : []),
-            ]);
-        }
     });
 
     it('serializes cross-target writes before accepting a combined effective invariant', async () => {
@@ -3094,7 +2932,6 @@ type MutationLaneProbeObserver = (event: MutationLaneProbeEvent) => void;
 
 function observeMutationLane(key: string): Readonly<{
     secondEntry: Promise<void>;
-    secondEffectStart: Promise<void>;
     effectStartCount(): number;
     stop(): void;
 }> {
@@ -3102,12 +2939,8 @@ function observeMutationLane(key: string): Readonly<{
     let entryCount = 0;
     let effectStartCount = 0;
     let resolveSecondEntry!: () => void;
-    let resolveSecondEffectStart!: () => void;
     const secondEntry = new Promise<void>((resolve) => {
         resolveSecondEntry = resolve;
-    });
-    const secondEffectStart = new Promise<void>((resolve) => {
-        resolveSecondEffectStart = resolve;
     });
     const observer: MutationLaneProbeObserver = (event) => {
         previous?.(event);
@@ -3118,12 +2951,10 @@ function observeMutationLane(key: string): Readonly<{
             return;
         }
         effectStartCount += 1;
-        if (effectStartCount === 2) resolveSecondEffectStart();
     };
     mutationLaneProbe.observer = observer;
     return {
         secondEntry,
-        secondEffectStart,
         effectStartCount: () => effectStartCount,
         stop: () => {
             if (mutationLaneProbe.observer === observer) {
@@ -3131,17 +2962,6 @@ function observeMutationLane(key: string): Readonly<{
             }
         },
     };
-}
-
-function testDeferred<T>(): Readonly<{
-    promise: Promise<T>;
-    resolve(value: T): void;
-}> {
-    let resolve!: (value: T) => void;
-    const promise = new Promise<T>((accept) => {
-        resolve = accept;
-    });
-    return { promise, resolve };
 }
 
 function holdReadsFor(

@@ -62,7 +62,6 @@ import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 
 const mutationLaneProbe = vi.hoisted(() => ({
     observer: undefined as MutationLaneProbeObserver | undefined,
-    handoff: undefined as (() => Promise<void>) | undefined,
 }));
 
 vi.mock(
@@ -75,12 +74,8 @@ vi.mock(
         >();
         return {
             ...original,
-            waitForInProcessMutationHandoff: () =>
-                mutationLaneProbe.handoff?.() ?? Promise.resolve(),
-            createInProcessMutationLane: (
-                ...laneOptions: Parameters<typeof original.createInProcessMutationLane>
-            ) => {
-                const lane = original.createInProcessMutationLane(...laneOptions);
+            createInProcessMutationLane: () => {
+                const lane = original.createInProcessMutationLane();
                 return {
                     ...lane,
                     run: <TResult>(
@@ -2694,155 +2689,6 @@ describe('convergent group and presence state', () => {
             .toBe('Distinct group update');
     });
 
-    it('hands off after a written aggregate while distinct and presence work progress', async () => {
-        const runtime = new GroupBarrierRepository();
-        await seedOpenGroup(runtime, 'handoff-service-lane-room');
-        await seedOpenGroup(runtime, 'handoff-distinct-lane-room');
-        const timing: RallarTimingEvent[] = [];
-        const firstWriteRecorded = testDeferred<void>();
-        const handoffScheduled = testDeferred<void>();
-        const handoffRelease = testDeferred<void>();
-        const service = createService(
-            runtime,
-            BASE_EPOCH_MS + 2_000,
-            undefined,
-            undefined,
-            undefined,
-            (event) => {
-                timing.push(event);
-                if (
-                    event.requestId === 'handoff-service-first' &&
-                    event.operation === 'mutation.write'
-                ) {
-                    firstWriteRecorded.resolve(undefined);
-                }
-            },
-        );
-        const heldReads = runtime.holdGroupReadsFor(
-            groupStateGroupStorageKey(groupRef('handoff-service-lane-room')),
-        );
-        const lane = observeMutationLane(
-            toScopedGroupKey(groupRef('handoff-service-lane-room')),
-        );
-        mutationLaneProbe.handoff = async () => {
-            handoffScheduled.resolve(undefined);
-            await handoffRelease.promise;
-        };
-
-        let readsReleased = false;
-        let handoffReleased = false;
-        const first = service.updateGroup(SCOPE, 'handoff-service-lane-room', {
-            displayName: 'First handoff update',
-            actorPrincipalId: 'alice',
-            requestId: 'handoff-service-first',
-        });
-        let second: ReturnType<typeof service.updateGroup> | undefined;
-        try {
-            await heldReads.firstArrival;
-            second = service.updateGroup(SCOPE, 'handoff-service-lane-room', {
-                displayName: 'Second handoff update',
-                actorPrincipalId: 'alice',
-                requestId: 'handoff-service-second',
-            });
-            await lane.secondEntry;
-            heldReads.release();
-            readsReleased = true;
-
-            const transition = await Promise.race([
-                handoffScheduled.promise.then(() => 'handoff' as const),
-                lane.secondEffectStart.then(() => 'successor' as const),
-            ]);
-            expect(transition).toBe('handoff');
-            await firstWriteRecorded.promise;
-            expect(lane.effectStartCount()).toBe(1);
-
-            const distinct = service.updateGroup(SCOPE, 'handoff-distinct-lane-room', {
-                displayName: 'Distinct update during handoff',
-                actorPrincipalId: 'alice',
-                requestId: 'handoff-service-distinct',
-            });
-            const presence = service.connectPresenceSessionReceipt(
-                SCOPE,
-                'handoff-service-lane-room',
-                'handoff-presence-session',
-                {
-                    principalId: 'alice',
-                    generationId: 'handoff-presence-generation',
-                    expiresAtEpochMs: BASE_EPOCH_MS + 60_000,
-                    requestId: 'handoff-service-presence',
-                },
-            );
-            const [distinctResult, presenceResult] = await Promise.all([distinct, presence]);
-            expect(distinctResult.result.right).toBeDefined();
-            expect(presenceResult.outcome).toBe('applied');
-            expect(lane.effectStartCount()).toBe(1);
-
-            handoffRelease.resolve(undefined);
-            handoffReleased = true;
-            await Promise.all([first, second]);
-            expect(timing.filter((event) => event.operation === 'mutation.conflict'))
-                .toEqual([]);
-            expect((await requireSnapshot(runtime, 'handoff-service-lane-room')).group.displayName)
-                .toBe('Second handoff update');
-        } finally {
-            mutationLaneProbe.handoff = undefined;
-            lane.stop();
-            if (!readsReleased) heldReads.release();
-            if (!handoffReleased) handoffRelease.resolve(undefined);
-            await Promise.allSettled([first, ...(second ? [second] : [])]);
-        }
-    });
-
-    it('does not hand off after replaying an applied group receipt', async () => {
-        const runtime = new GroupBarrierRepository();
-        await seedOpenGroup(runtime, 'handoff-replay-room');
-        const service = createService(runtime, BASE_EPOCH_MS + 2_000);
-        const replayRequest = {
-            displayName: 'Replay source update',
-            actorPrincipalId: 'alice',
-            requestId: 'handoff-replay-request',
-        } as const;
-        const firstResult = await service.updateGroup(
-            SCOPE,
-            'handoff-replay-room',
-            replayRequest,
-        );
-        const heldReads = runtime.holdGroupReadsFor(
-            groupStateGroupStorageKey(groupRef('handoff-replay-room')),
-        );
-        const lane = observeMutationLane(toScopedGroupKey(groupRef('handoff-replay-room')));
-        const handoff = vi.fn(() => Promise.resolve());
-        mutationLaneProbe.handoff = handoff;
-        const replay = service.updateGroup(SCOPE, 'handoff-replay-room', replayRequest);
-        let successor: ReturnType<typeof service.updateGroup> | undefined;
-        let readsReleased = false;
-        try {
-            await heldReads.firstArrival;
-            successor = service.updateGroup(SCOPE, 'handoff-replay-room', {
-                displayName: 'After replay update',
-                actorPrincipalId: 'alice',
-                requestId: 'handoff-replay-successor',
-            });
-            await lane.secondEntry;
-            heldReads.release();
-            readsReleased = true;
-            const [replayResult] = await Promise.all([replay, successor]);
-
-            expect(replayResult).toEqual(firstResult);
-            expect(handoff).not.toHaveBeenCalled();
-            expect((await requireSnapshot(runtime, 'handoff-replay-room')).group.displayName)
-                .toBe('After replay update');
-        } finally {
-            mutationLaneProbe.handoff = undefined;
-            lane.stop();
-            if (!readsReleased) heldReads.release();
-            await Promise.allSettled([
-                replay,
-                ...(successor ? [successor] : []),
-            ]);
-        }
-    });
-
     it('keeps independent service instances subject to CAS conflict and retry', async () => {
         const runtime = new GroupBarrierRepository();
         await seedOpenGroup(runtime, 'cross-service-lane-room');
@@ -4923,7 +4769,6 @@ type MutationLaneProbeObserver = (event: MutationLaneProbeEvent) => void;
 
 function observeMutationLane(key: string): Readonly<{
     secondEntry: Promise<void>;
-    secondEffectStart: Promise<void>;
     entryCount(): number;
     effectStartCount(): number;
     stop(): void;
@@ -4932,12 +4777,8 @@ function observeMutationLane(key: string): Readonly<{
     let entryCount = 0;
     let effectStartCount = 0;
     let resolveSecondEntry!: () => void;
-    let resolveSecondEffectStart!: () => void;
     const secondEntry = new Promise<void>((resolve) => {
         resolveSecondEntry = resolve;
-    });
-    const secondEffectStart = new Promise<void>((resolve) => {
-        resolveSecondEffectStart = resolve;
     });
     const observer: MutationLaneProbeObserver = (event) => {
         previous?.(event);
@@ -4948,12 +4789,10 @@ function observeMutationLane(key: string): Readonly<{
             return;
         }
         effectStartCount += 1;
-        if (effectStartCount === 2) resolveSecondEffectStart();
     };
     mutationLaneProbe.observer = observer;
     return {
         secondEntry,
-        secondEffectStart,
         entryCount: () => entryCount,
         effectStartCount: () => effectStartCount,
         stop: () => {
@@ -4962,17 +4801,6 @@ function observeMutationLane(key: string): Readonly<{
             }
         },
     };
-}
-
-function testDeferred<T>(): Readonly<{
-    promise: Promise<T>;
-    resolve(value: T): void;
-}> {
-    let resolve!: (value: T) => void;
-    const promise = new Promise<T>((accept) => {
-        resolve = accept;
-    });
-    return { promise, resolve };
 }
 
 type ManualRepositoryGate = Readonly<{
