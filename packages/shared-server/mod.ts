@@ -74,5 +74,6 @@ export * from './postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 export * from './postgres/runtime-state/PSqlJsonPersistenceProvider.ts';
 export * from './postgres/runtime-state/PSqlRuntimeStateRepository.ts';
 export * from './runtime-state/RuntimeStateJsonStore.ts';
+export * from './runtime-state/RuntimeStateGuardedBatch.ts';
 export * from './runtime-state/RuntimeStateRepository.ts';
 export * from './runtime-state/optimistic-runtime-state-write.ts';

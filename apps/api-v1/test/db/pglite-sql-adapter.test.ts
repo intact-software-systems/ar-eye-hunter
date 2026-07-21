@@ -7,6 +7,11 @@ import {
   ResourceInboxResultsRepository,
 } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
+import {
+  isRuntimeStateGuardedBatchRepositoryLike,
+  type RuntimeStateGuardedBatch,
+  type RuntimeStateGuardedBatchResult,
+} from '@shared-server/runtime-state/RuntimeStateGuardedBatch.ts';
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
@@ -178,6 +183,436 @@ Deno.test('PSqlRuntimeStateRepository runs against PGlite SQL adapter', async ()
     assert.equal(await repository.findEntry('runtime-smoke', 'expired'), undefined);
   });
 });
+
+Deno.test(
+  'guarded runtime-state batch applies every guard and effect operation with exact results',
+  async () => {
+    await withPGliteSql(async (sql) => {
+      const repository = new PSqlRuntimeStateRepository(sql);
+      await repository.insertIfAbsent(
+        'guarded-effect',
+        'update',
+        'before-update',
+        FUTURE_MS,
+      );
+      await repository.insertIfAbsent(
+        'guarded-effect',
+        'delete',
+        'before-delete',
+        FUTURE_MS,
+      );
+      await repository.insertIfAbsent(
+        'guarded-effect',
+        'put',
+        'before-put',
+        FUTURE_MS,
+      );
+
+      const insertBatch: RuntimeStateGuardedBatch = {
+        guard: {
+          operation: 'insert',
+          namespace: 'guarded-root',
+          key: 'root',
+          value: 'inserted-root',
+          expireAtTimestamp: FUTURE_MS,
+        },
+        effects: [{
+          effectId: 'insert',
+          operation: 'insert',
+          namespace: 'guarded-effect',
+          key: 'insert',
+          value: 'inserted-effect',
+          expireAtTimestamp: FUTURE_MS,
+        }, {
+          effectId: 'update',
+          operation: 'update',
+          namespace: 'guarded-effect',
+          key: 'update',
+          expectedRevision: 0,
+          value: 'updated-effect',
+          expireAtTimestamp: FUTURE_MS,
+        }, {
+          effectId: 'delete',
+          operation: 'delete',
+          namespace: 'guarded-effect',
+          key: 'delete',
+          expectedRevision: 0,
+        }, {
+          effectId: 'put',
+          operation: 'put',
+          namespace: 'guarded-effect',
+          key: 'put',
+          value: 'put-effect',
+          expireAtTimestamp: FUTURE_MS,
+        }],
+      };
+
+      const insertResult = await repository.begin(async (transactionRepository) => {
+        assert.equal(
+          isRuntimeStateGuardedBatchRepositoryLike(transactionRepository),
+          true,
+        );
+        if (!isRuntimeStateGuardedBatchRepositoryLike(transactionRepository)) {
+          throw new Error('Expected guarded runtime-state batch capability.');
+        }
+        return await transactionRepository.executeGuardedBatch(insertBatch);
+      });
+
+      assert.deepEqual(insertResult, {
+        guard: {
+          status: 'applied',
+          operation: 'insert',
+          namespace: 'guarded-root',
+          key: 'root',
+          resultingRevision: 0,
+        },
+        effects: [{
+          status: 'applied',
+          effectId: 'insert',
+          operation: 'insert',
+          namespace: 'guarded-effect',
+          key: 'insert',
+          resultingRevision: 0,
+        }, {
+          status: 'applied',
+          effectId: 'update',
+          operation: 'update',
+          namespace: 'guarded-effect',
+          key: 'update',
+          resultingRevision: 1,
+        }, {
+          status: 'applied',
+          effectId: 'delete',
+          operation: 'delete',
+          namespace: 'guarded-effect',
+          key: 'delete',
+          matchedRevision: 0,
+        }, {
+          status: 'applied',
+          effectId: 'put',
+          operation: 'put',
+          namespace: 'guarded-effect',
+          key: 'put',
+          resultingRevision: 1,
+        }],
+      });
+      assert.equal(
+        (await repository.findEntry('guarded-effect', 'insert'))?.value,
+        'inserted-effect',
+      );
+      const updatedEffect = await repository.findEntry('guarded-effect', 'update');
+      assert.equal(updatedEffect?.value, 'updated-effect');
+      assert.equal(updatedEffect?.revision, 1);
+      assert.equal(await repository.findEntry('guarded-effect', 'delete'), undefined);
+      const putEffect = await repository.findEntry('guarded-effect', 'put');
+      assert.equal(putEffect?.value, 'put-effect');
+      assert.equal(putEffect?.revision, 1);
+
+      const updateBatch: RuntimeStateGuardedBatch = {
+        guard: {
+          operation: 'update',
+          namespace: 'guarded-root',
+          key: 'root',
+          expectedRevision: 0,
+          value: 'updated-root',
+          expireAtTimestamp: FUTURE_MS,
+        },
+        effects: [{
+          effectId: 'after-update',
+          operation: 'insert',
+          namespace: 'guarded-effect',
+          key: 'after-update',
+          value: 'after-update',
+          expireAtTimestamp: FUTURE_MS,
+        }],
+      };
+      assert.deepEqual(
+        await repository.begin(async (transactionRepository) => {
+          if (!isRuntimeStateGuardedBatchRepositoryLike(transactionRepository)) {
+            throw new Error('Expected guarded runtime-state batch capability.');
+          }
+          return await transactionRepository.executeGuardedBatch(updateBatch);
+        }),
+        {
+          guard: {
+            status: 'applied',
+            operation: 'update',
+            namespace: 'guarded-root',
+            key: 'root',
+            resultingRevision: 1,
+          },
+          effects: [{
+            status: 'applied',
+            effectId: 'after-update',
+            operation: 'insert',
+            namespace: 'guarded-effect',
+            key: 'after-update',
+            resultingRevision: 0,
+          }],
+        },
+      );
+
+      const deleteBatch: RuntimeStateGuardedBatch = {
+        guard: {
+          operation: 'delete',
+          namespace: 'guarded-root',
+          key: 'root',
+          expectedRevision: 1,
+        },
+        effects: [{
+          effectId: 'after-delete',
+          operation: 'insert',
+          namespace: 'guarded-effect',
+          key: 'after-delete',
+          value: 'after-delete',
+          expireAtTimestamp: FUTURE_MS,
+        }],
+      };
+      assert.deepEqual(
+        await repository.begin(async (transactionRepository) => {
+          if (!isRuntimeStateGuardedBatchRepositoryLike(transactionRepository)) {
+            throw new Error('Expected guarded runtime-state batch capability.');
+          }
+          return await transactionRepository.executeGuardedBatch(deleteBatch);
+        }),
+        {
+          guard: {
+            status: 'applied',
+            operation: 'delete',
+            namespace: 'guarded-root',
+            key: 'root',
+            matchedRevision: 1,
+          },
+          effects: [{
+            status: 'applied',
+            effectId: 'after-delete',
+            operation: 'insert',
+            namespace: 'guarded-effect',
+            key: 'after-delete',
+            resultingRevision: 0,
+          }],
+        },
+      );
+      assert.equal(await repository.findEntry('guarded-root', 'root'), undefined);
+    });
+  },
+);
+
+Deno.test(
+  'guarded runtime-state batch guard conflict skips every effect without writes',
+  async () => {
+    await withPGliteSql(async (sql) => {
+      const repository = new PSqlRuntimeStateRepository(sql);
+      await repository.insertIfAbsent('guarded-miss', 'root', 'winner', FUTURE_MS);
+      await repository.insertIfAbsent('guarded-miss', 'put-target', 'before', FUTURE_MS);
+      const batch: RuntimeStateGuardedBatch = {
+        guard: {
+          operation: 'insert',
+          namespace: 'guarded-miss',
+          key: 'root',
+          value: 'loser',
+          expireAtTimestamp: FUTURE_MS,
+        },
+        effects: [{
+          effectId: 'insert',
+          operation: 'insert',
+          namespace: 'guarded-miss',
+          key: 'insert-target',
+          value: 'must-not-exist',
+          expireAtTimestamp: FUTURE_MS,
+        }, {
+          effectId: 'put',
+          operation: 'put',
+          namespace: 'guarded-miss',
+          key: 'put-target',
+          value: 'must-not-change',
+          expireAtTimestamp: FUTURE_MS,
+        }],
+      };
+
+      const result = await repository.begin(async (transactionRepository) => {
+        if (!isRuntimeStateGuardedBatchRepositoryLike(transactionRepository)) {
+          throw new Error('Expected guarded runtime-state batch capability.');
+        }
+        return await transactionRepository.executeGuardedBatch(batch);
+      });
+
+      assert.deepEqual(result, {
+        guard: {
+          status: 'conflict',
+          operation: 'insert',
+          namespace: 'guarded-miss',
+          key: 'root',
+          reason: 'condition-not-met',
+        },
+        effects: [{
+          status: 'skipped',
+          effectId: 'insert',
+          operation: 'insert',
+          namespace: 'guarded-miss',
+          key: 'insert-target',
+          reason: 'guard-conflict',
+        }, {
+          status: 'skipped',
+          effectId: 'put',
+          operation: 'put',
+          namespace: 'guarded-miss',
+          key: 'put-target',
+          reason: 'guard-conflict',
+        }],
+      });
+      assert.equal(await repository.findEntry('guarded-miss', 'insert-target'), undefined);
+      const unchangedPut = await repository.findEntry('guarded-miss', 'put-target');
+      assert.equal(unchangedPut?.value, 'before');
+      assert.equal(unchangedPut?.revision, 0);
+    });
+  },
+);
+
+Deno.test(
+  'guarded runtime-state batch preserves sequential physical expiry exactly',
+  async () => {
+    await withPGliteSql(async (sql) => {
+      const repository = new PSqlRuntimeStateRepository(sql);
+      const fractionalEpochMs = 1_234.75;
+      await repository.insertIfAbsent(
+        'guarded-expiry',
+        'sequential-future',
+        'future',
+        FUTURE_MS,
+      );
+      await repository.insertIfAbsent(
+        'guarded-expiry',
+        'sequential-fractional',
+        'fractional',
+        fractionalEpochMs,
+      );
+
+      await repository.begin(async (transactionRepository) => {
+        if (!isRuntimeStateGuardedBatchRepositoryLike(transactionRepository)) {
+          throw new Error('Expected guarded runtime-state batch capability.');
+        }
+        await transactionRepository.executeGuardedBatch({
+          guard: {
+            operation: 'insert',
+            namespace: 'guarded-expiry',
+            key: 'guarded-future',
+            value: 'future',
+            expireAtTimestamp: FUTURE_MS,
+          },
+          effects: [{
+            effectId: 'fractional',
+            operation: 'insert',
+            namespace: 'guarded-expiry',
+            key: 'guarded-fractional',
+            value: 'fractional',
+            expireAtTimestamp: fractionalEpochMs,
+          }],
+        });
+      });
+
+      const rows = await sql<Array<{ store_key: string; expire_at_ts: string }>>`
+        select store_key, expire_at_ts::text as expire_at_ts
+        from runtime_state_store
+        where store_namespace = ${'guarded-expiry'}
+        order by store_key
+      `;
+      const expiryByKey = new Map(
+        rows.map((row) => [row.store_key, row.expire_at_ts]),
+      );
+      assert.equal(
+        expiryByKey.get('guarded-future'),
+        expiryByKey.get('sequential-future'),
+      );
+      assert.equal(
+        expiryByKey.get('guarded-fractional'),
+        expiryByKey.get('sequential-fractional'),
+      );
+    });
+  },
+);
+
+Deno.test(
+  'guarded runtime-state batch rolls back applied siblings when a conditional effect conflicts',
+  async () => {
+    await withPGliteSql(async (sql) => {
+      const repository = new PSqlRuntimeStateRepository(sql);
+      await repository.insertIfAbsent('guarded-rollback', 'root', 'before', FUTURE_MS);
+      let observedResult: RuntimeStateGuardedBatchResult | undefined;
+
+      await assert.rejects(
+        async () => {
+          await repository.begin(async (transactionRepository) => {
+            if (!isRuntimeStateGuardedBatchRepositoryLike(transactionRepository)) {
+              throw new Error('Expected guarded runtime-state batch capability.');
+            }
+            observedResult = await transactionRepository.executeGuardedBatch({
+              guard: {
+                operation: 'update',
+                namespace: 'guarded-rollback',
+                key: 'root',
+                expectedRevision: 0,
+                value: 'after',
+                expireAtTimestamp: FUTURE_MS,
+              },
+              effects: [{
+                effectId: 'sibling',
+                operation: 'insert',
+                namespace: 'guarded-rollback',
+                key: 'sibling',
+                value: 'inserted',
+                expireAtTimestamp: FUTURE_MS,
+              }, {
+                effectId: 'conflict',
+                operation: 'update',
+                namespace: 'guarded-rollback',
+                key: 'missing',
+                expectedRevision: 0,
+                value: 'never',
+                expireAtTimestamp: FUTURE_MS,
+              }],
+            });
+            assert.deepEqual(observedResult.effects.map((effect) => effect.status), [
+              'applied',
+              'conflict',
+            ]);
+            throw new Error('roll back guarded batch conflict');
+          });
+        },
+        /roll back guarded batch conflict/u,
+      );
+
+      assert.deepEqual(observedResult, {
+        guard: {
+          status: 'applied',
+          operation: 'update',
+          namespace: 'guarded-rollback',
+          key: 'root',
+          resultingRevision: 1,
+        },
+        effects: [{
+          status: 'applied',
+          effectId: 'sibling',
+          operation: 'insert',
+          namespace: 'guarded-rollback',
+          key: 'sibling',
+          resultingRevision: 0,
+        }, {
+          status: 'conflict',
+          effectId: 'conflict',
+          operation: 'update',
+          namespace: 'guarded-rollback',
+          key: 'missing',
+          reason: 'condition-not-met',
+        }],
+      });
+      const rolledBackGuard = await repository.findEntry('guarded-rollback', 'root');
+      assert.equal(rolledBackGuard?.value, 'before');
+      assert.equal(rolledBackGuard?.revision, 0);
+      assert.equal(await repository.findEntry('guarded-rollback', 'sibling'), undefined);
+    });
+  },
+);
 
 Deno.test('PSqlRuntimeStateRepository generic expiry preserves protected namespaces', async () => {
   await withPGliteSql(async (sql) => {

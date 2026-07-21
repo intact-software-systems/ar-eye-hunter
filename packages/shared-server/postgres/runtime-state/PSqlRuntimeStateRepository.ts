@@ -8,6 +8,17 @@ import {
     assertRuntimeStateExpectedRevision,
     assertRuntimeStateUpsertExpectedRevision,
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+import type {
+    RuntimeStateGuardedBatch,
+    RuntimeStateGuardedBatchEffect,
+    RuntimeStateGuardedBatchEffectResult,
+    RuntimeStateGuardedBatchGuardResult,
+    RuntimeStateGuardedBatchResult,
+} from '@shared-server/runtime-state/RuntimeStateGuardedBatch.ts';
+import {
+    validateRuntimeStateGuardedBatch,
+    validateRuntimeStateGuardedBatchResult,
+} from '@shared-server/runtime-state/RuntimeStateGuardedBatch.ts';
 import type { PSqlSql, PSqlTransactionSql } from '../PostgresSqlClient.ts';
 
 const RUNTIME_STATE_EXPIRY_EVICTION_INTERVAL_MS = 60_000;
@@ -31,6 +42,15 @@ type RuntimeStateSqlState =
     | Readonly<{ kind: 'root'; sql: PSqlSql }>
     | Readonly<{ kind: 'transaction'; sql: RuntimeStateSavepointSql }>;
 
+type RuntimeStateGuardedBatchRow = Readonly<{
+    result_kind: unknown;
+    effect_id: unknown;
+    operation: unknown;
+    store_namespace: unknown;
+    store_key: unknown;
+    revision: unknown;
+}>;
+
 export class PSqlRuntimeStateRepository
     implements RuntimeStateOptimisticTransactionalRepositoryLike {
     private readonly sqlState: RuntimeStateSqlState;
@@ -43,6 +63,10 @@ export class PSqlRuntimeStateRepository
             kind: 'root',
             sql,
         };
+    }
+
+    get runtimeStateGuardedBatchCapability(): boolean {
+        return this.sqlState.kind === 'transaction';
     }
 
     async begin<T>(
@@ -69,6 +93,256 @@ export class PSqlRuntimeStateRepository
                 }));
             },
         );
+    }
+
+    async executeGuardedBatch(
+        input: RuntimeStateGuardedBatch,
+    ): Promise<RuntimeStateGuardedBatchResult> {
+        const batch = validateRuntimeStateGuardedBatch(input);
+        if (this.sqlState.kind !== 'transaction') {
+            throw new Error(
+                'Guarded runtime state batches require a transaction-scoped repository.',
+            );
+        }
+
+        const rows = await this.sql<RuntimeStateGuardedBatchRow[]>`
+            with guard_input as (
+                select descriptor ->> 'operation' as operation,
+                       descriptor ->> 'namespace' as store_namespace,
+                       descriptor ->> 'key' as store_key,
+                       descriptor ->> 'value' as store_value,
+                       (descriptor ->> 'expireAtTimestamp')::timestamptz as expire_at_ts,
+                       (descriptor ->> 'expectedRevision')::bigint as expected_revision
+                from (select ${serializeRuntimeStateGuardedBatchSqlInput(batch.guard)}::jsonb as descriptor) guard_json
+            ),
+            effect_input as (
+                select descriptor ->> 'effectId' as effect_id,
+                       descriptor ->> 'operation' as operation,
+                       descriptor ->> 'namespace' as store_namespace,
+                       descriptor ->> 'key' as store_key,
+                       descriptor ->> 'value' as store_value,
+                       (descriptor ->> 'expireAtTimestamp')::timestamptz as expire_at_ts,
+                       (descriptor ->> 'expectedRevision')::bigint as expected_revision
+                from jsonb_array_elements(${serializeRuntimeStateGuardedBatchSqlInput(batch.effects)}::jsonb) descriptor
+            ),
+            guard_insert as (
+                insert into runtime_state_store (store_namespace,
+                                                 store_key,
+                                                 store_value,
+                                                 expire_at_ts,
+                                                 updated_ts,
+                                                 revision)
+                select store_namespace,
+                       store_key,
+                       store_value,
+                       expire_at_ts,
+                       now(),
+                       0
+                from guard_input
+                where operation = 'insert'
+                on conflict (store_namespace, store_key) do nothing
+                returning 'insert'::text as operation,
+                          store_namespace,
+                          store_key,
+                          revision
+            ),
+            guard_update as (
+                update runtime_state_store target
+                set store_value = descriptor.store_value,
+                    expire_at_ts = descriptor.expire_at_ts,
+                    updated_ts = now(),
+                    revision = target.revision + 1
+                from guard_input descriptor
+                where descriptor.operation = 'update'
+                  and target.store_namespace = descriptor.store_namespace
+                  and target.store_key = descriptor.store_key
+                  and target.revision = descriptor.expected_revision
+                returning 'update'::text as operation,
+                          target.store_namespace,
+                          target.store_key,
+                          target.revision
+            ),
+            guard_delete as (
+                delete from runtime_state_store target
+                using guard_input descriptor
+                where descriptor.operation = 'delete'
+                  and target.store_namespace = descriptor.store_namespace
+                  and target.store_key = descriptor.store_key
+                  and target.revision = descriptor.expected_revision
+                returning 'delete'::text as operation,
+                          target.store_namespace,
+                          target.store_key,
+                          target.revision
+            ),
+            authority as (
+                select operation, store_namespace, store_key, revision
+                from guard_insert
+                union all
+                select operation, store_namespace, store_key, revision
+                from guard_update
+                union all
+                select operation, store_namespace, store_key, revision
+                from guard_delete
+            ),
+            effect_insert as (
+                insert into runtime_state_store (store_namespace,
+                                                 store_key,
+                                                 store_value,
+                                                 expire_at_ts,
+                                                 updated_ts,
+                                                 revision)
+                select descriptor.store_namespace,
+                       descriptor.store_key,
+                       descriptor.store_value,
+                       descriptor.expire_at_ts,
+                       now(),
+                       0
+                from effect_input descriptor
+                cross join authority
+                where descriptor.operation = 'insert'
+                on conflict (store_namespace, store_key) do nothing
+                returning store_namespace, store_key, revision
+            ),
+            effect_update as (
+                update runtime_state_store target
+                set store_value = descriptor.store_value,
+                    expire_at_ts = descriptor.expire_at_ts,
+                    updated_ts = now(),
+                    revision = target.revision + 1
+                from effect_input descriptor
+                cross join authority
+                where descriptor.operation = 'update'
+                  and target.store_namespace = descriptor.store_namespace
+                  and target.store_key = descriptor.store_key
+                  and target.revision = descriptor.expected_revision
+                returning target.store_namespace,
+                          target.store_key,
+                          target.revision
+            ),
+            effect_delete as (
+                delete from runtime_state_store target
+                using effect_input descriptor, authority
+                where descriptor.operation = 'delete'
+                  and target.store_namespace = descriptor.store_namespace
+                  and target.store_key = descriptor.store_key
+                  and target.revision = descriptor.expected_revision
+                returning target.store_namespace,
+                          target.store_key,
+                          target.revision
+            ),
+            effect_put as (
+                insert into runtime_state_store (store_namespace,
+                                                 store_key,
+                                                 store_value,
+                                                 expire_at_ts,
+                                                 updated_ts,
+                                                 revision)
+                select descriptor.store_namespace,
+                       descriptor.store_key,
+                       descriptor.store_value,
+                       descriptor.expire_at_ts,
+                       now(),
+                       0
+                from effect_input descriptor
+                cross join authority
+                where descriptor.operation = 'put'
+                on conflict (store_namespace, store_key)
+                    do update set store_value = excluded.store_value,
+                                  expire_at_ts = excluded.expire_at_ts,
+                                  updated_ts = now(),
+                                  revision = runtime_state_store.revision + 1
+                returning store_namespace, store_key, revision
+            ),
+            effect_insert_result as (
+                select descriptor.effect_id,
+                       descriptor.operation,
+                       mutation.store_namespace,
+                       mutation.store_key,
+                       mutation.revision
+                from effect_insert mutation
+                join effect_input descriptor
+                  on descriptor.store_namespace = mutation.store_namespace
+                 and descriptor.store_key = mutation.store_key
+                 and descriptor.operation = 'insert'
+            ),
+            effect_update_result as (
+                select descriptor.effect_id,
+                       descriptor.operation,
+                       mutation.store_namespace,
+                       mutation.store_key,
+                       mutation.revision
+                from effect_update mutation
+                join effect_input descriptor
+                  on descriptor.store_namespace = mutation.store_namespace
+                 and descriptor.store_key = mutation.store_key
+                 and descriptor.operation = 'update'
+            ),
+            effect_delete_result as (
+                select descriptor.effect_id,
+                       descriptor.operation,
+                       mutation.store_namespace,
+                       mutation.store_key,
+                       mutation.revision
+                from effect_delete mutation
+                join effect_input descriptor
+                  on descriptor.store_namespace = mutation.store_namespace
+                 and descriptor.store_key = mutation.store_key
+                 and descriptor.operation = 'delete'
+            ),
+            effect_put_result as (
+                select descriptor.effect_id,
+                       descriptor.operation,
+                       mutation.store_namespace,
+                       mutation.store_key,
+                       mutation.revision
+                from effect_put mutation
+                join effect_input descriptor
+                  on descriptor.store_namespace = mutation.store_namespace
+                 and descriptor.store_key = mutation.store_key
+                 and descriptor.operation = 'put'
+            )
+            select 'guard'::text as result_kind,
+                   null::text as effect_id,
+                   operation,
+                   store_namespace,
+                   store_key,
+                   revision
+            from authority
+            union all
+            select 'effect'::text as result_kind,
+                   effect_id,
+                   operation,
+                   store_namespace,
+                   store_key,
+                   revision
+            from effect_insert_result
+            union all
+            select 'effect'::text as result_kind,
+                   effect_id,
+                   operation,
+                   store_namespace,
+                   store_key,
+                   revision
+            from effect_update_result
+            union all
+            select 'effect'::text as result_kind,
+                   effect_id,
+                   operation,
+                   store_namespace,
+                   store_key,
+                   revision
+            from effect_delete_result
+            union all
+            select 'effect'::text as result_kind,
+                   effect_id,
+                   operation,
+                   store_namespace,
+                   store_key,
+                   revision
+            from effect_put_result
+        `;
+
+        return toRuntimeStateGuardedBatchResult(batch, rows);
     }
 
     async findEntry(namespace: string, key: string): Promise<RuntimeStateEntry | undefined> {
@@ -483,6 +757,237 @@ function validateExpiryWorkerDelay(value: number, label: string): void {
     if (!Number.isSafeInteger(value) || value < 1) {
         throw new RangeError(`Runtime state expiry ${label} is invalid`);
     }
+}
+
+function toRuntimeStateGuardedBatchResult(
+    batch: RuntimeStateGuardedBatch,
+    rows: readonly RuntimeStateGuardedBatchRow[],
+): RuntimeStateGuardedBatchResult {
+    requireDenseGuardedBatchRows(rows);
+    let guardRow: ParsedRuntimeStateGuardedBatchRow | undefined;
+    const effectRows = new Map<string, ParsedRuntimeStateGuardedBatchRow>();
+    for (const inputRow of rows) {
+        const row = parseRuntimeStateGuardedBatchRow(inputRow);
+        if (row.resultKind === 'guard') {
+            if (row.effectId !== null || guardRow !== undefined) {
+                throw invalidGuardedBatchDatabaseResult(
+                    'expected exactly one unique guard row',
+                );
+            }
+            guardRow = row;
+            continue;
+        }
+        if (row.effectId === null || effectRows.has(row.effectId)) {
+            throw invalidGuardedBatchDatabaseResult(
+                'effect rows require unique effect IDs',
+            );
+        }
+        effectRows.set(row.effectId, row);
+    }
+
+    if (guardRow === undefined) {
+        if (effectRows.size > 0) {
+            throw invalidGuardedBatchDatabaseResult(
+                'effects applied without guard authority',
+            );
+        }
+        return validateRuntimeStateGuardedBatchResult(batch, {
+            guard: {
+                status: 'conflict',
+                operation: batch.guard.operation,
+                namespace: batch.guard.namespace,
+                key: batch.guard.key,
+                reason: 'condition-not-met',
+            },
+            effects: batch.effects.map((effect) => ({
+                status: 'skipped',
+                effectId: effect.effectId,
+                operation: effect.operation,
+                namespace: effect.namespace,
+                key: effect.key,
+                reason: 'guard-conflict',
+            })),
+        });
+    }
+
+    const guardResult = toAppliedGuardedBatchGuardResult(batch, guardRow);
+    const effects = batch.effects.map((effect) => {
+        const row = effectRows.get(effect.effectId);
+        if (row === undefined) {
+            if (effect.operation === 'put') {
+                throw invalidGuardedBatchDatabaseResult(
+                    `put effect did not return a row: ${effect.effectId}`,
+                );
+            }
+            return {
+                status: 'conflict',
+                effectId: effect.effectId,
+                operation: effect.operation,
+                namespace: effect.namespace,
+                key: effect.key,
+                reason: 'condition-not-met',
+            } as const;
+        }
+        effectRows.delete(effect.effectId);
+        return toAppliedGuardedBatchEffectResult(effect, row);
+    });
+    if (effectRows.size > 0) {
+        throw invalidGuardedBatchDatabaseResult('received an unexpected effect row');
+    }
+
+    return validateRuntimeStateGuardedBatchResult(batch, {
+        guard: guardResult,
+        effects,
+    });
+}
+
+function serializeRuntimeStateGuardedBatchSqlInput(input: unknown): string {
+    const serialized = JSON.stringify(input, (key, value: unknown) =>
+        key === 'expireAtTimestamp' && typeof value === 'number'
+            ? new Date(value).toISOString()
+            : value
+    );
+    if (serialized === undefined) {
+        throw new Error('Guarded runtime state batch SQL input is not serializable.');
+    }
+    return serialized;
+}
+
+type ParsedRuntimeStateGuardedBatchRow = Readonly<{
+    resultKind: 'guard' | 'effect';
+    effectId: string | null;
+    operation: 'insert' | 'update' | 'delete' | 'put';
+    namespace: string;
+    key: string;
+    revision: number;
+}>;
+
+function parseRuntimeStateGuardedBatchRow(
+    row: RuntimeStateGuardedBatchRow,
+): ParsedRuntimeStateGuardedBatchRow {
+    const resultKind = row.result_kind;
+    if (resultKind !== 'guard' && resultKind !== 'effect') {
+        throw invalidGuardedBatchDatabaseResult('result kind is invalid');
+    }
+    const effectId = row.effect_id;
+    if (effectId !== null && (typeof effectId !== 'string' || effectId.length === 0)) {
+        throw invalidGuardedBatchDatabaseResult('effect ID is invalid');
+    }
+    const operation = row.operation;
+    if (
+        operation !== 'insert' &&
+        operation !== 'update' &&
+        operation !== 'delete' &&
+        operation !== 'put'
+    ) {
+        throw invalidGuardedBatchDatabaseResult('operation is invalid');
+    }
+    if (typeof row.store_namespace !== 'string' || row.store_namespace.length === 0) {
+        throw invalidGuardedBatchDatabaseResult('namespace is invalid');
+    }
+    if (typeof row.store_key !== 'string' || row.store_key.length === 0) {
+        throw invalidGuardedBatchDatabaseResult('key is invalid');
+    }
+    if (typeof row.revision !== 'number' && typeof row.revision !== 'string') {
+        throw invalidGuardedBatchDatabaseResult('revision is invalid');
+    }
+
+    return {
+        resultKind,
+        effectId,
+        operation,
+        namespace: row.store_namespace,
+        key: row.store_key,
+        revision: parseRuntimeStateRevision(row.revision),
+    };
+}
+
+function toAppliedGuardedBatchGuardResult(
+    batch: RuntimeStateGuardedBatch,
+    row: ParsedRuntimeStateGuardedBatchRow,
+): RuntimeStateGuardedBatchGuardResult {
+    requireGuardedBatchRowMatch(batch.guard, row, 'guard');
+    return batch.guard.operation === 'delete'
+        ? {
+            status: 'applied',
+            operation: batch.guard.operation,
+            namespace: batch.guard.namespace,
+            key: batch.guard.key,
+            matchedRevision: row.revision,
+        }
+        : {
+            status: 'applied',
+            operation: batch.guard.operation,
+            namespace: batch.guard.namespace,
+            key: batch.guard.key,
+            resultingRevision: row.revision,
+        };
+}
+
+function toAppliedGuardedBatchEffectResult(
+    effect: RuntimeStateGuardedBatchEffect,
+    row: ParsedRuntimeStateGuardedBatchRow,
+): RuntimeStateGuardedBatchEffectResult {
+    requireGuardedBatchRowMatch(effect, row, `effect ${effect.effectId}`);
+    if (row.effectId !== effect.effectId) {
+        throw invalidGuardedBatchDatabaseResult(
+            `effect ID does not match: ${effect.effectId}`,
+        );
+    }
+    return effect.operation === 'delete'
+        ? {
+            status: 'applied',
+            effectId: effect.effectId,
+            operation: effect.operation,
+            namespace: effect.namespace,
+            key: effect.key,
+            matchedRevision: row.revision,
+        }
+        : {
+            status: 'applied',
+            effectId: effect.effectId,
+            operation: effect.operation,
+            namespace: effect.namespace,
+            key: effect.key,
+            resultingRevision: row.revision,
+        };
+}
+
+function requireGuardedBatchRowMatch(
+    expected: Readonly<{
+        operation: string;
+        namespace: string;
+        key: string;
+    }>,
+    row: ParsedRuntimeStateGuardedBatchRow,
+    label: string,
+): void {
+    if (
+        row.operation !== expected.operation ||
+        row.namespace !== expected.namespace ||
+        row.key !== expected.key
+    ) {
+        throw invalidGuardedBatchDatabaseResult(
+            `${label} operation or identity does not match`,
+        );
+    }
+}
+
+function requireDenseGuardedBatchRows(
+    rows: readonly RuntimeStateGuardedBatchRow[],
+): void {
+    if (!Array.isArray(rows)) {
+        throw invalidGuardedBatchDatabaseResult('rows must be an array');
+    }
+    for (let index = 0; index < rows.length; index += 1) {
+        if (!Object.hasOwn(rows, index)) {
+            throw invalidGuardedBatchDatabaseResult('rows must be dense');
+        }
+    }
+}
+
+function invalidGuardedBatchDatabaseResult(reason: string): Error {
+    return new Error(`Invalid runtime state guarded batch database result: ${reason}`);
 }
 
 function toEntry(row: RuntimeStateRow): RuntimeStateEntry {
