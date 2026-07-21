@@ -61,6 +61,29 @@ describe('repo code style authority integrity', () => {
     expect(humanGuide).toContain('left includes `RuntimeFailure`');
   });
 
+  it('defines data-only DTOs and linear workflow-stage records', () => {
+    const canonicalStyle = readRepo(canonicalStylePath);
+    const normalizedStyle = canonicalStyle.replace(/\s+/g, ' ');
+
+    expectAll(normalizedStyle, [
+      '`Dto` marks a readonly, data-only value',
+      'operation, service, transport, persistence, or process boundary',
+      'A DTO contains properties, not callbacks',
+      '`XxxServiceDependencies`',
+      'Provide a service dependency bundle once when creating the service',
+      'immutable workflow-stage record',
+      'immediate predecessor exactly once',
+      'readonly input: InvoiceInputDto;',
+      'readonly read: InvoiceRead;',
+      'readonly computed: InvoiceComputed;',
+      'interface InvoiceValidationFailure',
+      'readonly issues: readonly InvoiceValidationIssue[];',
+      'Either<InvoiceValidationFailure, InvoiceComputed>',
+    ]);
+    expect(canonicalStyle).not.toContain('InvoiceComputedDto');
+    expect(canonicalStyle).not.toContain('ReadInvoiceInput');
+  });
+
   it('keeps changed production warnings visible when the default output is capped', () => {
     const codeWriting = readRepo('.agents/skills/rallar-code-writing/SKILL.md');
 
