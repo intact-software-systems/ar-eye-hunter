@@ -1,7 +1,7 @@
 {
   "name": "rallar-repo",
   "version": "0.1.0",
-  "description": "Repo-local Codex skills for working on Rallar packages and apps.",
+  "description": "Repo-local Codex skills and TypeScript standards for Rallar packages and apps.",
   "author": {
     "name": "Rallar Project"
   },
@@ -15,25 +15,22 @@
     "ai",
     "codex-skills",
     "code-style",
-    "package-quality",
+    "repo-code-style",
+    "human-traceability",
     "testability"
   ],
   "skills": "./.agents/skills/",
   "interface": {
     "displayName": "Rallar Repo",
     "shortDescription": "Build and change Rallar packages and apps.",
-    "longDescription": "Repo-local skills for Rallar package boundaries, greenfield browser apps, React/3D architecture, realtime infrastructure, games, AI, operations, performance, and validation.",
+    "longDescription": "Repo-local skills for Rallar package boundaries, repo-wide TypeScript traceability, greenfield browser apps, React/3D architecture, realtime infrastructure, games, AI, operations, performance, and validation.",
     "developerName": "Rallar Project",
     "category": "Developer Tools",
-    "capabilities": [
-      "Code",
-      "Review",
-      "Testing"
-    ],
+    "capabilities": ["Code", "Review", "Testing"],
     "defaultPrompt": [
       "Scaffold a Rallar-first browser app.",
       "Plan a Rallar React and 3D architecture.",
-      "Find and test the right Rallar package change."
+      "Review Rallar TypeScript for human traceability and repo style."
     ],
     "brandColor": "#2F80ED"
   }

@@ -1,4 +1,5 @@
 .idea
+.venv/
 
 /apps/web/dist/
 /apps/ar-eye-hunter-v1/dist/

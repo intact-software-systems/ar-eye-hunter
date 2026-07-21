@@ -5,6 +5,10 @@ Rallar facade, Rallar browser data stores, and Rallar server middleware.
 
 ## Documents
 
+- [Repo Human Style Review Guide](./repo-human-style-guide.md) Human review
+  sequence and warning-only checker usage for the authoritative repo TypeScript
+  standard in
+  [repo-code-style.md](../.agents/skills/rallar-code-writing/references/repo-code-style.md).
 - [Rallar API Reference](./rallar-api-reference.md) Complete public API
   description for `rallar.ts`, `rallar-data.ts`, and `RallarMiddleware.ts`, with
   usage examples.

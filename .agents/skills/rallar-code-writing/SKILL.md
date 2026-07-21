@@ -1,78 +1,73 @@
 ---
 name: rallar-code-writing
-description: Use when writing, refactoring, or reviewing package-oriented Rallar TypeScript under packages/**, or app code that consumes or extends package APIs, to follow repo style, functional design, testability, and AI-generated code safety expectations.
+description: Use when writing, generating, refactoring, or reviewing TypeScript anywhere in the Rallar repository, including apps, packages, scripts, examples, and tests.
 ---
 
 # Rallar Code Writing
 
 ## Start Here
 
-Inspect nearby package code and tests before choosing a shape. Read `references/package-code-style.md` when a change introduces exports, state, abstractions, or nontrivial behavior.
+Always read `references/repo-code-style.md` completely before writing,
+refactoring, generating, or reviewing TypeScript. It is the authoritative
+repo-wide coding standard; local guidance may tighten it but may not relax it.
+
+Inspect nearby code, tests, and relevant `examples/**` before choosing a shape.
+Existing implementation is useful context but is not precedent when it violates
+the standard.
 
 Useful first searches:
 
 ```bash
-rg -n "export function|export const|export type|export class|createRallar|Readonly<|GroupRef|StateSync|RallarAi" packages
-rg --files packages/tests packages/shared packages/shared-web packages/shared-server packages/relic-hunters
+rg -n "export function|export const|export interface|export type|export class|createRallar|Readonly<|GroupRef|StateSync|RallarAi" apps packages
+rg --files apps packages examples scripts
 ```
 
 ## Workflow
 
-1. Identify the domain boundary first: shared contract, browser facade, server runtime, game rules, AI, motion, graph, or tests.
-2. Reuse existing helpers and package APIs before adding new modules.
-3. Keep algorithmic behavior in one canonical helper; adapters and bridges should delegate to it rather than reimplementing logic.
-4. Prefer small functions with explicit inputs and return values.
-5. Inject clocks, random IDs, repositories, providers, transports, and side effects through options.
-6. Add or update behavior tests with the code change.
-7. Use the rallar-testing skill to pick targeted checks and package type-checks.
-
-## Contract Defaults
-
-- Prefer required public and persisted fields. Authoritative persisted,
-  replicated, queued, event, snapshot, and response values should be fully
-  populated. Optional fields are appropriate only when omission has domain
-  meaning and a consumer test; convenience during construction is not domain
-  meaning.
-- Model incomplete construction with a separate input type or discriminated
-  union, then produce a fully populated authoritative value at the boundary.
-- Do not add a backwards-compatibility fallback by default. Before a plan
-  keeps a legacy field, message shape, import, or runtime path, explicitly ask
-  the human to approve compatibility and document how long it remains.
-
-## Database Write Defaults
-
-- Do not implement authoritative state as read, derive, then unconditional
-  upsert. Create with conditional insert; update with expected-revision compare-and-set;
-  delete or expire with expected-revision conditional delete.
-- On a compare-and-set conflict, bound the retry count, re-read the whole
-  decision surface, and rerun authorization, policy, capacity, lifecycle, and invariant checks.
-  A retry of only the stale write is incorrect.
-- Make idempotency claims with insert-if-absent semantics. The losing writer
-  loads the winner; it must not overwrite the ledger.
-- Database row, table, and advisory locks are exceptions, not reusable
-  architecture. Require explicit human approval and document the protected
-  invariant, evidence, bounded critical section, and removal condition.
+1. Identify the owning domain and side-effect boundary.
+2. Trace input, defaults, decisions, reads, computation, writes, and failures
+   before changing the shape.
+3. Reuse a well-named existing implementation when it has the same semantics.
+4. Keep one canonical implementation of domain behavior. Adapters translate;
+   they do not reimplement.
+5. Keep defaults and policy decisions high in the call stack.
+6. Prefer required contracts and explicit value flow.
+7. Add or update behavior tests for changed behavior.
+8. Use the `rallar-testing` skill to select focused checks, type-checks, and any
+   broader consumer validation.
 
 ## Shape Decision
 
-- Use a pure function for parsing, validation, transformation, derivation, routing decisions, key building, and policy checks.
-- Use a factory returning a plain interface when behavior needs private mutable state but does not need inheritance or lifecycle hooks.
-- Use a class when the code owns lifecycle, cache state, subscriptions, persistence, connection state, or long-lived runtime coordination.
-- Keep stateful objects narrow and injectable; avoid hidden global state unless the surrounding package already uses that repository pattern.
+- Use a pure function for validation, translation, calculation, routing
+  decisions, key building, and policy checks.
+- Use a factory returning a plain interface only for narrow, explicitly owned
+  in-memory state exposed through clear `get` and `set` operations.
+- Use a class when the code explicitly owns lifecycle, cache state,
+  subscriptions, persistence, connection state, or long-lived coordination.
+- Keep stateful objects narrow and injectable. Do not introduce hidden global
+  state because nearby legacy code has it.
 
 ## AI-Generated Code Safety Checklist
 
 - No untested behavior changes.
 - No new abstraction without real duplication or complexity reduction.
 - No broad public export unless it is intentionally part of the package API.
-- No hidden clock, randomness, network, storage, or repository dependency when injection would make tests deterministic.
+- No hidden clock, randomness, network, storage, repository, config, or
+  environment dependency.
 - No clever code where named helpers or explicit branches would be easier to review.
-- No parallel implementations of the same algorithm; bridges or adapters need a clear boundary, compatibility, or runtime reason.
+- No parallel implementations of the same algorithm.
 - No app-local duplicate of behavior that already belongs in `packages/**`.
 - No unconditional authoritative upsert after a read-derived decision.
 - No lock-based concurrency test where a conflict, rebase, retry exhaustion,
   and final-convergence test is required.
+- No compatibility fallback unless the human explicitly approved its purpose and
+  lifetime.
 
 ## Validation
 
-Run focused tests for the touched behavior and type-check the changed package. For public API or cross-runtime changes, check both browser and server consumers before finishing.
+Run the focused tests and type-check for the touched surface. Run
+`npm run check:repo-style` and review warnings in changed production files. For
+output that reaches the display cap, rerun with `--root` set to the smallest
+directory containing changed production files. For public API or cross-runtime
+changes, check both browser and server consumers. Report passed, failed, and
+skipped commands in the completion handoff.

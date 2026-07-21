@@ -759,7 +759,7 @@ Default policy:
 - Modify: `.agents/skills/rallar-testing/SKILL.md`
 - Create: `.agents/skills/rallar-realtime/references/state-snapshot-consistency-checklist.md`
 - Modify: `.agents/skills/rallar-testing/references/test-commands.md`
-- Modify: `.agents/skills/rallar-code-writing/references/package-code-style.md`
+- Modify: `.agents/skills/rallar-code-writing/references/repo-code-style.md`
 - Verify: `packages/tests/repo/rallar-skill-integrity.test.ts`
 
 - [ ] Update `rallar-realtime` rules of thumb: cache is latest observed, point REST without minimum is durable, point REST with minimum is at-least, presence freshness is not completeness, and policy authority is durable.
@@ -768,7 +768,7 @@ Default policy:
 - [ ] Update `rallar-code-writing` contract defaults: centralize query parsing and read selection, preserve monotonic observation, fail closed on authoritative regression, and never reuse stale-tolerant response data for authorization or mutation validation.
 - [ ] Update `rallar-testing` selection rules: every state point-read change requires both tokenless and tokened behavior, invalid/unavailable minimums, multi-node cache isolation, strict-auth stale-cache denial, and browser probe-boundary tests.
 - [ ] Add exact commands from Tasks 1–7 to `rallar-testing/references/test-commands.md`, including when the three-process PostgreSQL gate may be skipped locally but is mandatory in CI.
-- [ ] Add scoped entity-key and mandatory-output guidance to `package-code-style.md`; query/request omission remains optional by meaningful absence.
+- [ ] Add scoped entity-key and mandatory-output guidance to `repo-code-style.md`; query/request omission remains optional by meaningful absence.
 - [ ] Run `npx vitest run packages/tests/repo/rallar-skill-integrity.test.ts`; expect all skill links, frontmatter, and references to pass.
 - [ ] Read every modified `SKILL.md` completely after editing and verify it does not contradict the new documentation or the companion database-write plan.
 - [ ] Commit: `git add .agents/skills/rallar-realtime .agents/skills/rallar-platform/SKILL.md .agents/skills/rallar-code-writing .agents/skills/rallar-testing && git commit -m "docs: teach snapshot convergence in Rallar skills"`.

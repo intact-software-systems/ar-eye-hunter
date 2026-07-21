@@ -11,13 +11,13 @@ Build the scoped graph diagnostics and group topology management REST product de
 - `playground/api-v1-graph-topology-management-design.md`
 - `plans/api-v1-graph-topology-management-implementation-plan.md`
 - `AGENTS.md` instructions from the conversation
-- `skills/rallar-platform/SKILL.md`
-- `skills/rallar-platform/references/package-map.md`
-- `skills/rallar-realtime/SKILL.md`
-- `skills/rallar-code-writing/SKILL.md`
-- `skills/rallar-code-writing/references/package-code-style.md`
-- `skills/rallar-testing/SKILL.md`
-- `skills/rallar-testing/references/test-commands.md`
+- `.agents/skills/rallar-platform/SKILL.md`
+- `.agents/skills/rallar-platform/references/package-map.md`
+- `.agents/skills/rallar-realtime/SKILL.md`
+- `.agents/skills/rallar-code-writing/SKILL.md`
+- `.agents/skills/rallar-code-writing/references/repo-code-style.md`
+- `.agents/skills/rallar-testing/SKILL.md`
+- `.agents/skills/rallar-testing/references/test-commands.md`
 - `docs/rallar-api-reference.md`
 - `docs/rallar-rtc-rtt-reporting.md`
 - `docs/environment-variables.md`

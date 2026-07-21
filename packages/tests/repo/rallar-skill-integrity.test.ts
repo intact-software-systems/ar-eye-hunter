@@ -231,8 +231,8 @@ describe('Rallar repo skill and documentation integrity', () => {
         );
         const platform = readRepo('.agents/skills/rallar-platform/SKILL.md');
         const codeWriting = readRepo('.agents/skills/rallar-code-writing/SKILL.md');
-        const packageCodeStyle = readRepo(
-            '.agents/skills/rallar-code-writing/references/package-code-style.md',
+        const repoCodeStyle = readRepo(
+            '.agents/skills/rallar-code-writing/references/repo-code-style.md',
         );
         const games = readRepo('.agents/skills/rallar-games/SKILL.md');
         const realtime = readRepo('.agents/skills/rallar-realtime/SKILL.md');
@@ -255,17 +255,17 @@ describe('Rallar repo skill and documentation integrity', () => {
             'authoritative persisted, replicated, queued, event, snapshot, and response',
             'Database row, table, and advisory locks are not the default',
         ]);
-        expect(codeWriting).toMatch(/required public and persisted fields/);
-        expect(codeWriting).toMatch(/backwards-compatibility fallback/);
         expectAll(codeWriting, [
-            'expected-revision compare-and-set',
-            'rerun authorization, policy, capacity, lifecycle, and invariant checks',
+            'Always read `references/repo-code-style.md`',
+            'Prefer required contracts and explicit value flow',
+            'No compatibility fallback unless the human explicitly approved',
         ]);
-        expectAll(packageCodeStyle, [
-            'Do not use optional fields as a compatibility shortcut',
+        expectAll(repoCodeStyle, [
             'discriminated union',
-            'Create with conditional insert, update with expected-revision compare-and-set',
-            'stale expiry read cannot delete a refreshed value',
+            'Create with conditional insert',
+            'Update with expected-revision compare-and-set',
+            'A stale expiry read must not delete a value that has since been refreshed',
+            'Every retry must re-read and rerun authorization',
         ]);
         expectAll(realtime, [
             'optimistic reconciliation',

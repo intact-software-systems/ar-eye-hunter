@@ -1555,7 +1555,7 @@ Before committing, restrict the staged shared-test files to the recipe registry/
 - Modify: `.agents/skills/rallar-platform/SKILL.md`
 - Modify: `.agents/skills/rallar-realtime/SKILL.md`
 - Modify: `.agents/skills/rallar-code-writing/SKILL.md`
-- Modify: `.agents/skills/rallar-code-writing/references/package-code-style.md`
+- Modify: `.agents/skills/rallar-code-writing/references/repo-code-style.md`
 - Modify: `.agents/skills/rallar-testing/SKILL.md`
 - Modify: `.agents/skills/rallar-testing/references/test-commands.md`
 - Modify: `.agents/skills/performance-analysis/SKILL.md`
@@ -1640,7 +1640,7 @@ Expected: Vitest PASS; `rg` exits `1` with no matches.
 - [ ] **Step 5: Commit durable guidance**
 
 ```bash
-git add AGENTS.md .agents/skills/rallar-platform/SKILL.md .agents/skills/rallar-realtime/SKILL.md .agents/skills/rallar-code-writing/SKILL.md .agents/skills/rallar-code-writing/references/package-code-style.md .agents/skills/rallar-testing/SKILL.md .agents/skills/rallar-testing/references/test-commands.md .agents/skills/performance-analysis/SKILL.md docs/rallar-convergent-state-and-rtc-topology.md packages/shared-server/architecture.md packages/shared-server/rallar-server-repositories.md packages/shared-server/rallar-server-repositories-improvements.md packages/tests/shared-server/read-compute-write-contract.test.ts packages/tests/repo/rallar-skill-integrity.test.ts
+git add AGENTS.md .agents/skills/rallar-platform/SKILL.md .agents/skills/rallar-realtime/SKILL.md .agents/skills/rallar-code-writing/SKILL.md .agents/skills/rallar-code-writing/references/repo-code-style.md .agents/skills/rallar-testing/SKILL.md .agents/skills/rallar-testing/references/test-commands.md .agents/skills/performance-analysis/SKILL.md docs/rallar-convergent-state-and-rtc-topology.md packages/shared-server/architecture.md packages/shared-server/rallar-server-repositories.md packages/shared-server/rallar-server-repositories-improvements.md packages/tests/shared-server/read-compute-write-contract.test.ts packages/tests/repo/rallar-skill-integrity.test.ts
 git commit -m "docs: codify convergent database writes"
 ```
 
