@@ -113,7 +113,7 @@ export class PSqlRuntimeStateRepository
                        descriptor ->> 'value' as store_value,
                        (descriptor ->> 'expireAtTimestamp')::timestamptz as expire_at_ts,
                        (descriptor ->> 'expectedRevision')::bigint as expected_revision
-                from (select ${serializeRuntimeStateGuardedBatchSqlInput(batch.guard)}::jsonb as descriptor) guard_json
+                from (select ${toRuntimeStateGuardedBatchSqlInput(batch.guard)}::jsonb as descriptor) guard_json
             ),
             effect_input as (
                 select descriptor ->> 'effectId' as effect_id,
@@ -123,7 +123,7 @@ export class PSqlRuntimeStateRepository
                        descriptor ->> 'value' as store_value,
                        (descriptor ->> 'expireAtTimestamp')::timestamptz as expire_at_ts,
                        (descriptor ->> 'expectedRevision')::bigint as expected_revision
-                from jsonb_array_elements(${serializeRuntimeStateGuardedBatchSqlInput(batch.effects)}::jsonb) descriptor
+                from jsonb_array_elements(${batch.effects.map(toRuntimeStateGuardedBatchSqlInput)}::jsonb) descriptor
             ),
             guard_insert as (
                 insert into runtime_state_store (store_namespace,
@@ -841,16 +841,15 @@ function toRuntimeStateGuardedBatchResult(
     });
 }
 
-function serializeRuntimeStateGuardedBatchSqlInput(input: unknown): string {
-    const serialized = JSON.stringify(input, (key, value: unknown) =>
-        key === 'expireAtTimestamp' && typeof value === 'number'
-            ? new Date(value).toISOString()
-            : value
-    );
-    if (serialized === undefined) {
-        throw new Error('Guarded runtime state batch SQL input is not serializable.');
-    }
-    return serialized;
+function toRuntimeStateGuardedBatchSqlInput(
+    input: RuntimeStateGuardedBatch['guard'] | RuntimeStateGuardedBatchEffect,
+): Readonly<Record<string, unknown>> {
+    return 'expireAtTimestamp' in input
+        ? {
+            ...input,
+            expireAtTimestamp: new Date(input.expireAtTimestamp).toISOString(),
+        }
+        : { ...input };
 }
 
 type ParsedRuntimeStateGuardedBatchRow = Readonly<{

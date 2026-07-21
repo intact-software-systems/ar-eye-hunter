@@ -391,14 +391,11 @@ describe('runtime-state guarded batches', () => {
         ]) {
             expect(query.source).not.toContain(secret);
         }
-        const jsonValues = query.values.map((value) =>
-            JSON.parse(value as string) as unknown
-        );
-        expect(jsonValues).toContainEqual({
+        expect(query.values).toContainEqual({
             ...batch.guard,
             expireAtTimestamp: new Date(FUTURE_MS).toISOString(),
         });
-        expect(jsonValues).toContainEqual(batch.effects.map((effect) =>
+        expect(query.values).toContainEqual(batch.effects.map((effect) =>
             'expireAtTimestamp' in effect
                 ? {
                     ...effect,
