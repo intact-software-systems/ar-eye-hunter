@@ -129,6 +129,16 @@ metadata and roster guard the group; presence guards one session and does not
 contend on the group row. The materialized presence summary converges
 asynchronously and carries `GroupStateCausalRevision` with the group revision.
 
+`GroupStateService` aggregate-backed commands and
+`GroupTopologyManagementService` config/override commands use one scoped-key
+FIFO lane per service instance to suppress avoidable local CAS collisions.
+Presence-session commands do not enter the aggregate lane. The lane is not a
+correctness or authorization authority: separately constructed services and
+processes remain independent, and every effect retains its fresh-read,
+revalidation, and conditional database write. It is not a database-lock
+substitute or precedent, and it must never be used to justify removing the CAS
+guard or adding a row, table, or advisory lock.
+
 Authoritative shared fields are mandatory except documented input or migration
 exceptions. Sparse request/query/patch/build types do not weaken persisted,
 replicated, queued, event, snapshot, receipt, or response values.

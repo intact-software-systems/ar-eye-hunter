@@ -6,6 +6,7 @@ import type {
     GroupSnapshot,
     GroupStateCausalRevision,
 } from '@shared/api/group-types.ts';
+import { toScopedGroupKey } from '@shared/api/api-type-utils.ts';
 import type {
     AcceptGroupInviteRequest,
     AppointGroupDirectorRequest,
@@ -70,6 +71,9 @@ import {
     validateGroupMutation,
     validateGroupMutationCommand,
 } from './group-state-mutations.ts';
+import {
+    createInProcessMutationLane,
+} from './in-process-mutation-lane.ts';
 import {
     recordRallarTiming,
     type RallarTimingSink,
@@ -399,8 +403,9 @@ export function createGroupStateRuntime(
     ) => new GroupStateRepository(target, {
         events: dependencies.createGroupStateEventStore?.(target),
     });
+    const aggregateMutationLane = createInProcessMutationLane();
 
-    const executeReceipt = async (
+    const executeReceiptWithRetry = async (
         command: GroupMutationCommand,
         mutationAtEpochMs: number | undefined = undefined,
         internalAuthority: GroupMutationFacts['internalAuthority'] = 'none',
@@ -590,6 +595,33 @@ export function createGroupStateRuntime(
         }
         throw new RuntimeStateRetryExhaustedError(
             lastConflict ?? new RuntimeStateWriteConflictError(),
+        );
+    };
+
+    const executeReceipt = (
+        command: GroupMutationCommand,
+        mutationAtEpochMs: number | undefined = undefined,
+        internalAuthority: GroupMutationFacts['internalAuthority'] = 'none',
+        authenticatedAuthority: GroupMutationFacts['authenticatedAuthority'] = null,
+        reverifyAuthority?: () => Promise<void>,
+    ): Promise<GroupMutationExecution> => {
+        const execute = () => executeReceiptWithRetry(
+            command,
+            mutationAtEpochMs,
+            internalAuthority,
+            authenticatedAuthority,
+            reverifyAuthority,
+        );
+        if (
+            command.operation === 'connectPresence' ||
+            command.operation === 'heartbeatPresence' ||
+            command.operation === 'disconnectPresence'
+        ) {
+            return execute();
+        }
+        return aggregateMutationLane.run(
+            toScopedGroupKey(command.aggregateRef),
+            execute,
         );
     };
 

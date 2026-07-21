@@ -267,6 +267,81 @@ describe('GroupTopologyManagementService', () => {
         ]));
     });
 
+    it('serializes same-service config mutations while distinct groups progress', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        runtimeRepository.serializeTransactions = true;
+        const group = createGroupSnapshot(createGroupRef('same-service-lane'));
+        const distinctGroup = createGroupSnapshot(createGroupRef('distinct-service-lane'));
+        const configRepository = new GroupTopologyConfigRepository(runtimeRepository);
+        const timingEvents: RallarTimingEvent[] = [];
+        const service = createService({
+            runtimeRepository,
+            group,
+            additionalGroups: [distinctGroup],
+            configRepository,
+            now: () => 1_000,
+            timing: (event) => timingEvents.push(event),
+        });
+        await Promise.all([
+            service.readConfig(group.group),
+            service.readConfig(distinctGroup.group),
+        ]);
+        const heldReads = holdReadsFor(
+            runtimeRepository,
+            GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+            configRepository.configKey(group.group),
+        );
+
+        const first = service.putConfig({
+            groupRef: group.group,
+            config: { topologyKind: 'tree' },
+            updatedByPrincipalId: 'owner',
+            requestId: 'same-service-config',
+        });
+        await heldReads.firstArrival;
+        const second = service.putOverride({
+            groupRef: group.group,
+            config: { degreeLimit: 4 },
+            expiresAtEpochMs: 61_000,
+            updatedByPrincipalId: 'owner',
+            requestId: 'same-service-override',
+        });
+        const distinct = service.putConfig({
+            groupRef: distinctGroup.group,
+            config: { topologyKind: 'mesh' },
+            updatedByPrincipalId: 'owner',
+            requestId: 'distinct-service-config',
+        });
+
+        let heldReadArrivals = 0;
+        let configResult: Awaited<typeof first> | undefined;
+        let overrideResult: Awaited<typeof second> | undefined;
+        try {
+            await distinct;
+            await new Promise((resolve) => setTimeout(resolve, 0));
+            heldReadArrivals = heldReads.arrivalCount();
+        } finally {
+            heldReads.release();
+            [configResult, overrideResult] = await Promise.all([first, second]);
+        }
+
+        expect(heldReadArrivals).toBe(1);
+        expect(timingEvents.filter((event) => event.operation === 'mutation.conflict'))
+            .toEqual([]);
+        expect(configResult).toMatchObject({
+            config: { version: 1 },
+            receipt: { acceptedVersion: 1 },
+        });
+        expect(overrideResult).toMatchObject({
+            override: { version: 1 },
+            receipt: { acceptedVersion: 1 },
+        });
+        await expect(configRepository.findInvariantGenerationEntry(group.group))
+            .resolves.toMatchObject({ value: { version: 2 } });
+        await expect(configRepository.findConfig(distinctGroup.group))
+            .resolves.toMatchObject({ version: 1 });
+    });
+
     it('serializes cross-target writes before accepting a combined effective invariant', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         runtimeRepository.serializeTransactions = true;
@@ -2610,6 +2685,7 @@ describe('GroupTopologyManagementService', () => {
 function createService(options: {
     readonly runtimeRepository: FakeRuntimeStateRepository;
     readonly group: GroupSnapshot;
+    readonly additionalGroups?: readonly GroupSnapshot[];
     readonly readGroup?: () => GroupSnapshot;
     readonly authoritativeReadGroup?: () => GroupSnapshot;
     readonly configRepository?: GroupTopologyConfigRepository;
@@ -2624,14 +2700,20 @@ function createService(options: {
     readonly wakeStateMutationOutbox?: () => void;
     readonly adminPrincipalIds?: ReadonlySet<string>;
 }): GroupTopologyManagementService {
-    seedGroupAuthorityState(options.runtimeRepository, options.group);
+    const groups = [options.group, ...(options.additionalGroups ?? [])];
+    groups.forEach((group) => seedGroupAuthorityState(options.runtimeRepository, group));
     return new GroupTopologyManagementService({
-        findGroupSnapshotByRef: async (ref) =>
-            ref.applicationId === options.group.group.applicationId &&
-                ref.workspaceId === options.group.group.workspaceId &&
-                ref.groupId === options.group.group.groupId
+        findGroupSnapshotByRef: async (ref) => {
+            const group = groups.find((candidate) =>
+                ref.applicationId === candidate.group.applicationId &&
+                ref.workspaceId === candidate.group.workspaceId &&
+                ref.groupId === candidate.group.groupId
+            );
+            if (!group) return undefined;
+            return group === options.group
                 ? options.readGroup?.() ?? options.group
-                : undefined,
+                : group;
+        },
         groupStateRepository: new GroupStateRepository(options.runtimeRepository),
         configRepository: options.configRepository ??
             new GroupTopologyConfigRepository(options.runtimeRepository),
@@ -2793,6 +2875,44 @@ async function blockFirstReadsTogether(
             await barrier;
         }
         return entry;
+    };
+}
+
+function holdReadsFor(
+    runtime: FakeRuntimeStateRepository,
+    namespace: string,
+    key: string,
+): Readonly<{
+    firstArrival: Promise<void>;
+    arrivalCount(): number;
+    release(): void;
+}> {
+    const findEntry = runtime.findEntry.bind(runtime);
+    let arrivals = 0;
+    let resolveFirstArrival!: () => void;
+    let release!: () => void;
+    const firstArrival = new Promise<void>((resolve) => {
+        resolveFirstArrival = resolve;
+    });
+    const released = new Promise<void>((resolve) => {
+        release = resolve;
+    });
+    runtime.findEntry = async (candidateNamespace, candidateKey) => {
+        const entry = await findEntry(candidateNamespace, candidateKey);
+        if (candidateNamespace === namespace && candidateKey === key) {
+            arrivals += 1;
+            resolveFirstArrival();
+            await released;
+        }
+        return entry;
+    };
+    return {
+        firstArrival,
+        arrivalCount: () => arrivals,
+        release: () => {
+            runtime.findEntry = findEntry;
+            release();
+        },
     };
 }
 

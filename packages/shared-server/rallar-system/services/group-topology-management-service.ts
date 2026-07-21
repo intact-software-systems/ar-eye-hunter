@@ -1,5 +1,8 @@
 import { AppTopics, type RttMeasurementInfo } from '@shared/api/api-config.ts';
-import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
+import {
+    toScopedGroupKey,
+    toScopedOverlayId,
+} from '@shared/api/api-type-utils.ts';
 import type {
     EffectiveGroupTopologyConfig,
     GroupTopologyConfigPatch,
@@ -83,6 +86,7 @@ import {
     isRuntimeStateTransactionalRepositoryLike,
 } from '../../runtime-state/RuntimeStateRepository.ts';
 import { recordRallarTiming, type RallarTimingSink } from './timing.ts';
+import { createInProcessMutationLane } from './in-process-mutation-lane.ts';
 import {
     RallarRtcTopologyService,
     type RallarRtcTopologyUpdateResult,
@@ -217,11 +221,18 @@ export type ReconcileGroupTopologyResult = Readonly<{
     changed: boolean;
 }>;
 
+type GroupTopologyConfigMutationExecution = Readonly<{
+    receipt: GroupTopologyConfigMutationReceipt;
+    config?: StoredGroupTopologyConfig;
+    override?: StoredGroupTopologyOverride;
+}>;
+
 export class GroupTopologyManagementService {
     private readonly topologyConfigGenerationReadiness = new Map<
         string,
         Promise<void>
     >();
+    private readonly configMutationLane = createInProcessMutationLane();
 
     constructor(private readonly options: GroupTopologyManagementServiceOptions) {}
 
@@ -345,13 +356,18 @@ export class GroupTopologyManagementService {
         };
     }
 
-    private async executeTopologyConfigMutation(
+    private executeTopologyConfigMutation(
         command: GroupTopologyConfigMutationCommand,
-    ): Promise<Readonly<{
-        receipt: GroupTopologyConfigMutationReceipt;
-        config?: StoredGroupTopologyConfig;
-        override?: StoredGroupTopologyOverride;
-    }>> {
+    ): Promise<GroupTopologyConfigMutationExecution> {
+        return this.configMutationLane.run(
+            toScopedGroupKey(command.aggregateRef),
+            () => this.executeTopologyConfigMutationWithRetry(command),
+        );
+    }
+
+    private async executeTopologyConfigMutationWithRetry(
+        command: GroupTopologyConfigMutationCommand,
+    ): Promise<GroupTopologyConfigMutationExecution> {
         const repository = this.requireConfigRepository();
         await this.ensureTopologyConfigGenerationReady(command.aggregateRef);
         const commandHash = await hashStateMutationCommand(command);

@@ -2587,6 +2587,159 @@ describe('convergent group and presence state', () => {
         ]));
     });
 
+    it('serializes same-service aggregate mutations while distinct groups progress', async () => {
+        const runtime = new GroupBarrierRepository();
+        await seedOpenGroup(runtime, 'same-service-lane-room');
+        await seedOpenGroup(runtime, 'distinct-service-lane-room');
+        const timing: RallarTimingEvent[] = [];
+        const service = createService(
+            runtime,
+            2_000,
+            undefined,
+            undefined,
+            undefined,
+            (event) => timing.push(event),
+        );
+        const heldReads = runtime.holdGroupReadsFor(
+            groupStateGroupStorageKey(groupRef('same-service-lane-room')),
+        );
+
+        const first = service.updateGroup(SCOPE, 'same-service-lane-room', {
+            displayName: 'First same-service update',
+            actorPrincipalId: 'alice',
+            requestId: 'same-service-lane-first',
+        });
+        await heldReads.firstArrival;
+        const second = service.updateGroup(SCOPE, 'same-service-lane-room', {
+            displayName: 'Second same-service update',
+            actorPrincipalId: 'alice',
+            requestId: 'same-service-lane-second',
+        });
+        const distinct = service.updateGroup(SCOPE, 'distinct-service-lane-room', {
+            displayName: 'Distinct group update',
+            actorPrincipalId: 'alice',
+            requestId: 'distinct-service-lane-update',
+        });
+
+        let heldReadArrivals = 0;
+        let sameGroupResults: readonly PromiseSettledResult<unknown>[] = [];
+        try {
+            await distinct;
+            await new Promise((resolve) => setTimeout(resolve, 0));
+            heldReadArrivals = heldReads.arrivalCount();
+        } finally {
+            heldReads.release();
+            sameGroupResults = await Promise.allSettled([first, second]);
+        }
+
+        expect(heldReadArrivals).toBe(1);
+        expect(sameGroupResults.every(({ status }) => status === 'fulfilled')).toBe(true);
+        expect(timing.filter((event) => event.operation === 'mutation.conflict'))
+            .toEqual([]);
+        expect((await requireSnapshot(runtime, 'same-service-lane-room')).group.displayName)
+            .toBe('Second same-service update');
+        expect((await requireSnapshot(runtime, 'distinct-service-lane-room')).group.displayName)
+            .toBe('Distinct group update');
+    });
+
+    it('keeps independent service instances subject to CAS conflict and retry', async () => {
+        const runtime = new GroupBarrierRepository();
+        await seedOpenGroup(runtime, 'cross-service-lane-room');
+        const timing: RallarTimingEvent[] = [];
+        const sleep = vi.fn((_delayMs: number) => Promise.resolve());
+        const first = createService(
+            runtime,
+            2_000,
+            undefined,
+            sleep,
+            undefined,
+            (event) => timing.push(event),
+        );
+        const second = createService(
+            runtime,
+            2_001,
+            undefined,
+            sleep,
+            undefined,
+            (event) => timing.push(event),
+        );
+        runtime.armGroupReadBarrier(2);
+
+        await Promise.all([
+            first.updateGroup(SCOPE, 'cross-service-lane-room', {
+                displayName: 'Cross-service first',
+                actorPrincipalId: 'alice',
+                requestId: 'cross-service-lane-first',
+            }),
+            second.updateGroup(SCOPE, 'cross-service-lane-room', {
+                displayName: 'Cross-service second',
+                actorPrincipalId: 'alice',
+                requestId: 'cross-service-lane-second',
+            }),
+        ]);
+
+        const conflicts = timing.filter((event) => event.operation === 'mutation.conflict');
+        const retryWrites = timing.filter((event) =>
+            event.operation === 'mutation.write' && event.details?.attempt === 1
+        );
+        expect(conflicts).toEqual([
+            expect.objectContaining({
+                operation: 'mutation.conflict',
+                details: expect.objectContaining({ attempt: 0, backoffMs: 0 }),
+            }),
+        ]);
+        expect(retryWrites).toEqual([
+            expect.objectContaining({
+                operation: 'mutation.write',
+                details: expect.objectContaining({ attempt: 1, backoffMs: 2 }),
+            }),
+        ]);
+        expect(sleep.mock.calls.map(([delayMs]) => delayMs)).toEqual([2]);
+        expect((await requireSnapshot(runtime, 'cross-service-lane-room')).group.snapshotVersion)
+            .toBe(3);
+    });
+
+    it('does not block per-session presence behind an aggregate lane', async () => {
+        const runtime = new GroupBarrierRepository();
+        runtime.serializeGroupTestTransactions = false;
+        await seedOpenGroup(runtime, 'presence-lane-bypass-room');
+        runtime.resetGuards();
+        const service = createService(runtime, 2_000);
+        const heldGuard = runtime.holdGroupGuardFor(
+            groupStateGroupStorageKey(groupRef('presence-lane-bypass-room')),
+        );
+        let aggregateSettled = false;
+
+        const aggregate = service.updateGroup(SCOPE, 'presence-lane-bypass-room', {
+            displayName: 'Held aggregate update',
+            actorPrincipalId: 'alice',
+            requestId: 'held-aggregate-update',
+        });
+        void aggregate.finally(() => {
+            aggregateSettled = true;
+        }).catch(() => undefined);
+        await heldGuard.firstArrival;
+
+        const presence = await service.connectPresenceSessionReceipt(
+            SCOPE,
+            'presence-lane-bypass-room',
+            'presence-lane-session',
+            {
+                principalId: 'alice',
+                generationId: 'presence-lane-generation',
+                expiresAtEpochMs: BASE_EPOCH_MS + 60_000,
+                requestId: 'presence-lane-connect',
+            },
+        );
+
+        expect(aggregateSettled).toBe(false);
+        expect(presence.outcome).toBe('applied');
+        expect(runtime.groupGuards).toBe(1);
+        expect(runtime.presenceGuards).toBe(1);
+        heldGuard.release();
+        await aggregate;
+    });
+
     it('rebases metadata and join-code rotation without losing either update', async () => {
         const runtime = new GroupBarrierRepository();
         await createService(runtime, 1_000).createGroup(SCOPE, {
@@ -4254,6 +4407,7 @@ class GroupBarrierRepository extends FakeRuntimeStateRepository {
     conditionalOperations: string[] = [];
     hotPathListReads = 0;
     compatibilitySnapshotListReads = 0;
+    serializeGroupTestTransactions = true;
     private groupReadsRemaining = 0;
     private groupReadsArrived = 0;
     private releaseGroupReads: (() => void) | undefined;
@@ -4269,6 +4423,8 @@ class GroupBarrierRepository extends FakeRuntimeStateRepository {
     private groupConflictsRemaining = 0;
     private presenceDeleteConflictsRemaining = 0;
     private conflictingGroupDisplayName: string | undefined;
+    private heldGroupRead: ManualRepositoryGate | undefined;
+    private heldGroupGuard: ManualRepositoryGate | undefined;
 
     failNextPresenceSummaryCas(): void {
         this.presenceSummaryConflictsRemaining = 1;
@@ -4305,6 +4461,22 @@ class GroupBarrierRepository extends FakeRuntimeStateRepository {
         this.admissionReadsArrived = 0;
     }
 
+    holdGroupReadsFor(key: string): ManualRepositoryGateControl {
+        const gate = createManualRepositoryGate(key);
+        this.heldGroupRead = gate;
+        return gate.control(() => {
+            if (this.heldGroupRead === gate) this.heldGroupRead = undefined;
+        });
+    }
+
+    holdGroupGuardFor(key: string): ManualRepositoryGateControl {
+        const gate = createManualRepositoryGate(key);
+        this.heldGroupGuard = gate;
+        return gate.control(() => {
+            if (this.heldGroupGuard === gate) this.heldGroupGuard = undefined;
+        });
+    }
+
     resetGuards(): void {
         this.groupGuards = 0;
         this.presenceGuards = 0;
@@ -4339,6 +4511,12 @@ class GroupBarrierRepository extends FakeRuntimeStateRepository {
     ): Promise<RuntimeStateEntry | undefined> {
         this.entryReadKeys.push(key);
         const value = await super.findEntry(namespace, key);
+        if (
+            namespace === 'group-state:groups' &&
+            this.heldGroupRead?.key === key
+        ) {
+            await this.heldGroupRead.arrive();
+        }
         if (namespace === 'group-state:groups' && this.groupReadsRemaining > 0) {
             await this.waitAtBarrier('group');
         }
@@ -4357,6 +4535,9 @@ class GroupBarrierRepository extends FakeRuntimeStateRepository {
     override async begin<T>(
         fn: (repository: RuntimeStateOptimisticTransactionalRepositoryLike) => Promise<T>,
     ): Promise<T> {
+        if (!this.serializeGroupTestTransactions) {
+            return await super.begin(fn);
+        }
         let release!: () => void;
         const previous = this.barrierTransactionTail;
         this.barrierTransactionTail = new Promise<void>((resolve) => {
@@ -4388,7 +4569,7 @@ class GroupBarrierRepository extends FakeRuntimeStateRepository {
         return super.insertIfAbsent(namespace, key, value, expireAtTimestamp);
     }
 
-    override upsertIfRevision(
+    override async upsertIfRevision(
         namespace: string,
         key: string,
         value: string,
@@ -4399,27 +4580,33 @@ class GroupBarrierRepository extends FakeRuntimeStateRepository {
         this.recordGuard(namespace);
         if (
             namespace === 'group-state:groups' &&
+            this.heldGroupGuard?.key === key
+        ) {
+            await this.heldGroupGuard.arrive();
+        }
+        if (
+            namespace === 'group-state:groups' &&
             this.conflictingGroupDisplayName !== undefined &&
             JSON.parse(value).displayName === this.conflictingGroupDisplayName
         ) {
             this.conflictingGroupDisplayName = undefined;
-            return Promise.resolve({ status: 'conflict' });
+            return { status: 'conflict' };
         }
         if (
             namespace === 'group-state:groups' &&
             this.groupConflictsRemaining > 0
         ) {
             this.groupConflictsRemaining -= 1;
-            return Promise.resolve({ status: 'conflict' });
+            return { status: 'conflict' };
         }
         if (
             namespace === 'group-state:presence-summaries' &&
             this.presenceSummaryConflictsRemaining > 0
         ) {
             this.presenceSummaryConflictsRemaining -= 1;
-            return Promise.resolve({ status: 'conflict' });
+            return { status: 'conflict' };
         }
-        return super.upsertIfRevision(
+        return await super.upsertIfRevision(
             namespace,
             key,
             value,
@@ -4488,6 +4675,46 @@ class GroupBarrierRepository extends FakeRuntimeStateRepository {
             this.releasePresenceReads = resolve;
         });
     }
+}
+
+type ManualRepositoryGateControl = Readonly<{
+    firstArrival: Promise<void>;
+    arrivalCount(): number;
+    release(): void;
+}>;
+
+type ManualRepositoryGate = Readonly<{
+    key: string;
+    arrive(): Promise<void>;
+    control(onRelease: () => void): ManualRepositoryGateControl;
+}>;
+
+function createManualRepositoryGate(key: string): ManualRepositoryGate {
+    let arrivals = 0;
+    let resolveFirstArrival!: () => void;
+    let release!: () => void;
+    const firstArrival = new Promise<void>((resolve) => {
+        resolveFirstArrival = resolve;
+    });
+    const released = new Promise<void>((resolve) => {
+        release = resolve;
+    });
+    return {
+        key,
+        arrive: async () => {
+            arrivals += 1;
+            resolveFirstArrival();
+            await released;
+        },
+        control: (onRelease) => ({
+            firstArrival,
+            arrivalCount: () => arrivals,
+            release: () => {
+                onRelease();
+                release();
+            },
+        }),
+    };
 }
 
 async function corruptFirstEntry(

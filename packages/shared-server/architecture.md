@@ -94,6 +94,15 @@ process restart.
 - RTC topology guards the snapshot; RTT guards the lexically ordered endpoint
   admission rows.
 
+Aggregate-backed group mutations and topology config/override mutations also
+use a per-service in-process FIFO lane keyed by the scoped group. The lane only
+suppresses avoidable collisions among calls already handled by one service
+instance. Presence-session mutations bypass the aggregate lane, and separate
+service instances or processes retain independent lanes. Every queued effect
+still runs the complete bounded retry from a fresh read; the lane does not
+replace database CAS and is not authorization, persistence, or correctness
+authority.
+
 Snapshot assembly treats presence summaries as optimistic hints. At one
 observation time it intersects the summary with the latest active/unexpired
 group, active members, and connected/unexpired sessions. The causal tuple is

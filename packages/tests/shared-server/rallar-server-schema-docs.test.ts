@@ -136,6 +136,19 @@ describe('Rallar server storage schema docs', () => {
         expect(docs).toContain('state-event logs in `client_state_events` and `group_state_events`');
     });
 
+    it('documents in-process mutation lanes as conflict suppression rather than authority', () => {
+        const architecture = readWorkspaceFile('packages/shared-server/architecture.md')
+            .replace(/\s+/g, ' ');
+        const repositories = readWorkspaceFile(
+            'packages/shared-server/rallar-server-repositories.md',
+        ).replace(/\s+/g, ' ');
+
+        expect(architecture).toContain('per-service in-process FIFO lane');
+        expect(architecture).toContain('does not replace database CAS');
+        expect(repositories).toContain('not a correctness or authorization authority');
+        expect(repositories).toContain('not a database-lock substitute or precedent');
+    });
+
     it('inventories every intentional residual database lock with explicit governance', () => {
         const docs = readWorkspaceFile(
             'packages/shared-server/rallar-server-repositories.md',
