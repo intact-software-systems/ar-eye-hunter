@@ -145,3 +145,9 @@ reread, reauthorization, revalidation, and CAS commit. Both the every-write
 and quota variants are therefore rejected and are not shipping behavior. The
 original per-service FIFO lane remains because it suppresses only avoidable
 same-instance overlap and adds no timing policy.
+
+The next approved experiment shortens guard-held database work rather than
+coordinating schedulers. Its provider-neutral capability, PostgreSQL statement
+shape, group/topology effect sets, rollback rules, and performance stop
+conditions are specified in
+`2026-07-21-guarded-runtime-state-batch-design.md`.
