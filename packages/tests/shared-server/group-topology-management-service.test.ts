@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { AppTopics } from '@shared/api/api-config.ts';
+import { toScopedGroupKey } from '@shared/api/api-type-utils.ts';
 import type { AuditStamp, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { EffectiveGroupTopologyConfig } from '@shared/api/graph-topology-management-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
@@ -39,6 +40,41 @@ import {
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import type { RuntimeStateEntry } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+
+const mutationLaneProbe = vi.hoisted(() => ({
+    observer: undefined as MutationLaneProbeObserver | undefined,
+}));
+
+vi.mock(
+    '@shared-server/rallar-system/services/in-process-mutation-lane.ts',
+    async (importOriginal) => {
+        const original = await importOriginal<
+            typeof import(
+                '@shared-server/rallar-system/services/in-process-mutation-lane.ts'
+            )
+        >();
+        return {
+            ...original,
+            createInProcessMutationLane: () => {
+                const lane = original.createInProcessMutationLane();
+                return {
+                    ...lane,
+                    run: <TResult>(
+                        key: string,
+                        effect: () => TResult | PromiseLike<TResult>,
+                        options?: Parameters<typeof lane.run>[2],
+                    ) => {
+                        mutationLaneProbe.observer?.({ key, phase: 'entered' });
+                        return lane.run(key, () => {
+                            mutationLaneProbe.observer?.({ key, phase: 'started' });
+                            return effect();
+                        }, options);
+                    },
+                };
+            },
+        };
+    },
+);
 
 describe('GroupTopologyManagementService', () => {
     it.each([
@@ -291,41 +327,50 @@ describe('GroupTopologyManagementService', () => {
             GROUP_TOPOLOGY_CONFIG_NAMESPACE,
             configRepository.configKey(group.group),
         );
-
-        const first = service.putConfig({
-            groupRef: group.group,
-            config: { topologyKind: 'tree' },
-            updatedByPrincipalId: 'owner',
-            requestId: 'same-service-config',
-        });
-        await heldReads.firstArrival;
-        const second = service.putOverride({
-            groupRef: group.group,
-            config: { degreeLimit: 4 },
-            expiresAtEpochMs: 61_000,
-            updatedByPrincipalId: 'owner',
-            requestId: 'same-service-override',
-        });
-        const distinct = service.putConfig({
-            groupRef: distinctGroup.group,
-            config: { topologyKind: 'mesh' },
-            updatedByPrincipalId: 'owner',
-            requestId: 'distinct-service-config',
-        });
+        const lane = observeMutationLane(toScopedGroupKey(group.group));
 
         let heldReadArrivals = 0;
-        let configResult: Awaited<typeof first> | undefined;
-        let overrideResult: Awaited<typeof second> | undefined;
+        let sameKeyEffectStarts = 0;
+        let first: ReturnType<typeof service.putConfig> | undefined;
+        let second: ReturnType<typeof service.putOverride> | undefined;
+        let configResult: Awaited<ReturnType<typeof service.putConfig>> | undefined;
+        let overrideResult: Awaited<ReturnType<typeof service.putOverride>> | undefined;
         try {
+            first = service.putConfig({
+                groupRef: group.group,
+                config: { topologyKind: 'tree' },
+                updatedByPrincipalId: 'owner',
+                requestId: 'same-service-config',
+            });
+            await heldReads.firstArrival;
+            second = service.putOverride({
+                groupRef: group.group,
+                config: { degreeLimit: 4 },
+                expiresAtEpochMs: 61_000,
+                updatedByPrincipalId: 'owner',
+                requestId: 'same-service-override',
+            });
+            const distinct = service.putConfig({
+                groupRef: distinctGroup.group,
+                config: { topologyKind: 'mesh' },
+                updatedByPrincipalId: 'owner',
+                requestId: 'distinct-service-config',
+            });
+
+            await lane.secondEntry;
             await distinct;
-            await new Promise((resolve) => setTimeout(resolve, 0));
             heldReadArrivals = heldReads.arrivalCount();
+            sameKeyEffectStarts = lane.effectStartCount();
         } finally {
+            lane.stop();
             heldReads.release();
-            [configResult, overrideResult] = await Promise.all([first, second]);
+            if (first && second) {
+                [configResult, overrideResult] = await Promise.all([first, second]);
+            }
         }
 
         expect(heldReadArrivals).toBe(1);
+        expect(sameKeyEffectStarts).toBe(1);
         expect(timingEvents.filter((event) => event.operation === 'mutation.conflict'))
             .toEqual([]);
         expect(configResult).toMatchObject({
@@ -2875,6 +2920,47 @@ async function blockFirstReadsTogether(
             await barrier;
         }
         return entry;
+    };
+}
+
+type MutationLaneProbeEvent = Readonly<{
+    key: string;
+    phase: 'entered' | 'started';
+}>;
+
+type MutationLaneProbeObserver = (event: MutationLaneProbeEvent) => void;
+
+function observeMutationLane(key: string): Readonly<{
+    secondEntry: Promise<void>;
+    effectStartCount(): number;
+    stop(): void;
+}> {
+    const previous = mutationLaneProbe.observer;
+    let entryCount = 0;
+    let effectStartCount = 0;
+    let resolveSecondEntry!: () => void;
+    const secondEntry = new Promise<void>((resolve) => {
+        resolveSecondEntry = resolve;
+    });
+    const observer: MutationLaneProbeObserver = (event) => {
+        previous?.(event);
+        if (event.key !== key) return;
+        if (event.phase === 'entered') {
+            entryCount += 1;
+            if (entryCount === 2) resolveSecondEntry();
+            return;
+        }
+        effectStartCount += 1;
+    };
+    mutationLaneProbe.observer = observer;
+    return {
+        secondEntry,
+        effectStartCount: () => effectStartCount,
+        stop: () => {
+            if (mutationLaneProbe.observer === observer) {
+                mutationLaneProbe.observer = previous;
+            }
+        },
     };
 }
 

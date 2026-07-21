@@ -1,4 +1,5 @@
 import { describe, expect, expectTypeOf, it, vi } from 'vitest';
+import { toScopedGroupKey } from '@shared/api/api-type-utils.ts';
 import type {
     AuditStamp,
     Group,
@@ -58,6 +59,41 @@ import type {
 import { RuntimeStateRetryExhaustedError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
+
+const mutationLaneProbe = vi.hoisted(() => ({
+    observer: undefined as MutationLaneProbeObserver | undefined,
+}));
+
+vi.mock(
+    '@shared-server/rallar-system/services/in-process-mutation-lane.ts',
+    async (importOriginal) => {
+        const original = await importOriginal<
+            typeof import(
+                '@shared-server/rallar-system/services/in-process-mutation-lane.ts'
+            )
+        >();
+        return {
+            ...original,
+            createInProcessMutationLane: () => {
+                const lane = original.createInProcessMutationLane();
+                return {
+                    ...lane,
+                    run: <TResult>(
+                        key: string,
+                        effect: () => TResult | PromiseLike<TResult>,
+                        options?: Parameters<typeof lane.run>[2],
+                    ) => {
+                        mutationLaneProbe.observer?.({ key, phase: 'entered' });
+                        return lane.run(key, () => {
+                            mutationLaneProbe.observer?.({ key, phase: 'started' });
+                            return effect();
+                        }, options);
+                    },
+                };
+            },
+        };
+    },
+);
 
 const SCOPE: StateScope = {
     applicationId: 'app-1',
@@ -2603,36 +2639,47 @@ describe('convergent group and presence state', () => {
         const heldReads = runtime.holdGroupReadsFor(
             groupStateGroupStorageKey(groupRef('same-service-lane-room')),
         );
-
-        const first = service.updateGroup(SCOPE, 'same-service-lane-room', {
-            displayName: 'First same-service update',
-            actorPrincipalId: 'alice',
-            requestId: 'same-service-lane-first',
-        });
-        await heldReads.firstArrival;
-        const second = service.updateGroup(SCOPE, 'same-service-lane-room', {
-            displayName: 'Second same-service update',
-            actorPrincipalId: 'alice',
-            requestId: 'same-service-lane-second',
-        });
-        const distinct = service.updateGroup(SCOPE, 'distinct-service-lane-room', {
-            displayName: 'Distinct group update',
-            actorPrincipalId: 'alice',
-            requestId: 'distinct-service-lane-update',
-        });
+        const lane = observeMutationLane(
+            toScopedGroupKey(groupRef('same-service-lane-room')),
+        );
 
         let heldReadArrivals = 0;
+        let sameKeyEffectStarts = 0;
         let sameGroupResults: readonly PromiseSettledResult<unknown>[] = [];
+        let first: ReturnType<typeof service.updateGroup> | undefined;
+        let second: ReturnType<typeof service.updateGroup> | undefined;
         try {
+            first = service.updateGroup(SCOPE, 'same-service-lane-room', {
+                displayName: 'First same-service update',
+                actorPrincipalId: 'alice',
+                requestId: 'same-service-lane-first',
+            });
+            await heldReads.firstArrival;
+            second = service.updateGroup(SCOPE, 'same-service-lane-room', {
+                displayName: 'Second same-service update',
+                actorPrincipalId: 'alice',
+                requestId: 'same-service-lane-second',
+            });
+            const distinct = service.updateGroup(SCOPE, 'distinct-service-lane-room', {
+                displayName: 'Distinct group update',
+                actorPrincipalId: 'alice',
+                requestId: 'distinct-service-lane-update',
+            });
+
+            await lane.secondEntry;
             await distinct;
-            await new Promise((resolve) => setTimeout(resolve, 0));
             heldReadArrivals = heldReads.arrivalCount();
+            sameKeyEffectStarts = lane.effectStartCount();
         } finally {
+            lane.stop();
             heldReads.release();
-            sameGroupResults = await Promise.allSettled([first, second]);
+            sameGroupResults = await Promise.allSettled(
+                [first, second].filter((operation) => operation !== undefined),
+            );
         }
 
         expect(heldReadArrivals).toBe(1);
+        expect(sameKeyEffectStarts).toBe(1);
         expect(sameGroupResults.every(({ status }) => status === 'fulfilled')).toBe(true);
         expect(timing.filter((event) => event.operation === 'mutation.conflict'))
             .toEqual([]);
@@ -2699,14 +2746,18 @@ describe('convergent group and presence state', () => {
             .toBe(3);
     });
 
-    it('does not block per-session presence behind an aggregate lane', async () => {
+    it('keeps connect, heartbeat, and disconnect outside an aggregate lane', async () => {
         const runtime = new GroupBarrierRepository();
         runtime.serializeGroupTestTransactions = false;
         await seedOpenGroup(runtime, 'presence-lane-bypass-room');
         runtime.resetGuards();
-        const service = createService(runtime, 2_000);
+        let nowEpochMs = BASE_EPOCH_MS + 2_000;
+        const service = createService(runtime, () => nowEpochMs);
         const heldGuard = runtime.holdGroupGuardFor(
             groupStateGroupStorageKey(groupRef('presence-lane-bypass-room')),
+        );
+        const lane = observeMutationLane(
+            toScopedGroupKey(groupRef('presence-lane-bypass-room')),
         );
         let aggregateSettled = false;
 
@@ -2720,7 +2771,7 @@ describe('convergent group and presence state', () => {
         }).catch(() => undefined);
         await heldGuard.firstArrival;
 
-        const presence = await service.connectPresenceSessionReceipt(
+        const connected = await service.connectPresenceSessionReceipt(
             SCOPE,
             'presence-lane-bypass-room',
             'presence-lane-session',
@@ -2731,11 +2782,37 @@ describe('convergent group and presence state', () => {
                 requestId: 'presence-lane-connect',
             },
         );
+        nowEpochMs = BASE_EPOCH_MS + 3_000;
+        const heartbeat = await service.heartbeatPresenceSessionReceipt(
+            SCOPE,
+            'presence-lane-bypass-room',
+            'presence-lane-session',
+            {
+                generationId: 'presence-lane-generation',
+                lastHeartbeatAtEpochMs: nowEpochMs,
+                expiresAtEpochMs: BASE_EPOCH_MS + 70_000,
+                requestId: 'presence-lane-heartbeat',
+            },
+        );
+        nowEpochMs = BASE_EPOCH_MS + 4_000;
+        const disconnected = await service.disconnectPresenceSessionReceipt(
+            SCOPE,
+            'presence-lane-bypass-room',
+            'presence-lane-session',
+            {
+                generationId: 'presence-lane-generation',
+                disconnectedAtEpochMs: nowEpochMs,
+                requestId: 'presence-lane-disconnect',
+            },
+        );
 
         expect(aggregateSettled).toBe(false);
-        expect(presence.outcome).toBe('applied');
+        expect([connected.outcome, heartbeat.outcome, disconnected.outcome])
+            .toEqual(['applied', 'applied', 'applied']);
+        expect(lane.entryCount()).toBe(1);
         expect(runtime.groupGuards).toBe(1);
-        expect(runtime.presenceGuards).toBe(1);
+        expect(runtime.presenceGuards).toBe(3);
+        lane.stop();
         heldGuard.release();
         await aggregate;
     });
@@ -4682,6 +4759,49 @@ type ManualRepositoryGateControl = Readonly<{
     arrivalCount(): number;
     release(): void;
 }>;
+
+type MutationLaneProbeEvent = Readonly<{
+    key: string;
+    phase: 'entered' | 'started';
+}>;
+
+type MutationLaneProbeObserver = (event: MutationLaneProbeEvent) => void;
+
+function observeMutationLane(key: string): Readonly<{
+    secondEntry: Promise<void>;
+    entryCount(): number;
+    effectStartCount(): number;
+    stop(): void;
+}> {
+    const previous = mutationLaneProbe.observer;
+    let entryCount = 0;
+    let effectStartCount = 0;
+    let resolveSecondEntry!: () => void;
+    const secondEntry = new Promise<void>((resolve) => {
+        resolveSecondEntry = resolve;
+    });
+    const observer: MutationLaneProbeObserver = (event) => {
+        previous?.(event);
+        if (event.key !== key) return;
+        if (event.phase === 'entered') {
+            entryCount += 1;
+            if (entryCount === 2) resolveSecondEntry();
+            return;
+        }
+        effectStartCount += 1;
+    };
+    mutationLaneProbe.observer = observer;
+    return {
+        secondEntry,
+        entryCount: () => entryCount,
+        effectStartCount: () => effectStartCount,
+        stop: () => {
+            if (mutationLaneProbe.observer === observer) {
+                mutationLaneProbe.observer = previous;
+            }
+        },
+    };
+}
 
 type ManualRepositoryGate = Readonly<{
     key: string;
