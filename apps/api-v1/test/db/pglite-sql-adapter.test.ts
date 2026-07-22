@@ -1701,6 +1701,95 @@ Deno.test('ResourceInboxRepository rejects a persisted null attempt count', asyn
   });
 });
 
+Deno.test('ResourceInboxRepository replay is independent of PostgreSQL DateStyle', async () => {
+  await withPGliteSql(async (sql) => {
+    await sql`set datestyle to 'SQL, DMY'`;
+
+    const inbox = new ResourceInboxRepository(sql);
+    const base = createResourceEntry('datestyle-replay', {
+      payload: { text: 'datestyle independent' },
+      typeId: 'APP_OUTBOX',
+      expiryTs: Temporal.Instant.from('9999-12-31T23:59:59.000001Z'),
+    });
+    const entry = {
+      ...base,
+      audit: {
+        ...base.audit,
+        createdTs: Temporal.PlainDateTime.from('2026-06-01T12:00:00.000001'),
+      },
+    };
+
+    assert.equal(await inbox.writeIfAbsentOrMatch(entry), 'inserted');
+    assert.equal(await inbox.writeIfAbsentOrMatch(entry), 'matched');
+    await assert.rejects(
+      () => inbox.writeIfAbsentOrMatch({
+        ...entry,
+        audit: {
+          ...entry.audit,
+          createdTs: Temporal.PlainDateTime.from('2026-06-01T12:00:00.000002'),
+        },
+      }),
+      ResourceInboxInvariantCorruptionError,
+    );
+    await assert.rejects(
+      () => inbox.writeIfAbsentOrMatch({
+        ...entry,
+        audit: {
+          ...entry.audit,
+          expiryTs: Temporal.Instant.from('9999-12-31T23:59:59.000002Z'),
+        },
+      }),
+      ResourceInboxInvariantCorruptionError,
+    );
+
+    await sql`
+      update resource_inbox
+      set ri_status = ${EntityStatus.RETRY},
+          ri_attempts = 1,
+          start_ts = timestamp '2026-06-01 12:01:00.000001',
+          end_ts = timestamp '2026-06-01 12:01:01.000001',
+          next_ts = timestamp '2026-06-01 12:01:02.000001'
+      where ri_topic_id = ${entry.key.topicId}
+        and ri_resource_id = ${entry.key.resourceId}
+        and fk_ext_bank_id = ${entry.key.contextId}
+    `;
+    assert.equal(await inbox.writeIfAbsentOrMatch(entry), 'matched');
+  });
+});
+
+Deno.test('ResourceInboxRepository preserves supported expanded-year rollover', async () => {
+  await withPGliteSql(async (sql) => {
+    await sql`set datestyle to 'SQL, DMY'`;
+
+    const inbox = new ResourceInboxRepository(sql);
+    const base = createResourceEntry('expanded-year-replay', {
+      payload: { text: 'expanded year' },
+      typeId: 'APP_OUTBOX',
+      expiryTs: Temporal.Instant.from('9999-12-31T23:59:59.9999995Z'),
+    });
+    const entry = {
+      ...base,
+      audit: {
+        ...base.audit,
+        createdTs: Temporal.PlainDateTime.from('9999-01-01T00:00:00'),
+      },
+    };
+
+    assert.equal(await inbox.writeIfAbsentOrMatch(entry), 'inserted');
+    assert.equal(await inbox.writeIfAbsentOrMatch(entry), 'matched');
+    await assert.rejects(
+      () => inbox.writeIfAbsentOrMatch({
+        ...entry,
+        audit: {
+          ...entry.audit,
+          expiryTs: Temporal.Instant.from('9999-12-31T23:59:59.9999994Z'),
+        },
+      }),
+      ResourceInboxInvariantCorruptionError,
+    );
+  });
+});
+
 Deno.test('ResourceInboxRepository and ResourceInboxResultsRepository run against PGlite SQL adapter', async () => {
   await withPGliteSql(async (sql) => {
     const inbox = new ResourceInboxRepository(sql);

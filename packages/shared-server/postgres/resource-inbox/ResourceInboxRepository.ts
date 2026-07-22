@@ -148,13 +148,43 @@ export class ResourceInboxRepository {
                    ri_type_id,
                    ri_status,
                    fk_ext_bank_id,
-                   system_date::text as system_date,
+                   case
+                       when extract(year from system_date) > 9999
+                           then '+' || lpad(extract(year from system_date)::text, 6, '0') ||
+                                to_char(system_date, '-MM-DD')
+                       else to_char(system_date, 'YYYY-MM-DD')
+                       end as system_date,
                    created_by,
-                   created_ts::text as created_ts,
-                   expire_ts::text as expire_ts,
-                   start_ts::text as start_ts,
-                   end_ts::text as end_ts,
-                   next_ts::text as next_ts,
+                   case
+                       when extract(year from created_ts) > 9999
+                           then '+' || lpad(extract(year from created_ts)::text, 6, '0') ||
+                                to_char(created_ts, '-MM-DD"T"HH24:MI:SS.US')
+                       else to_char(created_ts, 'YYYY-MM-DD"T"HH24:MI:SS.US')
+                       end as created_ts,
+                   case
+                       when extract(year from expire_ts) > 9999
+                           then '+' || lpad(extract(year from expire_ts)::text, 6, '0') ||
+                                to_char(expire_ts, '-MM-DD"T"HH24:MI:SS.US')
+                       else to_char(expire_ts, 'YYYY-MM-DD"T"HH24:MI:SS.US')
+                       end as expire_ts,
+                   case
+                       when extract(year from start_ts) > 9999
+                           then '+' || lpad(extract(year from start_ts)::text, 6, '0') ||
+                                to_char(start_ts, '-MM-DD"T"HH24:MI:SS.US')
+                       else to_char(start_ts, 'YYYY-MM-DD"T"HH24:MI:SS.US')
+                       end as start_ts,
+                   case
+                       when extract(year from end_ts) > 9999
+                           then '+' || lpad(extract(year from end_ts)::text, 6, '0') ||
+                                to_char(end_ts, '-MM-DD"T"HH24:MI:SS.US')
+                       else to_char(end_ts, 'YYYY-MM-DD"T"HH24:MI:SS.US')
+                       end as end_ts,
+                   case
+                       when extract(year from next_ts) > 9999
+                           then '+' || lpad(extract(year from next_ts)::text, 6, '0') ||
+                                to_char(next_ts, '-MM-DD"T"HH24:MI:SS.US')
+                       else to_char(next_ts, 'YYYY-MM-DD"T"HH24:MI:SS.US')
+                       end as next_ts,
                    ri_attempts
             from resource_inbox
             where ri_topic_id = ${entry.key.topicId}
