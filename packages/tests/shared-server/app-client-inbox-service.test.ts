@@ -654,7 +654,7 @@ describe('AppClientInboxService', () => {
             60_000,
         );
 
-        await queue.releaseEntries([entry], EntityStatus.RETRY, null);
+        await queue.releaseEntries([entry], { status: EntityStatus.RETRY, delayMs: 1 });
 
         service.processExpiredSessionsNoWaiting(180_000);
         await new Promise((resolve) => setTimeout(resolve, 0));

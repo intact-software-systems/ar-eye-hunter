@@ -13,6 +13,42 @@ export type ResourceInboxReservationOptions = Readonly<{
 
 export type ResourceInboxReservationInput = number | ResourceInboxReservationOptions;
 
+export type ResourceInboxFairnessReservationOptions = ResourceInboxReservationOptions & Readonly<{
+    maxToScan: number;
+}>;
+
+export type ResourceInboxFairnessReservationInput =
+    | number
+    | ResourceInboxFairnessReservationOptions;
+
+export type ResourceInboxWorkAdvertisementOptions = Readonly<{
+    checkTimeout: RateLimiter;
+    checkFairness: RateLimiter;
+    maxAttempts: number;
+}>;
+
+export type ResourceInboxWorkAdvertisementInput =
+    | RateLimiter
+    | ResourceInboxWorkAdvertisementOptions;
+
+export type ResourceInboxTerminalReleaseStatus =
+    | Resource.EntityStatus.COMPLETED
+    | Resource.EntityStatus.FAILED
+    | Resource.EntityStatus.ABORTED
+    | Resource.EntityStatus.NON_RETRYABLE
+    | Resource.EntityStatus.PARTITIONED
+    | Resource.EntityStatus.MERGED;
+
+export type ResourceInboxReleaseDisposition =
+    | Readonly<{
+        status: Resource.EntityStatus.RETRY;
+        delayMs: number;
+    }>
+    | Readonly<{
+        status: ResourceInboxTerminalReleaseStatus;
+        delayMs: null;
+    }>;
+
 export type ResourceInboxFairnessSelection = Readonly<{
     entry: ResourceEntry;
     selectedDueTs: Temporal.Instant;
@@ -29,6 +65,15 @@ export class ResourceInboxLostReservationError extends Error {
             `Resource inbox reservation was lost before release: ${JSON.stringify(key)}`,
         );
         this.name = 'ResourceInboxLostReservationError';
+    }
+}
+
+export class ResourceInboxInvalidReleaseDispositionError extends Error {
+    readonly code = 'resource-inbox-invalid-release-disposition';
+
+    constructor() {
+        super('Resource inbox release disposition is invalid');
+        this.name = 'ResourceInboxInvalidReleaseDispositionError';
     }
 }
 
@@ -50,12 +95,76 @@ export function toResourceInboxReservationOptions(
     return options;
 }
 
+export function toResourceInboxFairnessReservationOptions(
+    input: ResourceInboxFairnessReservationInput,
+    defaultMaxAttempts: number,
+): ResourceInboxFairnessReservationOptions {
+    const reservation = toResourceInboxReservationOptions(input, defaultMaxAttempts);
+    const maxToScan = typeof input === 'number'
+        ? Math.max(reservation.maxToReserve, reservation.maxToReserve * 8)
+        : input.maxToScan;
+
+    if (!Number.isSafeInteger(maxToScan) || maxToScan < 0) {
+        throw new Error('maxToScan must be a non-negative safe integer');
+    }
+
+    return { ...reservation, maxToScan };
+}
+
+export function toResourceInboxWorkAdvertisementOptions(
+    input: ResourceInboxWorkAdvertisementInput,
+    legacyCheckFairness: RateLimiter | undefined,
+    defaultMaxAttempts: number,
+): ResourceInboxWorkAdvertisementOptions {
+    const options = input instanceof RateLimiter
+        ? {
+            checkTimeout: input,
+            checkFairness: legacyCheckFairness ?? input,
+            maxAttempts: defaultMaxAttempts,
+        }
+        : input;
+
+    if (!Number.isSafeInteger(options.maxAttempts) || options.maxAttempts < 1) {
+        throw new Error('maxAttempts must be a positive safe integer');
+    }
+
+    return options;
+}
+
+export function toResourceInboxReleaseDisposition(
+    input: ResourceInboxReleaseDisposition,
+): ResourceInboxReleaseDisposition {
+    const status = (input as { status?: unknown } | null)?.status;
+    const delayMs = (input as { delayMs?: unknown } | null)?.delayMs;
+    if (
+        status === Resource.EntityStatus.RETRY &&
+        Number.isSafeInteger(delayMs) &&
+        (delayMs as number) >= 1
+    ) {
+        return input;
+    }
+
+    const terminalStatuses: ReadonlySet<unknown> = new Set([
+        Resource.EntityStatus.COMPLETED,
+        Resource.EntityStatus.FAILED,
+        Resource.EntityStatus.ABORTED,
+        Resource.EntityStatus.NON_RETRYABLE,
+        Resource.EntityStatus.PARTITIONED,
+        Resource.EntityStatus.MERGED,
+    ]);
+    if (terminalStatuses.has(status) && delayMs === null) {
+        return input;
+    }
+
+    throw new ResourceInboxInvalidReleaseDispositionError();
+}
+
 export interface DequeueResourceEntryRepository {
 
     isAnyEntryToLock(
         typeIds: Set<string>,
-        checkTimeout: RateLimiter,
-        checkFairness: RateLimiter,
+        workOptions: ResourceInboxWorkAdvertisementInput,
+        legacyCheckFairness?: RateLimiter,
     )
         : Promise<boolean>;
 
@@ -76,14 +185,13 @@ export interface DequeueResourceEntryRepository {
     reserveOverdueRetryEntries(
         typeIds: Set<string>,
         overdueBeforeEpochMs: number,
-        options: ResourceInboxReservationInput,
+        options: ResourceInboxFairnessReservationInput,
     )
         : Promise<Map<Resource.Key, ResourceInboxFairnessSelection>>;
 
     releaseEntries(
         resources: Resource.ResourceEntry[],
-        entityStatus: Resource.EntityStatus,
-        delayMs: number | null,
+        disposition: ResourceInboxReleaseDisposition,
     )
         : Promise<Map<Resource.Key, Resource.ResourceEntry>>;
 }

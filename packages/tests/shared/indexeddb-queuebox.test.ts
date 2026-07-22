@@ -113,7 +113,10 @@ describe('IndexedDbQueueBox', () => {
         expect(reservedEntry.status).toBe(EntityStatus.RESERVED);
         expect(reservedEntry.dequeueAudit.attempts).toBe(1);
 
-        const released = await reader.releaseEntries([reservedEntry], EntityStatus.COMPLETED, null);
+        const released = await reader.releaseEntries([reservedEntry], {
+            status: EntityStatus.COMPLETED,
+            delayMs: null,
+        });
 
         expect(firstValue(released).status).toBe(EntityStatus.COMPLETED);
 
@@ -168,8 +171,7 @@ describe('IndexedDbQueueBox', () => {
 
         const retrying = await queue.releaseEntries(
             [firstValue(reserved)],
-            EntityStatus.RETRY,
-            1_000,
+            { status: EntityStatus.RETRY, delayMs: 1_000 },
         );
 
         const retryEntry = firstValue(retrying);
@@ -207,7 +209,7 @@ describe('IndexedDbQueueBox', () => {
         await expect(queue.releaseEntries([{
             ...current,
             dequeueAudit: { ...current.dequeueAudit, attempts: 1 },
-        }], EntityStatus.RETRY, 1)).rejects.toMatchObject({
+        }], { status: EntityStatus.RETRY, delayMs: 1 })).rejects.toMatchObject({
             code: 'resource-inbox-lost-reservation',
         });
 
@@ -240,12 +242,45 @@ describe('IndexedDbQueueBox', () => {
                 ...second,
                 dequeueAudit: { ...second.dequeueAudit, attempts: 1 },
             },
-        ], EntityStatus.COMPLETED, null)).rejects.toMatchObject({
+        ], { status: EntityStatus.COMPLETED, delayMs: null })).rejects.toMatchObject({
             code: 'resource-inbox-lost-reservation',
         });
 
         expect((await queue.getItem(first.key))?.status).toBe(EntityStatus.RESERVED);
         expect((await queue.getItem(second.key))?.dequeueAudit.attempts).toBe(2);
+    });
+
+    it.each([
+        ['retry without delay', { status: EntityStatus.RETRY, delayMs: null }],
+        ['retry with zero delay', { status: EntityStatus.RETRY, delayMs: 0 }],
+        ['retry with fractional delay', { status: EntityStatus.RETRY, delayMs: 1.5 }],
+        ['terminal with delay', { status: EntityStatus.COMPLETED, delayMs: 1 }],
+        ['unsupported status', { status: EntityStatus.RESERVED, delayMs: null }],
+    ] as const)('atomically rejects invalid IndexedDB release disposition: %s', async (
+        _scenario,
+        disposition,
+    ) => {
+        const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
+        const typeId = 'chat.private-text.v1';
+        const queue = new IndexedDbQueueBox({ dbName });
+        const first = createEntry(typeId, `invalid-first-${_scenario}`, {
+            status: EntityStatus.RESERVED,
+            startTs: Temporal.Now.instant(),
+            attempts: 1,
+        });
+        const second = createEntry(typeId, `invalid-second-${_scenario}`, {
+            status: EntityStatus.RESERVED,
+            startTs: Temporal.Now.instant(),
+            attempts: 1,
+        });
+        await queue.enqueue(first);
+        await queue.enqueue(second);
+
+        await expect(queue.releaseEntries([first, second], disposition as never))
+            .rejects.toMatchObject({ code: 'resource-inbox-invalid-release-disposition' });
+
+        expect((await queue.getItem(first.key))?.status).toBe(EntityStatus.RESERVED);
+        expect((await queue.getItem(second.key))?.status).toBe(EntityStatus.RESERVED);
     });
 
     it('removes completed entries during cleanup while keeping active work', async () => {
@@ -375,6 +410,49 @@ describe('IndexedDbQueueBox', () => {
         expect((await queue.getItem(exhausted.key))?.dequeueAudit.attempts).toBe(2);
     });
 
+    it.each([
+        ['ordinary retry', {
+            status: EntityStatus.RETRY,
+            nextTs: Temporal.Now.instant().subtract({ seconds: 1 }),
+        }],
+        ['timed out reservation', {
+            status: EntityStatus.RESERVED,
+            startTs: Temporal.Now.instant().subtract({ minutes: 10 }),
+        }],
+    ] as const)('does not advertise exhausted IndexedDB %s work', async (_lane, entryOptions) => {
+        const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
+        const typeId = 'chat.private-text.v1';
+        const queue = new IndexedDbQueueBox({ dbName });
+        const exhausted = createEntry(typeId, `advertise-${_lane}`, {
+            ...entryOptions,
+            attempts: 2,
+        });
+        await queue.enqueue(exhausted);
+
+        const advertised = await queue.isAnyEntryToLock(
+            new Set([typeId]),
+            {
+                checkTimeout: RateLimiter.init(60_000, 1),
+                checkFairness: RateLimiter.init(60_000, 1),
+                maxAttempts: 2,
+            } as never,
+        );
+        const reserved = entryOptions.status === EntityStatus.RETRY
+            ? await queue.reserveEntries(
+                new Set([typeId]),
+                new Set([EntityStatus.RETRY]),
+                { maxToReserve: 1, maxAttempts: 2 },
+            )
+            : await queue.reserveTimeoutEntries(
+                new Set([typeId]),
+                { maxToReserve: 1, maxAttempts: 2 },
+                Temporal.Duration.from({ minutes: 5 }),
+            );
+
+        expect(advertised).toBe(false);
+        expect(reserved.size).toBe(0);
+    });
+
     it('does not reclaim an IndexedDB timeout beyond a custom attempt budget', async () => {
         const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
         const typeId = 'presence.state.v1';
@@ -451,6 +529,103 @@ describe('IndexedDbQueueBox', () => {
 
         expect(selected.entry.key.resourceId).toBe('a-earlier-key');
     });
+
+    it('upgrades an existing queue store with the ordered fairness index', async () => {
+        const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
+        await createLegacyQueueDatabase(dbName);
+        const queue = new IndexedDbQueueBox({ dbName });
+
+        await queue.getAllKeys();
+
+        const db = await openDatabase(dbName);
+        const store = db.transaction(IndexedDbQueueBox.DEFAULT_STORE_NAME, 'readonly')
+            .objectStore(IndexedDbQueueBox.DEFAULT_STORE_NAME);
+        expect([...store.indexNames]).toContain(IndexedDbQueueBox.FAIRNESS_INDEX_NAME);
+        expect(store.index(IndexedDbQueueBox.FAIRNESS_INDEX_NAME).keyPath).toEqual([
+            'typeId',
+            'status',
+            'dequeueAudit.nextTs',
+            'keyString',
+        ]);
+        expect(db.version).toBeGreaterThan(1);
+        db.close();
+    });
+
+    it('bounds fairness cursor work while ignoring unrelated indexed ranges', async () => {
+        const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
+        const requestedType = 'chat.private-text.v1';
+        const queue = new IndexedDbQueueBox({ dbName });
+        const now = Temporal.Now.instant();
+        await Promise.all(
+            Array.from({ length: 200 }, (_, index) => queue.enqueue(createEntry(
+                'irrelevant.type.v1',
+                `irrelevant-${index}`,
+                {
+                    status: EntityStatus.RETRY,
+                    attempts: 1,
+                    nextTs: now.subtract({ seconds: 1_000 + index }),
+                },
+            ))),
+        );
+        const exhaustedOldest = createEntry(requestedType, 'exhausted-oldest', {
+            status: EntityStatus.RETRY,
+            attempts: 2,
+            nextTs: now.subtract({ seconds: 100 }),
+        });
+        const exhaustedSecond = createEntry(requestedType, 'exhausted-second', {
+            status: EntityStatus.RETRY,
+            attempts: 2,
+            nextTs: now.subtract({ seconds: 90 }),
+        });
+        const validThird = createEntry(requestedType, 'valid-third', {
+            status: EntityStatus.RETRY,
+            attempts: 1,
+            nextTs: now.subtract({ seconds: 80 }),
+        });
+        await queue.enqueue(exhaustedOldest);
+        await queue.enqueue(exhaustedSecond);
+        await queue.enqueue(validThird);
+
+        const bounded = await queue.reserveOverdueRetryEntries(
+            new Set([requestedType]),
+            Number(now.epochMilliseconds) - 30_000,
+            { maxToReserve: 1, maxAttempts: 2, maxToScan: 2 } as never,
+        );
+        const extended = await queue.reserveOverdueRetryEntries(
+            new Set([requestedType]),
+            Number(now.epochMilliseconds) - 30_000,
+            { maxToReserve: 1, maxAttempts: 2, maxToScan: 3 } as never,
+        );
+
+        expect(bounded.size).toBe(0);
+        expect(firstValue(extended).entry.key.resourceId).toBe(validThird.key.resourceId);
+    });
+
+    it('merges ordered fairness cursors across requested types', async () => {
+        const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
+        const queue = new IndexedDbQueueBox({ dbName });
+        const now = Temporal.Now.instant();
+        const newer = createEntry('type-a', 'newer', {
+            status: EntityStatus.RETRY,
+            attempts: 1,
+            nextTs: now.subtract({ seconds: 40 }),
+        });
+        const older = createEntry('type-b', 'older', {
+            status: EntityStatus.RETRY,
+            attempts: 1,
+            nextTs: now.subtract({ seconds: 60 }),
+        });
+        await queue.enqueue(newer);
+        await queue.enqueue(older);
+
+        const selected = firstValue(await queue.reserveOverdueRetryEntries(
+            new Set([newer.typeId, older.typeId]),
+            Number(now.epochMilliseconds) - 30_000,
+            { maxToReserve: 1, maxAttempts: 2, maxToScan: 8 } as never,
+        ));
+
+        expect(selected.entry.key.resourceId).toBe(older.key.resourceId);
+    });
 });
 
 function createEntry(
@@ -497,4 +672,28 @@ function firstValue<K, V>(map: Map<K, V>): V {
         throw new Error('Expected at least one map value');
     }
     return first;
+}
+
+async function createLegacyQueueDatabase(dbName: string): Promise<void> {
+    await new Promise<void>((resolve, reject) => {
+        const request = indexedDB.open(dbName, 1);
+        request.onupgradeneeded = () => {
+            request.result.createObjectStore(IndexedDbQueueBox.DEFAULT_STORE_NAME, {
+                keyPath: 'keyString',
+            });
+        };
+        request.onsuccess = () => {
+            request.result.close();
+            resolve();
+        };
+        request.onerror = () => reject(request.error ?? new Error('Legacy DB open failed'));
+    });
+}
+
+async function openDatabase(dbName: string): Promise<IDBDatabase> {
+    return await new Promise<IDBDatabase>((resolve, reject) => {
+        const request = indexedDB.open(dbName);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error ?? new Error('DB open failed'));
+    });
 }

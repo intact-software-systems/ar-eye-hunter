@@ -111,6 +111,26 @@ describe('enqueue and dequeue', () => {
 });
 
 describe('resource inbox retry and fairness lanes', () => {
+    it('uses the configured retry budget for engine work advertisement', () => {
+        const duration = Temporal.Duration.from({ seconds: 10 });
+        const retryPolicy = {
+            ...DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
+            maxAttempts: 2,
+        };
+        const custom = ResilienceDto.toResilienceDto(
+            new CircuitBreakerPolicy(10, duration, duration, duration),
+            1,
+            10,
+            1,
+            1,
+            ResilienceDto.MAX_NUM_DEQUEUE_IN_WINDOW,
+            retryPolicy,
+        );
+
+        expect(custom.toWorkAdvertisementOptions().maxAttempts).toBe(2);
+        expect(toTestResilience().toWorkAdvertisementOptions().maxAttempts).toBe(20);
+    });
+
     it('threads a custom attempt budget through every reservation lane', async () => {
         const optionsSeen: unknown[] = [];
         const repository = createDequeueRepository({
@@ -147,7 +167,7 @@ describe('resource inbox retry and fairness lanes', () => {
         expect(optionsSeen).toEqual([
             { maxToReserve: 1, maxAttempts: 2 },
             { maxToReserve: 1, maxAttempts: 2 },
-            { maxToReserve: 1, maxAttempts: 2 },
+            { maxToReserve: 1, maxAttempts: 2, maxToScan: 8 },
             { maxToReserve: 1, maxAttempts: 2 },
         ]);
     });
@@ -173,11 +193,11 @@ describe('resource inbox retry and fairness lanes', () => {
                 }
                 return new Map();
             },
-            releaseEntries: async (entries, status, delayMs) => {
-                releaseCalls.push({ status, delayMs });
+            releaseEntries: async (entries, disposition) => {
+                releaseCalls.push(disposition);
                 return new Map(entries.map((released) => [released.key, {
                     ...released,
-                    status,
+                    status: disposition.status,
                 }]));
             },
         });
@@ -288,7 +308,7 @@ describe('resource inbox retry and fairness lanes', () => {
 
         expect(fairnessCalls[0]).toEqual({
             overdueBeforeEpochMs: Date.parse('2026-01-01T00:00:30.000Z'),
-            options: { maxToReserve: 1, maxAttempts: 20 },
+            options: { maxToReserve: 1, maxAttempts: 20, maxToScan: 8 },
         });
         expect(dequeued.get(Reservator.FAIRNESS)?.size).toBe(1);
         expect(telemetry).toContainEqual({
@@ -371,8 +391,11 @@ function createDequeueRepository(overrides: Record<string, unknown> = {}) {
         reserveTimeoutEntries: async () => new Map(),
         releaseEntries: async (
             entries: ResourceEntry[],
-            status: EntityStatus,
-        ) => new Map(entries.map((entry) => [entry.key, { ...entry, status }])),
+            disposition: Readonly<{ status: EntityStatus }>,
+        ) => new Map(entries.map((entry) => [entry.key, {
+            ...entry,
+            status: disposition.status,
+        }])),
         ...overrides,
     };
 }

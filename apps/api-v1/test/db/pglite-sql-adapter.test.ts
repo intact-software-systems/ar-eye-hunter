@@ -1803,10 +1803,48 @@ Deno.test('ResourceInboxRepository and ResourceInboxResultsRepository run agains
       typeId: 'TYPE_A',
       expiryTs: PAST_INSTANT,
     });
+    const exhausted = {
+      ...createResourceEntry('exhausted-ordinary', {
+        payload: { text: 'exhausted ordinary' },
+        typeId: 'TYPE_EXHAUSTED',
+      }),
+      dequeueAudit: { attempts: 2 },
+    };
+    const exhaustedTimeout = {
+      ...createResourceEntry('exhausted-timeout', {
+        payload: { text: 'exhausted timeout' },
+        typeId: 'TYPE_EXHAUSTED_TIMEOUT',
+      }),
+      status: EntityStatus.RESERVED,
+      dequeueAudit: {
+        attempts: 2,
+        startTs: Temporal.Instant.from('2020-01-01T00:00:00Z'),
+      },
+    };
 
     const stored = await inbox.write(active);
     assert.ok(stored.db?.id);
     await inbox.write(expired);
+    await inbox.write(exhausted);
+    await inbox.write(exhaustedTimeout);
+    assert.equal(await inbox.isEntriesToLock(
+      new Set([exhausted.typeId]),
+      new Set([EntityStatus.NEW]),
+      2,
+    ), false);
+    assert.equal(await inbox.isEntriesToLock(
+      new Set([exhausted.typeId]),
+      new Set([EntityStatus.NEW]),
+    ), true);
+    assert.equal(await inbox.isTimeoutOnReservedEntries(
+      new Set([exhaustedTimeout.typeId]),
+      Temporal.Duration.from({ seconds: 1 }),
+      2,
+    ), false);
+    assert.equal(await inbox.isTimeoutOnReservedEntries(
+      new Set([exhaustedTimeout.typeId]),
+      Temporal.Duration.from({ seconds: 1 }),
+    ), true);
 
     const immutable = {
       ...createResourceEntry('immutable-replay', {
@@ -1930,16 +1968,14 @@ Deno.test('ResourceInboxRepository and ResourceInboxResultsRepository run agains
       Number(reservedStartTs.epochMilliseconds) + 123,
     );
     assert.equal(await inbox.releaseReserved(active.key, {
-      status: EntityStatus.COMPLETED,
       expectedAttempts: 2,
       releasedAt,
-      delayMs: null,
+      disposition: { status: EntityStatus.COMPLETED, delayMs: null },
     }), null);
     const released = await inbox.releaseReserved(active.key, {
-      status: EntityStatus.COMPLETED,
       expectedAttempts: 1,
       releasedAt,
-      delayMs: null,
+      disposition: { status: EntityStatus.COMPLETED, delayMs: null },
     });
     const releaseRows = await sql<{ end_ts: string }[]>`
       select end_ts::text as end_ts
@@ -1982,7 +2018,7 @@ Deno.test('ResourceInboxRepository and ResourceInboxResultsRepository run agains
             attempts: 0,
           },
         },
-      ], EntityStatus.COMPLETED, null),
+      ], { status: EntityStatus.COMPLETED, delayMs: null }),
       (error) => error instanceof Error &&
         'code' in error &&
         error.code === 'resource-inbox-lost-reservation',

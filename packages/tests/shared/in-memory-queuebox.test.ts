@@ -6,6 +6,7 @@ import {
     NEVER_EXPIRE_TS,
     type ResourceEntry,
 } from '@shared/queuebox/ResourceEntry.ts';
+import { RateLimiter } from '@shared/resilience/Resilience.ts';
 
 describe('InMemoryQueueBox', () => {
     it('returns the existing entry from enqueueIfAbsent without overwriting it', async () => {
@@ -137,7 +138,7 @@ describe('InMemoryQueueBox', () => {
         await queue.enqueue(entry);
 
         const released = firstValue(
-            await queue.releaseEntries([entry], EntityStatus.RETRY, 37),
+            await queue.releaseEntries([entry], { status: EntityStatus.RETRY, delayMs: 37 }),
         );
 
         expect(released.status).toBe(EntityStatus.RETRY);
@@ -169,7 +170,7 @@ describe('InMemoryQueueBox', () => {
         };
         await queue.enqueue(current);
 
-        await expect(queue.releaseEntries([stale], EntityStatus.RETRY, 1))
+        await expect(queue.releaseEntries([stale], { status: EntityStatus.RETRY, delayMs: 1 }))
             .rejects.toMatchObject({ code: 'resource-inbox-lost-reservation' });
 
         expect(await queue.getItem(current.key)).toMatchObject({
@@ -197,12 +198,41 @@ describe('InMemoryQueueBox', () => {
                 ...second,
                 dequeueAudit: { ...second.dequeueAudit, attempts: 1 },
             },
-        ], EntityStatus.COMPLETED, null)).rejects.toMatchObject({
+        ], { status: EntityStatus.COMPLETED, delayMs: null })).rejects.toMatchObject({
             code: 'resource-inbox-lost-reservation',
         });
 
         expect((await queue.getItem(first.key))?.status).toBe(EntityStatus.RESERVED);
         expect((await queue.getItem(second.key))?.dequeueAudit.attempts).toBe(2);
+    });
+
+    it.each([
+        ['retry without delay', { status: EntityStatus.RETRY, delayMs: null }],
+        ['retry with zero delay', { status: EntityStatus.RETRY, delayMs: 0 }],
+        ['retry with fractional delay', { status: EntityStatus.RETRY, delayMs: 1.5 }],
+        ['terminal with delay', { status: EntityStatus.COMPLETED, delayMs: 1 }],
+        ['unsupported status', { status: EntityStatus.RESERVED, delayMs: null }],
+    ] as const)('atomically rejects invalid memory release disposition: %s', async (
+        _scenario,
+        disposition,
+    ) => {
+        const queue = new InMemoryQueueBox();
+        const first = createEntry('chat.private-text.v1', `invalid-first-${_scenario}`, {
+            status: EntityStatus.RESERVED,
+            attempts: 1,
+        });
+        const second = createEntry('chat.private-text.v1', `invalid-second-${_scenario}`, {
+            status: EntityStatus.RESERVED,
+            attempts: 1,
+        });
+        await queue.enqueue(first);
+        await queue.enqueue(second);
+
+        await expect(queue.releaseEntries([first, second], disposition as never))
+            .rejects.toMatchObject({ code: 'resource-inbox-invalid-release-disposition' });
+
+        expect((await queue.getItem(first.key))?.status).toBe(EntityStatus.RESERVED);
+        expect((await queue.getItem(second.key))?.status).toBe(EntityStatus.RESERVED);
     });
 
     it('uses a custom two-attempt reservation budget', async () => {
@@ -222,6 +252,47 @@ describe('InMemoryQueueBox', () => {
 
         expect(reserved.size).toBe(0);
         expect((await queue.getItem(exhausted.key))?.dequeueAudit.attempts).toBe(2);
+    });
+
+    it.each([
+        ['ordinary retry', {
+            status: EntityStatus.RETRY,
+            nextTs: Temporal.Now.instant().subtract({ seconds: 1 }),
+        }],
+        ['timed out reservation', {
+            status: EntityStatus.RESERVED,
+            startTs: Temporal.Now.instant().subtract({ minutes: 10 }),
+        }],
+    ] as const)('does not advertise exhausted %s work', async (_lane, entryOptions) => {
+        const queue = new InMemoryQueueBox();
+        const exhausted = createEntry('chat.private-text.v1', `advertise-${_lane}`, {
+            ...entryOptions,
+            attempts: 2,
+        });
+        await queue.enqueue(exhausted);
+
+        const advertised = await queue.isAnyEntryToLock(
+            new Set([exhausted.typeId]),
+            {
+                checkTimeout: RateLimiter.init(60_000, 1),
+                checkFairness: RateLimiter.init(60_000, 1),
+                maxAttempts: 2,
+            } as never,
+        );
+        const reserved = entryOptions.status === EntityStatus.RETRY
+            ? await queue.reserveEntries(
+                new Set([exhausted.typeId]),
+                new Set([EntityStatus.RETRY]),
+                { maxToReserve: 1, maxAttempts: 2 },
+            )
+            : await queue.reserveTimeoutEntries(
+                new Set([exhausted.typeId]),
+                { maxToReserve: 1, maxAttempts: 2 },
+                Temporal.Duration.from({ minutes: 5 }),
+            );
+
+        expect(advertised).toBe(false);
+        expect(reserved.size).toBe(0);
     });
 
     it('increments memory timeout recovery attempts and enforces its budget', async () => {

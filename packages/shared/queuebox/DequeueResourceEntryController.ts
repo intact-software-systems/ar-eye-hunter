@@ -8,7 +8,11 @@ import {
     RateLimiter
 } from '../resilience/Resilience.ts';
 import { DequeueController, FailureDto, Reservator, SuccessDto } from './DequeueController.ts';
-import { DequeueResourceEntryRepository } from './QueueBoxTypes.ts';
+import {
+    DequeueResourceEntryRepository,
+    type ResourceInboxReleaseDisposition,
+    type ResourceInboxWorkAdvertisementOptions,
+} from './QueueBoxTypes.ts';
 import * as Resource from './ResourceEntry.ts';
 import { EntityStatus, isKeysEqual, ResourceEntry } from './ResourceEntry.ts';
 import {
@@ -51,7 +55,16 @@ export class ResilienceDto {
         public readonly checkReserveTimeouts: InstanceType<typeof ResilienceDto.StatusChecker>,
         public readonly checkFairness: InstanceType<typeof ResilienceDto.StatusChecker>,
         public readonly rateAdjuster: RateAdjuster,
+        public readonly retryPolicy: ResourceInboxRetryPolicy = DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
     ) {
+    }
+
+    toWorkAdvertisementOptions(): ResourceInboxWorkAdvertisementOptions {
+        return {
+            checkTimeout: this.checkReserveTimeouts.isEntryRateLimiter,
+            checkFairness: this.checkFairness.isEntryRateLimiter,
+            maxAttempts: this.retryPolicy.maxAttempts,
+        };
     }
 
     get checkFailed(): InstanceType<typeof ResilienceDto.StatusChecker> {
@@ -122,6 +135,7 @@ export class ResilienceDto {
         concurrencyIncreaseStep: number,
         concurrencyReduceStep: number,
         maxFairnessSelectionsInWindow: number = ResilienceDto.MAX_NUM_DEQUEUE_IN_WINDOW,
+        retryPolicy: ResourceInboxRetryPolicy = DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
     ): InstanceType<typeof ResilienceDto> {
         const policy = RateAdjuster.toPolicy(
             initialRate,
@@ -144,6 +158,7 @@ export class ResilienceDto {
                 policy.minConsecutiveSuccesses,
                 policy.adjustWindowMs,
             )),
+            retryPolicy,
         );
     }
 }
@@ -167,7 +182,7 @@ export class DequeueResourceEntryController {
         resilience: InstanceType<typeof ResilienceDto>,
         options: DequeueResourceEntryOptions = {},
     ): DequeueController<Resource.Key, ResourceEntry, V> {
-        const retryPolicy = options.retryPolicy ?? DEFAULT_RESOURCE_INBOX_RETRY_POLICY;
+        const retryPolicy = options.retryPolicy ?? resilience.retryPolicy;
         if (maxRetries !== retryPolicy.maxAttempts) {
             throw new Error(
                 `ResourceInbox retry limit ${maxRetries} must match policy maxAttempts ${retryPolicy.maxAttempts}`,
@@ -217,6 +232,9 @@ export class DequeueResourceEntryController {
                             {
                                 maxToReserve: maxNumToReserve,
                                 maxAttempts: retryPolicy.maxAttempts,
+                                maxToScan: maxNumToReserve <= Math.floor(Number.MAX_SAFE_INTEGER / 8)
+                                    ? maxNumToReserve * 8
+                                    : Number.MAX_SAFE_INTEGER,
                             },
                         );
                         for (const selection of reserved.values()) {
@@ -265,8 +283,7 @@ export class DequeueResourceEntryController {
                         await dequeueResourceEntryRepository.releaseEntries(
                             Array.from(successByKey.values())
                                 .map((dto) => dto.value),
-                            EntityStatus.COMPLETED,
-                            null,
+                            { status: EntityStatus.COMPLETED, delayMs: null },
                         );
 
                     const out = new Map<Resource.Key, SuccessDto<Resource.Key, ResourceEntry, V>>();
@@ -299,15 +316,29 @@ export class DequeueResourceEntryController {
                                 failure.value.dequeueAudit.attempts,
                                 jitterUnit(),
                             );
-                        const status = nonRetryable
-                            ? EntityStatus.NON_RETRYABLE
-                            : decision.status === 'retry'
-                                ? EntityStatus.RETRY
-                                : EntityStatus.FAILED;
+                        let disposition: ResourceInboxReleaseDisposition;
+                        if (nonRetryable) {
+                            disposition = {
+                                status: EntityStatus.NON_RETRYABLE,
+                                delayMs: null,
+                            };
+                        } else if (decision.status === 'retry') {
+                            if (decision.delayMs === null) {
+                                throw new Error('Retry decision is missing a release delay');
+                            }
+                            disposition = {
+                                status: EntityStatus.RETRY,
+                                delayMs: decision.delayMs,
+                            };
+                        } else {
+                            disposition = {
+                                status: EntityStatus.FAILED,
+                                delayMs: null,
+                            };
+                        }
                         const released = await dequeueResourceEntryRepository.releaseEntries(
                             [failure.value],
-                            status,
-                            decision.delayMs,
+                            disposition,
                         );
 
                         for (const [k, v] of released.entries()) {

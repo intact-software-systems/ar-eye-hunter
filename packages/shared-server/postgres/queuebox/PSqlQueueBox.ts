@@ -1,10 +1,16 @@
 import { Temporal } from '@js-temporal/polyfill';
 import {
     QueueBoxResourceEntryRepository,
+    ResourceInboxFairnessReservationInput,
     ResourceInboxFairnessSelection,
     ResourceInboxLostReservationError,
+    ResourceInboxReleaseDisposition,
     ResourceInboxReservationInput,
+    ResourceInboxWorkAdvertisementInput,
+    toResourceInboxFairnessReservationOptions,
+    toResourceInboxReleaseDisposition,
     toResourceInboxReservationOptions,
+    toResourceInboxWorkAdvertisementOptions,
 } from '@shared/queuebox/QueueBoxTypes.ts';
 import type { PersistenceSetItemOptions } from '@shared/persistence/PersistenceProvider.ts';
 import { RateLimiter } from '@shared/resilience/Resilience.ts';
@@ -32,14 +38,24 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
         });
     }
 
-    async isAnyEntryToLock(typeIds: Set<string>, checkTimeout: RateLimiter, _checkFairness: RateLimiter): Promise<boolean> {
+    async isAnyEntryToLock(
+        typeIds: Set<string>,
+        workInput: ResourceInboxWorkAdvertisementInput,
+        legacyCheckFairness?: RateLimiter,
+    ): Promise<boolean> {
+        const { checkTimeout, maxAttempts } = toResourceInboxWorkAdvertisementOptions(
+            workInput,
+            legacyCheckFairness,
+            DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts,
+        );
         const isTimedOutReservedEntryToLock: boolean =
             await RateLimiter.tryToExecuteOrDefault(
                 checkTimeout,
                 async () =>
                     await this.repo.isTimeoutOnReservedEntries(
                         typeIds,
-                        TIMEOUT_ON_NON_RESPONSIVE_ENTRY
+                        TIMEOUT_ON_NON_RESPONSIVE_ENTRY,
+                        maxAttempts,
                     ),
                 false
             );
@@ -47,7 +63,8 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
         const isNewAndRetryEntryToLock: boolean =
             await this.repo.isEntriesToLock(
                 typeIds,
-                NEW_AND_RETRY_STATUSES
+                NEW_AND_RETRY_STATUSES,
+                maxAttempts,
             );
 
         return isNewAndRetryEntryToLock || isTimedOutReservedEntryToLock;
@@ -122,9 +139,9 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
     async reserveOverdueRetryEntries(
         typeIds: Set<string>,
         overdueBeforeEpochMs: number,
-        reservationInput: ResourceInboxReservationInput,
+        reservationInput: ResourceInboxFairnessReservationInput,
     ): Promise<Map<Key, ResourceInboxFairnessSelection>> {
-        const options = toResourceInboxReservationOptions(
+        const options = toResourceInboxFairnessReservationOptions(
             reservationInput,
             DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts,
         );
@@ -133,7 +150,10 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
                 const foundEntries = await txRepo.findOverdueRetryEntriesSkipLocked(
                     typeIds,
                     overdueBeforeEpochMs,
-                    options,
+                    {
+                        maxToReserve: options.maxToReserve,
+                        maxAttempts: options.maxAttempts,
+                    },
                 );
                 const reservedEntries = new Map<Key, ResourceInboxFairnessSelection>();
 
@@ -165,9 +185,9 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
 
     async releaseEntries(
         resources: ResourceEntry[],
-        entityStatus: EntityStatus,
-        delayMs: number | null,
+        releaseInput: ResourceInboxReleaseDisposition,
     ): Promise<Map<Key, ResourceEntry>> {
+        const disposition = toResourceInboxReleaseDisposition(releaseInput);
         const releasedAt = Temporal.Now.instant();
         return await this.repo.begin(
             async (txRepo: ResourceInboxRepository) => {
@@ -176,10 +196,9 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
 
                 for (const entry of resources) {
                     const updated = await txRepo.releaseReserved(entry.key, {
-                        status: entityStatus,
                         expectedAttempts: entry.dequeueAudit.attempts,
                         releasedAt,
-                        delayMs,
+                        disposition,
                     });
                     if (!updated) {
                         throw new ResourceInboxLostReservationError(

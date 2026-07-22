@@ -4,7 +4,9 @@ import { tryRunInIntervals } from '@shared/resilience/TryWith.ts';
 import { EntityStatus, type Key, type ResourceEntry, } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import {
+    type ResourceInboxReleaseDisposition,
     type ResourceInboxReservationInput,
+    toResourceInboxReleaseDisposition,
     toResourceInboxReservationOptions,
 } from '@shared/queuebox/QueueBoxTypes.ts';
 import type { PSqlSql, PSqlTransactionSql } from '../PostgresSqlClient.ts';
@@ -499,12 +501,18 @@ export class ResourceInboxRepository {
     // Existence checks
     // ---------------------------------
 
-    async isEntriesToLock(typeIds: ReadonlySet<string>, statusIds: ReadonlySet<EntityStatus>): Promise<boolean> {
+    async isEntriesToLock(
+        typeIds: ReadonlySet<string>,
+        statusIds: ReadonlySet<EntityStatus>,
+        maxAttempts: number = DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts,
+    ): Promise<boolean> {
         if (typeIds.size === 0 || statusIds.size === 0) {
             return false;
         }
 
-        const now = new Date();
+        if (!Number.isSafeInteger(maxAttempts) || maxAttempts < 1) {
+            throw new Error('maxAttempts must be a positive safe integer');
+        }
 
         const rows = await this.sql<{ one: number }[]>`
             select 1 as one
@@ -512,12 +520,12 @@ export class ResourceInboxRepository {
             where ri_type_id in ${this.sql([...typeIds])}
               and ri_status in ${this.sql([...statusIds])}
               and ri_status <> ${EntityStatus.FAILED}
-              and expire_ts > ${now}
-              and ri_attempts < ${DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts}
+              and expire_ts > now()
+              and ri_attempts < ${maxAttempts}
               and (
-                  (ri_status = ${EntityStatus.RETRY} and next_ts <= ${now})
+                  (ri_status = ${EntityStatus.RETRY} and next_ts <= now())
                   or
-                  (ri_status <> ${EntityStatus.RETRY} and start_ts is null and (next_ts is null or next_ts <= ${now}))
+                  (ri_status <> ${EntityStatus.RETRY} and start_ts is null and (next_ts is null or next_ts <= now()))
               )
             limit 1
         `;
@@ -543,14 +551,22 @@ export class ResourceInboxRepository {
         return rows.length > 0;
     }
 
-    async isTimeoutOnReservedEntries(typeIds: ReadonlySet<string>, timeSinceStartTs: Temporal.Duration): Promise<boolean> {
+    async isTimeoutOnReservedEntries(
+        typeIds: ReadonlySet<string>,
+        timeSinceStartTs: Temporal.Duration,
+        maxAttempts: number = DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts,
+    ): Promise<boolean> {
         if (typeIds.size === 0) {
             return false;
         }
 
-        const now = new Date();
-        const timeoutTs = new Date(now.getTime() - timeSinceStartTs.total('milliseconds'));
-
+        const timeoutMs = timeSinceStartTs.total({ unit: 'milliseconds' });
+        if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 0) {
+            throw new Error('Reserved-entry timeout must be a non-negative safe integer in milliseconds');
+        }
+        if (!Number.isSafeInteger(maxAttempts) || maxAttempts < 1) {
+            throw new Error('maxAttempts must be a positive safe integer');
+        }
 
         const rows =
             await this.sql<{ one: number }[]>
@@ -559,9 +575,10 @@ export class ResourceInboxRepository {
                     from resource_inbox
                     where ri_type_id in ${this.sql([...typeIds])}
                       and ri_status in ${this.sql([EntityStatus.RESERVED])}
-                      and expire_ts > ${now}
+                      and expire_ts > now()
+                      and ri_attempts < ${maxAttempts}
                       and start_ts is not null
-                      and start_ts < ${timeoutTs}
+                      and start_ts < now() - (${timeoutMs} * interval '1 millisecond')
                     limit 1
                 `;
 
@@ -657,29 +674,23 @@ export class ResourceInboxRepository {
     async releaseReserved(
         key: Key,
         options: Readonly<{
-            status: EntityStatus;
             expectedAttempts: number;
             releasedAt: Temporal.Instant;
-            delayMs: number | null;
+            disposition: ResourceInboxReleaseDisposition;
         }>,
     ): Promise<ResourceEntry | null> {
-        if (
-            options.delayMs !== null &&
-            (!Number.isSafeInteger(options.delayMs) || options.delayMs < 0)
-        ) {
-            throw new Error('Resource inbox release delay must be a non-negative integer or null');
-        }
+        const disposition = toResourceInboxReleaseDisposition(options.disposition);
 
         const persistedReleasedAt = Temporal.Instant.fromEpochMilliseconds(
             Number(options.releasedAt.epochMilliseconds),
         );
         const endTs = new Date(Number(persistedReleasedAt.epochMilliseconds));
-        const nextTs = options.delayMs !== null
-            ? new Date(endTs.getTime() + options.delayMs)
+        const nextTs = disposition.delayMs !== null
+            ? new Date(endTs.getTime() + disposition.delayMs)
             : null;
         const rows = await this.sql<ResourceInboxRow[]>`
             update resource_inbox
-            set ri_status = ${options.status},
+            set ri_status = ${disposition.status},
                 end_ts    = ${endTs},
                 next_ts   = ${nextTs}
             where ri_topic_id = ${key.topicId}
@@ -701,8 +712,8 @@ export class ResourceInboxRepository {
             dequeueAudit: {
                 ...released.dequeueAudit,
                 endTs: persistedReleasedAt,
-                nextTs: options.delayMs !== null
-                    ? persistedReleasedAt.add({ milliseconds: options.delayMs })
+                nextTs: disposition.delayMs !== null
+                    ? persistedReleasedAt.add({ milliseconds: disposition.delayMs })
                     : undefined,
             },
         };

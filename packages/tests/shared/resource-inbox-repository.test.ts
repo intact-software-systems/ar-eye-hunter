@@ -95,6 +95,42 @@ describe('ResourceInboxRepository', () => {
         expect(capture.queries[0]?.values).not.toContain(20);
     });
 
+    it('uses database time and the configured budget for ordinary work advertisement', async () => {
+        const capture = createQueryCapture();
+        const repo = new repositoryModule.ResourceInboxRepository(capture.sql);
+
+        await repo.isEntriesToLock(
+            new Set(['APP_INBOX']),
+            new Set([EntityStatus.RETRY]),
+            2,
+        );
+
+        expect(capture.queries).toHaveLength(1);
+        expect(capture.queries[0]?.query).toContain('expire_ts > now()');
+        expect(capture.queries[0]?.query).toContain('next_ts <= now()');
+        expect(capture.queries[0]?.values).toContain(2);
+        expect(capture.queries[0]?.values.some(value => value instanceof Date)).toBe(false);
+    });
+
+    it('uses a safely bound database interval for timeout work advertisement', async () => {
+        const capture = createQueryCapture();
+        const repo = new repositoryModule.ResourceInboxRepository(capture.sql);
+
+        await repo.isTimeoutOnReservedEntries(
+            new Set(['APP_INBOX']),
+            Temporal.Duration.from({ seconds: 30 }),
+            2,
+        );
+
+        expect(capture.queries).toHaveLength(1);
+        expect(capture.queries[0]?.query).toContain('expire_ts > now()');
+        expect(capture.queries[0]?.query).toContain('start_ts < now() -');
+        expect(capture.queries[0]?.query).toContain("interval '1 millisecond'");
+        expect(capture.queries[0]?.values).toContain(30_000);
+        expect(capture.queries[0]?.values).toContain(2);
+        expect(capture.queries[0]?.values.some(value => value instanceof Date)).toBe(false);
+    });
+
     it('inserts immutable outbox content once and matches an operationally advanced replay', async () => {
         vi.useFakeTimers();
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
@@ -556,25 +592,25 @@ describe('ResourceInboxRepository', () => {
             releaseReserved(
                 key: Key,
                 options: Readonly<{
-                    status: EntityStatus;
                     expectedAttempts: number;
                     releasedAt: Temporal.Instant;
-                    delayMs: number | null;
+                    disposition: Readonly<{
+                        status: EntityStatus.RETRY;
+                        delayMs: number;
+                    }>;
                 }>,
             ): Promise<ResourceEntry | null>;
         };
         await expect(releaseRepo.releaseReserved(entry.key, {
-            status: EntityStatus.RETRY,
             expectedAttempts: 1,
             releasedAt,
-            delayMs: 37,
+            disposition: { status: EntityStatus.RETRY, delayMs: 37 },
         })).resolves.toBeNull();
 
         const released = await releaseRepo.releaseReserved(entry.key, {
-            status: EntityStatus.RETRY,
             expectedAttempts: 2,
             releasedAt,
-            delayMs: 37,
+            disposition: { status: EntityStatus.RETRY, delayMs: 37 },
         });
 
         expect(released?.dequeueAudit.endTs?.toString()).toBe(releasedAt.toString());
@@ -582,6 +618,30 @@ describe('ResourceInboxRepository', () => {
             .toBe(releasedAt.add({ milliseconds: 37 }).toString());
         expect(stored.ri_status).toBe(EntityStatus.RETRY);
         expect(stored.ri_attempts).toBe(2n);
+    });
+
+    it.each([
+        ['retry without delay', { status: EntityStatus.RETRY, delayMs: null }],
+        ['retry with zero delay', { status: EntityStatus.RETRY, delayMs: 0 }],
+        ['retry with fractional delay', { status: EntityStatus.RETRY, delayMs: 1.5 }],
+        ['terminal with delay', { status: EntityStatus.COMPLETED, delayMs: 1 }],
+        ['unsupported status', { status: EntityStatus.RESERVED, delayMs: null }],
+    ] as const)('rejects invalid repository release disposition before SQL: %s', async (
+        _scenario,
+        disposition,
+    ) => {
+        const capture = createQueryCapture();
+        const repo = new repositoryModule.ResourceInboxRepository(capture.sql);
+
+        await expect(repo.releaseReserved(createKey(`invalid-${_scenario}`), {
+            expectedAttempts: 1,
+            releasedAt: Temporal.Instant.from('2026-01-01T00:00:00Z'),
+            disposition,
+        } as never)).rejects.toMatchObject({
+            code: 'resource-inbox-invalid-release-disposition',
+        });
+
+        expect(capture.queries).toHaveLength(0);
     });
 
     it('rejects a nonterminal finish status before issuing SQL', async () => {

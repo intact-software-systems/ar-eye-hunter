@@ -5,10 +5,16 @@ import { RateLimiter } from '../resilience/Resilience.ts';
 import { ResilienceDto } from './DequeueResourceEntryController.ts';
 import {
     QueueBoxResourceEntryRepository,
+    ResourceInboxFairnessReservationInput,
     ResourceInboxFairnessSelection,
     ResourceInboxLostReservationError,
+    ResourceInboxReleaseDisposition,
     ResourceInboxReservationInput,
+    ResourceInboxWorkAdvertisementInput,
+    toResourceInboxFairnessReservationOptions,
+    toResourceInboxReleaseDisposition,
     toResourceInboxReservationOptions,
+    toResourceInboxWorkAdvertisementOptions,
 } from './QueueBoxTypes.ts';
 import {
     COMPLETED_STATUSES,
@@ -112,6 +118,7 @@ export type IndexedDbQueueBoxOptions = Readonly<{
 export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     static readonly DEFAULT_DB_NAME = 'ar-eye-hunter-queuebox';
     static readonly DEFAULT_STORE_NAME = 'entries';
+    static readonly FAIRNESS_INDEX_NAME = 'by-type-status-next-key';
 
     private readonly dbName: string;
     private readonly storeName: string;
@@ -354,9 +361,9 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
 
     async releaseEntries(
         resources: ResourceEntry[],
-        entityStatus: EntityStatus,
-        delayMs: number | null,
+        releaseInput: ResourceInboxReleaseDisposition,
     ): Promise<Map<Key, ResourceEntry>> {
+        const disposition = toResourceInboxReleaseDisposition(releaseInput);
         if (resources.length === 0) {
             return new Map<Key, ResourceEntry>();
         }
@@ -395,12 +402,12 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                     const current = this.toResourceEntry(stored);
                     const updated: ResourceEntry = {
                         ...current,
-                        status: entityStatus,
+                        status: disposition.status,
                         dequeueAudit: {
                             startTs: current.dequeueAudit.startTs,
                             endTs: releasedAt,
-                            nextTs: delayMs !== null
-                                ? releasedAt.add({ milliseconds: delayMs })
+                            nextTs: disposition.delayMs !== null
+                                ? releasedAt.add({ milliseconds: disposition.delayMs })
                                 : undefined,
                             attempts: current.dequeueAudit.attempts,
                         },
@@ -517,9 +524,9 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     async reserveOverdueRetryEntries(
         typeIds: Set<string>,
         overdueBeforeEpochMs: number,
-        reservationInput: ResourceInboxReservationInput,
+        reservationInput: ResourceInboxFairnessReservationInput,
     ): Promise<Map<Key, ResourceInboxFairnessSelection>> {
-        const { maxToReserve, maxAttempts } = toResourceInboxReservationOptions(
+        const { maxToReserve, maxAttempts, maxToScan } = toResourceInboxFairnessReservationOptions(
             reservationInput,
             DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts,
         );
@@ -531,78 +538,134 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         const reserved = new Map<Key, ResourceInboxFairnessSelection>();
         const now = Temporal.Now.instant();
         const overdueBefore = Temporal.Instant.fromEpochMilliseconds(overdueBeforeEpochMs);
-        const candidates: StoredResourceEntry[] = [];
 
         return await new Promise<Map<Key, ResourceInboxFairnessSelection>>((resolve, reject) => {
             const tx = db.transaction(this.storeName, 'readwrite');
             const store = tx.objectStore(this.storeName);
-            const request = store.openCursor();
+            const index = store.index(IndexedDbQueueBox.FAIRNESS_INDEX_NAME);
+            const states = [...typeIds].map(typeId => ({
+                typeId,
+                ready: false,
+                cursor: undefined as IDBCursorWithValue | undefined,
+            }));
+            let scanned = 0;
+            let stopped = maxToScan === 0;
 
             tx.oncomplete = () => resolve(reserved);
             tx.onabort = () => reject(tx.error ?? new Error('IndexedDB fairness reservation aborted'));
             tx.onerror = () => reject(tx.error ?? new Error('IndexedDB fairness reservation failed'));
 
-            request.onerror = () => reject(request.error ?? new Error('IndexedDB fairness cursor failed'));
-            request.onsuccess = () => {
-                const cursor = request.result;
-                if (!cursor) {
-                    const selected = candidates
-                        .sort((left, right) => {
-                            const dueOrder = Temporal.Instant.compare(
-                                Temporal.Instant.from(left.dequeueAudit.nextTs!),
-                                Temporal.Instant.from(right.dequeueAudit.nextTs!),
-                            );
-                            return dueOrder !== 0
-                                ? dueOrder
-                                : left.keyString.localeCompare(right.keyString);
-                        })
-                        .slice(0, maxToReserve);
-
-                    for (const stored of selected) {
-                        const selectedDueTs = Temporal.Instant.from(stored.dequeueAudit.nextTs!);
-                        const entry = this.toReservedEntry(this.toResourceEntry(stored), now);
-                        const updateRequest = store.put(this.toStoredEntry(entry));
-                        updateRequest.onerror = () => reject(
-                            updateRequest.error ?? new Error('IndexedDB fairness update failed'),
-                        );
-                        updateRequest.onsuccess = () => {
-                            reserved.set(entry.key, { entry, selectedDueTs });
-                        };
-                    }
-                    return;
-                }
-
-                const stored = cursor.value as StoredResourceEntry;
-                const nextTs = stored.dequeueAudit.nextTs
-                    ? Temporal.Instant.from(stored.dequeueAudit.nextTs)
-                    : undefined;
-                const isOverdueRetry =
-                    !this.isExpiredStoredEntry(stored, now) &&
-                    typeIds.has(stored.typeId) &&
-                    stored.status === EntityStatus.RETRY &&
-                    stored.dequeueAudit.attempts < maxAttempts &&
-                    nextTs !== undefined &&
-                    Temporal.Instant.compare(nextTs, overdueBefore) <= 0;
-                if (!isOverdueRetry) {
-                    cursor.continue();
-                    return;
-                }
-
-                candidates.push(stored);
+            const continueCursor = (
+                state: typeof states[number],
+                cursor: IDBCursorWithValue,
+            ) => {
+                state.ready = false;
                 cursor.continue();
             };
+
+            const drain = () => {
+                if (stopped || states.some(state => !state.ready)) {
+                    return;
+                }
+
+                const available = states.filter(
+                    (state): state is typeof state & { cursor: IDBCursorWithValue } =>
+                        state.cursor !== undefined,
+                );
+                if (available.length === 0) {
+                    return;
+                }
+
+                const selectedState = available.reduce((left, right) => {
+                    const leftEntry = left.cursor.value as StoredResourceEntry;
+                    const rightEntry = right.cursor.value as StoredResourceEntry;
+                    const dueOrder = Temporal.Instant.compare(
+                        Temporal.Instant.from(leftEntry.dequeueAudit.nextTs!),
+                        Temporal.Instant.from(rightEntry.dequeueAudit.nextTs!),
+                    );
+                    return dueOrder < 0 || (
+                        dueOrder === 0 && leftEntry.keyString.localeCompare(rightEntry.keyString) <= 0
+                    ) ? left : right;
+                });
+                const cursor = selectedState.cursor;
+                const stored = cursor.value as StoredResourceEntry;
+                scanned += 1;
+
+                if (
+                    this.isExpiredStoredEntry(stored, now) ||
+                    stored.dequeueAudit.attempts >= maxAttempts
+                ) {
+                    if (scanned >= maxToScan) {
+                        stopped = true;
+                        return;
+                    }
+                    continueCursor(selectedState, cursor);
+                    return;
+                }
+
+                const selectedDueTs = Temporal.Instant.from(stored.dequeueAudit.nextTs!);
+                const entry = this.toReservedEntry(this.toResourceEntry(stored), now);
+                selectedState.ready = false;
+                const updateRequest = cursor.update(this.toStoredEntry(entry));
+                updateRequest.onerror = () => reject(
+                    updateRequest.error ?? new Error('IndexedDB fairness update failed'),
+                );
+                updateRequest.onsuccess = () => {
+                    reserved.set(entry.key, { entry, selectedDueTs });
+                    if (reserved.size >= maxToReserve || scanned >= maxToScan) {
+                        stopped = true;
+                        return;
+                    }
+                    continueCursor(selectedState, cursor);
+                };
+            };
+
+            for (const state of states) {
+                const request = index.openCursor(IDBKeyRange.bound(
+                    [state.typeId, EntityStatus.RETRY, '', ''],
+                    [
+                        state.typeId,
+                        EntityStatus.RETRY,
+                        overdueBefore.toString({ fractionalSecondDigits: 9 }),
+                        '\uffff',
+                    ],
+                ));
+                request.onerror = () => reject(request.error ?? new Error('IndexedDB fairness cursor failed'));
+                request.onsuccess = () => {
+                    state.cursor = request.result ?? undefined;
+                    state.ready = true;
+                    drain();
+                };
+            }
         });
     }
 
-    async isAnyEntryToLock(typeIds: Set<string>, checkTimeout: RateLimiter, _checkFairness: RateLimiter): Promise<boolean> {
+    async isAnyEntryToLock(
+        typeIds: Set<string>,
+        workInput: ResourceInboxWorkAdvertisementInput,
+        legacyCheckFairness?: RateLimiter,
+    ): Promise<boolean> {
+        const { checkTimeout, maxAttempts } = toResourceInboxWorkAdvertisementOptions(
+            workInput,
+            legacyCheckFairness,
+            DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts,
+        );
         const isTimedOutEntryToLock =
             await RateLimiter.tryToExecuteOrDefault(
                 checkTimeout,
-                async () => await this.hasAnyTimedOutReservedEntry(typeIds, TIMEOUT_ON_NON_RESPONSIVE_ENTRY),
+                async () => await this.hasAnyTimedOutReservedEntry(
+                    typeIds,
+                    TIMEOUT_ON_NON_RESPONSIVE_ENTRY,
+                    maxAttempts,
+                ),
                 false,
             );
 
-        const newAndRetryEntryToLock = await this.hasAnyReservableEntry(typeIds, NEW_AND_RETRY_STATUSES);
+        const newAndRetryEntryToLock = await this.hasAnyReservableEntry(
+            typeIds,
+            NEW_AND_RETRY_STATUSES,
+            maxAttempts,
+        );
 
         void this.cleanupAsync().catch(e => {
             console.error('Failed to cleanup entries', e);
@@ -614,20 +677,23 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     private async hasAnyReservableEntry(
         typeIds: Set<string>,
         statusesToFind: ReadonlySet<EntityStatus>,
+        maxAttempts: number,
     ): Promise<boolean> {
         return await this.findAnyStoredEntry(stored => {
             const now = Temporal.Now.instant();
-            return this.isReservableEntry(stored, typeIds, statusesToFind, now);
+            return this.isReservableEntry(stored, typeIds, statusesToFind, now, maxAttempts);
         });
     }
 
     private async hasAnyTimedOutReservedEntry(
         typeIds: Set<string>,
         duration: Temporal.Duration,
+        maxAttempts: number,
     ): Promise<boolean> {
         return await this.findAnyStoredEntry(stored => {
             const now = Temporal.Now.instant();
-            return this.isTimedOutReservedEntry(stored, typeIds, duration, now);
+            return stored.dequeueAudit.attempts < maxAttempts &&
+                this.isTimedOutReservedEntry(stored, typeIds, duration, now);
         });
     }
 
@@ -743,6 +809,15 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                 {
                     name: this.storeName,
                     keyPath: 'keyString',
+                    indexes: [{
+                        name: IndexedDbQueueBox.FAIRNESS_INDEX_NAME,
+                        keyPath: [
+                            'typeId',
+                            'status',
+                            'dequeueAudit.nextTs',
+                            'keyString',
+                        ],
+                    }],
                 },
             ).then(db => {
                 db.onversionchange = () => {
@@ -772,7 +847,9 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             dequeueAudit: {
                 startTs: toOptionalInstant(entry.dequeueAudit.startTs)?.toString(),
                 endTs: toOptionalInstant(entry.dequeueAudit.endTs)?.toString(),
-                nextTs: toOptionalInstant(entry.dequeueAudit.nextTs)?.toString(),
+                nextTs: toOptionalInstant(entry.dequeueAudit.nextTs)?.toString({
+                    fractionalSecondDigits: 9,
+                }),
                 attempts: entry.dequeueAudit.attempts,
             },
         };

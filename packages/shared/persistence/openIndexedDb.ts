@@ -1,6 +1,13 @@
+export type IndexedDbIndexDefinition = Readonly<{
+    name: string;
+    keyPath: string | readonly string[];
+    unique?: boolean;
+}>;
+
 export type IndexedDbStoreDefinition = Readonly<{
     name: string;
     keyPath: string;
+    indexes?: readonly IndexedDbIndexDefinition[];
 }>;
 
 export async function openIndexedDbWithStore(
@@ -21,10 +28,9 @@ export async function openIndexedDbWithStores(
     const initialDb = await openIndexedDb(
         dbName,
         undefined,
-        db => ensureStores(db, stores),
+        (db, transaction) => ensureStores(db, transaction, stores),
     );
-    const missingStores = stores.filter(store => !initialDb.objectStoreNames.contains(store.name));
-    if (missingStores.length === 0) {
+    if (!hasMissingSchema(initialDb, stores)) {
         initialDb.onversionchange = () => initialDb.close();
         return initialDb;
     }
@@ -35,7 +41,7 @@ export async function openIndexedDbWithStores(
     const upgradedDb = await openIndexedDb(
         dbName,
         nextVersion,
-        db => ensureStores(db, stores),
+        (db, transaction) => ensureStores(db, transaction, stores),
     );
     upgradedDb.onversionchange = () => upgradedDb.close();
 
@@ -43,6 +49,13 @@ export async function openIndexedDbWithStores(
         if (!upgradedDb.objectStoreNames.contains(store.name)) {
             upgradedDb.close();
             throw new Error(`IndexedDB store "${store.name}" was not created`);
+        }
+        const existingStore = upgradedDb.transaction(store.name).objectStore(store.name);
+        for (const index of store.indexes ?? []) {
+            if (!existingStore.indexNames.contains(index.name)) {
+                upgradedDb.close();
+                throw new Error(`IndexedDB index "${index.name}" was not created`);
+            }
         }
     }
 
@@ -52,7 +65,7 @@ export async function openIndexedDbWithStores(
 async function openIndexedDb(
     dbName: string,
     version?: number,
-    onUpgradeNeeded?: (db: IDBDatabase) => void,
+    onUpgradeNeeded?: (db: IDBDatabase, transaction: IDBTransaction) => void,
 ): Promise<IDBDatabase> {
     return await new Promise<IDBDatabase>((resolve, reject) => {
         const request = version === undefined
@@ -60,7 +73,11 @@ async function openIndexedDb(
             : indexedDB.open(dbName, version);
 
         request.onupgradeneeded = () => {
-            onUpgradeNeeded?.(request.result);
+            if (!request.transaction) {
+                reject(new Error('IndexedDB upgrade transaction is unavailable'));
+                return;
+            }
+            onUpgradeNeeded?.(request.result, request.transaction);
         };
 
         request.onsuccess = () => {
@@ -74,13 +91,41 @@ async function openIndexedDb(
 
 function ensureStores(
     db: IDBDatabase,
+    transaction: IDBTransaction,
     stores: readonly IndexedDbStoreDefinition[],
 ): void {
     for (const store of stores) {
-        if (!db.objectStoreNames.contains(store.name)) {
-            db.createObjectStore(store.name, {
+        const objectStore = !db.objectStoreNames.contains(store.name)
+            ? db.createObjectStore(store.name, {
                 keyPath: store.keyPath,
-            });
+            })
+            : transaction.objectStore(store.name);
+        for (const index of store.indexes ?? []) {
+            if (!objectStore.indexNames.contains(index.name)) {
+                objectStore.createIndex(
+                    index.name,
+                    Array.isArray(index.keyPath) ? [...index.keyPath] : index.keyPath,
+                    { unique: index.unique ?? false },
+                );
+            }
         }
     }
+}
+
+function hasMissingSchema(
+    db: IDBDatabase,
+    stores: readonly IndexedDbStoreDefinition[],
+): boolean {
+    for (const store of stores) {
+        if (!db.objectStoreNames.contains(store.name)) {
+            return true;
+        }
+        const objectStore = db.transaction(store.name).objectStore(store.name);
+        for (const index of store.indexes ?? []) {
+            if (!objectStore.indexNames.contains(index.name)) {
+                return true;
+            }
+        }
+    }
+    return false;
 }

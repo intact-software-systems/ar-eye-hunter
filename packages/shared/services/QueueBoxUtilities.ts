@@ -24,9 +24,10 @@ export class QueueBoxUtilities {
                 qbox,
                 () => typesToDequeue,
                 () => DequeueController.DEFAULT_MAX_NUM_TO_RESERVE,
-                DequeueController.DEFAULT_MAX_RETRY,
+                resilience.retryPolicy.maxAttempts,
                 DequeueController.DEFAULT_MAX_NUM_TO_DEQUEUE,
-                resilience
+                resilience,
+                { retryPolicy: resilience.retryPolicy },
             )
             .onFailedEntries(
                 _ => resilience.failure()

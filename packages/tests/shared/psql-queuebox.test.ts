@@ -4,6 +4,7 @@ import { Either } from '@shared/resilience/Either.ts';
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
 import { PSqlResultsQueueBox } from '@shared-server/postgres/queuebox/PSqlResultsQueueBox.ts';
+import { RateLimiter } from '@shared/resilience/Resilience.ts';
 
 describe('PSqlQueueBox', () => {
     it('enqueue replaces the stored row and returns the previous entry', async () => {
@@ -228,6 +229,50 @@ describe('PSqlQueueBox', () => {
         expect(startProcessingEntity).toHaveBeenCalledWith(exhausted, 2);
     });
 
+    it.each([
+        ['ordinary', false],
+        ['timeout', true],
+    ] as const)('threads the attempt budget through PostgreSQL %s work advertisement', async (
+        _lane,
+        timeoutLane,
+    ) => {
+        const isEntriesToLock = vi.fn(async (
+            _types: ReadonlySet<string>,
+            _statuses: ReadonlySet<EntityStatus>,
+            maxAttempts = 20,
+        ) => !timeoutLane && maxAttempts > 2);
+        const isTimeoutOnReservedEntries = vi.fn(async (
+            _types: ReadonlySet<string>,
+            _duration: Temporal.Duration,
+            maxAttempts = 20,
+        ) => timeoutLane && maxAttempts > 2);
+        const queue = new PSqlQueueBox(createRepo({
+            isEntriesToLock,
+            isTimeoutOnReservedEntries,
+        }) as never);
+
+        const advertised = await queue.isAnyEntryToLock(
+            new Set(['type-1']),
+            {
+                checkTimeout: RateLimiter.init(60_000, 1),
+                checkFairness: RateLimiter.init(60_000, 1),
+                maxAttempts: 2,
+            } as never,
+        );
+
+        expect(advertised).toBe(false);
+        expect(isEntriesToLock).toHaveBeenCalledWith(
+            new Set(['type-1']),
+            expect.any(Set),
+            2,
+        );
+        expect(isTimeoutOnReservedEntries).toHaveBeenCalledWith(
+            new Set(['type-1']),
+            expect.any(Temporal.Duration),
+            2,
+        );
+    });
+
     it('returns the exact timestamps persisted by the fenced PostgreSQL release', async () => {
         const entry = {
             ...createEntry('retry-delay', EntityStatus.RESERVED),
@@ -258,13 +303,15 @@ describe('PSqlQueueBox', () => {
         const repo = createRepo({ releaseReserved });
         const queue = new PSqlQueueBox(repo as never);
 
-        const released = await queue.releaseEntries([entry], EntityStatus.RETRY, 37);
+        const released = await queue.releaseEntries([entry], {
+            status: EntityStatus.RETRY,
+            delayMs: 37,
+        });
         const [updated] = released.values();
 
         expect(releaseReserved).toHaveBeenCalledWith(entry.key, expect.objectContaining({
-            status: EntityStatus.RETRY,
             expectedAttempts: 1,
-            delayMs: 37,
+            disposition: { status: EntityStatus.RETRY, delayMs: 37 },
         }));
         expect(updated?.dequeueAudit.endTs?.toString()).toBe(persistedEndTs.toString());
         expect(updated?.dequeueAudit.nextTs?.toString()).toBe(persistedNextTs.toString());
@@ -288,11 +335,40 @@ describe('PSqlQueueBox', () => {
         });
         const queue = new PSqlQueueBox(repo as never);
 
-        await expect(queue.releaseEntries([stale], EntityStatus.RETRY, 1))
+        await expect(queue.releaseEntries([stale], { status: EntityStatus.RETRY, delayMs: 1 }))
             .rejects.toMatchObject({
                 code: 'resource-inbox-lost-reservation',
                 expectedAttempts: 1,
             });
+    });
+
+    it.each([
+        ['retry without delay', { status: EntityStatus.RETRY, delayMs: null }],
+        ['retry with zero delay', { status: EntityStatus.RETRY, delayMs: 0 }],
+        ['retry with fractional delay', { status: EntityStatus.RETRY, delayMs: 1.5 }],
+        ['terminal with delay', { status: EntityStatus.COMPLETED, delayMs: 1 }],
+        ['unsupported status', { status: EntityStatus.RESERVED, delayMs: null }],
+    ] as const)('rejects invalid PostgreSQL release disposition before the transaction: %s', async (
+        _scenario,
+        disposition,
+    ) => {
+        const first = {
+            ...createEntry(`invalid-first-${_scenario}`, EntityStatus.RESERVED),
+            dequeueAudit: { attempts: 1, startTs: Temporal.Now.instant() },
+        };
+        const second = {
+            ...createEntry(`invalid-second-${_scenario}`, EntityStatus.RESERVED),
+            dequeueAudit: { attempts: 1, startTs: Temporal.Now.instant() },
+        };
+        const releaseReserved = vi.fn(async () => first);
+        const repo = createRepo({ releaseReserved });
+        const queue = new PSqlQueueBox(repo as never);
+
+        await expect(queue.releaseEntries([first, second], disposition as never))
+            .rejects.toMatchObject({ code: 'resource-inbox-invalid-release-disposition' });
+
+        expect(repo.begin).not.toHaveBeenCalled();
+        expect(releaseReserved).not.toHaveBeenCalled();
     });
 
     it('claims overdue retries through the dedicated PostgreSQL fairness selector', async () => {
@@ -397,6 +473,16 @@ describe('PSqlResultsQueueBox', () => {
 });
 
 function createRepo(overrides: {
+    isEntriesToLock?: (
+        typeIds: ReadonlySet<string>,
+        statusIds: ReadonlySet<EntityStatus>,
+        maxAttempts?: number,
+    ) => Promise<boolean>;
+    isTimeoutOnReservedEntries?: (
+        typeIds: ReadonlySet<string>,
+        duration: Temporal.Duration,
+        maxAttempts?: number,
+    ) => Promise<boolean>;
     findEntriesSkipLocked?: () => Promise<Map<Key, ResourceEntry>>;
     findTimedOutReservedEntriesSkipLocked?: () => Promise<Map<Key, ResourceEntry>>;
     findOverdueRetryEntriesSkipLocked?: () => Promise<Map<Key, ResourceEntry>>;
@@ -424,6 +510,9 @@ function createRepo(overrides: {
     >;
 }) {
     const repo = {
+        isEntriesToLock: overrides.isEntriesToLock ?? vi.fn(async () => false),
+        isTimeoutOnReservedEntries:
+            overrides.isTimeoutOnReservedEntries ?? vi.fn(async () => false),
         begin: vi.fn(async (fn: (txRepo: unknown) => Promise<unknown>) => await fn(repo)),
         findEntriesSkipLocked:
             overrides.findEntriesSkipLocked ?? vi.fn(async () => new Map<Key, ResourceEntry>()),

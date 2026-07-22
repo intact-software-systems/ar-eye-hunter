@@ -4,10 +4,16 @@ import { RateLimiter } from '../resilience/Resilience.ts';
 import type { PersistenceSetItemOptions } from '../persistence/PersistenceProvider.ts';
 import {
     QueueBoxResourceEntryRepository,
+    ResourceInboxFairnessReservationInput,
     ResourceInboxFairnessSelection,
     ResourceInboxLostReservationError,
+    ResourceInboxReleaseDisposition,
     ResourceInboxReservationInput,
+    ResourceInboxWorkAdvertisementInput,
+    toResourceInboxFairnessReservationOptions,
+    toResourceInboxReleaseDisposition,
     toResourceInboxReservationOptions,
+    toResourceInboxWorkAdvertisementOptions,
 } from './QueueBoxTypes.ts';
 import {
     COMPLETED_STATUSES,
@@ -146,9 +152,9 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
 
     async releaseEntries(
         resources: ResourceEntry[],
-        entityStatus: EntityStatus,
-        delayMs: number | null,
+        releaseInput: ResourceInboxReleaseDisposition,
     ): Promise<Map<Key, ResourceEntry>> {
+        const disposition = toResourceInboxReleaseDisposition(releaseInput);
         const currentEntries = resources.map(resource => {
             const current = this.data.get(toKeyAsString(resource.key));
             if (
@@ -170,12 +176,12 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         for (const current of currentEntries) {
             const updated: ResourceEntry = {
                 ...current,
-                status: entityStatus,
+                status: disposition.status,
                 dequeueAudit: {
                     startTs: current.dequeueAudit.startTs,
                     endTs: releasedAt,
-                    nextTs: delayMs !== null
-                        ? releasedAt.add({ milliseconds: delayMs })
+                    nextTs: disposition.delayMs !== null
+                        ? releasedAt.add({ milliseconds: disposition.delayMs })
                         : undefined,
                     attempts: current.dequeueAudit.attempts,
                 },
@@ -279,9 +285,9 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
     async reserveOverdueRetryEntries(
         typeIds: Set<string>,
         overdueBeforeEpochMs: number,
-        reservationInput: ResourceInboxReservationInput,
+        reservationInput: ResourceInboxFairnessReservationInput,
     ): Promise<Map<Key, ResourceInboxFairnessSelection>> {
-        const { maxToReserve, maxAttempts } = toResourceInboxReservationOptions(
+        const { maxToReserve, maxAttempts } = toResourceInboxFairnessReservationOptions(
             reservationInput,
             DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts,
         );
@@ -332,15 +338,32 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         return reserved;
     }
 
-    async isAnyEntryToLock(typeIds: Set<string>, checkTimeout: RateLimiter, _checkFairness: RateLimiter): Promise<boolean> {
+    async isAnyEntryToLock(
+        typeIds: Set<string>,
+        workInput: ResourceInboxWorkAdvertisementInput,
+        legacyCheckFairness?: RateLimiter,
+    ): Promise<boolean> {
+        const { checkTimeout, maxAttempts } = toResourceInboxWorkAdvertisementOptions(
+            workInput,
+            legacyCheckFairness,
+            DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts,
+        );
         const isTimedOutEntryToLock =
             await RateLimiter.tryToExecuteOrDefault(
                 checkTimeout,
-                async () => this.isAnyReservedEntryTimedOut(typeIds, TIMEOUT_ON_NON_RESPONSIVE_ENTRY),
+                async () => this.isAnyReservedEntryTimedOut(
+                    typeIds,
+                    TIMEOUT_ON_NON_RESPONSIVE_ENTRY,
+                    maxAttempts,
+                ),
                 false
             );
 
-        const newAndRetryEntryToLock = this.isAnyToLock(typeIds, NEW_AND_RETRY_STATUSES);
+        const newAndRetryEntryToLock = this.isAnyToLock(
+            typeIds,
+            NEW_AND_RETRY_STATUSES,
+            maxAttempts,
+        );
 
         this.cleanupAsync()
             .catch(e => {
@@ -351,14 +374,18 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         return newAndRetryEntryToLock || isTimedOutEntryToLock;
     }
 
-    private isAnyToLock(typeIds: Set<string>, statusesToFind: ReadonlySet<EntityStatus>) {
+    private isAnyToLock(
+        typeIds: Set<string>,
+        statusesToFind: ReadonlySet<EntityStatus>,
+        maxAttempts: number,
+    ) {
         for (const entry of this.data.values()) {
             if (
                 !isExpiredResourceEntry(entry)
                 && typeIds.has(entry.typeId)
                 && statusesToFind.has(entry.status)
                 && entry.status !== EntityStatus.FAILED
-                && entry.dequeueAudit.attempts < DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
+                && entry.dequeueAudit.attempts < maxAttempts
                 && (
                     !entry.dequeueAudit.nextTs ||
                     Temporal.Instant.compare(Temporal.Now.instant(), entry.dequeueAudit.nextTs) >= 0
@@ -371,9 +398,16 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         return false;
     }
 
-    private isAnyReservedEntryTimedOut(typeIds: Set<string>, duration: Temporal.Duration) {
+    private isAnyReservedEntryTimedOut(
+        typeIds: Set<string>,
+        duration: Temporal.Duration,
+        maxAttempts: number,
+    ) {
         for (const entry of this.data.values()) {
-            if (this.isReservedEntryTimedOut(typeIds, entry, duration)) {
+            if (
+                entry.dequeueAudit.attempts < maxAttempts &&
+                this.isReservedEntryTimedOut(typeIds, entry, duration)
+            ) {
                 return true;
             }
         }
