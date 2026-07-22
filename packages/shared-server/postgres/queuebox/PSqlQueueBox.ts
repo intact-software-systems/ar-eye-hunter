@@ -4,6 +4,7 @@ import {
     ResourceInboxFairnessReservationInput,
     ResourceInboxFairnessSelection,
     ResourceInboxFinalizationReservationOptions,
+    ResourceInboxFinalizationSelection,
     ResourceInboxLostReservationError,
     ResourceInboxReleaseDisposition,
     ResourceInboxReservationInput,
@@ -202,7 +203,7 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
     async reserveRetryExhaustionFinalizations(
         typeIds: Set<string>,
         input: ResourceInboxFinalizationReservationOptions,
-    ): Promise<Map<Key, ResourceEntry>> {
+    ): Promise<Map<Key, ResourceInboxFinalizationSelection>> {
         const options = toResourceInboxFinalizationReservationOptions(input);
         const finalizationTypes = typeIds.has(EnqueuedType.APP_INBOX)
             ? new Set([EnqueuedType.APP_INBOX])
@@ -217,8 +218,12 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
                     maxToReserve: options.maxToReserve,
                 },
             );
-            const reserved = new Map<Key, ResourceEntry>();
+            const reserved = new Map<Key, ResourceInboxFinalizationSelection>();
             for (const entry of found.values()) {
+                const selectedDueTs = entry.dequeueAudit.startTs;
+                if (!selectedDueTs) {
+                    throw new Error('Finalization selector returned an entry without startTs');
+                }
                 const recovery = await txRepo.startFinalizationRecovery(
                     entry,
                     options.processingAttempts,
@@ -226,7 +231,7 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
                 recovery.fold(
                     () => undefined,
                     value => {
-                        reserved.set(value.key, value);
+                        reserved.set(value.key, { entry: value, selectedDueTs });
                         return undefined;
                     },
                 );

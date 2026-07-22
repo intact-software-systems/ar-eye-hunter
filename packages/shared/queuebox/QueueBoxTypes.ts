@@ -66,6 +66,11 @@ export type ResourceInboxFairnessSelection = Readonly<{
     selectedDueTs: Temporal.Instant;
 }>;
 
+export type ResourceInboxFinalizationSelection = Readonly<{
+    entry: ResourceEntry;
+    selectedDueTs: Temporal.Instant;
+}>;
+
 export class ResourceInboxLostReservationError extends Error {
     readonly code = 'resource-inbox-lost-reservation';
 
@@ -255,7 +260,7 @@ export interface DequeueResourceEntryRepository {
         typeIds: Set<string>,
         options: ResourceInboxFinalizationReservationOptions,
     )
-        : Promise<Map<Resource.Key, Resource.ResourceEntry>>;
+        : Promise<Map<Resource.Key, ResourceInboxFinalizationSelection>>;
 
     releaseEntries(
         resources: Resource.ResourceEntry[],

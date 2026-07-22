@@ -7,6 +7,7 @@ import {
     ResourceInboxFairnessReservationInput,
     ResourceInboxFairnessSelection,
     ResourceInboxFinalizationReservationOptions,
+    ResourceInboxFinalizationSelection,
     ResourceInboxLostReservationError,
     ResourceInboxReleaseDisposition,
     ResourceInboxReservationInput,
@@ -358,7 +359,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
     async reserveRetryExhaustionFinalizations(
         typeIds: Set<string>,
         input: ResourceInboxFinalizationReservationOptions,
-    ): Promise<Map<Key, ResourceEntry>> {
+    ): Promise<Map<Key, ResourceInboxFinalizationSelection>> {
         const options = toResourceInboxFinalizationReservationOptions(input);
         if (!typeIds.has(EnqueuedType.APP_INBOX) || options.maxToReserve === 0) {
             return new Map();
@@ -370,14 +371,13 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
             entry.status === EntityStatus.RESERVED &&
             !isExpiredResourceEntry(entry, now) &&
             entry.dequeueAudit.attempts >= options.processingAttempts &&
+            entry.dequeueAudit.attempts < Number.MAX_SAFE_INTEGER &&
             entry.dequeueAudit.startTs !== undefined &&
             Temporal.Instant.compare(entry.dequeueAudit.startTs, staleBefore) <= 0
         ).slice(0, options.maxToReserve);
-        if (candidates.some(([, entry]) => entry.dequeueAudit.attempts >= Number.MAX_SAFE_INTEGER)) {
-            throw new RangeError('Resource inbox finalization reservation generation overflow');
-        }
-        const reserved = new Map<Key, ResourceEntry>();
+        const reserved = new Map<Key, ResourceInboxFinalizationSelection>();
         for (const [key, entry] of candidates) {
+            const selectedDueTs = entry.dequeueAudit.startTs!;
             const updated: ResourceEntry = {
                 ...entry,
                 dequeueAudit: {
@@ -388,7 +388,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
                 },
             };
             this.data.set(key, updated);
-            reserved.set(updated.key, updated);
+            reserved.set(updated.key, { entry: updated, selectedDueTs });
         }
         return reserved;
     }

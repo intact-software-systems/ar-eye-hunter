@@ -11,13 +11,20 @@ import { toResourceInboxFairnessReservationOptions } from '@shared/queuebox/Queu
 describe('enqueue and dequeue', () => {
 
     it('runs exhausted AppInbox finalization recovery without invoking the domain computer or generic release', async () => {
+        const finalizedAtEpochMs = Date.parse('2026-07-22T12:00:00Z');
+        const selectedDueTs = Temporal.Instant.fromEpochMilliseconds(
+            finalizedAtEpochMs - 6 * 60 * 1000,
+        );
         const exhausted = createQueueEntry(
             'finalization-recovery',
             EntityStatus.RESERVED,
             21,
         );
         const reserveFinalizations = vi.fn()
-            .mockResolvedValueOnce(new Map([[exhausted.key, exhausted]]))
+            .mockResolvedValueOnce(new Map([[exhausted.key, {
+                entry: exhausted,
+                selectedDueTs,
+            }]]))
             .mockResolvedValue(new Map());
         const releaseEntries = vi.fn();
         const recoverFinalization = vi.fn(async () => undefined);
@@ -35,6 +42,7 @@ describe('enqueue and dequeue', () => {
             1,
             toTestResilience(),
             {
+                nowEpochMs: () => finalizedAtEpochMs,
                 onRetryExhaustionRecovery: recoverFinalization,
             } as never,
         )
@@ -55,6 +63,9 @@ describe('enqueue and dequeue', () => {
             reservationAttempt: 21,
             lane: 'FINALIZATION',
             failure: { source: 'finalization-recovery' },
+            selectedDueAtEpochMs: Number(selectedDueTs.epochMilliseconds),
+            dueAgeMs: 6 * 60 * 1000,
+            finalizedAtEpochMs,
         }));
         expect(domainComputer).not.toHaveBeenCalled();
         expect(releaseEntries).not.toHaveBeenCalled();
@@ -69,8 +80,14 @@ describe('enqueue and dequeue', () => {
             dequeueAudit: { ...attempt21.dequeueAudit, attempts: 22 },
         };
         const reserveFinalizations = vi.fn()
-            .mockResolvedValueOnce(new Map([[attempt21.key, attempt21]]))
-            .mockResolvedValueOnce(new Map([[attempt22.key, attempt22]]));
+            .mockResolvedValueOnce(new Map([[attempt21.key, {
+                entry: attempt21,
+                selectedDueTs: Temporal.Instant.from('2026-01-01T00:00:00Z'),
+            }]]))
+            .mockResolvedValueOnce(new Map([[attempt22.key, {
+                entry: attempt22,
+                selectedDueTs: Temporal.Instant.from('2026-01-01T00:00:00Z'),
+            }]]));
         const releaseEntries = vi.fn();
         const domainComputer = vi.fn(async () => 'domain-result');
         const recoverFinalization = vi.fn()

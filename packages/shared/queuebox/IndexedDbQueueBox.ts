@@ -8,6 +8,7 @@ import {
     ResourceInboxFairnessReservationInput,
     ResourceInboxFairnessSelection,
     ResourceInboxFinalizationReservationOptions,
+    ResourceInboxFinalizationSelection,
     ResourceInboxLostReservationError,
     ResourceInboxReleaseDisposition,
     ResourceInboxReservationInput,
@@ -673,7 +674,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     async reserveRetryExhaustionFinalizations(
         typeIds: Set<string>,
         input: ResourceInboxFinalizationReservationOptions,
-    ): Promise<Map<Key, ResourceEntry>> {
+    ): Promise<Map<Key, ResourceInboxFinalizationSelection>> {
         const options = toResourceInboxFinalizationReservationOptions(input);
         if (!typeIds.has(EnqueuedType.APP_INBOX) || options.maxToReserve === 0) {
             return new Map();
@@ -681,7 +682,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         const db = await this.openDb();
         const now = Temporal.Now.instant();
         const staleBefore = now.subtract({ milliseconds: options.staleAfterMs });
-        const reserved = new Map<Key, ResourceEntry>();
+        const reserved = new Map<Key, ResourceInboxFinalizationSelection>();
         return await new Promise((resolve, reject) => {
             const tx = db.transaction(this.storeName, 'readwrite');
             const request = tx.objectStore(this.storeName).openCursor();
@@ -700,15 +701,11 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                     stored.status === EntityStatus.RESERVED &&
                     !this.isExpiredStoredEntry(stored, now) &&
                     stored.dequeueAudit.attempts >= options.processingAttempts &&
+                    stored.dequeueAudit.attempts < Number.MAX_SAFE_INTEGER &&
                     startTs !== undefined &&
                     Temporal.Instant.compare(startTs, staleBefore) <= 0;
                 if (!eligible) {
                     cursor.continue();
-                    return;
-                }
-                if (stored.dequeueAudit.attempts >= Number.MAX_SAFE_INTEGER) {
-                    tx.abort();
-                    reject(new RangeError('Resource inbox finalization reservation generation overflow'));
                     return;
                 }
                 const entry = this.toResourceEntry(stored);
@@ -724,7 +721,10 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                 const update = cursor.update(this.toStoredEntry(updated));
                 update.onerror = () => reject(update.error ?? new Error('IndexedDB finalization update failed'));
                 update.onsuccess = () => {
-                    reserved.set(updated.key, updated);
+                    reserved.set(updated.key, {
+                        entry: updated,
+                        selectedDueTs: startTs,
+                    });
                     cursor.continue();
                 };
             };

@@ -355,6 +355,34 @@ describe('AppInbox error classification', () => {
             error: new Error('unknown failure'),
             kind: 'retryable',
         },
+        ...[
+            'future-validation-timeout',
+            'network-collision-course',
+            'transient-invariant-corruption-wrapper',
+            'authority-denied-by-upstream-ish',
+            'policy-denied-retry-proxy',
+            'lifecycle-rejected-temporarily',
+        ].map((code) => ({
+            name: `unknown fragment-bearing code ${code}`,
+            error: Object.assign(new Error('unknown transient failure'), { code }),
+            kind: 'retryable' as const,
+        })),
+        {
+            name: 'known idempotency conflict',
+            error: Object.assign(new Error('command identity changed'), {
+                code: 'app-inbox-idempotency-conflict',
+                status: 409,
+            }),
+            kind: 'terminal',
+        },
+        {
+            name: 'known mutation rejection',
+            error: Object.assign(new Error('mutation rejected'), {
+                code: 'group-mutation-rejected',
+                status: 409,
+            }),
+            kind: 'terminal',
+        },
     ])('classifies $name by typed code precedence', ({ error, kind }) => {
         expect(classifyAppInboxError(error).kind).toBe(kind);
     });
@@ -418,6 +446,7 @@ describe('AppInbox retry exhaustion', () => {
                 resourceId: harness.entry.key.resourceId,
                 topicId: harness.entry.key.topicId,
                 operation: AppInboxType.GROUP_CREATE,
+                operationSource: 'command',
             },
             selectedLane: 'NEW',
             processingAttempts: 20,
@@ -445,6 +474,67 @@ describe('AppInbox retry exhaustion', () => {
         expect(stored?.resource).not.toContain('password-123');
     });
 
+    it.each([
+        {
+            name: 'corrupt outer JSON',
+            resource: '{"secret":"outer-password"',
+            operationSource: 'corrupt',
+        },
+        {
+            name: 'corrupt nested command JSON',
+            resource: JSON.stringify({
+                payload: { resource: '{"secret":"nested-password"' },
+            }),
+            operationSource: 'corrupt',
+        },
+        {
+            name: 'unknown removed operation',
+            resource: JSON.stringify({
+                payload: {
+                    resource: JSON.stringify({
+                        type: 'REMOVED_GROUP_OPERATION_password',
+                    }),
+                },
+            }),
+            operationSource: 'unavailable',
+        },
+    ].flatMap((testCase) => [
+        { ...testCase, lane: 'initial' as const, attempts: 20 },
+        { ...testCase, lane: 'recovery' as const, attempts: 21 },
+    ]))('atomically finalizes $lane exhaustion with $name', async ({
+        resource,
+        operationSource,
+        lane,
+        attempts,
+    }) => {
+        const harness = createAtomicHarness({ attempts, entryResource: resource });
+        const domainHandler = vi.fn();
+        if (lane === 'initial') {
+            await createAppInboxRetryExhaustionHandler({
+                database: harness.database.sql,
+            })(toExhaustion(harness.entry));
+        } else {
+            await createAppInboxRetryExhaustionRecoveryHandler({
+                database: harness.database.sql,
+            })(toRecovery(harness.entry, attempts));
+        }
+
+        const stored = harness.database.state.results.get(toKeyAsString(harness.entry.key));
+        expect(harness.database.beginCalls).toBe(1);
+        expect(harness.database.state.inbox.get(toKeyAsString(harness.entry.key))?.status)
+            .toBe(EntityStatus.FAILED);
+        expect(JSON.parse(stored!.resource)).toMatchObject({
+            commandIdentity: {
+                operation: 'APP_INBOX_GROUP_OPERATION_UNAVAILABLE',
+                operationSource,
+            },
+            processingAttempts: 20,
+            reservationAttempt: attempts,
+        });
+        expect(stored?.resource).not.toContain('password');
+        expect(domainHandler).not.toHaveBeenCalled();
+    });
+
     it('rolls back a lost recovery reservation and finalizes a later reservation generation', async () => {
         const harness = createAtomicHarness({ attempts: 21, loseReservation: true });
         const recover = createAppInboxRetryExhaustionRecoveryHandler({
@@ -469,6 +559,7 @@ describe('AppInbox retry exhaustion', () => {
             selectedLane: 'FINALIZATION',
             processingAttempts: 20,
             reservationAttempt: 22,
+            finalizedAtEpochMs: NOW_EPOCH_MS,
             lastError: {
                 source: 'finalization-recovery',
                 code: 'app-inbox-finalization-recovery',
@@ -693,11 +784,15 @@ class AtomicDatabase {
 
 function createAtomicHarness(options: Readonly<{
     attempts?: number;
+    entryResource?: string;
     failResultWrite?: boolean;
     loseReservation?: boolean;
     timing?: (event: RallarTimingEvent) => void;
 }> = {}) {
-    const entry = createReservedEntry(options.attempts ?? 7);
+    const baseEntry = createReservedEntry(options.attempts ?? 7);
+    const entry = options.entryResource === undefined
+        ? baseEntry
+        : { ...baseEntry, resource: options.entryResource };
     const database = new AtomicDatabase(entry, {
         failResultWrite: options.failResultWrite ?? false,
         loseReservation: options.loseReservation ?? false,
@@ -815,6 +910,27 @@ function toRecovery(
         failure: { source: 'finalization-recovery' },
         queueAgeMs: 60_000,
         dueAgeMs: 300_000,
+        selectedDueAtEpochMs: NOW_EPOCH_MS - 300_000,
+        finalizedAtEpochMs: NOW_EPOCH_MS,
+    };
+}
+
+function toExhaustion(entry: ResourceEntry): ResourceInboxRetryExhaustion {
+    return {
+        entry,
+        processingAttempts: 20,
+        reservationAttempt: 20,
+        lane: 'NEW' as never,
+        classification: 'retryable',
+        exhausted: true,
+        failure: {
+            source: 'processing',
+            error: Object.assign(new Error('retryable conflict'), {
+                code: 'runtime-state-write-conflict',
+            }),
+        },
+        queueAgeMs: 60_000,
+        dueAgeMs: 0,
         exhaustedAtEpochMs: NOW_EPOCH_MS,
     };
 }

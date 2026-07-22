@@ -14,26 +14,44 @@ export type AppInboxErrorClassification =
         message: string;
     }>;
 
-const RETRYABLE_CODES = new Set([
+const RETRYABLE_CONFLICT_CODES = new Set([
     'app-inbox-reservation-conflict',
     'resource-inbox-lost-reservation',
     'runtime-state-write-conflict',
     'state-snapshot-read-conflict',
     'group-topology-commit-conflict',
+]);
+
+const RETRYABLE_CODES = new Set([
+    ...RETRYABLE_CONFLICT_CODES,
     'app-inbox-transient',
 ]);
 
-const TERMINAL_CODE_PARTS = [
-    'authority-denied',
-    'policy-denied',
-    'malformed',
-    'rejected',
-    'validation',
-    'idempotency-conflict',
-    'collision',
-    'invariant-corruption',
-    'lifecycle',
-] as const;
+const TERMINAL_CODES = new Set([
+    'app-inbox-malformed-command',
+    'app-inbox-idempotency-conflict',
+    'app-inbox-lifecycle-rejected',
+    'client-mutation-idempotency-conflict',
+    'client-mutation-rejected',
+    'client-state-event-repository-invariant-corruption',
+    'client-state-repository-invariant-corruption',
+    'group-mutation-authority-denied',
+    'group-mutation-idempotency-conflict',
+    'group-mutation-rejected',
+    'group-state-event-collision',
+    'group-state-event-repository-invariant-corruption',
+    'group-state-repository-invariant-corruption',
+    'group-topology-config-idempotency-conflict',
+    'group-topology-config-repository-invariant-corruption',
+    'group-topology-config-validation-failed',
+    'group-topology-validation-failed',
+    'resource-inbox-invariant-corruption',
+    'rtc-rtt-idempotency-conflict',
+    'rtc-topology-publication-collision',
+    'rtc-topology-repository-invariant-corruption',
+    'state-mutation-outbox-collision',
+    'state-mutation-outbox-invariant-corruption',
+]);
 
 export function classifyAppInboxError(error: unknown): AppInboxErrorClassification {
     const code = toAppInboxErrorCode(error);
@@ -78,7 +96,7 @@ export function classifyAppInboxError(error: unknown): AppInboxErrorClassificati
             result: error.message,
         };
     }
-    if (isExplicitTerminalCode(code)) {
+    if (TERMINAL_CODES.has(code)) {
         return {
             kind: 'terminal',
             code,
@@ -102,14 +120,10 @@ export function toAppInboxErrorCode(error: unknown): string {
 }
 
 export function toRetryableAppInboxMessage(code: string): string {
-    if (code.includes('conflict') || code === 'resource-inbox-lost-reservation') {
+    if (RETRYABLE_CONFLICT_CODES.has(code)) {
         return 'AppInbox processing encountered a retryable conflict';
     }
     return 'AppInbox processing encountered a retryable transient failure';
-}
-
-function isExplicitTerminalCode(code: string): boolean {
-    return TERMINAL_CODE_PARTS.some((part) => code.includes(part));
 }
 
 function toTerminalResult(error: unknown, code: string): unknown {

@@ -239,9 +239,12 @@ describe('InMemoryQueueBox', () => {
 
         expect([...recovered.values()]).toEqual([
             expect.objectContaining({
-                key: exhausted.key,
-                status: EntityStatus.RESERVED,
-                dequeueAudit: expect.objectContaining({ attempts: 21 }),
+                entry: expect.objectContaining({
+                    key: exhausted.key,
+                    status: EntityStatus.RESERVED,
+                    dequeueAudit: expect.objectContaining({ attempts: 21 }),
+                }),
+                selectedDueTs: staleStart,
             }),
         ]);
         expect((await queue.reserveRetryExhaustionFinalizations(
@@ -254,22 +257,56 @@ describe('InMemoryQueueBox', () => {
         )).size).toBe(0);
     });
 
-    it('rejects finalization recovery generation overflow', async () => {
+    it('skips poison finalization generations without consuming a valid bounded batch', async () => {
         const queue = new InMemoryQueueBox();
-        await queue.enqueue(createEntry(EnqueuedType.APP_INBOX, 'overflow', {
+        const poison = createEntry(EnqueuedType.APP_INBOX, '000-overflow', {
             status: EntityStatus.RESERVED,
             attempts: Number.MAX_SAFE_INTEGER,
             startTs: Temporal.Now.instant().subtract({ minutes: 6 }),
-        }));
+        });
+        const valid = createEntry(EnqueuedType.APP_INBOX, 'zzz-valid', {
+            status: EntityStatus.RESERVED,
+            attempts: 20,
+            startTs: Temporal.Now.instant().subtract({ minutes: 6 }),
+        });
+        await queue.enqueue(poison);
+        await queue.enqueue(valid);
 
-        await expect(queue.reserveRetryExhaustionFinalizations(
+        const selected = await queue.reserveRetryExhaustionFinalizations(
             new Set([EnqueuedType.APP_INBOX]),
             {
                 processingAttempts: 20,
                 maxToReserve: 1,
                 staleAfterMs: 5 * 60 * 1000,
             },
-        )).rejects.toThrow(/generation|attempt|overflow/iu);
+        );
+
+        expect(firstValue(selected).entry).toMatchObject({
+            key: valid.key,
+            dequeueAudit: { attempts: 21 },
+        });
+        expect((await queue.getItem(poison.key))?.dequeueAudit.attempts)
+            .toBe(Number.MAX_SAFE_INTEGER);
+    });
+
+    it('does not advertise finalization work when only poison generations remain', async () => {
+        const queue = new InMemoryQueueBox();
+        await queue.enqueue(createEntry(EnqueuedType.APP_INBOX, 'overflow-only', {
+            status: EntityStatus.RESERVED,
+            attempts: Number.MAX_SAFE_INTEGER,
+            startTs: Temporal.Now.instant().subtract({ minutes: 6 }),
+        }));
+
+        await expect(queue.isAnyEntryToLock(
+            new Set([EnqueuedType.APP_INBOX]),
+            {
+                checkTimeout: RateLimiter.init(60_000, 1),
+                checkFairness: RateLimiter.init(60_000, 1),
+                checkFinalization: RateLimiter.init(60_000, 1),
+                maxAttempts: 20,
+                finalizationStaleAfterMs: 5 * 60 * 1000,
+            },
+        )).resolves.toBe(false);
     });
 
     it('rolls back the whole memory release batch when one reservation is stale', async () => {

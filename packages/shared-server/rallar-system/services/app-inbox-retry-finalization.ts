@@ -1,5 +1,4 @@
 import { Temporal } from '@js-temporal/polyfill';
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import {
     EntityStatus,
     type ResourceEntry,
@@ -13,13 +12,27 @@ import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import { runInTransaction } from '@shared-server/postgres/run-in-transaction.ts';
-import { AppInboxReservationConflictError, AppInboxType, type AppInboxEnqueueInput } from './app-inbox-contracts.ts';
+import { AppInboxReservationConflictError, AppInboxType } from './app-inbox-contracts.ts';
 import { classifyAppInboxError } from './app-inbox-error-classification.ts';
 import { type RallarTimingSink, timeRallarAsync } from './timing.ts';
 
 export type AppInboxRetryFinalization =
     | ResourceInboxRetryExhaustion
     | ResourceInboxRetryExhaustionRecovery;
+
+interface AppInboxOperationIdentity {
+    readonly operation: AppInboxType | AppInboxUnavailableOperation;
+    readonly operationSource: 'command' | 'corrupt' | 'unavailable';
+}
+
+type AppInboxUnavailableOperation =
+    | 'APP_INBOX_CLIENT_OPERATION_UNAVAILABLE'
+    | 'APP_INBOX_GROUP_OPERATION_UNAVAILABLE'
+    | 'APP_INBOX_OPERATION_UNAVAILABLE';
+
+const APP_INBOX_CLIENT_TOPIC = 'app-inbox.client-state';
+const APP_INBOX_GROUP_TOPIC = 'app-inbox.group-state';
+const APP_INBOX_OPERATIONS = new Set<string>(Object.values(AppInboxType));
 
 export function createAppInboxRetryExhaustionHandler(options: Readonly<{
     database: PSqlSql;
@@ -43,6 +56,7 @@ function createFinalizer(options: Readonly<{
         if (exhaustion.reservationAttempt < exhaustion.processingAttempts) {
             throw new RangeError('App inbox exhaustion reservation precedes the processing retry limit');
         }
+        const finalizedAtEpochMs = toFinalizedAtEpochMs(exhaustion);
         const diagnostics = toDiagnostics(exhaustion);
         const details = {
             processingAttempts: exhaustion.processingAttempts,
@@ -83,7 +97,7 @@ function createFinalizer(options: Readonly<{
                             exhaustion.entry.key,
                             exhaustion.reservationAttempt,
                             EntityStatus.FAILED,
-                            new Date(exhaustion.exhaustedAtEpochMs),
+                            new Date(finalizedAtEpochMs),
                         );
                         if (!finished) {
                             throw new AppInboxReservationConflictError(exhaustion.entry.key);
@@ -96,7 +110,7 @@ function createFinalizer(options: Readonly<{
                     dequeueAudit: {
                         ...exhaustion.entry.dequeueAudit,
                         endTs: Temporal.Instant.fromEpochMilliseconds(
-                            exhaustion.exhaustedAtEpochMs,
+                            finalizedAtEpochMs,
                         ),
                         nextTs: undefined,
                     },
@@ -107,13 +121,20 @@ function createFinalizer(options: Readonly<{
 }
 
 function toDiagnostics(exhaustion: AppInboxRetryFinalization) {
+    const operationIdentity = toOperationIdentity(exhaustion.entry);
+    const timingIdentity = isProcessingFinalization(exhaustion)
+        ? { exhaustedAtEpochMs: exhaustion.exhaustedAtEpochMs }
+        : {
+            selectedDueAtEpochMs: exhaustion.selectedDueAtEpochMs,
+            finalizedAtEpochMs: exhaustion.finalizedAtEpochMs,
+        };
     return {
         type: 'app-inbox-retry-exhausted',
         commandIdentity: {
             contextId: exhaustion.entry.key.contextId,
             resourceId: exhaustion.entry.key.resourceId,
             topicId: exhaustion.entry.key.topicId,
-            operation: readOperation(exhaustion.entry),
+            ...operationIdentity,
         },
         selectedLane: exhaustion.lane,
         processingAttempts: exhaustion.processingAttempts,
@@ -127,7 +148,7 @@ function toDiagnostics(exhaustion: AppInboxRetryFinalization) {
             },
         queueAgeMs: exhaustion.queueAgeMs,
         dueAgeMs: exhaustion.dueAgeMs,
-        exhaustedAtEpochMs: exhaustion.exhaustedAtEpochMs,
+        ...timingIdentity,
     } as const;
 }
 
@@ -142,11 +163,67 @@ function toProcessingFailure(error: Error) {
     } as const;
 }
 
-function readOperation(entry: ResourceEntry): AppInboxType {
-    const message = JSON.parse(entry.resource) as ALMessage;
-    const command = JSON.parse(message.payload.resource) as AppInboxEnqueueInput<unknown>;
-    if (!Object.values(AppInboxType).includes(command.type)) {
-        throw new TypeError('App inbox exhaustion command operation is malformed');
+function toFinalizedAtEpochMs(exhaustion: AppInboxRetryFinalization): number {
+    return isProcessingFinalization(exhaustion)
+        ? exhaustion.exhaustedAtEpochMs
+        : exhaustion.finalizedAtEpochMs;
+}
+
+function isProcessingFinalization(
+    exhaustion: AppInboxRetryFinalization,
+): exhaustion is ResourceInboxRetryExhaustion {
+    return exhaustion.failure.source === 'processing';
+}
+
+function toOperationIdentity(entry: ResourceEntry): AppInboxOperationIdentity {
+    let outer: unknown;
+    try {
+        outer = JSON.parse(entry.resource) as unknown;
+    } catch {
+        return toUnavailableOperationIdentity(entry.key.topicId, 'corrupt');
     }
-    return command.type;
+    if (!isRecord(outer) || !isRecord(outer.payload) ||
+        typeof outer.payload.resource !== 'string') {
+        return toUnavailableOperationIdentity(entry.key.topicId, 'corrupt');
+    }
+
+    let command: unknown;
+    try {
+        command = JSON.parse(outer.payload.resource) as unknown;
+    } catch {
+        return toUnavailableOperationIdentity(entry.key.topicId, 'corrupt');
+    }
+    if (!isRecord(command) || typeof command.type !== 'string') {
+        return toUnavailableOperationIdentity(entry.key.topicId, 'corrupt');
+    }
+    if (!APP_INBOX_OPERATIONS.has(command.type) ||
+        !isOperationForTopic(command.type, entry.key.topicId)) {
+        return toUnavailableOperationIdentity(entry.key.topicId, 'unavailable');
+    }
+    return {
+        operation: command.type as AppInboxType,
+        operationSource: 'command',
+    };
+}
+
+function toUnavailableOperationIdentity(
+    topicId: string,
+    operationSource: 'corrupt' | 'unavailable',
+): AppInboxOperationIdentity {
+    const operation = topicId === APP_INBOX_GROUP_TOPIC
+        ? 'APP_INBOX_GROUP_OPERATION_UNAVAILABLE'
+        : topicId === APP_INBOX_CLIENT_TOPIC
+        ? 'APP_INBOX_CLIENT_OPERATION_UNAVAILABLE'
+        : 'APP_INBOX_OPERATION_UNAVAILABLE';
+    return { operation, operationSource };
+}
+
+function isOperationForTopic(operation: string, topicId: string): boolean {
+    return topicId === APP_INBOX_GROUP_TOPIC
+        ? operation.startsWith('GROUP_')
+        : topicId === APP_INBOX_CLIENT_TOPIC && operation.startsWith('CLIENT_');
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
 }

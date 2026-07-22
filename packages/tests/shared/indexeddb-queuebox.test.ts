@@ -187,11 +187,71 @@ describe('IndexedDbQueueBox', () => {
         );
 
         expect(firstValue(recovered)).toMatchObject({
-            key: exhausted.key,
-            status: EntityStatus.RESERVED,
-            dequeueAudit: { attempts: 21 },
+            entry: {
+                key: exhausted.key,
+                status: EntityStatus.RESERVED,
+                dequeueAudit: { attempts: 21 },
+            },
+            selectedDueTs: exhausted.dequeueAudit.startTs,
         });
         expect((await queue.getItem(exhausted.key))?.dequeueAudit.attempts).toBe(21);
+    });
+
+    it('skips poison finalization generations and reserves the valid cursor sibling', async () => {
+        const queue = new IndexedDbQueueBox({
+            dbName: `indexeddb-finalization-poison-${crypto.randomUUID()}`,
+        });
+        const staleStart = Temporal.Now.instant().subtract({ minutes: 6 });
+        const poison = createEntry(EnqueuedType.APP_INBOX, '000-overflow', {
+            status: EntityStatus.RESERVED,
+            attempts: Number.MAX_SAFE_INTEGER,
+            startTs: staleStart,
+        });
+        const valid = createEntry(EnqueuedType.APP_INBOX, 'zzz-valid', {
+            status: EntityStatus.RESERVED,
+            attempts: 20,
+            startTs: staleStart,
+        });
+        await queue.enqueue(poison);
+        await queue.enqueue(valid);
+
+        const selected = await queue.reserveRetryExhaustionFinalizations(
+            new Set([EnqueuedType.APP_INBOX]),
+            {
+                processingAttempts: 20,
+                maxToReserve: 1,
+                staleAfterMs: 5 * 60 * 1000,
+            },
+        );
+
+        expect(firstValue(selected).entry).toMatchObject({
+            key: valid.key,
+            dequeueAudit: { attempts: 21 },
+        });
+        expect((await queue.getItem(poison.key))?.dequeueAudit.attempts)
+            .toBe(Number.MAX_SAFE_INTEGER);
+    });
+
+    it('does not advertise IndexedDB finalization work for poison generations alone', async () => {
+        const queue = new IndexedDbQueueBox({
+            dbName: `indexeddb-finalization-advertisement-${crypto.randomUUID()}`,
+        });
+        await queue.enqueue(createEntry(EnqueuedType.APP_INBOX, 'overflow-only', {
+            status: EntityStatus.RESERVED,
+            attempts: Number.MAX_SAFE_INTEGER,
+            startTs: Temporal.Now.instant().subtract({ minutes: 6 }),
+        }));
+
+        await expect(queue.isAnyEntryToLock(
+            new Set([EnqueuedType.APP_INBOX]),
+            {
+                checkTimeout: RateLimiter.init(60_000, 1),
+                checkFairness: RateLimiter.init(60_000, 1),
+                checkFinalization: RateLimiter.init(60_000, 1),
+                maxAttempts: 20,
+                finalizationStaleAfterMs: 5 * 60 * 1000,
+            },
+        )).resolves.toBe(false);
     });
 
     it('does not reserve retry entries before nextTs', async () => {

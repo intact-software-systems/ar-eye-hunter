@@ -218,7 +218,10 @@ describe('PSqlQueueBox', () => {
             { processingAttempts: 20, maxToReserve: 1 },
         );
         expect(startFinalizationRecovery).toHaveBeenCalledWith(exhausted, 20);
-        expect([...selected.values()][0]?.dequeueAudit.attempts).toBe(21);
+        expect([...selected.values()][0]).toEqual({
+            entry: recovered,
+            selectedDueTs: exhausted.dequeueAudit.startTs,
+        });
     });
 
     it('uses a custom two-attempt PostgreSQL reservation budget', async () => {

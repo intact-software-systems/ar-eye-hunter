@@ -1817,8 +1817,12 @@ Deno.test('PGlite reclaims stale AppInbox exhaustion as an exact finalization ge
     );
 
     assert.equal(recovered.size, 1);
-    assert.equal([...recovered.values()][0]?.dequeueAudit.attempts, 21);
-    assert.equal([...recovered.values()][0]?.status, EntityStatus.RESERVED);
+    assert.equal([...recovered.values()][0]?.entry.dequeueAudit.attempts, 21);
+    assert.equal([...recovered.values()][0]?.entry.status, EntityStatus.RESERVED);
+    assert.equal(
+      [...recovered.values()][0]?.selectedDueTs.toString(),
+      exhausted.dequeueAudit.startTs.toString(),
+    );
     assert.equal(
       (await queue.reserveRetryExhaustionFinalizations(
         new Set(['APP_INBOX']),

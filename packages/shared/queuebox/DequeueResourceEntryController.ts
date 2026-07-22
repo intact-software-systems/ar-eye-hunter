@@ -11,6 +11,7 @@ import { DequeueController, FailureDto, Reservator, SuccessDto } from './Dequeue
 import {
     DequeueResourceEntryRepository,
     type ResourceInboxReleaseDisposition,
+    type ResourceInboxFinalizationSelection,
     type ResourceInboxWorkAdvertisementOptions,
     toSaturatedResourceInboxFairnessScanBudget,
 } from './QueueBoxTypes.ts';
@@ -60,7 +61,8 @@ export type ResourceInboxRetryExhaustionRecovery = Readonly<{
     failure: Readonly<{ source: 'finalization-recovery' }>;
     queueAgeMs: number;
     dueAgeMs: number;
-    exhaustedAtEpochMs: number;
+    selectedDueAtEpochMs: number;
+    finalizedAtEpochMs: number;
 }>;
 
 export type ResourceInboxAttemptTelemetry = Readonly<{
@@ -68,6 +70,7 @@ export type ResourceInboxAttemptTelemetry = Readonly<{
     queueAgeMs: number;
     dueAgeMs: number;
     attempt: number;
+    selectedDueAtEpochMs: number;
 }>;
 
 const attemptTelemetryByEntry = new WeakMap<ResourceEntry, ResourceInboxAttemptTelemetry>();
@@ -285,8 +288,9 @@ export class DequeueResourceEntryController {
             .withMaxNumToDequeue(maxNumToDequeue)
             .withMaxNumToReserve(maxToReserve)
             .onFinalizationEntriesReserveDo(options.onRetryExhaustionRecovery
-                ? async (types, maxNumToReserve) =>
-                    await RateLimiter.tryToExecuteOrDefault(
+                ? async (types, maxNumToReserve) => {
+                    const selectedAtEpochMs = nowEpochMs();
+                    const selections = await RateLimiter.tryToExecuteOrDefault(
                         resilience.checkFinalization.lockEntryRateLimiter,
                         () => dequeueResourceEntryRepository.reserveRetryExhaustionFinalizations(
                             types,
@@ -296,16 +300,31 @@ export class DequeueResourceEntryController {
                                 staleAfterMs: DequeueResourceEntryController.FINALIZATION_STALE_AFTER_MS,
                             },
                         ),
-                        new Map<Resource.Key, ResourceEntry>(),
-                    )
+                        new Map<Resource.Key, ResourceInboxFinalizationSelection>(),
+                    );
+                    const entries = new Map<Resource.Key, ResourceEntry>();
+                    for (const [key, selection] of selections) {
+                        attemptTelemetryByEntry.set(
+                            selection.entry,
+                            toAttemptTelemetry(
+                                selection.entry,
+                                Reservator.FINALIZATION,
+                                selectedAtEpochMs,
+                                Number(selection.selectedDueTs.epochMilliseconds),
+                            ),
+                        );
+                        entries.set(key, selection.entry);
+                    }
+                    return entries;
+                }
                 : undefined)
             .onFinalizationEntriesDo(options.onRetryExhaustionRecovery
                 ? async (key, entry) => {
-                    const exhaustedAtEpochMs = nowEpochMs();
+                    const finalizedAtEpochMs = nowEpochMs();
                     const recovery = toRetryExhaustionRecovery(
                         entry,
                         retryPolicy.maxAttempts,
-                        exhaustedAtEpochMs,
+                        finalizedAtEpochMs,
                     );
                     await options.onRetryExhaustionRecovery!(recovery);
                     options.onRetryExhaustionTelemetry?.(recovery);
@@ -612,9 +631,12 @@ function toRetryExhaustion(
 function toRetryExhaustionRecovery(
     entry: ResourceEntry,
     processingAttempts: number,
-    exhaustedAtEpochMs: number,
+    finalizedAtEpochMs: number,
 ): ResourceInboxRetryExhaustionRecovery {
-    const telemetry = toAttemptTelemetry(entry, Reservator.FINALIZATION, exhaustedAtEpochMs);
+    const telemetry = readResourceInboxAttemptTelemetry(entry);
+    if (!telemetry || telemetry.selectedLane !== Reservator.FINALIZATION) {
+        throw new Error('Finalization recovery selection telemetry is missing');
+    }
     return {
         entry,
         processingAttempts,
@@ -625,7 +647,8 @@ function toRetryExhaustionRecovery(
         failure: { source: 'finalization-recovery' },
         queueAgeMs: telemetry.queueAgeMs,
         dueAgeMs: telemetry.dueAgeMs,
-        exhaustedAtEpochMs,
+        selectedDueAtEpochMs: telemetry.selectedDueAtEpochMs,
+        finalizedAtEpochMs,
     };
 }
 
@@ -646,6 +669,7 @@ function toAttemptTelemetry(
         queueAgeMs: Math.max(0, selectedAtEpochMs - createdAtEpochMs),
         dueAgeMs: Math.max(0, selectedAtEpochMs - dueAtEpochMs),
         attempt: entry.dequeueAudit.attempts,
+        selectedDueAtEpochMs: dueAtEpochMs,
     };
 }
 
