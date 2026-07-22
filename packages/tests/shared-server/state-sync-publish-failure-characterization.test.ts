@@ -38,7 +38,10 @@ import {
     type GroupPresenceConnectAppInboxPayload,
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
-import type { IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+import {
+    AuthSessionRepository,
+    type IssuedAuthSession,
+} from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 import { createWsStateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
 import { createCachedGroupStateService } from '@shared-server/rallar-system/services/cached-group-state-service.ts';
 import { createCachedClientStateService } from '@shared-server/rallar-system/services/cached-client-state-service.ts';
@@ -56,6 +59,10 @@ const SCOPE: StateScope = {
 const GROUP_INBOX_AUTHORITIES = new WeakMap<
     AppGroupInboxService,
     (principalId: string, sessionId?: string) => IssuedAuthSession
+>();
+const CLIENT_INBOX_AUTHORITIES = new WeakMap<
+    AppClientInboxService,
+    (principalId: string, sessionId?: string) => Promise<IssuedAuthSession>
 >();
 
 describe('state sync publish failure characterization', () => {
@@ -174,7 +181,8 @@ describe('state sync publish failure characterization', () => {
         const enqueueOutboxIfAbsent = vi.fn(async () => {
             throw new Error('client snapshot enqueue unavailable');
         });
-        const { appInbox, reader, queue, results, outboxEntries } = createClientAppInbox(
+        const { appInbox, reader, queue, results, outboxEntries, clientEventStore } =
+            createClientAppInbox(
             runtimeRepository,
             createPublisher(enqueueOutboxIfAbsent),
             2_000,
@@ -191,7 +199,9 @@ describe('state sync publish failure characterization', () => {
             ...SCOPE,
             principalId: 'alice',
         };
-        const durableRepository = new ClientStateRepository(runtimeRepository);
+        const durableRepository = new ClientStateRepository(runtimeRepository, {
+            events: clientEventStore,
+        });
         const durableSnapshot = await durableRepository.readSnapshot(principalRef);
         expect(durableSnapshot?.principal).toMatchObject({
             ...principalRef,
@@ -498,6 +508,7 @@ function createClientAppInbox(
     queue: TestResourceInbox;
     results: TestResourceInboxResults;
     outboxEntries: ReadonlyMap<string, ResourceEntry>;
+    clientEventStore: ReturnType<typeof createAppInboxTestDatabase>['clientEventStore'];
 }> {
     const queue = new TestResourceInbox();
     const reader = new InboxQueueReader(queue);
@@ -506,6 +517,7 @@ function createClientAppInbox(
     const database = createAppInboxTestDatabase(queue, results, {
         runtimeRepository,
     });
+    const authSessions = new AuthSessionRepository(runtimeRepository);
     const appInbox = new AppClientInboxService(
         reader,
         queue as never,
@@ -514,7 +526,7 @@ function createClientAppInbox(
         createCachedClientStateService({
             durable: createClientStateService({
                 runtimeRepository,
-                bindRuntimeStateTransaction: database.bindRuntimeStateTransaction,
+                createClientStateEventStore: () => database.clientEventStore,
                 serviceId: 'state-service',
             }),
             cache: createClientStateSnapshotReadThroughCache({
@@ -523,6 +535,21 @@ function createClientAppInbox(
         }),
         'state-service',
     );
+    CLIENT_INBOX_AUTHORITIES.set(appInbox, async (principalId, requestedSessionId) => {
+        const sessionId = requestedSessionId ?? `${principalId}-session`;
+        const existing = await authSessions.findBySessionId(sessionId);
+        if (existing) return existing;
+        const authority = {
+            clientId: principalId,
+            sessionId,
+            accessToken: `test-token:${principalId}:${sessionId}`,
+            username: principalId,
+            issuedAtEpochMs: 1,
+            expiresAtEpochMs: Number.MAX_SAFE_INTEGER,
+        } satisfies IssuedAuthSession;
+        await authSessions.putSession(authority);
+        return authority;
+    });
 
     return {
         appInbox,
@@ -530,6 +557,7 @@ function createClientAppInbox(
         queue,
         results,
         outboxEntries: database.outboxEntries,
+        clientEventStore: database.clientEventStore,
     };
 }
 
@@ -583,7 +611,7 @@ async function processUpsertClientPrincipal(
     principalId: string,
 ): Promise<ResourceEntry> {
     const requestId = `upsert-client-${principalId}`;
-    appInbox.processEntryNoWaiting<ClientPrincipalUpsertAppInboxPayload>({
+    const input: AppInboxEnqueueInput<ClientPrincipalUpsertAppInboxPayload> = {
         type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
         resourceId: requestId,
         contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${principalId}`,
@@ -598,20 +626,20 @@ async function processUpsertClientPrincipal(
                 requestId,
             },
         },
-    });
+    };
+    const resultPromise = appInbox.processAuthenticatedEntryUntilCompletion(
+        input,
+        await clientAuthority(appInbox, principalId),
+    );
 
-    await waitForQueueEntry(queue);
+    const queued = await waitForNewQueueEntry(queue);
     await reader.dequeueInbox(
         InboxQueueReader.INBOX_DEQUEUE_TYPES,
         createResilience(),
     );
+    await resultPromise;
 
-    const entry = readOnlyEntry(queue);
-    if (!entry) {
-        throw new Error('Expected app inbox entry to remain in queue');
-    }
-
-    return entry;
+    return requireQueueEntry(await queue.getItem(queued.key));
 }
 
 async function processConnectClientSession(
@@ -623,7 +651,7 @@ async function processConnectClientSession(
 ): Promise<ResourceEntry> {
     const requestId = `connect-client-${sessionId}`;
     const clientInstanceId = `${principalId}-browser`;
-    appInbox.processEntryNoWaiting<ClientSessionConnectAppInboxPayload>({
+    const input: AppInboxEnqueueInput<ClientSessionConnectAppInboxPayload> = {
         type: AppInboxType.CLIENT_SESSION_CONNECT,
         resourceId: requestId,
         contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${principalId}`,
@@ -645,20 +673,32 @@ async function processConnectClientSession(
                 requestId,
             },
         },
-    });
+    };
+    const resultPromise = appInbox.processAuthenticatedEntryUntilCompletion(
+        input,
+        await clientAuthority(appInbox, principalId, sessionId),
+    );
 
-    await waitForQueueEntry(queue);
+    const queued = await waitForNewQueueEntry(queue);
     await reader.dequeueInbox(
         InboxQueueReader.INBOX_DEQUEUE_TYPES,
         createResilience(),
     );
+    await resultPromise;
 
-    const entry = readOnlyEntry(queue);
-    if (!entry) {
-        throw new Error('Expected app inbox entry to remain in queue');
+    return requireQueueEntry(await queue.getItem(queued.key));
+}
+
+async function clientAuthority(
+    appInbox: AppClientInboxService,
+    principalId: string,
+    sessionId?: string,
+): Promise<IssuedAuthSession> {
+    const issue = CLIENT_INBOX_AUTHORITIES.get(appInbox);
+    if (!issue) {
+        throw new Error('Expected client app inbox authority issuer');
     }
-
-    return entry;
+    return await issue(principalId, sessionId);
 }
 
 async function processUpsertGroupMember(

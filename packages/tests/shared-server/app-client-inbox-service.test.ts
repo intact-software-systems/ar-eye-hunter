@@ -1,7 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { describe, expect, it, vi } from 'vitest';
 import { createAppInboxTestDatabase } from './app-inbox-test-database.ts';
-import type { AuthSession } from '@shared/api/api-config.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
@@ -34,18 +33,208 @@ import {
     type ClientStateService,
     type ClientStateWritten,
     createClientStateService,
+    toClientMutationCommand,
+    toClientMutationIssuedSessionAuthority,
+    toUpsertPrincipalCommandInput,
 } from '@shared-server/rallar-system/services/client-state-service.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
 import { InMemoryClientStateEventStore } from '@shared-server/rallar-system/repositories/StateEventStore.ts';
+import {
+    AuthSessionRepository,
+    type IssuedAuthSession,
+} from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 
 const SCOPE: StateScope = {
     applicationId: 'ar-eye-hunter',
     workspaceId: 'default',
 };
+const TEST_AUTHORITIES = new WeakMap<
+    AppClientInboxService,
+    Map<string, IssuedAuthSession>
+>();
 
 describe('AppClientInboxService', () => {
+    it('does not trust a persisted Mallory actor claim for Alice authority', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const authSessions = new AuthSessionRepository(runtimeRepository);
+        const mallory = issuedSession('mallory', 'mallory-session');
+        await authSessions.putSession(mallory);
+        const service = createClientStateService({
+            runtimeRepository,
+            serviceId: 'server-12345678',
+        });
+        const command = await toClientMutationCommand(
+            toUpsertPrincipalCommandInput(
+                SCOPE,
+                'alice',
+                {
+                    username: 'alice',
+                    displayName: 'Mallory controlled',
+                    actorPrincipalId: 'mallory',
+                    actorSessionId: 'mallory-session',
+                    requestId: 'direct-mallory-targets-alice',
+                },
+                'direct-mallory-targets-alice',
+            ),
+            {
+                nowEpochMs: Date.now(),
+                serviceId: 'server-12345678',
+                eventId: 'direct-mallory-targets-alice-event',
+                attemptCount: 1,
+                expireAtEpochMs: Date.now() + 60_000,
+            },
+            toClientMutationIssuedSessionAuthority(
+                mallory,
+                SCOPE,
+                'upsertPrincipal',
+            ),
+        );
+        const read = await service.read(command);
+        const computed = service.compute(command, read);
+
+        expect(() => service.validate(command, read, computed))
+            .toThrow(/authority|authenticated|principal/i);
+    });
+
+    it('rejects a durable Mallory authority targeting Alice before any domain write', async () => {
+        const queue = new TestResourceInbox();
+        const reader = new InboxQueueReader(queue);
+        const results = new TestResourceInboxResults();
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const database = createAppInboxTestDatabase(queue, results, {
+            runtimeRepository,
+        });
+        const authSessions = new AuthSessionRepository(runtimeRepository);
+        const mallory = issuedSession('mallory', 'mallory-session');
+        await authSessions.putSession(mallory);
+        const service = new AppClientInboxService(
+            reader,
+            queue as never,
+            results as never,
+            database,
+            createClientStateService({
+                runtimeRepository,
+                createClientStateEventStore: () => new InMemoryClientStateEventStore(),
+                serviceId: 'server-12345678',
+            }),
+            'server-12345678',
+        );
+
+        await expect(processAuthenticatedClientMutation(service, {
+            type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
+            resourceId: 'mallory-targets-alice',
+            contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:alice`,
+            senderId: 'mallory',
+            data: {
+                scope: SCOPE,
+                principalId: 'alice',
+                request: {
+                    username: 'alice',
+                    displayName: 'Mallory controlled',
+                    actorPrincipalId: 'mallory',
+                    requestId: 'mallory-targets-alice',
+                },
+            },
+        }, mallory)).rejects.toThrow(/principal|authority|authenticated/i);
+
+        expect(await new ClientStateRepository(runtimeRepository).readSnapshot({
+            ...SCOPE,
+            principalId: 'alice',
+        })).toBeUndefined();
+        expect(database.outboxEntries.size).toBe(0);
+    });
+
+    it('rereads revoked durable authority after an outer AppInbox CAS retry', async () => {
+        const queue = new TestResourceInbox();
+        const reader = new InboxQueueReader(queue);
+        const results = new TestResourceInboxResults();
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const authSessions = new AuthSessionRepository(runtimeRepository);
+        const alice = issuedSession('alice', 'alice-session');
+        await authSessions.putSession(alice);
+        let injectedConflict = false;
+        runtimeRepository.beforeConditionalWrite = async (
+            operation,
+            namespace,
+            key,
+        ) => {
+            if (
+                !injectedConflict && operation === 'insertIfAbsent' &&
+                namespace === 'client-state:principals'
+            ) {
+                injectedConflict = true;
+                runtimeRepository.data.set(`${namespace}::${key}`, {
+                    key,
+                    value: JSON.stringify({ competing: true }),
+                    expireAtTimestamp: Number.MAX_SAFE_INTEGER,
+                    updatedTimestamp: new Date().toISOString(),
+                    revision: 0,
+                });
+            }
+        };
+        let revoked = false;
+        const database = createAppInboxTestDatabase(queue, results, {
+            runtimeRepository,
+            onTransactionRollback: async () => {
+                if (injectedConflict && !revoked) {
+                    revoked = true;
+                    await authSessions.deleteSession(alice);
+                }
+            },
+        });
+        const service = new AppClientInboxService(
+            reader,
+            queue as never,
+            results as never,
+            database,
+            createClientStateService({
+                runtimeRepository,
+                createClientStateEventStore: () => new InMemoryClientStateEventStore(),
+                serviceId: 'server-12345678',
+            }),
+            'server-12345678',
+        );
+        const pending = processAuthenticatedClientMutation(service, {
+            type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
+            resourceId: 'alice-revoked-after-conflict',
+            contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:alice`,
+            senderId: 'alice',
+            data: {
+                scope: SCOPE,
+                principalId: 'alice',
+                request: {
+                    username: 'alice',
+                    displayName: 'Must not commit',
+                    actorPrincipalId: 'alice',
+                    requestId: 'alice-revoked-after-conflict',
+                },
+            },
+        }, alice);
+
+        await reader.dequeueInbox(
+            InboxQueueReader.INBOX_DEQUEUE_TYPES,
+            createResilience(),
+        );
+        await new Promise((resolve) => setTimeout(resolve, 2));
+        await reader.dequeueInbox(
+            InboxQueueReader.INBOX_DEQUEUE_TYPES,
+            createResilience(),
+        );
+
+        const result = await pending;
+        expect(result.left).toMatch(/expired|missing|revoked|authority|authenticated/i);
+        expect(revoked).toBe(true);
+        expect(await new ClientStateRepository(runtimeRepository).readSnapshot({
+            ...SCOPE,
+            principalId: 'alice',
+        })).toBeUndefined();
+        expect(database.outboxEntries.size).toBe(0);
+        const [entry] = await readEntries(queue);
+        expect(entry.dequeueAudit.attempts).toBe(2);
+    });
+
     it('restarts client phases from read after an AppInbox CAS conflict', async () => {
         const queue = new TestResourceInbox();
         const reader = new InboxQueueReader(queue);
@@ -113,7 +302,7 @@ describe('AppClientInboxService', () => {
             'server-12345678',
         );
 
-        const resultPromise = service.processEntryUntilCompletion({
+        const resultPromise = processAuthenticatedClientMutation(service, {
             type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
             resourceId: 'retry-client-alice',
             contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:alice`,
@@ -128,7 +317,7 @@ describe('AppClientInboxService', () => {
                     requestId: 'retry-client-alice',
                 },
             },
-        });
+        }, issuedSession('alice', 'alice-test-session'));
 
         await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
         await new Promise((resolve) => setTimeout(resolve, 2));
@@ -165,12 +354,7 @@ describe('AppClientInboxService', () => {
             queue as never,
             results as never,
             database,
-            createClientStateService({
-                runtimeRepository,
-                syncPublisher: publisher,
-                bindRuntimeStateTransaction: database.bindRuntimeStateTransaction,
-                serviceId: 'server-12345678',
-            }),
+            createAutoAuthorizingClientStateService(runtimeRepository, database),
             'server-12345678',
         );
 
@@ -315,12 +499,7 @@ describe('AppClientInboxService', () => {
             queue as never,
             results as never,
             database,
-            createClientStateService({
-                runtimeRepository,
-                syncPublisher: publisher,
-                bindRuntimeStateTransaction: database.bindRuntimeStateTransaction,
-                serviceId: 'server-12345678',
-            }),
+            createAutoAuthorizingClientStateService(runtimeRepository, database),
             'server-12345678',
         );
 
@@ -392,6 +571,7 @@ describe('AppClientInboxService', () => {
         let database!: ReturnType<typeof createAppInboxTestDatabase>;
         database = createAppInboxTestDatabase(queue, results, {
             runtimeRepository,
+            clientEventStore: eventStore,
             shouldFailOutboxWrite: () => {
                 if (!failOutbox) return false;
                 failOutbox = false;
@@ -447,13 +627,11 @@ describe('AppClientInboxService', () => {
                 expect((await queue.getItem(key))?.status).toBe(EntityStatus.RESERVED);
             },
         });
-        const clientStateService = createClientStateService({
+        const clientStateService = createAutoAuthorizingClientStateService(
             runtimeRepository,
-            createClientStateEventStore: () => eventStore,
-            syncPublisher: createPublisher(),
-            bindRuntimeStateTransaction: database.bindRuntimeStateTransaction,
-            serviceId: 'server-12345678',
-        });
+            database,
+            eventStore,
+        );
         const service = new AppClientInboxService(
             reader,
             queue as never,
@@ -496,20 +674,15 @@ describe('AppClientInboxService', () => {
         });
     });
 
-    it('processes authorised websocket lifecycle mutations through the inbox', async () => {
+    it('rejects authorised websocket disconnect after durable auth revocation', async () => {
         const queue = new TestResourceInbox();
         const reader = new InboxQueueReader(queue);
         const results = new TestResourceInboxResults();
         const publisher = createPublisher();
-        const authSession: AuthSession = {
-            clientId: 'alice',
-            username: 'alice',
-            accessToken: 'secret-token',
-            sessionId: 'alice-ws-session',
-            expiresAtEpochMs: Date.now() + 60_000,
-        };
-        let authSessionAvailable = true;
+        const authSession = issuedSession('alice', 'alice-ws-session');
         const runtimeRepository = new FakeRuntimeStateRepository();
+        const authSessions = new AuthSessionRepository(runtimeRepository);
+        await authSessions.putSession(authSession);
         const database = createAppInboxTestDatabase(queue, results, {
             runtimeRepository,
         });
@@ -520,19 +693,7 @@ describe('AppClientInboxService', () => {
             database,
             createClientStateService({
                 runtimeRepository,
-                syncPublisher: publisher,
-                authSessionRepository: {
-                    findBySessionId: vi.fn(async (sessionId: string) =>
-                        authSessionAvailable &&
-                            sessionId === authSession.sessionId
-                            ? {
-                                ...authSession,
-                                issuedAtEpochMs: 1_000,
-                              }
-                            : undefined,
-                    ),
-                } as never,
-                bindRuntimeStateTransaction: database.bindRuntimeStateTransaction,
+                createClientStateEventStore: () => database.clientEventStore,
                 serviceId: 'server-12345678',
             }),
             'server-12345678',
@@ -546,22 +707,21 @@ describe('AppClientInboxService', () => {
         );
         vi.mocked(publisher.publishClientSnapshot).mockClear();
         vi.mocked(publisher.publishClientEvent).mockClear();
-        authSessionAvailable = false;
-        const disconnected = await processAppInboxMethod(reader, () =>
+        await authSessions.deleteSession(authSession);
+        await expect(
             service.processAuthorisedWsClientDisconnect(
                 authSession.sessionId,
                 'generation-1',
                 'socket-closed',
             ),
-        );
+        ).rejects.toThrow(/authority|auth session/i);
 
         expect(requireRightSnapshot(connected).activeSessions).toHaveLength(1);
         expect(requireRightSnapshot(connected).instances[0]).toMatchObject({
             clientInstanceId: 'alice',
             userAgent: 'Browser',
         });
-        expect(requireRightSnapshot(disconnected).activeSessions).toHaveLength(0);
-        expect(requireRightWritten(disconnected).event?.eventType).toBe('session-disconnected');
+        expect(requireRightSnapshot(connected).activeSessions).toHaveLength(1);
         expect(publisher.publishClientSnapshot).not.toHaveBeenCalled();
         expect(publisher.publishClientEvent).not.toHaveBeenCalled();
     });
@@ -571,14 +731,9 @@ describe('AppClientInboxService', () => {
         const reader = new InboxQueueReader(queue);
         const results = new TestResourceInboxResults();
         const publisher = createPublisher();
-        const authSession: AuthSession = {
-            clientId: 'admin',
-            username: 'admin',
-            accessToken: 'secret-token',
-            sessionId: 'admin-ws-session',
-            expiresAtEpochMs: Date.now() + 60_000,
-        };
+        const authSession = issuedSession('admin', 'admin-ws-session');
         const runtimeRepository = new FakeRuntimeStateRepository();
+        await new AuthSessionRepository(runtimeRepository).putSession(authSession);
         const database = createAppInboxTestDatabase(queue, results, {
             runtimeRepository,
         });
@@ -589,8 +744,7 @@ describe('AppClientInboxService', () => {
             database,
             createClientStateService({
                 runtimeRepository,
-                syncPublisher: publisher,
-                bindRuntimeStateTransaction: database.bindRuntimeStateTransaction,
+                createClientStateEventStore: () => database.clientEventStore,
                 serviceId: 'server-12345678',
             }),
             'server-12345678',
@@ -632,14 +786,9 @@ describe('AppClientInboxService', () => {
         const reader = new InboxQueueReader(queue);
         const results = new TestResourceInboxResults();
         const publisher = createPublisher();
-        const authSession: AuthSession = {
-            clientId: 'admin',
-            username: 'admin',
-            accessToken: 'secret-token',
-            sessionId: 'admin-ws-session',
-            expiresAtEpochMs: Date.now() + 60_000,
-        };
+        const authSession = issuedSession('admin', 'admin-ws-session');
         const runtimeRepository = new FakeRuntimeStateRepository();
+        await new AuthSessionRepository(runtimeRepository).putSession(authSession);
         const database = createAppInboxTestDatabase(queue, results, {
             runtimeRepository,
         });
@@ -650,8 +799,7 @@ describe('AppClientInboxService', () => {
             database,
             createClientStateService({
                 runtimeRepository,
-                syncPublisher: publisher,
-                bindRuntimeStateTransaction: database.bindRuntimeStateTransaction,
+                createClientStateEventStore: () => database.clientEventStore,
                 serviceId: 'server-12345678',
             }),
             'server-12345678',
@@ -685,14 +833,9 @@ describe('AppClientInboxService', () => {
         const reader = new InboxQueueReader(queue);
         const results = new TestResourceInboxResults();
         const publisher = createPublisher();
-        const authSession: AuthSession = {
-            clientId: 'admin',
-            username: 'admin',
-            accessToken: 'secret-token',
-            sessionId: 'admin-ws-session',
-            expiresAtEpochMs: Date.now() + 60_000,
-        };
+        const authSession = issuedSession('admin', 'admin-ws-session');
         const runtimeRepository = new FakeRuntimeStateRepository();
+        await new AuthSessionRepository(runtimeRepository).putSession(authSession);
         const database = createAppInboxTestDatabase(queue, results, {
             runtimeRepository,
         });
@@ -703,18 +846,7 @@ describe('AppClientInboxService', () => {
             database,
             createClientStateService({
                 runtimeRepository,
-                syncPublisher: publisher,
-                authSessionRepository: {
-                    findBySessionId: vi.fn(async (sessionId: string) =>
-                        sessionId === authSession.sessionId
-                            ? {
-                                ...authSession,
-                                issuedAtEpochMs: 1_000,
-                              }
-                            : undefined,
-                    ),
-                } as never,
-                bindRuntimeStateTransaction: database.bindRuntimeStateTransaction,
+                createClientStateEventStore: () => database.clientEventStore,
                 serviceId: 'server-12345678',
             }),
             'server-12345678',
@@ -758,12 +890,10 @@ describe('AppClientInboxService', () => {
         const database = createAppInboxTestDatabase(queue, results, {
             runtimeRepository,
         });
-        const clientStateService = createClientStateService({
+        const clientStateService = createAutoAuthorizingClientStateService(
             runtimeRepository,
-            syncPublisher: publisher,
-            bindRuntimeStateTransaction: database.bindRuntimeStateTransaction,
-            serviceId: 'server-12345678',
-        });
+            database,
+        );
         const service = new AppClientInboxService(
             reader,
             queue as never,
@@ -1111,11 +1241,87 @@ async function processAppInbox<V, R>(
         data: V;
     },
 ): Promise<Either<string, R>> {
-    const resultPromise = service.processEntryUntilCompletion<V, R>(input);
+    const resultPromise = service.processAuthenticatedEntryUntilCompletion<V, R>(
+        input,
+        toTestIssuedAuthority(service, input),
+    );
     await reader.dequeueInbox(
         InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
 
     return await resultPromise;
+}
+
+function toTestIssuedAuthority<V>(
+    service: AppClientInboxService,
+    input: Readonly<{
+    senderId?: string;
+    data: V;
+    }>,
+): IssuedAuthSession {
+    const data = typeof input.data === 'object' && input.data !== null
+        ? Object.fromEntries(Object.entries(input.data))
+        : {};
+    const request = typeof data.request === 'object' && data.request !== null
+        ? Object.fromEntries(Object.entries(data.request))
+        : {};
+    const principalId = typeof data.principalId === 'string'
+        ? data.principalId
+        : input.senderId ?? 'alice';
+    const sessionId = typeof data.sessionId === 'string'
+        ? data.sessionId
+        : typeof request.actorSessionId === 'string'
+        ? request.actorSessionId
+        : `${principalId}-test-authority-session`;
+    let authorities = TEST_AUTHORITIES.get(service);
+    if (!authorities) {
+        authorities = new Map();
+        TEST_AUTHORITIES.set(service, authorities);
+    }
+    const key = `${principalId}:${sessionId}`;
+    const existing = authorities.get(key);
+    if (existing) return existing;
+    const created = issuedSession(principalId, sessionId);
+    authorities.set(key, created);
+    return created;
+}
+
+async function processAuthenticatedClientMutation<V, R = ClientStateWritten>(
+    service: AppClientInboxService,
+    input: {
+        type: AppInboxType;
+        topicId?: string;
+        resourceId?: string;
+        contextId?: string;
+        senderId?: string;
+        data: V;
+    },
+    authority: IssuedAuthSession,
+): Promise<Either<string, R>> {
+    const authenticated = service as unknown as Readonly<{
+        processAuthenticatedEntryUntilCompletion<V, R = V>(
+            enqueue: typeof input,
+            authority: IssuedAuthSession,
+        ): Promise<Either<string, R>>;
+    }>;
+    return await authenticated.processAuthenticatedEntryUntilCompletion<V, R>(
+        input,
+        authority,
+    );
+}
+
+function issuedSession(
+    clientId: string,
+    sessionId: string,
+): IssuedAuthSession {
+    const nowEpochMs = Date.now();
+    return {
+        clientId,
+        accessToken: `${clientId}-token`,
+        username: clientId,
+        sessionId,
+        issuedAtEpochMs: nowEpochMs - 1_000,
+        expiresAtEpochMs: nowEpochMs + 60_000,
+    };
 }
 
 async function processAppInboxMethod<R>(
@@ -1123,6 +1329,7 @@ async function processAppInboxMethod<R>(
     run: () => Promise<R>,
 ): Promise<R> {
     const resultPromise = run();
+    await new Promise((resolve) => setTimeout(resolve, 0));
     await reader.dequeueInbox(
         InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
 
@@ -1199,8 +1406,43 @@ function createClientStateServiceStub(
         write: vi.fn(),
         listExpiredSessionCandidates: vi.fn(async () => []),
         findSessionBySessionId: vi.fn(),
+        readIssuedAuthSession: vi.fn(),
         observeSnapshot: vi.fn(async (snapshot) => snapshot),
         ...overrides,
+    };
+}
+
+function createAutoAuthorizingClientStateService(
+    runtimeRepository: FakeRuntimeStateRepository,
+    database: ReturnType<typeof createAppInboxTestDatabase>,
+    eventStore: InMemoryClientStateEventStore = database.clientEventStore,
+): ClientStateService {
+    const authSessions = new AuthSessionRepository(runtimeRepository);
+    const durable = createClientStateService({
+        runtimeRepository,
+        createClientStateEventStore: () => eventStore,
+        serviceId: 'server-12345678',
+    });
+    return {
+        ...durable,
+        read: async (command) => {
+            if (command.authority.kind === 'issued-session') {
+                const existing = await authSessions.findBySessionId(
+                    command.authority.sessionId,
+                );
+                if (!existing) {
+                    await authSessions.putSession({
+                        clientId: command.authority.principalId,
+                        accessToken: `${command.authority.sessionId}-test-token`,
+                        username: command.authority.principalId,
+                        sessionId: command.authority.sessionId,
+                        issuedAtEpochMs: command.authority.sessionIssuedAtEpochMs,
+                        expiresAtEpochMs: command.authority.sessionExpiresAtEpochMs,
+                    });
+                }
+            }
+            return await durable.read(command);
+        },
     };
 }
 

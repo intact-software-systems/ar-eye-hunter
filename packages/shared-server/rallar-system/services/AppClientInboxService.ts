@@ -10,7 +10,6 @@ import {
     DEFAULT_STATE_WORKSPACE_ID,
     type StateScope,
 } from '@shared/api/state-types.ts';
-import type { AuthSession } from '@shared/api/api-config.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import {
@@ -29,6 +28,8 @@ import {
     toDisconnectCommandInput,
     toExpiryCommandInput,
     toHeartbeatCommandInput,
+    toClientMutationIssuedSessionAuthority,
+    toClientMutationSystemAuthority,
     toUpsertInstanceCommandInput,
     toUpsertPrincipalCommandInput,
 } from '@shared-server/rallar-system/services/client-state-service.ts';
@@ -44,11 +45,13 @@ import type { RallarTimingSink } from './timing.ts';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import type { AppInboxMessageContext } from './app-inbox-contracts.ts';
 import type {
+    ClientMutationAuthority,
     ClientMutationCommand,
     ClientMutationCommandInput,
     ClientMutationComputed,
 } from './client-state-mutations.ts';
 import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import type { IssuedAuthSession } from '../repositories/AuthSessionRepository.ts';
 
 export {
     AppInboxService,
@@ -95,7 +98,7 @@ export type ClientSessionDisconnectAppInboxPayload = Readonly<{
 }>;
 
 export type ClientAuthorisedWsSessionConnectAppInboxPayload = Readonly<{
-    authSession: Omit<AuthSession, 'accessToken'>;
+    authSession: Omit<IssuedAuthSession, 'accessToken'>;
     generationId: string;
     input: RegisterAuthorisedWsClientInput;
 }>;
@@ -293,6 +296,42 @@ export class AppClientInboxService extends AppInboxService {
         );
     }
 
+    public override async processEntryUntilCompletion<V, R = V>(
+        enqueue: AppInboxEnqueueInput<V>,
+    ): Promise<import('@shared/resilience/Either.ts').Either<string, R>> {
+        void enqueue;
+        throw new NonRetryableException(
+            'Authenticated client mutation authority is required.',
+        );
+    }
+
+    public override async processEntryUntilCompletionIf<V, R = V>(
+        enqueue: AppInboxEnqueueInput<V>,
+        enqueueIf: (entry: import('@shared/queuebox/ResourceEntry.ts').ResourceEntry) => boolean,
+    ): Promise<import('@shared/resilience/Either.ts').Either<string, R>> {
+        void enqueue;
+        void enqueueIf;
+        throw new NonRetryableException(
+            'Authenticated client mutation authority is required.',
+        );
+    }
+
+    public async processAuthenticatedEntryUntilCompletion<V, R = V>(
+        enqueue: AppInboxEnqueueInput<V>,
+        authority: IssuedAuthSession,
+    ): Promise<import('@shared/resilience/Either.ts').Either<string, R>> {
+        const ingress = readAuthenticatedClientMutationIngress(enqueue);
+        validateIssuedClientMutationIngress(authority, ingress);
+        return await super.processEntryUntilCompletion<V, R>({
+            ...enqueue,
+            authority: toClientMutationIssuedSessionAuthority(
+                authority,
+                ingress.scope,
+                ingress.operation,
+            ),
+        });
+    }
+
     private async processCommand(
         context: AppInboxMessageContext,
         input: ClientMutationCommandInput,
@@ -309,17 +348,21 @@ export class AppClientInboxService extends AppInboxService {
         input: ClientMutationCommandInput,
     ): Promise<ClientMutationCommand> {
         const createdAtEpochMs = context.message.id.ts;
-        return await toClientMutationCommand(input, {
-            nowEpochMs: createdAtEpochMs,
-            serviceId: this.serviceId,
-            eventId: `client-event:${JSON.stringify([
-                context.entry.key.contextId,
-                context.entry.key.topicId,
-                input.commandId,
-            ])}`,
-            attemptCount: context.entry.dequeueAudit.attempts,
-            expireAtEpochMs: Number(context.entry.audit.expiryTs.epochMilliseconds),
-        });
+        return await toClientMutationCommand(
+            input,
+            {
+                nowEpochMs: createdAtEpochMs,
+                serviceId: this.serviceId,
+                eventId: `client-event:${JSON.stringify([
+                    context.entry.key.contextId,
+                    context.entry.key.topicId,
+                    input.commandId,
+                ])}`,
+                attemptCount: context.entry.dequeueAudit.attempts,
+                expireAtEpochMs: Number(context.entry.audit.expiryTs.epochMilliseconds),
+            },
+            readClientMutationAuthority(context.enqueue.authority, input.operation),
+        );
     }
 
     private async commitComputed(
@@ -370,7 +413,7 @@ export class AppClientInboxService extends AppInboxService {
     }
 
     public async processAuthorisedWsClientConnect(
-        authSession: AuthSession,
+        authSession: IssuedAuthSession,
         generationId: string,
         input?: RegisterAuthorisedWsClientInput,
     ) {
@@ -378,7 +421,7 @@ export class AppClientInboxService extends AppInboxService {
         const principalId = input?.principalId ?? authSession.clientId;
         const clientInstanceId = input?.clientInstanceId ?? authSession.clientId;
 
-        return await this.processEntryUntilCompletion<
+        return await super.processEntryUntilCompletion<
             ClientAuthorisedWsSessionConnectAppInboxPayload,
             ClientStateWritten
         >({
@@ -392,11 +435,17 @@ export class AppClientInboxService extends AppInboxService {
             ),
             contextId: toClientAppInboxContextId(scope, principalId),
             senderId: authSession.clientId,
+            authority: toClientMutationIssuedSessionAuthority(
+                authSession,
+                scope,
+                'connectAuthorisedWsSession',
+            ),
             data: {
                 authSession: {
                     clientId: authSession.clientId,
                     username: authSession.username,
                     sessionId: authSession.sessionId,
+                    issuedAtEpochMs: authSession.issuedAtEpochMs,
                     expiresAtEpochMs: authSession.expiresAtEpochMs,
                 },
                 generationId,
@@ -411,7 +460,25 @@ export class AppClientInboxService extends AppInboxService {
         reason?: string,
     ) {
         const disconnectReason = reason ?? 'websocket-closed';
-        return await this.processEntryUntilCompletion<
+        const [authSession, session] = await Promise.all([
+            this.clientStateService.readIssuedAuthSession(sessionId),
+            this.clientStateService.findSessionBySessionId(sessionId),
+        ]);
+        if (!authSession || !session) {
+            throw new NonRetryableException(
+                `Durable authorised WebSocket authority not found: ${sessionId}`,
+            );
+        }
+        const scope = {
+            applicationId: session.applicationId,
+            workspaceId: session.workspaceId,
+        };
+        if (authSession.clientId !== session.principalId) {
+            throw new NonRetryableException(
+                'Durable authorised WebSocket principal differs from auth session.',
+            );
+        }
+        return await super.processEntryUntilCompletion<
             ClientAuthorisedWsSessionDisconnectAppInboxPayload,
             ClientStateWritten
         >({
@@ -419,6 +486,11 @@ export class AppClientInboxService extends AppInboxService {
             resourceId: `authorised-ws-disconnect-${sessionId}-${generationId}`,
             contextId: sessionId,
             senderId: sessionId,
+            authority: toClientMutationIssuedSessionAuthority(
+                authSession,
+                scope,
+                'disconnectAuthorisedWsSession',
+            ),
             data: {
                 sessionId,
                 generationId,
@@ -428,7 +500,7 @@ export class AppClientInboxService extends AppInboxService {
     }
 
     public async processExpiredSessions(atEpochMs: number = Date.now()) {
-        return await this.processEntryUntilCompletionIf<
+        return await super.processEntryUntilCompletionIf<
             ClientExpiredSessionsAppInboxPayload,
             readonly ClientStateWritten[]
         >(
@@ -438,7 +510,7 @@ export class AppClientInboxService extends AppInboxService {
     }
 
     public processExpiredSessionsNoWaiting(atEpochMs: number = Date.now()): void {
-        this.processEntryNoWaitingIf<ClientExpiredSessionsAppInboxPayload>(
+        super.processEntryNoWaitingIf<ClientExpiredSessionsAppInboxPayload>(
             this.toExpiredSessionsEnqueue(atEpochMs),
             entry => isCompletedOrFailed(entry.status),
         );
@@ -453,11 +525,269 @@ export class AppClientInboxService extends AppInboxService {
             resourceId: `expire-client-sessions`,
             contextId: 'expire-client-sessions',
             senderId: this.serviceId,
+            authority: toClientMutationSystemAuthority(this.serviceId),
             data: {
                 atEpochMs,
             },
         };
     }
+}
+
+type AuthenticatedClientMutationIngress = Readonly<{
+    scope: StateScope;
+    operation: Exclude<ClientMutationCommand['operation'], 'expireSession'>;
+    principalId: string;
+    sessionId: string | null;
+    actorPrincipalId: string | null;
+    actorSessionId: string | null;
+    senderId: string;
+}>;
+
+function readAuthenticatedClientMutationIngress(
+    enqueue: AppInboxEnqueueInput<unknown>,
+): AuthenticatedClientMutationIngress {
+    const data = requireClientIngressRecord(enqueue.data, 'Client mutation payload');
+    const scope = readClientIngressScope(data.scope);
+    const principalId = requireClientIngressString(
+        data.principalId,
+        'Client mutation principalId',
+    );
+    const request = requireClientIngressRecord(
+        data.request,
+        'Client mutation request',
+    );
+    const actorPrincipalId = readNullableClientIngressString(
+        request.actorPrincipalId,
+        'Client mutation actorPrincipalId',
+    );
+    const actorSessionId = readNullableClientIngressString(
+        request.actorSessionId,
+        'Client mutation actorSessionId',
+    );
+    const senderId = requireClientIngressString(
+        enqueue.senderId,
+        'Client mutation senderId',
+    );
+    switch (enqueue.type) {
+        case AppInboxType.CLIENT_PRINCIPAL_UPSERT:
+            return {
+                scope,
+                operation: 'upsertPrincipal',
+                principalId,
+                sessionId: null,
+                actorPrincipalId,
+                actorSessionId,
+                senderId,
+            };
+        case AppInboxType.CLIENT_INSTANCE_UPSERT:
+            requireClientIngressString(
+                data.clientInstanceId,
+                'Client mutation clientInstanceId',
+            );
+            return {
+                scope,
+                operation: 'upsertInstance',
+                principalId,
+                sessionId: null,
+                actorPrincipalId,
+                actorSessionId,
+                senderId,
+            };
+        case AppInboxType.CLIENT_SESSION_CONNECT:
+        case AppInboxType.CLIENT_SESSION_HEARTBEAT:
+        case AppInboxType.CLIENT_SESSION_DISCONNECT:
+            requireClientIngressString(
+                data.clientInstanceId,
+                'Client mutation clientInstanceId',
+            );
+            return {
+                scope,
+                operation: enqueue.type === AppInboxType.CLIENT_SESSION_CONNECT
+                    ? 'connectSession'
+                    : enqueue.type === AppInboxType.CLIENT_SESSION_HEARTBEAT
+                    ? 'heartbeatSession'
+                    : 'disconnectSession',
+                principalId,
+                sessionId: requireClientIngressString(
+                    data.sessionId,
+                    'Client mutation sessionId',
+                ),
+                actorPrincipalId,
+                actorSessionId,
+                senderId,
+            };
+        default:
+            throw new NonRetryableException(
+                'App inbox type is not an authenticated client mutation.',
+            );
+    }
+}
+
+function validateIssuedClientMutationIngress(
+    authority: IssuedAuthSession,
+    ingress: AuthenticatedClientMutationIngress,
+): void {
+    if (
+        !authority.accessToken || !authority.sessionId || !authority.clientId ||
+        authority.issuedAtEpochMs >= authority.expiresAtEpochMs ||
+        authority.expiresAtEpochMs <= Date.now()
+    ) {
+        throw new NonRetryableException(
+            'Authenticated client mutation session is invalid or expired.',
+        );
+    }
+    if (
+        ingress.principalId !== authority.clientId ||
+        ingress.senderId !== authority.clientId ||
+        ingress.actorPrincipalId !== null &&
+            ingress.actorPrincipalId !== authority.clientId ||
+        ingress.actorSessionId !== null &&
+            ingress.actorSessionId !== authority.sessionId ||
+        ingress.sessionId !== null && ingress.sessionId !== authority.sessionId
+    ) {
+        throw new NonRetryableException(
+            'Authenticated client mutation principal or session authority differs.',
+        );
+    }
+}
+
+function readClientMutationAuthority(
+    authority: unknown,
+    operation: ClientMutationCommandInput['operation'],
+): ClientMutationAuthority {
+    const value = requireClientIngressRecord(authority, 'Client mutation authority');
+    if (value.kind === 'issued-session') {
+        const proof: ClientMutationAuthority = {
+            kind: 'issued-session',
+            version: requireClientAuthorityVersion(value.version),
+            principalId: requireClientIngressString(
+                value.principalId,
+                'Client mutation authority principalId',
+            ),
+            sessionId: requireClientIngressString(
+                value.sessionId,
+                'Client mutation authority sessionId',
+            ),
+            sessionIssuedAtEpochMs: requireClientIngressTimestamp(
+                value.sessionIssuedAtEpochMs,
+                'Client mutation authority issuedAtEpochMs',
+            ),
+            sessionExpiresAtEpochMs: requireClientIngressTimestamp(
+                value.sessionExpiresAtEpochMs,
+                'Client mutation authority expiresAtEpochMs',
+            ),
+            applicationId: requireClientIngressString(
+                value.applicationId,
+                'Client mutation authority applicationId',
+            ),
+            workspaceId: requireClientIngressString(
+                value.workspaceId,
+                'Client mutation authority workspaceId',
+            ),
+            operation: readIssuedClientAuthorityOperation(value.operation),
+        };
+        if (proof.operation !== operation) {
+            throw new NonRetryableException(
+                'Client mutation authority operation differs from command.',
+            );
+        }
+        return proof;
+    }
+    if (value.kind === 'system') {
+        const proof: ClientMutationAuthority = {
+            kind: 'system',
+            version: requireClientAuthorityVersion(value.version),
+            serviceId: requireClientIngressString(
+                value.serviceId,
+                'Client mutation authority serviceId',
+            ),
+            operation: value.operation === 'expireSession'
+                ? value.operation
+                : invalidClientAuthorityOperation(),
+        };
+        if (operation !== 'expireSession') {
+            throw new NonRetryableException(
+                'System authority is only valid for client session expiry.',
+            );
+        }
+        return proof;
+    }
+    throw new NonRetryableException('Client mutation authority kind is invalid.');
+}
+
+function readIssuedClientAuthorityOperation(
+    operation: unknown,
+): Exclude<ClientMutationCommand['operation'], 'expireSession'> {
+    switch (operation) {
+        case 'upsertPrincipal':
+        case 'upsertInstance':
+        case 'connectSession':
+        case 'connectAuthorisedWsSession':
+        case 'heartbeatSession':
+        case 'disconnectSession':
+        case 'disconnectAuthorisedWsSession':
+            return operation;
+        default:
+            return invalidClientAuthorityOperation();
+    }
+}
+
+function invalidClientAuthorityOperation(): never {
+    throw new NonRetryableException('Client mutation authority operation is invalid.');
+}
+
+function requireClientIngressRecord(
+    value: unknown,
+    label: string,
+): Readonly<Record<string, unknown>> {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+        throw new NonRetryableException(`${label} must be an object.`);
+    }
+    return Object.fromEntries(Object.entries(value));
+}
+
+function readClientIngressScope(value: unknown): StateScope {
+    const scope = requireClientIngressRecord(value, 'Client mutation scope');
+    return {
+        applicationId: requireClientIngressString(
+            scope.applicationId,
+            'Client mutation applicationId',
+        ),
+        workspaceId: requireClientIngressString(
+            scope.workspaceId,
+            'Client mutation workspaceId',
+        ),
+    };
+}
+
+function readNullableClientIngressString(
+    value: unknown,
+    label: string,
+): string | null {
+    return value === undefined || value === null
+        ? null
+        : requireClientIngressString(value, label);
+}
+
+function requireClientIngressString(value: unknown, label: string): string {
+    if (typeof value !== 'string' || value.length === 0) {
+        throw new NonRetryableException(`${label} is required.`);
+    }
+    return value;
+}
+
+function requireClientIngressTimestamp(value: unknown, label: string): number {
+    if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+        throw new NonRetryableException(`${label} is invalid.`);
+    }
+    return value;
+}
+
+function requireClientAuthorityVersion(value: unknown): 1 {
+    if (value !== 1) {
+        throw new NonRetryableException('Client mutation authority version is invalid.');
+    }
+    return value;
 }
 
 function toAuthorisedWsClientScope(

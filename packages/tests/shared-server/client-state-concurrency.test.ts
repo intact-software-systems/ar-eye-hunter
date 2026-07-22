@@ -9,8 +9,10 @@ import { STATE_MUTATION_OUTBOX_NAMESPACE } from '@shared-server/rallar-system/re
 import { ClientMutationIdempotencyConflictError } from '@shared-server/rallar-system/services/client-state-service.ts';
 import {
     computeClientMutation,
+    type ClientMutationAuthority,
     type ClientMutationCommand,
     type ClientMutationFacts,
+    type ClientMutationOperation,
     type ClientMutationRead,
     ClientMutationRejectedError,
     validateClientMutationCommand,
@@ -551,6 +553,7 @@ describe('convergent client state', () => {
             aggregateRef: principalRef('alice'),
             commandId: 'pure-command',
             requestId: 'pure-command',
+            authority: validAuthority('upsertPrincipal'),
             facts: validFacts(),
             input: {
                 username: 'alice',
@@ -569,6 +572,7 @@ describe('convergent client state', () => {
             },
         });
         const read: ClientMutationRead = deepFreeze({
+            authoritySession: validAuthoritySession(),
             idempotency: null,
             principal: null,
             instance: null,
@@ -576,18 +580,10 @@ describe('convergent client state', () => {
             snapshot: null,
             receiptEvent: null,
         });
-        const facts: ClientMutationFacts = deepFreeze({
-            nowEpochMs: 1_000,
-            serviceId: 'client-service',
-            eventId: 'event-1',
-            commandHash: `sha256:${'a'.repeat(64)}`,
-            attemptCount: 1,
-        });
-
-        const first = computeClientMutation({ command, read, facts });
-        const second = computeClientMutation({ command, read, facts });
-        validateClientMutation({ command, read, computed: first, facts });
-        validateClientMutation({ command, read, computed: second, facts });
+        const first = computeClientMutation({ command, read });
+        const second = computeClientMutation({ command, read });
+        validateClientMutation({ command, read, computed: first });
+        validateClientMutation({ command, read, computed: second });
         expect(second).toEqual(first);
         expect(command).toEqual(deepFreeze(structuredClone(command)));
         expect(read).toEqual(deepFreeze(structuredClone(read)));
@@ -602,7 +598,7 @@ describe('convergent client state', () => {
             syncPublisher: createPublisher(),
             now: () => 1_000,
             randomId: () => 'event-conflict',
-            sleep: (delayMs) => {
+            sleep: (delayMs: number) => {
                 delays.push(delayMs);
                 return Promise.resolve();
             },
@@ -619,7 +615,9 @@ describe('convergent client state', () => {
         expect(delays).toEqual([]);
         expect(runtime.principalGuardCount).toBe(8);
         expect(runtime.transactionBeginCount).toBe(8);
-        expect(runtime.data.size).toBe(0);
+        expect(
+            [...runtime.data.keys()].filter((key) => key.startsWith('client-state:')),
+        ).toEqual([]);
         expect(timing.filter((event) => event.operation === 'mutation.write')).toHaveLength(8);
         expect(timing.map((event) => event.operation)).not.toContain('mutation.conflict');
     });
@@ -812,7 +810,6 @@ describe('convergent client state', () => {
         const computed = computeClientMutation({
             command: validConnect,
             read: emptyClientMutationRead(),
-            facts: validFacts(),
         });
         expect(computed.outcome).toBe('write');
         if (computed.outcome !== 'write' || computed.session.operation === 'none') {
@@ -840,6 +837,7 @@ describe('convergent client state', () => {
                 {},
             ) as ClientMutationCommand,
             read: {
+                authoritySession: validAuthoritySession('session-1'),
                 idempotency: null,
                 principal: entry(computed.principal.value) as never,
                 instance: computed.instance.operation === 'none'
@@ -849,7 +847,6 @@ describe('convergent client state', () => {
                     snapshot: computed.snapshot,
                     receiptEvent: null,
                 },
-                facts: validFacts(),
             }),
         ).toThrow(ClientMutationRejectedError);
 
@@ -874,7 +871,6 @@ describe('convergent client state', () => {
             command: validConnect,
                 read: emptyClientMutationRead(),
                 computed: invalidSessionComputed,
-                facts: validFacts(),
             }),
         ).toThrow(ClientMutationRejectedError);
 
@@ -891,7 +887,9 @@ describe('convergent client state', () => {
                 requestId: 'malformed-heartbeat',
             }),
         ).rejects.toMatchObject({ status: 400 });
-        expect(runtime.data.size).toBe(0);
+        expect(
+            [...runtime.data.keys()].filter((key) => key.startsWith('client-state:')),
+        ).toEqual([]);
 
         await connect(runtime, 'corrupt-session', 'corrupt-generation', BASE_EPOCH_MS);
         const storedSession = [...runtime.data.entries()].find(([, stored]) => {
@@ -927,15 +925,14 @@ describe('convergent client state', () => {
 
     it('rejects malformed read entries and computed authoritative candidates', () => {
         const command = validPrincipalCommand();
-        const facts = validFacts();
         expect(() => computeClientMutation({
             command,
             read: [] as unknown as ClientMutationRead,
-                facts,
             }),
         ).toThrow(ClientMutationRejectedError);
 
         const invalidRead = {
+            authoritySession: validAuthoritySession(),
             idempotency: null,
             principal: {
                 entry: {
@@ -955,11 +952,12 @@ describe('convergent client state', () => {
             snapshot: null,
             receiptEvent: null,
         } as unknown as ClientMutationRead;
-        expect(() => computeClientMutation({ command, read: invalidRead, facts })).toThrow(
+        expect(() => computeClientMutation({ command, read: invalidRead })).toThrow(
             ClientMutationRejectedError,
         );
 
         const read: ClientMutationRead = {
+            authoritySession: validAuthoritySession(),
             idempotency: null,
             principal: null,
             instance: null,
@@ -967,13 +965,12 @@ describe('convergent client state', () => {
             snapshot: null,
             receiptEvent: null,
         };
-        const computed = computeClientMutation({ command, read, facts });
+        const computed = computeClientMutation({ command, read });
         const invalidComputed = structuredClone(computed) as Record<string, unknown>;
         (invalidComputed.receipt as Record<string, unknown>).snapshotVersion = -1;
         expect(() => validateClientMutation({
             command,
             read,
-            facts,
             computed: invalidComputed as unknown as typeof computed,
             }),
         ).toThrow(ClientMutationRejectedError);
@@ -989,6 +986,7 @@ function invalidSessionCommand(
     const common = {
         ...base,
         operation,
+        authority: validAuthority(operation as ClientMutationOperation, 'session-1'),
         clientInstanceId: 'browser',
         sessionId: 'session-1',
     };
@@ -1041,6 +1039,7 @@ function validPrincipalCommand(): ClientMutationCommand {
         aggregateRef: principalRef('alice'),
         commandId: 'valid-command',
         requestId: 'valid-command',
+        authority: validAuthority('upsertPrincipal'),
         facts: validFacts(),
         input: {
             username: 'alice',
@@ -1071,8 +1070,9 @@ function validFacts(): ClientMutationFacts {
     };
 }
 
-function emptyClientMutationRead(): ClientMutationRead {
+function emptyClientMutationRead(sessionId = 'session-1'): ClientMutationRead {
     return {
+        authoritySession: validAuthoritySession(sessionId),
         idempotency: null,
         principal: null,
         instance: null,
@@ -1080,6 +1080,42 @@ function emptyClientMutationRead(): ClientMutationRead {
         snapshot: null,
         receiptEvent: null,
     };
+}
+
+function validAuthority(
+    operation: ClientMutationOperation,
+    sessionId = 'authority-session',
+): ClientMutationAuthority {
+    if (operation === 'expireSession') {
+        return {
+            kind: 'system',
+            version: 1,
+            serviceId: 'client-service',
+            operation,
+        };
+    }
+    return {
+        kind: 'issued-session',
+        version: 1,
+        principalId: 'alice',
+        sessionId,
+        sessionIssuedAtEpochMs: 0,
+        sessionExpiresAtEpochMs: 10_000,
+        applicationId: SCOPE.applicationId,
+        workspaceId: SCOPE.workspaceId,
+        operation,
+    };
+}
+
+function validAuthoritySession(sessionId = 'authority-session') {
+    return {
+        clientId: 'alice',
+        accessToken: `${sessionId}-token`,
+        username: 'alice',
+        sessionId,
+        issuedAtEpochMs: 0,
+        expiresAtEpochMs: 10_000,
+    } as const;
 }
 
 function validPrincipalValue() {

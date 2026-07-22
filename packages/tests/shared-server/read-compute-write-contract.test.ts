@@ -18,13 +18,14 @@ type CallExpectation = Readonly<{
 type CallSpec = string | readonly [name: string, branch: Branch] | CallExpectation;
 type ExpectedCall = Partial<CallExpectation> & Pick<CallExpectation, 'name'>;
 type PathContract = Readonly<{
-    family: string; name: string; file: string; owner: Selector; retry: string;
+    family: string; name: string; file: string; owner: Selector; retry: string | null;
     phases: readonly [CallSpec, CallSpec, CallSpec, CallSpec];
 }>;
 type SeamContract = Readonly<{
     family: string; file: string; owner: Selector; guards: readonly string[];
     dependent: readonly string[];
     guardChecks: readonly GuardCheck[];
+    transaction: 'owned' | 'received';
 }>;
 type GuardCheck = Readonly<{
     call: CallExpectation; wrapper?: string; binding?: string; condition?: string;
@@ -48,6 +49,12 @@ type EffectContract = Readonly<{
     atomic: readonly AtomicMapping[]; replay?: readonly ReplayMapping[];
 }>;
 const clientFile = 'packages/shared-server/rallar-system/services/client-state-service.ts';
+const clientMutationFile =
+    'packages/shared-server/rallar-system/services/client-state-mutations.ts';
+const appClientFile =
+    'packages/shared-server/rallar-system/services/AppClientInboxService.ts';
+const clientRepositoryFile =
+    'packages/shared-server/rallar-system/repositories/ClientStateRepository.ts';
 const groupFile = 'packages/shared-server/rallar-system/services/group-state-service.ts';
 const groupWriteFile = groupFile.replace('-service', '-guarded-batch');
 const configFile = 'packages/shared-server/rallar-system/services/group-topology-management-service.ts';
@@ -59,8 +66,8 @@ const clientSeam = seam(
     'client mutation', clientFile, ['function', 'writeClientMutation'],
     ['insertPrincipal', 'updatePrincipal'],
     [
-        'writeChildCandidate', 'insertIdempotentClientStateWritten',
-        'insertForAuthoritativeWrite', 'appendEvent',
+        'writeChildCandidate',
+        'appendEvent', 'writeIfAbsentOrMatch',
     ],
     [
         wrapped('repository.insertPrincipal'),
@@ -68,6 +75,7 @@ const clientSeam = seam(
         wrapped('repository.insertIdempotentClientStateWritten',
             ['computed.idempotency', 'then']),
     ],
+    'received',
 );
 const groupSeam = seam(
     'group mutation', groupWriteFile, ['function', 'writeGroupMutation'],
@@ -172,11 +180,24 @@ const rttSeam = seam(
             "inserted.status === 'conflict'"),
     ],
 );
-const seams = [groupSeam, configSeam, rtcSeam, rttSeam] as const;
+const seams = [clientSeam, groupSeam, configSeam, rtcSeam, rttSeam] as const;
 const rtcWorkerOwner = [
     'callback', 'function', 'createRtcTopologyWorkHandler', 'onMessage',
 ] as const satisfies Selector;
 const paths: readonly PathContract[] = [
+    {
+        family: clientSeam.family,
+        name: 'client AppInbox effectful path',
+        file: appClientFile,
+        owner: ['method', 'processCommand'],
+        retry: null,
+        phases: [
+            exact('this.clientStateService.read', ['command'], true),
+            exact('this.clientStateService.compute', ['command', 'read'], false),
+            exact('this.clientStateService.validate', ['command', 'read', 'computed'], false),
+            exact('this.commitComputed', ['context', 'computed'], true),
+        ],
+    },
     {
         family: groupSeam.family,
         name: 'group effectful path',
@@ -258,6 +279,41 @@ const paths: readonly PathContract[] = [
     },
 ];
 const effects: readonly EffectContract[] = [
+    {
+        family: clientSeam.family,
+        type: [clientMutationFile, 'ClientMutationComputed'],
+        noExternalEffectOutcomes: ['replay', 'idempotency-conflict'],
+        noExternalEffectVariants: [{
+            outcome: 'no-op',
+            property: ['persistIdempotency', ['false']],
+        }],
+        atomic: [
+            {
+                outcome: 'no-op',
+                property: ['persistIdempotency', ['true']],
+                seam: clientSeam,
+                calls: [exact(
+                    'repository.insertIdempotentClientStateWritten',
+                    [
+                        'computed.aggregateRef', 'computed.idempotency.requestId',
+                        'computed.idempotency',
+                    ],
+                    true,
+                    ["computed.outcome === 'no-op'", 'then'],
+                )],
+            },
+            {
+                outcome: 'write',
+                property: ['outboxEntries', ['readonly ResourceEntry[]']],
+                seam: clientSeam,
+                calls: [exact(
+                    'outbox.writeIfAbsentOrMatch',
+                    ['entry'],
+                    true,
+                )],
+            },
+        ],
+    },
     {
         family: groupSeam.family,
         type: [
@@ -381,10 +437,37 @@ afterAll(() => {
     compiler.api.close();
 });
 describe('read/compute/validate/write implementation contract', () => {
-    it('keeps four self-retrying operation families while guarding both RTC topology paths', () => {
-        expect(new Set(paths.map(({ family }) => family)).size).toBe(4);
+    it('keeps client mutation in the structural seam, path, and effect inventories', () => {
+        expect(seams.map(({ family }) => family)).toContain(clientSeam.family);
+        expect(paths.map(({ family }) => family)).toContain(clientSeam.family);
+        expect(effects.map(({ family }) => family)).toContain(clientSeam.family);
+    });
+
+    it('requires the exact received SQL transaction for all client write repositories', () => {
+        const service = readRepo(clientFile);
+        const repository = readRepo(clientRepositoryFile);
+        expect(service).not.toContain('bindRuntimeStateTransaction');
+        expect(repository).not.toContain('createEventStore?:');
+        expect(repository).toContain('new PSqlRuntimeStateRepository(transaction)');
+        expect(repository).toContain('new PSqlClientStateEventRepository(transaction)');
+    });
+
+    it('keeps persisted and non-persisted client no-op variants explicit', () => {
+        const mutations = readRepo(clientMutationFile);
+        expect(mutations).not.toContain('as ClientMutationComputed');
+        expect(mutations).toContain('assertNeverClientMutationComputed');
+    });
+
+    it('keeps client outer retry and four self-retrying operation families inventoried', () => {
+        expect(new Set(paths.map(({ family }) => family)).size).toBe(5);
         expect(paths.map(({ family, name, file, owner }) =>
             [family, name, file, owner])).toEqual([
+            [
+                clientSeam.family,
+                'client AppInbox effectful path',
+                appClientFile,
+                ['method', 'processCommand'],
+            ],
             [
                 groupSeam.family,
                 'group effectful path',
@@ -411,8 +494,11 @@ describe('read/compute/validate/write implementation contract', () => {
             ],
             [rttSeam.family, 'RTC RTT effectful path', rttFile, ['function', 'executeRttMutation']],
         ]);
-        expect(effects[0]!.noExternalEffectOutcomes).toContain('no-op');
-        expect(effects[1]!.noExternalEffectOutcomes).toContain('claim');
+        expect(effects[0]!.noExternalEffectVariants).toContainEqual({
+            outcome: 'no-op',
+            property: ['persistIdempotency', ['false']],
+        });
+        expect(effects[2]!.noExternalEffectOutcomes).toContain('claim');
     });
     it('keeps client phases visible while AppInbox owns transaction and retry', () => {
         const client = readFileSync(clientFile, 'utf8');
@@ -429,6 +515,111 @@ describe('read/compute/validate/write implementation contract', () => {
         expect(appClient).toContain('this.clientStateService.validate(command, read, computed)');
         expect(appClient).toContain('this.writeMutation(context');
     });
+    it('keeps every client write repository on the exact received transaction', () => {
+        assertClientTransactionAffinity(repoSource(clientFile));
+    });
+    it.each([
+        [
+            'an omitted AppClient compute phase',
+            `class Fixture {
+                async processCommand(command: unknown) {
+                    const read = await this.clientStateService.read(command);
+                    const computed = read;
+                    this.clientStateService.validate(command, read, computed);
+                    return await this.commitComputed(command, computed);
+                }
+            }`,
+            /compute/,
+        ],
+        [
+            'a reordered AppClient validate phase',
+            `class Fixture {
+                async processCommand(command: unknown) {
+                    const read = await this.clientStateService.read(command);
+                    this.clientStateService.validate(command, read, computed);
+                    const computed = this.clientStateService.compute(command, read);
+                    return await this.commitComputed(command, computed);
+                }
+            }`,
+            /effectful path|greater/,
+        ],
+    ])('rejects %s', (_name, fixture, error) => {
+        withFixture(fixture, (source) => {
+            expect(() => assertPath(source, {
+                family: 'client fixture',
+                name: 'client fixture effectful path',
+                file: source.fileName,
+                owner: ['method', 'processCommand'],
+                retry: null,
+                phases: [
+                    exact('this.clientStateService.read', ['command'], true),
+                    exact('this.clientStateService.compute', ['command', 'read'], false),
+                    exact(
+                        'this.clientStateService.validate',
+                        ['command', 'read', 'computed'],
+                        false,
+                    ),
+                    exact('this.commitComputed', ['command', 'computed'], true),
+                ],
+            })).toThrow(error);
+        });
+    });
+    it('rejects a client service write that starts its own retry transaction', () => {
+        withFixture(`async function writeClientMutation(transaction: unknown) {
+            return await runtime.begin(async () => {
+                await repository.insertPrincipal();
+                await repository.appendEvent();
+            });
+        }`, (source) => {
+            expect(() => assertSeam(source, seam(
+                'client fixture', source.fileName, ['function', 'writeClientMutation'],
+                ['insertPrincipal'], ['appendEvent'], [], 'received',
+            ))).toThrow(/nested begin|begin/);
+        });
+    });
+    it.each([
+        [
+            'a principal CAS after its dependent write',
+            `async function writeClientMutation(transaction: unknown) {
+                await repository.appendEvent();
+                await repository.insertPrincipal();
+            }`,
+            /client fixture/,
+        ],
+        [
+            'an unawaited principal CAS',
+            `async function writeClientMutation(transaction: unknown) {
+                repository.insertPrincipal();
+                await repository.appendEvent();
+            }`,
+            /await/,
+        ],
+    ])('rejects %s', (_name, fixture, error) => {
+        withFixture(fixture, (source) => {
+            expect(() => assertSeam(source, seam(
+                'client fixture', source.fileName, ['function', 'writeClientMutation'],
+                ['insertPrincipal'], ['appendEvent'], [], 'received',
+            ))).toThrow(error);
+        });
+    });
+    it('rejects ResourceInbox construction from anything except the received transaction', () => {
+        withFixture(`async function writeClientMutation(transaction: unknown) {
+            await repository.insertPrincipal();
+            const outbox = new ResourceInboxRepository(unrelatedTransaction);
+            await outbox.writeIfAbsentOrMatch(entry);
+        }`, (source) => {
+            expect(() => assertClientTransactionAffinity(source)).toThrow(/ResourceInbox/);
+        });
+    });
+    it('rejects an intermediate StateMutationOutbox result from client write', () => {
+        withFixture(`async function writeClientMutation(transaction: unknown) {
+            await repository.insertPrincipal();
+            return new StateMutationOutboxWork(transaction);
+        }`, (source) => {
+            expect(() => assertClientTransactionAffinity(source))
+                .toThrow(/StateMutationOutbox/);
+        });
+    });
     it.each(paths)(
         '$name keeps one syntax-aware branch-local read/compute/validate/write path',
         (contract) => assertPath(repoSource(contract.file), contract),
@@ -443,7 +634,7 @@ describe('read/compute/validate/write implementation contract', () => {
     );
     it('commits the publication-bearing RTC worker result before fanout', () => {
         assertRtcWorker(repoSource(rtcWorkerFile));
-        const internal = findFunction(repoSource(paths[3]!.file), paths[3]!.owner);
+        const internal = findFunction(repoSource(paths[4]!.file), paths[4]!.owner);
         expect(ownedCalls(internal).filter(({ name }) => name === 'publish'))
             .toHaveLength(0);
     });
@@ -595,7 +786,7 @@ describe('read/compute/validate/write implementation contract', () => {
     });
     it('keeps the architecture inventory synchronized with all guarded paths', () => {
         const architecture = readRepo('packages/shared-server/architecture.md');
-        for (const contract of paths) {
+        for (const contract of paths.filter(({ family }) => family !== clientSeam.family)) {
             for (const phase of contract.phases) {
                 const name = readCallSpec(phase).name;
                 expect(architecture, `${contract.name}: ${name}`)
@@ -611,8 +802,9 @@ describe('read/compute/validate/write implementation contract', () => {
 function seam(family: string, file: string, owner: Selector,
     guards: readonly string[], dependent: readonly string[],
     guardChecks: readonly GuardCheck[] = [],
+    transaction: SeamContract['transaction'] = 'owned',
 ): SeamContract {
-    return { family, file, owner, guards, dependent, guardChecks }; }
+    return { family, file, owner, guards, dependent, guardChecks, transaction }; }
 function under(name: string, condition: string,
     side: 'then' | 'else'): CallSpec {
     return [name, [condition, side]]; }
@@ -654,20 +846,24 @@ function fixtureEffect(source: ts.SourceFile): EffectContract {
 function assertPath(source: ts.SourceFile, contract: PathContract): void {
     const owner = findFunction(source, contract.owner);
     const calls = contract.phases.map((phase) => findCall(source, owner, phase));
-    const loops = calls.map((call) => nearestLoop(call, owner));
-    for (const loop of loops) {
-        expect(normalize(loop.condition?.getText(source) ?? ''), contract.name)
-            .toBe(
-            contract.retry,
-        );
+    if (contract.retry !== null) {
+        const loops = calls.map((call) => nearestLoop(call, owner));
+        for (const loop of loops) {
+            expect(normalize(loop.condition?.getText(source) ?? ''), contract.name)
+                .toBe(contract.retry);
+        }
+        expect(new Set(loops.map(({ pos, end }) => `${pos}:${end}`)).size).toBe(1);
+    } else {
+        for (const call of calls) {
+            expect(() => nearestLoop(call, owner), contract.name).toThrow(/Missing retry loop/);
+        }
     }
-    expect(new Set(loops.map(({ pos, end }) => `${pos}:${end}`)).size).toBe(1);
     for (let index = 1; index < calls.length; index += 1) {
         expect(calls[index]!.pos, contract.name).toBeGreaterThan(calls[index - 1]!.pos);
     }
 }
 function assertRtcWorker(source: ts.SourceFile): void {
-    const external = paths[2]!;
+    const external = paths[3]!;
     assertPath(source, external);
     const owner = findFunction(source, external.owner);
     const publication = findCall(source, owner, 'toTopologyPublication');
@@ -712,11 +908,9 @@ function assertRtcWorker(source: ts.SourceFile): void {
 function assertSeam(source: ts.SourceFile, contract: SeamContract): void {
     const owner = findFunction(source, contract.owner);
     const ownedBegin = ownedCalls(owner).filter(({ name }) => name === 'begin');
-    expect(ownedBegin, `${contract.family}: owned begin`).toHaveLength(1);
-    expect(allCalls(source).filter(({ name }) => name === 'begin'),
-        contract.family,
-    ).toHaveLength(1);
-    const transaction = callCallback(ownedBegin[0]!.node, source);
+    const transaction = contract.transaction === 'owned'
+        ? requireOwnedTransaction(source, contract, owner, ownedBegin)
+        : requireReceivedTransaction(source, contract, owner, ownedBegin);
     const calls = ownedCalls(transaction).filter(({ node }) =>
         !readBranches(node, transaction, source).flat().includes(guardedCapability),
     );
@@ -735,6 +929,53 @@ function assertSeam(source: ts.SourceFile, contract: SeamContract): void {
     for (const check of contract.guardChecks) {
         assertGuardCheck(source, transaction, check);
     }
+}
+
+function assertClientTransactionAffinity(source: ts.SourceFile): void {
+    const writer = findFunction(source, ['function', 'writeClientMutation']);
+    const resourceInboxes: ts.NewExpression[] = [];
+    const intermediateOutboxes: ts.NewExpression[] = [];
+    walkOwned(writer, (node) => {
+        if (!ts.isNewExpression(node)) return;
+        const constructor = normalize(node.expression.getText(source));
+        if (constructor === 'ResourceInboxRepository') resourceInboxes.push(node);
+        if (constructor === 'StateMutationOutboxWork') intermediateOutboxes.push(node);
+    });
+    expect(intermediateOutboxes, 'StateMutationOutbox intermediate result')
+        .toHaveLength(0);
+    expect(resourceInboxes, 'ResourceInbox must be constructed once by client write')
+        .toHaveLength(1);
+    expect(
+        resourceInboxes[0]!.arguments?.map((argument) =>
+            normalize(argument.getText(source))) ?? [],
+        'ResourceInbox must use the received transaction',
+    ).toEqual(['transaction']);
+}
+
+function requireOwnedTransaction(
+    source: ts.SourceFile,
+    contract: SeamContract,
+    owner: ts.FunctionLikeDeclaration,
+    begin: readonly NamedCall[],
+): ts.FunctionLikeDeclaration {
+    expect(begin, `${contract.family}: owned begin`).toHaveLength(1);
+    expect(allCalls(source).filter(({ name }) => name === 'begin'), contract.family)
+        .toHaveLength(1);
+    return callCallback(begin[0]!.node, source);
+}
+
+function requireReceivedTransaction(
+    source: ts.SourceFile,
+    contract: SeamContract,
+    owner: ts.FunctionLikeDeclaration,
+    begin: readonly NamedCall[],
+): ts.FunctionLikeDeclaration {
+    expect(begin, `${contract.family}: no nested begin`).toHaveLength(0);
+    expect(allCalls(source).filter(({ name }) => name === 'begin'), contract.family)
+        .toHaveLength(0);
+    expect(owner.parameters.map((parameter) => normalize(parameter.name.getText(source))))
+        .toContain('transaction');
+    return owner;
 }
 function assertGuardCheck(source: ts.SourceFile,
     transaction: ts.FunctionLikeDeclaration,
@@ -772,8 +1013,9 @@ function assertEffect(contract: EffectContract, provided?: ts.SourceFile): void 
         const writerSource = provided ?? repoSource(mapping.seam.file);
         const writer = findFunction(writerSource, mapping.seam.owner);
         const begin = ownedCalls(writer).filter(({ name }) => name === 'begin');
-        expect(begin, `${contract.family}:${mapping.outcome}: begin`).toHaveLength(1);
-        const transaction = callCallback(begin[0]!.node, writerSource);
+        const transaction = mapping.seam.transaction === 'owned'
+            ? requireOwnedTransaction(writerSource, mapping.seam, writer, begin)
+            : requireReceivedTransaction(writerSource, mapping.seam, writer, begin);
         for (const call of mapping.calls) findCall(writerSource, transaction, call);
     }
     for (const mapping of contract.replay ?? []) {
@@ -959,7 +1201,7 @@ function readVariants(alias: ts.TypeAliasDeclaration,
         );
         expect(outcome && isProperty(outcome) && outcome.type, alias.name.text)
             .toBeDefined();
-        return readLiterals((outcome as ts.PropertySignature).type!).map((value) => ({
+        return readLiterals((outcome as ts.PropertySignatureDeclaration).type!).map((value) => ({
             outcome: value,
             properties,
         }));
@@ -977,6 +1219,13 @@ function expandTypeAlternatives(node: ts.TypeNode,
             normalize(reference.typeName.getText(source)) === 'Readonly' &&
             reference.typeArguments?.length === 1
         ) return expandTypeAlternatives(reference.typeArguments[0]!, source);
+        const referencedName = normalize(reference.typeName.getText(source));
+        const declaration = source.statements.find((statement) =>
+            ts.isTypeAliasDeclaration(statement) && statement.name.text === referencedName
+        );
+        if (declaration && ts.isTypeAliasDeclaration(declaration)) {
+            return expandTypeAlternatives(declaration.type, source);
+        }
     }
     if (ts.isUnionTypeNode(node)) {
         return node.types.flatMap((type) => expandTypeAlternatives(type, source));
@@ -1075,7 +1324,9 @@ function isFunction(node: ts.Node): node is ts.FunctionLikeDeclaration {
         ts.isConstructorDeclaration(node)
     );
 }
-function isProperty(node: ts.Node): node is ts.PropertySignature { return node.kind === ts.SyntaxKind.PropertySignature; }
+function isProperty(node: ts.Node): node is ts.PropertySignatureDeclaration {
+    return ts.isPropertySignatureDeclaration(node);
+}
 function within(node: ts.Node, container: ts.Node): boolean { return node.pos >= container.pos && node.end <= container.end; }
 function hasKind(node: ts.Node, kind: ts.SyntaxKind): boolean {
     let found = false;

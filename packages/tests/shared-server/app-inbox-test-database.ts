@@ -3,17 +3,18 @@ import type { EntityStatus, Key, ResourceEntry } from '@shared/queuebox/Resource
 import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import { ResourceInboxInvariantCorruptionError } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
+import { InMemoryClientStateEventStore } from '@shared-server/rallar-system/repositories/StateEventStore.ts';
+import type { ClientEvent } from '@shared/api/client-types.ts';
 
 export type AppInboxTestDatabase = PSqlSql &
     Readonly<{
-        bindRuntimeStateTransaction(
-            transaction: PSqlTransactionSql,
-        ): RuntimeStateOptimisticTransactionalRepositoryLike;
+        clientEventStore: InMemoryClientStateEventStore;
         outboxEntries: ReadonlyMap<string, ResourceEntry>;
     }>;
 
 type AppInboxTestDatabaseOptions = Readonly<{
     runtimeRepository?: RuntimeStateOptimisticTransactionalRepositoryLike;
+    clientEventStore?: InMemoryClientStateEventStore;
     withTransaction?: <T>(write: () => Promise<T>) => Promise<T>;
     shouldFailOutboxWrite?: () => boolean;
     onTransactionRollback?: () => void | Promise<void>;
@@ -29,11 +30,8 @@ export function createAppInboxTestDatabase(
     }>,
     options: AppInboxTestDatabaseOptions = {},
 ): AppInboxTestDatabase {
-    const transactionRuntime = new WeakMap<
-        PSqlTransactionSql,
-        RuntimeStateOptimisticTransactionalRepositoryLike
-    >();
     const outboxEntries = new Map<string, ResourceEntry>();
+    const clientEventStore = options.clientEventStore ?? new InMemoryClientStateEventStore();
     const database = (async () => {
         throw new Error('App inbox SQL must use the supplied transaction');
     }) as unknown as AppInboxTestDatabase;
@@ -45,11 +43,65 @@ export function createAppInboxTestDatabase(
             const pendingResults: ResourceEntry[] = [];
             const pendingInbox: ResourceEntry[] = [];
             const pendingOutbox = new Map(outboxEntries);
+            const pendingClientEvents: ClientEvent[] = [];
             const transaction = (async (
             strings: TemplateStringsArray,
             ...values: unknown[]
         ) => {
             const query = strings.join('?').replace(/\s+/gu, ' ').trim().toLowerCase();
+            if (
+                query.includes('insert into runtime_state_store') &&
+                query.includes('do nothing') &&
+                query.includes('returning revision')
+            ) {
+                if (!runtime) {
+                    throw new Error('Runtime-state SQL requires a transaction runtime');
+                }
+                const [namespace, key, value, expireAt] = values as [
+                    string,
+                    string,
+                    string,
+                    Date,
+                ];
+                const result = await runtime.insertIfAbsent(
+                    namespace,
+                    key,
+                    value,
+                    expireAt.getTime(),
+                );
+                return result.status === 'applied' ? [{ revision: result.revision }] : [];
+            }
+            if (
+                query.includes('update runtime_state_store') &&
+                query.includes('returning revision')
+            ) {
+                if (!runtime) {
+                    throw new Error('Runtime-state SQL requires a transaction runtime');
+                }
+                const [value, expireAt, namespace, key, expectedRevision] = values as [
+                    string,
+                    Date,
+                    string,
+                    string,
+                    number,
+                ];
+                const result = await runtime.upsertIfRevision(
+                    namespace,
+                    key,
+                    value,
+                    expireAt.getTime(),
+                    expectedRevision,
+                );
+                return result.status === 'applied' ? [{ revision: result.revision }] : [];
+            }
+            if (query.includes('insert into client_state_events')) {
+                const eventJson = values.at(-1);
+                if (typeof eventJson !== 'string') {
+                    throw new Error('Client state event JSON is required');
+                }
+                pendingClientEvents.push(JSON.parse(eventJson) as ClientEvent);
+                return [];
+            }
             if (query.includes('insert into resource_inbox_results')) {
                 const entry = toResultEntry(values);
                 pendingResults.push(entry);
@@ -108,13 +160,14 @@ export function createAppInboxTestDatabase(
         transaction.begin = async () => {
             throw new Error('Nested app inbox transaction');
             };
-            if (runtime) transactionRuntime.set(transaction, runtime);
-
             const output = await write(transaction);
         for (const entry of pendingResults) await results.replace(entry);
         for (const entry of pendingInbox) await inbox.enqueue(entry);
             outboxEntries.clear();
             for (const [key, entry] of pendingOutbox) outboxEntries.set(key, entry);
+            for (const event of pendingClientEvents) {
+                await clientEventStore.appendClientEvent(event);
+            }
             return output;
         };
 
@@ -133,12 +186,10 @@ export function createAppInboxTestDatabase(
             throw error;
         }
     };
-    database.bindRuntimeStateTransaction = (transaction) => {
-        const runtime = transactionRuntime.get(transaction);
-        if (!runtime) throw new Error('Runtime repository is not bound to this transaction');
-        return runtime;
-    };
-    database.outboxEntries = outboxEntries;
+    Object.defineProperties(database, {
+        clientEventStore: { value: clientEventStore },
+        outboxEntries: { value: outboxEntries },
+    });
     return database;
 }
 function toInboxEntry(values: readonly unknown[]): ResourceEntry {

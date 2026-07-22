@@ -20,6 +20,8 @@ import {
     createClientStateService,
     requiresClientWrite,
     toClientMutationCommand,
+    toClientMutationIssuedSessionAuthority,
+    toClientMutationSystemAuthority,
     toClientStateWritten,
     toConnectCommandInput,
     toDisconnectCommandInput,
@@ -30,9 +32,16 @@ import {
 } from '@shared-server/rallar-system/services/client-state-service.ts';
 import type { RallarTimingSink } from '@shared-server/rallar-system/services/timing.ts';
 import { defaultClientStateEventStoreFor } from '@shared-server/rallar-system/repositories/StateEventStore.ts';
+import {
+    AuthSessionRepository,
+    type IssuedAuthSession,
+} from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+import type { ClientEvent } from '@shared/api/client-types.ts';
 
 const OUTBOX_BY_RUNTIME = new WeakMap<object, Map<string, ResourceEntry>>();
 const OUTBOX_FAILURES_BY_RUNTIME = new WeakMap<object, number>();
+const TEST_AUTH_ISSUED_AT_EPOCH_MS = 0;
+const TEST_AUTH_EXPIRES_AT_EPOCH_MS = 253_402_300_799_000;
 
 export type ClientStatePhaseTestDriver = Pick<
     ClientStateService,
@@ -103,16 +112,12 @@ export function createClientStatePhaseTestDriver(
         timing?: RallarTimingSink;
     }> = {},
 ): ClientStatePhaseTestDriver {
-    let transactionRuntime: RuntimeStateOptimisticTransactionalRepositoryLike | undefined;
     const outbox = outboxFor(runtimeRepository);
     const eventStore = defaultClientStateEventStoreFor(runtimeRepository);
+    const authSessions = new AuthSessionRepository(runtimeRepository);
     const service = createClientStateService({
         runtimeRepository,
         createClientStateEventStore: () => eventStore,
-        bindRuntimeStateTransaction: () => {
-            if (!transactionRuntime) throw new Error('Missing test transaction runtime');
-            return transactionRuntime;
-        },
         serviceId: options.serviceId ?? 'client-service',
         timing: options.timing,
     });
@@ -123,25 +128,36 @@ export function createClientStatePhaseTestDriver(
     ): Promise<ClientStateWritten> => {
         for (let attempt = 1; attempt <= 8; attempt += 1) {
             const input = inputFactory();
-            const command = await toClientMutationCommand(input, {
-                nowEpochMs: nowEpochMs(),
-                serviceId: options.serviceId ?? 'client-service',
-                eventId: `test-client-event:${input.commandId}:${++commandSequence}`,
-                attemptCount: attempt,
-                expireAtEpochMs: nowEpochMs() + 24 * 60 * 60 * 1_000,
-            });
+            const now = nowEpochMs();
+            const retentionExpiresAtEpochMs = TEST_AUTH_EXPIRES_AT_EPOCH_MS;
+            const authority = await toTestAuthority(input);
+            const command = await toClientMutationCommand(
+                input,
+                {
+                    nowEpochMs: now,
+                    serviceId: options.serviceId ?? 'client-service',
+                    eventId: `test-client-event:${input.commandId}:${++commandSequence}`,
+                    attemptCount: attempt,
+                    expireAtEpochMs: retentionExpiresAtEpochMs,
+                },
+                authority,
+            );
             const read = await service.read(command);
             const computed = service.compute(command, read);
             service.validate(command, read, computed);
             try {
                 if (requiresClientWrite(computed)) {
                     await runtimeRepository.begin(async (runtime) => {
-                        transactionRuntime = runtime;
                         const before = new Map(outbox);
                         const eventsBefore = [...eventStore.events];
                         try {
                             await service.write(
-                                toOutboxTransaction(outbox, runtimeRepository),
+                                toClientTransaction(
+                                    outbox,
+                                    runtime,
+                                    runtimeRepository,
+                                    eventStore,
+                                ),
                                 computed,
                             );
                         } catch (error) {
@@ -150,8 +166,6 @@ export function createClientStatePhaseTestDriver(
                             eventStore.events.length = 0;
                             eventStore.events.push(...eventsBefore);
                             throw error;
-                        } finally {
-                            transactionRuntime = undefined;
                         }
                     });
                 }
@@ -296,6 +310,42 @@ export function createClientStatePhaseTestDriver(
     function nextId(): string {
         return `test-client-command-${++commandSequence}`;
     }
+
+    async function toTestAuthority(
+        input: Parameters<typeof toClientMutationCommand>[0],
+    ) {
+        if (input.operation === 'expireSession') {
+            return toClientMutationSystemAuthority(
+                options.serviceId ?? 'client-service',
+            );
+        }
+        const sessionId = 'sessionId' in input
+            ? input.sessionId
+            : input.input.actorSessionId ??
+                `${input.aggregateRef.principalId}-test-authority-session`;
+        const existing = await authSessions.findBySessionId(sessionId);
+        if (existing) {
+            return toClientMutationIssuedSessionAuthority(
+                existing,
+                input.aggregateRef,
+                input.operation,
+            );
+        }
+        const session: IssuedAuthSession = {
+            clientId: input.aggregateRef.principalId,
+            accessToken: `${sessionId}-test-token`,
+            username: input.aggregateRef.principalId,
+            sessionId,
+            issuedAtEpochMs: TEST_AUTH_ISSUED_AT_EPOCH_MS,
+            expiresAtEpochMs: TEST_AUTH_EXPIRES_AT_EPOCH_MS,
+        };
+        await authSessions.putSession(session);
+        return toClientMutationIssuedSessionAuthority(
+            session,
+            input.aggregateRef,
+            input.operation,
+        );
+    }
 }
 
 export function createLegacyClientStateTestDriver(
@@ -345,12 +395,61 @@ function outboxFor(
     return entries;
 }
 
-function toOutboxTransaction(
+function toClientTransaction(
     outbox: Map<string, ResourceEntry>,
+    runtime: RuntimeStateOptimisticTransactionalRepositoryLike,
     runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike,
+    eventStore: ReturnType<typeof defaultClientStateEventStoreFor>,
 ): PSqlTransactionSql {
     const transaction = (async (strings: TemplateStringsArray, ...values: unknown[]) => {
         const query = strings.join('?').replace(/\s+/gu, ' ').trim().toLowerCase();
+        if (
+            query.includes('insert into runtime_state_store') &&
+            query.includes('do nothing') &&
+            query.includes('returning revision')
+        ) {
+            const [namespace, key, value, expireAt] = values as [
+                string,
+                string,
+                string,
+                Date,
+            ];
+            const result = await runtime.insertIfAbsent(
+                namespace,
+                key,
+                value,
+                expireAt.getTime(),
+            );
+            return result.status === 'applied' ? [{ revision: result.revision }] : [];
+        }
+        if (
+            query.includes('update runtime_state_store') &&
+            query.includes('returning revision')
+        ) {
+            const [value, expireAt, namespace, key, expectedRevision] = values as [
+                string,
+                Date,
+                string,
+                string,
+                number,
+            ];
+            const result = await runtime.upsertIfRevision(
+                namespace,
+                key,
+                value,
+                expireAt.getTime(),
+                expectedRevision,
+            );
+            return result.status === 'applied' ? [{ revision: result.revision }] : [];
+        }
+        if (query.includes('insert into client_state_events')) {
+            const eventJson = values.at(-1);
+            if (typeof eventJson !== 'string') {
+                throw new Error('Client state event JSON is required');
+            }
+            await eventStore.appendClientEvent(JSON.parse(eventJson) as ClientEvent);
+            return [];
+        }
         if (query.includes('insert into resource_inbox')) {
             const entry = toEntry(values);
             const identity = runtimeRepository as object;

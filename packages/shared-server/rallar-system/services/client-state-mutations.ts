@@ -28,6 +28,7 @@ import {
     computeClientStateSyncEntries,
     type ComputedClientStateSync,
 } from '../state-sync-publisher.ts';
+import type { IssuedAuthSession } from '../repositories/AuthSessionRepository.ts';
 
 type NullableActorInput = Readonly<{
     actorPrincipalId: string | null;
@@ -36,11 +37,45 @@ type NullableActorInput = Readonly<{
     traceId: string | null;
 }>;
 
+export type ClientMutationOperation =
+    | 'upsertPrincipal'
+    | 'upsertInstance'
+    | 'connectSession'
+    | 'connectAuthorisedWsSession'
+    | 'heartbeatSession'
+    | 'disconnectSession'
+    | 'disconnectAuthorisedWsSession'
+    | 'expireSession';
+
+export type ClientMutationIssuedSessionAuthority = Readonly<{
+    kind: 'issued-session';
+    version: 1;
+    principalId: string;
+    sessionId: string;
+    sessionIssuedAtEpochMs: number;
+    sessionExpiresAtEpochMs: number;
+    applicationId: string;
+    workspaceId: string;
+    operation: Exclude<ClientMutationOperation, 'expireSession'>;
+}>;
+
+export type ClientMutationSystemAuthority = Readonly<{
+    kind: 'system';
+    version: 1;
+    serviceId: string;
+    operation: 'expireSession';
+}>;
+
+export type ClientMutationAuthority =
+    | ClientMutationIssuedSessionAuthority
+    | ClientMutationSystemAuthority;
+
 type ClientMutationCommandBase = Readonly<{
     aggregateRef: ClientPrincipalRef;
     commandId: string;
     requestId: string | null;
     facts: ClientMutationFacts;
+    authority: ClientMutationAuthority;
 }>;
 
 export type ClientMutationCommand =
@@ -147,6 +182,7 @@ export type ClientMutationIdempotencyRecord = Readonly<{
 }>;
 
 export type ClientMutationRead = Readonly<{
+    authoritySession: IssuedAuthSession | null;
     idempotency: RuntimeStateEntryValue<ClientMutationIdempotencyRecord> | null;
     principal: RuntimeStateEntryValue<ClientPrincipal> | null;
     instance: RuntimeStateEntryValue<ClientInstance> | null;
@@ -166,7 +202,7 @@ export type ClientMutationFacts = Readonly<{
 
 export type ClientMutationCommandInput = ClientMutationCommand extends infer Command
     ? Command extends ClientMutationCommand
-        ? Omit<Command, 'facts'>
+        ? Omit<Command, 'facts' | 'authority'>
         : never
     : never;
 
@@ -261,6 +297,7 @@ export function validateClientMutationCommand(
     requireNullableNonEmptyString(value.requestId, 'Client mutation requestId');
     validatePrincipalRef(value.aggregateRef, 'Client mutation aggregateRef');
     validateClientMutationFacts(value.facts);
+    validateClientMutationAuthority(value.authority);
     const input = requirePlainRecord(value.input, 'Client mutation input');
     validateActorInput(input);
 
@@ -838,6 +875,7 @@ export function validateClientMutation(input: Readonly<{
         throw new ClientMutationRejectedError('Request id must own the command identity');
     }
     validateClientMutationRead(command, read);
+    validateClientMutationAuthorityPolicy(command, read);
     if ('sessionId' in command) {
         if (!command.sessionId || !command.clientInstanceId ||
             !command.input.generationId) {
@@ -928,7 +966,10 @@ function validateClientMutationRead(
     const root = requirePlainRecord(read, 'Client mutation read');
     requireExactKeys(
         root,
-        ['idempotency', 'principal', 'instance', 'session', 'snapshot', 'receiptEvent'],
+        [
+            'authoritySession', 'idempotency', 'principal', 'instance', 'session',
+            'snapshot', 'receiptEvent',
+        ],
         'Client mutation read',
     );
     validateNullableEntryValue(read.principal, 'Client principal read', validatePrincipal);
@@ -980,6 +1021,68 @@ function validateClientMutationRead(
                 read.idempotency.value.commandHash) {
             throw new ClientMutationRejectedError('Client idempotency read is invalid');
         }
+    }
+}
+
+function validateClientMutationAuthorityPolicy(
+    command: ClientMutationCommand,
+    read: ClientMutationRead,
+): void {
+    const authority = command.authority;
+    if (authority.kind === 'system') {
+        if (
+            command.operation !== 'expireSession' ||
+            authority.operation !== command.operation ||
+            authority.serviceId !== command.facts.serviceId ||
+            read.authoritySession !== null ||
+            command.input.actorPrincipalId !== command.aggregateRef.principalId ||
+            command.input.actorSessionId !== command.sessionId ||
+            command.input.reason !== 'expired'
+        ) {
+            throw new ClientMutationRejectedError(
+                'System authority is not permitted for this client command.',
+            );
+        }
+        return;
+    }
+    const session = read.authoritySession;
+    if (
+        command.operation === 'expireSession' ||
+        authority.operation !== command.operation ||
+        authority.applicationId !== command.aggregateRef.applicationId ||
+        authority.workspaceId !== command.aggregateRef.workspaceId ||
+        authority.principalId !== command.aggregateRef.principalId ||
+        !session ||
+        session.clientId !== authority.principalId ||
+        session.sessionId !== authority.sessionId ||
+        session.issuedAtEpochMs !== authority.sessionIssuedAtEpochMs ||
+        session.expiresAtEpochMs !== authority.sessionExpiresAtEpochMs ||
+        session.expiresAtEpochMs <= command.facts.nowEpochMs
+    ) {
+        throw new ClientMutationRejectedError(
+            'Authenticated client authority is missing, expired, revoked, or mismatched.',
+        );
+    }
+    if (
+        command.input.actorPrincipalId !== null &&
+        command.input.actorPrincipalId !== session.clientId
+    ) {
+        throw new ClientMutationRejectedError(
+            'Client mutation actor principal differs from durable authority.',
+        );
+    }
+    if (
+        command.input.actorSessionId !== null &&
+        command.input.actorSessionId !== session.sessionId
+    ) {
+        throw new ClientMutationRejectedError(
+            'Client mutation actor session differs from durable authority.',
+        );
+    }
+    if ('sessionId' in command && command.sessionId !== session.sessionId) {
+        throw new ClientMutationRejectedError(
+            'Client mutation session differs from durable authority.',
+        );
     }
 }
 
@@ -1313,24 +1416,34 @@ function noOpReceipt(
             `Client principal not found: ${command.aggregateRef.principalId}`,
         );
     }
-    const shouldPersistIdempotency = persistIdempotency && command.requestId !== null;
+    const receipt = toNoOpReceipt(command, read, facts);
+    const snapshot = requireReadSnapshot(read, command);
+    if (persistIdempotency && command.requestId !== null) {
+        return {
+            outcome: 'no-op',
+            persistIdempotency: true,
+            aggregateRef: command.aggregateRef,
+            idempotency: {
+                requestId: command.requestId,
+                commandHash: facts.commandHash,
+                receipt,
+            },
+            receipt,
+            snapshot,
+            event: null,
+        };
+    }
     return {
         outcome: 'no-op',
-        persistIdempotency: shouldPersistIdempotency,
-        ...(shouldPersistIdempotency
-            ? {
-                aggregateRef: command.aggregateRef,
-                idempotency: {
-                    requestId: command.requestId,
-                    commandHash: facts.commandHash,
-                    receipt: toNoOpReceipt(command, read, facts),
-                },
-            }
-            : {}),
-        receipt: toNoOpReceipt(command, read, facts),
-        snapshot: requireReadSnapshot(read, command),
+        persistIdempotency: false,
+        receipt,
+        snapshot,
         event: null,
-    } as ClientMutationComputed;
+    };
+}
+
+export function assertNeverClientMutationComputed(value: never): never {
+    throw new Error(`Unhandled client mutation outcome: ${JSON.stringify(value)}`);
 }
 
 function toNoOpReceipt(
@@ -1781,7 +1894,7 @@ const ACTOR_INPUT_KEYS = [
     'actorPrincipalId', 'actorSessionId', 'reason', 'traceId',
 ] as const;
 const COMMAND_BASE_KEYS = [
-    'operation', 'aggregateRef', 'commandId', 'requestId', 'facts', 'input',
+    'operation', 'aggregateRef', 'commandId', 'requestId', 'authority', 'facts', 'input',
 ] as const;
 const INSTANCE_COMMAND_KEYS = [...COMMAND_BASE_KEYS, 'clientInstanceId'] as const;
 const SESSION_COMMAND_KEYS = [...INSTANCE_COMMAND_KEYS, 'sessionId'] as const;
@@ -2415,6 +2528,67 @@ function validateClientMutationFacts(facts: unknown): void {
     if ((value.expireAtEpochMs as number) <= (value.nowEpochMs as number)) {
         reject('Client mutation facts.expireAtEpochMs must follow nowEpochMs');
     }
+}
+
+function validateClientMutationAuthority(authority: unknown): void {
+    const value = requirePlainRecord(authority, 'Client mutation authority');
+    if (value.kind === 'issued-session') {
+        requireExactKeys(
+            value,
+            [
+                'kind', 'version', 'principalId', 'sessionId',
+                'sessionIssuedAtEpochMs', 'sessionExpiresAtEpochMs',
+                'applicationId', 'workspaceId', 'operation',
+            ],
+            'Client mutation issued-session authority',
+        );
+        if (value.version !== 1 || value.operation === 'expireSession' ||
+            !CLIENT_MUTATION_OPERATIONS.has(value.operation as string)) {
+            reject('Client mutation issued-session authority is invalid');
+        }
+        for (
+            const [field, label] of [
+                ['principalId', 'principalId'], ['sessionId', 'sessionId'],
+                ['applicationId', 'applicationId'], ['workspaceId', 'workspaceId'],
+            ] as const
+        ) {
+            requireNonEmptyString(
+                value[field],
+                `Client mutation authority.${label}`,
+            );
+        }
+        requireTimestamp(
+            value.sessionIssuedAtEpochMs,
+            'Client mutation authority.sessionIssuedAtEpochMs',
+        );
+        requireTimestamp(
+            value.sessionExpiresAtEpochMs,
+            'Client mutation authority.sessionExpiresAtEpochMs',
+        );
+        if (
+            (value.sessionExpiresAtEpochMs as number) <=
+                (value.sessionIssuedAtEpochMs as number)
+        ) {
+            reject('Client mutation authority expiry must follow issuance');
+        }
+        return;
+    }
+    if (value.kind === 'system') {
+        requireExactKeys(
+            value,
+            ['kind', 'version', 'serviceId', 'operation'],
+            'Client mutation system authority',
+        );
+        if (value.version !== 1 || value.operation !== 'expireSession') {
+            reject('Client mutation system authority is invalid');
+        }
+        requireNonEmptyString(
+            value.serviceId,
+            'Client mutation authority.serviceId',
+        );
+        return;
+    }
+    reject('Client mutation authority kind is invalid');
 }
 
 function requireSha256(value: unknown, label: string): void {

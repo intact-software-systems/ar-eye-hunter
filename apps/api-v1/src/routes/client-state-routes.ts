@@ -30,7 +30,7 @@ import {
   type StateSyncCacheHydrationInput,
   type StateSyncCacheHydrationResult,
 } from '@shared-server/rallar-system/state-sync-cache-hydration.ts';
-import type { AuthSession } from '@shared/api/api-config.ts';
+import type { IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 import {
   ClientMutationRejectedError,
   validateClientMutationRequest,
@@ -46,10 +46,7 @@ export type ClientStateRouteService = Pick<
   | 'listEventPage'
 >;
 
-export type ClientStateRouteAuthSession = Pick<
-  AuthSession,
-  'clientId' | 'sessionId'
->;
+export type ClientStateRouteAuthSession = IssuedAuthSession;
 
 export type ClientStateRouteDependencies = Readonly<{
   getClientStateService?: () => ClientStateRouteService;
@@ -63,6 +60,7 @@ export type ClientStateRouteDependencies = Readonly<{
   ) => Promise<StateSyncCacheHydrationResult>;
   processClientAppInbox?: <V>(
     enqueue: AppInboxEnqueueInput<V>,
+    authority: ClientStateRouteAuthSession,
   ) => Promise<ClientSnapshot>;
 }>;
 
@@ -209,7 +207,7 @@ export function init(
             principalId,
             request,
           },
-        });
+        }, authSession);
         return c.json(snapshot);
       } catch (error) {
         return toErrorResponse(c, error);
@@ -243,7 +241,7 @@ export function init(
             clientInstanceId,
             request,
           },
-        });
+        }, authSession);
         return c.json(snapshot);
       } catch (error) {
         return toErrorResponse(c, error);
@@ -280,7 +278,7 @@ export function init(
             sessionId,
             request,
           },
-        });
+        }, authSession);
         return c.json(snapshot);
       } catch (error) {
         return toErrorResponse(c, error);
@@ -317,7 +315,7 @@ export function init(
             sessionId,
             request,
           },
-        });
+        }, authSession);
         return c.json(snapshot);
       } catch (error) {
         return toErrorResponse(c, error);
@@ -354,7 +352,7 @@ export function init(
             sessionId,
             request,
           },
-        });
+        }, authSession);
         return c.json(snapshot);
       } catch (error) {
         return toErrorResponse(c, error);
@@ -443,13 +441,16 @@ function isDefined<T>(value: T | undefined): value is T {
 
 async function processClientAppInbox<V>(
   enqueue: AppInboxEnqueueInput<V>,
+  authority: ClientStateRouteAuthSession,
 ): Promise<ClientSnapshot> {
-  const result = await getMiddleware().appClientInboxService.processEntryUntilCompletion<
-    V,
-    ClientStateWritten
-  >(
-    enqueue,
-  );
+  const result = await getMiddleware().appClientInboxService
+    .processAuthenticatedEntryUntilCompletion<
+      V,
+      ClientStateWritten
+    >(
+      enqueue,
+      authority,
+    );
 
   return result.fold(
     (error) => {

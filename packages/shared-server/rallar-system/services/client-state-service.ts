@@ -30,11 +30,16 @@ import {
     toClientSessionExpiryCandidate,
 } from '../repositories/session-expiry.ts';
 import type { ClientStateEventStore } from '../repositories/StateEventStore.ts';
+import {
+    AuthSessionRepository,
+    type IssuedAuthSession,
+} from '../repositories/AuthSessionRepository.ts';
 import { hashStateMutationCommand } from '../repositories/StateMutationOutboxRepository.ts';
 import type { StateEventListQuery } from '../state-event-listing.ts';
 import {
     ClientMutationIdempotencyConflictError,
     ClientMutationRejectedError,
+    assertNeverClientMutationComputed,
     computeClientMutation,
     type ClientMutationCommand,
     type ClientMutationCommandInput,
@@ -43,6 +48,10 @@ import {
     type ClientMutationFacts,
     type ClientMutationRead,
     type ClientMutationReceipt,
+    type ClientMutationAuthority,
+    type ClientMutationIssuedSessionAuthority,
+    type ClientMutationOperation,
+    type ClientMutationSystemAuthority,
     validateClientMutation,
     validateClientMutationCommand,
 } from './client-state-mutations.ts';
@@ -107,6 +116,7 @@ export type ClientStateService = Readonly<{
         atEpochMs: number,
     ): Promise<readonly ClientSessionExpiryCandidate[]>;
     findSessionBySessionId(sessionId: string): Promise<ClientSession | undefined>;
+    readIssuedAuthSession(sessionId: string): Promise<IssuedAuthSession | undefined>;
     observeSnapshot(snapshot: ClientSnapshot): Promise<ClientSnapshot>;
 }>;
 
@@ -115,10 +125,6 @@ export type ClientStateServiceDependencies = Readonly<{
     createClientStateEventStore?: (
         runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike,
     ) => ClientStateEventStore;
-    /** Test adapters may bind an in-memory repository to the supplied fake transaction. */
-    bindRuntimeStateTransaction?: (
-        transaction: PSqlTransactionSql,
-    ) => RuntimeStateOptimisticTransactionalRepositoryLike;
     serviceId: string;
     timing?: RallarTimingSink;
 }>;
@@ -127,6 +133,7 @@ export function createClientStateService(
     dependencies: ClientStateServiceDependencies,
 ): ClientStateService {
     const runtimeRepository = dependencies.runtimeRepository;
+    const authSessionRepository = new AuthSessionRepository(runtimeRepository);
     const repositoryFor = (runtime: RuntimeStateOptimisticTransactionalRepositoryLike) =>
         new ClientStateRepository(runtime, {
             events: dependencies.createClientStateEventStore?.(runtime),
@@ -143,16 +150,15 @@ export function createClientStateService(
         listEventPage: async (ref, query) =>
             await repositoryFor(runtimeRepository).listEventPage(ref, query),
         read: async (command) =>
-            await readClientMutation(repositoryFor(runtimeRepository), command),
+            await readClientMutation(
+                repositoryFor(runtimeRepository),
+                authSessionRepository,
+                command,
+            ),
         compute: (command, read) => computeClientMutation({ command, read }),
         validate: (command, read, computed) => validateClientMutation({ command, read, computed }),
         write: async (transaction, computed) => {
-            const repository = dependencies.bindRuntimeStateTransaction
-                ? repositoryFor(dependencies.bindRuntimeStateTransaction(transaction))
-                : createTransactionBoundClientStateRepository(
-                      transaction,
-                      dependencies.createClientStateEventStore,
-                  );
+            const repository = createTransactionBoundClientStateRepository(transaction);
             return await writeClientMutation(transaction, repository, computed);
         },
         listExpiredSessionCandidates: async (atEpochMs) =>
@@ -166,6 +172,8 @@ export function createClientStateService(
                 .map(toClientSessionExpiryCandidate),
         findSessionBySessionId: async (sessionId) =>
             await findClientSessionBySessionId(repositoryFor(runtimeRepository), sessionId),
+        readIssuedAuthSession: async (sessionId) =>
+            await authSessionRepository.findBySessionId(sessionId),
         observeSnapshot: async (snapshot) => snapshot,
     };
 
@@ -174,6 +182,7 @@ export function createClientStateService(
 
 async function readClientMutation(
     repository: ClientStateRepository,
+    authSessionRepository: Pick<AuthSessionRepository, 'findBySessionId'>,
     command: ClientMutationCommand,
 ): Promise<ClientMutationRead> {
     const instanceRef = 'clientInstanceId' in command
@@ -182,7 +191,11 @@ async function readClientMutation(
     const sessionRef = instanceRef && 'sessionId' in command
         ? { ...instanceRef, sessionId: command.sessionId }
         : null;
-    const [idempotency, principal, instance, session, snapshot] = await Promise.all([
+    const [authoritySession, idempotency, principal, instance, session, snapshot] =
+        await Promise.all([
+        command.authority.kind === 'issued-session'
+            ? authSessionRepository.findBySessionId(command.authority.sessionId)
+            : Promise.resolve(undefined),
         command.requestId === null
             ? Promise.resolve(undefined)
             : repository.findIdempotentClientMutationReceiptEntry(
@@ -210,6 +223,7 @@ async function readClientMutation(
         );
     }
     return {
+        authoritySession: authoritySession ?? null,
         idempotency: idempotency ?? null,
         principal: principal ?? null,
         instance: instance ?? null,
@@ -294,25 +308,63 @@ export type ClientMutationPersistedFacts = Omit<ClientMutationFacts, 'commandHas
 export async function toClientMutationCommand(
     input: ClientMutationCommandInput,
     facts: ClientMutationPersistedFacts,
+    authority: ClientMutationAuthority,
 ): Promise<ClientMutationCommand> {
     const command = {
         ...input,
+        authority,
         facts: {
             ...facts,
-            commandHash: await hashStateMutationCommand(input),
+            commandHash: await hashStateMutationCommand({ ...input, authority }),
         },
     } as ClientMutationCommand;
     validateClientMutationCommand(command);
     return command;
 }
 
+export function toClientMutationIssuedSessionAuthority(
+    session: IssuedAuthSession,
+    scope: StateScope,
+    operation: Exclude<ClientMutationOperation, 'expireSession'>,
+): ClientMutationIssuedSessionAuthority {
+    return {
+        kind: 'issued-session',
+        version: 1,
+        principalId: session.clientId,
+        sessionId: session.sessionId,
+        sessionIssuedAtEpochMs: session.issuedAtEpochMs,
+        sessionExpiresAtEpochMs: session.expiresAtEpochMs,
+        applicationId: scope.applicationId,
+        workspaceId: scope.workspaceId,
+        operation,
+    };
+}
+
+export function toClientMutationSystemAuthority(
+    serviceId: string,
+): ClientMutationSystemAuthority {
+    return {
+        kind: 'system',
+        version: 1,
+        serviceId,
+        operation: 'expireSession',
+    };
+}
+
 export function requiresClientWrite(
     computed: ClientMutationComputed,
 ): computed is ClientMutationComputedWrite {
-    return (
-        computed.outcome === 'write' ||
-        (computed.outcome === 'no-op' && computed.persistIdempotency)
-    );
+    switch (computed.outcome) {
+        case 'write':
+            return true;
+        case 'no-op':
+            return computed.persistIdempotency;
+        case 'replay':
+        case 'idempotency-conflict':
+            return false;
+        default:
+            return assertNeverClientMutationComputed(computed);
+    }
 }
 
 export function toClientMutationReceipt(
@@ -324,6 +376,14 @@ export function toClientMutationReceipt(
 export function toClientStateWritten(
     computed: Exclude<ClientMutationComputed, { outcome: 'idempotency-conflict' }>,
 ): ClientStateWritten {
+    switch (computed.outcome) {
+        case 'write':
+        case 'no-op':
+        case 'replay':
+            break;
+        default:
+            return assertNeverClientMutationComputed(computed);
+    }
     return {
         status: 'ok',
         result: Either.ofRight({
@@ -499,7 +559,7 @@ export function toDisconnectCommandInput(
 
 export function toExpiryCommandInput(
     session: ClientSessionExpiryCandidate,
-): ClientMutationCommandInput {
+): Extract<ClientMutationCommandInput, { operation: 'expireSession' }> {
     const commandId = [
         'expire-client-session',
         session.sessionId,

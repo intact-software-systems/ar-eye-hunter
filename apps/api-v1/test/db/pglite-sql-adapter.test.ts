@@ -17,10 +17,18 @@ import {
 } from '@shared-server/runtime-state/RuntimeStateGuardedBatch.ts';
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
+import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/repositories/GroupTopologyConfigRepository.ts';
 import { StateMutationOutboxRepository } from '@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
+import {
+  createClientStateService,
+  requiresClientWrite,
+  toClientMutationCommand,
+  toClientMutationIssuedSessionAuthority,
+  toUpsertPrincipalCommandInput,
+} from '@shared-server/rallar-system/services/client-state-service.ts';
 import { GroupTopologyManagementService } from '@shared-server/rallar-system/services/group-topology-management-service.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
 import {
@@ -184,6 +192,98 @@ Deno.test('PSqlRuntimeStateRepository runs against PGlite SQL adapter', async ()
     await repository.upsert('runtime-smoke', 'expired', 'expired', PAST_MS);
     assert.equal(await repository.deleteExpired('runtime-smoke'), 1);
     assert.equal(await repository.findEntry('runtime-smoke', 'expired'), undefined);
+  });
+});
+
+Deno.test('PGlite client write commits state, event, and ResourceInbox rows in one caller transaction', async () => {
+  await withPGliteSql(async (sql) => {
+    const runtime = new PSqlRuntimeStateRepository(sql);
+    const authSessions = new AuthSessionRepository(runtime);
+    const events = new PSqlClientStateEventRepository(sql);
+    const repository = new ClientStateRepository(runtime, { events });
+    const service = createClientStateService({
+      runtimeRepository: runtime,
+      createClientStateEventStore: () => events,
+      serviceId: 'pglite-client-service',
+    });
+    const scope = { applicationId: 'pglite-app', workspaceId: 'pglite-workspace' };
+
+    const compute = async (principalId: string, commandId: string) => {
+      const authority = {
+        clientId: principalId,
+        accessToken: `${principalId}-token`,
+        username: principalId,
+        sessionId: `${principalId}-session`,
+        issuedAtEpochMs: 1_000,
+        expiresAtEpochMs: FUTURE_MS,
+      } as const;
+      await authSessions.putSession(authority);
+      const input = toUpsertPrincipalCommandInput(
+        scope,
+        principalId,
+        {
+          username: principalId,
+          displayName: principalId,
+          actorPrincipalId: principalId,
+          actorSessionId: authority.sessionId,
+          requestId: commandId,
+        },
+        commandId,
+      );
+      const command = await toClientMutationCommand(
+        input,
+        {
+          nowEpochMs: 2_000,
+          serviceId: 'pglite-client-service',
+          eventId: `${commandId}-event`,
+          attemptCount: 1,
+          expireAtEpochMs: FUTURE_MS,
+        },
+        toClientMutationIssuedSessionAuthority(authority, scope, 'upsertPrincipal'),
+      );
+      const read = await service.read(command);
+      const computed = service.compute(command, read);
+      service.validate(command, read, computed);
+      assert.equal(computed.outcome, 'write');
+      if (computed.outcome !== 'write') throw new Error('Expected applied client write');
+      assert.equal(requiresClientWrite(computed), true);
+      return computed;
+    };
+
+    const committed = await compute('alice', 'pglite-client-commit');
+    await sql.begin(async (transaction) => {
+      await service.write(transaction, committed);
+    });
+
+    assert.equal(
+      (await repository.readSnapshot({ ...scope, principalId: 'alice' }))
+        ?.principal.snapshotVersion,
+      1,
+    );
+    assert.equal((await events.listClientEvents({ ...scope, principalId: 'alice' })).length, 1);
+    const outbox = new ResourceInboxRepository(sql);
+    for (const entry of committed.outboxEntries) {
+      assert.equal((await outbox.findByKey(entry.key))?.typeId, 'WS_OUTBOX');
+    }
+
+    const rolledBack = await compute('bob', 'pglite-client-rollback');
+    await assert.rejects(
+      async () => {
+        await sql.begin(async (transaction) => {
+          await service.write(transaction, rolledBack);
+          throw new Error('rollback exact client write');
+        });
+      },
+      /rollback exact client write/,
+    );
+    assert.equal(
+      await repository.readSnapshot({ ...scope, principalId: 'bob' }),
+      undefined,
+    );
+    assert.equal((await events.listClientEvents({ ...scope, principalId: 'bob' })).length, 0);
+    for (const entry of rolledBack.outboxEntries) {
+      assert.equal(await outbox.findByKey(entry.key), null);
+    }
   });
 });
 

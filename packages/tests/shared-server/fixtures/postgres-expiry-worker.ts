@@ -15,7 +15,10 @@ import type {
   DeleteGroupTopologyConfigInput,
   PutGroupTopologyConfigInput,
 } from '@shared-server/rallar-system/services/group-topology-management-service.ts';
-import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type {
+  PSqlSql,
+  PSqlTransactionSql,
+} from '@shared-server/postgres/PostgresSqlClient.ts';
 import {
   createClientStateEventRepository,
   createClientStateRepository,
@@ -27,7 +30,23 @@ import type {
   RuntimeStateOptimisticTransactionalRepositoryLike,
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import type { ClientMutationReceipt } from '@shared-server/rallar-system/services/client-state-mutations.ts';
-import { createClientStateService } from '@shared-server/rallar-system/services/client-state-service.ts';
+import {
+  createClientStateService,
+  requiresClientWrite,
+  toClientMutationCommand,
+  toClientMutationIssuedSessionAuthority,
+  toClientMutationSystemAuthority,
+  toConnectCommandInput,
+  toDisconnectCommandInput,
+  toExpiryCommandInput,
+  toHeartbeatCommandInput,
+} from '@shared-server/rallar-system/services/client-state-service.ts';
+import type {
+  ClientMutationCommandInput,
+  ClientMutationComputed,
+} from '@shared-server/rallar-system/services/client-state-mutations.ts';
+import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+import type { IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 import type { GroupMutationReceipt } from '@shared-server/rallar-system/services/group-state-mutations.ts';
 import { createGroupStateRuntime } from '@shared-server/rallar-system/services/group-state-service.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/repositories/GroupTopologyConfigRepository.ts';
@@ -254,38 +273,28 @@ async function runClientMutation(
   const service = createClientStateService({
     runtimeRepository,
     createClientStateEventStore: createClientStateEventRepository,
-    syncPublisher: createPublisher(),
-    now: () => input.atEpochMs,
-    sleep: createRecordedSleep(runtimeRepository, trace),
     timing: createTimingSink(trace),
     serviceId: `postgres-state-worker-${Deno.pid}`,
   });
+  const authoritySession: IssuedAuthSession = {
+    clientId: input.principalId,
+    accessToken: `${input.sessionId}-postgres-worker-token`,
+    username: input.principalId,
+    sessionId: input.sessionId,
+    issuedAtEpochMs: Math.max(0, input.atEpochMs - 1),
+    expiresAtEpochMs: input.atEpochMs + 24 * 60 * 60 * 1_000,
+  };
+  await new AuthSessionRepository(runtimeRepository).putSession(authoritySession);
   runtimeRepository.armBarrier();
-  if (input.command === 'client-heartbeat') {
-    await service.heartbeatSession(
-      input.scope,
-      input.principalId,
-      input.clientInstanceId,
-      input.sessionId,
-      input.request as HeartbeatClientSessionRequest,
-    );
-  } else if (input.command === 'client-disconnect') {
-    await service.disconnectSession(
-      input.scope,
-      input.principalId,
-      input.clientInstanceId,
-      input.sessionId,
-      input.request as DisconnectClientSessionRequest,
-    );
-  } else {
-    await service.connectSession(
-      input.scope,
-      input.principalId,
-      input.clientInstanceId,
-      input.sessionId,
-      input.request as ConnectClientSessionRequest,
-    );
-  }
+  const commandInput = toClientWorkerCommandInput(input);
+  await executeClientCommandWithOuterAttempts({
+    service,
+    runtimeRepository,
+    commandInput,
+    authoritySession,
+    atEpochMs: input.atEpochMs,
+    trace,
+  });
 
   const stored = await createClientStateRepository(runtimeRepository)
     .findIdempotentClientMutationReceipt(
@@ -296,6 +305,88 @@ async function runClientMutation(
     throw new Error(`Client mutation receipt not found: ${requestId}`);
   }
   return compactClientReceipt(input.command, requestId, stored.receipt);
+}
+
+function toClientWorkerCommandInput(
+  input: ClientWorkerInput,
+): ClientMutationCommandInput {
+  if (input.command === 'client-heartbeat') {
+    return toHeartbeatCommandInput(
+      input.scope,
+      input.principalId,
+      input.clientInstanceId,
+      input.sessionId,
+      input.request,
+      input.request.requestId,
+    );
+  }
+  if (input.command === 'client-disconnect') {
+    return toDisconnectCommandInput(
+      'disconnectSession',
+      input.scope,
+      input.principalId,
+      input.clientInstanceId,
+      input.sessionId,
+      input.request,
+      input.request.requestId,
+    );
+  }
+  return toConnectCommandInput(
+    'connectSession',
+    input.scope,
+    input.principalId,
+    input.clientInstanceId,
+    input.sessionId,
+    input.request,
+    input.request.requestId,
+    {},
+  );
+}
+
+async function executeClientCommandWithOuterAttempts(input: Readonly<{
+  service: ReturnType<typeof createClientStateService>;
+  runtimeRepository: BarrierControlledRuntimeStateRepository;
+  commandInput: ClientMutationCommandInput;
+  authoritySession: IssuedAuthSession;
+  atEpochMs: number;
+  trace: WorkerTraceState;
+}>): Promise<ClientMutationComputed> {
+  const sleep = createRecordedSleep(input.runtimeRepository, input.trace);
+  if (input.commandInput.operation === 'expireSession') {
+    throw new Error('Client worker command requires issued-session authority');
+  }
+  for (let attempt = 1; attempt <= 8; attempt += 1) {
+    const command = await toClientMutationCommand(
+      input.commandInput,
+      {
+        nowEpochMs: input.atEpochMs,
+        serviceId: `postgres-state-worker-${Deno.pid}`,
+        eventId: `postgres-client-event:${input.commandInput.commandId}`,
+        attemptCount: attempt,
+        expireAtEpochMs: input.atEpochMs + 24 * 60 * 60 * 1_000,
+      },
+      toClientMutationIssuedSessionAuthority(
+        input.authoritySession,
+        input.commandInput.aggregateRef,
+        input.commandInput.operation,
+      ),
+    );
+    const read = await input.service.read(command);
+    const computed = input.service.compute(command, read);
+    input.service.validate(command, read, computed);
+    try {
+      if (requiresClientWrite(computed)) {
+        await input.runtimeRepository.beginSqlTransaction(
+          async (transaction) => await input.service.write(transaction, computed),
+        );
+      }
+      return computed;
+    } catch (error) {
+      if (!(error instanceof RuntimeStateWriteConflictError) || attempt === 8) throw error;
+      await sleep(Math.min(16, 2 ** (attempt - 1)));
+    }
+  }
+  throw new Error('Client AppInbox-equivalent outer attempts exhausted');
 }
 
 async function runGroupMutation(
@@ -483,6 +574,22 @@ class BarrierControlledRuntimeStateRepository extends PSqlRuntimeStateRepository
     return this.transactionDepth > 0;
   }
 
+  async beginSqlTransaction<T>(
+    write: (transaction: PSqlTransactionSql) => Promise<T>,
+  ): Promise<T> {
+    if (this.barrierArmed && !this.barrierConsumed) {
+      this.barrierConsumed = true;
+      this.trace.barrierWaitCount += 1;
+      await waitAtBarrier(this.barrier);
+    }
+    this.transactionDepth += 1;
+    try {
+      return await this.sql.begin(write);
+    } finally {
+      this.transactionDepth -= 1;
+    }
+  }
+
   override async begin<T>(
     fn: (
       repository: RuntimeStateOptimisticTransactionalRepositoryLike,
@@ -551,20 +658,30 @@ async function runExpiryWorker(
   backendPid: number,
 ): Promise<ExpiryWorkerOutput> {
   if (input.mode === 'client') {
-    const results = await createClientStateService({
+    const service = createClientStateService({
       runtimeRepository,
       createClientStateEventStore: createClientStateEventRepository,
-      syncPublisher: createPublisher(),
-      now: () => input.atEpochMs,
       serviceId: `postgres-expiry-worker-${Deno.pid}`,
-    }).expireExpiredSessions(input.atEpochMs);
+    });
+    const candidates = await service.listExpiredSessionCandidates(input.atEpochMs);
+    const results: ClientMutationComputed[] = [];
+    for (const candidate of candidates) {
+      results.push(await executeClientExpiryWithOuterAttempts(
+        service,
+        runtimeRepository,
+        toExpiryCommandInput(candidate),
+        input.atEpochMs,
+      ));
+    }
 
     return {
       mode: input.mode,
       backendPid,
       resultCount: results.length,
       eventTypes: results
-        .map((result) => result.result.right?.event?.eventType)
+        .map((result) => result.outcome === 'idempotency-conflict'
+          ? undefined
+          : result.event?.eventType)
         .filter(isDefined),
     };
   }
@@ -586,6 +703,43 @@ async function runExpiryWorker(
       .map((result) => result.result.right?.event?.eventType)
       .filter(isDefined),
   };
+}
+
+async function executeClientExpiryWithOuterAttempts(
+  service: ReturnType<typeof createClientStateService>,
+  runtimeRepository: PSqlRuntimeStateRepository,
+  commandInput: Extract<ClientMutationCommandInput, { operation: 'expireSession' }>,
+  atEpochMs: number,
+): Promise<ClientMutationComputed> {
+  const serviceId = `postgres-expiry-worker-${Deno.pid}`;
+  for (let attempt = 1; attempt <= 8; attempt += 1) {
+    const command = await toClientMutationCommand(
+      commandInput,
+      {
+        nowEpochMs: atEpochMs,
+        serviceId,
+        eventId: `postgres-client-expiry-event:${commandInput.commandId}`,
+        attemptCount: attempt,
+        expireAtEpochMs: atEpochMs + 24 * 60 * 60 * 1_000,
+      },
+      toClientMutationSystemAuthority(serviceId),
+    );
+    const read = await service.read(command);
+    const computed = service.compute(command, read);
+    service.validate(command, read, computed);
+    try {
+      if (requiresClientWrite(computed)) {
+        await runtimeRepository.sql.begin(
+          async (transaction) => await service.write(transaction, computed),
+        );
+      }
+      return computed;
+    } catch (error) {
+      if (!(error instanceof RuntimeStateWriteConflictError) || attempt === 8) throw error;
+      await delay(Math.min(16, 2 ** (attempt - 1)));
+    }
+  }
+  throw new Error('Client expiry AppInbox-equivalent outer attempts exhausted');
 }
 
 function readInput(): ExpiryWorkerInput | StateMutationWorkerInput {
