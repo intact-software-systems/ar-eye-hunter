@@ -4,6 +4,10 @@ import * as Resource from './ResourceEntry.ts';
 import { type Key, ResourceEntry } from './ResourceEntry.ts';
 import { RateLimiter } from '../resilience/Resilience.ts';
 import { EnqueuedType } from '../api/api-config.ts';
+import {
+    hasSameGroupPresenceSummaryImmutableEntry,
+    isCanonicalGroupPresenceSummaryEntry,
+} from './GroupPresenceSummaryEntryContract.ts';
 
 export type { PersistenceProvider } from '../persistence/PersistenceProvider.ts';
 
@@ -99,77 +103,26 @@ export function isIdempotentHandlerFinalizedRelease(
     reserved: ResourceEntry,
     disposition: ResourceInboxReleaseDisposition,
 ): boolean {
-    const commonFinalization = disposition.status === Resource.EntityStatus.COMPLETED &&
-        disposition.delayMs === null &&
-        reserved.status === Resource.EntityStatus.RESERVED &&
-        current.typeId === reserved.typeId &&
-        current.status === Resource.EntityStatus.COMPLETED &&
-        Resource.isKeysEqual(current.key, reserved.key) &&
-        current.dequeueAudit.attempts === reserved.dequeueAudit.attempts &&
-        !Resource.isExpiredResourceEntry(current);
-    if (!commonFinalization) return false;
-    if (reserved.typeId === EnqueuedType.APP_INBOX) return true;
-    return reserved.typeId === EnqueuedType.APP_OUTBOX &&
-        current.resource === reserved.resource &&
-        isGroupPresenceSummaryHandlerFinalizedEntry(reserved) &&
-        isGroupPresenceSummaryHandlerFinalizedEntry(current);
-}
-
-const GROUP_PRESENCE_SUMMARY_TYPE = 'GROUP_PRESENCE_SUMMARY';
-const GROUP_PRESENCE_SUMMARY_TOPIC = 'app-outbox.group-presence-summary';
-
-function isGroupPresenceSummaryHandlerFinalizedEntry(
-    entry: ResourceEntry,
-): boolean {
-    if (
-        entry.typeId !== EnqueuedType.APP_OUTBOX ||
-        entry.key.topicId !== GROUP_PRESENCE_SUMMARY_TOPIC
-    ) return false;
     try {
-        const message = JSON.parse(entry.resource) as unknown;
-        if (!isRecord(message) || !hasExactKeys(message, [
-            'id', 'route', 'constraints', 'ordering', 'delivery', 'payload', 'audit',
-        ])) return false;
-        const route = message.route;
-        const payload = message.payload;
-        if (
-            !isRecord(route) ||
-            !hasExactKeys(route, ['topicId', 'resourceId', 'contextId']) ||
-            route.topicId !== entry.key.topicId ||
-            route.resourceId !== entry.key.resourceId ||
-            route.contextId !== entry.key.contextId ||
-            !isRecord(payload) ||
-            !hasExactKeys(payload, ['typeId', 'contentType', 'resource']) ||
-            payload.typeId !== GROUP_PRESENCE_SUMMARY_TYPE ||
-            payload.contentType !== 'application/json' ||
-            typeof payload.resource !== 'string'
-        ) return false;
-        const envelope = JSON.parse(payload.resource) as unknown;
-        return isRecord(envelope) &&
-            hasExactKeys(envelope, [
-                'type', 'topicId', 'resourceId', 'contextId', 'senderId', 'data',
-            ]) &&
-            envelope.type === GROUP_PRESENCE_SUMMARY_TYPE &&
-            envelope.topicId === GROUP_PRESENCE_SUMMARY_TOPIC &&
-            isRecord(envelope.data) &&
-            envelope.data.effectKind === 'group-presence-summary';
+        const commonFinalization =
+            disposition.status === Resource.EntityStatus.COMPLETED &&
+            disposition.delayMs === null &&
+            reserved.status === Resource.EntityStatus.RESERVED &&
+            current.typeId === reserved.typeId &&
+            current.status === Resource.EntityStatus.COMPLETED &&
+            Resource.isKeysEqual(current.key, reserved.key) &&
+            current.dequeueAudit.attempts === reserved.dequeueAudit.attempts &&
+            !Resource.isExpiredResourceEntry(current);
+        if (!commonFinalization) return false;
+        if (reserved.typeId === EnqueuedType.APP_INBOX) return true;
+
+        return reserved.typeId === EnqueuedType.APP_OUTBOX &&
+            current.resource === reserved.resource &&
+            hasSameGroupPresenceSummaryImmutableEntry(current, reserved) &&
+            isCanonicalGroupPresenceSummaryEntry(reserved);
     } catch {
         return false;
     }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function hasExactKeys(
-    value: Record<string, unknown>,
-    expected: readonly string[],
-): boolean {
-    const keys = Object.keys(value).toSorted();
-    const expectedKeys = expected.toSorted();
-    return keys.length === expected.length &&
-        keys.every((key, index) => key === expectedKeys[index]);
 }
 
 export function toResourceInboxReservationOptions(

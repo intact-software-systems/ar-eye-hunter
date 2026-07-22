@@ -1,6 +1,3 @@
-import { Temporal } from '@js-temporal/polyfill';
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { EnqueuedType } from '@shared/api/api-config.ts';
 import type {
     AuditStamp,
     Group,
@@ -23,7 +20,7 @@ import {
     toGroupSnapshotStateRevision,
 } from '@shared/api/group-client-views.ts';
 import type { MutationActor } from '@shared/api/mutation-actor.ts';
-import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { RuntimeStateEntryValue } from '../../runtime-state/RuntimeStateJsonStore.ts';
 import {
     canActivateGroupMember,
@@ -40,11 +37,11 @@ import type {
     DisconnectGroupPresenceSessionRequest,
     HeartbeatGroupPresenceSessionRequest,
 } from '@shared/api/state-types.ts';
-import { AppOutboxType } from './AppOutboxService.ts';
 import {
-    toAppQueueCreatedBy,
-    toAppQueueKey,
-} from './app-inbox-queue-key.ts';
+    computeGroupPresenceSummaryEntry,
+    GROUP_PRESENCE_SUMMARY_TOPIC,
+    type GroupPresenceSummaryWorkData,
+} from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import {
     createRallarGroupDirectorAppointment,
     mergeRallarGroupDirectorMetadata,
@@ -66,6 +63,11 @@ export {
     normalizePersistedGroupEvent,
     validatePersistedGroupEvent,
 } from '../persisted-group-event.ts';
+export {
+    computeGroupPresenceSummaryEntry,
+    GROUP_PRESENCE_SUMMARY_TOPIC as APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC,
+};
+export type { GroupPresenceSummaryWorkData };
 
 const DEFAULT_GROUP_SESSION_TTL_MS = 24 * 60 * 60 * 1_000;
 const DEFAULT_GROUP_INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
@@ -327,19 +329,6 @@ type PresenceAdmissionCandidate =
         expectedRevision: number;
     }>;
 
-export const APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC =
-    'app-outbox.group-presence-summary';
-
-export type GroupPresenceSummaryWorkData = Readonly<{
-    effectKind: 'group-presence-summary';
-    aggregateRef: GroupRef;
-    commandId: string;
-    createdAtEpochMs: number;
-    expireAtEpochMs: number;
-    acceptedCausalRevision: GroupStateCausalRevision;
-    event: GroupEvent;
-}>;
-
 export type GroupMutationComputed =
     | Readonly<{ outcome: 'replay'; receipt: GroupMutationReceipt }>
     | Readonly<{
@@ -367,105 +356,6 @@ export type GroupMutationComputedWrite = Extract<
     GroupMutationComputed,
     { outcome: 'write' }
 >;
-
-export function computeGroupPresenceSummaryEntry(
-    computed: GroupPresenceSummaryWorkData,
-    senderId: string,
-): ResourceEntry {
-    validateGroupRef(computed.aggregateRef);
-    validateGroupEvent(
-        computed.event,
-        computed.aggregateRef,
-        'Group presence-summary work event',
-    );
-    requireNonEmptyString(computed.commandId, 'Group presence-summary commandId');
-    requireNonEmptyString(senderId, 'Group presence-summary senderId');
-    if (
-        computed.effectKind !== 'group-presence-summary' ||
-        !Number.isSafeInteger(computed.createdAtEpochMs) ||
-        !Number.isSafeInteger(computed.expireAtEpochMs) ||
-        computed.createdAtEpochMs < 0 ||
-        computed.expireAtEpochMs <= computed.createdAtEpochMs ||
-        !jsonEquals(computed.acceptedCausalRevision, computed.event.causalRevision)
-    ) {
-        throw new TypeError('Group presence-summary work facts are invalid');
-    }
-    const causalIdentity = [
-        `group=${computed.acceptedCausalRevision.groupRevision}`,
-        `presence=${computed.acceptedCausalRevision.presenceRevision}`,
-    ].join(';');
-    const resourceId = [
-        computed.commandId,
-        computed.effectKind,
-        causalIdentity,
-    ].join(':');
-    const contextId = JSON.stringify([
-        computed.aggregateRef.applicationId,
-        computed.aggregateRef.workspaceId,
-        computed.aggregateRef.groupId,
-    ]);
-    const key = toAppQueueKey({
-        topicId: APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC,
-        resourceId,
-        contextId,
-    });
-    const createdBy = toAppQueueCreatedBy(senderId);
-    const envelope = {
-        type: AppOutboxType.GROUP_PRESENCE_SUMMARY,
-        topicId: APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC,
-        resourceId,
-        contextId,
-        senderId: createdBy,
-        data: computed,
-    } as const;
-    const message: ALMessage = {
-        id: {
-            v: 2,
-            msgId: resourceId,
-            ts: computed.createdAtEpochMs,
-            senderId: createdBy,
-        },
-        route: key,
-        constraints: { expiresAtMs: computed.expireAtEpochMs },
-        ordering: {
-            orderingKey: key.contextId,
-            epoch: computed.acceptedCausalRevision.groupRevision,
-            seq: computed.acceptedCausalRevision.presenceRevision,
-        },
-        delivery: {
-            ownership: 'exclusive',
-            reliability: 'at-least-once',
-            ack: 'none',
-        },
-        payload: {
-            typeId: AppOutboxType.GROUP_PRESENCE_SUMMARY,
-            contentType: 'application/json',
-            resource: JSON.stringify(envelope),
-        },
-        audit: {
-            createdBy,
-            createdTs: computed.createdAtEpochMs,
-        },
-    };
-    const createdTs = Temporal.Instant
-        .fromEpochMilliseconds(computed.createdAtEpochMs)
-        .toZonedDateTimeISO('UTC')
-        .toPlainDateTime();
-    return {
-        key,
-        resource: JSON.stringify(message),
-        typeId: EnqueuedType.APP_OUTBOX,
-        status: EntityStatus.NEW,
-        audit: {
-            date: createdTs.toPlainTime(),
-            createdBy,
-            createdTs,
-            expiryTs: Temporal.Instant
-                .fromEpochMilliseconds(computed.expireAtEpochMs),
-        },
-        dequeueAudit: { attempts: 0 },
-    };
-}
 
 export type GroupMutationIdempotencyProbe =
     | Readonly<{ outcome: 'miss' }>
