@@ -1,11 +1,23 @@
 import { Temporal } from '@js-temporal/polyfill';
 import type { EntityStatus, Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import type {
-    PSqlSql,
-    PSqlTransactionSql,
-} from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+import { ResourceInboxInvariantCorruptionError } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 
-export type AppInboxTestDatabase = PSqlSql;
+export type AppInboxTestDatabase = PSqlSql &
+    Readonly<{
+        bindRuntimeStateTransaction(
+            transaction: PSqlTransactionSql,
+        ): RuntimeStateOptimisticTransactionalRepositoryLike;
+        outboxEntries: ReadonlyMap<string, ResourceEntry>;
+    }>;
+
+type AppInboxTestDatabaseOptions = Readonly<{
+    runtimeRepository?: RuntimeStateOptimisticTransactionalRepositoryLike;
+    withTransaction?: <T>(write: () => Promise<T>) => Promise<T>;
+    shouldFailOutboxWrite?: () => boolean;
+    onTransactionRollback?: () => void | Promise<void>;
+}>;
 
 export function createAppInboxTestDatabase(
     inbox: Readonly<{
@@ -15,16 +27,25 @@ export function createAppInboxTestDatabase(
     results: Readonly<{
         replace(entry: ResourceEntry): Promise<ResourceEntry>;
     }>,
+    options: AppInboxTestDatabaseOptions = {},
 ): AppInboxTestDatabase {
+    const transactionRuntime = new WeakMap<
+        PSqlTransactionSql,
+        RuntimeStateOptimisticTransactionalRepositoryLike
+    >();
+    const outboxEntries = new Map<string, ResourceEntry>();
     const database = (async () => {
         throw new Error('App inbox SQL must use the supplied transaction');
-    }) as unknown as PSqlSql;
+    }) as unknown as AppInboxTestDatabase;
     database.begin = async <T>(
-        write: (transaction: PSqlTransactionSql) => Promise<T>,
-    ) => {
-        const pendingResults: ResourceEntry[] = [];
-        const pendingInbox: ResourceEntry[] = [];
-        const transaction = (async (
+        write: (transaction: PSqlTransactionSql) => Promise<T>) => {
+        const run = async (
+            runtime: RuntimeStateOptimisticTransactionalRepositoryLike | undefined,
+        ): Promise<T> => {
+            const pendingResults: ResourceEntry[] = [];
+            const pendingInbox: ResourceEntry[] = [];
+            const pendingOutbox = new Map(outboxEntries);
+            const transaction = (async (
             strings: TemplateStringsArray,
             ...values: unknown[]
         ) => {
@@ -59,24 +80,129 @@ export function createAppInboxTestDatabase(
                 };
                 pendingInbox.push(entry);
                 return [toInboxRow(entry)];
-            }
-            throw new Error(`Unexpected app inbox transaction SQL: ${query}`);
+                }
+                if (
+                    query.includes('insert into resource_inbox') &&
+                    query.includes('on conflict') &&
+                    query.includes('do nothing')
+                ) {
+                    const entry = toInboxEntry(values);
+                    if (options.shouldFailOutboxWrite?.()) {
+                        throw new ResourceInboxInvariantCorruptionError(
+                            entry.key,
+                            'Injected AppInbox outbox collision',
+                        );
+                    }
+                    const key = toResourceKey(entry);
+                    if (pendingOutbox.has(key)) return [];
+                    pendingOutbox.set(key, entry);
+                    return [toInboxRow(entry)];
+                }
+                if (query.includes('from resource_inbox') && query.includes('where ri_topic_id')) {
+                    const [topicId, resourceId, contextId] = values as string[];
+                    const entry = pendingOutbox.get(`${contextId}:${topicId}:${resourceId}`);
+                    return entry ? [toInboxRow(entry)] : [];
+                }
+                throw new Error(`Unexpected app inbox transaction SQL: ${query}`);
         }) as unknown as PSqlTransactionSql;
         transaction.begin = async () => {
             throw new Error('Nested app inbox transaction');
-        };
+            };
+            if (runtime) transactionRuntime.set(transaction, runtime);
 
-        const output = await write(transaction);
+            const output = await write(transaction);
         for (const entry of pendingResults) await results.replace(entry);
         for (const entry of pendingInbox) await inbox.enqueue(entry);
-        return output;
+            outboxEntries.clear();
+            for (const [key, entry] of pendingOutbox) outboxEntries.set(key, entry);
+            return output;
+        };
+
+        try {
+            const execute = async (
+                runtime: RuntimeStateOptimisticTransactionalRepositoryLike | undefined,
+            ) =>
+                options.withTransaction
+                    ? await options.withTransaction(async () => await run(runtime))
+                    : await run(runtime);
+            return options.runtimeRepository
+                ? await options.runtimeRepository.begin(execute)
+                : await execute(undefined);
+        } catch (error) {
+            await options.onTransactionRollback?.();
+            throw error;
+        }
     };
+    database.bindRuntimeStateTransaction = (transaction) => {
+        const runtime = transactionRuntime.get(transaction);
+        if (!runtime) throw new Error('Runtime repository is not bound to this transaction');
+        return runtime;
+    };
+    database.outboxEntries = outboxEntries;
     return database;
+}
+function toInboxEntry(values: readonly unknown[]): ResourceEntry {
+    const [
+        resourceId,
+        topicId,
+        resource,
+        typeId,
+        status,
+        contextId,
+        systemDate,
+        createdBy,
+        createdTs,
+        expiryTs,
+        startTs,
+        endTs,
+        nextTs,
+        attempts,
+    ] = values;
+    return {
+        key: {
+            resourceId: resourceId as string,
+            topicId: topicId as string,
+            contextId: contextId as string,
+        },
+        resource: resource as string,
+        typeId: typeId as string,
+        status: status as EntityStatus,
+        audit: {
+            date: Temporal.PlainDate.from(systemDate as string)
+                .toPlainDateTime()
+                .toPlainTime(),
+            createdBy: createdBy as string,
+            createdTs: toPlainDateTime(createdTs),
+            expiryTs: toInstant(expiryTs),
+        },
+        dequeueAudit: {
+            startTs: startTs === null ? undefined : toInstant(startTs),
+            endTs: endTs === null ? undefined : toInstant(endTs),
+            nextTs: nextTs === null ? undefined : toInstant(nextTs),
+            attempts: Number(attempts),
+        },
+    };
+}
+
+function toPlainDateTime(value: unknown): Temporal.PlainDateTime {
+    return Temporal.PlainDateTime.from(String(value).replace(/Z$/u, ''));
+}
+
+function toInstant(value: unknown): Temporal.Instant {
+    const text = String(value);
+    return Temporal.Instant.from(text.endsWith('Z') ? text : `${text}Z`);
+}
+
+function toResourceKey(entry: ResourceEntry): string {
+    return `${entry.key.contextId}:${entry.key.topicId}:${entry.key.resourceId}`;
 }
 
 function toResultEntry(values: readonly unknown[]): ResourceEntry {
     const [resourceId, topicId, resource, typeId, status, contextId, systemDate,
-        createdBy, createdTs, expiryTs] = values;
+        createdBy,
+        createdTs,
+        expiryTs,
+    ] = values;
     return {
         key: {
             resourceId: resourceId as string,

@@ -10,9 +10,12 @@ import type {
     ClientPrincipalStatus,
     ClientSession,
     ClientSessionRef,
+    ClientSnapshot,
     ClientTransport,
 } from '@shared/api/client-types.ts';
 import type { MutationActor } from '@shared/api/mutation-actor.ts';
+import { validateAuthoritativeClientSnapshot } from '@shared/api/authoritative-state-validation.ts';
+import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { RuntimeStateEntryValue } from '../../runtime-state/RuntimeStateJsonStore.ts';
 import type {
     ConnectClientSessionRequest,
@@ -21,7 +24,10 @@ import type {
     UpsertClientInstanceRequest,
     UpsertClientPrincipalRequest,
 } from '@shared/api/state-types.ts';
-import { toStateMutationOutboxId } from '../repositories/StateMutationOutboxRepository.ts';
+import {
+    computeClientStateSyncEntries,
+    type ComputedClientStateSync,
+} from '../state-sync-publisher.ts';
 
 type NullableActorInput = Readonly<{
     actorPrincipalId: string | null;
@@ -34,6 +40,7 @@ type ClientMutationCommandBase = Readonly<{
     aggregateRef: ClientPrincipalRef;
     commandId: string;
     requestId: string | null;
+    facts: ClientMutationFacts;
 }>;
 
 export type ClientMutationCommand =
@@ -144,6 +151,8 @@ export type ClientMutationRead = Readonly<{
     principal: RuntimeStateEntryValue<ClientPrincipal> | null;
     instance: RuntimeStateEntryValue<ClientInstance> | null;
     session: RuntimeStateEntryValue<ClientSession> | null;
+    snapshot: ClientSnapshot | null;
+    receiptEvent: ClientEvent | null;
 }>;
 
 export type ClientMutationFacts = Readonly<{
@@ -152,56 +161,69 @@ export type ClientMutationFacts = Readonly<{
     eventId: string;
     commandHash: string;
     attemptCount: number;
+    expireAtEpochMs: number;
 }>;
+
+export type ClientMutationCommandInput = ClientMutationCommand extends infer Command
+    ? Command extends ClientMutationCommand
+        ? Omit<Command, 'facts'>
+        : never
+    : never;
 
 type ConditionalCandidate<T> =
     | Readonly<{ operation: 'none' }>
     | Readonly<{ operation: 'insert'; value: T }>
     | Readonly<{ operation: 'update'; value: T; expectedRevision: number }>;
 
-export type ClientMutationOutboxCandidate = Readonly<{
-    kind: 'client';
+export type ClientMutationComputedPersistedNoOp = Readonly<{
+    outcome: 'no-op';
+    persistIdempotency: true;
     aggregateRef: ClientPrincipalRef;
-    commandId: string;
-    commandHash: string;
-    createdAtEpochMs: number;
-    acceptedCausalRevision: Readonly<{
-        kind: 'client';
-        stateRevision: number;
-        snapshotVersion: number;
-        presenceVersion: number;
-    }>;
-    effects: readonly ['client-state-sync'];
-    event:
-        | Readonly<{ kind: 'none' }>
-        | Readonly<{ kind: 'client'; event: ClientEvent }>;
+    idempotency: ClientMutationIdempotencyRecord;
+    receipt: ClientMutationReceipt;
+    snapshot: ClientSnapshot;
+    event: null;
 }>;
+
+export type ClientMutationComputedNonPersistedNoOp = Readonly<{
+    outcome: 'no-op';
+    persistIdempotency: false;
+    receipt: ClientMutationReceipt;
+    snapshot: ClientSnapshot;
+    event: null;
+}>;
+
+export type ClientMutationComputedAppliedWrite = Readonly<{
+    outcome: 'write';
+    principal: Exclude<ConditionalCandidate<ClientPrincipal>, { operation: 'none' }>;
+    instance: ConditionalCandidate<ClientInstance>;
+    session: ConditionalCandidate<ClientSession>;
+    event: ClientEvent;
+    snapshot: ClientSnapshot;
+    receipt: ClientMutationReceipt;
+    idempotency: ClientMutationIdempotencyRecord | null;
+    stateSync: readonly ComputedClientStateSync[];
+    outboxEntries: readonly ResourceEntry[];
+}>;
+
+export type ClientMutationComputedWrite =
+    ClientMutationComputedAppliedWrite | ClientMutationComputedPersistedNoOp;
 
 export type ClientMutationComputed =
     | Readonly<{
         outcome: 'replay';
         receipt: ClientMutationReceipt;
+        snapshot: ClientSnapshot;
+        event: ClientEvent | null;
     }>
-    | Readonly<{
-        outcome: 'no-op';
-        receipt: ClientMutationReceipt;
-        persistIdempotency: boolean;
-    }>
+    | ClientMutationComputedPersistedNoOp
+    | ClientMutationComputedNonPersistedNoOp
     | Readonly<{
         outcome: 'idempotency-conflict';
         existingCommandHash: string;
         receivedCommandHash: string;
     }>
-    | Readonly<{
-        outcome: 'write';
-        principal: Exclude<ConditionalCandidate<ClientPrincipal>, { operation: 'none' }>;
-        instance: ConditionalCandidate<ClientInstance>;
-        session: ConditionalCandidate<ClientSession>;
-        event: ClientEvent;
-        receipt: ClientMutationReceipt;
-        idempotency: ClientMutationIdempotencyRecord | null;
-        outbox: ClientMutationOutboxCandidate;
-    }>;
+    | ClientMutationComputedAppliedWrite;
 
 export class ClientMutationIdempotencyConflictError extends Error {
     readonly code = 'client-mutation-idempotency-conflict';
@@ -238,6 +260,7 @@ export function validateClientMutationCommand(
     requireNonEmptyString(value.commandId, 'Client mutation commandId');
     requireNullableNonEmptyString(value.requestId, 'Client mutation requestId');
     validatePrincipalRef(value.aggregateRef, 'Client mutation aggregateRef');
+    validateClientMutationFacts(value.facts);
     const input = requirePlainRecord(value.input, 'Client mutation input');
     validateActorInput(input);
 
@@ -755,15 +778,20 @@ export function validatePersistedClientEvent(
 export function computeClientMutation(input: Readonly<{
     command: ClientMutationCommand;
     read: ClientMutationRead;
-    facts: ClientMutationFacts;
 }>): ClientMutationComputed {
-    const { command, read, facts } = input;
+    const { command, read } = input;
+    const { facts } = command;
     validateClientMutationCommand(command);
     validateClientMutationFacts(facts);
     validateClientMutationRead(command, read);
     if (read.idempotency) {
         return read.idempotency.value.commandHash === facts.commandHash
-            ? { outcome: 'replay', receipt: read.idempotency.value.receipt }
+            ? {
+                outcome: 'replay',
+                receipt: read.idempotency.value.receipt,
+                snapshot: requireReadSnapshot(read, command),
+                event: read.receiptEvent,
+            }
             : {
                 outcome: 'idempotency-conflict',
                 existingCommandHash: read.idempotency.value.commandHash,
@@ -793,9 +821,9 @@ export function validateClientMutation(input: Readonly<{
     command: ClientMutationCommand;
     read: ClientMutationRead;
     computed: ClientMutationComputed;
-    facts: ClientMutationFacts;
 }>): void {
-    const { command, read, computed, facts } = input;
+    const { command, read, computed } = input;
+    const { facts } = command;
     validateClientMutationCommand(command);
     validateClientMutationFacts(facts);
     validateClientMutationComputed(computed);
@@ -840,10 +868,19 @@ export function validateClientMutation(input: Readonly<{
     if (computed.outcome !== 'write') return;
     if (computed.receipt.outcome !== 'applied' ||
         computed.event.snapshotVersion !== computed.principal.value.snapshotVersion ||
-        computed.outbox.commandHash !== facts.commandHash ||
-        computed.outbox.acceptedCausalRevision.stateRevision !==
-            computed.receipt.stateRevision) {
+        computed.snapshot.stateRevision !== computed.receipt.stateRevision ||
+        computed.snapshot.principal.snapshotVersion !== computed.receipt.snapshotVersion) {
         throw new ClientMutationRejectedError('Invalid effectful client mutation');
+    }
+    const expectedOutboxEntries = computed.stateSync.flatMap((stateSync) =>
+        computeClientStateSyncEntries(stateSync, facts.serviceId)
+    );
+    if (
+        JSON.stringify(expectedOutboxEntries) !== JSON.stringify(computed.outboxEntries) ||
+        JSON.stringify(computed.receipt.outboxIds) !==
+            JSON.stringify(expectedOutboxEntries.map((entry) => entry.key.resourceId))
+    ) {
+        throw new ClientMutationRejectedError('Client mutation WS outbox differs');
     }
     if (read.principal && computed.principal.operation !== 'update') {
         throw new ClientMutationRejectedError('Existing principal requires compare-and-set');
@@ -891,7 +928,7 @@ function validateClientMutationRead(
     const root = requirePlainRecord(read, 'Client mutation read');
     requireExactKeys(
         root,
-        ['idempotency', 'principal', 'instance', 'session'],
+        ['idempotency', 'principal', 'instance', 'session', 'snapshot', 'receiptEvent'],
         'Client mutation read',
     );
     validateNullableEntryValue(read.principal, 'Client principal read', validatePrincipal);
@@ -902,6 +939,18 @@ function validateClientMutationRead(
         'Client idempotency read',
         validateIdempotencyRecord,
     );
+    if (read.snapshot !== null) {
+        try {
+            validateAuthoritativeClientSnapshot(read.snapshot, command.aggregateRef);
+        } catch (error) {
+            throw new ClientMutationRejectedError(
+                error instanceof Error ? error.message : 'Client snapshot read is invalid',
+            );
+        }
+    }
+    if (read.receiptEvent !== null) {
+        validatePersistedClientEvent(read.receiptEvent, command.aggregateRef);
+    }
     if (read.principal && !samePrincipalRef(read.principal.value, command.aggregateRef)) {
         throw new ClientMutationRejectedError('Client principal read is wrongly scoped');
     }
@@ -1180,21 +1229,42 @@ function effectful(
 ): ClientMutationComputed {
     const stateRevision = read.principal ? read.principal.entry.revision + 2 : 1;
     const event = toEvent(command, principal, facts, eventType, clientInstanceId, sessionId);
-    const outbox: ClientMutationOutboxCandidate = {
-        kind: 'client',
-        aggregateRef: command.aggregateRef,
+    const snapshot = toComputedSnapshot(read, principal, instance, session, stateRevision);
+    const commonStateSync = {
         commandId: command.commandId,
-        commandHash: facts.commandHash,
-        createdAtEpochMs: facts.nowEpochMs,
-        acceptedCausalRevision: {
-            kind: 'client',
-            stateRevision,
-            snapshotVersion: principal.snapshotVersion,
-            presenceVersion: principal.presenceVersion,
+        aggregateRef: command.aggregateRef,
+        audience: {
+            kind: 'principal' as const,
+            applicationId: command.aggregateRef.applicationId,
+            workspaceId: command.aggregateRef.workspaceId,
+            resourceId: command.aggregateRef.principalId,
         },
-        effects: ['client-state-sync'],
-        event: { kind: 'client', event },
+        createdAtEpochMs: facts.nowEpochMs,
+        expireAtEpochMs: facts.expireAtEpochMs,
     };
+    const stateSync: readonly ComputedClientStateSync[] = [
+        {
+            ...commonStateSync,
+            acceptedCausalRevision: snapshot.stateRevision,
+            effects: [{
+                effectKind: 'principal-state',
+                payloadKind: 'snapshot',
+                payload: snapshot,
+            }],
+        },
+        {
+            ...commonStateSync,
+            acceptedCausalRevision: event.snapshotVersion,
+            effects: [{
+                effectKind: 'principal-state',
+                payloadKind: 'event',
+                payload: event,
+            }],
+        },
+    ];
+    const outboxEntries = stateSync.flatMap((computed) =>
+        computeClientStateSyncEntries(computed, facts.serviceId)
+    );
     const receipt: ClientMutationReceipt = {
         commandId: command.commandId,
         requestId: command.requestId,
@@ -1209,7 +1279,7 @@ function effectful(
         snapshotVersion: principal.snapshotVersion,
         presenceVersion: principal.presenceVersion,
         eventId: event.eventId,
-        outboxIds: [toStateMutationOutboxId(outbox)],
+        outboxIds: outboxEntries.map((entry) => entry.key.resourceId),
     };
     return {
         outcome: 'write',
@@ -1219,13 +1289,15 @@ function effectful(
         instance,
         session,
         event,
+        snapshot,
         receipt,
         idempotency: command.requestId === null ? null : {
             requestId: command.requestId,
             commandHash: facts.commandHash,
             receipt,
         },
-        outbox,
+        stateSync,
+        outboxEntries,
     };
 }
 
@@ -1241,23 +1313,107 @@ function noOpReceipt(
             `Client principal not found: ${command.aggregateRef.principalId}`,
         );
     }
+    const shouldPersistIdempotency = persistIdempotency && command.requestId !== null;
     return {
         outcome: 'no-op',
-        persistIdempotency,
-        receipt: {
-            commandId: command.commandId,
-            requestId: command.requestId,
-            commandHash: facts.commandHash,
-            aggregateRef: command.aggregateRef,
-            outcome: 'no-op',
-            attemptCount: facts.attemptCount,
-            acceptedStorageRevision: read.principal.entry.revision,
-            stateRevision: (read.principal?.entry.revision ?? -1) + 1,
-            snapshotVersion: principal.snapshotVersion,
-            presenceVersion: principal.presenceVersion,
-            eventId: null,
-            outboxIds: [],
-        },
+        persistIdempotency: shouldPersistIdempotency,
+        ...(shouldPersistIdempotency
+            ? {
+                aggregateRef: command.aggregateRef,
+                idempotency: {
+                    requestId: command.requestId,
+                    commandHash: facts.commandHash,
+                    receipt: toNoOpReceipt(command, read, facts),
+                },
+            }
+            : {}),
+        receipt: toNoOpReceipt(command, read, facts),
+        snapshot: requireReadSnapshot(read, command),
+        event: null,
+    } as ClientMutationComputed;
+}
+
+function toNoOpReceipt(
+    command: ClientMutationCommand,
+    read: ClientMutationRead,
+    facts: ClientMutationFacts,
+): ClientMutationReceipt {
+    const principal = read.principal?.value;
+    if (!principal) {
+        throw new ClientMutationRejectedError(
+            `Client principal not found: ${command.aggregateRef.principalId}`,
+        );
+    }
+    return {
+        commandId: command.commandId,
+        requestId: command.requestId,
+        commandHash: facts.commandHash,
+        aggregateRef: command.aggregateRef,
+        outcome: 'no-op',
+        attemptCount: facts.attemptCount,
+        acceptedStorageRevision: read.principal.entry.revision,
+        stateRevision: read.principal.entry.revision + 1,
+        snapshotVersion: principal.snapshotVersion,
+        presenceVersion: principal.presenceVersion,
+        eventId: null,
+        outboxIds: [],
+    };
+}
+
+function requireReadSnapshot(
+    read: ClientMutationRead,
+    command: ClientMutationCommand,
+): ClientSnapshot {
+    if (!read.snapshot) {
+        throw new ClientMutationRejectedError(
+            `Client snapshot not found: ${command.aggregateRef.principalId}`,
+        );
+    }
+    return read.snapshot;
+}
+
+function toComputedSnapshot(
+    read: ClientMutationRead,
+    principal: ClientPrincipal,
+    instance: ConditionalCandidate<ClientInstance>,
+    session: ConditionalCandidate<ClientSession>,
+    stateRevision: number,
+): ClientSnapshot {
+    const instances = [...(read.snapshot?.instances ?? [])];
+    if (instance.operation !== 'none') {
+        const index = instances.findIndex(
+            (candidate) => candidate.clientInstanceId === instance.value.clientInstanceId,
+        );
+        if (index < 0) instances.push(instance.value);
+        else instances[index] = instance.value;
+    }
+    const activeSessions = [...(read.snapshot?.activeSessions ?? [])];
+    if (session.operation !== 'none') {
+        const index = activeSessions.findIndex(
+            (candidate) =>
+                candidate.clientInstanceId === session.value.clientInstanceId &&
+                candidate.sessionId === session.value.sessionId,
+        );
+        const isActive =
+            session.value.status === 'active' && session.value.disconnectedAtEpochMs === null;
+        if (isActive && index < 0) activeSessions.push(session.value);
+        else if (isActive) activeSessions[index] = session.value;
+        else if (index >= 0) activeSessions.splice(index, 1);
+    }
+    const lastSeenAtEpochMs = activeSessions.reduce<number | null>(
+        (latest, candidate) => latest === null
+            ? candidate.lastHeartbeatAtEpochMs
+            : Math.max(latest, candidate.lastHeartbeatAtEpochMs),
+        principal.lastSeenAtEpochMs,
+    );
+    return {
+        stateRevision,
+        principal,
+        instances,
+        activeSessions,
+        isOnline: activeSessions.length > 0,
+        activeSessionCount: activeSessions.length,
+        lastSeenAtEpochMs,
     };
 }
 
@@ -1625,7 +1781,7 @@ const ACTOR_INPUT_KEYS = [
     'actorPrincipalId', 'actorSessionId', 'reason', 'traceId',
 ] as const;
 const COMMAND_BASE_KEYS = [
-    'operation', 'aggregateRef', 'commandId', 'requestId', 'input',
+    'operation', 'aggregateRef', 'commandId', 'requestId', 'facts', 'input',
 ] as const;
 const INSTANCE_COMMAND_KEYS = [...COMMAND_BASE_KEYS, 'clientInstanceId'] as const;
 const SESSION_COMMAND_KEYS = [...INSTANCE_COMMAND_KEYS, 'sessionId'] as const;
@@ -2247,7 +2403,7 @@ function validateClientMutationFacts(facts: unknown): void {
     const value = requirePlainRecord(facts, 'Client mutation facts');
     requireExactKeys(
         value,
-        ['nowEpochMs', 'serviceId', 'eventId', 'commandHash', 'attemptCount'],
+        ['nowEpochMs', 'serviceId', 'eventId', 'commandHash', 'attemptCount', 'expireAtEpochMs'],
         'Client mutation facts',
     );
     requireTimestamp(value.nowEpochMs, 'Client mutation facts.nowEpochMs');
@@ -2255,6 +2411,10 @@ function validateClientMutationFacts(facts: unknown): void {
     requireNonEmptyString(value.eventId, 'Client mutation facts.eventId');
     requireSha256(value.commandHash, 'Client mutation facts.commandHash');
     requirePositiveSafeInteger(value.attemptCount, 'Client mutation facts.attemptCount');
+    requireTimestamp(value.expireAtEpochMs, 'Client mutation facts.expireAtEpochMs');
+    if ((value.expireAtEpochMs as number) <= (value.nowEpochMs as number)) {
+        reject('Client mutation facts.expireAtEpochMs must follow nowEpochMs');
+    }
 }
 
 function requireSha256(value: unknown, label: string): void {
@@ -2277,10 +2437,7 @@ function validateReceipt(value: unknown, label: string): void {
     requireNonEmptyString(receipt.commandId, `${label}.commandId`);
     requireNullableNonEmptyString(receipt.requestId, `${label}.requestId`);
     requireSha256(receipt.commandHash, `${label}.commandHash`);
-    const aggregateRef = validatePrincipalRef(
-        receipt.aggregateRef,
-        `${label}.aggregateRef`,
-    );
+    validatePrincipalRef(receipt.aggregateRef, `${label}.aggregateRef`);
     requireEnum(receipt.outcome, new Set(['applied', 'no-op']), `${label}.outcome`);
     requirePositiveSafeInteger(receipt.attemptCount, `${label}.attemptCount`);
     if (receipt.acceptedStorageRevision === null) {
@@ -2301,37 +2458,15 @@ function validateReceipt(value: unknown, label: string): void {
     if (receipt.stateRevision !== receipt.acceptedStorageRevision + 1) {
         reject(`${label}.stateRevision differs from acceptedStorageRevision`);
     }
-    const expectedOutboxCount = receipt.outcome === 'applied' ? 1 : 0;
+    const expectedOutboxCount = receipt.outcome === 'applied' ? 2 : 0;
     if (receipt.outboxIds.length !== expectedOutboxCount) {
         reject(`${label}.outboxIds differs from outcome`);
     }
-    if (receipt.outcome === 'applied') {
-        const expectedOutboxId = toStateMutationOutboxId({
-            commandId: receipt.commandId,
-            kind: 'client',
-            aggregateRef,
-            acceptedCausalRevision: {
-                kind: 'client',
-                stateRevision: receipt.stateRevision,
-                snapshotVersion: receipt.snapshotVersion,
-                presenceVersion: receipt.presenceVersion,
-            },
-        });
-        if (receipt.outboxIds[0] !== expectedOutboxId) {
-            reject(`${label}.outboxIds differs from accepted causal revision`);
-        }
+    if (receipt.outcome === 'applied' &&
+        (new Set(receipt.outboxIds as string[]).size !== receipt.outboxIds.length ||
+            receipt.outboxIds.some((outboxId) => outboxId.length === 0))) {
+        reject(`${label}.outboxIds are not unique durable identities`);
     }
-}
-
-function validateEventEnvelope(value: unknown, label: string): void {
-    const envelope = requirePlainRecord(value, label);
-    if (envelope.kind === 'none') {
-        requireExactKeys(envelope, ['kind'], label);
-        return;
-    }
-    if (envelope.kind !== 'client') reject(`${label}.kind is invalid`);
-    requireExactKeys(envelope, ['kind', 'event'], label);
-    validateClientEvent(envelope.event, `${label}.event`);
 }
 
 function validateClientEvent(
@@ -2436,64 +2571,49 @@ function validateConditionalCandidate(
     }
 }
 
-function validateOutboxCandidate(value: unknown, label: string): void {
-    const outbox = requirePlainRecord(value, label);
-    requireExactKeys(
-        outbox,
-        [
-            'kind', 'aggregateRef', 'commandId', 'commandHash', 'createdAtEpochMs',
-            'acceptedCausalRevision', 'effects', 'event',
-        ],
-        label,
-    );
-    if (outbox.kind !== 'client') reject(`${label}.kind must be client`);
-    validatePrincipalRef(outbox.aggregateRef, `${label}.aggregateRef`);
-    requireNonEmptyString(outbox.commandId, `${label}.commandId`);
-    requireSha256(outbox.commandHash, `${label}.commandHash`);
-    requireTimestamp(outbox.createdAtEpochMs, `${label}.createdAtEpochMs`);
-    const revision = requirePlainRecord(
-        outbox.acceptedCausalRevision,
-        `${label}.acceptedCausalRevision`,
-    );
-    requireExactKeys(
-        revision,
-        ['kind', 'stateRevision', 'snapshotVersion', 'presenceVersion'],
-        `${label}.acceptedCausalRevision`,
-    );
-    if (revision.kind !== 'client') {
-        reject(`${label}.acceptedCausalRevision.kind must be client`);
-    }
-    for (const field of ['stateRevision', 'snapshotVersion', 'presenceVersion'] as const) {
-        requirePositiveSafeInteger(
-            revision[field],
-            `${label}.acceptedCausalRevision.${field}`,
-        );
-    }
-    if (!Array.isArray(outbox.effects) || outbox.effects.length !== 1 ||
-        outbox.effects[0] !== 'client-state-sync') {
-        reject(`${label}.effects must contain only client-state-sync`);
-    }
-    validateEventEnvelope(outbox.event, `${label}.event`);
-}
 
 function validateClientMutationComputed(computed: unknown): void {
     const value = requirePlainRecord(computed, 'Client mutation computed');
     switch (value.outcome) {
         case 'replay':
-            requireExactKeys(value, ['outcome', 'receipt'], 'Client mutation computed');
-            validateReceipt(value.receipt, 'Client mutation computed.receipt');
-            return;
-        case 'no-op':
             requireExactKeys(
                 value,
-                ['outcome', 'receipt', 'persistIdempotency'],
+                ['outcome', 'receipt', 'snapshot', 'event'],
                 'Client mutation computed',
             );
+            validateReceipt(value.receipt, 'Client mutation computed.receipt');
+            validateAuthoritativeClientSnapshot(value.snapshot as ClientSnapshot);
+            if (value.event !== null) {
+                validateClientEvent(value.event, 'Client mutation computed.event');
+            }
+            return;
+        case 'no-op':
             requireBoolean(
                 value.persistIdempotency,
                 'Client mutation computed.persistIdempotency',
             );
+            requireExactKeys(
+                value,
+                value.persistIdempotency
+                    ? [
+                        'outcome', 'persistIdempotency', 'aggregateRef', 'idempotency',
+                        'receipt', 'snapshot', 'event',
+                    ]
+                    : ['outcome', 'persistIdempotency', 'receipt', 'snapshot', 'event'],
+                'Client mutation computed',
+            );
             validateReceipt(value.receipt, 'Client mutation computed.receipt');
+            validateAuthoritativeClientSnapshot(value.snapshot as ClientSnapshot);
+            if (value.event !== null) {
+                reject('Client mutation computed no-op event must be null');
+            }
+            if (value.persistIdempotency) {
+                validatePrincipalRef(value.aggregateRef, 'Client mutation computed.aggregateRef');
+                validateIdempotencyRecord(
+                    value.idempotency,
+                    'Client mutation computed.idempotency',
+                );
+            }
             return;
         case 'idempotency-conflict':
             requireExactKeys(
@@ -2515,7 +2635,7 @@ function validateClientMutationComputed(computed: unknown): void {
                 value,
                 [
                     'outcome', 'principal', 'instance', 'session', 'event', 'receipt',
-                    'idempotency', 'outbox',
+                    'snapshot', 'idempotency', 'stateSync', 'outboxEntries',
                 ],
                 'Client mutation computed',
             );
@@ -2538,6 +2658,7 @@ function validateClientMutationComputed(computed: unknown): void {
                 validateSession,
             );
             validateClientEvent(value.event, 'Client mutation computed.event');
+            validateAuthoritativeClientSnapshot(value.snapshot as ClientSnapshot);
             validateReceipt(value.receipt, 'Client mutation computed.receipt');
             if (value.idempotency !== null) {
                 validateIdempotencyRecord(
@@ -2545,7 +2666,12 @@ function validateClientMutationComputed(computed: unknown): void {
                     'Client mutation computed.idempotency',
                 );
             }
-            validateOutboxCandidate(value.outbox, 'Client mutation computed.outbox');
+            if (!Array.isArray(value.stateSync) || value.stateSync.length !== 2) {
+                reject('Client mutation computed stateSync must contain snapshot and event');
+            }
+            if (!Array.isArray(value.outboxEntries) || value.outboxEntries.length !== 2) {
+                reject('Client mutation computed outboxEntries must contain snapshot and event');
+            }
             return;
         default:
             reject('Client mutation computed outcome is invalid');

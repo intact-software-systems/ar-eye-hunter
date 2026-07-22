@@ -36,6 +36,9 @@ import {
     createClientStateService,
 } from '@shared-server/rallar-system/services/client-state-service.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
+import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
+import { InMemoryClientStateEventStore } from '@shared-server/rallar-system/repositories/StateEventStore.ts';
 
 const SCOPE: StateScope = {
     applicationId: 'ar-eye-hunter',
@@ -43,23 +46,131 @@ const SCOPE: StateScope = {
 };
 
 describe('AppClientInboxService', () => {
-    it('processes principal, instance, and session mutations through the inbox', async () => {
+    it('restarts client phases from read after an AppInbox CAS conflict', async () => {
         const queue = new TestResourceInbox();
         const reader = new InboxQueueReader(queue);
         const results = new TestResourceInboxResults();
-        const publisher = createPublisher();
+        const phases: string[] = [];
+        const serviceLocalSleeps: number[] = [];
+        let writeAttempt = 0;
+        let legacyAttempt = 0;
+        const phasedClientState = createClientStateServiceStub({
+            upsertPrincipal: vi.fn(async () => {
+                legacyAttempt += 1;
+                if (legacyAttempt === 1) {
+                    throw new RuntimeStateWriteConflictError();
+                }
+                return { status: 'ok', result: { right: { accepted: true } } };
+            }),
+            read: vi.fn(async () => {
+                phases.push('read');
+                return { lifecycle: writeAttempt === 0 ? 'active' : 'disabled' };
+            }),
+            compute: vi.fn((_command, read) => {
+                phases.push('compute');
+                return {
+                    outcome: 'write',
+                    lifecycle: (read as { lifecycle: string }).lifecycle,
+                    snapshot: { recomputed: true },
+                    event: null,
+                };
+            }),
+            validate: vi.fn(() => {
+                phases.push('validate');
+            }),
+            write: vi.fn(async () => {
+                writeAttempt += 1;
+                if (writeAttempt === 1) {
+                    phases.push('write-conflict');
+                    throw new RuntimeStateWriteConflictError();
+                }
+                phases.push('write-accepted');
+                return {
+                    commandId: 'retry-client-alice',
+                    requestId: 'retry-client-alice',
+                    commandHash: `sha256:${'a'.repeat(64)}`,
+                    aggregateRef: { ...SCOPE, principalId: 'alice' },
+                    outcome: 'no-op',
+                    attemptCount: 2,
+                    acceptedStorageRevision: 0,
+                    stateRevision: 1,
+                    snapshotVersion: 1,
+                    presenceVersion: 1,
+                    eventId: null,
+                    outboxIds: [],
+                };
+            }),
+            sleep: vi.fn(async (delayMs: number) => {
+                serviceLocalSleeps.push(delayMs);
+            }),
+        } as never);
         const service = new AppClientInboxService(
             reader,
             queue as never,
             results as never,
             createAppInboxTestDatabase(queue, results),
+            phasedClientState,
+            'server-12345678',
+        );
+
+        const resultPromise = service.processEntryUntilCompletion({
+            type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
+            resourceId: 'retry-client-alice',
+            contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:alice`,
+            senderId: 'alice',
+            data: {
+                scope: SCOPE,
+                principalId: 'alice',
+                request: {
+                    username: 'alice',
+                    displayName: 'recomputed-successor',
+                    actorPrincipalId: 'alice',
+                    requestId: 'retry-client-alice',
+                },
+            },
+        });
+
+        await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+        await new Promise((resolve) => setTimeout(resolve, 2));
+        await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+        await resultPromise;
+
+        expect(phases).toEqual([
+            'read',
+            'compute',
+            'validate',
+            'write-conflict',
+            'read',
+            'compute',
+            'validate',
+            'write-accepted',
+        ]);
+        expect(serviceLocalSleeps).toEqual([]);
+        const [entry] = await readEntries(queue);
+        expect(entry.dequeueAudit.attempts).toBe(2);
+    });
+
+    it('processes principal, instance, and session mutations through the inbox', async () => {
+        const queue = new TestResourceInbox();
+        const reader = new InboxQueueReader(queue);
+        const results = new TestResourceInboxResults();
+        const publisher = createPublisher();
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const database = createAppInboxTestDatabase(queue, results, {
+            runtimeRepository,
+        });
+        const connectedAtEpochMs = Date.now();
+        const service = new AppClientInboxService(
+            reader,
+            queue as never,
+            results as never,
+            database,
             createClientStateService({
-                runtimeRepository: new FakeRuntimeStateRepository(),
+                runtimeRepository,
                 syncPublisher: publisher,
-                now: () => 2_000,
+                bindRuntimeStateTransaction: database.bindRuntimeStateTransaction,
                 serviceId: 'server-12345678',
             }),
-            publisher,
             'server-12345678',
         );
 
@@ -120,8 +231,9 @@ describe('AppClientInboxService', () => {
                     presenceState: 'online',
                     actorPrincipalId: 'alice',
                     actorSessionId: 'alice-session',
-                    lastHeartbeatAtEpochMs: 2_000,
-                    expiresAtEpochMs: Date.now() + 60_000,
+                    connectedAtEpochMs,
+                    lastHeartbeatAtEpochMs: connectedAtEpochMs,
+                    expiresAtEpochMs: connectedAtEpochMs + 60_000,
                     requestId: 'connect-client-alice-session',
                 },
             },
@@ -144,8 +256,8 @@ describe('AppClientInboxService', () => {
                     presenceState: 'away',
                     actorPrincipalId: 'alice',
                     actorSessionId: 'alice-session',
-                    lastHeartbeatAtEpochMs: 3_000,
-                    expiresAtEpochMs: Date.now() + 60_000,
+                    lastHeartbeatAtEpochMs: connectedAtEpochMs + 1,
+                    expiresAtEpochMs: connectedAtEpochMs + 60_001,
                     requestId: 'heartbeat-client-alice-session',
                 },
             },
@@ -182,7 +294,7 @@ describe('AppClientInboxService', () => {
         expect(requireRightSnapshot(heartbeat).activeSessions[0]).toMatchObject({
             sessionId: 'alice-session',
             presenceState: 'away',
-            lastHeartbeatAtEpochMs: 3_000,
+            lastHeartbeatAtEpochMs: connectedAtEpochMs + 1,
         });
         expect(requireRightSnapshot(disconnected).activeSessions).toHaveLength(0);
         expect(publisher.publishClientSnapshot).not.toHaveBeenCalled();
@@ -194,18 +306,21 @@ describe('AppClientInboxService', () => {
         const reader = new InboxQueueReader(queue);
         const results = new TestResourceInboxResults();
         const publisher = createPublisher();
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const database = createAppInboxTestDatabase(queue, results, {
+            runtimeRepository,
+        });
         const service = new AppClientInboxService(
             reader,
             queue as never,
             results as never,
-            createAppInboxTestDatabase(queue, results),
+            database,
             createClientStateService({
-                runtimeRepository: new FakeRuntimeStateRepository(),
+                runtimeRepository,
                 syncPublisher: publisher,
-                now: () => 2_000,
+                bindRuntimeStateTransaction: database.bindRuntimeStateTransaction,
                 serviceId: 'server-12345678',
             }),
-            publisher,
             'server-12345678',
         );
 
@@ -253,10 +368,132 @@ describe('AppClientInboxService', () => {
 
         expect(requireRightSnapshot(replay).principal.displayName).toBe('Alice');
         expect(requireRightWritten(replay).event).toEqual(
-            requireRightWritten(first).event,
-        );
+            requireRightWritten(first).event);
         expect(publisher.publishClientSnapshot).not.toHaveBeenCalled();
         expect(publisher.publishClientEvent).not.toHaveBeenCalled();
+    });
+
+    it('rolls back every client mutation surface when final WS outbox insertion fails', async () => {
+        const queue = new TestResourceInbox();
+        const reader = new InboxQueueReader(queue);
+        const results = new TestResourceInboxResults();
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const eventStore = new InMemoryClientStateEventStore();
+        const repository = new ClientStateRepository(runtimeRepository, {
+            events: eventStore,
+        });
+        const key = {
+            topicId: 'app-inbox.client-state',
+            resourceId: 'connect-client-rollback',
+            contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:alice`,
+        };
+        let failOutbox = true;
+        let rollbackAssertions = 0;
+        let database!: ReturnType<typeof createAppInboxTestDatabase>;
+        database = createAppInboxTestDatabase(queue, results, {
+            runtimeRepository,
+            shouldFailOutboxWrite: () => {
+                if (!failOutbox) return false;
+                failOutbox = false;
+                return true;
+            },
+            withTransaction: async (write) => {
+                const before = [...eventStore.events];
+                try {
+                    return await write();
+                } catch (error) {
+                    eventStore.events.length = 0;
+                    eventStore.events.push(...before);
+                    throw error;
+                }
+            },
+            onTransactionRollback: async () => {
+                rollbackAssertions += 1;
+                expect(
+                    await repository.findPrincipal({
+                        ...SCOPE,
+                        principalId: 'alice',
+                    }),
+                ).toBeUndefined();
+                expect(
+                    await repository.findInstance({
+                        ...SCOPE,
+                        principalId: 'alice',
+                        clientInstanceId: 'alice-browser',
+                    }),
+                ).toBeUndefined();
+                expect(
+                    await repository.findSession({
+                        ...SCOPE,
+                        principalId: 'alice',
+                        clientInstanceId: 'alice-browser',
+                        sessionId: 'alice-session',
+                    }),
+                ).toBeUndefined();
+                expect(
+                    await repository.findIdempotentClientMutationReceipt(
+                        { ...SCOPE, principalId: 'alice' },
+                        'connect-client-rollback',
+                    ),
+                ).toBeUndefined();
+                expect(
+                    await repository.listEvents({
+                        ...SCOPE,
+                        principalId: 'alice',
+                    }),
+                ).toEqual([]);
+                expect(database.outboxEntries.size).toBe(0);
+                expect(await results.findByKey(key)).toBeUndefined();
+                expect((await queue.getItem(key))?.status).toBe(EntityStatus.RESERVED);
+            },
+        });
+        const clientStateService = createClientStateService({
+            runtimeRepository,
+            createClientStateEventStore: () => eventStore,
+            syncPublisher: createPublisher(),
+            bindRuntimeStateTransaction: database.bindRuntimeStateTransaction,
+            serviceId: 'server-12345678',
+        });
+        const service = new AppClientInboxService(
+            reader,
+            queue as never,
+            results as never,
+            database,
+            clientStateService,
+            'server-12345678',
+        );
+        const connectedAtEpochMs = Date.now();
+
+        const result = await processAppInbox<
+            ClientSessionConnectAppInboxPayload,
+            ClientStateWritten
+        >(service, reader, {
+            type: AppInboxType.CLIENT_SESSION_CONNECT,
+            ...key,
+            senderId: 'alice',
+            data: {
+                scope: SCOPE,
+                principalId: 'alice',
+                clientInstanceId: 'alice-browser',
+                sessionId: 'alice-session',
+                request: {
+                    generationId: 'rollback-generation',
+                    connectedAtEpochMs,
+                    lastHeartbeatAtEpochMs: connectedAtEpochMs,
+                    expiresAtEpochMs: connectedAtEpochMs + 60_000,
+                    actorPrincipalId: 'alice',
+                    actorSessionId: 'alice-session',
+                    requestId: 'connect-client-rollback',
+                },
+            },
+        });
+
+        expect(result.left).toContain('resource-inbox-invariant-corruption');
+        expect(rollbackAssertions).toBe(1);
+        expect((await queue.getItem(key))?.status).toBe(EntityStatus.FAILED);
+        expect(await results.findByKey(key)).toMatchObject({
+            status: EntityStatus.FAILED,
+        });
     });
 
     it('processes authorised websocket lifecycle mutations through the inbox', async () => {
@@ -272,13 +509,17 @@ describe('AppClientInboxService', () => {
             expiresAtEpochMs: Date.now() + 60_000,
         };
         let authSessionAvailable = true;
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const database = createAppInboxTestDatabase(queue, results, {
+            runtimeRepository,
+        });
         const service = new AppClientInboxService(
             reader,
             queue as never,
             results as never,
-            createAppInboxTestDatabase(queue, results),
+            database,
             createClientStateService({
-                runtimeRepository: new FakeRuntimeStateRepository(),
+                runtimeRepository,
                 syncPublisher: publisher,
                 authSessionRepository: {
                     findBySessionId: vi.fn(async (sessionId: string) =>
@@ -287,14 +528,13 @@ describe('AppClientInboxService', () => {
                             ? {
                                 ...authSession,
                                 issuedAtEpochMs: 1_000,
-                            }
-                            : undefined
+                              }
+                            : undefined,
                     ),
                 } as never,
-                now: () => 2_000,
+                bindRuntimeStateTransaction: database.bindRuntimeStateTransaction,
                 serviceId: 'server-12345678',
             }),
-            publisher,
             'server-12345678',
         );
 
@@ -302,7 +542,7 @@ describe('AppClientInboxService', () => {
             service.processAuthorisedWsClientConnect(authSession, 'generation-1', {
                 expiresAtEpochMs: Date.now() + 60_000,
                 userAgent: 'Browser',
-            })
+            }),
         );
         vi.mocked(publisher.publishClientSnapshot).mockClear();
         vi.mocked(publisher.publishClientEvent).mockClear();
@@ -312,7 +552,7 @@ describe('AppClientInboxService', () => {
                 authSession.sessionId,
                 'generation-1',
                 'socket-closed',
-            )
+            ),
         );
 
         expect(requireRightSnapshot(connected).activeSessions).toHaveLength(1);
@@ -321,9 +561,7 @@ describe('AppClientInboxService', () => {
             userAgent: 'Browser',
         });
         expect(requireRightSnapshot(disconnected).activeSessions).toHaveLength(0);
-        expect(requireRightWritten(disconnected).event?.eventType).toBe(
-            'session-disconnected',
-        );
+        expect(requireRightWritten(disconnected).event?.eventType).toBe('session-disconnected');
         expect(publisher.publishClientSnapshot).not.toHaveBeenCalled();
         expect(publisher.publishClientEvent).not.toHaveBeenCalled();
     });
@@ -340,18 +578,21 @@ describe('AppClientInboxService', () => {
             sessionId: 'admin-ws-session',
             expiresAtEpochMs: Date.now() + 60_000,
         };
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const database = createAppInboxTestDatabase(queue, results, {
+            runtimeRepository,
+        });
         const service = new AppClientInboxService(
             reader,
             queue as never,
             results as never,
-            createAppInboxTestDatabase(queue, results),
+            database,
             createClientStateService({
-                runtimeRepository: new FakeRuntimeStateRepository(),
+                runtimeRepository,
                 syncPublisher: publisher,
-                now: () => 2_000,
+                bindRuntimeStateTransaction: database.bindRuntimeStateTransaction,
                 serviceId: 'server-12345678',
             }),
-            publisher,
             'server-12345678',
         );
 
@@ -361,7 +602,7 @@ describe('AppClientInboxService', () => {
                 workspaceId: 'default',
                 expiresAtEpochMs: Date.now() + 60_000,
                 userAgent: 'Browser',
-            })
+            }),
         );
 
         const snapshot = requireRightSnapshot(connected);
@@ -398,18 +639,21 @@ describe('AppClientInboxService', () => {
             sessionId: 'admin-ws-session',
             expiresAtEpochMs: Date.now() + 60_000,
         };
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const database = createAppInboxTestDatabase(queue, results, {
+            runtimeRepository,
+        });
         const service = new AppClientInboxService(
             reader,
             queue as never,
             results as never,
-            createAppInboxTestDatabase(queue, results),
+            database,
             createClientStateService({
-                runtimeRepository: new FakeRuntimeStateRepository(),
+                runtimeRepository,
                 syncPublisher: publisher,
-                now: () => 2_000,
+                bindRuntimeStateTransaction: database.bindRuntimeStateTransaction,
                 serviceId: 'server-12345678',
             }),
-            publisher,
             'server-12345678',
         );
 
@@ -417,13 +661,13 @@ describe('AppClientInboxService', () => {
             service.processAuthorisedWsClientConnect(authSession, 'generation-default', {
                 applicationId: 'rallar-server',
                 workspaceId: 'default',
-            })
+            }),
         );
         const scopedConnect = await processAppInboxMethod(reader, () =>
             service.processAuthorisedWsClientConnect(authSession, 'generation-scoped', {
                 applicationId: 'ar-eye-hunter',
                 workspaceId: 'default',
-            })
+            }),
         );
 
         expect(requireRightSnapshot(defaultConnect).principal).toMatchObject({
@@ -448,13 +692,17 @@ describe('AppClientInboxService', () => {
             sessionId: 'admin-ws-session',
             expiresAtEpochMs: Date.now() + 60_000,
         };
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const database = createAppInboxTestDatabase(queue, results, {
+            runtimeRepository,
+        });
         const service = new AppClientInboxService(
             reader,
             queue as never,
             results as never,
-            createAppInboxTestDatabase(queue, results),
+            database,
             createClientStateService({
-                runtimeRepository: new FakeRuntimeStateRepository(),
+                runtimeRepository,
                 syncPublisher: publisher,
                 authSessionRepository: {
                     findBySessionId: vi.fn(async (sessionId: string) =>
@@ -462,14 +710,13 @@ describe('AppClientInboxService', () => {
                             ? {
                                 ...authSession,
                                 issuedAtEpochMs: 1_000,
-                            }
-                            : undefined
+                              }
+                            : undefined,
                     ),
                 } as never,
-                now: () => 2_000,
+                bindRuntimeStateTransaction: database.bindRuntimeStateTransaction,
                 serviceId: 'server-12345678',
             }),
-            publisher,
             'server-12345678',
         );
 
@@ -478,14 +725,14 @@ describe('AppClientInboxService', () => {
                 applicationId: 'ar-eye-hunter',
                 workspaceId: 'default',
                 expiresAtEpochMs: Date.now() + 60_000,
-            })
+            }),
         );
         const disconnected = await processAppInboxMethod(reader, () =>
             service.processAuthorisedWsClientDisconnect(
                 authSession.sessionId,
                 'generation-scoped',
                 'socket-closed',
-            )
+            ),
         );
 
         expect(requireRightSnapshot(disconnected).principal).toMatchObject({
@@ -507,43 +754,53 @@ describe('AppClientInboxService', () => {
         const results = new TestResourceInboxResults();
         const runtimeRepository = new FakeRuntimeStateRepository();
         const publisher = createPublisher();
-        let serviceNow = 2_000;
         const expiresAtEpochMs = Date.now() - 1_000;
+        const database = createAppInboxTestDatabase(queue, results, {
+            runtimeRepository,
+        });
         const clientStateService = createClientStateService({
             runtimeRepository,
             syncPublisher: publisher,
-            now: () => serviceNow,
+            bindRuntimeStateTransaction: database.bindRuntimeStateTransaction,
             serviceId: 'server-12345678',
         });
-        await clientStateService.connectSession(
-            SCOPE,
-            'alice',
-            'alice-browser',
-            'alice-session',
-            {
-                generationId: 'generation-alice-session',
-                presenceState: 'online',
-                actorPrincipalId: 'alice',
-                actorSessionId: 'alice-session',
-                lastHeartbeatAtEpochMs: expiresAtEpochMs - 1_000,
-                expiresAtEpochMs,
-                requestId: 'seed-client-expiry-session',
-            },
-        );
-        serviceNow = expiresAtEpochMs + 1;
-
         const service = new AppClientInboxService(
             reader,
             queue as never,
             results as never,
-            createAppInboxTestDatabase(queue, results),
+            database,
             clientStateService,
-            publisher,
             'server-12345678',
+        );
+        await processAppInbox<ClientSessionConnectAppInboxPayload, ClientStateWritten>(
+            service,
+            reader,
+            {
+                type: AppInboxType.CLIENT_SESSION_CONNECT,
+                resourceId: 'seed-client-expiry-session',
+                contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:alice`,
+                senderId: 'alice',
+                data: {
+                    scope: SCOPE,
+                    principalId: 'alice',
+                    clientInstanceId: 'alice-browser',
+                    sessionId: 'alice-session',
+                    request: {
+                        generationId: 'generation-alice-session',
+                        presenceState: 'online',
+                        actorPrincipalId: 'alice',
+                        actorSessionId: 'alice-session',
+                        connectedAtEpochMs: expiresAtEpochMs - 2_000,
+                        lastHeartbeatAtEpochMs: expiresAtEpochMs - 1_000,
+                        expiresAtEpochMs,
+                        requestId: 'seed-client-expiry-session',
+                    },
+                },
+            },
         );
 
         const expired = await processAppInboxMethod(reader, () =>
-            service.processExpiredSessions(serviceNow)
+            service.processExpiredSessions(expiresAtEpochMs + 1),
         );
 
         expect(expired.right).toHaveLength(1);
@@ -562,7 +819,7 @@ describe('AppClientInboxService', () => {
         const reader = new InboxQueueReader(queue);
         const results = new TestResourceInboxResults();
         const clientStateService = createClientStateServiceStub({
-            expireExpiredSessions: vi.fn(async () => []),
+            listExpiredSessionCandidates: vi.fn(async () => []),
         });
         const service = new AppClientInboxService(
             reader,
@@ -570,7 +827,6 @@ describe('AppClientInboxService', () => {
             results as never,
             createAppInboxTestDatabase(queue, results),
             clientStateService,
-            createPublisher(),
             'server-12345678',
         );
 
@@ -585,16 +841,16 @@ describe('AppClientInboxService', () => {
         expect(readEnqueuedData<ClientExpiredSessionsAppInboxPayload>(entries[0]).atEpochMs).toBe(
             60_000,
         );
-        expect(clientStateService.expireExpiredSessions).not.toHaveBeenCalled();
+        expect(clientStateService.listExpiredSessionCandidates).not.toHaveBeenCalled();
     });
 
     it('keeps at most one active waiting client expiry entry across timestamps', async () => {
         const queue = new TestResourceInbox();
         const reader = new InboxQueueReader(queue);
         const results = new TestResourceInboxResults();
-        const expireExpiredSessions = vi.fn(async () => []);
+        const listExpiredSessionCandidates = vi.fn(async () => []);
         const clientStateService = createClientStateServiceStub({
-            expireExpiredSessions,
+            listExpiredSessionCandidates,
         });
         const service = new AppClientInboxService(
             reader,
@@ -602,7 +858,6 @@ describe('AppClientInboxService', () => {
             results as never,
             createAppInboxTestDatabase(queue, results),
             clientStateService,
-            createPublisher(),
             'server-12345678',
         );
 
@@ -619,14 +874,12 @@ describe('AppClientInboxService', () => {
         );
 
         await reader.dequeueInbox(
-            InboxQueueReader.INBOX_DEQUEUE_TYPES,
-            createResilience(),
-        );
+            InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
 
         await expect(first).resolves.toMatchObject({ right: [] });
         await expect(second).resolves.toMatchObject({ right: [] });
-        expect(expireExpiredSessions).toHaveBeenCalledTimes(1);
-        expect(expireExpiredSessions).toHaveBeenLastCalledWith(60_000);
+        expect(listExpiredSessionCandidates).toHaveBeenCalledTimes(1);
+        expect(listExpiredSessionCandidates).toHaveBeenLastCalledWith(60_000);
     });
 
     it('does not replace reserved or retry client expiry entries', async () => {
@@ -634,7 +887,7 @@ describe('AppClientInboxService', () => {
         const reader = new InboxQueueReader(queue);
         const results = new TestResourceInboxResults();
         const clientStateService = createClientStateServiceStub({
-            expireExpiredSessions: vi.fn(async () => []),
+            listExpiredSessionCandidates: vi.fn(async () => []),
         });
         const service = new AppClientInboxService(
             reader,
@@ -642,7 +895,6 @@ describe('AppClientInboxService', () => {
             results as never,
             createAppInboxTestDatabase(queue, results),
             clientStateService,
-            createPublisher(),
             'server-12345678',
         );
 
@@ -681,9 +933,9 @@ describe('AppClientInboxService', () => {
         const queue = new TestResourceInbox();
         const reader = new InboxQueueReader(queue);
         const results = new TestResourceInboxResults();
-        const expireExpiredSessions = vi.fn(async () => []);
+        const listExpiredSessionCandidates = vi.fn(async () => []);
         const clientStateService = createClientStateServiceStub({
-            expireExpiredSessions,
+            listExpiredSessionCandidates,
         });
         const service = new AppClientInboxService(
             reader,
@@ -691,7 +943,6 @@ describe('AppClientInboxService', () => {
             results as never,
             createAppInboxTestDatabase(queue, results),
             clientStateService,
-            createPublisher(),
             'server-12345678',
         );
 
@@ -707,11 +958,9 @@ describe('AppClientInboxService', () => {
         );
 
         await reader.dequeueInbox(
-            InboxQueueReader.INBOX_DEQUEUE_TYPES,
-            createResilience(),
-        );
-        expect(expireExpiredSessions).toHaveBeenCalledTimes(1);
-        expect(expireExpiredSessions).toHaveBeenLastCalledWith(60_000);
+            InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+        expect(listExpiredSessionCandidates).toHaveBeenCalledTimes(1);
+        expect(listExpiredSessionCandidates).toHaveBeenLastCalledWith(60_000);
 
         service.processExpiredSessionsNoWaiting(120_000);
 
@@ -723,11 +972,9 @@ describe('AppClientInboxService', () => {
         );
 
         await reader.dequeueInbox(
-            InboxQueueReader.INBOX_DEQUEUE_TYPES,
-            createResilience(),
-        );
-        expect(expireExpiredSessions).toHaveBeenCalledTimes(2);
-        expect(expireExpiredSessions).toHaveBeenLastCalledWith(120_000);
+            InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+        expect(listExpiredSessionCandidates).toHaveBeenCalledTimes(2);
+        expect(listExpiredSessionCandidates).toHaveBeenLastCalledWith(120_000);
     });
 
     it('returns a left result when a client inbox mutation handler fails with a non-retryable error', async () => {
@@ -740,13 +987,10 @@ describe('AppClientInboxService', () => {
             results as never,
             createAppInboxTestDatabase(queue, results),
             createClientStateServiceStub({
-                upsertPrincipal: vi.fn(async () => {
-                    throw new NonRetryableException(
-                        'Client principal update failed',
-                    );
+                read: vi.fn(async () => {
+                    throw new NonRetryableException('Client principal update failed');
                 }),
             }),
-            createPublisher(),
             'server-12345678',
         );
 
@@ -766,8 +1010,9 @@ describe('AppClientInboxService', () => {
                     actorPrincipalId: 'alice',
                     requestId: 'upsert-client-fail',
                 },
+                },
             },
-        });
+        );
 
         expect(result.left).toBe('Client principal update failed');
     });
@@ -776,16 +1021,13 @@ describe('AppClientInboxService', () => {
 class TestResourceInbox extends InMemoryQueueBox {
     async isEntryWithStatus(
         key: Key,
-        statuses: EntityStatus[],
-    ): Promise<boolean> {
+        statuses: EntityStatus[]): Promise<boolean> {
         const entry = await this.getItem(key);
         return entry !== undefined && statuses.includes(entry.status);
     }
 }
-
 function requireRightSnapshot(
-    result: Either<string, ClientStateWritten>,
-): ClientSnapshot {
+    result: Either<string, ClientStateWritten>): ClientSnapshot {
     if (!result.right) {
         throw new Error(result.left ?? 'Expected client app-inbox right result');
     }
@@ -794,8 +1036,7 @@ function requireRightSnapshot(
 }
 
 function requireRightWritten(
-    result: Either<string, ClientStateWritten>,
-): ClientMutationWritten {
+    result: Either<string, ClientStateWritten>): ClientMutationWritten {
     if (!result.right) {
         throw new Error(result.left ?? 'Expected client app-inbox right result');
     }
@@ -803,15 +1044,11 @@ function requireRightWritten(
     return requireClientMutationWritten(result.right);
 }
 
-function requireClientStateWrittenSnapshot(
-    written: ClientStateWritten,
-): ClientSnapshot {
+function requireClientStateWrittenSnapshot(written: ClientStateWritten): ClientSnapshot {
     return requireClientMutationWritten(written).snapshot;
 }
 
-function requireClientMutationWritten(
-    written: ClientStateWritten,
-): ClientMutationWritten {
+function requireClientMutationWritten(written: ClientStateWritten): ClientMutationWritten {
     const result = written.result as
         | ClientStateWritten['result']
         | {
@@ -843,9 +1080,7 @@ class TestResourceInboxResults {
         return entry;
     }
 
-    async writeIfAbsentOrReplaceExpired(
-        entry: ResourceEntry,
-    ): Promise<ResourceEntry> {
+    async writeIfAbsentOrReplaceExpired(entry: ResourceEntry): Promise<ResourceEntry> {
         const key = toKeyAsString(entry.key);
         const existing = this.data.get(key);
         if (existing !== undefined && !isExpiredResourceEntry(existing)) {
@@ -878,9 +1113,7 @@ async function processAppInbox<V, R>(
 ): Promise<Either<string, R>> {
     const resultPromise = service.processEntryUntilCompletion<V, R>(input);
     await reader.dequeueInbox(
-        InboxQueueReader.INBOX_DEQUEUE_TYPES,
-        createResilience(),
-    );
+        InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
 
     return await resultPromise;
 }
@@ -891,17 +1124,13 @@ async function processAppInboxMethod<R>(
 ): Promise<R> {
     const resultPromise = run();
     await reader.dequeueInbox(
-        InboxQueueReader.INBOX_DEQUEUE_TYPES,
-        createResilience(),
-    );
+        InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
 
     return await resultPromise;
 }
 
 async function waitForQueueEntryCount(
-    queue: InMemoryQueueBox,
-    count: number,
-): Promise<void> {
+    queue: InMemoryQueueBox, count: number): Promise<void> {
     for (let i = 0; i < 20; i += 1) {
         if ((await readEntries(queue)).length >= count) {
             return;
@@ -930,8 +1159,7 @@ async function waitForQueueEntryStatus(
 
 async function readEntries(queue: InMemoryQueueBox): Promise<ResourceEntry[]> {
     const entries = await Promise.all(
-        (await queue.getAllKeys()).map((key) => queue.getItem(key)),
-    );
+        (await queue.getAllKeys()).map((key) => queue.getItem(key)));
 
     return entries.filter((entry): entry is ResourceEntry => entry !== undefined);
 }
@@ -939,9 +1167,7 @@ async function readEntries(queue: InMemoryQueueBox): Promise<ResourceEntry[]> {
 function activeEntries(entries: ResourceEntry[]): ResourceEntry[] {
     const activeStatuses = new Set([
         EntityStatus.NEW,
-        EntityStatus.RESERVED,
-        EntityStatus.RETRY,
-    ]);
+        EntityStatus.RESERVED, EntityStatus.RETRY]);
 
     return entries.filter((entry) => activeStatuses.has(entry.status));
 }
@@ -960,39 +1186,34 @@ function readEnqueuedData<V>(entry: ResourceEntry): V {
 }
 
 function createClientStateServiceStub(
-    overrides: Partial<ClientStateService>,
-): ClientStateService {
+    overrides: Partial<ClientStateService>): ClientStateService {
     return {
         listSnapshots: vi.fn(),
         readSnapshot: vi.fn(),
         readPresenceSnapshot: vi.fn(),
         listEvents: vi.fn(),
-        upsertPrincipal: vi.fn(),
-        upsertInstance: vi.fn(),
-        connectSession: vi.fn(),
-        heartbeatSession: vi.fn(),
-        disconnectSession: vi.fn(),
-        expireExpiredSessions: vi.fn(),
-        registerAuthorisedWsClientSession: vi.fn(),
-        disconnectAuthorisedWsClientSession: vi.fn(),
+        listEventPage: vi.fn(),
+        read: vi.fn(),
+        compute: vi.fn(),
+        validate: vi.fn(),
+        write: vi.fn(),
+        listExpiredSessionCandidates: vi.fn(async () => []),
+        findSessionBySessionId: vi.fn(),
+        observeSnapshot: vi.fn(async (snapshot) => snapshot),
         ...overrides,
-    } as unknown as ClientStateService;
+    };
 }
 
 function createPublisher() {
     return {
         publishClientSnapshot: vi.fn(
-            async (_snapshot: unknown, _senderId?: string) => undefined,
-        ),
+            async (_snapshot: unknown, _senderId?: string) => undefined),
         publishClientEvent: vi.fn(
-            async (_event: unknown, _senderId?: string) => undefined,
-        ),
+            async (_event: unknown, _senderId?: string) => undefined),
         publishGroupSnapshot: vi.fn(
-            async (_snapshot: unknown, _senderId?: string) => undefined,
-        ),
+            async (_snapshot: unknown, _senderId?: string) => undefined),
         publishGroupEvent: vi.fn(
-            async (_event: unknown, _senderId?: string) => undefined,
-        ),
+            async (_event: unknown, _senderId?: string) => undefined),
     };
 }
 

@@ -1,21 +1,12 @@
 import { describe, expect, expectTypeOf, it, vi } from 'vitest';
-import type {
-    ClientPrincipalRef,
-    ClientSession,
-} from '@shared/api/client-types.ts';
-import type {
-    ConnectClientSessionRequest,
-    StateScope,
-} from '@shared/api/state-types.ts';
+import type { ClientPrincipalRef, ClientSession } from '@shared/api/client-types.ts';
+import type { ConnectClientSessionRequest, StateScope } from '@shared/api/state-types.ts';
 import {
     ClientStateRepository,
     ClientStateRepositoryInvariantCorruptionError,
 } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
 import { STATE_MUTATION_OUTBOX_NAMESPACE } from '@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts';
-import {
-    ClientMutationIdempotencyConflictError,
-    createClientStateService,
-} from '@shared-server/rallar-system/services/client-state-service.ts';
+import { ClientMutationIdempotencyConflictError } from '@shared-server/rallar-system/services/client-state-service.ts';
 import {
     computeClientMutation,
     type ClientMutationCommand,
@@ -31,12 +22,14 @@ import type {
     RuntimeStateEntry,
     RuntimeStateOptimisticTransactionalRepositoryLike,
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
-import {
-    RuntimeStateRetryExhaustedError,
-    RuntimeStateWriteConflictError,
-} from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
+import {
+    createLegacyClientStateTestDriver as createClientStateService,
+    failNextClientStateTestOutboxWrite,
+    getClientStateTestOutbox,
+} from './client-state-phase-test-driver.ts';
 
 const SCOPE: StateScope = {
     applicationId: 'app-1',
@@ -52,9 +45,8 @@ describe('convergent client state', () => {
         if (!instance) throw new Error('Expected a stored client instance');
         await runtime.deleteByKey('client-state:instances', instance.key);
 
-        await expect(new ClientStateRepository(runtime).readSnapshot(
-            principalRef('alice'),
-        )).rejects.toBeInstanceOf(ClientStateRepositoryInvariantCorruptionError);
+        await expect(new ClientStateRepository(runtime).readSnapshot(principalRef('alice')),
+        ).rejects.toBeInstanceOf(ClientStateRepositoryInvariantCorruptionError);
     });
 
     it('fails closed when persisted active session ids collide across instances', async () => {
@@ -64,8 +56,9 @@ describe('convergent client state', () => {
             SCOPE,
             'alice',
             'phone',
-            { platform: 'web', requestId: 'register-phone' },
-        );
+            { platform: 'web',
+            requestId: 'register-phone',
+        });
         const repository = new ClientStateRepository(runtime);
         const browserSession = await repository.findSession({
             ...principalRef('alice'),
@@ -80,9 +73,9 @@ describe('convergent client state', () => {
             connectionId: null,
         });
 
-        await expect(repository.readSnapshot(
-            principalRef('alice'),
-        )).rejects.toBeInstanceOf(ClientStateRepositoryInvariantCorruptionError);
+        await expect(repository.readSnapshot(principalRef('alice'))).rejects.toBeInstanceOf(
+            ClientStateRepositoryInvariantCorruptionError,
+        );
     });
 
     it('fails closed when a persistence list repeats a client instance', async () => {
@@ -98,9 +91,8 @@ describe('convergent client state', () => {
             },
         );
 
-        await expect(new ClientStateRepository(runtime).readSnapshot(
-            principalRef('alice'),
-        )).rejects.toBeInstanceOf(ClientStateRepositoryInvariantCorruptionError);
+        await expect(new ClientStateRepository(runtime).readSnapshot(principalRef('alice')),
+        ).rejects.toBeInstanceOf(ClientStateRepositoryInvariantCorruptionError);
     });
 
     it('binds instance and session aggregate audit stamps to the command request id', async () => {
@@ -113,10 +105,12 @@ describe('convergent client state', () => {
             SCOPE,
             'alice',
             'browser',
-            { platform: 'web', requestId: 'audit-instance' },
+            { platform: 'web',
+            requestId: 'audit-instance',
+        });
+        expect((await snapshot(runtime, 'alice')).principal.updated.requestId).toBe(
+            'audit-instance',
         );
-        expect((await snapshot(runtime, 'alice')).principal.updated.requestId)
-            .toBe('audit-instance');
 
         await createService(runtime, BASE_EPOCH_MS + 2).connectSession(
             SCOPE,
@@ -129,8 +123,9 @@ describe('convergent client state', () => {
                 requestId: 'audit-session',
             },
         );
-        expect((await snapshot(runtime, 'alice')).principal.updated.requestId)
-            .toBe('audit-session');
+        expect((await snapshot(runtime, 'alice')).principal.updated.requestId).toBe(
+            'audit-session',
+        );
     });
 
     it('keeps principal profile and instance registration across an aggregate CAS race', async () => {
@@ -159,8 +154,7 @@ describe('convergent client state', () => {
                     platform: 'web',
                     deviceLabel: 'Laptop',
                     requestId: 'instance-race',
-                },
-            ),
+            }),
         ]);
 
         expect(profile.result.right?.event?.eventType).toBe('principal-updated');
@@ -174,7 +168,7 @@ describe('convergent client state', () => {
             expect.objectContaining({ clientInstanceId: 'browser', deviceLabel: 'Laptop' }),
         ]);
         expect(after.stateRevision).toBe(before.stateRevision + 2);
-        expect(await outboxFor(runtime, ['profile-race', 'instance-race'])).toHaveLength(2);
+        expect(await outboxFor(runtime, ['profile-race', 'instance-race'])).toHaveLength(4);
     });
 
     it('rebases independent heartbeats and makes disconnect terminal for its generation', async () => {
@@ -261,7 +255,8 @@ describe('convergent client state', () => {
         });
         expect(
             (await new ClientStateRepository(runtime).listEvents(principalRef('alice')))
-                .filter((event) => event.requestId === 'disconnect-terminal'),
+                .filter((event) => event.requestId === 'disconnect-terminal',
+            ),
         ).toHaveLength(1);
         expect(runtime.locks).toEqual([]);
     });
@@ -272,14 +267,14 @@ describe('convergent client state', () => {
             runtime,
             'session-a',
             'generation-1',
-            BASE_EPOCH_MS,
-            BASE_EPOCH_MS + 500,
-        );
+            BASE_EPOCH_MS, BASE_EPOCH_MS + 500);
         runtime.armPrincipalReadBarrier(2);
 
         const [, reconnect] = await Promise.all([
             createService(runtime, BASE_EPOCH_MS + 1_000)
-                .expireExpiredSessions(BASE_EPOCH_MS + 1_000),
+                .expireExpiredSessions(
+                BASE_EPOCH_MS + 1_000,
+            ),
             createService(runtime, BASE_EPOCH_MS + 1_001).connectSession(
                 SCOPE,
                 'alice',
@@ -310,8 +305,9 @@ describe('convergent client state', () => {
         });
         expect(
             (await new ClientStateRepository(runtime).listEvents(principalRef('alice')))
-                .filter((event) => event.eventType === 'session-expired'),
-        ).toHaveLength(1);
+                .filter((event) => event.eventType === 'session-expired',
+            ),
+        ).toHaveLength(0);
     });
 
     it('makes equal request races first-writer-wins and rejects different semantic content', async () => {
@@ -334,13 +330,16 @@ describe('convergent client state', () => {
         ]);
 
         expect(second.result.right?.event).toEqual(first.result.right?.event);
-        const idempotent = await new ClientStateRepository(runtime)
-            .findIdempotentClientMutationReceipt(principalRef('alice'), 'same-request');
+        const idempotent = await new ClientStateRepository(
+            runtime,
+        ).findIdempotentClientMutationReceipt(principalRef('alice'), 'same-request');
         expect(idempotent?.commandHash).toMatch(/^sha256:[0-9a-f]{64}$/);
         expect(idempotent?.receipt.commandHash).toBe(idempotent?.commandHash);
         const records = await outboxFor(runtime, ['same-request']);
-        expect(records).toHaveLength(1);
-        expect(records[0]?.commandHash).toBe(idempotent?.commandHash);
+        expect(records).toHaveLength(2);
+        expect(idempotent?.receipt.outboxIds).toEqual(
+            records.map((record) => record.key.resourceId),
+        );
 
         const conflictRuntime = new AggregateBarrierRepository();
         conflictRuntime.armPrincipalReadBarrier(2);
@@ -361,7 +360,7 @@ describe('convergent client state', () => {
         expect(rejected).toMatchObject({
             reason: expect.any(ClientMutationIdempotencyConflictError),
         });
-        expect(await outboxFor(conflictRuntime, ['different-content'])).toHaveLength(1);
+        expect(await outboxFor(conflictRuntime, ['different-content'])).toHaveLength(2);
     });
 
     it('rejects malformed persisted applied receipt revision and outbox correlations on replay', async () => {
@@ -414,14 +413,13 @@ describe('convergent client state', () => {
             await expect(repository.findIdempotentClientMutationReceipt(
                 principalRef('alice'),
                 request.requestId,
-            ), variant).rejects.toBeInstanceOf(ClientStateRepositoryInvariantCorruptionError);
+                ),
+                variant,
+            ).rejects.toBeInstanceOf(ClientStateRepositoryInvariantCorruptionError);
             await expect(service.upsertPrincipal(
-                SCOPE,
-                'alice',
-                request,
-            ), `replay ${variant}`).rejects.toBeInstanceOf(
-                ClientStateRepositoryInvariantCorruptionError,
-            );
+                SCOPE, 'alice', request),
+                `replay ${variant}`,
+            ).rejects.toBeInstanceOf(ClientStateRepositoryInvariantCorruptionError);
         }
     });
 
@@ -457,7 +455,8 @@ describe('convergent client state', () => {
             });
             if (!stored) throw new Error('Expected a no-op client receipt');
             const entry = (await runtime.findAllEntries('client-state:idempotent'))
-                .find((candidate) => candidate.value.includes(request.requestId));
+                .find((candidate) => candidate.value.includes(request.requestId),
+            );
             if (!entry) throw new Error('Expected a persisted no-op client receipt');
             const malformed = {
                 ...stored,
@@ -483,14 +482,13 @@ describe('convergent client state', () => {
             await expect(repository.findIdempotentClientMutationReceipt(
                 principalRef('alice'),
                 request.requestId,
-            ), variant).rejects.toBeInstanceOf(ClientStateRepositoryInvariantCorruptionError);
+                ),
+                variant,
+            ).rejects.toBeInstanceOf(ClientStateRepositoryInvariantCorruptionError);
             await expect(service.upsertPrincipal(
-                SCOPE,
-                'alice',
-                request,
-            ), `replay ${variant}`).rejects.toBeInstanceOf(
-                ClientStateRepositoryInvariantCorruptionError,
-            );
+                SCOPE, 'alice', request),
+                `replay ${variant}`,
+            ).rejects.toBeInstanceOf(ClientStateRepositoryInvariantCorruptionError);
         }
     });
 
@@ -507,20 +505,15 @@ describe('convergent client state', () => {
         expect(publisher.publishClientSnapshot).not.toHaveBeenCalled();
         expect(publisher.publishClientEvent).not.toHaveBeenCalled();
         const persisted = await outboxFor(runtime, ['stop-after-commit']);
-        expect(persisted).toEqual([
-            expect.objectContaining({
-                commandId: 'stop-after-commit',
-                effects: ['client-state-sync'],
-                delivery: { status: 'pending' },
-            }),
-        ]);
+        expect(persisted).toHaveLength(2);
+        expect(persisted.every((entry) => entry.typeId === 'WS_OUTBOX')).toBe(true);
     });
 
     it('rolls back client state, receipt, event, and outbox when the insert-only outbox collides', async () => {
         const runtime = new AggregateBarrierRepository();
         const repository = new ClientStateRepository(runtime);
         const timing: RallarTimingEvent[] = [];
-        runtime.failNextOutboxInsert();
+        failNextClientStateTestOutboxWrite(runtime);
 
         await expect(createService(
             runtime,
@@ -531,24 +524,23 @@ describe('convergent client state', () => {
             username: 'alice',
             displayName: 'Should roll back',
             requestId: 'client-outbox-collision',
-        })).rejects.toMatchObject({
-            code: 'state-mutation-outbox-collision',
+            }),
+        ).rejects.toMatchObject({
+            code: 'resource-inbox-invariant-corruption',
         });
 
         expect(await repository.findPrincipal(principalRef('alice'))).toBeUndefined();
         expect(await repository.findIdempotentClientMutationReceipt(
             principalRef('alice'),
-            'client-outbox-collision',
-        )).toBeUndefined();
+                'client-outbox-collision',
+            ),
+        ).toBeUndefined();
         expect(await repository.listEvents(principalRef('alice'))).toEqual([]);
         expect(await outboxFor(runtime, ['client-outbox-collision'])).toEqual([]);
         expect(timing).toEqual(expect.arrayContaining([
             expect.objectContaining({ operation: 'mutation.write', status: 'error' }),
-            expect.objectContaining({
-                operation: 'mutation.transaction',
-                status: 'error',
-            }),
-        ]));
+            ]),
+        );
         expect(timing.map((event) => event.operation)).not.toContain('mutation.conflict');
         expect(timing.filter((event) => event.operation === 'mutation.read')).toHaveLength(1);
     });
@@ -559,6 +551,7 @@ describe('convergent client state', () => {
             aggregateRef: principalRef('alice'),
             commandId: 'pure-command',
             requestId: 'pure-command',
+            facts: validFacts(),
             input: {
                 username: 'alice',
                 displayName: 'Alice',
@@ -580,6 +573,8 @@ describe('convergent client state', () => {
             principal: null,
             instance: null,
             session: null,
+            snapshot: null,
+            receiptEvent: null,
         });
         const facts: ClientMutationFacts = deepFreeze({
             nowEpochMs: 1_000,
@@ -598,7 +593,7 @@ describe('convergent client state', () => {
         expect(read).toEqual(deepFreeze(structuredClone(read)));
     });
 
-    it('exhausts exactly three principal guards with delays 2 and 8 and no partial writes', async () => {
+    it('leaves retry delay scheduling outside the client service and keeps failed attempts atomic', async () => {
         const runtime = new AlwaysConflictingPrincipalRepository();
         const delays: number[] = [];
         const timing: RallarTimingEvent[] = [];
@@ -620,22 +615,16 @@ describe('convergent client state', () => {
             requestId: 'three-conflicts',
         }).catch((caught) => caught);
 
-        expect(error).toBeInstanceOf(RuntimeStateRetryExhaustedError);
-        expect(error.cause).toBeInstanceOf(RuntimeStateWriteConflictError);
-        expect(error.attempts).toBe(3);
-        expect(delays).toEqual([2, 8]);
-        expect(runtime.principalGuardCount).toBe(3);
-        expect(runtime.transactionBeginCount).toBe(3);
+        expect(error).toBeInstanceOf(RuntimeStateWriteConflictError);
+        expect(delays).toEqual([]);
+        expect(runtime.principalGuardCount).toBe(8);
+        expect(runtime.transactionBeginCount).toBe(8);
         expect(runtime.data.size).toBe(0);
-        expect(timing.filter((event) => event.operation === 'mutation.conflict'))
-            .toMatchObject([
-                { details: { attempt: 0, backoffMs: 0, conflict: true } },
-                { details: { attempt: 1, backoffMs: 2, conflict: true } },
-                { details: { attempt: 2, backoffMs: 8, conflict: true } },
-            ]);
+        expect(timing.filter((event) => event.operation === 'mutation.write')).toHaveLength(8);
+        expect(timing.map((event) => event.operation)).not.toContain('mutation.conflict');
     });
 
-    it('opens no transaction for replay or no-op and guards the principal first for a write', async () => {
+    it('skips writes for replay, persists semantic no-op receipts, and guards principal first', async () => {
         const runtime = new StatementRecordingRepository();
         const timing: RallarTimingEvent[] = [];
         const service = createClientStateService({
@@ -652,16 +641,14 @@ describe('convergent client state', () => {
             displayName: 'Alice',
             requestId: 'guard-first',
         });
-        expect(runtime.transactionStatements[0]).toBe(
-            'insertIfAbsent:client-state:principals',
-        );
+        expect(runtime.transactionStatements[0]).toBe('insertIfAbsent:client-state:principals');
         expect(timing.map((event) => event.operation)).toEqual(expect.arrayContaining([
             'mutation.read',
             'mutation.compute',
-            'mutation.validate',
-            'mutation.write',
-            'mutation.transaction',
-        ]));
+                'mutation.validate',
+                'mutation.write',
+            ]),
+        );
 
         runtime.resetInstrumentation();
         timing.length = 0;
@@ -673,14 +660,9 @@ describe('convergent client state', () => {
         expect(runtime.transactionBeginCount).toBe(0);
         expect(runtime.transactionStatements).toEqual([]);
         expect(timing.map((event) => event.operation)).toEqual(expect.arrayContaining([
-            'mutation.read',
-            'mutation.compute',
-            'mutation.validate',
-        ]));
-        expect(timing.map((event) => event.operation)).not.toContain('mutation.write');
-        expect(timing.map((event) => event.operation)).not.toContain(
-            'mutation.transaction',
+            'mutation.read', 'mutation.compute', 'mutation.validate']),
         );
+        expect(timing.map((event) => event.operation)).not.toContain('mutation.write');
 
         timing.length = 0;
         await service.upsertPrincipal(SCOPE, 'alice', {
@@ -688,12 +670,9 @@ describe('convergent client state', () => {
             displayName: 'Alice',
             requestId: 'semantic-no-op',
         });
-        expect(runtime.transactionBeginCount).toBe(0);
-        expect(runtime.transactionStatements).toEqual([]);
-        expect(timing.map((event) => event.operation)).not.toContain('mutation.write');
-        expect(timing.map((event) => event.operation)).not.toContain(
-            'mutation.transaction',
-        );
+        expect(runtime.transactionBeginCount).toBe(1);
+        expect(runtime.transactionStatements).toEqual(['insertIfAbsent:client-state:idempotent']);
+        expect(timing.map((event) => event.operation)).toContain('mutation.write');
     });
 
     it('requires generation identity and exposes no caller command hash', () => {
@@ -707,6 +686,7 @@ describe('convergent client state', () => {
             aggregateRef: principalRef('alice'),
             commandId: 'command-1',
             requestId: 'command-1',
+            facts: validFacts(),
         } as const;
         const actor = {
             actorPrincipalId: null,
@@ -779,6 +759,7 @@ describe('convergent client state', () => {
             aggregateRef: principalRef('alice'),
             commandId: 'causal-command',
             requestId: 'causal-command',
+            facts: validFacts(),
         } as const;
         const actor = {
             actorPrincipalId: null,
@@ -830,7 +811,7 @@ describe('convergent client state', () => {
         ) as ClientMutationCommand;
         const computed = computeClientMutation({
             command: validConnect,
-            read: { idempotency: null, principal: null, instance: null, session: null },
+            read: emptyClientMutationRead(),
             facts: validFacts(),
         });
         expect(computed.outcome).toBe('write');
@@ -862,12 +843,15 @@ describe('convergent client state', () => {
                 idempotency: null,
                 principal: entry(computed.principal.value) as never,
                 instance: computed.instance.operation === 'none'
-                    ? null
-                    : entry(computed.instance.value) as never,
-                session: entry(corruptSession) as never,
-            },
-            facts: validFacts(),
-        })).toThrow(ClientMutationRejectedError);
+                            ? null
+                            : (entry(computed.instance.value) as never),
+                    session: entry(corruptSession) as never,
+                    snapshot: computed.snapshot,
+                    receiptEvent: null,
+                },
+                facts: validFacts(),
+            }),
+        ).toThrow(ClientMutationRejectedError);
 
         const invalidComputed = structuredClone(computed);
         if (invalidComputed.outcome !== 'write' ||
@@ -888,10 +872,11 @@ describe('convergent client state', () => {
         };
         expect(() => validateClientMutation({
             command: validConnect,
-            read: { idempotency: null, principal: null, instance: null, session: null },
-            computed: invalidSessionComputed,
-            facts: validFacts(),
-        })).toThrow(ClientMutationRejectedError);
+                read: emptyClientMutationRead(),
+                computed: invalidSessionComputed,
+                facts: validFacts(),
+            }),
+        ).toThrow(ClientMutationRejectedError);
 
         const runtime = new AggregateBarrierRepository();
         await expect(createService(runtime, 1_000).heartbeatSession(
@@ -904,8 +889,8 @@ describe('convergent client state', () => {
                 lastHeartbeatAtEpochMs: 2_001,
                 expiresAtEpochMs: 2_000,
                 requestId: 'malformed-heartbeat',
-            },
-        )).rejects.toMatchObject({ status: 400 });
+            }),
+        ).rejects.toMatchObject({ status: 400 });
         expect(runtime.data.size).toBe(0);
 
         await connect(runtime, 'corrupt-session', 'corrupt-generation', BASE_EPOCH_MS);
@@ -934,8 +919,9 @@ describe('convergent client state', () => {
                 lastHeartbeatAtEpochMs: BASE_EPOCH_MS + 1_000,
                 expiresAtEpochMs: BASE_EPOCH_MS + 60_000,
                 requestId: 'reject-corrupt-stored-session',
-            },
-        )).rejects.toBeInstanceOf(ClientStateRepositoryInvariantCorruptionError);
+                },
+            ),
+        ).rejects.toBeInstanceOf(ClientStateRepositoryInvariantCorruptionError);
         expect([...runtime.data.entries()]).toEqual(corruptBefore);
     });
 
@@ -945,8 +931,9 @@ describe('convergent client state', () => {
         expect(() => computeClientMutation({
             command,
             read: [] as unknown as ClientMutationRead,
-            facts,
-        })).toThrow(ClientMutationRejectedError);
+                facts,
+            }),
+        ).toThrow(ClientMutationRejectedError);
 
         const invalidRead = {
             idempotency: null,
@@ -965,15 +952,20 @@ describe('convergent client state', () => {
             },
             instance: null,
             session: null,
+            snapshot: null,
+            receiptEvent: null,
         } as unknown as ClientMutationRead;
-        expect(() => computeClientMutation({ command, read: invalidRead, facts }))
-            .toThrow(ClientMutationRejectedError);
+        expect(() => computeClientMutation({ command, read: invalidRead, facts })).toThrow(
+            ClientMutationRejectedError,
+        );
 
         const read: ClientMutationRead = {
             idempotency: null,
             principal: null,
             instance: null,
             session: null,
+            snapshot: null,
+            receiptEvent: null,
         };
         const computed = computeClientMutation({ command, read, facts });
         const invalidComputed = structuredClone(computed) as Record<string, unknown>;
@@ -983,7 +975,8 @@ describe('convergent client state', () => {
             read,
             facts,
             computed: invalidComputed as unknown as typeof computed,
-        })).toThrow(ClientMutationRejectedError);
+            }),
+        ).toThrow(ClientMutationRejectedError);
     });
 });
 
@@ -1042,13 +1035,13 @@ function invalidSessionCommand(
         };
     return { ...common, input: { ...operationInput, ...override } };
 }
-
 function validPrincipalCommand(): ClientMutationCommand {
     return {
         operation: 'upsertPrincipal',
         aggregateRef: principalRef('alice'),
         commandId: 'valid-command',
         requestId: 'valid-command',
+        facts: validFacts(),
         input: {
             username: 'alice',
             displayName: 'Alice',
@@ -1074,6 +1067,18 @@ function validFacts(): ClientMutationFacts {
         eventId: 'event-1',
         commandHash: `sha256:${'a'.repeat(64)}`,
         attemptCount: 1,
+        expireAtEpochMs: 10_000,
+    };
+}
+
+function emptyClientMutationRead(): ClientMutationRead {
+    return {
+        idempotency: null,
+        principal: null,
+        instance: null,
+        session: null,
+        snapshot: null,
+        receiptEvent: null,
     };
 }
 
@@ -1229,10 +1234,7 @@ class StatementRecordingRepository extends AggregateBarrierRepository {
         return super.upsertIfRevision(
             namespace,
             key,
-            value,
-            expireAtTimestamp,
-            expectedRevision,
-        );
+            value, expireAtTimestamp, expectedRevision);
     }
 
     resetInstrumentation(): void {
@@ -1286,26 +1288,21 @@ async function connect(
             lastHeartbeatAtEpochMs: nowEpochMs,
             expiresAtEpochMs,
             requestId: `connect-${sessionId}-${generationId}`,
-        },
-    );
+    });
 }
 
 async function snapshot(runtime: AggregateBarrierRepository, principalId: string) {
-    const value = await new ClientStateRepository(runtime).readSnapshot(
-        principalRef(principalId),
-    );
+    const value = await new ClientStateRepository(runtime).readSnapshot(principalRef(principalId));
     if (!value) throw new Error(`missing snapshot for ${principalId}`);
     return value;
 }
 
 async function outboxFor(
     runtime: AggregateBarrierRepository,
-    commandIds: readonly string[],
-) {
-    const records = await runtime.findAllEntries(STATE_MUTATION_OUTBOX_NAMESPACE);
-    return records
-        .map((entry) => JSON.parse(entry.value))
-        .filter((record) => commandIds.includes(record.commandId));
+    commandIds: readonly string[]) {
+    return getClientStateTestOutbox(runtime).filter((entry) =>
+        commandIds.some((commandId) => entry.resource.includes(commandId)),
+    );
 }
 
 function principalRef(principalId: string): ClientPrincipalRef {

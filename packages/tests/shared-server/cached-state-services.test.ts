@@ -133,16 +133,12 @@ describe('cached state services', () => {
         expect(() => service.observeSnapshot(snapshot)).toThrow(conflict);
     });
 
-    it('uses client read-through state and observes mutation results', async () => {
+    it('uses client read-through state and explicitly observes committed snapshots', async () => {
         const snapshot = createClientSnapshot(2);
         const findOrLoadByRef = vi.fn().mockResolvedValue(snapshot);
         const observe = vi.fn();
         const durable = {
             readSnapshot: vi.fn(),
-            upsertPrincipal: vi.fn().mockResolvedValue({
-                status: 'ok',
-                result: Either.ofRight({ snapshot, event: undefined }),
-            }),
         } as unknown as ClientStateService;
         const service = createCachedClientStateService({
             durable,
@@ -150,15 +146,10 @@ describe('cached state services', () => {
         });
 
         await expect(service.readSnapshot(snapshot.principal)).resolves.toBe(snapshot);
-        const result = await service.upsertPrincipal(
-            { applicationId: 'app-1', workspaceId: 'workspace-1' },
-            'alice',
-            {} as never,
-        );
+        await expect(service.observeSnapshot(snapshot)).resolves.toBe(snapshot);
 
         expect(findOrLoadByRef).toHaveBeenCalledWith(snapshot.principal);
         expect(observe).toHaveBeenCalledWith(snapshot);
-        expect(result.result.right?.snapshot).toBe(snapshot);
     });
 });
 

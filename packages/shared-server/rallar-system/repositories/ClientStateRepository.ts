@@ -22,6 +22,7 @@ import type { RuntimeStateRepositoryLike } from '../../runtime-state/RuntimeStat
 import type {
     RuntimeStateConditionalDeleteResult,
     RuntimeStateConditionalWriteResult,
+    RuntimeStateOptimisticTransactionalRepositoryLike,
 } from '../../runtime-state/RuntimeStateRepository.ts';
 import {
     RuntimeStateJsonStore,
@@ -46,6 +47,8 @@ import { isLogicallyActiveSession, toSessionPurgeAfterEpochMs } from './session-
 import { type ClientStateEventStore, defaultClientStateEventStoreFor } from './StateEventStore.ts';
 import { filterStateEventsForList, type StateEventListQuery } from '../state-event-listing.ts';
 import { readStableStateSnapshot } from './state-snapshot-read.ts';
+import type { PSqlTransactionSql } from '../../postgres/PostgresSqlClient.ts';
+import { PSqlRuntimeStateRepository } from '../../postgres/runtime-state/PSqlRuntimeStateRepository.ts';
 
 const PRINCIPALS_NAMESPACE = 'client-state:principals';
 const INSTANCES_NAMESPACE = 'client-state:instances';
@@ -55,6 +58,18 @@ const IDEMPOTENT_NAMESPACE = 'client-state:idempotent';
 export type ClientStateRepositoryOptions = Readonly<{
     events?: ClientStateEventStore;
 }>;
+
+export function createTransactionBoundClientStateRepository(
+    transaction: PSqlTransactionSql,
+    createEventStore?: (
+        runtime: RuntimeStateOptimisticTransactionalRepositoryLike,
+    ) => ClientStateEventStore,
+): ClientStateRepository {
+    const runtime = new PSqlRuntimeStateRepository(transaction);
+    return new ClientStateRepository(runtime, {
+        events: createEventStore?.(runtime),
+    });
+}
 
 export class ClientStateRepositoryInvariantCorruptionError extends Error {
     readonly code = 'client-state-repository-invariant-corruption';

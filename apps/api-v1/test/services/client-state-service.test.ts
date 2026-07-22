@@ -11,7 +11,9 @@ import type {
   RuntimeStateEntry,
   RuntimeStateOptimisticTransactionalRepositoryLike,
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
-import { createClientStateService } from '../../src/services/client-state-service.ts';
+import {
+  createLegacyClientStateTestDriver as createClientStateService,
+} from '../../../../packages/tests/shared-server/client-state-phase-test-driver.ts';
 import type { StateSyncPublisher } from '../../src/services/state-sync-service.ts';
 
 const TEST_SCOPE: StateScope = {

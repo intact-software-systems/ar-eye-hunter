@@ -174,7 +174,7 @@ describe('state sync publish failure characterization', () => {
         const enqueueOutboxIfAbsent = vi.fn(async () => {
             throw new Error('client snapshot enqueue unavailable');
         });
-        const { appInbox, reader, queue, results } = createClientAppInbox(
+        const { appInbox, reader, queue, results, outboxEntries } = createClientAppInbox(
             runtimeRepository,
             createPublisher(enqueueOutboxIfAbsent),
             2_000,
@@ -202,14 +202,11 @@ describe('state sync publish failure characterization', () => {
             findClientStateSnapshotByPrincipalId('alice')?.principal.snapshotVersion,
         ).toBe(1);
         expect(enqueueOutboxIfAbsent).not.toHaveBeenCalled();
-        expect(await clientMutationOutboxRecords(runtimeRepository)).toEqual([
-            expect.objectContaining({
-                kind: 'client',
-                commandId: 'upsert-client-alice',
-                effects: ['client-state-sync'],
-                delivery: { status: 'pending' },
-            }),
-        ]);
+        expect(await clientMutationOutboxRecords(runtimeRepository)).toEqual([]);
+        expect([...outboxEntries.values()]).toHaveLength(2);
+        expect([...outboxEntries.values()].every((entry) => entry.typeId === 'WS_OUTBOX')).toBe(
+            true,
+        );
         expect(entry.status).toBe(EntityStatus.COMPLETED);
         expect(entry.dequeueAudit.attempts).toBe(1);
         expect(await results.findByKey(entry.key)).toMatchObject({
@@ -225,7 +222,7 @@ describe('state sync publish failure characterization', () => {
             entries: [],
             reason: 'test resolver returned no recipients',
         }));
-        const { appInbox, reader, queue, results } = createClientAppInbox(
+        const { appInbox, reader, queue, results, outboxEntries } = createClientAppInbox(
             runtimeRepository,
             createPublisher(enqueueOutboxIfAbsent),
             2_500,
@@ -250,14 +247,8 @@ describe('state sync publish failure characterization', () => {
             expect(durableSnapshot?.activeSessions.map(session => session.sessionId))
                 .toEqual(['session-alice']);
             expect(enqueueOutboxIfAbsent).not.toHaveBeenCalled();
-            expect(await clientMutationOutboxRecords(runtimeRepository)).toEqual([
-                expect.objectContaining({
-                    kind: 'client',
-                    commandId: 'connect-client-session-alice',
-                    effects: ['client-state-sync'],
-                    delivery: { status: 'pending' },
-                }),
-            ]);
+            expect(await clientMutationOutboxRecords(runtimeRepository)).toEqual([]);
+            expect([...outboxEntries.values()]).toHaveLength(2);
             expect(entry.status).toBe(EntityStatus.COMPLETED);
             expect(entry.dequeueAudit.attempts).toBe(1);
             expect(await results.findByKey(entry.key)).toMatchObject({
@@ -499,35 +490,37 @@ function createGroupAppInbox(
 
 function createClientAppInbox(
     runtimeRepository: FakeRuntimeStateRepository,
-    publisher: ReturnType<typeof createPublisher>,
-    now: number,
+    _publisher: ReturnType<typeof createPublisher>,
+    _now: number,
 ): Readonly<{
     appInbox: AppClientInboxService;
     reader: InboxQueueReader;
     queue: TestResourceInbox;
     results: TestResourceInboxResults;
+    outboxEntries: ReadonlyMap<string, ResourceEntry>;
 }> {
     const queue = new TestResourceInbox();
     const reader = new InboxQueueReader(queue);
     const results = new TestResourceInboxResults();
     const clientsRepository = new ClientStateRepository(runtimeRepository);
+    const database = createAppInboxTestDatabase(queue, results, {
+        runtimeRepository,
+    });
     const appInbox = new AppClientInboxService(
         reader,
         queue as never,
         results as never,
-        createAppInboxTestDatabase(queue, results),
+        database,
         createCachedClientStateService({
             durable: createClientStateService({
                 runtimeRepository,
-                syncPublisher: publisher,
-                now: () => now,
+                bindRuntimeStateTransaction: database.bindRuntimeStateTransaction,
                 serviceId: 'state-service',
             }),
             cache: createClientStateSnapshotReadThroughCache({
                 clientsRepository,
             }),
         }),
-        publisher,
         'state-service',
     );
 
@@ -536,6 +529,7 @@ function createClientAppInbox(
         reader,
         queue,
         results,
+        outboxEntries: database.outboxEntries,
     };
 }
 

@@ -49,7 +49,6 @@ import {
   type CachedGroupStateService,
   createCachedGroupStateService,
 } from '@shared-server/rallar-system/services/cached-group-state-service.ts';
-import { createWsStateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
 import { myPublisherId, myServerId } from './runtime/runtime-identity.ts';
 import { toResilienceDto } from './middleware-resilience.ts';
 import {
@@ -317,16 +316,11 @@ function initialise(
         appInboxOptions,
       );
     },
-    createAppClientInboxService: ({ inboxQueueReader, wsQBoxServerService }) => {
-      const stateSyncPublisher = createWsStateSyncPublisher(
-        wsQBoxServerService,
-        { serverId: myServerId, timing },
-      );
+    createAppClientInboxService: ({ inboxQueueReader }) => {
       const clientStateService = createCachedClientStateService({
         durable: createClientStateService({
           runtimeRepository: runtimeStateRepository,
           createClientStateEventStore: createClientStateEventRepository,
-          syncPublisher: stateSyncPublisher,
           serviceId: myServerId,
           timing,
         }),
@@ -338,7 +332,6 @@ function initialise(
         resourceInboxResultsRepository,
         postgresSql,
         clientStateService,
-        stateSyncPublisher,
         myServerId,
         timing,
         appInboxOptions,

@@ -21,7 +21,17 @@ import type {
     ClientStateWritten,
     RegisterAuthorisedWsClientInput,
 } from '@shared-server/rallar-system/services/client-state-service.ts';
-import type { StateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
+import {
+    requiresClientWrite,
+    toClientMutationCommand,
+    toClientStateWritten,
+    toConnectCommandInput,
+    toDisconnectCommandInput,
+    toExpiryCommandInput,
+    toHeartbeatCommandInput,
+    toUpsertInstanceCommandInput,
+    toUpsertPrincipalCommandInput,
+} from '@shared-server/rallar-system/services/client-state-service.ts';
 import {
     AppInboxEnqueueInput,
     AppInboxService,
@@ -32,6 +42,13 @@ import {
 import { isCompletedOrFailed } from '@shared/queuebox/ResourceEntry.ts';
 import type { RallarTimingSink } from './timing.ts';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { AppInboxMessageContext } from './app-inbox-contracts.ts';
+import type {
+    ClientMutationCommand,
+    ClientMutationCommandInput,
+    ClientMutationComputed,
+} from './client-state-mutations.ts';
+import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryController.ts';
 
 export {
     AppInboxService,
@@ -100,7 +117,6 @@ export class AppClientInboxService extends AppInboxService {
         public override readonly resourceInboxResults: ResourceInboxResultsRepository,
         database: PSqlSql,
         public readonly clientStateService: ClientStateService,
-        public readonly stateSyncPublisher: StateSyncPublisher,
         public override readonly serviceId: string,
         timing?: RallarTimingSink,
         options?: AppInboxServiceOptions,
@@ -118,114 +134,239 @@ export class AppClientInboxService extends AppInboxService {
 
         this.onStateMessage<ClientPrincipalUpsertAppInboxPayload>(
             AppInboxType.CLIENT_PRINCIPAL_UPSERT,
-            async (principal) => {
-                const clientStateWritten =
-                    await this.clientStateService.upsertPrincipal(
+            async (principal, context) =>
+                await this.processCommand(
+                    context,
+                    toUpsertPrincipalCommandInput(
                         principal.scope,
                         principal.principalId,
                         principal.request,
-                    );
-
-                return clientStateWritten;
-            },
+                        context.entry.key.resourceId,
+                    ),
+                ),
         );
         this.onStateMessage<ClientInstanceUpsertAppInboxPayload>(
             AppInboxType.CLIENT_INSTANCE_UPSERT,
-            async (instance) => {
-                const clientStateWritten = await this.clientStateService.upsertInstance(
-                    instance.scope,
-                    instance.principalId,
-                    instance.clientInstanceId,
-                    instance.request,
-                );
-
-                return clientStateWritten;
-            },
+            async (instance, context) =>
+                await this.processCommand(
+                    context,
+                    toUpsertInstanceCommandInput(
+                        instance.scope,
+                        instance.principalId,
+                        instance.clientInstanceId,
+                        instance.request,
+                        context.entry.key.resourceId,
+                    ),
+                ),
         );
         this.onStateMessage<ClientSessionConnectAppInboxPayload>(
             AppInboxType.CLIENT_SESSION_CONNECT,
-            async (session) => {
-                const clientStateWritten = await this.clientStateService.connectSession(
-                    session.scope,
-                    session.principalId,
-                    session.clientInstanceId,
-                    session.sessionId,
-                    session.request,
-                );
-
-                return clientStateWritten;
-            },
+            async (session, context) =>
+                await this.processCommand(
+                    context,
+                    toConnectCommandInput(
+                        'connectSession',
+                        session.scope,
+                        session.principalId,
+                        session.clientInstanceId,
+                        session.sessionId,
+                        session.request,
+                        context.entry.key.resourceId,
+                        {},
+                    ),
+                ),
         );
         this.onStateMessage<ClientSessionHeartbeatAppInboxPayload>(
             AppInboxType.CLIENT_SESSION_HEARTBEAT,
-            async (session) => {
-                const clientStateWritten =
-                    await this.clientStateService.heartbeatSession(
+            async (session, context) =>
+                await this.processCommand(
+                    context,
+                    toHeartbeatCommandInput(
                         session.scope,
                         session.principalId,
                         session.clientInstanceId,
                         session.sessionId,
                         session.request,
-                    );
-
-                return clientStateWritten;
-            },
+                        context.entry.key.resourceId,
+                    ),
+                ),
         );
         this.onStateMessage<ClientSessionDisconnectAppInboxPayload>(
             AppInboxType.CLIENT_SESSION_DISCONNECT,
-            async (session) => {
-                const clientStateWritten =
-                    await this.clientStateService.disconnectSession(
+            async (session, context) =>
+                await this.processCommand(
+                    context,
+                    toDisconnectCommandInput(
+                        'disconnectSession',
                         session.scope,
                         session.principalId,
                         session.clientInstanceId,
                         session.sessionId,
                         session.request,
-                    );
-
-                return clientStateWritten;
-            },
+                        context.entry.key.resourceId,
+                    ),
+                ),
         );
         this.onStateMessage<ClientAuthorisedWsSessionConnectAppInboxPayload>(
             AppInboxType.CLIENT_AUTHORISED_WS_CONNECT,
-            async (session) => {
-                const clientStateWritten =
-                    await this.clientStateService.registerAuthorisedWsClientSession(
+            async (session, context) => {
+                const scope = toAuthorisedWsClientScope(session.input);
+                const principalId = session.input.principalId ?? session.authSession.clientId;
+                const clientInstanceId =
+                    session.input.clientInstanceId ?? session.authSession.clientId;
+                const requestId =
+                    `authorised-ws:connect:${session.authSession.sessionId}:${session.generationId}`;
+                return await this.processCommand(
+                    context,
+                    toConnectCommandInput(
+                        'connectAuthorisedWsSession',
+                        scope,
+                        principalId,
+                        clientInstanceId,
+                        session.authSession.sessionId,
                         {
-                            ...session.authSession,
-                            accessToken: '',
+                            generationId: session.generationId,
+                            presenceState: 'online',
+                            transport: 'ws',
+                            connectionId: session.generationId,
+                            connectedAtEpochMs: session.input.connectedAtEpochMs,
+                            expiresAtEpochMs:
+                                session.input.expiresAtEpochMs ??
+                                session.authSession.expiresAtEpochMs,
+                            actorPrincipalId: principalId,
+                            actorSessionId: session.authSession.sessionId,
+                            requestId,
                         },
-                        session.generationId,
-                        session.input,
-                    );
-
-                return clientStateWritten;
+                        requestId,
+                        {
+                            platform: session.input.platform,
+                            userAgent: session.input.userAgent,
+                            capabilities: session.input.capabilities,
+                            principalUsername: session.authSession.username,
+                            principalDisplayName:
+                                session.input.displayName ?? session.authSession.username,
+                            principalRoles: ['member'],
+                        },
+                    ),
+                );
             },
         );
         this.onStateMessage<ClientAuthorisedWsSessionDisconnectAppInboxPayload>(
             AppInboxType.CLIENT_AUTHORISED_WS_DISCONNECT,
-            async (session) => {
-                const clientStateWritten =
-                    await this.clientStateService.disconnectAuthorisedWsClientSession(
-                        session.sessionId,
-                        session.generationId,
-                        session.reason,
+            async (input, context) => {
+                const session = await this.clientStateService.findSessionBySessionId(
+                    input.sessionId,
+                );
+                if (!session) {
+                    throw new NonRetryableException(
+                        `Durable client connection generation not found: ${input.sessionId}`,
                     );
-
-                return clientStateWritten;
+                }
+                return await this.processCommand(
+                    context,
+                    toDisconnectCommandInput(
+                        'disconnectAuthorisedWsSession',
+                        {
+                            applicationId: session.applicationId,
+                            workspaceId: session.workspaceId,
+                        },
+                        session.principalId,
+                        session.clientInstanceId,
+                        input.sessionId,
+                        {
+                            generationId: input.generationId,
+                            reason: input.reason,
+                            actorPrincipalId: session.principalId,
+                            actorSessionId: input.sessionId,
+                            requestId:
+                                `authorised-ws:disconnect:${input.sessionId}:${input.generationId}`,
+                        },
+                        context.entry.key.resourceId,
+                    ),
+                );
             },
         );
         this.onStateMessage<ClientExpiredSessionsAppInboxPayload>(
             AppInboxType.CLIENT_EXPIRED_SESSIONS,
-            async (input) => {
-                const clientStateWrittenResults =
-                    await this.clientStateService.expireExpiredSessions(
-                        input.atEpochMs,
-                    );
-
-                return clientStateWrittenResults;
-            },
+            async (input, context) =>
+                await this.processExpiredSessionCommands(context, input.atEpochMs),
         );
+    }
+
+    private async processCommand(
+        context: AppInboxMessageContext,
+        input: ClientMutationCommandInput,
+    ): Promise<ClientStateWritten> {
+        const command = await this.toCommand(context, input);
+        const read = await this.clientStateService.read(command);
+        const computed = this.clientStateService.compute(command, read);
+        this.clientStateService.validate(command, read, computed);
+        return await this.commitComputed(context, computed);
+    }
+
+    private async toCommand(
+        context: AppInboxMessageContext,
+        input: ClientMutationCommandInput,
+    ): Promise<ClientMutationCommand> {
+        const createdAtEpochMs = context.message.id.ts;
+        return await toClientMutationCommand(input, {
+            nowEpochMs: createdAtEpochMs,
+            serviceId: this.serviceId,
+            eventId: `client-event:${JSON.stringify([
+                context.entry.key.contextId,
+                context.entry.key.topicId,
+                input.commandId,
+            ])}`,
+            attemptCount: context.entry.dequeueAudit.attempts,
+            expireAtEpochMs: Number(context.entry.audit.expiryTs.epochMilliseconds),
+        });
+    }
+
+    private async commitComputed(
+        context: AppInboxMessageContext,
+        computed: ClientMutationComputed,
+    ): Promise<ClientStateWritten> {
+        if (computed.outcome === 'idempotency-conflict') {
+            throw new Error('Validated client idempotency conflict is unreachable');
+        }
+        const written = toClientStateWritten(computed);
+        const result = await this.writeMutation(context, async (transaction) => {
+            if (requiresClientWrite(computed)) {
+                await this.clientStateService.write(transaction, computed);
+            }
+            return written;
+        });
+        await this.clientStateService.observeSnapshot(computed.snapshot);
+        return result;
+    }
+
+    private async processExpiredSessionCommands(
+        context: AppInboxMessageContext,
+        atEpochMs: number,
+    ): Promise<readonly ClientStateWritten[]> {
+        const candidates = await this.clientStateService.listExpiredSessionCandidates(atEpochMs);
+        const computed: ClientMutationComputed[] = [];
+        for (const candidate of candidates) {
+            const command = await this.toCommand(context, toExpiryCommandInput(candidate));
+            const read = await this.clientStateService.read(command);
+            const successor = this.clientStateService.compute(command, read);
+            this.clientStateService.validate(command, read, successor);
+            computed.push(successor);
+        }
+        const applied = computed.filter((successor) => successor.outcome === 'write');
+        const results = applied.map(toClientStateWritten);
+        const committed = await this.writeMutation(context, async (transaction) => {
+            for (const successor of computed) {
+                if (requiresClientWrite(successor)) {
+                    await this.clientStateService.write(transaction, successor);
+                }
+            }
+            return results;
+        });
+        for (const successor of applied) {
+            await this.clientStateService.observeSnapshot(successor.snapshot);
+        }
+        return committed;
     }
 
     public async processAuthorisedWsClientConnect(

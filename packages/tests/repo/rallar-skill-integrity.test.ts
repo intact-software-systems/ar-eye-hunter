@@ -489,6 +489,9 @@ describe('Rallar repo skill and documentation integrity', () => {
         const clientService = readRepo(
             'packages/shared-server/rallar-system/services/client-state-service.ts',
         );
+        const appClientInbox = readRepo(
+            'packages/shared-server/rallar-system/services/AppClientInboxService.ts',
+        );
 
         expect(groupService).not.toContain('timeMutationPhase');
         expectAll(groupService, [
@@ -506,12 +509,19 @@ describe('Rallar repo skill and documentation integrity', () => {
             "'read' | 'compute' | 'validate' | 'write' | 'transaction'",
         ]);
         expect(clientService).not.toContain('timeMutationPhase');
+        expect(clientService).not.toContain('runtime.begin(');
         expectAll(clientService, [
-            'const read = await readClientMutation',
-            'const computed = computeClientMutation',
-            'validateClientMutation({ command, read, computed, facts })',
-            'const written = await writeClientMutation',
-            "'read' | 'compute' | 'validate' | 'write' | 'transaction'",
+            'read: async (command)',
+            'compute: (command, read)',
+            'validate: (command, read, computed)',
+            'write: async (transaction, computed)',
+            'new ResourceInboxRepository(transaction)',
+        ]);
+        expectAll(appClientInbox, [
+            'this.clientStateService.read(command)',
+            'this.clientStateService.compute(command, read)',
+            'this.clientStateService.validate(command, read, computed)',
+            'this.writeMutation(context',
         ]);
     });
 

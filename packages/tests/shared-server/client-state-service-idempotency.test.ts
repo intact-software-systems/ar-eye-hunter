@@ -3,14 +3,14 @@ import type { ClientPrincipalRef } from '@shared/api/client-types.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
-import { STATE_MUTATION_OUTBOX_NAMESPACE } from '@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts';
-import {
-    ClientMutationIdempotencyConflictError,
-    createClientStateService,
-} from '@shared-server/rallar-system/services/client-state-service.ts';
+import { ClientMutationIdempotencyConflictError } from '@shared-server/rallar-system/services/client-state-service.ts';
 import type { StateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
+import {
+    createLegacyClientStateTestDriver as createClientStateService,
+    getClientStateTestOutbox,
+} from './client-state-phase-test-driver.ts';
 
 const SCOPE: StateScope = {
     applicationId: 'app-1',
@@ -37,17 +37,16 @@ describe('ClientStateService command idempotency', () => {
             requestId: 'alice-no-op',
         });
 
-        const stored = await new ClientStateRepository(runtimeRepository)
-            .findIdempotentClientMutationReceipt(
-                toClientPrincipalRef('alice'),
-                'alice-no-op',
-            );
+        const stored = await new ClientStateRepository(
+            runtimeRepository,
+        ).findIdempotentClientMutationReceipt(toClientPrincipalRef('alice'), 'alice-no-op');
         expect(stored?.receipt.outcome).toBe('no-op');
         await expect(service.upsertPrincipal(SCOPE, 'alice', {
             username: 'alice',
             displayName: 'Changed',
             requestId: 'alice-no-op',
-        })).rejects.toBeInstanceOf(ClientMutationIdempotencyConflictError);
+            }),
+        ).rejects.toBeInstanceOf(ClientMutationIdempotencyConflictError);
     });
 
     it('records timing for client state service methods when a timing sink is supplied', async () => {
@@ -72,14 +71,13 @@ describe('ClientStateService command idempotency', () => {
             expect.arrayContaining([
                 expect.objectContaining({
                     component: 'client-state-service',
-                    operation: 'upsertPrincipal',
+                    operation: 'mutation.write',
                     status: 'ok',
                     serviceId: 'client-service',
                     requestId: 'upsert-alice-timed',
                     applicationId: SCOPE.applicationId,
                     workspaceId: SCOPE.workspaceId,
                     principalId: 'alice',
-                    sessionId: 'alice-session',
                 }),
             ]),
         );
@@ -105,8 +103,7 @@ describe('ClientStateService command idempotency', () => {
                 displayName: 'Alice',
                 actorPrincipalId: 'alice',
                 requestId: 'upsert-alice',
-            },
-        );
+        });
         await expect(service.upsertPrincipal(
             SCOPE,
             principalRef.principalId,
@@ -115,19 +112,18 @@ describe('ClientStateService command idempotency', () => {
                 displayName: 'Alice with changed payload',
                 actorPrincipalId: 'alice',
                 requestId: 'upsert-alice',
-            },
-        )).rejects.toBeInstanceOf(ClientMutationIdempotencyConflictError);
+            }),
+        ).rejects.toBeInstanceOf(ClientMutationIdempotencyConflictError);
         expect(first.result.right?.event?.eventType).toBe('principal-created');
 
         const repository = new ClientStateRepository(runtimeRepository);
         expect(
-            (await repository.readSnapshot(principalRef))?.principal.displayName,
-        ).toBe('Alice');
+            (await repository.readSnapshot(principalRef))?.principal.displayName).toBe('Alice');
         expect(
             (await repository.listEvents(principalRef)).map(
-                (event) => event.eventType,
-            ),
-        ).toEqual(['principal-created']);
+                (event) => event.eventType)).toEqual(
+            ['principal-created'],
+        );
         expect(publisher.publishClientSnapshot).not.toHaveBeenCalled();
         expect(publisher.publishClientEvent).not.toHaveBeenCalled();
     });
@@ -194,12 +190,10 @@ describe('ClientStateService command idempotency', () => {
         const repository = new ClientStateRepository(runtimeRepository);
         expect(
             (await repository.listEvents(principalRef)).map(
-                (event) => event.eventType,
-            ),
-        ).toEqual(['session-connected']);
-        expect(
-            (await repository.readSnapshot(principalRef))?.principal.snapshotVersion,
-        ).toBe(1);
+                (event) => event.eventType)).toEqual(
+            ['session-connected'],
+        );
+        expect((await repository.readSnapshot(principalRef))?.principal.snapshotVersion).toBe(1);
         expect(publisher.publishClientSnapshot).not.toHaveBeenCalled();
         expect(publisher.publishClientEvent).not.toHaveBeenCalled();
     });
@@ -208,10 +202,7 @@ describe('ClientStateService command idempotency', () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         await seedConnectedSession(
             runtimeRepository,
-            'alice',
-            'alice-browser',
-            'session-1',
-        );
+            'alice', 'alice-browser', 'session-1');
 
         const publisher = createPublisher();
         let now = 4_000;
@@ -275,9 +266,9 @@ describe('ClientStateService command idempotency', () => {
         ).toBe(4_000);
         expect(
             (await repository.listEvents(principalRef)).map(
-                (event) => event.eventType,
-            ),
-        ).toEqual(['session-connected', 'session-disconnected']);
+                (event) => event.eventType)).toEqual(
+            ['session-connected', 'session-disconnected'],
+        );
         expect(publisher.publishClientSnapshot).not.toHaveBeenCalled();
         expect(publisher.publishClientEvent).not.toHaveBeenCalled();
     });
@@ -330,9 +321,8 @@ describe('ClientStateService command idempotency', () => {
                 applicationId: SCOPE.applicationId,
                 workspaceId: SCOPE.workspaceId,
                 connectedAtEpochMs: 200,
-                expiresAtEpochMs,
-            },
-        );
+            expiresAtEpochMs,
+        });
         const third = await register(
             authSession,
             'ws-generation-3',
@@ -340,9 +330,8 @@ describe('ClientStateService command idempotency', () => {
                 applicationId: SCOPE.applicationId,
                 workspaceId: SCOPE.workspaceId,
                 connectedAtEpochMs: 300,
-                expiresAtEpochMs,
-            },
-        );
+            expiresAtEpochMs,
+        });
         const staleClose = await disconnect(
             authSession.sessionId,
             'ws-generation-2',
@@ -379,7 +368,8 @@ describe('ClientStateService command idempotency', () => {
             ...toClientPrincipalRef('alice'),
             clientInstanceId: 'alice',
             sessionId: authSession.sessionId,
-        })).toMatchObject({
+            }),
+        ).toMatchObject({
             generationId: 'ws-generation-3',
             generationVersion: 3,
             status: 'active',
@@ -394,22 +384,26 @@ describe('ClientStateService command idempotency', () => {
             'session-connected',
             'session-connected',
         ]);
-        const outbox = (await runtimeRepository.findAllEntries(
-            STATE_MUTATION_OUTBOX_NAMESPACE,
-        )).map((entry) => JSON.parse(entry.value));
-        expect(outbox).toHaveLength(4);
-        expect(outbox.map((record) => record.commandId).sort()).toEqual([
+        const commandIds = [
             'authorised-ws:connect:ws-session-1:ws-generation-1',
             'authorised-ws:connect:ws-session-1:ws-generation-2',
             'authorised-ws:connect:ws-session-1:ws-generation-3',
             'authorised-ws:disconnect:ws-session-1:ws-generation-1',
-        ].sort());
-        for (const record of outbox) {
+        ];
+        const outbox = getClientStateTestOutbox(runtimeRepository);
+        expect(outbox).toHaveLength(8);
+        for (const commandId of commandIds) {
             const receipt = await repository.findIdempotentClientMutationReceipt(
                 toClientPrincipalRef('alice'),
-                record.commandId,
+                commandId,
             );
-            expect(receipt?.receipt.commandHash).toBe(record.commandHash);
+            const commandEntries = outbox.filter((entry) =>
+                receipt?.receipt.outboxIds.includes(entry.key.resourceId),
+            );
+            expect(commandEntries).toHaveLength(2);
+            expect(receipt?.receipt.outboxIds).toEqual(
+                commandEntries.map((entry) => entry.key.resourceId),
+            );
         }
     });
 
@@ -466,7 +460,8 @@ describe('ClientStateService command idempotency', () => {
             activeSessions: [{
                 generationId: 'generation-b',
                 connectedAtEpochMs: 200,
-            }],
+                },
+            ],
         });
         expect(delayedOlder.result.right?.event).toBeNull();
         expect(delayedOlder.result.right?.snapshot.activeSessions).toEqual([
@@ -481,23 +476,19 @@ describe('ClientStateService command idempotency', () => {
             workspaceId: SCOPE.workspaceId,
             displayName: 'Different Canonical Display',
             connectedAtEpochMs: 200,
-            expiresAtEpochMs,
-        })).rejects.toBeInstanceOf(ClientMutationIdempotencyConflictError);
-        const authorisedCommandId =
-            'authorised-ws:connect:ws-session-ordered:generation-b';
-        const authorisedOutbox = (await runtimeRepository.findAllEntries(
-            STATE_MUTATION_OUTBOX_NAMESPACE,
-        )).map((entry) => JSON.parse(entry.value)).find(
-            (record) => record.commandId === authorisedCommandId,
+                expiresAtEpochMs,
+            }),
+        ).rejects.toBeInstanceOf(ClientMutationIdempotencyConflictError);
+        const authorisedCommandId = 'authorised-ws:connect:ws-session-ordered:generation-b';
+        const authorisedOutbox = getClientStateTestOutbox(runtimeRepository).filter((entry) =>
+            entry.resource.includes(authorisedCommandId),
         );
-        const authorisedReceipt = await new ClientStateRepository(runtimeRepository)
-            .findIdempotentClientMutationReceipt(
-                toClientPrincipalRef('alice'),
-                authorisedCommandId,
-            );
+        const authorisedReceipt = await new ClientStateRepository(
+            runtimeRepository,
+        ).findIdempotentClientMutationReceipt(toClientPrincipalRef('alice'), authorisedCommandId);
         expect(authorisedReceipt?.receipt.commandHash).toMatch(/^sha256:[0-9a-f]{64}$/u);
-        expect(authorisedOutbox?.commandHash).toBe(
-            authorisedReceipt?.receipt.commandHash,
+        expect(authorisedOutbox.map((entry) => entry.key.resourceId)).toEqual(
+            authorisedReceipt?.receipt.outboxIds,
         );
 
         await service.connectSession(
@@ -510,8 +501,7 @@ describe('ClientStateService command idempotency', () => {
                 connectedAtEpochMs: 300,
                 expiresAtEpochMs,
                 requestId: 'rest-current-connect',
-            },
-        );
+        });
         const entriesAfterRestCurrent = runtimeRepository.data.size;
         const missingOrderedFact = await service.connectSession(
             SCOPE,
@@ -546,9 +536,8 @@ describe('ClientStateService command idempotency', () => {
             'session-1',
             {
                 lastHeartbeatAtEpochMs: expiresAtEpochMs - 1_000,
-                expiresAtEpochMs,
-            },
-        );
+            expiresAtEpochMs,
+        });
 
         const publisher = createPublisher();
         const now = expiresAtEpochMs + 1;
@@ -593,9 +582,9 @@ describe('ClientStateService command idempotency', () => {
         });
         expect(
             (await repository.listEvents(principalRef)).map(
-                (event) => event.eventType,
-            ),
-        ).toEqual(['session-connected', 'session-expired']);
+                (event) => event.eventType)).toEqual(
+            ['session-connected', 'session-expired'],
+        );
         expect(publisher.publishClientSnapshot).not.toHaveBeenCalled();
         expect(publisher.publishClientEvent).not.toHaveBeenCalled();
     });
@@ -610,9 +599,8 @@ describe('ClientStateService command idempotency', () => {
             'session-1',
             {
                 lastHeartbeatAtEpochMs: expiresAtEpochMs - 1_000,
-                expiresAtEpochMs,
-            },
-        );
+            expiresAtEpochMs,
+        });
         runtimeRepository.locks.splice(0);
 
         const now = expiresAtEpochMs + 1;
@@ -654,9 +642,9 @@ describe('ClientStateService command idempotency', () => {
         });
         expect(
             (await repository.listEvents(principalRef)).map(
-                (event) => event.eventType,
-            ),
-        ).toEqual(['session-connected', 'session-expired']);
+                (event) => event.eventType)).toEqual(
+            ['session-connected', 'session-expired'],
+        );
         expect(runtimeRepository.locks).toEqual([]);
     });
 
@@ -670,9 +658,8 @@ describe('ClientStateService command idempotency', () => {
             'session-1',
             {
                 lastHeartbeatAtEpochMs: expiresAtEpochMs - 1_000,
-                expiresAtEpochMs,
-            },
-        );
+            expiresAtEpochMs,
+        });
 
         const now = expiresAtEpochMs + 1;
         const service = createClientStateService({
@@ -715,22 +702,16 @@ describe('ClientStateService command idempotency', () => {
         });
         expect(
             (await repository.listEvents(principalRef)).map(
-                (event) => event.eventType,
-            ),
-        ).toEqual([
-            'session-connected',
-            'session-expired',
-        ]);
+                (event) => event.eventType)).toEqual(
+            ['session-connected', 'session-expired'],
+        );
     });
 
     it('advances causal state revision for a heartbeat-only snapshot change', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         await seedConnectedSession(
             runtimeRepository,
-            'alice',
-            'alice-browser',
-            'session-1',
-        );
+            'alice', 'alice-browser', 'session-1');
         const repository = new ClientStateRepository(runtimeRepository);
         const principalRef = toClientPrincipalRef('alice');
         const before = await repository.readSnapshot(principalRef);
@@ -792,7 +773,6 @@ async function seedConnectedSession(
         requestId: `seed-${sessionId}`,
     });
 }
-
 function toClientPrincipalRef(principalId: string): ClientPrincipalRef {
     return {
         ...SCOPE,
