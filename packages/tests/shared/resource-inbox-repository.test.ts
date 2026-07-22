@@ -102,6 +102,98 @@ describe('ResourceInboxRepository', () => {
     });
 
     it.each([
+        [
+            'creation',
+            'below half',
+            '2026-06-01T12:00:00.0000004',
+            '2026-06-01 12:00:00.000000',
+        ],
+        [
+            'creation',
+            'half even down',
+            '2026-06-01T12:00:00.0000005',
+            '2026-06-01 12:00:00.000000',
+        ],
+        [
+            'creation',
+            'half even up',
+            '2026-06-01T12:00:00.0000015',
+            '2026-06-01 12:00:00.000002',
+        ],
+        [
+            'creation',
+            'above half',
+            '2026-06-01T12:00:00.0000006',
+            '2026-06-01 12:00:00.000001',
+        ],
+        [
+            'creation',
+            'second rollover',
+            '2026-06-01T12:00:00.9999995',
+            '2026-06-01 12:00:01.000000',
+        ],
+        [
+            'expiry',
+            'below half',
+            '2026-06-01T13:00:00.0000004Z',
+            '2026-06-01 13:00:00.000000',
+        ],
+        [
+            'expiry',
+            'half even down',
+            '2026-06-01T13:00:00.0000005Z',
+            '2026-06-01 13:00:00.000000',
+        ],
+        [
+            'expiry',
+            'half even up',
+            '2026-06-01T13:00:00.0000015Z',
+            '2026-06-01 13:00:00.000002',
+        ],
+        [
+            'expiry',
+            'above half',
+            '2026-06-01T13:00:00.0000006Z',
+            '2026-06-01 13:00:00.000001',
+        ],
+        [
+            'expiry',
+            'second rollover',
+            '2026-06-01T13:00:00.9999995Z',
+            '2026-06-01 13:00:01.000000',
+        ],
+    ])('matches PostgreSQL timestamp(6) %s %s rounding', async (
+        field,
+        _scenario,
+        candidate,
+        persisted,
+    ) => {
+        const harness = createSqlHarness();
+        const repo = new repositoryModule.ResourceInboxRepository(harness.sql);
+        const key = createKey(`rounding-${field}-${_scenario}`);
+        const entry = createEntry(key, {
+            text: 'immutable',
+            createdTs: field === 'creation'
+                ? Temporal.PlainDateTime.from(candidate)
+                : Temporal.PlainDateTime.from('2026-06-01T12:00:00'),
+            expiryTs: field === 'expiry'
+                ? Temporal.Instant.from(candidate)
+                : Temporal.Instant.from('2026-06-01T13:00:00Z'),
+        });
+
+        await repo.writeIfAbsentOrMatch(entry);
+        const stored = findStoredRow(harness.rows, key);
+        if (!stored) throw new Error('Expected inserted resource inbox row');
+        if (field === 'creation') {
+            stored.created_ts = persisted;
+        } else {
+            stored.expire_ts = persisted;
+        }
+
+        await expect(repo.writeIfAbsentOrMatch(entry)).resolves.toBe('matched');
+    });
+
+    it.each([
         ['topic key', (row: ResourceInboxRow) => { row.ri_topic_id = 'other-topic'; }],
         ['resource key', (row: ResourceInboxRow) => { row.ri_resource_id = 'other-resource'; }],
         ['context key', (row: ResourceInboxRow) => { row.fk_ext_bank_id = 'other-context'; }],
@@ -161,6 +253,9 @@ describe('ResourceInboxRepository', () => {
     });
 
     it.each([
+        ['missing attempt count', (row: ResourceInboxRow) => {
+            row.ri_attempts = null;
+        }],
         ['completed without a reservation', (row: ResourceInboxRow) => {
             row.ri_status = EntityStatus.COMPLETED;
             row.ri_attempts = 0n;

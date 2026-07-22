@@ -668,7 +668,11 @@ export class ResourceInboxRepository {
 const RESOURCE_INBOX_STATUSES = new Set<string>(Object.values(EntityStatus));
 
 function isValidResourceInboxLifecycle(row: ResourceInboxRow): boolean {
-    const attempts = row.ri_attempts == null ? 0 : Number(row.ri_attempts);
+    if (row.ri_attempts == null) {
+        return false;
+    }
+
+    const attempts = Number(row.ri_attempts);
     if (
         !RESOURCE_INBOX_STATUSES.has(row.ri_status) ||
         !Number.isSafeInteger(attempts) ||
@@ -771,7 +775,7 @@ function toPostgresTimestamp6(
 
     return timestamp.round({
         smallestUnit: 'microsecond',
-        roundingMode: 'halfExpand',
+        roundingMode: 'halfEven',
     });
 }
 

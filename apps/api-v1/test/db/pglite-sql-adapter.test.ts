@@ -1677,6 +1677,30 @@ Deno.test('PSql group events enforce the complete event contract and physical co
   });
 });
 
+Deno.test('ResourceInboxRepository rejects a persisted null attempt count', async () => {
+  await withPGliteSql(async (sql) => {
+    const inbox = new ResourceInboxRepository(sql);
+    const nullAttempts = createResourceEntry('null-attempts', {
+      payload: { text: 'mandatory attempts' },
+      typeId: 'APP_OUTBOX',
+      expiryTs: Temporal.Instant.from('9999-12-31T23:59:59Z'),
+    });
+    assert.equal(await inbox.writeIfAbsentOrMatch(nullAttempts), 'inserted');
+    await sql`
+      update resource_inbox
+      set ri_attempts = null
+      where ri_topic_id = ${nullAttempts.key.topicId}
+        and ri_resource_id = ${nullAttempts.key.resourceId}
+        and fk_ext_bank_id = ${nullAttempts.key.contextId}
+    `;
+
+    await assert.rejects(
+      () => inbox.writeIfAbsentOrMatch(nullAttempts),
+      ResourceInboxInvariantCorruptionError,
+    );
+  });
+});
+
 Deno.test('ResourceInboxRepository and ResourceInboxResultsRepository run against PGlite SQL adapter', async () => {
   await withPGliteSql(async (sql) => {
     const inbox = new ResourceInboxRepository(sql);
@@ -1719,6 +1743,62 @@ Deno.test('ResourceInboxRepository and ResourceInboxResultsRepository run agains
       }),
       ResourceInboxInvariantCorruptionError,
     );
+
+    const timestampRoundingCases = [
+      ['below-half', '0000004', '12:00:00'],
+      ['half-even-down', '0000005', '12:00:00'],
+      ['half-even-up', '0000015', '12:00:00.000002'],
+      ['above-half', '0000006', '12:00:00.000001'],
+      ['second-rollover', '9999995', '12:00:01'],
+    ] as const;
+    for (const [scenario, fraction, expectedTime] of timestampRoundingCases) {
+      const creationBase = createResourceEntry(`round-created-${scenario}`, {
+        payload: { scenario },
+        typeId: 'APP_OUTBOX',
+        expiryTs: Temporal.Instant.from('9999-12-31T23:59:59Z'),
+      });
+      const creationEntry = {
+        ...creationBase,
+        audit: {
+          ...creationBase.audit,
+          createdTs: Temporal.PlainDateTime.from(
+            `2026-06-01T12:00:00.${fraction}`,
+          ),
+        },
+      };
+      assert.equal(await inbox.writeIfAbsentOrMatch(creationEntry), 'inserted');
+      const creationRows = await sql<{ created_ts: string }[]>`
+        select created_ts::text as created_ts
+        from resource_inbox
+        where ri_topic_id = ${creationEntry.key.topicId}
+          and ri_resource_id = ${creationEntry.key.resourceId}
+          and fk_ext_bank_id = ${creationEntry.key.contextId}
+      `;
+      assert.equal(
+        creationRows[0]?.created_ts,
+        `2026-06-01 ${expectedTime}`,
+      );
+      assert.equal(await inbox.writeIfAbsentOrMatch(creationEntry), 'matched');
+
+      const expiryEntry = createResourceEntry(`round-expiry-${scenario}`, {
+        payload: { scenario },
+        typeId: 'APP_OUTBOX',
+        expiryTs: Temporal.Instant.from(`9998-06-01T12:00:00.${fraction}Z`),
+      });
+      assert.equal(await inbox.writeIfAbsentOrMatch(expiryEntry), 'inserted');
+      const expiryRows = await sql<{ expire_ts: string }[]>`
+        select expire_ts::text as expire_ts
+        from resource_inbox
+        where ri_topic_id = ${expiryEntry.key.topicId}
+          and ri_resource_id = ${expiryEntry.key.resourceId}
+          and fk_ext_bank_id = ${expiryEntry.key.contextId}
+      `;
+      assert.equal(
+        expiryRows[0]?.expire_ts,
+        `9998-06-01 ${expectedTime}`,
+      );
+      assert.equal(await inbox.writeIfAbsentOrMatch(expiryEntry), 'matched');
+    }
 
     assert.equal((await inbox.findByKey(active.key))?.key.resourceId, 'active-1');
     assert.equal(await inbox.findByKey(expired.key), null);
