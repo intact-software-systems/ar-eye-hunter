@@ -1,4 +1,7 @@
-import type { AppInboxFailure } from './app-inbox-failure.ts';
+import type {
+    AppInboxFailure,
+    LegacyAppInboxRetryExhaustionWire,
+} from './app-inbox-failure.ts';
 
 const BASE_OBJECT_KEYS = ['error', 'code', 'message', 'status'] as const;
 const BASE_OBJECT_WITH_DETAILS_KEYS = [...BASE_OBJECT_KEYS, 'details'] as const;
@@ -95,6 +98,32 @@ function readLegacyRetryExhaustion(
     if (Object.hasOwn(value, 'status')) {
         return null;
     }
+    validateLegacyRetryExhaustionWire(value);
+    return {
+        type: 'app-inbox-failure',
+        version: 'legacy-retry-exhausted.v0',
+        code: 'app-inbox-retry-exhausted',
+        status: 503,
+        message: 'AppInbox processing exhausted its retry budget',
+        issues: null,
+        denial: null,
+        retry: {
+            kind: 'exhausted',
+            attempts: value.processingAttempts,
+            lane: value.selectedLane,
+            queueAgeMs: value.queueAgeMs,
+            dueAgeMs: value.dueAgeMs,
+        },
+        legacyWire: value,
+    };
+}
+
+function validateLegacyRetryExhaustionWire(
+    value: unknown,
+): asserts value is LegacyAppInboxRetryExhaustionWire {
+    if (!isRecord(value)) {
+        throw new TypeError('Legacy AppInbox retry exhaustion is invalid');
+    }
     const timingKeys = Object.hasOwn(value, 'exhaustedAtEpochMs')
         ? ['exhaustedAtEpochMs']
         : ['selectedDueAtEpochMs', 'finalizedAtEpochMs'];
@@ -109,9 +138,12 @@ function readLegacyRetryExhaustion(
         'dueAgeMs',
         ...timingKeys,
     ], 'legacy AppInbox retry exhaustion');
+    if (record.type !== 'app-inbox-retry-exhausted') {
+        throw new TypeError('Legacy AppInbox retry exhaustion type is invalid');
+    }
     readRetryExhaustionIdentity(record.commandIdentity);
     readRetryExhaustionError(record.lastError);
-    const lane = requireNonEmptyString(record.selectedLane, 'legacy AppInbox retry lane');
+    requireNonEmptyString(record.selectedLane, 'legacy AppInbox retry lane');
     const attempts = requirePositiveInteger(
         record.processingAttempts,
         'legacy AppInbox processing attempts',
@@ -123,27 +155,11 @@ function readLegacyRetryExhaustion(
     if (reservationAttempt < attempts) {
         throw new TypeError('Legacy AppInbox reservation attempt is invalid');
     }
-    const queueAgeMs = requireNonNegativeNumber(record.queueAgeMs, 'legacy queue age');
-    const dueAgeMs = requireNonNegativeNumber(record.dueAgeMs, 'legacy due age');
+    requireNonNegativeNumber(record.queueAgeMs, 'legacy queue age');
+    requireNonNegativeNumber(record.dueAgeMs, 'legacy due age');
     for (const key of timingKeys) {
         requireNonNegativeNumber(record[key], `legacy timing ${key}`);
     }
-    return {
-        type: 'app-inbox-failure',
-        version: 'legacy-retry-exhausted.v0',
-        code: 'app-inbox-retry-exhausted',
-        status: 503,
-        message: 'AppInbox processing exhausted its retry budget',
-        issues: null,
-        denial: null,
-        retry: {
-            kind: 'exhausted',
-            attempts,
-            lane,
-            queueAgeMs,
-            dueAgeMs,
-        },
-    };
 }
 
 function readRetryExhaustionIdentity(value: unknown): void {

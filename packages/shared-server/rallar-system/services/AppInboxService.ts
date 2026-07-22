@@ -687,6 +687,9 @@ function toLegacyAppInboxFailure(failure: AppInboxFailure): string {
                 : { details: failure.denial.details }),
         });
     }
+    if (failure.version === 'legacy-retry-exhausted.v0') {
+        return JSON.stringify(failure.legacyWire);
+    }
     if (failure.code === 'app-inbox-non-retryable') {
         return failure.message;
     }

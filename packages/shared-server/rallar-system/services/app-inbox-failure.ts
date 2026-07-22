@@ -19,9 +19,8 @@ export interface AppInboxFailureRetry {
     readonly dueAgeMs: number | null;
 }
 
-export interface AppInboxFailure {
+interface AppInboxFailureFields {
     readonly type: 'app-inbox-failure';
-    readonly version: AppInboxFailureVersion;
     readonly code: string;
     readonly status: number;
     readonly message: string;
@@ -29,6 +28,59 @@ export interface AppInboxFailure {
     readonly denial: AppInboxFailureDenial | null;
     readonly retry: AppInboxFailureRetry | null;
 }
+
+interface CurrentAppInboxFailure extends AppInboxFailureFields {
+    readonly version: Exclude<AppInboxFailureVersion, 'legacy-retry-exhausted.v0'>;
+}
+
+export interface LegacyAppInboxRetryExhaustionCommandIdentity {
+    readonly contextId: string;
+    readonly resourceId: string;
+    readonly topicId: string;
+    readonly operation: string;
+    readonly operationSource: 'command' | 'corrupt' | 'unavailable';
+}
+
+export interface LegacyAppInboxRetryExhaustionError {
+    readonly source: 'processing' | 'finalization-recovery';
+    readonly code: string;
+    readonly message: string;
+}
+
+interface LegacyAppInboxRetryExhaustionWireFields {
+    readonly type: 'app-inbox-retry-exhausted';
+    readonly commandIdentity: LegacyAppInboxRetryExhaustionCommandIdentity;
+    readonly selectedLane: string;
+    readonly processingAttempts: number;
+    readonly reservationAttempt: number;
+    readonly lastError: LegacyAppInboxRetryExhaustionError;
+    readonly queueAgeMs: number;
+    readonly dueAgeMs: number;
+}
+
+export interface LegacyAppInboxProcessingRetryExhaustionWire
+    extends LegacyAppInboxRetryExhaustionWireFields {
+    readonly exhaustedAtEpochMs: number;
+}
+
+export interface LegacyAppInboxRecoveryRetryExhaustionWire
+    extends LegacyAppInboxRetryExhaustionWireFields {
+    readonly selectedDueAtEpochMs: number;
+    readonly finalizedAtEpochMs: number;
+}
+
+export type LegacyAppInboxRetryExhaustionWire =
+    | LegacyAppInboxProcessingRetryExhaustionWire
+    | LegacyAppInboxRecoveryRetryExhaustionWire;
+
+interface DecodedLegacyRetryExhaustedAppInboxFailure extends AppInboxFailureFields {
+    readonly version: 'legacy-retry-exhausted.v0';
+    readonly legacyWire: LegacyAppInboxRetryExhaustionWire;
+}
+
+export type AppInboxFailure =
+    | CurrentAppInboxFailure
+    | DecodedLegacyRetryExhaustedAppInboxFailure;
 
 export type AppInboxFailureVersion =
     | 'canonical.v1'

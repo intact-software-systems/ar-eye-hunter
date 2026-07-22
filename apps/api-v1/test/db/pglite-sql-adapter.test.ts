@@ -180,6 +180,28 @@ Deno.test('PGlite AppInbox decodes exact legacy failure versions without weakeni
       dueAgeMs: 5,
       exhaustedAtEpochMs: 1_000,
     } as const;
+    const legacyRetryRecovery = {
+      type: 'app-inbox-retry-exhausted',
+      commandIdentity: {
+        contextId: 'legacy-context',
+        resourceId: 'legacy-recovery',
+        topicId: 'app-inbox.group-state',
+        operation: 'GROUP_CREATE',
+        operationSource: 'command',
+      },
+      selectedLane: 'FINALIZATION',
+      processingAttempts: 20,
+      reservationAttempt: 22,
+      lastError: {
+        source: 'finalization-recovery',
+        code: 'app-inbox-finalization-recovery',
+        message: 'AppInbox retry exhaustion finalization is being recovered',
+      },
+      queueAgeMs: 60_000,
+      dueAgeMs: 300_000,
+      selectedDueAtEpochMs: 700,
+      finalizedAtEpochMs: 1_000,
+    } as const;
     const cases = [
       {
         name: 'raw-string',
@@ -219,6 +241,15 @@ Deno.test('PGlite AppInbox decodes exact legacy failure versions without weakeni
         version: 'legacy-retry-exhausted.v0',
         code: 'app-inbox-retry-exhausted',
         status: 503,
+        legacy: JSON.stringify(legacyRetryExhaustion),
+      },
+      {
+        name: 'retry-recovery',
+        resource: legacyRetryRecovery,
+        version: 'legacy-retry-exhausted.v0',
+        code: 'app-inbox-retry-exhausted',
+        status: 503,
+        legacy: JSON.stringify(legacyRetryRecovery),
       },
       {
         name: 'malformed',
