@@ -18,6 +18,8 @@ import {
     toAppQueueCreatedBy,
     toAppQueueKey,
 } from './app-inbox-queue-key.ts';
+import type { PSqlTransactionSql } from '../../postgres/PostgresSqlClient.ts';
+import { ResourceInboxRepository } from '../../postgres/resource-inbox/ResourceInboxRepository.ts';
 
 export const COALESCED_APP_OUTBOX_WORK_FIELD = '__rallarCoalescedWork';
 
@@ -70,12 +72,76 @@ export type CoalescedAppOutboxWorkEnqueueResult<T extends object> = Readonly<{
     blockedByReserved: boolean;
 }>;
 
+export type ComputedCoalescedAppOutboxWork = Readonly<{
+    expectedEntry: ResourceEntry | null;
+    entry: ResourceEntry;
+    successorEntry: ResourceEntry;
+}>;
+
+export type CoalescedAppOutboxWorkWriteResult = Readonly<{
+    action: 'inserted' | 'matched' | 'updated' | 'successor';
+    entry: ResourceEntry;
+    previous: ResourceEntry | null;
+    blockedByReserved: boolean;
+}>;
+
 export class CoalescedAppOutboxWorkService {
     constructor(
         private readonly outbox: OutboxQueueReader,
         private readonly serviceId: string = 'rallar-server',
         private readonly now: () => number = () => Date.now(),
     ) {
+    }
+
+    async write(
+        transaction: PSqlTransactionSql,
+        computed: ComputedCoalescedAppOutboxWork,
+    ): Promise<CoalescedAppOutboxWorkWriteResult> {
+        const repository = new ResourceInboxRepository(transaction);
+        const expected = computed.expectedEntry;
+        if (expected === null) {
+            const action = await repository.writeIfAbsentOrMatch(computed.entry);
+            return {
+                action,
+                entry: computed.entry,
+                previous: null,
+                blockedByReserved: false,
+            };
+        }
+
+        const expectedGeneration = this.readGeneration(expected);
+        const nextGeneration = this.readGeneration(computed.entry);
+        if (nextGeneration !== expectedGeneration + 1) {
+            throw new TypeError(
+                'Coalesced APP_OUTBOX write must advance exactly one generation',
+            );
+        }
+        const updated = await repository.replacePendingIfMatch(
+            expected,
+            computed.entry,
+            expectedGeneration,
+        );
+        if (updated !== null) {
+            return {
+                action: 'updated',
+                entry: updated,
+                previous: expected,
+                blockedByReserved: false,
+            };
+        }
+
+        if (sameKey(computed.successorEntry.key, computed.entry.key)) {
+            throw new TypeError(
+                'Coalesced APP_OUTBOX successor must have a distinct queue identity',
+            );
+        }
+        await repository.writeIfAbsentOrMatch(computed.successorEntry);
+        return {
+            action: 'successor',
+            entry: computed.successorEntry,
+            previous: expected,
+            blockedByReserved: true,
+        };
     }
 
     async enqueue<T extends object>(
@@ -256,6 +322,12 @@ export class CoalescedAppOutboxWorkService {
             return undefined;
         }
     }
+}
+
+function sameKey(left: Key, right: Key): boolean {
+    return left.topicId === right.topicId &&
+        left.resourceId === right.resourceId &&
+        left.contextId === right.contextId;
 }
 
 function isTerminalCoalescedStatus(status: EntityStatus): boolean {

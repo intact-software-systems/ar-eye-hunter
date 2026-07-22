@@ -140,6 +140,39 @@ describe('state-sync routing group visibility', () => {
         expect(server.broadcastCalls).toBe(0);
         expect(server.sentConnectionIds).toEqual(['alice-session']);
     });
+
+    it('fails closed when a persisted logical group audience differs from its payload', () => {
+        const server = createWebSocketServer(['alice-session']);
+        const snapshot = createGroupSnapshot([
+            { principalId: 'alice', sessionId: 'alice-session', status: 'active' },
+        ]);
+        const message = newALBroadcastMessage(
+            'server-1',
+            newALEventRoute(
+                AppTopics.groupStateSnapshot,
+                snapshot.group.groupId,
+                snapshot.group.groupId,
+            ),
+            'room',
+            AppTopics.groupStateSnapshot,
+            snapshot,
+            {
+                groupRef: {
+                    applicationId: snapshot.group.applicationId,
+                    workspaceId: snapshot.group.workspaceId,
+                    groupId: 'different-room',
+                },
+                reliability: 'at-least-once',
+            },
+        );
+
+        expect(resolveStateSyncRecipients(server, message, {
+            readClientSnapshots: () => [
+                createClientSnapshot('alice', 'alice-session'),
+            ],
+            now: () => NOW,
+        })).toEqual([]);
+    });
 });
 
 function connectionIds(

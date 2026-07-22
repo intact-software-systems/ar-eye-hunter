@@ -2209,6 +2209,91 @@ Deno.test('Coalesced APP_OUTBOX RTC topology work fits the durable resource inbo
   });
 });
 
+Deno.test('transaction-bound APP_OUTBOX coalescing fences generation and reserved work', async () => {
+  await withPGliteSql(async (sql) => {
+    const repository = new ResourceInboxRepository(sql);
+    const queue = new PSqlQueueBox(repository);
+    const service = new CoalescedAppOutboxWorkService(
+      new OutboxQueueReader(queue),
+      'rallar-server',
+      () => 500,
+    );
+    const first = (await service.enqueue({
+      type: AppOutboxType.RTC_TOPOLOGY_RECOMPUTE,
+      topicId: 'app-outbox.rtc-topology',
+      resourceId: 'transactional-overlay',
+      contextId: 'transactional-room',
+      data: { overlayId: 'transactional-overlay', revision: 1 },
+    })).entry;
+    const second = advanceCoalescedGeneration(first, 2);
+    const successor = createResourceEntry('transactional-successor', {
+      topicId: first.key.topicId,
+      contextId: first.key.contextId,
+      typeId: first.typeId,
+      payload: { generation: 2, kind: 'successor' },
+    });
+
+    const statusFirst = (await service.enqueue({
+      type: AppOutboxType.RTC_TOPOLOGY_RECOMPUTE,
+      topicId: 'app-outbox.rtc-topology',
+      resourceId: 'transactional-status-fence',
+      contextId: 'transactional-room',
+      data: { overlayId: 'transactional-status-fence', revision: 1 },
+    })).entry;
+    await repository.writeIfAbsentOrMatch(statusFirst);
+    await sql`
+      update resource_inbox
+      set ri_status = ${EntityStatus.RETRY}
+      where ri_topic_id = ${statusFirst.key.topicId}
+        and ri_resource_id = ${statusFirst.key.resourceId}
+        and fk_ext_bank_id = ${statusFirst.key.contextId}
+    `;
+    const statusMismatch = await sql.begin(async (transaction) =>
+      await new ResourceInboxRepository(transaction).replacePendingIfMatch(
+        statusFirst,
+        advanceCoalescedGeneration(statusFirst, 2),
+        1,
+      )
+    );
+    assert.equal(statusMismatch, null);
+    assert.equal(
+      (await repository.findAnyByKey(statusFirst.key))?.status,
+      EntityStatus.RETRY,
+    );
+
+    const updated = await sql.begin(async (transaction) =>
+      await service.write(transaction, {
+        expectedEntry: first,
+        entry: second,
+        successorEntry: successor,
+      })
+    );
+    assert.equal(updated.action, 'updated');
+    assert.equal((await repository.findByKey(first.key))?.resource, second.resource);
+
+    const reserved = await queue.reserveEntries(
+      new Set([first.typeId]),
+      new Set([EntityStatus.NEW]),
+      { maxToReserve: 1, maxAttempts: 20 },
+    );
+    assert.equal(reserved.size, 1);
+    const third = advanceCoalescedGeneration(second, 3);
+    const blocked = await sql.begin(async (transaction) =>
+      await service.write(transaction, {
+        expectedEntry: second,
+        entry: third,
+        successorEntry: successor,
+      })
+    );
+
+    assert.equal(blocked.action, 'successor');
+    assert.equal(blocked.blockedByReserved, true);
+    assert.equal((await repository.findAnyByKey(first.key))?.resource, second.resource);
+    assert.equal((await repository.findAnyByKey(first.key))?.status, EntityStatus.RESERVED);
+    assert.equal((await repository.findByKey(successor.key))?.resource, successor.resource);
+  });
+});
+
 Deno.test('PSqlAppDataRepository runs against PGlite SQL adapter', async () => {
   await withPGliteSql(async (sql) => {
     const repository = new PSqlAppDataRepository(sql);
@@ -2667,5 +2752,20 @@ function createResourceEntry(
     dequeueAudit: {
       attempts: 0,
     },
+  };
+}
+
+function advanceCoalescedGeneration(
+  entry: ResourceEntry,
+  generation: number,
+): ResourceEntry {
+  const message = JSON.parse(entry.resource);
+  const envelope = JSON.parse(message.payload.resource);
+  envelope.data.__rallarCoalescedWork.generation = generation;
+  envelope.data.revision = generation;
+  message.payload.resource = JSON.stringify(envelope);
+  return {
+    ...entry,
+    resource: JSON.stringify(message),
   };
 }

@@ -253,7 +253,10 @@ function parseStateSyncPayload(message: ALMessage):
             }
             case AppTopics.groupStateSnapshot: {
                 const snapshot = JSON.parse(message.payload.resource);
-                if (!isGroupSnapshot(snapshot)) {
+                if (
+                    !isGroupSnapshot(snapshot) ||
+                    !hasMatchingExplicitGroupAudience(message, snapshot.group)
+                ) {
                     return { kind: 'invalid' };
                 }
                 return {
@@ -263,7 +266,10 @@ function parseStateSyncPayload(message: ALMessage):
             }
             case AppTopics.groupDirectorySnapshot: {
                 const snapshot = JSON.parse(message.payload.resource);
-                if (!isGroupSnapshot(snapshot)) {
+                if (
+                    !isGroupSnapshot(snapshot) ||
+                    !hasMatchingExplicitGroupAudience(message, snapshot.group)
+                ) {
                     return { kind: 'invalid' };
                 }
                 return {
@@ -273,7 +279,10 @@ function parseStateSyncPayload(message: ALMessage):
             }
             case AppTopics.groupStateEvent: {
                 const event = JSON.parse(message.payload.resource);
-                if (!isGroupEvent(event)) {
+                if (
+                    !isGroupEvent(event) ||
+                    !hasMatchingExplicitGroupAudience(message, event)
+                ) {
                     return { kind: 'invalid' };
                 }
                 return {
@@ -284,7 +293,10 @@ function parseStateSyncPayload(message: ALMessage):
             }
             case AppTopics.overlayTopology: {
                 const snapshot = JSON.parse(message.payload.resource);
-                if (!isOverlayTopologySnapshot(snapshot)) {
+                if (
+                    !isOverlayTopologySnapshot(snapshot) ||
+                    !hasMatchingExplicitGroupAudience(message, snapshot.groupRef)
+                ) {
                     return { kind: 'invalid' };
                 }
                 return {
@@ -301,6 +313,24 @@ function parseStateSyncPayload(message: ALMessage):
             ? { kind: 'invalid' }
             : undefined;
     }
+}
+
+function hasMatchingExplicitGroupAudience(
+    message: ALMessage,
+    groupRef: GroupRef,
+): boolean {
+    const targets = message.targets;
+    const targetRef = targets?.mode === 'multicast'
+        ? targets.groupRef
+        : targets?.mode === 'broadcast' && targets.groupRef !== undefined
+        ? targets.groupRef
+        : undefined;
+    return targetRef === undefined ||
+        (
+            targetRef.applicationId === groupRef.applicationId &&
+            targetRef.workspaceId === groupRef.workspaceId &&
+            targetRef.groupId === groupRef.groupId
+        );
 }
 
 function sameScope(

@@ -1,16 +1,341 @@
-import { AppTopics } from '@shared/api/api-config.ts';
-import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
+import { Temporal } from '@js-temporal/polyfill';
+import { AppTopics, EnqueuedType } from '@shared/api/api-config.ts';
+import type {
+    ClientEvent,
+    ClientPrincipalRef,
+    ClientSnapshot,
+} from '@shared/api/client-types.ts';
 import type { MutationActor } from '@shared/api/mutation-actor.ts';
-import type { GroupEvent, GroupSnapshot } from '@shared/api/group-types.ts';
+import type {
+    GroupEvent,
+    GroupRef,
+    GroupSnapshot,
+    GroupStateCausalRevision,
+} from '@shared/api/group-types.ts';
 import { newALBroadcastMessage, newALEventRoute } from '@shared/al-contracts/al-contract.ts';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALOutboundEnqueueResult } from '@shared/alm/ALOutboundMessageRuntime.ts';
+import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
+import type { PSqlTransactionSql } from '../postgres/PostgresSqlClient.ts';
+import { ResourceInboxRepository } from '../postgres/resource-inbox/ResourceInboxRepository.ts';
 import {
     recordRallarTiming,
     type RallarTimingSink,
 } from './services/timing.ts';
+import {
+    toAppQueueCreatedBy,
+    toAppQueueKey,
+} from './services/app-inbox-queue-key.ts';
+
+export type StateSyncAudience = Readonly<{
+    kind: 'principal' | 'group';
+    applicationId: string;
+    workspaceId: string;
+    resourceId: string;
+}>;
+
+export type ComputedClientStateSyncEffect =
+    | Readonly<{
+        effectKind: 'principal-state';
+        payloadKind: 'snapshot';
+        payload: ClientSnapshot;
+    }>
+    | Readonly<{
+        effectKind: 'principal-state';
+        payloadKind: 'event';
+        payload: ClientEvent;
+    }>;
+
+export type ComputedGroupStateSyncEffect =
+    | Readonly<{
+        effectKind: 'member-state' | 'scope-directory';
+        payloadKind: 'snapshot';
+        payload: GroupSnapshot;
+    }>
+    | Readonly<{
+        effectKind: 'member-state';
+        payloadKind: 'event';
+        payload: GroupEvent;
+    }>;
+
+export type ComputedClientStateSync = Readonly<{
+    commandId: string;
+    aggregateRef: ClientPrincipalRef;
+    acceptedCausalRevision: number;
+    audience: StateSyncAudience;
+    createdAtEpochMs: number;
+    expireAtEpochMs: number;
+    effects: readonly ComputedClientStateSyncEffect[];
+}>;
+
+export type ComputedGroupStateSync = Readonly<{
+    commandId: string;
+    aggregateRef: GroupRef;
+    acceptedCausalRevision: GroupStateCausalRevision;
+    audience: StateSyncAudience;
+    createdAtEpochMs: number;
+    expireAtEpochMs: number;
+    effects: readonly ComputedGroupStateSyncEffect[];
+}>;
+
+export function computeClientStateSyncEntries(
+    computed: ComputedClientStateSync,
+    senderId: string,
+): readonly ResourceEntry[] {
+    validateComputedStateSyncFacts(computed, senderId);
+    if (
+        !Number.isSafeInteger(computed.acceptedCausalRevision) ||
+        computed.acceptedCausalRevision < 0 ||
+        computed.effects.some((effect) =>
+            !sameClientRef(computed.aggregateRef, effect.payload) ||
+            (effect.payloadKind === 'snapshot'
+                ? effect.payload.stateRevision
+                : effect.payload.snapshotVersion) !==
+                computed.acceptedCausalRevision
+        )
+    ) {
+        throw new TypeError('Computed client state sync differs from accepted authority');
+    }
+    return computed.effects.map((effect) =>
+        toStateSyncEntry(
+            computed,
+            effect,
+            senderId,
+            AppTopics[effect.payloadKind === 'snapshot'
+                ? 'clientStateSnapshot'
+                : 'clientStateEvent'],
+            computed.acceptedCausalRevision,
+            0,
+        )
+    );
+}
+
+export function computeGroupStateSyncEntries(
+    computed: ComputedGroupStateSync,
+    senderId: string,
+): readonly ResourceEntry[] {
+    validateComputedStateSyncFacts(computed, senderId);
+    if (
+        !isValidGroupCausalRevision(computed.acceptedCausalRevision) ||
+        computed.effects.some((effect) =>
+            !sameGroupRef(computed.aggregateRef, effect.payload) ||
+            effect.payload.causalRevision.groupRevision !==
+                computed.acceptedCausalRevision.groupRevision ||
+            effect.payload.causalRevision.presenceRevision !==
+                computed.acceptedCausalRevision.presenceRevision
+        )
+    ) {
+        throw new TypeError('Computed group state sync differs from accepted authority');
+    }
+    return computed.effects.map((effect) => {
+        const topicId = effect.payloadKind === 'event'
+            ? AppTopics.groupStateEvent
+            : effect.effectKind === 'scope-directory'
+            ? AppTopics.groupDirectorySnapshot
+            : AppTopics.groupStateSnapshot;
+        return toStateSyncEntry(
+            computed,
+            effect,
+            senderId,
+            topicId,
+            computed.acceptedCausalRevision.presenceRevision,
+            computed.acceptedCausalRevision.groupRevision,
+        );
+    });
+}
+
+export async function writeClientStateSync(
+    transaction: PSqlTransactionSql,
+    entries: readonly ResourceEntry[],
+): Promise<readonly ResourceEntry[]> {
+    await writeStateSyncEntries(transaction, entries);
+    return entries;
+}
+
+export async function writeGroupStateSync(
+    transaction: PSqlTransactionSql,
+    entries: readonly ResourceEntry[],
+): Promise<readonly ResourceEntry[]> {
+    await writeStateSyncEntries(transaction, entries);
+    return entries;
+}
+
+async function writeStateSyncEntries(
+    transaction: PSqlTransactionSql,
+    entries: readonly ResourceEntry[],
+): Promise<void> {
+    const repository = new ResourceInboxRepository(transaction);
+    for (const entry of entries) {
+        if (entry.typeId !== EnqueuedType.WS_OUTBOX) {
+            throw new TypeError('State sync write received a non-WS_OUTBOX entry');
+        }
+        await repository.writeIfAbsentOrMatch(entry);
+    }
+}
+
+type ComputedStateSync = ComputedClientStateSync | ComputedGroupStateSync;
+type ComputedStateSyncEffect =
+    | ComputedClientStateSyncEffect
+    | ComputedGroupStateSyncEffect;
+
+function toStateSyncEntry(
+    computed: ComputedStateSync,
+    effect: ComputedStateSyncEffect,
+    senderId: string,
+    topicId: string,
+    sequence: number,
+    epoch: number,
+): ResourceEntry {
+    const causalIdentity = typeof computed.acceptedCausalRevision === 'number'
+        ? `revision=${computed.acceptedCausalRevision}`
+        : `group=${computed.acceptedCausalRevision.groupRevision};presence=${computed.acceptedCausalRevision.presenceRevision}`;
+    const messageId = [
+        computed.commandId,
+        effect.effectKind,
+        effect.payloadKind,
+        causalIdentity,
+    ].join(':');
+    const key = toAppQueueKey({
+        topicId,
+        resourceId: messageId,
+        contextId: JSON.stringify([
+            computed.audience.kind,
+            computed.audience.applicationId,
+            computed.audience.workspaceId,
+            computed.audience.resourceId,
+        ]),
+    });
+    const isGroup = computed.audience.kind === 'group';
+    const message: ALMessage = {
+        id: {
+            v: 2,
+            msgId: messageId,
+            ts: computed.createdAtEpochMs,
+            senderId,
+        },
+        route: key,
+        targets: isGroup
+            ? {
+                mode: 'broadcast',
+                scope: 'room',
+                groupRef: {
+                    applicationId: computed.audience.applicationId,
+                    workspaceId: computed.audience.workspaceId,
+                    groupId: computed.audience.resourceId,
+                },
+            }
+            : {
+                mode: 'broadcast',
+                scope: 'world',
+            },
+        constraints: {
+            expiresAtMs: computed.expireAtEpochMs,
+        },
+        ordering: {
+            orderingKey: key.contextId,
+            epoch,
+            seq: sequence,
+        },
+        delivery: {
+            ownership: 'shared',
+            reliability: 'at-least-once',
+            ack: 'none',
+        },
+        payload: {
+            typeId: topicId,
+            contentType: 'application/json',
+            resource: JSON.stringify(effect.payload),
+        },
+        audit: {
+            createdBy: senderId,
+            createdTs: computed.createdAtEpochMs,
+        },
+    };
+    const createdTs = Temporal.Instant
+        .fromEpochMilliseconds(computed.createdAtEpochMs)
+        .toZonedDateTimeISO('UTC')
+        .toPlainDateTime();
+    return {
+        key,
+        resource: JSON.stringify(message),
+        typeId: EnqueuedType.WS_OUTBOX,
+        status: EntityStatus.NEW,
+        audit: {
+            date: createdTs.toPlainTime(),
+            createdBy: toAppQueueCreatedBy(senderId),
+            createdTs,
+            expiryTs: Temporal.Instant.fromEpochMilliseconds(
+                computed.expireAtEpochMs,
+            ),
+        },
+        dequeueAudit: { attempts: 0 },
+    };
+}
+
+function validateComputedStateSyncFacts(
+    computed: ComputedStateSync,
+    senderId: string,
+): void {
+    if (
+        computed.commandId.length === 0 ||
+        senderId.length === 0 ||
+        !Number.isSafeInteger(computed.createdAtEpochMs) ||
+        !Number.isSafeInteger(computed.expireAtEpochMs) ||
+        computed.createdAtEpochMs < 0 ||
+        computed.expireAtEpochMs <= computed.createdAtEpochMs ||
+        computed.effects.length === 0 ||
+        computed.audience.applicationId !== computed.aggregateRef.applicationId ||
+        computed.audience.workspaceId !== computed.aggregateRef.workspaceId
+    ) {
+        throw new TypeError('Computed state sync facts are invalid');
+    }
+    if (
+        ('principalId' in computed.aggregateRef &&
+            (
+                computed.audience.kind !== 'principal' ||
+                computed.audience.resourceId !== computed.aggregateRef.principalId
+            )) ||
+        ('groupId' in computed.aggregateRef &&
+            (
+                computed.audience.kind !== 'group' ||
+                computed.audience.resourceId !== computed.aggregateRef.groupId
+            ))
+    ) {
+        throw new TypeError('Computed state sync audience differs from aggregate');
+    }
+}
+
+function sameClientRef(
+    ref: ClientPrincipalRef,
+    value: ClientSnapshot | ClientEvent,
+): boolean {
+    const candidate = 'principal' in value ? value.principal : value;
+    return ref.applicationId === candidate.applicationId &&
+        ref.workspaceId === candidate.workspaceId &&
+        ref.principalId === candidate.principalId;
+}
+
+function sameGroupRef(
+    ref: GroupRef,
+    value: GroupSnapshot | GroupEvent,
+): boolean {
+    const candidate = 'group' in value ? value.group : value;
+    return ref.applicationId === candidate.applicationId &&
+        ref.workspaceId === candidate.workspaceId &&
+        ref.groupId === candidate.groupId;
+}
+
+function isValidGroupCausalRevision(
+    revision: GroupStateCausalRevision,
+): boolean {
+    return Number.isSafeInteger(revision.groupRevision) &&
+        revision.groupRevision >= 0 &&
+        Number.isSafeInteger(revision.presenceRevision) &&
+        revision.presenceRevision >= 0;
+}
 
 export type StateSyncPublisher = Readonly<{
     publishClientSnapshot(
@@ -161,6 +486,10 @@ async function enqueueBroadcast<T>(
         'all',
         topicId,
         payload,
+        {
+            reliability: 'at-least-once',
+            ack: 'none',
+        },
     );
     const result = await wsQBoxServerService.enqueueOutboxIfAbsent(
         options.deliveryId

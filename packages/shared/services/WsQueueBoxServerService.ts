@@ -91,13 +91,35 @@ export type WsQueueBoxServerServiceOptions = Readonly<{
     inboundStores?: ALInboundRuntimeStores;
     outboundStores?: ALOutboundRuntimeStores;
     outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
+    outboundDeliveryOutcome?: (outcome: WsOutboxDeliveryOutcome) => void;
 }>;
 
-type WsServerPreparedMessage = Readonly<{
-    peerId: string;
-    connectionId: string;
-    message: ALMessage;
-}>;
+export type WsOutboxDeliveryOutcome =
+    | Readonly<{
+        status: 'sent';
+        messageId: string;
+    }>
+    | Readonly<{
+        status: 'no-current-recipient';
+        messageId: string;
+    }>
+    | Readonly<{
+        status: 'retryable-transport-failure';
+        messageId: string;
+        reason: string;
+    }>;
+
+type WsServerPreparedMessage =
+    | Readonly<{
+        kind: 'recipient';
+        peerId: string;
+        connectionId: string;
+        message: ALMessage;
+    }>
+    | Readonly<{
+        kind: 'no-current-recipient';
+        message: ALMessage;
+    }>;
 
 export class WsQueueBoxServerService {
     private static readonly ALL_IN: string = '*';
@@ -125,6 +147,9 @@ export class WsQueueBoxServerService {
     private readonly outboundRuntime: ALOutboundMessageRuntime<WsServerPreparedMessage>;
     private readonly qosProvider?: ALQosInputProvider;
     private readonly targetResolver: WsServerTargetResolver;
+    private readonly outboundDeliveryOutcome?: (
+        outcome: WsOutboxDeliveryOutcome,
+    ) => void;
 
     constructor(
         public readonly inbox: QueueBoxResourceEntryRepository,
@@ -135,6 +160,7 @@ export class WsQueueBoxServerService {
     ) {
         this.qosProvider = options.qosProvider;
         this.targetResolver = options.targetResolver ?? {};
+        this.outboundDeliveryOutcome = options.outboundDeliveryOutcome;
 
         this.outboundRuntime = new ALOutboundMessageRuntime<
             WsServerPreparedMessage
@@ -150,11 +176,12 @@ export class WsQueueBoxServerService {
                     ),
                 readMessageFromEntry: (entry) =>
                     JSON.parse(entry.resource) as ALMessage,
-                planOutgoingMessage: (message) => this.planOutgoingMessage(message),
-                sendPreparedMessage: async (prepared, _phase) => {
-                    await this.sendPreparedMessage(prepared);
-                    return { status: 'sent' };
-                },
+                planOutgoingMessage: (message) =>
+                    this.planOutgoingMessage(message, 'immediate'),
+                planDequeuedMessage: (message) =>
+                    this.planOutgoingMessage(message, 'dequeue'),
+                sendPreparedMessage: async (prepared, _phase) =>
+                    await this.sendPreparedMessage(prepared),
                 planRepairMessage: async (message, request) =>
                     await this.planRepairMessage(message, request),
             },
@@ -307,22 +334,7 @@ export class WsQueueBoxServerService {
     }
 
     async enqueueOutboxIfAbsent(message: ALMessage): Promise<ALOutboundEnqueueResult> {
-        if (
-            message.targets?.mode === 'broadcast' &&
-            this.resolveRecipients(message).length === 0
-        ) {
-            return {
-                status: 'no-route',
-                message,
-                entries: [],
-                reason: WsQueueBoxServerService.toNoResolvedRecipientsReason(
-                    'broadcast',
-                    message.id.msgId,
-                ),
-            };
-        }
-
-        const dispatchPlan = this.planOutgoingMessage(message);
+        const dispatchPlan = this.planOutgoingMessage(message, 'immediate');
         if (dispatchPlan.persist) {
             validatePersistedALMessage(message);
         }
@@ -495,12 +507,16 @@ export class WsQueueBoxServerService {
 
     private planOutgoingMessage(
         message: ALMessage,
+        phase: 'immediate' | 'dequeue',
     ) {
         const normalized = this.normalizeOutgoingPolicy(message);
         const effective = normalized.effective;
         const persist = shouldPersistOutbox(effective);
 
-        return this.validateMessage(message)
+        return this.validateMessage(message, {
+            resolveRecipients: phase === 'dequeue' || !persist,
+            representNoCurrentRecipient: phase === 'dequeue',
+        })
             .fold(
                 (error: string) => {
                     return WsQueueBoxServerService.toNoRouteDispatchPlan(
@@ -509,11 +525,18 @@ export class WsQueueBoxServerService {
                 },
                 (recipients: readonly WsServerResolvedRecipient[]) => ({
                     persist,
-                    preparedMessages: recipients.map((recipient) => ({
-                        peerId: recipient.peerId,
-                        connectionId: recipient.connectionId,
-                        message,
-                    })),
+                    preparedMessages: recipients.length === 0 &&
+                            phase === 'dequeue'
+                        ? [{
+                            kind: 'no-current-recipient' as const,
+                            message,
+                        }]
+                        : recipients.map((recipient) => ({
+                            kind: 'recipient' as const,
+                            peerId: recipient.peerId,
+                            connectionId: recipient.connectionId,
+                            message,
+                        })),
                     ackTracking: this.toAckTrackingPlan(effective, recipients),
                     repairTracking: this.toRepairTrackingPlan(effective),
                     supersedenceTracking: this.toSupersedenceTrackingPlan(
@@ -526,6 +549,10 @@ export class WsQueueBoxServerService {
 
     private validateMessage(
         message: ALMessage,
+        options: Readonly<{
+            resolveRecipients: boolean;
+            representNoCurrentRecipient: boolean;
+        }>,
     ): Either<string, readonly WsServerResolvedRecipient[]> {
         const targets = message.targets;
         if (!targets) {
@@ -534,9 +561,12 @@ export class WsQueueBoxServerService {
             );
         }
 
-        const recipients: readonly WsServerResolvedRecipient[] = this
-            .resolveRecipients(message);
-        if (recipients.length === 0) {
+        if (!options.resolveRecipients) {
+            return Either.ofRight([]);
+        }
+
+        const recipients = this.resolveRecipients(message);
+        if (recipients.length === 0 && !options.representNoCurrentRecipient) {
             return Either.ofLeft(
                 WsQueueBoxServerService.toNoResolvedRecipientsReason(
                     targets.mode,
@@ -613,6 +643,7 @@ export class WsQueueBoxServerService {
         return Promise.resolve({
             persist: false,
             preparedMessages: recipients.map((recipient) => ({
+                kind: 'recipient' as const,
                 peerId: recipient.peerId,
                 connectionId: recipient.connectionId,
                 message,
@@ -626,11 +657,42 @@ export class WsQueueBoxServerService {
         });
     }
 
-    private sendPreparedMessage(
+    private async sendPreparedMessage(
         prepared: WsServerPreparedMessage,
-    ): Promise<void> {
-        this.socket.send(prepared.connectionId, prepared.message);
-        return Promise.resolve();
+    ): Promise<Readonly<{ status: 'sent' | 'no-targets' }>> {
+        if (prepared.kind === 'no-current-recipient') {
+            this.recordOutboundDeliveryOutcome({
+                status: 'no-current-recipient',
+                messageId: prepared.message.id.msgId,
+            });
+            return { status: 'no-targets' };
+        }
+
+        try {
+            this.socket.send(prepared.connectionId, prepared.message);
+            this.recordOutboundDeliveryOutcome({
+                status: 'sent',
+                messageId: prepared.message.id.msgId,
+            });
+            return { status: 'sent' };
+        } catch (error) {
+            this.recordOutboundDeliveryOutcome({
+                status: 'retryable-transport-failure',
+                messageId: prepared.message.id.msgId,
+                reason: errorToReason(error),
+            });
+            throw error;
+        }
+    }
+
+    private recordOutboundDeliveryOutcome(
+        outcome: WsOutboxDeliveryOutcome,
+    ): void {
+        try {
+            this.outboundDeliveryOutcome?.(outcome);
+        } catch (error) {
+            console.error('WS outbox delivery outcome sink failed', error);
+        }
     }
 
     private forwardIncomingMessage(

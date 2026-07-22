@@ -93,6 +93,7 @@ export type ALOutboundMessageRuntimeInput<TPrepared> = Readonly<{
     toOutboxEntry: (msg: ALMessage) => ResourceEntry;
     readMessageFromEntry: (entry: ResourceEntry) => ALMessage;
     planOutgoingMessage: (msg: ALMessage) => ALOutboundDispatchPlan<TPrepared>;
+    planDequeuedMessage?: (msg: ALMessage) => ALOutboundDispatchPlan<TPrepared>;
     sendPreparedMessage: (
         prepared: TPrepared,
         phase: ALOutboundDispatchPhase,
@@ -319,7 +320,8 @@ export class ALOutboundMessageRuntime<TPrepared> {
                 const msg = this.input.readMessageFromEntry(entry);
                 await this.commitDispatchPlanWithRetry(
                     msg,
-                    this.input.planOutgoingMessage,
+                    this.input.planDequeuedMessage ??
+                        this.input.planOutgoingMessage,
                     'dequeue',
                     'dequeue',
                     {

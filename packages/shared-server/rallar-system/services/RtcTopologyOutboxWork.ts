@@ -1,17 +1,22 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
     type ALMessage,
     newALRoute,
     newALUntargetedMessage,
 } from '@shared/al-contracts/al-contract.ts';
-import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
+import { EnqueuedType, type RttMeasurementInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { groupStateGroupStorageKey } from '../group-state-storage-keys.ts';
 import {
     readGroupStateRevision,
 } from '@shared/api/group-client-views.ts';
-import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import type {
+    GroupRef,
+    GroupSnapshot,
+    GroupStateCausalRevision,
+} from '@shared/api/group-types.ts';
 import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-state-validation.ts';
-import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
 import type { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import type { RtcTopologyPublicationFanout } from '../pubsub/RtcTopologyClusterTransport.ts';
@@ -49,8 +54,143 @@ import {
     type RtcOverlayTopologyMessageFacts,
 } from './group-topology-management-service.ts';
 import { validatePersistedALMessage } from './al-message-persistence-validation.ts';
+import type { PSqlTransactionSql } from '../../postgres/PostgresSqlClient.ts';
+import { ResourceInboxRepository } from '../../postgres/resource-inbox/ResourceInboxRepository.ts';
 
 export const APP_OUTBOX_RTC_TOPOLOGY_TOPIC = 'app-outbox.rtc-topology';
+
+export type ComputedRtcTopologyOutbox = Readonly<{
+    commandId: string;
+    aggregateRef: GroupRef;
+    acceptedCausalRevision: GroupStateCausalRevision;
+    groupSnapshot: GroupSnapshot;
+    effectKind: 'rtc-topology-recompute';
+    createdAtEpochMs: number;
+    expireAtEpochMs: number;
+}>;
+
+export function computeRtcTopologyEntry(
+    computed: ComputedRtcTopologyOutbox,
+    senderId: string,
+): ResourceEntry {
+    validateComputedRtcTopologyOutbox(computed, senderId);
+    const createdBy = toAppQueueCreatedBy(senderId);
+    const overlayId = toScopedOverlayId(computed.aggregateRef);
+    const sourceGroupStateRevision = readGroupStateRevision(
+        computed.groupSnapshot,
+    );
+    const causalIdentity =
+        `group=${computed.acceptedCausalRevision.groupRevision};presence=${computed.acceptedCausalRevision.presenceRevision}`;
+    const messageId = [
+        computed.commandId,
+        computed.effectKind,
+        causalIdentity,
+    ].join(':');
+    const key = toAppQueueKey({
+        topicId: APP_OUTBOX_RTC_TOPOLOGY_TOPIC,
+        resourceId: messageId,
+        contextId: toRtcTopologyQueueContextId(computed.aggregateRef),
+    });
+    const envelope: RtcTopologyWorkEnvelope<RtcTopologyGroupRevisionWork> = {
+        type: AppOutboxType.RTC_TOPOLOGY_RECOMPUTE,
+        topicId: APP_OUTBOX_RTC_TOPOLOGY_TOPIC,
+        resourceId: messageId,
+        contextId: toRtcTopologyQueueContextId(computed.aggregateRef),
+        senderId: createdBy,
+        data: {
+            kind: 'group-revision',
+            overlayId,
+            groupSnapshot: computed.groupSnapshot,
+            sourceGroupStateRevision,
+            requestedAtEpochMs: computed.createdAtEpochMs,
+        },
+    };
+    const message: ALMessage = {
+        id: {
+            v: 2,
+            msgId: messageId,
+            ts: computed.createdAtEpochMs,
+            senderId: createdBy,
+        },
+        route: key,
+        constraints: { expiresAtMs: computed.expireAtEpochMs },
+        ordering: {
+            orderingKey: key.contextId,
+            epoch: computed.acceptedCausalRevision.groupRevision,
+            seq: computed.acceptedCausalRevision.presenceRevision,
+        },
+        delivery: {
+            ownership: 'exclusive',
+            reliability: 'at-least-once',
+            ack: 'none',
+        },
+        payload: {
+            typeId: AppOutboxType.RTC_TOPOLOGY_RECOMPUTE,
+            contentType: 'application/json',
+            resource: JSON.stringify(envelope),
+        },
+        audit: {
+            createdBy,
+            createdTs: computed.createdAtEpochMs,
+        },
+    };
+    const createdTs = Temporal.Instant
+        .fromEpochMilliseconds(computed.createdAtEpochMs)
+        .toZonedDateTimeISO('UTC')
+        .toPlainDateTime();
+    return {
+        key,
+        resource: JSON.stringify(message),
+        typeId: EnqueuedType.APP_OUTBOX,
+        status: EntityStatus.NEW,
+        audit: {
+            date: createdTs.toPlainTime(),
+            createdBy,
+            createdTs,
+            expiryTs: Temporal.Instant.fromEpochMilliseconds(
+                computed.expireAtEpochMs,
+            ),
+        },
+        dequeueAudit: { attempts: 0 },
+    };
+}
+
+export async function writeRtcTopologyOutbox(
+    transaction: PSqlTransactionSql,
+    entry: ResourceEntry,
+): Promise<ResourceEntry> {
+    if (entry.typeId !== EnqueuedType.APP_OUTBOX) {
+        throw new TypeError('RTC topology outbox write received a non-APP_OUTBOX entry');
+    }
+    await new ResourceInboxRepository(transaction).writeIfAbsentOrMatch(entry);
+    return entry;
+}
+
+function validateComputedRtcTopologyOutbox(
+    computed: ComputedRtcTopologyOutbox,
+    senderId: string,
+): void {
+    const snapshot = computed.groupSnapshot;
+    validateAuthoritativeGroupSnapshot(snapshot);
+    if (
+        computed.commandId.length === 0 ||
+        senderId.length === 0 ||
+        computed.effectKind !== 'rtc-topology-recompute' ||
+        !Number.isSafeInteger(computed.createdAtEpochMs) ||
+        !Number.isSafeInteger(computed.expireAtEpochMs) ||
+        computed.createdAtEpochMs < 0 ||
+        computed.expireAtEpochMs <= computed.createdAtEpochMs ||
+        computed.aggregateRef.applicationId !== snapshot.group.applicationId ||
+        computed.aggregateRef.workspaceId !== snapshot.group.workspaceId ||
+        computed.aggregateRef.groupId !== snapshot.group.groupId ||
+        computed.acceptedCausalRevision.groupRevision !==
+            snapshot.causalRevision.groupRevision ||
+        computed.acceptedCausalRevision.presenceRevision !==
+            snapshot.causalRevision.presenceRevision
+    ) {
+        throw new TypeError('Computed RTC topology outbox facts are invalid');
+    }
+}
 
 export type RtcTopologyGroupRevisionWork = Readonly<{
     kind: 'group-revision';

@@ -216,6 +216,72 @@ export class ResourceInboxRepository {
         return 'matched';
     }
 
+    async replacePendingIfMatch(
+        expected: ResourceEntry,
+        next: ResourceEntry,
+        expectedGeneration: number,
+    ): Promise<ResourceEntry | null> {
+        if (
+            expected.key.topicId !== next.key.topicId ||
+            expected.key.resourceId !== next.key.resourceId ||
+            expected.key.contextId !== next.key.contextId ||
+            expected.typeId !== next.typeId ||
+            ![EntityStatus.NEW, EntityStatus.RETRY].includes(expected.status) ||
+            ![EntityStatus.NEW, EntityStatus.RETRY].includes(next.status) ||
+            next.dequeueAudit.attempts !== expected.dequeueAudit.attempts ||
+            !Number.isSafeInteger(expectedGeneration) ||
+            expectedGeneration < 1
+        ) {
+            throw new ResourceInboxInvariantCorruptionError(
+                next.key,
+                'Resource inbox pending replacement identity or lifecycle differs',
+            );
+        }
+
+        const rows = await this.sql<ResourceInboxRow[]>`
+            update resource_inbox
+            set ri_resource = ${next.resource},
+                ri_status = ${next.status},
+                next_ts = ${next.dequeueAudit.nextTs
+                    ? toPgTimestamp(next.dequeueAudit.nextTs)
+                    : null}
+            where ri_topic_id = ${expected.key.topicId}
+              and ri_resource_id = ${expected.key.resourceId}
+              and fk_ext_bank_id = ${expected.key.contextId}
+              and ri_type_id = ${expected.typeId}
+              and ri_status = ${expected.status}
+              and ri_resource = ${expected.resource}
+              and (((ri_resource::jsonb #>> '{payload,resource}')::jsonb
+                    #>> '{data,__rallarCoalescedWork,generation}')::bigint) =
+                  ${expectedGeneration}
+              and ri_attempts = ${expected.dequeueAudit.attempts}
+            returning *
+        `;
+
+        if (rows.length === 0) {
+            return null;
+        }
+        if (rows.length !== 1) {
+            throw new ResourceInboxInvariantCorruptionError(
+                next.key,
+                'Resource inbox pending replacement returned an unexpected row count',
+            );
+        }
+
+        const updated = toDomain(rows[0]);
+        if (
+            updated.resource !== next.resource ||
+            updated.status !== next.status ||
+            updated.typeId !== next.typeId
+        ) {
+            throw new ResourceInboxInvariantCorruptionError(
+                next.key,
+                'Resource inbox pending replacement returned different content',
+            );
+        }
+        return updated;
+    }
+
     async replace(entry: ResourceEntry): Promise<ResourceEntry> {
         const systemDate = toSystemDate(entry);
 
