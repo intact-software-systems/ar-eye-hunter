@@ -67,6 +67,8 @@ export function createCachedGroupStateService(options: Readonly<{
             await options.durable.readStateRevision(ref),
         readCausalRevision: async (ref) =>
             await options.durable.readCausalRevision(ref),
+        readIssuedAuthSession: async (sessionId) =>
+            await options.durable.readIssuedAuthSession(sessionId),
         listEvents: async (ref) =>
             await options.durable.listEvents(ref),
         listRecentEvents: options.durable.listRecentEvents

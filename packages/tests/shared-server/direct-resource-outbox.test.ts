@@ -418,12 +418,16 @@ describe('direct resource outbox writes', () => {
       groupSnapshot,
       effectKind: 'rtc-topology-recompute',
       payloadKind: 'group-revision',
+      senderId: 'server-1',
+      resourceId: 'group-command-1:rtc-topology-recompute:group-revision:group=4;presence=3',
+      requestOptions: {},
+      publish: true,
       createdAtEpochMs: CREATED_AT_EPOCH_MS,
       expireAtEpochMs: EXPIRE_AT_EPOCH_MS,
     };
 
-    const first = computeRtcTopologyEntry(computed, 'server-1');
-    const replay = computeRtcTopologyEntry(computed, 'server-1');
+    const first = computeRtcTopologyEntry(computed);
+    const replay = computeRtcTopologyEntry(computed);
 
     expect(first).toEqual(replay);
     expect(first.typeId).toBe(EnqueuedType.APP_OUTBOX);
@@ -441,7 +445,7 @@ describe('direct resource outbox writes', () => {
     expect(message.id.msgId).toContain('group-command-1');
     const database = createResourceInboxDatabase();
     await runInTransaction(database.sql, async (transaction) => {
-      await writeRtcTopologyOutbox(transaction, computed, 'server-1');
+      await writeRtcTopologyOutbox(transaction, computed);
     });
     expect(database.rows.get(toRowKey(first))?.ri_resource).toBe(
       first.resource,
@@ -830,6 +834,11 @@ function createComputedRtcTopologyOutbox() {
     acceptedCausalRevision: groupSnapshot.causalRevision,
     groupSnapshot,
     effectKind: 'rtc-topology-recompute' as const,
+    senderId: 'server-1',
+    resourceId:
+      'group-command-1:rtc-topology-recompute:group-revision:group=4;presence=3',
+    requestOptions: {},
+    publish: true,
     createdAtEpochMs: CREATED_AT_EPOCH_MS,
     expireAtEpochMs: EXPIRE_AT_EPOCH_MS,
   };
@@ -1080,7 +1089,7 @@ function createResourceInboxTransaction(
   rows: Map<string, TestResourceInboxRow>,
   onNestedBegin: () => void,
 ): PSqlTransactionSql {
-  const transaction = (async (
+  const transaction = ((
     stringsOrValues: TemplateStringsArray | readonly unknown[],
     ...values: unknown[]
   ) => {
@@ -1138,7 +1147,7 @@ function createResourceInboxTransaction(
     }
     throw new Error(`Unexpected resource inbox SQL: ${query}`);
   }) as unknown as PSqlTransactionSql;
-  transaction.begin = async () => {
+  transaction.begin = () => {
     onNestedBegin();
     throw new Error('Nested resource inbox transaction');
   };

@@ -365,6 +365,7 @@ type RtcRttRecomputeIntentBase = Readonly<{
     rtt: RttMeasurementInfo;
     createdAtEpochMs: number;
     commandHash: string;
+    senderId: string;
 }>;
 
 export type RtcRttRecomputeIntent = RtcRttRecomputeIntentBase & (
@@ -532,6 +533,7 @@ export function computeRttMutation(input: Readonly<{
         rtt: authority.command.rtt,
         createdAtEpochMs: authority.facts.requestedAtEpochMs,
         commandHash: input.facts.commandHash,
+        senderId: authority.command.alSenderId,
         delivery: { state: 'pending' },
     }));
     return {

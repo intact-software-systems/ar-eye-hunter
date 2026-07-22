@@ -36,6 +36,7 @@ type RtcRttRecomputeIntentContract = Readonly<{
     rtt: RttMeasurementInfo;
     createdAtEpochMs: number;
     commandHash: string;
+    senderId: string;
     delivery:
         | Readonly<{ state: 'pending' }>
         | Readonly<{ state: 'delivered'; deliveredAtEpochMs: number }>;
@@ -148,12 +149,13 @@ export function validateRtcRttRecomputeIntent(
     const intent = record(value, 'RTC RTT recompute intent');
     exactKeys(intent, [
         'outboxId', 'receiptId', 'groupSnapshot', 'rtt', 'createdAtEpochMs',
-        'commandHash', 'delivery',
+        'commandHash', 'senderId', 'delivery',
     ]);
     nonEmptyString(intent.outboxId, 'recompute outbox id');
     nonEmptyString(intent.receiptId, 'recompute receipt id');
     safeInteger(intent.createdAtEpochMs, 0, 'recompute creation time');
     validateCommandHash(intent.commandHash);
+    nonEmptyString(intent.senderId, 'recompute sender id');
     validatePersistedGroupSnapshot(intent.groupSnapshot);
     validateRtcRttMeasurement(intent.rtt);
     const group = intent.groupSnapshot as GroupSnapshot;

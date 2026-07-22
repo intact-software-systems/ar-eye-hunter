@@ -1,4 +1,3 @@
-import { Temporal } from '@js-temporal/polyfill';
 import { ALMessage, newALRoute, newALUntargetedMessage, } from '@shared/al-contracts/al-contract.ts';
 import {
     EntityStatus,
@@ -638,7 +637,7 @@ export class AppInboxService {
         };
     }
 
-    private nowEpochMs(): number {
+    protected nowEpochMs(): number {
         return this.optionsInput.nowEpochMs?.() ?? Date.now();
     }
 

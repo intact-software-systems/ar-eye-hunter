@@ -26,7 +26,6 @@ import type {
     RuntimeStateEntry,
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
-import { toStateMutationOutboxId } from '@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts';
 
 describe('group topology config repository', () => {
     it('uses canonical optional-workspace keys across every topology namespace', () => {
@@ -929,15 +928,12 @@ describe('group topology config repository', () => {
             rosterVersion: 1,
             presenceVersion: 0,
         };
-        const outboxId = toStateMutationOutboxId({
-            commandId: requestId,
-            kind: 'group',
-            aggregateRef: groupRef,
-            acceptedCausalRevision: {
-                kind: 'group',
-                ...acceptedCausalRevision,
-            },
-        });
+        const outboxId = [
+            requestId,
+            'rtc-topology-recompute',
+            'group-revision',
+            `group=${acceptedCausalRevision.causalRevision.groupRevision};presence=${acceptedCausalRevision.causalRevision.presenceRevision}`,
+        ].join(':');
         await runtimeRepository.insertIfAbsent(
             GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE,
             repository.mutationKey(groupRef, requestId),

@@ -88,7 +88,7 @@ describe('RTC topology mutation phases', () => {
             .toMatch(/rtc-topology-publication-validation/);
     });
 
-    it('owns RTT read-compute-validate-write ordering and transactions in the effectful service', () => {
+    it('keeps RTT phases explicit while AppInbox exclusively owns retries and transactions', () => {
         const serviceUrl = new URL(
             '../../shared-server/rallar-system/services/rtc-rtt-mutation-service.ts',
             import.meta.url,
@@ -105,9 +105,43 @@ describe('RTC topology mutation phases', () => {
             .toEqual([...new Set([readIndex, computeIndex, validateIndex, writeIndex])]
                 .toSorted((left, right) => left - right));
         expect(readIndex).toBeGreaterThanOrEqual(0);
-        expect(source.match(/\.begin\s*\(/g)).toHaveLength(1);
+        expect(source).not.toMatch(/\.begin\s*\(/);
+        expect(source).not.toMatch(/waitForRuntimeStateWriteRetry|\bfor\s*\([^)]*attempt/);
+        expect(source).not.toMatch(/\bsleep\??\s*:/);
         const writeFunctionIndex = source.indexOf('export async function writeRttMutation');
-        expect(source.indexOf('.begin(')).toBeGreaterThan(writeFunctionIndex);
+        const writeFunction = source.slice(
+            writeFunctionIndex,
+            source.indexOf('\n}', writeFunctionIndex) + 2,
+        );
+        expect(writeFunction).toMatch(/transaction:\s*PSqlTransactionSql/);
+        expect(writeFunction).not.toMatch(/RuntimeStateOptimisticTransactionalRepositoryLike/);
+    });
+
+    it('declares every topology ingress command and routes each through AppGroupInbox', () => {
+        const contracts = readFileSync(new URL(
+            '../../shared-server/rallar-system/services/app-inbox-contracts.ts',
+            import.meta.url,
+        ), 'utf8');
+        const service = readFileSync(new URL(
+            '../../shared-server/rallar-system/services/AppGroupInboxService.ts',
+            import.meta.url,
+        ), 'utf8');
+        const expected = [
+            'TOPOLOGY_CONFIG_PUT',
+            'TOPOLOGY_CONFIG_DELETE',
+            'TOPOLOGY_OVERRIDE_PUT',
+            'TOPOLOGY_OVERRIDE_DELETE',
+            'TOPOLOGY_RECONFIGURE',
+            'RTC_RTT_SUBMIT',
+        ];
+
+        for (const operation of expected) {
+            expect(contracts).toContain(`${operation} = '${operation}'`);
+            expect(service).toContain(`AppInboxType.${operation}`);
+        }
+        expect(service).toMatch(/readTopologyMutation[\s\S]*computeTopologyMutation/);
+        expect(service).toMatch(/computeTopologyMutation[\s\S]*validateTopologyMutation/);
+        expect(service).toMatch(/validateTopologyMutation[\s\S]*writeMutation\(/);
     });
 
     it('keeps receipt-family cleanup reads and validation outside its write transaction', () => {

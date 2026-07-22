@@ -135,6 +135,8 @@ export class GroupPresenceSummaryWork {
             groupSnapshot: snapshot,
             effectKind: 'rtc-topology-recompute',
             payloadKind: 'group-revision',
+            requestOptions: {},
+            publish: true,
             createdAtEpochMs: summary.summary.computedAtEpochMs,
             expireAtEpochMs: work.expireAtEpochMs,
         }, this.options.serviceId);

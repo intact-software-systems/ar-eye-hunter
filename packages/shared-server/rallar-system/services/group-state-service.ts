@@ -191,6 +191,7 @@ export type GroupStateService = GroupStateMutationService & Readonly<{
     readSnapshot(ref: GroupRef): Promise<GroupSnapshot | undefined>;
     readStateRevision(ref: GroupRef): Promise<number | undefined>;
     readCausalRevision(ref: GroupRef): Promise<GroupStateCausalRevision | undefined>;
+    readIssuedAuthSession(sessionId: string): Promise<IssuedAuthSession | undefined>;
     listEvents(ref: GroupRef): Promise<readonly GroupEvent[]>;
     listRecentEvents?(
         ref: GroupRef,
@@ -381,6 +382,8 @@ export function createGroupStateRuntime(
         readSnapshot: async (ref) => await repositoryFor(runtime).readSnapshot(ref),
         readStateRevision: async (ref) => await repositoryFor(runtime).readStateRevision(ref),
         readCausalRevision: async (ref) => await repositoryFor(runtime).readCausalRevision(ref),
+        readIssuedAuthSession: async (sessionId) =>
+            await dependencies.authSessionRepository.findBySessionId(sessionId),
         listEvents: async (ref) => await repositoryFor(runtime).listEvents(ref),
         listRecentEvents: async (ref, query) =>
             await repositoryFor(runtime).listRecentEvents(ref, query),

@@ -1,14 +1,7 @@
-import type {
-    RuntimeStateOptimisticTransactionalRepositoryLike,
-} from '../../runtime-state/RuntimeStateRepository.ts';
-import {
-    RuntimeStateRetryExhaustedError,
-    RuntimeStateWriteConflictError,
-    waitForRuntimeStateWriteRetry,
-} from '../../runtime-state/optimistic-runtime-state-write.ts';
-import {
-    RtcRttRepository,
-} from '../repositories/RtcRttRepository.ts';
+import { RuntimeStateWriteConflictError } from '../../runtime-state/optimistic-runtime-state-write.ts';
+import type { PSqlTransactionSql } from '../../postgres/PostgresSqlClient.ts';
+import { PSqlRuntimeStateRepository } from '../../postgres/runtime-state/PSqlRuntimeStateRepository.ts';
+import { RtcRttRepository } from '../repositories/RtcRttRepository.ts';
 import {
     RTC_RTT_MUTATION_RETENTION_MS,
     validateRtcRttWriteCandidate,
@@ -18,7 +11,6 @@ import {
     compareRtcTopologyIdentifiers,
     toRtcRttMutationReceiptId,
 } from '../rtc-topology-identifiers.ts';
-import { rtcTopologySemanticEqual } from '../rtc-topology-semantic-equality.ts';
 import {
     computeRttMutation,
     type RtcRttMutationCommand,
@@ -29,7 +21,7 @@ import {
     type RtcRttStableRequest,
     validateRttMutation,
 } from './rtc-topology-mutations.ts';
-import { recordRallarTiming, type RallarTimingSink } from './timing.ts';
+import { writeRtcTopologyOutbox } from './rtc-topology-outbox-entry.ts';
 
 export async function readRttMutation(
     repository: RtcRttRepository,
@@ -40,82 +32,83 @@ export async function readRttMutation(
     );
     if (receipt) return { receipt };
 
-    const [measurement, measurements, ...endpointAdmissions] = await Promise.all([
-        repository.findMeasurementEntry(
-            request.rtt.sessionIdFrom,
-            request.rtt.sessionIdTo,
-        ),
-        repository.listMeasurementEntries(),
-        ...[...new Set([
-            request.rtt.sessionIdFrom,
-            request.rtt.sessionIdTo,
-        ])].sort(compareRtcTopologyIdentifiers).map((endpointId) =>
-            repository.findEndpointAdmissionEntry(endpointId)
-        ),
-    ]);
+    const [measurement, measurements, ...endpointAdmissions] =
+        await Promise.all([
+            repository.findMeasurementEntry(
+                request.rtt.sessionIdFrom,
+                request.rtt.sessionIdTo,
+            ),
+            repository.listMeasurementEntries(),
+            ...[
+                ...new Set([
+                    request.rtt.sessionIdFrom,
+                    request.rtt.sessionIdTo,
+                ]),
+            ]
+                .sort(compareRtcTopologyIdentifiers)
+                .map((endpointId) =>
+                    repository.findEndpointAdmissionEntry(endpointId),
+                ),
+        ]);
     return {
         receipt: null,
         measurement: measurement ?? null,
-        endpointAdmissions: endpointAdmissions.filter((entry): entry is
-            NonNullable<typeof entry> => entry !== undefined),
+        endpointAdmissions: endpointAdmissions.filter(
+            (entry): entry is NonNullable<typeof entry> => entry !== undefined,
+        ),
         measurements,
     };
 }
 
 export async function writeRttMutation(
-    runtime: RuntimeStateOptimisticTransactionalRepositoryLike,
+    transaction: PSqlTransactionSql,
     options: ConstructorParameters<typeof RtcRttRepository>[1],
     computed: Extract<RtcRttMutationComputed, { outcome: 'write' }>,
-): Promise<'accepted' | 'conflict'> {
-    const mutationExpireAtTimestamp = computed.receipt.acceptedAtEpochMs +
-        RTC_RTT_MUTATION_RETENTION_MS;
+): Promise<'accepted'> {
+    const mutationExpireAtTimestamp =
+        computed.receipt.acceptedAtEpochMs + RTC_RTT_MUTATION_RETENTION_MS;
     validateRtcRttWriteCandidate(computed, mutationExpireAtTimestamp);
-    try {
-        const accepted = await runtime.begin(async (transaction) => {
-            const repository = new RtcRttRepository(transaction, options);
-            for (let index = 0; index < computed.endpointGuards.length; index += 1) {
-                const guard = computed.endpointGuards[index]!;
-                const written = await repository.commitEndpointAdmission(
-                    guard.value,
-                    guard.expectedRevision,
-                    guard.expireAtTimestamp,
-                );
-                if (written.status === 'conflict') {
-                    if (index === 0) return false;
-                    throw new RuntimeStateWriteConflictError();
-                }
-            }
-            const measurement = await repository.commitMeasurement(
-                computed.measurementGuard.value,
-                computed.measurementGuard.expectedRevision,
-                computed.measurementGuard.purgeAfterEpochMs,
-            );
-            if (measurement.status === 'conflict') {
-                throw new RuntimeStateWriteConflictError();
-            }
-            const receipt = await repository.insertMutationReceipt(
-                computed.receipt,
-                mutationExpireAtTimestamp,
-            );
-            if (receipt.status === 'conflict') {
-                throw new RuntimeStateWriteConflictError();
-            }
-            for (const intent of computed.recomputeIntents) {
-                const inserted = await repository.insertRecomputeIntent(
-                    intent,
-                    mutationExpireAtTimestamp,
-                );
-                if (inserted.status === 'conflict') {
-                    throw new RuntimeStateWriteConflictError();
-                }
-            }
-            return true;
-        });
-        return accepted ? 'accepted' : 'conflict';
-    } catch (error) {
-        if (error instanceof RuntimeStateWriteConflictError) return 'conflict';
-        throw error;
+    const runtime = new PSqlRuntimeStateRepository(transaction);
+    const repository = new RtcRttRepository(runtime, options);
+    for (const guard of computed.endpointGuards) {
+        requireAcceptedRttWrite(
+            await repository.commitEndpointAdmission(
+                guard.value,
+                guard.expectedRevision,
+                guard.expireAtTimestamp,
+            ),
+        );
     }
+    requireAcceptedRttWrite(
+        await repository.commitMeasurement(
+            computed.measurementGuard.value,
+            computed.measurementGuard.expectedRevision,
+            computed.measurementGuard.purgeAfterEpochMs,
+        ),
+    );
+    requireAcceptedRttWrite(
+        await repository.insertMutationReceipt(
+            computed.receipt,
+            mutationExpireAtTimestamp,
+        ),
+    );
+    for (const intent of computed.recomputeIntents) {
+        await writeRtcTopologyOutbox(transaction, {
+            commandId: intent.receiptId,
+            resourceId: intent.outboxId,
+            aggregateRef: intent.groupSnapshot.group,
+            acceptedCausalRevision: intent.groupSnapshot.causalRevision,
+            groupSnapshot: intent.groupSnapshot,
+            effectKind: 'rtc-topology-recompute',
+            payloadKind: 'group-revision',
+            createdAtEpochMs: intent.createdAtEpochMs,
+            expireAtEpochMs: mutationExpireAtTimestamp,
+            senderId: intent.senderId,
+            requestOptions: {},
+            publish: true,
+        });
+    }
+    return 'accepted';
 }
 
 export type ExecuteRttMutationResult = Readonly<{
@@ -123,20 +116,14 @@ export type ExecuteRttMutationResult = Readonly<{
     updated: boolean;
 }>;
 
-type ExecuteRttMutationBase = Readonly<{
+export type ExecuteRttMutationInput = Readonly<{
     repository: RtcRttRepository;
-    runtime: RuntimeStateOptimisticTransactionalRepositoryLike;
+    transaction: PSqlTransactionSql;
     readFacts: () =>
-        | RtcRttMutationLifecycleFacts
-        | Promise<RtcRttMutationLifecycleFacts>;
-    sleep?: (delayMs: number) => Promise<void>;
-    timing?: RallarTimingSink;
-    serviceId?: string;
-}>;
-
-type ExecuteRttMutationInput = ExecuteRttMutationBase & Readonly<{
+        RtcRttMutationLifecycleFacts | Promise<RtcRttMutationLifecycleFacts>;
     request: RtcRttStableRequest;
     readCommand: () => RtcRttMutationCommand | Promise<RtcRttMutationCommand>;
+    attemptCount: number;
 }>;
 
 export async function executeRttMutation(
@@ -144,147 +131,51 @@ export async function executeRttMutation(
 ): Promise<ExecuteRttMutationResult> {
     const stableRequest = input.request;
     const commandHash = await hashStateMutationCommand(stableRequest);
-    let lastConflict: RuntimeStateWriteConflictError | undefined;
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-        const backoffMs = await waitForRuntimeStateWriteRetry(attempt as 0 | 1 | 2, {
-            sleep: input.sleep,
-        });
-        const readStarted = performance.now();
-        const read = await readRttMutation(input.repository, stableRequest);
-        recordRttPhase(
-            input,
-            stableRequest,
-            'read',
-            readStarted,
-            attempt,
-            backoffMs,
-        );
-
-        let command: RtcRttMutationCommand;
-        let facts: RtcRttMutationFacts;
-        if (read.receipt) {
-            command = {
-                ...stableRequest,
-                candidateGroups: null,
-                overlaySnapshotsByGroupKey: null,
-                degreeLimit: null,
-            };
-            facts = {
-                commandHash,
-                attemptCount: attempt + 1,
-                requestedAtEpochMs: null,
-                purgeAfterEpochMs: null,
-            };
-        } else {
-            command = await input.readCommand();
-            if (!sameRttRequest(command, stableRequest)) {
-                throw new TypeError('RTC RTT retry changed the stable request payload');
-            }
-            facts = {
-                ...await input.readFacts(),
-                commandHash,
-                attemptCount: attempt + 1,
-            };
-        }
-
-        const computeStarted = performance.now();
-        const computed = computeRttMutation({ command, read, facts });
-        recordRttPhase(
-            input,
-            stableRequest,
-            'compute',
-            computeStarted,
-            attempt,
-            backoffMs,
-        );
-
-        const validateStarted = performance.now();
-        validateRttMutation({ command, read, facts, computed });
-        recordRttPhase(
-            input,
-            stableRequest,
-            'validate',
-            validateStarted,
-            attempt,
-            backoffMs,
-        );
-        if (computed.outcome === 'rejected' || computed.outcome === 'replay') {
-            return { computed, updated: false };
-        }
-        if (
-            facts.requestedAtEpochMs === null ||
-            facts.purgeAfterEpochMs === null
-        ) {
-            throw new TypeError('RTC RTT write is missing lifecycle facts');
-        }
-
-        const writeStarted = performance.now();
-        const transactionStarted = performance.now();
-        const written = await writeRttMutation(
-            input.runtime,
-            {
-                ttlMs: facts.purgeAfterEpochMs - facts.requestedAtEpochMs,
-                now: () => facts.requestedAtEpochMs,
-            },
-            computed,
-        );
-        recordRttPhase(
-            input,
-            stableRequest,
-            'transaction',
-            transactionStarted,
-            attempt,
-            backoffMs,
-        );
-        recordRttPhase(
-            input,
-            stableRequest,
-            'write',
-            writeStarted,
-            attempt,
-            backoffMs,
-        );
-        if (written === 'accepted') return { computed, updated: true };
-
-        lastConflict = new RuntimeStateWriteConflictError();
-        recordRallarTiming(input.timing, {
-            component: 'rtc-rtt-service',
-            operation: 'mutation.conflict',
-            serviceId: input.serviceId,
-            requestId: requestId(stableRequest),
-            details: { attempt, backoffMs, conflict: true },
-        }, 'error', 0, lastConflict);
+    const read = await readRttMutation(input.repository, stableRequest);
+    let command: RtcRttMutationCommand;
+    let facts: RtcRttMutationFacts;
+    if (read.receipt) {
+        command = {
+            ...stableRequest,
+            candidateGroups: null,
+            overlaySnapshotsByGroupKey: null,
+            degreeLimit: null,
+        };
+        facts = {
+            commandHash,
+            attemptCount: input.attemptCount,
+            requestedAtEpochMs: null,
+            purgeAfterEpochMs: null,
+        };
+    } else {
+        command = await input.readCommand();
+        facts = {
+            ...(await input.readFacts()),
+            commandHash,
+            attemptCount: input.attemptCount,
+        };
     }
-    throw new RuntimeStateRetryExhaustedError(
-        lastConflict ?? new RuntimeStateWriteConflictError(),
+    const computed = computeRttMutation({ command, read, facts });
+    validateRttMutation({ command, read, facts, computed });
+    if (computed.outcome !== 'write') return { computed, updated: false };
+    if (facts.requestedAtEpochMs === null || facts.purgeAfterEpochMs === null) {
+        throw new TypeError('RTC RTT write is missing lifecycle facts');
+    }
+    await writeRttMutation(
+        input.transaction,
+        {
+            ttlMs: facts.purgeAfterEpochMs - facts.requestedAtEpochMs,
+            now: () => facts.requestedAtEpochMs,
+        },
+        computed,
     );
+    return { computed, updated: true };
 }
 
-function sameRttRequest(
-    command: RtcRttMutationCommand,
-    request: RtcRttStableRequest,
-): boolean {
-    return rtcTopologySemanticEqual(command.rtt, request.rtt) &&
-        command.alSenderId === request.alSenderId;
-}
-
-function recordRttPhase(
-    input: Pick<ExecuteRttMutationBase, 'timing' | 'serviceId'>,
-    request: RtcRttStableRequest,
-    phase: 'read' | 'compute' | 'validate' | 'transaction' | 'write',
-    started: number,
-    attempt: number,
-    backoffMs: number,
+function requireAcceptedRttWrite(
+    result: Readonly<{ status: 'accepted' | 'conflict' }>,
 ): void {
-    recordRallarTiming(input.timing, {
-        component: 'rtc-rtt-service',
-        operation: `mutation.${phase}`,
-        serviceId: input.serviceId,
-        requestId: requestId(request),
-        details: { attempt, backoffMs },
-    }, 'ok', performance.now() - started);
-}
-
-function requestId(request: RtcRttStableRequest): string {
-    return `${request.rtt.sessionIdFrom}:${request.rtt.sessionIdTo}:${request.rtt.version}`;
+    if (result.status === 'conflict') {
+        throw new RuntimeStateWriteConflictError();
+    }
 }

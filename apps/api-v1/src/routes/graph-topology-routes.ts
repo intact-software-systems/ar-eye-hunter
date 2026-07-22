@@ -1,5 +1,4 @@
 import { Hono } from 'jsr:@hono/hono@4.11.9';
-import type { AuthSession } from '@shared/api/api-config.ts';
 import type {
   GraphDiagnosticReadOptions,
   GraphDiagnosticReadResponse,
@@ -20,11 +19,32 @@ import {
 } from '@shared-server/rallar-system/group-policy.ts';
 import { getGroupStateService } from '../services/group-state-service.ts';
 import { requireApiAuthSession as defaultRequireApiAuthSession } from '../services/request-auth-service.ts';
+import { getMiddleware } from '../middleware.ts';
+import type { IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+import {
+  type TopologyAppInboxCommand,
+  type TopologyAppInboxPayload,
+  toTopologyAppInboxCommand,
+} from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
+import {
+  type AppInboxEnqueueInput,
+  AppInboxType,
+} from '@shared-server/rallar-system/services/AppInboxService.ts';
 
 export type GraphTopologyRouteAuthSession = Pick<
-  AuthSession,
-  'clientId' | 'sessionId'
+  IssuedAuthSession,
+  | 'clientId'
+  | 'sessionId'
+  | 'accessToken'
+  | 'username'
+  | 'issuedAtEpochMs'
+  | 'expiresAtEpochMs'
 >;
+
+export type ProcessTopologyAppInbox = (
+  authority: GraphTopologyRouteAuthSession,
+  enqueue: AppInboxEnqueueInput<TopologyAppInboxCommand>,
+) => Promise<unknown>;
 
 export type GraphTopologyGroupStateService = Readonly<{
   readSnapshot(ref: GroupRef): Promise<GroupSnapshot | undefined>;
@@ -56,6 +76,7 @@ export type GraphTopologyRouteDependencies = Readonly<{
   getGroupStateService: () => GraphTopologyGroupStateService;
   graphDiagnostics: GraphTopologyRouteGraphDiagnostics;
   topologyManagement: GraphTopologyRouteTopologyManagement;
+  processTopologyAppInbox: ProcessTopologyAppInbox;
   requireApiAuthSession: (
     req: { header(name: string): string | undefined },
   ) => Promise<GraphTopologyRouteAuthSession>;
@@ -82,7 +103,9 @@ export function init(
     }
   });
 
-  app.get('/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/graphs/latest', async (c) => {
+  app.get(
+    '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/graphs/latest',
+    async (c) => {
     try {
       const groupRef = toGroupRef(c);
       await assertGroupExists(groupRef, deps);
@@ -94,9 +117,12 @@ export function init(
     } catch (error) {
       return toErrorResponse(c, error);
     }
-  });
+    },
+  );
 
-  app.get('/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology', async (c) => {
+  app.get(
+    '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology',
+    async (c) => {
     try {
       const groupRef = toGroupRef(c);
       await assertGroupExists(groupRef, deps);
@@ -105,9 +131,12 @@ export function init(
     } catch (error) {
       return toErrorResponse(c, error);
     }
-  });
+    },
+  );
 
-  app.get('/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/config', async (c) => {
+  app.get(
+    '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/config',
+    async (c) => {
     try {
       const groupRef = toGroupRef(c);
       await assertGroupExists(groupRef, deps);
@@ -116,40 +145,50 @@ export function init(
     } catch (error) {
       return toErrorResponse(c, error);
     }
-  });
+    },
+  );
 
-  app.put('/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/config', async (c) => {
+  app.put(
+    '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/config',
+    async (c) => {
     try {
       const { authSession, groupRef } = await assertCanManageGroupRef(c.req, deps, toGroupRef(c));
       const body = await readJsonBody<{
         requestId?: string;
         config: GroupTopologyConfigPatch;
       }>(c);
-      return c.json(await deps.topologyManagement.putConfig({
-        groupRef,
-        config: body.config,
-        updatedByPrincipalId: authSession.clientId,
-        requestId: readRequestId(c, body),
-      }));
+        return c.json(
+          await writeTopologyAppInboxCommand(deps, authSession, groupRef, {
+            requestId: requireRequestId(c, body),
+            payload: { operation: 'putConfig', config: body.config },
+          }),
+        );
     } catch (error) {
       return toErrorResponse(c, error);
     }
-  });
+    },
+  );
 
-  app.delete('/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/config', async (c) => {
+  app.delete(
+    '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/config',
+    async (c) => {
     try {
       const { authSession, groupRef } = await assertCanManageGroupRef(c.req, deps, toGroupRef(c));
-      return c.json(await deps.topologyManagement.deleteConfig({
-        groupRef,
-        updatedByPrincipalId: authSession.clientId,
-        requestId: c.req.header('Idempotency-Key'),
-      }));
+        return c.json(
+          await writeTopologyAppInboxCommand(deps, authSession, groupRef, {
+            requestId: requireRequestId(c, {}),
+            payload: { operation: 'deleteConfig', target: 'config' },
+          }),
+        );
     } catch (error) {
       return toErrorResponse(c, error);
     }
-  });
+    },
+  );
 
-  app.get('/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/override', async (c) => {
+  app.get(
+    '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/override',
+    async (c) => {
     try {
       const groupRef = toGroupRef(c);
       await assertGroupExists(groupRef, deps);
@@ -158,9 +197,12 @@ export function init(
     } catch (error) {
       return toErrorResponse(c, error);
     }
-  });
+    },
+  );
 
-  app.put('/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/override', async (c) => {
+  app.put(
+    '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/override',
+    async (c) => {
     try {
       const { authSession, groupRef } = await assertCanManageGroupRef(c.req, deps, toGroupRef(c));
       const body = await readJsonBody<{
@@ -169,50 +211,69 @@ export function init(
         ttlMs?: number;
         expiresAtEpochMs?: number;
       }>(c);
-      return c.json(await deps.topologyManagement.putOverride({
-        groupRef,
+        return c.json(
+          await writeTopologyAppInboxCommand(deps, authSession, groupRef, {
+            requestId: requireRequestId(c, body),
+            payload: {
+              operation: 'putOverride',
         config: body.config,
-        ttlMs: body.ttlMs,
-        expiresAtEpochMs: body.expiresAtEpochMs,
-        updatedByPrincipalId: authSession.clientId,
-        requestId: readRequestId(c, body),
-      }));
+              ttlMs: body.expiresAtEpochMs === undefined ? body.ttlMs ?? null : null,
+              expiresAtEpochMs: body.expiresAtEpochMs ?? null,
+            },
+          }),
+        );
     } catch (error) {
       return toErrorResponse(c, error);
     }
-  });
+    },
+  );
 
-  app.delete('/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/override', async (c) => {
+  app.delete(
+    '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/override',
+    async (c) => {
     try {
       const { authSession, groupRef } = await assertCanManageGroupRef(c.req, deps, toGroupRef(c));
-      return c.json(await deps.topologyManagement.deleteOverride({
-        groupRef,
-        updatedByPrincipalId: authSession.clientId,
-        requestId: c.req.header('Idempotency-Key'),
-      }));
+        return c.json(
+          await writeTopologyAppInboxCommand(deps, authSession, groupRef, {
+            requestId: requireRequestId(c, {}),
+            payload: { operation: 'deleteOverride', target: 'override' },
+          }),
+        );
     } catch (error) {
       return toErrorResponse(c, error);
     }
-  });
+    },
+  );
 
-  app.post('/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/reconfigure', async (c) => {
+  app.post(
+    '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/reconfigure',
+    async (c) => {
     try {
-      const { groupRef } = await assertCanManageGroupRef(c.req, deps, toGroupRef(c));
+        const { authSession, groupRef } = await assertCanManageGroupRef(
+          c.req,
+          deps,
+          toGroupRef(c),
+        );
       const body = await readOptionalJsonBody<{
         requestId?: string;
         options?: GroupTopologyConfigPatch;
         publish?: boolean;
       }>(c, {});
-      return c.json(await deps.topologyManagement.reconfigureGroupTopology({
-        groupRef,
-        requestOptions: body.options,
+        return c.json(
+          await writeTopologyAppInboxCommand(deps, authSession, groupRef, {
+            requestId: requireRequestId(c, body),
+            payload: {
+              operation: 'reconfigureTopology',
+              requestOptions: body.options ?? {},
         publish: body.publish ?? true,
-        requestId: readRequestId(c, body),
-      }));
+            },
+          }),
+        );
     } catch (error) {
       return toErrorResponse(c, error);
     }
-  });
+    },
+  );
 }
 
 function toDependencies(
@@ -227,6 +288,8 @@ function toDependencies(
     },
     topologyManagement: dependencies.topologyManagement ??
       notConfiguredTopologyManagement(),
+    processTopologyAppInbox: dependencies.processTopologyAppInbox ??
+      defaultProcessTopologyAppInbox,
     requireApiAuthSession: dependencies.requireApiAuthSession ??
       defaultRequireApiAuthSession,
     adminClientIds: dependencies.adminClientIds ?? [],
@@ -292,11 +355,13 @@ async function assertCanManageGroupRef(
   req: { header(name: string): string | undefined },
   deps: GraphTopologyRouteDependencies,
   groupRef: GroupRef,
-): Promise<Readonly<{
+): Promise<
+  Readonly<{
   authSession: GraphTopologyRouteAuthSession;
   groupRef: GroupRef;
   snapshot: GroupSnapshot;
-}>> {
+  }>
+> {
   const authSession = await deps.requireApiAuthSession(req);
   const snapshot = await assertGroupExists(groupRef, deps);
   if (deps.adminClientIds.includes(authSession.clientId)) {
@@ -382,6 +447,89 @@ function readRequestId(
   body: { requestId?: string },
 ): string | undefined {
   return body.requestId ?? c.req.header('Idempotency-Key');
+}
+
+function requireRequestId(
+  c: { req: { header(name: string): string | undefined } },
+  body: { requestId?: string },
+): string {
+  const requestId = readRequestId(c, body)?.trim();
+  if (!requestId) {
+    const error = new Error('Topology mutation requestId is required') as Error & {
+      status: number;
+    };
+    error.status = 400;
+    throw error;
+  }
+  return requestId;
+}
+
+async function writeTopologyAppInboxCommand(
+  deps: GraphTopologyRouteDependencies,
+  authSession: GraphTopologyRouteAuthSession,
+  groupRef: GroupRef,
+  input: Readonly<{
+    requestId: string;
+    payload: TopologyAppInboxPayload;
+  }>,
+): Promise<unknown> {
+  const command = await toTopologyAppInboxCommand({
+    actor: {
+      principalId: authSession.clientId,
+      sessionId: authSession.sessionId,
+    },
+    groupRef,
+    requestId: input.requestId,
+    capturedAtEpochMs: deps.now(),
+    payload: input.payload,
+  });
+  return await deps.processTopologyAppInbox(authSession, {
+    type: toTopologyAppInboxType(command.operation),
+    resourceId: command.requestId,
+    contextId: toTopologyAppInboxContextId(groupRef),
+    senderId: command.actor.principalId,
+    data: command,
+  });
+}
+
+function toTopologyAppInboxType(
+  operation: TopologyAppInboxCommand['operation'],
+): AppInboxType {
+  switch (operation) {
+    case 'putConfig':
+      return AppInboxType.TOPOLOGY_CONFIG_PUT;
+    case 'deleteConfig':
+      return AppInboxType.TOPOLOGY_CONFIG_DELETE;
+    case 'putOverride':
+      return AppInboxType.TOPOLOGY_OVERRIDE_PUT;
+    case 'deleteOverride':
+      return AppInboxType.TOPOLOGY_OVERRIDE_DELETE;
+    case 'reconfigureTopology':
+      return AppInboxType.TOPOLOGY_RECONFIGURE;
+  }
+}
+
+function toTopologyAppInboxContextId(groupRef: GroupRef): string {
+  return [groupRef.applicationId, groupRef.workspaceId, groupRef.groupId]
+    .map(encodeURIComponent)
+    .join(':');
+}
+
+async function defaultProcessTopologyAppInbox(
+  authority: GraphTopologyRouteAuthSession,
+  enqueue: AppInboxEnqueueInput<TopologyAppInboxCommand>,
+): Promise<unknown> {
+  const result = await getMiddleware().appGroupInboxService
+    .processAuthenticatedEntryUntilCompletion(
+      enqueue,
+      authority as IssuedAuthSession,
+    );
+  return result.fold(
+    (error) => {
+      throw new Error(error);
+    },
+    (value) => value,
+  );
 }
 
 function toScope(c: {

@@ -32,6 +32,15 @@ type AppInboxUnavailableOperation =
 const APP_INBOX_CLIENT_TOPIC = 'app-inbox.client-state';
 const APP_INBOX_GROUP_TOPIC = 'app-inbox.group-state';
 const APP_INBOX_OPERATIONS = new Set<string>(Object.values(AppInboxType));
+const APP_INBOX_GROUP_OPERATIONS = new Set<AppInboxType>([
+  ...Object.values(AppInboxType).filter((operation) => operation.startsWith('GROUP_')),
+  AppInboxType.TOPOLOGY_CONFIG_PUT,
+  AppInboxType.TOPOLOGY_CONFIG_DELETE,
+  AppInboxType.TOPOLOGY_OVERRIDE_PUT,
+  AppInboxType.TOPOLOGY_OVERRIDE_DELETE,
+  AppInboxType.TOPOLOGY_RECONFIGURE,
+  AppInboxType.RTC_RTT_SUBMIT,
+]);
 const APP_INBOX_OPERATION_SPECIFIC_TOPIC_BY_OPERATION: Readonly<
   Partial<Record<AppInboxType, string>>
 > = {
@@ -132,7 +141,7 @@ function isOperationForTopic(
     return true;
   }
   return topicId === APP_INBOX_GROUP_TOPIC
-    ? operation.startsWith('GROUP_')
+    ? APP_INBOX_GROUP_OPERATIONS.has(operation)
     : topicId === APP_INBOX_CLIENT_TOPIC && operation.startsWith('CLIENT_');
 }
 

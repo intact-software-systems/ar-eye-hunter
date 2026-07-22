@@ -1,228 +1,62 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import path from 'node:path';
-import { API } from 'typescript/unstable/sync';
-import * as ts from 'typescript/unstable/ast';
-import { afterAll, describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { describe, expect, it } from 'vitest';
 
-import {
-  callCallback,
-  callName,
-  findCall,
-  findForOfAncestor,
-  findFunction,
-  findIf,
-  findOutboxEffectPush,
-  findSingleReturn,
-  findVariableBinding,
-  hasKind,
-  isAwaited,
-  ownedCalls,
-  within,
-} from './guarded-batch-contract-test-support.ts';
+const topologyConfigSource = readFileSync(
+    'packages/shared-server/rallar-system/services/group-topology-management-service.ts',
+    'utf8',
+);
 
-interface GuardedBatchContract {
-  readonly family: string;
-  readonly file: string;
-  readonly writer: string;
-  readonly materializer: string;
-  readonly materializerArguments: readonly string[];
-  readonly validationArgument: string;
-  readonly appendsGroupEvent: boolean;
-}
-
-const capabilityCondition = 'isRuntimeStateGuardedBatchRepositoryLike(transaction)';
-const groupFile = 'packages/shared-server/rallar-system/services/group-state-guarded-batch.ts';
-const topologyFile =
-  'packages/shared-server/rallar-system/services/group-topology-management-service.ts';
-const contracts: readonly GuardedBatchContract[] = [
-  {
-    family: 'topology config mutation',
-    file: topologyFile,
-    writer: 'writeTopologyConfigMutation',
-    materializer: 'materializeTopologyConfigGuardedBatch',
-    materializerArguments: ['runtime', 'computed'],
-    validationArgument: `{
-      guard: materializeGroupStateAuthorityGuard(
-        computed.groupAuthorityGuard,
-      ),
-      effects,
-    }`,
-    appendsGroupEvent: false,
-  },
-];
-const repoCompiler = openCompiler(contracts.map(({ file }) => absolute(file)));
-afterAll(() => {
-  repoCompiler.snapshot.dispose();
-  repoCompiler.api.close();
-});
-
-describe('guarded batch write structural contract', () => {
-  it.each(contracts)(
-    '$family validates before begin and classifies the guarded result atomically',
-    (contract) => assertGuardedBatchContract(contract),
-  );
-
-});
-
-function assertGuardedBatchContract(
-  contract: GuardedBatchContract,
-  provided?: ts.SourceFile,
-): void {
-  const source = provided ?? repoSource(contract.file);
-  const writer = findFunction(source, contract.writer);
-  const materializer = findCall(source, writer, {
-    callee: contract.materializer,
-    arguments: contract.materializerArguments,
-    awaited: false,
-  });
-  expect(findVariableBinding(materializer, writer), contract.family).toBe('materialized');
-  const begin = findCall(source, writer, { callee: 'runtime.begin', awaited: true });
-  expect(materializer.pos, `${contract.family}: materialize before begin`).toBeLessThan(begin.pos);
-
-  const materializerOwner = findFunction(source, contract.materializer);
-  const outbox = findCall(source, materializerOwner, {
-    callee: 'createStateMutationOutboxRecord',
-    arguments: ['computed.outbox'],
-    awaited: false,
-  });
-  const outboxEffect = findOutboxEffectPush(source, materializerOwner);
-  const validation = findCall(source, materializerOwner, {
-    callee: 'validateRuntimeStateGuardedBatch',
-    arguments: [contract.validationArgument],
-    awaited: false,
-  });
-  expect(outbox.pos, `${contract.family}: outbox before effect`).toBeLessThan(outboxEffect.pos);
-  expect(outboxEffect.pos, `${contract.family}: effect included in validation`).toBeLessThan(
-    validation.pos,
-  );
-
-  const transaction = callCallback(begin, source);
-  const capability = findIf(transaction, capabilityCondition, source);
-  const resultValidation = findCall(source, capability.thenStatement, {
-    callee: 'validateRuntimeStateGuardedBatchResult',
-    arguments: ['materialized.batch', 'await transaction.executeGuardedBatch(materialized.batch)'],
-    awaited: false,
-  });
-  expect(findVariableBinding(resultValidation, transaction), contract.family).toBe('result');
-  findCall(source, capability.thenStatement, {
-    callee: 'transaction.executeGuardedBatch',
-    arguments: ['materialized.batch'],
-    awaited: true,
-  });
-
-  const guardConflict = findIf(transaction, "result.guard.status === 'conflict'", source);
-  const applied = findIf(transaction, "effect.status === 'applied'", source);
-  const outboxConflict = findIf(transaction, "effect.effectId === 'outbox'", source);
-  expect(resultValidation.pos, `${contract.family}: classify after result validation`).toBeLessThan(
-    guardConflict.pos,
-  );
-  expect(hasKind(guardConflict.thenStatement, ts.SyntaxKind.ThrowStatement)).toBe(true);
-  expect(hasKind(applied.thenStatement, ts.SyntaxKind.ContinueStatement)).toBe(true);
-  expect(hasKind(outboxConflict.thenStatement, ts.SyntaxKind.ThrowStatement)).toBe(true);
-  const classification = findForOfAncestor(applied, transaction);
-  const capableReturn = findSingleReturn(capability.thenStatement);
-  expect(classification.end, `${contract.family}: classify before return`).toBeLessThanOrEqual(
-    capableReturn.pos,
-  );
-
-  if (contract.appendsGroupEvent) {
-    const append = findCall(source, capability.thenStatement, {
-      callee: 'repository.appendEvent',
-      arguments: ['computed.event'],
-      awaited: true,
+describe('authoritative conditional-write structural contract', () => {
+    it('keeps topology config writes on the caller transaction without an owned transaction or retry', () => {
+        const writer = topologyConfigWriter();
+        expect(writer).toMatch(
+            /writeTopologyConfigMutation\(\s*transaction:\s*PSqlTransactionSql/,
+        );
+        expect(writer).not.toMatch(/\.begin\s*\(/);
+        expect(writer).not.toMatch(/waitForRuntimeStateWriteRetry/);
+        expect(writer).not.toMatch(/for\s*\([^)]*attempt/);
     });
-    expect(classification.end, 'classify before event append').toBeLessThan(append.pos);
-    expect(append.end, 'event append before return').toBeLessThanOrEqual(capableReturn.pos);
-    assertLegacyGroupGuardOrder(source, transaction, capability);
-  }
-  findCall(source, transaction, {
-    callee: 'new StateMutationOutboxRepository(transaction).insertForAuthoritativeWrite',
-    arguments: ['materialized.outbox'],
-    awaited: true,
-  });
+
+    it('advances the authority fence before conditional state, receipt, and APP_OUTBOX writes', () => {
+        expectInOrder(topologyConfigWriter(), [
+            'advanceAuthorityFence(computed.groupAuthorityGuard)',
+            "if (computed.outcome === 'write')",
+            'guard.expectedRevision',
+            'commitInvariantGeneration(',
+            'computed.invariantGenerationGuard.expectedRevision',
+            'commitGeneration(',
+            'computed.generationGuard.expectedRevision',
+            'insertMutationRecord(computed.idempotency)',
+            'writeRtcTopologyOutbox(transaction, computed.outbox)',
+        ]);
+    });
+
+    it('writes direct immutable APP_OUTBOX work without an intermediate mutation intent', () => {
+        const writer = topologyConfigWriter();
+        expect(writer).not.toContain('StateMutationOutbox');
+        expect(writer).not.toContain('materializeTopologyConfigGuardedBatch');
+        expect(writer).not.toContain('executeGuardedBatch');
+        expect(writer).toContain(
+            'writeRtcTopologyOutbox(transaction, computed.outbox)',
+        );
+    });
+});
+
+function topologyConfigWriter(): string {
+    const start = topologyConfigSource.indexOf(
+        'export async function writeTopologyConfigMutation',
+    );
+    if (start < 0) throw new Error('Missing topology config writer');
+    return topologyConfigSource.slice(start);
 }
 
-function assertLegacyGroupGuardOrder(
-  source: ts.SourceFile,
-  transaction: ts.FunctionLikeDeclaration,
-  capability: ts.IfStatement,
-): void {
-  const calls = ownedCalls(transaction).filter(({ node }) => !within(node, capability));
-  const guardNames = new Set([
-    'insertGroup',
-    'updateGroup',
-    'insertPresence',
-    'updatePresence',
-    'deletePresence',
-  ]);
-  const dependentNames = new Set([
-    'insertPresenceAdmission',
-    'updatePresenceAdmission',
-    'putMember',
-    'insertPresenceSummary',
-    'insertIdempotentGroupMutationReceipt',
-    'insertForAuthoritativeWrite',
-    'appendEvent',
-  ]);
-  const guards = calls.filter(({ name }) => guardNames.has(name));
-  const dependent = calls.filter(({ name }) => dependentNames.has(name));
-  expect(guards.length, 'legacy guards').toBeGreaterThan(0);
-  expect(dependent.length, 'legacy dependent writes').toBeGreaterThan(0);
-  expect(
-    Math.max(...guards.map(({ node }) => node.pos)),
-    'legacy guard before dependent writes',
-  ).toBeLessThan(Math.min(...dependent.map(({ node }) => node.pos)));
-  for (const guard of guards) {
-    expect(isAwaited(guard.node), `${callName(guard.node)} awaited`).toBe(true);
-  }
-  void source;
-}
-
-function absolute(file: string): string {
-  return path.join(process.cwd(), file);
-}
-
-function repoSource(file: string): ts.SourceFile {
-  const source = repoCompiler.snapshot
-    .getDefaultProjectForFile(absolute(file))
-    ?.program.getSourceFile(absolute(file));
-  expect(source, file).toBeDefined();
-  return source!;
-}
-
-function withFixture(source: string, run: (source: ts.SourceFile) => void): void {
-  const directory = mkdtempSync(path.join(tmpdir(), 'rallar-guarded-batch-contract-'));
-  const file = path.join(directory, 'fixture.ts');
-  let compiler: ReturnType<typeof openCompiler> | undefined;
-  try {
-    writeFileSync(file, source);
-    compiler = openCompiler([file]);
-    const parsed = compiler.snapshot.getDefaultProjectForFile(file)?.program.getSourceFile(file);
-    expect(parsed, file).toBeDefined();
-    run(parsed!);
-  } finally {
-    compiler?.snapshot.dispose();
-    compiler?.api.close();
-    rmSync(directory, { recursive: true, force: true });
-  }
-}
-
-function openCompiler(openFiles: readonly string[]) {
-  const api = new API();
-  try {
-    return { api, snapshot: api.updateSnapshot({ openFiles: [...openFiles] }) };
-  } catch (error) {
-    api.close();
-    throw error;
-  }
-}
-
-function readRepo(file: string): string {
-  return readFileSync(absolute(file), 'utf8');
-}
-
-function replaceOnce(source: string, before: string, after: string): string {
-  expect(source.split(before), before).toHaveLength(2);
-  return source.replace(before, after);
+function expectInOrder(source: string, markers: readonly string[]): void {
+    let cursor = -1;
+    for (const marker of markers) {
+        const index = source.indexOf(marker, cursor + 1);
+        expect(index, `Missing or reordered marker: ${marker}`).toBeGreaterThan(
+            cursor,
+        );
+        cursor = index;
+    }
 }

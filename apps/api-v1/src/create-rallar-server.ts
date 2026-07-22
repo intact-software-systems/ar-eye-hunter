@@ -39,10 +39,7 @@ import {
 } from '@shared-graph/graph-diagnostics-service.ts';
 import type { RallarServerWsFacadeOptions } from '@shared-server/rallar-facade/ws-topic-router.ts';
 import type { Middleware } from './middleware.ts';
-import {
-  initialiseMiddleware,
-  registerMiddlewareBackgroundTask,
-} from './middleware.ts';
+import { initialiseMiddleware, registerMiddlewareBackgroundTask } from './middleware.ts';
 import { getApiRtcTopologyServiceOptions } from './services/rtc-topology-config.ts';
 import { getApiTimingSink } from './services/timing-service.ts';
 import { createApiV1RoomWsAuthorizer } from './services/ws-topic-room-authorizer.ts';
@@ -64,6 +61,7 @@ import { readApiV1DatabasePubSubConfig } from './db/database-pubsub-config.ts';
 import { myServerId } from './runtime/runtime-identity.ts';
 import { createRuntimeStateRepository } from './repository/createStateRepositories.ts';
 import { SpaStatisticsService } from '@shared-server/rallar-system/spa-statistics/SpaStatisticsService.ts';
+import { toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
 
 export { RallarServerDataFacade, RallarServerSystemFacade };
 
@@ -127,7 +125,36 @@ export function createRallarServer(
     timing,
     serviceId: myServerId,
     adminPrincipalIds: new Set(adminClientIds),
-    wakeStateMutationOutbox: () => middleware.qboxEngine.wake(),
+  });
+  middleware.appGroupInboxService.setTopologyManagementService(
+    topologyManagement,
+  );
+  middleware.appGroupInboxService.setRtcRttAppInboxDependencies({
+    repository: rttRepository,
+    readPolicyInputs: async (groupRefs) => {
+      const candidateGroups = (
+        await Promise.all(
+          groupRefs.map((ref) => middleware.groupStateService.readSnapshotAtLeast(ref, {})),
+        )
+      ).filter((snapshot) => snapshot !== undefined);
+      const overlaySnapshotsByGroupKey = new Map();
+      for (const group of candidateGroups) {
+        const snapshot = await topologySnapshotRepository.findSnapshot(
+          group.group,
+        );
+        if (snapshot) {
+          overlaySnapshotsByGroupKey.set(
+            toWebRtcGroupKey(group.group),
+            snapshot,
+          );
+        }
+      }
+      return {
+        candidateGroups,
+        overlaySnapshotsByGroupKey,
+        degreeLimit: rtcTopologyService.readRttReportingDegreeLimit(),
+      };
+    },
   });
   const databaseConfig = readApiV1DatabaseBackendConfig();
   const databasePubSubConfig = readApiV1DatabasePubSubConfig(Deno.env, databaseConfig);
@@ -214,6 +241,7 @@ export function createRallarServer(
               rtts: rttRepository,
             },
             rtcTopologyAppOutbox: {
+              database: sql as unknown as PSqlSql,
               outboxQueueReader: runtime.outboxQueueReader,
               senderId: myServerId,
               wake: () => runtime.qboxEngine.wake(),
@@ -221,6 +249,12 @@ export function createRallarServer(
               publicationFanout: runtime.rtcTopologyPublicationFanout,
               findGroupSnapshotByRef: (ref, cacheOptions) =>
                 runtime.groupStateService.readSnapshotAtLeast(ref, cacheOptions ?? {}),
+            },
+            processRtcRttMutation: async (input) => {
+              const result = await middleware.appGroupInboxService
+                .processRtcRttUntilCompletion(input);
+              if (result.right !== undefined) return result.right;
+              throw new Error(result.left ?? 'RTC RTT AppInbox processing failed');
             },
           },
         );

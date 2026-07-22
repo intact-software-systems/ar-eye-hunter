@@ -234,39 +234,52 @@ describe('group topology config service', () => {
             expect(mutationSource, forbidden).not.toContain(forbidden);
         }
 
-        const serviceSource = readFileSync(
+        const managementSource = readFileSync(
             new URL(
                 '../../shared-server/rallar-system/services/group-topology-management-service.ts',
                 import.meta.url,
             ),
             'utf8',
         );
-        const read = serviceSource.indexOf('const read = await readTopologyConfigMutation');
-        const compute = serviceSource.indexOf(
-            'computed = computeTopologyConfigMutation',
+        const appInboxSource = readFileSync(
+            new URL(
+                '../../shared-server/rallar-system/services/AppGroupInboxService.ts',
+                import.meta.url,
+            ),
+            'utf8',
+        );
+        const read = appInboxSource.indexOf(
+            'const read = await service.readTopologyConfigMutation',
+        );
+        const compute = appInboxSource.indexOf(
+            'const computed = service.computeTopologyConfigMutation',
             read,
         );
-        const validate = serviceSource.indexOf('validateTopologyConfigMutation', compute);
-        const write = serviceSource.indexOf(
-            'written = await writeTopologyConfigMutation',
+        const validate = appInboxSource.indexOf(
+            'service.validateTopologyConfigMutation',
+            compute,
+        );
+        const transaction = appInboxSource.indexOf(
+            'const result = await this.writeMutation',
             validate,
+        );
+        const write = appInboxSource.indexOf(
+            'await service.writeTopologyConfigMutation',
+            transaction,
         );
         expect(read).toBeGreaterThan(-1);
         expect(read).toBeLessThan(compute);
         expect(compute).toBeLessThan(validate);
-        expect(validate).toBeLessThan(write);
-        const writeHelper = serviceSource.indexOf(
-            'async function writeTopologyConfigMutation',
+        expect(validate).toBeLessThan(transaction);
+        expect(transaction).toBeLessThan(write);
+        const writeHelper = managementSource.indexOf(
+            'export async function writeTopologyConfigMutation',
         );
-        const nextHelper = serviceSource.indexOf(
-            'function topologyConfigExecution',
-            writeHelper,
-        );
-        expect(writeHelper).toBeGreaterThan(write);
-        expect(serviceSource.slice(writeHelper, nextHelper))
-            .toContain('return await runtime.begin');
-        expect(serviceSource.match(/\.begin\(/g)).toHaveLength(1);
-        expect(serviceSource.slice(read, writeHelper)).not.toContain('.begin(');
+        expect(writeHelper).toBeGreaterThan(-1);
+        const writer = managementSource.slice(writeHelper);
+        expect(writer).toContain('transaction: PSqlTransactionSql');
+        expect(writer).not.toContain('.begin(');
+        expect(appInboxSource.slice(read, write)).not.toContain('.begin(');
     });
 
     it('resolves server defaults, durable config, temporary override, and request options', () => {

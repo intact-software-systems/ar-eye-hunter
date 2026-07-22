@@ -4,6 +4,8 @@ import type {
     RuntimeStateOptimisticTransactionalRepositoryLike,
 } from '../../runtime-state/RuntimeStateRepository.ts';
 import { RuntimeStateWriteConflictError } from '../../runtime-state/optimistic-runtime-state-write.ts';
+import type { PSqlTransactionSql } from '../../postgres/PostgresSqlClient.ts';
+import { PSqlRuntimeStateRepository } from '../../postgres/runtime-state/PSqlRuntimeStateRepository.ts';
 import {
     createRtcTopologyExecutionReceipt,
     DEFAULT_RTC_TOPOLOGY_PUBLICATION_RETENTION_MS,
@@ -105,45 +107,40 @@ export class RtcTopologyExecutionRepository {
     }
 
     async writeTopologyMutation(
+        transaction: PSqlTransactionSql,
         computed: Extract<RtcTopologyMutationComputed, { outcome: 'write' }>,
-    ): Promise<'committed' | 'conflict'> {
+    ): Promise<'committed'> {
         const publicationWrite = requirePublicationWrite(computed);
-        try {
-            await this.runtimeRepository.begin(async (transaction) => {
-                const snapshots = new RtcTopologySnapshotRepository(transaction);
-                const guard = await snapshots.commitSnapshotGuard(
-                    computed.snapshotGuard.candidate,
-                    computed.snapshotGuard.expectedRevision,
-                );
-                if (guard.status === 'conflict') {
-                    throw new RuntimeStateWriteConflictError();
-                }
-                if (publicationWrite) {
-                    const publications = this.publications(transaction);
-                    const receipt = createRtcTopologyExecutionReceipt(
-                        publicationWrite.publication,
-                        {
-                            commandHash: publicationWrite.commandHash,
-                            attemptCount: publicationWrite.attemptCount,
-                            acceptedStorageRevision: guard.storageRevision,
-                        },
-                    );
-                    const claimed = await publications.insertWorkClaim(
-                        receipt,
-                        publicationWrite.expireAtTimestamp,
-                    );
-                    if (!claimed) throw new RuntimeStateWriteConflictError();
-                    await publications.insertPublication(
-                        publicationWrite.publication,
-                        publicationWrite.expireAtTimestamp,
-                    );
-                }
-            });
-            return 'committed';
-        } catch (error) {
-            if (error instanceof RuntimeStateWriteConflictError) return 'conflict';
-            throw error;
+        const runtime = new PSqlRuntimeStateRepository(transaction);
+        const snapshots = new RtcTopologySnapshotRepository(runtime);
+        const guard = await snapshots.commitSnapshotGuard(
+            computed.snapshotGuard.candidate,
+            computed.snapshotGuard.expectedRevision,
+        );
+        if (guard.status === 'conflict') {
+            throw new RuntimeStateWriteConflictError();
         }
+        if (publicationWrite) {
+            const publications = this.publications(runtime);
+            const receipt = createRtcTopologyExecutionReceipt(
+                publicationWrite.publication,
+                {
+                    commandHash: publicationWrite.commandHash,
+                    attemptCount: publicationWrite.attemptCount,
+                    acceptedStorageRevision: guard.storageRevision,
+                },
+            );
+            const claimed = await publications.insertWorkClaim(
+                receipt,
+                publicationWrite.expireAtTimestamp,
+            );
+            if (!claimed) throw new RuntimeStateWriteConflictError();
+            await publications.insertPublication(
+                publicationWrite.publication,
+                publicationWrite.expireAtTimestamp,
+            );
+        }
+        return 'committed';
     }
 
     async commit(input: Readonly<{
@@ -201,18 +198,9 @@ export class RtcTopologyExecutionRepository {
         if (computed.outcome === 'superseded') {
             return { status: 'superseded', current: computed.current };
         }
-        const written = await this.writeTopologyMutation(computed);
-        if (written === 'conflict') {
-            return {
-                status: 'retry',
-                current: await this.findSnapshot(input.candidate.groupRef),
-            };
-        }
-        return {
-            status: 'committed',
-            snapshot: computed.snapshotGuard.candidate,
-            publication: input.publication,
-        };
+        throw new TypeError(
+            'RTC topology commits require an AppInbox or APP_OUTBOX transaction',
+        );
     }
 
     publicationExpireAtTimestamp(): number {

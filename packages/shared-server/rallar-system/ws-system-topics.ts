@@ -38,19 +38,16 @@ import {
     evaluateRtcRttMeasurement,
     type RtcRttAcceptanceResult,
 } from './services/rtc-rtt-measurement-policy.ts';
-import { executeRttMutation } from './services/rtc-rtt-mutation-service.ts';
 import { GroupTopologyConfigRepository } from './repositories/GroupTopologyConfigRepository.ts';
 import { GroupStateRepository } from './repositories/GroupStateRepository.ts';
 import { RtcRttRepository, type RtcRttRepositoryOptions, } from './repositories/RtcRttRepository.ts';
 import { RtcTopologySnapshotRepository } from './repositories/RtcTopologySnapshotRepository.ts';
 import {
-    isRuntimeStateConditionalRepositoryLike,
-    isRuntimeStateOptimisticTransactionalRepositoryLike,
-    isRuntimeStateTransactionalRepositoryLike,
     type RuntimeStateRepositoryLike,
 } from '../runtime-state/RuntimeStateRepository.ts';
 import type { RtcTopologyPublicationFanout } from './pubsub/RtcTopologyClusterTransport.ts';
 import type { RtcTopologyExecutionRepository } from './repositories/RtcTopologyExecutionRepository.ts';
+import type { PSqlSql } from '../postgres/PostgresSqlClient.ts';
 
 export type InitRallarSystemWsTopicsOptions = Readonly<{
     initDynamicTopics?: boolean;
@@ -66,6 +63,7 @@ export type InitRallarSystemWsTopicsOptions = Readonly<{
     }>;
     rtcTopologyRepositories?: RtcTopologyRuntimeState;
     rtcTopologyAppOutbox?: Readonly<{
+        database: PSqlSql;
         outboxQueueReader: OutboxQueueReader;
         topicId?: string;
         senderId?: string;
@@ -74,6 +72,12 @@ export type InitRallarSystemWsTopicsOptions = Readonly<{
         executionRepository: RtcTopologyExecutionRepository;
         publicationFanout: RtcTopologyPublicationFanout;
     }>;
+    processRtcRttMutation?: (input: Readonly<{
+        rtt: RttMeasurementInfo;
+        alSenderId: string;
+        candidateGroupRefs: readonly GroupRef[];
+        capturedAtEpochMs: number;
+    }>) => Promise<StoredRtcRttAcceptanceResult>;
 }>;
 
 export type RallarSystemWsTopicsRuntime = Readonly<{
@@ -182,10 +186,12 @@ export function initRallarSystemWsTopics(
             rtcTopologyAppOutbox.workType,
             createRtcTopologyWorkHandler({
                 runtime: rtcTopologyAppOutbox,
+                database: rtcTopologyAppOutboxOptions.database,
                 topologyManagement: rtcTopologyManagement,
                 executionRepository:
                     rtcTopologyAppOutboxOptions.executionRepository,
                 publicationFanout: rtcTopologyAppOutboxOptions.publicationFanout,
+                wakeQueue: rtcTopologyAppOutboxOptions.wake,
                 onInactiveOverlay: (overlayId) =>
                     clearRtcTopologyFlushTimer(
                         overlayId,
@@ -265,6 +271,7 @@ export function initRallarSystemWsTopics(
         rtcRttRecomputeOutboxWorker,
         scheduleGlobalGraphRttRecompute,
         findGroupSnapshotByRef,
+        options.processRtcRttMutation,
     );
     initRtcSignalingTopic(wsQBoxServerService);
     if (options.initDynamicTopics ?? true) {
@@ -563,6 +570,7 @@ function initRttTopic(
     scheduleGlobalGraphRttRecompute: () => void = () => {
     },
     findGroupSnapshotByRef?: GroupTopologyGroupSnapshotReader,
+    processRtcRttMutation?: InitRallarSystemWsTopicsOptions['processRtcRttMutation'],
 ): void {
     wsQBoxServerService.onInboxMessageDo(AppTopics.rtt, {
         onMessage: async (data: ALMessage, _: ResourceEntry, server: JsonWebSocketServer) => {
@@ -595,6 +603,7 @@ function initRttTopic(
                 alSenderId: data.id.senderId,
                 readPolicyInputs,
                 runtimeState,
+                processRtcRttMutation,
             });
             if (!acceptance.accepted) {
                 console.warn(`Rejected RTC RTT measurement: ${acceptance.reason}`);
@@ -642,6 +651,7 @@ async function acceptRtcRttMeasurementWithPolicy(input: {
         degreeLimit: number;
     }>>;
     readonly runtimeState?: RtcTopologyRuntimeState;
+    readonly processRtcRttMutation?: InitRallarSystemWsTopicsOptions['processRtcRttMutation'];
 }): Promise<StoredRtcRttAcceptanceResult> {
     const evaluate = (
         policyInputs: Readonly<{
@@ -673,61 +683,22 @@ async function acceptRtcRttMeasurementWithPolicy(input: {
         };
     }
 
-    const runtimeRtts = input.runtimeState.rtts;
-    const runtime = runtimeRtts.runtimeRepository;
-    if (!isRuntimeStateOptimisticTransactionalRepositoryLike(runtime)) {
+    if (!input.processRtcRttMutation) {
         throw new TypeError(
-            'RTC RTT persistence requires conditional transactional runtime state',
+            'RTC RTT persistence requires AppInbox processing',
         );
     }
-    const executed = await executeRttMutation({
-        repository: runtimeRtts,
-        runtime,
-        request: {
-            rtt: input.rtt,
-            alSenderId: input.alSenderId,
-        },
-        readCommand: async () => {
-            return {
-                rtt: input.rtt,
-                alSenderId: input.alSenderId,
-                ...await input.readPolicyInputs(),
-            };
-        },
-        readFacts: () => runtimeRtts.readMutationFacts(),
+    const policyInputs = await input.readPolicyInputs();
+    const result = await input.processRtcRttMutation({
+        rtt: input.rtt,
+        alSenderId: input.alSenderId,
+        candidateGroupRefs: policyInputs.candidateGroups.map((group) => group.group),
+        capturedAtEpochMs: Date.now(),
     });
-    if (executed.updated) {
+    if (result.updated) {
         rttRepository.setRtt(input.rtt);
     }
-    if (executed.computed.outcome === 'replay') {
-        return {
-            accepted: true,
-            reason: 'accepted',
-            affectedGroups: [],
-            updated: false,
-        };
-    }
-    if (executed.computed.outcome === 'rejected') {
-        return executed.computed.reason === 'stale'
-            ? {
-                accepted: true,
-                reason: 'accepted',
-                affectedGroups: [],
-                updated: false,
-            }
-            : {
-                accepted: false,
-                reason: executed.computed.reason,
-                affectedGroups: executed.computed.affectedGroups,
-                updated: false,
-            };
-    }
-    return {
-        accepted: true,
-        reason: executed.computed.reason,
-        affectedGroups: executed.computed.affectedGroups,
-        updated: executed.updated,
-    };
+    return result;
 }
 
 async function readOverlaySnapshotsForGroups(

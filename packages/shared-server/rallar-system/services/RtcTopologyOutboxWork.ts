@@ -1,10 +1,11 @@
-import { Temporal } from '@js-temporal/polyfill';
 import {
     type ALMessage,
     newALRoute,
     newALUntargetedMessage,
 } from '@shared/al-contracts/al-contract.ts';
-import { EnqueuedType, type RttMeasurementInfo } from '@shared/api/api-config.ts';
+import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
+import type { GroupTopologyConfigPatch } from '@shared/api/graph-topology-management-types.ts';
+import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-state-validation.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { groupStateGroupStorageKey } from '../group-state-storage-keys.ts';
 import {
@@ -13,9 +14,7 @@ import {
 import type {
     GroupRef,
     GroupSnapshot,
-    GroupStateCausalRevision,
 } from '@shared/api/group-types.ts';
-import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-state-validation.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
 import type { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
@@ -35,8 +34,8 @@ import {
     computeTopologyMutation,
     validateTopologyMutation,
 } from './rtc-topology-mutations.ts';
-import { waitForRuntimeStateWriteRetry } from '../../runtime-state/optimistic-runtime-state-write.ts';
-import { recordRallarTiming, type RallarTimingSink } from './timing.ts';
+import type { RallarTimingSink } from './timing.ts';
+import { RuntimeStateWriteConflictError } from '../../runtime-state/optimistic-runtime-state-write.ts';
 import { AppOutboxType } from './AppOutboxService.ts';
 import {
     COALESCED_APP_OUTBOX_WORK_FIELD,
@@ -54,145 +53,17 @@ import {
     type RtcOverlayTopologyMessageFacts,
 } from './group-topology-management-service.ts';
 import { validatePersistedALMessage } from './al-message-persistence-validation.ts';
-import type { PSqlTransactionSql } from '../../postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '../../postgres/PostgresSqlClient.ts';
 import { ResourceInboxRepository } from '../../postgres/resource-inbox/ResourceInboxRepository.ts';
-
-export const APP_OUTBOX_RTC_TOPOLOGY_TOPIC = 'app-outbox.rtc-topology';
-
-export type ComputedRtcTopologyOutbox = Readonly<{
-    commandId: string;
-    aggregateRef: GroupRef;
-    acceptedCausalRevision: GroupStateCausalRevision;
-    groupSnapshot: GroupSnapshot;
-    effectKind: 'rtc-topology-recompute';
-    payloadKind: 'group-revision';
-    createdAtEpochMs: number;
-    expireAtEpochMs: number;
-}>;
-
-export function computeRtcTopologyEntry(
-    computed: ComputedRtcTopologyOutbox,
-    senderId: string,
-): ResourceEntry {
-    validateComputedRtcTopologyOutbox(computed, senderId);
-    const createdBy = toAppQueueCreatedBy(senderId);
-    const overlayId = toScopedOverlayId(computed.aggregateRef);
-    const sourceGroupStateRevision = readGroupStateRevision(
-        computed.groupSnapshot,
-    );
-    const causalIdentity =
-        `group=${computed.acceptedCausalRevision.groupRevision};presence=${computed.acceptedCausalRevision.presenceRevision}`;
-    const messageId = [
-        computed.commandId,
-        computed.effectKind,
-        computed.payloadKind,
-        causalIdentity,
-    ].join(':');
-    const key = toAppQueueKey({
-        topicId: APP_OUTBOX_RTC_TOPOLOGY_TOPIC,
-        resourceId: messageId,
-        contextId: toRtcTopologyQueueContextId(computed.aggregateRef),
-    });
-    const envelope: RtcTopologyWorkEnvelope<RtcTopologyGroupRevisionWork> = {
-        type: AppOutboxType.RTC_TOPOLOGY_RECOMPUTE,
-        topicId: APP_OUTBOX_RTC_TOPOLOGY_TOPIC,
-        resourceId: messageId,
-        contextId: toRtcTopologyQueueContextId(computed.aggregateRef),
-        senderId: createdBy,
-        data: {
-            kind: computed.payloadKind,
-            overlayId,
-            groupSnapshot: computed.groupSnapshot,
-            sourceGroupStateRevision,
-            requestedAtEpochMs: computed.createdAtEpochMs,
-        },
-    };
-    const message: ALMessage = {
-        id: {
-            v: 2,
-            msgId: messageId,
-            ts: computed.createdAtEpochMs,
-            senderId: createdBy,
-        },
-        route: key,
-        constraints: { expiresAtMs: computed.expireAtEpochMs },
-        ordering: {
-            orderingKey: key.contextId,
-            epoch: computed.acceptedCausalRevision.groupRevision,
-            seq: computed.acceptedCausalRevision.presenceRevision,
-        },
-        delivery: {
-            ownership: 'exclusive',
-            reliability: 'at-least-once',
-            ack: 'none',
-        },
-        payload: {
-            typeId: AppOutboxType.RTC_TOPOLOGY_RECOMPUTE,
-            contentType: 'application/json',
-            resource: JSON.stringify(envelope),
-        },
-        audit: {
-            createdBy,
-            createdTs: computed.createdAtEpochMs,
-        },
-    };
-    const createdTs = Temporal.Instant
-        .fromEpochMilliseconds(computed.createdAtEpochMs)
-        .toZonedDateTimeISO('UTC')
-        .toPlainDateTime();
-    return {
-        key,
-        resource: JSON.stringify(message),
-        typeId: EnqueuedType.APP_OUTBOX,
-        status: EntityStatus.NEW,
-        audit: {
-            date: createdTs.toPlainTime(),
-            createdBy,
-            createdTs,
-            expiryTs: Temporal.Instant.fromEpochMilliseconds(
-                computed.expireAtEpochMs,
-            ),
-        },
-        dequeueAudit: { attempts: 0 },
-    };
-}
-
-export async function writeRtcTopologyOutbox(
-    transaction: PSqlTransactionSql,
-    computed: ComputedRtcTopologyOutbox,
-    senderId: string,
-): Promise<ResourceEntry> {
-    const entry = computeRtcTopologyEntry(computed, senderId);
-    await new ResourceInboxRepository(transaction).writeIfAbsentOrMatch(entry);
-    return entry;
-}
-
-function validateComputedRtcTopologyOutbox(
-    computed: ComputedRtcTopologyOutbox,
-    senderId: string,
-): void {
-    const snapshot = computed.groupSnapshot;
-    validateAuthoritativeGroupSnapshot(snapshot);
-    if (
-        computed.commandId.length === 0 ||
-        senderId.length === 0 ||
-        computed.effectKind !== 'rtc-topology-recompute' ||
-        computed.payloadKind !== 'group-revision' ||
-        !Number.isSafeInteger(computed.createdAtEpochMs) ||
-        !Number.isSafeInteger(computed.expireAtEpochMs) ||
-        computed.createdAtEpochMs < 0 ||
-        computed.expireAtEpochMs <= computed.createdAtEpochMs ||
-        computed.aggregateRef.applicationId !== snapshot.group.applicationId ||
-        computed.aggregateRef.workspaceId !== snapshot.group.workspaceId ||
-        computed.aggregateRef.groupId !== snapshot.group.groupId ||
-        computed.acceptedCausalRevision.groupRevision !==
-            snapshot.causalRevision.groupRevision ||
-        computed.acceptedCausalRevision.presenceRevision !==
-            snapshot.causalRevision.presenceRevision
-    ) {
-        throw new TypeError('Computed RTC topology outbox facts are invalid');
-    }
-}
+import { runInTransaction } from '../../postgres/run-in-transaction.ts';
+import { writeRtcTopologyPublicationOutbox } from './rtc-topology-ws-outbox-entry.ts';
+export {
+    APP_OUTBOX_RTC_TOPOLOGY_TOPIC,
+    computeRtcTopologyEntry,
+    type ComputedRtcTopologyOutbox,
+    writeRtcTopologyOutbox,
+} from './rtc-topology-outbox-entry.ts';
+import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from './rtc-topology-outbox-entry.ts';
 
 export type RtcTopologyGroupRevisionWork = Readonly<{
     kind: 'group-revision';
@@ -200,6 +71,8 @@ export type RtcTopologyGroupRevisionWork = Readonly<{
     groupSnapshot: GroupSnapshot;
     sourceGroupStateRevision: number;
     requestedAtEpochMs: number;
+    requestOptions: GroupTopologyConfigPatch;
+    publish: boolean;
 }>;
 
 export type RtcTopologyRttRefreshWork = Readonly<{
@@ -209,6 +82,8 @@ export type RtcTopologyRttRefreshWork = Readonly<{
     requestedGroupStateRevision: number;
     requestedRttVersion: number;
     requestedAtEpochMs: number;
+    requestOptions: GroupTopologyConfigPatch;
+    publish: boolean;
 }>;
 
 export type RtcTopologyStateMutationPublisher = Readonly<{
@@ -297,211 +172,178 @@ export function createRtcTopologyOutboxPublisher(options: Readonly<{
 
 export function createRtcTopologyWorkHandler(options: Readonly<{
     runtime: RtcTopologyWorkRuntime;
+    database: PSqlSql;
     topologyManagement: GroupTopologyManagementService;
     executionRepository: RtcTopologyExecutionRepository;
     publicationFanout: RtcTopologyPublicationFanout;
     onInactiveOverlay?: (overlayId: string) => void;
+    wakeQueue?: () => void;
     sleep?: (delayMs: number) => Promise<void>;
     timing?: RallarTimingSink;
     serviceId?: string;
 }>): OnMessageCallback {
     return {
-        onMessage: async (message: ALMessage, _entry: ResourceEntry) => {
+        onMessage: async (message: ALMessage, entry: ResourceEntry) => {
             const workEnvelope = readRtcTopologyWorkEnvelope(
                 message,
                 options.runtime.workType,
             );
             const work = workEnvelope.data;
             const workId = toRtcTopologyExecutionId(workEnvelope);
-            const publicationFacts: RtcOverlayTopologyMessageFacts = {
+            const attemptCount = entry.dequeueAudit.attempts;
+            const read = await options.executionRepository.readTopologyMutation(
+                work.groupSnapshot.group,
                 workId,
-                createdAtEpochMs: work.requestedAtEpochMs,
-            };
-            for (let attempt = 0; attempt < 3; attempt += 1) {
-                const backoffMs = await waitForRuntimeStateWriteRetry(
-                    attempt as 0 | 1 | 2,
-                    { sleep: options.sleep },
-                );
-                const readStarted = performance.now();
-                const read = await options.executionRepository
-                    .readTopologyMutation(work.groupSnapshot.group, workId);
-                if (read.publicationClaim) {
-                    recordTopologyExecutionPhase(
-                        options,
-                        workId,
-                        work.groupSnapshot.group,
-                        'read',
-                        readStarted,
-                        attempt,
-                        backoffMs,
-                    );
-                    const replayInput = {
-                        read,
-                        candidate: null,
-                        publication: null,
-                        facts: {
-                            publicationExpireAtTimestamp: null,
-                            commandHash: null,
-                            attemptCount: null,
-                        },
-                    } as const;
-                    const computeStarted = performance.now();
-                    const computed = computeTopologyMutation(replayInput);
-                    recordTopologyExecutionPhase(
-                        options,
-                        workId,
-                        work.groupSnapshot.group,
-                        'compute',
-                        computeStarted,
-                        attempt,
-                        backoffMs,
-                    );
-                    const validateStarted = performance.now();
-                    validateTopologyMutation({ ...replayInput, computed });
-                    recordTopologyExecutionPhase(
-                        options,
-                        workId,
-                        work.groupSnapshot.group,
-                        'validate',
-                        validateStarted,
-                        attempt,
-                        backoffMs,
-                    );
-                    if (computed.outcome === 'retry') continue;
-                    if (computed.outcome !== 'loaded') {
-                        throw new TypeError(
-                            'RTC topology claimed replay has an invalid outcome',
-                        );
-                    }
-                    await options.publicationFanout.publish(computed.publication);
-                    options.topologyManagement.recordTopologyPublication(true);
-                    return;
-                }
-                const authority = await options.topologyManagement
-                    .readTopologyPlanningAuthority(
-                        work.groupSnapshot.group,
-                        undefined,
-                        work.groupSnapshot,
-                    );
-                const group = authority.group;
-                if (
-                    work.kind === 'group-revision' &&
-                    work.sourceGroupStateRevision < readGroupStateRevision(group)
-                ) {
-                    return;
-                }
-                const planned = options.topologyManagement
-                    .planTopologyFromAuthority(authority, read.snapshot?.value);
-                recordTopologyExecutionPhase(
-                    options,
-                    workId,
-                    group.group,
-                    'read',
-                    readStarted,
-                    attempt,
-                    backoffMs,
-                );
-                const computeStarted = performance.now();
-                const publication = toTopologyPublication(
-                    workEnvelope,
-                    group,
-                    planned.snapshot,
-                    publicationFacts,
-                );
-                const facts = {
-                    publicationExpireAtTimestamp: options.executionRepository
-                        .publicationExpireAtTimestamp(),
-                    commandHash: await hashRtcTopologyExecutionCommand(publication),
-                    attemptCount: attempt + 1,
-                };
-                const computed = computeTopologyMutation({
+            );
+            if (read.publicationClaim) {
+                const replayInput = {
                     read,
-                    candidate: planned.snapshot,
-                    publication,
-                    facts,
-                });
-                recordTopologyExecutionPhase(
-                    options, workId, group.group, 'compute', computeStarted,
-                    attempt, backoffMs,
-                );
-                const validateStarted = performance.now();
-                validateTopologyMutation({
-                    read,
-                    candidate: planned.snapshot,
-                    publication,
-                    facts,
-                    computed,
-                });
-                recordTopologyExecutionPhase(
-                    options, workId, group.group, 'validate', validateStarted,
-                    attempt, backoffMs,
-                );
-                if (computed.outcome === 'superseded') {
-                    options.topologyManagement.observeCommittedTopology(
-                        group,
-                        computed.current,
+                    candidate: null,
+                    publication: null,
+                    facts: {
+                        publicationExpireAtTimestamp: null,
+                        commandHash: null,
+                        attemptCount: null,
+                    },
+                } as const;
+                const computed = computeTopologyMutation(replayInput);
+                validateTopologyMutation({ ...replayInput, computed });
+                if (computed.outcome !== 'loaded') {
+                    throw new RuntimeStateWriteConflictError();
+                }
+                await runInTransaction(options.database, async (transaction) => {
+                    await writeRtcTopologyPublicationOutbox(
+                        transaction,
+                        computed.publication,
                     );
-                    return;
-                }
-                if (computed.outcome === 'retry') {
-                    recordRallarTiming(options.timing, {
-                        component: 'rtc-topology-execution-service',
-                        operation: 'mutation.conflict',
-                        serviceId: options.serviceId,
-                        requestId: workId,
-                        ...canonicalGroupRef(group.group),
-                        details: {
-                            attempt,
-                            backoffMs,
-                            conflict: true,
-                            reason: computed.reason,
-                        },
-                    }, 'ok', 0);
-                    continue;
-                }
-                if (computed.outcome === 'loaded') {
-                    throw new TypeError(
-                        'RTC topology publication claim appeared on a claim-miss path',
-                    );
-                }
-                const writeStarted = performance.now();
-                const transactionStarted = performance.now();
-                const written = await options.executionRepository
-                    .writeTopologyMutation(computed);
-                recordTopologyExecutionPhase(
-                    options, workId, group.group, 'transaction', transactionStarted,
-                    attempt, backoffMs,
-                );
-                recordTopologyExecutionPhase(
-                    options, workId, group.group, 'write', writeStarted,
-                    attempt, backoffMs,
-                );
-                if (written === 'conflict') {
-                    recordRallarTiming(options.timing, {
-                        component: 'rtc-topology-execution-service',
-                        operation: 'mutation.conflict',
-                        serviceId: options.serviceId,
-                        requestId: workId,
-                        ...canonicalGroupRef(group.group),
-                        details: { attempt, backoffMs, conflict: true },
-                    }, 'ok', 0);
-                    continue;
-                }
-                options.topologyManagement.observeCommittedTopology(
-                    group,
-                    computed.snapshotGuard.candidate,
-                );
-                if (computed.snapshotGuard.candidate.state === 'removed') {
-                    options.onInactiveOverlay?.(work.overlayId);
-                }
-                await options.publicationFanout.publish(publication!);
+                    await finishRtcTopologyReservation(transaction, entry);
+                });
                 options.topologyManagement.recordTopologyPublication(true);
+                options.wakeQueue?.();
                 return;
             }
 
-            throw new RtcTopologyExecutionConflictError(workId);
+            const authority = await options.topologyManagement
+                .readTopologyPlanningAuthority(
+                    work.groupSnapshot.group,
+                    work.requestOptions,
+                    work.groupSnapshot,
+                );
+            const group = authority.group;
+            if (
+                work.kind === 'group-revision' &&
+                work.sourceGroupStateRevision < readGroupStateRevision(group)
+            ) {
+                await finishRtcTopologyWork(options.database, entry);
+                return;
+            }
+            const computedTopology = options.topologyManagement
+                .computeTopologyFromAuthority(authority, read.snapshot?.value);
+            const publicationExpireAtTimestamp = work.publish
+                ? options.executionRepository.publicationExpireAtTimestamp()
+                : null;
+            const publicationFacts: RtcOverlayTopologyMessageFacts | null =
+                publicationExpireAtTimestamp === null
+                    ? null
+                    : {
+                        workId,
+                        createdAtEpochMs: work.requestedAtEpochMs,
+                        expiresAtEpochMs: publicationExpireAtTimestamp,
+                    };
+            const publication = publicationFacts
+                ? toTopologyPublication(
+                    workEnvelope,
+                    group,
+                    computedTopology.snapshot,
+                    publicationFacts,
+                )
+                : null;
+            const facts = publication && publicationFacts ? {
+                publicationExpireAtTimestamp:
+                    publicationFacts.expiresAtEpochMs,
+                commandHash: await hashRtcTopologyExecutionCommand(publication),
+                attemptCount,
+            } : {
+                publicationExpireAtTimestamp: null,
+                commandHash: null,
+                attemptCount: null,
+            } as const;
+            const computed = computeTopologyMutation({
+                read,
+                candidate: computedTopology.snapshot,
+                publication,
+                facts,
+            });
+            validateTopologyMutation({
+                read,
+                candidate: computedTopology.snapshot,
+                publication,
+                facts,
+                computed,
+            });
+            if (computed.outcome === 'retry') {
+                throw new RuntimeStateWriteConflictError();
+            }
+            if (computed.outcome === 'loaded') {
+                throw new TypeError(
+                    'RTC topology publication claim appeared on a claim-miss path',
+                );
+            }
+            if (computed.outcome === 'superseded') {
+                await finishRtcTopologyWork(options.database, entry);
+                options.topologyManagement.observeCommittedTopology(
+                    group,
+                    computed.current,
+                );
+                return;
+            }
+            await runInTransaction(options.database, async (transaction) => {
+                await options.executionRepository.writeTopologyMutation(
+                    transaction,
+                    computed,
+                );
+                if (publication) {
+                    await writeRtcTopologyPublicationOutbox(transaction, publication);
+                }
+                await finishRtcTopologyReservation(transaction, entry);
+            });
+            options.topologyManagement.observeCommittedTopology(
+                group,
+                computed.snapshotGuard.candidate,
+            );
+            if (computed.snapshotGuard.candidate.state === 'removed') {
+                options.onInactiveOverlay?.(work.overlayId);
+            }
+            if (publication) {
+                options.topologyManagement.recordTopologyPublication(true);
+                options.wakeQueue?.();
+            }
         },
     };
+}
+
+async function finishRtcTopologyWork(
+    database: PSqlSql,
+    entry: ResourceEntry,
+): Promise<void> {
+    await runInTransaction(database, async (transaction) => {
+        await finishRtcTopologyReservation(transaction, entry);
+    });
+}
+
+async function finishRtcTopologyReservation(
+    transaction: Parameters<Parameters<typeof runInTransaction>[1]>[0],
+    entry: ResourceEntry,
+): Promise<void> {
+    const finished = await new ResourceInboxRepository(transaction).finishReserved(
+        entry.key,
+        entry.dequeueAudit.attempts,
+        EntityStatus.COMPLETED,
+        new Date(),
+    );
+    if (!finished) {
+        throw new RuntimeStateWriteConflictError();
+    }
 }
 
 export class RtcTopologyExecutionConflictError extends Error {
@@ -509,7 +351,7 @@ export class RtcTopologyExecutionConflictError extends Error {
     readonly code = 'rtc-topology-execution-conflict';
 
     constructor(readonly workId: string) {
-        super(`RTC topology predecessor changed during three execution attempts: ${workId}`);
+        super(`RTC topology predecessor changed before the queued attempt committed: ${workId}`);
         this.name = 'RtcTopologyExecutionConflictError';
     }
 }
@@ -632,8 +474,7 @@ export function initRtcRttRecomputeOutboxWorker(input: Readonly<{
     const scheduleRun = (delayMs: number): void => {
         if (stopped) return;
         cancelScheduled();
-        let handle: unknown;
-        handle = schedule(async () => {
+        const handle = schedule(async () => {
             if (scheduledHandle === handle) scheduledHandle = undefined;
             await run();
         }, delayMs);
@@ -669,16 +510,17 @@ export function initRtcRttRecomputeOutboxWorker(input: Readonly<{
             failureCount += 1;
         } finally {
             running = false;
-            if (stopped) return;
-            if (wakeRequested) {
-                wakeRequested = false;
-                scheduleRun(0);
-            } else if (failed) {
-                scheduleRun(retryDelaysMs[
-                    Math.min(failureCount - 1, retryDelaysMs.length - 1)
-                ]!);
-            } else {
-                scheduleRun(intervalMs);
+            if (!stopped) {
+                if (wakeRequested) {
+                    wakeRequested = false;
+                    scheduleRun(0);
+                } else if (failed) {
+                    scheduleRun(retryDelaysMs[
+                        Math.min(failureCount - 1, retryDelaysMs.length - 1)
+                    ]!);
+                } else {
+                    scheduleRun(intervalMs);
+                }
             }
         }
     };
@@ -765,6 +607,8 @@ function createRtcTopologyWorkRuntime(
                 requestedGroupStateRevision,
                 requestedRttVersion: rtt.version,
                 requestedAtEpochMs,
+                requestOptions: {},
+                publish: true,
             } satisfies RtcTopologyRttRefreshWork,
             reason: 'rtt',
             requestedAtEpochMs,
@@ -809,6 +653,8 @@ function createRtcTopologyWorkRuntime(
                 groupSnapshot: group,
                 sourceGroupStateRevision,
                 requestedAtEpochMs,
+                requestOptions: {},
+                publish: true,
             },
         };
         const key = toAppQueueKey(envelope);
@@ -921,6 +767,7 @@ function validatePersistedRtcTopologyWorkEnvelope(
     const work = requireWorkRecord(envelope.data, 'RTC topology work data');
     const common = [
         'kind', 'overlayId', 'groupSnapshot', 'requestedAtEpochMs',
+        'requestOptions', 'publish',
     ];
     const variant = work.kind === 'group-revision'
         ? ['sourceGroupStateRevision']
@@ -932,6 +779,9 @@ function validatePersistedRtcTopologyWorkEnvelope(
     requireWorkKeys(work, [...common, ...variant], allowed, 'RTC topology work data');
     requireWorkString(work.overlayId, 'RTC topology work overlayId');
     requireWorkInteger(work.requestedAtEpochMs, 'RTC topology work requestedAtEpochMs');
+    if (!isWorkRecord(work.requestOptions) || typeof work.publish !== 'boolean') {
+        throw new TypeError('RTC topology work request options are invalid');
+    }
     validateAuthoritativeGroupSnapshot(work.groupSnapshot);
     if (work.overlayId !== toScopedOverlayId(work.groupSnapshot.group)) {
         throw new TypeError('RTC topology work overlayId differs from group scope');
@@ -1112,28 +962,6 @@ function canonicalGroupRef(ref: GroupRef): GroupRef {
         workspaceId: ref.workspaceId,
         groupId: ref.groupId,
     };
-}
-
-function recordTopologyExecutionPhase(
-    options: Readonly<{
-        timing?: RallarTimingSink;
-        serviceId?: string;
-    }>,
-    workId: string,
-    groupRef: GroupRef,
-    phase: 'read' | 'compute' | 'validate' | 'transaction' | 'write',
-    started: number,
-    attempt: number,
-    backoffMs: number,
-): void {
-    recordRallarTiming(options.timing, {
-        component: 'rtc-topology-execution-service',
-        operation: `mutation.${phase}`,
-        serviceId: options.serviceId,
-        requestId: workId,
-        ...canonicalGroupRef(groupRef),
-        details: { attempt, backoffMs },
-    }, 'ok', performance.now() - started);
 }
 
 function uniqueStrings(values: readonly string[]): readonly string[] {

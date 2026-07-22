@@ -16,6 +16,7 @@ import {
   type RuntimeStateGuardedBatch,
   type RuntimeStateGuardedBatchResult,
 } from '@shared-server/runtime-state/RuntimeStateGuardedBatch.ts';
+import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
 import {
@@ -24,13 +25,15 @@ import {
 } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/repositories/GroupTopologyConfigRepository.ts';
-import { StateMutationOutboxRepository } from '@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts';
+import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/repositories/RtcTopologyExecutionRepository.ts';
+import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/repositories/RtcTopologySnapshotRepository.ts';
+import { toRtcTopologyPublicationId } from '@shared-server/rallar-system/repositories/RtcTopologyPublicationRepository.ts';
 import {
   createGroupStateService,
-  mutationDescriptor,
   type GroupMutationDescriptor,
   type GroupMutationPreparation,
   type GroupStateService,
+  mutationDescriptor,
 } from '@shared-server/rallar-system/services/group-state-service.ts';
 import {
   createClientStateService,
@@ -41,6 +44,9 @@ import {
   toUpsertPrincipalCommandInput,
 } from '@shared-server/rallar-system/services/client-state-service.ts';
 import { GroupTopologyManagementService } from '@shared-server/rallar-system/services/group-topology-management-service.ts';
+import { materializeRtcOverlayTopologyBroadcastMessage } from '@shared-server/rallar-system/services/group-topology-management-service.ts';
+import type { GroupTopologyConfigMutationCommand } from '@shared-server/rallar-system/services/group-topology-config-mutations.ts';
+import { hashStateMutationCommand } from '@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
 import {
   groupStateGroupStorageKey,
@@ -87,7 +93,11 @@ import {
 } from '@shared-server/rallar-system/services/group-state-mutations.ts';
 import {
   APP_OUTBOX_RTC_TOPOLOGY_TOPIC,
+  createRtcTopologyOutboxPublisher,
+  createRtcTopologyWorkHandler,
+  writeRtcTopologyOutbox,
 } from '@shared-server/rallar-system/services/RtcTopologyOutboxWork.ts';
+import { computeRtcTopologyPublicationOutbox } from '@shared-server/rallar-system/services/rtc-topology-ws-outbox-entry.ts';
 import { toResilienceDto } from '../../src/middleware-resilience.ts';
 import { createApiV1SqlClient } from '../../src/db/db.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
@@ -147,8 +157,7 @@ Deno.test('PGlite AppGroup commits group mutation and summary fan-out through fe
       now: () => nowEpochMs,
     });
     outboxReader.onOutboxMessageDo(AppOutboxType.GROUP_PRESENCE_SUMMARY, {
-      onMessage: async (message, entry) =>
-        await summaryWork.processReservedEntry(message, entry),
+      onMessage: async (message, entry) => await summaryWork.processReservedEntry(message, entry),
     });
     outboxReader.onOutboxMessageDo(
       AppOutboxType.RTC_TOPOLOGY_RECOMPUTE,
@@ -190,20 +199,37 @@ Deno.test('PGlite AppGroup commits group mutation and summary fan-out through fe
       workspaceId: 'main',
       groupId: 'vertical-group',
     };
-    assert.equal((await new GroupStateRepository(runtime).findGroup(ref))?.displayName,
-      'Vertical Group');
+    assert.equal(
+      (await new GroupStateRepository(runtime).findGroup(ref))?.displayName,
+      'Vertical Group',
+    );
     assert.equal((await new PSqlGroupStateEventRepository(sql).listGroupEvents(ref)).length, 1);
     const beforeSummary = await sql<{ ri_type_id: string; ri_status: string }[]>`
       select ri_type_id, ri_status from resource_inbox order by ri_row_id
     `;
-    assert.equal(beforeSummary.filter((row) => row.ri_type_id === 'APP_INBOX' &&
-      row.ri_status === 'COMPLETED').length, 1);
-    assert.equal(beforeSummary.filter((row) => row.ri_type_id === 'APP_OUTBOX' &&
-      row.ri_status === 'NEW').length, 1);
+    assert.equal(
+      beforeSummary.filter((row) =>
+        row.ri_type_id === 'APP_INBOX' &&
+        row.ri_status === 'COMPLETED'
+      ).length,
+      1,
+    );
+    assert.equal(
+      beforeSummary.filter((row) =>
+        row.ri_type_id === 'APP_OUTBOX' &&
+        row.ri_status === 'NEW'
+      ).length,
+      1,
+    );
     assert.equal(beforeSummary.filter((row) => row.ri_type_id === 'WS_OUTBOX').length, 0);
-    assert.equal(Number((await sql<{ count: string | number }[]>`
+    assert.equal(
+      Number(
+        (await sql<{ count: string | number }[]>`
       select count(*) as count from resource_inbox_results
-    `)[0]?.count), 1);
+    `)[0]?.count,
+      ),
+      1,
+    );
     assert.equal((await runtime.findAllEntries('state-mutation:outbox')).length, 0);
 
     await outboxReader.dequeueOutbox(
@@ -217,14 +243,29 @@ Deno.test('PGlite AppGroup commits group mutation and summary fan-out through fe
     }[]>`
       select ri_topic_id, ri_type_id, ri_status from resource_inbox order by ri_row_id
     `;
-    assert.equal(afterSummary.filter((row) => row.ri_type_id === 'APP_OUTBOX' &&
+    assert.equal(
+      afterSummary.filter((row) =>
+        row.ri_type_id === 'APP_OUTBOX' &&
       row.ri_topic_id === APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC &&
-      row.ri_status === 'COMPLETED').length, 1);
-    assert.equal(afterSummary.filter((row) => row.ri_type_id === 'WS_OUTBOX' &&
-      row.ri_status === 'NEW').length, 3);
-    assert.equal(afterSummary.filter((row) => row.ri_type_id === 'APP_OUTBOX' &&
+        row.ri_status === 'COMPLETED'
+      ).length,
+      1,
+    );
+    assert.equal(
+      afterSummary.filter((row) =>
+        row.ri_type_id === 'WS_OUTBOX' &&
+        row.ri_status === 'NEW'
+      ).length,
+      3,
+    );
+    assert.equal(
+      afterSummary.filter((row) =>
+        row.ri_type_id === 'APP_OUTBOX' &&
       row.ri_topic_id === APP_OUTBOX_RTC_TOPOLOGY_TOPIC &&
-      row.ri_status === 'COMPLETED').length, 1);
+        row.ri_status === 'COMPLETED'
+      ).length,
+      1,
+    );
   });
 });
 
@@ -339,7 +380,8 @@ Deno.test('PGlite summary reservation fence rolls back CAS and every downstream 
     });
 
     await assert.rejects(
-      () => work.processReservedEntry(message, {
+      () =>
+        work.processReservedEntry(message, {
         ...reserved,
         dequeueAudit: { ...reserved.dequeueAudit, attempts: 2 },
       }),
@@ -1267,32 +1309,80 @@ Deno.test('PGlite topology config mutations converge concurrent CAS transactions
     for (const member of snapshot.members) {
       await groupStateRepository.putMember(member);
     }
-    const service = () => new GroupTopologyManagementService({
+    const service = new GroupTopologyManagementService({
       findGroupSnapshotByRef: () => snapshot,
       groupStateRepository,
       configRepository: repository,
       topologyService: new RallarRtcTopologyService(),
-      sleep: () => Promise.resolve(),
     });
+    const commands = [
+      topologyConfigCommand(groupRef, 'pglite-topology-a', 'tree'),
+      topologyConfigCommand(groupRef, 'pglite-topology-b', 'mesh'),
+    ] as const;
+    const preparations = await Promise.all(
+      commands.map(async (command) =>
+        await service.prepareTopologyConfigMutation({
+          command,
+          commandHash: await hashStateMutationCommand(command),
+          capturedAtEpochMs: 1_000,
+        })
+      ),
+    );
+    const firstReads = await Promise.all(
+      commands.map((command) => service.readTopologyConfigMutation(command)),
+    );
+    const firstComputed = preparations.map((preparation, index) =>
+      service.computeTopologyConfigMutation(
+        preparation,
+        firstReads[index],
+        1,
+      )
+    );
+    for (let index = 0; index < firstComputed.length; index += 1) {
+      service.validateTopologyConfigMutation(
+        preparations[index],
+        firstReads[index],
+        1,
+        firstComputed[index],
+      );
+    }
+    const firstWrite = firstComputed[0];
+    const staleSecondWrite = firstComputed[1];
+    assert.equal(firstWrite.outcome, 'write');
+    assert.equal(staleSecondWrite.outcome, 'write');
+    if (firstWrite.outcome !== 'write' || staleSecondWrite.outcome !== 'write') {
+      throw new Error('Expected two topology writes');
+    }
+    const firstReceipt = await sql.begin((transaction) =>
+      service.writeTopologyConfigMutation(transaction, firstWrite)
+    );
+    await assert.rejects(
+      () =>
+        sql.begin((transaction) =>
+          service.writeTopologyConfigMutation(transaction, staleSecondWrite)
+        ),
+      /conditional write conflict/,
+    );
+    const retryRead = await service.readTopologyConfigMutation(commands[1]);
+    const retryComputed = service.computeTopologyConfigMutation(
+      preparations[1],
+      retryRead,
+      2,
+    );
+    service.validateTopologyConfigMutation(
+      preparations[1],
+      retryRead,
+      2,
+      retryComputed,
+    );
+    assert.equal(retryComputed.outcome, 'write');
+    if (retryComputed.outcome !== 'write') throw new Error('Expected retry write');
+    const secondReceipt = await sql.begin((transaction) =>
+      service.writeTopologyConfigMutation(transaction, retryComputed)
+    );
 
-    const results = await Promise.all([
-      service().putConfig({
-        groupRef,
-        config: { topologyKind: 'tree' },
-        updatedByPrincipalId: 'owner',
-        requestId: 'pglite-topology-a',
-      }),
-      service().putConfig({
-        groupRef,
-        config: { topologyKind: 'mesh' },
-        updatedByPrincipalId: 'owner',
-        requestId: 'pglite-topology-b',
-      }),
-    ]);
-
-    assert.deepEqual(results.map(({ config }) => config.version).sort(), [1, 2]);
     assert.deepEqual(
-      results.map(({ receipt }) => receipt.acceptedVersion).sort(),
+      [firstReceipt.acceptedVersion, secondReceipt.acceptedVersion],
       [1, 2],
     );
     assert.ok(await repository.findMutationRecord(groupRef, 'pglite-topology-a'));
@@ -1307,19 +1397,17 @@ Deno.test('PGlite topology config mutations converge concurrent CAS transactions
       repository.invariantGenerationKey(groupRef),
     );
     assert.equal(invariantGeneration?.entry.revision, 1);
-    const outbox = new StateMutationOutboxRepository(runtime);
-    const pending = await outbox.listPendingPage({ limit: 10 });
-    assert.equal(pending.records.length, 2);
-    assert.ok(pending.records.every(({ record }) =>
-      record.effects.length === 1 && record.effects[0] === 'rtc-topology-recompute'
-    ));
-    const exactRecords = await Promise.all(
-      results.map(({ receipt }) => outbox.find(receipt.outboxId!)),
-    );
+    const outboxRows = await sql<{ ri_resource: string }[]>`
+      select ri_resource
+      from resource_inbox
+      where ri_type_id = 'APP_OUTBOX'
+      order by ri_resource_id
+    `;
     assert.deepEqual(
-      exactRecords.map((stored) => stored?.record.commandId).sort(),
-      ['pglite-topology-a', 'pglite-topology-b'],
+      outboxRows.map((row) => (JSON.parse(row.ri_resource) as ALMessage).id.msgId).sort(),
+      [firstReceipt.outboxId, secondReceipt.outboxId].sort(),
     );
+    assert.equal((await runtime.findAllEntries('state-mutation:outbox')).length, 0);
   });
 });
 
@@ -1338,7 +1426,7 @@ Deno.test('PGlite topology authority fence rejects an archive overlapping the st
     for (const member of snapshot.members) await groupState.putMember(member);
     const observed = Promise.withResolvers<void>();
     const release = Promise.withResolvers<void>();
-    let pauseFirstRead = true;
+    let pauseFirstRead = false;
     class PausingGroupStateRepository extends GroupStateRepository {
       override async readSnapshotWithAuthorityGuard(ref: GroupRef) {
         const observation = await super.readSnapshotWithAuthorityGuard(ref);
@@ -1355,15 +1443,19 @@ Deno.test('PGlite topology authority fence rejects an archive overlapping the st
       groupStateRepository: new PausingGroupStateRepository(runtime),
       configRepository: topology,
       topologyService: new RallarRtcTopologyService(),
-      sleep: () => Promise.resolve(),
     });
-
-    const mutation = service.putConfig({
+    const command = topologyConfigCommand(
       groupRef,
-      config: { topologyKind: 'tree' },
-      updatedByPrincipalId: 'owner',
-      requestId: 'pglite-overlapping-archive',
+      'pglite-overlapping-archive',
+      'tree',
+    );
+    const preparation = await service.prepareTopologyConfigMutation({
+      command,
+      commandHash: await hashStateMutationCommand(command),
+      capturedAtEpochMs: 1_000,
     });
+    pauseFirstRead = true;
+    const firstReadPromise = service.readTopologyConfigMutation(command);
     await observed.promise;
     const current = await groupState.findGroupEntry(groupRef);
     assert.ok(current);
@@ -1380,9 +1472,33 @@ Deno.test('PGlite topology authority fence rejects an archive overlapping the st
       'applied',
     );
     release.resolve();
-
+    const firstRead = await firstReadPromise;
+    const firstComputed = service.computeTopologyConfigMutation(
+      preparation,
+      firstRead,
+      1,
+    );
+    service.validateTopologyConfigMutation(
+      preparation,
+      firstRead,
+      1,
+      firstComputed,
+    );
+    assert.equal(firstComputed.outcome, 'write');
+    if (firstComputed.outcome !== 'write') throw new Error('Expected topology write');
     await assert.rejects(
-      mutation,
+      () =>
+        sql.begin((transaction) => service.writeTopologyConfigMutation(transaction, firstComputed)),
+      /conditional write conflict/,
+    );
+    const retryRead = await service.readTopologyConfigMutation(command);
+    assert.throws(
+      () =>
+        service.computeTopologyConfigMutation(
+          preparation,
+          retryRead,
+          2,
+        ),
       (error: unknown) =>
         typeof error === 'object' && error !== null &&
         'status' in error && error.status === 403,
@@ -1394,10 +1510,132 @@ Deno.test('PGlite topology authority fence rejects an archive overlapping the st
     );
     assert.equal((await groupState.findGroup(groupRef))?.status, 'archived');
     assert.equal(
-      (await new StateMutationOutboxRepository(runtime).listPendingPage({ limit: 10 }))
-        .records.length,
+      Number(
+        (await sql<{ count: string | number }[]>`
+        select count(*) as count
+        from resource_inbox
+        where ri_type_id = 'APP_OUTBOX'
+      `)[0]?.count,
+      ),
       0,
     );
+  });
+});
+
+Deno.test('PGlite topology worker classifies exact WS outbox replay as idempotent', async () => {
+  await withPGliteSql(async (sql) => {
+    const fixture = await createPGliteTopologyWorkFixture(
+      sql,
+      'pglite-topology-ws-replay',
+    );
+    await new ResourceInboxRepository(sql).write(fixture.publicationEntry);
+
+    await fixture.handler.onMessage(fixture.message, fixture.reserved);
+
+    const consumed = await fixture.resourceInbox.findAnyByKey(fixture.workEntry.key);
+    assert.equal(consumed?.status, EntityStatus.COMPLETED);
+    assert.deepEqual(
+      await fixture.executionRepository.findPublicationForWork(
+        fixture.groupRef,
+        fixture.workId,
+      ),
+      fixture.publication,
+    );
+    assert.deepEqual(
+      await fixture.executionRepository.findSnapshot(fixture.groupRef),
+      fixture.topology,
+    );
+    assert.equal(
+      Number(
+        (await sql<{ count: string | number }[]>`
+        select count(*) as count
+        from resource_inbox
+        where ri_type_id = 'WS_OUTBOX'
+      `)[0]?.count,
+      ),
+      1,
+    );
+  });
+});
+
+Deno.test('PGlite topology worker rolls state and receipt back on divergent WS outbox collision', async () => {
+  await withPGliteSql(async (sql) => {
+    const fixture = await createPGliteTopologyWorkFixture(
+      sql,
+      'pglite-topology-ws-collision',
+    );
+    const divergentResource = JSON.stringify({
+      collision: 'preexisting-divergent-topology-publication',
+    });
+    await fixture.resourceInbox.write({
+      ...fixture.publicationEntry,
+      resource: divergentResource,
+    });
+
+    await assert.rejects(
+      () => fixture.handler.onMessage(fixture.message, fixture.reserved),
+      ResourceInboxInvariantCorruptionError,
+    );
+
+    assert.equal(
+      await fixture.executionRepository.findPublicationForWork(
+        fixture.groupRef,
+        fixture.workId,
+      ),
+      undefined,
+    );
+    assert.equal(
+      await fixture.executionRepository.findSnapshot(fixture.groupRef),
+      undefined,
+    );
+    const consumed = await fixture.resourceInbox.findAnyByKey(fixture.workEntry.key);
+    assert.equal(consumed?.status, EntityStatus.RESERVED);
+    assert.equal(consumed?.dequeueAudit.attempts, 1);
+    assert.equal(
+      (await fixture.resourceInbox.findAnyByKey(fixture.publicationEntry.key))
+        ?.resource,
+      divergentResource,
+    );
+  });
+});
+
+Deno.test('PGlite topology worker rolls every effect back when reservation completion loses its fence', async () => {
+  await withPGliteSql(async (sql) => {
+    const fixture = await createPGliteTopologyWorkFixture(
+      sql,
+      'pglite-topology-finish-fence',
+    );
+
+    await assert.rejects(
+      () =>
+        fixture.handler.onMessage(fixture.message, {
+          ...fixture.reserved,
+          dequeueAudit: {
+            ...fixture.reserved.dequeueAudit,
+            attempts: fixture.reserved.dequeueAudit.attempts + 1,
+          },
+        }),
+      RuntimeStateWriteConflictError,
+    );
+
+    assert.equal(
+      await fixture.executionRepository.findPublicationForWork(
+        fixture.groupRef,
+        fixture.workId,
+      ),
+      undefined,
+    );
+    assert.equal(
+      await fixture.executionRepository.findSnapshot(fixture.groupRef),
+      undefined,
+    );
+    assert.equal(
+      await fixture.resourceInbox.findAnyByKey(fixture.publicationEntry.key),
+      null,
+    );
+    const consumed = await fixture.resourceInbox.findAnyByKey(fixture.workEntry.key);
+    assert.equal(consumed?.status, EntityStatus.RESERVED);
+    assert.equal(consumed?.dequeueAudit.attempts, 1);
   });
 });
 
@@ -1492,7 +1730,8 @@ Deno.test('PGlite runtime-state hierarchy isolates sibling key segments', async 
     const groups = new GroupStateRepository(runtime);
     const audit = canonicalAuditStamp(1);
 
-    assert.equal((await clients.insertPrincipal({
+    assert.equal(
+      (await clients.insertPrincipal({
       applicationId: 'app',
       workspaceId: 'foo',
       principalId: 'alice',
@@ -1512,8 +1751,11 @@ Deno.test('PGlite runtime-state hierarchy isolates sibling key segments', async 
       lastSeenAtEpochMs: null,
       disabled: null,
       deleted: null,
-    })).status, 'applied');
-    assert.equal((await clients.insertPrincipal({
+      })).status,
+      'applied',
+    );
+    assert.equal(
+      (await clients.insertPrincipal({
       applicationId: 'app',
       workspaceId: 'foobar',
       principalId: 'bob',
@@ -1533,7 +1775,9 @@ Deno.test('PGlite runtime-state hierarchy isolates sibling key segments', async 
       lastSeenAtEpochMs: null,
       disabled: null,
       deleted: null,
-    })).status, 'applied');
+      })).status,
+      'applied',
+    );
     await groups.putGroup(groupFixture({
       applicationId: 'app',
       workspaceId: 'foo',
@@ -1600,11 +1844,13 @@ Deno.test('PGlite group-state reads fail closed on a directly seeded legacy wron
       const read of [
         () => repository.findGroup(ref),
         () => repository.readSnapshot(ref),
-        () => repository.listGroups({
+        () =>
+          repository.listGroups({
           applicationId: ref.applicationId,
           workspaceId: ref.workspaceId,
         }),
-        () => repository.listSnapshots({
+        () =>
+          repository.listSnapshots({
           applicationId: ref.applicationId,
           workspaceId: ref.workspaceId,
         }),
@@ -1666,18 +1912,28 @@ Deno.test('PGlite group-state reads reject complete-contract corruption across p
         randomId: () => `event-${testCase.kind}-${eventSequence++}`,
         serviceId: `pglite-complete-${testCase.kind}`,
       });
-      await applyPGliteGroupMutation(sql, service, mutationDescriptor('createGroup', scope,
-        ref.groupId, {
+      await applyPGliteGroupMutation(
+        sql,
+        service,
+        mutationDescriptor('createGroup', scope, ref.groupId, {
         groupId: ref.groupId,
         displayName: `Complete ${testCase.kind}`,
         kind: 'room',
         joinMode: 'open',
         createdByPrincipalId: 'alice',
         requestId: `create-${testCase.kind}`,
-      }), authority);
+        }),
+        authority,
+      );
       if (testCase.kind === 'session') {
-        await applyPGliteGroupMutation(sql, service, mutationDescriptor(
-          'connectPresence', scope, ref.groupId, {
+        await applyPGliteGroupMutation(
+          sql,
+          service,
+          mutationDescriptor(
+            'connectPresence',
+            scope,
+            ref.groupId,
+            {
             principalId: 'alice',
             generationId: `generation-${testCase.kind}`,
             connectedAtEpochMs: 10_000,
@@ -1687,8 +1943,11 @@ Deno.test('PGlite group-state reads reject complete-contract corruption across p
             actorSessionId: authority.sessionId,
             requestId: `connect-${testCase.kind}`,
           },
-          'alice', authority.sessionId,
-        ), authority);
+            'alice',
+            authority.sessionId,
+          ),
+          authority,
+        );
       }
 
       const storageKey = testCase.kind === 'member'
@@ -1736,11 +1995,14 @@ Deno.test('PGlite group-state reads reject complete-contract corruption across p
           () => repository.listSnapshotsPage(scope, { limit: 10 }),
         ];
       for (const [readIndex, read] of reads.entries()) {
-        await assert.rejects(read, (error) =>
+        await assert.rejects(
+          read,
+          (error) =>
           error instanceof Error &&
           'code' in error &&
           error.code === 'group-state-repository-invariant-corruption',
-          `${testCase.kind} public read ${readIndex} accepted a corrupt persisted record`);
+          `${testCase.kind} public read ${readIndex} accepted a corrupt persisted record`,
+        );
       }
     }
   });
@@ -1995,15 +2257,19 @@ Deno.test('PGlite group event collision rolls back the authoritative mutation tr
     });
     const scope = { applicationId: 'collision-app', workspaceId: 'main' };
     const ref = { ...scope, groupId: 'collision-group' };
-    await applyPGliteGroupMutation(sql, service, mutationDescriptor('createGroup', scope,
-      ref.groupId, {
+    await applyPGliteGroupMutation(
+      sql,
+      service,
+      mutationDescriptor('createGroup', scope, ref.groupId, {
       groupId: ref.groupId,
       displayName: 'Before collision',
       kind: 'room',
       joinMode: 'open',
       createdByPrincipalId: 'alice',
       requestId: 'seed-collision-group',
-    }), authority);
+      }),
+      authority,
+    );
     const updateDescriptor = mutationDescriptor('updateGroup', scope, ref.groupId, {
       displayName: 'Must roll back',
       actorPrincipalId: 'alice',
@@ -2077,15 +2343,19 @@ Deno.test('PGlite group summary outbox collision rolls back state event and rece
     });
     const scope = { applicationId: 'summary-collision-app', workspaceId: 'main' };
     const ref = { ...scope, groupId: 'summary-collision-group' };
-    await applyPGliteGroupMutation(sql, service, mutationDescriptor('createGroup', scope,
-      ref.groupId, {
+    await applyPGliteGroupMutation(
+      sql,
+      service,
+      mutationDescriptor('createGroup', scope, ref.groupId, {
       groupId: ref.groupId,
       displayName: 'Before summary collision',
       kind: 'room',
       joinMode: 'open',
       createdByPrincipalId: 'alice',
       requestId: 'seed-summary-collision-group',
-    }), authority);
+      }),
+      authority,
+    );
 
     const preparation = await service.prepareMutation(
       mutationDescriptor('updateGroup', scope, ref.groupId, {
@@ -2233,10 +2503,12 @@ Deno.test('PSql group event reads normalize the f135 legacy contract at the stor
 Deno.test('PSql group event reads reject explicit null legacy identities and payloads', async () => {
   await withPGliteSql(async (sql) => {
     const repository = new PSqlGroupStateEventRepository(sql);
-    for (const [suffix, defect] of [
+    for (
+      const [suffix, defect] of [
       ['workspace', { workspaceId: null }],
       ['payload', { payload: null }],
-    ] as const) {
+      ] as const
+    ) {
       const ref = {
         applicationId: 'legacy-group-event-null-app',
         workspaceId: 'main',
@@ -2367,11 +2639,13 @@ Deno.test('PSql group events enforce the complete event contract and physical co
         )
       `;
 
-      for (const read of [
+      for (
+        const read of [
         () => repository.listGroupEvents(ref),
         () => repository.listRecentGroupEvents(ref),
         () => repository.listGroupEventPage(ref, { limit: 10 }),
-      ]) {
+        ]
+      ) {
         await assert.rejects(read, (error) =>
           error instanceof Error &&
           'code' in error &&
@@ -2426,7 +2700,8 @@ Deno.test('ResourceInboxRepository replay is independent of PostgreSQL DateStyle
     assert.equal(await inbox.writeIfAbsentOrMatch(entry), 'inserted');
     assert.equal(await inbox.writeIfAbsentOrMatch(entry), 'matched');
     await assert.rejects(
-      () => inbox.writeIfAbsentOrMatch({
+      () =>
+        inbox.writeIfAbsentOrMatch({
         ...entry,
         audit: {
           ...entry.audit,
@@ -2436,7 +2711,8 @@ Deno.test('ResourceInboxRepository replay is independent of PostgreSQL DateStyle
       ResourceInboxInvariantCorruptionError,
     );
     await assert.rejects(
-      () => inbox.writeIfAbsentOrMatch({
+      () =>
+        inbox.writeIfAbsentOrMatch({
         ...entry,
         audit: {
           ...entry.audit,
@@ -2482,7 +2758,8 @@ Deno.test('ResourceInboxRepository preserves supported expanded-year rollover', 
     assert.equal(await inbox.writeIfAbsentOrMatch(entry), 'inserted');
     assert.equal(await inbox.writeIfAbsentOrMatch(entry), 'matched');
     await assert.rejects(
-      () => inbox.writeIfAbsentOrMatch({
+      () =>
+        inbox.writeIfAbsentOrMatch({
         ...entry,
         audit: {
           ...entry.audit,
@@ -2578,24 +2855,36 @@ Deno.test('ResourceInboxRepository and ResourceInboxResultsRepository run agains
     await inbox.write(expired);
     await inbox.write(exhausted);
     await inbox.write(exhaustedTimeout);
-    assert.equal(await inbox.isEntriesToLock(
+    assert.equal(
+      await inbox.isEntriesToLock(
       new Set([exhausted.typeId]),
       new Set([EntityStatus.NEW]),
       2,
-    ), false);
-    assert.equal(await inbox.isEntriesToLock(
+      ),
+      false,
+    );
+    assert.equal(
+      await inbox.isEntriesToLock(
       new Set([exhausted.typeId]),
       new Set([EntityStatus.NEW]),
-    ), true);
-    assert.equal(await inbox.isTimeoutOnReservedEntries(
+      ),
+      true,
+    );
+    assert.equal(
+      await inbox.isTimeoutOnReservedEntries(
       new Set([exhaustedTimeout.typeId]),
       Temporal.Duration.from({ seconds: 1 }),
       2,
-    ), false);
-    assert.equal(await inbox.isTimeoutOnReservedEntries(
+      ),
+      false,
+    );
+    assert.equal(
+      await inbox.isTimeoutOnReservedEntries(
       new Set([exhaustedTimeout.typeId]),
       Temporal.Duration.from({ seconds: 1 }),
-    ), true);
+      ),
+      true,
+    );
     const databaseClockTimeout = {
       ...createResourceEntry('database-clock-timeout', {
         payload: { text: 'database clock timeout' },
@@ -2618,13 +2907,16 @@ Deno.test('ResourceInboxRepository and ResourceInboxResultsRepository run agains
     const originalDateNow = Date.now;
     Date.now = () => Date.parse('1900-01-01T00:00:00Z');
     try {
-      assert.equal((await inbox.begin((transactionInbox) =>
+      assert.equal(
+        (await inbox.begin((transactionInbox) =>
         transactionInbox.findTimedOutReservedEntriesSkipLocked(
           new Set([databaseClockTimeout.typeId]),
           30_000,
           { maxToReserve: 1, maxAttempts: 2 },
         )
-      )).size, 0);
+        )).size,
+        0,
+      );
       await sql`
         update resource_inbox
         set start_ts = (now() - interval '31 seconds') at time zone 'UTC'
@@ -2632,13 +2924,16 @@ Deno.test('ResourceInboxRepository and ResourceInboxResultsRepository run agains
           and ri_resource_id = ${databaseClockTimeout.key.resourceId}
           and fk_ext_bank_id = ${databaseClockTimeout.key.contextId}
       `;
-      assert.equal((await inbox.begin((transactionInbox) =>
+      assert.equal(
+        (await inbox.begin((transactionInbox) =>
         transactionInbox.findTimedOutReservedEntriesSkipLocked(
           new Set([databaseClockTimeout.typeId]),
           30_000,
           { maxToReserve: 1, maxAttempts: 2 },
         )
-      )).size, 1);
+        )).size,
+        1,
+      );
     } finally {
       Date.now = originalDateNow;
     }
@@ -2658,7 +2953,8 @@ Deno.test('ResourceInboxRepository and ResourceInboxResultsRepository run agains
     assert.equal(await inbox.writeIfAbsentOrMatch(immutable), 'inserted');
     assert.equal(await inbox.writeIfAbsentOrMatch(immutable), 'matched');
     await assert.rejects(
-      () => inbox.writeIfAbsentOrMatch({
+      () =>
+        inbox.writeIfAbsentOrMatch({
         ...immutable,
         audit: {
           ...immutable.audit,
@@ -2768,11 +3064,14 @@ Deno.test('ResourceInboxRepository and ResourceInboxResultsRepository run agains
     const releasedAt = Temporal.Instant.fromEpochMilliseconds(
       Number(reservedStartTs.epochMilliseconds) + 123,
     );
-    assert.equal(await inbox.releaseReserved(active.key, {
+    assert.equal(
+      await inbox.releaseReserved(active.key, {
       expectedAttempts: 2,
       releasedAt,
       disposition: { status: EntityStatus.COMPLETED, delayMs: null },
-    }), null);
+      }),
+      null,
+    );
     const released = await inbox.releaseReserved(active.key, {
       expectedAttempts: 1,
       releasedAt,
@@ -2810,7 +3109,8 @@ Deno.test('ResourceInboxRepository and ResourceInboxResultsRepository run agains
     assert.ok(secondReservation.right);
     const queueBox = new PSqlQueueBox(inbox);
     await assert.rejects(
-      () => queueBox.releaseEntries([
+      () =>
+        queueBox.releaseEntries([
         firstReservation.right!,
         {
           ...secondReservation.right!,
@@ -2820,7 +3120,8 @@ Deno.test('ResourceInboxRepository and ResourceInboxResultsRepository run agains
           },
         },
       ], { status: EntityStatus.COMPLETED, delayMs: null }),
-      (error) => error instanceof Error &&
+      (error) =>
+        error instanceof Error &&
         'code' in error &&
         error.code === 'resource-inbox-lost-reservation',
     );
@@ -3279,6 +3580,153 @@ Deno.test('PSqlCrdtLogRepository runs against PGlite SQL adapter', async () => {
     );
   });
 });
+
+function topologyConfigCommand(
+  groupRef: GroupRef,
+  requestId: string,
+  topologyKind: 'tree' | 'mesh',
+): GroupTopologyConfigMutationCommand {
+  return {
+    operation: 'putConfig',
+    aggregateRef: groupRef,
+    commandId: requestId,
+    requestId,
+    input: {
+      config: { topologyKind },
+      updatedByPrincipalId: 'owner',
+      ttlMs: null,
+      expiresAtEpochMs: null,
+    },
+  };
+}
+
+async function createPGliteTopologyWorkFixture(
+  sql: PGliteSql,
+  commandId: string,
+) {
+  const nowEpochMs = Date.parse('2026-07-23T00:00:00.000Z');
+  const groupRef = {
+    applicationId: commandId,
+    workspaceId: 'atomic-work',
+    groupId: 'room',
+  };
+  const groupSnapshot = topologyGroupSnapshot(groupRef);
+  const runtimeRepository = new PSqlRuntimeStateRepository(sql);
+  const topologySnapshotRepository = new RtcTopologySnapshotRepository(
+    runtimeRepository,
+  );
+  const topologyManagement = new GroupTopologyManagementService({
+    findGroupSnapshotByRef: () => groupSnapshot,
+    topologyService: new RallarRtcTopologyService({ now: () => nowEpochMs }),
+    topologySnapshotRepository,
+    processRttReader: () => [],
+    now: () => nowEpochMs,
+  });
+  const executionRepository = new RtcTopologyExecutionRepository(
+    runtimeRepository,
+    60_000,
+    () => nowEpochMs,
+  );
+  const resourceInbox = new ResourceInboxRepository(sql);
+  const workEntry = await sql.begin((transaction) =>
+    writeRtcTopologyOutbox(transaction, {
+      commandId,
+      resourceId: `${commandId}:rtc-topology-recompute:explicit`,
+      aggregateRef: groupRef,
+      acceptedCausalRevision: groupSnapshot.causalRevision,
+      groupSnapshot,
+      effectKind: 'rtc-topology-recompute',
+      payloadKind: 'group-revision',
+      createdAtEpochMs: nowEpochMs,
+      expireAtEpochMs: FUTURE_MS,
+      senderId: 'owner',
+      requestOptions: {},
+      publish: true,
+    })
+  );
+  await sql`
+    update resource_inbox
+    set ri_status = 'RESERVED', ri_attempts = 1,
+        start_ts = now() at time zone 'UTC', end_ts = null, next_ts = null
+    where ri_topic_id = ${workEntry.key.topicId}
+      and ri_resource_id = ${workEntry.key.resourceId}
+      and fk_ext_bank_id = ${workEntry.key.contextId}
+  `;
+  const reserved = await resourceInbox.findAnyByKey(workEntry.key);
+  assert.ok(reserved);
+  const message = JSON.parse(reserved.resource) as ALMessage;
+  const envelope = JSON.parse(message.payload.resource) as {
+    topicId: string;
+    resourceId: string;
+    contextId: string;
+  };
+  const workId = [
+    envelope.topicId,
+    envelope.contextId,
+    envelope.resourceId,
+    0,
+  ].join(':');
+  const authority = await topologyManagement.readTopologyPlanningAuthority(
+    groupRef,
+    {},
+    groupSnapshot,
+  );
+  const topology = topologyManagement.computeTopologyFromAuthority(
+    authority,
+    undefined,
+  ).snapshot;
+  const expiresAtEpochMs = executionRepository.publicationExpireAtTimestamp();
+  const publication = {
+    publicationId: toRtcTopologyPublicationId({
+      workId,
+      sourceGroupStateCausalRevision: topology.sourceGroupStateCausalRevision,
+      overlayVersion: topology.version,
+    }),
+    workId,
+    groupRef,
+    sourceGroupStateCausalRevision: topology.sourceGroupStateCausalRevision,
+    overlayVersion: topology.version,
+    targetGroupSnapshotVersion: groupSnapshot.group.snapshotVersion,
+    recipientSessionIds: topology.activeSessionIds,
+    message: materializeRtcOverlayTopologyBroadcastMessage(
+      groupSnapshot,
+      topology,
+      { workId, createdAtEpochMs: nowEpochMs, expiresAtEpochMs },
+    ),
+    createdAtEpochMs: nowEpochMs,
+  };
+  const publicationEntry = computeRtcTopologyPublicationOutbox(publication);
+  const queue = new PSqlQueueBox(resourceInbox);
+  const runtime = createRtcTopologyOutboxPublisher({
+    outboxQueueReader: new OutboxQueueReader(queue),
+    senderId: 'pglite-topology-worker',
+    now: () => nowEpochMs,
+  });
+  const handler = createRtcTopologyWorkHandler({
+    runtime,
+    database: sql,
+    topologyManagement,
+    executionRepository,
+    publicationFanout: {
+      readiness: Promise.resolve(),
+      publish: () => Promise.resolve(0),
+      deliverLocal: () => 0,
+    },
+  });
+  return {
+    groupRef,
+    workId,
+    topology,
+    publication,
+    publicationEntry,
+    resourceInbox,
+    executionRepository,
+    workEntry,
+    reserved,
+    message,
+    handler,
+  };
+}
 
 function topologyGroupSnapshot(groupRef: GroupRef): GroupSnapshot {
   return {

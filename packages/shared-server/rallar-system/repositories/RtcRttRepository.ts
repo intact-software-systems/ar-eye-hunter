@@ -364,9 +364,7 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
         const entries = await this.runtimeRepository.findAllEntries(
             RTC_RTT_RECEIPTS_NAMESPACE,
         );
-        return compact(await Promise.all(entries.map((entry) =>
-            this.toLiveReceiptEntry(entry)
-        )));
+        return compact(entries.map((entry) => this.toLiveReceiptEntry(entry)));
     }
 
     async listMutationReceiptEntriesPage(
@@ -377,9 +375,7 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
             '',
             options,
         );
-        return compact(await Promise.all(entries.map((entry) =>
-            this.toLiveReceiptEntry(entry)
-        )));
+        return compact(entries.map((entry) => this.toLiveReceiptEntry(entry)));
     }
 
     async listRecomputeIntents(): Promise<readonly RtcRttRecomputeIntent[]> {
@@ -710,10 +706,10 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
         return undefined;
     }
 
-    private async toLiveReceiptEntry(
+    private toLiveReceiptEntry(
         entry: RuntimeStateEntry,
         trustedReceiptId?: string,
-    ): Promise<RuntimeStateEntryValue<RtcRttMutationReceipt> | undefined> {
+    ): RuntimeStateEntryValue<RtcRttMutationReceipt> | undefined {
         const receipt = this.toReceiptEntry(entry, trustedReceiptId);
         return entry.expireAtTimestamp > this.nowEpochMs()
             ? receipt
@@ -1080,6 +1076,7 @@ export async function migrateLegacyRtcRttRecomputeIntentDeliveryState(
                     }
                     const upgraded = {
                         ...legacy,
+                        senderId: 'rallar-server-legacy-migration',
                         delivery: { state: 'pending' },
                     } as const satisfies RtcRttRecomputeIntent;
                     validateRecomputeIntent(upgraded, current.expireAtTimestamp);

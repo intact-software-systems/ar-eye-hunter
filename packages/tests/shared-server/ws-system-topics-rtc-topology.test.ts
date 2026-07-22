@@ -18,18 +18,14 @@ import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import { latestRttById } from '@shared/repository/rtt-repository.ts';
-import { initRallarSystemWsTopics } from '@shared-server/rallar-system/ws-system-topics.ts';
+import {
+    initRallarSystemWsTopics,
+    type InitRallarSystemWsTopicsOptions,
+} from '@shared-server/rallar-system/ws-system-topics.ts';
 import { createRtcTopologyOutboxPublisher } from '@shared-server/rallar-system/services/RtcTopologyOutboxWork.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
-import {
-    DEFAULT_RTC_RTT_MUTATION_RETENTION_MS,
-    RtcRttRepository,
-    toRtcRttMutationReceiptId,
-} from '@shared-server/rallar-system/repositories/RtcRttRepository.ts';
-import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/repositories/RtcTopologySnapshotRepository.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/repositories/RtcTopologyExecutionRepository.ts';
 import { RtcTopologyPublicationRepository } from '@shared-server/rallar-system/repositories/RtcTopologyPublicationRepository.ts';
-import { hashStateMutationCommand } from '@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts';
 import {
     createDisabledRtcTopologyClusterTransport,
     createRtcTopologyPublicationFanout,
@@ -37,6 +33,7 @@ import {
 import * as vivaldiService from '@shared-graph/vivaldi-service.ts';
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
+import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 
 describe('Rallar system websocket topics RTC topology', () => {
     it('broadcasts overlay topology after accepted group snapshots', async () => {
@@ -158,13 +155,10 @@ describe('Rallar system websocket topics RTC topology', () => {
         });
     });
 
-    it('processes immutable app-outbox work without scheduling from inbound snapshots', async () => {
+    it('queues immutable app-outbox work with canonical identity without scheduling from inbound snapshots', async () => {
         configureTestCacheRepositories();
 
         const runtimeRepository = new FakeRuntimeStateRepository();
-        const topologyRepository = new RtcTopologySnapshotRepository(
-            runtimeRepository,
-        );
         const server = new JsonWebSocketServer();
         const sockets = createSockets([
             'session-a',
@@ -204,9 +198,10 @@ describe('Rallar system websocket topics RTC topology', () => {
                     server,
                     'server-1',
                 ),
-                findGroupSnapshotByRef: async (ref) =>
+                findGroupSnapshotByRef: (ref) => Promise.resolve(
                     groupStateSnapshotsRepository
                         .findGroupStateSnapshotByRef(ref),
+                ),
             },
         });
 
@@ -236,21 +231,39 @@ describe('Rallar system websocket topics RTC topology', () => {
         expect(await appOutbox.getAllKeys()).toEqual([]);
         expect(countSentTopologyMessages(sockets)).toBe(0);
         await topologyOutbox.publisher.enqueueForGroupSnapshot(group);
-        await outboxQueueReader.dequeueOutbox(
-            OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
-            createResilience(),
-        );
-        expect(countSentTopologyMessages(sockets)).toBe(5);
-        expect(topologyService.readSnapshot(group)).toBeDefined();
-        expect(await topologyRepository.findSnapshot(group.group)).toBeDefined();
-        expect(topologyService.readMetrics()).toMatchObject({
-            topologySnapshotCount: 1,
-            topologyRemovalRequestCount: 0,
+        await topologyOutbox.publisher.enqueueForGroupSnapshot(group);
+        const [activeKey] = await appOutbox.getAllKeys();
+        expect(activeKey).toMatchObject({
+            topicId: 'app-outbox.rtc-topology',
+            resourceId: expect.any(String),
         });
-
-        for (const socket of sockets.values()) {
-            socket.sent.length = 0;
-        }
+        const activeEntry = await appOutbox.getItem(activeKey!);
+        const activeMessage = JSON.parse(activeEntry!.resource) as ALMessage;
+        const activeEnvelope = JSON.parse(activeMessage.payload.resource) as {
+            resourceId: string;
+            contextId: string;
+            senderId: string;
+            data: {
+                groupSnapshot: GroupSnapshot;
+                requestOptions: object;
+                publish: boolean;
+            };
+        };
+        expect(activeMessage.route).toEqual(activeKey);
+        expect(activeEnvelope).toMatchObject({
+            resourceId: expect.stringContaining(
+                `:group-revision:${group.stateRevision}`,
+            ),
+            contextId: expect.stringContaining('group=room-1'),
+            senderId: expect.any(String),
+            data: {
+                groupSnapshot: group,
+                requestOptions: {},
+                publish: true,
+            },
+        });
+        expect(await appOutbox.getAllKeys()).toHaveLength(1);
+        expect(countSentTopologyMessages(sockets)).toBe(0);
 
         const archivedGroup = createInactiveGroupSnapshot(group, 'archived');
         await senderSocket.dispatchMessage(
@@ -272,25 +285,8 @@ describe('Rallar system websocket topics RTC topology', () => {
 
         expect(await appOutbox.getAllKeys()).toHaveLength(1);
         await topologyOutbox.publisher.enqueueForGroupSnapshot(archivedGroup);
-        await outboxQueueReader.dequeueOutbox(
-            OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
-            createResilience(),
-        );
-
-        expect(countSentTopologyMessages(sockets)).toBe(5);
-        expect(topologyService.readSnapshot(group)).toBeUndefined();
-        expect(await topologyRepository.findSnapshot(group.group)).toMatchObject({
-            state: 'removed',
-            sourceGroupStateCausalRevision: archivedGroup.causalRevision,
-            updatedAtEpochMs: archivedGroup.group.updated.atEpochMs,
-        });
-        expect(topologyService.readMetrics()).toMatchObject({
-            topologyRemovalRequestCount: 1,
-            topologyRemovedCount: 1,
-            topologyRemoveMissCount: 0,
-            topologySnapshotCount: 0,
-            pendingRttUpdateCount: 0,
-        });
+        expect(await appOutbox.getAllKeys()).toHaveLength(2);
+        expect(countSentTopologyMessages(sockets)).toBe(0);
     });
 
     it('rejects RTT measurements from a mismatched AL sender', async () => {
@@ -500,17 +496,31 @@ describe('Rallar system websocket topics RTC topology', () => {
     it('rejects over-degree RTT measurements with runtime-state storage', async () => {
         configureTestCacheRepositories();
         const runtimeRepository = new FakeRuntimeStateRepository();
-        const { sockets } = createRttHarness(['session-a', 'session-b', 'session-c'], {
-            rtcTopologyOptions: {
-                rttReportingDegreeLimit: 1,
-            },
-            runtimeRepository,
-        });
         const group = createGroupSnapshot('room-1', [
             'session-a',
             'session-b',
             'session-c',
         ]);
+        const processRtcRttMutation = vi.fn()
+            .mockResolvedValueOnce({
+                accepted: true,
+                reason: 'accepted',
+                affectedGroups: [group],
+                updated: true,
+            })
+            .mockResolvedValueOnce({
+                accepted: false,
+                reason: 'over-degree',
+                affectedGroups: [group],
+                updated: false,
+            });
+        const { sockets } = createRttHarness(['session-a', 'session-b', 'session-c'], {
+            rtcTopologyOptions: {
+                rttReportingDegreeLimit: 1,
+            },
+            runtimeRepository,
+            processRtcRttMutation,
+        });
         groupStateSnapshotsRepository.setGroupStateSnapshot(group);
 
         await dispatchRtt(sockets.get('session-a')!, 'session-a', {
@@ -528,24 +538,38 @@ describe('Rallar system websocket topics RTC topology', () => {
             version: 2,
         }, group);
 
-        const durableRtts = new RtcRttRepository(runtimeRepository);
-        expect(await durableRtts.findMeasurement('session-a', 'session-b'))
+        expect(processRtcRttMutation).toHaveBeenCalledTimes(2);
+        expect(latestRttById().read('session-a::session-b'))
             .toBeDefined();
-        expect(await durableRtts.findMeasurement('session-a', 'session-c'))
+        expect(latestRttById().read('session-a::session-c'))
             .toBeUndefined();
     });
 
     it('rejects runtime-state over-degree RTT measurements across active groups', async () => {
         configureTestCacheRepositories();
         const runtimeRepository = new FakeRuntimeStateRepository();
+        const groupOne = createGroupSnapshot('room-1', ['session-a', 'session-b']);
+        const groupTwo = createGroupSnapshot('room-2', ['session-a', 'session-c']);
+        const processRtcRttMutation = vi.fn()
+            .mockResolvedValueOnce({
+                accepted: true,
+                reason: 'accepted',
+                affectedGroups: [groupOne],
+                updated: true,
+            })
+            .mockResolvedValueOnce({
+                accepted: false,
+                reason: 'over-degree',
+                affectedGroups: [groupTwo],
+                updated: false,
+            });
         const { sockets } = createRttHarness(['session-a', 'session-b', 'session-c'], {
             rtcTopologyOptions: {
                 rttReportingDegreeLimit: 1,
             },
             runtimeRepository,
+            processRtcRttMutation,
         });
-        const groupOne = createGroupSnapshot('room-1', ['session-a', 'session-b']);
-        const groupTwo = createGroupSnapshot('room-2', ['session-a', 'session-c']);
         groupStateSnapshotsRepository.setGroupStateSnapshot(groupOne);
         groupStateSnapshotsRepository.setGroupStateSnapshot(groupTwo);
 
@@ -564,10 +588,10 @@ describe('Rallar system websocket topics RTC topology', () => {
             version: 2,
         }, groupTwo);
 
-        const durableRtts = new RtcRttRepository(runtimeRepository);
-        expect(await durableRtts.findMeasurement('session-a', 'session-b'))
+        expect(processRtcRttMutation).toHaveBeenCalledTimes(2);
+        expect(latestRttById().read('session-a::session-b'))
             .toBeDefined();
-        expect(await durableRtts.findMeasurement('session-a', 'session-c'))
+        expect(latestRttById().read('session-a::session-c'))
             .toBeUndefined();
     });
 
@@ -577,10 +601,17 @@ describe('Rallar system websocket topics RTC topology', () => {
         vi.spyOn(runtimeRepository, 'lockKey').mockRejectedValue(
             new Error('RTT endpoint locks are forbidden'),
         );
+        const group = createGroupSnapshot('room-1', ['session-a', 'session-b']);
+        const processRtcRttMutation = vi.fn().mockResolvedValue({
+            accepted: true,
+            reason: 'accepted',
+            affectedGroups: [group],
+            updated: true,
+        });
         const { sockets } = createRttHarness(['session-a', 'session-b'], {
             runtimeRepository,
+            processRtcRttMutation,
         });
-        const group = createGroupSnapshot('room-1', ['session-a', 'session-b']);
         groupStateSnapshotsRepository.setGroupStateSnapshot(group);
 
         await dispatchRtt(sockets.get('session-a')!, 'session-a', {
@@ -591,19 +622,31 @@ describe('Rallar system websocket topics RTC topology', () => {
             version: 1,
         }, group);
 
-        expect(await new RtcRttRepository(runtimeRepository)
-            .findMeasurement('session-a', 'session-b')).toBeDefined();
+        expect(processRtcRttMutation).toHaveBeenCalledOnce();
+        expect(latestRttById().read('session-a::session-b')).toBeDefined();
         expect(runtimeRepository.locks).toEqual([]);
     });
 
-    it('resolves exact and divergent WS RTT receipt replay before policy, lifecycle, or effects', async () => {
+    it('delegates exact and divergent WS RTT replay to AppInbox before local effects', async () => {
         configureTestCacheRepositories();
         const runtimeRepository = new FakeRuntimeStateRepository();
+        const group = createGroupSnapshot('room-1', ['session-a', 'session-b']);
+        const conflict = Object.assign(
+            new Error('RTC RTT idempotency conflict'),
+            { code: 'rtc-rtt-idempotency-conflict' },
+        );
+        const processRtcRttMutation = vi.fn()
+            .mockResolvedValueOnce({
+                accepted: true,
+                reason: 'accepted',
+                affectedGroups: [group],
+                updated: false,
+            })
+            .mockRejectedValueOnce(conflict);
         const { sockets, topologyService } = createRttHarness(
             ['session-a', 'session-b'],
-            { runtimeRepository },
+            { runtimeRepository, processRtcRttMutation },
         );
-        const group = createGroupSnapshot('room-1', ['session-a', 'session-b']);
         groupStateSnapshotsRepository.setGroupStateSnapshot(group);
         const rtt = {
             sessionIdFrom: 'session-a',
@@ -612,72 +655,12 @@ describe('Rallar system websocket topics RTC topology', () => {
             createdAtEpochMs: 1,
             version: 1,
         };
-        const durableRtts = new RtcRttRepository(runtimeRepository, { now: () => 1 });
-        const receiptId = toRtcRttMutationReceiptId(rtt);
-        const commandHash = await hashStateMutationCommand({
-            rtt,
-            alSenderId: 'session-a',
-        });
-        await durableRtts.insertMutationReceipt({
-            receiptId,
-            commandId: receiptId,
-            requestId: receiptId,
-            sessionIdFrom: rtt.sessionIdFrom,
-            sessionIdTo: rtt.sessionIdTo,
-            aggregateRef: {
-                sessionIdFrom: rtt.sessionIdFrom,
-                sessionIdTo: rtt.sessionIdTo,
-            },
-            measurementVersion: rtt.version,
-            affectedGroupRefs: [{
-                applicationId: group.group.applicationId,
-                workspaceId: group.group.workspaceId,
-                groupId: group.group.groupId,
-            }],
-            acceptedAtEpochMs: 1,
-            outcome: 'accepted',
-            attemptCount: 1,
-            acceptedStorageRevision: 0,
-            eventId: null,
-            outboxIds: [],
-            commandHash,
-        }, 1 + DEFAULT_RTC_RTT_MUTATION_RETENTION_MS);
         const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
         const observeRtt = vi.spyOn(vivaldiService, 'observeRtt').mockClear();
         const queueRttTopologyUpdate = vi.spyOn(
             topologyService,
             'queueRttTopologyUpdate',
         ).mockClear();
-        const forbidden = [
-            vi.spyOn(groupStateSnapshotsRepository, 'findGroupStateSnapshotByRef')
-                .mockImplementation(() => {
-                    throw new Error('RTT replay read group policy authority');
-                }),
-            vi.spyOn(RtcTopologySnapshotRepository.prototype, 'findSnapshot')
-                .mockRejectedValue(new Error('RTT replay read topology authority')),
-            vi.spyOn(topologyService, 'readRttReportingDegreeLimit')
-                .mockImplementation(() => {
-                    throw new Error('RTT replay read degree policy');
-                }),
-            vi.spyOn(RtcRttRepository.prototype, 'readMutationFacts')
-                .mockImplementation(() => {
-                    throw new Error('RTT replay read lifecycle clock');
-                }),
-            vi.spyOn(RtcRttRepository.prototype, 'findMeasurementEntry')
-                .mockRejectedValue(new Error('RTT replay read measurement')),
-            vi.spyOn(RtcRttRepository.prototype, 'listMeasurementEntries')
-                .mockRejectedValue(new Error('RTT replay list measurements')),
-            vi.spyOn(RtcRttRepository.prototype, 'findEndpointAdmissionEntry')
-                .mockRejectedValue(new Error('RTT replay read admission')),
-            vi.spyOn(runtimeRepository, 'deleteIfRevision')
-                .mockRejectedValue(new Error('RTT replay cleanup')),
-            vi.spyOn(runtimeRepository, 'begin')
-                .mockRejectedValue(new Error('RTT replay transaction')),
-            vi.spyOn(runtimeRepository, 'insertIfAbsent')
-                .mockRejectedValue(new Error('RTT replay insert')),
-            vi.spyOn(runtimeRepository, 'upsertIfRevision')
-                .mockRejectedValue(new Error('RTT replay update')),
-        ];
         try {
             await expect(dispatchRtt(
                 sockets.get('session-a')!,
@@ -692,7 +675,15 @@ describe('Rallar system websocket topics RTC topology', () => {
                 group,
             )).resolves.toBeUndefined();
 
-            for (const spy of forbidden) expect(spy).not.toHaveBeenCalled();
+            expect(processRtcRttMutation).toHaveBeenCalledTimes(2);
+            expect(processRtcRttMutation).toHaveBeenNthCalledWith(
+                1,
+                expect.objectContaining({
+                    rtt,
+                    alSenderId: 'session-a',
+                    candidateGroupRefs: [group.group],
+                }),
+            );
             expect(observeRtt).not.toHaveBeenCalled();
             expect(queueRttTopologyUpdate).not.toHaveBeenCalled();
             expect(consoleError).toHaveBeenCalledWith(
@@ -700,7 +691,6 @@ describe('Rallar system websocket topics RTC topology', () => {
                 expect.objectContaining({ code: 'rtc-rtt-idempotency-conflict' }),
             );
         } finally {
-            for (const spy of forbidden) spy.mockRestore();
             consoleError.mockRestore();
         }
     });
@@ -968,7 +958,7 @@ describe('Rallar system websocket topics RTC topology', () => {
                 'server-1',
             );
             const group = createGroupSnapshot('room-1', [...sockets.keys()]);
-            const findGroupSnapshotByRef = vi.fn(async () => group);
+            const findGroupSnapshotByRef = vi.fn(() => Promise.resolve(group));
             initRallarSystemWsTopics(service, {
                 rtcTopologyOptions: {
                     rttRebuildDebounceMs: 100,
@@ -1006,18 +996,7 @@ describe('Rallar system websocket topics RTC topology', () => {
                     },
                 ),
             );
-            await createRtcTopologyOutboxPublisher({ outboxQueueReader })
-                .publisher.enqueueForGroupSnapshot(group);
-
-            await outboxQueueReader.dequeueOutbox(
-                OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
-                createResilience(),
-            );
-            expect(countSentTopologyMessages(sockets)).toBe(5);
-
-            for (const socket of sockets.values()) {
-                socket.sent.length = 0;
-            }
+            expect(await appOutboxQueue.getAllKeys()).toEqual([]);
             groupStateSnapshotsRepository.removeGroupStateSnapshotByRef(
                 group.group,
             );
@@ -1027,27 +1006,27 @@ describe('Rallar system websocket topics RTC topology', () => {
                 'getAllGroupStateSnapshots',
             );
 
-            for (const rtt of createCentralRttMeasurements(
-                [...sockets.keys()],
-                'session-a',
-            )) {
-                await senderSocket.dispatchMessage(
-                    newALBroadcastMessage(
-                        'session-a',
-                        newALEventRoute(
-                            AppTopics.rtt,
-                            group.group.groupId,
-                            `rtt-${rtt.version}`,
-                        ),
-                        'room',
+            const rtt = {
+                sessionIdFrom: 'session-a',
+                sessionIdTo: 'session-b',
+                rttMs: 12,
+                createdAtEpochMs: 1_000,
+                version: 1,
+            };
+            await senderSocket.dispatchMessage(
+                newALBroadcastMessage(
+                    'session-a',
+                    newALEventRoute(
                         AppTopics.rtt,
-                        rtt,
-                        {
-                            groupRef: group.group,
-                        },
+                        group.group.groupId,
+                        `rtt-${rtt.version}`,
                     ),
-                );
-            }
+                    'room',
+                    AppTopics.rtt,
+                    rtt,
+                    { groupRef: group.group },
+                ),
+            );
             groupStateSnapshotsRepository.setGroupStateSnapshot(group);
 
             expect(fullSnapshotScan).not.toHaveBeenCalled();
@@ -1059,151 +1038,96 @@ describe('Rallar system websocket topics RTC topology', () => {
                 groupId: group.group.groupId,
             });
             expect(countSentTopologyMessages(sockets)).toBe(0);
-
-            await outboxQueueReader.dequeueOutbox(
-                OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
-                createResilience(),
-            );
-            expect(countSentTopologyMessages(sockets)).toBe(0);
-
-            vi.setSystemTime(1_100);
-            await outboxQueueReader.dequeueOutbox(
-                OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
-                createResilience(),
-            );
-
-            expect(countSentTopologyMessages(sockets)).toBe(5);
-            const topology = senderSocket.sent.find((sent) =>
-                sent.payload.typeId === AppTopics.overlayTopology
-            );
-            const snapshot = topology
-                ? JSON.parse(topology.payload.resource) as {
-                    version?: number;
-                    nextHopsBySessionId?: Record<string, readonly string[]>;
-                }
-                : undefined;
-
-            expect(snapshot?.version).toBe(2);
-            expect(snapshot?.nextHopsBySessionId?.['session-a']).toHaveLength(4);
+            const [key] = await appOutboxQueue.getAllKeys();
+            expect(key).toMatchObject({
+                topicId: 'app-outbox.rtc-topology',
+                resourceId: expect.stringContaining('room-1'),
+            });
+            const entry = await appOutboxQueue.getItem(key!);
+            const message = JSON.parse(entry!.resource) as ALMessage;
+            const envelope = JSON.parse(message.payload.resource) as {
+                resourceId: string;
+                contextId: string;
+                data: {
+                    kind: string;
+                    groupSnapshot: GroupSnapshot;
+                    requestedRttVersion: number;
+                    requestOptions: object;
+                    publish: boolean;
+                };
+            };
+            expect(message.route).toEqual(key);
+            expect(envelope).toMatchObject({
+                resourceId: expect.any(String),
+                contextId: expect.stringContaining('group=room-1'),
+                data: {
+                    kind: 'rtt-refresh',
+                    groupSnapshot: group,
+                    requestedRttVersion: rtt.version,
+                    requestOptions: {},
+                    publish: true,
+                },
+            });
         } finally {
             vi.useRealTimers();
         }
     });
 
-    it('uses durable topology snapshots and RTTs across app-outbox workers', async () => {
-        vi.useFakeTimers();
-        vi.setSystemTime(1_000);
+    it('converges multiple app-outbox publishers on one immutable work identity', async () => {
+        configureTestCacheRepositories();
+        const appOutboxQueue = new InMemoryQueueBox(new Map());
+        const group = createGroupSnapshot('room-1', [
+            'session-a',
+            'session-b',
+        ]);
+        const deliveryId = [
+            'group-command-1',
+            'rtc-topology-recompute',
+            'group-revision',
+            `group=${group.causalRevision.groupRevision};presence=${group.causalRevision.presenceRevision}`,
+        ].join(':');
+        const publisherA = createRtcTopologyOutboxPublisher({
+            outboxQueueReader: new OutboxQueueReader(appOutboxQueue),
+            senderId: 'worker-a',
+            now: () => 1_000,
+        }).publisher;
+        const publisherB = createRtcTopologyOutboxPublisher({
+            outboxQueueReader: new OutboxQueueReader(appOutboxQueue),
+            senderId: 'worker-b',
+            now: () => 1_001,
+        }).publisher;
 
-        try {
-            configureTestCacheRepositories();
+        const [first, second] = await Promise.all([
+            publisherA.enqueueForStateMutation(group, deliveryId),
+            publisherB.enqueueForStateMutation(group, deliveryId),
+        ]);
 
-            const runtimeRepository = new FakeRuntimeStateRepository();
-            const appOutboxQueue = new InMemoryQueueBox(new Map());
-            const group = createGroupSnapshot('room-1', [
-                'session-a',
-                'session-b',
-                'session-c',
-                'session-d',
-                'session-e',
-            ]);
-            clientStateSnapshotsRepository.setClientStateSnapshots(
-                group.activeSessions.map((session) =>
-                    createClientSnapshot(session.sessionId)
-                ),
-            );
-
-            const workerA = createTopologyWorker(
-                appOutboxQueue,
-                runtimeRepository,
-                group,
-                'worker-a',
-            );
-            await workerA.systemTopics.rtcRttRecomputeOutboxWorker?.firstRun;
-
-            await workerA.senderSocket.dispatchMessage(
-                newALBroadcastMessage(
-                    'session-a',
-                    newALEventRoute(
-                        AppTopics.groupStateSnapshot,
-                        group.group.groupId,
-                        'group-snapshot-1',
-                    ),
-                    'room',
-                    AppTopics.groupStateSnapshot,
-                    group,
-                    {
-                        groupRef: group.group,
-                    },
-                ),
-            );
-            await createRtcTopologyOutboxPublisher({
-                outboxQueueReader: workerA.outboxQueueReader,
-            }).publisher.enqueueForGroupSnapshot(group);
-
-            await workerA.outboxQueueReader.dequeueOutbox(
-                OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
-                createResilience(),
-            );
-
-            const firstTopology = findSentTopology(workerA.sockets);
-            expect(firstTopology?.version).toBe(1);
-
-            const workerB = createTopologyWorker(
-                appOutboxQueue,
-                runtimeRepository,
-                group,
-                'worker-b',
-            );
-            await workerB.systemTopics.rtcRttRecomputeOutboxWorker?.firstRun;
-
-            for (const rtt of createCentralRttMeasurements(
-                group.activeSessions.map((session) => session.sessionId),
-                'session-a',
-            )) {
-                await workerB.senderSocket.dispatchMessage(
-                    newALBroadcastMessage(
-                        'session-a',
-                        newALEventRoute(
-                            AppTopics.rtt,
-                            group.group.groupId,
-                            `rtt-${rtt.version}`,
-                        ),
-                        'room',
-                        AppTopics.rtt,
-                        rtt,
-                        {
-                            groupRef: group.group,
-                        },
-                    ),
-                );
-            }
-
-            latestRttById().clearAll();
-
-            const workerC = createTopologyWorker(
-                appOutboxQueue,
-                runtimeRepository,
-                group,
-                'worker-c',
-            );
-            await workerC.systemTopics.rtcRttRecomputeOutboxWorker?.firstRun;
-
-            vi.setSystemTime(1_100);
-            await workerC.outboxQueueReader.dequeueOutbox(
-                OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
-                createResilience(),
-            );
-
-            const secondTopology = findSentTopology(workerC.sockets);
-            expect(secondTopology?.version).toBe(2);
-            expect(secondTopology?.nextHopsBySessionId?.['session-a'])
-                .toHaveLength(4);
-            workerA.systemTopics.stop();
-            workerB.systemTopics.stop();
-            workerC.systemTopics.stop();
-        } finally {
-            vi.useRealTimers();
-        }
+        expect(first).toEqual(second);
+        expect(first.effectiveSnapshotRevision).toBe(group.stateRevision);
+        const [key] = await appOutboxQueue.getAllKeys();
+        expect(key?.resourceId).toEqual(expect.any(String));
+        expect(await appOutboxQueue.getAllKeys()).toHaveLength(1);
+        const entry = await appOutboxQueue.getItem(key!);
+        const message = JSON.parse(entry!.resource) as ALMessage;
+        const envelope = JSON.parse(message.payload.resource) as {
+            resourceId: string;
+            senderId: string;
+            data: {
+                groupSnapshot: GroupSnapshot;
+                requestOptions: object;
+                publish: boolean;
+            };
+        };
+        expect(message.route).toEqual(key);
+        expect(envelope).toMatchObject({
+            resourceId: deliveryId,
+            senderId: expect.stringMatching(/^worker-/),
+            data: {
+                groupSnapshot: group,
+                requestOptions: {},
+                publish: true,
+            },
+        });
     });
 });
 
@@ -1250,6 +1174,8 @@ function createRttHarness(
     options: Readonly<{
         rtcTopologyOptions?: ConstructorParameters<typeof RallarRtcTopologyService>[0];
         runtimeRepository?: FakeRuntimeStateRepository;
+        processRtcRttMutation?:
+            InitRallarSystemWsTopicsOptions['processRtcRttMutation'];
     }> = {},
 ): {
     readonly sockets: Map<string, FakeSocket>;
@@ -1275,6 +1201,7 @@ function createRttHarness(
         ...(options.runtimeRepository
             ? { rtcTopologyRuntimeState: { repository: options.runtimeRepository } }
             : {}),
+        processRtcRttMutation: options.processRtcRttMutation,
     });
 
     return { sockets, topologyService };
@@ -1317,24 +1244,6 @@ function countSentTopologyMessages(
         .length;
 }
 
-function findSentTopology(
-    sockets: ReadonlyMap<string, FakeSocket>,
-): {
-    readonly version?: number;
-    readonly nextHopsBySessionId?: Record<string, readonly string[]>;
-} | undefined {
-    const message = [...sockets.values()]
-        .flatMap((socket) => socket.sent)
-        .find((sent) => sent.payload.typeId === AppTopics.overlayTopology);
-
-    return message
-        ? JSON.parse(message.payload.resource) as {
-            version?: number;
-            nextHopsBySessionId?: Record<string, readonly string[]>;
-        }
-        : undefined;
-}
-
 function createTopologyExecutionDependencies(
     runtimeRepository: FakeRuntimeStateRepository,
     server: JsonWebSocketServer,
@@ -1344,6 +1253,7 @@ function createTopologyExecutionDependencies(
         runtimeRepository,
     );
     return {
+        database: createUnusedDatabase(),
         executionRepository: new RtcTopologyExecutionRepository(
             runtimeRepository,
         ),
@@ -1356,57 +1266,14 @@ function createTopologyExecutionDependencies(
     };
 }
 
-function createTopologyWorker(
-    appOutboxQueue: InMemoryQueueBox,
-    runtimeRepository: FakeRuntimeStateRepository,
-    group: GroupSnapshot,
-    name: string,
-): {
-    readonly sockets: Map<string, FakeSocket>;
-    readonly senderSocket: FakeSocket;
-    readonly outboxQueueReader: OutboxQueueReader;
-    readonly systemTopics: ReturnType<typeof initRallarSystemWsTopics>;
-} {
-    const server = new JsonWebSocketServer();
-    const sockets = createSockets(
-        group.activeSessions.map((session) => session.sessionId),
+function createUnusedDatabase(): PSqlSql {
+    const database = (() => Promise.reject(
+        new Error('Unexpected SQL execution in WS routing unit test'),
+    )) as PSqlSql;
+    database.begin = () => Promise.reject(
+        new Error('Unexpected transaction in WS routing unit test'),
     );
-
-    for (const [sessionId, socket] of sockets) {
-        server.addConnection(new ConnectionContext(sessionId, socket as never));
-    }
-
-    const outboxQueueReader = new OutboxQueueReader(appOutboxQueue);
-    const service = new WsQueueBoxServerService(
-        new InMemoryQueueBox(new Map()),
-        new InMemoryQueueBox(new Map()),
-        server,
-        name,
-    );
-    const systemTopics = initRallarSystemWsTopics(service, {
-        rtcTopologyOptions: {
-            rttRebuildDebounceMs: 100,
-        },
-        rtcTopologyRuntimeState: {
-            repository: runtimeRepository,
-        },
-        rtcTopologyAppOutbox: {
-            outboxQueueReader,
-            ...createTopologyExecutionDependencies(
-                runtimeRepository,
-                server,
-                name,
-            ),
-            findGroupSnapshotByRef: async () => group,
-        },
-    });
-
-    return {
-        sockets,
-        senderSocket: sockets.get('session-a')!,
-        outboxQueueReader,
-        systemTopics,
-    };
+    return database;
 }
 
 function createCentralRttMeasurements(

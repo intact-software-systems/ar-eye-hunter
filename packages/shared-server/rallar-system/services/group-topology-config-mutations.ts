@@ -30,12 +30,10 @@ import {
     validateEffectiveGroupTopologyConfig,
     validateGroupTopologyConfigPatch,
 } from './group-topology-config-service.ts';
-import type {
-    CreateStateMutationOutboxRecordInput,
-} from '../repositories/StateMutationOutboxRepository.ts';
 import {
-    toStateMutationOutboxId,
-} from '../repositories/StateMutationOutboxRepository.ts';
+    type ComputedRtcTopologyOutbox,
+    toRtcTopologyEntryResourceId,
+} from './rtc-topology-outbox-entry.ts';
 
 export type GroupTopologyConfigMutationCommand = Readonly<{
     operation: GroupTopologyConfigMutationOperation;
@@ -97,21 +95,18 @@ export type GroupTopologyConfigDeleteTarget = Readonly<{
 export type GroupTopologyConfigMutationStableFacts = Readonly<{
     requestedAtEpochMs: number;
     commandHash: string;
-    isPlatformAdmin: boolean;
     resolvedOverrideExpiresAtEpochMs: number | null;
     deleteTarget: GroupTopologyConfigDeleteTarget | null;
 }>;
 
 export type GroupTopologyConfigMutationFacts =
     GroupTopologyConfigMutationStableFacts & Readonly<{
+        isPlatformAdmin: boolean;
         policyNowEpochMs: number;
         attemptCount: number;
     }>;
 
-export type GroupTopologyConfigOutboxInput = Extract<
-    CreateStateMutationOutboxRecordInput,
-    { kind: 'group' }
->;
+export type GroupTopologyConfigOutboxInput = ComputedRtcTopologyOutbox;
 
 type TopologyConfigWriteGuard =
     | Readonly<{
@@ -251,12 +246,9 @@ export function validateTopologyConfigMutation(input: Readonly<{
         }
     }
     if (input.computed.outcome === 'write') {
-        if (input.computed.outbox.commandHash !== input.facts.commandHash) {
-            throw new TypeError('Topology config outbox hash differs from facts');
-        }
         if (
             input.computed.receipt.outboxId !==
-                toStateMutationOutboxId(input.computed.outbox)
+                toRtcTopologyEntryResourceId(input.computed.outbox)
         ) {
             throw new TypeError('Topology config receipt outbox differs from intent');
         }
@@ -523,18 +515,25 @@ function writeResult(
         rosterVersion: accepted.group.rosterVersion,
         presenceVersion: accepted.group.presenceVersion,
     };
+    const outboxResourceId = [
+        input.command.commandId,
+        'rtc-topology-recompute',
+        'group-revision',
+        `group=${acceptedCausalRevision.causalRevision.groupRevision};presence=${acceptedCausalRevision.causalRevision.presenceRevision}`,
+    ].join(':');
     const outbox: GroupTopologyConfigOutboxInput = {
-        kind: 'group',
         aggregateRef: copyGroupRef(input.command.aggregateRef),
         commandId: input.command.commandId,
-        commandHash: input.facts.commandHash,
         createdAtEpochMs: input.facts.requestedAtEpochMs,
-        acceptedCausalRevision: {
-            kind: 'group',
-            ...acceptedCausalRevision,
-        },
-        effects: ['rtc-topology-recompute'],
-        event: { kind: 'none' },
+        acceptedCausalRevision: accepted.causalRevision,
+        groupSnapshot: accepted,
+        effectKind: 'rtc-topology-recompute',
+        payloadKind: 'group-revision',
+        expireAtEpochMs: 253_402_300_799_999,
+        senderId: input.command.input.updatedByPrincipalId,
+        resourceId: outboxResourceId,
+        requestOptions: {},
+        publish: true,
     };
     const acceptedValue = guard.operation === 'delete' ? null : guard.value;
     const receipt = receiptFor(input.command, input.facts, {
@@ -552,7 +551,7 @@ function writeResult(
             ? null
             : { ...acceptedValue.config },
         acceptedCausalRevision,
-        outboxId: toStateMutationOutboxId(outbox),
+        outboxId: toRtcTopologyEntryResourceId(outbox),
     });
     const result: GroupTopologyConfigMutationAcceptedResult =
         guard.operation === 'delete'
@@ -1165,27 +1164,12 @@ function validateTopologyConfigReceipt(value: unknown, expectedRef: GroupRef): v
             value.acceptedCausalRevision.causalRevision,
             'Topology config accepted causal revision tuple',
         );
-        const expectedOutboxId = toStateMutationOutboxId({
-            commandId: String(value.commandId),
-            kind: 'group',
-            aggregateRef: value.groupRef as GroupRef,
-            acceptedCausalRevision: {
-                kind: 'group',
-                stateRevision: Number(value.acceptedCausalRevision.stateRevision),
-                causalRevision: {
-                    groupRevision: Number(
-                        value.acceptedCausalRevision.causalRevision.groupRevision,
-                    ),
-                    presenceRevision: Number(
-                        value.acceptedCausalRevision.causalRevision.presenceRevision,
-                    ),
-                },
-                snapshotVersion: Number(value.acceptedCausalRevision.snapshotVersion),
-                metadataVersion: Number(value.acceptedCausalRevision.metadataVersion),
-                rosterVersion: Number(value.acceptedCausalRevision.rosterVersion),
-                presenceVersion: Number(value.acceptedCausalRevision.presenceVersion),
-            },
-        });
+        const expectedOutboxId = [
+            String(value.commandId),
+            'rtc-topology-recompute',
+            'group-revision',
+            `group=${value.acceptedCausalRevision.causalRevision.groupRevision};presence=${value.acceptedCausalRevision.causalRevision.presenceRevision}`,
+        ].join(':');
         if (value.outboxId !== expectedOutboxId) {
             throw new TypeError('Topology config receipt outbox identity is invalid');
         }

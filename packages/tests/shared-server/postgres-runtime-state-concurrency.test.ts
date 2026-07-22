@@ -145,15 +145,16 @@ describe('Postgres runtime-state conditional-write concurrency', () => {
             withPostgresClients(
                 'acquisition-failure',
                 2,
-                async () => {
+                () => {
                     createCalls += 1;
                     if (createCalls === 1) {
-                        return firstClient;
+                        return Promise.resolve(firstClient);
                     }
                     throw setupFailure;
                 },
-                async () => {
+                () => {
                     runCalls += 1;
+                    return Promise.resolve();
                 },
             ),
         ).rejects.toBe(setupFailure);
@@ -181,14 +182,14 @@ describe('Postgres runtime-state conditional-write concurrency', () => {
             withPostgresClients(
                 'synchronous-cleanup-acquisition-failure',
                 2,
-                async () => {
+                () => {
                     createCalls += 1;
                     if (createCalls === 1) {
-                        return firstClient;
+                        return Promise.resolve(firstClient);
                     }
                     throw setupFailure;
                 },
-                async () => {},
+                () => Promise.resolve(),
             ),
         ).rejects.toBe(setupFailure);
         expect(createCalls).toBe(2);
@@ -212,8 +213,8 @@ describe('Postgres runtime-state conditional-write concurrency', () => {
             withPostgresClients(
                 'synchronous-cleanup-only-failure',
                 1,
-                async () => client,
-                async () => undefined,
+                () => Promise.resolve(client),
+                () => Promise.resolve(undefined),
             ),
         ).rejects.toMatchObject({
             errors: [cleanupFailure],
@@ -1525,7 +1526,11 @@ function topologyPublication(
     const message = materializeRtcOverlayTopologyBroadcastMessage(
         topologyGroupSnapshot(snapshot.groupRef),
         snapshot,
-        { workId, createdAtEpochMs },
+        {
+            workId,
+            createdAtEpochMs,
+            expiresAtEpochMs: createdAtEpochMs + 60_000,
+        },
     );
     return {
         publicationId: `${workId}:${snapshot.sourceGroupStateCausalRevision.groupRevision}:${snapshot.sourceGroupStateCausalRevision.presenceRevision}:${snapshot.version}`,
