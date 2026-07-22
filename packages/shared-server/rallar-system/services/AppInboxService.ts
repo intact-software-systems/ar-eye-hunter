@@ -1,4 +1,4 @@
-import { ALMessage, newALRoute, newALUntargetedMessage, } from '@shared/al-contracts/al-contract.ts';
+import { ALMessage, newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 import {
     EntityStatus,
     Key,
@@ -7,35 +7,34 @@ import {
 } from '@shared/queuebox/ResourceEntry.ts';
 import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import {
-    ResourceInboxFinalizedByHandlerError,
     readResourceInboxAttemptTelemetry,
+    ResourceInboxFinalizedByHandlerError,
 } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { TryWithExhaustedError, TryWithPolicy, tryWithPolicy } from '@shared/resilience/TryWith.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import {
-    ResourceInboxResultsRepository
+    ResourceInboxResultsRepository,
 } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
-import type {
-    PSqlSql,
-    PSqlTransactionSql,
-} from '@shared-server/postgres/PostgresSqlClient.ts';
-import { type RallarTimingDetails, type RallarTimingSink, recordRallarTiming, timeRallarAsync, } from './timing.ts';
+import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import {
-    toAppInboxQueueCreatedBy,
-    toAppInboxQueueKey,
-} from './app-inbox-queue-key.ts';
+    type RallarTimingDetails,
+    type RallarTimingSink,
+    recordRallarTiming,
+    timeRallarAsync,
+} from './timing.ts';
+import { toAppInboxQueueCreatedBy, toAppInboxQueueKey } from './app-inbox-queue-key.ts';
 import {
+    type AppInboxEnqueueInput,
     AppInboxIdempotencyConflictError,
+    type AppInboxMessageContext,
     AppInboxReservationConflictError,
     AppInboxType,
-    type AppInboxEnqueueInput,
-    type AppInboxMessageContext,
 } from './app-inbox-contracts.ts';
 import {
-    classifyAppInboxError,
     type AppInboxErrorClassification,
+    classifyAppInboxError,
 } from './app-inbox-error-classification.ts';
 import {
     AppInboxTransactionWriter,
@@ -51,6 +50,12 @@ import {
     AppInboxCommandIdentityError,
     validateAppInboxCommandIdentity,
 } from './app-inbox-command-identity.ts';
+import {
+    type AppInboxFailure,
+    readPersistedAppInboxFailure,
+    toTerminalAppInboxFailure,
+    toUnavailableAppInboxFailure,
+} from './app-inbox-failure.ts';
 
 export const SIMPLER_GROUP_STATE_APP_INBOX_TOPIC = 'app-inbox.group-state';
 export const SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC = 'app-inbox.client-state';
@@ -65,6 +70,7 @@ export {
 export type {
     AppInboxEnqueueInput,
     AppInboxErrorClassification,
+    AppInboxFailure,
     AppInboxMessageContext,
 };
 export {
@@ -81,10 +87,12 @@ export type AppInboxServiceOptions = Readonly<{
     nowEpochMs?: () => number;
 }>;
 
-type NormalizedAppInboxServiceOptions = Required<Omit<
+type NormalizedAppInboxServiceOptions = Required<
+    Omit<
     AppInboxServiceOptions,
     'nowEpochMs'
->>;
+    >
+>;
 
 export class AppInboxService {
     public static readonly MAX_ELAPSED_MSECS = 10_000;
@@ -173,7 +181,7 @@ export class AppInboxService {
                             wireEnqueue,
                         ),
                     );
-                }
+            },
             )
             .catch((err) => {
                 console.error(`Error processing entry without waiting: ${err}`);
@@ -183,7 +191,7 @@ export class AppInboxService {
     // use this from client/group cleanup of expired
     public processEntryNoWaitingIf<V, R = V>(
         enqueue: AppInboxEnqueueInput<V>,
-        enqueueIf: (entry: ResourceEntry) => boolean
+        enqueueIf: (entry: ResourceEntry) => boolean,
     ) {
         this.processEntryUntilCompletionInternal(
                 enqueue,
@@ -197,9 +205,9 @@ export class AppInboxService {
                             wireEnqueue.type.toString(),
                             wireEnqueue,
                         ),
-                        enqueueIf
+                    enqueueIf,
                     );
-                }
+            },
             )
             .catch((err) => {
                 console.error(`Error processing entry without waiting: ${err}`);
@@ -209,7 +217,16 @@ export class AppInboxService {
     public async processEntryUntilCompletion<V, R = V>(
         enqueue: AppInboxEnqueueInput<V>,
     ): Promise<Either<string, R>> {
-        return await this.processEntryUntilCompletionInternal(
+        const result = await this.processEntryUntilCompletionResult<V, R>(
+            enqueue,
+        );
+        return result.mapLeft(toLegacyAppInboxFailure);
+    }
+
+    public async processEntryUntilCompletionResult<V, R = V>(
+        enqueue: AppInboxEnqueueInput<V>,
+    ): Promise<Either<AppInboxFailure, R>> {
+        return await this.processEntryUntilCompletionInternal<V, R>(
             enqueue,
             true,
             true,
@@ -222,15 +239,15 @@ export class AppInboxService {
                         wireEnqueue,
                     ),
                 );
-            }
+            },
         );
     }
 
     public async processEntryUntilCompletionIf<V, R = V>(
         enqueue: AppInboxEnqueueInput<V>,
-        enqueueIf: (entry: ResourceEntry) => boolean
+        enqueueIf: (entry: ResourceEntry) => boolean,
     ): Promise<Either<string, R>> {
-        return await this.processEntryUntilCompletionInternal(
+        const result = await this.processEntryUntilCompletionInternal<V, R>(
             enqueue,
             true,
             false,
@@ -242,10 +259,11 @@ export class AppInboxService {
                         wireEnqueue.type.toString(),
                         wireEnqueue,
                     ),
-                    enqueueIf
+                    enqueueIf,
                 );
-            }
+            },
         );
+        return result.mapLeft(toLegacyAppInboxFailure);
     }
 
     private async processEntryUntilCompletionInternal<V, R = V>(
@@ -255,8 +273,8 @@ export class AppInboxService {
         enqueuer: (
             key: Key,
             wireEnqueue: AppInboxEnqueueInput<V>,
-        ) => Promise<ResourceEntry | undefined>
-    ): Promise<Either<string, R>> {
+        ) => Promise<ResourceEntry | undefined>,
+    ): Promise<Either<AppInboxFailure, R>> {
         const wireEnqueue = toJsonWireAppInboxEnqueue(enqueue);
         const key: Key = this.toKey(wireEnqueue);
         const receivedCommandIdentity = enforceCommandIdentity
@@ -300,13 +318,13 @@ export class AppInboxService {
                 }
 
                 if (!waitForCompletion) {
-                    return Either.ofLeft('No waiting for completion');
+                    return Either.ofLeft(toUnavailableAppInboxFailure());
                 }
 
                 const isCompleted = await this.waitForCompletion(wireEnqueue, key);
 
                 if (!isCompleted) {
-                    return Either.ofLeft('App inbox entry not completed');
+                    return Either.ofLeft(toUnavailableAppInboxFailure());
                 }
 
                 return await this.timePhase(
@@ -321,16 +339,21 @@ export class AppInboxService {
 
     private async findByKeyAndReturnEither<R>(
         key: Key,
-    ): Promise<Either<string, R>> {
+    ): Promise<Either<AppInboxFailure, R>> {
         const result = await this.resourceInboxResults.findByKey(key);
         if (result === undefined) {
-            return Either.ofLeft('App inbox entry not found');
+            return Either.ofLeft(toTerminalAppInboxFailure(
+                Object.assign(new Error('App inbox entry result was not found'), {
+                    status: 500,
+                }),
+                'app-inbox-result-not-found',
+            ));
         }
         if (result.status === EntityStatus.FAILED) {
-            return Either.ofLeft(toAppInboxErrorMessage(result.resource));
+            return Either.ofLeft(readPersistedAppInboxFailure(result.resource));
         }
         if (result.status !== EntityStatus.COMPLETED) {
-            return Either.ofLeft('App inbox entry not completed');
+            return Either.ofLeft(toUnavailableAppInboxFailure());
         }
 
         return Either.ofRight(JSON.parse(result.resource) as R);
@@ -345,15 +368,15 @@ export class AppInboxService {
                 'wait-completion',
                 enqueue,
                 key,
-                async () => await tryWithPolicy<boolean>(
+                async () =>
+                    await tryWithPolicy<boolean>(
                     async () => {
-                        const isCompleted =
-                            await this.resourceInbox.isEntryWithStatus(
+                            const isCompleted = await this.resourceInbox.isEntryWithStatus(
                                 key,
                                 [
                                     EntityStatus.COMPLETED,
                                     EntityStatus.FAILED,
-                                ]
+                                ],
                             );
 
                         if (!isCompleted) {
@@ -496,15 +519,14 @@ export class AppInboxService {
                                         EntityStatus.FAILED,
                                         this.nowEpochMs(),
                                     ),
-                                    error instanceof Error
-                                        ? error
-                                        : new Error(String(error)),
+                                    error instanceof Error ? error : new Error(String(error)),
                                 );
                             }
                         },
                     );
                 },
-            });
+            },
+        );
     }
 
     private recordQueueRetryTiming<V>(
@@ -650,53 +672,23 @@ export class AppInboxService {
     }
 }
 
-function toAppInboxErrorMessage(resource: string): string {
-    try {
-        const parsed = JSON.parse(resource) as unknown;
-        if (typeof parsed === 'string') {
-            return parsed;
+function toLegacyAppInboxFailure(failure: AppInboxFailure): string {
+    if (failure.code === 'app-inbox-non-retryable') {
+        return failure.message;
         }
-        if (isSerializedPolicyDenial(parsed)) {
-            return JSON.stringify(parsed);
+    if (failure.denial !== null) {
+        return failure.message.startsWith('Forbidden:')
+            ? failure.message
+            : `Forbidden: ${failure.denial.message}`;
         }
-        if (
-            parsed &&
-            typeof parsed === 'object' &&
-            'error' in parsed &&
-            typeof parsed.error === 'string'
-        ) {
-            return parsed.error;
-        }
-        return JSON.stringify(parsed);
-    } catch {
-        return resource;
-    }
-}
-
-function isSerializedPolicyDenial(value: unknown): value is Readonly<{
-    error: string;
-    code: string;
-    message: string;
-}> {
-    return Boolean(
-        value &&
-        typeof value === 'object' &&
-        'error' in value &&
-        typeof value.error === 'string' &&
-        'code' in value &&
-        typeof value.code === 'string' &&
-        'message' in value &&
-        typeof value.message === 'string',
-    );
+    return JSON.stringify(failure);
 }
 
 function toNonNegativeFiniteNumber(
     value: number | undefined,
     fallback: number,
 ): number {
-    return value === undefined || !Number.isFinite(value) || value < 0
-        ? fallback
-        : value;
+    return value === undefined || !Number.isFinite(value) || value < 0 ? fallback : value;
 }
 
 function toRatio(value: number | undefined, fallback: number): number {

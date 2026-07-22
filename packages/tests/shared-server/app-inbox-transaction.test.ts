@@ -17,21 +17,21 @@ import {
 } from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/Resilience.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import type {
-    PSqlSql,
-    PSqlTransactionSql,
-} from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import {
+    type AppInboxMessageContext,
     AppInboxReservationConflictError,
     AppInboxService,
     AppInboxType,
     classifyAppInboxError,
     createAppInboxRetryExhaustionHandler,
     createAppInboxRetryExhaustionRecoveryHandler,
-    type AppInboxMessageContext,
 } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
 import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-policy.ts';
+import { GroupMutationAuthorizationError } from '@shared-server/rallar-system/services/group-state-service.ts';
+import { GroupTopologyConfigValidationError } from '@shared-server/rallar-system/services/group-topology-config-service.ts';
+import { readPersistedAppInboxFailure } from '@shared-server/rallar-system/services/app-inbox-failure.ts';
 import { createAppInboxTestDatabase } from './app-inbox-test-database.ts';
 
 const NOW_EPOCH_MS = Date.parse('2026-07-22T12:00:00.000Z');
@@ -52,7 +52,11 @@ describe('AppInboxService transaction ownership', () => {
         expect(harness.database.beginCalls).toBe(1);
         expect(harness.database.state.mutations.get('group-1')).toEqual({ revision: 2 });
         expect(harness.database.state.outbox.get('outbox-1')).toEqual({ groupId: 'group-1' });
-        expect(JSON.parse(harness.database.state.results.get(toKeyAsString(harness.entry.key))!.resource))
+        expect(
+            JSON.parse(
+                harness.database.state.results.get(toKeyAsString(harness.entry.key))!.resource,
+            ),
+        )
             .toEqual(receipt);
         expect(harness.database.state.inbox.get(toKeyAsString(harness.entry.key))?.status)
             .toBe(EntityStatus.COMPLETED);
@@ -182,7 +186,8 @@ describe('AppInboxService registered handler finalization', () => {
         });
         harness.service.onStateMessage(
             AppInboxType.GROUP_CREATE,
-            async (_data, context) => await harness.service.commit(
+            async (_data, context) =>
+                await harness.service.commit(
                 context,
                 async () => ({ status: 'accepted', source: 'transaction' }),
             ),
@@ -378,7 +383,8 @@ describe('AppInboxService registered handler finalization', () => {
             await harness.service.commit(context, async () => {
                 mutationCommitted = true;
                 return { status: 'accepted' };
-            }));
+            })
+        );
         harness.service.onStateMessage(outerType as AppInboxType, handler);
         harness.service.processEntryNoWaiting(harness.enqueue);
         const entry = await waitForRegisteredHandlerEntry(harness.queue);
@@ -433,7 +439,8 @@ describe('AppInboxService registered handler finalization', () => {
             await harness.service.commit(context, async () => {
                 mutationCommitted = true;
                 return { status: 'accepted' };
-            }));
+            })
+        );
         harness.service.onStateMessage(AppInboxType.GROUP_UPDATE, handler);
         harness.service.processEntryNoWaiting(harness.enqueue);
         const entry = await waitForRegisteredHandlerEntry(harness.queue);
@@ -461,6 +468,101 @@ describe('AppInboxService registered handler finalization', () => {
 });
 
 describe('AppInbox error classification', () => {
+    it('fails closed when persisted failure metadata is structurally corrupt', () => {
+        const malformed = readPersistedAppInboxFailure(JSON.stringify({
+            type: 'app-inbox-retry-exhausted',
+            status: 503,
+            message: 'AppInbox processing exhausted its retry budget',
+            issues: null,
+            denial: null,
+            retry: {
+                kind: 'exhausted',
+                attempts: 20,
+                lane: 'NEW',
+                queueAgeMs: 10,
+                dueAgeMs: 5,
+            },
+            commandIdentity: {
+                contextId: '',
+                resourceId: 'request-1',
+                topicId: 'app-inbox.group-state',
+                operation: 'TOPOLOGY_CONFIG_PUT',
+                operationSource: 'command',
+            },
+            selectedLane: 'NEW',
+            processingAttempts: 20,
+            reservationAttempt: 20,
+            lastError: {
+                source: 'processing',
+                code: 'runtime-state-write-conflict',
+                message: 'retryable conflict',
+            },
+            queueAgeMs: 10,
+            dueAgeMs: 5,
+            exhaustedAtEpochMs: NOW_EPOCH_MS,
+        }));
+
+        expect(malformed).toEqual({
+            type: 'app-inbox-failure',
+            code: 'app-inbox-malformed-persisted-failure',
+            status: 500,
+            message: 'Persisted AppInbox failure is malformed',
+            issues: null,
+            denial: null,
+            retry: null,
+        });
+    });
+
+    it('serializes validation and authority failures with mandatory structured fields', () => {
+        const validation = classifyAppInboxError(
+            new GroupTopologyConfigValidationError([{
+                code: 'invalid-positive-integer',
+                path: ['degreeLimit'],
+                message: 'degreeLimit must be a positive integer',
+                details: { value: 0 },
+            }]),
+        );
+        expect(validation).toEqual({
+            kind: 'terminal',
+            code: 'group-topology-config-validation-failed',
+            result: {
+                type: 'app-inbox-failure',
+                code: 'group-topology-config-validation-failed',
+                status: 422,
+                message: 'Group topology config validation failed',
+                issues: [{
+                    code: 'invalid-positive-integer',
+                    path: ['degreeLimit'],
+                    message: 'degreeLimit must be a positive integer',
+                    details: { value: 0 },
+                }],
+                denial: null,
+                retry: null,
+            },
+        });
+
+        const authority = classifyAppInboxError(
+            new GroupMutationAuthorizationError('session was revoked'),
+        );
+        expect(authority).toEqual({
+            kind: 'terminal',
+            code: 'group-mutation-authority-denied',
+            result: {
+                type: 'app-inbox-failure',
+                code: 'group-mutation-authority-denied',
+                status: 403,
+                message: 'Forbidden: session was revoked',
+                issues: null,
+                denial: {
+                    code: 'group-mutation-authority-denied',
+                    message: 'Forbidden: session was revoked',
+                    details: null,
+                },
+                retry: null,
+            },
+        });
+    });
+
     it.each([
         {
             name: 'typed reservation conflict with 409',
@@ -619,6 +721,17 @@ describe('AppInbox retry exhaustion', () => {
         expect(stored?.status).toBe(EntityStatus.FAILED);
         expect(JSON.parse(stored!.resource)).toEqual({
             type: 'app-inbox-retry-exhausted',
+            status: 503,
+            message: 'AppInbox processing exhausted its retry budget',
+            issues: null,
+            denial: null,
+            retry: {
+                kind: 'exhausted',
+                attempts: 20,
+                lane: 'NEW',
+                queueAgeMs: expect.any(Number),
+                dueAgeMs: expect.any(Number),
+            },
             commandIdentity: {
                 contextId: harness.entry.key.contextId,
                 resourceId: harness.entry.key.resourceId,
@@ -764,7 +877,10 @@ describe('AppInbox retry exhaustion', () => {
         expect(harness.database.beginCalls).toBe(1);
         expect(harness.database.state.inbox.get(toKeyAsString(harness.entry.key))?.status)
             .toBe(EntityStatus.FAILED);
-        expect(harness.database.state.inbox.get(toKeyAsString(harness.entry.key))?.dequeueAudit.attempts)
+        expect(
+            harness.database.state.inbox.get(toKeyAsString(harness.entry.key))?.dequeueAudit
+                .attempts,
+        )
             .toBe(attempts);
         expect(stored?.status).toBe(EntityStatus.FAILED);
         expect(JSON.parse(stored!.resource)).toMatchObject({
@@ -889,7 +1005,8 @@ function createRegisteredHandlerHarness(options: Readonly<{
     return {
         enqueue,
         queue,
-        readEntry: () => (
+        readEntry: () =>
+            (
             queue as unknown as { data: Map<string, ResourceEntry> }
         ).data.values().next().value as ResourceEntry | undefined,
         reader,
@@ -927,12 +1044,12 @@ function toRegisteredHandlerIdentityResource(
     message.payload.typeId = identity.outerType;
     message.payload.resource = identity.nested.kind === 'corrupt'
         ? '{"secret":"nested-password"'
-        : JSON.stringify(identity.nested.kind === 'missing'
-            ? { data: { secret: 'nested-password' } }
-            : {
+        : JSON.stringify(
+            identity.nested.kind === 'missing' ? { data: { secret: 'nested-password' } } : {
                 type: identity.nested.type,
                 data: { secret: 'nested-password' },
-            });
+            },
+        );
     return JSON.stringify(message);
 }
 
@@ -982,9 +1099,19 @@ class AtomicDatabase {
                     this.requireWorking().results.set(toKeyAsString(result.key), result);
                     return [toAtomicResultRow(result)];
                 }
-                if (query.includes('update resource_inbox') && query.includes("ri_status = 'reserved'")) {
+                if (
+                    query.includes('update resource_inbox') &&
+                    query.includes("ri_status = 'reserved'")
+                ) {
                     const [status, completedAt, topicId, resourceId, contextId, attempts] =
-                        values as [EntityStatus, Date, string, string, string, number];
+                        values as [
+                            EntityStatus,
+                            Date,
+                            string,
+                            string,
+                            string,
+                            number,
+                        ];
                     if (this.loseReservation) return [];
                     const key = toKeyAsString({ topicId, resourceId, contextId });
                     const stored = this.requireWorking().inbox.get(key);
@@ -1104,8 +1231,18 @@ function createAtomicHarness(options: Readonly<{
 }
 
 function toAtomicResultEntry(values: readonly unknown[]): ResourceEntry {
-    const [resourceId, topicId, resource, typeId, status, contextId, , createdBy,
-        createdTs, expiryTs] = values;
+    const [
+        resourceId,
+        topicId,
+        resource,
+        typeId,
+        status,
+        contextId,
+        ,
+        createdBy,
+        createdTs,
+        expiryTs,
+    ] = values;
     return {
         key: { resourceId, topicId, contextId } as Key,
         resource: resource as string,
@@ -1117,7 +1254,8 @@ function toAtomicResultEntry(values: readonly unknown[]): ResourceEntry {
             createdTs: Temporal.PlainDateTime.from(createdTs as string),
             expiryTs: String(expiryTs).endsWith('Z')
                 ? Temporal.Instant.from(expiryTs as string)
-                : Temporal.PlainDateTime.from(expiryTs as string).toZonedDateTime('UTC').toInstant(),
+                : Temporal.PlainDateTime.from(expiryTs as string).toZonedDateTime('UTC')
+                    .toInstant(),
         },
         dequeueAudit: { attempts: 0 },
     };
@@ -1173,10 +1311,12 @@ function createReservedEntry(attempts: number): ResourceEntry {
     };
 }
 
-function toPersistedAppInboxResource(options: Readonly<{
+function toPersistedAppInboxResource(
+    options: Readonly<{
     outerType?: string;
     nestedType?: string;
-}>): string {
+    }>,
+): string {
     const command = options.nestedType === undefined
         ? { data: { secret: 'nested-password' } }
         : { type: options.nestedType, data: { secret: 'nested-password' } };

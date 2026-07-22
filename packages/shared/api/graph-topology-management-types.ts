@@ -55,16 +55,17 @@ export type GraphDiagnosticReadResponse = Readonly<{
 export type GroupTopologyKindSetting = 'auto' | 'star' | 'tree' | 'mesh';
 
 export type GroupTopologyConfigPatch = Readonly<{
-    topologyKind?: GroupTopologyKindSetting;
-    degreeLimit?: number;
-    treeMinSize?: number;
-    meshMinSize?: number;
-    meshParamK?: number;
+    topologyKind?: GroupTopologyKindSetting | null;
+    degreeLimit?: number | null;
+    treeMinSize?: number | null;
+    meshMinSize?: number | null;
+    meshParamK?: number | null;
 }>;
 
 export type CanonicalGroupTopologyConfigField<T> =
     | Readonly<{ action: 'preserve' }>
-    | Readonly<{ action: 'set'; value: T }>;
+    | Readonly<{ action: 'set'; value: T }>
+    | Readonly<{ action: 'clear' }>;
 
 /**
  * Mandatory JSON representation used after a sparse topology request crosses a
@@ -78,7 +79,13 @@ export type CanonicalGroupTopologyConfigPatch = Readonly<{
     meshParamK: CanonicalGroupTopologyConfigField<number>;
 }>;
 
-export type EffectiveGroupTopologyConfig = Required<GroupTopologyConfigPatch>;
+export type EffectiveGroupTopologyConfig = Readonly<{
+    topologyKind: GroupTopologyKindSetting;
+    degreeLimit: number;
+    treeMinSize: number;
+    meshMinSize: number;
+    meshParamK: number;
+}>;
 
 export type StoredGroupTopologyConfig = Readonly<{
     groupRef: GroupRef;

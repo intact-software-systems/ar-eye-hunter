@@ -1,8 +1,8 @@
 import type {
     EffectiveGroupTopologyConfig,
-    GroupTopologyConfigPatch,
     GroupTopologyConfigMutationOperation,
     GroupTopologyConfigMutationReceipt,
+    GroupTopologyConfigPatch,
     StoredGroupTopologyConfig,
     StoredGroupTopologyOverride,
 } from '@shared/api/graph-topology-management-types.ts';
@@ -11,11 +11,7 @@ export type {
     GroupTopologyConfigMutationOperation,
     GroupTopologyConfigMutationReceipt,
 } from '@shared/api/graph-topology-management-types.ts';
-import type {
-    GroupRef,
-    GroupSnapshot,
-    GroupStateCausalRevision,
-} from '@shared/api/group-types.ts';
+import type { GroupRef, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import type { RuntimeStateEntryValue } from '../../runtime-state/RuntimeStateJsonStore.ts';
 import type { GroupStateAuthorityGuard } from '../repositories/GroupStateRepository.ts';
 import {
@@ -92,7 +88,8 @@ export type GroupTopologyConfigMutationStableFacts = Readonly<{
 }>;
 
 export type GroupTopologyConfigMutationFacts =
-    GroupTopologyConfigMutationStableFacts & Readonly<{
+    & GroupTopologyConfigMutationStableFacts
+    & Readonly<{
         isPlatformAdmin: boolean;
         policyNowEpochMs: number;
         attemptCount: number;
@@ -171,12 +168,14 @@ export type GroupTopologyConfigMutationComputed =
         receivedCommandHash: string;
     }>;
 
-export function computeTopologyConfigMutation(input: Readonly<{
+export function computeTopologyConfigMutation(
+    input: Readonly<{
     command: GroupTopologyConfigMutationCommand;
     read: GroupTopologyConfigMutationRead;
     facts: GroupTopologyConfigMutationFacts;
     serverDefaults: GroupTopologyServerOptions;
-}>): GroupTopologyConfigMutationComputed {
+    }>,
+): GroupTopologyConfigMutationComputed {
     const { command, read, facts } = input;
     validateTopologyConfigCommand(command);
     validateTopologyConfigRead(read, command);
@@ -201,13 +200,15 @@ export function computeTopologyConfigMutation(input: Readonly<{
     }
 }
 
-export function validateTopologyConfigMutation(input: Readonly<{
+export function validateTopologyConfigMutation(
+    input: Readonly<{
     command: GroupTopologyConfigMutationCommand;
     read: GroupTopologyConfigMutationRead;
     facts: GroupTopologyConfigMutationFacts;
     serverDefaults: GroupTopologyServerOptions;
     computed: GroupTopologyConfigMutationComputed;
-}>): void {
+    }>,
+): void {
     validateTopologyConfigCommand(input.command);
     validateTopologyConfigRead(input.read, input.command);
     validateTopologyConfigFacts(input.facts);
@@ -312,23 +313,25 @@ export function validateTopologyConfigMutationIdempotency(
     }
 }
 
-function computePutConfig(input: Readonly<{
+function computePutConfig(
+    input: Readonly<{
     command: GroupTopologyConfigMutationCommand;
     read: GroupTopologyConfigMutationRead;
     facts: GroupTopologyConfigMutationFacts;
     serverDefaults: GroupTopologyServerOptions;
-}>): GroupTopologyConfigMutationComputed {
+    }>,
+): GroupTopologyConfigMutationComputed {
     const { command, read, facts } = input;
     const current = read.config;
     const generation = read.configGeneration;
     const patch = requireTopologyConfigPatch(command);
     const config: StoredGroupTopologyConfig = {
         groupRef: copyGroupRef(command.aggregateRef),
-        config: {
-            ...readDefaultGroupTopologyConfig(input.serverDefaults),
-            ...(current?.value.config ?? {}),
-            ...normalizeGroupTopologyConfigPatch(patch),
-        },
+        config: applyGroupTopologyConfigPatch({
+            fallback: readDefaultGroupTopologyConfig(input.serverDefaults),
+            current: current?.value.config,
+            patch,
+        }),
         version: nextTopologyConfigVersion(current?.value.version, generation),
         createdAtEpochMs: current?.value.createdAtEpochMs ??
             facts.requestedAtEpochMs,
@@ -350,20 +353,28 @@ function computePutConfig(input: Readonly<{
             temporary: read.override.value,
         });
     }
-    return writeResult(input, {
+    return writeResult(
+        input,
+        {
         target: 'config',
         operation: current ? 'update' : 'insert',
         expectedRevision: current?.entry.revision ?? null,
         value: config,
-    }, generation, config.version, current ? current.entry.revision + 1 : 0);
+        },
+        generation,
+        config.version,
+        current ? current.entry.revision + 1 : 0,
+    );
 }
 
-function computePutOverride(input: Readonly<{
+function computePutOverride(
+    input: Readonly<{
     command: GroupTopologyConfigMutationCommand;
     read: GroupTopologyConfigMutationRead;
     facts: GroupTopologyConfigMutationFacts;
     serverDefaults: GroupTopologyServerOptions;
-}>): GroupTopologyConfigMutationComputed {
+    }>,
+): GroupTopologyConfigMutationComputed {
     const { command, read, facts } = input;
     const current = read.override;
     const generation = read.overrideGeneration;
@@ -373,11 +384,12 @@ function computePutOverride(input: Readonly<{
     }
     const override: StoredGroupTopologyOverride = {
         groupRef: copyGroupRef(command.aggregateRef),
-        config: {
-            ...readDefaultGroupTopologyConfig(input.serverDefaults),
-            ...(read.config?.value.config ?? {}),
-            ...normalizeGroupTopologyConfigPatch(patch),
-        },
+        config: applyGroupTopologyConfigPatch({
+            fallback: read.config?.value.config ??
+                readDefaultGroupTopologyConfig(input.serverDefaults),
+            current: current?.value.config,
+            patch,
+        }),
         version: nextTopologyConfigVersion(current?.value.version, generation),
         createdAtEpochMs: current?.value.createdAtEpochMs ??
             facts.requestedAtEpochMs,
@@ -394,12 +406,18 @@ function computePutOverride(input: Readonly<{
         durable: read.config?.value,
         temporary: override,
     });
-    return writeResult(input, {
+    return writeResult(
+        input,
+        {
         target: 'override',
         operation: current ? 'update' : 'insert',
         expectedRevision: current?.entry.revision ?? null,
         value: override,
-    }, generation, override.version, current ? current.entry.revision + 1 : 0);
+        },
+        generation,
+        override.version,
+        current ? current.entry.revision + 1 : 0,
+    );
 }
 
 function computeDelete(
@@ -462,10 +480,16 @@ function computeDelete(
             expectedRevision: current.entry.revision,
             value: null,
         };
-    return writeResult(input, guard, generation, Math.max(
+    return writeResult(
+        input,
+        guard,
+        generation,
+        Math.max(
         current.value.version,
         generation?.value.version ?? 0,
-    ) + 1, current.entry.revision);
+        ) + 1,
+        current.entry.revision,
+    );
 }
 
 function writeResult(
@@ -520,14 +544,11 @@ function writeResult(
                 guard.target === 'override'
             ? guard.value.expiresAtEpochMs
             : null,
-        acceptedConfig: acceptedValue === null
-            ? null
-            : { ...acceptedValue.config },
+        acceptedConfig: acceptedValue === null ? null : { ...acceptedValue.config },
         acceptedCausalRevision,
         outboxId: toRtcTopologyEntryResourceId(outbox),
     });
-    const result: GroupTopologyConfigMutationAcceptedResult =
-        guard.operation === 'delete'
+    const result: GroupTopologyConfigMutationAcceptedResult = guard.operation === 'delete'
             ? { kind: 'delete', deleted: true }
             : guard.target === 'config'
             ? { kind: 'config', config: guard.value }
@@ -705,9 +726,11 @@ function validateTopologyConfigCommand(
     if (!command || typeof command !== 'object' || 'commandHash' in command) {
         throw new TypeError('Topology config command is invalid');
     }
-    if (!['putConfig', 'deleteConfig', 'putOverride', 'deleteOverride'].includes(
+    if (
+        !['putConfig', 'deleteConfig', 'putOverride', 'deleteOverride'].includes(
         command.operation,
-    )) {
+        )
+    ) {
         throw new TypeError('Topology config operation is invalid');
     }
     validateGroupRef(command.aggregateRef, 'Topology config command groupRef');
@@ -1031,9 +1054,11 @@ function validateTopologyConfigReceipt(value: unknown, expectedRef: GroupRef): v
     if (!/^sha256:[0-9a-f]{64}$/.test(String(value.commandHash))) {
         throw new TypeError('Topology config receipt hash is invalid');
     }
-    if (!['putConfig', 'deleteConfig', 'putOverride', 'deleteOverride'].includes(
+    if (
+        !['putConfig', 'deleteConfig', 'putOverride', 'deleteOverride'].includes(
         String(value.operation),
-    )) throw new TypeError('Topology config receipt operation is invalid');
+        )
+    ) throw new TypeError('Topology config receipt operation is invalid');
     if (value.outcome !== 'applied' && value.outcome !== 'no-op') {
         throw new TypeError('Topology config receipt outcome is invalid');
     }
@@ -1061,11 +1086,13 @@ function validateTopologyConfigReceipt(value: unknown, expectedRef: GroupRef): v
             'Topology config accepted storage revision',
         );
     }
-    for (const [field, label] of [
+    for (
+        const [field, label] of [
         ['acceptedCreatedAtEpochMs', 'Topology config accepted creation time'],
         ['acceptedUpdatedAtEpochMs', 'Topology config accepted update time'],
         ['acceptedExpiresAtEpochMs', 'Topology config accepted expiry'],
-    ] as const) {
+        ] as const
+    ) {
         if (value[field] !== null) validateStorageRevision(value[field], label);
     }
     if (value.acceptedConfig !== null) {
@@ -1121,13 +1148,15 @@ function validateTopologyConfigReceipt(value: unknown, expectedRef: GroupRef): v
             'rosterVersion',
             'presenceVersion',
         ], 'Topology config accepted causal revision');
-        for (const field of [
+        for (
+            const field of [
             'stateRevision',
             'snapshotVersion',
             'metadataVersion',
             'rosterVersion',
             'presenceVersion',
-        ] as const) {
+            ] as const
+        ) {
             validateStorageRevision(
                 value.acceptedCausalRevision[field],
                 `Topology config accepted causal revision ${field}`,
@@ -1193,6 +1222,53 @@ export function normalizeGroupTopologyConfigPatch(
     };
 }
 
+function applyGroupTopologyConfigPatch(
+    input: Readonly<{
+        fallback: EffectiveGroupTopologyConfig;
+        current: EffectiveGroupTopologyConfig | undefined;
+        patch: GroupTopologyConfigPatch;
+    }>,
+): EffectiveGroupTopologyConfig {
+    const current = input.current ?? input.fallback;
+    return {
+        topologyKind: applyTopologyConfigField(
+            input.patch.topologyKind,
+            current.topologyKind,
+            input.fallback.topologyKind,
+        ),
+        degreeLimit: applyTopologyConfigField(
+            input.patch.degreeLimit,
+            current.degreeLimit,
+            input.fallback.degreeLimit,
+        ),
+        treeMinSize: applyTopologyConfigField(
+            input.patch.treeMinSize,
+            current.treeMinSize,
+            input.fallback.treeMinSize,
+        ),
+        meshMinSize: applyTopologyConfigField(
+            input.patch.meshMinSize,
+            current.meshMinSize,
+            input.fallback.meshMinSize,
+        ),
+        meshParamK: applyTopologyConfigField(
+            input.patch.meshParamK,
+            current.meshParamK,
+            input.fallback.meshParamK,
+        ),
+    };
+}
+
+function applyTopologyConfigField<T>(
+    patch: T | null | undefined,
+    current: T,
+    fallback: T,
+): T {
+    if (patch === undefined) return current;
+    if (patch === null) return fallback;
+    return patch;
+}
+
 function validateAcceptedTopologyConfig(
     value: unknown,
     label: string,
@@ -1206,8 +1282,10 @@ function validateAcceptedTopologyConfig(
         'meshParamK',
     ], label);
     const topologyKind = value.topologyKind;
-    if (topologyKind !== 'auto' && topologyKind !== 'star' &&
-        topologyKind !== 'tree' && topologyKind !== 'mesh') {
+    if (
+        topologyKind !== 'auto' && topologyKind !== 'star' &&
+        topologyKind !== 'tree' && topologyKind !== 'mesh'
+    ) {
         throw new TypeError(`${label} topologyKind is invalid`);
     }
     const degreeLimit = value.degreeLimit;

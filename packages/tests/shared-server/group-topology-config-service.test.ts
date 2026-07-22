@@ -23,10 +23,11 @@ import {
 
 describe('group topology config service', () => {
     it('keeps synchronous reconfigure options off config mutation requests', () => {
-        type ConfigHasReconfigure = 'reconfigure' extends
-            keyof PutGroupTopologyConfigRequest ? true : false;
-        type OverrideHasReconfigure = 'reconfigure' extends
-            keyof PutGroupTopologyOverrideRequest ? true : false;
+        type ConfigHasReconfigure = 'reconfigure' extends keyof PutGroupTopologyConfigRequest ? true
+            : false;
+        type OverrideHasReconfigure = 'reconfigure' extends keyof PutGroupTopologyOverrideRequest
+            ? true
+            : false;
         expectTypeOf<ConfigHasReconfigure>().toEqualTypeOf<false>();
         expectTypeOf<OverrideHasReconfigure>().toEqualTypeOf<false>();
     });
@@ -93,7 +94,8 @@ describe('group topology config service', () => {
         if (first.outcome !== 'write') {
             throw new Error('Expected an applied topology config mutation');
         }
-        expect(() => validateGroupTopologyConfigMutationRecord({
+        expect(() =>
+            validateGroupTopologyConfigMutationRecord({
             groupRef: input.command.aggregateRef,
             requestId: input.command.requestId,
             commandHash: input.facts.commandHash,
@@ -104,8 +106,10 @@ describe('group topology config service', () => {
         }, {
             groupRef: input.command.aggregateRef,
             requestId: input.command.requestId,
-        })).toThrow('Topology config receipt outboxIds are invalid');
-        expect(() => validateGroupTopologyConfigMutationRecord({
+            })
+        ).toThrow('Topology config receipt outboxIds are invalid');
+        expect(() =>
+            validateGroupTopologyConfigMutationRecord({
             groupRef: input.command.aggregateRef,
             requestId: input.command.requestId,
             commandHash: input.facts.commandHash,
@@ -113,8 +117,10 @@ describe('group topology config service', () => {
         }, {
             groupRef: input.command.aggregateRef,
             requestId: input.command.requestId,
-        })).toThrow('accepted config does not match operation');
-        expect(() => validateGroupTopologyConfigMutationRecord({
+            })
+        ).toThrow('accepted config does not match operation');
+        expect(() =>
+            validateGroupTopologyConfigMutationRecord({
             groupRef: input.command.aggregateRef,
             requestId: input.command.requestId,
             commandHash: input.facts.commandHash,
@@ -125,7 +131,34 @@ describe('group topology config service', () => {
         }, {
             groupRef: input.command.aggregateRef,
             requestId: input.command.requestId,
-        })).toThrow('accepted config fields are invalid');
+            })
+        ).toThrow('accepted config fields are invalid');
+    });
+
+    it('clears durable and override fields back to their immediate fallback', () => {
+        const durableInput = createConfigMutationInput({
+            operation: 'putConfig',
+            config: { degreeLimit: null },
+            durableDegreeLimit: 9,
+            overrideDegreeLimit: null,
+        });
+        const durable = computeTopologyConfigMutation(durableInput);
+        if (durable.outcome !== 'write' || durable.result.kind !== 'config') {
+            throw new Error('Expected durable config write');
+        }
+        expect(durable.result.config.config.degreeLimit).toBe(5);
+
+        const overrideInput = createConfigMutationInput({
+            operation: 'putOverride',
+            config: { degreeLimit: null },
+            durableDegreeLimit: 4,
+            overrideDegreeLimit: 9,
+        });
+        const override = computeTopologyConfigMutation(overrideInput);
+        if (override.outcome !== 'write' || override.result.kind !== 'override') {
+            throw new Error('Expected topology override write');
+        }
+        expect(override.result.override.config.degreeLimit).toBe(4);
     });
 
     it.each(['putConfig', 'putOverride'] as const)(
@@ -152,9 +185,7 @@ describe('group topology config service', () => {
                         acceptedStorageRevision: null,
                         acceptedCreatedAtEpochMs: 1_000,
                         acceptedUpdatedAtEpochMs: 1_000,
-                        acceptedExpiresAtEpochMs: operation === 'putOverride'
-                            ? 6_000
-                            : null,
+                        acceptedExpiresAtEpochMs: operation === 'putOverride' ? 6_000 : null,
                         acceptedConfig: {
                             topologyKind: 'tree',
                             degreeLimit: 5,
@@ -221,7 +252,8 @@ describe('group topology config service', () => {
             ),
             'utf8',
         );
-        for (const forbidden of [
+        for (
+            const forbidden of [
             'Date.now',
             'Temporal.Now',
             'Math.random',
@@ -230,7 +262,8 @@ describe('group topology config service', () => {
             'new StateMutationOutboxRepository',
             'publisher',
             'topologyService',
-        ]) {
+            ]
+        ) {
             expect(mutationSource, forbidden).not.toContain(forbidden);
         }
 
@@ -417,6 +450,90 @@ function createGroupRef() {
         workspaceId: 'workspace-1',
         groupId: 'room-1',
     };
+}
+
+function createConfigMutationInput(
+    input: Readonly<{
+        operation: 'putConfig' | 'putOverride';
+        config: Parameters<typeof validateGroupTopologyConfigPatch>[0];
+        durableDegreeLimit: number;
+        overrideDegreeLimit: number | null;
+    }>,
+) {
+    const groupRef = createGroupRef();
+    const stored = (degreeLimit: number, requestId: string) => ({
+        groupRef,
+        config: {
+            topologyKind: 'auto' as const,
+            degreeLimit,
+            treeMinSize: 5,
+            meshMinSize: 16,
+            meshParamK: 2,
+        },
+        version: 1,
+        createdAtEpochMs: 500,
+        updatedAtEpochMs: 500,
+        updatedByPrincipalId: 'owner',
+        requestId,
+    });
+    const durable = stored(input.durableDegreeLimit, 'durable');
+    const override = input.overrideDegreeLimit === null ? null : {
+        ...stored(input.overrideDegreeLimit, 'override'),
+        expiresAtEpochMs: 10_000,
+    };
+    return {
+        command: {
+            operation: input.operation,
+            aggregateRef: groupRef,
+            commandId: `clear-${input.operation}`,
+            requestId: `clear-${input.operation}`,
+            input: {
+                config: input.config,
+                updatedByPrincipalId: 'owner',
+                ttlMs: input.operation === 'putOverride' ? 5_000 : null,
+                expiresAtEpochMs: null,
+            },
+        },
+        read: {
+            config: {
+                key: 'config',
+                value: durable,
+                entry: {
+                    key: 'config',
+                    value: JSON.stringify(durable),
+                    expireAtTimestamp: Number.MAX_SAFE_INTEGER,
+                    updatedTimestamp: new Date(0).toISOString(),
+                    revision: 0,
+                },
+            },
+            override: override === null ? null : {
+                key: 'override',
+                value: override,
+                entry: {
+                    key: 'override',
+                    value: JSON.stringify(override),
+                    expireAtTimestamp: override.expiresAtEpochMs,
+                    updatedTimestamp: new Date(0).toISOString(),
+                    revision: 0,
+                },
+            },
+            configGeneration: null,
+            overrideGeneration: null,
+            invariantGeneration: null,
+            idempotency: null,
+            groupSnapshot: createGroupSnapshot(),
+            groupAuthorityGuard: createGroupAuthorityGuard(),
+        },
+        facts: {
+            requestedAtEpochMs: 1_000,
+            policyNowEpochMs: 1_000,
+            commandHash: `sha256:${'c'.repeat(64)}`,
+            attemptCount: 1,
+            isPlatformAdmin: false,
+            resolvedOverrideExpiresAtEpochMs: input.operation === 'putOverride' ? 6_000 : null,
+        },
+        serverDefaults: {},
+    } as const;
 }
 
 function createGroupSnapshot(): GroupSnapshot {

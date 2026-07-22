@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { Hono } from 'jsr:@hono/hono@4.11.9';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { configureRttRepository } from '@shared/repository/rtt-repository.ts';
 import {
@@ -99,6 +100,7 @@ import {
   AppGroupInboxService,
   type GroupCreateAppInboxPayload,
   type TopologyAppInboxCommand,
+    type TopologyAppInboxRequestPayload,
   toTopologyAppInboxCommand,
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
@@ -117,6 +119,7 @@ import { computeRtcTopologyPublicationOutbox } from '@shared-server/rallar-syste
 import { toResilienceDto } from '../../src/middleware-resilience.ts';
 import { createApiV1SqlClient } from '../../src/db/db.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
+import * as graphTopologyRoutes from '../../src/routes/graph-topology-routes.ts';
 
 const FUTURE_MS = Date.parse('9999-12-31T23:59:59.999Z');
 const PAST_MS = Date.parse('2000-01-01T00:00:00.000Z');
@@ -173,7 +176,8 @@ Deno.test('PGlite AppGroup commits group mutation and summary fan-out through fe
       now: () => nowEpochMs,
     });
     outboxReader.onOutboxMessageDo(AppOutboxType.GROUP_PRESENCE_SUMMARY, {
-      onMessage: async (message, entry) => await summaryWork.processReservedEntry(message, entry),
+            onMessage: async (message, entry) =>
+                await summaryWork.processReservedEntry(message, entry),
     });
     outboxReader.onOutboxMessageDo(
       AppOutboxType.RTC_TOPOLOGY_RECOMPUTE,
@@ -510,7 +514,10 @@ Deno.test('PSqlRuntimeStateRepository runs against PGlite SQL adapter', async ()
     const entry = await repository.findEntry('runtime-smoke', 'a');
     assert.equal(entry?.value, '{"value":3}');
     assert.equal(entry?.revision, 1);
-    assert.match(entry?.updatedTimestamp ?? '', /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u);
+        assert.match(
+            entry?.updatedTimestamp ?? '',
+            /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u,
+        );
 
     const allEntries = await repository.findAllEntries('runtime-smoke');
     assert.deepEqual(allEntries.map((row) => row.key), ['a', 'b']);
@@ -1310,7 +1317,7 @@ Deno.test('PSqlRuntimeStateRepository generic expiry preserves protected namespa
   });
 });
 
-Deno.test('PGlite topology config mutations converge concurrent CAS transactions with receipts and outboxes', async () => {
+Deno.test('PGlite topology config mutations converge cross-target CAS transactions with receipts and outboxes', async () => {
   await withPGliteSql(async (sql) => {
     const runtime = new PSqlRuntimeStateRepository(sql);
     const repository = new GroupTopologyConfigRepository(runtime);
@@ -1330,10 +1337,11 @@ Deno.test('PGlite topology config mutations converge concurrent CAS transactions
       groupStateRepository,
       configRepository: repository,
       topologyService: new RallarRtcTopologyService(),
+            now: () => 1_000,
     });
     const commands = [
       topologyConfigCommand(groupRef, 'pglite-topology-a', 'tree'),
-      topologyConfigCommand(groupRef, 'pglite-topology-b', 'mesh'),
+            topologyOverrideCommand(groupRef, 'pglite-topology-b', 'mesh'),
     ] as const;
     const preparations = await Promise.all(
       commands.map(async (command) =>
@@ -1399,13 +1407,20 @@ Deno.test('PGlite topology config mutations converge concurrent CAS transactions
 
     assert.deepEqual(
       [firstReceipt.acceptedVersion, secondReceipt.acceptedVersion],
-      [1, 2],
+            [1, 1],
     );
     assert.ok(await repository.findMutationRecord(groupRef, 'pglite-topology-a'));
     assert.ok(await repository.findMutationRecord(groupRef, 'pglite-topology-b'));
     const generation = await repository.findGenerationEntry(groupRef, 'config');
-    assert.deepEqual(generation?.value, { groupRef, target: 'config', version: 2 });
-    assert.equal(generation?.entry.revision, 1);
+        assert.deepEqual(generation?.value, { groupRef, target: 'config', version: 1 });
+        assert.equal(generation?.entry.revision, 0);
+        const overrideGeneration = await repository.findGenerationEntry(groupRef, 'override');
+        assert.deepEqual(overrideGeneration?.value, {
+            groupRef,
+            target: 'override',
+            version: 1,
+        });
+        assert.equal(overrideGeneration?.entry.revision, 0);
     const invariantGeneration = await repository.findInvariantGenerationEntry(groupRef);
     assert.deepEqual(invariantGeneration?.value, { groupRef, version: 2 });
     assert.equal(
@@ -1505,6 +1520,17 @@ Deno.test('PGlite AppGroup reuses the first durable topology command and rejects
     );
     const firstResult = await firstPending;
     assert.ok(firstResult.right);
+        const acceptedHttpCommands: Array<{
+            command: TopologyAppInboxCommand;
+            requestPayload: TopologyAppInboxRequestPayload;
+            divergentPayload: TopologyAppInboxRequestPayload;
+            result: unknown;
+        }> = [{
+            command: first,
+            requestPayload: { operation: 'putConfig', config: { topologyKind: 'tree' } },
+            divergentPayload: { operation: 'putConfig', config: { topologyKind: 'mesh' } },
+            result: firstResult.right,
+        }];
 
     const replay = await toTopologyAppInboxCommand({
       actor: first.actor,
@@ -1542,7 +1568,7 @@ Deno.test('PGlite AppGroup reuses the first durable topology command and rejects
     );
 
     for (
-      const [requestId, payload] of [
+            const [requestId, payload, divergentPayload] of [
         [
           'stable-topology-override-put',
           {
@@ -1551,18 +1577,32 @@ Deno.test('PGlite AppGroup reuses the first durable topology command and rejects
             ttlMs: 60_000,
             expiresAtEpochMs: null,
           },
+                    {
+                        operation: 'putOverride',
+                        config: { degreeLimit: 5 },
+                        ttlMs: 60_000,
+                        expiresAtEpochMs: null,
+                    },
         ],
         [
           'stable-topology-override-delete',
           { operation: 'deleteOverride', target: 'override' },
+                    {
+                        operation: 'putOverride',
+                        config: { degreeLimit: 3 },
+                        ttlMs: 60_000,
+                        expiresAtEpochMs: null,
+                    },
         ],
         [
           'stable-topology-config-delete',
           { operation: 'deleteConfig', target: 'config' },
+                    { operation: 'putConfig', config: { topologyKind: 'mesh' } },
         ],
         [
           'stable-topology-reconfigure',
           { operation: 'reconfigureTopology', requestOptions: {}, publish: false },
+                    { operation: 'reconfigureTopology', requestOptions: {}, publish: true },
         ],
       ] as const
     ) {
@@ -1579,8 +1619,171 @@ Deno.test('PGlite AppGroup reuses the first durable topology command and rejects
         InboxQueueReader.INBOX_DEQUEUE_TYPES,
         toResilienceDto(),
       );
-      assert.ok((await pending).right, `${payload.operation} did not complete`);
+            const result = await pending;
+            assert.ok(result.right, `${payload.operation} did not complete`);
+            acceptedHttpCommands.push({
+                command,
+                requestPayload: payload,
+                divergentPayload,
+                result: result.right,
+            });
+        }
+
+        const [outboxCountBeforeReplay] = await sql<{ count: string | number }[]>`
+      select count(*) as count from resource_inbox where ri_type_id = 'APP_OUTBOX'
+    `;
+        for (const accepted of acceptedHttpCommands) {
+            const replayAfterCurrentStateChanged = await toTopologyAppInboxCommand({
+                actor: accepted.command.actor,
+                groupRef,
+                requestId: accepted.command.requestId,
+                capturedAtEpochMs: accepted.command.capturedAtEpochMs + 30_000,
+                payload: accepted.requestPayload,
+            });
+            assert.equal(
+                replayAfterCurrentStateChanged.commandHash,
+                accepted.command.commandHash,
+            );
+            const replayAfterChange = await submitPGliteTopologyCommand(
+                appGroup,
+                authority,
+                replayAfterCurrentStateChanged,
+            );
+            assert.deepEqual(replayAfterChange.right, accepted.result);
+            assert.equal(
+                Number(
+                    (await sql<{ count: string | number }[]>`
+            select count(*) as count from resource_inbox
+            where ri_type_id = 'APP_INBOX'
+              and ri_resource_id = ${accepted.command.requestId}
+          `)[0]?.count,
+                ),
+                1,
+            );
+
+            const divergent = await toTopologyAppInboxCommand({
+                actor: accepted.command.actor,
+                groupRef,
+                requestId: accepted.command.requestId,
+                capturedAtEpochMs: accepted.command.capturedAtEpochMs + 60_000,
+                payload: accepted.divergentPayload,
+            });
+            await assert.rejects(
+                () => submitPGliteTopologyCommand(appGroup, authority, divergent),
+                (error) =>
+                    error instanceof Error &&
+                    'code' in error && error.code === 'app-inbox-idempotency-conflict',
+            );
     }
+        assert.equal(
+            Number(
+                (await sql<{ count: string | number }[]>`
+          select count(*) as count from resource_inbox where ri_type_id = 'APP_OUTBOX'
+        `)[0]?.count,
+            ),
+            Number(outboxCountBeforeReplay?.count),
+        );
+
+        const processCommand = async (
+            requestId: string,
+            payload: TopologyAppInboxRequestPayload,
+        ) => {
+            const command = await toTopologyAppInboxCommand({
+                actor: first.actor,
+                groupRef,
+                requestId,
+                capturedAtEpochMs: nowEpochMs,
+                payload,
+            });
+            const pending = submitPGliteTopologyCommand(appGroup, authority, command);
+            await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
+            await inboxReader.dequeueInbox(
+                InboxQueueReader.INBOX_DEQUEUE_TYPES,
+                toResilienceDto(),
+            );
+            return { command, result: await pending };
+        };
+        assert.ok(
+            (await processCommand(
+                'topology-clear-durable-base',
+                { operation: 'putConfig', config: { degreeLimit: 4 } },
+            )).result.right,
+        );
+        assert.ok(
+            (await processCommand(
+                'topology-clear-override-base',
+                {
+                    operation: 'putOverride',
+                    config: { meshParamK: 4 },
+                    ttlMs: 60_000,
+                    expiresAtEpochMs: null,
+                },
+            )).result.right,
+        );
+        const durableUpdateUnderOverride = await processCommand(
+            'topology-durable-under-full-override',
+            { operation: 'putConfig', config: { degreeLimit: 3 } },
+        );
+        assert.ok(durableUpdateUnderOverride.result.right);
+        const underOverride = await topology.readConfig(groupRef);
+        assert.equal(underOverride.durable?.config.degreeLimit, 3);
+        assert.equal(underOverride.temporary?.config.degreeLimit, 4);
+        assert.equal(underOverride.effective.degreeLimit, 4);
+
+        const cleared = await processCommand(
+            'topology-clear-durable-field',
+            { operation: 'putConfig', config: { degreeLimit: null } },
+        );
+        assert.ok(cleared.result.right);
+        const afterClear = await topology.readConfig(groupRef);
+        assert.equal(afterClear.durable?.config.degreeLimit, 5);
+        assert.equal(afterClear.effective.degreeLimit, 4);
+        assert.equal(afterClear.effective.meshParamK, 4);
+
+        assert.ok(
+            (await processCommand(
+                'topology-clear-override-field',
+                {
+                    operation: 'putOverride',
+                    config: { degreeLimit: null },
+                    ttlMs: 60_000,
+                    expiresAtEpochMs: null,
+                },
+            )).result.right,
+        );
+        assert.equal((await topology.readConfig(groupRef)).effective.degreeLimit, 5);
+
+        assert.ok(
+            (await processCommand(
+                'topology-overwrite-after-clear',
+                { operation: 'putConfig', config: { degreeLimit: 7 } },
+            )).result.right,
+        );
+        const clearReplay = await toTopologyAppInboxCommand({
+            actor: first.actor,
+            groupRef,
+            requestId: cleared.command.requestId,
+            capturedAtEpochMs: nowEpochMs + 90_000,
+            payload: { operation: 'putConfig', config: { degreeLimit: null } },
+        });
+        assert.deepEqual(
+            (await submitPGliteTopologyCommand(appGroup, authority, clearReplay)).right,
+            cleared.result.right,
+        );
+        assert.equal((await topology.readConfig(groupRef)).durable?.config.degreeLimit, 7);
+        const clearDivergent = await toTopologyAppInboxCommand({
+            actor: first.actor,
+            groupRef,
+            requestId: cleared.command.requestId,
+            capturedAtEpochMs: nowEpochMs + 120_000,
+            payload: { operation: 'putConfig', config: { degreeLimit: 5 } },
+        });
+        await assert.rejects(
+            () => submitPGliteTopologyCommand(appGroup, authority, clearDivergent),
+            (error) =>
+                error instanceof Error &&
+                'code' in error && error.code === 'app-inbox-idempotency-conflict',
+        );
 
     const rttGroup = topologyGroupSnapshotWithSessions(
       groupRef,
@@ -1658,21 +1861,7 @@ Deno.test('PGlite AppGroup reuses the first durable topology command and rejects
         where ri_type_id = 'APP_INBOX' and ri_status = 'COMPLETED'
       `)[0]?.count,
       ),
-      6,
-    );
-
-    const divergent = await toTopologyAppInboxCommand({
-      actor: first.actor,
-      groupRef,
-      requestId: first.requestId,
-      capturedAtEpochMs: 12_000,
-      payload: { operation: 'putConfig', config: { topologyKind: 'mesh' } },
-    });
-    await assert.rejects(
-      () => submitPGliteTopologyCommand(appGroup, authority, divergent),
-      (error) =>
-        error instanceof Error &&
-        'code' in error && error.code === 'app-inbox-idempotency-conflict',
+            12,
     );
 
     for (
@@ -1734,6 +1923,12 @@ Deno.test('PGlite AppGroup reuses the first durable topology command and rejects
     );
     const revokedResult = await revokedPending;
     assert.match(revokedResult.left ?? '', /revoked|authority|session/i);
+        await assert.rejects(
+            () => submitPGliteTopologyCommand(appGroup, authority, first),
+            (error) =>
+                error instanceof Error &&
+                'code' in error && error.code === 'group-mutation-authority-denied',
+        );
     assert.equal(
       await new GroupTopologyConfigRepository(runtime).findMutationRecord(
         groupRef,
@@ -1742,6 +1937,190 @@ Deno.test('PGlite AppGroup reuses the first durable topology command and rejects
       undefined,
     );
   });
+});
+
+Deno.test('PGlite topology route preserves structured AppInbox terminal and unavailable failures', async () => {
+    await withPGliteSql(async (sql) => {
+        const nowEpochMs = Date.parse('2026-07-23T00:00:00.000Z');
+        const runtime = new PSqlRuntimeStateRepository(sql);
+        const resourceInbox = new ResourceInboxRepository(sql);
+        const resourceResults = new ResourceInboxResultsRepository(sql);
+        const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
+        const authSessions = new AuthSessionRepository(runtime);
+        const authority: IssuedAuthSession = {
+            clientId: 'owner',
+            sessionId: 'owner-session',
+            accessToken: 'owner-token',
+            username: 'owner',
+            issuedAtEpochMs: nowEpochMs - 1_000,
+            expiresAtEpochMs: FUTURE_MS,
+        };
+        await authSessions.putSession(authority);
+        const groupRef = {
+            applicationId: 'pglite-topology-route-errors',
+            workspaceId: 'default',
+            groupId: 'room',
+        };
+        const snapshot = topologyGroupSnapshot(groupRef);
+        const groupRepository = new GroupStateRepository(runtime);
+        assert.equal((await groupRepository.insertGroup(snapshot.group)).status, 'applied');
+        for (const member of snapshot.members) await groupRepository.putMember(member);
+        const groupState = createGroupStateService({
+            runtimeRepository: runtime,
+            createGroupStateEventStore: createGroupStateEventRepository,
+            authSessionRepository: authSessions,
+            serviceId: 'pglite-topology-route-errors',
+            now: () => nowEpochMs,
+        });
+        const topology = new GroupTopologyManagementService({
+            findGroupSnapshotByRef: (ref) => groupRepository.readSnapshot(ref),
+            groupStateRepository: groupRepository,
+            configRepository: new GroupTopologyConfigRepository(runtime),
+            topologyService: new RallarRtcTopologyService({ now: () => nowEpochMs }),
+            processRttReader: () => [],
+            now: () => nowEpochMs,
+        });
+        const createAppGroup = (waitMaxElapsedMsecs: number) => {
+            const service = new AppGroupInboxService(
+                inboxReader,
+                resourceInbox,
+                resourceResults,
+                sql,
+                groupState,
+                'pglite-topology-route-errors',
+                undefined,
+                {
+                    waitMaxElapsedMsecs,
+                    waitRetryIntervalMsecs: 1,
+                    waitMaxRetryIntervalMsecs: 4,
+                    waitJitterRatio: 0,
+                    nowEpochMs: () => nowEpochMs,
+                },
+            );
+            service.setTopologyManagementService(topology);
+            return service;
+        };
+        const appGroup = createAppGroup(5_000);
+        const createRouteApp = (service: AppGroupInboxService) => {
+            const app = new Hono();
+            graphTopologyRoutes.init(app, {
+                getGroupStateService: () => ({
+                    readSnapshot: (ref) => groupRepository.readSnapshot(ref),
+                }),
+                requireApiAuthSession: () => Promise.resolve(authority),
+                readAppGroupInboxService: () => service,
+                now: () => nowEpochMs,
+            });
+            return app;
+        };
+        const routePath =
+            `/api/state/apps/${groupRef.applicationId}/workspaces/${groupRef.workspaceId}/groups/${groupRef.groupId}/topology/config`;
+        const submit = (
+            app: Hono,
+            requestId: string,
+            config: Record<string, unknown>,
+        ) => app.request(routePath, {
+            method: 'PUT',
+            headers: {
+                authorization: 'Bearer owner-token',
+                'Idempotency-Key': requestId,
+                'content-type': 'application/json',
+            },
+            body: JSON.stringify({ config }),
+        });
+
+        const validationPending = submit(
+            createRouteApp(appGroup),
+            'route-validation',
+            { degreeLimit: 0 },
+        );
+        await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
+        await inboxReader.dequeueInbox(
+            InboxQueueReader.INBOX_DEQUEUE_TYPES,
+            toResilienceDto(),
+        );
+        const validation = await validationPending;
+        assert.equal(validation.status, 422);
+        assert.deepEqual(await validation.json(), {
+            error: 'Group topology config validation failed',
+            code: 'group-topology-config-validation-failed',
+            message: 'Group topology config validation failed',
+            issues: [{
+                code: 'invalid-positive-integer',
+                path: ['degreeLimit'],
+                message: 'degreeLimit must be a positive integer',
+                details: { value: 0 },
+            }],
+            denial: null,
+            retry: null,
+        });
+
+        const authorityPending = submit(
+            createRouteApp(appGroup),
+            'route-authority',
+            { topologyKind: 'tree' },
+        );
+        await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
+        await authSessions.deleteSession(authority);
+        await inboxReader.dequeueInbox(
+            InboxQueueReader.INBOX_DEQUEUE_TYPES,
+            toResilienceDto(),
+        );
+        const denied = await authorityPending;
+        assert.equal(denied.status, 403);
+        const denialBody = await denied.json() as Record<string, unknown>;
+        assert.equal(denialBody.code, 'group-mutation-authority-denied');
+        assert.deepEqual(denialBody.denial, {
+            code: 'group-mutation-authority-denied',
+            message:
+                'Forbidden: Topology mutation authority is missing, expired, revoked, or mismatched.',
+            details: null,
+        });
+        await authSessions.putSession(authority);
+
+        const firstPending = submit(
+            createRouteApp(appGroup),
+            'route-idempotency',
+            { topologyKind: 'tree' },
+        );
+        await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
+        await inboxReader.dequeueInbox(
+            InboxQueueReader.INBOX_DEQUEUE_TYPES,
+            toResilienceDto(),
+        );
+        assert.equal((await firstPending).status, 200);
+        const conflict = await submit(
+            createRouteApp(appGroup),
+            'route-idempotency',
+            { topologyKind: 'mesh' },
+        );
+        assert.equal(conflict.status, 409);
+        assert.equal(
+            (await conflict.json() as { code?: string }).code,
+            'app-inbox-idempotency-conflict',
+        );
+
+        const unavailable = await submit(
+            createRouteApp(createAppGroup(0)),
+            'route-unavailable',
+            { topologyKind: 'mesh' },
+        );
+        assert.equal(unavailable.status, 503);
+        assert.deepEqual(await unavailable.json(), {
+            error: 'App inbox entry did not complete within the wait budget',
+            code: 'app-inbox-unavailable',
+            message: 'App inbox entry did not complete within the wait budget',
+            issues: null,
+            denial: null,
+            retry: {
+                kind: 'unavailable',
+                attempts: null,
+                lane: null,
+                queueAgeMs: null,
+                dueAgeMs: null,
+            },
+        });
+    });
 });
 
 Deno.test('PGlite AppGroup rereads lifecycle after a retryable topology conflict', async () => {
@@ -1956,7 +2335,9 @@ Deno.test('PGlite topology authority fence rejects an archive overlapping the st
     if (firstComputed.outcome !== 'write') throw new Error('Expected topology write');
     await assert.rejects(
       () =>
-        sql.begin((transaction) => service.writeTopologyConfigMutation(transaction, firstComputed)),
+                sql.begin((transaction) =>
+                    service.writeTopologyConfigMutation(transaction, firstComputed)
+                ),
       /conditional write conflict/,
     );
     const retryRead = await service.readTopologyConfigMutation(command);
@@ -2449,7 +2830,8 @@ Deno.test('PGlite group-state reads reject complete-contract corruption across p
         ]
         : testCase.kind === 'session'
         ? [
-          () => repository.findPresenceSession({ ...ref, sessionId: authority.sessionId }),
+                    () =>
+                        repository.findPresenceSession({ ...ref, sessionId: authority.sessionId }),
           () => repository.listPresenceSessions(ref),
           () => repository.listAllPresenceSessions(),
           () => repository.readSnapshot(ref),
@@ -4093,6 +4475,25 @@ function topologyConfigCommand(
       expiresAtEpochMs: null,
     },
   };
+}
+
+function topologyOverrideCommand(
+    groupRef: GroupRef,
+    requestId: string,
+    topologyKind: 'tree' | 'mesh',
+): GroupTopologyConfigMutationCommand {
+    return {
+        operation: 'putOverride',
+        aggregateRef: groupRef,
+        commandId: requestId,
+        requestId,
+        input: {
+            config: { topologyKind },
+            updatedByPrincipalId: 'owner',
+            ttlMs: 60_000,
+            expiresAtEpochMs: null,
+        },
+    };
 }
 
 async function createPGliteTopologyWorkFixture(

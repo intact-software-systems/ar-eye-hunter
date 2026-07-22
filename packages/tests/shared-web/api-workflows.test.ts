@@ -13,30 +13,32 @@ import type {
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import {
     consumeAgentSessionTicketAt,
+    deleteStateGroupTopologyConfig,
+    deleteStateGroupTopologyOverride,
     issueAgentSessionTicketsAt,
     listStateClientEventPage,
     listStateClientEvents,
     listStateGroupEventPage,
     listStateGroupEvents,
-    deleteStateGroupTopologyConfig,
-    deleteStateGroupTopologyOverride,
     putStateGroupTopologyConfig,
     putStateGroupTopologyOverride,
-    readStateGroupStats,
     readStateGroupGraph,
-    readStateMyRealtimeStatus,
+    readStateGroupStats,
     readStateGroupTopology,
     readStateGroupTopologyConfig,
     readStateGroupTopologyOverride,
+    readStateMyRealtimeStatus,
     readStateScopedGlobalGraph,
     readStateWorkspaceStatsSummary,
     reconfigureStateGroupTopology,
 } from '@shared-web/browser/api-integration.ts';
 import {
     acceptStateGroupInvite,
+    archiveStateGroup,
     banStateGroupMember,
     createAndJoinStateGroup,
     createStateGroupInvite,
+    deleteStateGroup,
     joinStateGroup,
     leaveStateGroup,
     refreshStateHeartbeat,
@@ -47,8 +49,6 @@ import {
     setStateGroupMemberRole,
     transferStateGroupOwnership,
     unbanStateGroupMember,
-    archiveStateGroup,
-    deleteStateGroup,
     updateStateGroupDetails,
     updateStateGroupMetadata,
 } from '@shared-web/browser/api-workflows.ts';
@@ -91,12 +91,14 @@ describe('state API workflows', () => {
         };
         stubFetch(({ url, method }) => {
             if (method === 'POST' && url.endsWith('/api/auth/agent-session-tickets')) {
-                return jsonResponse({ tickets: [{
+                return jsonResponse({
+                    tickets: [{
                     agentId: 'agent-1',
                     ticket: 'ticket-1',
                     sessionId: 'agent-session-1',
                     expiresAtEpochMs: 9_000,
-                }] });
+                    }],
+                });
             }
             if (method === 'POST' && url.endsWith('/api/auth/agent-session-tickets/consume')) {
                 return jsonResponse(authSession);
@@ -118,7 +120,7 @@ describe('state API workflows', () => {
         );
         await readStateMyRealtimeStatus();
 
-        expect(fetchCalls.map(call => call.url)).toEqual([
+        expect(fetchCalls.map((call) => call.url)).toEqual([
             'https://agent-api.example.test/api/auth/agent-session-tickets',
             'https://agent-api.example.test/api/auth/agent-session-tickets/consume',
             '/api/state/apps/rallar-server/workspaces/default/stats/me/realtime',
@@ -459,6 +461,13 @@ describe('state API workflows', () => {
         ]);
         expect(fetchCalls.every((call) => call.headers.authorization === 'Bearer token-1'))
             .toBe(true);
+        expect(fetchCalls.map((call) => call.headers['idempotency-key'])).toEqual([
+            'config-1',
+            'override-1',
+            'reconfigure-1',
+            'config-delete-1',
+            'override-delete-1',
+        ]);
         expect(fetchCalls[0].body).toMatchObject({
             requestId: 'config-1',
             config: { topologyKind: 'mesh', degreeLimit: 3 },

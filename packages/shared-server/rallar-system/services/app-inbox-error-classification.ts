@@ -1,6 +1,7 @@
 import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { isGroupPolicyDeniedError } from '../group-policy.ts';
 import { AppInboxReservationConflictError } from './app-inbox-contracts.ts';
+import { toPolicyDeniedAppInboxFailure, toTerminalAppInboxFailure } from './app-inbox-failure.ts';
 
 export type AppInboxErrorClassification =
     | Readonly<{
@@ -70,31 +71,30 @@ export function classifyAppInboxError(error: unknown): AppInboxErrorClassificati
         return {
             kind: 'terminal',
             code: error.denial.code,
-            result: {
-                error: error.message,
+            result: toPolicyDeniedAppInboxFailure({
                 code: error.denial.code,
                 message: error.denial.message,
                 details: error.denial.details,
-            },
+            }),
         };
     }
     if (error instanceof SyntaxError || error instanceof TypeError) {
         return {
             kind: 'terminal',
             code: 'app-inbox-malformed-command',
-            result: {
-                error: 'App inbox command is malformed',
-                code: 'app-inbox-malformed-command',
-                message: 'App inbox command is malformed',
+            result: toTerminalAppInboxFailure(
+                Object.assign(new Error('App inbox command is malformed'), {
                 status: 400,
-            },
+                }),
+                'app-inbox-malformed-command',
+            ),
         };
     }
     if (error instanceof NonRetryableException) {
         return {
             kind: 'terminal',
             code: 'app-inbox-non-retryable',
-            result: error.message,
+            result: toTerminalAppInboxFailure(error, 'app-inbox-non-retryable'),
         };
     }
     if (TERMINAL_CODES.has(code)) {
@@ -128,10 +128,5 @@ export function toRetryableAppInboxMessage(code: string): string {
 }
 
 function toTerminalResult(error: unknown, code: string): unknown {
-    const message = error instanceof Error ? error.message : String(error);
-    const status = error && typeof error === 'object' && 'status' in error &&
-            typeof error.status === 'number'
-        ? error.status
-        : 400;
-    return { error: message, code, message, status };
+    return toTerminalAppInboxFailure(error, code);
 }

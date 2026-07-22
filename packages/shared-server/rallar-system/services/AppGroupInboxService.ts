@@ -1,13 +1,13 @@
 import type {
     AcceptGroupInviteRequest,
     AppointGroupDirectorRequest,
+    BanGroupMemberRequest,
     ConnectGroupPresenceSessionRequest,
     CreateGroupInviteRequest,
     CreateGroupRequest,
     DisconnectGroupPresenceSessionRequest,
     HeartbeatGroupPresenceSessionRequest,
     JoinGroupRequest,
-    BanGroupMemberRequest,
     RemoveGroupMemberRequest,
     RevokeGroupInviteRequest,
     RotateGroupJoinCodeRequest,
@@ -43,6 +43,7 @@ import type {
 import { GroupMutationAuthorizationError } from '@shared-server/rallar-system/services/group-state-service.ts';
 import {
     AppInboxEnqueueInput,
+    type AppInboxFailure,
     type AppInboxMessageContext,
     AppInboxService,
     type AppInboxServiceOptions,
@@ -58,22 +59,16 @@ import {
     createTransactionBoundGroupStateRepository,
     type GroupStateRepository,
 } from '../repositories/GroupStateRepository.ts';
-import type {
-    GroupMutationComputed,
-    GroupMutationReceipt,
-} from './group-state-mutations.ts';
+import type { GroupMutationComputed, GroupMutationReceipt } from './group-state-mutations.ts';
 import { hashCanonicalCommand } from './canonical-command-hash.ts';
 import type {
-    GroupTopologyReconfigureCommand,
     GroupTopologyManagementService,
+    GroupTopologyReconfigureCommand,
 } from './group-topology-management-service.ts';
 import type { GroupTopologyConfigMutationCommand } from './group-topology-config-mutations.ts';
 import { GroupTopologyConfigIdempotencyConflictError } from './group-topology-management-service.ts';
 import { RtcRttRepository } from '../repositories/RtcRttRepository.ts';
-import {
-    readRttMutation,
-    writeRttMutation,
-} from './rtc-rtt-mutation-service.ts';
+import { readRttMutation, writeRttMutation } from './rtc-rtt-mutation-service.ts';
 import {
     computeRttMutation,
     type RtcRttMutationComputed,
@@ -84,10 +79,10 @@ import type { RtcRttAcceptanceReason } from './rtc-rtt-measurement-policy.ts';
 import { validateRtcRttMeasurement } from '../rtc-rtt-persistence-validation.ts';
 
 export {
-    AppInboxService,
-    AppInboxType,
     type AppInboxEnqueueInput,
+    AppInboxService,
     type AppInboxServiceOptions,
+    AppInboxType,
 } from '@shared-server/rallar-system/services/AppInboxService.ts';
 
 export type GroupCreateAppInboxPayload = Readonly<{
@@ -323,14 +318,16 @@ type RtcRttAppInboxAuthority = Readonly<{
 
 export type RtcRttAppInboxDependencies = Readonly<{
     repository: RtcRttRepository;
-    readPolicyInputs(command: RtcRttAppInboxCommand): Promise<Readonly<{
+    readPolicyInputs(command: RtcRttAppInboxCommand): Promise<
+        Readonly<{
         candidateGroups: readonly GroupSnapshot[];
         overlaySnapshotsByGroupKey: ReadonlyMap<
             string,
             RallarOverlayTopologySnapshot
         >;
         degreeLimit: number;
-    }>>;
+        }>
+    >;
     observeCommitted?(rtt: RttMeasurementInfo): void;
 }>;
 
@@ -380,8 +377,7 @@ export class AppGroupInboxService extends AppInboxService {
     public async processExpiredPresenceSessionsNoWaiting(
         atEpochMs: number,
     ): Promise<number> {
-        const preparations =
-            await this.groupStateService.prepareExpiredPresenceMutations(
+        const preparations = await this.groupStateService.prepareExpiredPresenceMutations(
                 atEpochMs,
             );
         for (const preparation of preparations) {
@@ -397,8 +393,7 @@ export class AppGroupInboxService extends AppInboxService {
         sessionId: string,
         disconnectedAtEpochMs: number,
     ): Promise<number> {
-        const preparations =
-            await this.groupStateService.prepareSessionCleanupMutations(
+        const preparations = await this.groupStateService.prepareSessionCleanupMutations(
                 sessionId,
                 disconnectedAtEpochMs,
             );
@@ -481,6 +476,32 @@ export class AppGroupInboxService extends AppInboxService {
         });
     }
 
+    public async processAuthenticatedEntryUntilCompletionResult<V, R = V>(
+        enqueue: AppInboxEnqueueInput<V>,
+        authority: IssuedAuthSession,
+    ): Promise<Either<AppInboxFailure, R>> {
+        if (isTopologyConfigInboxType(enqueue.type)) {
+            return await this.processAuthenticatedTopologyEntryResult<V, R>(
+                enqueue,
+                authority,
+            );
+        }
+        if (!isAuthenticatedGroupMutationInboxType(enqueue.type)) {
+            throw new GroupMutationAuthorizationError(
+                'App inbox type is not an authenticated group mutation.',
+            );
+        }
+        const preparation = await this.groupStateService.prepareMutation(
+            toGroupMutationDescriptor(enqueue),
+            authority,
+        );
+        return await super.processEntryUntilCompletionResult<V, R>({
+            ...enqueue,
+            resourceId: preparation.queueResourceId,
+            authority: preparation,
+        });
+    }
+
     setTopologyManagementService(
         service: GroupTopologyManagementService,
     ): void {
@@ -507,11 +528,13 @@ export class AppGroupInboxService extends AppInboxService {
         this.rtcRttDependencies = dependencies;
     }
 
-    async processRtcRttUntilCompletion(input: Readonly<{
+    async processRtcRttUntilCompletion(
+        input: Readonly<{
         rtt: RttMeasurementInfo;
         alSenderId: string;
         capturedAtEpochMs: number;
-    }>): Promise<Either<string, RtcRttAppInboxResult>> {
+        }>,
+    ): Promise<Either<string, RtcRttAppInboxResult>> {
         const session = await this.groupStateService.readIssuedAuthSession(
             input.alSenderId,
         );
@@ -610,37 +633,35 @@ export class AppGroupInboxService extends AppInboxService {
         enqueue: AppInboxEnqueueInput<V>,
         authority: IssuedAuthSession,
     ): Promise<Either<string, R>> {
-        const command = await readAuthenticatedTopologyCommand(
-            enqueue,
-            authority,
+        return await super.processEntryUntilCompletion<V, R>(
+            await this.toAuthenticatedTopologyEnqueue(enqueue, authority),
         );
-        const currentSession = await this.requireCurrentTopologySession(
-            command,
-            authority,
+    }
+
+    private async processAuthenticatedTopologyEntryResult<V, R>(
+        enqueue: AppInboxEnqueueInput<V>,
+        authority: IssuedAuthSession,
+    ): Promise<Either<AppInboxFailure, R>> {
+        return await super.processEntryUntilCompletionResult<V, R>(
+            await this.toAuthenticatedTopologyEnqueue(enqueue, authority),
         );
+    }
+
+    private async toAuthenticatedTopologyEnqueue<V>(
+        enqueue: AppInboxEnqueueInput<V>,
+        authority: IssuedAuthSession,
+    ): Promise<AppInboxEnqueueInput<V>> {
+        const command = await readAuthenticatedTopologyCommand(enqueue, authority);
+        const currentSession = await this.requireCurrentTopologySession(command, authority);
         const proof = await createTopologyMutationAuthorityProof(
             currentSession,
             command.commandHash,
         );
-        if (command.operation === 'reconfigureTopology') {
-            return await super.processEntryUntilCompletion<V, R>({
-                ...enqueue,
-                authority: {
-                    kind: 'topology-reconfigure',
-                    proof,
-                    command,
-                } satisfies TopologyReconfigureAppInboxAuthority,
-            });
-        }
-        const durableAuthority: TopologyConfigAppInboxAuthority = {
-            kind: 'topology-config',
-            proof,
-            command,
-        };
-        return await super.processEntryUntilCompletion<V, R>({
-            ...enqueue,
-            authority: durableAuthority,
-        });
+        const durableAuthority: TopologyAppInboxAuthority =
+            command.operation === 'reconfigureTopology'
+                ? { kind: 'topology-reconfigure', proof, command }
+                : { kind: 'topology-config', proof, command };
+        return { ...enqueue, authority: durableAuthority };
     }
 
     private async processTopologyConfigMutation(
@@ -789,8 +810,7 @@ export class AppGroupInboxService extends AppInboxService {
                 await writeRttMutation(
                     transaction,
                     {
-                        ttlMs:
-                            facts.purgeAfterEpochMs - facts.requestedAtEpochMs,
+                        ttlMs: facts.purgeAfterEpochMs - facts.requestedAtEpochMs,
                         now: () => facts.requestedAtEpochMs,
                     },
                     computed,
@@ -998,8 +1018,7 @@ export class AppGroupInboxService extends AppInboxService {
                 if (isPresenceOperation(command.command.operation)) {
                     return receipt;
                 }
-                const repository =
-                    createTransactionBoundGroupStateRepository(transaction);
+                const repository = createTransactionBoundGroupStateRepository(transaction);
                 const snapshot = await repository.readSnapshot(
                     command.command.aggregateRef,
                 );
@@ -1050,10 +1069,7 @@ export class AppGroupInboxService extends AppInboxService {
                     };
                 }
                 return {
-                    status:
-                        command.command.operation === 'createGroup'
-                            ? 'created'
-                            : 'ok',
+                    status: command.command.operation === 'createGroup' ? 'created' : 'ok',
                     result: Either.ofRight({ snapshot, event }),
                 };
             },
@@ -1628,8 +1644,7 @@ function constantTimeEqual(left: string, right: string): boolean {
     let difference = left.length ^ right.length;
     const length = Math.max(left.length, right.length);
     for (let index = 0; index < length; index += 1) {
-        difference |=
-            (left.charCodeAt(index) || 0) ^ (right.charCodeAt(index) || 0);
+        difference |= (left.charCodeAt(index) || 0) ^ (right.charCodeAt(index) || 0);
     }
     return difference === 0;
 }
@@ -1716,8 +1731,7 @@ function toGroupMutationDescriptor<V>(
         case AppInboxType.GROUP_MEMBER_BAN:
         case AppInboxType.GROUP_MEMBER_UNBAN: {
             const payload = enqueue.data as GroupMemberRemoveAppInboxPayload;
-            const operation =
-                enqueue.type === AppInboxType.GROUP_MEMBER_REMOVE
+            const operation = enqueue.type === AppInboxType.GROUP_MEMBER_REMOVE
                 ? 'removeGroupMember'
                 : enqueue.type === AppInboxType.GROUP_MEMBER_BAN
                 ? 'banGroupMember'
@@ -1741,8 +1755,7 @@ function toGroupMutationDescriptor<V>(
             );
         }
         case AppInboxType.GROUP_OWNERSHIP_TRANSFER: {
-            const payload =
-                enqueue.data as GroupOwnershipTransferAppInboxPayload;
+            const payload = enqueue.data as GroupOwnershipTransferAppInboxPayload;
             return descriptor(
                 'transferGroupOwnership',
                 payload.scope,
@@ -1773,8 +1786,7 @@ function toGroupMutationDescriptor<V>(
             );
         }
         case AppInboxType.GROUP_PRESENCE_HEARTBEAT: {
-            const payload =
-                enqueue.data as GroupPresenceHeartbeatAppInboxPayload;
+            const payload = enqueue.data as GroupPresenceHeartbeatAppInboxPayload;
             return descriptor(
                 'heartbeatPresence',
                 payload.scope,
@@ -1785,8 +1797,7 @@ function toGroupMutationDescriptor<V>(
             );
         }
         case AppInboxType.GROUP_PRESENCE_DISCONNECT: {
-            const payload =
-                enqueue.data as GroupPresenceDisconnectAppInboxPayload;
+            const payload = enqueue.data as GroupPresenceDisconnectAppInboxPayload;
             return descriptor(
                 'disconnectPresence',
                 payload.scope,

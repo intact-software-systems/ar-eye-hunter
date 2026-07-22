@@ -1468,6 +1468,7 @@ paths:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
@@ -1484,13 +1485,15 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/TopologyMutationFailure'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
-          $ref: '#/components/responses/Conflict'
+          $ref: '#/components/responses/TopologyMutationFailure'
+        '422':
+          $ref: '#/components/responses/TopologyMutationFailure'
         '503':
-          $ref: '#/components/responses/ServiceUnavailable'
+          $ref: '#/components/responses/TopologyMutationFailure'
     delete:
       tags: [Topology]
       summary: Delete durable group topology config
@@ -1512,13 +1515,15 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/TopologyMutationFailure'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
-          $ref: '#/components/responses/Conflict'
+          $ref: '#/components/responses/TopologyMutationFailure'
+        '422':
+          $ref: '#/components/responses/TopologyMutationFailure'
         '503':
-          $ref: '#/components/responses/ServiceUnavailable'
+          $ref: '#/components/responses/TopologyMutationFailure'
 
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/override:
     get:
@@ -1550,6 +1555,7 @@ paths:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
@@ -1566,13 +1572,15 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/TopologyMutationFailure'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
-          $ref: '#/components/responses/Conflict'
+          $ref: '#/components/responses/TopologyMutationFailure'
+        '422':
+          $ref: '#/components/responses/TopologyMutationFailure'
         '503':
-          $ref: '#/components/responses/ServiceUnavailable'
+          $ref: '#/components/responses/TopologyMutationFailure'
     delete:
       tags: [Topology]
       summary: Delete temporary group topology override
@@ -1594,13 +1602,15 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/TopologyMutationFailure'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
-          $ref: '#/components/responses/Conflict'
+          $ref: '#/components/responses/TopologyMutationFailure'
+        '422':
+          $ref: '#/components/responses/TopologyMutationFailure'
         '503':
-          $ref: '#/components/responses/ServiceUnavailable'
+          $ref: '#/components/responses/TopologyMutationFailure'
 
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/reconfigure:
     post:
@@ -1613,6 +1623,7 @@ paths:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: false
         content:
@@ -1629,9 +1640,15 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/TopologyMutationFailure'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/TopologyMutationFailure'
+        '422':
+          $ref: '#/components/responses/TopologyMutationFailure'
+        '503':
+          $ref: '#/components/responses/TopologyMutationFailure'
 
   /api/crdt/catch-up:
     post:
@@ -2503,10 +2520,11 @@ components:
     IdempotencyKey:
       name: Idempotency-Key
       in: header
-      required: false
-      description: Stable request identifier for replaying the immutable DELETE result.
+      required: true
+      description: Stable request identifier for replaying an immutable topology mutation result.
       schema:
         type: string
+        minLength: 1
     GraphIncludeMeasured:
       name: includeMeasured
       in: query
@@ -2612,6 +2630,12 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
+    TopologyMutationFailure:
+      description: Topology mutation validation, denial, conflict, or retry failure.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/TopologyMutationFailureResponse'
     CrdtRouteError:
       description: CRDT route returned an application-level error.
       content:
@@ -4936,14 +4960,88 @@ components:
       properties:
         topologyKind:
           $ref: '#/components/schemas/GroupTopologyKindSetting'
+          nullable: true
         degreeLimit:
           $ref: '#/components/schemas/GroupTopologyPositiveInteger'
+          nullable: true
         treeMinSize:
           $ref: '#/components/schemas/GroupTopologyPositiveInteger'
+          nullable: true
         meshMinSize:
           $ref: '#/components/schemas/GroupTopologyPositiveInteger'
+          nullable: true
         meshParamK:
           $ref: '#/components/schemas/GroupTopologyPositiveInteger'
+          nullable: true
+
+    TopologyMutationFailureResponse:
+      type: object
+      required: [error, code, message, issues, denial, retry]
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        message:
+          type: string
+        issues:
+          type: array
+          nullable: true
+          items:
+            type: object
+            required: [code, path, message, details]
+            properties:
+              code:
+                type: string
+              path:
+                type: array
+                nullable: true
+                items:
+                  oneOf:
+                    - type: string
+                    - type: integer
+              message:
+                type: string
+              details:
+                type: object
+                nullable: true
+                additionalProperties: true
+        denial:
+          type: object
+          nullable: true
+          required: [code, message, details]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details:
+              type: object
+              nullable: true
+              additionalProperties: true
+        retry:
+          type: object
+          nullable: true
+          required: [kind, attempts, lane, queueAgeMs, dueAgeMs]
+          properties:
+            kind:
+              type: string
+              enum: [unavailable, exhausted]
+            attempts:
+              type: integer
+              nullable: true
+              minimum: 0
+            lane:
+              type: string
+              nullable: true
+            queueAgeMs:
+              type: number
+              nullable: true
+              minimum: 0
+            dueAgeMs:
+              type: number
+              nullable: true
+              minimum: 0
 
     EffectiveGroupTopologyConfig:
       type: object

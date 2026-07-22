@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+    fromCanonicalGroupTopologyConfigPatch,
+    readCanonicalGroupTopologyConfigPatch,
+    toCanonicalGroupTopologyConfigPatch,
+} from '@shared/api/group-topology-config-canonical.ts';
+import {
     toTopologyAppInboxCommand,
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
@@ -83,6 +88,55 @@ describe('topology AppInbox durable command contract', () => {
             } as never,
         })).rejects.toThrow(/unknown|canonical|invalid/i);
     });
+
+    it('canonicalizes omitted, set, and JSON-null clear actions exactly', () => {
+        const canonical = toCanonicalGroupTopologyConfigPatch({
+            topologyKind: null,
+            degreeLimit: 7,
+        });
+
+        expect(canonical).toEqual({
+            topologyKind: { action: 'clear' },
+            degreeLimit: { action: 'set', value: 7 },
+            treeMinSize: { action: 'preserve' },
+            meshMinSize: { action: 'preserve' },
+            meshParamK: { action: 'preserve' },
+        });
+        expect(fromCanonicalGroupTopologyConfigPatch(canonical)).toEqual({
+            topologyKind: null,
+            degreeLimit: 7,
+        });
+        expect(() =>
+            readCanonicalGroupTopologyConfigPatch({
+                ...canonical,
+                topologyKind: { action: 'clear', value: 'tree' },
+            })
+        ).toThrow(/exactly|clear/i);
+        expect(() =>
+            readCanonicalGroupTopologyConfigPatch({
+                topologyKind: { action: 'clear' },
+                degreeLimit: { action: 'set', value: 7 },
+                treeMinSize: { action: 'preserve' },
+                meshMinSize: { action: 'preserve' },
+            })
+        ).toThrow(/exactly|missing/i);
+    });
+
+    it('treats set and clear as divergent stable topology semantics', async () => {
+        const set = await topologyCommand(1_000);
+        const clear = await toTopologyAppInboxCommand({
+            actor: set.actor,
+            groupRef: set.groupRef,
+            requestId: set.requestId,
+            capturedAtEpochMs: 2_000,
+            payload: {
+                operation: 'putConfig',
+                config: { topologyKind: null },
+            },
+        });
+
+        expect(clear.commandHash).not.toBe(set.commandHash);
+    });
 });
 
 async function topologyCommand(capturedAtEpochMs: number) {
@@ -102,9 +156,11 @@ async function topologyCommand(capturedAtEpochMs: number) {
     });
 }
 
-function logicalIdentity(enqueue: Parameters<
+function logicalIdentity(
+    enqueue: Parameters<
     typeof toJsonWireAppInboxEnqueue
->[0]): string {
+    >[0],
+): string {
     return serializeCanonicalJsonWire(
         toLogicalAppInboxCommand(toJsonWireAppInboxEnqueue(enqueue)),
     );

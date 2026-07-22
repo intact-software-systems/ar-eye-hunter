@@ -21,27 +21,35 @@ export type AppInboxRetryFinalization =
     | ResourceInboxRetryExhaustion
     | ResourceInboxRetryExhaustionRecovery;
 
-export function createAppInboxRetryExhaustionHandler(options: Readonly<{
+export function createAppInboxRetryExhaustionHandler(
+    options: Readonly<{
     database: PSqlSql;
     timing?: RallarTimingSink;
-}>): (exhaustion: ResourceInboxRetryExhaustion) => Promise<ResourceEntry> {
+    }>,
+): (exhaustion: ResourceInboxRetryExhaustion) => Promise<ResourceEntry> {
     return createFinalizer(options);
 }
 
-export function createAppInboxRetryExhaustionRecoveryHandler(options: Readonly<{
+export function createAppInboxRetryExhaustionRecoveryHandler(
+    options: Readonly<{
     database: PSqlSql;
     timing?: RallarTimingSink;
-}>): (exhaustion: ResourceInboxRetryExhaustionRecovery) => Promise<ResourceEntry> {
+    }>,
+): (exhaustion: ResourceInboxRetryExhaustionRecovery) => Promise<ResourceEntry> {
     return createFinalizer(options);
 }
 
-function createFinalizer(options: Readonly<{
+function createFinalizer(
+    options: Readonly<{
     database: PSqlSql;
     timing?: RallarTimingSink;
-}>): (exhaustion: AppInboxRetryFinalization) => Promise<ResourceEntry> {
-    return async exhaustion => {
+    }>,
+): (exhaustion: AppInboxRetryFinalization) => Promise<ResourceEntry> {
+    return async (exhaustion) => {
         if (exhaustion.reservationAttempt < exhaustion.processingAttempts) {
-            throw new RangeError('App inbox exhaustion reservation precedes the processing retry limit');
+            throw new RangeError(
+                'App inbox exhaustion reservation precedes the processing retry limit',
+            );
         }
         const finalizedAtEpochMs = toFinalizedAtEpochMs(exhaustion);
         const diagnostics = toDiagnostics(exhaustion);
@@ -63,7 +71,8 @@ function createFinalizer(options: Readonly<{
                 requestId: exhaustion.entry.key.resourceId,
                 details,
             },
-            async () => await runInTransaction(options.database, async transaction => {
+            async () =>
+                await runInTransaction(options.database, async (transaction) => {
                 const resourceInbox = new ResourceInboxRepository(transaction);
                 const results = new ResourceInboxResultsRepository(transaction);
                 await timeRallarAsync(
@@ -117,6 +126,17 @@ function toDiagnostics(exhaustion: AppInboxRetryFinalization) {
         };
     return {
         type: 'app-inbox-retry-exhausted',
+        status: 503,
+        message: 'AppInbox processing exhausted its retry budget',
+        issues: null,
+        denial: null,
+        retry: {
+            kind: 'exhausted',
+            attempts: exhaustion.processingAttempts,
+            lane: exhaustion.lane,
+            queueAgeMs: exhaustion.queueAgeMs,
+            dueAgeMs: exhaustion.dueAgeMs,
+        },
         commandIdentity: {
             contextId: exhaustion.entry.key.contextId,
             resourceId: exhaustion.entry.key.resourceId,

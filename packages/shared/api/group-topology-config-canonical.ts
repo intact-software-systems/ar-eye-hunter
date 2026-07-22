@@ -79,13 +79,30 @@ export function fromCanonicalGroupTopologyConfigPatch(
 ): GroupTopologyConfigPatch {
     const canonical = readCanonicalGroupTopologyConfigPatch(value);
     const patch: {
-        -readonly [K in keyof GroupTopologyConfigPatch]:
-            GroupTopologyConfigPatch[K];
+        -readonly [K in keyof GroupTopologyConfigPatch]: GroupTopologyConfigPatch[K];
     } = {};
     for (const key of CONFIG_KEYS) {
         const field = canonical[key];
         if (field.action === 'set') {
             patch[key] = field.value as never;
+        } else if (field.action === 'clear') {
+            switch (key) {
+                case 'topologyKind':
+                    patch.topologyKind = null;
+                    break;
+                case 'degreeLimit':
+                    patch.degreeLimit = null;
+                    break;
+                case 'treeMinSize':
+                    patch.treeMinSize = null;
+                    break;
+                case 'meshMinSize':
+                    patch.meshMinSize = null;
+                    break;
+                case 'meshParamK':
+                    patch.meshParamK = null;
+                    break;
+            }
         }
     }
     return patch;
@@ -98,6 +115,7 @@ function toCanonicalField<T>(
 ): CanonicalGroupTopologyConfigField<T> {
     if (!Object.hasOwn(record, key)) return { action: 'preserve' };
     const value = record[key];
+    if (value === null) return { action: 'clear' };
     if (!validate(value)) {
         throw new TypeError(`Topology config patch ${key} is invalid`);
     }
@@ -124,6 +142,10 @@ function readCanonicalField<T>(
             throw new TypeError(`Canonical topology field ${key} value is invalid`);
         }
         return { action: 'set', value: record.value };
+    }
+    if (record.action === 'clear') {
+        requireExactKeys(record, ['action'], `canonical topology field ${key}`);
+        return { action: 'clear' };
     }
     throw new TypeError(`Canonical topology field ${key} action is invalid`);
 }

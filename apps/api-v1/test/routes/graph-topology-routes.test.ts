@@ -196,7 +196,8 @@ Deno.test('all topology mutation routes submit complete AppInbox commands and ne
       putConfig: () => recordDirectMutation(directTopologyMutationCalls, 'putConfig'),
       deleteConfig: () => recordDirectMutation(directTopologyMutationCalls, 'deleteConfig'),
       putOverride: () => recordDirectMutation(directTopologyMutationCalls, 'putOverride'),
-      deleteOverride: () => recordDirectMutation(directTopologyMutationCalls, 'deleteOverride'),
+            deleteOverride: () =>
+                recordDirectMutation(directTopologyMutationCalls, 'deleteOverride'),
       reconfigureGroupTopology: () =>
         recordDirectMutation(directTopologyMutationCalls, 'reconfigureGroupTopology'),
     },
@@ -416,7 +417,7 @@ Deno.test('topology mutations return after commit while explicit reconfigure for
   );
 });
 
-Deno.test('topology reconfigure requires a request id with an empty request body', async () => {
+Deno.test('all topology mutation routes reject requests without a stable identity', async () => {
   const calls: unknown[] = [];
   const app = createRouteApp({
     group: createGroupSnapshot('room-1', ['owner']),
@@ -434,15 +435,25 @@ Deno.test('topology reconfigure requires a request id with an empty request body
     },
   });
 
+    for (
+        const mutation of [
+            { method: 'PUT', path: 'config', body: { config: { topologyKind: 'tree' } } },
+            { method: 'DELETE', path: 'config' },
+            { method: 'PUT', path: 'override', body: { config: { degreeLimit: 4 } } },
+            { method: 'DELETE', path: 'override' },
+            { method: 'POST', path: 'reconfigure' },
+        ] as const
+    ) {
   const response = await app.request(
-    '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1/topology/reconfigure',
+            `/api/state/apps/app-1/workspaces/workspace-1/groups/room-1/topology/${mutation.path}`,
     {
-      method: 'POST',
+                method: mutation.method,
       headers: { authorization: 'Bearer token' },
+                ...('body' in mutation ? { body: JSON.stringify(mutation.body) } : {}),
     },
   );
-
-  assert.equal(response.status, 400);
+        assert.equal(response.status, 400, `${mutation.method} ${mutation.path}`);
+    }
   assert.deepEqual(calls, []);
 });
 
@@ -457,7 +468,10 @@ Deno.test('graph topology routes map missing groups and validation errors', asyn
     group: createGroupSnapshot('room-1', ['owner']),
     session: createIssuedSession('owner', 'owner-session'),
     processTopologyAppInbox: () => {
-      const error = new Error('invalid config') as Error & { status: number; issues: unknown[] };
+            const error = new Error('invalid config') as Error & {
+                status: number;
+                issues: unknown[];
+            };
       error.status = 422;
       error.issues = [{ code: 'invalid-positive-integer' }];
       throw error;
@@ -515,11 +529,14 @@ function createRouteApp(options: {
         ),
     }),
     requireApiAuthSession: options.requireApiAuthSession ??
-      (() => Promise.resolve(options.session ?? createIssuedSession('owner', 'owner-session'))),
+            (() =>
+                Promise.resolve(options.session ?? createIssuedSession('owner', 'owner-session'))),
     adminClientIds: options.adminClientIds ?? [],
     graphDiagnostics: {
-      readScopedGlobalGraphDiagnostic: options.graphDiagnostics?.readScopedGlobalGraphDiagnostic ??
-        ((scope) => Either.ofRight(createGraphResponse({ ...scope, groupId: '__global__' }))),
+            readScopedGlobalGraphDiagnostic:
+                options.graphDiagnostics?.readScopedGlobalGraphDiagnostic ??
+                    ((scope) =>
+                        Either.ofRight(createGraphResponse({ ...scope, groupId: '__global__' }))),
       readGroupGraphDiagnostic: options.graphDiagnostics?.readGroupGraphDiagnostic ??
         ((groupRef) => Either.ofRight(createGraphResponse(groupRef))),
     },

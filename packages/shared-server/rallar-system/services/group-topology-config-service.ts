@@ -70,7 +70,7 @@ export function validateGroupTopologyConfigPatch(
         ] as const
     ) {
         const value = patch[key];
-        if (value === undefined) {
+        if (value === undefined || value === null) {
             continue;
         }
 
@@ -86,6 +86,7 @@ export function validateGroupTopologyConfigPatch(
 
     if (
         patch.topologyKind !== undefined &&
+        patch.topologyKind !== null &&
         !['auto', 'star', 'tree', 'mesh'].includes(patch.topologyKind)
     ) {
         issues.push({
@@ -150,7 +151,7 @@ export function resolveGroupTopologyConfig(
         ...serverDefaults,
         ...(input.durable?.config ?? {}),
         ...(input.temporary?.config ?? {}),
-        ...(input.requestOptions ?? {}),
+        ...toSetTopologyConfigPatch(input.requestOptions ?? {}),
     };
     validateEffectiveGroupTopologyConfig(effective);
 
@@ -160,6 +161,28 @@ export function resolveGroupTopologyConfig(
         temporary: input.temporary ?? null,
         requestOptions: input.requestOptions ?? null,
         effective,
+    };
+}
+
+function toSetTopologyConfigPatch(
+    patch: GroupTopologyConfigPatch,
+): Partial<EffectiveGroupTopologyConfig> {
+    return {
+        ...(patch.topologyKind === undefined || patch.topologyKind === null
+            ? {}
+            : { topologyKind: patch.topologyKind }),
+        ...(patch.degreeLimit === undefined || patch.degreeLimit === null
+            ? {}
+            : { degreeLimit: patch.degreeLimit }),
+        ...(patch.treeMinSize === undefined || patch.treeMinSize === null
+            ? {}
+            : { treeMinSize: patch.treeMinSize }),
+        ...(patch.meshMinSize === undefined || patch.meshMinSize === null
+            ? {}
+            : { meshMinSize: patch.meshMinSize }),
+        ...(patch.meshParamK === undefined || patch.meshParamK === null
+            ? {}
+            : { meshParamK: patch.meshParamK }),
     };
 }
 

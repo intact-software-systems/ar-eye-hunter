@@ -935,6 +935,7 @@ export async function putStateGroupTopologyConfig(
         'PUT',
         request,
         options,
+        topologyMutationHeaders(request.requestId),
     );
 }
 
@@ -949,7 +950,7 @@ export async function deleteStateGroupTopologyConfig(
         'DELETE',
         undefined,
         options,
-        topologyDeleteHeaders(options),
+        topologyMutationHeaders(options?.requestId),
     );
 }
 
@@ -982,6 +983,7 @@ export async function putStateGroupTopologyOverride(
         'PUT',
         request,
         options,
+        topologyMutationHeaders(request.requestId),
     );
 }
 
@@ -996,15 +998,15 @@ export async function deleteStateGroupTopologyOverride(
         'DELETE',
         undefined,
         options,
-        topologyDeleteHeaders(options),
+        topologyMutationHeaders(options?.requestId),
     );
 }
 
-function topologyDeleteHeaders(
-    options: StateGroupTopologyDeleteOptions | undefined,
+function topologyMutationHeaders(
+    requestId: string | undefined,
 ): Readonly<Record<string, string>> {
-    return options?.requestId
-        ? { 'Idempotency-Key': options.requestId }
+    return requestId
+        ? { 'Idempotency-Key': requestId }
         : {};
 }
 
@@ -1023,6 +1025,7 @@ export async function reconfigureStateGroupTopology(
         'POST',
         request,
         options,
+        topologyMutationHeaders(request.requestId),
     );
 }
 

@@ -15,7 +15,6 @@ import {
   canReadGroupSnapshot,
   canUpdateGroupSnapshot,
   GroupPolicyDeniedError,
-  isGroupPolicyDeniedError,
 } from '@shared-server/rallar-system/group-policy.ts';
 import { getGroupStateService } from '../services/group-state-service.ts';
 import { requireApiAuthSession as defaultRequireApiAuthSession } from '../services/request-auth-service.ts';
@@ -28,8 +27,13 @@ import {
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 import {
   type AppInboxEnqueueInput,
+    type AppInboxFailure,
   AppInboxType,
 } from '@shared-server/rallar-system/services/AppInboxService.ts';
+import {
+    toGraphTopologyErrorResponse as toErrorResponse,
+    TopologyAppInboxFailureError,
+} from './graph-topology-route-errors.ts';
 
 export type GraphTopologyRouteAuthSession = Pick<
   IssuedAuthSession,
@@ -45,6 +49,13 @@ export type ProcessTopologyAppInbox = (
   authority: GraphTopologyRouteAuthSession,
   enqueue: AppInboxEnqueueInput<TopologyAppInboxCommand>,
 ) => Promise<unknown>;
+
+export type GraphTopologyAppInboxService = Readonly<{
+    processAuthenticatedEntryUntilCompletionResult<V, R = V>(
+        enqueue: AppInboxEnqueueInput<V>,
+        authority: IssuedAuthSession,
+    ): Promise<Either<AppInboxFailure, R>>;
+}>;
 
 export type GraphTopologyGroupStateService = Readonly<{
   readSnapshot(ref: GroupRef): Promise<GroupSnapshot | undefined>;
@@ -77,6 +88,7 @@ export type GraphTopologyRouteDependencies = Readonly<{
   graphDiagnostics: GraphTopologyRouteGraphDiagnostics;
   topologyManagement: GraphTopologyRouteTopologyManagement;
   processTopologyAppInbox: ProcessTopologyAppInbox;
+    readAppGroupInboxService: () => GraphTopologyAppInboxService;
   requireApiAuthSession: (
     req: { header(name: string): string | undefined },
   ) => Promise<GraphTopologyRouteAuthSession>;
@@ -152,7 +164,11 @@ export function init(
     '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/config',
     async (c) => {
       try {
-        const { authSession, groupRef } = await assertCanManageGroupRef(c.req, deps, toGroupRef(c));
+                const { authSession, groupRef } = await assertCanManageGroupRef(
+                    c.req,
+                    deps,
+                    toGroupRef(c),
+                );
         const body = await readJsonBody<{
           requestId?: string;
           config: GroupTopologyConfigPatch;
@@ -173,7 +189,11 @@ export function init(
     '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/config',
     async (c) => {
       try {
-        const { authSession, groupRef } = await assertCanManageGroupRef(c.req, deps, toGroupRef(c));
+                const { authSession, groupRef } = await assertCanManageGroupRef(
+                    c.req,
+                    deps,
+                    toGroupRef(c),
+                );
         return c.json(
           await writeTopologyAppInboxCommand(deps, authSession, groupRef, {
             requestId: requireRequestId(c, {}),
@@ -204,7 +224,11 @@ export function init(
     '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/override',
     async (c) => {
       try {
-        const { authSession, groupRef } = await assertCanManageGroupRef(c.req, deps, toGroupRef(c));
+                const { authSession, groupRef } = await assertCanManageGroupRef(
+                    c.req,
+                    deps,
+                    toGroupRef(c),
+                );
         const body = await readJsonBody<{
           requestId?: string;
           config: GroupTopologyConfigPatch;
@@ -232,7 +256,11 @@ export function init(
     '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/override',
     async (c) => {
       try {
-        const { authSession, groupRef } = await assertCanManageGroupRef(c.req, deps, toGroupRef(c));
+                const { authSession, groupRef } = await assertCanManageGroupRef(
+                    c.req,
+                    deps,
+                    toGroupRef(c),
+                );
         return c.json(
           await writeTopologyAppInboxCommand(deps, authSession, groupRef, {
             requestId: requireRequestId(c, {}),
@@ -289,7 +317,15 @@ function toDependencies(
     topologyManagement: dependencies.topologyManagement ??
       notConfiguredTopologyManagement(),
     processTopologyAppInbox: dependencies.processTopologyAppInbox ??
-      defaultProcessTopologyAppInbox,
+            ((authority, enqueue) =>
+                defaultProcessTopologyAppInbox(
+                    dependencies.readAppGroupInboxService?.() ??
+                        getMiddleware().appGroupInboxService,
+                    authority,
+                    enqueue,
+                )),
+        readAppGroupInboxService: dependencies.readAppGroupInboxService ??
+            (() => getMiddleware().appGroupInboxService),
     requireApiAuthSession: dependencies.requireApiAuthSession ??
       defaultRequireApiAuthSession,
     adminClientIds: dependencies.adminClientIds ?? [],
@@ -516,17 +552,17 @@ function toTopologyAppInboxContextId(groupRef: GroupRef): string {
 }
 
 async function defaultProcessTopologyAppInbox(
+    service: GraphTopologyAppInboxService,
   authority: GraphTopologyRouteAuthSession,
   enqueue: AppInboxEnqueueInput<TopologyAppInboxCommand>,
 ): Promise<unknown> {
-  const result = await getMiddleware().appGroupInboxService
-    .processAuthenticatedEntryUntilCompletion(
+    const result = await service.processAuthenticatedEntryUntilCompletionResult(
       enqueue,
       authority as IssuedAuthSession,
     );
   return result.fold(
     (error) => {
-      throw new Error(error);
+            throw new TopologyAppInboxFailureError(error);
     },
     (value) => value,
   );
@@ -557,51 +593,4 @@ function isStrictReadAuthEnabled(): boolean {
   }
 
   return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
-}
-
-function toErrorResponse(
-  c: { json(value: unknown, status?: number): Response },
-  error: unknown,
-): Response {
-  if (isGroupPolicyDeniedError(error)) {
-    return c.json(
-      {
-        error: error.message,
-        code: error.denial.code,
-        message: error.denial.message,
-        details: error.denial.details,
-      },
-      error.status,
-    );
-  }
-
-  if (isStatusError(error)) {
-    return c.json(
-      {
-        error: error.message,
-        issues: error.issues,
-      },
-      error.status,
-    );
-  }
-
-  const message = error instanceof Error ? error.message : String(error);
-  const status = message.includes('not found')
-    ? 404
-    : message.startsWith('Unauthorized:')
-    ? 401
-    : message.startsWith('Forbidden:')
-    ? 403
-    : message.includes('stale') || message.includes('conflict')
-    ? 409
-    : 400;
-
-  return c.json({ error: message }, status);
-}
-
-function isStatusError(
-  error: unknown,
-): error is Error & { status: number; issues?: unknown } {
-  return error instanceof Error &&
-    typeof (error as { status?: unknown }).status === 'number';
 }
