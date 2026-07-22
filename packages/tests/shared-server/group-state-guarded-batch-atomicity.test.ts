@@ -4,7 +4,6 @@ import {
   groupStatePresenceAdmissionStorageKey,
   groupStatePresenceSessionStorageKey,
 } from '@shared-server/rallar-system/group-state-storage-keys.ts';
-import { StateMutationOutboxCollisionError } from '@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts';
 import { GroupStateEventCollisionError } from '@shared-server/postgres/rallar-system/PSqlStateEventRepository.ts';
 import {
   RuntimeStateRetryExhaustedError,
@@ -32,7 +31,6 @@ describe('GroupStateService guarded batch atomicity', () => {
         expect(runtime.activeTransactionDepth).toBe(0);
         expect(delayMs).toBe(2);
       });
-      const wakeStateMutationOutbox = vi.fn();
       runtime.forceNextConflict(conflictTarget);
       const service = createTestGroupStateService({
         runtimeRepository: runtime,
@@ -40,7 +38,6 @@ describe('GroupStateService guarded batch atomicity', () => {
         now: () => 1_000,
         randomId: () => `retry-${conflictTarget}-id`,
         sleep,
-        wakeStateMutationOutbox,
         serviceId: 'group-batch-retry-service',
       });
 
@@ -63,7 +60,6 @@ describe('GroupStateService guarded batch atomicity', () => {
       expect([...runtime.data.values()].every(({ revision }) => revision === 0)).toBe(true);
       expect(eventStore.events).toHaveLength(1);
       expect(sleep).toHaveBeenCalledOnce();
-      expect(wakeStateMutationOutbox).toHaveBeenCalledOnce();
     },
   );
 
@@ -74,7 +70,6 @@ describe('GroupStateService guarded batch atomicity', () => {
     const sleep = vi.fn(async () => {
       expect(runtime.activeTransactionDepth).toBe(0);
     });
-    const wakeStateMutationOutbox = vi.fn();
     let generatedId = 0;
     const service = createTestGroupStateService({
       runtimeRepository: runtime,
@@ -82,7 +77,6 @@ describe('GroupStateService guarded batch atomicity', () => {
       now: () => nowEpochMs,
       randomId: () => `admission-retry-id-${++generatedId}`,
       sleep,
-      wakeStateMutationOutbox,
       serviceId: 'admission-retry-service',
     });
     const ref = { ...SCOPE, groupId: 'admission-retry' };
@@ -95,7 +89,6 @@ describe('GroupStateService guarded batch atomicity', () => {
       requestId: 'admission-retry-seed',
     });
     runtime.resetObservations();
-    wakeStateMutationOutbox.mockClear();
     runtime.forceNextConflict('presence-admission');
 
     const receipt = await service.connectPresenceSessionReceipt(
@@ -138,7 +131,6 @@ describe('GroupStateService guarded batch atomicity', () => {
     ).toBe(0);
     expect(eventStore.events).toHaveLength(2);
     expect(sleep).toHaveBeenCalledWith(2);
-    expect(wakeStateMutationOutbox).toHaveBeenCalledOnce();
   });
 
   it('exhausts repeated guard conflicts without leaking rows or events', async () => {
@@ -149,7 +141,6 @@ describe('GroupStateService guarded batch atomicity', () => {
       expect(runtime.activeTransactionDepth).toBe(0);
       delays.push(delayMs);
     });
-    const wakeStateMutationOutbox = vi.fn();
     runtime.forceNextConflict('guard');
     runtime.forceNextConflict('guard');
     runtime.forceNextConflict('guard');
@@ -159,7 +150,6 @@ describe('GroupStateService guarded batch atomicity', () => {
       now: () => 1_000,
       randomId: () => 'guard-exhaustion-id',
       sleep,
-      wakeStateMutationOutbox,
       serviceId: 'guard-exhaustion-service',
     });
     const before = new Map(runtime.data);
@@ -179,47 +169,18 @@ describe('GroupStateService guarded batch atomicity', () => {
     expect(runtime.data).toEqual(before);
     expect(eventStore.events).toEqual([]);
     expect(delays).toEqual([2, 8]);
-    expect(wakeStateMutationOutbox).not.toHaveBeenCalled();
-  });
-
-  it('keeps an outbox conflict terminal and rolls every row back', async () => {
-    const runtime = new ApplyingGuardedBatchRepository();
-    const eventStore = new OrderedGroupEventStore(runtime);
-    const sleep = vi.fn();
-    const wakeStateMutationOutbox = vi.fn();
-    runtime.forceNextConflict('outbox');
-    const service = createTestGroupStateService({
-      runtimeRepository: runtime,
-      createGroupStateEventStore: () => eventStore,
-      now: () => 1_000,
-      randomId: () => 'outbox-conflict-id',
-      sleep,
-      wakeStateMutationOutbox,
-      serviceId: 'outbox-conflict-service',
-    });
-    const before = new Map(runtime.data);
-
-    await expect(createGroup(service, 'outbox-conflict')).rejects.toBeInstanceOf(
-      StateMutationOutboxCollisionError,
-    );
-
-    expectTerminalRollback(runtime, eventStore.events, before);
-    expect(sleep).not.toHaveBeenCalled();
-    expect(wakeStateMutationOutbox).not.toHaveBeenCalled();
   });
 
   it('keeps an event collision terminal and rolls its batch back', async () => {
     const runtime = new ApplyingGuardedBatchRepository();
     const eventStore = new CollidingGroupEventStore(runtime);
     const sleep = vi.fn();
-    const wakeStateMutationOutbox = vi.fn();
     const service = createTestGroupStateService({
       runtimeRepository: runtime,
       createGroupStateEventStore: () => eventStore,
       now: () => 1_000,
       randomId: () => 'event-conflict-id',
       sleep,
-      wakeStateMutationOutbox,
       serviceId: 'event-conflict-service',
     });
     const before = new Map(runtime.data);
@@ -232,14 +193,12 @@ describe('GroupStateService guarded batch atomicity', () => {
     expect(runtime.data).toEqual(before);
     expect(eventStore.events).toEqual([]);
     expect(sleep).not.toHaveBeenCalled();
-    expect(wakeStateMutationOutbox).not.toHaveBeenCalled();
   });
 
   it('treats a missing member-put result as a terminal invariant failure', async () => {
     const runtime = new ApplyingGuardedBatchRepository();
     const eventStore = new OrderedGroupEventStore(runtime);
     const sleep = vi.fn();
-    const wakeStateMutationOutbox = vi.fn();
     runtime.omitNextEffectResult('member:alice');
     const service = createTestGroupStateService({
       runtimeRepository: runtime,
@@ -247,18 +206,16 @@ describe('GroupStateService guarded batch atomicity', () => {
       now: () => 1_000,
       randomId: () => 'missing-member-result-id',
       sleep,
-      wakeStateMutationOutbox,
       serviceId: 'missing-member-result-service',
     });
     const before = new Map(runtime.data);
 
     await expect(createGroup(service, 'missing-member-result')).rejects.toThrow(
-      'expected 4 effects, received 3',
+      'expected 3 effects, received 2',
     );
 
     expectTerminalRollback(runtime, eventStore.events, before);
     expect(sleep).not.toHaveBeenCalled();
-    expect(wakeStateMutationOutbox).not.toHaveBeenCalled();
   });
 });
 

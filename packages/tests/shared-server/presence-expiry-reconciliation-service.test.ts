@@ -4,16 +4,14 @@ import {
 } from '@shared-server/rallar-system/services/presence-expiry-reconciliation-service.ts';
 
 describe('enqueuePresenceExpiryReconciliation', () => {
-    it('enqueues client expiry and invokes narrow group maintenance without waiting', async () => {
-        const expireExpiredPresenceSessions = vi.fn(async () => []);
+    it('enqueues client and group expiry through their app inboxes without waiting', async () => {
+        const processExpiredPresenceSessionsNoWaiting = vi.fn(async () => 0);
         const runtime = {
             appClientInboxService: {
                 processExpiredSessionsNoWaiting: vi.fn(),
             },
-            groupStateMaintenanceService: {
-                disconnectPresenceSessionsBySessionId: vi.fn(async () => []),
-                disconnectPresenceSessionsBySessionIdWritten: vi.fn(async () => []),
-                expireExpiredPresenceSessions,
+            appGroupInboxService: {
+                processExpiredPresenceSessionsNoWaiting,
             },
         };
 
@@ -23,7 +21,7 @@ describe('enqueuePresenceExpiryReconciliation', () => {
             runtime.appClientInboxService.processExpiredSessionsNoWaiting,
         ).toHaveBeenCalledWith(123_456);
         expect(
-            expireExpiredPresenceSessions,
+            processExpiredPresenceSessionsNoWaiting,
         ).toHaveBeenCalledWith(123_456);
     });
 
@@ -33,10 +31,8 @@ describe('enqueuePresenceExpiryReconciliation', () => {
             appClientInboxService: {
                 processExpiredSessionsNoWaiting: vi.fn(),
             },
-            groupStateMaintenanceService: {
-                disconnectPresenceSessionsBySessionId: vi.fn(async () => []),
-                disconnectPresenceSessionsBySessionIdWritten: vi.fn(async () => []),
-                expireExpiredPresenceSessions: vi.fn(async () => []),
+            appGroupInboxService: {
+                processExpiredPresenceSessionsNoWaiting: vi.fn(async () => 0),
                 processPurgeExpiredGroupsNoWaiting,
             },
         };
@@ -55,10 +51,8 @@ describe('enqueuePresenceExpiryReconciliation', () => {
             appClientInboxService: {
                 processExpiredSessionsNoWaiting: vi.fn(),
             },
-            groupStateMaintenanceService: {
-                disconnectPresenceSessionsBySessionId: vi.fn(async () => []),
-                disconnectPresenceSessionsBySessionIdWritten: vi.fn(async () => []),
-                expireExpiredPresenceSessions: vi.fn(async () => {
+            appGroupInboxService: {
+                processExpiredPresenceSessionsNoWaiting: vi.fn(async () => {
                     throw failure;
                 }),
             },

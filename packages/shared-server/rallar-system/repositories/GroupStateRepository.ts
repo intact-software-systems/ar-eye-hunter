@@ -41,6 +41,9 @@ import {
     validatePersistedGroupEvent,
 } from '@shared-server/rallar-system/services/group-state-mutations.ts';
 import type { GroupSnapshotPage, GroupSnapshotPageOptions } from '@shared-server/rallar-system/services/group-state-service.ts';
+import type { PSqlTransactionSql } from '../../postgres/PostgresSqlClient.ts';
+import { PSqlRuntimeStateRepository } from '../../postgres/runtime-state/PSqlRuntimeStateRepository.ts';
+import { PSqlGroupStateEventRepository } from '../../postgres/rallar-system/PSqlStateEventRepository.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { toSessionPurgeAfterEpochMs } from './session-expiry.ts';
 import { defaultGroupStateEventStoreFor, type GroupStateEventStore } from './StateEventStore.ts';
@@ -78,6 +81,15 @@ import {
 export type GroupStateRepositoryOptions = Readonly<{
     events?: GroupStateEventStore;
 }>;
+
+export function createTransactionBoundGroupStateRepository(
+    transaction: PSqlTransactionSql,
+): GroupStateRepository {
+    return new GroupStateRepository(
+        new PSqlRuntimeStateRepository(transaction),
+        { events: new PSqlGroupStateEventRepository(transaction) },
+    );
+}
 
 export type GroupStateAuthorityGuard = Readonly<{
     groupRef: GroupRef;

@@ -3,12 +3,17 @@ import type { EntityStatus, Key, ResourceEntry } from '@shared/queuebox/Resource
 import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import { ResourceInboxInvariantCorruptionError } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
-import { InMemoryClientStateEventStore } from '@shared-server/rallar-system/repositories/StateEventStore.ts';
+import {
+    InMemoryClientStateEventStore,
+    InMemoryGroupStateEventStore,
+} from '@shared-server/rallar-system/repositories/StateEventStore.ts';
 import type { ClientEvent } from '@shared/api/client-types.ts';
+import type { GroupEvent } from '@shared/api/group-types.ts';
 
 export type AppInboxTestDatabase = PSqlSql &
     Readonly<{
         clientEventStore: InMemoryClientStateEventStore;
+        groupEventStore: InMemoryGroupStateEventStore;
         outboxEntries: ReadonlyMap<string, ResourceEntry>;
     }>;
 
@@ -32,6 +37,7 @@ export function createAppInboxTestDatabase(
 ): AppInboxTestDatabase {
     const outboxEntries = new Map<string, ResourceEntry>();
     const clientEventStore = options.clientEventStore ?? new InMemoryClientStateEventStore();
+    const groupEventStore = new InMemoryGroupStateEventStore();
     const database = (async () => {
         throw new Error('App inbox SQL must use the supplied transaction');
     }) as unknown as AppInboxTestDatabase;
@@ -44,6 +50,7 @@ export function createAppInboxTestDatabase(
             const pendingInbox: ResourceEntry[] = [];
             const pendingOutbox = new Map(outboxEntries);
             const pendingClientEvents: ClientEvent[] = [];
+            const pendingGroupEvents: GroupEvent[] = [];
             const transaction = (async (
             strings: TemplateStringsArray,
             ...values: unknown[]
@@ -94,6 +101,57 @@ export function createAppInboxTestDatabase(
                 );
                 return result.status === 'applied' ? [{ revision: result.revision }] : [];
             }
+            if (
+                query.includes('insert into runtime_state_store') &&
+                query.includes('do update set')
+            ) {
+                if (!runtime) {
+                    throw new Error('Runtime-state SQL requires a transaction runtime');
+                }
+                const [namespace, key, value, expireAt] = values as [
+                    string,
+                    string,
+                    string,
+                    Date,
+                ];
+                await runtime.upsert(namespace, key, value, expireAt.getTime());
+                return [];
+            }
+            if (
+                query.includes('jsonb_array_elements') &&
+                query.includes('as selections')
+            ) {
+                if (!runtime) {
+                    throw new Error('Runtime-state SQL requires a transaction runtime');
+                }
+                const rawSelectors = typeof values[0] === 'string'
+                    ? JSON.parse(values[0]) as unknown
+                    : values[0];
+                if (!Array.isArray(rawSelectors)) {
+                    throw new Error('Runtime-state batch selectors are required');
+                }
+                const selections = [];
+                for (const rawSelector of rawSelectors) {
+                    const selector = rawSelector as Readonly<{
+                        selectorId: string;
+                        kind: 'key' | 'prefix';
+                        namespace: string;
+                        key: string | null;
+                        keyPrefix: string | null;
+                    }>;
+                    const entries = selector.kind === 'key'
+                        ? await runtime.findEntriesByKeys(
+                            selector.namespace,
+                            selector.key === null ? [] : [selector.key],
+                        )
+                        : await runtime.findEntriesByPrefix(
+                            selector.namespace,
+                            selector.keyPrefix ?? '',
+                        );
+                    selections.push({ selectorId: selector.selectorId, entries });
+                }
+                return [{ selections }];
+            }
             if (query.includes('insert into client_state_events')) {
                 const eventJson = values.at(-1);
                 if (typeof eventJson !== 'string') {
@@ -102,6 +160,32 @@ export function createAppInboxTestDatabase(
                 const event = JSON.parse(eventJson) as ClientEvent;
                 pendingClientEvents.push(event);
                 return [{ event_id: event.eventId }];
+            }
+            if (query.includes('insert into group_state_events')) {
+                const eventJson = values.at(-1);
+                if (typeof eventJson !== 'string') {
+                    throw new Error('Group state event JSON is required');
+                }
+                const event = JSON.parse(eventJson) as GroupEvent;
+                pendingGroupEvents.push(event);
+                return [{ event_id: event.eventId }];
+            }
+            if (query.includes('from group_state_events')) {
+                const [applicationId, workspaceKey, groupId] = values as string[];
+                const workspaceId = workspaceKey === '_' ? undefined : workspaceKey;
+                return [...groupEventStore.events, ...pendingGroupEvents]
+                    .filter((event) =>
+                        event.applicationId === applicationId &&
+                        event.workspaceId === workspaceId &&
+                        event.groupId === groupId
+                    )
+                    .map((event) => ({
+                        event_id: event.eventId,
+                        event_type: event.eventType,
+                        snapshot_version: event.snapshotVersion,
+                        occurred_at_epoch_ms: event.occurredAtEpochMs,
+                        event_json: JSON.stringify(event),
+                    }));
             }
             if (query.includes('insert into resource_inbox_results')) {
                 const entry = toResultEntry(values);
@@ -169,6 +253,9 @@ export function createAppInboxTestDatabase(
             for (const event of pendingClientEvents) {
                 await clientEventStore.appendClientEvent(event);
             }
+            for (const event of pendingGroupEvents) {
+                await groupEventStore.appendGroupEvent(event);
+            }
             return output;
         };
 
@@ -189,6 +276,7 @@ export function createAppInboxTestDatabase(
     };
     Object.defineProperties(database, {
         clientEventStore: { value: clientEventStore },
+        groupEventStore: { value: groupEventStore },
         outboxEntries: { value: outboxEntries },
     });
     return database;

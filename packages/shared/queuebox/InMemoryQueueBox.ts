@@ -12,7 +12,7 @@ import {
     ResourceInboxReleaseDisposition,
     ResourceInboxReservationInput,
     ResourceInboxWorkAdvertisementInput,
-    isIdempotentCompletedAppInboxRelease,
+    isIdempotentHandlerFinalizedRelease,
     toResourceInboxFairnessReservationOptions,
     toResourceInboxFinalizationReservationOptions,
     toResourceInboxReleaseDisposition,
@@ -170,7 +170,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
                         current.status !== EntityStatus.RESERVED ||
                         current.dequeueAudit.attempts !== resource.dequeueAudit.attempts
                     ) &&
-                    !isIdempotentCompletedAppInboxRelease(
+                    !isIdempotentHandlerFinalizedRelease(
                         current,
                         resource,
                         disposition,

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { Temporal } from '@js-temporal/polyfill';
 import { PSqlAppDataRepository } from '@shared-server/postgres/app-data/PSqlAppDataRepository.ts';
 import { PSqlCrdtLogRepository } from '@shared-server/postgres/crdt/PSqlCrdtLogRepository.ts';
@@ -17,11 +18,20 @@ import {
 } from '@shared-server/runtime-state/RuntimeStateGuardedBatch.ts';
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
-import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+import {
+  AuthSessionRepository,
+  type IssuedAuthSession,
+} from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/repositories/GroupTopologyConfigRepository.ts';
 import { StateMutationOutboxRepository } from '@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts';
-import { createGroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
+import {
+  createGroupStateService,
+  mutationDescriptor,
+  type GroupMutationDescriptor,
+  type GroupMutationPreparation,
+  type GroupStateService,
+} from '@shared-server/rallar-system/services/group-state-service.ts';
 import {
   createClientStateService,
   requiresClientWrite,
@@ -65,6 +75,20 @@ import {
 } from '@shared/crdt/mod.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
+import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import {
+  AppGroupInboxService,
+  type GroupCreateAppInboxPayload,
+} from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
+import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
+import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/services/GroupPresenceSummaryWork.ts';
+import {
+  APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC,
+} from '@shared-server/rallar-system/services/group-state-mutations.ts';
+import {
+  APP_OUTBOX_RTC_TOPOLOGY_TOPIC,
+} from '@shared-server/rallar-system/services/RtcTopologyOutboxWork.ts';
+import { toResilienceDto } from '../../src/middleware-resilience.ts';
 import { createApiV1SqlClient } from '../../src/db/db.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 
@@ -73,6 +97,268 @@ const PAST_MS = Date.parse('2000-01-01T00:00:00.000Z');
 const FUTURE_INSTANT = Temporal.Instant.from('9999-12-31T23:59:59.999Z');
 const PAST_INSTANT = Temporal.Instant.from('2000-01-01T00:00:00.000Z');
 const CREATED_TS = Temporal.PlainDateTime.from('2026-06-01T12:00:00');
+
+Deno.test('PGlite AppGroup commits group mutation and summary fan-out through fenced queue transactions', async () => {
+  await withPGliteSql(async (sql) => {
+    const runtime = new PSqlRuntimeStateRepository(sql);
+    const resourceInbox = new ResourceInboxRepository(sql);
+    const resourceResults = new ResourceInboxResultsRepository(sql);
+    const queue = new PSqlQueueBox(resourceInbox);
+    const inboxReader = new InboxQueueReader(queue);
+    const outboxReader = new OutboxQueueReader(queue);
+    const nowEpochMs = Date.parse('2026-07-22T00:00:00.000Z');
+    const authority = {
+      clientId: 'alice',
+      sessionId: 'alice-session',
+      accessToken: 'alice-token',
+      username: 'alice',
+      issuedAtEpochMs: nowEpochMs - 1_000,
+      expiresAtEpochMs: FUTURE_MS,
+    };
+    const authSessions = new AuthSessionRepository(runtime);
+    await authSessions.putSession(authority);
+    const groupState = createGroupStateService({
+      runtimeRepository: runtime,
+      createGroupStateEventStore: createGroupStateEventRepository,
+      authSessionRepository: authSessions,
+      serviceId: 'pglite-group-service',
+      now: () => nowEpochMs,
+    });
+    const appGroup = new AppGroupInboxService(
+      inboxReader,
+      resourceInbox,
+      resourceResults,
+      sql,
+      groupState,
+      'pglite-group-service',
+      undefined,
+      {
+        waitMaxElapsedMsecs: 5_000,
+        waitRetryIntervalMsecs: 1,
+        waitMaxRetryIntervalMsecs: 4,
+        waitJitterRatio: 0,
+        nowEpochMs: () => nowEpochMs,
+      },
+    );
+    const summaryWork = new GroupPresenceSummaryWork({
+      runtimeRepository: runtime,
+      database: sql,
+      serviceId: 'pglite-group-service',
+      now: () => nowEpochMs,
+    });
+    outboxReader.onOutboxMessageDo(AppOutboxType.GROUP_PRESENCE_SUMMARY, {
+      onMessage: async (message, entry) =>
+        await summaryWork.processReservedEntry(message, entry),
+    });
+    outboxReader.onOutboxMessageDo(
+      AppOutboxType.RTC_TOPOLOGY_RECOMPUTE,
+      { onMessage: () => Promise.resolve() },
+    );
+
+    const pending = appGroup.processAuthenticatedEntryUntilCompletion<
+      GroupCreateAppInboxPayload,
+      unknown
+    >({
+      type: AppInboxType.GROUP_CREATE,
+      resourceId: 'pglite-app-group-create',
+      contextId: 'vertical-app:main:vertical-group',
+      senderId: authority.clientId,
+      data: {
+        scope: { applicationId: 'vertical-app', workspaceId: 'main' },
+        request: {
+          groupId: 'vertical-group',
+          displayName: 'Vertical Group',
+          kind: 'room',
+          joinMode: 'open',
+          createdByPrincipalId: authority.clientId,
+          actorPrincipalId: authority.clientId,
+          actorSessionId: authority.sessionId,
+          requestId: 'pglite-app-group-create',
+        },
+      },
+    }, authority);
+    await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
+    await inboxReader.dequeueInbox(
+      InboxQueueReader.INBOX_DEQUEUE_TYPES,
+      toResilienceDto(),
+    );
+    const result = await pending;
+    assert.equal(result.right !== undefined, true);
+
+    const ref = {
+      applicationId: 'vertical-app',
+      workspaceId: 'main',
+      groupId: 'vertical-group',
+    };
+    assert.equal((await new GroupStateRepository(runtime).findGroup(ref))?.displayName,
+      'Vertical Group');
+    assert.equal((await new PSqlGroupStateEventRepository(sql).listGroupEvents(ref)).length, 1);
+    const beforeSummary = await sql<{ ri_type_id: string; ri_status: string }[]>`
+      select ri_type_id, ri_status from resource_inbox order by ri_row_id
+    `;
+    assert.equal(beforeSummary.filter((row) => row.ri_type_id === 'APP_INBOX' &&
+      row.ri_status === 'COMPLETED').length, 1);
+    assert.equal(beforeSummary.filter((row) => row.ri_type_id === 'APP_OUTBOX' &&
+      row.ri_status === 'NEW').length, 1);
+    assert.equal(beforeSummary.filter((row) => row.ri_type_id === 'WS_OUTBOX').length, 0);
+    assert.equal(Number((await sql<{ count: string | number }[]>`
+      select count(*) as count from resource_inbox_results
+    `)[0]?.count), 1);
+    assert.equal((await runtime.findAllEntries('state-mutation:outbox')).length, 0);
+
+    await outboxReader.dequeueOutbox(
+      OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
+      toResilienceDto(),
+    );
+    const afterSummary = await sql<{
+      ri_topic_id: string;
+      ri_type_id: string;
+      ri_status: string;
+    }[]>`
+      select ri_topic_id, ri_type_id, ri_status from resource_inbox order by ri_row_id
+    `;
+    assert.equal(afterSummary.filter((row) => row.ri_type_id === 'APP_OUTBOX' &&
+      row.ri_topic_id === APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC &&
+      row.ri_status === 'COMPLETED').length, 1);
+    assert.equal(afterSummary.filter((row) => row.ri_type_id === 'WS_OUTBOX' &&
+      row.ri_status === 'NEW').length, 3);
+    assert.equal(afterSummary.filter((row) => row.ri_type_id === 'APP_OUTBOX' &&
+      row.ri_topic_id === APP_OUTBOX_RTC_TOPOLOGY_TOPIC &&
+      row.ri_status === 'COMPLETED').length, 1);
+  });
+});
+
+Deno.test('PGlite summary reservation fence rolls back CAS and every downstream row atomically', async () => {
+  await withPGliteSql(async (sql) => {
+    const runtime = new PSqlRuntimeStateRepository(sql);
+    const resourceInbox = new ResourceInboxRepository(sql);
+    const resourceResults = new ResourceInboxResultsRepository(sql);
+    const queue = new PSqlQueueBox(resourceInbox);
+    const inboxReader = new InboxQueueReader(queue);
+    const nowEpochMs = Date.parse('2026-07-22T00:00:00.000Z');
+    const authority = {
+      clientId: 'alice',
+      sessionId: 'alice-session',
+      accessToken: 'alice-token',
+      username: 'alice',
+      issuedAtEpochMs: nowEpochMs - 1_000,
+      expiresAtEpochMs: FUTURE_MS,
+    };
+    const authSessions = new AuthSessionRepository(runtime);
+    await authSessions.putSession(authority);
+    const groupState = createGroupStateService({
+      runtimeRepository: runtime,
+      createGroupStateEventStore: createGroupStateEventRepository,
+      authSessionRepository: authSessions,
+      serviceId: 'pglite-summary-fence',
+      now: () => nowEpochMs,
+    });
+    const appGroup = new AppGroupInboxService(
+      inboxReader,
+      resourceInbox,
+      resourceResults,
+      sql,
+      groupState,
+      'pglite-summary-fence',
+      undefined,
+      {
+        waitMaxElapsedMsecs: 5_000,
+        waitRetryIntervalMsecs: 1,
+        waitMaxRetryIntervalMsecs: 4,
+        waitJitterRatio: 0,
+        nowEpochMs: () => nowEpochMs,
+      },
+    );
+    const pending = appGroup.processAuthenticatedEntryUntilCompletion<
+      GroupCreateAppInboxPayload,
+      unknown
+    >({
+      type: AppInboxType.GROUP_CREATE,
+      resourceId: 'pglite-summary-fence-create',
+      contextId: 'fence-app:main:fence-group',
+      senderId: authority.clientId,
+      data: {
+        scope: { applicationId: 'fence-app', workspaceId: 'main' },
+        request: {
+          groupId: 'fence-group',
+          displayName: 'Fence Group',
+          kind: 'room',
+          joinMode: 'open',
+          createdByPrincipalId: authority.clientId,
+          actorPrincipalId: authority.clientId,
+          actorSessionId: authority.sessionId,
+          requestId: 'pglite-summary-fence-create',
+        },
+      },
+    }, authority);
+    await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
+    await inboxReader.dequeueInbox(
+      InboxQueueReader.INBOX_DEQUEUE_TYPES,
+      toResilienceDto(),
+    );
+    assert.equal((await pending).right !== undefined, true);
+
+    const [summaryKey] = await sql<{
+      ri_topic_id: string;
+      ri_resource_id: string;
+      fk_ext_bank_id: string;
+    }[]>`
+      select ri_topic_id, ri_resource_id, fk_ext_bank_id
+      from resource_inbox
+      where ri_topic_id = ${APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC}
+    `;
+    assert.ok(summaryKey);
+    await sql`
+      update resource_inbox
+      set ri_status = 'RESERVED', ri_attempts = 1,
+          start_ts = now() at time zone 'UTC', end_ts = null, next_ts = null
+      where ri_topic_id = ${summaryKey.ri_topic_id}
+        and ri_resource_id = ${summaryKey.ri_resource_id}
+        and fk_ext_bank_id = ${summaryKey.fk_ext_bank_id}
+    `;
+    const key = {
+      topicId: summaryKey.ri_topic_id,
+      resourceId: summaryKey.ri_resource_id,
+      contextId: summaryKey.fk_ext_bank_id,
+    };
+    const reserved = await resourceInbox.findAnyByKey(key);
+    assert.ok(reserved);
+    const message = JSON.parse(reserved.resource) as ALMessage;
+    const ref = {
+      applicationId: 'fence-app',
+      workspaceId: 'main',
+      groupId: 'fence-group',
+    };
+    const repository = new GroupStateRepository(runtime);
+    const summaryBefore = await repository.findPresenceSummaryEntry(ref);
+    const work = new GroupPresenceSummaryWork({
+      runtimeRepository: runtime,
+      database: sql,
+      serviceId: 'pglite-summary-fence',
+      now: () => nowEpochMs,
+    });
+
+    await assert.rejects(
+      () => work.processReservedEntry(message, {
+        ...reserved,
+        dequeueAudit: { ...reserved.dequeueAudit, attempts: 2 },
+      }),
+      /reservation changed before commit/,
+    );
+
+    assert.deepEqual(await repository.findPresenceSummaryEntry(ref), summaryBefore);
+    const stillReserved = await resourceInbox.findAnyByKey(key);
+    assert.equal(stillReserved?.status, EntityStatus.RESERVED);
+    assert.equal(stillReserved?.dequeueAudit.attempts, 1);
+    const downstream = await sql<{ ri_topic_id: string; ri_type_id: string }[]>`
+      select ri_topic_id, ri_type_id
+      from resource_inbox
+      where ri_type_id in ('WS_OUTBOX', 'APP_OUTBOX')
+        and ri_topic_id <> ${APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC}
+    `;
+    assert.deepEqual(downstream, []);
+  });
+});
 
 function groupFixture(ref: GroupRef, displayName: string): Group {
   const audit = canonicalAuditStamp(1);
@@ -1378,23 +1664,20 @@ Deno.test('PGlite group-state reads reject complete-contract corruption across p
         },
         now: () => 10_000,
         randomId: () => `event-${testCase.kind}-${eventSequence++}`,
-        sleep: () => Promise.resolve(),
         serviceId: `pglite-complete-${testCase.kind}`,
       });
-      await service.createGroup(scope, {
+      await applyPGliteGroupMutation(sql, service, mutationDescriptor('createGroup', scope,
+        ref.groupId, {
         groupId: ref.groupId,
         displayName: `Complete ${testCase.kind}`,
         kind: 'room',
         joinMode: 'open',
         createdByPrincipalId: 'alice',
         requestId: `create-${testCase.kind}`,
-      }, authority);
+      }), authority);
       if (testCase.kind === 'session') {
-        await service.connectPresenceSession(
-          scope,
-          ref.groupId,
-          authority.sessionId,
-          {
+        await applyPGliteGroupMutation(sql, service, mutationDescriptor(
+          'connectPresence', scope, ref.groupId, {
             principalId: 'alice',
             generationId: `generation-${testCase.kind}`,
             connectedAtEpochMs: 10_000,
@@ -1404,8 +1687,8 @@ Deno.test('PGlite group-state reads reject complete-contract corruption across p
             actorSessionId: authority.sessionId,
             requestId: `connect-${testCase.kind}`,
           },
-          authority,
-        );
+          'alice', authority.sessionId,
+        ), authority);
       }
 
       const storageKey = testCase.kind === 'member'
@@ -1586,22 +1869,19 @@ Deno.test('PSql state event repositories page by snapshot cursor order', async (
       'member-left',
     );
     await groupEvents.appendGroupEvent(firstDuplicate);
-    for (
-      const duplicate of [
-        structuredClone(firstDuplicate),
-        createGroupStateEvent('group-duplicate', 5_000, 50, 'member-left', {
-          reason: 'updated',
-        }),
-      ]
-    ) {
-      await assert.rejects(
-        () => groupEvents.appendGroupEvent(duplicate),
-        (error) =>
-          error instanceof Error &&
-          'code' in error &&
-          error.code === 'group-state-event-collision',
-      );
-    }
+    await groupEvents.appendGroupEvent(structuredClone(firstDuplicate));
+    await assert.rejects(
+      () =>
+        groupEvents.appendGroupEvent(
+          createGroupStateEvent('group-duplicate', 5_000, 50, 'member-left', {
+            reason: 'updated',
+          }),
+        ),
+      (error) =>
+        error instanceof Error &&
+        'code' in error &&
+        error.code === 'group-state-event-collision',
+    );
 
     const firstGroupPage = await groupEvents.listGroupEventPage(groupRef, {
       limit: 2,
@@ -1695,7 +1975,6 @@ Deno.test('PSql group events isolate ordinary and sentinel workspaces without ev
 Deno.test('PGlite group event collision rolls back the authoritative mutation transaction', async () => {
   await withPGliteSql(async (sql) => {
     const runtime = new PSqlRuntimeStateRepository(sql);
-    const eventIds = ['seed-event', 'colliding-event'];
     const authority = {
       clientId: 'alice',
       sessionId: 'alice-session',
@@ -1712,34 +1991,34 @@ Deno.test('PGlite group event collision rolls back the authoritative mutation tr
           Promise.resolve(sessionId === authority.sessionId ? authority : undefined),
       },
       now: () => 10_000,
-      randomId: () => eventIds.shift() ?? 'unexpected-event-id',
-      sleep: () => Promise.resolve(),
       serviceId: 'pglite-group-service',
     });
     const scope = { applicationId: 'collision-app', workspaceId: 'main' };
     const ref = { ...scope, groupId: 'collision-group' };
-    await service.createGroup(scope, {
+    await applyPGliteGroupMutation(sql, service, mutationDescriptor('createGroup', scope,
+      ref.groupId, {
       groupId: ref.groupId,
       displayName: 'Before collision',
       kind: 'room',
       joinMode: 'open',
       createdByPrincipalId: 'alice',
       requestId: 'seed-collision-group',
-    }, authority);
+    }), authority);
+    const updateDescriptor = mutationDescriptor('updateGroup', scope, ref.groupId, {
+      displayName: 'Must roll back',
+      actorPrincipalId: 'alice',
+      requestId: 'collision-request',
+    });
+    const updatePreparation = await service.prepareMutation(updateDescriptor, authority);
     await new PSqlGroupStateEventRepository(sql).appendGroupEvent(
-      createGroupStateEvent('colliding-event', 9_000, 99, 'group-updated', {
+      createGroupStateEvent(updatePreparation.facts.eventId, 9_000, 99, 'group-updated', {
         ...ref,
         requestId: 'preexisting-event',
       }),
     );
 
     await assert.rejects(
-      () =>
-        service.updateGroup(scope, ref.groupId, {
-          displayName: 'Must roll back',
-          actorPrincipalId: 'alice',
-          requestId: 'collision-request',
-        }, authority),
+      () => applyPreparedPGliteGroupMutation(sql, service, updatePreparation),
       (error) =>
         error instanceof Error &&
         'code' in error &&
@@ -1762,9 +2041,103 @@ Deno.test('PGlite group event collision rolls back the authoritative mutation tr
       where application_id = ${ref.applicationId}
         and workspace_key = ${groupEventWorkspaceKey(ref.workspaceId)}
         and group_id = ${ref.groupId}
-        and event_id = 'colliding-event'
+        and event_id = ${updatePreparation.facts.eventId}
     `;
     assert.equal(Number(collisionRows[0]?.count), 1);
+    const [summaryRows] = await sql<{ count: string | number }[]>`
+      select count(*) as count
+      from resource_inbox
+      where ri_topic_id = ${APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC}
+        and ri_resource like ${'%collision-request%'}
+    `;
+    assert.equal(Number(summaryRows?.count ?? 0), 0);
+  });
+});
+
+Deno.test('PGlite group summary outbox collision rolls back state event and receipt atomically', async () => {
+  await withPGliteSql(async (sql) => {
+    const runtime = new PSqlRuntimeStateRepository(sql);
+    const authority = {
+      clientId: 'alice',
+      sessionId: 'alice-session',
+      accessToken: 'test-token',
+      username: 'alice',
+      issuedAtEpochMs: 1,
+      expiresAtEpochMs: 100_000,
+    };
+    const service = createGroupStateService({
+      runtimeRepository: runtime,
+      createGroupStateEventStore: createGroupStateEventRepository,
+      authSessionRepository: {
+        findBySessionId: (sessionId) =>
+          Promise.resolve(sessionId === authority.sessionId ? authority : undefined),
+      },
+      now: () => 10_000,
+      serviceId: 'pglite-group-summary-collision',
+    });
+    const scope = { applicationId: 'summary-collision-app', workspaceId: 'main' };
+    const ref = { ...scope, groupId: 'summary-collision-group' };
+    await applyPGliteGroupMutation(sql, service, mutationDescriptor('createGroup', scope,
+      ref.groupId, {
+      groupId: ref.groupId,
+      displayName: 'Before summary collision',
+      kind: 'room',
+      joinMode: 'open',
+      createdByPrincipalId: 'alice',
+      requestId: 'seed-summary-collision-group',
+    }), authority);
+
+    const preparation = await service.prepareMutation(
+      mutationDescriptor('updateGroup', scope, ref.groupId, {
+        displayName: 'Must roll back at summary outbox',
+        actorPrincipalId: 'alice',
+        requestId: 'summary-collision-request',
+      }),
+      authority,
+    );
+    const command = {
+      ...preparation,
+      facts: { ...preparation.facts, attemptCount: 1 },
+    };
+    const read = await service.read(command);
+    const computed = service.compute(command, read);
+    service.validate(command, read, computed);
+    assert.equal(computed.outcome, 'write');
+    if (computed.outcome !== 'write') throw new TypeError('Expected summary collision write');
+    const [summaryEntry] = computed.outboxEntries;
+    assert.ok(summaryEntry);
+    const divergentResource = JSON.stringify({
+      collision: 'preexisting-divergent-summary-work',
+    });
+    await new ResourceInboxRepository(sql).write({
+      ...summaryEntry,
+      resource: divergentResource,
+    });
+
+    await assert.rejects(
+      () => sql.begin(async (transaction) => await service.write(transaction, computed)),
+      ResourceInboxInvariantCorruptionError,
+    );
+
+    const repository = new GroupStateRepository(runtime);
+    assert.equal((await repository.findGroup(ref))?.displayName, 'Before summary collision');
+    assert.equal(
+      await repository.findIdempotentGroupMutationReceipt(ref, 'summary-collision-request'),
+      undefined,
+    );
+    const [eventRows] = await sql<{ count: string | number }[]>`
+      select count(*) as count
+      from group_state_events
+      where application_id = ${ref.applicationId}
+        and workspace_key = ${groupEventWorkspaceKey(ref.workspaceId)}
+        and group_id = ${ref.groupId}
+        and event_id = ${preparation.facts.eventId}
+    `;
+    assert.equal(Number(eventRows?.count ?? 0), 0);
+    const storedCollision = await new ResourceInboxRepository(sql).findAnyByKey(
+      summaryEntry.key,
+    );
+    assert.equal(storedCollision?.resource, divergentResource);
   });
 });
 
@@ -2943,6 +3316,54 @@ async function withPGliteSql(
   } finally {
     await sql.close();
   }
+}
+
+async function waitForPGliteQueueRow(
+  sql: PGliteSql,
+  typeId: string,
+  status: string,
+): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const [row] = await sql<{ count: string }[]>`
+      select count(*) as count
+      from resource_inbox
+      where ri_type_id = ${typeId} and ri_status = ${status}
+    `;
+    if (Number(row?.count ?? 0) > 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  throw new Error(`Timed out waiting for ${typeId} ${status} queue row`);
+}
+
+async function applyPGliteGroupMutation(
+  sql: PGliteSql,
+  service: GroupStateService,
+  descriptor: GroupMutationDescriptor,
+  authority: IssuedAuthSession,
+): Promise<void> {
+  await applyPreparedPGliteGroupMutation(
+    sql,
+    service,
+    await service.prepareMutation(descriptor, authority),
+  );
+}
+
+async function applyPreparedPGliteGroupMutation(
+  sql: PGliteSql,
+  service: GroupStateService,
+  preparation: GroupMutationPreparation,
+): Promise<void> {
+  const command = {
+    ...preparation,
+    facts: { ...preparation.facts, attemptCount: 1 },
+  };
+  const read = await service.read(command);
+  const computed = service.compute(command, read);
+  service.validate(command, read, computed);
+  if (computed.outcome !== 'write') return;
+  await sql.begin(async (transaction) => {
+    await service.write(transaction, computed);
+  });
 }
 
 async function readCrdtStoredUpdateBytes(

@@ -1,3 +1,6 @@
+import { Temporal } from '@js-temporal/polyfill';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { EnqueuedType } from '@shared/api/api-config.ts';
 import type {
     AuditStamp,
     Group,
@@ -20,6 +23,7 @@ import {
     toGroupSnapshotStateRevision,
 } from '@shared/api/group-client-views.ts';
 import type { MutationActor } from '@shared/api/mutation-actor.ts';
+import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { RuntimeStateEntryValue } from '../../runtime-state/RuntimeStateJsonStore.ts';
 import {
     canActivateGroupMember,
@@ -36,6 +40,11 @@ import type {
     DisconnectGroupPresenceSessionRequest,
     HeartbeatGroupPresenceSessionRequest,
 } from '@shared/api/state-types.ts';
+import { AppOutboxType } from './AppOutboxService.ts';
+import {
+    toAppQueueCreatedBy,
+    toAppQueueKey,
+} from './app-inbox-queue-key.ts';
 import {
     createRallarGroupDirectorAppointment,
     mergeRallarGroupDirectorMetadata,
@@ -52,7 +61,6 @@ import {
     groupStatePresenceSessionStorageKey,
     groupStatePresenceSummaryStorageKey,
 } from '../group-state-storage-keys.ts';
-import { toStateMutationOutboxId } from '../repositories/StateMutationOutboxRepository.ts';
 import { validateGroupEvent } from '../persisted-group-event.ts';
 export {
     normalizePersistedGroupEvent,
@@ -246,6 +254,7 @@ export type GroupMutationRead = Readonly<{
 
 export type GroupMutationFacts = Readonly<{
     nowEpochMs: number;
+    expireAtEpochMs: number;
     serviceId: string;
     eventId: string;
     commandHash: string;
@@ -318,23 +327,17 @@ type PresenceAdmissionCandidate =
         expectedRevision: number;
     }>;
 
-export type GroupMutationOutboxCandidate = Readonly<{
-    kind: 'group';
+export const APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC =
+    'app-outbox.group-presence-summary';
+
+export type GroupPresenceSummaryWorkData = Readonly<{
+    effectKind: 'group-presence-summary';
     aggregateRef: GroupRef;
     commandId: string;
-    commandHash: string;
     createdAtEpochMs: number;
-    acceptedCausalRevision: Readonly<{
-        kind: 'group';
-        stateRevision: number;
-        causalRevision: GroupStateCausalRevision;
-        snapshotVersion: number;
-        metadataVersion: number;
-        rosterVersion: number;
-        presenceVersion: number;
-    }>;
-    effects: readonly ['group-state-sync', 'group-presence-summary'];
-    event: Readonly<{ kind: 'group'; event: GroupEvent }>;
+    expireAtEpochMs: number;
+    acceptedCausalRevision: GroupStateCausalRevision;
+    event: GroupEvent;
 }>;
 
 export type GroupMutationComputed =
@@ -357,8 +360,112 @@ export type GroupMutationComputed =
         event: GroupEvent;
         receipt: GroupMutationReceipt;
         idempotency: GroupMutationIdempotencyRecord | null;
-        outbox: GroupMutationOutboxCandidate;
+        outboxEntries: readonly [ResourceEntry];
     }>;
+
+export type GroupMutationComputedWrite = Extract<
+    GroupMutationComputed,
+    { outcome: 'write' }
+>;
+
+export function computeGroupPresenceSummaryEntry(
+    computed: GroupPresenceSummaryWorkData,
+    senderId: string,
+): ResourceEntry {
+    validateGroupRef(computed.aggregateRef);
+    validateGroupEvent(
+        computed.event,
+        computed.aggregateRef,
+        'Group presence-summary work event',
+    );
+    requireNonEmptyString(computed.commandId, 'Group presence-summary commandId');
+    requireNonEmptyString(senderId, 'Group presence-summary senderId');
+    if (
+        computed.effectKind !== 'group-presence-summary' ||
+        !Number.isSafeInteger(computed.createdAtEpochMs) ||
+        !Number.isSafeInteger(computed.expireAtEpochMs) ||
+        computed.createdAtEpochMs < 0 ||
+        computed.expireAtEpochMs <= computed.createdAtEpochMs ||
+        !jsonEquals(computed.acceptedCausalRevision, computed.event.causalRevision)
+    ) {
+        throw new TypeError('Group presence-summary work facts are invalid');
+    }
+    const causalIdentity = [
+        `group=${computed.acceptedCausalRevision.groupRevision}`,
+        `presence=${computed.acceptedCausalRevision.presenceRevision}`,
+    ].join(';');
+    const resourceId = [
+        computed.commandId,
+        computed.effectKind,
+        causalIdentity,
+    ].join(':');
+    const contextId = JSON.stringify([
+        computed.aggregateRef.applicationId,
+        computed.aggregateRef.workspaceId,
+        computed.aggregateRef.groupId,
+    ]);
+    const key = toAppQueueKey({
+        topicId: APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC,
+        resourceId,
+        contextId,
+    });
+    const createdBy = toAppQueueCreatedBy(senderId);
+    const envelope = {
+        type: AppOutboxType.GROUP_PRESENCE_SUMMARY,
+        topicId: APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC,
+        resourceId,
+        contextId,
+        senderId: createdBy,
+        data: computed,
+    } as const;
+    const message: ALMessage = {
+        id: {
+            v: 2,
+            msgId: resourceId,
+            ts: computed.createdAtEpochMs,
+            senderId: createdBy,
+        },
+        route: key,
+        constraints: { expiresAtMs: computed.expireAtEpochMs },
+        ordering: {
+            orderingKey: key.contextId,
+            epoch: computed.acceptedCausalRevision.groupRevision,
+            seq: computed.acceptedCausalRevision.presenceRevision,
+        },
+        delivery: {
+            ownership: 'exclusive',
+            reliability: 'at-least-once',
+            ack: 'none',
+        },
+        payload: {
+            typeId: AppOutboxType.GROUP_PRESENCE_SUMMARY,
+            contentType: 'application/json',
+            resource: JSON.stringify(envelope),
+        },
+        audit: {
+            createdBy,
+            createdTs: computed.createdAtEpochMs,
+        },
+    };
+    const createdTs = Temporal.Instant
+        .fromEpochMilliseconds(computed.createdAtEpochMs)
+        .toZonedDateTimeISO('UTC')
+        .toPlainDateTime();
+    return {
+        key,
+        resource: JSON.stringify(message),
+        typeId: EnqueuedType.APP_OUTBOX,
+        status: EntityStatus.NEW,
+        audit: {
+            date: createdTs.toPlainTime(),
+            createdBy,
+            createdTs,
+            expiryTs: Temporal.Instant
+                .fromEpochMilliseconds(computed.expireAtEpochMs),
+        },
+        dequeueAudit: { attempts: 0 },
+    };
+}
 
 export type GroupMutationIdempotencyProbe =
     | Readonly<{ outcome: 'miss' }>
@@ -709,7 +816,12 @@ export function validateGroupMutation(input: Readonly<{
     validateGroupMutationRead(input.read, input.command);
     validateFacts(input.facts);
     validateTrustedAuthorityMode(input.command, input.facts);
-    requireJsonSafe(input.computed, 'Group mutation computed result');
+    requireJsonSafe(
+        input.computed.outcome === 'write'
+            ? { ...input.computed, outboxEntries: [] }
+            : input.computed,
+        'Group mutation computed result',
+    );
     validateComputedMutationShape(
         input.command,
         input.read,
@@ -736,9 +848,7 @@ export function validateGroupMutation(input: Readonly<{
         if (input.computed.presenceAdmission) {
             validatePresenceAdmission(input.computed.presenceAdmission.value);
         }
-        if (input.computed.outbox.commandHash !== input.facts.commandHash) {
-            throw new TypeError('Group mutation outbox hash differs from facts');
-        }
+        validateComputedOutboxEntries(input.command, input.facts, input.computed);
         if (input.computed.event.eventId !== receipt.eventId) {
             throw new TypeError('Group mutation receipt event differs from write event');
         }
@@ -1536,11 +1646,11 @@ function validateComputedMutationShape(
         case 'write':
             assertExactKeys(value, [
                 'outcome', 'guard', 'members', 'initialPresenceSummary',
-                'presenceAdmission', 'event', 'receipt', 'idempotency', 'outbox',
+                'presenceAdmission', 'event', 'receipt', 'idempotency', 'outboxEntries',
             ], 'Group mutation computed result');
             assertRequiredKeys(value, [
                 'outcome', 'guard', 'members', 'initialPresenceSummary',
-                'presenceAdmission', 'event', 'receipt', 'idempotency', 'outbox',
+                'presenceAdmission', 'event', 'receipt', 'idempotency', 'outboxEntries',
             ], 'Group mutation computed result');
             validateComputedWrite(command, read, facts, computed);
             return;
@@ -1698,7 +1808,7 @@ function validateComputedWrite(
     } else if (command.requestId !== null) {
         throw new TypeError('Group mutation computed idempotency is missing');
     }
-    validateComputedOutbox(command, read, facts, computed);
+    validateComputedOutboxEntries(command, facts, computed);
 }
 
 function expectedMutationMemberPrincipalIds(
@@ -1734,92 +1844,25 @@ function expectedMutationMemberPrincipalIds(
     }
 }
 
-function validateComputedOutbox(
+function validateComputedOutboxEntries(
     command: GroupMutationCommand,
-    read: GroupMutationRead,
     facts: GroupMutationFacts,
     computed: Extract<GroupMutationComputed, { outcome: 'write' }>,
 ): void {
-    const outbox = computed.outbox as unknown as Record<string, unknown>;
-    assertExactKeys(outbox, [
-        'kind', 'aggregateRef', 'commandId', 'commandHash', 'createdAtEpochMs',
-        'acceptedCausalRevision', 'effects', 'event',
-    ], 'Group mutation computed outbox');
-    assertRequiredKeys(outbox, [
-        'kind', 'aggregateRef', 'commandId', 'commandHash', 'createdAtEpochMs',
-        'acceptedCausalRevision', 'effects', 'event',
-    ], 'Group mutation computed outbox');
-    if (computed.outbox.kind !== 'group') {
-        throw new TypeError('Group mutation computed outbox kind is invalid');
+    if (!Array.isArray(computed.outboxEntries) || computed.outboxEntries.length !== 1) {
+        throw new TypeError('Group mutation must compute one presence-summary outbox entry');
     }
-    validateGroupRef(computed.outbox.aggregateRef);
-    if (!jsonEquals(computed.outbox.aggregateRef, command.aggregateRef)) {
-        throw new TypeError('Group mutation computed outbox scope differs from command');
-    }
-    if (computed.outbox.commandId !== command.commandId ||
-        computed.outbox.commandHash !== facts.commandHash ||
-        computed.outbox.createdAtEpochMs !== facts.nowEpochMs) {
-        throw new TypeError('Group mutation computed outbox identity differs from command');
-    }
-    if (!jsonEquals(computed.outbox.effects,
-        ['group-state-sync', 'group-presence-summary'])) {
-        throw new TypeError('Group mutation computed outbox effects are invalid');
-    }
-    const revision = requireRecord(
-        computed.outbox.acceptedCausalRevision,
-        'Group mutation computed outbox causal revision',
-    );
-    assertExactKeys(revision, [
-        'kind', 'stateRevision', 'causalRevision', 'snapshotVersion', 'metadataVersion',
-        'rosterVersion', 'presenceVersion',
-    ], 'Group mutation computed outbox causal revision');
-    assertRequiredKeys(revision, [
-        'kind', 'stateRevision', 'causalRevision', 'snapshotVersion', 'metadataVersion',
-        'rosterVersion', 'presenceVersion',
-    ], 'Group mutation computed outbox causal revision');
-    if (revision.kind !== 'group') {
-        throw new TypeError('Group mutation computed outbox revision kind is invalid');
-    }
-    for (const key of [
-        'stateRevision', 'snapshotVersion', 'metadataVersion', 'rosterVersion',
-        'presenceVersion',
-    ]) {
-        requireNonNegativeSafeInteger(revision[key],
-            `Group mutation computed outbox ${key}`);
-    }
-    const causalRevision = requireRecord(
-        revision.causalRevision,
-        'Group mutation computed outbox causal tuple',
-    );
-    assertExactKeys(causalRevision, [
-        'groupRevision',
-        'presenceRevision',
-    ], 'Group mutation computed outbox causal tuple');
-    for (const key of ['groupRevision', 'presenceRevision']) {
-        requireNonNegativeSafeInteger(
-            causalRevision[key],
-            `Group mutation computed outbox causal ${key}`,
-        );
-    }
-    const group = computed.guard.kind === 'group'
-        ? computed.guard.value
-        : requireGroup(read, command.aggregateRef).value;
-    if (revision.stateRevision !== computed.receipt.stateRevision ||
-        !jsonEquals(causalRevision, computed.receipt.causalRevision) ||
-        revision.snapshotVersion !== group.snapshotVersion ||
-        revision.presenceVersion !== computed.receipt.causalRevision.presenceRevision) {
-        throw new TypeError('Group mutation computed outbox revision differs from receipt');
-    }
-    if (revision.metadataVersion !== group.metadataVersion ||
-        revision.rosterVersion !== group.rosterVersion) {
-        throw new TypeError('Group mutation computed outbox versions differ from group');
-    }
-    const event = requireRecord(computed.outbox.event,
-        'Group mutation computed outbox event');
-    assertExactKeys(event, ['kind', 'event'], 'Group mutation computed outbox event');
-    assertRequiredKeys(event, ['kind', 'event'], 'Group mutation computed outbox event');
-    if (event.kind !== 'group' || !jsonEquals(event.event, computed.event)) {
-        throw new TypeError('Group mutation computed outbox event differs from event');
+    const expected = computeGroupPresenceSummaryEntry({
+        effectKind: 'group-presence-summary',
+        aggregateRef: command.aggregateRef,
+        commandId: command.commandId,
+        createdAtEpochMs: facts.nowEpochMs,
+        expireAtEpochMs: facts.expireAtEpochMs,
+        acceptedCausalRevision: computed.receipt.causalRevision,
+        event: computed.event,
+    }, facts.serviceId);
+    if (!jsonEquals(computed.outboxEntries[0], expected)) {
+        throw new TypeError('Group mutation presence-summary outbox entry is not canonical');
     }
 }
 
@@ -2569,22 +2612,34 @@ function computeUpsertMember(
             }));
     }
     const existing = findTargetMember(read);
+    const role = command.input.role ?? existing?.role ?? 'member';
+    const invitedByPrincipalId =
+        command.input.invitedByPrincipalId ?? existing?.invitedByPrincipalId ?? null;
+    const invitationExpiresAtEpochMs =
+        command.input.invitationExpiresAtEpochMs ??
+        existing?.invitationExpiresAtEpochMs ?? null;
+    if (
+        existing &&
+        existing.status === command.input.status &&
+        existing.role === role &&
+        existing.invitedByPrincipalId === invitedByPrincipalId &&
+        existing.invitationExpiresAtEpochMs === invitationExpiresAtEpochMs
+    ) {
+        return noOp(command, read, facts);
+    }
     const audit = auditStamp(command, facts,
         command.input.actorPrincipalId ?? command.targetPrincipalId);
     const member = transitionMemberLifecycle({
         ...command.aggregateRef,
         principalId: command.targetPrincipalId,
-        role: command.input.role ?? existing?.role ?? 'member',
+        role,
         joined: existing?.joined ?? audit,
         updated: audit,
         left: existing?.left ?? null,
         removed: existing?.removed ?? null,
         banned: existing?.banned ?? null,
-        invitedByPrincipalId:
-            command.input.invitedByPrincipalId ?? existing?.invitedByPrincipalId ?? null,
-        invitationExpiresAtEpochMs:
-            command.input.invitationExpiresAtEpochMs ??
-            existing?.invitationExpiresAtEpochMs ?? null,
+        invitedByPrincipalId,
+        invitationExpiresAtEpochMs,
     }, command.input.status, audit);
     if (existing && jsonEquals(existing, member)) return noOp(command, read, facts);
     assertNotLastOwner(requireGroup(read, command.aggregateRef).value,
@@ -2925,27 +2980,15 @@ function writeResult(
         command,
         facts,
     );
-    const outbox: GroupMutationOutboxCandidate = {
-        kind: 'group',
+    const outboxEntry = computeGroupPresenceSummaryEntry({
+        effectKind: 'group-presence-summary',
         aggregateRef: command.aggregateRef,
         commandId: command.commandId,
-        commandHash: facts.commandHash,
         createdAtEpochMs: facts.nowEpochMs,
-        acceptedCausalRevision: {
-            kind: 'group',
-            stateRevision: toGroupSnapshotStateRevision(
-                causalRevision.groupRevision,
-                causalRevision.presenceRevision,
-            ),
-            causalRevision,
-            snapshotVersion: group.snapshotVersion,
-            metadataVersion: group.metadataVersion,
-            rosterVersion: group.rosterVersion,
-            presenceVersion: causalRevision.presenceRevision,
-        },
-        effects: ['group-state-sync', 'group-presence-summary'],
-        event: { kind: 'group', event },
-    };
+        expireAtEpochMs: facts.expireAtEpochMs,
+        acceptedCausalRevision: causalRevision,
+        event,
+    }, facts.serviceId);
     const receipt = receiptFor(command, facts, {
         outcome: 'applied',
         causalRevision,
@@ -2954,7 +2997,7 @@ function writeResult(
             ? 0
             : input.guard.expectedRevision + 1,
         eventId: event.eventId,
-        outboxIds: [toStateMutationOutboxId(outbox)],
+        outboxIds: [outboxEntry.key.resourceId],
         rejection: null,
     });
     const idempotency = command.requestId === null ? null : {
@@ -2972,7 +3015,7 @@ function writeResult(
         event,
         receipt,
         idempotency,
-        outbox,
+        outboxEntries: [outboxEntry],
     };
 }
 
@@ -3668,12 +3711,16 @@ export { compareGroupCausalRevision };
 function validateFacts(facts: GroupMutationFacts): void {
     requireJsonSafe(facts, 'Group mutation facts');
     assertExactKeys(facts as unknown as Record<string, unknown>, [
-        'nowEpochMs', 'serviceId', 'eventId', 'commandHash', 'resolvedJoinCode',
+        'nowEpochMs', 'expireAtEpochMs', 'serviceId', 'eventId', 'commandHash', 'resolvedJoinCode',
         'joinCodeVerifier', 'internalAuthority', 'authenticatedAuthority',
         'attemptCount',
     ], 'Group mutation facts');
     if (!Number.isSafeInteger(facts.nowEpochMs) || facts.nowEpochMs < 0) {
         throw new TypeError('Group mutation timestamp is invalid');
+    }
+    if (!Number.isSafeInteger(facts.expireAtEpochMs) ||
+        facts.expireAtEpochMs <= facts.nowEpochMs) {
+        throw new TypeError('Group mutation expiry timestamp is invalid');
     }
     requirePositiveSafeInteger(facts.attemptCount, 'Group mutation attemptCount');
     requireNonEmptyString(facts.serviceId, 'Group mutation serviceId');

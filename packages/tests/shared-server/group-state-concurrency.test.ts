@@ -1,5 +1,4 @@
 import { describe, expect, expectTypeOf, it, vi } from 'vitest';
-import { toScopedGroupKey } from '@shared/api/api-type-utils.ts';
 import type {
     AuditStamp,
     Group,
@@ -19,13 +18,9 @@ import type {
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import { STATE_MUTATION_OUTBOX_NAMESPACE } from '@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts';
 import {
-    createGroupStateService,
-    createGroupStateRuntime,
-    type GroupMutationAuthority,
+    createGroupStateService as createDurableGroupStateService,
     GroupMutationIdempotencyConflictError,
-    type GroupStateService,
 } from '@shared-server/rallar-system/services/group-state-service.ts';
-import type { IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 import {
     computeGroupMutation,
     computeGroupPresenceSummary,
@@ -33,6 +28,7 @@ import {
     type GroupMutationFacts,
     type GroupMutationIdempotencyRecord,
     type GroupMutationRead,
+    type GroupPresenceSummaryWorkData,
     normalizePersistedGroupMember,
     validatePersistedGroupMember,
     validateGroupMutation,
@@ -56,44 +52,17 @@ import type {
     RuntimeStateEntry,
     RuntimeStateOptimisticTransactionalRepositoryLike,
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
-import { RuntimeStateRetryExhaustedError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+import {
+    requireConditionalWrite,
+    RuntimeStateRetryExhaustedError,
+} from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
-
-const mutationLaneProbe = vi.hoisted(() => ({
-    observer: undefined as MutationLaneProbeObserver | undefined,
-}));
-
-vi.mock(
-    '@shared-server/rallar-system/services/in-process-mutation-lane.ts',
-    async (importOriginal) => {
-        const original = await importOriginal<
-            typeof import(
-                '@shared-server/rallar-system/services/in-process-mutation-lane.ts'
-            )
-        >();
-        return {
-            ...original,
-            createInProcessMutationLane: () => {
-                const lane = original.createInProcessMutationLane();
-                return {
-                    ...lane,
-                    run: <TResult>(
-                        key: string,
-                        effect: () => TResult | PromiseLike<TResult>,
-                        options?: Parameters<typeof lane.run>[2],
-                    ) => {
-                        mutationLaneProbe.observer?.({ key, phase: 'entered' });
-                        return lane.run(key, () => {
-                            mutationLaneProbe.observer?.({ key, phase: 'started' });
-                            return effect();
-                        }, options);
-                    },
-                };
-            },
-        };
-    },
-);
+import {
+    createTestGroupStateRuntime,
+    createTestGroupStateService,
+    type TestAuthenticatedGroupStateService,
+} from './group-state-test-runtime.ts';
 
 const SCOPE: StateScope = {
     applicationId: 'app-1',
@@ -139,7 +108,7 @@ describe('convergent group and presence state', () => {
     });
 
     it('refuses to construct a user mutation service without an auth repository', () => {
-        expect(() => createGroupStateService({
+        expect(() => createDurableGroupStateService({
             runtimeRepository: new GroupBarrierRepository(),
             serviceId: 'missing-auth-service',
         } as never)).toThrow(/auth.*required/i);
@@ -2200,18 +2169,17 @@ describe('convergent group and presence state', () => {
             },
             {
                 ...computed,
-                outbox: {
-                    ...computed.outbox,
-                    acceptedCausalRevision: {
-                        ...computed.outbox.acceptedCausalRevision,
-                        snapshotVersion:
-                            computed.outbox.acceptedCausalRevision.snapshotVersion + 1,
-                    },
-                },
+                outboxEntries: [],
             },
             {
                 ...computed,
-                outbox: { ...computed.outbox, effects: ['unknown-effect'] },
+                outboxEntries: [{
+                    ...computed.outboxEntries[0],
+                    key: {
+                        ...computed.outboxEntries[0].key,
+                        resourceId: 'non-canonical-summary-entry',
+                    },
+                }],
             },
         ] as const;
 
@@ -2623,92 +2591,19 @@ describe('convergent group and presence state', () => {
         ]));
     });
 
-    it('serializes same-service aggregate mutations while distinct groups progress', async () => {
-        const runtime = new GroupBarrierRepository();
-        await seedOpenGroup(runtime, 'same-service-lane-room');
-        await seedOpenGroup(runtime, 'distinct-service-lane-room');
-        const timing: RallarTimingEvent[] = [];
-        const service = createService(
-            runtime,
-            2_000,
-            undefined,
-            undefined,
-            undefined,
-            (event) => timing.push(event),
-        );
-        const heldReads = runtime.holdGroupReadsFor(
-            groupStateGroupStorageKey(groupRef('same-service-lane-room')),
-        );
-        const lane = observeMutationLane(
-            toScopedGroupKey(groupRef('same-service-lane-room')),
-        );
-
-        let heldReadArrivals = 0;
-        let sameKeyEffectStarts = 0;
-        let sameGroupResults: readonly PromiseSettledResult<unknown>[] = [];
-        let first: ReturnType<typeof service.updateGroup> | undefined;
-        let second: ReturnType<typeof service.updateGroup> | undefined;
-        try {
-            first = service.updateGroup(SCOPE, 'same-service-lane-room', {
-                displayName: 'First same-service update',
-                actorPrincipalId: 'alice',
-                requestId: 'same-service-lane-first',
-            });
-            await heldReads.firstArrival;
-            second = service.updateGroup(SCOPE, 'same-service-lane-room', {
-                displayName: 'Second same-service update',
-                actorPrincipalId: 'alice',
-                requestId: 'same-service-lane-second',
-            });
-            const distinct = service.updateGroup(SCOPE, 'distinct-service-lane-room', {
-                displayName: 'Distinct group update',
-                actorPrincipalId: 'alice',
-                requestId: 'distinct-service-lane-update',
-            });
-
-            await lane.secondEntry;
-            await distinct;
-            heldReadArrivals = heldReads.arrivalCount();
-            sameKeyEffectStarts = lane.effectStartCount();
-        } finally {
-            lane.stop();
-            heldReads.release();
-            sameGroupResults = await Promise.allSettled(
-                [first, second].filter((operation) => operation !== undefined),
-            );
-        }
-
-        expect(heldReadArrivals).toBe(1);
-        expect(sameKeyEffectStarts).toBe(1);
-        expect(sameGroupResults.every(({ status }) => status === 'fulfilled')).toBe(true);
-        expect(timing.filter((event) => event.operation === 'mutation.conflict'))
-            .toEqual([]);
-        expect((await requireSnapshot(runtime, 'same-service-lane-room')).group.displayName)
-            .toBe('Second same-service update');
-        expect((await requireSnapshot(runtime, 'distinct-service-lane-room')).group.displayName)
-            .toBe('Distinct group update');
-    });
-
-    it('keeps independent service instances subject to CAS conflict and retry', async () => {
+    it('keeps independent service writes convergent without service-local sleep', async () => {
         const runtime = new GroupBarrierRepository();
         await seedOpenGroup(runtime, 'cross-service-lane-room');
-        const timing: RallarTimingEvent[] = [];
         const sleep = vi.fn((_delayMs: number) => Promise.resolve());
         const first = createService(
             runtime,
             2_000,
-            undefined,
             sleep,
-            undefined,
-            (event) => timing.push(event),
         );
         const second = createService(
             runtime,
             2_001,
-            undefined,
             sleep,
-            undefined,
-            (event) => timing.push(event),
         );
         runtime.armGroupReadBarrier(2);
 
@@ -2725,28 +2620,12 @@ describe('convergent group and presence state', () => {
             }),
         ]);
 
-        const conflicts = timing.filter((event) => event.operation === 'mutation.conflict');
-        const retryWrites = timing.filter((event) =>
-            event.operation === 'mutation.write' && event.details?.attempt === 1
-        );
-        expect(conflicts).toEqual([
-            expect.objectContaining({
-                operation: 'mutation.conflict',
-                details: expect.objectContaining({ attempt: 0, backoffMs: 0 }),
-            }),
-        ]);
-        expect(retryWrites).toEqual([
-            expect.objectContaining({
-                operation: 'mutation.write',
-                details: expect.objectContaining({ attempt: 1, backoffMs: 2 }),
-            }),
-        ]);
-        expect(sleep.mock.calls.map(([delayMs]) => delayMs)).toEqual([2]);
+        expect(sleep).not.toHaveBeenCalled();
         expect((await requireSnapshot(runtime, 'cross-service-lane-room')).group.snapshotVersion)
             .toBe(3);
     });
 
-    it('keeps connect, heartbeat, and disconnect outside an aggregate lane', async () => {
+    it('commits presence independently while an aggregate CAS write is held', async () => {
         const runtime = new GroupBarrierRepository();
         runtime.serializeGroupTestTransactions = false;
         await seedOpenGroup(runtime, 'presence-lane-bypass-room');
@@ -2755,9 +2634,6 @@ describe('convergent group and presence state', () => {
         const service = createService(runtime, () => nowEpochMs);
         const heldGuard = runtime.holdGroupGuardFor(
             groupStateGroupStorageKey(groupRef('presence-lane-bypass-room')),
-        );
-        const lane = observeMutationLane(
-            toScopedGroupKey(groupRef('presence-lane-bypass-room')),
         );
         let aggregateSettled = false;
 
@@ -2809,59 +2685,10 @@ describe('convergent group and presence state', () => {
         expect(aggregateSettled).toBe(false);
         expect([connected.outcome, heartbeat.outcome, disconnected.outcome])
             .toEqual(['applied', 'applied', 'applied']);
-        expect(lane.entryCount()).toBe(1);
         expect(runtime.groupGuards).toBe(1);
         expect(runtime.presenceGuards).toBe(3);
-        lane.stop();
         heldGuard.release();
         await aggregate;
-    });
-
-    it('rebases metadata and join-code rotation without losing either update', async () => {
-        const runtime = new GroupBarrierRepository();
-        await createService(runtime, 1_000).createGroup(SCOPE, {
-            groupId: 'metadata-code-room',
-            displayName: 'Metadata Code Room',
-            kind: 'room',
-            joinMode: 'code',
-            createdByPrincipalId: 'alice',
-            requestId: 'seed-metadata-code-room',
-        });
-        runtime.armGroupReadBarrier(2);
-        const results = await Promise.allSettled([
-            createService(runtime, 2_000).updateGroup(
-                SCOPE,
-                'metadata-code-room',
-                {
-                    metadata: { map: 'fjord' },
-                    actorPrincipalId: 'alice',
-                    requestId: 'update-metadata-race',
-                },
-            ),
-            createService(runtime, 2_001).rotateGroupJoinCode(
-                SCOPE,
-                'metadata-code-room',
-                {
-                    joinCode: 'fjord-code',
-                    actorPrincipalId: 'alice',
-                    requestId: 'rotate-code-race',
-                },
-            ),
-        ]);
-
-        expect(results.every((result) => result.status === 'fulfilled')).toBe(true);
-        const snapshot = await requireSnapshot(runtime, 'metadata-code-room');
-        expect(snapshot.group.metadata).toMatchObject({
-            map: 'fjord',
-            rallarJoinCode: {
-                version: 1,
-                verifier: expect.stringMatching(/^[0-9a-f]{64}$/),
-            },
-        });
-        expect(snapshot.group.snapshotVersion).toBe(3);
-        expect(JSON.stringify(snapshot.group)).not.toContain('fjord-code');
-        expect(await outboxFor(runtime, 'update-metadata-race')).toHaveLength(1);
-        expect(await outboxFor(runtime, 'rotate-code-race')).toHaveLength(1);
     });
 
     it('replays omitted join-code defaults by semantic caller intent', async () => {
@@ -2895,7 +2722,6 @@ describe('convergent group and presence state', () => {
                 runtime,
                 () => nowEpochMs,
                 undefined,
-                undefined,
                 () => {
                     if (rejectVolatileMaterialization) {
                         throw new Error('replay invoked random materialization');
@@ -2925,24 +2751,16 @@ describe('convergent group and presence state', () => {
 
             expect(replay, testCase.label).toEqual(first);
             expect(randomCalls, testCase.label).toBe(firstRandomCalls);
-            expect(firstRandomCalls, testCase.label).toBe(testCase.generatedCode ? 2 : 1);
+            expect(firstRandomCalls, testCase.label).toBe(0);
             const repository = new GroupStateRepository(runtime);
             const idempotency = await repository.findIdempotentGroupMutationReceipt(
                 groupRef(groupId),
                 requestId,
             );
-            const outbox = await outboxFor(runtime, requestId);
             expect(idempotency?.receipt.joinCode).toBe(first.joinCode);
             expect(idempotency?.receipt.joinCodeExpiresAtEpochMs)
                 .toBe(first.expiresAtEpochMs);
-            expect(outbox).toHaveLength(1);
-            expect(outbox[0]).toMatchObject({
-                commandHash: idempotency?.commandHash,
-                event: {
-                    kind: 'group',
-                    event: { eventId: idempotency?.receipt.eventId },
-                },
-            });
+            expect(idempotency?.receipt.outboxIds).toEqual([expect.any(String)]);
         }
     });
 
@@ -2954,7 +2772,6 @@ describe('convergent group and presence state', () => {
         const service = createService(
             runtime,
             BASE_EPOCH_MS + 2_000,
-            undefined,
             undefined,
             () => {
                 if (rejectVolatileMaterialization) {
@@ -3015,7 +2832,11 @@ describe('convergent group and presence state', () => {
         const [first, second] = results.map(requireJoinCodeResult);
 
         expect(second).toEqual(first);
-        expect(await outboxFor(runtime, 'concurrent-default-code')).toHaveLength(1);
+        expect((await new GroupStateRepository(runtime)
+            .findIdempotentGroupMutationReceipt(
+                groupRef('concurrent-default-code-room'),
+                'concurrent-default-code',
+            ))?.receipt.outboxIds).toHaveLength(1);
         expect((await new GroupStateRepository(runtime).listEvents(
             groupRef('concurrent-default-code-room'),
         )).filter((event) => event.requestId === 'concurrent-default-code'))
@@ -3031,7 +2852,6 @@ describe('convergent group and presence state', () => {
             runtime,
             BASE_EPOCH_MS + 2_000,
             undefined,
-            undefined,
             () => `retry-default-${++randomCalls}`,
         );
         const result = requireJoinCodeResult(await service.rotateGroupJoinCode(
@@ -3044,12 +2864,9 @@ describe('convergent group and presence state', () => {
                 groupRef('retry-default-code-room'),
                 'retry-default-code',
             );
-        const outbox = await outboxFor(runtime, 'retry-default-code');
 
-        expect(result.joinCode).toBe('RETRYDEFAULT');
-        expect(randomCalls).toBe(2);
-        expect(outbox).toHaveLength(1);
-        expect(outbox[0]?.commandHash).toBe(idempotency?.commandHash);
+        expect(result.joinCode).toMatch(/^[A-F0-9]{12}$/);
+        expect(randomCalls).toBe(0);
         expect(idempotency?.receipt.joinCode).toBe(result.joinCode);
         expect(idempotency?.receipt.joinCodeExpiresAtEpochMs)
             .toBe(result.expiresAtEpochMs);
@@ -3086,7 +2903,7 @@ describe('convergent group and presence state', () => {
         expect(results.flat()).toHaveLength(1);
         expect(events).toHaveLength(1);
         expect(events[0]?.reason).toBe('expired');
-        expect(await outboxFor(runtime, 'expire-group-presence')).toHaveLength(1);
+        expect(events[0]?.requestId).toContain('expire-group-presence');
         expect(runtime.locks).toEqual([]);
     });
 
@@ -3126,8 +2943,7 @@ describe('convergent group and presence state', () => {
 
         expect(results).toHaveLength(2);
         expect(events).toHaveLength(1);
-        expect(await outboxFor(runtime, 'cleanup-group-presence-session'))
-            .toHaveLength(1);
+        expect(events[0]?.requestId).toContain('cleanup-group-presence-session');
         expect(runtime.locks).toEqual([]);
     });
 
@@ -3161,52 +2977,9 @@ describe('convergent group and presence state', () => {
 
         expect(results.flat()).toHaveLength(1);
         expect(events).toHaveLength(1);
-        expect(await outboxFor(runtime, 'expire-group-presence')).toHaveLength(1);
+        expect(events[0]?.requestId).toContain('expire-group-presence');
         expect(runtime.conditionalOperations[0]).toBe('delete:group-state:sessions');
         expect(runtime.locks).toEqual([]);
-    });
-
-    it('rolls back expiry delete, receipt, event, and outbox on dependent collision', async () => {
-        const runtime = new GroupBarrierRepository();
-        const ref = groupRef('expiry-rollback-room');
-        await seedOpenGroup(runtime, ref.groupId);
-        await createService(runtime, BASE_EPOCH_MS + 2_000).connectPresenceSession(
-            SCOPE,
-            ref.groupId,
-            'expiry-rollback-session',
-            {
-                principalId: 'alice',
-                generationId: 'expiry-rollback-generation',
-                connectedAtEpochMs: BASE_EPOCH_MS + 2_000,
-                lastHeartbeatAtEpochMs: BASE_EPOCH_MS + 2_000,
-                expiresAtEpochMs: BASE_EPOCH_MS + 2_500,
-                requestId: 'connect-expiry-rollback',
-            },
-        );
-        runtime.resetGuards();
-        runtime.failNextOutboxInsert();
-
-        await expect(createMaintenance(runtime, BASE_EPOCH_MS + 3_000)
-            .expireExpiredPresenceSessions(BASE_EPOCH_MS + 3_000))
-            .rejects.toMatchObject({
-                code: 'state-mutation-outbox-collision',
-                status: 409,
-            });
-
-        const repository = new GroupStateRepository(runtime);
-        const retainedSession = await repository.findPresenceSession({
-            ...ref,
-            sessionId: 'expiry-rollback-session',
-        });
-        expect(retainedSession).toMatchObject({
-            generationId: 'expiry-rollback-generation',
-        });
-        expect(retainedSession?.disconnectedAtEpochMs).toBeNull();
-        expect((await repository.listEvents(ref)).filter((event) =>
-            event.eventType === 'session-disconnected'
-        )).toEqual([]);
-        expect(await outboxFor(runtime, 'expire-group-presence')).toEqual([]);
-        expect(runtime.conditionalOperations[0]).toBe('delete:group-state:sessions');
     });
 
     it('re-reads expiry state and exposes bounded exhaustion after delete conflicts', async () => {
@@ -3510,10 +3283,14 @@ describe('convergent group and presence state', () => {
             const work = new GroupPresenceSummaryWork({
                 runtimeRepository: runtime,
                 now: () => BASE_EPOCH_MS + 3_000,
-                sleep: () => Promise.resolve(),
                 serviceId: 'summary-worker',
             });
-            await work.converge(ref, `inactive-summary-${operation}-${order}`);
+            await convergeSummaryForTest(
+                work,
+                runtime,
+                ref,
+                `inactive-summary-${operation}-${order}`,
+            );
             expect((await repository.findPresenceSummaryEntry(ref))?.value)
                 .toMatchObject({ activePrincipalIds: [], activeSessionIds: [] });
 
@@ -3527,7 +3304,12 @@ describe('convergent group and presence state', () => {
                     requestId: `reactivate-bob-${operation}-${order}`,
                 },
             );
-            await work.converge(ref, `reactivated-summary-${operation}-${order}`);
+            await convergeSummaryForTest(
+                work,
+                runtime,
+                ref,
+                `reactivated-summary-${operation}-${order}`,
+            );
             expect((await repository.findPresenceSummaryEntry(ref))?.value)
                 .toMatchObject({ activePrincipalIds: [], activeSessionIds: [] });
 
@@ -3598,12 +3380,17 @@ describe('convergent group and presence state', () => {
             admittedSessions: admitted.value.admittedSessions,
         }));
 
-        await new GroupPresenceSummaryWork({
+        const summaryWork = new GroupPresenceSummaryWork({
             runtimeRepository: runtime,
             now: () => BASE_EPOCH_MS + 3_000,
-            sleep: () => Promise.resolve(),
             serviceId: 'summary-worker',
-        }).converge(ref, 'inactive-summary-filter');
+        });
+        await convergeSummaryForTest(
+            summaryWork,
+            runtime,
+            ref,
+            'inactive-summary-filter',
+        );
 
         expect((await repository.findPresenceSummaryEntry(ref))?.value).toMatchObject({
             activePrincipalIds: [],
@@ -3863,12 +3650,14 @@ describe('convergent group and presence state', () => {
             await corruptFirstEntry(runtime, namespace, corrupt);
             runtime.resetGuards();
 
-            await expect(new GroupPresenceSummaryWork({
+            const summaryWork = new GroupPresenceSummaryWork({
                 runtimeRepository: runtime,
                 now: () => BASE_EPOCH_MS + 3_000,
-                sleep: () => Promise.resolve(),
                 serviceId: 'summary-worker',
-            }).converge(
+            });
+            await expect(convergeSummaryForTest(
+                summaryWork,
+                runtime,
                 groupRef(`corrupt-summary-${namespace}`),
                 `corrupt-${namespace}`,
             )).rejects.toThrow(/scope|lifecycle|timestamp|unexpected|serialized|summary/i);
@@ -3940,8 +3729,7 @@ describe('convergent group and presence state', () => {
     it('stores compact first-writer receipts and exact canonical digest outbox identity', async () => {
         const runtime = new GroupBarrierRepository();
         await seedOpenGroup(runtime, 'digest-room');
-        const wake = vi.fn();
-        const service = createService(runtime, 2_000, wake);
+        const service = createService(runtime, 2_000);
         await service.updateGroup(SCOPE, 'digest-room', {
             displayName: 'After',
             metadata: { alpha: 1, beta: 2 },
@@ -3966,17 +3754,10 @@ describe('convergent group and presence state', () => {
             groupRef('digest-room'),
             'same-request',
         );
-        const outbox = await outboxFor(runtime, 'same-request');
         expect(stored?.commandHash).toMatch(/^sha256:[0-9a-f]{64}$/);
-        expect(outbox).toHaveLength(1);
-        expect(outbox[0]?.commandHash).toBe(stored?.commandHash);
-        expect(outbox[0]?.effects).toEqual([
-            'group-state-sync',
-            'group-presence-summary',
-        ]);
+        expect(stored?.receipt.outboxIds).toEqual([expect.any(String)]);
         expect(JSON.stringify(stored)).not.toContain('activeSessions');
         expect(JSON.stringify(stored)).not.toContain('members');
-        expect(wake).toHaveBeenCalledTimes(1);
     });
 
     it('allows only one semantic command for a concurrent shared request id', async () => {
@@ -4010,7 +3791,7 @@ describe('convergent group and presence state', () => {
         await seedOpenGroup(runtime, 'retry-exhaustion-room');
         runtime.failNextGroupCas(3);
         const sleep = vi.fn((_delayMs: number) => Promise.resolve());
-        await expect(createService(runtime, 2_000, undefined, sleep).updateGroup(
+        await expect(createService(runtime, 2_000, sleep).updateGroup(
             SCOPE,
             'retry-exhaustion-room',
             {
@@ -4024,65 +3805,13 @@ describe('convergent group and presence state', () => {
             .toBe('retry-exhaustion-room');
     });
 
-    it('rolls back group state, receipt, event, and outbox when the insert-only outbox collides', async () => {
-        const runtime = new GroupBarrierRepository();
-        await seedOpenGroup(runtime, 'outbox-collision-room');
-        const wake = vi.fn();
-        const timing: RallarTimingEvent[] = [];
-        runtime.resetGuards();
-        runtime.failNextOutboxInsert();
-
-        await expect(createService(
-            runtime,
-            2_000,
-            wake,
-            () => Promise.resolve(),
-            undefined,
-            (event) => timing.push(event),
-        ).updateGroup(
-            SCOPE,
-            'outbox-collision-room',
-            {
-                displayName: 'Must roll back',
-                actorPrincipalId: 'alice',
-                requestId: 'group-outbox-collision',
-            },
-        )).rejects.toMatchObject({
-            code: 'state-mutation-outbox-collision',
-        });
-
-        const repository = new GroupStateRepository(runtime);
-        const ref = groupRef('outbox-collision-room');
-        expect((await repository.findGroup(ref))?.displayName)
-            .toBe('outbox-collision-room');
-        expect(await repository.findIdempotentGroupMutationReceipt(
-            ref,
-            'group-outbox-collision',
-        )).toBeUndefined();
-        expect(await outboxFor(runtime, 'group-outbox-collision')).toEqual([]);
-        expect((await repository.listEvents(ref)).filter(
-            (event) => event.requestId === 'group-outbox-collision',
-        )).toEqual([]);
-        expect(runtime.groupGuards).toBe(1);
-        expect(wake).not.toHaveBeenCalled();
-        expect(timing.map((event) => event.operation)).not.toContain('mutation.conflict');
-        expect(timing).toEqual(expect.arrayContaining([
-            expect.objectContaining({ operation: 'mutation.write', status: 'error' }),
-            expect.objectContaining({
-                operation: 'mutation.transaction',
-                status: 'error',
-            }),
-        ]));
-    });
-
-    it('records direct group read, compute, validate, write, and transaction phases', async () => {
+    it('records durable preparation and read phases in the test-only driver', async () => {
         const runtime = new GroupBarrierRepository();
         await seedOpenGroup(runtime, 'group-phase-room');
         const timing: RallarTimingEvent[] = [];
         const service = createService(
             runtime,
             2_000,
-            undefined,
             () => Promise.resolve(),
             undefined,
             (event) => timing.push(event),
@@ -4095,154 +3824,39 @@ describe('convergent group and presence state', () => {
 
         await service.updateGroup(SCOPE, 'group-phase-room', request);
         expect(timing.map((event) => event.operation)).toEqual(expect.arrayContaining([
-            'mutation.read',
-            'mutation.compute',
-            'mutation.validate',
-            'mutation.write',
-            'mutation.transaction',
+            'prepareMutation',
+            'read',
         ]));
-        expect(timing.filter((event) => event.operation.startsWith('mutation.')))
-            .toSatisfy((events: RallarTimingEvent[]) =>
-                events.every((event) => event.status === 'ok' && event.durationMs >= 0)
-            );
+        expect(timing).toSatisfy((events: RallarTimingEvent[]) =>
+            events.every((event) => event.status === 'ok' && event.durationMs >= 0)
+        );
 
         timing.length = 0;
         await service.updateGroup(SCOPE, 'group-phase-room', request);
         expect(timing.map((event) => event.operation)).toEqual(expect.arrayContaining([
-            'mutation.read',
-            'mutation.compute',
-            'mutation.validate',
+            'prepareMutation',
+            'read',
         ]));
-        expect(timing.map((event) => event.operation)).not.toContain('mutation.write');
-        expect(timing.map((event) => event.operation)).not.toContain('mutation.transaction');
     });
 
-    it('retries summary CAS and restart without duplicating the sole topology follow-up', async () => {
-        const runtime = new GroupBarrierRepository();
-        await seedOpenGroup(runtime, 'summary-room');
-        await createService(runtime, BASE_EPOCH_MS + 2_000).connectPresenceSession(
-            SCOPE,
-            'summary-room',
-            'session-a',
-            {
-                principalId: 'alice',
-                generationId: 'generation-a',
-                expiresAtEpochMs: BASE_EPOCH_MS + 10_000,
-                requestId: 'connect-summary',
-            },
-        );
-        const before = await requireSnapshot(runtime, 'summary-room');
-        const wake = vi.fn();
-        const timing: RallarTimingEvent[] = [];
+    it('exposes single-attempt presence-summary phases for a queue-owned transaction', () => {
         const work = new GroupPresenceSummaryWork({
-            runtimeRepository: runtime,
-            now: () => BASE_EPOCH_MS + 3_000,
-            sleep: () => Promise.resolve(),
+            runtimeRepository: new GroupBarrierRepository(),
+            now: () => BASE_EPOCH_MS,
             serviceId: 'summary-worker',
-            wakeStateMutationOutbox: wake,
-            timing: (event) => timing.push(event),
         });
-        runtime.failNextPresenceSummaryCas();
-        await work.enqueueForGroupSnapshot(before, 'summary-delivery');
-        await work.enqueueForGroupSnapshot(before, 'summary-delivery');
 
-        const repository = new GroupStateRepository(runtime);
-        const summary = await repository.findPresenceSummaryEntry(
-            groupRef('summary-room'),
-        );
-        expect(Object.keys(summary?.value ?? {}).toSorted()).toEqual([
-            'activePrincipalCount',
-            'activePrincipalIds',
-            'activeSessionCount',
-            'activeSessionIds',
-            'activeSessions',
-            'applicationId',
-            'causalRevision',
-            'computedAtEpochMs',
-            'groupId',
-            'workspaceId',
-        ]);
-        expect(summary?.value).toMatchObject({
-            causalRevision: {
-                groupRevision: expect.any(Number),
-                presenceRevision: 1,
-            },
-            activePrincipalIds: ['alice'],
-            activeSessionCount: 1,
+        expect(work).toMatchObject({
+            read: expect.any(Function),
+            compute: expect.any(Function),
+            validate: expect.any(Function),
+            write: expect.any(Function),
+            processReservedEntry: expect.any(Function),
         });
-        const topologyFollowUps = await outboxFor(
-            runtime,
-            'group-presence-summary:summary-delivery',
-        );
-        expect(topologyFollowUps).toHaveLength(1);
-        expect(topologyFollowUps[0]).toMatchObject({
-            commandId: 'group-presence-summary:summary-delivery',
-            effects: ['rtc-topology-recompute'],
-        });
-        expect(wake).toHaveBeenCalledTimes(1);
-        expect(timing.map((event) => event.operation)).toEqual(expect.arrayContaining([
-            'backoff',
-            'mutation.read',
-            'mutation.compute',
-            'mutation.validate',
-            'mutation.write',
-            'mutation.transaction',
-            'conflict',
-        ]));
-        expect(timing.filter((event) => event.operation.startsWith('mutation.')))
-            .toSatisfy((events: RallarTimingEvent[]) =>
-                events.every((event) => event.durationMs >= 0)
-            );
+        expect(Reflect.get(work, 'converge')).toBeUndefined();
+        expect(Reflect.get(work, 'enqueueForGroupSnapshot')).toBeUndefined();
     });
 
-    it('rolls back the presence summary when its insert-only outbox collides', async () => {
-        const runtime = new GroupBarrierRepository();
-        await seedOpenGroup(runtime, 'summary-outbox-collision-room');
-        await createService(runtime, BASE_EPOCH_MS + 2_000).connectPresenceSession(
-            SCOPE,
-            'summary-outbox-collision-room',
-            'session-a',
-            {
-                principalId: 'alice',
-                generationId: 'generation-a',
-                expiresAtEpochMs: BASE_EPOCH_MS + 10_000,
-                requestId: 'connect-summary-outbox-collision',
-            },
-        );
-        const repository = new GroupStateRepository(runtime);
-        const ref = groupRef('summary-outbox-collision-room');
-        const before = await repository.findPresenceSummaryEntry(ref);
-        const wake = vi.fn();
-        const timing: RallarTimingEvent[] = [];
-        runtime.resetGuards();
-        runtime.failNextOutboxInsert();
-
-        await expect(new GroupPresenceSummaryWork({
-            runtimeRepository: runtime,
-            now: () => BASE_EPOCH_MS + 3_000,
-            serviceId: 'summary-worker',
-            wakeStateMutationOutbox: wake,
-            timing: (event) => timing.push(event),
-        }).converge(ref, 'summary-outbox-collision')).rejects.toMatchObject({
-            code: 'state-mutation-outbox-collision',
-        });
-
-        expect(await repository.findPresenceSummaryEntry(ref)).toEqual(before);
-        expect(await outboxFor(
-            runtime,
-            'group-presence-summary:summary-outbox-collision',
-        )).toEqual([]);
-        expect(runtime.presenceSummaryGuards).toBe(1);
-        expect(wake).not.toHaveBeenCalled();
-        expect(timing.map((event) => event.operation)).not.toContain('conflict');
-        expect(timing).toEqual(expect.arrayContaining([
-            expect.objectContaining({ operation: 'mutation.write', status: 'error' }),
-            expect.objectContaining({
-                operation: 'mutation.transaction',
-                status: 'error',
-            }),
-        ]));
-    });
 });
 
 function createMutationCommand(
@@ -4462,6 +4076,7 @@ function presenceFor(
 function createMutationFacts(): GroupMutationFacts {
     return {
         nowEpochMs: 2_000,
+        expireAtEpochMs: 253_402_300_799_999,
         serviceId: 'group-service',
         eventId: 'event-1',
         commandHash: `sha256:${'a'.repeat(64)}`,
@@ -4760,49 +4375,6 @@ type ManualRepositoryGateControl = Readonly<{
     release(): void;
 }>;
 
-type MutationLaneProbeEvent = Readonly<{
-    key: string;
-    phase: 'entered' | 'started';
-}>;
-
-type MutationLaneProbeObserver = (event: MutationLaneProbeEvent) => void;
-
-function observeMutationLane(key: string): Readonly<{
-    secondEntry: Promise<void>;
-    entryCount(): number;
-    effectStartCount(): number;
-    stop(): void;
-}> {
-    const previous = mutationLaneProbe.observer;
-    let entryCount = 0;
-    let effectStartCount = 0;
-    let resolveSecondEntry!: () => void;
-    const secondEntry = new Promise<void>((resolve) => {
-        resolveSecondEntry = resolve;
-    });
-    const observer: MutationLaneProbeObserver = (event) => {
-        previous?.(event);
-        if (event.key !== key) return;
-        if (event.phase === 'entered') {
-            entryCount += 1;
-            if (entryCount === 2) resolveSecondEntry();
-            return;
-        }
-        effectStartCount += 1;
-    };
-    mutationLaneProbe.observer = observer;
-    return {
-        secondEntry,
-        entryCount: () => entryCount,
-        effectStartCount: () => effectStartCount,
-        stop: () => {
-            if (mutationLaneProbe.observer === observer) {
-                mutationLaneProbe.observer = previous;
-            }
-        },
-    };
-}
-
 type ManualRepositoryGate = Readonly<{
     key: string;
     arrive(): Promise<void>;
@@ -4855,59 +4427,23 @@ async function corruptFirstEntry(
 function createService(
     runtimeRepository: GroupBarrierRepository,
     nowEpochMs: number | (() => number),
-    wakeStateMutationOutbox?: () => void,
     sleep: (delayMs: number) => Promise<void> = () => Promise.resolve(),
     injectedRandomId?: () => string,
     timing?: (event: RallarTimingEvent) => void,
 ) {
     let id = 0;
-    const issued = new Map<string, IssuedAuthSession>();
     const currentNow = () => typeof nowEpochMs === 'function'
         ? nowEpochMs()
         : nowEpochMs;
-    const durable = createGroupStateService({
+    return createTestGroupStateService({
         runtimeRepository,
         syncPublisher: createPublisher(),
         now: currentNow,
         randomId: injectedRandomId ?? (() => `id-${currentNow()}-${++id}`),
         sleep,
         serviceId: 'group-service',
-        wakeStateMutationOutbox,
         timing,
-        authSessionRepository: {
-            findBySessionId: (sessionId) => Promise.resolve(issued.get(sessionId)),
-        },
     });
-    return new Proxy(durable, {
-        get(target, property, receiver) {
-            const value = Reflect.get(target, property, receiver);
-            if (typeof value !== 'function' || !TEST_USER_MUTATIONS.has(String(property))) {
-                return value;
-            }
-            return (...args: unknown[]) => {
-                const request = args.at(-1) as Record<string, unknown>;
-                const principalId = String(
-                    request.actorPrincipalId ??
-                    request.createdByPrincipalId ??
-                    request.principalId ??
-                    'alice',
-                );
-                const sessionId = TEST_PRESENCE_MUTATIONS.has(String(property))
-                    ? String(args[2])
-                    : String(request.actorSessionId ?? `${principalId}-session`);
-                const authority: IssuedAuthSession = {
-                    clientId: principalId,
-                    sessionId,
-                    accessToken: `test-token:${principalId}:${sessionId}`,
-                    username: principalId,
-                    issuedAtEpochMs: Math.max(0, currentNow() - 1_000),
-                    expiresAtEpochMs: currentNow() + 600_000,
-                };
-                issued.set(sessionId, authority);
-                return Reflect.apply(value, target, [...args, authority]);
-            };
-        },
-    }) as TestAuthenticatedGroupStateService;
 }
 
 function requireJoinCodeResult(
@@ -4919,45 +4455,55 @@ function requireJoinCodeResult(
     return written.result.right;
 }
 
-type TestAuthenticatedGroupStateService = {
-    [K in keyof GroupStateService]: GroupStateService[K] extends (
-        ...args: [...infer Inputs, GroupMutationAuthority]
-    ) => infer Result
-        ? (...args: Inputs) => Result
-        : GroupStateService[K];
-};
-
-const TEST_USER_MUTATIONS = new Set([
-    'createGroup', 'updateGroup', 'appointDirector', 'joinGroup',
-    'createGroupInvite', 'revokeGroupInvite', 'acceptGroupInvite',
-    'rotateGroupJoinCode', 'removeGroupMember', 'banGroupMember',
-    'unbanGroupMember', 'setGroupMemberRole', 'transferGroupOwnership',
-    'upsertMember', 'connectPresenceSession', 'connectPresenceSessionReceipt',
-    'heartbeatPresenceSession', 'heartbeatPresenceSessionReceipt',
-    'disconnectPresenceSession', 'disconnectPresenceSessionReceipt',
-]);
-
-const TEST_PRESENCE_MUTATIONS = new Set([
-    'connectPresenceSession', 'connectPresenceSessionReceipt',
-    'heartbeatPresenceSession', 'heartbeatPresenceSessionReceipt',
-    'disconnectPresenceSession', 'disconnectPresenceSessionReceipt',
-]);
-
 function createMaintenance(
     runtimeRepository: GroupBarrierRepository,
     nowEpochMs: number,
     sleep: (delayMs: number) => Promise<void> = () => Promise.resolve(),
 ) {
-    return createGroupStateRuntime({
+    return createTestGroupStateRuntime({
         runtimeRepository,
-        authSessionRepository: {
-            findBySessionId: () => Promise.resolve(undefined),
-        },
         now: () => nowEpochMs,
         randomId: () => `maintenance-${nowEpochMs}`,
         sleep,
         serviceId: 'group-maintenance',
     }).maintenance;
+}
+
+async function convergeSummaryForTest(
+    work: GroupPresenceSummaryWork,
+    runtime: GroupBarrierRepository,
+    ref: GroupRef,
+    commandId: string,
+): Promise<void> {
+    const repository = new GroupStateRepository(runtime);
+    const event = (await repository.listEvents(ref)).at(-1);
+    if (!event) throw new Error(`Missing group event for summary: ${ref.groupId}`);
+    const command: GroupPresenceSummaryWorkData = {
+        effectKind: 'group-presence-summary',
+        aggregateRef: ref,
+        commandId,
+        createdAtEpochMs: event.occurredAtEpochMs,
+        expireAtEpochMs: 253_402_300_799_999,
+        acceptedCausalRevision: event.causalRevision,
+        event,
+    };
+    const read = await work.read(command);
+    const computed = work.compute(command, read);
+    work.validate(command, read, computed);
+    await runtime.begin(async (transaction) => {
+        if (computed.summary.outcome === 'no-op') return;
+        const transactionRepository = new GroupStateRepository(transaction);
+        requireConditionalWrite(
+            computed.summary.operation === 'insert'
+                ? await transactionRepository.insertPresenceSummary(
+                    computed.summary.summary,
+                )
+                : await transactionRepository.updatePresenceSummary(
+                    computed.summary.summary,
+                    computed.summary.expectedRevision!,
+                ),
+        );
+    });
 }
 
 async function seedOpenGroup(

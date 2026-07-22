@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from "vitest";
 import type { GroupRef } from "@shared/api/group-types.ts";
 import type { StateScope } from "@shared/api/state-types.ts";
 import { GroupStateRepository } from "@shared-server/rallar-system/repositories/GroupStateRepository.ts";
-import { STATE_MUTATION_OUTBOX_NAMESPACE } from "@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts";
 import { groupStateMaintenanceRequestId } from "@shared-server/rallar-system/services/group-state-service.ts";
 import {
   createTestGroupStateRuntime,
@@ -41,14 +40,13 @@ describe("GroupStateService command idempotency", () => {
       expect.arrayContaining([
         expect.objectContaining({
           component: "group-state-service",
-          operation: "createGroup",
+          operation: "read",
           status: "ok",
           serviceId: "group-service",
           requestId: "create-timed-room",
           applicationId: SCOPE.applicationId,
           workspaceId: SCOPE.workspaceId,
           groupId: "timed-room",
-          principalId: "alice",
         }),
       ]),
     );
@@ -537,20 +535,14 @@ describe("GroupStateService command idempotency", () => {
         traceId: null,
       },
     });
-    expect(
-      await repository.findIdempotentGroupMutationReceipt(
-        groupRef,
-        expiryRequestId,
-      ),
-    ).toMatchObject({ receipt: { outcome: "applied" } });
-    const expiryOutbox = (
-      await runtimeRepository.findAllEntries(STATE_MUTATION_OUTBOX_NAMESPACE)
-    ).map((entry) => JSON.parse(entry.value) as Record<string, unknown>)
-      .filter((record) => record.commandId === expiryRequestId);
-    expect(expiryOutbox).toHaveLength(1);
-    expect(expiryOutbox[0]).toMatchObject({
-      effects: ["group-state-sync", "group-presence-summary"],
-      delivery: { status: "pending" },
+    expect(await repository.findIdempotentGroupMutationReceipt(
+      groupRef,
+      expiryRequestId,
+    )).toMatchObject({
+      receipt: {
+        outcome: "applied",
+        outboxIds: [expect.any(String)],
+      },
     });
     expect(
       (await repository.listEvents(groupRef)).map((event) => event.eventType),

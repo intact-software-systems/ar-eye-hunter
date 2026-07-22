@@ -10,7 +10,6 @@ import {
   createGroupStateEventRepository,
   createRuntimeStateRepository,
 } from '../repository/createStateRepositories.ts';
-import { getWsStateSyncPublisher } from './state-sync-service.ts';
 import { getApiTimingSink } from './timing-service.ts';
 
 export { createGroupStateService, type GroupStateService, type GroupStateServiceDependencies };
@@ -26,7 +25,6 @@ export function getGroupStateService(): ApiGroupStateService {
     runtimeRepository,
     authSessionRepository: createAuthSessionRepository(runtimeRepository),
     createGroupStateEventStore: createGroupStateEventRepository,
-    syncPublisher: getWsStateSyncPublisher(),
     serviceId: myServerId,
     timing: getApiTimingSink(),
   });

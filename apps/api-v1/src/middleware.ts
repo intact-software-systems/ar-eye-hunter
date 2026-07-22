@@ -24,6 +24,7 @@ import {
 import { installQueueBoxPubSubBridge } from '@shared-server/rallar-system/pubsub/QueueBoxPubSubBridge.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/services/AppClientInboxService.ts';
 import { AppGroupInboxService } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
+import { AppOutboxType } from '@shared-server/rallar-system/services/AppOutboxService.ts';
 import {
   createAppInboxRetryExhaustionHandler,
   createAppInboxRetryExhaustionRecoveryHandler,
@@ -38,8 +39,7 @@ import {
 } from '@shared-server/rallar-system/services/group-topology-config-generation-backfill.ts';
 import { createClientStateService } from '@shared-server/rallar-system/services/client-state-service.ts';
 import {
-  createGroupStateRuntime,
-  type GroupStateMaintenanceService,
+  createGroupStateService,
 } from '@shared-server/rallar-system/services/group-state-service.ts';
 import {
   type CachedClientStateService,
@@ -117,7 +117,6 @@ export type Middleware =
   }>;
 
 let middleware: Middleware | undefined = undefined;
-let groupStateMaintenanceService: GroupStateMaintenanceService | undefined;
 const runtimeStateExpiryLifecycle = createRuntimeStateExpiryLifecycle();
 const middlewareBackgroundTaskStops = new Set<() => void>();
 
@@ -126,13 +125,6 @@ export function getMiddleware(): Middleware {
     throw new Error('Middleware not initialised');
   }
   return middleware;
-}
-
-export function getGroupStateMaintenanceService(): GroupStateMaintenanceService {
-  if (groupStateMaintenanceService === undefined) {
-    throw new Error('Group state maintenance service not initialised');
-  }
-  return groupStateMaintenanceService;
 }
 
 export function initialiseMiddleware() {
@@ -290,21 +282,35 @@ function initialise(
     outboundStores: resolveServerWsQBoxALOutboundRuntimeStores(wsRuntimeName),
     createAppGroupInboxService: ({
       inboxQueueReader,
+      outboxQueueReader,
       wakeQueueEngine,
     }) => {
-      const durableRuntime = createGroupStateRuntime({
+      const durable = createGroupStateService({
         runtimeRepository: runtimeStateRepository,
         authSessionRepository: createAuthSessionRepository(runtimeStateRepository),
         createGroupStateEventStore: createGroupStateEventRepository,
         serviceId: myServerId,
-        wakeStateMutationOutbox: wakeQueueEngine,
         timing,
       });
-      groupStateMaintenanceService = durableRuntime.maintenance;
       const groupStateService = createCachedGroupStateService({
-        durable: durableRuntime.service,
+        durable,
         cache: groupSnapshotReadThroughCache,
       });
+      const presenceSummary = new GroupPresenceSummaryWork({
+        runtimeRepository: runtimeStateRepository,
+        database: postgresSql,
+        serviceId: myServerId,
+        wakeQueue: wakeQueueEngine,
+        now,
+        timing,
+      });
+      outboxQueueReader.onOutboxMessageDo(
+        AppOutboxType.GROUP_PRESENCE_SUMMARY,
+        {
+          onMessage: async (message, entry) =>
+            await presenceSummary.processReservedEntry(message, entry),
+        },
+      );
       return new AppGroupInboxService(
         inboxQueueReader,
         resourceInboxRepository,
@@ -314,6 +320,7 @@ function initialise(
         myServerId,
         timing,
         appInboxOptions,
+        wakeQueueEngine,
       );
     },
     createAppClientInboxService: ({ inboxQueueReader }) => {
@@ -371,13 +378,6 @@ function initialise(
         repository: new StateMutationOutboxRepository(runtimeStateRepository),
         readClientSnapshot: (ref) => clientsRepository.readSnapshot(ref),
         readGroupSnapshot: (ref) => groupsRepository.readSnapshot(ref),
-        groupPresenceSummaryPublisher: new GroupPresenceSummaryWork({
-          runtimeRepository: runtimeStateRepository,
-          serviceId: myServerId,
-          wakeStateMutationOutbox: wakeQueueEngine,
-          now,
-          timing,
-        }),
         rtcTopologyPublisher: topologyOutbox.publisher,
         stateSyncServerId: myServerId,
         senderId: myServerId,
@@ -404,7 +404,7 @@ function initialise(
 
   initPresenceExpiryReconciliation({
     appClientInboxService: runtime.appClientInboxService,
-    groupStateMaintenanceService: getGroupStateMaintenanceService(),
+    appGroupInboxService: runtime.appGroupInboxService,
   })
     .catch((e) => console.error('Failed to initialise presence expiry reconciliation:', e));
 

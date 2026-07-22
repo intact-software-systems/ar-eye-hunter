@@ -18,7 +18,7 @@ const SCOPE = {
 const BASE_EPOCH_MS = 1_900_000_000_000;
 
 describe('GroupStateService guarded batch convergence', () => {
-  it('converges independent group services through a guarded retry', async () => {
+  it('converges independent group services after a guarded conflict re-read', async () => {
     const runtime = new ApplyingGuardedBatchRepository();
     runtime.serializeTransactions = true;
     const eventStore = new OrderedGroupEventStore(runtime);
@@ -70,10 +70,9 @@ describe('GroupStateService guarded batch convergence', () => {
       ),
     ]);
     expect(results.every(({ status }) => status === 'ok')).toBe(true);
-    expect(receipts.map((stored) => stored?.receipt.attemptCount).sort()).toEqual([1, 2]);
-    expect(runtime.batches).toHaveLength(3);
-    expect(sleep).toHaveBeenCalledOnce();
-    expect(sleep).toHaveBeenCalledWith(2);
+    expect(receipts.map((stored) => stored?.receipt.attemptCount).sort()).toEqual([1, 1]);
+    expect(runtime.batches).toHaveLength(2);
+    expect(sleep).not.toHaveBeenCalled();
     expect(snapshot?.group.snapshotVersion).toBe(3);
     expect(snapshot?.group.displayName).toBe('Independent first');
     expect(snapshot?.group.description).toBe('Independent second');

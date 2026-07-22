@@ -42,6 +42,12 @@ type GroupStateEventRow = Readonly<{
     event_json: string;
 }>;
 
+type GroupStateEventCollisionRow = GroupStateEventRow & Readonly<{
+    application_id: string;
+    workspace_key: string;
+    group_id: string;
+}>;
+
 const DEFAULT_WORKSPACE_KEY = '_';
 
 export class GroupStateEventCollisionError extends Error {
@@ -287,6 +293,7 @@ export class PSqlGroupStateEventRepository implements GroupStateEventStore {
 
     async appendGroupEvent(event: GroupEvent): Promise<void> {
         assertCompleteGroupEvent(event, event);
+        const eventJson = JSON.stringify(event);
         const inserted = await this.sql<{ event_id: string }[]>`
             insert into group_state_events (application_id,
                                             workspace_key,
@@ -303,14 +310,28 @@ export class PSqlGroupStateEventRepository implements GroupStateEventStore {
                     ${event.eventType},
                     ${event.snapshotVersion},
                     ${event.occurredAtEpochMs},
-                    ${JSON.stringify(event)})
+                    ${eventJson})
             on conflict (application_id, workspace_key, group_id, event_id)
                 do nothing
             returning event_id
         `;
-        if (inserted.length !== 1) {
-            throw new GroupStateEventCollisionError(event);
+        if (inserted.length === 1) {
+            return;
         }
+
+        const [existing] = await this.sql<GroupStateEventCollisionRow[]>`
+            select application_id, workspace_key, group_id, event_id,
+                   event_type, snapshot_version, occurred_at_epoch_ms, event_json
+            from group_state_events
+            where application_id = ${event.applicationId}
+              and workspace_key = ${groupEventWorkspaceKey(event.workspaceId)}
+              and group_id = ${event.groupId}
+              and event_id = ${event.eventId}
+        `;
+        if (existing && isExactPersistedGroupEvent(existing, event, eventJson)) {
+            return;
+        }
+        throw new GroupStateEventCollisionError(event);
     }
 
     async listGroupEvents(ref: GroupRef): Promise<readonly GroupEvent[]> {
@@ -456,6 +477,21 @@ export class PSqlGroupStateEventRepository implements GroupStateEventStore {
             order by snapshot_version, occurred_at_epoch_ms, event_id
         `;
     }
+}
+
+function isExactPersistedGroupEvent(
+    row: GroupStateEventCollisionRow,
+    event: GroupEvent,
+    eventJson: string,
+): boolean {
+    return row.application_id === event.applicationId &&
+        row.workspace_key === groupEventWorkspaceKey(event.workspaceId) &&
+        row.group_id === event.groupId &&
+        row.event_id === event.eventId &&
+        row.event_type === event.eventType &&
+        Number(row.snapshot_version) === event.snapshotVersion &&
+        Number(row.occurred_at_epoch_ms) === event.occurredAtEpochMs &&
+        row.event_json === eventJson;
 }
 
 function toWorkspaceKey(workspaceId: string | undefined): string {

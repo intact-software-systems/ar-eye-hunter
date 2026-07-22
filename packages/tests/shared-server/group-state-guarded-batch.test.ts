@@ -85,8 +85,6 @@ describe('GroupStateService guarded runtime-state batch', () => {
     if (!summary || !idempotency || !owner) {
       throw new Error('Expected the complete group insert bundle');
     }
-    const outbox = expectedGroupOutbox(accepted.snapshot.group, event, idempotency.receipt, 1_000);
-
     expect(runtime.batches).toEqual([
       {
         guard: {
@@ -119,14 +117,6 @@ describe('GroupStateService guarded runtime-state batch', () => {
             namespace: 'group-state:idempotent',
             key: groupStateIdempotencyStorageKey(ref, 'group-insert-request'),
             value: JSON.stringify(idempotency),
-            expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP,
-          },
-          {
-            effectId: 'outbox',
-            operation: 'insert',
-            namespace: STATE_MUTATION_OUTBOX_NAMESPACE,
-            key: stateMutationOutboxStorageKey(outbox.outboxId),
-            value: JSON.stringify(outbox),
             expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP,
           },
         ],

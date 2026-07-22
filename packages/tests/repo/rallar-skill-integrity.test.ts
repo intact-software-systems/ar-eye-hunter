@@ -492,21 +492,29 @@ describe('Rallar repo skill and documentation integrity', () => {
         const appClientInbox = readRepo(
             'packages/shared-server/rallar-system/services/AppClientInboxService.ts',
         );
+        const appGroupInbox = readRepo(
+            'packages/shared-server/rallar-system/services/AppGroupInboxService.ts',
+        );
 
         expect(groupService).not.toContain('timeMutationPhase');
         expectAll(groupService, [
-            'const read = await readGroupMutation',
-            'computed = computeGroupMutation',
-            'validateGroupMutation({ command, read, facts, computed })',
-            'const written = await writeGroupMutation',
-            "'read' | 'compute' | 'validate' | 'write' | 'transaction'",
+            'return await readGroupMutation(repositoryFor(runtime), prepared.command)',
+            'compute: (prepared, read) => computeGroupMutation',
+            'validateGroupMutation({\n                command: prepared.command,',
+            'await writeGroupMutation(transaction, computed)',
         ]);
         expectAll(summaryWork, [
-            'const read = await readGroupPresenceSummary',
-            'const computed = computeGroupPresenceSummary',
-            'validateGroupPresenceSummary({ ref, read, computed })',
-            'const written = await writeGroupPresenceSummary',
-            "'read' | 'compute' | 'validate' | 'write' | 'transaction'",
+            'async read(work: GroupPresenceSummaryWorkData)',
+            'const summary = computeGroupPresenceSummary',
+            'validateGroupPresenceSummary({',
+            'async write(',
+            'transaction: PSqlTransactionSql',
+        ]);
+        expectAll(appGroupInbox, [
+            'const read = await this.groupStateService.read(command)',
+            'const computed = this.groupStateService.compute(command, read)',
+            'this.groupStateService.validate(command, read, computed)',
+            'this.writeMutation(context',
         ]);
         expect(clientService).not.toContain('timeMutationPhase');
         expect(clientService).not.toContain('runtime.begin(');

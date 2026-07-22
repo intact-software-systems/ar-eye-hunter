@@ -1,5 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createAppInboxTestDatabase } from './app-inbox-test-database.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
@@ -30,12 +30,14 @@ import {
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 import {
     createGroupStateService,
+    GroupMutationAuthorizationError,
     type GroupStateService,
     type GroupStateWritten,
 } from '@shared-server/rallar-system/services/group-state-service.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 import type { GroupMutationReceipt } from '@shared-server/rallar-system/services/group-state-mutations.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
+import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 
 const SCOPE: StateScope = {
     applicationId: 'ar-eye-hunter',
@@ -43,33 +45,173 @@ const SCOPE: StateScope = {
 };
 
 describe('AppGroupInboxService authenticated authority', () => {
+    it('exposes transaction-injected mutation phases without direct mutation bypasses', async () => {
+        const harness = await createAuthorityHarness(['owner']);
+
+        expect(harness.groupStateService).toMatchObject({
+            read: expect.any(Function),
+            compute: expect.any(Function),
+            validate: expect.any(Function),
+            write: expect.any(Function),
+        });
+        for (const method of [
+            'createGroup',
+            'updateGroup',
+            'joinGroup',
+            'upsertMember',
+            'connectPresenceSession',
+            'heartbeatPresenceSession',
+            'disconnectPresenceSession',
+        ]) {
+            expect(Reflect.get(harness.groupStateService, method)).toBeUndefined();
+        }
+    });
+
+    it('restarts the AppInbox group operation and denies a retry after authority changes', async () => {
+        const nowEpochMs = Date.now();
+        const queue = new TestResourceInbox();
+        const reader = new InboxQueueReader(queue);
+        const results = new TestResourceInboxResults();
+        const attempts: Array<Readonly<{
+            attempt: number;
+            outcome: 'conflict' | 'denied';
+            authorized: boolean;
+        }>> = [];
+        let authorized = true;
+        const phaseService = {
+            prepareMutation: vi.fn(async () => ({
+                authorityProof: {
+                    version: 1,
+                    principalId: 'owner',
+                    sessionId: 'owner-session',
+                    sessionIssuedAtEpochMs: nowEpochMs - 1_000,
+                    sessionExpiresAtEpochMs: nowEpochMs + 60_000,
+                    commandMac: 'a'.repeat(64),
+                },
+                descriptor: {
+                    operation: 'updateGroup',
+                    scope: SCOPE,
+                    groupId: 'outer-retry-room',
+                    targetPrincipalId: null,
+                    sessionId: null,
+                    request: {
+                        displayName: 'Must Not Apply',
+                        actorPrincipalId: 'owner',
+                        actorSessionId: 'owner-session',
+                        requestId: 'outer-retry-authority-change',
+                    },
+                },
+                command: {
+                    operation: 'updateGroup',
+                    aggregateRef: { ...SCOPE, groupId: 'outer-retry-room' },
+                    commandId: 'outer-retry-authority-change',
+                    requestId: 'outer-retry-authority-change',
+                    input: {},
+                },
+                facts: {
+                    nowEpochMs,
+                    expireAtEpochMs: nowEpochMs + 60_000,
+                    serviceId: 'server-12345678',
+                    eventId: 'outer-retry-event',
+                    commandHash: `sha256:${'a'.repeat(64)}`,
+                    resolvedJoinCode: null,
+                    joinCodeVerifier: null,
+                    internalAuthority: 'none',
+                    authenticatedAuthority: {
+                        principalId: 'owner',
+                        sessionId: 'owner-session',
+                    },
+                },
+                causalToken: 'causal-token',
+                queueResourceId: 'outer-retry-authority-change',
+            })),
+            read: vi.fn(async (command: Readonly<{ facts: { attemptCount: number } }>) => ({
+                authorized,
+                command,
+            })),
+            compute: vi.fn((_command, read) => ({
+                outcome: 'write',
+                receipt: { commandId: 'outer-retry-authority-change' },
+                read,
+            })),
+            validate: vi.fn((_command, _read, computed) => {
+                if (!computed.read.authorized) {
+                    attempts.push({
+                        attempt: computed.read.command.facts.attemptCount,
+                        outcome: 'denied',
+                        authorized: false,
+                    });
+                    throw new GroupMutationAuthorizationError(
+                        'Authenticated session changed before retry.',
+                    );
+                }
+            }),
+            write: vi.fn(async (_transaction, computed) => {
+                const attempt = computed.read.command.facts.attemptCount as number;
+                attempts.push({ attempt, outcome: 'conflict', authorized: true });
+                authorized = false;
+                throw new RuntimeStateWriteConflictError();
+            }),
+        };
+        const service = new AppGroupInboxService(
+            reader,
+            queue as never,
+            results as never,
+            createAppInboxTestDatabase(queue, results),
+            phaseService as never,
+            'server-12345678',
+        );
+        const authority = authSession(
+            'owner',
+            'owner-session',
+            'owner-token',
+            nowEpochMs,
+        );
+        const pending = authenticatedProcessor<GroupUpdateAppInboxPayload, GroupStateWritten>(
+            service,
+        )({
+            type: AppInboxType.GROUP_UPDATE,
+            resourceId: 'outer-retry-authority-change',
+            contextId: 'ar-eye-hunter:default:outer-retry-room',
+            senderId: 'owner',
+            data: {
+                scope: SCOPE,
+                groupId: 'outer-retry-room',
+                request: {
+                    displayName: 'Must Not Apply',
+                    actorPrincipalId: 'owner',
+                    actorSessionId: 'owner-session',
+                    requestId: 'outer-retry-authority-change',
+                },
+            },
+        }, authority);
+
+        await waitForQueueEntry(queue);
+        await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+
+        expect((await pending).left).toContain('Forbidden:');
+        expect(attempts).toEqual([
+            { attempt: 1, outcome: 'conflict', authorized: true },
+            { attempt: 2, outcome: 'denied', authorized: false },
+        ]);
+        expect(phaseService.read).toHaveBeenCalledTimes(2);
+        expect(phaseService.compute).toHaveBeenCalledTimes(2);
+        expect(phaseService.validate).toHaveBeenCalledTimes(2);
+        expect(phaseService.write).toHaveBeenCalledTimes(1);
+    });
+
     it('fails closed before a direct user mutation can read or write without authority', async () => {
         const harness = await createAuthorityHarness(['owner']);
         await createRoom(harness, 'direct-missing-authority', 'Before');
 
-        await expect(Reflect.apply(
-            harness.groupStateService.updateGroup,
-            undefined,
-            [
-                SCOPE,
-                'direct-missing-authority',
-                {
-                    displayName: 'Must Not Apply',
-                    actorPrincipalId: 'owner',
-                    actorSessionId: 'owner-session',
-                    requestId: 'direct-missing-authority',
-                },
-            ],
-        )).rejects.toMatchObject({ status: 403 });
+        expect(Reflect.get(harness.groupStateService, 'updateGroup')).toBeUndefined();
 
         expect((await harness.repository.readSnapshot({
             ...SCOPE,
             groupId: 'direct-missing-authority',
         }))?.group.displayName).toBe('Before');
-        expect(await harness.repository.listEvents({
-            ...SCOPE,
-            groupId: 'direct-missing-authority',
-        })).toHaveLength(1);
     });
 
     it('rejects a raw user inbox call without authority before enqueue', async () => {
@@ -150,7 +292,7 @@ describe('AppGroupInboxService authenticated authority', () => {
             createResilience(),
         );
 
-        expect((await pending).left).toContain('authority proof is malformed');
+        expect((await pending).left).toContain('durable group mutation facts are malformed');
         expect(await harness.repository.readSnapshot({
             ...SCOPE,
             groupId: 'raw-extra-proof',
@@ -211,7 +353,7 @@ describe('AppGroupInboxService authenticated authority', () => {
             reader,
             queue as never,
             results as never,
-            createAppInboxTestDatabase(queue, results),
+            createAppInboxTestDatabase(queue, results, { runtimeRepository }),
             groupStateService,
             'server-12345678',
         );
@@ -265,40 +407,13 @@ describe('AppGroupInboxService authenticated authority', () => {
             groupId: 'authority-room',
         });
         expect(snapshot?.group.displayName).toBe('Authority Room');
-        expect(await repository.listEvents({
-            ...SCOPE,
-            groupId: 'authority-room',
-        })).toHaveLength(1);
     });
 
     it('rejects a direct raw-service attacker that claims the owner actor', async () => {
         const harness = await createAuthorityHarness(['owner', 'attacker']);
         await createRoom(harness, 'raw-authority-room', 'Raw Authority Room');
 
-        type RawUpdate = (
-            scope: StateScope,
-            groupId: string,
-            request: Readonly<{
-                displayName: string;
-                actorPrincipalId: string;
-                actorSessionId: string;
-                requestId: string;
-            }>,
-            authority: IssuedAuthSession,
-        ) => Promise<GroupStateWritten>;
-        const rawUpdate = harness.groupStateService.updateGroup as unknown as RawUpdate;
-
-        await expect(rawUpdate(
-            SCOPE,
-            'raw-authority-room',
-            {
-                displayName: 'Forged Raw Name',
-                actorPrincipalId: 'owner',
-                actorSessionId: 'owner-session',
-                requestId: 'forged-raw-owner-update',
-            },
-            harness.sessions.attacker,
-        )).rejects.toMatchObject({ status: 403 });
+        expect(Reflect.get(harness.groupStateService, 'updateGroup')).toBeUndefined();
 
         const snapshot = await harness.repository.readSnapshot({
             ...SCOPE,
@@ -720,8 +835,10 @@ async function createAuthorityHarness(
     const queue = new TestResourceInbox();
     const reader = new InboxQueueReader(queue);
     const results = new TestResourceInboxResults();
+    const database = createAppInboxTestDatabase(queue, results, { runtimeRepository });
     const groupStateService = createGroupStateService({
         runtimeRepository,
+        createGroupStateEventStore: () => database.groupEventStore,
         serviceId: 'server-12345678',
         now: () => nowEpochMs,
         authSessionRepository: authSessions,
@@ -731,14 +848,16 @@ async function createAuthorityHarness(
     return {
         nowEpochMs,
         runtimeRepository,
-        repository: new GroupStateRepository(runtimeRepository),
+        repository: new GroupStateRepository(runtimeRepository, {
+            events: database.groupEventStore,
+        }),
         authSessions,
         groupStateService,
         service: new AppGroupInboxService(
             reader,
             queue as never,
             results as never,
-            createAppInboxTestDatabase(queue, results),
+            database,
             groupStateService,
             'server-12345678',
         ),

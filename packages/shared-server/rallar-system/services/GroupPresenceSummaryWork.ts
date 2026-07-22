@@ -1,43 +1,45 @@
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import {
+    requireConditionalWrite,
+} from '../../runtime-state/optimistic-runtime-state-write.ts';
 import type {
     RuntimeStateOptimisticTransactionalRepositoryLike,
 } from '../../runtime-state/RuntimeStateRepository.ts';
+import type { PSqlSql, PSqlTransactionSql } from '../../postgres/PostgresSqlClient.ts';
+import { runInTransaction } from '../../postgres/run-in-transaction.ts';
+import { ResourceInboxRepository } from '../../postgres/resource-inbox/ResourceInboxRepository.ts';
 import {
-    DEFAULT_RUNTIME_STATE_WRITE_ATTEMPTS,
-    requireConditionalWrite,
-    RuntimeStateRetryExhaustedError,
-    RuntimeStateWriteConflictError,
-    waitForRuntimeStateWriteRetry,
-} from '../../runtime-state/optimistic-runtime-state-write.ts';
-import {
-    createStateMutationOutboxRecord,
-    hashStateMutationCommand,
-    StateMutationOutboxRepository,
-    type StateMutationOutboxRecord,
-} from '../repositories/StateMutationOutboxRepository.ts';
-import { toGroupSnapshotStateRevision } from '@shared/api/group-client-views.ts';
-import { GroupStateRepository } from '../repositories/GroupStateRepository.ts';
+    createTransactionBoundGroupStateRepository,
+    GroupStateRepository,
+} from '../repositories/GroupStateRepository.ts';
+import { assembleGroupStateSnapshot } from '../repositories/group-state-snapshot-assembly.ts';
 import {
     computeGroupPresenceSummary,
     type GroupPresenceSummaryComputed,
     type GroupPresenceSummaryRead,
+    type GroupPresenceSummaryWorkData,
     validateGroupPresenceSummary,
 } from './group-state-mutations.ts';
-import type { StateMutationEffectEnqueueResult } from './StateMutationOutboxWork.ts';
-import { recordRallarTiming, type RallarTimingSink } from './timing.ts';
+import { computeGroupStateSyncEntries } from '../state-sync-publisher.ts';
+import { computeRtcTopologyEntry } from './RtcTopologyOutboxWork.ts';
 
 export type GroupPresenceSummaryWorkOptions = Readonly<{
     runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike;
+    database?: PSqlSql;
     now?: () => number;
-    sleep?: (delayMs: number) => Promise<void>;
     serviceId: string;
-    /** Wake the same durable drainer for the topology-only follow-up. */
-    wakeStateMutationOutbox?: () => void;
-    timing?: RallarTimingSink;
+    wakeQueue?: () => void;
+    timing?: import('./timing.ts').RallarTimingSink;
 }>;
 
-type GroupPresenceSummaryPhase =
-    'read' | 'compute' | 'validate' | 'write' | 'transaction';
+export type GroupPresenceSummaryComputedWork = Readonly<{
+    work: GroupPresenceSummaryWorkData;
+    summary: GroupPresenceSummaryComputed;
+    snapshot: GroupSnapshot;
+    downstreamOutboxEntries: readonly ResourceEntry[];
+}>;
 
 export class GroupPresenceSummaryWork {
     private readonly now: () => number;
@@ -46,293 +48,195 @@ export class GroupPresenceSummaryWork {
         this.now = options.now ?? (() => Date.now());
     }
 
-    async enqueueForGroupSnapshot(
-        group: GroupSnapshot,
-        deliveryId: string,
-    ): Promise<StateMutationEffectEnqueueResult> {
-        return await this.converge(group.group, deliveryId);
-    }
-
-    async converge(
-        ref: GroupRef,
-        deliveryId: string,
-    ): Promise<StateMutationEffectEnqueueResult> {
-        const command = {
-            operation: 'convergeGroupPresenceSummary',
-            aggregateRef: ref,
-            deliveryId,
-        } as const;
-        const commandHash = await hashStateMutationCommand(command);
-        let lastConflict: RuntimeStateWriteConflictError | undefined;
-        for (let attempt = 0; attempt < DEFAULT_RUNTIME_STATE_WRITE_ATTEMPTS; attempt += 1) {
-            const backoffStarted = performance.now();
-            const backoffMs = await waitForRuntimeStateWriteRetry(
-                attempt as 0 | 1 | 2,
-                { sleep: this.options.sleep },
+    async read(work: GroupPresenceSummaryWorkData): Promise<GroupPresenceSummaryRead> {
+        const repository = new GroupStateRepository(this.options.runtimeRepository);
+        const [group, members, admissions, presenceSessions, current] = await Promise.all([
+            repository.findGroupEntry(work.aggregateRef),
+            repository.listMemberEntries(work.aggregateRef),
+            repository.listPresenceAdmissionEntries(work.aggregateRef),
+            repository.listPresenceSessionEntries(work.aggregateRef),
+            repository.findPresenceSummaryEntry(work.aggregateRef),
+        ]);
+        if (!group) {
+            throw new TypeError(
+                `Group not found for presence summary: ${work.aggregateRef.groupId}`,
             );
-            this.record('backoff', 'ok', performance.now() - backoffStarted, {
-                deliveryId,
-                attempt,
-                backoffMs,
-            }, ref);
-            let activePhase: GroupPresenceSummaryPhase = 'read';
-            let phaseStarted = performance.now();
-            let phaseRecorded = false;
-            let transactionStarted: number | undefined;
-            try {
-                const read = await readGroupPresenceSummary(
-                    this.options.runtimeRepository,
-                    ref,
-                );
-                this.recordPhase(
-                    'read',
-                    'ok',
-                    phaseStarted,
-                    ref,
-                    deliveryId,
-                    attempt,
-                    backoffMs,
-                );
-                phaseRecorded = true;
-
-                activePhase = 'compute';
-                phaseStarted = performance.now();
-                phaseRecorded = false;
-                const computed = computeGroupPresenceSummary({
-                    ref,
-                    read,
-                    nowEpochMs: this.now(),
-                });
-                this.recordPhase(
-                    'compute',
-                    'ok',
-                    phaseStarted,
-                    ref,
-                    deliveryId,
-                    attempt,
-                    backoffMs,
-                );
-                phaseRecorded = true;
-
-                activePhase = 'validate';
-                phaseStarted = performance.now();
-                phaseRecorded = false;
-                validateGroupPresenceSummary({ ref, read, computed });
-                if (computed.outcome === 'no-op') {
-                    this.recordPhase(
-                        'validate',
-                        'ok',
-                        phaseStarted,
-                        ref,
-                        deliveryId,
-                        attempt,
-                        backoffMs,
-                    );
-                    phaseRecorded = true;
-                    return {
-                        effectiveSnapshotRevision: toGroupSnapshotStateRevision(
-                            computed.summary.causalRevision.groupRevision,
-                            computed.summary.causalRevision.presenceRevision,
-                        ),
-                    };
-                }
-                const outbox = createGroupPresenceSummaryOutbox(
-                    ref,
-                    deliveryId,
-                    commandHash,
-                    read.group.value,
-                    computed,
-                );
-                this.recordPhase(
-                    'validate',
-                    'ok',
-                    phaseStarted,
-                    ref,
-                    deliveryId,
-                    attempt,
-                    backoffMs,
-                );
-                phaseRecorded = true;
-
-                activePhase = 'write';
-                phaseStarted = performance.now();
-                phaseRecorded = false;
-                transactionStarted = performance.now();
-                const written = await writeGroupPresenceSummary(
-                    this.options.runtimeRepository,
-                    computed,
-                    outbox,
-                );
-                phaseRecorded = true;
-                void written;
-                this.recordPhase(
-                    'transaction',
-                    'ok',
-                    transactionStarted,
-                    ref,
-                    deliveryId,
-                    attempt,
-                    backoffMs,
-                );
-                this.recordPhase(
-                    'write',
-                    'ok',
-                    phaseStarted,
-                    ref,
-                    deliveryId,
-                    attempt,
-                    backoffMs,
-                );
-                this.options.wakeStateMutationOutbox?.();
-                return {
-                    effectiveSnapshotRevision: toGroupSnapshotStateRevision(
-                        computed.summary.causalRevision.groupRevision,
-                        computed.summary.causalRevision.presenceRevision,
-                    ),
-                };
-            } catch (error) {
-                if (activePhase === 'write' && transactionStarted !== undefined) {
-                    this.recordPhase(
-                        'transaction',
-                        'error',
-                        transactionStarted,
-                        ref,
-                        deliveryId,
-                        attempt,
-                        backoffMs,
-                        error,
-                    );
-                }
-                if (!phaseRecorded) {
-                    this.recordPhase(
-                        activePhase,
-                        'error',
-                        phaseStarted,
-                        ref,
-                        deliveryId,
-                        attempt,
-                        backoffMs,
-                        error,
-                    );
-                }
-                if (!(error instanceof RuntimeStateWriteConflictError)) throw error;
-                lastConflict = error;
-                this.record('conflict', 'ok', 0, {
-                    deliveryId,
-                    attempt,
-                    backoffMs,
-                }, ref);
-            }
         }
-        throw new RuntimeStateRetryExhaustedError(
-            lastConflict ?? new RuntimeStateWriteConflictError(),
-        );
+        return {
+            group,
+            members,
+            admissions,
+            presenceSessions,
+            current: current ?? null,
+        };
     }
 
-    private recordPhase(
-        phase: GroupPresenceSummaryPhase,
-        status: 'ok' | 'error',
-        started: number,
-        ref: GroupRef,
-        deliveryId: string,
-        attempt: number,
-        backoffMs: number,
-        error?: unknown,
+    compute(
+        work: GroupPresenceSummaryWorkData,
+        read: GroupPresenceSummaryRead,
+    ): GroupPresenceSummaryComputedWork {
+        const summary = computeGroupPresenceSummary({
+            ref: work.aggregateRef,
+            read,
+            nowEpochMs: this.now(),
+        });
+        const snapshot = assembleGroupStateSnapshot({
+            group: read.group.value,
+            members: read.members.map((member) => member.value),
+            summary: summary.summary,
+            authoritativeSessions: read.presenceSessions.map((session) => session.value),
+            groupRevision: summary.summary.causalRevision.groupRevision,
+            observedAtEpochMs: summary.summary.computedAtEpochMs,
+        }, (storageKey, message) => new Error(`${message}: ${storageKey}`));
+        const audience = {
+            kind: 'group' as const,
+            applicationId: work.aggregateRef.applicationId,
+            workspaceId: work.aggregateRef.workspaceId,
+            resourceId: work.aggregateRef.groupId,
+        };
+        const eventEntries = computeGroupStateSyncEntries({
+            commandId: work.commandId,
+            aggregateRef: work.aggregateRef,
+            acceptedCausalRevision: work.acceptedCausalRevision,
+            audience,
+            createdAtEpochMs: work.createdAtEpochMs,
+            expireAtEpochMs: work.expireAtEpochMs,
+            effects: [{
+                effectKind: 'member-state',
+                payloadKind: 'event',
+                payload: work.event,
+            }],
+        }, this.options.serviceId);
+        const snapshotEntries = computeGroupStateSyncEntries({
+            commandId: work.commandId,
+            aggregateRef: work.aggregateRef,
+            acceptedCausalRevision: snapshot.causalRevision,
+            audience,
+            createdAtEpochMs: summary.summary.computedAtEpochMs,
+            expireAtEpochMs: work.expireAtEpochMs,
+            effects: [
+                {
+                    effectKind: 'member-state',
+                    payloadKind: 'snapshot',
+                    payload: snapshot,
+                },
+                {
+                    effectKind: 'scope-directory',
+                    payloadKind: 'snapshot',
+                    payload: snapshot,
+                },
+            ],
+        }, this.options.serviceId);
+        const topologyEntry = computeRtcTopologyEntry({
+            commandId: work.commandId,
+            aggregateRef: work.aggregateRef,
+            acceptedCausalRevision: snapshot.causalRevision,
+            groupSnapshot: snapshot,
+            effectKind: 'rtc-topology-recompute',
+            payloadKind: 'group-revision',
+            createdAtEpochMs: summary.summary.computedAtEpochMs,
+            expireAtEpochMs: work.expireAtEpochMs,
+        }, this.options.serviceId);
+        return {
+            work,
+            summary,
+            snapshot,
+            downstreamOutboxEntries: [...eventEntries, ...snapshotEntries, topologyEntry],
+        };
+    }
+
+    validate(
+        work: GroupPresenceSummaryWorkData,
+        read: GroupPresenceSummaryRead,
+        computed: GroupPresenceSummaryComputedWork,
     ): void {
-        this.record(`mutation.${phase}`, status, performance.now() - started, {
-            deliveryId,
-            attempt,
-            backoffMs,
-        }, ref, error);
+        if (computed.work !== work) {
+            throw new TypeError('Presence-summary computed work differs from its command');
+        }
+        validateGroupPresenceSummary({
+            ref: work.aggregateRef,
+            read,
+            computed: computed.summary,
+        });
+        if (
+            work.event.applicationId !== work.aggregateRef.applicationId ||
+            work.event.workspaceId !== work.aggregateRef.workspaceId ||
+            work.event.groupId !== work.aggregateRef.groupId ||
+            work.event.causalRevision.groupRevision !==
+                work.acceptedCausalRevision.groupRevision ||
+            work.event.causalRevision.presenceRevision !==
+                work.acceptedCausalRevision.presenceRevision
+        ) {
+            throw new TypeError('Presence-summary event differs from accepted group revision');
+        }
     }
 
-    private record(
-        operation: string,
-        status: 'ok' | 'error',
-        durationMs: number,
-        details: Readonly<Record<string, string | number | boolean | undefined>>,
-        ref: GroupRef,
-        error?: unknown,
-    ): void {
-        recordRallarTiming(this.options.timing, {
-            component: 'group-presence-summary-work',
-            operation,
-            serviceId: this.options.serviceId,
-            ...ref,
-            details,
-        }, status, durationMs, error);
+    async write(
+        transaction: PSqlTransactionSql,
+        computed: GroupPresenceSummaryComputedWork,
+    ): Promise<void> {
+        const repository = createTransactionBoundGroupStateRepository(transaction);
+        if (computed.summary.outcome === 'write') {
+            requireConditionalWrite(
+                computed.summary.operation === 'insert'
+                    ? await repository.insertPresenceSummary(computed.summary.summary)
+                    : await repository.updatePresenceSummary(
+                        computed.summary.summary,
+                        computed.summary.expectedRevision!,
+                    ),
+            );
+        }
+        const outbox = new ResourceInboxRepository(transaction);
+        for (const entry of computed.downstreamOutboxEntries) {
+            await outbox.writeIfAbsentOrMatch(entry);
+        }
+    }
+
+    async processReservedEntry(
+        message: ALMessage,
+        entry: ResourceEntry,
+    ): Promise<void> {
+        if (!this.options.database) {
+            throw new TypeError('Presence-summary queue processing requires a database');
+        }
+        const work = readGroupPresenceSummaryWork(message, entry);
+        const read = await this.read(work);
+        const computed = this.compute(work, read);
+        this.validate(work, read, computed);
+        await runInTransaction(this.options.database, async (transaction) => {
+            await this.write(transaction, computed);
+            const finished = await new ResourceInboxRepository(transaction).finishReserved(
+                entry.key,
+                entry.dequeueAudit.attempts,
+                EntityStatus.COMPLETED,
+                new Date(this.now()),
+            );
+            if (!finished) {
+                throw new Error('Presence-summary reservation changed before commit');
+            }
+        });
+        this.options.wakeQueue?.();
     }
 }
 
-async function readGroupPresenceSummary(
-    runtime: RuntimeStateOptimisticTransactionalRepositoryLike,
-    ref: GroupRef,
-): Promise<GroupPresenceSummaryRead> {
-    const repository = new GroupStateRepository(runtime);
-    const [group, members, admissions, presenceSessions, current] = await Promise.all([
-        repository.findGroupEntry(ref),
-        repository.listMemberEntries(ref),
-        repository.listPresenceAdmissionEntries(ref),
-        repository.listPresenceSessionEntries(ref),
-        repository.findPresenceSummaryEntry(ref),
-    ]);
-    if (!group) throw new Error(`Group not found for presence summary: ${ref.groupId}`);
-    return {
-        group,
-        members,
-        admissions,
-        presenceSessions,
-        current: current ?? null,
-    };
+function readGroupPresenceSummaryWork(
+    message: ALMessage,
+    entry: ResourceEntry,
+): GroupPresenceSummaryWorkData {
+    if (message.route.topicId !== entry.key.topicId ||
+        message.route.resourceId !== entry.key.resourceId ||
+        message.route.contextId !== entry.key.contextId) {
+        throw new TypeError('Presence-summary message route differs from reservation');
+    }
+    const envelope = JSON.parse(message.payload.resource) as Readonly<{
+        data?: GroupPresenceSummaryWorkData;
+    }>;
+    if (!envelope.data || envelope.data.effectKind !== 'group-presence-summary') {
+        throw new TypeError('Presence-summary work payload is malformed');
+    }
+    return envelope.data;
 }
 
-async function writeGroupPresenceSummary(
-    runtime: RuntimeStateOptimisticTransactionalRepositoryLike,
-    computed: Extract<GroupPresenceSummaryComputed, { outcome: 'write' }>,
-    outbox: StateMutationOutboxRecord,
-): Promise<void> {
-    await runtime.begin(async (transaction) => {
-        const repository = new GroupStateRepository(transaction);
-
-        // Summary ownership is the first and only aggregate guard.
-        requireConditionalWrite(computed.operation === 'insert'
-            ? await repository.insertPresenceSummary(computed.summary)
-            : await repository.updatePresenceSummary(
-                computed.summary,
-                computed.expectedRevision!,
-            ));
-
-        await new StateMutationOutboxRepository(transaction)
-            .insertForAuthoritativeWrite(outbox);
-    });
-}
-
-function createGroupPresenceSummaryOutbox(
-    ref: GroupRef,
-    deliveryId: string,
-    commandHash: string,
-    group: GroupSnapshot['group'],
-    computed: Extract<GroupPresenceSummaryComputed, { outcome: 'write' }>,
-): StateMutationOutboxRecord {
-    return createStateMutationOutboxRecord({
-        kind: 'group',
-        aggregateRef: ref,
-        commandId: `group-presence-summary:${deliveryId}`,
-        commandHash,
-        createdAtEpochMs: computed.summary.computedAtEpochMs,
-        acceptedCausalRevision: {
-            kind: 'group',
-            stateRevision: toGroupSnapshotStateRevision(
-                computed.summary.causalRevision.groupRevision,
-                computed.summary.causalRevision.presenceRevision,
-            ),
-            causalRevision: computed.summary.causalRevision,
-            snapshotVersion: group.snapshotVersion,
-            metadataVersion: group.metadataVersion,
-            rosterVersion: group.rosterVersion,
-            presenceVersion: computed.summary.causalRevision.presenceRevision,
-        },
-        effects: ['rtc-topology-recompute'],
-        event: { kind: 'none' },
-    });
+export function toGroupPresenceSummaryQueueContextId(ref: GroupRef): string {
+    return JSON.stringify([ref.applicationId, ref.workspaceId, ref.groupId]);
 }

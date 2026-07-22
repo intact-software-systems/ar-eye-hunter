@@ -13,7 +13,7 @@ import {
     ResourceInboxReleaseDisposition,
     ResourceInboxReservationInput,
     ResourceInboxWorkAdvertisementInput,
-    isIdempotentCompletedAppInboxRelease,
+    isIdempotentHandlerFinalizedRelease,
     toResourceInboxFairnessReservationOptions,
     toResourceInboxFinalizationReservationOptions,
     toResourceInboxReleaseDisposition,
@@ -402,7 +402,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                                 stored.status !== EntityStatus.RESERVED ||
                                 stored.dequeueAudit.attempts !== resource.dequeueAudit.attempts
                             ) &&
-                            !isIdempotentCompletedAppInboxRelease(
+                            !isIdempotentHandlerFinalizedRelease(
                                 current,
                                 resource,
                                 disposition,

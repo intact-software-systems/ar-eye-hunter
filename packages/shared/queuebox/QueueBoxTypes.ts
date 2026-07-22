@@ -94,16 +94,20 @@ export class ResourceInboxInvalidReleaseDispositionError extends Error {
     }
 }
 
-export function isIdempotentCompletedAppInboxRelease(
+export function isIdempotentHandlerFinalizedRelease(
     current: ResourceEntry,
     reserved: ResourceEntry,
     disposition: ResourceInboxReleaseDisposition,
 ): boolean {
+    const handlerFinalizedTypes: ReadonlySet<string> = new Set([
+        EnqueuedType.APP_INBOX,
+        EnqueuedType.APP_OUTBOX,
+    ]);
     return disposition.status === Resource.EntityStatus.COMPLETED &&
         disposition.delayMs === null &&
-        reserved.typeId === EnqueuedType.APP_INBOX &&
+        handlerFinalizedTypes.has(reserved.typeId) &&
         reserved.status === Resource.EntityStatus.RESERVED &&
-        current.typeId === EnqueuedType.APP_INBOX &&
+        current.typeId === reserved.typeId &&
         current.status === Resource.EntityStatus.COMPLETED &&
         Resource.isKeysEqual(current.key, reserved.key) &&
         current.dequeueAudit.attempts === reserved.dequeueAudit.attempts &&

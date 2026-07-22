@@ -9,7 +9,7 @@ import {
     ResourceInboxReleaseDisposition,
     ResourceInboxReservationInput,
     ResourceInboxWorkAdvertisementInput,
-    isIdempotentCompletedAppInboxRelease,
+    isIdempotentHandlerFinalizedRelease,
     toResourceInboxFairnessReservationOptions,
     toResourceInboxFinalizationReservationOptions,
     toResourceInboxReleaseDisposition,
@@ -259,7 +259,7 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
                     });
                     if (!updated) {
                         const current = await txRepo.findAnyByKey(entry.key);
-                        if (!current || !isIdempotentCompletedAppInboxRelease(
+                        if (!current || !isIdempotentHandlerFinalizedRelease(
                             current,
                             entry,
                             disposition,

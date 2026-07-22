@@ -37,15 +37,6 @@ const topologyFile =
   'packages/shared-server/rallar-system/services/group-topology-management-service.ts';
 const contracts: readonly GuardedBatchContract[] = [
   {
-    family: 'group mutation',
-    file: groupFile,
-    writer: 'writeGroupMutation',
-    materializer: 'materializeGroupStateGuardedBatch',
-    materializerArguments: ['computed'],
-    validationArgument: '{ guard: materializeGuard(computed), effects, }',
-    appendsGroupEvent: true,
-  },
-  {
     family: 'topology config mutation',
     file: topologyFile,
     writer: 'writeTopologyConfigMutation',
@@ -72,65 +63,6 @@ describe('guarded batch write structural contract', () => {
     (contract) => assertGuardedBatchContract(contract),
   );
 
-  it('still rejects a group fallback write before its legacy guard', () => {
-    const beforeGuard =
-      '    // Aggregate/session ownership is always the first database statement.';
-    const fallbackTail = `    await new StateMutationOutboxRepository(transaction).insertForAuthoritativeWrite(
-      materialized.outbox,
-    );
-    await repository.appendEvent(computed.event);
-    return computed.receipt;`;
-    const mutated = replaceOnce(
-      replaceOnce(
-        readRepo(groupFile),
-        beforeGuard,
-        `    await repository.appendEvent(computed.event);\n\n${beforeGuard}`,
-      ),
-      fallbackTail,
-      `    await new StateMutationOutboxRepository(transaction).insertForAuthoritativeWrite(
-      materialized.outbox,
-    );
-    return computed.receipt;`,
-    );
-    withFixture(mutated, (source) => {
-      expect(() => assertGuardedBatchContract(contracts[0]!, source)).toThrow(
-        /legacy guard before dependent writes/,
-      );
-    });
-  });
-
-  it.each([
-    [
-      'an unawaited guarded batch execution',
-      'await transaction.executeGuardedBatch(materialized.batch)',
-      'transaction.executeGuardedBatch(materialized.batch)',
-      /executeGuardedBatch/,
-    ],
-    [
-      'a bypassed pre-begin validation',
-      'batch: validateRuntimeStateGuardedBatch({',
-      'batch: acceptUncheckedBatch({',
-      /validateRuntimeStateGuardedBatch/,
-    ],
-    [
-      'validation without the materialized outbox effects',
-      '      effects,',
-      '      effects: [],',
-      /validateRuntimeStateGuardedBatch/,
-    ],
-    [
-      'a capable return before its group event append',
-      `      await repository.appendEvent(computed.event);
-      return computed.receipt;`,
-      `      return computed.receipt;
-      await repository.appendEvent(computed.event);`,
-      /event append before return/,
-    ],
-  ] as const)('rejects %s', (_name, before, after, error) => {
-    withFixture(replaceOnce(readRepo(groupFile), before, after), (source) => {
-      expect(() => assertGuardedBatchContract(contracts[0]!, source)).toThrow(error);
-    });
-  });
 });
 
 function assertGuardedBatchContract(

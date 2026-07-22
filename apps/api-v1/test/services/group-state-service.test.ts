@@ -3,7 +3,11 @@ import type { GroupEvent, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { GroupPolicyReasonCode } from '@shared/api/group-policy-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { readRallarGroupDirectorFromSnapshot } from '@shared/api/group-director.ts';
-import { createTestGroupStateRuntime } from '../../../../packages/tests/shared-server/group-state-test-runtime.ts';
+import {
+  createTestGroupStateRuntime,
+  type TestAuthenticatedGroupStateService,
+  type TestGroupStateMaintenanceService,
+} from '../../../../packages/tests/shared-server/group-state-test-runtime.ts';
 import type { StateSyncPublisher } from '../../src/services/state-sync-service.ts';
 import type { GroupStateWritten } from '@shared-server/rallar-system/services/group-state-service.ts';
 import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-policy.ts';
@@ -1083,7 +1087,7 @@ Deno.test('rotateGroupJoinCode stores only a verifier and validates code joins',
   assertMember(joinedAfterRotation, 'member-2', 'member', 'active');
 });
 
-Deno.test('rotateGroupJoinCode replays direct service retries for the same request id', async () => {
+Deno.test('rotateGroupJoinCode replays the same request id without rematerializing defaults', async () => {
   const service = createTestGroupStateService();
   await service.createGroup(TEST_SCOPE, {
     groupId: 'code-group',
@@ -1591,17 +1595,20 @@ Deno.test('upsertMember and connectPresenceSession ignore unchanged semantic sta
 
 function createTestGroupStateService(
   syncPublisher: StateSyncPublisher = NO_OP_SYNC_PUBLISHER,
-) {
+): TestAuthenticatedGroupStateService & Pick<
+  TestGroupStateMaintenanceService,
+  'expireExpiredPresenceSessions'
+> {
   const runtime = createTestGroupStateRuntime({
     runtimeRepository: new FakeRuntimeStateRepository(),
     syncPublisher,
     now: () => 1_000,
     serviceId: 'test-service',
   });
-  return {
+  return Object.assign({}, runtime.service, {
     ...runtime.service,
     expireExpiredPresenceSessions: runtime.maintenance.expireExpiredPresenceSessions,
-  };
+  });
 }
 
 async function createGovernanceGroup(

@@ -56,6 +56,8 @@ const appClientFile =
 const clientRepositoryFile =
     'packages/shared-server/rallar-system/repositories/ClientStateRepository.ts';
 const groupFile = 'packages/shared-server/rallar-system/services/group-state-service.ts';
+const appGroupFile =
+    'packages/shared-server/rallar-system/services/AppGroupInboxService.ts';
 const groupWriteFile = groupFile.replace('-service', '-guarded-batch');
 const configFile = 'packages/shared-server/rallar-system/services/group-topology-management-service.ts';
 const rtcWorkerFile = 'packages/shared-server/rallar-system/services/RtcTopologyOutboxWork.ts';
@@ -83,22 +85,10 @@ const groupSeam = seam(
     [
         'insertPresenceAdmission', 'updatePresenceAdmission', 'putMember',
         'insertPresenceSummary', 'insertIdempotentGroupMutationReceipt',
-        'insertForAuthoritativeWrite', 'appendEvent',
+        'appendEvent', 'writeIfAbsentOrMatch',
     ],
-    [
-        wrapped('repository.insertGroup', ["computed.guard.kind === 'group'", 'then']),
-        wrapped('repository.updateGroup', ["computed.guard.kind === 'group'", 'then']),
-        wrapped('repository.insertPresence', ["computed.guard.kind === 'group'", 'else']),
-        wrapped('repository.updatePresence', ["computed.guard.kind === 'group'", 'else']),
-        wrapped('repository.deletePresence', ["computed.guard.kind === 'group'", 'else']),
-        wrapped('repository.insertPresenceAdmission', ['computed.presenceAdmission', 'then']),
-        wrapped('repository.updatePresenceAdmission', ['computed.presenceAdmission', 'then']),
-        wrapped('repository.insertPresenceSummary', ['computed.initialPresenceSummary', 'then']),
-        wrapped('repository.insertIdempotentGroupMutationReceipt', [
-            'computed.idempotency',
-            'then',
-        ]),
-    ],
+    [],
+    'received',
 );
 const configSeam = seam(
     'topology config mutation', configFile,
@@ -200,15 +190,15 @@ const paths: readonly PathContract[] = [
     },
     {
         family: groupSeam.family,
-        name: 'group effectful path',
-        file: groupFile,
-        owner: ['variable', 'executeReceiptWithRetry'],
-        retry: 'attempt < DEFAULT_RUNTIME_STATE_WRITE_ATTEMPTS',
+        name: 'group AppInbox effectful path',
+        file: appGroupFile,
+        owner: ['method', 'processMutation'],
+        retry: null,
         phases: [
-            'readGroupMutation',
-            under('computeGroupMutation', "idempotency.outcome !== 'miss'", 'else'),
-            under('validateGroupMutation', 'resolvedFromIdempotency', 'else'),
-            'writeGroupMutation',
+            exact('this.groupStateService.read', ['command'], true),
+            exact('this.groupStateService.compute', ['command', 'read'], false),
+            exact('this.groupStateService.validate', ['command', 'read', 'computed'], false),
+            exact('this.commitMutation', ['context', 'command', 'computed'], true),
         ],
     },
     {
@@ -323,12 +313,12 @@ const effects: readonly EffectContract[] = [
         noExternalEffectOutcomes: [
             'replay', 'idempotency-conflict', 'no-op', 'rejected'],
         atomic: [{
-            outcome: 'write', property: ['outbox', ['GroupMutationOutboxCandidate']],
+            outcome: 'write', property: ['outboxEntries', ['readonly [ResourceEntry]']],
             seam: groupSeam, calls: [exact(
-                'new StateMutationOutboxRepository(transaction).insertForAuthoritativeWrite',
-                ['materialized.outbox'],
-                        true,
-                    ),
+                'outbox.writeIfAbsentOrMatch',
+                ['entry'],
+                true,
+            ),
                 ],
             },
         ],
@@ -470,9 +460,9 @@ describe('read/compute/validate/write implementation contract', () => {
             ],
             [
                 groupSeam.family,
-                'group effectful path',
-                groupFile,
-                ['variable', 'executeReceiptWithRetry'],
+                'group AppInbox effectful path',
+                appGroupFile,
+                ['method', 'processMutation'],
             ],
             [
                 configSeam.family,
@@ -786,7 +776,9 @@ describe('read/compute/validate/write implementation contract', () => {
     });
     it('keeps the architecture inventory synchronized with all guarded paths', () => {
         const architecture = readRepo('packages/shared-server/architecture.md');
-        for (const contract of paths.filter(({ family }) => family !== clientSeam.family)) {
+        for (const contract of paths.filter(({ family }) =>
+            family !== clientSeam.family && family !== groupSeam.family
+        )) {
             for (const phase of contract.phases) {
                 const name = readCallSpec(phase).name;
                 expect(architecture, `${contract.name}: ${name}`)

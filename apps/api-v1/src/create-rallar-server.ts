@@ -40,13 +40,9 @@ import {
 import type { RallarServerWsFacadeOptions } from '@shared-server/rallar-facade/ws-topic-router.ts';
 import type { Middleware } from './middleware.ts';
 import {
-  getGroupStateMaintenanceService,
   initialiseMiddleware,
   registerMiddlewareBackgroundTask,
 } from './middleware.ts';
-import type {
-  GroupStateMaintenanceService,
-} from '@shared-server/rallar-system/services/group-state-service.ts';
 import { getApiRtcTopologyServiceOptions } from './services/rtc-topology-config.ts';
 import { getApiTimingSink } from './services/timing-service.ts';
 import { createApiV1RoomWsAuthorizer } from './services/ws-topic-room-authorizer.ts';
@@ -79,16 +75,12 @@ export type CreateRallarServerOptions = Readonly<{
   crdtAuditSink?: RallarCrdtAuditSink;
   ws?: RallarServerWsFacadeOptions;
   rtcTopologyOptions?: RallarRtcTopologyServiceOptions;
-  groupStateMaintenanceService?: GroupStateMaintenanceService;
 }>;
 
 export function createRallarServer(
   options: CreateRallarServerOptions = {},
 ): RallarServerApplication<Middleware, Hono> {
-  const usesDefaultMiddleware = options.middleware === undefined;
   const middleware = options.middleware ?? initialiseMiddleware();
-  const groupStateMaintenanceService = options.groupStateMaintenanceService ??
-    (usesDefaultMiddleware ? getGroupStateMaintenanceService() : undefined);
   const crdtLogRepository = options.crdtLogRepository ??
     new PSqlCrdtLogRepository(sql as unknown as PSqlSql, {
       serverId: myServerId,
@@ -260,13 +252,8 @@ export function createRallarServer(
             sessionId,
             _request,
           ) => {
-            if (!groupStateMaintenanceService) {
-              throw new Error(
-                'Group state maintenance service is required for WebSocket cleanup',
-              );
-            }
-            await groupStateMaintenanceService
-              .disconnectPresenceSessionsBySessionIdWritten(sessionId, now());
+            await runtime.appGroupInboxService
+              .processDisconnectedPresenceSessionsNoWaiting(sessionId, now());
           },
         });
       },

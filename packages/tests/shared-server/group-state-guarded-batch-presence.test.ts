@@ -80,12 +80,6 @@ describe('GroupStateService guarded presence batch', () => {
     if (!connectedGroup || !admission || !connectIdempotency || !connectEvent) {
       throw new Error('Expected the complete presence connect bundle');
     }
-    const connectOutbox = expectedGroupOutbox(
-      connectedGroup,
-      connectEvent,
-      connectReceipt,
-      nowEpochMs,
-    );
     const connectedSession = {
       ...ref,
       sessionId: 'session-a',
@@ -124,7 +118,6 @@ describe('GroupStateService guarded presence batch', () => {
           expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP,
         },
         exactReceiptEffect(ref, 'presence-update-connect', connectIdempotency),
-        exactOutboxEffect(connectOutbox),
       ],
     });
 
@@ -157,13 +150,6 @@ describe('GroupStateService guarded presence batch', () => {
     if (!presence || !heartbeatIdempotency || !heartbeatEvent) {
       throw new Error('Expected the complete presence heartbeat bundle');
     }
-    const heartbeatOutbox = expectedGroupOutbox(
-      connectedGroup,
-      heartbeatEvent,
-      heartbeatReceipt,
-      nowEpochMs,
-    );
-
     expect(runtime.batches).toEqual([
       {
         guard: {
@@ -179,7 +165,6 @@ describe('GroupStateService guarded presence batch', () => {
         },
         effects: [
           exactReceiptEffect(ref, 'presence-update-heartbeat', heartbeatIdempotency),
-          exactOutboxEffect(heartbeatOutbox),
         ],
       },
     ]);
@@ -265,11 +250,6 @@ describe('GroupStateService guarded presence batch', () => {
         effectId: 'receipt',
         operation: 'insert',
         namespace: 'group-state:idempotent',
-      },
-      {
-        effectId: 'outbox',
-        operation: 'insert',
-        namespace: STATE_MUTATION_OUTBOX_NAMESPACE,
       },
     ]);
     expect(
