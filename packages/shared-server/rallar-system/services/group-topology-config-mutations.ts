@@ -6,6 +6,7 @@ import type {
     StoredGroupTopologyConfig,
     StoredGroupTopologyOverride,
 } from '@shared/api/graph-topology-management-types.ts';
+import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 export type {
     GroupTopologyConfigMutationOperation,
     GroupTopologyConfigMutationReceipt,
@@ -84,19 +85,10 @@ export type GroupTopologyConfigMutationRead = Readonly<{
     groupAuthorityGuard: GroupStateAuthorityGuard;
 }>;
 
-export type GroupTopologyConfigDeleteTarget = Readonly<{
-    target: 'config' | 'override';
-    storageRevision: number;
-    version: number;
-    updatedAtEpochMs: number;
-    expiresAtEpochMs: number | null;
-}>;
-
 export type GroupTopologyConfigMutationStableFacts = Readonly<{
     requestedAtEpochMs: number;
     commandHash: string;
     resolvedOverrideExpiresAtEpochMs: number | null;
-    deleteTarget: GroupTopologyConfigDeleteTarget | null;
 }>;
 
 export type GroupTopologyConfigMutationFacts =
@@ -423,28 +415,12 @@ function computeDelete(
     const generation = target === 'config'
         ? input.read.configGeneration
         : input.read.overrideGeneration;
-    const deleteTarget = input.facts.deleteTarget;
-    const targetStillCurrent = Boolean(
-        current &&
-        deleteTarget &&
-        deleteTarget.target === target &&
-        current.entry.revision === deleteTarget.storageRevision &&
-        current.value.version === deleteTarget.version &&
-        current.value.updatedAtEpochMs === deleteTarget.updatedAtEpochMs &&
-        (target === 'config' ||
-            input.read.override?.value.expiresAtEpochMs ===
-                deleteTarget.expiresAtEpochMs),
-    );
-    if (!targetStillCurrent) {
+    if (!current) {
         const receipt = receiptFor(input.command, input.facts, {
             target,
             outcome: 'no-op',
-            acceptedVersion: Math.max(
-                current?.value.version ?? 0,
-                deleteTarget?.version ?? 0,
-                generation?.value.version ?? 0,
-            ),
-            acceptedStorageRevision: current?.entry.revision ?? null,
+            acceptedVersion: generation?.value.version ?? 0,
+            acceptedStorageRevision: null,
             acceptedCreatedAtEpochMs: null,
             acceptedUpdatedAtEpochMs: null,
             acceptedExpiresAtEpochMs: null,
@@ -467,9 +443,6 @@ function computeDelete(
             result,
             idempotency,
         };
-    }
-    if (current === null) {
-        throw new TypeError('Topology config delete target is unavailable');
     }
     resolveGroupTopologyConfig({
         serverOptions: input.serverDefaults,
@@ -532,7 +505,7 @@ function writeResult(
         expireAtEpochMs: 253_402_300_799_999,
         senderId: input.command.input.updatedByPrincipalId,
         resourceId: outboxResourceId,
-        requestOptions: {},
+        requestOptions: toCanonicalGroupTopologyConfigPatch({}),
         publish: true,
     };
     const acceptedValue = guard.operation === 'delete' ? null : guard.value;

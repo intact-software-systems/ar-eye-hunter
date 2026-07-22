@@ -10,6 +10,7 @@ import type {
     StoredGroupTopologyConfig,
     StoredGroupTopologyOverride,
 } from '@shared/api/graph-topology-management-types.ts';
+import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type {
     GroupRef,
     GroupSnapshot,
@@ -46,7 +47,6 @@ import {
 } from './group-topology-config-service.ts';
 import {
     computeTopologyConfigMutation,
-    type GroupTopologyConfigDeleteTarget,
     type GroupTopologyConfigMutationCommand,
     type GroupTopologyConfigMutationComputed,
     type GroupTopologyConfigMutationReceipt,
@@ -326,41 +326,6 @@ export class GroupTopologyManagementService {
         }>,
     ): Promise<GroupTopologyConfigMutationPreparation> {
         const { command } = input;
-        let target: Awaited<
-            ReturnType<typeof readTopologyConfigMutation>
-        >['config' | 'override'] = null;
-        if (
-            command.operation === 'deleteConfig' ||
-            command.operation === 'deleteOverride'
-        ) {
-            await this.ensureTopologyConfigGenerationReady(
-                command.aggregateRef,
-            );
-            const read = await readTopologyConfigMutation(
-                this.requireConfigRepository(),
-                this.requireGroupStateRepository(),
-                command,
-            );
-            target = command.operation === 'deleteConfig'
-                ? read.config
-                : read.override;
-        }
-        const deleteTarget: GroupTopologyConfigDeleteTarget | null = target
-            ? {
-                  target:
-                      command.operation === 'deleteConfig'
-                          ? 'config'
-                          : 'override',
-                  storageRevision: target.entry.revision,
-                  version: target.value.version,
-                  updatedAtEpochMs: target.value.updatedAtEpochMs,
-                  expiresAtEpochMs:
-                      command.operation === 'deleteOverride'
-                          ? (target.value as StoredGroupTopologyOverride)
-                                .expiresAtEpochMs
-                          : null,
-              }
-            : null;
         return {
             command,
             stableFacts: {
@@ -375,7 +340,6 @@ export class GroupTopologyManagementService {
                                   command.input.expiresAtEpochMs ?? undefined,
                           })
                         : null,
-                deleteTarget,
             },
         };
     }
@@ -528,7 +492,9 @@ export class GroupTopologyManagementService {
             createdAtEpochMs: command.capturedAtEpochMs,
             expireAtEpochMs: 253_402_300_799_999,
             senderId: command.actorPrincipalId,
-            requestOptions: command.requestOptions,
+            requestOptions: toCanonicalGroupTopologyConfigPatch(
+                command.requestOptions,
+            ),
             publish: command.publish,
         };
     }
@@ -555,7 +521,9 @@ export class GroupTopologyManagementService {
             computed.commandId !== command.commandId ||
             computed.groupSnapshot !== read.authority.group ||
             computed.authorityGuard !== read.authorityGuard ||
-            computed.requestOptions !== command.requestOptions ||
+            JSON.stringify(computed.requestOptions) !== JSON.stringify(
+                toCanonicalGroupTopologyConfigPatch(command.requestOptions),
+            ) ||
             computed.publish !== command.publish
         ) {
             throw new TypeError('Topology reconfigure computation is invalid');

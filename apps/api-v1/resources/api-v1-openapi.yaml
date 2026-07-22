@@ -1625,7 +1625,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ReconfigureGroupTopologyResponse'
+                $ref: '#/components/schemas/QueuedGroupTopologyReconfigureResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -5308,6 +5308,20 @@ components:
           $ref: '#/components/schemas/GroupTopologyConfigView'
         published:
           type: boolean
+
+    QueuedGroupTopologyReconfigureResponse:
+      type: object
+      required: [status, groupRef, requestId, outboxId]
+      properties:
+        status:
+          type: string
+          enum: [queued]
+        groupRef:
+          $ref: '#/components/schemas/GroupRef'
+        requestId:
+          type: string
+        outboxId:
+          type: string
 
     CrdtRouteErrorResponse:
       type: object

@@ -22,7 +22,15 @@ import type { GroupEvent, GroupRef } from '@shared/api/group-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
-import type { GroupTopologyConfigPatch } from '@shared/api/graph-topology-management-types.ts';
+import type {
+    CanonicalGroupTopologyConfigPatch,
+    GroupTopologyConfigPatch,
+} from '@shared/api/graph-topology-management-types.ts';
+import {
+    fromCanonicalGroupTopologyConfigPatch,
+    readCanonicalGroupTopologyConfigPatch,
+    toCanonicalGroupTopologyConfigPatch,
+} from '@shared/api/group-topology-config-canonical.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
@@ -54,9 +62,8 @@ import type {
     GroupMutationComputed,
     GroupMutationReceipt,
 } from './group-state-mutations.ts';
-import { hashStateMutationCommand } from '../repositories/StateMutationOutboxRepository.ts';
+import { hashCanonicalCommand } from './canonical-command-hash.ts';
 import type {
-    GroupTopologyConfigMutationPreparation,
     GroupTopologyReconfigureCommand,
     GroupTopologyManagementService,
 } from './group-topology-management-service.ts';
@@ -74,6 +81,7 @@ import {
 } from './rtc-topology-mutations.ts';
 import { toRtcRttMutationReceiptId } from '../rtc-topology-identifiers.ts';
 import type { RtcRttAcceptanceReason } from './rtc-rtt-measurement-policy.ts';
+import { validateRtcRttMeasurement } from '../rtc-rtt-persistence-validation.ts';
 
 export {
     AppInboxService,
@@ -201,7 +209,7 @@ export type TopologyAppInboxOperation =
     | 'reconfigureTopology'
     | 'submitRtt';
 
-export type TopologyAppInboxPayload =
+export type TopologyAppInboxRequestPayload =
     | Readonly<{
           operation: 'putConfig';
           config: GroupTopologyConfigPatch;
@@ -226,6 +234,31 @@ export type TopologyAppInboxPayload =
           publish: boolean;
       }>;
 
+export type TopologyAppInboxPayload =
+    | Readonly<{
+          operation: 'putConfig';
+          config: CanonicalGroupTopologyConfigPatch;
+      }>
+    | Readonly<{
+          operation: 'deleteConfig';
+          target: 'config';
+      }>
+    | Readonly<{
+          operation: 'putOverride';
+          config: CanonicalGroupTopologyConfigPatch;
+          ttlMs: number | null;
+          expiresAtEpochMs: number | null;
+      }>
+    | Readonly<{
+          operation: 'deleteOverride';
+          target: 'override';
+      }>
+    | Readonly<{
+          operation: 'reconfigureTopology';
+          requestOptions: CanonicalGroupTopologyConfigPatch;
+          publish: boolean;
+      }>;
+
 export type TopologyAppInboxCommand = Readonly<{
     actor: Readonly<{
         principalId: string;
@@ -244,7 +277,7 @@ export type CreateTopologyAppInboxCommandInput = Readonly<{
     groupRef: GroupRef;
     requestId: string;
     capturedAtEpochMs: number;
-    payload: TopologyAppInboxPayload;
+    payload: TopologyAppInboxRequestPayload;
 }>;
 
 type TopologyMutationAuthorityProof = Readonly<{
@@ -260,7 +293,7 @@ type TopologyMutationAuthorityProof = Readonly<{
 type TopologyConfigAppInboxAuthority = Readonly<{
     kind: 'topology-config';
     proof: TopologyMutationAuthorityProof;
-    preparation: GroupTopologyConfigMutationPreparation;
+    command: TopologyAppInboxCommand;
 }>;
 
 type TopologyReconfigureAppInboxAuthority = Readonly<{
@@ -280,7 +313,6 @@ export type RtcRttAppInboxCommand = Readonly<{
     mutationCommandHash: string;
     capturedAtEpochMs: number;
     rtt: RttMeasurementInfo;
-    candidateGroupRefs: readonly GroupRef[];
 }>;
 
 type RtcRttAppInboxAuthority = Readonly<{
@@ -291,7 +323,7 @@ type RtcRttAppInboxAuthority = Readonly<{
 
 export type RtcRttAppInboxDependencies = Readonly<{
     repository: RtcRttRepository;
-    readPolicyInputs(groupRefs: readonly GroupRef[]): Promise<Readonly<{
+    readPolicyInputs(command: RtcRttAppInboxCommand): Promise<Readonly<{
         candidateGroups: readonly GroupSnapshot[];
         overlaySnapshotsByGroupKey: ReadonlyMap<
             string,
@@ -319,13 +351,14 @@ export async function toTopologyAppInboxCommand(
         input.groupRef.applicationId.length === 0 ||
         input.groupRef.workspaceId.length === 0 ||
         input.groupRef.groupId.length === 0 ||
-        !isTopologyAppInboxPayload(input.payload) ||
+        !isTopologyAppInboxRequestPayload(input.payload) ||
         !Number.isSafeInteger(input.capturedAtEpochMs) ||
         input.capturedAtEpochMs < 0
     ) {
         throw new TypeError('Topology AppInbox command identity is invalid');
     }
-    const command = {
+    const payload = toCanonicalTopologyAppInboxPayload(input.payload);
+    const stableCommand = {
         actor: { ...input.actor },
         groupRef: {
             applicationId: input.groupRef.applicationId,
@@ -333,13 +366,13 @@ export async function toTopologyAppInboxCommand(
             groupId: input.groupRef.groupId,
         },
         requestId: input.requestId,
-        capturedAtEpochMs: input.capturedAtEpochMs,
-        operation: input.payload.operation,
-        payload: input.payload,
+        operation: payload.operation,
+        payload,
     } as const;
     return {
-        ...command,
-        commandHash: await hashStateMutationCommand(command),
+        ...stableCommand,
+        capturedAtEpochMs: input.capturedAtEpochMs,
+        commandHash: await hashCanonicalCommand(stableCommand),
     };
 }
 
@@ -477,7 +510,6 @@ export class AppGroupInboxService extends AppInboxService {
     async processRtcRttUntilCompletion(input: Readonly<{
         rtt: RttMeasurementInfo;
         alSenderId: string;
-        candidateGroupRefs: readonly GroupRef[];
         capturedAtEpochMs: number;
     }>): Promise<Either<string, RtcRttAppInboxResult>> {
         const session = await this.groupStateService.readIssuedAuthSession(
@@ -496,14 +528,19 @@ export class AppGroupInboxService extends AppInboxService {
                 sessionId: session.sessionId,
             },
             requestId,
-            mutationCommandHash: await hashStateMutationCommand(stableRequest),
+            mutationCommandHash: await hashCanonicalCommand(stableRequest),
             capturedAtEpochMs: input.capturedAtEpochMs,
             rtt: input.rtt,
-            candidateGroupRefs: input.candidateGroupRefs.map((ref) => ({ ...ref })),
+        } as const;
+        const stableCommand = {
+            actor: commandWithoutHash.actor,
+            requestId: commandWithoutHash.requestId,
+            mutationCommandHash: commandWithoutHash.mutationCommandHash,
+            rtt: commandWithoutHash.rtt,
         } as const;
         const command: RtcRttAppInboxCommand = {
             ...commandWithoutHash,
-            commandHash: await hashStateMutationCommand(commandWithoutHash),
+            commandHash: await hashCanonicalCommand(stableCommand),
         };
         const proof = await createTopologyMutationAuthorityProof(
             session,
@@ -573,7 +610,6 @@ export class AppGroupInboxService extends AppInboxService {
         enqueue: AppInboxEnqueueInput<V>,
         authority: IssuedAuthSession,
     ): Promise<Either<string, R>> {
-        const service = this.requireTopologyManagementService();
         const command = await readAuthenticatedTopologyCommand(
             enqueue,
             authority,
@@ -596,15 +632,10 @@ export class AppGroupInboxService extends AppInboxService {
                 } satisfies TopologyReconfigureAppInboxAuthority,
             });
         }
-        const preparation = await service.prepareTopologyConfigMutation({
-            command: toTopologyConfigMutationCommand(command),
-            commandHash: command.commandHash,
-            capturedAtEpochMs: command.capturedAtEpochMs,
-        });
         const durableAuthority: TopologyConfigAppInboxAuthority = {
             kind: 'topology-config',
             proof,
-            preparation,
+            command,
         };
         return await super.processEntryUntilCompletion<V, R>({
             ...enqueue,
@@ -626,17 +657,22 @@ export class AppGroupInboxService extends AppInboxService {
             );
         }
         const service = this.requireTopologyManagementService();
+        const preparation = await service.prepareTopologyConfigMutation({
+            command: toTopologyConfigMutationCommand(authority.command),
+            commandHash: authority.command.commandHash,
+            capturedAtEpochMs: authority.command.capturedAtEpochMs,
+        });
         const read = await service.readTopologyConfigMutation(
-            authority.preparation.command,
+            preparation.command,
         );
         const attemptCount = context.entry.dequeueAudit.attempts;
         const computed = service.computeTopologyConfigMutation(
-            authority.preparation,
+            preparation,
             read,
             attemptCount,
         );
         service.validateTopologyConfigMutation(
-            authority.preparation,
+            preparation,
             read,
             attemptCount,
             computed,
@@ -679,7 +715,9 @@ export class AppGroupInboxService extends AppInboxService {
             commandId: authority.command.requestId,
             actorPrincipalId: authority.command.actor.principalId,
             capturedAtEpochMs: authority.command.capturedAtEpochMs,
-            requestOptions: authority.command.payload.requestOptions,
+            requestOptions: fromCanonicalGroupTopologyConfigPatch(
+                authority.command.payload.requestOptions,
+            ),
             publish: authority.command.payload.publish,
             isPlatformAdmin: service.isPlatformAdmin(
                 authority.command.actor.principalId,
@@ -725,9 +763,7 @@ export class AppGroupInboxService extends AppInboxService {
             } as const
             : {
                 ...stableRequest,
-                ...await dependencies.readPolicyInputs(
-                    authority.command.candidateGroupRefs,
-                ),
+                ...await dependencies.readPolicyInputs(authority.command),
             };
         const lifecycleFacts = read.receipt
             ? {
@@ -795,18 +831,16 @@ export class AppGroupInboxService extends AppInboxService {
                 'RTC RTT authority proof does not match the command.',
             );
         }
-        const canonicalWithoutHash = {
+        const canonicalStableCommand = {
             actor: authority.command.actor,
             requestId: authority.command.requestId,
             mutationCommandHash: authority.command.mutationCommandHash,
-            capturedAtEpochMs: authority.command.capturedAtEpochMs,
             rtt: authority.command.rtt,
-            candidateGroupRefs: authority.command.candidateGroupRefs,
         };
         if (
-            await hashStateMutationCommand(canonicalWithoutHash) !==
+            await hashCanonicalCommand(canonicalStableCommand) !==
                 authority.command.commandHash ||
-            await hashStateMutationCommand({
+            await hashCanonicalCommand({
                 rtt: authority.command.rtt,
                 alSenderId: authority.command.actor.sessionId,
             }) !== authority.command.mutationCommandHash
@@ -852,12 +886,8 @@ export class AppGroupInboxService extends AppInboxService {
     private async verifyTopologyMutationAuthority(
         authority: TopologyAppInboxAuthority,
     ): Promise<void> {
-        const actorPrincipalId = authority.kind === 'topology-config'
-            ? authority.preparation.command.input.updatedByPrincipalId
-            : authority.command.actor.principalId;
-        const commandHash = authority.kind === 'topology-config'
-            ? authority.preparation.stableFacts.commandHash
-            : authority.command.commandHash;
+        const actorPrincipalId = authority.command.actor.principalId;
+        const commandHash = authority.command.commandHash;
         const session = await this.groupStateService.readIssuedAuthSession(
             authority.proof.sessionId,
         );
@@ -886,6 +916,20 @@ export class AppGroupInboxService extends AppInboxService {
         ) {
             throw new GroupMutationAuthorizationError(
                 'Topology mutation authority proof does not match the command.',
+            );
+        }
+        const command = authority.command;
+        if (
+            await hashCanonicalCommand({
+                actor: command.actor,
+                groupRef: command.groupRef,
+                requestId: command.requestId,
+                operation: command.operation,
+                payload: command.payload,
+            }) !== command.commandHash
+        ) {
+            throw new GroupMutationAuthorizationError(
+                'Topology durable command hash is invalid.',
             );
         }
     }
@@ -1174,14 +1218,14 @@ async function readAuthenticatedTopologyCommand<V>(
             'Topology AppInbox command does not match authenticated authority.',
         );
     }
-    const canonical = await toTopologyAppInboxCommand({
+    const stableCommand = {
         actor: command.actor,
         groupRef: command.groupRef,
         requestId: command.requestId,
-        capturedAtEpochMs: command.capturedAtEpochMs,
+        operation: command.operation,
         payload: command.payload,
-    });
-    if (canonical.commandHash !== command.commandHash) {
+    };
+    if (await hashCanonicalCommand(stableCommand) !== command.commandHash) {
         throw new GroupMutationAuthorizationError(
             'Topology AppInbox command hash is invalid.',
         );
@@ -1189,42 +1233,140 @@ async function readAuthenticatedTopologyCommand<V>(
     return command;
 }
 
+function isTopologyAppInboxRequestPayload(
+    value: unknown,
+): value is TopologyAppInboxRequestPayload {
+    if (!isRecord(value) || typeof value.operation !== 'string') return false;
+    try {
+        switch (value.operation) {
+            case 'putConfig':
+                requireExactKeys(value, ['operation', 'config']);
+                toCanonicalGroupTopologyConfigPatch(value.config);
+                return true;
+            case 'deleteConfig':
+                requireExactKeys(value, ['operation', 'target']);
+                return value.target === 'config';
+            case 'putOverride':
+                requireExactKeys(value, [
+                    'operation',
+                    'config',
+                    'ttlMs',
+                    'expiresAtEpochMs',
+                ]);
+                toCanonicalGroupTopologyConfigPatch(value.config);
+                return isFiniteNumberOrNull(value.ttlMs) &&
+                    isFiniteNumberOrNull(value.expiresAtEpochMs);
+            case 'deleteOverride':
+                requireExactKeys(value, ['operation', 'target']);
+                return value.target === 'override';
+            case 'reconfigureTopology':
+                requireExactKeys(value, [
+                    'operation',
+                    'requestOptions',
+                    'publish',
+                ]);
+                toCanonicalGroupTopologyConfigPatch(value.requestOptions);
+                return typeof value.publish === 'boolean';
+            default:
+                return false;
+        }
+    } catch {
+        return false;
+    }
+}
+
 function isTopologyAppInboxPayload(
     value: unknown,
 ): value is TopologyAppInboxPayload {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
-        return false;
-    }
-    const record = value as Record<string, unknown>;
+    if (!isRecord(value)) return false;
+    const record = value;
     if (typeof record.operation !== 'string') {
         return false;
     }
-    switch (record.operation) {
+    try {
+        switch (record.operation) {
+            case 'putConfig':
+                requireExactKeys(record, ['operation', 'config']);
+                readCanonicalGroupTopologyConfigPatch(record.config);
+                return true;
+            case 'deleteConfig':
+                requireExactKeys(record, ['operation', 'target']);
+                return record.target === 'config';
+            case 'putOverride':
+                requireExactKeys(record, [
+                    'operation',
+                    'config',
+                    'ttlMs',
+                    'expiresAtEpochMs',
+                ]);
+                readCanonicalGroupTopologyConfigPatch(record.config);
+                return isFiniteNumberOrNull(record.ttlMs) &&
+                    isFiniteNumberOrNull(record.expiresAtEpochMs);
+            case 'deleteOverride':
+                requireExactKeys(record, ['operation', 'target']);
+                return record.target === 'override';
+            case 'reconfigureTopology':
+                requireExactKeys(record, [
+                    'operation',
+                    'requestOptions',
+                    'publish',
+                ]);
+                readCanonicalGroupTopologyConfigPatch(record.requestOptions);
+                return typeof record.publish === 'boolean';
+            default:
+                return false;
+        }
+    } catch {
+        return false;
+    }
+}
+
+function toCanonicalTopologyAppInboxPayload(
+    payload: TopologyAppInboxRequestPayload,
+): TopologyAppInboxPayload {
+    switch (payload.operation) {
         case 'putConfig':
-            return isRecord(record.config);
+            return {
+                operation: payload.operation,
+                config: toCanonicalGroupTopologyConfigPatch(payload.config),
+            };
         case 'deleteConfig':
-            return record.target === 'config';
-        case 'putOverride':
-            return (
-                isRecord(record.config) &&
-                (record.ttlMs === null || typeof record.ttlMs === 'number') &&
-                (record.expiresAtEpochMs === null ||
-                    typeof record.expiresAtEpochMs === 'number')
-            );
         case 'deleteOverride':
-            return record.target === 'override';
+            return { ...payload };
+        case 'putOverride':
+            return {
+                ...payload,
+                config: toCanonicalGroupTopologyConfigPatch(payload.config),
+            };
         case 'reconfigureTopology':
-            return (
-                isRecord(record.requestOptions) &&
-                typeof record.publish === 'boolean'
-            );
-        default:
-            return false;
+            return {
+                ...payload,
+                requestOptions: toCanonicalGroupTopologyConfigPatch(
+                    payload.requestOptions,
+                ),
+            };
     }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function requireExactKeys(
+    record: Record<string, unknown>,
+    expected: readonly string[],
+): void {
+    if (
+        JSON.stringify(Object.keys(record).toSorted()) !==
+            JSON.stringify([...expected].toSorted())
+    ) {
+        throw new TypeError('Topology durable command has missing or unknown fields');
+    }
+}
+
+function isFiniteNumberOrNull(value: unknown): value is number | null {
+    return value === null ||
+        (typeof value === 'number' && Number.isFinite(value));
 }
 
 function topologyInboxTypeForOperation(
@@ -1251,7 +1393,7 @@ function toTopologyConfigMutationCommand(
         case 'putConfig':
             return topologyConfigMutationCommand(
                 command,
-                command.payload.config,
+                fromCanonicalGroupTopologyConfigPatch(command.payload.config),
                 null,
                 null,
             );
@@ -1260,7 +1402,7 @@ function toTopologyConfigMutationCommand(
         case 'putOverride':
             return topologyConfigMutationCommand(
                 command,
-                command.payload.config,
+                fromCanonicalGroupTopologyConfigPatch(command.payload.config),
                 command.payload.ttlMs,
                 command.payload.expiresAtEpochMs,
             );
@@ -1299,51 +1441,116 @@ function topologyConfigMutationCommand(
 function readTopologyConfigAuthority(
     value: unknown,
 ): TopologyAppInboxAuthority {
-    if (
-        !value ||
-        typeof value !== 'object' ||
-        Array.isArray(value) ||
-        !('kind' in value) ||
-        (value.kind !== 'topology-config' &&
-            value.kind !== 'topology-reconfigure') ||
-        !('proof' in value) ||
-        !value.proof ||
-        typeof value.proof !== 'object' ||
-        (value.kind === 'topology-config' &&
-            (!('preparation' in value) ||
-                !value.preparation ||
-                typeof value.preparation !== 'object')) ||
-        (value.kind === 'topology-reconfigure' &&
-            (!('command' in value) ||
-                !value.command ||
-                typeof value.command !== 'object'))
-    ) {
+    try {
+        if (!isRecord(value)) throw new TypeError('authority is not a record');
+        requireExactKeys(value, ['kind', 'proof', 'command']);
+        if (
+            value.kind !== 'topology-config' &&
+            value.kind !== 'topology-reconfigure'
+        ) {
+            throw new TypeError('authority kind is invalid');
+        }
+        readTopologyMutationAuthorityProof(value.proof);
+        readDurableTopologyAppInboxCommand(value.command);
+        return value as TopologyAppInboxAuthority;
+    } catch {
         throw new GroupMutationAuthorizationError(
             'Topology AppInbox durable authority is malformed.',
         );
     }
-    return value as TopologyAppInboxAuthority;
 }
 
 function readRtcRttAuthority(value: unknown): RtcRttAppInboxAuthority {
-    if (
-        !value ||
-        typeof value !== 'object' ||
-        Array.isArray(value) ||
-        !('kind' in value) ||
-        value.kind !== 'rtc-rtt' ||
-        !('proof' in value) ||
-        !value.proof ||
-        typeof value.proof !== 'object' ||
-        !('command' in value) ||
-        !value.command ||
-        typeof value.command !== 'object'
-    ) {
+    try {
+        if (!isRecord(value)) throw new TypeError('authority is not a record');
+        requireExactKeys(value, ['kind', 'proof', 'command']);
+        if (value.kind !== 'rtc-rtt') throw new TypeError('authority kind is invalid');
+        readTopologyMutationAuthorityProof(value.proof);
+        const command = isRecord(value.command) ? value.command : null;
+        if (!command) throw new TypeError('RTC RTT command is invalid');
+        requireExactKeys(command, [
+            'actor',
+            'requestId',
+            'commandHash',
+            'mutationCommandHash',
+            'capturedAtEpochMs',
+            'rtt',
+        ]);
+        validateRtcRttMeasurement(command.rtt);
+        return value as RtcRttAppInboxAuthority;
+    } catch {
         throw new GroupMutationAuthorizationError(
             'RTC RTT AppInbox durable authority is malformed.',
         );
     }
-    return value as RtcRttAppInboxAuthority;
+}
+
+function readTopologyMutationAuthorityProof(value: unknown): void {
+    if (!isRecord(value)) throw new TypeError('authority proof is invalid');
+    requireExactKeys(value, [
+        'version',
+        'principalId',
+        'sessionId',
+        'sessionIssuedAtEpochMs',
+        'sessionExpiresAtEpochMs',
+        'commandHash',
+        'commandMac',
+    ]);
+    if (
+        value.version !== 1 ||
+        typeof value.principalId !== 'string' ||
+        typeof value.sessionId !== 'string' ||
+        !Number.isSafeInteger(value.sessionIssuedAtEpochMs) ||
+        !Number.isSafeInteger(value.sessionExpiresAtEpochMs) ||
+        typeof value.commandHash !== 'string' ||
+        typeof value.commandMac !== 'string'
+    ) {
+        throw new TypeError('authority proof fields are invalid');
+    }
+}
+
+function readDurableTopologyAppInboxCommand(
+    value: unknown,
+): TopologyAppInboxCommand {
+    if (!isRecord(value)) throw new TypeError('topology command is invalid');
+    requireExactKeys(value, [
+        'actor',
+        'groupRef',
+        'requestId',
+        'commandHash',
+        'capturedAtEpochMs',
+        'operation',
+        'payload',
+    ]);
+    if (!isTopologyAppInboxPayload(value.payload)) {
+        throw new TypeError('topology command payload is invalid');
+    }
+    const actor = isRecord(value.actor) ? value.actor : null;
+    const groupRef = isRecord(value.groupRef) ? value.groupRef : null;
+    if (!actor || !groupRef) throw new TypeError('topology identity is invalid');
+    requireExactKeys(actor, ['principalId', 'sessionId']);
+    requireExactKeys(groupRef, ['applicationId', 'workspaceId', 'groupId']);
+    if (
+        typeof actor.principalId !== 'string' ||
+        actor.principalId.length === 0 ||
+        typeof actor.sessionId !== 'string' ||
+        actor.sessionId.length === 0 ||
+        typeof groupRef.applicationId !== 'string' ||
+        groupRef.applicationId.length === 0 ||
+        typeof groupRef.workspaceId !== 'string' ||
+        groupRef.workspaceId.length === 0 ||
+        typeof groupRef.groupId !== 'string' ||
+        groupRef.groupId.length === 0 ||
+        typeof value.requestId !== 'string' ||
+        value.requestId.length === 0 ||
+        typeof value.commandHash !== 'string' ||
+        !Number.isSafeInteger(value.capturedAtEpochMs) ||
+        (value.capturedAtEpochMs as number) < 0 ||
+        value.operation !== value.payload.operation
+    ) {
+        throw new TypeError('topology command identity fields are invalid');
+    }
+    return value as TopologyAppInboxCommand;
 }
 
 function toRtcRttAppInboxResult(

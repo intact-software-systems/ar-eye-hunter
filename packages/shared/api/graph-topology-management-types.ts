@@ -62,6 +62,22 @@ export type GroupTopologyConfigPatch = Readonly<{
     meshParamK?: number;
 }>;
 
+export type CanonicalGroupTopologyConfigField<T> =
+    | Readonly<{ action: 'preserve' }>
+    | Readonly<{ action: 'set'; value: T }>;
+
+/**
+ * Mandatory JSON representation used after a sparse topology request crosses a
+ * durable queue boundary. Absence is represented explicitly by `preserve`.
+ */
+export type CanonicalGroupTopologyConfigPatch = Readonly<{
+    topologyKind: CanonicalGroupTopologyConfigField<GroupTopologyKindSetting>;
+    degreeLimit: CanonicalGroupTopologyConfigField<number>;
+    treeMinSize: CanonicalGroupTopologyConfigField<number>;
+    meshMinSize: CanonicalGroupTopologyConfigField<number>;
+    meshParamK: CanonicalGroupTopologyConfigField<number>;
+}>;
+
 export type EffectiveGroupTopologyConfig = Required<GroupTopologyConfigPatch>;
 
 export type StoredGroupTopologyConfig = Readonly<{
@@ -160,6 +176,13 @@ export type ReconfigureGroupTopologyResponse = Readonly<{
     previous: RallarOverlayTopologySnapshot | null;
     config: GroupTopologyConfigView;
     published: boolean;
+}>;
+
+export type QueuedGroupTopologyReconfigureResponse = Readonly<{
+    status: 'queued';
+    groupRef: GroupRef;
+    requestId: string;
+    outboxId: string;
 }>;
 
 export type GroupTopologyValidationIssue = Readonly<{

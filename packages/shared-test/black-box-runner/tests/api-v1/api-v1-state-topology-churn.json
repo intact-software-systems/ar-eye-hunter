@@ -781,15 +781,14 @@
       "expect": {
         "status": 200,
         "body": {
-          "snapshot": {
-            "sourceGroupStateRevision": "{sharedFinalRevision}",
-            "state": "active",
-            "groupRef": {
-              "applicationId": "{applicationId}",
-              "workspaceId": "{workspaceId}",
-              "groupId": "{sharedGroupId}"
-            }
-          }
+          "status": "queued",
+          "groupRef": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{sharedGroupId}"
+          },
+          "requestId": "reconcile-{sharedGroupId}-{runId}",
+          "outboxId": "string"
         }
       }
     },
@@ -812,15 +811,14 @@
       "expect": {
         "status": 200,
         "body": {
-          "snapshot": {
-            "sourceGroupStateRevision": "{churnFinalRevision}",
-            "state": "active",
-            "groupRef": {
-              "applicationId": "{applicationId}",
-              "workspaceId": "{workspaceId}",
-              "groupId": "{churnGroupId}"
-            }
-          }
+          "status": "queued",
+          "groupRef": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{churnGroupId}"
+          },
+          "requestId": "reconcile-{churnGroupId}-{runId}",
+          "outboxId": "string"
         }
       }
     }

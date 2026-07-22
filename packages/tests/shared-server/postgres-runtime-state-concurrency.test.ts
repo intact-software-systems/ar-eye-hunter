@@ -985,7 +985,6 @@ describe('Postgres runtime-state conditional-write concurrency', () => {
                 expect(result.filter(({ updated }) => updated)).toHaveLength(1);
                 const stored = new RtcRttRepository(firstRuntime, { now: () => 2 });
                 expect(await stored.listMeasurements()).toHaveLength(1);
-                expect(await stored.listRecomputeIntents()).toHaveLength(1);
             } finally {
                 await cleanupApplicationRows(clients, applicationId);
             }

@@ -1,10 +1,12 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { hashStateMutationCommand } from '../repositories/StateMutationOutboxRepository.ts';
+import { readCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
+import { validateRtcRttMeasurement } from '../rtc-rtt-persistence-validation.ts';
+import { hashCanonicalCommand } from './canonical-command-hash.ts';
 import {
     AppInboxIdempotencyConflictError,
     type AppInboxEnqueueInput,
-    type AppInboxType,
+    AppInboxType,
 } from './app-inbox-contracts.ts';
 
 export async function assertMatchingAppInboxCommand(
@@ -17,7 +19,7 @@ export async function assertMatchingAppInboxCommand(
         const message = JSON.parse(entry.resource) as ALMessage;
         existing = JSON.parse(message.payload.resource) as AppInboxEnqueueInput<unknown>;
     } catch {
-        const receivedCommandHash = await hashStateMutationCommand(
+        const receivedCommandHash = await hashCanonicalCommand(
             toLogicalAppInboxCommand(incoming),
         );
         throw new AppInboxIdempotencyConflictError(
@@ -32,8 +34,8 @@ export async function assertMatchingAppInboxCommand(
     );
     if (existingCommandIdentity === receivedCommandIdentity) return;
     const [existingCommandHash, receivedCommandHash] = await Promise.all([
-        hashStateMutationCommand(toLogicalAppInboxCommand(normalizedExisting)),
-        hashStateMutationCommand(toLogicalAppInboxCommand(incoming)),
+        hashCanonicalCommand(toLogicalAppInboxCommand(normalizedExisting)),
+        hashCanonicalCommand(toLogicalAppInboxCommand(incoming)),
     ]);
     throw new AppInboxIdempotencyConflictError(
         entry.key.resourceId,
@@ -53,11 +55,189 @@ export function toLogicalAppInboxCommand(enqueue: AppInboxEnqueueInput<unknown>)
     authority: unknown;
     data: unknown;
 }> {
+    const stable = toStableTopologyCommand(enqueue.type, enqueue.data);
+    if (stable) {
+        return {
+            type: enqueue.type,
+            authority: null,
+            data: stable,
+        };
+    }
     return {
         type: enqueue.type,
         authority: enqueue.authority ?? null,
         data: enqueue.data,
     };
+}
+
+function toStableTopologyCommand(
+    type: AppInboxType,
+    value: unknown,
+): unknown | undefined {
+    try {
+        if (type === AppInboxType.RTC_RTT_SUBMIT) {
+            const command = requireExactRecord(value, [
+                'actor',
+                'requestId',
+                'commandHash',
+                'mutationCommandHash',
+                'capturedAtEpochMs',
+                'rtt',
+            ]);
+            const actor = readActor(command.actor);
+            readNonEmptyString(command.requestId);
+            readNonEmptyString(command.commandHash);
+            readNonEmptyString(command.mutationCommandHash);
+            readEpoch(command.capturedAtEpochMs);
+            validateRtcRttMeasurement(command.rtt);
+            return {
+                actor,
+                requestId: command.requestId,
+                commandHash: command.commandHash,
+                mutationCommandHash: command.mutationCommandHash,
+                rtt: command.rtt,
+            };
+        }
+        if (!TOPOLOGY_APP_INBOX_TYPES.has(type)) return undefined;
+        const command = requireExactRecord(value, [
+            'actor',
+            'groupRef',
+            'requestId',
+            'commandHash',
+            'capturedAtEpochMs',
+            'operation',
+            'payload',
+        ]);
+        const actor = readActor(command.actor);
+        const groupRef = requireExactRecord(command.groupRef, [
+            'applicationId',
+            'workspaceId',
+            'groupId',
+        ]);
+        readNonEmptyString(groupRef.applicationId);
+        readNonEmptyString(groupRef.workspaceId);
+        readNonEmptyString(groupRef.groupId);
+        readNonEmptyString(command.requestId);
+        readNonEmptyString(command.commandHash);
+        readEpoch(command.capturedAtEpochMs);
+        const payload = readTopologyPayload(command.payload);
+        if (command.operation !== payload.operation) {
+            throw new TypeError('Topology operation differs from payload');
+        }
+        return {
+            actor,
+            groupRef,
+            requestId: command.requestId,
+            commandHash: command.commandHash,
+            operation: command.operation,
+            payload,
+        };
+    } catch {
+        return undefined;
+    }
+}
+
+const TOPOLOGY_APP_INBOX_TYPES = new Set<AppInboxType>([
+    AppInboxType.TOPOLOGY_CONFIG_PUT,
+    AppInboxType.TOPOLOGY_CONFIG_DELETE,
+    AppInboxType.TOPOLOGY_OVERRIDE_PUT,
+    AppInboxType.TOPOLOGY_OVERRIDE_DELETE,
+    AppInboxType.TOPOLOGY_RECONFIGURE,
+]);
+
+function readTopologyPayload(value: unknown): Record<string, unknown> {
+    const record = requireRecord(value);
+    switch (record.operation) {
+        case 'putConfig':
+            requireExactKeys(record, ['operation', 'config']);
+            readCanonicalGroupTopologyConfigPatch(record.config);
+            return record;
+        case 'deleteConfig':
+            requireExactKeys(record, ['operation', 'target']);
+            if (record.target !== 'config') throw new TypeError('Invalid target');
+            return record;
+        case 'putOverride':
+            requireExactKeys(record, [
+                'operation',
+                'config',
+                'ttlMs',
+                'expiresAtEpochMs',
+            ]);
+            readCanonicalGroupTopologyConfigPatch(record.config);
+            readFiniteNumberOrNull(record.ttlMs);
+            readFiniteNumberOrNull(record.expiresAtEpochMs);
+            return record;
+        case 'deleteOverride':
+            requireExactKeys(record, ['operation', 'target']);
+            if (record.target !== 'override') throw new TypeError('Invalid target');
+            return record;
+        case 'reconfigureTopology':
+            requireExactKeys(record, [
+                'operation',
+                'requestOptions',
+                'publish',
+            ]);
+            readCanonicalGroupTopologyConfigPatch(record.requestOptions);
+            if (typeof record.publish !== 'boolean') {
+                throw new TypeError('Invalid publish flag');
+            }
+            return record;
+        default:
+            throw new TypeError('Invalid topology operation');
+    }
+}
+
+function readActor(value: unknown): Record<string, unknown> {
+    const actor = requireExactRecord(value, ['principalId', 'sessionId']);
+    readNonEmptyString(actor.principalId);
+    readNonEmptyString(actor.sessionId);
+    return actor;
+}
+
+function requireExactRecord(
+    value: unknown,
+    expected: readonly string[],
+): Record<string, unknown> {
+    const record = requireRecord(value);
+    requireExactKeys(record, expected);
+    return record;
+}
+
+function requireRecord(value: unknown): Record<string, unknown> {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+        throw new TypeError('Expected record');
+    }
+    return value as Record<string, unknown>;
+}
+
+function requireExactKeys(
+    record: Record<string, unknown>,
+    expected: readonly string[],
+): void {
+    if (
+        JSON.stringify(Object.keys(record).toSorted()) !==
+            JSON.stringify([...expected].toSorted())
+    ) {
+        throw new TypeError('Unexpected durable command fields');
+    }
+}
+
+function readNonEmptyString(value: unknown): void {
+    if (typeof value !== 'string' || value.length === 0) {
+        throw new TypeError('Expected non-empty string');
+    }
+}
+
+function readEpoch(value: unknown): void {
+    if (!Number.isSafeInteger(value) || (value as number) < 0) {
+        throw new TypeError('Expected epoch');
+    }
+}
+
+function readFiniteNumberOrNull(value: unknown): void {
+    if (value !== null && (typeof value !== 'number' || !Number.isFinite(value))) {
+        throw new TypeError('Expected finite number or null');
+    }
 }
 
 export function serializeCanonicalJsonWire(value: unknown): string {

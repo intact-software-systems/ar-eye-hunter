@@ -23,7 +23,7 @@ import { getMiddleware } from '../middleware.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 import {
   type TopologyAppInboxCommand,
-  type TopologyAppInboxPayload,
+  type TopologyAppInboxRequestPayload,
   toTopologyAppInboxCommand,
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 import {
@@ -470,7 +470,7 @@ async function writeTopologyAppInboxCommand(
   groupRef: GroupRef,
   input: Readonly<{
     requestId: string;
-    payload: TopologyAppInboxPayload;
+    payload: TopologyAppInboxRequestPayload;
   }>,
 ): Promise<unknown> {
   const command = await toTopologyAppInboxCommand({

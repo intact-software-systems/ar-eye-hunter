@@ -11,6 +11,7 @@ export * from './api/api-type-utils.ts';
 export * from './api/admin-operations-types.ts';
 export * from './api/admin-support-types.ts';
 export * from './api/graph-topology-management-types.ts';
+export * from './api/group-topology-config-canonical.ts';
 export * from './api/group-director.ts';
 export * from './api/group-policy-types.ts';
 export * from './api/overlay-topology.ts';

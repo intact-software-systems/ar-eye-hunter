@@ -46,7 +46,7 @@ import type {
     PutGroupTopologyConfigRequest,
     PutGroupTopologyOverrideRequest,
     ReconfigureGroupTopologyRequest,
-    ReconfigureGroupTopologyResponse,
+    QueuedGroupTopologyReconfigureResponse,
     StoredGroupTopologyConfig,
     StoredGroupTopologyOverride,
 } from '@shared/api/graph-topology-management-types.ts';
@@ -1013,10 +1013,10 @@ export async function reconfigureStateGroupTopology(
     request: ReconfigureGroupTopologyRequest,
     scope: StateScope = defaultStateScope(),
     options?: ApiRequestOptions,
-): Promise<ReconfigureGroupTopologyResponse> {
+): Promise<QueuedGroupTopologyReconfigureResponse> {
     return await executeHttpRequest<
         ReconfigureGroupTopologyRequest,
-        ReconfigureGroupTopologyResponse
+        QueuedGroupTopologyReconfigureResponse
     >(
         readApiBaseUrl(),
         `${toStateGroupPath(scope, groupId)}/topology/reconfigure`,

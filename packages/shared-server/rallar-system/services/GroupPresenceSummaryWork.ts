@@ -1,5 +1,6 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import {
     requireConditionalWrite,
@@ -135,7 +136,7 @@ export class GroupPresenceSummaryWork {
             groupSnapshot: snapshot,
             effectKind: 'rtc-topology-recompute',
             payloadKind: 'group-revision',
-            requestOptions: {},
+            requestOptions: toCanonicalGroupTopologyConfigPatch({}),
             publish: true,
             createdAtEpochMs: summary.summary.computedAtEpochMs,
             expireAtEpochMs: work.expireAtEpochMs,

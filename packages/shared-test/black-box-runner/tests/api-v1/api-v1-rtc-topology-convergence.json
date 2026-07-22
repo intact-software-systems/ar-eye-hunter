@@ -338,17 +338,14 @@
       "expect": {
         "status": 200,
         "body": {
-          "snapshot": {
-            "sourceGroupStateRevision": "integer",
-            "state": "active",
-            "overlayId": "string",
-            "groupRef": {
-              "applicationId": "{applicationId}",
-              "workspaceId": "{workspaceId}",
-              "groupId": "{groupId}"
-            },
-            "version": "integer"
-          }
+          "status": "queued",
+          "groupRef": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{groupId}"
+          },
+          "requestId": "baseline-topology-{groupId}-{runId}",
+          "outboxId": "string"
         }
       }
     },

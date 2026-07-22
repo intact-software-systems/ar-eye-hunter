@@ -248,24 +248,17 @@ Deno.test('OpenAPI JSON includes scoped graph and topology management contracts'
     ],
   );
   const reconfigureResponse = json.components.schemas
-    .ReconfigureGroupTopologyResponse;
+    .QueuedGroupTopologyReconfigureResponse as {
+      required: string[];
+      properties: { status: { enum: string[] } };
+    };
   assert.deepEqual(reconfigureResponse.required, [
+    'status',
     'groupRef',
-    'overlayId',
-    'changed',
-    'snapshot',
-    'previous',
-    'config',
-    'published',
+    'requestId',
+    'outboxId',
   ]);
-  assert.ok(reconfigureResponse.properties?.changed);
-  assert.ok(reconfigureResponse.properties?.published);
-  assert.ok(reconfigureResponse.properties?.snapshot);
-  assert.ok(reconfigureResponse.properties?.config);
-  assert.deepEqual(reconfigureResponse.properties?.previous, {
-    $ref: '#/components/schemas/RallarOverlayTopologySnapshot',
-    nullable: true,
-  });
+  assert.deepEqual(reconfigureResponse.properties.status.enum, ['queued']);
 
   assertAuthContract(
     'GET scoped global graph',

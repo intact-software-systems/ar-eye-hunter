@@ -681,7 +681,6 @@ describe('Rallar system websocket topics RTC topology', () => {
                 expect.objectContaining({
                     rtt,
                     alSenderId: 'session-a',
-                    candidateGroupRefs: [group.group],
                 }),
             );
             expect(observeRtt).not.toHaveBeenCalled();

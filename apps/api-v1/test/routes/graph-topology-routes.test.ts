@@ -4,6 +4,7 @@ import { Either } from '@shared/resilience/Either.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import type { GraphDiagnosticReadResponse } from '@shared/api/graph-topology-management-types.ts';
+import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import * as graphTopologyRoutes from '../../src/routes/graph-topology-routes.ts';
 
 const TEST_SCOPE: StateScope = {
@@ -150,7 +151,7 @@ Deno.test('topology writes require group manager or platform admin auth', async 
   assert.equal(ownerAllowed.status, 200);
   assert.deepEqual((ownerCalls[0] as { data: { payload: unknown } }).data.payload, {
     operation: 'putConfig',
-    config: { topologyKind: 'tree' },
+    config: toCanonicalGroupTopologyConfigPatch({ topologyKind: 'tree' }),
   });
 
   const adminCalls: unknown[] = [];
@@ -292,6 +293,45 @@ Deno.test('all topology mutation routes submit complete AppInbox commands and ne
   }
 });
 
+Deno.test('topology AppInbox context ids preserve scoped component boundaries', async () => {
+  const contexts: string[] = [];
+  const refs = [
+    { applicationId: 'app:a', workspaceId: 'workspace', groupId: 'room' },
+    { applicationId: 'app', workspaceId: 'a:workspace', groupId: 'room' },
+  ] as const;
+
+  for (const ref of refs) {
+    const app = createRouteApp({
+      group: createGroupSnapshot(ref.groupId, ['owner'], ref),
+      session: createIssuedSession('owner', 'owner-session'),
+      processTopologyAppInbox: (_authority, enqueue) => {
+        contexts.push(enqueue.contextId);
+        return Promise.resolve({ status: 'queued' });
+      },
+    });
+    const response = await app.request(
+      `/api/state/apps/${encodeURIComponent(ref.applicationId)}/workspaces/${
+        encodeURIComponent(ref.workspaceId)
+      }/groups/${encodeURIComponent(ref.groupId)}/topology/config`,
+      {
+        method: 'PUT',
+        headers: {
+          authorization: 'Bearer token',
+          'Idempotency-Key': `context-${contexts.length}`,
+        },
+        body: JSON.stringify({ config: { topologyKind: 'tree' } }),
+      },
+    );
+    assert.equal(response.status, 200);
+  }
+
+  assert.deepEqual(contexts, [
+    'app%3Aa:workspace:room',
+    'app:a%3Aworkspace:room',
+  ]);
+  assert.notEqual(contexts[0], contexts[1]);
+});
+
 Deno.test('topology mutations return after commit while explicit reconfigure forwards options', async () => {
   const calls: unknown[] = [];
   const app = createRouteApp({
@@ -361,7 +401,7 @@ Deno.test('topology mutations return after commit while explicit reconfigure for
     [
     {
         operation: 'putOverride',
-        config: { degreeLimit: 4 },
+        config: toCanonicalGroupTopologyConfigPatch({ degreeLimit: 4 }),
         ttlMs: 5_000,
         expiresAtEpochMs: null,
     },
@@ -369,7 +409,7 @@ Deno.test('topology mutations return after commit while explicit reconfigure for
       { operation: 'deleteOverride', target: 'override' },
     {
         operation: 'reconfigureTopology',
-        requestOptions: { topologyKind: 'tree' },
+        requestOptions: toCanonicalGroupTopologyConfigPatch({ topologyKind: 'tree' }),
         publish: false,
     },
     ],
@@ -550,12 +590,13 @@ function createGraphResponse(groupRef: GroupRef): GraphDiagnosticReadResponse {
 function createGroupSnapshot(
   groupId: string,
   memberPrincipalIds: readonly string[],
+  scope: StateScope = TEST_SCOPE,
 ): GroupSnapshot {
   return {
     stateRevision: 1,
     causalRevision: { groupRevision: 1, presenceRevision: 0 },
     group: {
-      ...TEST_SCOPE,
+      ...scope,
       groupId,
       slug: null,
       displayName: groupId,
@@ -581,7 +622,7 @@ function createGroupSnapshot(
       deleted: null,
     },
     members: memberPrincipalIds.map((principalId, index) => ({
-      ...TEST_SCOPE,
+      ...scope,
       groupId,
       principalId,
       role: index === 0 ? 'owner' : 'member',
@@ -595,7 +636,7 @@ function createGroupSnapshot(
       banned: null,
     })),
     activeSessions: memberPrincipalIds.map((principalId) => ({
-      ...TEST_SCOPE,
+      ...scope,
       groupId,
       principalId,
       sessionId: `${principalId}-session`,

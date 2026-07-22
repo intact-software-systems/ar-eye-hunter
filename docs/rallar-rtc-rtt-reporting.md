@@ -211,10 +211,11 @@ publication asynchronously and can retry independently.
 API-v1 explicit REST reconfigure uses the shared recompute path that WS group snapshots,
 RTT timers, and app-inbox topology work use. `POST
 /api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/reconfigure`
-is the only configuration endpoint that waits for immediate recompute. It can
-apply request-time topology options for one recompute, while durable config
-and temporary overrides are resolved before the same service update,
-validation, persistence, and overlay publication steps.
+commits a recompute request through AppInbox and returns a mandatory queued
+receipt. Resource-inbox outbox work then applies request-time topology options
+for one recompute, resolving durable config and temporary overrides before the
+same service update, validation, persistence, and overlay publication steps.
+Callers use the topology read path to observe eventual completion.
 
 ## Global Graphs And Vivaldi
 

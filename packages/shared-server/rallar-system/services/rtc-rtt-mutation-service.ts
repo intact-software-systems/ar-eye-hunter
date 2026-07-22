@@ -6,7 +6,8 @@ import {
     RTC_RTT_MUTATION_RETENTION_MS,
     validateRtcRttWriteCandidate,
 } from '../rtc-rtt-persistence-validation.ts';
-import { hashStateMutationCommand } from '../repositories/StateMutationOutboxRepository.ts';
+import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
+import { hashCanonicalCommand } from './canonical-command-hash.ts';
 import {
     compareRtcTopologyIdentifiers,
     toRtcRttMutationReceiptId,
@@ -104,7 +105,7 @@ export async function writeRttMutation(
             createdAtEpochMs: intent.createdAtEpochMs,
             expireAtEpochMs: mutationExpireAtTimestamp,
             senderId: intent.senderId,
-            requestOptions: {},
+            requestOptions: toCanonicalGroupTopologyConfigPatch({}),
             publish: true,
         });
     }
@@ -130,7 +131,7 @@ export async function executeRttMutation(
     input: ExecuteRttMutationInput,
 ): Promise<ExecuteRttMutationResult> {
     const stableRequest = input.request;
-    const commandHash = await hashStateMutationCommand(stableRequest);
+    const commandHash = await hashCanonicalCommand(stableRequest);
     const read = await readRttMutation(input.repository, stableRequest);
     let command: RtcRttMutationCommand;
     let facts: RtcRttMutationFacts;

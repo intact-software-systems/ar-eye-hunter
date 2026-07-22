@@ -5725,7 +5725,9 @@
                     "body": {
                       "receipt": {
                         "acceptedVersion": "integer",
-                        "outboxIds": ["string"]
+                        "outboxIds": [
+                          "string"
+                        ]
                       }
                     }
                   }
@@ -5748,7 +5750,9 @@
                     "body": {
                       "receipt": {
                         "acceptedVersion": "integer",
-                        "outboxIds": ["string"]
+                        "outboxIds": [
+                          "string"
+                        ]
                       }
                     }
                   }
@@ -5781,7 +5785,9 @@
                     "body": {
                       "receipt": {
                         "acceptedVersion": "integer",
-                        "outboxIds": ["string"]
+                        "outboxIds": [
+                          "string"
+                        ]
                       }
                     }
                   }
@@ -5803,7 +5809,17 @@
                     }
                   },
                   "expect": {
-                    "status": 200
+                    "status": 200,
+                    "body": {
+                      "status": "queued",
+                      "groupRef": {
+                        "applicationId": "{applicationId}",
+                        "workspaceId": "{workspaceId}",
+                        "groupId": "{groupOneId}"
+                      },
+                      "requestId": "control-1-reconfigure-{loop.iteration}-{runId}",
+                      "outboxId": "string"
+                    }
                   }
                 }
               ]
@@ -5842,7 +5858,9 @@
                     "body": {
                       "receipt": {
                         "acceptedVersion": "integer",
-                        "outboxIds": ["string"]
+                        "outboxIds": [
+                          "string"
+                        ]
                       }
                     }
                   }
@@ -5865,7 +5883,9 @@
                     "body": {
                       "receipt": {
                         "acceptedVersion": "integer",
-                        "outboxIds": ["string"]
+                        "outboxIds": [
+                          "string"
+                        ]
                       }
                     }
                   }
@@ -5898,7 +5918,9 @@
                     "body": {
                       "receipt": {
                         "acceptedVersion": "integer",
-                        "outboxIds": ["string"]
+                        "outboxIds": [
+                          "string"
+                        ]
                       }
                     }
                   }
@@ -5920,7 +5942,17 @@
                     }
                   },
                   "expect": {
-                    "status": 200
+                    "status": 200,
+                    "body": {
+                      "status": "queued",
+                      "groupRef": {
+                        "applicationId": "{applicationId}",
+                        "workspaceId": "{workspaceId}",
+                        "groupId": "{groupTwoId}"
+                      },
+                      "requestId": "control-2-reconfigure-{loop.iteration}-{runId}",
+                      "outboxId": "string"
+                    }
                   }
                 }
               ]
@@ -5959,7 +5991,9 @@
                     "body": {
                       "receipt": {
                         "acceptedVersion": "integer",
-                        "outboxIds": ["string"]
+                        "outboxIds": [
+                          "string"
+                        ]
                       }
                     }
                   }
@@ -5982,7 +6016,9 @@
                     "body": {
                       "receipt": {
                         "acceptedVersion": "integer",
-                        "outboxIds": ["string"]
+                        "outboxIds": [
+                          "string"
+                        ]
                       }
                     }
                   }
@@ -6015,7 +6051,9 @@
                     "body": {
                       "receipt": {
                         "acceptedVersion": "integer",
-                        "outboxIds": ["string"]
+                        "outboxIds": [
+                          "string"
+                        ]
                       }
                     }
                   }
@@ -6037,7 +6075,17 @@
                     }
                   },
                   "expect": {
-                    "status": 200
+                    "status": 200,
+                    "body": {
+                      "status": "queued",
+                      "groupRef": {
+                        "applicationId": "{applicationId}",
+                        "workspaceId": "{workspaceId}",
+                        "groupId": "{groupThreeId}"
+                      },
+                      "requestId": "control-3-reconfigure-{loop.iteration}-{runId}",
+                      "outboxId": "string"
+                    }
                   }
                 }
               ]
@@ -6076,7 +6124,9 @@
                     "body": {
                       "receipt": {
                         "acceptedVersion": "integer",
-                        "outboxIds": ["string"]
+                        "outboxIds": [
+                          "string"
+                        ]
                       }
                     }
                   }
@@ -6099,7 +6149,9 @@
                     "body": {
                       "receipt": {
                         "acceptedVersion": "integer",
-                        "outboxIds": ["string"]
+                        "outboxIds": [
+                          "string"
+                        ]
                       }
                     }
                   }
@@ -6132,7 +6184,9 @@
                     "body": {
                       "receipt": {
                         "acceptedVersion": "integer",
-                        "outboxIds": ["string"]
+                        "outboxIds": [
+                          "string"
+                        ]
                       }
                     }
                   }
@@ -6154,7 +6208,17 @@
                     }
                   },
                   "expect": {
-                    "status": 200
+                    "status": 200,
+                    "body": {
+                      "status": "queued",
+                      "groupRef": {
+                        "applicationId": "{applicationId}",
+                        "workspaceId": "{workspaceId}",
+                        "groupId": "{groupFourId}"
+                      },
+                      "requestId": "control-4-reconfigure-{loop.iteration}-{runId}",
+                      "outboxId": "string"
+                    }
                   }
                 }
               ]
@@ -6193,7 +6257,9 @@
                     "body": {
                       "receipt": {
                         "acceptedVersion": "integer",
-                        "outboxIds": ["string"]
+                        "outboxIds": [
+                          "string"
+                        ]
                       }
                     }
                   }
@@ -6216,7 +6282,9 @@
                     "body": {
                       "receipt": {
                         "acceptedVersion": "integer",
-                        "outboxIds": ["string"]
+                        "outboxIds": [
+                          "string"
+                        ]
                       }
                     }
                   }
@@ -6249,7 +6317,9 @@
                     "body": {
                       "receipt": {
                         "acceptedVersion": "integer",
-                        "outboxIds": ["string"]
+                        "outboxIds": [
+                          "string"
+                        ]
                       }
                     }
                   }
@@ -6271,7 +6341,17 @@
                     }
                   },
                   "expect": {
-                    "status": 200
+                    "status": 200,
+                    "body": {
+                      "status": "queued",
+                      "groupRef": {
+                        "applicationId": "{applicationId}",
+                        "workspaceId": "{workspaceId}",
+                        "groupId": "{groupFiveId}"
+                      },
+                      "requestId": "control-5-reconfigure-{loop.iteration}-{runId}",
+                      "outboxId": "string"
+                    }
                   }
                 }
               ]
@@ -8929,24 +9009,84 @@
           "finalPollStatus": "SUCCESS",
           "causalHistory": {
             "groupOne": {
-              "state": ["integer", "integer", "integer", "integer", "integer"],
-              "presence": ["integer", "integer", "integer", "integer", "integer"]
+              "state": [
+                "integer",
+                "integer",
+                "integer",
+                "integer",
+                "integer"
+              ],
+              "presence": [
+                "integer",
+                "integer",
+                "integer",
+                "integer",
+                "integer"
+              ]
             },
             "groupTwo": {
-              "state": ["integer", "integer", "integer", "integer", "integer"],
-              "presence": ["integer", "integer", "integer", "integer", "integer"]
+              "state": [
+                "integer",
+                "integer",
+                "integer",
+                "integer",
+                "integer"
+              ],
+              "presence": [
+                "integer",
+                "integer",
+                "integer",
+                "integer",
+                "integer"
+              ]
             },
             "groupThree": {
-              "state": ["integer", "integer", "integer", "integer", "integer"],
-              "presence": ["integer", "integer", "integer", "integer", "integer"]
+              "state": [
+                "integer",
+                "integer",
+                "integer",
+                "integer",
+                "integer"
+              ],
+              "presence": [
+                "integer",
+                "integer",
+                "integer",
+                "integer",
+                "integer"
+              ]
             },
             "groupFour": {
-              "state": ["integer", "integer", "integer", "integer", "integer"],
-              "presence": ["integer", "integer", "integer", "integer", "integer"]
+              "state": [
+                "integer",
+                "integer",
+                "integer",
+                "integer",
+                "integer"
+              ],
+              "presence": [
+                "integer",
+                "integer",
+                "integer",
+                "integer",
+                "integer"
+              ]
             },
             "groupFive": {
-              "state": ["integer", "integer", "integer", "integer", "integer"],
-              "presence": ["integer", "integer", "integer", "integer", "integer"]
+              "state": [
+                "integer",
+                "integer",
+                "integer",
+                "integer",
+                "integer"
+              ],
+              "presence": [
+                "integer",
+                "integer",
+                "integer",
+                "integer",
+                "integer"
+              ]
             }
           }
         },
@@ -9009,30 +9149,19 @@
         "body": {
           "requestId": "final-reconfigure-{groupOneId}-{runId}",
           "publish": true
-        },
-        "outputs": {
-          "finalGroupOneIdTopologySnapshotVersion": "body.snapshot.version"
         }
       },
       "expect": {
         "status": 200,
         "body": {
-          "snapshot": {
-            "sourceGroupStateCausalRevision": {
-              "groupRevision": "{finalGroupOneIdStateCausalRevision}",
-              "presenceRevision": "{finalGroupOneIdPresenceCausalRevision}"
-            },
-            "groupRef": {
-              "applicationId": "{applicationId}",
-              "workspaceId": "{workspaceId}",
-              "groupId": "{groupOneId}"
-            }
+          "status": "queued",
+          "groupRef": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{groupOneId}"
           },
-          "config": {
-            "durable": {
-              "version": "{finalGroupOneIdConfigVersion}"
-            }
-          }
+          "requestId": "final-reconfigure-{groupOneId}-{runId}",
+          "outboxId": "string"
         }
       }
     },
@@ -9081,30 +9210,19 @@
         "body": {
           "requestId": "final-reconfigure-{groupTwoId}-{runId}",
           "publish": true
-        },
-        "outputs": {
-          "finalGroupTwoIdTopologySnapshotVersion": "body.snapshot.version"
         }
       },
       "expect": {
         "status": 200,
         "body": {
-          "snapshot": {
-            "sourceGroupStateCausalRevision": {
-              "groupRevision": "{finalGroupTwoIdStateCausalRevision}",
-              "presenceRevision": "{finalGroupTwoIdPresenceCausalRevision}"
-            },
-            "groupRef": {
-              "applicationId": "{applicationId}",
-              "workspaceId": "{workspaceId}",
-              "groupId": "{groupTwoId}"
-            }
+          "status": "queued",
+          "groupRef": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{groupTwoId}"
           },
-          "config": {
-            "durable": {
-              "version": "{finalGroupTwoIdConfigVersion}"
-            }
-          }
+          "requestId": "final-reconfigure-{groupTwoId}-{runId}",
+          "outboxId": "string"
         }
       }
     },
@@ -9153,30 +9271,19 @@
         "body": {
           "requestId": "final-reconfigure-{groupThreeId}-{runId}",
           "publish": true
-        },
-        "outputs": {
-          "finalGroupThreeIdTopologySnapshotVersion": "body.snapshot.version"
         }
       },
       "expect": {
         "status": 200,
         "body": {
-          "snapshot": {
-            "sourceGroupStateCausalRevision": {
-              "groupRevision": "{finalGroupThreeIdStateCausalRevision}",
-              "presenceRevision": "{finalGroupThreeIdPresenceCausalRevision}"
-            },
-            "groupRef": {
-              "applicationId": "{applicationId}",
-              "workspaceId": "{workspaceId}",
-              "groupId": "{groupThreeId}"
-            }
+          "status": "queued",
+          "groupRef": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{groupThreeId}"
           },
-          "config": {
-            "durable": {
-              "version": "{finalGroupThreeIdConfigVersion}"
-            }
-          }
+          "requestId": "final-reconfigure-{groupThreeId}-{runId}",
+          "outboxId": "string"
         }
       }
     },
@@ -9225,30 +9332,19 @@
         "body": {
           "requestId": "final-reconfigure-{groupFourId}-{runId}",
           "publish": true
-        },
-        "outputs": {
-          "finalGroupFourIdTopologySnapshotVersion": "body.snapshot.version"
         }
       },
       "expect": {
         "status": 200,
         "body": {
-          "snapshot": {
-            "sourceGroupStateCausalRevision": {
-              "groupRevision": "{finalGroupFourIdStateCausalRevision}",
-              "presenceRevision": "{finalGroupFourIdPresenceCausalRevision}"
-            },
-            "groupRef": {
-              "applicationId": "{applicationId}",
-              "workspaceId": "{workspaceId}",
-              "groupId": "{groupFourId}"
-            }
+          "status": "queued",
+          "groupRef": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{groupFourId}"
           },
-          "config": {
-            "durable": {
-              "version": "{finalGroupFourIdConfigVersion}"
-            }
-          }
+          "requestId": "final-reconfigure-{groupFourId}-{runId}",
+          "outboxId": "string"
         }
       }
     },
@@ -9297,149 +9393,225 @@
         "body": {
           "requestId": "final-reconfigure-{groupFiveId}-{runId}",
           "publish": true
-        },
-        "outputs": {
-          "finalGroupFiveIdTopologySnapshotVersion": "body.snapshot.version"
         }
       },
       "expect": {
         "status": 200,
         "body": {
-          "snapshot": {
-            "sourceGroupStateCausalRevision": {
-              "groupRevision": "{finalGroupFiveIdStateCausalRevision}",
-              "presenceRevision": "{finalGroupFiveIdPresenceCausalRevision}"
+          "status": "queued",
+          "groupRef": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{groupFiveId}"
+          },
+          "requestId": "final-reconfigure-{groupFiveId}-{runId}",
+          "outboxId": "string"
+        }
+      }
+    },
+    {
+      "name": "pollFinalTopologyEffects",
+      "type": "loop",
+      "count": 5,
+      "intervalMs": 250,
+      "steps": [
+        {
+          "name": "observeonePublishedTopologyEffect{loop.iteration}",
+          "type": "http",
+          "connection": "apiPrimary",
+          "nonBlockingFailure": true,
+          "request": {
+            "method": "GET",
+            "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupOneId}/topology",
+            "headers": {
+              "Authorization": "{ownerAuthHeader}",
+              "x-client-id": "{ownerClientId}"
             },
-            "groupRef": {
-              "applicationId": "{applicationId}",
-              "workspaceId": "{workspaceId}",
-              "groupId": "{groupFiveId}"
+            "outputs": {
+              "finalGroupOneIdTopologySnapshotVersion": "body.snapshot.version",
+              "observedGroupOneIdTopologySnapshotVersion": "body.snapshot.version"
             }
           },
-          "config": {
-            "durable": {
-              "version": "{finalGroupFiveIdConfigVersion}"
+          "expect": {
+            "status": 200,
+            "body": {
+              "snapshot": {
+                "version": "integer",
+                "sourceGroupStateCausalRevision": {
+                  "groupRevision": "{finalGroupOneIdStateCausalRevision}",
+                  "presenceRevision": "{finalGroupOneIdPresenceCausalRevision}"
+                },
+                "groupRef": {
+                  "applicationId": "{applicationId}",
+                  "workspaceId": "{workspaceId}",
+                  "groupId": "{groupOneId}"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "observetwoPublishedTopologyEffect{loop.iteration}",
+          "type": "http",
+          "connection": "apiPrimary",
+          "nonBlockingFailure": true,
+          "request": {
+            "method": "GET",
+            "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupTwoId}/topology",
+            "headers": {
+              "Authorization": "{ownerAuthHeader}",
+              "x-client-id": "{ownerClientId}"
+            },
+            "outputs": {
+              "finalGroupTwoIdTopologySnapshotVersion": "body.snapshot.version",
+              "observedGroupTwoIdTopologySnapshotVersion": "body.snapshot.version"
+            }
+          },
+          "expect": {
+            "status": 200,
+            "body": {
+              "snapshot": {
+                "version": "integer",
+                "sourceGroupStateCausalRevision": {
+                  "groupRevision": "{finalGroupTwoIdStateCausalRevision}",
+                  "presenceRevision": "{finalGroupTwoIdPresenceCausalRevision}"
+                },
+                "groupRef": {
+                  "applicationId": "{applicationId}",
+                  "workspaceId": "{workspaceId}",
+                  "groupId": "{groupTwoId}"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "observethreePublishedTopologyEffect{loop.iteration}",
+          "type": "http",
+          "connection": "apiPrimary",
+          "nonBlockingFailure": true,
+          "request": {
+            "method": "GET",
+            "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupThreeId}/topology",
+            "headers": {
+              "Authorization": "{ownerAuthHeader}",
+              "x-client-id": "{ownerClientId}"
+            },
+            "outputs": {
+              "finalGroupThreeIdTopologySnapshotVersion": "body.snapshot.version",
+              "observedGroupThreeIdTopologySnapshotVersion": "body.snapshot.version"
+            }
+          },
+          "expect": {
+            "status": 200,
+            "body": {
+              "snapshot": {
+                "version": "integer",
+                "sourceGroupStateCausalRevision": {
+                  "groupRevision": "{finalGroupThreeIdStateCausalRevision}",
+                  "presenceRevision": "{finalGroupThreeIdPresenceCausalRevision}"
+                },
+                "groupRef": {
+                  "applicationId": "{applicationId}",
+                  "workspaceId": "{workspaceId}",
+                  "groupId": "{groupThreeId}"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "observefourPublishedTopologyEffect{loop.iteration}",
+          "type": "http",
+          "connection": "apiPrimary",
+          "nonBlockingFailure": true,
+          "request": {
+            "method": "GET",
+            "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupFourId}/topology",
+            "headers": {
+              "Authorization": "{ownerAuthHeader}",
+              "x-client-id": "{ownerClientId}"
+            },
+            "outputs": {
+              "finalGroupFourIdTopologySnapshotVersion": "body.snapshot.version",
+              "observedGroupFourIdTopologySnapshotVersion": "body.snapshot.version"
+            }
+          },
+          "expect": {
+            "status": 200,
+            "body": {
+              "snapshot": {
+                "version": "integer",
+                "sourceGroupStateCausalRevision": {
+                  "groupRevision": "{finalGroupFourIdStateCausalRevision}",
+                  "presenceRevision": "{finalGroupFourIdPresenceCausalRevision}"
+                },
+                "groupRef": {
+                  "applicationId": "{applicationId}",
+                  "workspaceId": "{workspaceId}",
+                  "groupId": "{groupFourId}"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "observefivePublishedTopologyEffect{loop.iteration}",
+          "type": "http",
+          "connection": "apiPrimary",
+          "nonBlockingFailure": true,
+          "request": {
+            "method": "GET",
+            "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupFiveId}/topology",
+            "headers": {
+              "Authorization": "{ownerAuthHeader}",
+              "x-client-id": "{ownerClientId}"
+            },
+            "outputs": {
+              "finalGroupFiveIdTopologySnapshotVersion": "body.snapshot.version",
+              "observedGroupFiveIdTopologySnapshotVersion": "body.snapshot.version"
+            }
+          },
+          "expect": {
+            "status": 200,
+            "body": {
+              "snapshot": {
+                "version": "integer",
+                "sourceGroupStateCausalRevision": {
+                  "groupRevision": "{finalGroupFiveIdStateCausalRevision}",
+                  "presenceRevision": "{finalGroupFiveIdPresenceCausalRevision}"
+                },
+                "groupRef": {
+                  "applicationId": "{applicationId}",
+                  "workspaceId": "{workspaceId}",
+                  "groupId": "{groupFiveId}"
+                }
+              }
             }
           }
         }
-      }
+      ]
     },
     {
-      "name": "observeonePublishedTopologyEffect",
-      "type": "http",
-      "connection": "apiPrimary",
-      "request": {
-        "method": "GET",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupOneId}/topology",
-        "headers": { "Authorization": "{ownerAuthHeader}", "x-client-id": "{ownerClientId}" },
-        "outputs": { "observedGroupOneIdTopologySnapshotVersion": "body.snapshot.version" }
-      },
-      "expect": {
-        "status": 200,
-        "body": {
-          "snapshot": {
-            "version": "{finalGroupOneIdTopologySnapshotVersion}",
-            "groupRef": {
-              "applicationId": "{applicationId}",
-              "workspaceId": "{workspaceId}",
-              "groupId": "{groupOneId}"
-            }
-          }
+      "name": "assertFinalTopologyEffectsConverged",
+      "type": "assert",
+      "actual": {
+        "statuses": {
+          "one": "{resultsByName.observeonePublishedTopologyEffect5.0.status}",
+          "two": "{resultsByName.observetwoPublishedTopologyEffect5.0.status}",
+          "three": "{resultsByName.observethreePublishedTopologyEffect5.0.status}",
+          "four": "{resultsByName.observefourPublishedTopologyEffect5.0.status}",
+          "five": "{resultsByName.observefivePublishedTopologyEffect5.0.status}"
         }
-      }
-    },
-    {
-      "name": "observetwoPublishedTopologyEffect",
-      "type": "http",
-      "connection": "apiPrimary",
-      "request": {
-        "method": "GET",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupTwoId}/topology",
-        "headers": { "Authorization": "{ownerAuthHeader}", "x-client-id": "{ownerClientId}" },
-        "outputs": { "observedGroupTwoIdTopologySnapshotVersion": "body.snapshot.version" }
       },
       "expect": {
-        "status": 200,
         "body": {
-          "snapshot": {
-            "version": "{finalGroupTwoIdTopologySnapshotVersion}",
-            "groupRef": {
-              "applicationId": "{applicationId}",
-              "workspaceId": "{workspaceId}",
-              "groupId": "{groupTwoId}"
-            }
-          }
-        }
-      }
-    },
-    {
-      "name": "observethreePublishedTopologyEffect",
-      "type": "http",
-      "connection": "apiPrimary",
-      "request": {
-        "method": "GET",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupThreeId}/topology",
-        "headers": { "Authorization": "{ownerAuthHeader}", "x-client-id": "{ownerClientId}" },
-        "outputs": { "observedGroupThreeIdTopologySnapshotVersion": "body.snapshot.version" }
-      },
-      "expect": {
-        "status": 200,
-        "body": {
-          "snapshot": {
-            "version": "{finalGroupThreeIdTopologySnapshotVersion}",
-            "groupRef": {
-              "applicationId": "{applicationId}",
-              "workspaceId": "{workspaceId}",
-              "groupId": "{groupThreeId}"
-            }
-          }
-        }
-      }
-    },
-    {
-      "name": "observefourPublishedTopologyEffect",
-      "type": "http",
-      "connection": "apiPrimary",
-      "request": {
-        "method": "GET",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupFourId}/topology",
-        "headers": { "Authorization": "{ownerAuthHeader}", "x-client-id": "{ownerClientId}" },
-        "outputs": { "observedGroupFourIdTopologySnapshotVersion": "body.snapshot.version" }
-      },
-      "expect": {
-        "status": 200,
-        "body": {
-          "snapshot": {
-            "version": "{finalGroupFourIdTopologySnapshotVersion}",
-            "groupRef": {
-              "applicationId": "{applicationId}",
-              "workspaceId": "{workspaceId}",
-              "groupId": "{groupFourId}"
-            }
-          }
-        }
-      }
-    },
-    {
-      "name": "observefivePublishedTopologyEffect",
-      "type": "http",
-      "connection": "apiPrimary",
-      "request": {
-        "method": "GET",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupFiveId}/topology",
-        "headers": { "Authorization": "{ownerAuthHeader}", "x-client-id": "{ownerClientId}" },
-        "outputs": { "observedGroupFiveIdTopologySnapshotVersion": "body.snapshot.version" }
-      },
-      "expect": {
-        "status": 200,
-        "body": {
-          "snapshot": {
-            "version": "{finalGroupFiveIdTopologySnapshotVersion}",
-            "groupRef": {
-              "applicationId": "{applicationId}",
-              "workspaceId": "{workspaceId}",
-              "groupId": "{groupFiveId}"
-            }
+          "statuses": {
+            "one": "SUCCESS",
+            "two": "SUCCESS",
+            "three": "SUCCESS",
+            "four": "SUCCESS",
+            "five": "SUCCESS"
           }
         }
       }
@@ -9518,11 +9690,21 @@
       "expect": {
         "body": {
           "receipts": {
-            "groupOneId": ["string"],
-            "groupTwoId": ["string"],
-            "groupThreeId": ["string"],
-            "groupFourId": ["string"],
-            "groupFiveId": ["string"]
+            "groupOneId": [
+              "string"
+            ],
+            "groupTwoId": [
+              "string"
+            ],
+            "groupThreeId": [
+              "string"
+            ],
+            "groupFourId": [
+              "string"
+            ],
+            "groupFiveId": [
+              "string"
+            ]
           },
           "observedEffects": {
             "groupOneId": "{finalGroupOneIdTopologySnapshotVersion}",

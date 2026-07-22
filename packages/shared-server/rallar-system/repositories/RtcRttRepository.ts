@@ -305,22 +305,6 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
             : { status: 'conflict' };
     }
 
-    async insertRecomputeIntent(
-        intent: RtcRttRecomputeIntent,
-        expireAtTimestamp: number,
-    ): Promise<RtcRttConditionalWriteResult> {
-        validateRecomputeIntent(intent, expireAtTimestamp);
-        const result = await this.putValueIfAbsent(
-            RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE,
-            intent.outboxId,
-            intent,
-            expireAtTimestamp,
-        );
-        return result.status === 'applied'
-            ? { status: 'accepted', storageRevision: result.revision }
-            : { status: 'conflict' };
-    }
-
     async findMutationReceipt(
         receiptId: string,
     ): Promise<RtcRttMutationReceipt | undefined> {
@@ -376,89 +360,6 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
             options,
         );
         return compact(entries.map((entry) => this.toLiveReceiptEntry(entry)));
-    }
-
-    async listRecomputeIntents(): Promise<readonly RtcRttRecomputeIntent[]> {
-        return (await this.listRecomputeIntentEntries()).map(({ value }) => value);
-    }
-
-    async markRecomputeIntentDelivered(
-        observed: RuntimeStateEntryValue<RtcRttRecomputeIntent>,
-        deliveredAtEpochMs: number,
-    ): Promise<Readonly<{ status: 'accepted' | 'conflict' }>> {
-        const intent = this.toRecomputeIntentEntry(
-            observed.entry,
-            observed.value.outboxId,
-        );
-        if (intent.value.delivery.state !== 'pending') {
-            throw rttCorruption(
-                intent.entry.key,
-                'RTC RTT recompute intent is already delivered',
-            );
-        }
-        if (
-            !Number.isSafeInteger(deliveredAtEpochMs) ||
-            deliveredAtEpochMs < intent.value.createdAtEpochMs ||
-            deliveredAtEpochMs > intent.entry.expireAtTimestamp
-        ) {
-            throw rttCorruption(
-                intent.entry.key,
-                'RTC RTT recompute delivery time is outside the retained family lifetime',
-            );
-        }
-        const conditional = requireConditionalRuntime(this.runtimeRepository);
-        const updated = await conditional.upsertIfRevision(
-            RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE,
-            intent.entry.key,
-            JSON.stringify({
-                ...intent.value,
-                delivery: {
-                    state: 'delivered',
-                    deliveredAtEpochMs,
-                },
-            } satisfies RtcRttRecomputeIntent),
-            intent.entry.expireAtTimestamp,
-            intent.entry.revision,
-        );
-        return updated.status === 'applied'
-            ? { status: 'accepted' }
-            : { status: 'conflict' };
-    }
-
-    async listRecomputeIntentEntries(): Promise<
-        readonly RuntimeStateEntryValue<RtcRttRecomputeIntent>[]
-    > {
-        const entries = await this.runtimeRepository.findAllEntries(
-            RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE,
-        );
-        return compact(await Promise.all(entries.map(async (entry) => {
-            return await this.toLiveRecomputeIntentEntry(entry);
-        })));
-    }
-
-    async findRecomputeIntentEntry(
-        outboxId: string,
-    ): Promise<RuntimeStateEntryValue<RtcRttRecomputeIntent> | undefined> {
-        const entry = await this.runtimeRepository.findEntry(
-            RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE,
-            outboxId,
-        );
-        return entry
-            ? await this.toLiveRecomputeIntentEntry(entry, outboxId)
-            : undefined;
-    }
-
-    async listRecomputeIntentEntriesPage(
-        options: RuntimeStateEntryPageOptions,
-    ): Promise<readonly RuntimeStateEntryValue<RtcRttRecomputeIntent>[]> {
-        const entries = await this.listEntriesPage(
-            RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE,
-            '',
-            options,
-        );
-        return compact(await Promise.all(entries.map((entry) =>
-            this.toLiveRecomputeIntentEntry(entry)
-        )));
     }
 
     async putMeasurementIfNewer(
@@ -741,33 +642,6 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
             throw rttCorruption(entry.key, 'RTC RTT receipt differs from physical key');
         }
         return { entry, value };
-    }
-
-    private async toLiveRecomputeIntentEntry(
-        entry: RuntimeStateEntry,
-        trustedOutboxId?: string,
-        expiryAttempt = 0,
-    ): Promise<RuntimeStateEntryValue<RtcRttRecomputeIntent> | undefined> {
-        const intent = this.toRecomputeIntentEntry(entry, trustedOutboxId);
-        const receipt = await this.probeMutationReceiptEntry(intent.value.receiptId);
-        if (!receipt) {
-            throw rttCorruption(entry.key, 'RTC RTT recompute intent receipt is missing');
-        }
-        validateIntentAgainstReceipt(intent.value, receipt.value, entry.key);
-        if (entry.expireAtTimestamp !== receipt.entry.expireAtTimestamp) {
-            throw rttCorruption(
-                entry.key,
-                'RTC RTT recompute intent physical expiry differs from receipt',
-            );
-        }
-        const observedAtEpochMs = this.nowEpochMs();
-        if (entry.expireAtTimestamp > observedAtEpochMs) return intent;
-        await this.cleanupExpiredReceiptFamily(
-            receipt.value.receiptId,
-            observedAtEpochMs,
-            expiryAttempt,
-        );
-        return undefined;
     }
 
     private toRecomputeIntentEntry(
@@ -1421,15 +1295,6 @@ function toCleanupFailureError(
 
 function compact<T>(values: readonly (T | undefined)[]): readonly T[] {
     return values.filter((value): value is T => value !== undefined);
-}
-
-function requireConditionalRuntime(
-    runtime: RuntimeStateRepositoryLike,
-) {
-    if (!isRuntimeStateConditionalRepositoryLike(runtime)) {
-        throw new Error('RTC RTT repository requires conditional writes');
-    }
-    return runtime;
 }
 
 function requireOptimisticRuntime(

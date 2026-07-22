@@ -1,5 +1,16 @@
 import assert from 'node:assert/strict';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { configureRttRepository } from '@shared/repository/rtt-repository.ts';
+import {
+  AppTopics,
+  ConnectionContext,
+  InMemoryQueueBox,
+  JsonWebSocketServer,
+  newALBroadcastMessage,
+  newALEventRoute,
+  WsQueueBoxServerService,
+} from '@shared/mod.ts';
+import { configureSharedGraphRepositories } from '@shared-graph/repository/configure-shared-graph-repositories.ts';
 import { Temporal } from '@js-temporal/polyfill';
 import { PSqlAppDataRepository } from '@shared-server/postgres/app-data/PSqlAppDataRepository.ts';
 import { PSqlCrdtLogRepository } from '@shared-server/postgres/crdt/PSqlCrdtLogRepository.ts';
@@ -27,6 +38,7 @@ import { GroupStateRepository } from '@shared-server/rallar-system/repositories/
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/repositories/GroupTopologyConfigRepository.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/repositories/RtcTopologyExecutionRepository.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/repositories/RtcTopologySnapshotRepository.ts';
+import { RtcRttRepository } from '@shared-server/rallar-system/repositories/RtcRttRepository.ts';
 import { toRtcTopologyPublicationId } from '@shared-server/rallar-system/repositories/RtcTopologyPublicationRepository.ts';
 import {
   createGroupStateService,
@@ -63,6 +75,7 @@ import {
 import { groupEventWorkspaceKey } from '@shared-server/postgres/rallar-system/group-event-workspace-key.ts';
 import { createGroupStateEventRepository } from '@shared-server/postgres/rallar-system/createStateRepositories.ts';
 import type { ClientEvent } from '@shared/api/client-types.ts';
+import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type {
   AuditStamp,
   Group,
@@ -85,8 +98,11 @@ import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import {
   AppGroupInboxService,
   type GroupCreateAppInboxPayload,
+  toTopologyAppInboxCommand,
+  type TopologyAppInboxCommand,
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
+import { initRallarSystemWsTopics } from '@shared-server/rallar-system/ws-system-topics.ts';
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/services/GroupPresenceSummaryWork.ts';
 import {
   APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC,
@@ -1408,6 +1424,442 @@ Deno.test('PGlite topology config mutations converge concurrent CAS transactions
       [firstReceipt.outboxId, secondReceipt.outboxId].sort(),
     );
     assert.equal((await runtime.findAllEntries('state-mutation:outbox')).length, 0);
+  });
+});
+
+Deno.test('PGlite AppGroup reuses the first durable topology command and rejects divergent stable identity', async () => {
+  await withPGliteSql(async (sql) => {
+    const nowEpochMs = Date.parse('2026-07-23T00:00:00.000Z');
+    const runtime = new PSqlRuntimeStateRepository(sql);
+    const resourceInbox = new ResourceInboxRepository(sql);
+    const resourceResults = new ResourceInboxResultsRepository(sql);
+    const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
+    const authSessions = new AuthSessionRepository(runtime);
+    const authority: IssuedAuthSession = {
+      clientId: 'owner',
+      sessionId: 'owner-session',
+      accessToken: 'owner-token',
+      username: 'owner',
+      issuedAtEpochMs: nowEpochMs - 1_000,
+      expiresAtEpochMs: FUTURE_MS,
+    };
+    await authSessions.putSession(authority);
+    const groupRef = {
+      applicationId: 'pglite-app-inbox-topology',
+      workspaceId: 'replay',
+      groupId: 'room',
+    };
+    const snapshot = topologyGroupSnapshot(groupRef);
+    const groupRepository = new GroupStateRepository(runtime);
+    assert.equal((await groupRepository.insertGroup(snapshot.group)).status, 'applied');
+    for (const member of snapshot.members) await groupRepository.putMember(member);
+    const groupState = createGroupStateService({
+      runtimeRepository: runtime,
+      createGroupStateEventStore: createGroupStateEventRepository,
+      authSessionRepository: authSessions,
+      serviceId: 'pglite-app-inbox-topology',
+      now: () => nowEpochMs,
+    });
+    const topology = new GroupTopologyManagementService({
+      findGroupSnapshotByRef: (ref) => groupRepository.readSnapshot(ref),
+      groupStateRepository: groupRepository,
+      configRepository: new GroupTopologyConfigRepository(runtime),
+      topologyService: new RallarRtcTopologyService({ now: () => nowEpochMs }),
+      processRttReader: () => [],
+      now: () => nowEpochMs,
+    });
+    const appGroup = new AppGroupInboxService(
+      inboxReader,
+      resourceInbox,
+      resourceResults,
+      sql,
+      groupState,
+      'pglite-app-inbox-topology',
+      undefined,
+      {
+        waitMaxElapsedMsecs: 5_000,
+        waitRetryIntervalMsecs: 1,
+        waitMaxRetryIntervalMsecs: 4,
+        waitJitterRatio: 0,
+        nowEpochMs: () => nowEpochMs,
+      },
+    );
+    appGroup.setTopologyManagementService(topology);
+
+    const first = await toTopologyAppInboxCommand({
+      actor: { principalId: authority.clientId, sessionId: authority.sessionId },
+      groupRef,
+      requestId: 'stable-topology-request',
+      capturedAtEpochMs: 1_000,
+      payload: { operation: 'putConfig', config: { topologyKind: 'tree' } },
+    });
+    const firstPending = submitPGliteTopologyCommand(
+      appGroup,
+      authority,
+      first,
+    );
+    await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
+    await inboxReader.dequeueInbox(
+      InboxQueueReader.INBOX_DEQUEUE_TYPES,
+      toResilienceDto(),
+    );
+    const firstResult = await firstPending;
+    assert.ok(firstResult.right);
+
+    const replay = await toTopologyAppInboxCommand({
+      actor: first.actor,
+      groupRef,
+      requestId: first.requestId,
+      capturedAtEpochMs: 9_000,
+      payload: { operation: 'putConfig', config: { topologyKind: 'tree' } },
+    });
+    assert.equal(replay.commandHash, first.commandHash);
+    const replayResult = await submitPGliteTopologyCommand(
+      appGroup,
+      authority,
+      replay,
+    );
+    assert.deepEqual(replayResult.right, firstResult.right);
+
+    const [persisted] = await sql<{ ri_resource: string }[]>`
+      select ri_resource from resource_inbox
+      where ri_type_id = 'APP_INBOX'
+        and ri_resource_id = ${first.requestId}
+    `;
+    assert.ok(persisted);
+    const message = JSON.parse(persisted.ri_resource) as ALMessage;
+    const envelope = JSON.parse(message.payload.resource) as { data: TopologyAppInboxCommand };
+    assert.equal(envelope.data.capturedAtEpochMs, 1_000);
+    assert.equal(
+      Number((await sql<{ count: string | number }[]>`
+        select count(*) as count from resource_inbox
+        where ri_type_id = 'APP_INBOX'
+          and ri_resource_id = ${first.requestId}
+      `)[0]?.count),
+      1,
+    );
+
+    for (const [requestId, payload] of [
+      [
+        'stable-topology-override-put',
+        {
+          operation: 'putOverride',
+          config: { degreeLimit: 4 },
+          ttlMs: 60_000,
+          expiresAtEpochMs: null,
+        },
+      ],
+      [
+        'stable-topology-override-delete',
+        { operation: 'deleteOverride', target: 'override' },
+      ],
+      [
+        'stable-topology-config-delete',
+        { operation: 'deleteConfig', target: 'config' },
+      ],
+      [
+        'stable-topology-reconfigure',
+        { operation: 'reconfigureTopology', requestOptions: {}, publish: false },
+      ],
+    ] as const) {
+      const command = await toTopologyAppInboxCommand({
+        actor: first.actor,
+        groupRef,
+        requestId,
+        capturedAtEpochMs: nowEpochMs,
+        payload,
+      });
+      const pending = submitPGliteTopologyCommand(appGroup, authority, command);
+      await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
+      await inboxReader.dequeueInbox(
+        InboxQueueReader.INBOX_DEQUEUE_TYPES,
+        toResilienceDto(),
+      );
+      assert.ok((await pending).right, `${payload.operation} did not complete`);
+    }
+
+    const rttGroup = topologyGroupSnapshotWithSessions(
+      groupRef,
+      authority.sessionId,
+      'peer-session',
+      nowEpochMs,
+    );
+    appGroup.setRtcRttAppInboxDependencies({
+      repository: new RtcRttRepository(runtime, { now: () => nowEpochMs }),
+      readPolicyInputs: () => Promise.resolve({
+        candidateGroups: [rttGroup],
+        overlaySnapshotsByGroupKey: new Map(),
+        degreeLimit: 5,
+      }),
+    });
+    configureRttRepository({ ttlMs: 60_000 });
+    configureSharedGraphRepositories({
+      graphs: { ttlMs: 60_000 },
+      vivaldi: { ttlMs: 60_000 },
+    });
+    const wsServer = new JsonWebSocketServer();
+    const wsSocket = new PGliteTestSocket();
+    wsServer.addConnection(new ConnectionContext(authority.sessionId, wsSocket as never));
+    const wsService = new WsQueueBoxServerService(
+      new InMemoryQueueBox(new Map()),
+      new InMemoryQueueBox(new Map()),
+      wsServer,
+      'pglite-ws-ingress',
+    );
+    const wsIngressCapturedAt: number[] = [];
+    const wsTopics = initRallarSystemWsTopics(wsService, {
+      rtcTopologyService: new RallarRtcTopologyService({ now: () => nowEpochMs }),
+      rtcTopologyRuntimeState: { repository: runtime },
+      processRtcRttMutation: async (input) => {
+        wsIngressCapturedAt.push(input.capturedAtEpochMs);
+        const result = await appGroup.processRtcRttUntilCompletion(input);
+        if (result.right !== undefined) return result.right;
+        throw new Error(result.left ?? 'RTC RTT AppInbox processing failed');
+      },
+    });
+    const rtt = {
+      sessionIdFrom: authority.sessionId,
+      sessionIdTo: 'peer-session',
+      rttMs: 12,
+      createdAtEpochMs: nowEpochMs,
+      version: 1,
+    };
+    const dispatchRtt = () => wsSocket.dispatchMessage(newALBroadcastMessage(
+      authority.sessionId,
+      newALEventRoute(AppTopics.rtt, groupRef.groupId, 'pglite-rtt-replay'),
+      'room',
+      AppTopics.rtt,
+      rtt,
+      { groupRef },
+    ));
+    const rttPending = dispatchRtt();
+    await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
+    await inboxReader.dequeueInbox(
+      InboxQueueReader.INBOX_DEQUEUE_TYPES,
+      toResilienceDto(),
+    );
+    await rttPending;
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    await dispatchRtt();
+    wsTopics.stop();
+    assert.equal(wsIngressCapturedAt.length, 2);
+    assert.ok(wsIngressCapturedAt[1]! > wsIngressCapturedAt[0]!);
+
+    assert.equal(
+      Number((await sql<{ count: string | number }[]>`
+        select count(*) as count from resource_inbox
+        where ri_type_id = 'APP_INBOX' and ri_status = 'COMPLETED'
+      `)[0]?.count),
+      6,
+    );
+
+    const divergent = await toTopologyAppInboxCommand({
+      actor: first.actor,
+      groupRef,
+      requestId: first.requestId,
+      capturedAtEpochMs: 12_000,
+      payload: { operation: 'putConfig', config: { topologyKind: 'mesh' } },
+    });
+    await assert.rejects(
+      () => submitPGliteTopologyCommand(appGroup, authority, divergent),
+      (error) => error instanceof Error &&
+        'code' in error && error.code === 'app-inbox-idempotency-conflict',
+    );
+
+    for (const collisionAuthority of [
+      {
+        ...authority,
+        clientId: 'other-principal',
+        sessionId: 'other-principal-session',
+        accessToken: 'other-principal-token',
+      },
+      {
+        ...authority,
+        sessionId: 'owner-second-session',
+        accessToken: 'owner-second-token',
+      },
+    ]) {
+      await authSessions.putSession(collisionAuthority);
+      const actorDivergent = await toTopologyAppInboxCommand({
+        actor: {
+          principalId: collisionAuthority.clientId,
+          sessionId: collisionAuthority.sessionId,
+        },
+        groupRef,
+        requestId: first.requestId,
+        capturedAtEpochMs: 15_000,
+        payload: { operation: 'putConfig', config: { topologyKind: 'tree' } },
+      });
+      await assert.rejects(
+        () => submitPGliteTopologyCommand(
+          appGroup,
+          collisionAuthority,
+          actorDivergent,
+        ),
+        (error) => error instanceof Error &&
+          'code' in error && error.code === 'app-inbox-idempotency-conflict',
+      );
+    }
+
+    const revokedCommand = await toTopologyAppInboxCommand({
+      actor: first.actor,
+      groupRef,
+      requestId: 'revoked-before-topology-write',
+      capturedAtEpochMs: nowEpochMs,
+      payload: { operation: 'putConfig', config: { topologyKind: 'mesh' } },
+    });
+    const revokedPending = submitPGliteTopologyCommand(
+      appGroup,
+      authority,
+      revokedCommand,
+    );
+    await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
+    await authSessions.deleteSession(authority);
+    await inboxReader.dequeueInbox(
+      InboxQueueReader.INBOX_DEQUEUE_TYPES,
+      toResilienceDto(),
+    );
+    const revokedResult = await revokedPending;
+    assert.match(revokedResult.left ?? '', /revoked|authority|session/i);
+    assert.equal(
+      await new GroupTopologyConfigRepository(runtime).findMutationRecord(
+        groupRef,
+        revokedCommand.requestId,
+      ),
+      undefined,
+    );
+  });
+});
+
+Deno.test('PGlite AppGroup rereads lifecycle after a retryable topology conflict', async () => {
+  await withPGliteSql(async (sql) => {
+    const nowEpochMs = Date.parse('2026-07-23T00:00:00.000Z');
+    const runtime = new PSqlRuntimeStateRepository(sql);
+    const resourceInbox = new ResourceInboxRepository(sql);
+    let onFirstRetryRelease = async () => {};
+    let retryReleaseCount = 0;
+    class RetryObservedQueueBox extends PSqlQueueBox {
+      override async releaseEntries(
+        ...args: Parameters<PSqlQueueBox['releaseEntries']>
+      ): ReturnType<PSqlQueueBox['releaseEntries']> {
+        const released = await super.releaseEntries(...args);
+        if (args[1].status === EntityStatus.RETRY && retryReleaseCount++ === 0) {
+          await onFirstRetryRelease();
+        }
+        return released;
+      }
+    }
+    const inboxReader = new InboxQueueReader(new RetryObservedQueueBox(resourceInbox));
+    const authority: IssuedAuthSession = {
+      clientId: 'owner',
+      sessionId: 'retry-owner-session',
+      accessToken: 'retry-owner-token',
+      username: 'owner',
+      issuedAtEpochMs: nowEpochMs - 1_000,
+      expiresAtEpochMs: FUTURE_MS,
+    };
+    const authSessions = new AuthSessionRepository(runtime);
+    await authSessions.putSession(authority);
+    const groupRef = {
+      applicationId: 'pglite-topology-retry',
+      workspaceId: 'lifecycle',
+      groupId: 'room',
+    };
+    const snapshot = topologyGroupSnapshot(groupRef);
+    const groupRepository = new GroupStateRepository(runtime);
+    assert.equal((await groupRepository.insertGroup(snapshot.group)).status, 'applied');
+    for (const member of snapshot.members) await groupRepository.putMember(member);
+    const groupState = createGroupStateService({
+      runtimeRepository: runtime,
+      createGroupStateEventStore: createGroupStateEventRepository,
+      authSessionRepository: authSessions,
+      serviceId: 'pglite-topology-retry',
+      now: () => nowEpochMs,
+    });
+    let readCount = 0;
+    let writeCount = 0;
+    let readsAtFirstRetryRelease = 0;
+    class ConflictOnceTopologyService extends GroupTopologyManagementService {
+      override async readTopologyConfigMutation(
+        ...args: Parameters<GroupTopologyManagementService['readTopologyConfigMutation']>
+      ) {
+        readCount += 1;
+        return await super.readTopologyConfigMutation(...args);
+      }
+
+      override async writeTopologyConfigMutation(
+        ...args: Parameters<GroupTopologyManagementService['writeTopologyConfigMutation']>
+      ): ReturnType<GroupTopologyManagementService['writeTopologyConfigMutation']> {
+        writeCount += 1;
+        if (writeCount === 1) throw new RuntimeStateWriteConflictError();
+        return await super.writeTopologyConfigMutation(...args);
+      }
+    }
+    const topology = new ConflictOnceTopologyService({
+      findGroupSnapshotByRef: (ref) => groupRepository.readSnapshot(ref),
+      groupStateRepository: groupRepository,
+      configRepository: new GroupTopologyConfigRepository(runtime),
+      topologyService: new RallarRtcTopologyService({ now: () => nowEpochMs }),
+      processRttReader: () => [],
+      now: () => nowEpochMs,
+    });
+    onFirstRetryRelease = async () => {
+      readsAtFirstRetryRelease = readCount;
+      assert.equal(writeCount, 1);
+      const current = await groupRepository.findGroupEntry(groupRef);
+      assert.ok(current);
+      assert.equal((await groupRepository.updateGroup({
+        ...current.value,
+        status: 'archived',
+        snapshotVersion: current.value.snapshotVersion + 1,
+        updated: canonicalAuditStamp(2),
+        archived: canonicalAuditStamp(2),
+        deleted: null,
+      }, current.entry.revision)).status, 'applied');
+    };
+    const appGroup = new AppGroupInboxService(
+      inboxReader,
+      resourceInbox,
+      new ResourceInboxResultsRepository(sql),
+      sql,
+      groupState,
+      'pglite-topology-retry',
+      undefined,
+      {
+        waitMaxElapsedMsecs: 5_000,
+        waitRetryIntervalMsecs: 1,
+        waitMaxRetryIntervalMsecs: 4,
+        waitJitterRatio: 0,
+        nowEpochMs: () => nowEpochMs,
+      },
+    );
+    appGroup.setTopologyManagementService(topology);
+    const command = await toTopologyAppInboxCommand({
+      actor: { principalId: authority.clientId, sessionId: authority.sessionId },
+      groupRef,
+      requestId: 'lifecycle-change-after-conflict',
+      capturedAtEpochMs: nowEpochMs,
+      payload: { operation: 'putConfig', config: { topologyKind: 'tree' } },
+    });
+    const pending = submitPGliteTopologyCommand(appGroup, authority, command);
+    await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
+    await inboxReader.dequeueInbox(
+      InboxQueueReader.INBOX_DEQUEUE_TYPES,
+      toResilienceDto(),
+    );
+    const result = await pending;
+    assert.match(result.left ?? '', /active|archived|lifecycle|forbidden/i);
+    assert.equal(retryReleaseCount, 1);
+    assert.ok(readsAtFirstRetryRelease >= 1);
+    assert.ok(readCount > readsAtFirstRetryRelease);
+    assert.equal(writeCount, 1);
+    assert.equal(
+      await new GroupTopologyConfigRepository(runtime).findMutationRecord(
+        groupRef,
+        command.requestId,
+      ),
+      undefined,
+    );
   });
 });
 
@@ -3581,6 +4033,33 @@ Deno.test('PSqlCrdtLogRepository runs against PGlite SQL adapter', async () => {
   });
 });
 
+function submitPGliteTopologyCommand(
+  appGroup: AppGroupInboxService,
+  authority: IssuedAuthSession,
+  command: TopologyAppInboxCommand,
+) {
+  const type = command.operation === 'putConfig'
+    ? AppInboxType.TOPOLOGY_CONFIG_PUT
+    : command.operation === 'deleteConfig'
+    ? AppInboxType.TOPOLOGY_CONFIG_DELETE
+    : command.operation === 'putOverride'
+    ? AppInboxType.TOPOLOGY_OVERRIDE_PUT
+    : command.operation === 'deleteOverride'
+    ? AppInboxType.TOPOLOGY_OVERRIDE_DELETE
+    : AppInboxType.TOPOLOGY_RECONFIGURE;
+  return appGroup.processAuthenticatedEntryUntilCompletion({
+    type,
+    resourceId: command.requestId,
+    contextId: [
+      command.groupRef.applicationId,
+      command.groupRef.workspaceId,
+      command.groupRef.groupId,
+    ].map(encodeURIComponent).join(':'),
+    senderId: command.actor.principalId,
+    data: command,
+  }, authority);
+}
+
 function topologyConfigCommand(
   groupRef: GroupRef,
   requestId: string,
@@ -3640,7 +4119,7 @@ async function createPGliteTopologyWorkFixture(
       createdAtEpochMs: nowEpochMs,
       expireAtEpochMs: FUTURE_MS,
       senderId: 'owner',
-      requestOptions: {},
+      requestOptions: toCanonicalGroupTopologyConfigPatch({}),
       publish: true,
     })
   );
@@ -3752,6 +4231,51 @@ function topologyGroupSnapshot(groupRef: GroupRef): GroupSnapshot {
     activeSessions: [],
     memberCount: 1,
     onlineMemberCount: 0,
+  };
+}
+
+function topologyGroupSnapshotWithSessions(
+  groupRef: GroupRef,
+  ownerSessionId: string,
+  peerSessionId: string,
+  nowEpochMs: number,
+): GroupSnapshot {
+  const base = topologyGroupSnapshot(groupRef);
+  const peer = {
+    ...base.members[0],
+    principalId: 'peer',
+    role: 'member' as const,
+  };
+  const session = (sessionId: string, principalId: string) => ({
+    ...groupRef,
+    sessionId,
+    principalId,
+    generationId: `generation-${sessionId}`,
+    generationVersion: nowEpochMs - 1_000,
+    connectedAtEpochMs: nowEpochMs - 1_000,
+    lastHeartbeatAtEpochMs: nowEpochMs,
+    expiresAtEpochMs: nowEpochMs + 60_000,
+    status: 'active' as const,
+    disconnectedAtEpochMs: null,
+    disconnectReason: null,
+  });
+  return {
+    stateRevision: 2,
+    causalRevision: { groupRevision: 1, presenceRevision: 1 },
+    group: {
+      ...base.group,
+      activeMemberCount: 2,
+      snapshotVersion: 2,
+      rosterVersion: 2,
+      presenceVersion: 1,
+    },
+    members: [base.members[0], peer],
+    activeSessions: [
+      session(ownerSessionId, 'owner'),
+      session(peerSessionId, 'peer'),
+    ],
+    memberCount: 2,
+    onlineMemberCount: 2,
   };
 }
 
@@ -3985,6 +4509,26 @@ function createResourceEntry(
       attempts: 0,
     },
   };
+}
+
+class PGliteTestSocket {
+  readonly readyState = WebSocket.OPEN;
+  private readonly listeners = new Map<string, Array<(event: MessageEvent) => void>>();
+
+  addEventListener(type: string, listener: (event: MessageEvent) => void): void {
+    const listeners = this.listeners.get(type) ?? [];
+    listeners.push(listener);
+    this.listeners.set(type, listeners);
+  }
+
+  send(): void {}
+
+  async dispatchMessage(message: ALMessage): Promise<void> {
+    const event = { data: JSON.stringify(message) } as MessageEvent;
+    for (const listener of this.listeners.get('message') ?? []) {
+      await listener(event);
+    }
+  }
 }
 
 function advanceCoalescedGeneration(

@@ -146,18 +146,17 @@ describe('Rallar group documentation compatibility', () => {
             'acceptedConfig', 'acceptedCausalRevision', 'eventId', 'outboxId',
             'outboxIds',
         ]);
-        expectSchemaRequired('ReconfigureGroupTopologyResponse', [
-            'groupRef', 'overlayId', 'changed', 'snapshot', 'previous',
-            'config', 'published',
+        expectSchemaRequired('QueuedGroupTopologyReconfigureResponse', [
+            'status', 'groupRef', 'requestId', 'outboxId',
         ]);
         expect(
             schema('GroupTopologyConfigAcceptedCausalRevision')
                 .properties?.causalRevision?.$ref,
         ).toBe('#/components/schemas/GroupStateCausalRevision');
         expect(
-            schema('ReconfigureGroupTopologyResponse').properties?.previous
-                ?.nullable,
-        ).toBe(true);
+            schema('QueuedGroupTopologyReconfigureResponse').properties?.status
+                ?.enum,
+        ).toEqual(['queued']);
         expect(
             schema('GroupTopologyConfigMutationReceipt').properties?.eventId
                 ?.type,

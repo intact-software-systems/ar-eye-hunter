@@ -22,8 +22,6 @@ import { sendStateSyncMessage } from './state-sync-routing.ts';
 import {
     createRtcTopologyOutboxPublisher,
     createRtcTopologyWorkHandler,
-    initRtcRttRecomputeOutboxWorker,
-    type RtcRttRecomputeOutboxWorker,
     type RtcTopologyWorkPublisher,
 } from './services/RtcTopologyOutboxWork.ts';
 import {
@@ -75,14 +73,12 @@ export type InitRallarSystemWsTopicsOptions = Readonly<{
     processRtcRttMutation?: (input: Readonly<{
         rtt: RttMeasurementInfo;
         alSenderId: string;
-        candidateGroupRefs: readonly GroupRef[];
         capturedAtEpochMs: number;
     }>) => Promise<StoredRtcRttAcceptanceResult>;
 }>;
 
 export type RallarSystemWsTopicsRuntime = Readonly<{
     rtcTopologyWorkPublisher: RtcTopologyWorkPublisher | null;
-    rtcRttRecomputeOutboxWorker: RtcRttRecomputeOutboxWorker | null;
     stop(): void;
 }>;
 
@@ -168,19 +164,6 @@ export function initRallarSystemWsTopics(
             now: options.rtcTopologyOptions?.now,
         })
         : undefined;
-    const rtcRttRecomputeOutboxWorker =
-        rtcTopologyAppOutbox && rtcTopologyRuntimeState
-            ? initRtcRttRecomputeOutboxWorker({
-                repository: rtcTopologyRuntimeState.rtts,
-                publisher: rtcTopologyAppOutbox.publisher,
-                debounceMs: rtcTopologyService.readRttRebuildDebounceMs(),
-                onError: (failure) => {
-                    console.warn('RTC RTT recompute outbox worker failed', failure);
-                },
-            })
-            : undefined;
-    void rtcRttRecomputeOutboxWorker?.firstRun.catch(() => undefined);
-
     if (rtcTopologyAppOutbox && rtcTopologyAppOutboxOptions) {
         rtcTopologyAppOutboxOptions.outboxQueueReader.onOutboxMessageDo(
             rtcTopologyAppOutbox.workType,
@@ -268,7 +251,6 @@ export function initRallarSystemWsTopics(
         rtcTopologyAppOutbox?.publisher,
         rtcTopologyManagement,
         rtcTopologyRuntimeState,
-        rtcRttRecomputeOutboxWorker,
         scheduleGlobalGraphRttRecompute,
         findGroupSnapshotByRef,
         options.processRtcRttMutation,
@@ -279,9 +261,7 @@ export function initRallarSystemWsTopics(
     }
     return {
         rtcTopologyWorkPublisher: rtcTopologyAppOutbox?.publisher ?? null,
-        rtcRttRecomputeOutboxWorker: rtcRttRecomputeOutboxWorker ?? null,
         stop: () => {
-            rtcRttRecomputeOutboxWorker?.stop();
             if (globalGraphRttRecomputeTimer !== undefined) {
                 clearTimeout(globalGraphRttRecomputeTimer);
                 globalGraphRttRecomputeTimer = undefined;
@@ -566,7 +546,6 @@ function initRttTopic(
     rtcTopologyWorkPublisher?: RtcTopologyWorkPublisher,
     topologyManagement?: GroupTopologyManagementService,
     runtimeState?: RtcTopologyRuntimeState,
-    rtcRttRecomputeOutboxWorker?: RtcRttRecomputeOutboxWorker,
     scheduleGlobalGraphRttRecompute: () => void = () => {
     },
     findGroupSnapshotByRef?: GroupTopologyGroupSnapshotReader,
@@ -616,9 +595,7 @@ function initRttTopic(
             vivaldiService.observeRtt(rtt);
             scheduleGlobalGraphRttRecompute();
             if (rtcTopologyWorkPublisher) {
-                if (runtimeState) {
-                    rtcRttRecomputeOutboxWorker?.wake();
-                } else {
+                if (!runtimeState) {
                     await rtcTopologyWorkPublisher.enqueueForRttGroups(
                         rtt,
                         acceptance.affectedGroups,
@@ -688,11 +665,9 @@ async function acceptRtcRttMeasurementWithPolicy(input: {
             'RTC RTT persistence requires AppInbox processing',
         );
     }
-    const policyInputs = await input.readPolicyInputs();
     const result = await input.processRtcRttMutation({
         rtt: input.rtt,
         alSenderId: input.alSenderId,
-        candidateGroupRefs: policyInputs.candidateGroups.map((group) => group.group),
         capturedAtEpochMs: Date.now(),
     });
     if (result.updated) {

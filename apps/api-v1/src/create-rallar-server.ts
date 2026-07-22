@@ -62,6 +62,7 @@ import { myServerId } from './runtime/runtime-identity.ts';
 import { createRuntimeStateRepository } from './repository/createStateRepositories.ts';
 import { SpaStatisticsService } from '@shared-server/rallar-system/spa-statistics/SpaStatisticsService.ts';
 import { toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 
 export { RallarServerDataFacade, RallarServerSystemFacade };
 
@@ -131,7 +132,33 @@ export function createRallarServer(
   );
   middleware.appGroupInboxService.setRtcRttAppInboxDependencies({
     repository: rttRepository,
-    readPolicyInputs: async (groupRefs) => {
+    readPolicyInputs: async (command) => {
+      const sessionsByGroupKey = new Map<string, {
+        ref: GroupRef;
+        sessionIds: Set<string>;
+      }>();
+      for (const session of await groupStateRepository.listAllPresenceSessions()) {
+        if (session.status !== 'active' || session.expiresAtEpochMs <= now()) {
+          continue;
+        }
+        const key = toWebRtcGroupKey(session);
+        const current = sessionsByGroupKey.get(key) ?? {
+          ref: {
+            applicationId: session.applicationId,
+            workspaceId: session.workspaceId,
+            groupId: session.groupId,
+          },
+          sessionIds: new Set<string>(),
+        };
+        current.sessionIds.add(session.sessionId);
+        sessionsByGroupKey.set(key, current);
+      }
+      const groupRefs = [...sessionsByGroupKey.values()]
+        .filter(({ sessionIds }) =>
+          sessionIds.has(command.rtt.sessionIdFrom) &&
+          sessionIds.has(command.rtt.sessionIdTo)
+        )
+        .map(({ ref }) => ref);
       const candidateGroups = (
         await Promise.all(
           groupRefs.map((ref) => middleware.groupStateService.readSnapshotAtLeast(ref, {})),

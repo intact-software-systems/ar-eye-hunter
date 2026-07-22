@@ -10,7 +10,8 @@ import type {
     GroupSnapshot,
     GroupStateCausalRevision,
 } from '@shared/api/group-types.ts';
-import type { GroupTopologyConfigPatch } from '@shared/api/graph-topology-management-types.ts';
+import type { CanonicalGroupTopologyConfigPatch } from '@shared/api/graph-topology-management-types.ts';
+import { readCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import {
     EntityStatus,
@@ -35,7 +36,7 @@ export interface ComputedRtcTopologyOutbox {
     readonly expireAtEpochMs: number;
     readonly senderId: string;
     readonly resourceId: string;
-    readonly requestOptions: GroupTopologyConfigPatch;
+    readonly requestOptions: CanonicalGroupTopologyConfigPatch;
     readonly publish: boolean;
 }
 
@@ -50,7 +51,7 @@ interface RtcTopologyGroupRevisionWork {
     readonly groupSnapshot: GroupSnapshot;
     readonly sourceGroupStateRevision: number;
     readonly requestedAtEpochMs: number;
-    readonly requestOptions: GroupTopologyConfigPatch;
+    readonly requestOptions: CanonicalGroupTopologyConfigPatch;
     readonly publish: boolean;
 }
 
@@ -227,10 +228,17 @@ function validateComputedRtcTopologyOutbox(
         computed.acceptedCausalRevision.presenceRevision !==
             snapshot.causalRevision.presenceRevision ||
         typeof computed.publish !== 'boolean' ||
-        typeof computed.requestOptions !== 'object' ||
-        computed.requestOptions === null ||
-        Array.isArray(computed.requestOptions)
+        !hasCanonicalRequestOptions(computed.requestOptions)
     ) {
         throw new TypeError('Computed RTC topology outbox facts are invalid');
+    }
+}
+
+function hasCanonicalRequestOptions(value: unknown): boolean {
+    try {
+        readCanonicalGroupTopologyConfigPatch(value);
+        return true;
+    } catch {
+        return false;
     }
 }

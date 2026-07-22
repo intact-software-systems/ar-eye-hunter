@@ -1188,8 +1188,11 @@ state scope used by clients and groups:
   manages temporary topology overrides with the same convergent receipt/outbox
   transaction and asynchronous return contract.
 - `POST /api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/reconfigure`
-  is the only topology configuration route that waits synchronously for an
-  immediate recompute and optional publication.
+  commits a topology recompute request through AppInbox and returns the
+  mandatory queued receipt (`status`, `groupRef`, `requestId`, and `outboxId`).
+  Resource-inbox outbox work performs recompute and optional publication
+  asynchronously; callers observe completion through the normal topology read
+  path.
 
 Topology config resolves as server defaults, durable config, temporary override,
 then request-time reconfigure options. Writes require an active, unexpired group

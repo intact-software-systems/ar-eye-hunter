@@ -1,5 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { describe, expect, it, vi } from 'vitest';
+import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import {
   CircuitBreakerPolicy,
   EnqueuedType,
@@ -420,7 +421,7 @@ describe('direct resource outbox writes', () => {
       payloadKind: 'group-revision',
       senderId: 'server-1',
       resourceId: 'group-command-1:rtc-topology-recompute:group-revision:group=4;presence=3',
-      requestOptions: {},
+      requestOptions: toCanonicalGroupTopologyConfigPatch({}),
       publish: true,
       createdAtEpochMs: CREATED_AT_EPOCH_MS,
       expireAtEpochMs: EXPIRE_AT_EPOCH_MS,
@@ -485,6 +486,19 @@ describe('direct resource outbox writes', () => {
       ':rtc-topology-recompute:group-revision:group=4;presence=3',
     );
     expect(message.route).toEqual(entry.key);
+  });
+
+  it.each([
+    ['unknown', { topologyKind: 'tree', unexpected: true }],
+    ['wrong type', { topologyKind: 1 }],
+  ])('rejects %s durable RTC topology request options', (_label, requestOptions) => {
+    const computed = {
+      ...createComputedRtcTopologyOutbox(),
+      payloadKind: 'group-revision',
+      requestOptions,
+    } as unknown as ComputedRtcTopologyOutbox;
+
+    expect(() => computeRtcTopologyEntry(computed, 'server-1')).toThrow();
   });
 
   it('rejects arbitrary APP_OUTBOX entries at the RTC topology write boundary', async () => {
@@ -837,7 +851,7 @@ function createComputedRtcTopologyOutbox() {
     senderId: 'server-1',
     resourceId:
       'group-command-1:rtc-topology-recompute:group-revision:group=4;presence=3',
-    requestOptions: {},
+    requestOptions: toCanonicalGroupTopologyConfigPatch({}),
     publish: true,
     createdAtEpochMs: CREATED_AT_EPOCH_MS,
     expireAtEpochMs: EXPIRE_AT_EPOCH_MS,
