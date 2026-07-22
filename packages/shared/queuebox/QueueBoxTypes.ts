@@ -118,8 +118,9 @@ export function isIdempotentHandlerFinalizedRelease(
 
         return reserved.typeId === EnqueuedType.APP_OUTBOX &&
             current.resource === reserved.resource &&
-            hasSameGroupPresenceSummaryImmutableEntry(current, reserved) &&
-            isCanonicalGroupPresenceSummaryEntry(reserved);
+            isCanonicalGroupPresenceSummaryEntry(reserved) &&
+            isCanonicalGroupPresenceSummaryEntry(current) &&
+            hasSameGroupPresenceSummaryImmutableEntry(current, reserved);
     } catch {
         return false;
     }

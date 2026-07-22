@@ -15,6 +15,10 @@ import { RateLimiter } from '@shared/resilience/Resilience.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { HANDLER_FINALIZED_SUMMARY_SCENARIOS } from './handler-finalized-summary-test-support.ts';
 
+type IndexedDbRuntimeDecoder = {
+    toResourceEntry(stored: unknown): ResourceEntry;
+};
+
 afterEach(() => {
     vi.restoreAllMocks();
 });
@@ -28,6 +32,9 @@ describe('IndexedDbQueueBox', () => {
             });
             const { reserved, current } = entries();
             await queue.enqueue(current);
+            // IndexedDB serialization normalizes malformed inputs; release must still fence a malformed runtime row.
+            vi.spyOn(queue as unknown as IndexedDbRuntimeDecoder, 'toResourceEntry')
+                .mockReturnValue(current);
 
             const release = queue.releaseEntries([reserved], {
                 status: EntityStatus.COMPLETED,

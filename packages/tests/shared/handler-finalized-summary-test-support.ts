@@ -172,6 +172,66 @@ export const HANDLER_FINALIZED_SUMMARY_SCENARIOS: readonly HandlerFinalizedSumma
       createdBy: 'changed-audit',
     },
   })),
+  scenario('current audit date is an equal string impostor', false, undefined, (current) => ({
+    ...current,
+    audit: {
+      ...current.audit,
+      date: current.audit.date.toString() as never,
+    },
+  })),
+  scenario('current audit createdTs is an equal string impostor', false, undefined, (current) => ({
+    ...current,
+    audit: {
+      ...current.audit,
+      createdTs: current.audit.createdTs.toString() as never,
+    },
+  })),
+  scenario('current audit expiryTs is an equal string impostor', false, undefined, (current) => ({
+    ...current,
+    audit: {
+      ...current.audit,
+      expiryTs: current.audit.expiryTs.toString() as never,
+    },
+  })),
+  scenario('current audit date is an equal non-Temporal impostor', false, undefined, (current) => ({
+    ...current,
+    audit: {
+      ...current.audit,
+      date: { toString: () => current.audit.date.toString() } as never,
+    },
+  })),
+  scenario('current audit has an extra field', false, undefined, (current) => ({
+    ...current,
+    audit: {
+      ...current.audit,
+      unexpected: 'not-canonical',
+    },
+  })),
+  scenario('current key has an extra field', false, undefined, (current) => ({
+    ...current,
+    key: {
+      ...current.key,
+      unexpected: 'not-canonical',
+    },
+  })),
+  scenario('current dequeue startTs is an equal string impostor', false, undefined, (current) => ({
+    ...current,
+    dequeueAudit: {
+      ...current.dequeueAudit,
+      startTs: current.dequeueAudit.startTs?.toString() as never,
+    },
+  })),
+  scenario('current dequeue audit has an extra field', false, undefined, (current) => ({
+    ...current,
+    dequeueAudit: {
+      ...current.dequeueAudit,
+      unexpected: 'not-canonical',
+    },
+  })),
+  scenario('current database identity is invalid', false, undefined, (current) => ({
+    ...current,
+    db: { id: '' },
+  })),
   scenario('wrong completed attempt', false, undefined, (current) => ({
     ...current,
     dequeueAudit: {
