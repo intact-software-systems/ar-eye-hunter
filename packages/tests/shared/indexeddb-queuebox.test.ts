@@ -13,12 +13,44 @@ import {
 } from '@shared/queuebox/ResourceEntry.ts';
 import { RateLimiter } from '@shared/resilience/Resilience.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
+import { HANDLER_FINALIZED_SUMMARY_SCENARIOS } from './handler-finalized-summary-test-support.ts';
 
 afterEach(() => {
     vi.restoreAllMocks();
 });
 
 describe('IndexedDbQueueBox', () => {
+    it.each(HANDLER_FINALIZED_SUMMARY_SCENARIOS)(
+        'fences handler-finalized summary release: $name',
+        async ({ accepted, entries }) => {
+            const queue = new IndexedDbQueueBox({
+                dbName: `indexeddb-summary-finalized-${crypto.randomUUID()}`,
+            });
+            const { reserved, current } = entries();
+            await queue.enqueue(current);
+
+            const release = queue.releaseEntries([reserved], {
+                status: EntityStatus.COMPLETED,
+                delayMs: null,
+            });
+
+            if (accepted) {
+                expect(firstValue(await release)).toMatchObject({
+                    key: current.key,
+                    resource: current.resource,
+                    typeId: current.typeId,
+                    status: current.status,
+                    dequeueAudit: {
+                        attempts: current.dequeueAudit.attempts,
+                    },
+                });
+            } else {
+                await expect(release).rejects.toMatchObject({
+                    code: 'resource-inbox-lost-reservation',
+                });
+            }
+        },
+    );
     it('returns the existing entry from enqueueIfAbsent without overwriting it', async () => {
         const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
         const typeId = 'presence.state.v1';

@@ -8,8 +8,30 @@ import {
 } from '@shared/queuebox/ResourceEntry.ts';
 import { RateLimiter } from '@shared/resilience/Resilience.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
+import { HANDLER_FINALIZED_SUMMARY_SCENARIOS } from './handler-finalized-summary-test-support.ts';
 
 describe('InMemoryQueueBox', () => {
+    it.each(HANDLER_FINALIZED_SUMMARY_SCENARIOS)(
+        'fences handler-finalized summary release: $name',
+        async ({ accepted, entries }) => {
+            const queue = new InMemoryQueueBox();
+            const { reserved, current } = entries();
+            await queue.enqueue(current);
+
+            const release = queue.releaseEntries([reserved], {
+                status: EntityStatus.COMPLETED,
+                delayMs: null,
+            });
+
+            if (accepted) {
+                expect(firstValue(await release)).toEqual(current);
+            } else {
+                await expect(release).rejects.toMatchObject({
+                    code: 'resource-inbox-lost-reservation',
+                });
+            }
+        },
+    );
     it('returns the existing entry from enqueueIfAbsent without overwriting it', async () => {
         const queue = new InMemoryQueueBox();
         const original = createEntry('presence.state.v1', 'resource-1', {

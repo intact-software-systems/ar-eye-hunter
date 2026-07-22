@@ -24,6 +24,7 @@ import {
 } from './group-state-mutations.ts';
 import { computeGroupStateSyncEntries } from '../state-sync-publisher.ts';
 import { computeRtcTopologyEntry } from './RtcTopologyOutboxWork.ts';
+import { decodeCanonicalGroupPresenceSummaryWork } from './group-presence-summary-work-contract.ts';
 
 export type GroupPresenceSummaryWorkOptions = Readonly<{
     runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike;
@@ -199,7 +200,7 @@ export class GroupPresenceSummaryWork {
         if (!this.options.database) {
             throw new TypeError('Presence-summary queue processing requires a database');
         }
-        const work = readGroupPresenceSummaryWork(message, entry);
+        const work = decodeCanonicalGroupPresenceSummaryWork(message, entry);
         const read = await this.read(work);
         const computed = this.compute(work, read);
         this.validate(work, read, computed);
@@ -217,24 +218,6 @@ export class GroupPresenceSummaryWork {
         });
         this.options.wakeQueue?.();
     }
-}
-
-function readGroupPresenceSummaryWork(
-    message: ALMessage,
-    entry: ResourceEntry,
-): GroupPresenceSummaryWorkData {
-    if (message.route.topicId !== entry.key.topicId ||
-        message.route.resourceId !== entry.key.resourceId ||
-        message.route.contextId !== entry.key.contextId) {
-        throw new TypeError('Presence-summary message route differs from reservation');
-    }
-    const envelope = JSON.parse(message.payload.resource) as Readonly<{
-        data?: GroupPresenceSummaryWorkData;
-    }>;
-    if (!envelope.data || envelope.data.effectKind !== 'group-presence-summary') {
-        throw new TypeError('Presence-summary work payload is malformed');
-    }
-    return envelope.data;
 }
 
 export function toGroupPresenceSummaryQueueContextId(ref: GroupRef): string {

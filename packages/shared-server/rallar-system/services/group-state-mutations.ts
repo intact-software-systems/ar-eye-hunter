@@ -1923,7 +1923,7 @@ export function computeGroupPresenceSummary(input: Readonly<{
     nowEpochMs: number;
 }>): GroupPresenceSummaryComputed {
     const { ref, read, nowEpochMs } = input;
-    const content = deriveGroupPresenceSummaryContent(ref, read, nowEpochMs);
+    const content = deriveGroupPresenceSummaryContent(read, nowEpochMs);
     const groupRevision = read.group.entry.revision + 1;
     const current = read.current?.value;
     if (current &&
@@ -1984,7 +1984,6 @@ export function validateGroupPresenceSummary(input: Readonly<{
     const summary = computed.summary;
     validatePresenceSummaryValue(summary, ref);
     const expectedContent = deriveGroupPresenceSummaryContent(
-        ref,
         read,
         summary.computedAtEpochMs,
     );
@@ -2044,7 +2043,6 @@ export function validateGroupPresenceSummary(input: Readonly<{
 }
 
 function deriveGroupPresenceSummaryContent(
-    ref: GroupRef,
     read: GroupPresenceSummaryRead,
     nowEpochMs: number,
 ): ReturnType<typeof summaryContent> {
@@ -3684,12 +3682,6 @@ function cloneRecord(value: Readonly<Record<string, unknown>>): Record<string, u
     return structuredClone(value) as Record<string, unknown>;
 }
 
-function withoutUndefined<T extends Readonly<Record<string, unknown>>>(value: T): T {
-    return Object.fromEntries(
-        Object.entries(value).filter(([, entry]) => entry !== undefined),
-    ) as T;
-}
-
 function summaryContent(summary: GroupPresenceSummary): Readonly<{
     activePrincipalIds: readonly string[];
     activeSessionIds: readonly string[];
@@ -4261,10 +4253,6 @@ function requireNonEmptyString(value: unknown, label: string): asserts value is 
     }
 }
 
-function optionalNonEmptyString(value: unknown, label: string): void {
-    if (value !== undefined) requireNonEmptyString(value, label);
-}
-
 function nullableNonEmptyString(value: unknown, label: string): void {
     if (value === null) return;
     requireNonEmptyString(value, label);
@@ -4274,10 +4262,6 @@ function requireNonNegativeSafeInteger(value: unknown, label: string): asserts v
     if (!Number.isSafeInteger(value) || (value as number) < 0) {
         throw new TypeError(`${label} must be a non-negative safe integer`);
     }
-}
-
-function optionalPositiveSafeInteger(value: unknown, label: string): void {
-    if (value !== undefined) requirePositiveSafeInteger(value, label);
 }
 
 function nullablePositiveSafeInteger(

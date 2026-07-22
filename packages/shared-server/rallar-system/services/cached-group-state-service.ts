@@ -51,10 +51,10 @@ export function createCachedGroupStateService(options: Readonly<{
             options.durable.validate(command, read, computed),
         write: async (transaction, computed) =>
             await options.durable.write(transaction, computed),
-        observeSnapshot: async (snapshot) => {
+        observeSnapshot: (snapshot) => Promise.resolve().then(() => {
             options.cache.observe(snapshot);
             return snapshot;
-        },
+        }),
         readCurrentSnapshot: async (ref) =>
             await options.durable.readSnapshot(ref),
         readSnapshotAtLeast: async (ref, readOptions) =>

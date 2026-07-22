@@ -6,8 +6,32 @@ import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
 import { PSqlResultsQueueBox } from '@shared-server/postgres/queuebox/PSqlResultsQueueBox.ts';
 import { RateLimiter } from '@shared/resilience/Resilience.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
+import { HANDLER_FINALIZED_SUMMARY_SCENARIOS } from './handler-finalized-summary-test-support.ts';
 
 describe('PSqlQueueBox', () => {
+    it.each(HANDLER_FINALIZED_SUMMARY_SCENARIOS)(
+        'fences handler-finalized summary release: $name',
+        async ({ accepted, entries }) => {
+            const { reserved, current } = entries();
+            const queue = new PSqlQueueBox(createRepo({
+                releaseReserved: vi.fn(async () => null),
+                findAnyByKey: vi.fn(async () => current),
+            }) as never);
+
+            const release = queue.releaseEntries([reserved], {
+                status: EntityStatus.COMPLETED,
+                delayMs: null,
+            });
+
+            if (accepted) {
+                expect([...(await release).values()][0]).toEqual(current);
+            } else {
+                await expect(release).rejects.toMatchObject({
+                    code: 'resource-inbox-lost-reservation',
+                });
+            }
+        },
+    );
     it('enqueue replaces the stored row and returns the previous entry', async () => {
         const previous = createEntry('entry-1');
         const replacement = {

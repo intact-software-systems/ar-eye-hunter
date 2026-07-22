@@ -38,7 +38,6 @@ import {
 import type {
     RuntimeStateOptimisticTransactionalRepositoryLike,
 } from '../../runtime-state/RuntimeStateRepository.ts';
-import type { RuntimeStateEntryValue } from '../../runtime-state/RuntimeStateJsonStore.ts';
 import { GroupStateRepository } from '../repositories/GroupStateRepository.ts';
 import { hashStateMutationCommand } from '../repositories/StateMutationOutboxRepository.ts';
 import type { GroupStateEventStore } from '../repositories/StateEventStore.ts';
@@ -775,30 +774,6 @@ function requireSessionId(descriptor: GroupMutationDescriptor): string {
         throw new NonRetryableException('Group mutation session is required');
     }
     return descriptor.sessionId;
-}
-
-function toGroupMutationCausalSurface(read: GroupMutationRead): unknown {
-    const revision = (value: RuntimeStateEntryValue<unknown> | null) =>
-        value?.entry.revision ?? null;
-    return {
-        idempotency: revision(read.idempotency),
-        group: revision(read.group),
-        actorMember: revision(read.actorMemberEntry),
-        targetMember: revision(read.targetMemberEntry),
-        authorityMember: revision(read.authorityMemberEntry),
-        directorMember: revision(read.directorMemberEntry),
-        targetPresence: revision(read.targetPresence),
-        targetAdmission: revision(read.targetAdmission),
-        authorityAdmission: revision(read.authorityAdmission),
-        directorAdmission: revision(read.directorAdmission),
-        authorityPresenceSessions: read.authorityPresenceSessionEntries
-            .map(({ entry, value }) => ({
-                sessionId: value.sessionId,
-                revision: entry.revision,
-            }))
-            .toSorted((left, right) => left.sessionId.localeCompare(right.sessionId)),
-        presenceSummary: revision(read.presenceSummary),
-    };
 }
 
 async function hmacSha256Hex(secret: string, value: string): Promise<string> {

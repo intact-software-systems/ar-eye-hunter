@@ -221,24 +221,24 @@ export class AppGroupInboxService extends AppInboxService {
         );
     }
 
-    public override async processEntryUntilCompletion<V, R = V>(
+    public override processEntryUntilCompletion<V, R = V>(
         enqueue: AppInboxEnqueueInput<V>,
     ): Promise<Either<string, R>> {
         void enqueue;
-        throw new GroupMutationAuthorizationError(
+        return Promise.reject(new GroupMutationAuthorizationError(
             'Authenticated group mutation authority is required.',
-        );
+        ));
     }
 
-    public override async processEntryUntilCompletionIf<V, R = V>(
+    public override processEntryUntilCompletionIf<V, R = V>(
         enqueue: AppInboxEnqueueInput<V>,
         enqueueIf: (entry: ResourceEntry) => boolean,
     ): Promise<Either<string, R>> {
         void enqueue;
         void enqueueIf;
-        throw new GroupMutationAuthorizationError(
+        return Promise.reject(new GroupMutationAuthorizationError(
             'Authenticated group mutation authority is required.',
-        );
+        ));
     }
 
     public async processAuthenticatedEntryUntilCompletion<V, R = V>(
@@ -450,7 +450,7 @@ function readGroupMutationPreparation(
     return value as GroupMutationPreparation;
 }
 
-const AUTHENTICATED_GROUP_INBOX_TYPES = [
+export const AUTHENTICATED_GROUP_INBOX_TYPES = [
     AppInboxType.GROUP_CREATE,
     AppInboxType.GROUP_UPDATE,
     AppInboxType.GROUP_DIRECTOR_APPOINT,
