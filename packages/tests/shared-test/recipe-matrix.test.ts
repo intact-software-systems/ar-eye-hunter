@@ -964,26 +964,18 @@ describe('black-box runner recipe matrix', () => {
             expect(finalTopology).toMatchObject({ connection: 'apiSecondary' });
             expect(finalTopology?.expect).toMatchObject({
                 body: {
-                    snapshot: {
-                        sourceGroupStateCausalRevision: {
-                            groupRevision:
-                                `{final${groupId[0].toUpperCase()}${groupId.slice(1)}StateCausalRevision}`,
-                            presenceRevision:
-                                `{final${groupId[0].toUpperCase()}${groupId.slice(1)}PresenceCausalRevision}`,
-                        },
+                    status: 'queued',
+                    groupRef: {
+                        applicationId: '{applicationId}',
+                        workspaceId: '{workspaceId}',
+                        groupId: `{${groupId}}`,
                     },
-                    config: {
-                        durable: {
-                            version:
-                                `{final${groupId[0].toUpperCase()}${groupId.slice(1)}ConfigVersion}`,
-                        },
-                    },
+                    requestId: `final-reconfigure-{${groupId}}-{runId}`,
+                    outboxId: 'string',
                 },
             });
             expect((finalTopology?.request as { outputs?: Record<string, unknown> })?.outputs)
-                .not.toHaveProperty(
-                    `final${groupId[0].toUpperCase()}${groupId.slice(1)}TopologyOutboxIds`,
-                );
+                .toBeUndefined();
 
             const controlLoop = controlGroups.find(group =>
                 group.name === `group-control-lane-${groupIds.indexOf(groupId) + 1}`
@@ -998,6 +990,49 @@ describe('black-box runner recipe matrix', () => {
                         'body.receipt.outboxIds',
                 });
         });
+
+        const topologyPoll = afterChurn.find(step => step.name === 'pollFinalTopologyEffects');
+        expect(topologyPoll).toMatchObject({ type: 'loop', count: 5, intervalMs: 250 });
+        const topologyPollSteps = topologyPoll?.steps as Array<Record<string, unknown>>;
+        expect(topologyPollSteps).toHaveLength(5);
+        groupIds.forEach(groupId => {
+            const groupLabel = groupId.replace(/^group/, '').replace(/Id$/, '').toLowerCase();
+            const read = topologyPollSteps.find(step =>
+                step.name === `observe${groupLabel}PublishedTopologyEffect{loop.iteration}`
+            );
+            expect(read).toMatchObject({
+                type: 'http',
+                nonBlockingFailure: true,
+                expect: {
+                    body: {
+                        snapshot: {
+                            version: 'integer',
+                            sourceGroupStateCausalRevision: {
+                                groupRevision:
+                                    `{final${groupId[0].toUpperCase()}${groupId.slice(1)}StateCausalRevision}`,
+                                presenceRevision:
+                                    `{final${groupId[0].toUpperCase()}${groupId.slice(1)}PresenceCausalRevision}`,
+                            },
+                        },
+                    },
+                },
+            });
+        });
+        expect(afterChurn.find(step => step.name === 'assertFinalTopologyEffectsConverged'))
+            .toMatchObject({
+                type: 'assert',
+                expect: {
+                    body: {
+                        statuses: {
+                            one: 'SUCCESS',
+                            two: 'SUCCESS',
+                            three: 'SUCCESS',
+                            four: 'SUCCESS',
+                            five: 'SUCCESS',
+                        },
+                    },
+                },
+            });
 
         expect(recipeText).not.toContain('body.groupStateCausalRevision');
         expect(recipeText).not.toContain('body.groupPresenceCausalRevision');
@@ -1025,8 +1060,8 @@ describe('black-box runner recipe matrix', () => {
             );
             expect((finalTopology?.request as { body?: Record<string, unknown> })?.body?.publish).toBe(true);
 
-            const observedEffect = afterChurn.find(step =>
-                step.name === `observe${groupLabel}PublishedTopologyEffect`
+            const observedEffect = topologyPollSteps.find(step =>
+                step.name === `observe${groupLabel}PublishedTopologyEffect{loop.iteration}`
             );
             expect(observedEffect).toMatchObject({
                 type: 'http',
