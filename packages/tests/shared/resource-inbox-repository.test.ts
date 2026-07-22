@@ -53,15 +53,52 @@ describe('ResourceInboxRepository', () => {
 
         const stored = findStoredRow(harness.rows, entry.key);
         if (!stored) throw new Error('Expected inserted resource inbox row');
-        stored.created_ts = '2026-01-01 00:00:00';
-        stored.expire_ts = '2026-01-01 00:05:00+00';
+        stored.created_ts = '2026-01-01 00:00:00.000000';
+        stored.expire_ts = '2026-01-01 00:05:00.000000';
         stored.ri_status = EntityStatus.COMPLETED;
         stored.ri_attempts = 3n;
-        stored.start_ts = '2026-01-01T00:01:00.000Z';
-        stored.end_ts = '2026-01-01T00:01:01.000Z';
-        stored.next_ts = '2026-01-01T00:01:02.000Z';
+        stored.start_ts = '2026-01-01 00:01:00.000000';
+        stored.end_ts = '2026-01-01 00:01:01.000000';
+        stored.next_ts = null;
 
         await expect(repo.writeIfAbsentOrMatch(entry)).resolves.toBe('matched');
+    });
+
+    it.each([
+        ['creation timestamp', {
+            createdTs: Temporal.PlainDateTime.from('2026-01-01T00:00:00.000002'),
+            expiryTs: Temporal.Instant.from('2026-01-01T00:05:00.000001Z'),
+        }],
+        ['expiry', {
+            createdTs: Temporal.PlainDateTime.from('2026-01-01T00:00:00.000001'),
+            expiryTs: Temporal.Instant.from('2026-01-01T00:05:00.000002Z'),
+        }],
+    ])('rejects a replay whose immutable %s differs by one microsecond', async (
+        _field,
+        replayTimestamps,
+    ) => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+
+        const harness = createSqlHarness();
+        const repo = new repositoryModule.ResourceInboxRepository(harness.sql);
+        const key = createKey(`microsecond-${_field}`);
+        const original = createEntry(key, {
+            text: 'immutable',
+            createdTs: Temporal.PlainDateTime.from('2026-01-01T00:00:00.000001'),
+            expiryTs: Temporal.Instant.from('2026-01-01T00:05:00.000001Z'),
+        });
+        const replay = createEntry(key, {
+            text: 'immutable',
+            createdTs: replayTimestamps.createdTs,
+            expiryTs: replayTimestamps.expiryTs,
+        });
+
+        await repo.writeIfAbsentOrMatch(original);
+
+        await expect(repo.writeIfAbsentOrMatch(replay)).rejects.toBeInstanceOf(
+            repositoryModule.ResourceInboxInvariantCorruptionError,
+        );
     });
 
     it.each([
@@ -121,6 +158,186 @@ describe('ResourceInboxRepository', () => {
         await expect(repo.writeIfAbsentOrMatch(entry)).rejects.toBeInstanceOf(
             repositoryModule.ResourceInboxInvariantCorruptionError,
         );
+    });
+
+    it.each([
+        ['completed without a reservation', (row: ResourceInboxRow) => {
+            row.ri_status = EntityStatus.COMPLETED;
+            row.ri_attempts = 0n;
+            row.start_ts = null;
+            row.end_ts = null;
+            row.next_ts = null;
+        }],
+        ['reserved without a start timestamp', (row: ResourceInboxRow) => {
+            row.ri_status = EntityStatus.RESERVED;
+            row.ri_attempts = 1n;
+            row.start_ts = null;
+            row.end_ts = null;
+            row.next_ts = null;
+        }],
+        ['reserved with an end timestamp', (row: ResourceInboxRow) => {
+            row.ri_status = EntityStatus.RESERVED;
+            row.ri_attempts = 1n;
+            row.start_ts = '2026-01-01 00:01:00.000000';
+            row.end_ts = '2026-01-01 00:01:01.000000';
+            row.next_ts = null;
+        }],
+        ['retry without a next timestamp', (row: ResourceInboxRow) => {
+            row.ri_status = EntityStatus.RETRY;
+            row.ri_attempts = 1n;
+            row.start_ts = '2026-01-01 00:01:00.000000';
+            row.end_ts = '2026-01-01 00:01:01.000000';
+            row.next_ts = null;
+        }],
+        ['completed without an end timestamp', (row: ResourceInboxRow) => {
+            row.ri_status = EntityStatus.COMPLETED;
+            row.ri_attempts = 1n;
+            row.start_ts = '2026-01-01 00:01:00.000000';
+            row.end_ts = null;
+            row.next_ts = null;
+        }],
+        ['new with retry scheduling', (row: ResourceInboxRow) => {
+            row.ri_status = EntityStatus.NEW;
+            row.ri_attempts = 0n;
+            row.start_ts = null;
+            row.end_ts = null;
+            row.next_ts = '2026-01-01 00:01:00.000000';
+        }],
+        ['start before creation', (row: ResourceInboxRow) => {
+            row.ri_status = EntityStatus.RESERVED;
+            row.ri_attempts = 1n;
+            row.start_ts = '2025-12-31 23:59:59.999999';
+            row.end_ts = null;
+            row.next_ts = null;
+        }],
+        ['end before start', (row: ResourceInboxRow) => {
+            row.ri_status = EntityStatus.COMPLETED;
+            row.ri_attempts = 1n;
+            row.start_ts = '2026-01-01 00:01:01.000000';
+            row.end_ts = '2026-01-01 00:01:00.999999';
+            row.next_ts = null;
+        }],
+        ['next attempt before end', (row: ResourceInboxRow) => {
+            row.ri_status = EntityStatus.RETRY;
+            row.ri_attempts = 1n;
+            row.start_ts = '2026-01-01 00:01:00.000000';
+            row.end_ts = '2026-01-01 00:01:01.000000';
+            row.next_ts = '2026-01-01 00:01:00.999999';
+        }],
+    ])('rejects an enum-valid but impossible lifecycle: %s', async (
+        _scenario,
+        mutate,
+    ) => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+
+        const harness = createSqlHarness();
+        const repo = new repositoryModule.ResourceInboxRepository(harness.sql);
+        const entry = createEntry(createKey(`invalid-${_scenario}`), {
+            text: 'immutable',
+            createdTs: Temporal.PlainDateTime.from('2026-01-01T00:00:00'),
+            expiryTs: Temporal.Instant.from('2026-01-01T00:05:00Z'),
+        });
+
+        await repo.writeIfAbsentOrMatch(entry);
+        const stored = findStoredRow(harness.rows, entry.key);
+        if (!stored) throw new Error('Expected inserted resource inbox row');
+        mutate(stored);
+
+        await expect(repo.writeIfAbsentOrMatch(entry)).rejects.toBeInstanceOf(
+            repositoryModule.ResourceInboxInvariantCorruptionError,
+        );
+    });
+
+    it('rejects a lifecycle whose expiry is not after creation', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+
+        const harness = createSqlHarness();
+        const repo = new repositoryModule.ResourceInboxRepository(harness.sql);
+        const entry = createEntry(createKey('invalid-created-expiry-order'), {
+            text: 'immutable',
+            createdTs: Temporal.PlainDateTime.from('2026-01-01T00:00:00.000001'),
+            expiryTs: Temporal.Instant.from('2026-01-01T00:00:00.000001Z'),
+        });
+
+        await repo.writeIfAbsentOrMatch(entry);
+
+        await expect(repo.writeIfAbsentOrMatch(entry)).rejects.toBeInstanceOf(
+            repositoryModule.ResourceInboxInvariantCorruptionError,
+        );
+    });
+
+    it.each([
+        [
+            'scheduled retry',
+            EntityStatus.RETRY,
+            0n,
+            null,
+            null,
+            '2026-01-01 00:01:00.000000',
+        ],
+        [
+            'active reservation',
+            EntityStatus.RESERVED,
+            1n,
+            '2026-01-01 00:01:00.000000',
+            null,
+            null,
+        ],
+        [
+            'processed retry',
+            EntityStatus.RETRY,
+            1n,
+            '2026-01-01 00:01:00.000000',
+            '2026-01-01 00:01:01.000000',
+            '2026-01-01 00:01:02.000000',
+        ],
+        [
+            'terminal failure',
+            EntityStatus.FAILED,
+            1n,
+            '2026-01-01 00:01:00.000000',
+            '2026-01-01 00:01:01.000000',
+            null,
+        ],
+        [
+            'delayed failure',
+            EntityStatus.FAILED,
+            1n,
+            '2026-01-01 00:01:00.000000',
+            '2026-01-01 00:01:01.000000',
+            '2026-01-01 00:01:02.000000',
+        ],
+    ])('matches immutable content after a valid %s lifecycle advance', async (
+        _scenario,
+        status,
+        attempts,
+        startTs,
+        endTs,
+        nextTs,
+    ) => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+
+        const harness = createSqlHarness();
+        const repo = new repositoryModule.ResourceInboxRepository(harness.sql);
+        const entry = createEntry(createKey(`valid-${_scenario}`), {
+            text: 'immutable',
+            createdTs: Temporal.PlainDateTime.from('2026-01-01T00:00:00'),
+            expiryTs: Temporal.Instant.from('2026-01-01T00:05:00Z'),
+        });
+
+        await repo.writeIfAbsentOrMatch(entry);
+        const stored = findStoredRow(harness.rows, entry.key);
+        if (!stored) throw new Error('Expected inserted resource inbox row');
+        stored.ri_status = status;
+        stored.ri_attempts = attempts;
+        stored.start_ts = startTs;
+        stored.end_ts = endTs;
+        stored.next_ts = nextTs;
+
+        await expect(repo.writeIfAbsentOrMatch(entry)).resolves.toBe('matched');
     });
 
     it('finishes only the current live reservation with the expected attempt', async () => {
@@ -232,7 +449,7 @@ describe('ResourceInboxRepository', () => {
         expect(JSON.parse(replaced.resource)).toEqual({ text: 'expired-replacement' });
         expect(replaced.audit.createdBy).toBe('dave');
         expect(findStoredRow(harness.rows, expiredKey)?.expire_ts).toBe(
-            expiredReplacement.audit.expiryTs.toString(),
+            toStoredTimestamp(expiredReplacement.audit.expiryTs),
         );
     });
 
@@ -262,10 +479,10 @@ describe('ResourceInboxRepository', () => {
         expect(JSON.parse(replaced.resource)).toEqual({ text: 'replacement' });
         expect(replaced.audit.createdBy).toBe('bob');
         expect(findStoredRow(harness.rows, key)?.created_ts).toBe(
-            replacement.audit.createdTs.toString(),
+            toStoredTimestamp(replacement.audit.createdTs),
         );
         expect(findStoredRow(harness.rows, key)?.expire_ts).toBe(
-            replacement.audit.expiryTs.toString(),
+            toStoredTimestamp(replacement.audit.expiryTs),
         );
     });
 
@@ -499,7 +716,7 @@ function createSqlHarness() {
         }
 
         if (
-            query.includes('select * from resource_inbox') &&
+            query.includes('from resource_inbox') &&
             query.includes('where ri_topic_id =') &&
             query.includes('ri_resource_id =') &&
             query.includes('fk_ext_bank_id =')
@@ -510,7 +727,10 @@ function createSqlHarness() {
                 return [];
             }
 
-            if (expireAfter instanceof Date && Date.parse(row.expire_ts) <= expireAfter.getTime()) {
+            if (
+                expireAfter instanceof Date &&
+                toStoredTimestampEpochMs(row.expire_ts) <= expireAfter.getTime()
+            ) {
                 return [];
             }
 
@@ -639,8 +859,8 @@ function toRowFromInsert(values: readonly unknown[], rowId: bigint): ResourceInb
         fk_ext_bank_id: contextId as string,
         system_date: systemDate as string,
         created_by: createdBy as string,
-        created_ts: createdTs as string,
-        expire_ts: expireTs as string,
+        created_ts: toStoredTimestamp(createdTs),
+        expire_ts: toStoredTimestamp(expireTs),
         start_ts: toOptionalString(startTs),
         end_ts: toOptionalString(endTs),
         next_ts: toOptionalString(nextTs),
@@ -709,7 +929,7 @@ function findStoredRow(
 }
 
 function isExpired(expireTs: string): boolean {
-    return Date.parse(expireTs) <= Date.now();
+    return toStoredTimestampEpochMs(expireTs) <= Date.now();
 }
 
 function toOptionalString(value: unknown): string | null {
@@ -722,4 +942,15 @@ function toOptionalString(value: unknown): string | null {
     }
 
     return String(value);
+}
+
+function toStoredTimestamp(value: unknown): string {
+    const text = value instanceof Date ? value.toISOString() : String(value);
+    const withoutZone = text.replace('T', ' ').replace(/[zZ]$/u, '');
+    const [whole, fraction = ''] = withoutZone.split('.');
+    return `${whole}.${fraction.padEnd(6, '0').slice(0, 6)}`;
+}
+
+function toStoredTimestampEpochMs(value: string): number {
+    return Date.parse(`${value.replace(' ', 'T')}Z`);
 }

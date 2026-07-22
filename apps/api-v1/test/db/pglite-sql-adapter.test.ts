@@ -2,7 +2,10 @@ import assert from 'node:assert/strict';
 import { Temporal } from '@js-temporal/polyfill';
 import { PSqlAppDataRepository } from '@shared-server/postgres/app-data/PSqlAppDataRepository.ts';
 import { PSqlCrdtLogRepository } from '@shared-server/postgres/crdt/PSqlCrdtLogRepository.ts';
-import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
+import {
+  ResourceInboxInvariantCorruptionError,
+  ResourceInboxRepository,
+} from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import {
   ResourceInboxResultsRepository,
 } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
@@ -1692,6 +1695,31 @@ Deno.test('ResourceInboxRepository and ResourceInboxResultsRepository run agains
     assert.ok(stored.db?.id);
     await inbox.write(expired);
 
+    const immutable = {
+      ...createResourceEntry('immutable-replay', {
+        payload: { text: 'immutable' },
+        typeId: 'APP_OUTBOX',
+        expiryTs: Temporal.Instant.from('9999-12-31T23:59:59.000001Z'),
+      }),
+      audit: {
+        ...createResourceEntry('immutable-replay').audit,
+        createdTs: Temporal.PlainDateTime.from('2026-06-01T12:00:00.000001'),
+        expiryTs: Temporal.Instant.from('9999-12-31T23:59:59.000001Z'),
+      },
+    };
+    assert.equal(await inbox.writeIfAbsentOrMatch(immutable), 'inserted');
+    assert.equal(await inbox.writeIfAbsentOrMatch(immutable), 'matched');
+    await assert.rejects(
+      () => inbox.writeIfAbsentOrMatch({
+        ...immutable,
+        audit: {
+          ...immutable.audit,
+          expiryTs: Temporal.Instant.from('9999-12-31T23:59:59.000002Z'),
+        },
+      }),
+      ResourceInboxInvariantCorruptionError,
+    );
+
     assert.equal((await inbox.findByKey(active.key))?.key.resourceId, 'active-1');
     assert.equal(await inbox.findByKey(expired.key), null);
     assert.equal(
@@ -1715,9 +1743,11 @@ Deno.test('ResourceInboxRepository and ResourceInboxResultsRepository run agains
     const reserved = await inbox.startProcessingEntity(active);
     assert.equal(reserved.right?.status, EntityStatus.RESERVED);
     assert.equal(reserved.right?.dequeueAudit.attempts, 1);
+    assert.equal(await inbox.writeIfAbsentOrMatch(active), 'matched');
 
     assert.equal(await inbox.updateResourceEntry(active.key, EntityStatus.COMPLETED), 1);
     assert.equal((await inbox.findByKey(active.key))?.status, EntityStatus.COMPLETED);
+    assert.equal(await inbox.writeIfAbsentOrMatch(active), 'matched');
     assert.equal(await inbox.deleteExpired(), 1);
 
     const resultEntry = createResourceEntry('result-1', {

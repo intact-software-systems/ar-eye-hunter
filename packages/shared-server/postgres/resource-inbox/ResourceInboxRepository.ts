@@ -141,7 +141,21 @@ export class ResourceInboxRepository {
         }
 
         const rows = await this.sql<ResourceInboxRow[]>`
-            select *
+            select ri_row_id,
+                   ri_resource_id,
+                   ri_topic_id,
+                   ri_resource,
+                   ri_type_id,
+                   ri_status,
+                   fk_ext_bank_id,
+                   system_date::text as system_date,
+                   created_by,
+                   created_ts::text as created_ts,
+                   expire_ts::text as expire_ts,
+                   start_ts::text as start_ts,
+                   end_ts::text as end_ts,
+                   next_ts::text as next_ts,
+                   ri_attempts
             from resource_inbox
             where ri_topic_id = ${entry.key.topicId}
               and ri_resource_id = ${entry.key.resourceId}
@@ -663,11 +677,48 @@ function isValidResourceInboxLifecycle(row: ResourceInboxRow): boolean {
         return false;
     }
 
+    let createdTs: Temporal.PlainDateTime;
+    let expiryTs: Temporal.PlainDateTime;
+    let startTs: Temporal.PlainDateTime | null;
+    let endTs: Temporal.PlainDateTime | null;
+    let nextTs: Temporal.PlainDateTime | null;
     try {
-        toDomain(row);
-        return true;
+        createdTs = parsePostgresTimestamp6(row.created_ts);
+        expiryTs = parsePostgresTimestamp6(row.expire_ts);
+        startTs = row.start_ts ? parsePostgresTimestamp6(row.start_ts) : null;
+        endTs = row.end_ts ? parsePostgresTimestamp6(row.end_ts) : null;
+        nextTs = row.next_ts ? parsePostgresTimestamp6(row.next_ts) : null;
     } catch {
         return false;
+    }
+
+    if (
+        Temporal.PlainDateTime.compare(createdTs, expiryTs) >= 0 ||
+        (startTs && Temporal.PlainDateTime.compare(startTs, createdTs) < 0) ||
+        (endTs && (!startTs || Temporal.PlainDateTime.compare(endTs, startTs) < 0)) ||
+        (nextTs && endTs && Temporal.PlainDateTime.compare(nextTs, endTs) < 0) ||
+        (nextTs && !endTs && Temporal.PlainDateTime.compare(nextTs, createdTs) < 0)
+    ) {
+        return false;
+    }
+
+    switch (row.ri_status as EntityStatus) {
+        case EntityStatus.NEW:
+            return attempts === 0 && !startTs && !endTs && !nextTs;
+        case EntityStatus.RETRY:
+            return attempts === 0
+                ? !startTs && !endTs && nextTs !== null
+                : startTs !== null && endTs !== null && nextTs !== null;
+        case EntityStatus.RESERVED:
+            return attempts > 0 && startTs !== null && !endTs && !nextTs;
+        case EntityStatus.FAILED:
+            return attempts > 0 && startTs !== null && endTs !== null;
+        case EntityStatus.COMPLETED:
+        case EntityStatus.ABORTED:
+        case EntityStatus.NON_RETRYABLE:
+        case EntityStatus.PARTITIONED:
+        case EntityStatus.MERGED:
+            return attempts > 0 && startTs !== null && endTs !== null && !nextTs;
     }
 }
 
@@ -675,34 +726,53 @@ function hasMatchingImmutableResourceInboxContent(
     row: ResourceInboxRow,
     entry: ResourceEntry,
 ): boolean {
-    let persistedEntry: ResourceEntry;
-    let persistedCandidate: ResourceEntry;
     try {
-        persistedEntry = toDomain(row);
-        persistedCandidate = toDomain({
-            ...row,
-            ri_resource_id: entry.key.resourceId,
-            ri_topic_id: entry.key.topicId,
-            ri_resource: entry.resource,
-            ri_type_id: entry.typeId,
-            fk_ext_bank_id: entry.key.contextId,
-            system_date: toSystemDate(entry),
-            created_by: entry.audit.createdBy,
-            created_ts: toPgTimestamp(entry.audit.createdTs),
-            expire_ts: toPgTimestamp(entry.audit.expiryTs),
-        });
+        return row.ri_topic_id === entry.key.topicId &&
+            row.ri_resource_id === entry.key.resourceId &&
+            row.fk_ext_bank_id === entry.key.contextId &&
+            row.ri_type_id === entry.typeId &&
+            row.ri_resource === entry.resource &&
+            row.created_by === entry.audit.createdBy &&
+            isSamePostgresTimestamp6(row.created_ts, entry.audit.createdTs) &&
+            isSamePostgresTimestamp6(row.expire_ts, entry.audit.expiryTs);
     } catch {
         return false;
     }
+}
 
-    return persistedEntry.key.topicId === persistedCandidate.key.topicId &&
-        persistedEntry.key.resourceId === persistedCandidate.key.resourceId &&
-        persistedEntry.key.contextId === persistedCandidate.key.contextId &&
-        persistedEntry.typeId === persistedCandidate.typeId &&
-        persistedEntry.resource === persistedCandidate.resource &&
-        persistedEntry.audit.createdBy === persistedCandidate.audit.createdBy &&
-        persistedEntry.audit.createdTs.equals(persistedCandidate.audit.createdTs) &&
-        persistedEntry.audit.expiryTs.equals(persistedCandidate.audit.expiryTs);
+function isSamePostgresTimestamp6(
+    persisted: string,
+    candidate: Temporal.PlainDateTime | Temporal.Instant,
+): boolean {
+    return Temporal.PlainDateTime.compare(
+        parsePostgresTimestamp6(persisted),
+        toPostgresTimestamp6(candidate),
+    ) === 0;
+}
+
+function parsePostgresTimestamp6(value: string): Temporal.PlainDateTime {
+    if (/[zZ]$/u.test(value) || /[+-]\d{2}(?::?\d{2})?$/u.test(value)) {
+        throw new RangeError('PostgreSQL timestamp without time zone contains a zone');
+    }
+
+    const timestamp = Temporal.PlainDateTime.from(value.replace(' ', 'T'));
+    if (timestamp.nanosecond !== 0) {
+        throw new RangeError('PostgreSQL timestamp(6) exceeds microsecond precision');
+    }
+    return timestamp;
+}
+
+function toPostgresTimestamp6(
+    value: Temporal.PlainDateTime | Temporal.Instant,
+): Temporal.PlainDateTime {
+    const timestamp = value instanceof Temporal.Instant
+        ? value.toZonedDateTimeISO('UTC').toPlainDateTime()
+        : value;
+
+    return timestamp.round({
+        smallestUnit: 'microsecond',
+        roundingMode: 'halfExpand',
+    });
 }
 
 export async function initResourceInboxExpiryEviction(
