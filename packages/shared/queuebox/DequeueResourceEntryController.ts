@@ -35,6 +35,34 @@ export class NonRetryableException extends Error {
     }
 }
 
+export type ResourceInboxRetryClassification = 'retryable' | 'non-retryable';
+
+export type ResourceInboxRetryExhaustion = Readonly<{
+    entry: ResourceEntry;
+    error: Error;
+    attempt: number;
+    lane: Reservator;
+    classification: 'retryable';
+    exhausted: true;
+    queueAgeMs: number;
+    dueAgeMs: number;
+    exhaustedAtEpochMs: number;
+}>;
+
+export class ResourceInboxFinalizedByHandlerError extends Error {
+    readonly code = 'resource-inbox-finalized-by-handler';
+
+    constructor(
+        readonly entry: ResourceEntry,
+        readonly handlerError: Error,
+    ) {
+        super('Resource inbox entry was finalized by its handler', {
+            cause: handlerError,
+        });
+        this.name = 'ResourceInboxFinalizedByHandlerError';
+    }
+}
+
 // -----------------------------------------
 // class ResilienceDto
 // -----------------------------------------
@@ -202,6 +230,14 @@ export class DequeueResourceEntryController {
             options.onReservationTelemetry ?? ((event: ResourceInboxFairnessTelemetry) => {
                 console.info('ResourceInbox reservation', event);
             });
+        const laneByEntry = new WeakMap<ResourceEntry, Reservator>();
+        const rememberLane = (
+            entries: Map<Resource.Key, ResourceEntry>,
+            lane: Reservator,
+        ): Map<Resource.Key, ResourceEntry> => {
+            for (const entry of entries.values()) laneByEntry.set(entry, lane);
+            return entries;
+        };
 
         return DequeueController
             .create<Resource.Key, ResourceEntry, V>()
@@ -209,24 +245,24 @@ export class DequeueResourceEntryController {
             .withMaxNumToDequeue(maxNumToDequeue)
             .withMaxNumToReserve(maxToReserve)
             .onNewEntriesReserveDo(async (types, maxNumToReserve) =>
-                await dequeueResourceEntryRepository.reserveEntries(
+                rememberLane(await dequeueResourceEntryRepository.reserveEntries(
                     types,
                     new Set([EntityStatus.NEW]),
                     {
                         maxToReserve: maxNumToReserve,
                         maxAttempts: retryPolicy.maxAttempts,
                     },
-                ),
+                ), Reservator.NEW),
             )
             .onRetryEntriesReserveDo(async (types, maxNumToReserve) =>
-                await dequeueResourceEntryRepository.reserveEntries(
+                rememberLane(await dequeueResourceEntryRepository.reserveEntries(
                     types,
                     new Set([EntityStatus.RETRY]),
                     {
                         maxToReserve: maxNumToReserve,
                         maxAttempts: retryPolicy.maxAttempts,
                     },
-                ),
+                ), Reservator.RETRY),
             )
             .onFairnessEntriesReserveDo(async (types, maxNumToReserve) =>
                 await RateLimiter.tryToExecuteOrDefault(
@@ -253,9 +289,9 @@ export class DequeueResourceEntryController {
                                 ),
                             );
                         }
-                        return new Map(
+                        return rememberLane(new Map(
                             [...reserved].map(([key, selection]) => [key, selection.entry]),
-                        );
+                        ), Reservator.FAIRNESS);
                     },
                     new Map<Resource.Key, ResourceEntry>(),
                 ),
@@ -282,7 +318,7 @@ export class DequeueResourceEntryController {
                     );
                 }
 
-                return reservedTimeoutEntries;
+                return rememberLane(reservedTimeoutEntries, Reservator.TIMEOUT);
             })
             .onReleaseEntriesDo(
                 // successReleaser
@@ -315,6 +351,17 @@ export class DequeueResourceEntryController {
                 async (failureByKey) => {
                     const out = new Map<Resource.Key, FailureDto<Resource.Key, ResourceEntry>>();
                     for (const failure of failureByKey.values()) {
+                        if (failure.exception instanceof ResourceInboxFinalizedByHandlerError) {
+                            out.set(
+                                failure.key,
+                                new FailureDto(
+                                    failure.key,
+                                    failure.exception.entry,
+                                    failure.exception.handlerError,
+                                ),
+                            );
+                            continue;
+                        }
                         const nonRetryable =
                             DequeueResourceEntryController.isNonRetryableException(failure);
                         const decision = nonRetryable
@@ -338,6 +385,24 @@ export class DequeueResourceEntryController {
                                 status: EntityStatus.RETRY,
                                 delayMs: decision.delayMs,
                             };
+                        } else if (options.onRetryExhausted) {
+                            const exhaustedAtEpochMs = nowEpochMs();
+                            const exhaustion = toRetryExhaustion(
+                                failure,
+                                laneByEntry.get(failure.value) ?? Reservator.NEW,
+                                exhaustedAtEpochMs,
+                            );
+                            const finalized = await options.onRetryExhausted(exhaustion);
+                            options.onRetryExhaustionTelemetry?.(exhaustion);
+                            out.set(
+                                failure.key,
+                                new FailureDto(
+                                    failure.key,
+                                    finalized,
+                                    failure.exception,
+                                ),
+                            );
+                            continue;
                         } else {
                             disposition = {
                                 status: EntityStatus.FAILED,
@@ -429,7 +494,37 @@ export type DequeueResourceEntryOptions = Readonly<{
     jitterUnit?: () => number;
     nowEpochMs?: () => number;
     onReservationTelemetry?: (event: ResourceInboxFairnessTelemetry) => void;
+    onRetryExhausted?: (
+        exhaustion: ResourceInboxRetryExhaustion,
+    ) => Promise<ResourceEntry>;
+    onRetryExhaustionTelemetry?: (
+        exhaustion: ResourceInboxRetryExhaustion,
+    ) => void;
 }>;
+
+function toRetryExhaustion(
+    failure: FailureDto<Resource.Key, ResourceEntry>,
+    lane: Reservator,
+    exhaustedAtEpochMs: number,
+): ResourceInboxRetryExhaustion {
+    const createdAtEpochMs = Number(
+        failure.value.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds,
+    );
+    const dueAtEpochMs = failure.value.dequeueAudit.nextTs
+        ? Number(failure.value.dequeueAudit.nextTs.epochMilliseconds)
+        : Number(failure.value.dequeueAudit.startTs?.epochMilliseconds ?? exhaustedAtEpochMs);
+    return {
+        entry: failure.value,
+        error: failure.exception,
+        attempt: failure.value.dequeueAudit.attempts,
+        lane,
+        classification: 'retryable',
+        exhausted: true,
+        queueAgeMs: Math.max(0, exhaustedAtEpochMs - createdAtEpochMs),
+        dueAgeMs: Math.max(0, exhaustedAtEpochMs - dueAtEpochMs),
+        exhaustedAtEpochMs,
+    };
+}
 
 function isResourceInboxRetryPolicyEqual(
     left: ResourceInboxRetryPolicy,

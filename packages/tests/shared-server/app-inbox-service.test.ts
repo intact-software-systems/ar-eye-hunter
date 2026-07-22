@@ -1,5 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { describe, expect, it, vi } from 'vitest';
+import { createAppInboxTestDatabase } from './app-inbox-test-database.ts';
 import type { AuditStamp, GroupEvent, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
@@ -137,6 +138,7 @@ describe('AppInboxService', () => {
             reader,
             queue as never,
             results as never,
+            createAppInboxTestDatabase(queue, results),
             'server-12345678',
             SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
             undefined,
@@ -249,6 +251,7 @@ describe('AppInboxService', () => {
             reader,
             queue as never,
             results as never,
+            createAppInboxTestDatabase(queue, results),
             'server-12345678',
             SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
             undefined,
@@ -318,6 +321,7 @@ describe('AppInboxService', () => {
             reader,
             queue as never,
             results as never,
+            createAppInboxTestDatabase(queue, results),
             'server-12345678',
             SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
         );
@@ -367,6 +371,7 @@ describe('AppInboxService', () => {
             reader,
             queue as never,
             results as never,
+            createAppInboxTestDatabase(queue, results),
             'server-12345678',
             SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
             undefined,
@@ -438,6 +443,7 @@ describe('AppInboxService', () => {
             reader,
             queue as never,
             results as never,
+            createAppInboxTestDatabase(queue, results),
             'server-12345678',
             SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
             undefined,
@@ -474,7 +480,7 @@ describe('AppInboxService', () => {
             status: 409,
         });
         expect(handler).toHaveBeenCalledOnce();
-        expect(readOnlyEntry(queue)?.status).toBe(EntityStatus.COMPLETED);
+        expect(readOnlyEntry(queue)?.status).toBe(EntityStatus.FAILED);
         expect(readOnlyEntry(queue)?.dequeueAudit.attempts).toBe(1);
     });
 
@@ -502,6 +508,7 @@ describe('AppInboxService', () => {
             reader,
             queue as never,
             results as never,
+            createAppInboxTestDatabase(queue, results),
             'server-12345678',
             SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
             undefined,
@@ -529,7 +536,7 @@ describe('AppInboxService', () => {
 
         expect(JSON.parse(result.left ?? '{}')).toMatchObject({ code, status: 409 });
         expect(handler).toHaveBeenCalledOnce();
-        expect(readOnlyEntry(queue)?.status).toBe(EntityStatus.COMPLETED);
+        expect(readOnlyEntry(queue)?.status).toBe(EntityStatus.FAILED);
         expect(readOnlyEntry(queue)?.dequeueAudit.attempts).toBe(1);
     });
 
@@ -553,6 +560,7 @@ describe('AppInboxService', () => {
             reader,
             queue as never,
             results as never,
+            createAppInboxTestDatabase(queue, results),
             groupStateService,
             'server-12345678',
             (event) => timingEvents.push(event),
@@ -667,6 +675,7 @@ describe('AppInboxService', () => {
             reader,
             queue as never,
             results as never,
+            createAppInboxTestDatabase(queue, results),
             groupStateService,
             'server-1',
         );
@@ -722,6 +731,7 @@ describe('AppInboxService', () => {
             reader,
             queue as never,
             results as never,
+            createAppInboxTestDatabase(queue, results),
             groupStateService,
             'server-12345678',
             undefined,
@@ -754,6 +764,7 @@ describe('AppInboxService', () => {
             reader,
             queue as never,
             results as never,
+            createAppInboxTestDatabase(queue, results),
             createGroupStateServiceStub({}),
             'server-12345678',
             (event) => timingEvents.push(event),
@@ -818,6 +829,7 @@ describe('AppInboxService', () => {
             reader,
             queue as never,
             results as never,
+            createAppInboxTestDatabase(queue, results),
             createGroupStateService({
                 runtimeRepository,
                 createGroupStateEventStore: () => eventStore,
@@ -881,6 +893,7 @@ describe('AppInboxService', () => {
             reader,
             queue as never,
             results as never,
+            createAppInboxTestDatabase(queue, results),
             createGroupStateService({
                 runtimeRepository,
                 createGroupStateEventStore: () => eventStore,
@@ -1074,6 +1087,7 @@ describe('AppInboxService', () => {
             reader,
             queue as never,
             results as never,
+            createAppInboxTestDatabase(queue, results),
             createGroupStateService({
                 runtimeRepository,
                 syncPublisher: publisher,
@@ -1164,6 +1178,7 @@ describe('AppInboxService', () => {
             reader,
             queue as never,
             results as never,
+            createAppInboxTestDatabase(queue, results),
             createGroupStateService({
                 runtimeRepository: new FakeRuntimeStateRepository(),
                 syncPublisher: publisher,
@@ -1216,6 +1231,7 @@ describe('AppInboxService', () => {
             reader,
             queue as never,
             results as never,
+            createAppInboxTestDatabase(queue, results),
             groupStateService,
             'server-12345678',
         );
@@ -1281,6 +1297,7 @@ describe('AppInboxService', () => {
             reader,
             queue as never,
             results as never,
+            createAppInboxTestDatabase(queue, results),
             groupStateService,
             'server-12345678',
         );
@@ -1422,6 +1439,7 @@ describe('AppInboxService', () => {
             reader,
             queue as never,
             results as never,
+            createAppInboxTestDatabase(queue, results),
             groupStateService,
             'server-12345678',
         );
@@ -1490,6 +1508,7 @@ describe('AppInboxService', () => {
             reader,
             queue as never,
             results as never,
+            createAppInboxTestDatabase(queue, results),
             groupStateService,
             'server-12345678',
         );
@@ -1690,6 +1709,7 @@ describe('AppInboxService', () => {
             reader,
             queue as never,
             results as never,
+            createAppInboxTestDatabase(queue, results),
             createGroupStateServiceStub({
                 updateGroup: vi.fn(async () => {
                     throw new GroupPolicyDeniedError({
@@ -1747,6 +1767,7 @@ describe('AppInboxService', () => {
             reader,
             queue as never,
             results as never,
+            createAppInboxTestDatabase(queue, results),
             createGroupStateServiceStub({
                 updateGroup: vi.fn(async () => {
                     throw new Error('Transient group update unavailable');

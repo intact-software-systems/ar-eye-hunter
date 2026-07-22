@@ -7,6 +7,10 @@ import {
     toResourceEntryWithUpdatedResource,
 } from '@shared/queuebox/ResourceEntry.ts';
 import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import {
+    ResourceInboxFinalizedByHandlerError,
+    type ResourceInboxRetryExhaustion,
+} from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { TryWithExhaustedError, TryWithPolicy, tryWithPolicy } from '@shared/resilience/TryWith.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
@@ -14,6 +18,11 @@ import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/
 import {
     ResourceInboxResultsRepository
 } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
+import type {
+    PSqlSql,
+    PSqlTransactionSql,
+} from '@shared-server/postgres/PostgresSqlClient.ts';
+import { runInTransaction } from '@shared-server/postgres/run-in-transaction.ts';
 import { type RallarTimingDetails, type RallarTimingSink, recordRallarTiming, timeRallarAsync, } from './timing.ts';
 import { isGroupPolicyDeniedError } from '../group-policy.ts';
 import { hashStateMutationCommand } from '../repositories/StateMutationOutboxRepository.ts';
@@ -69,6 +78,44 @@ export class AppInboxIdempotencyConflictError extends Error {
     }
 }
 
+export class AppInboxReservationConflictError extends Error {
+    readonly code = 'app-inbox-reservation-conflict';
+    readonly status = 409;
+
+    constructor(readonly key: Key) {
+        super(`App inbox reservation changed before completion: ${JSON.stringify(key)}`);
+        this.name = 'AppInboxReservationConflictError';
+    }
+}
+
+export type AppInboxErrorClassification =
+    | Readonly<{
+        kind: 'terminal';
+        result: unknown;
+    }>
+    | Readonly<{
+        kind: 'retryable';
+        code: string;
+        message: string;
+    }>;
+
+type AppInboxTransactionResourceInbox = Pick<
+    ResourceInboxRepository,
+    'finishReserved'
+>;
+
+type AppInboxTransactionResults = Pick<
+    ResourceInboxResultsRepository,
+    'replace'
+>;
+
+export type AppInboxTransactionRepositories = (
+    transaction: PSqlTransactionSql,
+) => Readonly<{
+    resourceInbox: AppInboxTransactionResourceInbox;
+    resourceInboxResults: AppInboxTransactionResults;
+}>;
+
 export type AppInboxEnqueueInput<V> = {
     type: AppInboxType;
     topicId?: string;
@@ -91,9 +138,14 @@ export type AppInboxServiceOptions = Readonly<{
     waitRetryIntervalMsecs?: number;
     waitMaxRetryIntervalMsecs?: number;
     waitJitterRatio?: number;
+    nowEpochMs?: () => number;
+    transactionRepositories?: AppInboxTransactionRepositories;
 }>;
 
-type NormalizedAppInboxServiceOptions = Required<AppInboxServiceOptions>;
+type NormalizedAppInboxServiceOptions = Required<Omit<
+    AppInboxServiceOptions,
+    'nowEpochMs' | 'transactionRepositories'
+>>;
 
 export class AppInboxService {
     public static readonly MAX_ELAPSED_MSECS = 10_000;
@@ -102,16 +154,19 @@ export class AppInboxService {
     public static readonly WAIT_JITTER_RATIO = 0.2;
 
     private readonly options: NormalizedAppInboxServiceOptions;
+    private readonly optionsInput: AppInboxServiceOptions;
 
     constructor(
         public readonly inbox: InboxQueueReader,
         public readonly resourceInbox: ResourceInboxRepository,
         public readonly resourceInboxResults: ResourceInboxResultsRepository,
+        protected readonly database: PSqlSql,
         public readonly serviceId: string,
         private readonly defaultTopicId: string = SIMPLER_GROUP_STATE_APP_INBOX_TOPIC,
         private readonly timing?: RallarTimingSink,
         options: AppInboxServiceOptions = {},
     ) {
+        this.optionsInput = options;
         this.options = {
             phaseTiming: options.phaseTiming ?? false,
             waitMaxElapsedMsecs: toNonNegativeFiniteNumber(
@@ -131,6 +186,115 @@ export class AppInboxService {
                 AppInboxService.WAIT_JITTER_RATIO,
             ),
         };
+    }
+
+    private async writeAppInboxResult(
+        entry: ResourceEntry,
+        status: EntityStatus.COMPLETED,
+        value: unknown,
+    ): Promise<void> {
+        await this.resourceInboxResults.replace(
+            toResourceEntryWithUpdatedResource(entry, status, value),
+        );
+    }
+
+    protected async writeMutation<R>(
+        context: AppInboxMessageContext,
+        write: (transaction: PSqlTransactionSql) => Promise<R>,
+    ): Promise<R> {
+        const timingDetails = this.toMutationTimingDetails(context);
+        return await timeRallarAsync(
+            this.timing,
+            {
+                component: 'app-inbox-phase',
+                operation: 'transaction',
+                serviceId: this.serviceId,
+                requestId: context.enqueue.resourceId,
+                details: timingDetails,
+            },
+            async () => await runInTransaction(this.database, async (transaction) => {
+                const repositories = this.toTransactionRepositories(transaction);
+                const result = await timeRallarAsync(
+                    this.timing,
+                    {
+                        component: 'app-inbox-phase',
+                        operation: 'write',
+                        serviceId: this.serviceId,
+                        requestId: context.enqueue.resourceId,
+                        details: timingDetails,
+                    },
+                    async () => await write(transaction),
+                );
+                await repositories.resourceInboxResults.replace(
+                    toResourceEntryWithUpdatedResource(
+                        context.entry,
+                        EntityStatus.COMPLETED,
+                        result,
+                    ),
+                );
+                const completed = await repositories.resourceInbox.finishReserved(
+                    context.entry.key,
+                    context.entry.dequeueAudit.attempts,
+                    EntityStatus.COMPLETED,
+                    new Date(this.nowEpochMs()),
+                );
+                if (!completed) {
+                    throw new AppInboxReservationConflictError(context.entry.key);
+                }
+                return result;
+            }),
+        );
+    }
+
+    protected async writeTerminalFailure(
+        context: AppInboxMessageContext,
+        error: unknown,
+    ): Promise<void> {
+        const timingDetails = {
+            ...this.toMutationTimingDetails(context),
+            classification: 'terminal',
+        };
+        await timeRallarAsync(
+            this.timing,
+            {
+                component: 'app-inbox-phase',
+                operation: 'transaction',
+                serviceId: this.serviceId,
+                requestId: context.enqueue.resourceId,
+                details: timingDetails,
+            },
+            async () => await runInTransaction(this.database, async (transaction) => {
+                const repositories = this.toTransactionRepositories(transaction);
+                await timeRallarAsync(
+                    this.timing,
+                    {
+                        component: 'app-inbox-phase',
+                        operation: 'write',
+                        serviceId: this.serviceId,
+                        requestId: context.enqueue.resourceId,
+                        details: timingDetails,
+                    },
+                    async () => {
+                        await repositories.resourceInboxResults.replace(
+                            toResourceEntryWithUpdatedResource(
+                                context.entry,
+                                EntityStatus.FAILED,
+                                error,
+                            ),
+                        );
+                        const completed = await repositories.resourceInbox.finishReserved(
+                            context.entry.key,
+                            context.entry.dequeueAudit.attempts,
+                            EntityStatus.FAILED,
+                            new Date(this.nowEpochMs()),
+                        );
+                        if (!completed) {
+                            throw new AppInboxReservationConflictError(context.entry.key);
+                        }
+                    },
+                );
+            }),
+        );
     }
 
     public processEntryNoWaiting<V, R = V>(enqueue: AppInboxEnqueueInput<V>) {
@@ -423,24 +587,32 @@ export class AppInboxService {
                                     { resultStatus: EntityStatus.COMPLETED },
                                 );
                             } catch (error) {
-                                const terminalError = toTerminalAppInboxError(error);
-                                if (terminalError === undefined) {
+                                const classification = classifyAppInboxError(error);
+                                if (classification.kind === 'retryable') {
                                     this.recordQueueRetryTiming(enqueue, entry, error);
                                     throw error;
                                 }
 
-                                await this.timePhase(
-                                    'write-result',
-                                    enqueue,
-                                    entry.key,
-                                    async () => {
-                                        await this.writeAppInboxResult(
-                                            entry,
-                                            EntityStatus.FAILED,
-                                            terminalError,
-                                        );
+                                const context = { enqueue, message, entry };
+                                await this.writeTerminalFailure(
+                                    context,
+                                    classification.result,
+                                );
+                                throw new ResourceInboxFinalizedByHandlerError(
+                                    {
+                                        ...entry,
+                                        status: EntityStatus.FAILED,
+                                        dequeueAudit: {
+                                            ...entry.dequeueAudit,
+                                            endTs: Temporal.Instant.fromEpochMilliseconds(
+                                                this.nowEpochMs(),
+                                            ),
+                                            nextTs: undefined,
+                                        },
                                     },
-                                    { resultStatus: EntityStatus.FAILED },
+                                    error instanceof Error
+                                        ? error
+                                        : new Error(String(error)),
                                 );
                             }
                         },
@@ -472,16 +644,6 @@ export class AppInboxService {
             'ok',
             0,
             error,
-        );
-    }
-
-    private async writeAppInboxResult(
-        entry: ResourceEntry,
-        status: EntityStatus.COMPLETED | EntityStatus.FAILED,
-        value: unknown,
-    ): Promise<void> {
-        await this.resourceInboxResults.replace(
-            toResourceEntryWithUpdatedResource(entry, status, value),
         );
     }
 
@@ -568,6 +730,37 @@ export class AppInboxService {
         };
     }
 
+    private toMutationTimingDetails(
+        context: AppInboxMessageContext,
+    ): RallarTimingDetails {
+        const nowEpochMs = this.nowEpochMs();
+        return {
+            ...this.toTimingDetails(context.enqueue, context.entry.key),
+            attempt: context.entry.dequeueAudit.attempts,
+            queueAgeMs: toQueueAgeMs(context.entry, nowEpochMs),
+            dueAgeMs: toDueAgeMs(context.entry, nowEpochMs),
+        };
+    }
+
+    private toTransactionRepositories(
+        transaction: PSqlTransactionSql,
+    ): ReturnType<AppInboxTransactionRepositories> {
+        const databaseRepositories = (
+            this.database as PSqlSql & Readonly<{
+                appInboxTransactionRepositories?: AppInboxTransactionRepositories;
+            }>
+        ).appInboxTransactionRepositories;
+        return this.optionsInput.transactionRepositories?.(transaction) ??
+            databaseRepositories?.(transaction) ?? {
+            resourceInbox: new ResourceInboxRepository(transaction),
+            resourceInboxResults: new ResourceInboxResultsRepository(transaction),
+        };
+    }
+
+    private nowEpochMs(): number {
+        return this.optionsInput.nowEpochMs?.() ?? Date.now();
+    }
+
     private toKey<V>(enqueue: AppInboxEnqueueInput<V>) {
         return toAppInboxQueueKey({
             topicId: enqueue.topicId ?? this.defaultTopicId,
@@ -600,6 +793,25 @@ function toAppInboxErrorMessage(resource: string): string {
     }
 }
 
+export function classifyAppInboxError(error: unknown): AppInboxErrorClassification {
+    if (error instanceof AppInboxReservationConflictError) {
+        return {
+            kind: 'retryable',
+            code: error.code,
+            message: error.message,
+        };
+    }
+    const terminal = toTerminalAppInboxError(error);
+    if (terminal !== undefined) {
+        return { kind: 'terminal', result: terminal };
+    }
+    return {
+        kind: 'retryable',
+        code: toErrorCode(error),
+        message: error instanceof Error ? error.message : String(error),
+    };
+}
+
 function toTerminalAppInboxError(error: unknown): unknown | undefined {
     if (isGroupPolicyDeniedError(error)) {
         return {
@@ -624,6 +836,108 @@ function toTerminalAppInboxError(error: unknown): unknown | undefined {
     }
 
     return undefined;
+}
+
+export function createAppInboxRetryExhaustionHandler(options: Readonly<{
+    database: PSqlSql;
+    nowEpochMs?: () => number;
+    timing?: RallarTimingSink;
+    transactionRepositories?: AppInboxTransactionRepositories;
+}>): (exhaustion: ResourceInboxRetryExhaustion) => Promise<ResourceEntry> {
+    const nowEpochMs = options.nowEpochMs ?? Date.now;
+    return async (exhaustion) => {
+        if (exhaustion.attempt !== 20) {
+            throw new RangeError(
+                `App inbox exhaustion requires exactly 20 attempts, received ${exhaustion.attempt}`,
+            );
+        }
+        const exhaustedAtEpochMs = nowEpochMs();
+        const diagnostics = {
+            type: 'app-inbox-retry-exhausted',
+            commandIdentity: {
+                contextId: exhaustion.entry.key.contextId,
+                resourceId: exhaustion.entry.key.resourceId,
+                topicId: exhaustion.entry.key.topicId,
+                typeId: exhaustion.entry.typeId,
+            },
+            attempts: exhaustion.attempt,
+            lastError: {
+                code: toErrorCode(exhaustion.error),
+                message: exhaustion.error.message,
+            },
+            queueAgeMs: exhaustion.queueAgeMs,
+            dueAgeMs: exhaustion.dueAgeMs,
+            exhaustedAtEpochMs,
+        } as const;
+        const details = {
+            attempt: exhaustion.attempt,
+            selectedLane: exhaustion.lane,
+            classification: exhaustion.classification,
+            exhaustion: true,
+            queueAgeMs: exhaustion.queueAgeMs,
+            dueAgeMs: exhaustion.dueAgeMs,
+        } as const;
+        return await timeRallarAsync(
+            options.timing,
+            {
+                component: 'app-inbox-phase',
+                operation: 'transaction',
+                requestId: exhaustion.entry.key.resourceId,
+                details,
+            },
+            async () => await runInTransaction(options.database, async (transaction) => {
+                const repositories = options.transactionRepositories?.(transaction) ?? {
+                    resourceInbox: new ResourceInboxRepository(transaction),
+                    resourceInboxResults: new ResourceInboxResultsRepository(transaction),
+                };
+                await timeRallarAsync(
+                    options.timing,
+                    {
+                        component: 'app-inbox-phase',
+                        operation: 'write',
+                        requestId: exhaustion.entry.key.resourceId,
+                        details,
+                    },
+                    async () => {
+                        await repositories.resourceInboxResults.replace(
+                            toResourceEntryWithUpdatedResource(
+                                exhaustion.entry,
+                                EntityStatus.FAILED,
+                                diagnostics,
+                            ),
+                        );
+                        const finished = await repositories.resourceInbox.finishReserved(
+                            exhaustion.entry.key,
+                            exhaustion.attempt,
+                            EntityStatus.FAILED,
+                            new Date(exhaustedAtEpochMs),
+                        );
+                        if (!finished) {
+                            throw new AppInboxReservationConflictError(exhaustion.entry.key);
+                        }
+                    },
+                );
+                return {
+                    ...exhaustion.entry,
+                    status: EntityStatus.FAILED,
+                    dequeueAudit: {
+                        ...exhaustion.entry.dequeueAudit,
+                        endTs: Temporal.Instant.fromEpochMilliseconds(exhaustedAtEpochMs),
+                        nextTs: undefined,
+                    },
+                };
+            }),
+        );
+    };
+}
+
+function toErrorCode(error: unknown): string {
+    return error && typeof error === 'object' && 'code' in error &&
+            typeof error.code === 'string'
+        ? error.code
+        : error instanceof Error
+        ? error.name
+        : 'unknown-error';
 }
 
 async function assertMatchingAppInboxCommand(
@@ -834,14 +1148,24 @@ function toRatio(value: number | undefined, fallback: number): number {
     return Math.max(0, Math.min(1, value));
 }
 
-function toQueueAgeMs(entry: ResourceEntry): number | undefined {
+function toQueueAgeMs(
+    entry: ResourceEntry,
+    nowEpochMs: number = Date.now(),
+): number | undefined {
     try {
         return Math.max(
             0,
-            Temporal.Now.instant().epochMilliseconds -
+            nowEpochMs -
                 entry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds,
         );
     } catch {
         return undefined;
     }
+}
+
+function toDueAgeMs(entry: ResourceEntry, nowEpochMs: number): number {
+    const dueAtEpochMs = entry.dequeueAudit.nextTs
+        ? Number(entry.dequeueAudit.nextTs.epochMilliseconds)
+        : Number(entry.dequeueAudit.startTs?.epochMilliseconds ?? nowEpochMs);
+    return Math.max(0, nowEpochMs - dueAtEpochMs);
 }

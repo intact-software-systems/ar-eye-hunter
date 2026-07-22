@@ -1,5 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { describe, expect, it } from 'vitest';
+import { createAppInboxTestDatabase } from './app-inbox-test-database.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
@@ -210,6 +211,7 @@ describe('AppGroupInboxService authenticated authority', () => {
             reader,
             queue as never,
             results as never,
+            createAppInboxTestDatabase(queue, results),
             groupStateService,
             'server-12345678',
         );
@@ -736,6 +738,7 @@ async function createAuthorityHarness(
             reader,
             queue as never,
             results as never,
+            createAppInboxTestDatabase(queue, results),
             groupStateService,
             'server-12345678',
         ),

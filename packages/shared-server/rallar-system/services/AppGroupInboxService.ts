@@ -41,6 +41,7 @@ import type { RallarTimingSink } from './timing.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 import type { IssuedAuthSession } from '../repositories/AuthSessionRepository.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 
 export {
     AppInboxService,
@@ -225,6 +226,7 @@ export class AppGroupInboxService extends AppInboxService {
         public override readonly inbox: InboxQueueReader,
         public override readonly resourceInbox: ResourceInboxRepository,
         public override readonly resourceInboxResults: ResourceInboxResultsRepository,
+        database: PSqlSql,
         public readonly groupStateService: GroupStateService,
         public override readonly serviceId: string,
         timing?: RallarTimingSink,
@@ -234,6 +236,7 @@ export class AppGroupInboxService extends AppInboxService {
             inbox,
             resourceInbox,
             resourceInboxResults,
+            database,
             serviceId,
             SIMPLER_GROUP_STATE_APP_INBOX_TOPIC,
             timing,

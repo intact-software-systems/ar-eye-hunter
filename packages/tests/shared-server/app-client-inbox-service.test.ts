@@ -1,5 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { describe, expect, it, vi } from 'vitest';
+import { createAppInboxTestDatabase } from './app-inbox-test-database.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
@@ -51,6 +52,7 @@ describe('AppClientInboxService', () => {
             reader,
             queue as never,
             results as never,
+            createAppInboxTestDatabase(queue, results),
             createClientStateService({
                 runtimeRepository: new FakeRuntimeStateRepository(),
                 syncPublisher: publisher,
@@ -196,6 +198,7 @@ describe('AppClientInboxService', () => {
             reader,
             queue as never,
             results as never,
+            createAppInboxTestDatabase(queue, results),
             createClientStateService({
                 runtimeRepository: new FakeRuntimeStateRepository(),
                 syncPublisher: publisher,
@@ -273,6 +276,7 @@ describe('AppClientInboxService', () => {
             reader,
             queue as never,
             results as never,
+            createAppInboxTestDatabase(queue, results),
             createClientStateService({
                 runtimeRepository: new FakeRuntimeStateRepository(),
                 syncPublisher: publisher,
@@ -340,6 +344,7 @@ describe('AppClientInboxService', () => {
             reader,
             queue as never,
             results as never,
+            createAppInboxTestDatabase(queue, results),
             createClientStateService({
                 runtimeRepository: new FakeRuntimeStateRepository(),
                 syncPublisher: publisher,
@@ -397,6 +402,7 @@ describe('AppClientInboxService', () => {
             reader,
             queue as never,
             results as never,
+            createAppInboxTestDatabase(queue, results),
             createClientStateService({
                 runtimeRepository: new FakeRuntimeStateRepository(),
                 syncPublisher: publisher,
@@ -446,6 +452,7 @@ describe('AppClientInboxService', () => {
             reader,
             queue as never,
             results as never,
+            createAppInboxTestDatabase(queue, results),
             createClientStateService({
                 runtimeRepository: new FakeRuntimeStateRepository(),
                 syncPublisher: publisher,
@@ -529,6 +536,7 @@ describe('AppClientInboxService', () => {
             reader,
             queue as never,
             results as never,
+            createAppInboxTestDatabase(queue, results),
             clientStateService,
             publisher,
             'server-12345678',
@@ -560,6 +568,7 @@ describe('AppClientInboxService', () => {
             reader,
             queue as never,
             results as never,
+            createAppInboxTestDatabase(queue, results),
             clientStateService,
             createPublisher(),
             'server-12345678',
@@ -591,6 +600,7 @@ describe('AppClientInboxService', () => {
             reader,
             queue as never,
             results as never,
+            createAppInboxTestDatabase(queue, results),
             clientStateService,
             createPublisher(),
             'server-12345678',
@@ -630,6 +640,7 @@ describe('AppClientInboxService', () => {
             reader,
             queue as never,
             results as never,
+            createAppInboxTestDatabase(queue, results),
             clientStateService,
             createPublisher(),
             'server-12345678',
@@ -678,6 +689,7 @@ describe('AppClientInboxService', () => {
             reader,
             queue as never,
             results as never,
+            createAppInboxTestDatabase(queue, results),
             clientStateService,
             createPublisher(),
             'server-12345678',
@@ -726,6 +738,7 @@ describe('AppClientInboxService', () => {
             reader,
             queue as never,
             results as never,
+            createAppInboxTestDatabase(queue, results),
             createClientStateServiceStub({
                 upsertPrincipal: vi.fn(async () => {
                     throw new NonRetryableException(

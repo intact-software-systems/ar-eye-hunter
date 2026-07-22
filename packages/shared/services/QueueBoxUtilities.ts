@@ -1,5 +1,9 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { DequeueResourceEntryController, ResilienceDto } from '../queuebox/DequeueResourceEntryController.ts';
+import {
+    DequeueResourceEntryController,
+    type DequeueResourceEntryOptions,
+    ResilienceDto,
+} from '../queuebox/DequeueResourceEntryController.ts';
 import { DequeueController } from '../queuebox/DequeueController.ts';
 import { QueueBoxResourceEntryRepository } from '../queuebox/QueueBoxTypes.ts';
 import { EntityStatus, Key, NEVER_EXPIRE_TS, ResourceEntry, } from '../queuebox/ResourceEntry.ts';
@@ -12,7 +16,8 @@ export class QueueBoxUtilities {
         qbox: QueueBoxResourceEntryRepository,
         typesToDequeue: Set<string>,
         resilience: ResilienceDto,
-        onDequeuedDo: (entry: ResourceEntry) => Promise<void>
+        onDequeuedDo: (entry: ResourceEntry) => Promise<void>,
+        options: DequeueResourceEntryOptions = {},
     ): Promise<void> {
 
         if (resilience.isNotAllowedThroughToDequeue()) {
@@ -27,6 +32,7 @@ export class QueueBoxUtilities {
                 resilience.retryPolicy.maxAttempts,
                 DequeueController.DEFAULT_MAX_NUM_TO_DEQUEUE,
                 resilience,
+                options,
             )
             .onFailedEntries(
                 _ => resilience.failure()

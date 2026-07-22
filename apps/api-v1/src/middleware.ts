@@ -24,6 +24,8 @@ import {
 import { installQueueBoxPubSubBridge } from '@shared-server/rallar-system/pubsub/QueueBoxPubSubBridge.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/services/AppClientInboxService.ts';
 import { AppGroupInboxService } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
+import { createAppInboxRetryExhaustionHandler } from '@shared-server/rallar-system/services/AppInboxService.ts';
+import { recordRallarTiming } from '@shared-server/rallar-system/services/timing.ts';
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/services/GroupPresenceSummaryWork.ts';
 import { createRtcTopologyOutboxPublisher } from '@shared-server/rallar-system/services/RtcTopologyOutboxWork.ts';
 import { StateMutationOutboxRepository } from '@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts';
@@ -246,6 +248,34 @@ function initialise(
   const runtime = createRallarMiddleware({
     inbox: queueBox,
     outbox: queueBox,
+    appInboxDequeueOptions: {
+      nowEpochMs: now,
+      onRetryExhausted: createAppInboxRetryExhaustionHandler({
+        database: postgresSql,
+        nowEpochMs: now,
+        timing,
+      }),
+      onRetryExhaustionTelemetry: (exhaustion) => {
+        recordRallarTiming(
+          timing,
+          {
+            component: 'app-inbox-handler',
+            operation: 'retry-exhaustion',
+            requestId: exhaustion.entry.key.resourceId,
+            details: {
+              attempt: exhaustion.attempt,
+              selectedLane: exhaustion.lane,
+              classification: exhaustion.classification,
+              exhaustion: exhaustion.exhausted,
+              queueAgeMs: exhaustion.queueAgeMs,
+              dueAgeMs: exhaustion.dueAgeMs,
+            },
+          },
+          'ok',
+          0,
+        );
+      },
+    },
     webSocketServer,
     wsRuntimeName,
     findGroupSnapshotByRef: (ref) => groupSnapshotReadThroughCache.findByRef(ref),
@@ -272,6 +302,7 @@ function initialise(
         inboxQueueReader,
         resourceInboxRepository,
         resourceInboxResultsRepository,
+        postgresSql,
         groupStateService,
         myServerId,
         timing,
@@ -297,6 +328,7 @@ function initialise(
         inboxQueueReader,
         resourceInboxRepository,
         resourceInboxResultsRepository,
+        postgresSql,
         clientStateService,
         stateSyncPublisher,
         myServerId,

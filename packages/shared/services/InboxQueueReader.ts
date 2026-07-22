@@ -1,5 +1,8 @@
 import { QueueBoxResourceEntryRepository } from '@shared/queuebox/QueueBoxTypes.ts';
-import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import {
+    type DequeueResourceEntryOptions,
+    ResilienceDto,
+} from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
@@ -17,11 +20,15 @@ export class InboxQueueReader {
 
     private readonly reader: QueueMessageReader;
 
-    constructor(public readonly inbox: QueueBoxResourceEntryRepository) {
+    constructor(
+        public readonly inbox: QueueBoxResourceEntryRepository,
+        dequeueOptions: DequeueResourceEntryOptions = {},
+    ) {
         this.reader = createQueueMessageReader({
             repository: inbox,
             enqueueType: InboxQueueReader.INBOX_ENQUEUE_TYPE,
             queueName: 'APP_INBOX',
+            dequeueOptions,
         });
     }
 

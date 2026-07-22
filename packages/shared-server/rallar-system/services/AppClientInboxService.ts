@@ -31,6 +31,7 @@ import {
 } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import { isCompletedOrFailed } from '@shared/queuebox/ResourceEntry.ts';
 import type { RallarTimingSink } from './timing.ts';
+import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 
 export {
     AppInboxService,
@@ -97,6 +98,7 @@ export class AppClientInboxService extends AppInboxService {
         public override readonly inbox: InboxQueueReader,
         public override readonly resourceInbox: ResourceInboxRepository,
         public override readonly resourceInboxResults: ResourceInboxResultsRepository,
+        database: PSqlSql,
         public readonly clientStateService: ClientStateService,
         public readonly stateSyncPublisher: StateSyncPublisher,
         public override readonly serviceId: string,
@@ -107,6 +109,7 @@ export class AppClientInboxService extends AppInboxService {
             inbox,
             resourceInbox,
             resourceInboxResults,
+            database,
             serviceId,
             SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
             timing,

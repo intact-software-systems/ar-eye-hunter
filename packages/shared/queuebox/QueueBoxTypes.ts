@@ -3,6 +3,7 @@ import type { PersistenceProvider } from '../persistence/PersistenceProvider.ts'
 import * as Resource from './ResourceEntry.ts';
 import { type Key, ResourceEntry } from './ResourceEntry.ts';
 import { RateLimiter } from '../resilience/Resilience.ts';
+import { EnqueuedType } from '../api/api-config.ts';
 
 export type { PersistenceProvider } from '../persistence/PersistenceProvider.ts';
 
@@ -75,6 +76,22 @@ export class ResourceInboxInvalidReleaseDispositionError extends Error {
         super('Resource inbox release disposition is invalid');
         this.name = 'ResourceInboxInvalidReleaseDispositionError';
     }
+}
+
+export function isIdempotentCompletedAppInboxRelease(
+    current: ResourceEntry,
+    reserved: ResourceEntry,
+    disposition: ResourceInboxReleaseDisposition,
+): boolean {
+    return disposition.status === Resource.EntityStatus.COMPLETED &&
+        disposition.delayMs === null &&
+        reserved.typeId === EnqueuedType.APP_INBOX &&
+        reserved.status === Resource.EntityStatus.RESERVED &&
+        current.typeId === EnqueuedType.APP_INBOX &&
+        current.status === Resource.EntityStatus.COMPLETED &&
+        Resource.isKeysEqual(current.key, reserved.key) &&
+        current.dequeueAudit.attempts === reserved.dequeueAudit.attempts &&
+        !Resource.isExpiredResourceEntry(current);
 }
 
 export function toResourceInboxReservationOptions(

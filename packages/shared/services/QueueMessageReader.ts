@@ -4,6 +4,7 @@ import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/QueueBoxT
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
 import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
+import type { DequeueResourceEntryOptions } from '@shared/queuebox/DequeueResourceEntryController.ts';
 
 export type QueueMessageReader = Readonly<{
     onMessageDo(type: string, callback: OnMessageCallback): void;
@@ -23,6 +24,7 @@ export function createQueueMessageReader(options: Readonly<{
     repository: QueueBoxResourceEntryRepository;
     enqueueType: string;
     queueName: string;
+    dequeueOptions?: DequeueResourceEntryOptions;
 }>): QueueMessageReader {
     const callbacks = new Map<string, OnMessageCallback>();
 
@@ -62,6 +64,7 @@ export function createQueueMessageReader(options: Readonly<{
 
                     await callback.onMessage(message, entry);
                 },
+                options.dequeueOptions,
             );
         },
     };

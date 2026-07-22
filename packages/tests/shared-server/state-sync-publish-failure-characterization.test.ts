@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createAppInboxTestDatabase } from './app-inbox-test-database.ts';
 import { Temporal } from '@js-temporal/polyfill';
 import type { StateScope } from '@shared/api/state-types.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
@@ -456,6 +457,7 @@ function createGroupAppInbox(
         reader,
         queue as never,
         results as never,
+        createAppInboxTestDatabase(queue, results),
         createCachedGroupStateService({
             durable: createGroupStateService({
                 runtimeRepository,
@@ -513,6 +515,7 @@ function createClientAppInbox(
         reader,
         queue as never,
         results as never,
+        createAppInboxTestDatabase(queue, results),
         createCachedClientStateService({
             durable: createClientStateService({
                 runtimeRepository,

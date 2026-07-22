@@ -10,6 +10,7 @@ import {
     ResourceInboxReleaseDisposition,
     ResourceInboxReservationInput,
     ResourceInboxWorkAdvertisementInput,
+    isIdempotentCompletedAppInboxRelease,
     toResourceInboxFairnessReservationOptions,
     toResourceInboxReleaseDisposition,
     toResourceInboxReservationOptions,
@@ -159,9 +160,18 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
             const current = this.data.get(toKeyAsString(resource.key));
             if (
                 !current ||
-                isExpiredResourceEntry(current) ||
-                current.status !== EntityStatus.RESERVED ||
-                current.dequeueAudit.attempts !== resource.dequeueAudit.attempts
+                (
+                    (
+                        isExpiredResourceEntry(current) ||
+                        current.status !== EntityStatus.RESERVED ||
+                        current.dequeueAudit.attempts !== resource.dequeueAudit.attempts
+                    ) &&
+                    !isIdempotentCompletedAppInboxRelease(
+                        current,
+                        resource,
+                        disposition,
+                    )
+                )
             ) {
                 throw new ResourceInboxLostReservationError(
                     resource.key,
@@ -174,6 +184,10 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         const released = new Map<Key, ResourceEntry>();
 
         for (const current of currentEntries) {
+            if (current.status === EntityStatus.COMPLETED) {
+                released.set(current.key, current);
+                continue;
+            }
             const updated: ResourceEntry = {
                 ...current,
                 status: disposition.status,

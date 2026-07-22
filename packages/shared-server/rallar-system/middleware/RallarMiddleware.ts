@@ -2,7 +2,10 @@ import type { ALInboundRuntimeStores } from '@shared/alm/ALInboundMessageRuntime
 import type { ALOutboundRuntimeStores } from '@shared/alm/ALOutboundMessageRuntime.ts';
 import { type ALMessage, readALTargetGroupRef, } from '@shared/al-contracts/al-contract.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import type { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import type {
+    DequeueResourceEntryOptions,
+    ResilienceDto,
+} from '@shared/queuebox/DequeueResourceEntryController.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/QueueBoxTypes.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
@@ -91,6 +94,7 @@ export type RallarGroupSnapshotResolverOptions = Readonly<{
 export type CreateRallarMiddlewareOptions = Readonly<{
     inbox: QueueBoxResourceEntryRepository;
     outbox?: QueueBoxResourceEntryRepository;
+    appInboxDequeueOptions?: DequeueResourceEntryOptions;
     webSocketServer?: JsonWebSocketServer;
     wsRuntimeName?: string;
     targetResolver?: WsServerTargetResolver;
@@ -159,7 +163,10 @@ export function createRallarMiddleware(
             outboundStores: options.outboundStores,
         },
     );
-    const inboxQueueReader = new InboxQueueReader(options.inbox);
+    const inboxQueueReader = new InboxQueueReader(
+        options.inbox,
+        options.appInboxDequeueOptions,
+    );
     const outboxQueueReader = new OutboxQueueReader(
         options.outbox ?? options.inbox,
     );

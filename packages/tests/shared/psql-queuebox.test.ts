@@ -5,6 +5,7 @@ import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/Res
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
 import { PSqlResultsQueueBox } from '@shared-server/postgres/queuebox/PSqlResultsQueueBox.ts';
 import { RateLimiter } from '@shared/resilience/Resilience.ts';
+import { EnqueuedType } from '@shared/api/api-config.ts';
 
 describe('PSqlQueueBox', () => {
     it('enqueue replaces the stored row and returns the previous entry', async () => {
@@ -340,6 +341,40 @@ describe('PSqlQueueBox', () => {
                 code: 'resource-inbox-lost-reservation',
                 expectedAttempts: 1,
             });
+    });
+
+    it('treats the exact already-completed AppInbox reservation as an idempotent PostgreSQL success release', async () => {
+        const reserved = {
+            ...createEntry('atomic-success', EntityStatus.RESERVED),
+            typeId: EnqueuedType.APP_INBOX,
+            dequeueAudit: {
+                attempts: 7,
+                startTs: Temporal.Now.instant(),
+            },
+        };
+        const completed = { ...reserved, status: EntityStatus.COMPLETED };
+        const releaseReserved = vi.fn(async () => null);
+        const findAnyByKey = vi.fn(async () => completed);
+        const queue = new PSqlQueueBox(createRepo({
+            releaseReserved,
+            findAnyByKey,
+        }) as never);
+
+        const released = await queue.releaseEntries(
+            [reserved],
+            { status: EntityStatus.COMPLETED, delayMs: null },
+        );
+
+        expect([...released.values()][0]).toBe(completed);
+        expect(findAnyByKey).toHaveBeenCalledWith(reserved.key);
+        await expect(queue.releaseEntries(
+            [{ ...reserved, dequeueAudit: { ...reserved.dequeueAudit, attempts: 6 } }],
+            { status: EntityStatus.COMPLETED, delayMs: null },
+        )).rejects.toMatchObject({ code: 'resource-inbox-lost-reservation' });
+        await expect(queue.releaseEntries(
+            [reserved],
+            { status: EntityStatus.FAILED, delayMs: null },
+        )).rejects.toMatchObject({ code: 'resource-inbox-lost-reservation' });
     });
 
     it.each([

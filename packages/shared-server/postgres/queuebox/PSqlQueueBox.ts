@@ -7,6 +7,7 @@ import {
     ResourceInboxReleaseDisposition,
     ResourceInboxReservationInput,
     ResourceInboxWorkAdvertisementInput,
+    isIdempotentCompletedAppInboxRelease,
     toResourceInboxFairnessReservationOptions,
     toResourceInboxReleaseDisposition,
     toResourceInboxReservationOptions,
@@ -201,10 +202,19 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
                         disposition,
                     });
                     if (!updated) {
-                        throw new ResourceInboxLostReservationError(
-                            entry.key,
-                            entry.dequeueAudit.attempts,
-                        );
+                        const current = await txRepo.findAnyByKey(entry.key);
+                        if (!current || !isIdempotentCompletedAppInboxRelease(
+                            current,
+                            entry,
+                            disposition,
+                        )) {
+                            throw new ResourceInboxLostReservationError(
+                                entry.key,
+                                entry.dequeueAudit.attempts,
+                            );
+                        }
+                        releasedEntries.set(entry.key, current);
+                        continue;
                     }
 
                     releasedEntries.set(entry.key, updated);

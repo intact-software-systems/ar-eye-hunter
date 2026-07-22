@@ -7,6 +7,7 @@ import {
     type ResourceEntry,
 } from '@shared/queuebox/ResourceEntry.ts';
 import { RateLimiter } from '@shared/resilience/Resilience.ts';
+import { EnqueuedType } from '@shared/api/api-config.ts';
 
 describe('InMemoryQueueBox', () => {
     it('returns the existing entry from enqueueIfAbsent without overwriting it', async () => {
@@ -177,6 +178,33 @@ describe('InMemoryQueueBox', () => {
             status: EntityStatus.RESERVED,
             dequeueAudit: { attempts: 2 },
         });
+    });
+
+    it('treats the exact already-completed AppInbox reservation as an idempotent success release', async () => {
+        const queue = new InMemoryQueueBox();
+        const reserved = createEntry(EnqueuedType.APP_INBOX, 'atomic-success', {
+            status: EntityStatus.RESERVED,
+            attempts: 7,
+        });
+        await queue.enqueue({ ...reserved, status: EntityStatus.COMPLETED });
+
+        const released = await queue.releaseEntries(
+            [reserved],
+            { status: EntityStatus.COMPLETED, delayMs: null },
+        );
+
+        expect(firstValue(released)).toMatchObject({
+            status: EntityStatus.COMPLETED,
+            dequeueAudit: { attempts: 7 },
+        });
+        await expect(queue.releaseEntries(
+            [{ ...reserved, dequeueAudit: { ...reserved.dequeueAudit, attempts: 6 } }],
+            { status: EntityStatus.COMPLETED, delayMs: null },
+        )).rejects.toMatchObject({ code: 'resource-inbox-lost-reservation' });
+        await expect(queue.releaseEntries(
+            [reserved],
+            { status: EntityStatus.FAILED, delayMs: null },
+        )).rejects.toMatchObject({ code: 'resource-inbox-lost-reservation' });
     });
 
     it('rolls back the whole memory release batch when one reservation is stale', async () => {

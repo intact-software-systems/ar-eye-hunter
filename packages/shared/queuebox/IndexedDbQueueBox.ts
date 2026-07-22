@@ -11,6 +11,7 @@ import {
     ResourceInboxReleaseDisposition,
     ResourceInboxReservationInput,
     ResourceInboxWorkAdvertisementInput,
+    isIdempotentCompletedAppInboxRelease,
     toResourceInboxFairnessReservationOptions,
     toResourceInboxReleaseDisposition,
     toResourceInboxReservationOptions,
@@ -387,11 +388,22 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                 getRequest.onerror = () => reject(getRequest.error ?? new Error('IndexedDB get failed during releaseEntries'));
                 getRequest.onsuccess = () => {
                     const stored = getRequest.result as StoredResourceEntry | undefined;
+                    const current = stored ? this.toResourceEntry(stored) : undefined;
                     if (
                         !stored ||
-                        this.isExpiredStoredEntry(stored) ||
-                        stored.status !== EntityStatus.RESERVED ||
-                        stored.dequeueAudit.attempts !== resource.dequeueAudit.attempts
+                        !current ||
+                        (
+                            (
+                                this.isExpiredStoredEntry(stored) ||
+                                stored.status !== EntityStatus.RESERVED ||
+                                stored.dequeueAudit.attempts !== resource.dequeueAudit.attempts
+                            ) &&
+                            !isIdempotentCompletedAppInboxRelease(
+                                current,
+                                resource,
+                                disposition,
+                            )
+                        )
                     ) {
                         reject(new ResourceInboxLostReservationError(
                             resource.key,
@@ -400,7 +412,10 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                         tx.abort();
                         return;
                     }
-                    const current = this.toResourceEntry(stored);
+                    if (current.status === EntityStatus.COMPLETED) {
+                        released.set(current.key, current);
+                        return;
+                    }
                     const updated: ResourceEntry = {
                         ...current,
                         status: disposition.status,
