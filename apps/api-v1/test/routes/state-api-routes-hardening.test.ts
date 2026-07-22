@@ -1,16 +1,8 @@
 import assert from 'node:assert/strict';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import type {
-  AuditStamp,
-  ClientEvent,
-  ClientSnapshot,
-} from '@shared/api/client-types.ts';
-import type {
-  GroupEvent,
-  GroupMember,
-  GroupSnapshot,
-} from '@shared/api/group-types.ts';
+import type { AuditStamp, ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
+import type { GroupEvent, GroupMember, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { StateEventPage } from '@shared/api/state-event-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-policy.ts';
@@ -141,7 +133,8 @@ Deno.test('client REST lifecycle accepts equal causal timestamp boundaries', asy
     },
   });
   const app = createClientRouteApp(deps);
-  const session = '/api/state/apps/app-1/workspaces/workspace-1/clients/alice/instances/browser/sessions/alice-session';
+  const session =
+    '/api/state/apps/app-1/workspaces/workspace-1/clients/alice/instances/browser/sessions/alice-session';
   const cases = [
     {
       method: 'PUT',
@@ -206,7 +199,8 @@ Deno.test('group REST presence lifecycle requires a valid generation before enqu
     },
   });
   const app = createGroupRouteApp(deps);
-  const session = '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1/sessions/alice-session';
+  const session =
+    '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1/sessions/alice-session';
   const malformed = [
     { method: 'PUT', path: session, body: {} },
     {
@@ -243,11 +237,13 @@ Deno.test('group REST presence lifecycle requires a valid generation before enqu
   }
   assert.equal(processCalls.length, 0);
 
-  for (const testCase of [
-    { method: 'PUT', path: session },
-    { method: 'POST', path: `${session}/heartbeat` },
-    { method: 'POST', path: `${session}/disconnect` },
-  ] as const) {
+  for (
+    const testCase of [
+      { method: 'PUT', path: session },
+      { method: 'POST', path: `${session}/heartbeat` },
+      { method: 'POST', path: `${session}/disconnect` },
+    ] as const
+  ) {
     const response = await app.request(testCase.path, {
       method: testCase.method,
       headers: {
@@ -258,9 +254,7 @@ Deno.test('group REST presence lifecycle requires a valid generation before enqu
         generationId: 'generation-1',
         lastHeartbeatAtEpochMs: 1,
         expiresAtEpochMs: 1,
-        ...(testCase.path.endsWith('/disconnect')
-          ? { disconnectedAtEpochMs: 1 }
-          : {}),
+        ...(testCase.path.endsWith('/disconnect') ? { disconnectedAtEpochMs: 1 } : {}),
       }),
     });
     assert.equal(response.status, 200, testCase.path);
@@ -374,9 +368,11 @@ Deno.test('client REST mutation preserves explicit terminal idempotency 409', as
 
 Deno.test('client route adapter preserves a base-era AppInbox status code and message', async () => {
   const toClientError = (
-    clientStateRoutes as typeof clientStateRoutes & Readonly<{
-      toClientAppInboxError?: (failure: string) => Error;
-    }>
+    clientStateRoutes as
+      & typeof clientStateRoutes
+      & Readonly<{
+        toClientAppInboxError?: (failure: string) => Error;
+      }>
   ).toClientAppInboxError;
   assert.ok(toClientError);
   const failure = JSON.stringify({
@@ -741,9 +737,11 @@ Deno.test('group mutation routes return stable lifecycle policy error codes', as
 
 Deno.test('group route adapter reconstructs a legacy AppInbox policy denial with details', async () => {
   const toGroupError = (
-    groupStateRoutes as typeof groupStateRoutes & Readonly<{
-      toGroupAppInboxError?: (failure: string) => Error;
-    }>
+    groupStateRoutes as
+      & typeof groupStateRoutes
+      & Readonly<{
+        toGroupAppInboxError?: (failure: string) => Error;
+      }>
   ).toGroupAppInboxError;
   assert.ok(toGroupError);
   const failure = JSON.stringify({
@@ -1488,9 +1486,7 @@ function createGroupSnapshot(
       ...TEST_SCOPE,
       groupId,
       principalId,
-      role: principalId === activePrincipalIds[0]
-        ? 'owner'
-        : 'member',
+      role: principalId === activePrincipalIds[0] ? 'owner' : 'member',
       status: 'active',
       joined: testAuditStamp(1),
       updated: testAuditStamp(1),

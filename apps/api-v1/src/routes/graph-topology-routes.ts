@@ -27,12 +27,12 @@ import {
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 import {
   type AppInboxEnqueueInput,
-    type AppInboxFailure,
+  type AppInboxFailure,
   AppInboxType,
 } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import {
-    toGraphTopologyErrorResponse as toErrorResponse,
-    TopologyAppInboxFailureError,
+  toGraphTopologyErrorResponse as toErrorResponse,
+  TopologyAppInboxFailureError,
 } from './graph-topology-route-errors.ts';
 
 export type GraphTopologyRouteAuthSession = Pick<
@@ -51,10 +51,10 @@ export type ProcessTopologyAppInbox = (
 ) => Promise<unknown>;
 
 export type GraphTopologyAppInboxService = Readonly<{
-    processAuthenticatedEntryUntilCompletionResult<V, R = V>(
-        enqueue: AppInboxEnqueueInput<V>,
-        authority: IssuedAuthSession,
-    ): Promise<Either<AppInboxFailure, R>>;
+  processAuthenticatedEntryUntilCompletionResult<V, R = V>(
+    enqueue: AppInboxEnqueueInput<V>,
+    authority: IssuedAuthSession,
+  ): Promise<Either<AppInboxFailure, R>>;
 }>;
 
 export type GraphTopologyGroupStateService = Readonly<{
@@ -88,7 +88,7 @@ export type GraphTopologyRouteDependencies = Readonly<{
   graphDiagnostics: GraphTopologyRouteGraphDiagnostics;
   topologyManagement: GraphTopologyRouteTopologyManagement;
   processTopologyAppInbox: ProcessTopologyAppInbox;
-    readAppGroupInboxService: () => GraphTopologyAppInboxService;
+  readAppGroupInboxService: () => GraphTopologyAppInboxService;
   requireApiAuthSession: (
     req: { header(name: string): string | undefined },
   ) => Promise<GraphTopologyRouteAuthSession>;
@@ -164,11 +164,11 @@ export function init(
     '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/config',
     async (c) => {
       try {
-                const { authSession, groupRef } = await assertCanManageGroupRef(
-                    c.req,
-                    deps,
-                    toGroupRef(c),
-                );
+        const { authSession, groupRef } = await assertCanManageGroupRef(
+          c.req,
+          deps,
+          toGroupRef(c),
+        );
         const body = await readJsonBody<{
           requestId?: string;
           config: GroupTopologyConfigPatch;
@@ -189,11 +189,11 @@ export function init(
     '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/config',
     async (c) => {
       try {
-                const { authSession, groupRef } = await assertCanManageGroupRef(
-                    c.req,
-                    deps,
-                    toGroupRef(c),
-                );
+        const { authSession, groupRef } = await assertCanManageGroupRef(
+          c.req,
+          deps,
+          toGroupRef(c),
+        );
         return c.json(
           await writeTopologyAppInboxCommand(deps, authSession, groupRef, {
             requestId: requireRequestId(c, {}),
@@ -224,11 +224,11 @@ export function init(
     '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/override',
     async (c) => {
       try {
-                const { authSession, groupRef } = await assertCanManageGroupRef(
-                    c.req,
-                    deps,
-                    toGroupRef(c),
-                );
+        const { authSession, groupRef } = await assertCanManageGroupRef(
+          c.req,
+          deps,
+          toGroupRef(c),
+        );
         const body = await readJsonBody<{
           requestId?: string;
           config: GroupTopologyConfigPatch;
@@ -256,11 +256,11 @@ export function init(
     '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/override',
     async (c) => {
       try {
-                const { authSession, groupRef } = await assertCanManageGroupRef(
-                    c.req,
-                    deps,
-                    toGroupRef(c),
-                );
+        const { authSession, groupRef } = await assertCanManageGroupRef(
+          c.req,
+          deps,
+          toGroupRef(c),
+        );
         return c.json(
           await writeTopologyAppInboxCommand(deps, authSession, groupRef, {
             requestId: requireRequestId(c, {}),
@@ -317,15 +317,15 @@ function toDependencies(
     topologyManagement: dependencies.topologyManagement ??
       notConfiguredTopologyManagement(),
     processTopologyAppInbox: dependencies.processTopologyAppInbox ??
-            ((authority, enqueue) =>
-                defaultProcessTopologyAppInbox(
-                    dependencies.readAppGroupInboxService?.() ??
-                        getMiddleware().appGroupInboxService,
-                    authority,
-                    enqueue,
-                )),
-        readAppGroupInboxService: dependencies.readAppGroupInboxService ??
-            (() => getMiddleware().appGroupInboxService),
+      ((authority, enqueue) =>
+        defaultProcessTopologyAppInbox(
+          dependencies.readAppGroupInboxService?.() ??
+            getMiddleware().appGroupInboxService,
+          authority,
+          enqueue,
+        )),
+    readAppGroupInboxService: dependencies.readAppGroupInboxService ??
+      (() => getMiddleware().appGroupInboxService),
     requireApiAuthSession: dependencies.requireApiAuthSession ??
       defaultRequireApiAuthSession,
     adminClientIds: dependencies.adminClientIds ?? [],
@@ -552,17 +552,17 @@ function toTopologyAppInboxContextId(groupRef: GroupRef): string {
 }
 
 async function defaultProcessTopologyAppInbox(
-    service: GraphTopologyAppInboxService,
+  service: GraphTopologyAppInboxService,
   authority: GraphTopologyRouteAuthSession,
   enqueue: AppInboxEnqueueInput<TopologyAppInboxCommand>,
 ): Promise<unknown> {
-    const result = await service.processAuthenticatedEntryUntilCompletionResult(
-      enqueue,
-      authority as IssuedAuthSession,
-    );
+  const result = await service.processAuthenticatedEntryUntilCompletionResult(
+    enqueue,
+    authority as IssuedAuthSession,
+  );
   return result.fold(
     (error) => {
-            throw new TopologyAppInboxFailureError(error);
+      throw new TopologyAppInboxFailureError(error);
     },
     (value) => value,
   );

@@ -40,7 +40,7 @@ Deno.test('OpenAPI JSON includes black-box auth support contracts', async () => 
       post?: OpenApiOperation;
     }>;
     components: {
-            parameters: Record<string, { required?: boolean; name?: string; in?: string }>;
+      parameters: Record<string, { required?: boolean; name?: string; in?: string }>;
       schemas: Record<
         string,
         {
@@ -161,13 +161,13 @@ Deno.test('OpenAPI JSON includes scoped graph and topology management contracts'
       post?: OpenApiOperation;
     }>;
     components: {
-            parameters: Record<string, {
-                required?: boolean;
-                name?: string;
-                in?: string;
-                description?: string;
-                schema?: Record<string, unknown>;
-            }>;
+      parameters: Record<string, {
+        required?: boolean;
+        name?: string;
+        in?: string;
+        description?: string;
+        schema?: Record<string, unknown>;
+      }>;
       schemas: Record<
         string,
         {
@@ -267,46 +267,45 @@ Deno.test('OpenAPI JSON includes scoped graph and topology management contracts'
     'outboxId',
   ]);
   assert.deepEqual(reconfigureResponse.properties.status.enum, ['queued']);
-    assert.deepEqual(json.components.parameters.IdempotencyKey, {
-        name: 'Idempotency-Key',
-        in: 'header',
-        required: true,
-        description:
-            'Stable request identifier for replaying an immutable topology mutation result.',
-        schema: { type: 'string', minLength: 1 },
-    });
-    for (
-        const schemaName of [
-            'PutGroupTopologyConfigRequest',
-            'PutGroupTopologyOverrideRequest',
-            'ReconfigureGroupTopologyRequest',
-        ]
-    ) {
-        const schema = json.components.schemas[schemaName] as {
-            required?: string[];
-            properties: { requestId?: { type?: string; minLength?: number } };
-        };
-        assert.ok(schema.required?.includes('requestId'), schemaName);
-        assert.deepEqual(schema.properties.requestId, { type: 'string', minLength: 1 });
-    }
-    const topologyPatch = json.components.schemas.GroupTopologyConfigPatch as {
-        properties: Record<string, { nullable?: boolean }>;
+  assert.deepEqual(json.components.parameters.IdempotencyKey, {
+    name: 'Idempotency-Key',
+    in: 'header',
+    required: true,
+    description: 'Stable request identifier for replaying an immutable topology mutation result.',
+    schema: { type: 'string', minLength: 1 },
+  });
+  for (
+    const schemaName of [
+      'PutGroupTopologyConfigRequest',
+      'PutGroupTopologyOverrideRequest',
+      'ReconfigureGroupTopologyRequest',
+    ]
+  ) {
+    const schema = json.components.schemas[schemaName] as {
+      required?: string[];
+      properties: { requestId?: { type?: string; minLength?: number } };
     };
-    for (
-        const field of [
-            'topologyKind',
-            'degreeLimit',
-            'treeMinSize',
-            'meshMinSize',
-            'meshParamK',
-        ]
-    ) {
-        assert.equal(topologyPatch.properties[field]?.nullable, true, `${field} clear contract`);
-    }
-    assert.deepEqual(
-        json.components.schemas.TopologyMutationFailureResponse.required,
-        ['error', 'code', 'message', 'issues', 'denial', 'retry'],
-    );
+    assert.ok(schema.required?.includes('requestId'), schemaName);
+    assert.deepEqual(schema.properties.requestId, { type: 'string', minLength: 1 });
+  }
+  const topologyPatch = json.components.schemas.GroupTopologyConfigPatch as {
+    properties: Record<string, { nullable?: boolean }>;
+  };
+  for (
+    const field of [
+      'topologyKind',
+      'degreeLimit',
+      'treeMinSize',
+      'meshMinSize',
+      'meshParamK',
+    ]
+  ) {
+    assert.equal(topologyPatch.properties[field]?.nullable, true, `${field} clear contract`);
+  }
+  assert.deepEqual(
+    json.components.schemas.TopologyMutationFailureResponse.required,
+    ['error', 'code', 'message', 'issues', 'denial', 'retry'],
+  );
 
   assertAuthContract(
     'GET scoped global graph',
@@ -401,44 +400,44 @@ Deno.test('OpenAPI JSON includes scoped graph and topology management contracts'
       '#/components/parameters/GraphRefresh',
     ],
   );
-    const mutationOperations = [
-        json.paths[
-            '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config'
-        ].put,
-      json.paths[
-        '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config'
-      ].delete,
-        json.paths[
-            '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/override'
-        ].put,
-      json.paths[
-        '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/override'
-      ].delete,
-        json.paths[
-            '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/reconfigure'
-        ].post,
-    ];
-    for (const operation of mutationOperations) {
-        assert.deepEqual(parameterRefs(operation), [
+  const mutationOperations = [
+    json.paths[
+      '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config'
+    ].put,
+    json.paths[
+      '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config'
+    ].delete,
+    json.paths[
+      '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/override'
+    ].put,
+    json.paths[
+      '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/override'
+    ].delete,
+    json.paths[
+      '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/reconfigure'
+    ].post,
+  ];
+  for (const operation of mutationOperations) {
+    assert.deepEqual(parameterRefs(operation), [
       '#/components/parameters/ApplicationId',
       '#/components/parameters/WorkspaceId',
       '#/components/parameters/GroupId',
       '#/components/parameters/IdempotencyKey',
-        ]);
-        for (const code of ['403', '409', '422', '503']) {
+    ]);
+    for (const code of ['403', '409', '422', '503']) {
       assert.equal(
-                operation?.responses?.[code]?.$ref,
-                '#/components/responses/TopologyMutationFailure',
-                `topology mutation response ${code}`,
+        operation?.responses?.[code]?.$ref,
+        '#/components/responses/TopologyMutationFailure',
+        `topology mutation response ${code}`,
       );
     }
   }
-    for (
-        const operation of mutationOperations
-    ) {
-        assert.ok(operation?.responses?.['409']);
-        assert.ok(operation?.responses?.['503']);
-    }
+  for (
+    const operation of mutationOperations
+  ) {
+    assert.ok(operation?.responses?.['409']);
+    assert.ok(operation?.responses?.['503']);
+  }
 });
 
 Deno.test('OpenAPI JSON includes admin operations contracts', async () => {

@@ -1,8 +1,5 @@
 import { Hono } from 'jsr:@hono/hono@4.11.9';
-import type {
-  StateScope,
-  UpsertClientInstanceRequest,
-} from '@shared/api/state-types.ts';
+import type { StateScope, UpsertClientInstanceRequest } from '@shared/api/state-types.ts';
 import type { ClientEvent, ClientPrincipalRef, ClientSnapshot } from '@shared/api/client-types.ts';
 import {
   type ClientStateService,
@@ -489,8 +486,10 @@ async function readRequestWithRequestId(c: {
     throw new ClientMutationRejectedError('Client request must be a plain object');
   }
   const body = requestBody as Record<string, unknown>;
-  if (body.requestId !== undefined &&
-    (typeof body.requestId !== 'string' || body.requestId.trim().length === 0)) {
+  if (
+    body.requestId !== undefined &&
+    (typeof body.requestId !== 'string' || body.requestId.trim().length === 0)
+  ) {
     throw new ClientMutationRejectedError(
       'Client request requestId must be a non-empty string',
     );
@@ -532,15 +531,16 @@ function toErrorResponse(
   const serialized = readSerializedRouteError(message);
   const explicitStatus = readErrorStatus(error) ?? serialized?.status;
   const responseMessage = serialized?.error ?? serialized?.message ?? message;
-  const status = explicitStatus ?? (message.includes('not found')
-    ? 404
-    : message.startsWith('Unauthorized:')
-    ? 401
-    : message.startsWith('Forbidden:')
-    ? 403
-    : message.includes('already exists')
-    ? 409
-    : 400);
+  const status = explicitStatus ??
+    (message.includes('not found')
+      ? 404
+      : message.startsWith('Unauthorized:')
+      ? 401
+      : message.startsWith('Forbidden:')
+      ? 403
+      : message.includes('already exists')
+      ? 409
+      : 400);
 
   return c.json({
     error: responseMessage,
@@ -559,12 +559,14 @@ function readErrorStatus(error: unknown): number | undefined {
   return error.status as number;
 }
 
-function readSerializedRouteError(message: string): Readonly<{
-  error?: string;
-  message?: string;
-  code?: string;
-  status?: number;
-}> | undefined {
+function readSerializedRouteError(message: string):
+  | Readonly<{
+    error?: string;
+    message?: string;
+    code?: string;
+    status?: number;
+  }>
+  | undefined {
   try {
     const value = JSON.parse(message) as unknown;
     if (typeof value !== 'object' || value === null || Array.isArray(value)) {
