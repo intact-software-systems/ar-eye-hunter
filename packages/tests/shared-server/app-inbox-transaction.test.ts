@@ -325,6 +325,23 @@ describe('AppInboxService registered handler finalization', () => {
             valid: false,
         },
         {
+            name: 'unsupported group exact-operation durable topic',
+            outerType: AppInboxType.GROUP_CREATE as string,
+            nested: { kind: 'operation' as const, type: AppInboxType.GROUP_CREATE as string },
+            topicId: AppInboxType.GROUP_CREATE as string,
+            valid: false,
+        },
+        {
+            name: 'unsupported client exact-operation durable topic',
+            outerType: AppInboxType.CLIENT_SESSION_CONNECT as string,
+            nested: {
+                kind: 'operation' as const,
+                type: AppInboxType.CLIENT_SESSION_CONNECT as string,
+            },
+            topicId: AppInboxType.CLIENT_SESSION_CONNECT as string,
+            valid: false,
+        },
+        {
             name: 'valid outer nested and topic agreement',
             outerType: AppInboxType.GROUP_CREATE as string,
             nested: { kind: 'operation' as const, type: AppInboxType.GROUP_CREATE as string },
@@ -356,7 +373,12 @@ describe('AppInboxService registered handler finalization', () => {
             timing: (event) => timing.push(event),
             topicId,
         });
-        const handler = vi.fn(async () => ({ status: 'accepted' }));
+        let mutationCommitted = false;
+        const handler = vi.fn(async (_data, context) =>
+            await harness.service.commit(context, async () => {
+                mutationCommitted = true;
+                return { status: 'accepted' };
+            }));
         harness.service.onStateMessage(outerType as AppInboxType, handler);
         harness.service.processEntryNoWaiting(harness.enqueue);
         const entry = await waitForRegisteredHandlerEntry(harness.queue);
@@ -378,10 +400,12 @@ describe('AppInboxService registered handler finalization', () => {
         expect(finalized.dequeueAudit.nextTs).toBeUndefined();
         if (valid) {
             expect(handler).toHaveBeenCalledTimes(1);
+            expect(mutationCommitted).toBe(true);
             expect(finalized.status).toBe(EntityStatus.COMPLETED);
             expect(result?.status).toBe(EntityStatus.COMPLETED);
         } else {
             expect(handler).not.toHaveBeenCalled();
+            expect(mutationCommitted).toBe(false);
             expect(finalized.status).toBe(EntityStatus.FAILED);
             expect(result?.status).toBe(EntityStatus.FAILED);
             expect(JSON.parse(result!.resource)).toMatchObject({

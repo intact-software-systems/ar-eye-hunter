@@ -32,6 +32,11 @@ type AppInboxUnavailableOperation =
 const APP_INBOX_CLIENT_TOPIC = 'app-inbox.client-state';
 const APP_INBOX_GROUP_TOPIC = 'app-inbox.group-state';
 const APP_INBOX_OPERATIONS = new Set<string>(Object.values(AppInboxType));
+const APP_INBOX_OPERATION_SPECIFIC_TOPIC_BY_OPERATION: Readonly<
+  Partial<Record<AppInboxType, string>>
+> = {
+  [AppInboxType.CLIENT_EXPIRED_SESSIONS]: AppInboxType.CLIENT_EXPIRED_SESSIONS,
+};
 const OPTIONAL_STRING_FIELDS = [
   'topicId',
   'resourceId',
@@ -89,7 +94,7 @@ export function validateAppInboxCommandIdentity(
   }
   if (
     dispatchedOperation !== command.type ||
-    !isOperationForTopic(dispatchedOperation, entry.key.topicId)
+    !isOperationForTopic(dispatchedOperation as AppInboxType, entry.key.topicId)
   ) {
     return toInvalidIdentity(entry.key.topicId, 'corrupt');
   }
@@ -119,8 +124,11 @@ function toInvalidIdentity(
   };
 }
 
-function isOperationForTopic(operation: string, topicId: string): boolean {
-  if (topicId === operation) {
+function isOperationForTopic(
+  operation: AppInboxType,
+  topicId: string,
+): boolean {
+  if (APP_INBOX_OPERATION_SPECIFIC_TOPIC_BY_OPERATION[operation] === topicId) {
     return true;
   }
   return topicId === APP_INBOX_GROUP_TOPIC
