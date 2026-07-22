@@ -98,8 +98,8 @@ import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import {
   AppGroupInboxService,
   type GroupCreateAppInboxPayload,
-  toTopologyAppInboxCommand,
   type TopologyAppInboxCommand,
+  toTopologyAppInboxCommand,
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import { initRallarSystemWsTopics } from '@shared-server/rallar-system/ws-system-topics.ts';
@@ -262,7 +262,7 @@ Deno.test('PGlite AppGroup commits group mutation and summary fan-out through fe
     assert.equal(
       afterSummary.filter((row) =>
         row.ri_type_id === 'APP_OUTBOX' &&
-      row.ri_topic_id === APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC &&
+        row.ri_topic_id === APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC &&
         row.ri_status === 'COMPLETED'
       ).length,
       1,
@@ -277,7 +277,7 @@ Deno.test('PGlite AppGroup commits group mutation and summary fan-out through fe
     assert.equal(
       afterSummary.filter((row) =>
         row.ri_type_id === 'APP_OUTBOX' &&
-      row.ri_topic_id === APP_OUTBOX_RTC_TOPOLOGY_TOPIC &&
+        row.ri_topic_id === APP_OUTBOX_RTC_TOPOLOGY_TOPIC &&
         row.ri_status === 'COMPLETED'
       ).length,
       1,
@@ -398,9 +398,9 @@ Deno.test('PGlite summary reservation fence rolls back CAS and every downstream 
     await assert.rejects(
       () =>
         work.processReservedEntry(message, {
-        ...reserved,
-        dequeueAudit: { ...reserved.dequeueAudit, attempts: 2 },
-      }),
+          ...reserved,
+          dequeueAudit: { ...reserved.dequeueAudit, attempts: 2 },
+        }),
       /reservation changed before commit/,
     );
 
@@ -1531,37 +1531,41 @@ Deno.test('PGlite AppGroup reuses the first durable topology command and rejects
     const envelope = JSON.parse(message.payload.resource) as { data: TopologyAppInboxCommand };
     assert.equal(envelope.data.capturedAtEpochMs, 1_000);
     assert.equal(
-      Number((await sql<{ count: string | number }[]>`
+      Number(
+        (await sql<{ count: string | number }[]>`
         select count(*) as count from resource_inbox
         where ri_type_id = 'APP_INBOX'
           and ri_resource_id = ${first.requestId}
-      `)[0]?.count),
+      `)[0]?.count,
+      ),
       1,
     );
 
-    for (const [requestId, payload] of [
-      [
-        'stable-topology-override-put',
-        {
-          operation: 'putOverride',
-          config: { degreeLimit: 4 },
-          ttlMs: 60_000,
-          expiresAtEpochMs: null,
-        },
-      ],
-      [
-        'stable-topology-override-delete',
-        { operation: 'deleteOverride', target: 'override' },
-      ],
-      [
-        'stable-topology-config-delete',
-        { operation: 'deleteConfig', target: 'config' },
-      ],
-      [
-        'stable-topology-reconfigure',
-        { operation: 'reconfigureTopology', requestOptions: {}, publish: false },
-      ],
-    ] as const) {
+    for (
+      const [requestId, payload] of [
+        [
+          'stable-topology-override-put',
+          {
+            operation: 'putOverride',
+            config: { degreeLimit: 4 },
+            ttlMs: 60_000,
+            expiresAtEpochMs: null,
+          },
+        ],
+        [
+          'stable-topology-override-delete',
+          { operation: 'deleteOverride', target: 'override' },
+        ],
+        [
+          'stable-topology-config-delete',
+          { operation: 'deleteConfig', target: 'config' },
+        ],
+        [
+          'stable-topology-reconfigure',
+          { operation: 'reconfigureTopology', requestOptions: {}, publish: false },
+        ],
+      ] as const
+    ) {
       const command = await toTopologyAppInboxCommand({
         actor: first.actor,
         groupRef,
@@ -1586,11 +1590,12 @@ Deno.test('PGlite AppGroup reuses the first durable topology command and rejects
     );
     appGroup.setRtcRttAppInboxDependencies({
       repository: new RtcRttRepository(runtime, { now: () => nowEpochMs }),
-      readPolicyInputs: () => Promise.resolve({
-        candidateGroups: [rttGroup],
-        overlaySnapshotsByGroupKey: new Map(),
-        degreeLimit: 5,
-      }),
+      readPolicyInputs: () =>
+        Promise.resolve({
+          candidateGroups: [rttGroup],
+          overlaySnapshotsByGroupKey: new Map(),
+          degreeLimit: 5,
+        }),
     });
     configureRttRepository({ ttlMs: 60_000 });
     configureSharedGraphRepositories({
@@ -1624,14 +1629,15 @@ Deno.test('PGlite AppGroup reuses the first durable topology command and rejects
       createdAtEpochMs: nowEpochMs,
       version: 1,
     };
-    const dispatchRtt = () => wsSocket.dispatchMessage(newALBroadcastMessage(
-      authority.sessionId,
-      newALEventRoute(AppTopics.rtt, groupRef.groupId, 'pglite-rtt-replay'),
-      'room',
-      AppTopics.rtt,
-      rtt,
-      { groupRef },
-    ));
+    const dispatchRtt = () =>
+      wsSocket.dispatchMessage(newALBroadcastMessage(
+        authority.sessionId,
+        newALEventRoute(AppTopics.rtt, groupRef.groupId, 'pglite-rtt-replay'),
+        'room',
+        AppTopics.rtt,
+        rtt,
+        { groupRef },
+      ));
     const rttPending = dispatchRtt();
     await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
     await inboxReader.dequeueInbox(
@@ -1646,10 +1652,12 @@ Deno.test('PGlite AppGroup reuses the first durable topology command and rejects
     assert.ok(wsIngressCapturedAt[1]! > wsIngressCapturedAt[0]!);
 
     assert.equal(
-      Number((await sql<{ count: string | number }[]>`
+      Number(
+        (await sql<{ count: string | number }[]>`
         select count(*) as count from resource_inbox
         where ri_type_id = 'APP_INBOX' and ri_status = 'COMPLETED'
-      `)[0]?.count),
+      `)[0]?.count,
+      ),
       6,
     );
 
@@ -1662,23 +1670,26 @@ Deno.test('PGlite AppGroup reuses the first durable topology command and rejects
     });
     await assert.rejects(
       () => submitPGliteTopologyCommand(appGroup, authority, divergent),
-      (error) => error instanceof Error &&
+      (error) =>
+        error instanceof Error &&
         'code' in error && error.code === 'app-inbox-idempotency-conflict',
     );
 
-    for (const collisionAuthority of [
-      {
-        ...authority,
-        clientId: 'other-principal',
-        sessionId: 'other-principal-session',
-        accessToken: 'other-principal-token',
-      },
-      {
-        ...authority,
-        sessionId: 'owner-second-session',
-        accessToken: 'owner-second-token',
-      },
-    ]) {
+    for (
+      const collisionAuthority of [
+        {
+          ...authority,
+          clientId: 'other-principal',
+          sessionId: 'other-principal-session',
+          accessToken: 'other-principal-token',
+        },
+        {
+          ...authority,
+          sessionId: 'owner-second-session',
+          accessToken: 'owner-second-token',
+        },
+      ]
+    ) {
       await authSessions.putSession(collisionAuthority);
       const actorDivergent = await toTopologyAppInboxCommand({
         actor: {
@@ -1691,12 +1702,14 @@ Deno.test('PGlite AppGroup reuses the first durable topology command and rejects
         payload: { operation: 'putConfig', config: { topologyKind: 'tree' } },
       });
       await assert.rejects(
-        () => submitPGliteTopologyCommand(
-          appGroup,
-          collisionAuthority,
-          actorDivergent,
-        ),
-        (error) => error instanceof Error &&
+        () =>
+          submitPGliteTopologyCommand(
+            appGroup,
+            collisionAuthority,
+            actorDivergent,
+          ),
+        (error) =>
+          error instanceof Error &&
           'code' in error && error.code === 'app-inbox-idempotency-conflict',
       );
     }
@@ -1808,14 +1821,17 @@ Deno.test('PGlite AppGroup rereads lifecycle after a retryable topology conflict
       assert.equal(writeCount, 1);
       const current = await groupRepository.findGroupEntry(groupRef);
       assert.ok(current);
-      assert.equal((await groupRepository.updateGroup({
-        ...current.value,
-        status: 'archived',
-        snapshotVersion: current.value.snapshotVersion + 1,
-        updated: canonicalAuditStamp(2),
-        archived: canonicalAuditStamp(2),
-        deleted: null,
-      }, current.entry.revision)).status, 'applied');
+      assert.equal(
+        (await groupRepository.updateGroup({
+          ...current.value,
+          status: 'archived',
+          snapshotVersion: current.value.snapshotVersion + 1,
+          updated: canonicalAuditStamp(2),
+          archived: canonicalAuditStamp(2),
+          deleted: null,
+        }, current.entry.revision)).status,
+        'applied',
+      );
     };
     const appGroup = new AppGroupInboxService(
       inboxReader,
@@ -2184,49 +2200,49 @@ Deno.test('PGlite runtime-state hierarchy isolates sibling key segments', async 
 
     assert.equal(
       (await clients.insertPrincipal({
-      applicationId: 'app',
-      workspaceId: 'foo',
-      principalId: 'alice',
-      username: 'alice',
-      displayName: null,
-      avatarUrl: null,
-      authProvider: null,
-      externalSubjectId: null,
-      roles: [],
-      metadata: {},
-      status: 'active',
-      snapshotVersion: 1,
-      profileVersion: 1,
-      presenceVersion: 1,
-      created: audit,
-      updated: audit,
-      lastSeenAtEpochMs: null,
-      disabled: null,
-      deleted: null,
+        applicationId: 'app',
+        workspaceId: 'foo',
+        principalId: 'alice',
+        username: 'alice',
+        displayName: null,
+        avatarUrl: null,
+        authProvider: null,
+        externalSubjectId: null,
+        roles: [],
+        metadata: {},
+        status: 'active',
+        snapshotVersion: 1,
+        profileVersion: 1,
+        presenceVersion: 1,
+        created: audit,
+        updated: audit,
+        lastSeenAtEpochMs: null,
+        disabled: null,
+        deleted: null,
       })).status,
       'applied',
     );
     assert.equal(
       (await clients.insertPrincipal({
-      applicationId: 'app',
-      workspaceId: 'foobar',
-      principalId: 'bob',
-      username: 'bob',
-      displayName: null,
-      avatarUrl: null,
-      authProvider: null,
-      externalSubjectId: null,
-      roles: [],
-      metadata: {},
-      status: 'active',
-      snapshotVersion: 1,
-      profileVersion: 1,
-      presenceVersion: 1,
-      created: audit,
-      updated: audit,
-      lastSeenAtEpochMs: null,
-      disabled: null,
-      deleted: null,
+        applicationId: 'app',
+        workspaceId: 'foobar',
+        principalId: 'bob',
+        username: 'bob',
+        displayName: null,
+        avatarUrl: null,
+        authProvider: null,
+        externalSubjectId: null,
+        roles: [],
+        metadata: {},
+        status: 'active',
+        snapshotVersion: 1,
+        profileVersion: 1,
+        presenceVersion: 1,
+        created: audit,
+        updated: audit,
+        lastSeenAtEpochMs: null,
+        disabled: null,
+        deleted: null,
       })).status,
       'applied',
     );
@@ -2298,14 +2314,14 @@ Deno.test('PGlite group-state reads fail closed on a directly seeded legacy wron
         () => repository.readSnapshot(ref),
         () =>
           repository.listGroups({
-          applicationId: ref.applicationId,
-          workspaceId: ref.workspaceId,
-        }),
+            applicationId: ref.applicationId,
+            workspaceId: ref.workspaceId,
+          }),
         () =>
           repository.listSnapshots({
-          applicationId: ref.applicationId,
-          workspaceId: ref.workspaceId,
-        }),
+            applicationId: ref.applicationId,
+            workspaceId: ref.workspaceId,
+          }),
         () =>
           repository.listSnapshotsPage(
             {
@@ -2368,12 +2384,12 @@ Deno.test('PGlite group-state reads reject complete-contract corruption across p
         sql,
         service,
         mutationDescriptor('createGroup', scope, ref.groupId, {
-        groupId: ref.groupId,
-        displayName: `Complete ${testCase.kind}`,
-        kind: 'room',
-        joinMode: 'open',
-        createdByPrincipalId: 'alice',
-        requestId: `create-${testCase.kind}`,
+          groupId: ref.groupId,
+          displayName: `Complete ${testCase.kind}`,
+          kind: 'room',
+          joinMode: 'open',
+          createdByPrincipalId: 'alice',
+          requestId: `create-${testCase.kind}`,
         }),
         authority,
       );
@@ -2386,15 +2402,15 @@ Deno.test('PGlite group-state reads reject complete-contract corruption across p
             scope,
             ref.groupId,
             {
-            principalId: 'alice',
-            generationId: `generation-${testCase.kind}`,
-            connectedAtEpochMs: 10_000,
-            lastHeartbeatAtEpochMs: 10_000,
-            expiresAtEpochMs: 4_102_444_800_000,
-            actorPrincipalId: 'alice',
-            actorSessionId: authority.sessionId,
-            requestId: `connect-${testCase.kind}`,
-          },
+              principalId: 'alice',
+              generationId: `generation-${testCase.kind}`,
+              connectedAtEpochMs: 10_000,
+              lastHeartbeatAtEpochMs: 10_000,
+              expiresAtEpochMs: 4_102_444_800_000,
+              actorPrincipalId: 'alice',
+              actorSessionId: authority.sessionId,
+              requestId: `connect-${testCase.kind}`,
+            },
             'alice',
             authority.sessionId,
           ),
@@ -2450,9 +2466,9 @@ Deno.test('PGlite group-state reads reject complete-contract corruption across p
         await assert.rejects(
           read,
           (error) =>
-          error instanceof Error &&
-          'code' in error &&
-          error.code === 'group-state-repository-invariant-corruption',
+            error instanceof Error &&
+            'code' in error &&
+            error.code === 'group-state-repository-invariant-corruption',
           `${testCase.kind} public read ${readIndex} accepted a corrupt persisted record`,
         );
       }
@@ -2713,12 +2729,12 @@ Deno.test('PGlite group event collision rolls back the authoritative mutation tr
       sql,
       service,
       mutationDescriptor('createGroup', scope, ref.groupId, {
-      groupId: ref.groupId,
-      displayName: 'Before collision',
-      kind: 'room',
-      joinMode: 'open',
-      createdByPrincipalId: 'alice',
-      requestId: 'seed-collision-group',
+        groupId: ref.groupId,
+        displayName: 'Before collision',
+        kind: 'room',
+        joinMode: 'open',
+        createdByPrincipalId: 'alice',
+        requestId: 'seed-collision-group',
       }),
       authority,
     );
@@ -2799,12 +2815,12 @@ Deno.test('PGlite group summary outbox collision rolls back state event and rece
       sql,
       service,
       mutationDescriptor('createGroup', scope, ref.groupId, {
-      groupId: ref.groupId,
-      displayName: 'Before summary collision',
-      kind: 'room',
-      joinMode: 'open',
-      createdByPrincipalId: 'alice',
-      requestId: 'seed-summary-collision-group',
+        groupId: ref.groupId,
+        displayName: 'Before summary collision',
+        kind: 'room',
+        joinMode: 'open',
+        createdByPrincipalId: 'alice',
+        requestId: 'seed-summary-collision-group',
       }),
       authority,
     );
@@ -2957,8 +2973,8 @@ Deno.test('PSql group event reads reject explicit null legacy identities and pay
     const repository = new PSqlGroupStateEventRepository(sql);
     for (
       const [suffix, defect] of [
-      ['workspace', { workspaceId: null }],
-      ['payload', { payload: null }],
+        ['workspace', { workspaceId: null }],
+        ['payload', { payload: null }],
       ] as const
     ) {
       const ref = {
@@ -3093,9 +3109,9 @@ Deno.test('PSql group events enforce the complete event contract and physical co
 
       for (
         const read of [
-        () => repository.listGroupEvents(ref),
-        () => repository.listRecentGroupEvents(ref),
-        () => repository.listGroupEventPage(ref, { limit: 10 }),
+          () => repository.listGroupEvents(ref),
+          () => repository.listRecentGroupEvents(ref),
+          () => repository.listGroupEventPage(ref, { limit: 10 }),
         ]
       ) {
         await assert.rejects(read, (error) =>
@@ -3154,23 +3170,23 @@ Deno.test('ResourceInboxRepository replay is independent of PostgreSQL DateStyle
     await assert.rejects(
       () =>
         inbox.writeIfAbsentOrMatch({
-        ...entry,
-        audit: {
-          ...entry.audit,
-          createdTs: Temporal.PlainDateTime.from('2026-06-01T12:00:00.000002'),
-        },
-      }),
+          ...entry,
+          audit: {
+            ...entry.audit,
+            createdTs: Temporal.PlainDateTime.from('2026-06-01T12:00:00.000002'),
+          },
+        }),
       ResourceInboxInvariantCorruptionError,
     );
     await assert.rejects(
       () =>
         inbox.writeIfAbsentOrMatch({
-        ...entry,
-        audit: {
-          ...entry.audit,
-          expiryTs: Temporal.Instant.from('9999-12-31T23:59:59.000002Z'),
-        },
-      }),
+          ...entry,
+          audit: {
+            ...entry.audit,
+            expiryTs: Temporal.Instant.from('9999-12-31T23:59:59.000002Z'),
+          },
+        }),
       ResourceInboxInvariantCorruptionError,
     );
 
@@ -3212,12 +3228,12 @@ Deno.test('ResourceInboxRepository preserves supported expanded-year rollover', 
     await assert.rejects(
       () =>
         inbox.writeIfAbsentOrMatch({
-        ...entry,
-        audit: {
-          ...entry.audit,
-          expiryTs: Temporal.Instant.from('9999-12-31T23:59:59.9999994Z'),
-        },
-      }),
+          ...entry,
+          audit: {
+            ...entry.audit,
+            expiryTs: Temporal.Instant.from('9999-12-31T23:59:59.9999994Z'),
+          },
+        }),
       ResourceInboxInvariantCorruptionError,
     );
   });
@@ -3309,31 +3325,31 @@ Deno.test('ResourceInboxRepository and ResourceInboxResultsRepository run agains
     await inbox.write(exhaustedTimeout);
     assert.equal(
       await inbox.isEntriesToLock(
-      new Set([exhausted.typeId]),
-      new Set([EntityStatus.NEW]),
-      2,
+        new Set([exhausted.typeId]),
+        new Set([EntityStatus.NEW]),
+        2,
       ),
       false,
     );
     assert.equal(
       await inbox.isEntriesToLock(
-      new Set([exhausted.typeId]),
-      new Set([EntityStatus.NEW]),
+        new Set([exhausted.typeId]),
+        new Set([EntityStatus.NEW]),
       ),
       true,
     );
     assert.equal(
       await inbox.isTimeoutOnReservedEntries(
-      new Set([exhaustedTimeout.typeId]),
-      Temporal.Duration.from({ seconds: 1 }),
-      2,
+        new Set([exhaustedTimeout.typeId]),
+        Temporal.Duration.from({ seconds: 1 }),
+        2,
       ),
       false,
     );
     assert.equal(
       await inbox.isTimeoutOnReservedEntries(
-      new Set([exhaustedTimeout.typeId]),
-      Temporal.Duration.from({ seconds: 1 }),
+        new Set([exhaustedTimeout.typeId]),
+        Temporal.Duration.from({ seconds: 1 }),
       ),
       true,
     );
@@ -3361,11 +3377,11 @@ Deno.test('ResourceInboxRepository and ResourceInboxResultsRepository run agains
     try {
       assert.equal(
         (await inbox.begin((transactionInbox) =>
-        transactionInbox.findTimedOutReservedEntriesSkipLocked(
-          new Set([databaseClockTimeout.typeId]),
-          30_000,
-          { maxToReserve: 1, maxAttempts: 2 },
-        )
+          transactionInbox.findTimedOutReservedEntriesSkipLocked(
+            new Set([databaseClockTimeout.typeId]),
+            30_000,
+            { maxToReserve: 1, maxAttempts: 2 },
+          )
         )).size,
         0,
       );
@@ -3378,11 +3394,11 @@ Deno.test('ResourceInboxRepository and ResourceInboxResultsRepository run agains
       `;
       assert.equal(
         (await inbox.begin((transactionInbox) =>
-        transactionInbox.findTimedOutReservedEntriesSkipLocked(
-          new Set([databaseClockTimeout.typeId]),
-          30_000,
-          { maxToReserve: 1, maxAttempts: 2 },
-        )
+          transactionInbox.findTimedOutReservedEntriesSkipLocked(
+            new Set([databaseClockTimeout.typeId]),
+            30_000,
+            { maxToReserve: 1, maxAttempts: 2 },
+          )
         )).size,
         1,
       );
@@ -3407,12 +3423,12 @@ Deno.test('ResourceInboxRepository and ResourceInboxResultsRepository run agains
     await assert.rejects(
       () =>
         inbox.writeIfAbsentOrMatch({
-        ...immutable,
-        audit: {
-          ...immutable.audit,
-          expiryTs: Temporal.Instant.from('9999-12-31T23:59:59.000002Z'),
-        },
-      }),
+          ...immutable,
+          audit: {
+            ...immutable.audit,
+            expiryTs: Temporal.Instant.from('9999-12-31T23:59:59.000002Z'),
+          },
+        }),
       ResourceInboxInvariantCorruptionError,
     );
 
@@ -3518,9 +3534,9 @@ Deno.test('ResourceInboxRepository and ResourceInboxResultsRepository run agains
     );
     assert.equal(
       await inbox.releaseReserved(active.key, {
-      expectedAttempts: 2,
-      releasedAt,
-      disposition: { status: EntityStatus.COMPLETED, delayMs: null },
+        expectedAttempts: 2,
+        releasedAt,
+        disposition: { status: EntityStatus.COMPLETED, delayMs: null },
       }),
       null,
     );
@@ -3563,15 +3579,15 @@ Deno.test('ResourceInboxRepository and ResourceInboxResultsRepository run agains
     await assert.rejects(
       () =>
         queueBox.releaseEntries([
-        firstReservation.right!,
-        {
-          ...secondReservation.right!,
-          dequeueAudit: {
-            ...secondReservation.right!.dequeueAudit,
-            attempts: 0,
+          firstReservation.right!,
+          {
+            ...secondReservation.right!,
+            dequeueAudit: {
+              ...secondReservation.right!.dequeueAudit,
+              attempts: 0,
+            },
           },
-        },
-      ], { status: EntityStatus.COMPLETED, delayMs: null }),
+        ], { status: EntityStatus.COMPLETED, delayMs: null }),
       (error) =>
         error instanceof Error &&
         'code' in error &&

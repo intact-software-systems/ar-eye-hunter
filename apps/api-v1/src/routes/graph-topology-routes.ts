@@ -106,172 +106,172 @@ export function init(
   app.get(
     '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/graphs/latest',
     async (c) => {
-    try {
-      const groupRef = toGroupRef(c);
-      await assertGroupExists(groupRef, deps);
-      await assertCanReadGroupRef(c.req, deps, groupRef);
-      return toGraphDiagnosticResponse(
-        c,
-        deps.graphDiagnostics.readGroupGraphDiagnostic(groupRef, readGraphOptions(c)),
-      );
-    } catch (error) {
-      return toErrorResponse(c, error);
-    }
+      try {
+        const groupRef = toGroupRef(c);
+        await assertGroupExists(groupRef, deps);
+        await assertCanReadGroupRef(c.req, deps, groupRef);
+        return toGraphDiagnosticResponse(
+          c,
+          deps.graphDiagnostics.readGroupGraphDiagnostic(groupRef, readGraphOptions(c)),
+        );
+      } catch (error) {
+        return toErrorResponse(c, error);
+      }
     },
   );
 
   app.get(
     '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology',
     async (c) => {
-    try {
-      const groupRef = toGroupRef(c);
-      await assertGroupExists(groupRef, deps);
-      await assertCanReadGroupRef(c.req, deps, groupRef);
-      return c.json(await deps.topologyManagement.readTopologyView(groupRef));
-    } catch (error) {
-      return toErrorResponse(c, error);
-    }
+      try {
+        const groupRef = toGroupRef(c);
+        await assertGroupExists(groupRef, deps);
+        await assertCanReadGroupRef(c.req, deps, groupRef);
+        return c.json(await deps.topologyManagement.readTopologyView(groupRef));
+      } catch (error) {
+        return toErrorResponse(c, error);
+      }
     },
   );
 
   app.get(
     '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/config',
     async (c) => {
-    try {
-      const groupRef = toGroupRef(c);
-      await assertGroupExists(groupRef, deps);
-      await assertCanReadGroupRef(c.req, deps, groupRef);
-      return c.json(await deps.topologyManagement.readConfig(groupRef));
-    } catch (error) {
-      return toErrorResponse(c, error);
-    }
+      try {
+        const groupRef = toGroupRef(c);
+        await assertGroupExists(groupRef, deps);
+        await assertCanReadGroupRef(c.req, deps, groupRef);
+        return c.json(await deps.topologyManagement.readConfig(groupRef));
+      } catch (error) {
+        return toErrorResponse(c, error);
+      }
     },
   );
 
   app.put(
     '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/config',
     async (c) => {
-    try {
-      const { authSession, groupRef } = await assertCanManageGroupRef(c.req, deps, toGroupRef(c));
-      const body = await readJsonBody<{
-        requestId?: string;
-        config: GroupTopologyConfigPatch;
-      }>(c);
+      try {
+        const { authSession, groupRef } = await assertCanManageGroupRef(c.req, deps, toGroupRef(c));
+        const body = await readJsonBody<{
+          requestId?: string;
+          config: GroupTopologyConfigPatch;
+        }>(c);
         return c.json(
           await writeTopologyAppInboxCommand(deps, authSession, groupRef, {
             requestId: requireRequestId(c, body),
             payload: { operation: 'putConfig', config: body.config },
           }),
         );
-    } catch (error) {
-      return toErrorResponse(c, error);
-    }
+      } catch (error) {
+        return toErrorResponse(c, error);
+      }
     },
   );
 
   app.delete(
     '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/config',
     async (c) => {
-    try {
-      const { authSession, groupRef } = await assertCanManageGroupRef(c.req, deps, toGroupRef(c));
+      try {
+        const { authSession, groupRef } = await assertCanManageGroupRef(c.req, deps, toGroupRef(c));
         return c.json(
           await writeTopologyAppInboxCommand(deps, authSession, groupRef, {
             requestId: requireRequestId(c, {}),
             payload: { operation: 'deleteConfig', target: 'config' },
           }),
         );
-    } catch (error) {
-      return toErrorResponse(c, error);
-    }
+      } catch (error) {
+        return toErrorResponse(c, error);
+      }
     },
   );
 
   app.get(
     '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/override',
     async (c) => {
-    try {
-      const groupRef = toGroupRef(c);
-      await assertGroupExists(groupRef, deps);
-      await assertCanReadGroupRef(c.req, deps, groupRef);
-      return c.json(await deps.topologyManagement.readOverride(groupRef) ?? {});
-    } catch (error) {
-      return toErrorResponse(c, error);
-    }
+      try {
+        const groupRef = toGroupRef(c);
+        await assertGroupExists(groupRef, deps);
+        await assertCanReadGroupRef(c.req, deps, groupRef);
+        return c.json(await deps.topologyManagement.readOverride(groupRef) ?? {});
+      } catch (error) {
+        return toErrorResponse(c, error);
+      }
     },
   );
 
   app.put(
     '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/override',
     async (c) => {
-    try {
-      const { authSession, groupRef } = await assertCanManageGroupRef(c.req, deps, toGroupRef(c));
-      const body = await readJsonBody<{
-        requestId?: string;
-        config: GroupTopologyConfigPatch;
-        ttlMs?: number;
-        expiresAtEpochMs?: number;
-      }>(c);
+      try {
+        const { authSession, groupRef } = await assertCanManageGroupRef(c.req, deps, toGroupRef(c));
+        const body = await readJsonBody<{
+          requestId?: string;
+          config: GroupTopologyConfigPatch;
+          ttlMs?: number;
+          expiresAtEpochMs?: number;
+        }>(c);
         return c.json(
           await writeTopologyAppInboxCommand(deps, authSession, groupRef, {
             requestId: requireRequestId(c, body),
             payload: {
               operation: 'putOverride',
-        config: body.config,
+              config: body.config,
               ttlMs: body.expiresAtEpochMs === undefined ? body.ttlMs ?? null : null,
               expiresAtEpochMs: body.expiresAtEpochMs ?? null,
             },
           }),
         );
-    } catch (error) {
-      return toErrorResponse(c, error);
-    }
+      } catch (error) {
+        return toErrorResponse(c, error);
+      }
     },
   );
 
   app.delete(
     '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/override',
     async (c) => {
-    try {
-      const { authSession, groupRef } = await assertCanManageGroupRef(c.req, deps, toGroupRef(c));
+      try {
+        const { authSession, groupRef } = await assertCanManageGroupRef(c.req, deps, toGroupRef(c));
         return c.json(
           await writeTopologyAppInboxCommand(deps, authSession, groupRef, {
             requestId: requireRequestId(c, {}),
             payload: { operation: 'deleteOverride', target: 'override' },
           }),
         );
-    } catch (error) {
-      return toErrorResponse(c, error);
-    }
+      } catch (error) {
+        return toErrorResponse(c, error);
+      }
     },
   );
 
   app.post(
     '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/reconfigure',
     async (c) => {
-    try {
+      try {
         const { authSession, groupRef } = await assertCanManageGroupRef(
           c.req,
           deps,
           toGroupRef(c),
         );
-      const body = await readOptionalJsonBody<{
-        requestId?: string;
-        options?: GroupTopologyConfigPatch;
-        publish?: boolean;
-      }>(c, {});
+        const body = await readOptionalJsonBody<{
+          requestId?: string;
+          options?: GroupTopologyConfigPatch;
+          publish?: boolean;
+        }>(c, {});
         return c.json(
           await writeTopologyAppInboxCommand(deps, authSession, groupRef, {
             requestId: requireRequestId(c, body),
             payload: {
               operation: 'reconfigureTopology',
               requestOptions: body.options ?? {},
-        publish: body.publish ?? true,
+              publish: body.publish ?? true,
             },
           }),
         );
-    } catch (error) {
-      return toErrorResponse(c, error);
-    }
+      } catch (error) {
+        return toErrorResponse(c, error);
+      }
     },
   );
 }
@@ -357,9 +357,9 @@ async function assertCanManageGroupRef(
   groupRef: GroupRef,
 ): Promise<
   Readonly<{
-  authSession: GraphTopologyRouteAuthSession;
-  groupRef: GroupRef;
-  snapshot: GroupSnapshot;
+    authSession: GraphTopologyRouteAuthSession;
+    groupRef: GroupRef;
+    snapshot: GroupSnapshot;
   }>
 > {
   const authSession = await deps.requireApiAuthSession(req);

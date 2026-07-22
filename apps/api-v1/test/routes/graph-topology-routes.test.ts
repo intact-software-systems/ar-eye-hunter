@@ -134,8 +134,8 @@ Deno.test('topology writes require group manager or platform admin auth', async 
     session: createIssuedSession('owner', 'owner-session'),
     processTopologyAppInbox: (_authority, enqueue) => {
       ownerCalls.push(enqueue);
-        return Promise.resolve({ ok: true });
-      },
+      return Promise.resolve({ ok: true });
+    },
   });
   const ownerAllowed = await ownerApp.request(
     '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1/topology/config',
@@ -161,8 +161,8 @@ Deno.test('topology writes require group manager or platform admin auth', async 
     adminClientIds: ['platform-admin'],
     processTopologyAppInbox: (_authority, enqueue) => {
       adminCalls.push(enqueue);
-        return Promise.resolve({ ok: true });
-      },
+      return Promise.resolve({ ok: true });
+    },
   });
   const adminAllowed = await adminApp.request(
     '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1/topology/config',
@@ -199,7 +199,7 @@ Deno.test('all topology mutation routes submit complete AppInbox commands and ne
       deleteOverride: () => recordDirectMutation(directTopologyMutationCalls, 'deleteOverride'),
       reconfigureGroupTopology: () =>
         recordDirectMutation(directTopologyMutationCalls, 'reconfigureGroupTopology'),
-      },
+    },
   });
 
   const mutations: readonly Readonly<{
@@ -213,14 +213,14 @@ Deno.test('all topology mutation routes submit complete AppInbox commands and ne
       path: 'config',
       requestId: 'config-put',
       body: { config: { topologyKind: 'tree' } },
-      },
+    },
     { method: 'DELETE', path: 'config', requestId: 'config-delete' },
     {
       method: 'PUT',
       path: 'override',
       requestId: 'override-put',
       body: { config: { degreeLimit: 4 }, ttlMs: 5_000 },
-      },
+    },
     { method: 'DELETE', path: 'override', requestId: 'override-delete' },
     {
       method: 'POST',
@@ -238,7 +238,7 @@ Deno.test('all topology mutation routes submit complete AppInbox commands and ne
         headers: {
           authorization: 'Bearer token',
           'Idempotency-Key': mutation.requestId,
-      },
+        },
         ...(mutation.body === undefined ? {} : { body: JSON.stringify(mutation.body) }),
       },
     );
@@ -399,19 +399,19 @@ Deno.test('topology mutations return after commit while explicit reconfigure for
   assert.deepEqual(
     calls.map((call) => (call as { data: { payload: unknown } }).data.payload),
     [
-    {
+      {
         operation: 'putOverride',
         config: toCanonicalGroupTopologyConfigPatch({ degreeLimit: 4 }),
         ttlMs: 5_000,
         expiresAtEpochMs: null,
-    },
+      },
       { operation: 'deleteConfig', target: 'config' },
       { operation: 'deleteOverride', target: 'override' },
-    {
+      {
         operation: 'reconfigureTopology',
         requestOptions: toCanonicalGroupTopologyConfigPatch({ topologyKind: 'tree' }),
         publish: false,
-    },
+      },
     ],
   );
 });
@@ -457,11 +457,11 @@ Deno.test('graph topology routes map missing groups and validation errors', asyn
     group: createGroupSnapshot('room-1', ['owner']),
     session: createIssuedSession('owner', 'owner-session'),
     processTopologyAppInbox: () => {
-        const error = new Error('invalid config') as Error & { status: number; issues: unknown[] };
-        error.status = 422;
-        error.issues = [{ code: 'invalid-positive-integer' }];
-        throw error;
-      },
+      const error = new Error('invalid config') as Error & { status: number; issues: unknown[] };
+      error.status = 422;
+      error.issues = [{ code: 'invalid-positive-integer' }];
+      throw error;
+    },
   });
   const invalid = await invalidApp.request(
     '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1/topology/config',
