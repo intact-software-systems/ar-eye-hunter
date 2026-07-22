@@ -504,6 +504,7 @@ describe('AppInbox error classification', () => {
 
         expect(malformed).toEqual({
             type: 'app-inbox-failure',
+            version: 'malformed.v0',
             code: 'app-inbox-malformed-persisted-failure',
             status: 500,
             message: 'Persisted AppInbox failure is malformed',
@@ -527,6 +528,7 @@ describe('AppInbox error classification', () => {
             code: 'group-topology-config-validation-failed',
             result: {
                 type: 'app-inbox-failure',
+                version: 'canonical.v2',
                 code: 'group-topology-config-validation-failed',
                 status: 422,
                 message: 'Group topology config validation failed',
@@ -549,6 +551,7 @@ describe('AppInbox error classification', () => {
             code: 'group-mutation-authority-denied',
             result: {
                 type: 'app-inbox-failure',
+                version: 'canonical.v2',
                 code: 'group-mutation-authority-denied',
                 status: 403,
                 message: 'Forbidden: session was revoked',

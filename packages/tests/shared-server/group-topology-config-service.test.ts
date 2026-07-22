@@ -161,6 +161,112 @@ describe('group topology config service', () => {
         expect(override.result.override.config.degreeLimit).toBe(4);
     });
 
+    it('rejects an invalid durable config even when a temporary override hides it until expiry', () => {
+        const input = createConfigMutationInput({
+            operation: 'putConfig',
+            config: { meshParamK: 4 },
+            durableDegreeLimit: 3,
+            overrideDegreeLimit: 5,
+        });
+
+        expect(() =>
+            computeTopologyConfigMutation({
+                ...input,
+                serverDefaults: { degreeLimit: 3, meshParamK: 2 },
+            })
+        ).toThrow(GroupTopologyConfigValidationError);
+    });
+
+    it('denies expired and terminal lifecycle mutations to platform admins', () => {
+        const input = createConfigMutationInput({
+            operation: 'putConfig',
+            config: { topologyKind: 'tree' },
+            durableDegreeLimit: 5,
+            overrideDegreeLimit: null,
+        });
+        const expired = {
+            ...input.read.groupSnapshot,
+            group: {
+                ...input.read.groupSnapshot.group,
+                expiresAtEpochMs: 1_500,
+            },
+        };
+        const terminal = {
+            ...input.read.groupSnapshot,
+            group: {
+                ...input.read.groupSnapshot.group,
+                status: 'deleted' as const,
+            },
+        };
+
+        for (
+            const [groupSnapshot, denialCode] of [
+                [expired, 'group-not-active'],
+                [terminal, 'group-deleted'],
+            ] as const
+        ) {
+            expect(() =>
+                computeTopologyConfigMutation({
+                    ...input,
+                    read: { ...input.read, groupSnapshot },
+                    facts: {
+                        ...input.facts,
+                        isPlatformAdmin: true,
+                        policyNowEpochMs: 2_000,
+                    },
+                })
+            ).toThrow(expect.objectContaining({
+                status: 403,
+                denial: expect.objectContaining({ code: denialCode }),
+            }));
+        }
+    });
+
+    it('rejects compact replay receipt operation corruption against the verified command', () => {
+        const input = createConfigMutationInput({
+            operation: 'putConfig',
+            config: { topologyKind: 'tree' },
+            durableDegreeLimit: 5,
+            overrideDegreeLimit: null,
+        });
+        const accepted = computeTopologyConfigMutation(input);
+        if (accepted.outcome !== 'write') {
+            throw new Error('Expected topology config write');
+        }
+        const corruptRecord = {
+            groupRef: input.command.aggregateRef,
+            requestId: input.command.requestId,
+            commandHash: input.facts.commandHash,
+            receipt: {
+                ...accepted.receipt,
+                operation: 'putOverride' as const,
+                target: 'override' as const,
+                acceptedExpiresAtEpochMs: accepted.receipt.acceptedUpdatedAtEpochMs! + 1,
+            },
+        };
+        const replayInput = {
+            ...input,
+            read: {
+                ...input.read,
+                idempotency: {
+                    key: 'corrupt-replay',
+                    value: corruptRecord,
+                    entry: {
+                        key: 'corrupt-replay',
+                        value: JSON.stringify(corruptRecord),
+                        expireAtTimestamp: Number.MAX_SAFE_INTEGER,
+                        updatedTimestamp: new Date(0).toISOString(),
+                        revision: 0,
+                    },
+                },
+            },
+        };
+
+        expect(() => computeTopologyConfigMutation(replayInput)).toThrow(
+            'Topology config receipt operation differs from command',
+        );
+    });
+
     it.each(['putConfig', 'putOverride'] as const)(
         'rejects an impossible %s no-op receipt at the pure validator boundary',
         (operation) => {

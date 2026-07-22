@@ -275,6 +275,20 @@ Deno.test('OpenAPI JSON includes scoped graph and topology management contracts'
             'Stable request identifier for replaying an immutable topology mutation result.',
         schema: { type: 'string', minLength: 1 },
     });
+    for (
+        const schemaName of [
+            'PutGroupTopologyConfigRequest',
+            'PutGroupTopologyOverrideRequest',
+            'ReconfigureGroupTopologyRequest',
+        ]
+    ) {
+        const schema = json.components.schemas[schemaName] as {
+            required?: string[];
+            properties: { requestId?: { type?: string; minLength?: number } };
+        };
+        assert.ok(schema.required?.includes('requestId'), schemaName);
+        assert.deepEqual(schema.properties.requestId, { type: 'string', minLength: 1 });
+    }
     const topologyPatch = json.components.schemas.GroupTopologyConfigPatch as {
         properties: Record<string, { nullable?: boolean }>;
     };

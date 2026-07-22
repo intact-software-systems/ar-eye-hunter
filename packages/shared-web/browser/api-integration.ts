@@ -110,7 +110,7 @@ export type StateGraphDiagnosticReadOptions =
     & GraphDiagnosticReadOptions;
 
 export type StateGroupTopologyDeleteOptions = ApiRequestOptions & Readonly<{
-    requestId?: string;
+    requestId: string;
 }>;
 
 export type PutStateGroupTopologyConfigResponse = Readonly<{
@@ -926,6 +926,7 @@ export async function putStateGroupTopologyConfig(
     scope: StateScope = defaultStateScope(),
     options?: ApiRequestOptions,
 ): Promise<PutStateGroupTopologyConfigResponse> {
+    const requestId = requireTopologyMutationRequestId(request.requestId);
     return await executeHttpRequest<
         PutGroupTopologyConfigRequest,
         PutStateGroupTopologyConfigResponse
@@ -933,16 +934,16 @@ export async function putStateGroupTopologyConfig(
         readApiBaseUrl(),
         `${toStateGroupPath(scope, groupId)}/topology/config`,
         'PUT',
-        request,
+        { ...request, requestId },
         options,
-        topologyMutationHeaders(request.requestId),
+        topologyMutationHeaders(requestId),
     );
 }
 
 export async function deleteStateGroupTopologyConfig(
     groupId: string,
     scope: StateScope = defaultStateScope(),
-    options?: StateGroupTopologyDeleteOptions,
+    options: StateGroupTopologyDeleteOptions,
 ): Promise<DeleteStateGroupTopologyConfigResponse> {
     return await executeHttpRequest<void, DeleteStateGroupTopologyConfigResponse>(
         readApiBaseUrl(),
@@ -950,7 +951,7 @@ export async function deleteStateGroupTopologyConfig(
         'DELETE',
         undefined,
         options,
-        topologyMutationHeaders(options?.requestId),
+        topologyMutationHeaders(options.requestId),
     );
 }
 
@@ -974,6 +975,7 @@ export async function putStateGroupTopologyOverride(
     scope: StateScope = defaultStateScope(),
     options?: ApiRequestOptions,
 ): Promise<PutStateGroupTopologyOverrideResponse> {
+    const requestId = requireTopologyMutationRequestId(request.requestId);
     return await executeHttpRequest<
         PutGroupTopologyOverrideRequest,
         PutStateGroupTopologyOverrideResponse
@@ -981,16 +983,16 @@ export async function putStateGroupTopologyOverride(
         readApiBaseUrl(),
         `${toStateGroupPath(scope, groupId)}/topology/override`,
         'PUT',
-        request,
+        { ...request, requestId },
         options,
-        topologyMutationHeaders(request.requestId),
+        topologyMutationHeaders(requestId),
     );
 }
 
 export async function deleteStateGroupTopologyOverride(
     groupId: string,
     scope: StateScope = defaultStateScope(),
-    options?: StateGroupTopologyDeleteOptions,
+    options: StateGroupTopologyDeleteOptions,
 ): Promise<DeleteStateGroupTopologyConfigResponse> {
     return await executeHttpRequest<void, DeleteStateGroupTopologyConfigResponse>(
         readApiBaseUrl(),
@@ -998,16 +1000,22 @@ export async function deleteStateGroupTopologyOverride(
         'DELETE',
         undefined,
         options,
-        topologyMutationHeaders(options?.requestId),
+        topologyMutationHeaders(options.requestId),
     );
 }
 
 function topologyMutationHeaders(
-    requestId: string | undefined,
+    requestId: string,
 ): Readonly<Record<string, string>> {
-    return requestId
-        ? { 'Idempotency-Key': requestId }
-        : {};
+    return { 'Idempotency-Key': requireTopologyMutationRequestId(requestId) };
+}
+
+function requireTopologyMutationRequestId(requestId: string): string {
+    const canonical = requestId.trim();
+    if (canonical.length === 0) {
+        throw new TypeError('Topology mutation requestId must be non-empty');
+    }
+    return canonical;
 }
 
 export async function reconfigureStateGroupTopology(
@@ -1016,6 +1024,7 @@ export async function reconfigureStateGroupTopology(
     scope: StateScope = defaultStateScope(),
     options?: ApiRequestOptions,
 ): Promise<QueuedGroupTopologyReconfigureResponse> {
+    const requestId = requireTopologyMutationRequestId(request.requestId);
     return await executeHttpRequest<
         ReconfigureGroupTopologyRequest,
         QueuedGroupTopologyReconfigureResponse
@@ -1023,9 +1032,9 @@ export async function reconfigureStateGroupTopology(
         readApiBaseUrl(),
         `${toStateGroupPath(scope, groupId)}/topology/reconfigure`,
         'POST',
-        request,
+        { ...request, requestId },
         options,
-        topologyMutationHeaders(request.requestId),
+        topologyMutationHeaders(requestId),
     );
 }
 

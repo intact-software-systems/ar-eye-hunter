@@ -478,22 +478,22 @@ async function readOptionalJsonBody<T>(c: {
   }
 }
 
-function readRequestId(
-  c: { req: { header(name: string): string | undefined } },
-  body: { requestId?: string },
-): string | undefined {
-  return body.requestId ?? c.req.header('Idempotency-Key');
-}
-
 function requireRequestId(
   c: { req: { header(name: string): string | undefined } },
-  body: { requestId?: string },
+  body: { requestId?: unknown },
 ): string {
-  const requestId = readRequestId(c, body)?.trim();
+  const requestId = c.req.header('Idempotency-Key')?.trim();
   if (!requestId) {
     const error = new Error('Topology mutation requestId is required') as Error & {
       status: number;
     };
+    error.status = 400;
+    throw error;
+  }
+  if (body.requestId !== undefined && body.requestId !== requestId) {
+    const error = new Error(
+      'Topology mutation body requestId must match Idempotency-Key',
+    ) as Error & { status: number };
     error.status = 400;
     throw error;
   }

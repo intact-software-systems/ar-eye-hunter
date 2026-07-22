@@ -158,19 +158,19 @@ export type GroupTopologyManagementView = Readonly<{
 }>;
 
 export type PutGroupTopologyConfigRequest = Readonly<{
-    requestId?: string;
+    requestId: string;
     config: GroupTopologyConfigPatch;
 }>;
 
 export type PutGroupTopologyOverrideRequest = Readonly<{
-    requestId?: string;
+    requestId: string;
     config: GroupTopologyConfigPatch;
     ttlMs?: number;
     expiresAtEpochMs?: number;
 }>;
 
 export type ReconfigureGroupTopologyRequest = Readonly<{
-    requestId?: string;
+    requestId: string;
     options?: GroupTopologyConfigPatch;
     publish?: boolean;
 }>;

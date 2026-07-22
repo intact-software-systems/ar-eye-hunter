@@ -4,8 +4,9 @@ import type {
     AppInboxFailureIssue,
     AppInboxFailureRetry,
 } from './app-inbox-failure.ts';
+import { readLegacyPersistedAppInboxFailure } from './app-inbox-legacy-failure-decoding.ts';
 
-const FAILURE_KEYS = [
+const CANONICAL_V1_FAILURE_KEYS = [
     'type',
     'code',
     'status',
@@ -14,10 +15,18 @@ const FAILURE_KEYS = [
     'denial',
     'retry',
 ] as const;
+const CANONICAL_V2_FAILURE_KEYS = [
+    ...CANONICAL_V1_FAILURE_KEYS,
+    'version',
+] as const;
 
 export function readPersistedAppInboxFailure(resource: string): AppInboxFailure {
     try {
         const parsed = JSON.parse(resource) as unknown;
+        const legacy = readLegacyPersistedAppInboxFailure(parsed);
+        if (legacy !== null) {
+            return legacy;
+        }
         if (isRecord(parsed) && parsed.type === 'app-inbox-retry-exhausted') {
             return readRetryExhaustedPersistedFailure(parsed);
         }
@@ -106,6 +115,7 @@ function readRetryExhaustedPersistedFailure(
     }
     return {
         type: 'app-inbox-failure',
+        version: 'retry-exhausted.v1',
         code: 'app-inbox-retry-exhausted',
         status,
         message: requireNonEmptyString(record.message, 'AppInbox failure message'),
@@ -116,9 +126,21 @@ function readRetryExhaustedPersistedFailure(
 }
 
 export function readAppInboxFailure(value: unknown): AppInboxFailure {
-    const record = requireExactRecord(value, FAILURE_KEYS, 'AppInbox failure');
+    const version = isRecord(value) && Object.hasOwn(value, 'version')
+        ? 'canonical.v2'
+        : 'canonical.v1';
+    const record = requireExactRecord(
+        value,
+        version === 'canonical.v2'
+            ? CANONICAL_V2_FAILURE_KEYS
+            : CANONICAL_V1_FAILURE_KEYS,
+        'AppInbox failure',
+    );
     if (record.type !== 'app-inbox-failure') {
         throw new TypeError('AppInbox failure type is invalid');
+    }
+    if (version === 'canonical.v2' && record.version !== version) {
+        throw new TypeError('AppInbox failure version is invalid');
     }
     const code = requireNonEmptyString(record.code, 'AppInbox failure code');
     const status = requireHttpFailureStatus(record.status);
@@ -126,12 +148,13 @@ export function readAppInboxFailure(value: unknown): AppInboxFailure {
     const issues = readIssues(record.issues);
     const denial = readDenial(record.denial);
     const retry = readRetry(record.retry);
-    return { type: 'app-inbox-failure', code, status, message, issues, denial, retry };
+    return { type: 'app-inbox-failure', version, code, status, message, issues, denial, retry };
 }
 
 function malformedPersistedAppInboxFailure(): AppInboxFailure {
     return {
         type: 'app-inbox-failure',
+        version: 'malformed.v0',
         code: 'app-inbox-malformed-persisted-failure',
         status: 500,
         message: 'Persisted AppInbox failure is malformed',

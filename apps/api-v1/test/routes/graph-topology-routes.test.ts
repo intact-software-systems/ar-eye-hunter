@@ -457,6 +457,107 @@ Deno.test('all topology mutation routes reject requests without a stable identit
   assert.deepEqual(calls, []);
 });
 
+Deno.test('all topology mutation routes require a nonempty authoritative header', async () => {
+  const calls: unknown[] = [];
+  const app = createRouteApp({
+    group: createGroupSnapshot('room-1', ['owner']),
+    session: createIssuedSession('owner', 'owner-session'),
+    processTopologyAppInbox: (_authority, enqueue) => {
+      calls.push(enqueue);
+      return Promise.resolve({ queued: true });
+    },
+  });
+  const mutations = [
+    {
+      method: 'PUT',
+      path: 'config',
+      body: { requestId: 'body-config', config: { topologyKind: 'tree' } },
+    },
+    { method: 'DELETE', path: 'config' },
+    {
+      method: 'PUT',
+      path: 'override',
+      body: { requestId: 'body-override', config: { degreeLimit: 4 } },
+    },
+    { method: 'DELETE', path: 'override' },
+    {
+      method: 'POST',
+      path: 'reconfigure',
+      body: { requestId: 'body-reconfigure', publish: false },
+    },
+  ] as const;
+
+  for (const mutation of mutations) {
+    for (const idempotencyKey of [undefined, ''] as const) {
+      const response = await app.request(
+        `/api/state/apps/app-1/workspaces/workspace-1/groups/room-1/topology/${mutation.path}`,
+        {
+          method: mutation.method,
+          headers: {
+            authorization: 'Bearer token',
+            ...(idempotencyKey === undefined
+              ? {}
+              : { 'Idempotency-Key': idempotencyKey }),
+          },
+          ...('body' in mutation ? { body: JSON.stringify(mutation.body) } : {}),
+        },
+      );
+      assert.equal(
+        response.status,
+        400,
+        `${mutation.method} ${mutation.path} ${String(idempotencyKey)}`,
+      );
+    }
+  }
+  assert.deepEqual(calls, []);
+});
+
+Deno.test('topology mutation routes reject header and compatibility body identity mismatch', async () => {
+  const calls: unknown[] = [];
+  const app = createRouteApp({
+    group: createGroupSnapshot('room-1', ['owner']),
+    session: createIssuedSession('owner', 'owner-session'),
+    processTopologyAppInbox: (_authority, enqueue) => {
+      calls.push(enqueue);
+      return Promise.resolve({ queued: true });
+    },
+  });
+  const mutations = [
+    {
+      method: 'PUT',
+      path: 'config',
+      body: { requestId: 'body-config', config: { topologyKind: 'tree' } },
+    },
+    {
+      method: 'PUT',
+      path: 'override',
+      body: { requestId: 'body-override', config: { degreeLimit: 4 } },
+    },
+    {
+      method: 'POST',
+      path: 'reconfigure',
+      body: { requestId: 'body-reconfigure', publish: false },
+    },
+  ] as const;
+
+  for (const mutation of mutations) {
+    const response = await app.request(
+      `/api/state/apps/app-1/workspaces/workspace-1/groups/room-1/topology/${mutation.path}`,
+      {
+        method: mutation.method,
+        headers: {
+          authorization: 'Bearer token',
+          'Idempotency-Key': 'header-request',
+        },
+        body: JSON.stringify(mutation.body),
+      },
+    );
+    assert.equal(response.status, 400, `${mutation.method} ${mutation.path}`);
+    assert.match((await response.json()).error, /must match/u);
+  }
+  assert.deepEqual(calls, []);
+});
+
 Deno.test('graph topology routes map missing groups and validation errors', async () => {
   const missingApp = createRouteApp({ group: undefined });
   const missing = await missingApp.request(

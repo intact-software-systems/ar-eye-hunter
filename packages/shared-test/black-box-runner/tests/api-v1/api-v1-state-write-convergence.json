@@ -519,7 +519,7 @@
           "name": "topology-config-lane",
           "steps": [
             {
-              "name": "putRacingTopologyConfig",
+              "name": "rejectTopologyConfigWithoutAuthoritativeIdentity",
               "type": "http",
               "connection": "apiSecondary",
               "request": {
@@ -528,6 +528,78 @@
                 "headers": {
                   "Authorization": "{ownerAuthHeader}",
                   "x-client-id": "{ownerClientId}"
+                },
+                "body": {
+                  "requestId": "body-only-config-{groupId}-{runId}",
+                  "config": {
+                    "topologyKind": "tree",
+                    "degreeLimit": 2
+                  }
+                }
+              },
+              "expect": {
+                "status": 400
+              }
+            },
+            {
+              "name": "rejectTopologyConfigWithBlankAuthoritativeIdentity",
+              "type": "http",
+              "connection": "apiSecondary",
+              "request": {
+                "method": "PUT",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}",
+                  "Idempotency-Key": ""
+                },
+                "body": {
+                  "requestId": "blank-header-config-{groupId}-{runId}",
+                  "config": {
+                    "topologyKind": "tree",
+                    "degreeLimit": 2
+                  }
+                }
+              },
+              "expect": {
+                "status": 400
+              }
+            },
+            {
+              "name": "rejectTopologyConfigIdentityMismatch",
+              "type": "http",
+              "connection": "apiSecondary",
+              "request": {
+                "method": "PUT",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}",
+                  "Idempotency-Key": "header-config-{groupId}-{runId}"
+                },
+                "body": {
+                  "requestId": "body-config-{groupId}-{runId}",
+                  "config": {
+                    "topologyKind": "tree",
+                    "degreeLimit": 2
+                  }
+                }
+              },
+              "expect": {
+                "status": 400
+              }
+            },
+            {
+              "name": "putRacingTopologyConfig",
+              "type": "http",
+              "connection": "apiSecondary",
+              "request": {
+                "method": "PUT",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}",
+                  "Idempotency-Key": "put-racing-config-{groupId}-{runId}"
                 },
                 "body": {
                   "requestId": "put-racing-config-{groupId}-{runId}",
@@ -628,7 +700,8 @@
         "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config",
         "headers": {
           "Authorization": "{ownerAuthHeader}",
-          "x-client-id": "{ownerClientId}"
+          "x-client-id": "{ownerClientId}",
+          "Idempotency-Key": "put-initial-config-{groupId}-{runId}"
         },
         "body": {
           "requestId": "put-initial-config-{groupId}-{runId}",
@@ -692,7 +765,8 @@
         "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config",
         "headers": {
           "Authorization": "{ownerAuthHeader}",
-          "x-client-id": "{ownerClientId}"
+          "x-client-id": "{ownerClientId}",
+          "Idempotency-Key": "put-final-config-{groupId}-{runId}"
         },
         "body": {
           "requestId": "put-final-config-{groupId}-{runId}",

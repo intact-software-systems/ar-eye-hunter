@@ -5710,7 +5710,8 @@
                     "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupOneId}/topology/config",
                     "headers": {
                       "Authorization": "{ownerAuthHeader}",
-                      "x-client-id": "{ownerClientId}"
+                      "x-client-id": "{ownerClientId}",
+                      "Idempotency-Key": "control-1-put-a-{loop.iteration}-{runId}"
                     },
                     "body": {
                       "requestId": "control-1-put-a-{loop.iteration}-{runId}",
@@ -5766,7 +5767,8 @@
                     "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupOneId}/topology/config",
                     "headers": {
                       "Authorization": "{ownerAuthHeader}",
-                      "x-client-id": "{ownerClientId}"
+                      "x-client-id": "{ownerClientId}",
+                      "Idempotency-Key": "control-1-put-b-{loop.iteration}-{runId}"
                     },
                     "body": {
                       "requestId": "control-1-put-b-{loop.iteration}-{runId}",
@@ -5801,7 +5803,8 @@
                     "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupOneId}/topology/reconfigure",
                     "headers": {
                       "Authorization": "{ownerAuthHeader}",
-                      "x-client-id": "{ownerClientId}"
+                      "x-client-id": "{ownerClientId}",
+                      "Idempotency-Key": "control-1-reconfigure-{loop.iteration}-{runId}"
                     },
                     "body": {
                       "requestId": "control-1-reconfigure-{loop.iteration}-{runId}",
@@ -5843,7 +5846,8 @@
                     "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupTwoId}/topology/config",
                     "headers": {
                       "Authorization": "{ownerAuthHeader}",
-                      "x-client-id": "{ownerClientId}"
+                      "x-client-id": "{ownerClientId}",
+                      "Idempotency-Key": "control-2-put-a-{loop.iteration}-{runId}"
                     },
                     "body": {
                       "requestId": "control-2-put-a-{loop.iteration}-{runId}",
@@ -5899,7 +5903,8 @@
                     "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupTwoId}/topology/config",
                     "headers": {
                       "Authorization": "{ownerAuthHeader}",
-                      "x-client-id": "{ownerClientId}"
+                      "x-client-id": "{ownerClientId}",
+                      "Idempotency-Key": "control-2-put-b-{loop.iteration}-{runId}"
                     },
                     "body": {
                       "requestId": "control-2-put-b-{loop.iteration}-{runId}",
@@ -5934,7 +5939,8 @@
                     "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupTwoId}/topology/reconfigure",
                     "headers": {
                       "Authorization": "{ownerAuthHeader}",
-                      "x-client-id": "{ownerClientId}"
+                      "x-client-id": "{ownerClientId}",
+                      "Idempotency-Key": "control-2-reconfigure-{loop.iteration}-{runId}"
                     },
                     "body": {
                       "requestId": "control-2-reconfigure-{loop.iteration}-{runId}",
@@ -5976,7 +5982,8 @@
                     "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupThreeId}/topology/config",
                     "headers": {
                       "Authorization": "{ownerAuthHeader}",
-                      "x-client-id": "{ownerClientId}"
+                      "x-client-id": "{ownerClientId}",
+                      "Idempotency-Key": "control-3-put-a-{loop.iteration}-{runId}"
                     },
                     "body": {
                       "requestId": "control-3-put-a-{loop.iteration}-{runId}",
@@ -6032,7 +6039,8 @@
                     "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupThreeId}/topology/config",
                     "headers": {
                       "Authorization": "{ownerAuthHeader}",
-                      "x-client-id": "{ownerClientId}"
+                      "x-client-id": "{ownerClientId}",
+                      "Idempotency-Key": "control-3-put-b-{loop.iteration}-{runId}"
                     },
                     "body": {
                       "requestId": "control-3-put-b-{loop.iteration}-{runId}",
@@ -6067,7 +6075,8 @@
                     "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupThreeId}/topology/reconfigure",
                     "headers": {
                       "Authorization": "{ownerAuthHeader}",
-                      "x-client-id": "{ownerClientId}"
+                      "x-client-id": "{ownerClientId}",
+                      "Idempotency-Key": "control-3-reconfigure-{loop.iteration}-{runId}"
                     },
                     "body": {
                       "requestId": "control-3-reconfigure-{loop.iteration}-{runId}",
@@ -6109,7 +6118,8 @@
                     "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupFourId}/topology/config",
                     "headers": {
                       "Authorization": "{ownerAuthHeader}",
-                      "x-client-id": "{ownerClientId}"
+                      "x-client-id": "{ownerClientId}",
+                      "Idempotency-Key": "control-4-put-a-{loop.iteration}-{runId}"
                     },
                     "body": {
                       "requestId": "control-4-put-a-{loop.iteration}-{runId}",
@@ -6165,7 +6175,8 @@
                     "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupFourId}/topology/config",
                     "headers": {
                       "Authorization": "{ownerAuthHeader}",
-                      "x-client-id": "{ownerClientId}"
+                      "x-client-id": "{ownerClientId}",
+                      "Idempotency-Key": "control-4-put-b-{loop.iteration}-{runId}"
                     },
                     "body": {
                       "requestId": "control-4-put-b-{loop.iteration}-{runId}",
@@ -6200,7 +6211,8 @@
                     "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupFourId}/topology/reconfigure",
                     "headers": {
                       "Authorization": "{ownerAuthHeader}",
-                      "x-client-id": "{ownerClientId}"
+                      "x-client-id": "{ownerClientId}",
+                      "Idempotency-Key": "control-4-reconfigure-{loop.iteration}-{runId}"
                     },
                     "body": {
                       "requestId": "control-4-reconfigure-{loop.iteration}-{runId}",
@@ -6242,7 +6254,8 @@
                     "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupFiveId}/topology/config",
                     "headers": {
                       "Authorization": "{ownerAuthHeader}",
-                      "x-client-id": "{ownerClientId}"
+                      "x-client-id": "{ownerClientId}",
+                      "Idempotency-Key": "control-5-put-a-{loop.iteration}-{runId}"
                     },
                     "body": {
                       "requestId": "control-5-put-a-{loop.iteration}-{runId}",
@@ -6298,7 +6311,8 @@
                     "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupFiveId}/topology/config",
                     "headers": {
                       "Authorization": "{ownerAuthHeader}",
-                      "x-client-id": "{ownerClientId}"
+                      "x-client-id": "{ownerClientId}",
+                      "Idempotency-Key": "control-5-put-b-{loop.iteration}-{runId}"
                     },
                     "body": {
                       "requestId": "control-5-put-b-{loop.iteration}-{runId}",
@@ -6333,7 +6347,8 @@
                     "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupFiveId}/topology/reconfigure",
                     "headers": {
                       "Authorization": "{ownerAuthHeader}",
-                      "x-client-id": "{ownerClientId}"
+                      "x-client-id": "{ownerClientId}",
+                      "Idempotency-Key": "control-5-reconfigure-{loop.iteration}-{runId}"
                     },
                     "body": {
                       "requestId": "control-5-reconfigure-{loop.iteration}-{runId}",
@@ -9144,7 +9159,8 @@
         "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupOneId}/topology/reconfigure",
         "headers": {
           "Authorization": "{ownerAuthHeader}",
-          "x-client-id": "{ownerClientId}"
+          "x-client-id": "{ownerClientId}",
+          "Idempotency-Key": "final-reconfigure-{groupOneId}-{runId}"
         },
         "body": {
           "requestId": "final-reconfigure-{groupOneId}-{runId}",
@@ -9205,7 +9221,8 @@
         "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupTwoId}/topology/reconfigure",
         "headers": {
           "Authorization": "{ownerAuthHeader}",
-          "x-client-id": "{ownerClientId}"
+          "x-client-id": "{ownerClientId}",
+          "Idempotency-Key": "final-reconfigure-{groupTwoId}-{runId}"
         },
         "body": {
           "requestId": "final-reconfigure-{groupTwoId}-{runId}",
@@ -9266,7 +9283,8 @@
         "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupThreeId}/topology/reconfigure",
         "headers": {
           "Authorization": "{ownerAuthHeader}",
-          "x-client-id": "{ownerClientId}"
+          "x-client-id": "{ownerClientId}",
+          "Idempotency-Key": "final-reconfigure-{groupThreeId}-{runId}"
         },
         "body": {
           "requestId": "final-reconfigure-{groupThreeId}-{runId}",
@@ -9327,7 +9345,8 @@
         "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupFourId}/topology/reconfigure",
         "headers": {
           "Authorization": "{ownerAuthHeader}",
-          "x-client-id": "{ownerClientId}"
+          "x-client-id": "{ownerClientId}",
+          "Idempotency-Key": "final-reconfigure-{groupFourId}-{runId}"
         },
         "body": {
           "requestId": "final-reconfigure-{groupFourId}-{runId}",
@@ -9388,7 +9407,8 @@
         "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupFiveId}/topology/reconfigure",
         "headers": {
           "Authorization": "{ownerAuthHeader}",
-          "x-client-id": "{ownerClientId}"
+          "x-client-id": "{ownerClientId}",
+          "Idempotency-Key": "final-reconfigure-{groupFiveId}-{runId}"
         },
         "body": {
           "requestId": "final-reconfigure-{groupFiveId}-{runId}",

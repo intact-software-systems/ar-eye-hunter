@@ -771,7 +771,8 @@
         "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{sharedGroupId}/topology/reconfigure",
         "headers": {
           "Authorization": "{ownerAuthHeader}",
-          "x-client-id": "{ownerClientId}"
+          "x-client-id": "{ownerClientId}",
+          "Idempotency-Key": "reconcile-{sharedGroupId}-{runId}"
         },
         "body": {
           "requestId": "reconcile-{sharedGroupId}-{runId}",
@@ -801,7 +802,8 @@
         "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}/topology/reconfigure",
         "headers": {
           "Authorization": "{ownerAuthHeader}",
-          "x-client-id": "{ownerClientId}"
+          "x-client-id": "{ownerClientId}",
+          "Idempotency-Key": "reconcile-{churnGroupId}-{runId}"
         },
         "body": {
           "requestId": "reconcile-{churnGroupId}-{runId}",

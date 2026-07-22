@@ -9,6 +9,9 @@ import {
 } from './authoritative-group-fixtures.ts';
 import type {
     GroupTopologyConfigAcceptedCausalRevision,
+    PutGroupTopologyConfigRequest,
+    PutGroupTopologyOverrideRequest,
+    ReconfigureGroupTopologyRequest,
 } from '@shared/api/graph-topology-management-types.ts';
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import {
@@ -396,6 +399,12 @@ describe('state API workflows', () => {
     });
 
     it('mutates topology config and overrides with auth-capable methods', async () => {
+        expectTypeOf<PutGroupTopologyConfigRequest>()
+            .toMatchTypeOf<Readonly<{ requestId: string }>>();
+        expectTypeOf<PutGroupTopologyOverrideRequest>()
+            .toMatchTypeOf<Readonly<{ requestId: string }>>();
+        expectTypeOf<ReconfigureGroupTopologyRequest>()
+            .toMatchTypeOf<Readonly<{ requestId: string }>>();
         type ConfigReceipt = Awaited<
             ReturnType<typeof putStateGroupTopologyConfig>
         >['receipt'];
@@ -486,6 +495,27 @@ describe('state API workflows', () => {
         expect(fetchCalls[4].body).toBeUndefined();
         expect(fetchCalls[3].headers['idempotency-key']).toBe('config-delete-1');
         expect(fetchCalls[4].headers['idempotency-key']).toBe('override-delete-1');
+    });
+
+    it('rejects empty topology mutation request ids before issuing HTTP', async () => {
+        const scope = { applicationId: 'app', workspaceId: 'workspace' };
+        const cases = [
+            () => putStateGroupTopologyConfig('room', { requestId: '', config: {} }, scope),
+            () =>
+                putStateGroupTopologyOverride(
+                    'room',
+                    { requestId: '', config: {}, ttlMs: 1 },
+                    scope,
+                ),
+            () => reconfigureStateGroupTopology('room', { requestId: '' }, scope),
+            () => deleteStateGroupTopologyConfig('room', scope, { requestId: '' }),
+            () => deleteStateGroupTopologyOverride('room', scope, { requestId: '' }),
+        ];
+
+        for (const call of cases) {
+            await expect(call()).rejects.toThrow('Topology mutation requestId must be non-empty');
+        }
+        expect(fetchCalls).toHaveLength(0);
     });
 
     it('creates and joins a state group as a sequential workflow', async () => {

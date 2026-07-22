@@ -372,6 +372,47 @@ Deno.test('client REST mutation preserves explicit terminal idempotency 409', as
   assert.equal(processCount, 1);
 });
 
+Deno.test('client route adapter preserves a base-era AppInbox status code and message', async () => {
+  const toClientError = (
+    clientStateRoutes as typeof clientStateRoutes & Readonly<{
+      toClientAppInboxError?: (failure: string) => Error;
+    }>
+  ).toClientAppInboxError;
+  assert.ok(toClientError);
+  const failure = JSON.stringify({
+    error: 'Client mutation rejected',
+    code: 'client-mutation-rejected',
+    message: 'Client mutation rejected',
+    status: 422,
+  });
+  const deps = createClientRouteDeps({
+    session: createAuthSession('alice'),
+    clientService: {},
+    processClientAppInbox: () => Promise.reject(toClientError(failure)),
+  });
+
+  const response = await createClientRouteApp(deps).request(
+    '/api/state/apps/app-1/workspaces/workspace-1/clients/alice/principal',
+    {
+      method: 'PUT',
+      headers: {
+        authorization: 'Bearer token',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        requestId: 'legacy-client-failure',
+        username: 'alice',
+      }),
+    },
+  );
+
+  assert.equal(response.status, 422);
+  assert.deepEqual(await response.json(), {
+    error: 'Client mutation rejected',
+    code: 'client-mutation-rejected',
+  });
+});
+
 Deno.test('strict state read routes reject non-self client snapshot and event reads', async () => {
   await withStrictReadAuth(true, async () => {
     const deps = createClientRouteDeps({
@@ -695,6 +736,58 @@ Deno.test('group mutation routes return stable lifecycle policy error codes', as
       message: 'Group is archived.',
       details: { groupId: 'room-1' },
     });
+  });
+});
+
+Deno.test('group route adapter reconstructs a legacy AppInbox policy denial with details', async () => {
+  const toGroupError = (
+    groupStateRoutes as typeof groupStateRoutes & Readonly<{
+      toGroupAppInboxError?: (failure: string) => Error;
+    }>
+  ).toGroupAppInboxError;
+  assert.ok(toGroupError);
+  const failure = JSON.stringify({
+    error: 'Forbidden: Invite required.',
+    code: 'group-invite-required',
+    message: 'Invite required.',
+    details: { groupId: 'room-1' },
+  });
+  const snapshot = createGroupSnapshot('room-1', ['alice']);
+  const ownerSnapshot: GroupSnapshot = {
+    ...snapshot,
+    members: snapshot.members.map((member) =>
+      member.principalId === 'alice' ? { ...member, role: 'owner' as const } : member
+    ),
+  };
+  const deps = createGroupRouteDeps({
+    session: createAuthSession('alice'),
+    groupService: {
+      readSnapshot: () => Promise.resolve(ownerSnapshot),
+    },
+    processGroupAppInbox: () => Promise.reject(toGroupError(failure)),
+  });
+
+  const response = await createGroupRouteApp(deps).request(
+    '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1',
+    {
+      method: 'PUT',
+      headers: {
+        authorization: 'Bearer token',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        requestId: 'legacy-group-denial',
+        displayName: 'Renamed',
+      }),
+    },
+  );
+
+  assert.equal(response.status, 403);
+  assert.deepEqual(await response.json(), {
+    error: 'Forbidden: Invite required.',
+    code: 'group-invite-required',
+    message: 'Invite required.',
+    details: { groupId: 'room-1' },
   });
 });
 

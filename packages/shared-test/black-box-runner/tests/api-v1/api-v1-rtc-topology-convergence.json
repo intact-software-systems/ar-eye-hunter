@@ -328,7 +328,8 @@
         "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/reconfigure",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
-          "x-client-id": "{aliceClientId}"
+          "x-client-id": "{aliceClientId}",
+          "Idempotency-Key": "baseline-topology-{groupId}-{runId}"
         },
         "body": {
           "requestId": "baseline-topology-{groupId}-{runId}",

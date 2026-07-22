@@ -5169,19 +5169,21 @@ components:
 
     PutGroupTopologyConfigRequest:
       type: object
-      required: [config]
+      required: [requestId, config]
       properties:
         requestId:
           type: string
+          minLength: 1
         config:
           $ref: '#/components/schemas/GroupTopologyConfigPatch'
 
     PutGroupTopologyOverrideRequest:
       type: object
-      required: [config]
+      required: [requestId, config]
       properties:
         requestId:
           type: string
+          minLength: 1
         config:
           $ref: '#/components/schemas/GroupTopologyConfigPatch'
         ttlMs:
@@ -5379,9 +5381,11 @@ components:
 
     ReconfigureGroupTopologyRequest:
       type: object
+      required: [requestId]
       properties:
         requestId:
           type: string
+          minLength: 1
         options:
           $ref: '#/components/schemas/GroupTopologyConfigPatch'
         publish:

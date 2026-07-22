@@ -454,10 +454,14 @@ async function processClientAppInbox<V>(
 
   return result.fold(
     (error) => {
-      throw new Error(error);
+      throw toClientAppInboxError(error);
     },
     (value) => requireClientStateWrittenSnapshot(value),
   );
+}
+
+export function toClientAppInboxError(failure: string): Error {
+  return new Error(failure);
 }
 
 function requireClientStateWrittenSnapshot(

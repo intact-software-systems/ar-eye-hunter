@@ -1028,14 +1028,15 @@ async function defaultProcessGroupAppInbox<V, R>(
 
   return result.fold(
     (error) => {
-      const denial = readAppInboxPolicyDenial(error);
-      if (denial) {
-        throw new GroupPolicyDeniedError(denial);
-      }
-      throw new Error(error);
+      throw toGroupAppInboxError(error);
     },
     (value) => value,
   );
+}
+
+export function toGroupAppInboxError(failure: string): Error {
+  const denial = readAppInboxPolicyDenial(failure);
+  return denial ? new GroupPolicyDeniedError(denial) : new Error(failure);
 }
 
 function readAppInboxPolicyDenial(value: string): GroupPolicyDenied | undefined {

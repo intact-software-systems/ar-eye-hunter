@@ -21,6 +21,7 @@ export interface AppInboxFailureRetry {
 
 export interface AppInboxFailure {
     readonly type: 'app-inbox-failure';
+    readonly version: AppInboxFailureVersion;
     readonly code: string;
     readonly status: number;
     readonly message: string;
@@ -28,6 +29,16 @@ export interface AppInboxFailure {
     readonly denial: AppInboxFailureDenial | null;
     readonly retry: AppInboxFailureRetry | null;
 }
+
+export type AppInboxFailureVersion =
+    | 'canonical.v1'
+    | 'canonical.v2'
+    | 'legacy-string.v0'
+    | 'legacy-object.v0'
+    | 'legacy-policy-denial.v0'
+    | 'legacy-retry-exhausted.v0'
+    | 'retry-exhausted.v1'
+    | 'malformed.v0';
 
 export { readAppInboxFailure, readPersistedAppInboxFailure } from './app-inbox-failure-decoding.ts';
 
@@ -39,6 +50,7 @@ export function toTerminalAppInboxFailure(
     const status = readErrorStatus(error, 400);
     return {
         type: 'app-inbox-failure',
+        version: 'canonical.v2',
         code,
         status,
         message,
@@ -63,6 +75,7 @@ export function toPolicyDeniedAppInboxFailure(
 ): AppInboxFailure {
     return {
         type: 'app-inbox-failure',
+        version: 'canonical.v2',
         code: input.code,
         status: 403,
         message: input.message,
@@ -79,6 +92,7 @@ export function toPolicyDeniedAppInboxFailure(
 export function toUnavailableAppInboxFailure(): AppInboxFailure {
     return {
         type: 'app-inbox-failure',
+        version: 'canonical.v2',
         code: 'app-inbox-unavailable',
         status: 503,
         message: 'App inbox entry did not complete within the wait budget',

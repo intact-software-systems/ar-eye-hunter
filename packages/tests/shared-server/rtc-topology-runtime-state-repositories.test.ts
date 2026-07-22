@@ -1215,6 +1215,28 @@ describe('RTC topology runtime-state repositories', () => {
         await expect(repository.findSnapshot(removed.groupRef)).resolves.toEqual(removed);
     });
 
+    it('rejects invalid computed next-hop maps at the write boundary before persisting or publishing', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const repository = new RtcTopologySnapshotRepository(runtimeRepository);
+        const valid = createTopologySnapshot(createGroupRef(), 1);
+        const invalid = {
+            ...valid,
+            nextHopsBySessionId: {
+                'session-a': ['session-b'],
+                'session-b': [],
+            },
+        };
+
+        await expect(repository.commitSnapshot({
+            expected: undefined,
+            candidate: invalid,
+        })).rejects.toThrow('next hops are not reciprocal');
+        await expect(repository.findSnapshot(valid.groupRef)).resolves.toBeUndefined();
+        expect(await runtimeRepository.findAllEntries(
+            RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
+        )).toEqual([]);
+    });
+
     it.each(topologyInvariantCases().flatMap(({ defect, snapshot }) =>
         (['direct', 'list', 'page', 'publication'] as const).map((surface) => ({
             defect,
