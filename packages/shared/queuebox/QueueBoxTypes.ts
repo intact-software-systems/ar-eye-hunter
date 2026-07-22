@@ -101,7 +101,7 @@ export function toResourceInboxFairnessReservationOptions(
 ): ResourceInboxFairnessReservationOptions {
     const reservation = toResourceInboxReservationOptions(input, defaultMaxAttempts);
     const maxToScan = typeof input === 'number'
-        ? Math.max(reservation.maxToReserve, reservation.maxToReserve * 8)
+        ? toSaturatedResourceInboxFairnessScanBudget(reservation.maxToReserve)
         : input.maxToScan;
 
     if (!Number.isSafeInteger(maxToScan) || maxToScan < 0) {
@@ -109,6 +109,18 @@ export function toResourceInboxFairnessReservationOptions(
     }
 
     return { ...reservation, maxToScan };
+}
+
+export function toSaturatedResourceInboxFairnessScanBudget(
+    maxToReserve: number,
+): number {
+    if (!Number.isSafeInteger(maxToReserve) || maxToReserve < 0) {
+        throw new Error('maxToReserve must be a non-negative safe integer');
+    }
+
+    return maxToReserve > Math.floor(Number.MAX_SAFE_INTEGER / 8)
+        ? Number.MAX_SAFE_INTEGER
+        : maxToReserve * 8;
 }
 
 export function toResourceInboxWorkAdvertisementOptions(

@@ -80,14 +80,14 @@ export function toDomain(r: ResourceInboxRow): ResourceEntry {
         audit: {
             // date is not stored separately in the table; keep it derived from created_ts
             date: Temporal.PlainTime.from(
-                parseTemporalPlainDateTime(r.created_ts.toString())
+                parseTemporalPlainDateTime(r.created_ts)
                     .toPlainTime()
                     .toString(),
             ),
             createdBy: r.created_by,
-            createdTs: parseTemporalPlainDateTime(r.created_ts.toString()),
+            createdTs: parseTemporalPlainDateTime(r.created_ts),
             expiryTs: r.expire_ts
-                ? toInstant(r.expire_ts.toString())
+                ? toInstant(r.expire_ts)
                 : NEVER_EXPIRE_TS,
         },
         status: r.ri_status as EntityStatus,
@@ -138,11 +138,27 @@ export function toPgTimestamp(
     return t.toString();
 }
 
-export function parseTemporalPlainDateTime(ts: string): Temporal.PlainDateTime {
-    const instant = Temporal.Instant.from(new Date(ts).toISOString());
-    return instant.toZonedDateTimeISO('UTC').toPlainDateTime();
+export function parseTemporalPlainDateTime(ts: string | Date): Temporal.PlainDateTime {
+    if (ts instanceof Date) {
+        return Temporal.PlainDateTime.from({
+            year: ts.getFullYear(),
+            month: ts.getMonth() + 1,
+            day: ts.getDate(),
+            hour: ts.getHours(),
+            minute: ts.getMinutes(),
+            second: ts.getSeconds(),
+            millisecond: ts.getMilliseconds(),
+        });
+    }
+    return Temporal.PlainDateTime.from(ts.replace(' ', 'T'));
 }
 
-export function toInstant(ts: string): Temporal.Instant {
-    return Temporal.Instant.from(new Date(ts).toISOString());
+export function toInstant(ts: string | Date): Temporal.Instant {
+    if (ts instanceof Date) {
+        return parseTemporalPlainDateTime(ts).toZonedDateTime('UTC').toInstant();
+    }
+    const normalized = ts.replace(' ', 'T');
+    return Temporal.Instant.from(/[zZ]$|[+-]\d{2}(?::?\d{2})?$/u.test(normalized)
+        ? normalized
+        : `${normalized}Z`);
 }

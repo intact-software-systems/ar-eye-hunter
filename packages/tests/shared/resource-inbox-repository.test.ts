@@ -124,10 +124,59 @@ describe('ResourceInboxRepository', () => {
 
         expect(capture.queries).toHaveLength(1);
         expect(capture.queries[0]?.query).toContain('expire_ts > now()');
-        expect(capture.queries[0]?.query).toContain('start_ts < now() -');
+        expect(capture.queries[0]?.query).toContain('start_ts < (now() -');
         expect(capture.queries[0]?.query).toContain("interval '1 millisecond'");
         expect(capture.queries[0]?.values).toContain(30_000);
         expect(capture.queries[0]?.values).toContain(2);
+        expect(capture.queries[0]?.values.some(value => value instanceof Date)).toBe(false);
+    });
+
+    it('uses a safely bound database interval for timeout claiming', async () => {
+        const capture = createQueryCapture();
+        const repo = new repositoryModule.ResourceInboxRepository(capture.sql);
+
+        await repo.findTimedOutReservedEntriesSkipLocked(
+            new Set(['APP_INBOX']),
+            30_000,
+            { maxToReserve: 3, maxAttempts: 2 },
+        );
+
+        expect(capture.queries).toHaveLength(1);
+        expect(capture.queries[0]?.query).toContain('expire_ts > now()');
+        expect(capture.queries[0]?.query).toContain('start_ts < (now() -');
+        expect(capture.queries[0]?.query).toContain("interval '1 millisecond'");
+        expect(capture.queries[0]?.values).toContain(30_000);
+        expect(capture.queries[0]?.values).toContain(2);
+        expect(capture.queries[0]?.values.some(value => value instanceof Date)).toBe(false);
+    });
+
+    it.each([-1, 1.5, Number.MAX_SAFE_INTEGER + 1, Number.NaN])(
+        'rejects invalid timeout claim interval %s before SQL',
+        async (timeSinceStartMs) => {
+            const capture = createQueryCapture();
+            const repo = new repositoryModule.ResourceInboxRepository(capture.sql);
+
+            await expect(repo.findTimedOutReservedEntriesSkipLocked(
+                new Set(['APP_INBOX']),
+                timeSinceStartMs,
+                1,
+            )).rejects.toThrow(/non-negative safe integer/u);
+            expect(capture.queries).toHaveLength(0);
+        },
+    );
+
+    it('uses database time for the persisted reservation start timestamp', async () => {
+        const capture = createQueryCapture();
+        const repo = new repositoryModule.ResourceInboxRepository(capture.sql);
+        const entry = createEntry(createKey('db-clock-start'), {
+            text: 'db clock',
+            expiryTs: Temporal.Instant.from('9999-01-01T00:00:00Z'),
+        });
+
+        await repo.startProcessingEntity(entry, 2);
+
+        expect(capture.queries).toHaveLength(1);
+        expect(capture.queries[0]?.query).toContain('start_ts = now()');
         expect(capture.queries[0]?.values.some(value => value instanceof Date)).toBe(false);
     });
 
@@ -1085,7 +1134,11 @@ function createSqlHarness() {
             query.includes('ri_attempts =') &&
             query.includes('expire_ts > now()')
         ) {
-            const [status, attempts, startTs, endTs, nextTs, topicId, resourceId, contextId] = values;
+            const usesDatabaseStart = query.includes('start_ts = now()');
+            const [status, attempts, ...remaining] = values;
+            const [startTs, endTs, nextTs, topicId, resourceId, contextId] = usesDatabaseStart
+                ? [new Date(), ...remaining]
+                : remaining;
             const key = `${contextId}::${topicId}::${resourceId}`;
             const row = rows.get(key);
 

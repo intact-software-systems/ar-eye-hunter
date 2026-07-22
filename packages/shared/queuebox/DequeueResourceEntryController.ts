@@ -12,6 +12,7 @@ import {
     DequeueResourceEntryRepository,
     type ResourceInboxReleaseDisposition,
     type ResourceInboxWorkAdvertisementOptions,
+    toSaturatedResourceInboxFairnessScanBudget,
 } from './QueueBoxTypes.ts';
 import * as Resource from './ResourceEntry.ts';
 import { EntityStatus, isKeysEqual, ResourceEntry } from './ResourceEntry.ts';
@@ -182,7 +183,13 @@ export class DequeueResourceEntryController {
         resilience: InstanceType<typeof ResilienceDto>,
         options: DequeueResourceEntryOptions = {},
     ): DequeueController<Resource.Key, ResourceEntry, V> {
-        const retryPolicy = options.retryPolicy ?? resilience.retryPolicy;
+        const retryPolicy = resilience.retryPolicy;
+        if (
+            options.retryPolicy &&
+            !isResourceInboxRetryPolicyEqual(options.retryPolicy, retryPolicy)
+        ) {
+            throw new Error('Dequeue retry policy override must match resilience retry policy');
+        }
         if (maxRetries !== retryPolicy.maxAttempts) {
             throw new Error(
                 `ResourceInbox retry limit ${maxRetries} must match policy maxAttempts ${retryPolicy.maxAttempts}`,
@@ -232,9 +239,10 @@ export class DequeueResourceEntryController {
                             {
                                 maxToReserve: maxNumToReserve,
                                 maxAttempts: retryPolicy.maxAttempts,
-                                maxToScan: maxNumToReserve <= Math.floor(Number.MAX_SAFE_INTEGER / 8)
-                                    ? maxNumToReserve * 8
-                                    : Number.MAX_SAFE_INTEGER,
+                                maxToScan: Math.max(
+                                    types.size,
+                                    toSaturatedResourceInboxFairnessScanBudget(maxNumToReserve),
+                                ),
                             },
                         );
                         for (const selection of reserved.values()) {
@@ -422,3 +430,17 @@ export type DequeueResourceEntryOptions = Readonly<{
     nowEpochMs?: () => number;
     onReservationTelemetry?: (event: ResourceInboxFairnessTelemetry) => void;
 }>;
+
+function isResourceInboxRetryPolicyEqual(
+    left: ResourceInboxRetryPolicy,
+    right: ResourceInboxRetryPolicy,
+): boolean {
+    return left.maxAttempts === right.maxAttempts &&
+        left.maxDelayMs === right.maxDelayMs &&
+        left.jitterRatio === right.jitterRatio &&
+        left.staleDueThresholdMs === right.staleDueThresholdMs &&
+        left.delaysAfterAttemptMs.length === right.delaysAfterAttemptMs.length &&
+        left.delaysAfterAttemptMs.every(
+            (delayMs, index) => delayMs === right.delaysAfterAttemptMs[index],
+        );
+}

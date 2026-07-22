@@ -15,6 +15,10 @@ import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import {
+    DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
+    type ResourceInboxRetryPolicy,
+} from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/Resilience.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
@@ -128,6 +132,56 @@ describe('createRallarMiddleware', () => {
 
         expect(onMessage).toHaveBeenCalledOnce();
         expect(onMessage.mock.calls[0][0]).toEqual(message);
+    });
+
+    it('uses one custom retry budget for app inbox advertisement and reservation', async () => {
+        const inbox = new InMemoryQueueBox();
+        const retryPolicy = {
+            ...DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
+            maxAttempts: 2,
+        };
+        const resilience = createResilience(retryPolicy);
+        const runtime = createRallarMiddleware({
+            inbox,
+            resilience: {
+                inbox: resilience,
+                appInbox: resilience,
+                appOutbox: createResilience(),
+            },
+            createAppGroupInboxService: () => ({}) as AppGroupInboxService,
+            createAppClientInboxService: () => ({}) as AppClientInboxService,
+            clientsRepository: {} as ClientStateRepository,
+            groupsRepository: {} as GroupStateRepository,
+        });
+        const onMessage = vi.fn(async (_message: unknown) => undefined);
+        runtime.inboxQueueReader.onInboxMessageDo('group-state.create.v1', {
+            onMessage,
+        });
+        const enqueued = await runtime.inboxQueueReader.enqueueIfAbsent(
+            newALUntargetedMessage(
+                'api-v1',
+                newALRoute('app-inbox.group-state', 'group-1', 'request-exhausted'),
+                'group-state.create.v1',
+                { requestId: 'request-exhausted' },
+            ),
+        );
+        await inbox.enqueue({
+            ...enqueued,
+            dequeueAudit: { ...enqueued.dequeueAudit, attempts: 2 },
+        });
+        const appInboxTask = readOnlyEngineTask(
+            runtime.qboxEngine,
+            InboxQueueReader.INBOX_ENQUEUE_TYPE,
+        );
+
+        expect(await appInboxTask?.isWork()).toBe(false);
+        await appInboxTask?.runnable();
+
+        expect(onMessage).not.toHaveBeenCalled();
+        expect(await inbox.getItem(enqueued.key)).toMatchObject({
+            status: enqueued.status,
+            dequeueAudit: { attempts: 2 },
+        });
     });
 
     it('registers an independent app outbox engine task', async () => {
@@ -750,7 +804,9 @@ describe('createWsServerTargetResolver state sync routing', () => {
     });
 });
 
-function createResilience(): ResilienceDto {
+function createResilience(
+    retryPolicy: ResourceInboxRetryPolicy = DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
+): ResilienceDto {
     const duration = Temporal.Duration.from({ seconds: 10 });
     return ResilienceDto.toResilienceDto(
         new CircuitBreakerPolicy(10, duration, duration, duration),
@@ -758,6 +814,8 @@ function createResilience(): ResilienceDto {
         10,
         1,
         1,
+        ResilienceDto.MAX_NUM_DEQUEUE_IN_WINDOW,
+        retryPolicy,
     );
 }
 

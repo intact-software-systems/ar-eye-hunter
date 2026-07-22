@@ -2,11 +2,20 @@
 
 import '../setup-browser-indexeddb.ts';
 
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Temporal } from '@js-temporal/polyfill';
 import { IndexedDbQueueBox } from '@shared/queuebox/IndexedDbQueueBox.ts';
-import { EntityStatus, NEVER_EXPIRE_TS, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import {
+    EntityStatus,
+    NEVER_EXPIRE_TS,
+    ResourceEntry,
+    toKeyAsString,
+} from '@shared/queuebox/ResourceEntry.ts';
 import { RateLimiter } from '@shared/resilience/Resilience.ts';
+
+afterEach(() => {
+    vi.restoreAllMocks();
+});
 
 describe('IndexedDbQueueBox', () => {
     it('returns the existing entry from enqueueIfAbsent without overwriting it', async () => {
@@ -544,11 +553,169 @@ describe('IndexedDbQueueBox', () => {
         expect(store.index(IndexedDbQueueBox.FAIRNESS_INDEX_NAME).keyPath).toEqual([
             'typeId',
             'status',
-            'dequeueAudit.nextTs',
+            'fairnessDueEpochMs',
             'keyString',
         ]);
+        expect(store.index(IndexedDbQueueBox.FAIRNESS_INDEX_NAME).unique).toBe(false);
         expect(db.version).toBeGreaterThan(1);
         db.close();
+    });
+
+    it('backfills populated legacy due times before exact-cutoff fairness selection', async () => {
+        const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
+        const cutoff = Temporal.Instant.from('2026-01-01T00:00:00Z');
+        const indexedFirst = createEntry('!', 'legacy-indexed-first', {
+            status: EntityStatus.RETRY,
+            attempts: 1,
+            nextTs: cutoff,
+        });
+        const localeFirst = createEntry('_', 'legacy-locale-first', {
+            status: EntityStatus.RETRY,
+            attempts: 1,
+            nextTs: cutoff,
+        });
+        await createLegacyQueueDatabase(dbName, [
+            toLegacyStoredEntry(indexedFirst, '2026-01-01T00:00:00Z'),
+            toLegacyStoredEntry(localeFirst, '2026-01-01T00:00:00.000000000Z'),
+        ]);
+        const queue = new IndexedDbQueueBox({ dbName });
+
+        await queue.getAllKeys();
+        const db = await openDatabase(dbName);
+        const records = await readAllStoredRecords(db);
+        expect(records.map(record => record.fairnessDueEpochMs)).toEqual([
+            Number(cutoff.epochMilliseconds),
+            Number(cutoff.epochMilliseconds),
+        ]);
+        db.close();
+
+        const selected = firstValue(await queue.reserveOverdueRetryEntries(
+            new Set([indexedFirst.typeId, localeFirst.typeId]),
+            Number(cutoff.epochMilliseconds),
+            { maxToReserve: 1, maxAttempts: 2, maxToScan: 2 },
+        ));
+
+        expect(selected.entry.key.resourceId).toBe(indexedFirst.key.resourceId);
+    });
+
+    it('repairs a same-name wrong fairness index without losing legacy data', async () => {
+        const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
+        const legacy = createEntry('type-a', 'legacy-retained', {
+            status: EntityStatus.RETRY,
+            attempts: 1,
+            nextTs: Temporal.Instant.from('2026-01-01T00:00:00.1Z'),
+        });
+        await createLegacyQueueDatabase(
+            dbName,
+            [toLegacyStoredEntry(legacy, '2026-01-01T00:00:00.1Z')],
+            true,
+        );
+        const queue = new IndexedDbQueueBox({ dbName });
+
+        expect(await queue.getItem(legacy.key)).toMatchObject({
+            key: legacy.key,
+            resource: legacy.resource,
+        });
+
+        const db = await openDatabase(dbName);
+        const index = db.transaction(IndexedDbQueueBox.DEFAULT_STORE_NAME)
+            .objectStore(IndexedDbQueueBox.DEFAULT_STORE_NAME)
+            .index(IndexedDbQueueBox.FAIRNESS_INDEX_NAME);
+        expect(index.keyPath).toEqual([
+            'typeId',
+            'status',
+            'fairnessDueEpochMs',
+            'keyString',
+        ]);
+        expect(index.unique).toBe(false);
+        expect(await readAllStoredRecords(db)).toHaveLength(1);
+        db.close();
+    });
+
+    it('validates an empty fairness scan budget before opening IndexedDB cursors', async () => {
+        const queue = new IndexedDbQueueBox({
+            dbName: `indexeddb-queue-${crypto.randomUUID()}`,
+        });
+        const openCursor = vi.spyOn(IDBIndex.prototype, 'openCursor');
+
+        await expect(queue.reserveOverdueRetryEntries(
+            new Set(['type-a']),
+            Date.now(),
+            { maxToReserve: 1, maxAttempts: 2, maxToScan: 0 },
+        )).rejects.toThrow(/at least the number of requested types/u);
+        expect(openCursor).not.toHaveBeenCalled();
+        openCursor.mockRestore();
+    });
+
+    it('requires enough fairness scan budget for every requested type head', async () => {
+        const queue = new IndexedDbQueueBox({
+            dbName: `indexeddb-queue-${crypto.randomUUID()}`,
+        });
+
+        await expect(queue.reserveOverdueRetryEntries(
+            new Set(['type-a', 'type-b', 'type-c']),
+            Date.now(),
+            { maxToReserve: 1, maxAttempts: 2, maxToScan: 2 },
+        )).rejects.toThrow(/at least the number of requested types/u);
+    });
+
+    it('expands a legacy numeric fairness budget to cover every requested type', async () => {
+        const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
+        const queue = new IndexedDbQueueBox({ dbName });
+        const now = Temporal.Now.instant();
+        const types = new Set(Array.from({ length: 9 }, (_, index) => `type-${index}`));
+        const entry = createEntry('type-8', 'legacy-budget-entry', {
+            status: EntityStatus.RETRY,
+            attempts: 1,
+            nextTs: now.subtract({ minutes: 1 }),
+        });
+        await queue.enqueue(entry);
+
+        const selected = firstValue(await queue.reserveOverdueRetryEntries(
+            types,
+            Number(now.epochMilliseconds),
+            1,
+        ));
+
+        expect(selected.entry.key.resourceId).toBe(entry.key.resourceId);
+    });
+
+    it('charges each requested type head against the global fairness scan budget', async () => {
+        const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
+        const queue = new IndexedDbQueueBox({ dbName });
+        const now = Temporal.Now.instant();
+        const exhausted = createEntry('type-a', 'exhausted-head', {
+            status: EntityStatus.RETRY,
+            attempts: 2,
+            nextTs: now.subtract({ seconds: 100 }),
+        });
+        const hiddenBehindHead = createEntry('type-a', 'hidden-behind-head', {
+            status: EntityStatus.RETRY,
+            attempts: 1,
+            nextTs: now.subtract({ seconds: 90 }),
+        });
+        const visibleTypeB = createEntry('type-b', 'visible-type-b', {
+            status: EntityStatus.RETRY,
+            attempts: 1,
+            nextTs: now.subtract({ seconds: 80 }),
+        });
+        const visibleTypeC = createEntry('type-c', 'visible-type-c', {
+            status: EntityStatus.RETRY,
+            attempts: 1,
+            nextTs: now.subtract({ seconds: 70 }),
+        });
+        await queue.enqueue(exhausted);
+        await queue.enqueue(hiddenBehindHead);
+        await queue.enqueue(visibleTypeB);
+        await queue.enqueue(visibleTypeC);
+
+        const selected = firstValue(await queue.reserveOverdueRetryEntries(
+            new Set(['type-a', 'type-b', 'type-c']),
+            Number(now.epochMilliseconds),
+            { maxToReserve: 1, maxAttempts: 2, maxToScan: 3 },
+        ));
+
+        expect(selected.entry.key.resourceId).toBe(visibleTypeB.key.resourceId);
     });
 
     it('bounds fairness cursor work while ignoring unrelated indexed ranges', async () => {
@@ -626,6 +793,35 @@ describe('IndexedDbQueueBox', () => {
 
         expect(selected.entry.key.resourceId).toBe(older.key.resourceId);
     });
+
+    it('uses IndexedDB key ordering for mixed equal-due keys across types', async () => {
+        const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
+        const queue = new IndexedDbQueueBox({ dbName });
+        const now = Temporal.Now.instant();
+        const dueTs = now.subtract({ minutes: 1 });
+        const entries = ['A', 'a', 'é', '!', '_', '~'].map(typeId =>
+            createEntry(typeId, `resource-${typeId}`, {
+                status: EntityStatus.RETRY,
+                attempts: 1,
+                nextTs: dueTs,
+            })
+        );
+        for (const entry of entries) {
+            await queue.enqueue(entry);
+        }
+        const expected = [...entries].sort((left, right) => indexedDB.cmp(
+            toKeyAsString(left.key),
+            toKeyAsString(right.key),
+        ))[0];
+
+        const selected = firstValue(await queue.reserveOverdueRetryEntries(
+            new Set(entries.map(entry => entry.typeId)),
+            Number(now.epochMilliseconds),
+            { maxToReserve: 1, maxAttempts: 2, maxToScan: entries.length },
+        ));
+
+        expect(selected.entry.key.resourceId).toBe(expected.key.resourceId);
+    });
 });
 
 function createEntry(
@@ -674,19 +870,86 @@ function firstValue<K, V>(map: Map<K, V>): V {
     return first;
 }
 
-async function createLegacyQueueDatabase(dbName: string): Promise<void> {
+type LegacyStoredResourceEntry = Readonly<{
+    keyString: string;
+    key: ResourceEntry['key'];
+    resource: string;
+    typeId: string;
+    audit: Readonly<{
+        date: string;
+        createdBy: string;
+        createdTs: string;
+        expiryTs: string;
+    }>;
+    status: EntityStatus;
+    dequeueAudit: Readonly<{
+        nextTs?: string;
+        attempts: number;
+    }>;
+}>;
+
+async function createLegacyQueueDatabase(
+    dbName: string,
+    entries: readonly LegacyStoredResourceEntry[] = [],
+    createWrongFairnessIndex = false,
+): Promise<void> {
     await new Promise<void>((resolve, reject) => {
         const request = indexedDB.open(dbName, 1);
         request.onupgradeneeded = () => {
-            request.result.createObjectStore(IndexedDbQueueBox.DEFAULT_STORE_NAME, {
+            const store = request.result.createObjectStore(IndexedDbQueueBox.DEFAULT_STORE_NAME, {
                 keyPath: 'keyString',
             });
+            if (createWrongFairnessIndex) {
+                store.createIndex(
+                    IndexedDbQueueBox.FAIRNESS_INDEX_NAME,
+                    ['typeId', 'status', 'keyString'],
+                    { unique: true },
+                );
+            }
+            for (const entry of entries) {
+                store.put(entry);
+            }
         };
         request.onsuccess = () => {
             request.result.close();
             resolve();
         };
         request.onerror = () => reject(request.error ?? new Error('Legacy DB open failed'));
+    });
+}
+
+function toLegacyStoredEntry(
+    entry: ResourceEntry,
+    nextTs: string,
+): LegacyStoredResourceEntry {
+    return {
+        keyString: toKeyAsString(entry.key),
+        key: entry.key,
+        resource: entry.resource,
+        typeId: entry.typeId,
+        audit: {
+            date: entry.audit.date.toString(),
+            createdBy: entry.audit.createdBy,
+            createdTs: entry.audit.createdTs.toString(),
+            expiryTs: entry.audit.expiryTs.toString(),
+        },
+        status: entry.status,
+        dequeueAudit: {
+            nextTs,
+            attempts: entry.dequeueAudit.attempts,
+        },
+    };
+}
+
+async function readAllStoredRecords(
+    db: IDBDatabase,
+): Promise<Array<LegacyStoredResourceEntry & { fairnessDueEpochMs?: number }>> {
+    return await new Promise((resolve, reject) => {
+        const request = db.transaction(IndexedDbQueueBox.DEFAULT_STORE_NAME)
+            .objectStore(IndexedDbQueueBox.DEFAULT_STORE_NAME)
+            .getAll();
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error ?? new Error('Legacy records read failed'));
     });
 }
 

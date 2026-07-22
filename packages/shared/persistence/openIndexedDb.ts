@@ -8,6 +8,7 @@ export type IndexedDbStoreDefinition = Readonly<{
     name: string;
     keyPath: string;
     indexes?: readonly IndexedDbIndexDefinition[];
+    migrateOnUpgrade?: (store: IDBObjectStore) => void;
 }>;
 
 export async function openIndexedDbWithStore(
@@ -30,7 +31,7 @@ export async function openIndexedDbWithStores(
         undefined,
         (db, transaction) => ensureStores(db, transaction, stores),
     );
-    if (!hasMissingSchema(initialDb, stores)) {
+    if (!hasSchemaMismatch(initialDb, stores)) {
         initialDb.onversionchange = () => initialDb.close();
         return initialDb;
     }
@@ -52,9 +53,9 @@ export async function openIndexedDbWithStores(
         }
         const existingStore = upgradedDb.transaction(store.name).objectStore(store.name);
         for (const index of store.indexes ?? []) {
-            if (!existingStore.indexNames.contains(index.name)) {
+            if (!isMatchingIndex(existingStore, index)) {
                 upgradedDb.close();
-                throw new Error(`IndexedDB index "${index.name}" was not created`);
+                throw new Error(`IndexedDB index "${index.name}" does not match its schema`);
             }
         }
     }
@@ -101,6 +102,12 @@ function ensureStores(
             })
             : transaction.objectStore(store.name);
         for (const index of store.indexes ?? []) {
+            if (
+                objectStore.indexNames.contains(index.name) &&
+                !isMatchingIndex(objectStore, index)
+            ) {
+                objectStore.deleteIndex(index.name);
+            }
             if (!objectStore.indexNames.contains(index.name)) {
                 objectStore.createIndex(
                     index.name,
@@ -109,10 +116,11 @@ function ensureStores(
                 );
             }
         }
+        store.migrateOnUpgrade?.(objectStore);
     }
 }
 
-function hasMissingSchema(
+function hasSchemaMismatch(
     db: IDBDatabase,
     stores: readonly IndexedDbStoreDefinition[],
 ): boolean {
@@ -122,10 +130,34 @@ function hasMissingSchema(
         }
         const objectStore = db.transaction(store.name).objectStore(store.name);
         for (const index of store.indexes ?? []) {
-            if (!objectStore.indexNames.contains(index.name)) {
+            if (!isMatchingIndex(objectStore, index)) {
                 return true;
             }
         }
     }
     return false;
+}
+
+function isMatchingIndex(
+    store: IDBObjectStore,
+    definition: IndexedDbIndexDefinition,
+): boolean {
+    if (!store.indexNames.contains(definition.name)) {
+        return false;
+    }
+
+    const index = store.index(definition.name);
+    return index.unique === (definition.unique ?? false) &&
+        isEqualKeyPath(index.keyPath, definition.keyPath);
+}
+
+function isEqualKeyPath(
+    actual: string | string[],
+    expected: string | readonly string[],
+): boolean {
+    if (typeof actual === 'string' || typeof expected === 'string') {
+        return actual === expected;
+    }
+    return actual.length === expected.length &&
+        actual.every((part, index) => part === expected[index]);
 }

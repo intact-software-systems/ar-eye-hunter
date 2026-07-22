@@ -470,6 +470,9 @@ export class ResourceInboxRepository {
         timeSinceStartMs: number,
         reservationInput: ResourceInboxReservationInput,
     ): Promise<Map<string, ResourceEntry>> {
+        if (!Number.isSafeInteger(timeSinceStartMs) || timeSinceStartMs < 0) {
+            throw new Error('Reserved-entry timeout must be a non-negative safe integer in milliseconds');
+        }
         if (typeIds.size === 0) {
             return new Map();
         }
@@ -478,8 +481,6 @@ export class ResourceInboxRepository {
             reservationInput,
             DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts,
         );
-        const timedOutBefore = new Date(Date.now() - timeSinceStartMs);
-
         const rows = await this.sql<ResourceInboxRow[]>`
             select *
             from resource_inbox
@@ -488,7 +489,7 @@ export class ResourceInboxRepository {
               and expire_ts > now()
               and ri_attempts < ${maxAttempts}
               and start_ts is not null
-              and start_ts < ${timedOutBefore}
+              and start_ts < (now() - (${timeSinceStartMs} * interval '1 millisecond')) at time zone 'UTC'
             order by ri_row_id
                 for update skip locked
             limit ${maxToReserve}
@@ -578,7 +579,7 @@ export class ResourceInboxRepository {
                       and expire_ts > now()
                       and ri_attempts < ${maxAttempts}
                       and start_ts is not null
-                      and start_ts < now() - (${timeoutMs} * interval '1 millisecond')
+                      and start_ts < (now() - (${timeoutMs} * interval '1 millisecond')) at time zone 'UTC'
                     limit 1
                 `;
 
@@ -614,14 +615,13 @@ export class ResourceInboxRepository {
         entry: ResourceEntry,
         maxAttempts: number = DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts,
     ): Promise<Either<StartProcessingEntitySkipped, ResourceEntry>> {
-        const serverStart = new Date();
         const attempts = (entry.dequeueAudit.attempts ?? 0) + 1;
 
         const rows = await this.sql<ResourceInboxRow[]>`
             update resource_inbox
             set ri_status   = ${EntityStatus.RESERVED},
                 ri_attempts = ${attempts},
-                start_ts    = ${serverStart},
+                start_ts    = now() at time zone 'UTC',
                 end_ts      = ${null},
                 next_ts     = ${null}
             where ri_topic_id = ${entry.key.topicId}

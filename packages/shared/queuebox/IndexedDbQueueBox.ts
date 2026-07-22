@@ -31,6 +31,7 @@ import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from './ResourceInboxRetryPolicy.
 
 type StoredResourceEntry = Readonly<{
     keyString: ResourceEntryKeyString;
+    fairnessDueEpochMs?: number;
     key: Key;
     resource: string;
     typeId: string;
@@ -526,12 +527,19 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         overdueBeforeEpochMs: number,
         reservationInput: ResourceInboxFairnessReservationInput,
     ): Promise<Map<Key, ResourceInboxFairnessSelection>> {
-        const { maxToReserve, maxAttempts, maxToScan } = toResourceInboxFairnessReservationOptions(
+        const options = toResourceInboxFairnessReservationOptions(
             reservationInput,
             DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts,
         );
+        const { maxToReserve, maxAttempts } = options;
+        const maxToScan = typeof reservationInput === 'number'
+            ? Math.max(options.maxToScan, typeIds.size)
+            : options.maxToScan;
         if (typeIds.size === 0 || maxToReserve <= 0) {
             return new Map();
+        }
+        if (maxToScan < typeIds.size) {
+            throw new Error('maxToScan must be at least the number of requested types');
         }
 
         const db = await this.openDb();
@@ -548,17 +556,25 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                 ready: false,
                 cursor: undefined as IDBCursorWithValue | undefined,
             }));
-            let scanned = 0;
-            let stopped = maxToScan === 0;
+            let scanned = states.length;
+            let stopped = false;
 
             tx.oncomplete = () => resolve(reserved);
             tx.onabort = () => reject(tx.error ?? new Error('IndexedDB fairness reservation aborted'));
             tx.onerror = () => reject(tx.error ?? new Error('IndexedDB fairness reservation failed'));
 
-            const continueCursor = (
+            const advanceOrDropCursor = (
                 state: typeof states[number],
                 cursor: IDBCursorWithValue,
             ) => {
+                if (scanned >= maxToScan) {
+                    state.cursor = undefined;
+                    state.ready = true;
+                    drain();
+                    return;
+                }
+
+                scanned += 1;
                 state.ready = false;
                 cursor.continue();
             };
@@ -579,27 +595,23 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                 const selectedState = available.reduce((left, right) => {
                     const leftEntry = left.cursor.value as StoredResourceEntry;
                     const rightEntry = right.cursor.value as StoredResourceEntry;
-                    const dueOrder = Temporal.Instant.compare(
-                        Temporal.Instant.from(leftEntry.dequeueAudit.nextTs!),
-                        Temporal.Instant.from(rightEntry.dequeueAudit.nextTs!),
-                    );
+                    const dueOrder = leftEntry.fairnessDueEpochMs! -
+                        rightEntry.fairnessDueEpochMs!;
                     return dueOrder < 0 || (
-                        dueOrder === 0 && leftEntry.keyString.localeCompare(rightEntry.keyString) <= 0
+                        dueOrder === 0 && indexedDB.cmp(
+                            leftEntry.keyString,
+                            rightEntry.keyString,
+                        ) <= 0
                     ) ? left : right;
                 });
                 const cursor = selectedState.cursor;
                 const stored = cursor.value as StoredResourceEntry;
-                scanned += 1;
 
                 if (
                     this.isExpiredStoredEntry(stored, now) ||
                     stored.dequeueAudit.attempts >= maxAttempts
                 ) {
-                    if (scanned >= maxToScan) {
-                        stopped = true;
-                        return;
-                    }
-                    continueCursor(selectedState, cursor);
+                    advanceOrDropCursor(selectedState, cursor);
                     return;
                 }
 
@@ -612,21 +624,21 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                 );
                 updateRequest.onsuccess = () => {
                     reserved.set(entry.key, { entry, selectedDueTs });
-                    if (reserved.size >= maxToReserve || scanned >= maxToScan) {
+                    if (reserved.size >= maxToReserve) {
                         stopped = true;
                         return;
                     }
-                    continueCursor(selectedState, cursor);
+                    advanceOrDropCursor(selectedState, cursor);
                 };
             };
 
             for (const state of states) {
                 const request = index.openCursor(IDBKeyRange.bound(
-                    [state.typeId, EntityStatus.RETRY, '', ''],
+                    [state.typeId, EntityStatus.RETRY, Number.MIN_SAFE_INTEGER, ''],
                     [
                         state.typeId,
                         EntityStatus.RETRY,
-                        overdueBefore.toString({ fractionalSecondDigits: 9 }),
+                        Number(overdueBefore.epochMilliseconds),
                         '\uffff',
                     ],
                 ));
@@ -814,10 +826,12 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                         keyPath: [
                             'typeId',
                             'status',
-                            'dequeueAudit.nextTs',
+                            'fairnessDueEpochMs',
                             'keyString',
                         ],
+                        unique: false,
                     }],
+                    migrateOnUpgrade: store => this.migrateFairnessDueEpochMs(store),
                 },
             ).then(db => {
                 db.onversionchange = () => {
@@ -831,9 +845,35 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         return await this.dbPromise;
     }
 
+    private migrateFairnessDueEpochMs(store: IDBObjectStore): void {
+        const request = store.openCursor();
+        request.onsuccess = () => {
+            const cursor = request.result;
+            if (!cursor) {
+                return;
+            }
+
+            const stored = cursor.value as StoredResourceEntry;
+            const nextTs = toOptionalInstant(stored.dequeueAudit.nextTs);
+            const fairnessDueEpochMs = nextTs
+                ? Number(nextTs.epochMilliseconds)
+                : undefined;
+            if (stored.fairnessDueEpochMs !== fairnessDueEpochMs) {
+                cursor.update({
+                    ...stored,
+                    fairnessDueEpochMs,
+                });
+            }
+            cursor.continue();
+        };
+    }
+
     private toStoredEntry(entry: ResourceEntry): StoredResourceEntry {
         return {
             keyString: toKeyAsString(entry.key),
+            fairnessDueEpochMs: entry.dequeueAudit.nextTs
+                ? Number(entry.dequeueAudit.nextTs.epochMilliseconds)
+                : undefined,
             key: entry.key,
             resource: entry.resource,
             typeId: entry.typeId,

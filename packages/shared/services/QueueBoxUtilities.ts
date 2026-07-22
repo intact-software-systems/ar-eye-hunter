@@ -27,7 +27,6 @@ export class QueueBoxUtilities {
                 resilience.retryPolicy.maxAttempts,
                 DequeueController.DEFAULT_MAX_NUM_TO_DEQUEUE,
                 resilience,
-                { retryPolicy: resilience.retryPolicy },
             )
             .onFailedEntries(
                 _ => resilience.failure()

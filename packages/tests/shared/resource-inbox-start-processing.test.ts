@@ -120,7 +120,7 @@ function createSqlHarness(seedRows: ResourceInboxRow[]) {
             query.includes('ri_attempts =') &&
             query.includes('expire_ts > now()')
         ) {
-            const [status, attempts, startTs, endTs, nextTs, topicId, resourceId, contextId, maxAttempts] =
+            const [status, attempts, endTs, nextTs, topicId, resourceId, contextId, maxAttempts] =
                 values;
             const key = `${contextId}::${topicId}::${resourceId}`;
             const row = rows.get(key);
@@ -137,7 +137,7 @@ function createSqlHarness(seedRows: ResourceInboxRow[]) {
                 ...row,
                 ri_status: status as string,
                 ri_attempts: BigInt(attempts as number),
-                start_ts: toOptionalString(startTs),
+                start_ts: new Date().toISOString(),
                 end_ts: toOptionalString(endTs),
                 next_ts: toOptionalString(nextTs),
             };

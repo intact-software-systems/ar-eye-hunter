@@ -6,6 +6,7 @@ import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/Resilience.ts';
 import { EntityStatus, Key, NEVER_EXPIRE_TS, ResourceEntry, } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
+import { toResourceInboxFairnessReservationOptions } from '@shared/queuebox/QueueBoxTypes.ts';
 
 describe('enqueue and dequeue', () => {
 
@@ -131,6 +132,17 @@ describe('resource inbox retry and fairness lanes', () => {
         expect(toTestResilience().toWorkAdvertisementOptions().maxAttempts).toBe(20);
     });
 
+    it('saturates the legacy fairness scan budget at MAX_SAFE_INTEGER', () => {
+        expect(toResourceInboxFairnessReservationOptions(
+            Number.MAX_SAFE_INTEGER,
+            DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts,
+        )).toEqual({
+            maxToReserve: Number.MAX_SAFE_INTEGER,
+            maxAttempts: DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts,
+            maxToScan: Number.MAX_SAFE_INTEGER,
+        });
+    });
+
     it('threads a custom attempt budget through every reservation lane', async () => {
         const optionsSeen: unknown[] = [];
         const repository = createDequeueRepository({
@@ -148,18 +160,19 @@ describe('resource inbox retry and fairness lanes', () => {
             },
         });
 
+        const retryPolicy = {
+            ...DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
+            maxAttempts: 2,
+        };
         await DequeueResourceEntryController.toDequeuer<string>(
             repository as never,
             () => new Set(['APP_INBOX']),
             () => 1,
             2,
             10,
-            toTestResilience(),
+            toTestResilience(retryPolicy),
             {
-                retryPolicy: {
-                    ...DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
-                    maxAttempts: 2,
-                },
+                retryPolicy,
             },
         ).dequeueForCompute(async () => 'done');
 
@@ -170,6 +183,54 @@ describe('resource inbox retry and fairness lanes', () => {
             { maxToReserve: 1, maxAttempts: 2, maxToScan: 8 },
             { maxToReserve: 1, maxAttempts: 2 },
         ]);
+    });
+
+    it('derives a fairness scan budget covering every controller type', async () => {
+        const fairnessOptions: unknown[] = [];
+        const repository = createDequeueRepository({
+            reserveOverdueRetryEntries: async (_types, _cutoff, options) => {
+                fairnessOptions.push(options);
+                return new Map();
+            },
+        });
+        const types = new Set(Array.from({ length: 9 }, (_, index) => `TYPE_${index}`));
+
+        await DequeueResourceEntryController.toDequeuer<string>(
+            repository as never,
+            () => types,
+            () => 1,
+            20,
+            10,
+            toTestResilience(),
+        ).dequeueForCompute(async () => 'done');
+
+        expect(fairnessOptions).toEqual([{
+            maxToReserve: 1,
+            maxAttempts: 20,
+            maxToScan: types.size,
+        }]);
+    });
+
+    it('rejects a retry policy override that differs from engine advertisement policy', () => {
+        const resilience = toTestResilience({
+            ...DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
+            maxAttempts: 2,
+        });
+
+        expect(() => DequeueResourceEntryController.toDequeuer<string>(
+            createDequeueRepository() as never,
+            () => new Set(['APP_INBOX']),
+            () => 1,
+            2,
+            10,
+            resilience,
+            {
+                retryPolicy: {
+                    ...resilience.retryPolicy,
+                    staleDueThresholdMs: resilience.retryPolicy.staleDueThresholdMs + 1,
+                },
+            },
+        )).toThrow(/must match resilience retry policy/u);
     });
 
     it('releases a first failed attempt with the exact one-millisecond delay', async () => {
@@ -400,7 +461,9 @@ function createDequeueRepository(overrides: Record<string, unknown> = {}) {
     };
 }
 
-function toTestResilience(): ResilienceDto {
+function toTestResilience(
+    retryPolicy = DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
+): ResilienceDto {
     const duration = Temporal.Duration.from({ seconds: 10 });
     return ResilienceDto.toResilienceDto(
         new CircuitBreakerPolicy(10, duration, duration, duration),
@@ -408,5 +471,7 @@ function toTestResilience(): ResilienceDto {
         10,
         1,
         1,
+        ResilienceDto.MAX_NUM_DEQUEUE_IN_WINDOW,
+        retryPolicy,
     );
 }

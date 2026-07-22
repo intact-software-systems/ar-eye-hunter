@@ -1845,6 +1845,52 @@ Deno.test('ResourceInboxRepository and ResourceInboxResultsRepository run agains
       new Set([exhaustedTimeout.typeId]),
       Temporal.Duration.from({ seconds: 1 }),
     ), true);
+    const databaseClockTimeout = {
+      ...createResourceEntry('database-clock-timeout', {
+        payload: { text: 'database clock timeout' },
+        typeId: 'TYPE_DATABASE_CLOCK_TIMEOUT',
+      }),
+      status: EntityStatus.RESERVED,
+      dequeueAudit: {
+        attempts: 1,
+        startTs: Temporal.Instant.from('2020-01-01T00:00:00Z'),
+      },
+    };
+    await inbox.write(databaseClockTimeout);
+    await sql`
+      update resource_inbox
+      set start_ts = (now() - interval '29 seconds') at time zone 'UTC'
+      where ri_topic_id = ${databaseClockTimeout.key.topicId}
+        and ri_resource_id = ${databaseClockTimeout.key.resourceId}
+        and fk_ext_bank_id = ${databaseClockTimeout.key.contextId}
+    `;
+    const originalDateNow = Date.now;
+    Date.now = () => Date.parse('1900-01-01T00:00:00Z');
+    try {
+      assert.equal((await inbox.begin((transactionInbox) =>
+        transactionInbox.findTimedOutReservedEntriesSkipLocked(
+          new Set([databaseClockTimeout.typeId]),
+          30_000,
+          { maxToReserve: 1, maxAttempts: 2 },
+        )
+      )).size, 0);
+      await sql`
+        update resource_inbox
+        set start_ts = (now() - interval '31 seconds') at time zone 'UTC'
+        where ri_topic_id = ${databaseClockTimeout.key.topicId}
+          and ri_resource_id = ${databaseClockTimeout.key.resourceId}
+          and fk_ext_bank_id = ${databaseClockTimeout.key.contextId}
+      `;
+      assert.equal((await inbox.begin((transactionInbox) =>
+        transactionInbox.findTimedOutReservedEntriesSkipLocked(
+          new Set([databaseClockTimeout.typeId]),
+          30_000,
+          { maxToReserve: 1, maxAttempts: 2 },
+        )
+      )).size, 1);
+    } finally {
+      Date.now = originalDateNow;
+    }
 
     const immutable = {
       ...createResourceEntry('immutable-replay', {
@@ -1963,6 +2009,10 @@ Deno.test('ResourceInboxRepository and ResourceInboxResultsRepository run agains
     assert.ok(reservedStartText);
     const reservedStartTs = Temporal.Instant.from(
       `${reservedStartText.replace(' ', 'T')}Z`,
+    );
+    assert.equal(
+      reserved.right?.dequeueAudit.startTs?.toString(),
+      reservedStartTs.toString(),
     );
     const releasedAt = Temporal.Instant.fromEpochMilliseconds(
       Number(reservedStartTs.epochMilliseconds) + 123,
