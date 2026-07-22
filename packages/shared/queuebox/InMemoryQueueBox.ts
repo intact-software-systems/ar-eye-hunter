@@ -2,7 +2,13 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { RateLimiter } from '../resilience/Resilience.ts';
 import type { PersistenceSetItemOptions } from '../persistence/PersistenceProvider.ts';
-import { QueueBoxResourceEntryRepository } from './QueueBoxTypes.ts';
+import {
+    QueueBoxResourceEntryRepository,
+    ResourceInboxFairnessSelection,
+    ResourceInboxLostReservationError,
+    ResourceInboxReservationInput,
+    toResourceInboxReservationOptions,
+} from './QueueBoxTypes.ts';
 import {
     COMPLETED_STATUSES,
     EntityStatus,
@@ -143,56 +149,70 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         entityStatus: EntityStatus,
         delayMs: number | null,
     ): Promise<Map<Key, ResourceEntry>> {
-        return new Map(
-            resources
-                .map(
-                    (resource): [Key, ResourceEntry] => {
-                        const current = this.data.get(toKeyAsString(resource.key));
-                        const base = current && !isExpiredResourceEntry(current)
-                            ? current
-                            : resource;
-                        const releasedAt = Temporal.Now.instant();
-                        const dequeueAudit = {
-                            startTs: resource.dequeueAudit.startTs,
-                            endTs: releasedAt,
-                            nextTs: delayMs !== null
-                                ? releasedAt.add({ milliseconds: delayMs })
-                                : undefined,
-                            attempts: resource.dequeueAudit.attempts
-                        };
+        const currentEntries = resources.map(resource => {
+            const current = this.data.get(toKeyAsString(resource.key));
+            if (
+                !current ||
+                isExpiredResourceEntry(current) ||
+                current.status !== EntityStatus.RESERVED ||
+                current.dequeueAudit.attempts !== resource.dequeueAudit.attempts
+            ) {
+                throw new ResourceInboxLostReservationError(
+                    resource.key,
+                    resource.dequeueAudit.attempts,
+                );
+            }
+            return current;
+        });
+        const releasedAt = Temporal.Now.instant();
+        const released = new Map<Key, ResourceEntry>();
 
-                        const updated = {
-                            ...base,
-                            status: entityStatus,
-                            dequeueAudit,
-                        };
+        for (const current of currentEntries) {
+            const updated: ResourceEntry = {
+                ...current,
+                status: entityStatus,
+                dequeueAudit: {
+                    startTs: current.dequeueAudit.startTs,
+                    endTs: releasedAt,
+                    nextTs: delayMs !== null
+                        ? releasedAt.add({ milliseconds: delayMs })
+                        : undefined,
+                    attempts: current.dequeueAudit.attempts,
+                },
+            };
+            this.data.set(toKeyAsString(current.key), updated);
+            released.set(updated.key, updated);
+        }
 
-                        this.data.set(toKeyAsString(resource.key), updated);
-
-                        return [updated.key, updated];
-                    }
-                )
-        );
+        return released;
     }
 
     async reserveTimeoutEntries(
         typeIds: Set<string>,
-        maxToReserve: number,
+        reservationInput: ResourceInboxReservationInput,
         timeSinceStartTs: Temporal.Duration
     ): Promise<Map<Key, ResourceEntry>> {
+        const { maxToReserve, maxAttempts } = toResourceInboxReservationOptions(
+            reservationInput,
+            DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts,
+        );
         const timedOut = new Map<Key, ResourceEntry>();
+        const now = Temporal.Now.instant();
 
         for (const [key, entry] of this.data) {
             if (timedOut.size >= maxToReserve) {
                 break;
             }
 
-            if (this.isReservedEntryTimedOut(typeIds, entry, timeSinceStartTs)) {
+            if (
+                entry.dequeueAudit.attempts < maxAttempts &&
+                this.isReservedEntryTimedOut(typeIds, entry, timeSinceStartTs)
+            ) {
                 entry.dequeueAudit = {
-                    startTs: entry.dequeueAudit.startTs,
-                    endTs: Temporal.Now.instant(),
+                    startTs: now,
+                    endTs: undefined,
                     nextTs: undefined,
-                    attempts: entry.dequeueAudit.attempts
+                    attempts: entry.dequeueAudit.attempts + 1,
                 };
 
                 entry.status = EntityStatus.RESERVED;
@@ -210,8 +230,12 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
     async reserveEntries(
         typeIds: Set<string>,
         statusIds: Set<EntityStatus>,
-        maxToReserve: number
+        reservationInput: ResourceInboxReservationInput,
     ): Promise<Map<Key, ResourceEntry>> {
+        const { maxToReserve, maxAttempts } = toResourceInboxReservationOptions(
+            reservationInput,
+            DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts,
+        );
         const reserved = new Map<Key, ResourceEntry>();
         const now = Temporal.Now.instant();
 
@@ -226,7 +250,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
 
             if (
                 entry.status === EntityStatus.FAILED ||
-                entry.dequeueAudit.attempts >= DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
+                entry.dequeueAudit.attempts >= maxAttempts
             ) {
                 continue;
             }
@@ -255,8 +279,12 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
     async reserveOverdueRetryEntries(
         typeIds: Set<string>,
         overdueBeforeEpochMs: number,
-        maxToReserve: number,
-    ): Promise<Map<Key, ResourceEntry>> {
+        reservationInput: ResourceInboxReservationInput,
+    ): Promise<Map<Key, ResourceInboxFairnessSelection>> {
+        const { maxToReserve, maxAttempts } = toResourceInboxReservationOptions(
+            reservationInput,
+            DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts,
+        );
         if (typeIds.size === 0 || maxToReserve <= 0) {
             return new Map();
         }
@@ -268,18 +296,19 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
                 !isExpiredResourceEntry(entry, now) &&
                 typeIds.has(entry.typeId) &&
                 entry.status === EntityStatus.RETRY &&
-                entry.dequeueAudit.attempts < DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts &&
+                entry.dequeueAudit.attempts < maxAttempts &&
                 entry.dequeueAudit.nextTs !== undefined &&
                 Temporal.Instant.compare(entry.dequeueAudit.nextTs, overdueBefore) <= 0
             )
-            .sort(([, left], [, right]) =>
-                Temporal.Instant.compare(
+            .sort(([leftKey, left], [rightKey, right]) => {
+                const dueOrder = Temporal.Instant.compare(
                     left.dequeueAudit.nextTs!,
                     right.dequeueAudit.nextTs!,
-                )
-            )
+                );
+                return dueOrder !== 0 ? dueOrder : leftKey.localeCompare(rightKey);
+            })
             .slice(0, maxToReserve);
-        const reserved = new Map<Key, ResourceEntry>();
+        const reserved = new Map<Key, ResourceInboxFairnessSelection>();
 
         for (const [key, entry] of candidates) {
             const selectedNextTs = entry.dequeueAudit.nextTs;
@@ -289,18 +318,15 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
                 dequeueAudit: {
                     startTs: now,
                     endTs: undefined,
-                    nextTs: selectedNextTs,
+                    nextTs: undefined,
                     attempts: entry.dequeueAudit.attempts + 1,
                 },
             };
-            this.data.set(key, {
-                ...updated,
-                dequeueAudit: {
-                    ...updated.dequeueAudit,
-                    nextTs: undefined,
-                },
+            this.data.set(key, updated);
+            reserved.set(toResourceEntryKey(key), {
+                entry: updated,
+                selectedDueTs: selectedNextTs!,
             });
-            reserved.set(toResourceEntryKey(key), updated);
         }
 
         return reserved;

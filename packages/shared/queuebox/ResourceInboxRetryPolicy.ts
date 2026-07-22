@@ -1,4 +1,4 @@
-import type { ResourceEntry } from './ResourceEntry.ts';
+import type { ResourceInboxFairnessSelection } from './QueueBoxTypes.ts';
 
 export type ResourceInboxRetryPolicy = Readonly<{
     maxAttempts: number;
@@ -60,20 +60,17 @@ export function retryAfterAttempt(
 }
 
 export function toResourceInboxFairnessTelemetry(
-    entry: ResourceEntry,
+    selection: ResourceInboxFairnessSelection,
     selectedAtEpochMs: number,
 ): ResourceInboxFairnessTelemetry {
+    const { entry, selectedDueTs } = selection;
     const createdAtEpochMs = Number(
         entry.audit.createdTs.toZonedDateTime('UTC').toInstant().epochMilliseconds,
     );
-    const nextTs = entry.dequeueAudit.nextTs;
-    if (!nextTs) {
-        throw new Error('Fairness reservation requires a persisted nextTs');
-    }
 
     return {
         queueAgeMs: selectedAtEpochMs - createdAtEpochMs,
-        dueAgeMs: selectedAtEpochMs - Number(nextTs.epochMilliseconds),
+        dueAgeMs: selectedAtEpochMs - Number(selectedDueTs.epochMilliseconds),
         attempt: entry.dequeueAudit.attempts,
         type: entry.typeId,
         lane: 'FAIRNESS',

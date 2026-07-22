@@ -5,6 +5,7 @@ import { Reservator } from '@shared/queuebox/DequeueController.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/Resilience.ts';
 import { EntityStatus, Key, NEVER_EXPIRE_TS, ResourceEntry, } from '@shared/queuebox/ResourceEntry.ts';
+import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 
 describe('enqueue and dequeue', () => {
 
@@ -110,6 +111,47 @@ describe('enqueue and dequeue', () => {
 });
 
 describe('resource inbox retry and fairness lanes', () => {
+    it('threads a custom attempt budget through every reservation lane', async () => {
+        const optionsSeen: unknown[] = [];
+        const repository = createDequeueRepository({
+            reserveEntries: async (_types, _statuses, options) => {
+                optionsSeen.push(options);
+                return new Map();
+            },
+            reserveOverdueRetryEntries: async (_types, _cutoff, options) => {
+                optionsSeen.push(options);
+                return new Map();
+            },
+            reserveTimeoutEntries: async (_types, options) => {
+                optionsSeen.push(options);
+                return new Map();
+            },
+        });
+
+        await DequeueResourceEntryController.toDequeuer<string>(
+            repository as never,
+            () => new Set(['APP_INBOX']),
+            () => 1,
+            2,
+            10,
+            toTestResilience(),
+            {
+                retryPolicy: {
+                    ...DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
+                    maxAttempts: 2,
+                },
+            },
+        ).dequeueForCompute(async () => 'done');
+
+        expect(optionsSeen).toHaveLength(4);
+        expect(optionsSeen).toEqual([
+            { maxToReserve: 1, maxAttempts: 2 },
+            { maxToReserve: 1, maxAttempts: 2 },
+            { maxToReserve: 1, maxAttempts: 2 },
+            { maxToReserve: 1, maxAttempts: 2 },
+        ]);
+    });
+
     it('releases a first failed attempt with the exact one-millisecond delay', async () => {
         vi.useFakeTimers();
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
@@ -208,21 +250,24 @@ describe('resource inbox retry and fairness lanes', () => {
         const entry = {
             ...createQueueEntry('overdue', EntityStatus.RETRY, 5),
             dequeueAudit: {
-                attempts: 5,
+                attempts: 6,
                 startTs: Temporal.Instant.from('2026-01-01T00:00:00.000Z'),
-                endTs: Temporal.Instant.from('2026-01-01T00:00:01.000Z'),
-                nextTs,
+                endTs: undefined,
+                nextTs: undefined,
             },
         } satisfies ResourceEntry;
         const telemetry: unknown[] = [];
-        const fairnessCalls: Array<{ overdueBeforeEpochMs: number; maxToReserve: number }> = [];
+        const fairnessCalls: Array<{
+            overdueBeforeEpochMs: number;
+            options: unknown;
+        }> = [];
         let fairnessReserved = false;
         const repository = createDequeueRepository({
-            reserveOverdueRetryEntries: async (_types, overdueBeforeEpochMs, maxToReserve) => {
-                fairnessCalls.push({ overdueBeforeEpochMs, maxToReserve });
+            reserveOverdueRetryEntries: async (_types, overdueBeforeEpochMs, options) => {
+                fairnessCalls.push({ overdueBeforeEpochMs, options });
                 if (fairnessReserved) return new Map();
                 fairnessReserved = true;
-                return new Map([[entry.key, entry]]);
+                return new Map([[entry.key, { entry, selectedDueTs: nextTs }]]);
             },
         });
 
@@ -243,13 +288,13 @@ describe('resource inbox retry and fairness lanes', () => {
 
         expect(fairnessCalls[0]).toEqual({
             overdueBeforeEpochMs: Date.parse('2026-01-01T00:00:30.000Z'),
-            maxToReserve: 1,
+            options: { maxToReserve: 1, maxAttempts: 20 },
         });
         expect(dequeued.get(Reservator.FAIRNESS)?.size).toBe(1);
         expect(telemetry).toContainEqual({
             queueAgeMs: 60_000,
             dueAgeMs: 31_000,
-            attempt: 5,
+            attempt: 6,
             type: 'APP_INBOX',
             lane: Reservator.FAIRNESS,
         });

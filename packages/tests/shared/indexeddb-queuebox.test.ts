@@ -179,6 +179,10 @@ describe('IndexedDbQueueBox', () => {
                 ?.until(retryEntry.dequeueAudit.nextTs!)
                 .total({ unit: 'milliseconds' }),
         ).toBe(1_000);
+        expect((await queue.getItem(retryEntry.key))?.dequeueAudit.endTs?.toString())
+            .toBe(retryEntry.dequeueAudit.endTs?.toString());
+        expect((await queue.getItem(retryEntry.key))?.dequeueAudit.nextTs?.toString())
+            .toBe(retryEntry.dequeueAudit.nextTs?.toString());
 
         const immediatelyReservable = await queue.reserveEntries(
             new Set([typeId]),
@@ -187,6 +191,61 @@ describe('IndexedDbQueueBox', () => {
         );
 
         expect(immediatelyReservable.size).toBe(0);
+    });
+
+    it('rejects a stale release without overwriting a newer IndexedDB reservation', async () => {
+        const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
+        const typeId = 'chat.private-text.v1';
+        const queue = new IndexedDbQueueBox({ dbName });
+        const current = createEntry(typeId, 'stale-release', {
+            status: EntityStatus.RESERVED,
+            startTs: Temporal.Now.instant(),
+            attempts: 2,
+        });
+        await queue.enqueue(current);
+
+        await expect(queue.releaseEntries([{
+            ...current,
+            dequeueAudit: { ...current.dequeueAudit, attempts: 1 },
+        }], EntityStatus.RETRY, 1)).rejects.toMatchObject({
+            code: 'resource-inbox-lost-reservation',
+        });
+
+        expect(await queue.getItem(current.key)).toMatchObject({
+            status: EntityStatus.RESERVED,
+            dequeueAudit: { attempts: 2 },
+        });
+    });
+
+    it('rolls back the whole IndexedDB release transaction when one reservation is stale', async () => {
+        const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
+        const typeId = 'chat.private-text.v1';
+        const queue = new IndexedDbQueueBox({ dbName });
+        const first = createEntry(typeId, 'batch-current', {
+            status: EntityStatus.RESERVED,
+            startTs: Temporal.Now.instant(),
+            attempts: 1,
+        });
+        const second = createEntry(typeId, 'batch-stale', {
+            status: EntityStatus.RESERVED,
+            startTs: Temporal.Now.instant(),
+            attempts: 2,
+        });
+        await queue.enqueue(first);
+        await queue.enqueue(second);
+
+        await expect(queue.releaseEntries([
+            first,
+            {
+                ...second,
+                dequeueAudit: { ...second.dequeueAudit, attempts: 1 },
+            },
+        ], EntityStatus.COMPLETED, null)).rejects.toMatchObject({
+            code: 'resource-inbox-lost-reservation',
+        });
+
+        expect((await queue.getItem(first.key))?.status).toBe(EntityStatus.RESERVED);
+        expect((await queue.getItem(second.key))?.dequeueAudit.attempts).toBe(2);
     });
 
     it('removes completed entries during cleanup while keeping active work', async () => {
@@ -294,6 +353,104 @@ describe('IndexedDbQueueBox', () => {
 
         expect(hasWork).toBe(false);
     });
+
+    it('uses a custom two-attempt IndexedDB reservation budget', async () => {
+        const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
+        const typeId = 'chat.private-text.v1';
+        const queue = new IndexedDbQueueBox({ dbName });
+        const exhausted = createEntry(typeId, 'attempt-3', {
+            status: EntityStatus.RETRY,
+            attempts: 2,
+            nextTs: Temporal.Now.instant().subtract({ seconds: 1 }),
+        });
+        await queue.enqueue(exhausted);
+
+        const reserved = await queue.reserveEntries(
+            new Set([typeId]),
+            new Set([EntityStatus.RETRY]),
+            { maxToReserve: 1, maxAttempts: 2 },
+        );
+
+        expect(reserved.size).toBe(0);
+        expect((await queue.getItem(exhausted.key))?.dequeueAudit.attempts).toBe(2);
+    });
+
+    it('does not reclaim an IndexedDB timeout beyond a custom attempt budget', async () => {
+        const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
+        const typeId = 'presence.state.v1';
+        const queue = new IndexedDbQueueBox({ dbName });
+        await queue.enqueue(createEntry(typeId, 'timeout-attempt-3', {
+            status: EntityStatus.RESERVED,
+            startTs: Temporal.Now.instant().subtract({ minutes: 10 }),
+            attempts: 2,
+        }));
+
+        const reclaimed = await queue.reserveTimeoutEntries(
+            new Set([typeId]),
+            { maxToReserve: 1, maxAttempts: 2 },
+            Temporal.Duration.from({ minutes: 5 }),
+        );
+
+        expect(reclaimed.size).toBe(0);
+    });
+
+    it('orders IndexedDB fairness by oldest due timestamp before applying the batch limit', async () => {
+        const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
+        const typeId = 'chat.private-text.v1';
+        const queue = new IndexedDbQueueBox({ dbName });
+        const now = Temporal.Now.instant();
+        const newer = createEntry(typeId, 'a-newer', {
+            status: EntityStatus.RETRY,
+            attempts: 1,
+            nextTs: now.subtract({ seconds: 31 }),
+        });
+        const older = createEntry(typeId, 'z-older', {
+            status: EntityStatus.RETRY,
+            attempts: 1,
+            nextTs: now.subtract({ seconds: 60 }),
+        });
+        await queue.enqueue(newer);
+        await queue.enqueue(older);
+
+        const selected = firstValue(await queue.reserveOverdueRetryEntries(
+            new Set([typeId]),
+            Number(now.epochMilliseconds) - 30_000,
+            1,
+        ));
+
+        expect(selected.entry.key.resourceId).toBe('z-older');
+        expect(selected.selectedDueTs.toString()).toBe(older.dequeueAudit.nextTs?.toString());
+        expect(selected.entry.dequeueAudit.nextTs).toBeUndefined();
+        expect((await queue.getItem(older.key))?.dequeueAudit.nextTs).toBeUndefined();
+    });
+
+    it('breaks equal IndexedDB fairness due timestamps by canonical key', async () => {
+        const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
+        const typeId = 'chat.private-text.v1';
+        const queue = new IndexedDbQueueBox({ dbName });
+        const now = Temporal.Now.instant();
+        const dueTs = now.subtract({ seconds: 60 });
+        const laterKey = createEntry(typeId, 'z-later-key', {
+            status: EntityStatus.RETRY,
+            attempts: 1,
+            nextTs: dueTs,
+        });
+        const earlierKey = createEntry(typeId, 'a-earlier-key', {
+            status: EntityStatus.RETRY,
+            attempts: 1,
+            nextTs: dueTs,
+        });
+        await queue.enqueue(laterKey);
+        await queue.enqueue(earlierKey);
+
+        const selected = firstValue(await queue.reserveOverdueRetryEntries(
+            new Set([typeId]),
+            Number(now.epochMilliseconds) - 30_000,
+            1,
+        ));
+
+        expect(selected.entry.key.resourceId).toBe('a-earlier-key');
+    });
 });
 
 function createEntry(
@@ -302,6 +459,8 @@ function createEntry(
     options: Partial<{
         status: EntityStatus;
         startTs: Temporal.Instant;
+        endTs: Temporal.Instant;
+        nextTs: Temporal.Instant;
         attempts: number;
         resource: string;
         expiryTs: Temporal.Instant;
@@ -324,6 +483,8 @@ function createEntry(
         status: options.status ?? EntityStatus.NEW,
         dequeueAudit: {
             startTs: options.startTs,
+            endTs: options.endTs,
+            nextTs: options.nextTs,
             attempts: options.attempts ?? 0,
         },
         db: undefined,

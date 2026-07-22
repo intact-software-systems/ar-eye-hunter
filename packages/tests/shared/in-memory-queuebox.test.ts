@@ -134,6 +134,7 @@ describe('InMemoryQueueBox', () => {
             status: EntityStatus.RESERVED,
             attempts: 1,
         });
+        await queue.enqueue(entry);
 
         const released = firstValue(
             await queue.releaseEntries([entry], EntityStatus.RETRY, 37),
@@ -147,6 +148,132 @@ describe('InMemoryQueueBox', () => {
             .endTs!.until(released.dequeueAudit.nextTs!)
             .total({ unit: 'milliseconds' });
         expect(delayMs).toBe(37);
+        expect((await queue.getItem(entry.key))?.dequeueAudit.endTs?.toString())
+            .toBe(released.dequeueAudit.endTs?.toString());
+        expect((await queue.getItem(entry.key))?.dequeueAudit.nextTs?.toString())
+            .toBe(released.dequeueAudit.nextTs?.toString());
+    });
+
+    it('rejects a stale release without overwriting a newer reservation', async () => {
+        const queue = new InMemoryQueueBox();
+        const current = createEntry('chat.private-text.v1', 'stale-release', {
+            status: EntityStatus.RESERVED,
+            attempts: 2,
+        });
+        const stale = {
+            ...current,
+            dequeueAudit: {
+                ...current.dequeueAudit,
+                attempts: 1,
+            },
+        };
+        await queue.enqueue(current);
+
+        await expect(queue.releaseEntries([stale], EntityStatus.RETRY, 1))
+            .rejects.toMatchObject({ code: 'resource-inbox-lost-reservation' });
+
+        expect(await queue.getItem(current.key)).toMatchObject({
+            status: EntityStatus.RESERVED,
+            dequeueAudit: { attempts: 2 },
+        });
+    });
+
+    it('rolls back the whole memory release batch when one reservation is stale', async () => {
+        const queue = new InMemoryQueueBox();
+        const first = createEntry('chat.private-text.v1', 'batch-current', {
+            status: EntityStatus.RESERVED,
+            attempts: 1,
+        });
+        const second = createEntry('chat.private-text.v1', 'batch-stale', {
+            status: EntityStatus.RESERVED,
+            attempts: 2,
+        });
+        await queue.enqueue(first);
+        await queue.enqueue(second);
+
+        await expect(queue.releaseEntries([
+            first,
+            {
+                ...second,
+                dequeueAudit: { ...second.dequeueAudit, attempts: 1 },
+            },
+        ], EntityStatus.COMPLETED, null)).rejects.toMatchObject({
+            code: 'resource-inbox-lost-reservation',
+        });
+
+        expect((await queue.getItem(first.key))?.status).toBe(EntityStatus.RESERVED);
+        expect((await queue.getItem(second.key))?.dequeueAudit.attempts).toBe(2);
+    });
+
+    it('uses a custom two-attempt reservation budget', async () => {
+        const queue = new InMemoryQueueBox();
+        const exhausted = createEntry('chat.private-text.v1', 'attempt-3', {
+            status: EntityStatus.RETRY,
+            attempts: 2,
+            nextTs: Temporal.Now.instant().subtract({ seconds: 1 }),
+        });
+        await queue.enqueue(exhausted);
+
+        const reserved = await queue.reserveEntries(
+            new Set([exhausted.typeId]),
+            new Set([EntityStatus.RETRY]),
+            { maxToReserve: 1, maxAttempts: 2 },
+        );
+
+        expect(reserved.size).toBe(0);
+        expect((await queue.getItem(exhausted.key))?.dequeueAudit.attempts).toBe(2);
+    });
+
+    it('increments memory timeout recovery attempts and enforces its budget', async () => {
+        const queue = new InMemoryQueueBox();
+        const oldStartTs = Temporal.Now.instant().subtract({ minutes: 10 });
+        const recoverable = createEntry('chat.private-text.v1', 'timeout-2', {
+            status: EntityStatus.RESERVED,
+            attempts: 1,
+            startTs: oldStartTs,
+        });
+        await queue.enqueue(recoverable);
+
+        const reclaimed = await queue.reserveTimeoutEntries(
+            new Set([recoverable.typeId]),
+            { maxToReserve: 1, maxAttempts: 2 },
+            Temporal.Duration.from({ minutes: 5 }),
+        );
+
+        expect(firstValue(reclaimed).dequeueAudit.attempts).toBe(2);
+        expect(firstValue(reclaimed).dequeueAudit.startTs?.toString())
+            .not.toBe(oldStartTs.toString());
+        expect(firstValue(reclaimed).dequeueAudit.endTs).toBeUndefined();
+
+        expect((await queue.reserveTimeoutEntries(
+            new Set([recoverable.typeId]),
+            { maxToReserve: 1, maxAttempts: 2 },
+            Temporal.Duration.from({ milliseconds: 0 }),
+        )).size).toBe(0);
+    });
+
+    it('returns fairness metadata separately from the canonical reserved entry', async () => {
+        const queue = new InMemoryQueueBox();
+        const selectedDueTs = Temporal.Now.instant().subtract({ seconds: 31 });
+        const overdue = createEntry('chat.private-text.v1', 'fairness-contract', {
+            status: EntityStatus.RETRY,
+            attempts: 1,
+            startTs: Temporal.Now.instant().subtract({ minutes: 1 }),
+            endTs: Temporal.Now.instant().subtract({ seconds: 40 }),
+            nextTs: selectedDueTs,
+        });
+        await queue.enqueue(overdue);
+
+        const selected = firstValue(await queue.reserveOverdueRetryEntries(
+            new Set([overdue.typeId]),
+            Date.now() - 30_000,
+            1,
+        ));
+
+        expect(selected.selectedDueTs.toString()).toBe(selectedDueTs.toString());
+        expect(selected.entry.status).toBe(EntityStatus.RESERVED);
+        expect(selected.entry.dequeueAudit.nextTs).toBeUndefined();
+        expect((await queue.getItem(overdue.key))?.dequeueAudit.nextTs).toBeUndefined();
     });
 });
 
@@ -158,6 +285,9 @@ function createEntry(
         attempts: number;
         resource: string;
         expiryTs: Temporal.Instant;
+        startTs: Temporal.Instant;
+        endTs: Temporal.Instant;
+        nextTs: Temporal.Instant;
     }> = {},
 ): ResourceEntry {
     return {
@@ -176,6 +306,9 @@ function createEntry(
         },
         status: options.status ?? EntityStatus.NEW,
         dequeueAudit: {
+            startTs: options.startTs,
+            endTs: options.endTs,
+            nextTs: options.nextTs,
             attempts: options.attempts ?? 0,
         },
         db: undefined,

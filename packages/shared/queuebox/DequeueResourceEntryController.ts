@@ -190,14 +190,20 @@ export class DequeueResourceEntryController {
                 await dequeueResourceEntryRepository.reserveEntries(
                     types,
                     new Set([EntityStatus.NEW]),
-                    maxNumToReserve
+                    {
+                        maxToReserve: maxNumToReserve,
+                        maxAttempts: retryPolicy.maxAttempts,
+                    },
                 ),
             )
             .onRetryEntriesReserveDo(async (types, maxNumToReserve) =>
                 await dequeueResourceEntryRepository.reserveEntries(
                     types,
                     new Set([EntityStatus.RETRY]),
-                    maxNumToReserve
+                    {
+                        maxToReserve: maxNumToReserve,
+                        maxAttempts: retryPolicy.maxAttempts,
+                    },
                 ),
             )
             .onFairnessEntriesReserveDo(async (types, maxNumToReserve) =>
@@ -208,17 +214,22 @@ export class DequeueResourceEntryController {
                         const reserved = await dequeueResourceEntryRepository.reserveOverdueRetryEntries(
                             types,
                             selectedAtEpochMs - retryPolicy.staleDueThresholdMs,
-                            maxNumToReserve,
+                            {
+                                maxToReserve: maxNumToReserve,
+                                maxAttempts: retryPolicy.maxAttempts,
+                            },
                         );
-                        for (const entry of reserved.values()) {
+                        for (const selection of reserved.values()) {
                             recordReservationTelemetry(
                                 toResourceInboxFairnessTelemetry(
-                                    entry,
+                                    selection,
                                     selectedAtEpochMs,
                                 ),
                             );
                         }
-                        return reserved;
+                        return new Map(
+                            [...reserved].map(([key, selection]) => [key, selection.entry]),
+                        );
                     },
                     new Map<Resource.Key, ResourceEntry>(),
                 ),
@@ -230,7 +241,10 @@ export class DequeueResourceEntryController {
                         () =>
                             dequeueResourceEntryRepository.reserveTimeoutEntries(
                                 types,
-                                maxNumToReserve,
+                                {
+                                    maxToReserve: maxNumToReserve,
+                                    maxAttempts: retryPolicy.maxAttempts,
+                                },
                                 DequeueResourceEntryController.TIMEOUT_ON_NON_RESPONSIVE_ENTRY_MS
                             ),
                         new Map<Resource.Key, ResourceEntry>(),

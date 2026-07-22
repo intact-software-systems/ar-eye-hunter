@@ -50,7 +50,7 @@ describe('ResourceInboxRepository', () => {
 
         expect(capture.queries).toHaveLength(1);
         expect(capture.queries[0]?.query).toContain('ri_status <>');
-        expect(capture.queries[0]?.query).toContain('expire_ts >');
+        expect(capture.queries[0]?.query).toContain('expire_ts > now()');
         expect(capture.queries[0]?.query).toContain('next_ts <=');
         expect(capture.queries[0]?.query).toContain('ri_attempts <');
         expect(capture.queries[0]?.query).toContain('for update skip locked');
@@ -70,7 +70,7 @@ describe('ResourceInboxRepository', () => {
 
         expect(capture.queries).toHaveLength(1);
         expect(capture.queries[0]?.query).toContain('ri_status =');
-        expect(capture.queries[0]?.query).toContain('expire_ts >');
+        expect(capture.queries[0]?.query).toContain('expire_ts > now()');
         expect(capture.queries[0]?.query).toContain('next_ts <=');
         expect(capture.queries[0]?.query).toContain('ri_attempts <');
         expect(capture.queries[0]?.query).toContain('order by next_ts asc, ri_row_id asc');
@@ -78,6 +78,21 @@ describe('ResourceInboxRepository', () => {
         expect(capture.queries[0]?.values).toContain(EntityStatus.RETRY);
         expect(capture.queries[0]?.values).not.toContain(EntityStatus.FAILED);
         expect(capture.queries[0]?.values).toContainEqual(new Date(overdueBeforeEpochMs));
+    });
+
+    it('uses a configured two-attempt budget in PostgreSQL reservation selectors', async () => {
+        const capture = createQueryCapture();
+        const repo = new repositoryModule.ResourceInboxRepository(capture.sql);
+
+        await repo.findEntriesSkipLocked(
+            new Set(['APP_INBOX']),
+            new Set([EntityStatus.RETRY]),
+            { maxToReserve: 1, maxAttempts: 2 },
+        );
+
+        expect(capture.queries).toHaveLength(1);
+        expect(capture.queries[0]?.values).toContain(2);
+        expect(capture.queries[0]?.values).not.toContain(20);
     });
 
     it('inserts immutable outbox content once and matches an operationally advanced replay', async () => {
@@ -520,6 +535,55 @@ describe('ResourceInboxRepository', () => {
         )).resolves.toBe(false);
     });
 
+    it('atomically releases only the current live reservation and returns persisted timestamps', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+
+        const harness = createSqlHarness();
+        const repo = new repositoryModule.ResourceInboxRepository(harness.sql);
+        const releasedAt = Temporal.Instant.from('2026-01-01T00:01:00.123Z');
+        const entry = createEntry(createKey('reserved-release'), {
+            text: 'reserved',
+            expiryTs: Temporal.Instant.from('2026-01-01T00:05:00Z'),
+        });
+        await repo.write(entry);
+        const stored = findStoredRow(harness.rows, entry.key);
+        if (!stored) throw new Error('Expected inserted resource inbox row');
+        stored.ri_status = EntityStatus.RESERVED;
+        stored.ri_attempts = 2n;
+
+        const releaseRepo = repo as unknown as {
+            releaseReserved(
+                key: Key,
+                options: Readonly<{
+                    status: EntityStatus;
+                    expectedAttempts: number;
+                    releasedAt: Temporal.Instant;
+                    delayMs: number | null;
+                }>,
+            ): Promise<ResourceEntry | null>;
+        };
+        await expect(releaseRepo.releaseReserved(entry.key, {
+            status: EntityStatus.RETRY,
+            expectedAttempts: 1,
+            releasedAt,
+            delayMs: 37,
+        })).resolves.toBeNull();
+
+        const released = await releaseRepo.releaseReserved(entry.key, {
+            status: EntityStatus.RETRY,
+            expectedAttempts: 2,
+            releasedAt,
+            delayMs: 37,
+        });
+
+        expect(released?.dequeueAudit.endTs?.toString()).toBe(releasedAt.toString());
+        expect(released?.dequeueAudit.nextTs?.toString())
+            .toBe(releasedAt.add({ milliseconds: 37 }).toString());
+        expect(stored.ri_status).toBe(EntityStatus.RETRY);
+        expect(stored.ri_attempts).toBe(2n);
+    });
+
     it('rejects a nonterminal finish status before issuing SQL', async () => {
         const harness = createSqlHarness();
         const repo = new repositoryModule.ResourceInboxRepository(harness.sql);
@@ -903,6 +967,31 @@ function createSqlHarness() {
                 return [];
             }
 
+            return [cloneRow(row)];
+        }
+
+        if (
+            query.includes('update resource_inbox') &&
+            query.includes('set ri_status = , end_ts') &&
+            query.includes('end_ts') &&
+            query.includes('next_ts') &&
+            query.includes('returning *')
+        ) {
+            const [status, endTs, nextTs, topicId, resourceId, contextId, reserved, expectedAttempts] =
+                values;
+            const row = rows.get(`${contextId}::${topicId}::${resourceId}`);
+            if (
+                !row ||
+                row.ri_status !== reserved ||
+                row.ri_attempts !== BigInt(expectedAttempts as number) ||
+                isExpired(row.expire_ts)
+            ) {
+                return [];
+            }
+
+            row.ri_status = status as string;
+            row.end_ts = toOptionalString(endTs);
+            row.next_ts = toOptionalString(nextTs);
             return [cloneRow(row)];
         }
 

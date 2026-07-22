@@ -1914,9 +1914,81 @@ Deno.test('ResourceInboxRepository and ResourceInboxResultsRepository run agains
     assert.equal(reserved.right?.dequeueAudit.attempts, 1);
     assert.equal(await inbox.writeIfAbsentOrMatch(active), 'matched');
 
-    assert.equal(await inbox.updateResourceEntry(active.key, EntityStatus.COMPLETED, null), 1);
+    const reservedStartRows = await sql<{ start_ts: string }[]>`
+      select start_ts::text as start_ts
+      from resource_inbox
+      where ri_topic_id = ${active.key.topicId}
+        and ri_resource_id = ${active.key.resourceId}
+        and fk_ext_bank_id = ${active.key.contextId}
+    `;
+    const reservedStartText = reservedStartRows[0]?.start_ts;
+    assert.ok(reservedStartText);
+    const reservedStartTs = Temporal.Instant.from(
+      `${reservedStartText.replace(' ', 'T')}Z`,
+    );
+    const releasedAt = Temporal.Instant.fromEpochMilliseconds(
+      Number(reservedStartTs.epochMilliseconds) + 123,
+    );
+    assert.equal(await inbox.releaseReserved(active.key, {
+      status: EntityStatus.COMPLETED,
+      expectedAttempts: 2,
+      releasedAt,
+      delayMs: null,
+    }), null);
+    const released = await inbox.releaseReserved(active.key, {
+      status: EntityStatus.COMPLETED,
+      expectedAttempts: 1,
+      releasedAt,
+      delayMs: null,
+    });
+    const releaseRows = await sql<{ end_ts: string }[]>`
+      select end_ts::text as end_ts
+      from resource_inbox
+      where ri_topic_id = ${active.key.topicId}
+        and ri_resource_id = ${active.key.resourceId}
+        and fk_ext_bank_id = ${active.key.contextId}
+    `;
+    assert.equal(
+      releaseRows[0]?.end_ts,
+      releasedAt.toString().replace('T', ' ').replace(/Z$/u, ''),
+    );
+    assert.equal(released?.dequeueAudit.endTs?.toString(), releasedAt.toString());
+    assert.equal(released?.dequeueAudit.nextTs, undefined);
     assert.equal((await inbox.findByKey(active.key))?.status, EntityStatus.COMPLETED);
     assert.equal(await inbox.writeIfAbsentOrMatch(active), 'matched');
+
+    const batchFirst = createResourceEntry('release-batch-first', {
+      payload: { text: 'first' },
+      typeId: 'TYPE_A',
+    });
+    const batchSecond = createResourceEntry('release-batch-second', {
+      payload: { text: 'second' },
+      typeId: 'TYPE_A',
+    });
+    await inbox.write(batchFirst);
+    await inbox.write(batchSecond);
+    const firstReservation = await inbox.startProcessingEntity(batchFirst);
+    const secondReservation = await inbox.startProcessingEntity(batchSecond);
+    assert.ok(firstReservation.right);
+    assert.ok(secondReservation.right);
+    const queueBox = new PSqlQueueBox(inbox);
+    await assert.rejects(
+      () => queueBox.releaseEntries([
+        firstReservation.right!,
+        {
+          ...secondReservation.right!,
+          dequeueAudit: {
+            ...secondReservation.right!.dequeueAudit,
+            attempts: 0,
+          },
+        },
+      ], EntityStatus.COMPLETED, null),
+      (error) => error instanceof Error &&
+        'code' in error &&
+        error.code === 'resource-inbox-lost-reservation',
+    );
+    assert.equal((await inbox.findByKey(batchFirst.key))?.status, EntityStatus.RESERVED);
+    assert.equal((await inbox.findByKey(batchSecond.key))?.status, EntityStatus.RESERVED);
     assert.equal(await inbox.deleteExpired(), 1);
 
     const resultEntry = createResourceEntry('result-1', {
