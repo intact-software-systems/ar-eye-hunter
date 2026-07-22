@@ -12,27 +12,14 @@ import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import { runInTransaction } from '@shared-server/postgres/run-in-transaction.ts';
-import { AppInboxReservationConflictError, AppInboxType } from './app-inbox-contracts.ts';
+import { AppInboxReservationConflictError } from './app-inbox-contracts.ts';
+import { validateAppInboxCommandIdentity } from './app-inbox-command-identity.ts';
 import { classifyAppInboxError } from './app-inbox-error-classification.ts';
 import { type RallarTimingSink, timeRallarAsync } from './timing.ts';
 
 export type AppInboxRetryFinalization =
     | ResourceInboxRetryExhaustion
     | ResourceInboxRetryExhaustionRecovery;
-
-interface AppInboxOperationIdentity {
-    readonly operation: AppInboxType | AppInboxUnavailableOperation;
-    readonly operationSource: 'command' | 'corrupt' | 'unavailable';
-}
-
-type AppInboxUnavailableOperation =
-    | 'APP_INBOX_CLIENT_OPERATION_UNAVAILABLE'
-    | 'APP_INBOX_GROUP_OPERATION_UNAVAILABLE'
-    | 'APP_INBOX_OPERATION_UNAVAILABLE';
-
-const APP_INBOX_CLIENT_TOPIC = 'app-inbox.client-state';
-const APP_INBOX_GROUP_TOPIC = 'app-inbox.group-state';
-const APP_INBOX_OPERATIONS = new Set<string>(Object.values(AppInboxType));
 
 export function createAppInboxRetryExhaustionHandler(options: Readonly<{
     database: PSqlSql;
@@ -121,7 +108,7 @@ function createFinalizer(options: Readonly<{
 }
 
 function toDiagnostics(exhaustion: AppInboxRetryFinalization) {
-    const operationIdentity = toOperationIdentity(exhaustion.entry);
+    const operationIdentity = validateAppInboxCommandIdentity(exhaustion.entry).identity;
     const timingIdentity = isProcessingFinalization(exhaustion)
         ? { exhaustedAtEpochMs: exhaustion.exhaustedAtEpochMs }
         : {
@@ -173,63 +160,4 @@ function isProcessingFinalization(
     exhaustion: AppInboxRetryFinalization,
 ): exhaustion is ResourceInboxRetryExhaustion {
     return exhaustion.failure.source === 'processing';
-}
-
-function toOperationIdentity(entry: ResourceEntry): AppInboxOperationIdentity {
-    let outer: unknown;
-    try {
-        outer = JSON.parse(entry.resource) as unknown;
-    } catch {
-        return toUnavailableOperationIdentity(entry.key.topicId, 'corrupt');
-    }
-    if (!isRecord(outer) || !isRecord(outer.payload) ||
-        typeof outer.payload.typeId !== 'string' ||
-        typeof outer.payload.resource !== 'string') {
-        return toUnavailableOperationIdentity(entry.key.topicId, 'corrupt');
-    }
-    const dispatchedOperation = outer.payload.typeId;
-
-    let command: unknown;
-    try {
-        command = JSON.parse(outer.payload.resource) as unknown;
-    } catch {
-        return toUnavailableOperationIdentity(entry.key.topicId, 'corrupt');
-    }
-    if (!isRecord(command) || typeof command.type !== 'string') {
-        return toUnavailableOperationIdentity(entry.key.topicId, 'corrupt');
-    }
-    if (!APP_INBOX_OPERATIONS.has(dispatchedOperation) ||
-        !APP_INBOX_OPERATIONS.has(command.type)) {
-        return toUnavailableOperationIdentity(entry.key.topicId, 'unavailable');
-    }
-    if (dispatchedOperation !== command.type ||
-        !isOperationForTopic(dispatchedOperation, entry.key.topicId)) {
-        return toUnavailableOperationIdentity(entry.key.topicId, 'corrupt');
-    }
-    return {
-        operation: dispatchedOperation as AppInboxType,
-        operationSource: 'command',
-    };
-}
-
-function toUnavailableOperationIdentity(
-    topicId: string,
-    operationSource: 'corrupt' | 'unavailable',
-): AppInboxOperationIdentity {
-    const operation = topicId === APP_INBOX_GROUP_TOPIC
-        ? 'APP_INBOX_GROUP_OPERATION_UNAVAILABLE'
-        : topicId === APP_INBOX_CLIENT_TOPIC
-        ? 'APP_INBOX_CLIENT_OPERATION_UNAVAILABLE'
-        : 'APP_INBOX_OPERATION_UNAVAILABLE';
-    return { operation, operationSource };
-}
-
-function isOperationForTopic(operation: string, topicId: string): boolean {
-    return topicId === APP_INBOX_GROUP_TOPIC
-        ? operation.startsWith('GROUP_')
-        : topicId === APP_INBOX_CLIENT_TOPIC && operation.startsWith('CLIENT_');
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return value !== null && typeof value === 'object' && !Array.isArray(value);
 }

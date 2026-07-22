@@ -280,6 +280,160 @@ describe('AppInboxService registered handler finalization', () => {
             expect.objectContaining({ status: EntityStatus.FAILED }),
         ]);
     });
+
+    it.each([
+        {
+            name: 'known outer and nested mismatch',
+            outerType: AppInboxType.GROUP_UPDATE as string,
+            nested: { kind: 'operation' as const, type: AppInboxType.GROUP_CREATE as string },
+            topicId: 'app-inbox.group-state',
+            valid: false,
+        },
+        {
+            name: 'missing nested type',
+            outerType: AppInboxType.GROUP_CREATE as string,
+            nested: { kind: 'missing' as const },
+            topicId: 'app-inbox.group-state',
+            valid: false,
+        },
+        {
+            name: 'unknown removed nested type',
+            outerType: AppInboxType.GROUP_CREATE as string,
+            nested: { kind: 'operation' as const, type: 'REMOVED_GROUP_password' },
+            topicId: 'app-inbox.group-state',
+            valid: false,
+        },
+        {
+            name: 'unknown removed outer type with a registered callback',
+            outerType: 'REMOVED_GROUP_password',
+            nested: { kind: 'operation' as const, type: 'REMOVED_GROUP_password' },
+            topicId: 'app-inbox.group-state',
+            valid: false,
+        },
+        {
+            name: 'wrong durable queue topic',
+            outerType: AppInboxType.GROUP_CREATE as string,
+            nested: { kind: 'operation' as const, type: AppInboxType.GROUP_CREATE as string },
+            topicId: 'app-inbox.client-state',
+            valid: false,
+        },
+        {
+            name: 'corrupt nested JSON',
+            outerType: AppInboxType.GROUP_CREATE as string,
+            nested: { kind: 'corrupt' as const },
+            topicId: 'app-inbox.group-state',
+            valid: false,
+        },
+        {
+            name: 'valid outer nested and topic agreement',
+            outerType: AppInboxType.GROUP_CREATE as string,
+            nested: { kind: 'operation' as const, type: AppInboxType.GROUP_CREATE as string },
+            topicId: 'app-inbox.group-state',
+            valid: true,
+        },
+        {
+            name: 'valid operation-specific durable topic agreement',
+            outerType: AppInboxType.CLIENT_EXPIRED_SESSIONS as string,
+            nested: {
+                kind: 'operation' as const,
+                type: AppInboxType.CLIENT_EXPIRED_SESSIONS as string,
+            },
+            topicId: AppInboxType.CLIENT_EXPIRED_SESSIONS as string,
+            valid: true,
+        },
+    ].flatMap((testCase) => [
+        { ...testCase, attempt: 1 },
+        { ...testCase, attempt: 19 },
+    ]))('validates $name before attempt $attempt handler dispatch', async ({
+        outerType,
+        nested,
+        topicId,
+        valid,
+        attempt,
+    }) => {
+        const timing: RallarTimingEvent[] = [];
+        const harness = createRegisteredHandlerHarness({
+            timing: (event) => timing.push(event),
+            topicId,
+        });
+        const handler = vi.fn(async () => ({ status: 'accepted' }));
+        harness.service.onStateMessage(outerType as AppInboxType, handler);
+        harness.service.processEntryNoWaiting(harness.enqueue);
+        const entry = await waitForRegisteredHandlerEntry(harness.queue);
+        await harness.queue.enqueue({
+            ...entry,
+            resource: toRegisteredHandlerIdentityResource(entry, { outerType, nested }),
+            status: EntityStatus.NEW,
+            dequeueAudit: { attempts: attempt - 1 },
+        });
+
+        await harness.reader.dequeueInbox(
+            InboxQueueReader.INBOX_DEQUEUE_TYPES,
+            createResilience(),
+        );
+        const finalized = harness.readEntry()!;
+        const result = harness.results.entries.get(toKeyAsString(finalized.key));
+
+        expect(finalized.dequeueAudit.attempts).toBe(attempt);
+        expect(finalized.dequeueAudit.nextTs).toBeUndefined();
+        if (valid) {
+            expect(handler).toHaveBeenCalledTimes(1);
+            expect(finalized.status).toBe(EntityStatus.COMPLETED);
+            expect(result?.status).toBe(EntityStatus.COMPLETED);
+        } else {
+            expect(handler).not.toHaveBeenCalled();
+            expect(finalized.status).toBe(EntityStatus.FAILED);
+            expect(result?.status).toBe(EntityStatus.FAILED);
+            expect(JSON.parse(result!.resource)).toMatchObject({
+                code: 'app-inbox-malformed-command',
+                status: 400,
+            });
+            expect(result?.resource).not.toContain('password');
+        }
+        expect(timing).not.toEqual(expect.arrayContaining([
+            expect.objectContaining({ operation: 'queue-retry' }),
+        ]));
+
+        await harness.reader.dequeueInbox(
+            InboxQueueReader.INBOX_DEQUEUE_TYPES,
+            createResilience(),
+        );
+        expect(harness.readEntry()?.dequeueAudit.attempts).toBe(attempt);
+        expect(handler).toHaveBeenCalledTimes(valid ? 1 : 0);
+    });
+
+    it('prevents a mismatched identity from entering a transaction-owned mutation callback', async () => {
+        const harness = createRegisteredHandlerHarness();
+        let mutationCommitted = false;
+        const handler = vi.fn(async (_data, context) =>
+            await harness.service.commit(context, async () => {
+                mutationCommitted = true;
+                return { status: 'accepted' };
+            }));
+        harness.service.onStateMessage(AppInboxType.GROUP_UPDATE, handler);
+        harness.service.processEntryNoWaiting(harness.enqueue);
+        const entry = await waitForRegisteredHandlerEntry(harness.queue);
+        await harness.queue.enqueue({
+            ...entry,
+            resource: toRegisteredHandlerIdentityResource(entry, {
+                outerType: AppInboxType.GROUP_UPDATE,
+                nested: {
+                    kind: 'operation',
+                    type: AppInboxType.GROUP_CREATE,
+                },
+            }),
+        });
+
+        await harness.reader.dequeueInbox(
+            InboxQueueReader.INBOX_DEQUEUE_TYPES,
+            createResilience(),
+        );
+
+        expect(handler).not.toHaveBeenCalled();
+        expect(mutationCommitted).toBe(false);
+        expect(harness.readEntry()?.status).toBe(EntityStatus.FAILED);
+        expect(harness.readEntry()?.dequeueAudit.attempts).toBe(1);
+    });
 });
 
 describe('AppInbox error classification', () => {
@@ -680,6 +834,7 @@ class RegisteredHandlerResults {
 function createRegisteredHandlerHarness(options: Readonly<{
     failResultWriteAfter?: number;
     timing?: (event: RallarTimingEvent) => void;
+    topicId?: string;
 }> = {}) {
     const queue = new RegisteredHandlerInbox();
     const results = new RegisteredHandlerResults(options.failResultWriteAfter);
@@ -702,6 +857,7 @@ function createRegisteredHandlerHarness(options: Readonly<{
     );
     const enqueue = {
         type: AppInboxType.GROUP_CREATE,
+        topicId: options.topicId ?? 'app-inbox.group-state',
         resourceId: 'registered-handler-request',
         contextId: 'group-1',
         data: { requestId: 'registered-handler-request' },
@@ -729,6 +885,31 @@ async function waitForRegisteredHandlerEntry(
         await new Promise((resolve) => setTimeout(resolve, 0));
     }
     throw new Error('Expected registered handler entry');
+}
+
+function toRegisteredHandlerIdentityResource(
+    entry: ResourceEntry,
+    identity: Readonly<{
+        outerType: string;
+        nested:
+            | Readonly<{ kind: 'operation'; type: string }>
+            | Readonly<{ kind: 'missing' }>
+            | Readonly<{ kind: 'corrupt' }>;
+    }>,
+): string {
+    const message = JSON.parse(entry.resource) as {
+        payload: { typeId: string; resource: string };
+    };
+    message.payload.typeId = identity.outerType;
+    message.payload.resource = identity.nested.kind === 'corrupt'
+        ? '{"secret":"nested-password"'
+        : JSON.stringify(identity.nested.kind === 'missing'
+            ? { data: { secret: 'nested-password' } }
+            : {
+                type: identity.nested.type,
+                data: { secret: 'nested-password' },
+            });
+    return JSON.stringify(message);
 }
 
 type AtomicState = {

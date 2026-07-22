@@ -48,6 +48,10 @@ import {
     toJsonWireAppInboxEnqueue,
     toLogicalAppInboxCommand,
 } from './app-inbox-command-wire.ts';
+import {
+    AppInboxCommandIdentityError,
+    validateAppInboxCommandIdentity,
+} from './app-inbox-command-identity.ts';
 
 export const SIMPLER_GROUP_STATE_APP_INBOX_TOPIC = 'app-inbox.group-state';
 export const SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC = 'app-inbox.client-state';
@@ -425,9 +429,13 @@ export class AppInboxService {
                         },
                         async () => {
                             try {
-                                const enqueue = JSON.parse(
-                                    message.payload.resource,
-                                ) as AppInboxEnqueueInput<V>;
+                                const identity = validateAppInboxCommandIdentity(entry);
+                                if (!identity.valid) {
+                                    throw new AppInboxCommandIdentityError(
+                                        identity.identity.operationSource,
+                                    );
+                                }
+                                const enqueue = identity.command as AppInboxEnqueueInput<V>;
                                 context = { enqueue, message, entry };
                                 this.transactionWriter.begin(context);
                                 const result = await this.timePhase(

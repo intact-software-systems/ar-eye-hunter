@@ -15,7 +15,10 @@ import {
 import { CircuitBreakerPolicy } from '@shared/resilience/Resilience.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import { SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC } from '@shared-server/rallar-system/services/AppInboxService.ts';
+import {
+    SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
+    SIMPLER_GROUP_STATE_APP_INBOX_TOPIC,
+} from '@shared-server/rallar-system/services/AppInboxService.ts';
 import {
     AppInboxService,
     AppGroupInboxService,
@@ -140,7 +143,7 @@ describe('AppInboxService', () => {
             results as never,
             createAppInboxTestDatabase(queue, results),
             'server-12345678',
-            SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
+            SIMPLER_GROUP_STATE_APP_INBOX_TOPIC,
             undefined,
             {
                 waitMaxElapsedMsecs: 5_000,
