@@ -18,6 +18,16 @@ export type StartProcessingEntitySkipped = Readonly<{
     key: Key;
 }>;
 
+export class ResourceInboxInvariantCorruptionError extends Error {
+    readonly code = 'resource-inbox-invariant-corruption';
+    readonly status = 409;
+
+    constructor(readonly key: Key, message: string) {
+        super(`${message}: ${key.contextId}/${key.topicId}/${key.resourceId}`);
+        this.name = 'ResourceInboxInvariantCorruptionError';
+    }
+}
+
 export class ResourceInboxRepository {
     static readonly MAX_ROWS_TO_RETURN = 50;
 
@@ -80,6 +90,78 @@ export class ResourceInboxRepository {
 
         if (rows.length !== 1) throw new Error('Insert failed: expected exactly one row');
         return toDomain(rows[0]);
+    }
+
+    async writeIfAbsentOrMatch(
+        entry: ResourceEntry,
+    ): Promise<'inserted' | 'matched'> {
+        const systemDate = toSystemDate(entry);
+        const inserted = await this.sql<ResourceInboxRow[]>`
+            insert into resource_inbox (ri_resource_id,
+                                        ri_topic_id,
+                                        ri_resource,
+                                        ri_type_id,
+                                        ri_status,
+                                        fk_ext_bank_id,
+                                        system_date,
+                                        created_by,
+                                        created_ts,
+                                        expire_ts,
+                                        start_ts,
+                                        end_ts,
+                                        next_ts,
+                                        ri_attempts)
+            values (${entry.key.resourceId},
+                    ${entry.key.topicId},
+                    ${entry.resource},
+                    ${entry.typeId},
+                    ${entry.status},
+                    ${entry.key.contextId},
+                    ${systemDate},
+                    ${entry.audit.createdBy},
+                    ${toPgTimestamp(entry.audit.createdTs)},
+                    ${toPgTimestamp(entry.audit.expiryTs)},
+                    ${entry.dequeueAudit.startTs ? toPgTimestamp(entry.dequeueAudit.startTs) : null},
+                    ${entry.dequeueAudit.endTs ? toPgTimestamp(entry.dequeueAudit.endTs) : null},
+                    ${entry.dequeueAudit.nextTs ? toPgTimestamp(entry.dequeueAudit.nextTs) : null},
+                    ${entry.dequeueAudit.attempts ?? 0})
+            on conflict (fk_ext_bank_id, ri_resource_id, ri_topic_id)
+                do nothing
+            returning *
+        `;
+
+        if (inserted.length === 1) {
+            return 'inserted';
+        }
+        if (inserted.length !== 0) {
+            throw new ResourceInboxInvariantCorruptionError(
+                entry.key,
+                'Resource inbox insert returned an unexpected row count',
+            );
+        }
+
+        const rows = await this.sql<ResourceInboxRow[]>`
+            select *
+            from resource_inbox
+            where ri_topic_id = ${entry.key.topicId}
+              and ri_resource_id = ${entry.key.resourceId}
+              and fk_ext_bank_id = ${entry.key.contextId}
+            limit 1
+        `;
+        const existing = rows[0];
+        if (
+            rows.length !== 1 ||
+            !existing ||
+            !isValidResourceInboxLifecycle(existing) ||
+            !hasMatchingImmutableResourceInboxContent(existing, entry)
+        ) {
+            throw new ResourceInboxInvariantCorruptionError(
+                entry.key,
+                'Resource inbox immutable content or lifecycle differs',
+            );
+        }
+
+        return 'matched';
     }
 
     async replace(entry: ResourceEntry): Promise<ResourceEntry> {
@@ -463,6 +545,36 @@ export class ResourceInboxRepository {
         return rows.length;
     }
 
+    async finishReserved(
+        key: Key,
+        expectedAttempts: number,
+        status: EntityStatus.COMPLETED | EntityStatus.FAILED,
+        completedAt: Date,
+    ): Promise<boolean> {
+        if (
+            status !== EntityStatus.COMPLETED &&
+            status !== EntityStatus.FAILED
+        ) {
+            throw new Error(
+                'Resource inbox reservation finish status must be COMPLETED or FAILED',
+            );
+        }
+
+        const rows = await this.sql<{ ri_row_id: bigint }[]>`
+            update resource_inbox
+            set ri_status = ${status}, end_ts = ${completedAt}, next_ts = null
+            where ri_topic_id = ${key.topicId}
+              and ri_resource_id = ${key.resourceId}
+              and fk_ext_bank_id = ${key.contextId}
+              and ri_status = 'RESERVED'
+              and ri_attempts = ${expectedAttempts}
+              and expire_ts > now()
+            returning ri_row_id
+        `;
+
+        return rows.length === 1;
+    }
+
     async upsert(entry: ResourceEntry): Promise<ResourceEntry> {
         const systemDate = toSystemDate(entry);
 
@@ -537,6 +649,60 @@ export class ResourceInboxRepository {
 
         return rows.length;
     }
+}
+
+const RESOURCE_INBOX_STATUSES = new Set<string>(Object.values(EntityStatus));
+
+function isValidResourceInboxLifecycle(row: ResourceInboxRow): boolean {
+    const attempts = row.ri_attempts == null ? 0 : Number(row.ri_attempts);
+    if (
+        !RESOURCE_INBOX_STATUSES.has(row.ri_status) ||
+        !Number.isSafeInteger(attempts) ||
+        attempts < 0
+    ) {
+        return false;
+    }
+
+    try {
+        toDomain(row);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+function hasMatchingImmutableResourceInboxContent(
+    row: ResourceInboxRow,
+    entry: ResourceEntry,
+): boolean {
+    let persistedEntry: ResourceEntry;
+    let persistedCandidate: ResourceEntry;
+    try {
+        persistedEntry = toDomain(row);
+        persistedCandidate = toDomain({
+            ...row,
+            ri_resource_id: entry.key.resourceId,
+            ri_topic_id: entry.key.topicId,
+            ri_resource: entry.resource,
+            ri_type_id: entry.typeId,
+            fk_ext_bank_id: entry.key.contextId,
+            system_date: toSystemDate(entry),
+            created_by: entry.audit.createdBy,
+            created_ts: toPgTimestamp(entry.audit.createdTs),
+            expire_ts: toPgTimestamp(entry.audit.expiryTs),
+        });
+    } catch {
+        return false;
+    }
+
+    return persistedEntry.key.topicId === persistedCandidate.key.topicId &&
+        persistedEntry.key.resourceId === persistedCandidate.key.resourceId &&
+        persistedEntry.key.contextId === persistedCandidate.key.contextId &&
+        persistedEntry.typeId === persistedCandidate.typeId &&
+        persistedEntry.resource === persistedCandidate.resource &&
+        persistedEntry.audit.createdBy === persistedCandidate.audit.createdBy &&
+        persistedEntry.audit.createdTs.equals(persistedCandidate.audit.createdTs) &&
+        persistedEntry.audit.expiryTs.equals(persistedCandidate.audit.expiryTs);
 }
 
 export async function initResourceInboxExpiryEviction(

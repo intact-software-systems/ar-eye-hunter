@@ -58,6 +58,7 @@ export * from './http/rate-limit-service.ts';
 export * from './http/request-auth-service.ts';
 export * from './http/production-env-hardening.ts';
 export * from './postgres/PostgresSqlClient.ts';
+export * from './postgres/run-in-transaction.ts';
 export * from './postgres/al-runtime/createPSqlALRuntimeStores.ts';
 export * from './postgres/al-runtime/PSqlInboundAdmissionBackend.ts';
 export * from './postgres/al-runtime/PSqlOutboundAdmissionBackend.ts';

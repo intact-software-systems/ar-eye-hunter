@@ -36,6 +36,148 @@ afterEach(() => {
 });
 
 describe('ResourceInboxRepository', () => {
+    it('inserts immutable outbox content once and matches an operationally advanced replay', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+
+        const harness = createSqlHarness();
+        const repo = new repositoryModule.ResourceInboxRepository(harness.sql);
+        const entry = createEntry(createKey('idempotent-outbox'), {
+            text: 'immutable',
+            createdBy: 'alice',
+            createdTs: Temporal.PlainDateTime.from('2026-01-01T00:00:00'),
+            expiryTs: Temporal.Instant.from('2026-01-01T00:05:00Z'),
+        });
+
+        await expect(repo.writeIfAbsentOrMatch(entry)).resolves.toBe('inserted');
+
+        const stored = findStoredRow(harness.rows, entry.key);
+        if (!stored) throw new Error('Expected inserted resource inbox row');
+        stored.created_ts = '2026-01-01 00:00:00';
+        stored.expire_ts = '2026-01-01 00:05:00+00';
+        stored.ri_status = EntityStatus.COMPLETED;
+        stored.ri_attempts = 3n;
+        stored.start_ts = '2026-01-01T00:01:00.000Z';
+        stored.end_ts = '2026-01-01T00:01:01.000Z';
+        stored.next_ts = '2026-01-01T00:01:02.000Z';
+
+        await expect(repo.writeIfAbsentOrMatch(entry)).resolves.toBe('matched');
+    });
+
+    it.each([
+        ['topic key', (row: ResourceInboxRow) => { row.ri_topic_id = 'other-topic'; }],
+        ['resource key', (row: ResourceInboxRow) => { row.ri_resource_id = 'other-resource'; }],
+        ['context key', (row: ResourceInboxRow) => { row.fk_ext_bank_id = 'other-context'; }],
+        ['queue type', (row: ResourceInboxRow) => { row.ri_type_id = 'app.outbox'; }],
+        ['persisted resource representation', (row: ResourceInboxRow) => {
+            row.ri_resource = '{ "text": "immutable" }';
+        }],
+        ['creator', (row: ResourceInboxRow) => { row.created_by = 'mallory'; }],
+        ['creation timestamp', (row: ResourceInboxRow) => {
+            row.created_ts = '2026-01-01T00:00:01.000Z';
+        }],
+        ['expiry', (row: ResourceInboxRow) => {
+            row.expire_ts = '2026-01-01T00:06:00.000Z';
+        }],
+    ])('rejects a replay whose immutable %s differs', async (_field, mutate) => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+
+        const harness = createSqlHarness();
+        const repo = new repositoryModule.ResourceInboxRepository(harness.sql);
+        const entry = createEntry(createKey(`collision-${_field}`), {
+            text: 'immutable',
+            createdBy: 'alice',
+            createdTs: Temporal.PlainDateTime.from('2026-01-01T00:00:00'),
+            expiryTs: Temporal.Instant.from('2026-01-01T00:05:00Z'),
+        });
+
+        await repo.writeIfAbsentOrMatch(entry);
+        const stored = findStoredRow(harness.rows, entry.key);
+        if (!stored) throw new Error('Expected inserted resource inbox row');
+        mutate(stored);
+
+        await expect(repo.writeIfAbsentOrMatch(entry)).rejects.toBeInstanceOf(
+            repositoryModule.ResourceInboxInvariantCorruptionError,
+        );
+    });
+
+    it('rejects an invalid stored lifecycle when immutable content matches', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+
+        const harness = createSqlHarness();
+        const repo = new repositoryModule.ResourceInboxRepository(harness.sql);
+        const entry = createEntry(createKey('invalid-lifecycle'), {
+            text: 'immutable',
+            expiryTs: Temporal.Instant.from('2026-01-01T00:05:00Z'),
+        });
+
+        await repo.writeIfAbsentOrMatch(entry);
+        const stored = findStoredRow(harness.rows, entry.key);
+        if (!stored) throw new Error('Expected inserted resource inbox row');
+        stored.ri_status = 'NOT_A_STATUS';
+
+        await expect(repo.writeIfAbsentOrMatch(entry)).rejects.toBeInstanceOf(
+            repositoryModule.ResourceInboxInvariantCorruptionError,
+        );
+    });
+
+    it('finishes only the current live reservation with the expected attempt', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+
+        const harness = createSqlHarness();
+        const repo = new repositoryModule.ResourceInboxRepository(harness.sql);
+        const completedAt = new Date('2026-01-01T00:01:00.000Z');
+        const entry = createEntry(createKey('reserved-finish'), {
+            text: 'reserved',
+            expiryTs: Temporal.Instant.from('2026-01-01T00:05:00Z'),
+        });
+        await repo.write(entry);
+        const stored = findStoredRow(harness.rows, entry.key);
+        if (!stored) throw new Error('Expected inserted resource inbox row');
+        stored.ri_status = EntityStatus.RESERVED;
+        stored.ri_attempts = 2n;
+
+        await expect(repo.finishReserved(
+            entry.key,
+            1,
+            EntityStatus.COMPLETED,
+            completedAt,
+        )).resolves.toBe(false);
+        await expect(repo.finishReserved(
+            entry.key,
+            2,
+            EntityStatus.COMPLETED,
+            completedAt,
+        )).resolves.toBe(true);
+
+        expect(stored.ri_status).toBe(EntityStatus.COMPLETED);
+        expect(stored.end_ts).toBe(completedAt.toISOString());
+        expect(stored.next_ts).toBeNull();
+        await expect(repo.finishReserved(
+            entry.key,
+            2,
+            EntityStatus.FAILED,
+            completedAt,
+        )).resolves.toBe(false);
+    });
+
+    it('rejects a nonterminal finish status before issuing SQL', async () => {
+        const harness = createSqlHarness();
+        const repo = new repositoryModule.ResourceInboxRepository(harness.sql);
+        const sqlCallsBefore = harness.sqlCalls.length;
+
+        await expect(repo.finishReserved(
+            createKey('invalid-finish-status'),
+            1,
+            EntityStatus.RETRY as EntityStatus.COMPLETED,
+            new Date('2026-01-01T00:01:00.000Z'),
+        )).rejects.toThrow('COMPLETED or FAILED');
+        expect(harness.sqlCalls).toHaveLength(sqlCallsBefore);
+    });
+
     it('keeps write strict while writeIfAbsent returns active rows and replaces expired rows', async () => {
         vi.useFakeTimers();
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
@@ -230,6 +372,7 @@ describe('ResourceInboxRepository', () => {
 
 function createSqlHarness() {
     const rows = new Map<string, ResourceInboxRow>();
+    const sqlCalls: string[] = [];
     let nextRowId = 1n;
 
     const sql = ((
@@ -241,6 +384,7 @@ function createSqlHarness() {
         }
 
         const query = normalizeQuery(stringsOrValues);
+        sqlCalls.push(query);
 
         if (
             query.includes('insert into resource_inbox') &&
@@ -251,6 +395,23 @@ function createSqlHarness() {
 
             if (rows.has(key)) {
                 throw duplicateKeyError(key);
+            }
+
+            rows.set(key, incoming);
+            nextRowId += 1n;
+            return [cloneRow(incoming)];
+        }
+
+        if (
+            query.includes('insert into resource_inbox') &&
+            query.includes('on conflict (fk_ext_bank_id, ri_resource_id, ri_topic_id)') &&
+            query.includes('do nothing')
+        ) {
+            const incoming = toRowFromInsert(values, nextRowId);
+            const key = toCompositeKey(incoming);
+
+            if (rows.has(key)) {
+                return [];
             }
 
             rows.set(key, incoming);
@@ -358,6 +519,30 @@ function createSqlHarness() {
 
         if (
             query.includes('update resource_inbox') &&
+            query.includes("ri_status = 'reserved'") &&
+            query.includes('ri_attempts =') &&
+            query.includes('returning ri_row_id')
+        ) {
+            const [status, completedAt, topicId, resourceId, contextId, expectedAttempts] =
+                values;
+            const row = rows.get(`${contextId}::${topicId}::${resourceId}`);
+            if (
+                !row ||
+                row.ri_status !== EntityStatus.RESERVED ||
+                row.ri_attempts !== BigInt(expectedAttempts as number) ||
+                isExpired(row.expire_ts)
+            ) {
+                return [];
+            }
+
+            row.ri_status = status as string;
+            row.end_ts = toOptionalString(completedAt);
+            row.next_ts = null;
+            return [{ ri_row_id: row.ri_row_id }];
+        }
+
+        if (
+            query.includes('update resource_inbox') &&
             query.includes('set ri_status =') &&
             query.includes('ri_attempts =') &&
             query.includes('expire_ts > now()')
@@ -413,6 +598,7 @@ function createSqlHarness() {
 
     return {
         rows,
+        sqlCalls,
         sql: sql as never,
     };
 }
