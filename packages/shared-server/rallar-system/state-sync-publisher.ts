@@ -12,6 +12,12 @@ import type {
     GroupSnapshot,
     GroupStateCausalRevision,
 } from '@shared/api/group-types.ts';
+import {
+    validateAuthoritativeClientEvent,
+    validateAuthoritativeClientSnapshot,
+    validateAuthoritativeGroupEvent,
+    validateAuthoritativeGroupSnapshot,
+} from '@shared/api/authoritative-state-validation.ts';
 import { newALBroadcastMessage, newALEventRoute } from '@shared/al-contracts/al-contract.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALOutboundEnqueueResult } from '@shared/alm/ALOutboundMessageRuntime.ts';
@@ -88,16 +94,12 @@ export function computeClientStateSyncEntries(
     validateComputedStateSyncFacts(computed, senderId);
     if (
         !Number.isSafeInteger(computed.acceptedCausalRevision) ||
-        computed.acceptedCausalRevision < 0 ||
-        computed.effects.some((effect) =>
-            !sameClientRef(computed.aggregateRef, effect.payload) ||
-            (effect.payloadKind === 'snapshot'
-                ? effect.payload.stateRevision
-                : effect.payload.snapshotVersion) !==
-                computed.acceptedCausalRevision
-        )
+        computed.acceptedCausalRevision < 0
     ) {
         throw new TypeError('Computed client state sync differs from accepted authority');
+    }
+    for (const effect of computed.effects) {
+        validateClientStateSyncEffect(computed, effect);
     }
     return computed.effects.map((effect) =>
         toStateSyncEntry(
@@ -118,17 +120,11 @@ export function computeGroupStateSyncEntries(
     senderId: string,
 ): readonly ResourceEntry[] {
     validateComputedStateSyncFacts(computed, senderId);
-    if (
-        !isValidGroupCausalRevision(computed.acceptedCausalRevision) ||
-        computed.effects.some((effect) =>
-            !sameGroupRef(computed.aggregateRef, effect.payload) ||
-            effect.payload.causalRevision.groupRevision !==
-                computed.acceptedCausalRevision.groupRevision ||
-            effect.payload.causalRevision.presenceRevision !==
-                computed.acceptedCausalRevision.presenceRevision
-        )
-    ) {
+    if (!isValidGroupCausalRevision(computed.acceptedCausalRevision)) {
         throw new TypeError('Computed group state sync differs from accepted authority');
+    }
+    for (const effect of computed.effects) {
+        validateGroupStateSyncEffect(computed, effect);
     }
     return computed.effects.map((effect) => {
         const topicId = effect.payloadKind === 'event'
@@ -149,16 +145,20 @@ export function computeGroupStateSyncEntries(
 
 export async function writeClientStateSync(
     transaction: PSqlTransactionSql,
-    entries: readonly ResourceEntry[],
+    computed: ComputedClientStateSync,
+    senderId: string,
 ): Promise<readonly ResourceEntry[]> {
+    const entries = computeClientStateSyncEntries(computed, senderId);
     await writeStateSyncEntries(transaction, entries);
     return entries;
 }
 
 export async function writeGroupStateSync(
     transaction: PSqlTransactionSql,
-    entries: readonly ResourceEntry[],
+    computed: ComputedGroupStateSync,
+    senderId: string,
 ): Promise<readonly ResourceEntry[]> {
+    const entries = computeGroupStateSyncEntries(computed, senderId);
     await writeStateSyncEntries(transaction, entries);
     return entries;
 }
@@ -280,13 +280,33 @@ function validateComputedStateSyncFacts(
     senderId: string,
 ): void {
     if (
+        typeof computed !== 'object' ||
+        computed === null ||
+        typeof computed.commandId !== 'string' ||
         computed.commandId.length === 0 ||
+        typeof senderId !== 'string' ||
         senderId.length === 0 ||
         !Number.isSafeInteger(computed.createdAtEpochMs) ||
         !Number.isSafeInteger(computed.expireAtEpochMs) ||
         computed.createdAtEpochMs < 0 ||
         computed.expireAtEpochMs <= computed.createdAtEpochMs ||
+        !Array.isArray(computed.effects) ||
         computed.effects.length === 0 ||
+        typeof computed.aggregateRef !== 'object' ||
+        computed.aggregateRef === null ||
+        typeof computed.aggregateRef.applicationId !== 'string' ||
+        computed.aggregateRef.applicationId.length === 0 ||
+        typeof computed.aggregateRef.workspaceId !== 'string' ||
+        computed.aggregateRef.workspaceId.length === 0 ||
+        typeof computed.audience !== 'object' ||
+        computed.audience === null ||
+        !['principal', 'group'].includes(computed.audience.kind) ||
+        typeof computed.audience.applicationId !== 'string' ||
+        computed.audience.applicationId.length === 0 ||
+        typeof computed.audience.workspaceId !== 'string' ||
+        computed.audience.workspaceId.length === 0 ||
+        typeof computed.audience.resourceId !== 'string' ||
+        computed.audience.resourceId.length === 0 ||
         computed.audience.applicationId !== computed.aggregateRef.applicationId ||
         computed.audience.workspaceId !== computed.aggregateRef.workspaceId
     ) {
@@ -305,6 +325,78 @@ function validateComputedStateSyncFacts(
             ))
     ) {
         throw new TypeError('Computed state sync audience differs from aggregate');
+    }
+}
+
+function validateClientStateSyncEffect(
+    computed: ComputedClientStateSync,
+    effect: ComputedClientStateSyncEffect,
+): void {
+    if (
+        typeof effect !== 'object' ||
+        effect === null ||
+        effect.effectKind !== 'principal-state'
+    ) {
+        throw new TypeError('Computed client state sync effect kind is invalid');
+    }
+    if (effect.payloadKind === 'snapshot') {
+        validateAuthoritativeClientSnapshot(effect.payload, computed.aggregateRef);
+        if (
+            !sameClientRef(computed.aggregateRef, effect.payload) ||
+            effect.payload.stateRevision !== computed.acceptedCausalRevision
+        ) {
+            throw new TypeError(
+                'Computed client state sync snapshot differs from accepted authority',
+            );
+        }
+        return;
+    }
+    if (effect.payloadKind === 'event') {
+        validateAuthoritativeClientEvent(effect.payload, computed.aggregateRef);
+        if (
+            !sameClientRef(computed.aggregateRef, effect.payload) ||
+            effect.payload.snapshotVersion !== computed.acceptedCausalRevision
+        ) {
+            throw new TypeError(
+                'Computed client state sync event differs from accepted authority',
+            );
+        }
+        return;
+    }
+    throw new TypeError('Computed client state sync payload kind is invalid');
+}
+
+function validateGroupStateSyncEffect(
+    computed: ComputedGroupStateSync,
+    effect: ComputedGroupStateSyncEffect,
+): void {
+    if (typeof effect !== 'object' || effect === null) {
+        throw new TypeError('Computed group state sync effect is invalid');
+    }
+    if (effect.payloadKind === 'snapshot') {
+        if (
+            effect.effectKind !== 'member-state' &&
+            effect.effectKind !== 'scope-directory'
+        ) {
+            throw new TypeError('Computed group state sync effect kind is invalid');
+        }
+        validateAuthoritativeGroupSnapshot(effect.payload, computed.aggregateRef);
+    } else if (effect.payloadKind === 'event') {
+        if (effect.effectKind !== 'member-state') {
+            throw new TypeError('Computed group state sync effect kind is invalid');
+        }
+        validateAuthoritativeGroupEvent(effect.payload, computed.aggregateRef);
+    } else {
+        throw new TypeError('Computed group state sync payload kind is invalid');
+    }
+    if (
+        !sameGroupRef(computed.aggregateRef, effect.payload) ||
+        effect.payload.causalRevision.groupRevision !==
+            computed.acceptedCausalRevision.groupRevision ||
+        effect.payload.causalRevision.presenceRevision !==
+            computed.acceptedCausalRevision.presenceRevision
+    ) {
+        throw new TypeError('Computed group state sync differs from accepted authority');
     }
 }
 

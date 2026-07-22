@@ -6,8 +6,12 @@ import {
   InMemoryQueueBox,
   ResilienceDto,
 } from '@shared/mod.ts';
-import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
-import type { ClientEvent } from '@shared/api/client-types.ts';
+import type {
+  AuditStamp,
+  GroupEvent,
+  GroupSnapshot,
+} from '@shared/api/group-types.ts';
+import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
@@ -38,6 +42,233 @@ const CREATED_AT_EPOCH_MS = 1_800_000_000_000;
 const EXPIRE_AT_EPOCH_MS = 1_800_000_060_000;
 
 describe('direct resource outbox writes', () => {
+  it('rejects an incomplete canonical client event payload', async () => {
+    const incomplete = {
+      ...createClientEvent(),
+      eventType: undefined,
+    } as unknown as ClientEvent;
+
+    const computed = createComputedClientEventStateSync(incomplete);
+    expect(() => computeClientStateSyncEntries(computed, 'server-1')).toThrow();
+    const database = createResourceInboxDatabase();
+    await expect(
+      runInTransaction(database.sql, async (transaction) => {
+        await writeClientStateSync(transaction, computed, 'server-1');
+      }),
+    ).rejects.toThrow();
+    expect(database.rows.size).toBe(0);
+  });
+
+  it('rejects an incomplete canonical client snapshot payload', async () => {
+    const snapshot = createClientSnapshot();
+    const principal = {
+      ...snapshot.principal,
+      username: undefined,
+    } as unknown as ClientSnapshot['principal'];
+    const incomplete = { ...snapshot, principal };
+
+    const computed = createComputedClientSnapshotStateSync(incomplete);
+    expect(() => computeClientStateSyncEntries(computed, 'server-1')).toThrow();
+    const database = createResourceInboxDatabase();
+    await expect(
+      runInTransaction(database.sql, async (transaction) => {
+        await writeClientStateSync(transaction, computed, 'server-1');
+      }),
+    ).rejects.toThrow();
+    expect(database.rows.size).toBe(0);
+  });
+
+  it('rejects an incomplete canonical group event payload', async () => {
+    const incomplete = {
+      ...createGroupEvent(),
+      eventType: undefined,
+    } as unknown as GroupEvent;
+
+    const computed = createComputedGroupEventStateSync(incomplete);
+    expect(() => computeGroupStateSyncEntries(computed, 'server-1')).toThrow();
+    const database = createResourceInboxDatabase();
+    await expect(
+      runInTransaction(database.sql, async (transaction) => {
+        await writeGroupStateSync(transaction, computed, 'server-1');
+      }),
+    ).rejects.toThrow();
+    expect(database.rows.size).toBe(0);
+  });
+
+  it('rejects an incomplete canonical group snapshot payload', async () => {
+    const snapshot = createGroupSnapshot();
+    const group = {
+      ...snapshot.group,
+      displayName: undefined,
+    } as unknown as GroupSnapshot['group'];
+    const incomplete = { ...snapshot, group };
+
+    const computed = createComputedGroupStateSync(incomplete);
+    expect(() => computeGroupStateSyncEntries(computed, 'server-1')).toThrow();
+    const database = createResourceInboxDatabase();
+    await expect(
+      runInTransaction(database.sql, async (transaction) => {
+        await writeGroupStateSync(transaction, computed, 'server-1');
+      }),
+    ).rejects.toThrow();
+    expect(database.rows.size).toBe(0);
+  });
+
+  it('rejects a non-canonical state-sync effect kind', () => {
+    const computed = createComputedClientEventStateSync(createClientEvent());
+    const forged = {
+      ...computed,
+      effects: [{ ...computed.effects[0], effectKind: 'forged-state' }],
+    } as unknown as ComputedClientStateSync;
+
+    expect(() => computeClientStateSyncEntries(forged, 'server-1')).toThrow();
+  });
+
+  it('replays all canonical state-sync payload families identically', () => {
+    const clientEvent = createComputedClientEventStateSync(createClientEvent());
+    const clientSnapshot = createComputedClientSnapshotStateSync(
+      createClientSnapshot(),
+    );
+    const groupEvent = createComputedGroupEventStateSync(createGroupEvent());
+    const groupSnapshot = createComputedGroupStateSync(createGroupSnapshot());
+
+    expect(computeClientStateSyncEntries(clientEvent, 'server-1')).toEqual(
+      computeClientStateSyncEntries(clientEvent, 'server-1'),
+    );
+    expect(computeClientStateSyncEntries(clientSnapshot, 'server-1')).toEqual(
+      computeClientStateSyncEntries(clientSnapshot, 'server-1'),
+    );
+    expect(computeGroupStateSyncEntries(groupEvent, 'server-1')).toEqual(
+      computeGroupStateSyncEntries(groupEvent, 'server-1'),
+    );
+    expect(computeGroupStateSyncEntries(groupSnapshot, 'server-1')).toEqual(
+      computeGroupStateSyncEntries(groupSnapshot, 'server-1'),
+    );
+  });
+
+  it('rejects wrong audience and mandatory scalar facts before a write', async () => {
+    const valid = createComputedGroupStateSync(createGroupSnapshot());
+    const wrongAudience = {
+      ...valid,
+      audience: { ...valid.audience, resourceId: 'wrong-group' },
+    } as ComputedGroupStateSync;
+    const missingCommandId = {
+      ...valid,
+      commandId: undefined,
+    } as unknown as ComputedGroupStateSync;
+    const database = createResourceInboxDatabase();
+
+    for (const computed of [wrongAudience, missingCommandId]) {
+      await expect(
+        runInTransaction(database.sql, async (transaction) => {
+          await writeGroupStateSync(transaction, computed, 'server-1');
+        }),
+      ).rejects.toThrow();
+    }
+    expect(database.rows.size).toBe(0);
+  });
+
+  it('rejects arbitrary client WS_OUTBOX entries at the public write boundary', async () => {
+    const [entry] = computeClientStateSyncEntries(
+      createComputedClientEventStateSync(createClientEvent()),
+      'server-1',
+    );
+    const message = JSON.parse(entry.resource);
+    const payload = JSON.parse(message.payload.resource);
+    delete payload.eventType;
+    message.payload.resource = JSON.stringify(payload);
+    const forged = { ...entry, resource: JSON.stringify(message) };
+    const database = createResourceInboxDatabase();
+
+    await expect(
+      runInTransaction(database.sql, async (transaction) => {
+        await (
+          writeClientStateSync as unknown as (
+            transaction: PSqlTransactionSql,
+            entries: readonly ResourceEntry[],
+          ) => Promise<readonly ResourceEntry[]>
+        )(transaction, [forged]);
+      }),
+    ).rejects.toThrow();
+    expect(database.rows.size).toBe(0);
+  });
+
+  it('rejects arbitrary group WS_OUTBOX entries at the public write boundary', async () => {
+    const [entry] = computeGroupStateSyncEntries(
+      createComputedGroupStateSync(createGroupSnapshot()),
+      'server-1',
+    );
+    const message = JSON.parse(entry.resource);
+    message.targets.groupRef.groupId = 'wrong-group';
+    const forged = { ...entry, resource: JSON.stringify(message) };
+    const database = createResourceInboxDatabase();
+
+    await expect(
+      runInTransaction(database.sql, async (transaction) => {
+        await (
+          writeGroupStateSync as unknown as (
+            transaction: PSqlTransactionSql,
+            entries: readonly ResourceEntry[],
+          ) => Promise<readonly ResourceEntry[]>
+        )(transaction, [forged]);
+      }),
+    ).rejects.toThrow();
+    expect(database.rows.size).toBe(0);
+  });
+
+  it('computes and revalidates valid client and group work inside public writes', async () => {
+    const database = createResourceInboxDatabase();
+    const client = createComputedClientEventStateSync(createClientEvent());
+    const group = createComputedGroupStateSync(createGroupSnapshot());
+
+    const clientEntries = await runInTransaction(
+      database.sql,
+      async (transaction) =>
+        await (
+          writeClientStateSync as unknown as (
+            transaction: PSqlTransactionSql,
+            computed: ComputedClientStateSync,
+            senderId: string,
+          ) => Promise<readonly ResourceEntry[]>
+        )(transaction, client, 'server-1'),
+    );
+    const groupEntries = await runInTransaction(
+      database.sql,
+      async (transaction) =>
+        await (
+          writeGroupStateSync as unknown as (
+            transaction: PSqlTransactionSql,
+            computed: ComputedGroupStateSync,
+            senderId: string,
+          ) => Promise<readonly ResourceEntry[]>
+        )(transaction, group, 'server-1'),
+    );
+
+    expect(clientEntries).toEqual(
+      computeClientStateSyncEntries(client, 'server-1'),
+    );
+    expect(groupEntries).toEqual(
+      computeGroupStateSyncEntries(group, 'server-1'),
+    );
+    await runInTransaction(database.sql, async (transaction) => {
+      await (
+        writeClientStateSync as unknown as (
+          transaction: PSqlTransactionSql,
+          computed: ComputedClientStateSync,
+          senderId: string,
+        ) => Promise<readonly ResourceEntry[]>
+      )(transaction, client, 'server-1');
+      await (
+        writeGroupStateSync as unknown as (
+          transaction: PSqlTransactionSql,
+          computed: ComputedGroupStateSync,
+          senderId: string,
+        ) => Promise<readonly ResourceEntry[]>
+      )(transaction, group, 'server-1');
+    });
+    expect(database.nestedBeginCalls).toBe(0);
+  });
+
   it('computes mandatory client WS_OUTBOX data without clocks, randomness, or routes', async () => {
     const event = createClientEvent();
     const computed: ComputedClientStateSync = {
@@ -81,7 +312,7 @@ describe('direct resource outbox writes', () => {
     });
     const database = createResourceInboxDatabase();
     await runInTransaction(database.sql, async (transaction) => {
-      await writeClientStateSync(transaction, [entry]);
+      await writeClientStateSync(transaction, computed, 'server-1');
     });
     expect(database.rows.get(toRowKey(entry))?.ri_resource).toBe(
       entry.resource,
@@ -92,12 +323,11 @@ describe('direct resource outbox writes', () => {
   it('writes final WS_OUTBOX entries through the received transaction', async () => {
     const database = createResourceInboxDatabase();
     const computed = createComputedGroupStateSync(createGroupSnapshot());
-    const computedEntries = computeGroupStateSyncEntries(computed, 'server-1');
 
     const entries = await runInTransaction(
       database.sql,
       async (transaction) =>
-        await writeGroupStateSync(transaction, computedEntries),
+        await writeGroupStateSync(transaction, computed, 'server-1'),
     );
 
     expect(database.beginCalls).toBe(1);
@@ -110,7 +340,7 @@ describe('direct resource outbox writes', () => {
     ).toBe(true);
 
     await runInTransaction(database.sql, async (transaction) => {
-      await writeGroupStateSync(transaction, computedEntries);
+      await writeGroupStateSync(transaction, computed, 'server-1');
     });
     expect(database.rows.size).toBe(entries.length);
 
@@ -187,6 +417,7 @@ describe('direct resource outbox writes', () => {
       acceptedCausalRevision: groupSnapshot.causalRevision,
       groupSnapshot,
       effectKind: 'rtc-topology-recompute',
+      payloadKind: 'group-revision',
       createdAtEpochMs: CREATED_AT_EPOCH_MS,
       expireAtEpochMs: EXPIRE_AT_EPOCH_MS,
     };
@@ -210,10 +441,98 @@ describe('direct resource outbox writes', () => {
     expect(message.id.msgId).toContain('group-command-1');
     const database = createResourceInboxDatabase();
     await runInTransaction(database.sql, async (transaction) => {
-      await writeRtcTopologyOutbox(transaction, first);
+      await writeRtcTopologyOutbox(transaction, computed, 'server-1');
     });
     expect(database.rows.get(toRowKey(first))?.ri_resource).toBe(
       first.resource,
+    );
+    expect(database.nestedBeginCalls).toBe(0);
+  });
+
+  it.each([
+    ['missing', undefined],
+    ['wrong', 'snapshot'],
+  ])('rejects %s RTC topology payload kind', async (_label, payloadKind) => {
+    const computed = {
+      ...createComputedRtcTopologyOutbox(),
+      ...(payloadKind === undefined ? {} : { payloadKind }),
+    } as unknown as ComputedRtcTopologyOutbox;
+
+    expect(() => computeRtcTopologyEntry(computed, 'server-1')).toThrow();
+    const database = createResourceInboxDatabase();
+    await expect(
+      runInTransaction(database.sql, async (transaction) => {
+        await writeRtcTopologyOutbox(transaction, computed, 'server-1');
+      }),
+    ).rejects.toThrow();
+    expect(database.rows.size).toBe(0);
+  });
+
+  it('includes canonical RTC topology payload kind in deterministic identity', () => {
+    const computed = {
+      ...createComputedRtcTopologyOutbox(),
+      payloadKind: 'group-revision',
+    } as unknown as ComputedRtcTopologyOutbox;
+
+    const entry = computeRtcTopologyEntry(computed, 'server-1');
+    const message = JSON.parse(entry.resource);
+
+    expect(message.id.msgId).toContain(
+      ':rtc-topology-recompute:group-revision:group=4;presence=3',
+    );
+    expect(message.route).toEqual(entry.key);
+  });
+
+  it('rejects arbitrary APP_OUTBOX entries at the RTC topology write boundary', async () => {
+    const entry = computeRtcTopologyEntry(
+      {
+        ...createComputedRtcTopologyOutbox(),
+        payloadKind: 'group-revision',
+      },
+      'server-1',
+    );
+    const database = createResourceInboxDatabase();
+
+    await expect(
+      runInTransaction(database.sql, async (transaction) => {
+        await (
+          writeRtcTopologyOutbox as unknown as (
+            transaction: PSqlTransactionSql,
+            computed: ComputedRtcTopologyOutbox,
+            senderId: string,
+          ) => Promise<ResourceEntry>
+        )(
+          transaction,
+          entry as unknown as ComputedRtcTopologyOutbox,
+          'server-1',
+        );
+      }),
+    ).rejects.toThrow();
+    expect(database.rows.size).toBe(0);
+  });
+
+  it('computes and revalidates RTC topology work inside its public write', async () => {
+    const computed = {
+      ...createComputedRtcTopologyOutbox(),
+      payloadKind: 'group-revision',
+    } as unknown as ComputedRtcTopologyOutbox;
+    const database = createResourceInboxDatabase();
+
+    const entry = await runInTransaction(
+      database.sql,
+      async (transaction) =>
+        await (
+          writeRtcTopologyOutbox as unknown as (
+            transaction: PSqlTransactionSql,
+            computed: ComputedRtcTopologyOutbox,
+            senderId: string,
+          ) => Promise<ResourceEntry>
+        )(transaction, computed, 'server-1'),
+    );
+
+    expect(entry).toEqual(computeRtcTopologyEntry(computed, 'server-1'));
+    expect(database.rows.get(toRowKey(entry))?.ri_resource).toBe(
+      entry.resource,
     );
     expect(database.nestedBeginCalls).toBe(0);
   });
@@ -416,6 +735,106 @@ function createComputedGroupStateSync(
   };
 }
 
+function createComputedClientEventStateSync(
+  event: ClientEvent,
+): ComputedClientStateSync {
+  return {
+    commandId: 'client-command-1',
+    aggregateRef: {
+      applicationId: event.applicationId,
+      workspaceId: event.workspaceId,
+      principalId: event.principalId,
+    },
+    acceptedCausalRevision: event.snapshotVersion,
+    audience: {
+      kind: 'principal',
+      applicationId: event.applicationId,
+      workspaceId: event.workspaceId,
+      resourceId: event.principalId,
+    },
+    createdAtEpochMs: CREATED_AT_EPOCH_MS,
+    expireAtEpochMs: EXPIRE_AT_EPOCH_MS,
+    effects: [
+      {
+        effectKind: 'principal-state',
+        payloadKind: 'event',
+        payload: event,
+      },
+    ],
+  };
+}
+
+function createComputedClientSnapshotStateSync(
+  snapshot: ClientSnapshot,
+): ComputedClientStateSync {
+  return {
+    commandId: 'client-command-1',
+    aggregateRef: {
+      applicationId: snapshot.principal.applicationId,
+      workspaceId: snapshot.principal.workspaceId,
+      principalId: snapshot.principal.principalId,
+    },
+    acceptedCausalRevision: snapshot.stateRevision,
+    audience: {
+      kind: 'principal',
+      applicationId: snapshot.principal.applicationId,
+      workspaceId: snapshot.principal.workspaceId,
+      resourceId: snapshot.principal.principalId,
+    },
+    createdAtEpochMs: CREATED_AT_EPOCH_MS,
+    expireAtEpochMs: EXPIRE_AT_EPOCH_MS,
+    effects: [
+      {
+        effectKind: 'principal-state',
+        payloadKind: 'snapshot',
+        payload: snapshot,
+      },
+    ],
+  };
+}
+
+function createComputedGroupEventStateSync(
+  event: GroupEvent,
+): ComputedGroupStateSync {
+  return {
+    commandId: 'group-command-1',
+    aggregateRef: {
+      applicationId: event.applicationId,
+      workspaceId: event.workspaceId,
+      groupId: event.groupId,
+    },
+    acceptedCausalRevision: event.causalRevision,
+    audience: {
+      kind: 'group',
+      applicationId: event.applicationId,
+      workspaceId: event.workspaceId,
+      resourceId: event.groupId,
+    },
+    createdAtEpochMs: CREATED_AT_EPOCH_MS,
+    expireAtEpochMs: EXPIRE_AT_EPOCH_MS,
+    effects: [
+      {
+        effectKind: 'member-state',
+        payloadKind: 'event',
+        payload: event,
+      },
+    ],
+  };
+}
+
+function createComputedRtcTopologyOutbox() {
+  const groupSnapshot = createGroupSnapshot();
+  return {
+    commandId: 'group-command-1',
+    aggregateRef: groupSnapshot.group,
+    acceptedCausalRevision: groupSnapshot.causalRevision,
+    groupSnapshot,
+    effectKind: 'rtc-topology-recompute' as const,
+    createdAtEpochMs: CREATED_AT_EPOCH_MS,
+    expireAtEpochMs: EXPIRE_AT_EPOCH_MS,
+  };
+}
+
 type TestSocket = JsonWebSocketServer & Readonly<{ sent: readonly string[] }>;
 
 function createSocket(): TestSocket {
@@ -515,6 +934,57 @@ function createGroupSnapshot(): GroupSnapshot {
     ],
     memberCount: 1,
     onlineMemberCount: 1,
+  };
+}
+
+function createClientSnapshot(): ClientSnapshot {
+  const audit = createAuditStamp();
+  return {
+    stateRevision: 5,
+    principal: {
+      applicationId: 'app-1',
+      workspaceId: 'workspace-1',
+      principalId: 'alice',
+      username: 'alice',
+      displayName: 'Alice',
+      avatarUrl: null,
+      authProvider: null,
+      externalSubjectId: null,
+      status: 'active',
+      disabled: null,
+      deleted: null,
+      roles: [],
+      metadata: {},
+      snapshotVersion: 5,
+      profileVersion: 5,
+      presenceVersion: 1,
+      created: audit,
+      updated: audit,
+      lastSeenAtEpochMs: null,
+    },
+    instances: [],
+    activeSessions: [],
+    isOnline: false,
+    activeSessionCount: 0,
+    lastSeenAtEpochMs: null,
+  };
+}
+
+function createGroupEvent(): GroupEvent {
+  return {
+    applicationId: 'app-1',
+    workspaceId: 'workspace-1',
+    groupId: 'room-1',
+    eventId: 'group-event-1',
+    eventType: 'group-updated',
+    snapshotVersion: 7,
+    causalRevision: { groupRevision: 4, presenceRevision: 3 },
+    occurredAtEpochMs: CREATED_AT_EPOCH_MS,
+    actor: { kind: 'service', serviceId: 'test' },
+    reason: null,
+    traceId: null,
+    requestId: 'group-command-1',
+    payload: {},
   };
 }
 

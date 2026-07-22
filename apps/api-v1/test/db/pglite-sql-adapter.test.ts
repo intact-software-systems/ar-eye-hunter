@@ -2277,10 +2277,12 @@ Deno.test('transaction-bound APP_OUTBOX coalescing fences generation and reserve
       { maxToReserve: 1, maxAttempts: 20 },
     );
     assert.equal(reserved.size, 1);
+    const observedReserved = [...reserved.values()][0];
+    assert.ok(observedReserved);
     const third = advanceCoalescedGeneration(second, 3);
     const blocked = await sql.begin(async (transaction) =>
       await service.write(transaction, {
-        expectedEntry: second,
+        expectedEntry: observedReserved,
         entry: third,
         successorEntry: successor,
       })
@@ -2291,6 +2293,36 @@ Deno.test('transaction-bound APP_OUTBOX coalescing fences generation and reserve
     assert.equal((await repository.findAnyByKey(first.key))?.resource, second.resource);
     assert.equal((await repository.findAnyByKey(first.key))?.status, EntityStatus.RESERVED);
     assert.equal((await repository.findByKey(successor.key))?.resource, successor.resource);
+
+    const replay = await sql.begin(async (transaction) =>
+      await service.write(transaction, {
+        expectedEntry: observedReserved,
+        entry: third,
+        successorEntry: successor,
+      })
+    );
+    assert.equal(replay.action, 'successor');
+    assert.equal((await repository.findAnyByKey(first.key))?.resource, second.resource);
+    assert.equal((await repository.findAnyByKey(first.key))?.status, EntityStatus.RESERVED);
+    assert.equal((await repository.findByKey(successor.key))?.resource, successor.resource);
+
+    await assert.rejects(
+      async () => {
+        await sql.begin(async (transaction) =>
+          await service.write(transaction, {
+            expectedEntry: observedReserved,
+            entry: third,
+            successorEntry: {
+              ...successor,
+              resource: JSON.stringify({ different: true }),
+            },
+          })
+        );
+      },
+      (error) =>
+        error instanceof ResourceInboxInvariantCorruptionError &&
+        error.code === 'resource-inbox-invariant-corruption',
+    );
   });
 });
 

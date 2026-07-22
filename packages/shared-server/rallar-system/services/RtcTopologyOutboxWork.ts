@@ -65,6 +65,7 @@ export type ComputedRtcTopologyOutbox = Readonly<{
     acceptedCausalRevision: GroupStateCausalRevision;
     groupSnapshot: GroupSnapshot;
     effectKind: 'rtc-topology-recompute';
+    payloadKind: 'group-revision';
     createdAtEpochMs: number;
     expireAtEpochMs: number;
 }>;
@@ -84,6 +85,7 @@ export function computeRtcTopologyEntry(
     const messageId = [
         computed.commandId,
         computed.effectKind,
+        computed.payloadKind,
         causalIdentity,
     ].join(':');
     const key = toAppQueueKey({
@@ -98,7 +100,7 @@ export function computeRtcTopologyEntry(
         contextId: toRtcTopologyQueueContextId(computed.aggregateRef),
         senderId: createdBy,
         data: {
-            kind: 'group-revision',
+            kind: computed.payloadKind,
             overlayId,
             groupSnapshot: computed.groupSnapshot,
             sourceGroupStateRevision,
@@ -157,11 +159,10 @@ export function computeRtcTopologyEntry(
 
 export async function writeRtcTopologyOutbox(
     transaction: PSqlTransactionSql,
-    entry: ResourceEntry,
+    computed: ComputedRtcTopologyOutbox,
+    senderId: string,
 ): Promise<ResourceEntry> {
-    if (entry.typeId !== EnqueuedType.APP_OUTBOX) {
-        throw new TypeError('RTC topology outbox write received a non-APP_OUTBOX entry');
-    }
+    const entry = computeRtcTopologyEntry(computed, senderId);
     await new ResourceInboxRepository(transaction).writeIfAbsentOrMatch(entry);
     return entry;
 }
@@ -176,6 +177,7 @@ function validateComputedRtcTopologyOutbox(
         computed.commandId.length === 0 ||
         senderId.length === 0 ||
         computed.effectKind !== 'rtc-topology-recompute' ||
+        computed.payloadKind !== 'group-revision' ||
         !Number.isSafeInteger(computed.createdAtEpochMs) ||
         !Number.isSafeInteger(computed.expireAtEpochMs) ||
         computed.createdAtEpochMs < 0 ||

@@ -116,6 +116,9 @@ export class CoalescedAppOutboxWorkService {
                 'Coalesced APP_OUTBOX write must advance exactly one generation',
             );
         }
+        if (!isMutableCoalescedStatus(expected.status)) {
+            return await this.writeSuccessor(repository, computed, expected);
+        }
         const updated = await repository.replacePendingIfMatch(
             expected,
             computed.entry,
@@ -130,6 +133,14 @@ export class CoalescedAppOutboxWorkService {
             };
         }
 
+        return await this.writeSuccessor(repository, computed, expected);
+    }
+
+    private async writeSuccessor(
+        repository: ResourceInboxRepository,
+        computed: ComputedCoalescedAppOutboxWork,
+        expected: ResourceEntry,
+    ): Promise<CoalescedAppOutboxWorkWriteResult> {
         if (sameKey(computed.successorEntry.key, computed.entry.key)) {
             throw new TypeError(
                 'Coalesced APP_OUTBOX successor must have a distinct queue identity',
@@ -332,6 +343,10 @@ function sameKey(left: Key, right: Key): boolean {
 
 function isTerminalCoalescedStatus(status: EntityStatus): boolean {
     return COMPLETED_STATUSES.has(status) || isFailed(status);
+}
+
+function isMutableCoalescedStatus(status: EntityStatus): boolean {
+    return status === EntityStatus.NEW || status === EntityStatus.RETRY;
 }
 
 function isCoalescedEnvelope(
