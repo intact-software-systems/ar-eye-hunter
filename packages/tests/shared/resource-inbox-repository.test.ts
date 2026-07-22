@@ -180,6 +180,80 @@ describe('ResourceInboxRepository', () => {
         expect(capture.queries[0]?.values.some(value => value instanceof Date)).toBe(false);
     });
 
+    it('selects only live stale exhausted AppInbox reservations with the database clock', async () => {
+        const capture = createQueryCapture();
+        const repo = new repositoryModule.ResourceInboxRepository(capture.sql);
+
+        await repo.findRetryExhaustionFinalizationsSkipLocked(
+            new Set(['APP_INBOX', 'APP_OUTBOX']),
+            300_000,
+            { processingAttempts: 20, maxToReserve: 3 },
+        );
+
+        const query = capture.queries[0]!;
+        expect(query.query).toContain('ri_type_id =');
+        expect(query.query).toContain('ri_status =');
+        expect(query.query).toContain('expire_ts > now()');
+        expect(query.query).toContain('ri_attempts >=');
+        expect(query.query).toContain('ri_attempts <');
+        expect(query.query).toContain('start_ts <= (now() -');
+        expect(query.query).toContain("interval '1 millisecond'");
+        expect(query.query).toContain('for update skip locked');
+        expect(query.values).toContain('APP_INBOX');
+        expect(query.values).not.toContain('APP_OUTBOX');
+        expect(query.values).toContain(20);
+        expect(query.values).toContain(300_000);
+        expect(query.values.some(value => value instanceof Date)).toBe(false);
+    });
+
+    it('advances finalization generation with exact attempt and live reservation fences', async () => {
+        const capture = createQueryCapture();
+        const repo = new repositoryModule.ResourceInboxRepository(capture.sql);
+        const entry = {
+            ...createEntry(createKey('finalization-generation'), { text: 'recover' }),
+            typeId: 'APP_INBOX',
+            status: EntityStatus.RESERVED,
+            dequeueAudit: {
+                attempts: 21,
+                startTs: Temporal.Instant.from('2026-01-01T00:00:00Z'),
+            },
+        };
+
+        await repo.startFinalizationRecovery(entry, 20);
+
+        const query = capture.queries[0]!;
+        expect(query.query).toContain('ri_attempts = ri_attempts + 1');
+        expect(query.query).toContain('start_ts = now()');
+        expect(query.query).toContain('expire_ts > now()');
+        expect(query.query).toContain('ri_attempts =');
+        expect(query.query).toContain('ri_attempts >=');
+        expect(query.query).toContain('ri_type_id =');
+        expect(query.query).toContain('ri_status =');
+        expect(query.values).toContain(21);
+        expect(query.values).toContain(20);
+        expect(query.values).toContain('APP_INBOX');
+        expect(query.values.some(value => value instanceof Date)).toBe(false);
+    });
+
+    it('advertises stale finalization recovery using only the database clock', async () => {
+        const capture = createQueryCapture();
+        const repo = new repositoryModule.ResourceInboxRepository(capture.sql);
+
+        await repo.isRetryExhaustionFinalizationRequired(
+            new Set(['APP_INBOX']),
+            300_000,
+            20,
+        );
+
+        const query = capture.queries[0]!;
+        expect(query.query).toContain('expire_ts > now()');
+        expect(query.query).toContain('start_ts <= (now() -');
+        expect(query.query).toContain('ri_attempts >=');
+        expect(query.values).toContain(300_000);
+        expect(query.values).toContain(20);
+        expect(query.values.some(value => value instanceof Date)).toBe(false);
+    });
+
     it('inserts immutable outbox content once and matches an operationally advanced replay', async () => {
         vi.useFakeTimers();
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));

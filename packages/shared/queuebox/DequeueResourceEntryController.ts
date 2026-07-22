@@ -39,15 +39,44 @@ export type ResourceInboxRetryClassification = 'retryable' | 'non-retryable';
 
 export type ResourceInboxRetryExhaustion = Readonly<{
     entry: ResourceEntry;
-    error: Error;
-    attempt: number;
+    processingAttempts: number;
+    reservationAttempt: number;
     lane: Reservator;
     classification: 'retryable';
     exhausted: true;
+    failure: Readonly<{ source: 'processing'; error: Error }>;
     queueAgeMs: number;
     dueAgeMs: number;
     exhaustedAtEpochMs: number;
 }>;
+
+export type ResourceInboxRetryExhaustionRecovery = Readonly<{
+    entry: ResourceEntry;
+    processingAttempts: number;
+    reservationAttempt: number;
+    lane: Reservator.FINALIZATION;
+    classification: 'retryable';
+    exhausted: true;
+    failure: Readonly<{ source: 'finalization-recovery' }>;
+    queueAgeMs: number;
+    dueAgeMs: number;
+    exhaustedAtEpochMs: number;
+}>;
+
+export type ResourceInboxAttemptTelemetry = Readonly<{
+    selectedLane: Reservator;
+    queueAgeMs: number;
+    dueAgeMs: number;
+    attempt: number;
+}>;
+
+const attemptTelemetryByEntry = new WeakMap<ResourceEntry, ResourceInboxAttemptTelemetry>();
+
+export function readResourceInboxAttemptTelemetry(
+    entry: ResourceEntry,
+): ResourceInboxAttemptTelemetry | undefined {
+    return attemptTelemetryByEntry.get(entry);
+}
 
 export class ResourceInboxFinalizedByHandlerError extends Error {
     readonly code = 'resource-inbox-finalized-by-handler';
@@ -83,6 +112,7 @@ export class ResilienceDto {
         public readonly circuitBreaker: CircuitBreaker,
         public readonly checkReserveTimeouts: InstanceType<typeof ResilienceDto.StatusChecker>,
         public readonly checkFairness: InstanceType<typeof ResilienceDto.StatusChecker>,
+        public readonly checkFinalization: InstanceType<typeof ResilienceDto.StatusChecker>,
         public readonly rateAdjuster: RateAdjuster,
         public readonly retryPolicy: ResourceInboxRetryPolicy = DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
     ) {
@@ -92,7 +122,9 @@ export class ResilienceDto {
         return {
             checkTimeout: this.checkReserveTimeouts.isEntryRateLimiter,
             checkFairness: this.checkFairness.isEntryRateLimiter,
+            checkFinalization: this.checkFinalization.isEntryRateLimiter,
             maxAttempts: this.retryPolicy.maxAttempts,
+            finalizationStaleAfterMs: DequeueResourceEntryController.FINALIZATION_STALE_AFTER_MS,
         };
     }
 
@@ -179,6 +211,7 @@ export class ResilienceDto {
             CircuitBreaker.create(circuitBreakerPolicy),
             ResilienceDto.StatusChecker.toReserveEntryTimeoutChecker(),
             ResilienceDto.StatusChecker.toFairnessEntryChecker(maxFairnessSelectionsInWindow),
+            ResilienceDto.StatusChecker.toReserveEntryTimeoutChecker(),
             RateAdjuster.create(new RateAdjusterPolicy(
                 policy.initialRate,
                 policy.maxRate,
@@ -198,6 +231,7 @@ export class ResilienceDto {
 
 export class DequeueResourceEntryController {
     static readonly TIMEOUT_ON_NON_RESPONSIVE_ENTRY_MS = Temporal.Duration.from({ milliseconds: 5 * 60 * 1000 });
+    static readonly FINALIZATION_STALE_AFTER_MS = 5 * 60 * 1000;
 
     // -------------------------
     // Java record ResilienceDto
@@ -230,12 +264,18 @@ export class DequeueResourceEntryController {
             options.onReservationTelemetry ?? ((event: ResourceInboxFairnessTelemetry) => {
                 console.info('ResourceInbox reservation', event);
             });
-        const laneByEntry = new WeakMap<ResourceEntry, Reservator>();
         const rememberLane = (
             entries: Map<Resource.Key, ResourceEntry>,
             lane: Reservator,
         ): Map<Resource.Key, ResourceEntry> => {
-            for (const entry of entries.values()) laneByEntry.set(entry, lane);
+            const selectedAtEpochMs = nowEpochMs();
+            for (const entry of entries.values()) {
+                attemptTelemetryByEntry.set(entry, toAttemptTelemetry(
+                    entry,
+                    lane,
+                    selectedAtEpochMs,
+                ));
+            }
             return entries;
         };
 
@@ -244,6 +284,34 @@ export class DequeueResourceEntryController {
             .withInboxTypesToDequeue(typesToDequeue)
             .withMaxNumToDequeue(maxNumToDequeue)
             .withMaxNumToReserve(maxToReserve)
+            .onFinalizationEntriesReserveDo(options.onRetryExhaustionRecovery
+                ? async (types, maxNumToReserve) =>
+                    await RateLimiter.tryToExecuteOrDefault(
+                        resilience.checkFinalization.lockEntryRateLimiter,
+                        () => dequeueResourceEntryRepository.reserveRetryExhaustionFinalizations(
+                            types,
+                            {
+                                processingAttempts: retryPolicy.maxAttempts,
+                                maxToReserve: maxNumToReserve,
+                                staleAfterMs: DequeueResourceEntryController.FINALIZATION_STALE_AFTER_MS,
+                            },
+                        ),
+                        new Map<Resource.Key, ResourceEntry>(),
+                    )
+                : undefined)
+            .onFinalizationEntriesDo(options.onRetryExhaustionRecovery
+                ? async (key, entry) => {
+                    const exhaustedAtEpochMs = nowEpochMs();
+                    const recovery = toRetryExhaustionRecovery(
+                        entry,
+                        retryPolicy.maxAttempts,
+                        exhaustedAtEpochMs,
+                    );
+                    await options.onRetryExhaustionRecovery!(recovery);
+                    options.onRetryExhaustionTelemetry?.(recovery);
+                    return key as V;
+                }
+                : undefined)
             .onNewEntriesReserveDo(async (types, maxNumToReserve) =>
                 rememberLane(await dequeueResourceEntryRepository.reserveEntries(
                     types,
@@ -288,10 +356,19 @@ export class DequeueResourceEntryController {
                                     selectedAtEpochMs,
                                 ),
                             );
+                            attemptTelemetryByEntry.set(
+                                selection.entry,
+                                toAttemptTelemetry(
+                                    selection.entry,
+                                    Reservator.FAIRNESS,
+                                    selectedAtEpochMs,
+                                    Number(selection.selectedDueTs.epochMilliseconds),
+                                ),
+                            );
                         }
-                        return rememberLane(new Map(
+                        return new Map(
                             [...reserved].map(([key, selection]) => [key, selection.entry]),
-                        ), Reservator.FAIRNESS);
+                        );
                     },
                     new Map<Resource.Key, ResourceEntry>(),
                 ),
@@ -389,7 +466,8 @@ export class DequeueResourceEntryController {
                             const exhaustedAtEpochMs = nowEpochMs();
                             const exhaustion = toRetryExhaustion(
                                 failure,
-                                laneByEntry.get(failure.value) ?? Reservator.NEW,
+                                readResourceInboxAttemptTelemetry(failure.value)?.selectedLane ?? Reservator.NEW,
+                                retryPolicy.maxAttempts,
                                 exhaustedAtEpochMs,
                             );
                             const finalized = await options.onRetryExhausted(exhaustion);
@@ -498,13 +576,17 @@ export type DequeueResourceEntryOptions = Readonly<{
         exhaustion: ResourceInboxRetryExhaustion,
     ) => Promise<ResourceEntry>;
     onRetryExhaustionTelemetry?: (
-        exhaustion: ResourceInboxRetryExhaustion,
+        exhaustion: ResourceInboxRetryExhaustion | ResourceInboxRetryExhaustionRecovery,
     ) => void;
+    onRetryExhaustionRecovery?: (
+        exhaustion: ResourceInboxRetryExhaustionRecovery,
+    ) => Promise<ResourceEntry>;
 }>;
 
 function toRetryExhaustion(
     failure: FailureDto<Resource.Key, ResourceEntry>,
     lane: Reservator,
+    processingAttempts: number,
     exhaustedAtEpochMs: number,
 ): ResourceInboxRetryExhaustion {
     const createdAtEpochMs = Number(
@@ -515,14 +597,55 @@ function toRetryExhaustion(
         : Number(failure.value.dequeueAudit.startTs?.epochMilliseconds ?? exhaustedAtEpochMs);
     return {
         entry: failure.value,
-        error: failure.exception,
-        attempt: failure.value.dequeueAudit.attempts,
+        processingAttempts,
+        reservationAttempt: failure.value.dequeueAudit.attempts,
         lane,
         classification: 'retryable',
         exhausted: true,
+        failure: { source: 'processing', error: failure.exception },
         queueAgeMs: Math.max(0, exhaustedAtEpochMs - createdAtEpochMs),
         dueAgeMs: Math.max(0, exhaustedAtEpochMs - dueAtEpochMs),
         exhaustedAtEpochMs,
+    };
+}
+
+function toRetryExhaustionRecovery(
+    entry: ResourceEntry,
+    processingAttempts: number,
+    exhaustedAtEpochMs: number,
+): ResourceInboxRetryExhaustionRecovery {
+    const telemetry = toAttemptTelemetry(entry, Reservator.FINALIZATION, exhaustedAtEpochMs);
+    return {
+        entry,
+        processingAttempts,
+        reservationAttempt: entry.dequeueAudit.attempts,
+        lane: Reservator.FINALIZATION,
+        classification: 'retryable',
+        exhausted: true,
+        failure: { source: 'finalization-recovery' },
+        queueAgeMs: telemetry.queueAgeMs,
+        dueAgeMs: telemetry.dueAgeMs,
+        exhaustedAtEpochMs,
+    };
+}
+
+function toAttemptTelemetry(
+    entry: ResourceEntry,
+    selectedLane: Reservator,
+    selectedAtEpochMs: number,
+    selectedDueAtEpochMs?: number,
+): ResourceInboxAttemptTelemetry {
+    const createdAtEpochMs = Number(entry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds);
+    const dueAtEpochMs = selectedDueAtEpochMs ?? Number(
+        entry.dequeueAudit.nextTs?.epochMilliseconds ??
+        entry.dequeueAudit.startTs?.epochMilliseconds ??
+        selectedAtEpochMs,
+    );
+    return {
+        selectedLane,
+        queueAgeMs: Math.max(0, selectedAtEpochMs - createdAtEpochMs),
+        dueAgeMs: Math.max(0, selectedAtEpochMs - dueAtEpochMs),
+        attempt: entry.dequeueAudit.attempts,
     };
 }
 

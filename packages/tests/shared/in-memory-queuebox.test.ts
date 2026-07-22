@@ -207,6 +207,71 @@ describe('InMemoryQueueBox', () => {
         )).rejects.toMatchObject({ code: 'resource-inbox-lost-reservation' });
     });
 
+    it('reclaims only live stale exhausted AppInbox reservations for finalization', async () => {
+        const queue = new InMemoryQueueBox();
+        const staleStart = Temporal.Now.instant().subtract({ minutes: 6 });
+        const exhausted = createEntry(EnqueuedType.APP_INBOX, 'recover-exhaustion', {
+            status: EntityStatus.RESERVED,
+            attempts: 20,
+            startTs: staleStart,
+        });
+        await queue.enqueue(exhausted);
+        await queue.enqueue(createEntry(EnqueuedType.APP_OUTBOX, 'wrong-type', {
+            status: EntityStatus.RESERVED,
+            attempts: 20,
+            startTs: staleStart,
+        }));
+        await queue.enqueue(createEntry(EnqueuedType.APP_INBOX, 'expired', {
+            status: EntityStatus.RESERVED,
+            attempts: 20,
+            startTs: staleStart,
+            expiryTs: Temporal.Now.instant().subtract({ seconds: 1 }),
+        }));
+
+        const recovered = await queue.reserveRetryExhaustionFinalizations(
+            new Set([EnqueuedType.APP_INBOX, EnqueuedType.APP_OUTBOX]),
+            {
+                processingAttempts: 20,
+                maxToReserve: 10,
+                staleAfterMs: 5 * 60 * 1000,
+            },
+        );
+
+        expect([...recovered.values()]).toEqual([
+            expect.objectContaining({
+                key: exhausted.key,
+                status: EntityStatus.RESERVED,
+                dequeueAudit: expect.objectContaining({ attempts: 21 }),
+            }),
+        ]);
+        expect((await queue.reserveRetryExhaustionFinalizations(
+            new Set([EnqueuedType.APP_INBOX]),
+            {
+                processingAttempts: 20,
+                maxToReserve: 10,
+                staleAfterMs: 5 * 60 * 1000,
+            },
+        )).size).toBe(0);
+    });
+
+    it('rejects finalization recovery generation overflow', async () => {
+        const queue = new InMemoryQueueBox();
+        await queue.enqueue(createEntry(EnqueuedType.APP_INBOX, 'overflow', {
+            status: EntityStatus.RESERVED,
+            attempts: Number.MAX_SAFE_INTEGER,
+            startTs: Temporal.Now.instant().subtract({ minutes: 6 }),
+        }));
+
+        await expect(queue.reserveRetryExhaustionFinalizations(
+            new Set([EnqueuedType.APP_INBOX]),
+            {
+                processingAttempts: 20,
+                maxToReserve: 1,
+                staleAfterMs: 5 * 60 * 1000,
+            },
+        )).rejects.toThrow(/generation|attempt|overflow/iu);
+    });
+
     it('rolls back the whole memory release batch when one reservation is stale', async () => {
         const queue = new InMemoryQueueBox();
         const first = createEntry('chat.private-text.v1', 'batch-current', {
@@ -304,7 +369,9 @@ describe('InMemoryQueueBox', () => {
             {
                 checkTimeout: RateLimiter.init(60_000, 1),
                 checkFairness: RateLimiter.init(60_000, 1),
+                checkFinalization: RateLimiter.init(60_000, 1),
                 maxAttempts: 2,
+                finalizationStaleAfterMs: 5 * 60 * 1000,
             } as never,
         );
         const reserved = entryOptions.status === EntityStatus.RETRY

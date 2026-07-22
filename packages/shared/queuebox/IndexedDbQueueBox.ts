@@ -7,16 +7,19 @@ import {
     QueueBoxResourceEntryRepository,
     ResourceInboxFairnessReservationInput,
     ResourceInboxFairnessSelection,
+    ResourceInboxFinalizationReservationOptions,
     ResourceInboxLostReservationError,
     ResourceInboxReleaseDisposition,
     ResourceInboxReservationInput,
     ResourceInboxWorkAdvertisementInput,
     isIdempotentCompletedAppInboxRelease,
     toResourceInboxFairnessReservationOptions,
+    toResourceInboxFinalizationReservationOptions,
     toResourceInboxReleaseDisposition,
     toResourceInboxReservationOptions,
     toResourceInboxWorkAdvertisementOptions,
 } from './QueueBoxTypes.ts';
+import { EnqueuedType } from '../api/api-config.ts';
 import {
     COMPLETED_STATUSES,
     EntityStatus,
@@ -667,12 +670,73 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         });
     }
 
+    async reserveRetryExhaustionFinalizations(
+        typeIds: Set<string>,
+        input: ResourceInboxFinalizationReservationOptions,
+    ): Promise<Map<Key, ResourceEntry>> {
+        const options = toResourceInboxFinalizationReservationOptions(input);
+        if (!typeIds.has(EnqueuedType.APP_INBOX) || options.maxToReserve === 0) {
+            return new Map();
+        }
+        const db = await this.openDb();
+        const now = Temporal.Now.instant();
+        const staleBefore = now.subtract({ milliseconds: options.staleAfterMs });
+        const reserved = new Map<Key, ResourceEntry>();
+        return await new Promise((resolve, reject) => {
+            const tx = db.transaction(this.storeName, 'readwrite');
+            const request = tx.objectStore(this.storeName).openCursor();
+            tx.oncomplete = () => resolve(reserved);
+            tx.onabort = () => reject(tx.error ?? new Error('IndexedDB finalization reservation aborted'));
+            tx.onerror = () => reject(tx.error ?? new Error('IndexedDB finalization reservation failed'));
+            request.onerror = () => reject(request.error ?? new Error('IndexedDB finalization cursor failed'));
+            request.onsuccess = () => {
+                const cursor = request.result;
+                if (!cursor || reserved.size >= options.maxToReserve) return;
+                const stored = cursor.value as StoredResourceEntry;
+                const startTs = stored.dequeueAudit.startTs
+                    ? Temporal.Instant.from(stored.dequeueAudit.startTs)
+                    : undefined;
+                const eligible = stored.typeId === EnqueuedType.APP_INBOX &&
+                    stored.status === EntityStatus.RESERVED &&
+                    !this.isExpiredStoredEntry(stored, now) &&
+                    stored.dequeueAudit.attempts >= options.processingAttempts &&
+                    startTs !== undefined &&
+                    Temporal.Instant.compare(startTs, staleBefore) <= 0;
+                if (!eligible) {
+                    cursor.continue();
+                    return;
+                }
+                if (stored.dequeueAudit.attempts >= Number.MAX_SAFE_INTEGER) {
+                    tx.abort();
+                    reject(new RangeError('Resource inbox finalization reservation generation overflow'));
+                    return;
+                }
+                const entry = this.toResourceEntry(stored);
+                const updated: ResourceEntry = {
+                    ...entry,
+                    dequeueAudit: {
+                        attempts: entry.dequeueAudit.attempts + 1,
+                        startTs: now,
+                        endTs: undefined,
+                        nextTs: undefined,
+                    },
+                };
+                const update = cursor.update(this.toStoredEntry(updated));
+                update.onerror = () => reject(update.error ?? new Error('IndexedDB finalization update failed'));
+                update.onsuccess = () => {
+                    reserved.set(updated.key, updated);
+                    cursor.continue();
+                };
+            };
+        });
+    }
+
     async isAnyEntryToLock(
         typeIds: Set<string>,
         workInput: ResourceInboxWorkAdvertisementInput,
         legacyCheckFairness?: RateLimiter,
     ): Promise<boolean> {
-        const { checkTimeout, maxAttempts } = toResourceInboxWorkAdvertisementOptions(
+        const { checkTimeout, checkFinalization, maxAttempts, finalizationStaleAfterMs } = toResourceInboxWorkAdvertisementOptions(
             workInput,
             legacyCheckFairness,
             DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts,
@@ -693,12 +757,43 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             NEW_AND_RETRY_STATUSES,
             maxAttempts,
         );
+        const finalizationEntryToLock = await RateLimiter.tryToExecuteOrDefault(
+            checkFinalization,
+            () => this.hasAnyRetryExhaustionFinalization(
+                typeIds,
+                maxAttempts,
+                finalizationStaleAfterMs,
+            ),
+            false,
+        );
 
         void this.cleanupAsync().catch(e => {
             console.error('Failed to cleanup entries', e);
         });
 
-        return newAndRetryEntryToLock || isTimedOutEntryToLock;
+        return newAndRetryEntryToLock || isTimedOutEntryToLock || finalizationEntryToLock;
+    }
+
+    private async hasAnyRetryExhaustionFinalization(
+        typeIds: Set<string>,
+        processingAttempts: number,
+        staleAfterMs: number,
+    ): Promise<boolean> {
+        if (!typeIds.has(EnqueuedType.APP_INBOX)) return false;
+        const now = Temporal.Now.instant();
+        const staleBefore = now.subtract({ milliseconds: staleAfterMs });
+        return await this.findAnyStoredEntry(stored => {
+            const startTs = stored.dequeueAudit.startTs
+                ? Temporal.Instant.from(stored.dequeueAudit.startTs)
+                : undefined;
+            return stored.typeId === EnqueuedType.APP_INBOX &&
+                stored.status === EntityStatus.RESERVED &&
+                !this.isExpiredStoredEntry(stored, now) &&
+                stored.dequeueAudit.attempts >= processingAttempts &&
+                stored.dequeueAudit.attempts < Number.MAX_SAFE_INTEGER &&
+                startTs !== undefined &&
+                Temporal.Instant.compare(startTs, staleBefore) <= 0;
+        });
     }
 
     private async hasAnyReservableEntry(

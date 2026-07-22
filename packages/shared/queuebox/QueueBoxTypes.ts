@@ -22,10 +22,21 @@ export type ResourceInboxFairnessReservationInput =
     | number
     | ResourceInboxFairnessReservationOptions;
 
+export type ResourceInboxFinalizationReservationOptions = Readonly<{
+    processingAttempts: number;
+    maxToReserve: number;
+    staleAfterMs: number;
+}>;
+
+// Exhaustion recovery deliberately excludes expired rows. Queue cleanup owns
+// their terminal deletion; recovery never revives an expired command.
+
 export type ResourceInboxWorkAdvertisementOptions = Readonly<{
     checkTimeout: RateLimiter;
     checkFairness: RateLimiter;
+    checkFinalization: RateLimiter;
     maxAttempts: number;
+    finalizationStaleAfterMs: number;
 }>;
 
 export type ResourceInboxWorkAdvertisementInput =
@@ -108,7 +119,6 @@ export function toResourceInboxReservationOptions(
     if (!Number.isSafeInteger(options.maxAttempts) || options.maxAttempts < 1) {
         throw new Error('maxAttempts must be a positive safe integer');
     }
-
     return options;
 }
 
@@ -140,6 +150,21 @@ export function toSaturatedResourceInboxFairnessScanBudget(
         : maxToReserve * 8;
 }
 
+export function toResourceInboxFinalizationReservationOptions(
+    input: ResourceInboxFinalizationReservationOptions,
+): ResourceInboxFinalizationReservationOptions {
+    if (!Number.isSafeInteger(input.processingAttempts) || input.processingAttempts < 1) {
+        throw new Error('processingAttempts must be a positive safe integer');
+    }
+    if (!Number.isSafeInteger(input.maxToReserve) || input.maxToReserve < 0) {
+        throw new Error('maxToReserve must be a non-negative safe integer');
+    }
+    if (!Number.isSafeInteger(input.staleAfterMs) || input.staleAfterMs < 0) {
+        throw new Error('staleAfterMs must be a non-negative safe integer');
+    }
+    return input;
+}
+
 export function toResourceInboxWorkAdvertisementOptions(
     input: ResourceInboxWorkAdvertisementInput,
     legacyCheckFairness: RateLimiter | undefined,
@@ -149,12 +174,20 @@ export function toResourceInboxWorkAdvertisementOptions(
         ? {
             checkTimeout: input,
             checkFairness: legacyCheckFairness ?? input,
+            checkFinalization: input,
             maxAttempts: defaultMaxAttempts,
+            finalizationStaleAfterMs: 5 * 60 * 1000,
         }
         : input;
 
     if (!Number.isSafeInteger(options.maxAttempts) || options.maxAttempts < 1) {
         throw new Error('maxAttempts must be a positive safe integer');
+    }
+    if (
+        !Number.isSafeInteger(options.finalizationStaleAfterMs) ||
+        options.finalizationStaleAfterMs < 0
+    ) {
+        throw new Error('finalizationStaleAfterMs must be a non-negative safe integer');
     }
 
     return options;
@@ -217,6 +250,12 @@ export interface DequeueResourceEntryRepository {
         options: ResourceInboxFairnessReservationInput,
     )
         : Promise<Map<Resource.Key, ResourceInboxFairnessSelection>>;
+
+    reserveRetryExhaustionFinalizations(
+        typeIds: Set<string>,
+        options: ResourceInboxFinalizationReservationOptions,
+    )
+        : Promise<Map<Resource.Key, Resource.ResourceEntry>>;
 
     releaseEntries(
         resources: Resource.ResourceEntry[],

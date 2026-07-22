@@ -34,6 +34,7 @@ function toExponentialBackoffSeconds(failureCounter: number, maxSeconds = 60): n
 }
 
 export enum Reservator {
+    FINALIZATION = 'FINALIZATION',
     NEW = 'NEW',
     RETRY = 'RETRY',
     FAILED = 'FAILED',
@@ -81,6 +82,8 @@ export class DequeueController<K, V, T> {
     private retryReservator?: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>;
     private fairnessReservator?: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>;
     private timeoutReservator?: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>;
+    private finalizationReservator?: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>;
+    private finalizationComputer?: (key: K, value: V) => Promise<T>;
 
     private successReleaser?: (m: Map<K, SuccessDto<K, V, T>>) => Promise<Map<K, SuccessDto<K, V, T>>>;
     private failureReleaser?: (m: Map<K, FailureDto<K, V>>) => Promise<Map<K, FailureDto<K, V>>>;
@@ -145,6 +148,18 @@ export class DequeueController<K, V, T> {
         return this;
     }
 
+    onFinalizationEntriesReserveDo(
+        reservator?: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>,
+    ): this {
+        this.finalizationReservator = reservator ?? undefined;
+        return this;
+    }
+
+    onFinalizationEntriesDo(computer?: (key: K, value: V) => Promise<T>): this {
+        this.finalizationComputer = computer ?? undefined;
+        return this;
+    }
+
     onReleaseEntriesDo(
         successReleaser: (m: Map<K, SuccessDto<K, V, T>>) => Promise<Map<K, SuccessDto<K, V, T>>>,
         failureReleaser: (m: Map<K, FailureDto<K, V>>) => Promise<Map<K, FailureDto<K, V>>>,
@@ -191,6 +206,20 @@ export class DequeueController<K, V, T> {
             Reservator,
             Map<K, Either<FailureDto<K, V>, SuccessDto<K, V, T>>>
         >();
+
+        byReservator.set(
+            Reservator.FINALIZATION,
+            this.finalizationReservator && this.finalizationComputer
+                ? await DequeueController.dequeueFinalizations(
+                    this.typesToDequeue(),
+                    this.maxNumToReserve(),
+                    this.finalizationReservator,
+                    this.finalizationComputer,
+                    this.returnDequeuedEntries,
+                    this.log,
+                )
+                : new Map(),
+        );
 
         byReservator.set(
             Reservator.NEW,
@@ -275,6 +304,33 @@ export class DequeueController<K, V, T> {
         );
 
         return byReservator;
+    }
+
+    private static async dequeueFinalizations<K, V, T>(
+        types: Set<string>,
+        maxNumToReserve: number,
+        reservator: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>,
+        computer: (key: K, value: V) => Promise<T>,
+        returnDequeuedEntries: boolean,
+        log: Logger,
+    ): Promise<Map<K, Either<FailureDto<K, V>, SuccessDto<K, V, T>>>> {
+        const computed = new Map<K, Either<FailureDto<K, V>, SuccessDto<K, V, T>>>();
+        if (maxNumToReserve <= 0) return computed;
+        const reserved = await reservator(types, maxNumToReserve);
+        for (const [key, value] of reserved) {
+            try {
+                computed.set(key, Either.ofRight(new SuccessDto(
+                    key,
+                    value,
+                    await computer(key, value),
+                )));
+            } catch (error) {
+                const exception = error instanceof Error ? error : new Error(String(error));
+                log.error(`Finalization recovery failed on dequeued key ${String(key)}.`, exception);
+                computed.set(key, Either.ofLeft(new FailureDto(key, value, exception)));
+            }
+        }
+        return returnDequeuedEntries ? computed : new Map();
     }
 
     static async dequeueWithTypesAlgorithm<K, V, T>(

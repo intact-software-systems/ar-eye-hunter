@@ -6,16 +6,19 @@ import {
     QueueBoxResourceEntryRepository,
     ResourceInboxFairnessReservationInput,
     ResourceInboxFairnessSelection,
+    ResourceInboxFinalizationReservationOptions,
     ResourceInboxLostReservationError,
     ResourceInboxReleaseDisposition,
     ResourceInboxReservationInput,
     ResourceInboxWorkAdvertisementInput,
     isIdempotentCompletedAppInboxRelease,
     toResourceInboxFairnessReservationOptions,
+    toResourceInboxFinalizationReservationOptions,
     toResourceInboxReleaseDisposition,
     toResourceInboxReservationOptions,
     toResourceInboxWorkAdvertisementOptions,
 } from './QueueBoxTypes.ts';
+import { EnqueuedType } from '../api/api-config.ts';
 import {
     COMPLETED_STATUSES,
     EntityStatus,
@@ -352,12 +355,50 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         return reserved;
     }
 
+    async reserveRetryExhaustionFinalizations(
+        typeIds: Set<string>,
+        input: ResourceInboxFinalizationReservationOptions,
+    ): Promise<Map<Key, ResourceEntry>> {
+        const options = toResourceInboxFinalizationReservationOptions(input);
+        if (!typeIds.has(EnqueuedType.APP_INBOX) || options.maxToReserve === 0) {
+            return new Map();
+        }
+        const now = Temporal.Now.instant();
+        const staleBefore = now.subtract({ milliseconds: options.staleAfterMs });
+        const candidates = [...this.data.entries()].filter(([, entry]) =>
+            entry.typeId === EnqueuedType.APP_INBOX &&
+            entry.status === EntityStatus.RESERVED &&
+            !isExpiredResourceEntry(entry, now) &&
+            entry.dequeueAudit.attempts >= options.processingAttempts &&
+            entry.dequeueAudit.startTs !== undefined &&
+            Temporal.Instant.compare(entry.dequeueAudit.startTs, staleBefore) <= 0
+        ).slice(0, options.maxToReserve);
+        if (candidates.some(([, entry]) => entry.dequeueAudit.attempts >= Number.MAX_SAFE_INTEGER)) {
+            throw new RangeError('Resource inbox finalization reservation generation overflow');
+        }
+        const reserved = new Map<Key, ResourceEntry>();
+        for (const [key, entry] of candidates) {
+            const updated: ResourceEntry = {
+                ...entry,
+                dequeueAudit: {
+                    attempts: entry.dequeueAudit.attempts + 1,
+                    startTs: now,
+                    endTs: undefined,
+                    nextTs: undefined,
+                },
+            };
+            this.data.set(key, updated);
+            reserved.set(updated.key, updated);
+        }
+        return reserved;
+    }
+
     async isAnyEntryToLock(
         typeIds: Set<string>,
         workInput: ResourceInboxWorkAdvertisementInput,
         legacyCheckFairness?: RateLimiter,
     ): Promise<boolean> {
-        const { checkTimeout, maxAttempts } = toResourceInboxWorkAdvertisementOptions(
+        const { checkTimeout, checkFinalization, maxAttempts, finalizationStaleAfterMs } = toResourceInboxWorkAdvertisementOptions(
             workInput,
             legacyCheckFairness,
             DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts,
@@ -378,6 +419,15 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
             NEW_AND_RETRY_STATUSES,
             maxAttempts,
         );
+        const finalizationEntryToLock = await RateLimiter.tryToExecuteOrDefault(
+            checkFinalization,
+            async () => this.hasRetryExhaustionFinalization(
+                typeIds,
+                maxAttempts,
+                finalizationStaleAfterMs,
+            ),
+            false,
+        );
 
         this.cleanupAsync()
             .catch(e => {
@@ -385,7 +435,26 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
                 return false;
             });
 
-        return newAndRetryEntryToLock || isTimedOutEntryToLock;
+        return newAndRetryEntryToLock || isTimedOutEntryToLock || finalizationEntryToLock;
+    }
+
+    private hasRetryExhaustionFinalization(
+        typeIds: Set<string>,
+        processingAttempts: number,
+        staleAfterMs: number,
+    ): boolean {
+        if (!typeIds.has(EnqueuedType.APP_INBOX)) return false;
+        const now = Temporal.Now.instant();
+        const staleBefore = now.subtract({ milliseconds: staleAfterMs });
+        return [...this.data.values()].some(entry =>
+            entry.typeId === EnqueuedType.APP_INBOX &&
+            entry.status === EntityStatus.RESERVED &&
+            !isExpiredResourceEntry(entry, now) &&
+            entry.dequeueAudit.attempts >= processingAttempts &&
+            entry.dequeueAudit.attempts < Number.MAX_SAFE_INTEGER &&
+            entry.dequeueAudit.startTs !== undefined &&
+            Temporal.Instant.compare(entry.dequeueAudit.startTs, staleBefore) <= 0
+        );
     }
 
     private isAnyToLock(

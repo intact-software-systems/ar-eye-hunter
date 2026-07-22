@@ -6,6 +6,7 @@ import {
     DequeueResourceEntryController,
     ResilienceDto,
     type ResourceInboxRetryExhaustion,
+    type ResourceInboxRetryExhaustionRecovery,
 } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { DequeueController } from '@shared/queuebox/DequeueController.ts';
 import {
@@ -26,11 +27,12 @@ import {
     AppInboxType,
     classifyAppInboxError,
     createAppInboxRetryExhaustionHandler,
+    createAppInboxRetryExhaustionRecoveryHandler,
     type AppInboxMessageContext,
-    type AppInboxTransactionRepositories,
 } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
 import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-policy.ts';
+import { createAppInboxTestDatabase } from './app-inbox-test-database.ts';
 
 const NOW_EPOCH_MS = Date.parse('2026-07-22T12:00:00.000Z');
 
@@ -142,7 +144,7 @@ describe('AppInboxService transaction ownership', () => {
         expect(classifyAppInboxError(conflict)).toEqual({
             kind: 'retryable',
             code: 'runtime-state-write-conflict',
-            message: 'conditional write lost',
+            message: 'AppInbox processing encountered a retryable conflict',
         });
         expect(harness.database.state.results.size).toBe(0);
         expect(harness.database.state.inbox.get(toKeyAsString(harness.entry.key))?.status)
@@ -171,6 +173,193 @@ describe('AppInboxService transaction ownership', () => {
     });
 });
 
+describe('AppInboxService registered handler finalization', () => {
+    it('does not run legacy result persistence after a transaction-owned handler commits', async () => {
+        const timing: RallarTimingEvent[] = [];
+        const harness = createRegisteredHandlerHarness({
+            failResultWriteAfter: 1,
+            timing: (event) => timing.push(event),
+        });
+        harness.service.onStateMessage(
+            AppInboxType.GROUP_CREATE,
+            async (_data, context) => await harness.service.commit(
+                context,
+                async () => ({ status: 'accepted', source: 'transaction' }),
+            ),
+        );
+
+        const pending = harness.service.processEntryUntilCompletion(harness.enqueue);
+        await harness.reader.dequeueInbox(
+            InboxQueueReader.INBOX_DEQUEUE_TYPES,
+            createResilience(),
+        );
+
+        await expect(pending).resolves.toMatchObject({
+            right: { status: 'accepted', source: 'transaction' },
+        });
+        expect(harness.results.replaceCalls).toBe(1);
+        expect(harness.readEntry()?.status).toBe(EntityStatus.COMPLETED);
+        expect(timing).not.toEqual(expect.arrayContaining([
+            expect.objectContaining({ operation: 'queue-retry' }),
+        ]));
+    });
+
+    it('returns the committed result when handler code throws after transaction finalization', async () => {
+        const timing: RallarTimingEvent[] = [];
+        const harness = createRegisteredHandlerHarness({
+            timing: (event) => timing.push(event),
+        });
+        harness.service.onStateMessage(
+            AppInboxType.GROUP_CREATE,
+            async (_data, context) => {
+                await harness.service.commit(
+                    context,
+                    async () => ({ status: 'accepted', source: 'transaction' }),
+                );
+                throw new Error('secret-after-commit');
+            },
+        );
+
+        const pending = harness.service.processEntryUntilCompletion(harness.enqueue);
+        await harness.reader.dequeueInbox(
+            InboxQueueReader.INBOX_DEQUEUE_TYPES,
+            createResilience(),
+        );
+
+        await expect(pending).resolves.toMatchObject({
+            right: { status: 'accepted', source: 'transaction' },
+        });
+        expect(harness.results.replaceCalls).toBe(1);
+        expect(timing).not.toEqual(expect.arrayContaining([
+            expect.objectContaining({ operation: 'queue-retry' }),
+        ]));
+    });
+
+    it('persists a legacy handler result exactly once', async () => {
+        const harness = createRegisteredHandlerHarness();
+        harness.service.onStateMessage(
+            AppInboxType.GROUP_CREATE,
+            async () => ({ status: 'accepted', source: 'legacy' }),
+        );
+
+        const pending = harness.service.processEntryUntilCompletion(harness.enqueue);
+        await harness.reader.dequeueInbox(
+            InboxQueueReader.INBOX_DEQUEUE_TYPES,
+            createResilience(),
+        );
+
+        await expect(pending).resolves.toMatchObject({
+            right: { status: 'accepted', source: 'legacy' },
+        });
+        expect(harness.results.replaceCalls).toBe(1);
+    });
+
+    it('classifies malformed persisted handler JSON as terminal without invoking the handler', async () => {
+        const harness = createRegisteredHandlerHarness();
+        const handler = vi.fn(async () => ({ status: 'unexpected' }));
+        harness.service.onStateMessage(AppInboxType.GROUP_CREATE, handler);
+        harness.service.processEntryNoWaiting(harness.enqueue);
+        const entry = await waitForRegisteredHandlerEntry(harness.queue);
+        const message = JSON.parse(entry.resource) as {
+            payload: { resource: string };
+        };
+        message.payload.resource = '{"malformed":';
+        await harness.queue.enqueue({
+            ...entry,
+            resource: JSON.stringify(message),
+        });
+
+        await harness.reader.dequeueInbox(
+            InboxQueueReader.INBOX_DEQUEUE_TYPES,
+            createResilience(),
+        );
+
+        expect(handler).not.toHaveBeenCalled();
+        expect(harness.readEntry()?.status).toBe(EntityStatus.FAILED);
+        expect([...harness.results.entries.values()]).toEqual([
+            expect.objectContaining({ status: EntityStatus.FAILED }),
+        ]);
+    });
+});
+
+describe('AppInbox error classification', () => {
+    it.each([
+        {
+            name: 'typed reservation conflict with 409',
+            error: Object.assign(new Error('reservation changed'), {
+                code: 'app-inbox-reservation-conflict',
+                status: 409,
+            }),
+            kind: 'retryable',
+        },
+        {
+            name: 'typed CAS conflict with 409',
+            error: Object.assign(new Error('predecessor changed'), {
+                code: 'runtime-state-write-conflict',
+                status: 409,
+            }),
+            kind: 'retryable',
+        },
+        {
+            name: 'typed transient error',
+            error: Object.assign(new Error('database unavailable'), {
+                code: 'app-inbox-transient',
+                status: 503,
+            }),
+            kind: 'retryable',
+        },
+        {
+            name: 'authorization denial',
+            error: Object.assign(new Error('forbidden'), {
+                code: 'group-mutation-authority-denied',
+                status: 403,
+            }),
+            kind: 'terminal',
+        },
+        {
+            name: 'malformed command with non-4xx status',
+            error: Object.assign(new Error('invalid command'), {
+                code: 'app-inbox-malformed-command',
+                status: 503,
+            }),
+            kind: 'terminal',
+        },
+        {
+            name: 'invariant corruption with non-4xx status',
+            error: Object.assign(new Error('corrupt state'), {
+                code: 'resource-inbox-invariant-corruption',
+                status: 503,
+            }),
+            kind: 'terminal',
+        },
+        {
+            name: 'lifecycle rejection with non-4xx status',
+            error: Object.assign(new Error('expired lifecycle'), {
+                code: 'app-inbox-lifecycle-rejected',
+                status: 503,
+            }),
+            kind: 'terminal',
+        },
+        {
+            name: 'syntax decoding failure',
+            error: new SyntaxError('unexpected token secret'),
+            kind: 'terminal',
+        },
+        {
+            name: 'type decoding failure',
+            error: new TypeError('invalid persisted shape secret'),
+            kind: 'terminal',
+        },
+        {
+            name: 'unknown error',
+            error: new Error('unknown failure'),
+            kind: 'retryable',
+        },
+    ])('classifies $name by typed code precedence', ({ error, kind }) => {
+        expect(classifyAppInboxError(error).kind).toBe(kind);
+    });
+});
+
 describe('AppInbox retry exhaustion', () => {
     it('persists mandatory attempt-20 diagnostics and FAILED completion in one transaction', async () => {
         const harness = createAtomicHarness({ attempts: 20 });
@@ -178,8 +367,6 @@ describe('AppInbox retry exhaustion', () => {
         const releaseEntries = vi.fn();
         const onRetryExhausted = createAppInboxRetryExhaustionHandler({
             database: harness.database.sql,
-            nowEpochMs: () => NOW_EPOCH_MS,
-            transactionRepositories: harness.transactionRepositories,
         });
         let reserved = false;
         const controller = DequeueResourceEntryController.toDequeuer<Key>(
@@ -192,6 +379,7 @@ describe('AppInbox retry exhaustion', () => {
                 },
                 reserveTimeoutEntries: async () => new Map(),
                 reserveOverdueRetryEntries: async () => new Map(),
+                reserveRetryExhaustionFinalizations: async () => new Map(),
                 releaseEntries,
             },
             () => new Set([EnqueuedType.APP_INBOX]),
@@ -203,12 +391,16 @@ describe('AppInbox retry exhaustion', () => {
                 nowEpochMs: () => NOW_EPOCH_MS,
                 jitterUnit: () => 0.5,
                 onRetryExhausted,
-                onRetryExhaustionTelemetry: (event) => telemetry.push(event),
+                onRetryExhaustionTelemetry: (event) => {
+                    if (event.failure.source === 'processing') {
+                        telemetry.push(event as ResourceInboxRetryExhaustion);
+                    }
+                },
             },
         );
 
         await controller.dequeueForCompute(async () => {
-            throw Object.assign(new Error('conditional write lost'), {
+            throw Object.assign(new Error('conditional write lost secret=password-123'), {
                 code: 'runtime-state-write-conflict',
             });
         });
@@ -225,12 +417,15 @@ describe('AppInbox retry exhaustion', () => {
                 contextId: harness.entry.key.contextId,
                 resourceId: harness.entry.key.resourceId,
                 topicId: harness.entry.key.topicId,
-                typeId: EnqueuedType.APP_INBOX,
+                operation: AppInboxType.GROUP_CREATE,
             },
-            attempts: 20,
+            selectedLane: 'NEW',
+            processingAttempts: 20,
+            reservationAttempt: 20,
             lastError: {
+                source: 'processing',
                 code: 'runtime-state-write-conflict',
-                message: 'conditional write lost',
+                message: 'AppInbox processing encountered a retryable conflict',
             },
             queueAgeMs: expect.any(Number),
             dueAgeMs: expect.any(Number),
@@ -238,7 +433,8 @@ describe('AppInbox retry exhaustion', () => {
         });
         expect(telemetry).toEqual([
             expect.objectContaining({
-                attempt: 20,
+                processingAttempts: 20,
+                reservationAttempt: 20,
                 lane: 'NEW',
                 classification: 'retryable',
                 exhausted: true,
@@ -246,6 +442,38 @@ describe('AppInbox retry exhaustion', () => {
                 dueAgeMs: expect.any(Number),
             }),
         ]);
+        expect(stored?.resource).not.toContain('password-123');
+    });
+
+    it('rolls back a lost recovery reservation and finalizes a later reservation generation', async () => {
+        const harness = createAtomicHarness({ attempts: 21, loseReservation: true });
+        const recover = createAppInboxRetryExhaustionRecoveryHandler({
+            database: harness.database.sql,
+        });
+
+        await expect(recover(toRecovery(harness.entry, 21)))
+            .rejects.toBeInstanceOf(AppInboxReservationConflictError);
+        expect(harness.database.state.results.size).toBe(0);
+        expect(harness.database.state.inbox.get(toKeyAsString(harness.entry.key))?.status)
+            .toBe(EntityStatus.RESERVED);
+
+        const attempt22 = harness.database.reclaimFinalization();
+        harness.database.loseReservation = false;
+        await recover(toRecovery(attempt22, 22));
+
+        const stored = harness.database.state.results.get(toKeyAsString(harness.entry.key));
+        expect(harness.database.beginCalls).toBe(2);
+        expect(harness.database.state.inbox.get(toKeyAsString(harness.entry.key))?.status)
+            .toBe(EntityStatus.FAILED);
+        expect(JSON.parse(stored!.resource)).toMatchObject({
+            selectedLane: 'FINALIZATION',
+            processingAttempts: 20,
+            reservationAttempt: 22,
+            lastError: {
+                source: 'finalization-recovery',
+                code: 'app-inbox-finalization-recovery',
+            },
+        });
     });
 });
 
@@ -262,6 +490,90 @@ class AtomicAppInboxService extends AppInboxService {
     }
 }
 
+class RegisteredHandlerInbox extends InMemoryQueueBox {
+    async isEntryWithStatus(key: Key, statuses: EntityStatus[]): Promise<boolean> {
+        const entry = await this.getItem(key);
+        return entry !== undefined && statuses.includes(entry.status);
+    }
+}
+
+class RegisteredHandlerResults {
+    readonly entries = new Map<string, ResourceEntry>();
+    replaceCalls = 0;
+
+    constructor(private readonly failResultWriteAfter?: number) {}
+
+    async replace(entry: ResourceEntry): Promise<ResourceEntry> {
+        this.replaceCalls += 1;
+        if (
+            this.failResultWriteAfter !== undefined &&
+            this.replaceCalls > this.failResultWriteAfter
+        ) {
+            throw new Error('legacy result write must not run');
+        }
+        this.entries.set(toKeyAsString(entry.key), entry);
+        return entry;
+    }
+
+    async findByKey(key: Key): Promise<ResourceEntry | undefined> {
+        return this.entries.get(toKeyAsString(key));
+    }
+}
+
+function createRegisteredHandlerHarness(options: Readonly<{
+    failResultWriteAfter?: number;
+    timing?: (event: RallarTimingEvent) => void;
+}> = {}) {
+    const queue = new RegisteredHandlerInbox();
+    const results = new RegisteredHandlerResults(options.failResultWriteAfter);
+    const reader = new InboxQueueReader(queue);
+    const service = new AtomicAppInboxService(
+        reader,
+        queue as never,
+        results as never,
+        createAppInboxTestDatabase(queue, results),
+        'server-1',
+        'app-inbox.group-state',
+        options.timing,
+        {
+            phaseTiming: true,
+            waitMaxElapsedMsecs: 5_000,
+            waitRetryIntervalMsecs: 1,
+            waitMaxRetryIntervalMsecs: 1,
+            waitJitterRatio: 0,
+        },
+    );
+    const enqueue = {
+        type: AppInboxType.GROUP_CREATE,
+        resourceId: 'registered-handler-request',
+        contextId: 'group-1',
+        data: { requestId: 'registered-handler-request' },
+    } as const;
+    return {
+        enqueue,
+        queue,
+        readEntry: () => (
+            queue as unknown as { data: Map<string, ResourceEntry> }
+        ).data.values().next().value as ResourceEntry | undefined,
+        reader,
+        results,
+        service,
+    };
+}
+
+async function waitForRegisteredHandlerEntry(
+    queue: RegisteredHandlerInbox,
+): Promise<ResourceEntry> {
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+        const entry = (
+            queue as unknown as { data: Map<string, ResourceEntry> }
+        ).data.values().next().value as ResourceEntry | undefined;
+        if (entry) return entry;
+        await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    throw new Error('Expected registered handler entry');
+}
+
 type AtomicState = {
     mutations: Map<string, unknown>;
     outbox: Map<string, unknown>;
@@ -274,10 +586,18 @@ class AtomicDatabase {
     beginCalls = 0;
     activeTransaction: PSqlTransactionSql | undefined;
     private working: AtomicState | undefined;
+    loseReservation: boolean;
 
     readonly sql: PSqlSql;
 
-    constructor(entry: ResourceEntry) {
+    constructor(
+        entry: ResourceEntry,
+        private readonly options: Readonly<{
+            failResultWrite: boolean;
+            loseReservation: boolean;
+        }>,
+    ) {
+        this.loseReservation = options.loseReservation;
         this.state = {
             mutations: new Map(),
             outbox: new Map(),
@@ -289,8 +609,40 @@ class AtomicDatabase {
         }) as unknown as PSqlSql;
         sql.begin = async <T>(write: (transaction: PSqlTransactionSql) => Promise<T>) => {
             this.beginCalls += 1;
-            const transaction = (async () => {
-                throw new Error('Unexpected raw transaction SQL in atomic test database');
+            const transaction = (async (
+                strings: TemplateStringsArray,
+                ...values: unknown[]
+            ) => {
+                const query = strings.join('?').replace(/\s+/gu, ' ').trim().toLowerCase();
+                if (query.includes('insert into resource_inbox_results')) {
+                    if (this.options.failResultWrite) throw new Error('result write failed');
+                    const result = toAtomicResultEntry(values);
+                    this.requireWorking().results.set(toKeyAsString(result.key), result);
+                    return [toAtomicResultRow(result)];
+                }
+                if (query.includes('update resource_inbox') && query.includes("ri_status = 'reserved'")) {
+                    const [status, completedAt, topicId, resourceId, contextId, attempts] =
+                        values as [EntityStatus, Date, string, string, string, number];
+                    if (this.loseReservation) return [];
+                    const key = toKeyAsString({ topicId, resourceId, contextId });
+                    const stored = this.requireWorking().inbox.get(key);
+                    if (
+                        !stored ||
+                        stored.status !== EntityStatus.RESERVED ||
+                        stored.dequeueAudit.attempts !== attempts
+                    ) return [];
+                    this.requireWorking().inbox.set(key, {
+                        ...stored,
+                        status,
+                        dequeueAudit: {
+                            ...stored.dequeueAudit,
+                            endTs: Temporal.Instant.fromEpochMilliseconds(completedAt.getTime()),
+                            nextTs: undefined,
+                        },
+                    });
+                    return [{ ri_row_id: 1n }];
+                }
+                throw new Error(`Unexpected raw transaction SQL in atomic test database: ${query}`);
             }) as unknown as PSqlTransactionSql;
             transaction.begin = async () => {
                 throw new Error('Nested transaction');
@@ -317,40 +669,20 @@ class AtomicDatabase {
         this.requireWorking().outbox.set(key, value);
     }
 
-    repositories(options: Readonly<{
-        failResultWrite: boolean;
-        loseReservation: boolean;
-    }>): AppInboxTransactionRepositories {
-        return () => ({
-            resourceInboxResults: {
-                replace: async (entry) => {
-                    if (options.failResultWrite) throw new Error('result write failed');
-                    this.requireWorking().results.set(toKeyAsString(entry.key), entry);
-                    return entry;
-                },
+    reclaimFinalization(): ResourceEntry {
+        const [key, entry] = [...this.state.inbox.entries()][0] ?? [];
+        if (!key || !entry) throw new Error('Missing finalization entry');
+        const reclaimed: ResourceEntry = {
+            ...entry,
+            dequeueAudit: {
+                attempts: entry.dequeueAudit.attempts + 1,
+                startTs: Temporal.Instant.fromEpochMilliseconds(NOW_EPOCH_MS),
+                endTs: undefined,
+                nextTs: undefined,
             },
-            resourceInbox: {
-                finishReserved: async (key, expectedAttempts, status, completedAt) => {
-                    if (options.loseReservation) return false;
-                    const stored = this.requireWorking().inbox.get(toKeyAsString(key));
-                    if (
-                        !stored ||
-                        stored.status !== EntityStatus.RESERVED ||
-                        stored.dequeueAudit.attempts !== expectedAttempts
-                    ) return false;
-                    this.requireWorking().inbox.set(toKeyAsString(key), {
-                        ...stored,
-                        status,
-                        dequeueAudit: {
-                            ...stored.dequeueAudit,
-                            endTs: Temporal.Instant.fromEpochMilliseconds(completedAt.getTime()),
-                            nextTs: undefined,
-                        },
-                    });
-                    return true;
-                },
-            },
-        });
+        };
+        this.state.inbox.set(key, reclaimed);
+        return reclaimed;
     }
 
     private requireWorking(): AtomicState {
@@ -366,8 +698,7 @@ function createAtomicHarness(options: Readonly<{
     timing?: (event: RallarTimingEvent) => void;
 }> = {}) {
     const entry = createReservedEntry(options.attempts ?? 7);
-    const database = new AtomicDatabase(entry);
-    const transactionRepositories = database.repositories({
+    const database = new AtomicDatabase(entry, {
         failResultWrite: options.failResultWrite ?? false,
         loseReservation: options.loseReservation ?? false,
     });
@@ -384,7 +715,6 @@ function createAtomicHarness(options: Readonly<{
         {
             phaseTiming: true,
             nowEpochMs: () => NOW_EPOCH_MS,
-            transactionRepositories,
         },
     );
     const enqueue = {
@@ -398,17 +728,64 @@ function createAtomicHarness(options: Readonly<{
         message: {} as never,
         entry,
     };
-    return { context, database, entry, service, transactionRepositories };
+    return { context, database, entry, service };
+}
+
+function toAtomicResultEntry(values: readonly unknown[]): ResourceEntry {
+    const [resourceId, topicId, resource, typeId, status, contextId, , createdBy,
+        createdTs, expiryTs] = values;
+    return {
+        key: { resourceId, topicId, contextId } as Key,
+        resource: resource as string,
+        typeId: typeId as string,
+        status: status as EntityStatus,
+        audit: {
+            date: Temporal.PlainTime.from('00:00:00'),
+            createdBy: createdBy as string,
+            createdTs: Temporal.PlainDateTime.from(createdTs as string),
+            expiryTs: String(expiryTs).endsWith('Z')
+                ? Temporal.Instant.from(expiryTs as string)
+                : Temporal.PlainDateTime.from(expiryTs as string).toZonedDateTime('UTC').toInstant(),
+        },
+        dequeueAudit: { attempts: 0 },
+    };
+}
+
+function toAtomicResultRow(entry: ResourceEntry) {
+    return {
+        ris_row_id: 1n,
+        ris_resource_id: entry.key.resourceId,
+        ris_topic_id: entry.key.topicId,
+        ris_resource: entry.resource,
+        ris_type_id: entry.typeId,
+        ris_status: entry.status,
+        fk_ext_bank_id: entry.key.contextId,
+        system_date: entry.audit.createdTs.toPlainDate().toString(),
+        created_by: entry.audit.createdBy,
+        created_ts: entry.audit.createdTs.toString(),
+        expire_ts: entry.audit.expiryTs.toZonedDateTimeISO('UTC').toPlainDateTime().toString(),
+    };
 }
 
 function createReservedEntry(attempts: number): ResourceEntry {
+    const enqueue = {
+        type: AppInboxType.GROUP_CREATE,
+        resourceId: 'request-1',
+        contextId: 'group-1',
+        data: { requestId: 'request-1' },
+    };
     return {
         key: {
             topicId: 'app-inbox.group-state',
             resourceId: 'request-1',
             contextId: 'group-1',
         },
-        resource: JSON.stringify({ command: 'create-group' }),
+        resource: JSON.stringify({
+            payload: {
+                typeId: AppInboxType.GROUP_CREATE,
+                resource: JSON.stringify(enqueue),
+            },
+        }),
         typeId: EnqueuedType.APP_INBOX,
         audit: {
             date: Temporal.PlainTime.from('12:00:00'),
@@ -421,6 +798,24 @@ function createReservedEntry(attempts: number): ResourceEntry {
             attempts,
             startTs: Temporal.Instant.fromEpochMilliseconds(NOW_EPOCH_MS),
         },
+    };
+}
+
+function toRecovery(
+    entry: ResourceEntry,
+    reservationAttempt: number,
+): ResourceInboxRetryExhaustionRecovery {
+    return {
+        entry,
+        processingAttempts: 20,
+        reservationAttempt,
+        lane: 'FINALIZATION' as never,
+        classification: 'retryable',
+        exhausted: true,
+        failure: { source: 'finalization-recovery' },
+        queueAgeMs: 60_000,
+        dueAgeMs: 300_000,
+        exhaustedAtEpochMs: NOW_EPOCH_MS,
     };
 }
 

@@ -16,6 +16,13 @@ import { PSqlClientStateEventRepository } from '@shared-server/postgres/rallar-s
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
+import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import {
+    AppInboxService,
+    AppInboxType,
+    type AppInboxMessageContext,
+} from '@shared-server/rallar-system/services/AppInboxService.ts';
 
 type RuntimeRow = Readonly<{
     value: string;
@@ -93,7 +100,58 @@ describe('Postgres transaction write boundary', () => {
         expect(database.committed.inbox.get(toKey(incomingEntry.key))?.ri_status)
             .toBe(EntityStatus.RESERVED);
     });
+
+    it('binds AppInbox repositories to the supplied transaction and ignores external factories', async () => {
+        const database = createTransactionalDatabase();
+        Object.defineProperty(database.sql, 'appInboxTransactionRepositories', {
+            value: () => {
+                throw new Error('external repository factory must not run');
+            },
+        });
+        const service = new StrictTransactionAppInboxService(
+            new InboxQueueReader(new InMemoryQueueBox()),
+            new ResourceInboxRepository(database.sql),
+            new ResourceInboxResultsRepository(database.sql),
+            database.sql,
+            'server-1',
+        );
+        const context: AppInboxMessageContext = {
+            enqueue: {
+                type: AppInboxType.GROUP_CREATE,
+                resourceId: incomingEntry.key.resourceId,
+                contextId: incomingEntry.key.contextId,
+                data: { requestId: incomingEntry.key.resourceId },
+            },
+            message: {} as never,
+            entry: incomingEntry,
+        };
+
+        const result = await service.commit(context, async (transaction) => {
+            await new PSqlRuntimeStateRepository(transaction).insertIfAbsent(
+                'app-inbox-transaction',
+                'aggregate-1',
+                JSON.stringify({ state: 'accepted' }),
+                NEVER_EXPIRE_AT_TIMESTAMP,
+            );
+            return { status: 'accepted' };
+        });
+
+        expect(result).toEqual({ status: 'accepted' });
+        expect(database.beginCalls).toBe(1);
+        expect(new Set(database.statementTransactions).size).toBe(1);
+        expect(database.committed.inbox.get(toKey(incomingEntry.key))?.ri_status)
+            .toBe(EntityStatus.COMPLETED);
+    });
 });
+
+class StrictTransactionAppInboxService extends AppInboxService {
+    async commit<R>(
+        context: AppInboxMessageContext,
+        write: (transaction: PSqlTransactionSql) => Promise<R>,
+    ): Promise<R> {
+        return await this.writeMutation(context, write);
+    }
+}
 
 async function runMutation(database: TransactionalDatabase): Promise<void> {
     await runInTransaction(database.sql, async (transaction) => {

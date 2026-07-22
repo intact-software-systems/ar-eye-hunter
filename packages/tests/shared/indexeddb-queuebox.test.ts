@@ -166,6 +166,34 @@ describe('IndexedDbQueueBox', () => {
         expect(stored?.dequeueAudit.attempts).toBe(3);
     });
 
+    it('reclaims a stale exhausted AppInbox reservation as a new finalization generation', async () => {
+        const queue = new IndexedDbQueueBox({
+            dbName: `indexeddb-finalization-${crypto.randomUUID()}`,
+        });
+        const exhausted = createEntry(EnqueuedType.APP_INBOX, 'recover-exhaustion', {
+            status: EntityStatus.RESERVED,
+            attempts: 20,
+            startTs: Temporal.Now.instant().subtract({ minutes: 6 }),
+        });
+        await queue.enqueue(exhausted);
+
+        const recovered = await queue.reserveRetryExhaustionFinalizations(
+            new Set([EnqueuedType.APP_INBOX]),
+            {
+                processingAttempts: 20,
+                maxToReserve: 1,
+                staleAfterMs: 5 * 60 * 1000,
+            },
+        );
+
+        expect(firstValue(recovered)).toMatchObject({
+            key: exhausted.key,
+            status: EntityStatus.RESERVED,
+            dequeueAudit: { attempts: 21 },
+        });
+        expect((await queue.getItem(exhausted.key))?.dequeueAudit.attempts).toBe(21);
+    });
+
     it('does not reserve retry entries before nextTs', async () => {
         const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
         const typeId = 'chat.private-text.v1';
@@ -473,7 +501,9 @@ describe('IndexedDbQueueBox', () => {
             {
                 checkTimeout: RateLimiter.init(60_000, 1),
                 checkFairness: RateLimiter.init(60_000, 1),
+                checkFinalization: RateLimiter.init(60_000, 1),
                 maxAttempts: 2,
+                finalizationStaleAfterMs: 5 * 60 * 1000,
             } as never,
         );
         const reserved = entryOptions.status === EntityStatus.RETRY

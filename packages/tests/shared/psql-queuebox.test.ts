@@ -171,6 +171,56 @@ describe('PSqlQueueBox', () => {
         expect(reserved.size).toBe(0);
     });
 
+    it('reclaims exhausted reservations with the transaction-bound finalization operation', async () => {
+        const exhausted = {
+            ...createEntry('recover-exhaustion', EntityStatus.RESERVED),
+            typeId: EnqueuedType.APP_INBOX,
+            dequeueAudit: {
+                attempts: 20,
+                startTs: Temporal.Now.instant().subtract({ minutes: 6 }),
+            },
+        };
+        const recovered = {
+            ...exhausted,
+            dequeueAudit: {
+                ...exhausted.dequeueAudit,
+                attempts: 21,
+                startTs: Temporal.Now.instant(),
+            },
+        };
+        const findFinalizations = vi.fn(async () =>
+            new Map<Key, ResourceEntry>([[exhausted.key, exhausted]])
+        );
+        const startFinalizationRecovery = vi.fn(async () =>
+            Either.ofRight<
+                { kind: 'expired-or-missing'; key: Key },
+                ResourceEntry
+            >(recovered)
+        );
+        const repo = createRepo({
+            findRetryExhaustionFinalizationsSkipLocked: findFinalizations,
+            startFinalizationRecovery,
+        });
+        const queue = new PSqlQueueBox(repo as never);
+
+        const selected = await queue.reserveRetryExhaustionFinalizations(
+            new Set([EnqueuedType.APP_INBOX, EnqueuedType.APP_OUTBOX]),
+            {
+                processingAttempts: 20,
+                maxToReserve: 1,
+                staleAfterMs: 5 * 60 * 1000,
+            },
+        );
+
+        expect(findFinalizations).toHaveBeenCalledWith(
+            new Set([EnqueuedType.APP_INBOX]),
+            5 * 60 * 1000,
+            { processingAttempts: 20, maxToReserve: 1 },
+        );
+        expect(startFinalizationRecovery).toHaveBeenCalledWith(exhausted, 20);
+        expect([...selected.values()][0]?.dequeueAudit.attempts).toBe(21);
+    });
+
     it('uses a custom two-attempt PostgreSQL reservation budget', async () => {
         const exhausted = {
             ...createEntry('attempt-3', EntityStatus.RETRY),
@@ -257,7 +307,9 @@ describe('PSqlQueueBox', () => {
             {
                 checkTimeout: RateLimiter.init(60_000, 1),
                 checkFairness: RateLimiter.init(60_000, 1),
+                checkFinalization: RateLimiter.init(60_000, 1),
                 maxAttempts: 2,
+                finalizationStaleAfterMs: 5 * 60 * 1000,
             } as never,
         );
 
@@ -518,9 +570,11 @@ function createRepo(overrides: {
         duration: Temporal.Duration,
         maxAttempts?: number,
     ) => Promise<boolean>;
+    isRetryExhaustionFinalizationRequired?: () => Promise<boolean>;
     findEntriesSkipLocked?: () => Promise<Map<Key, ResourceEntry>>;
     findTimedOutReservedEntriesSkipLocked?: () => Promise<Map<Key, ResourceEntry>>;
     findOverdueRetryEntriesSkipLocked?: () => Promise<Map<Key, ResourceEntry>>;
+    findRetryExhaustionFinalizationsSkipLocked?: () => Promise<Map<Key, ResourceEntry>>;
     findAnyByKey?: (key: Key) => Promise<ResourceEntry | null>;
     replace?: (entry: ResourceEntry) => Promise<ResourceEntry>;
     writeIfAbsentOrReplaceExpired?: (entry: ResourceEntry) => Promise<ResourceEntry>;
@@ -543,11 +597,19 @@ function createRepo(overrides: {
             ResourceEntry
         >
     >;
+    startFinalizationRecovery?: (entry: ResourceEntry, processingAttempts: number) => Promise<
+        Either<
+            { kind: 'expired-or-missing'; key: Key },
+            ResourceEntry
+        >
+    >;
 }) {
     const repo = {
         isEntriesToLock: overrides.isEntriesToLock ?? vi.fn(async () => false),
         isTimeoutOnReservedEntries:
             overrides.isTimeoutOnReservedEntries ?? vi.fn(async () => false),
+        isRetryExhaustionFinalizationRequired:
+            overrides.isRetryExhaustionFinalizationRequired ?? vi.fn(async () => false),
         begin: vi.fn(async (fn: (txRepo: unknown) => Promise<unknown>) => await fn(repo)),
         findEntriesSkipLocked:
             overrides.findEntriesSkipLocked ?? vi.fn(async () => new Map<Key, ResourceEntry>()),
@@ -556,6 +618,9 @@ function createRepo(overrides: {
             vi.fn(async () => new Map<Key, ResourceEntry>()),
         findOverdueRetryEntriesSkipLocked:
             overrides.findOverdueRetryEntriesSkipLocked ??
+            vi.fn(async () => new Map<Key, ResourceEntry>()),
+        findRetryExhaustionFinalizationsSkipLocked:
+            overrides.findRetryExhaustionFinalizationsSkipLocked ??
             vi.fn(async () => new Map<Key, ResourceEntry>()),
         findAnyByKey: overrides.findAnyByKey ?? vi.fn(async () => null),
         replace: overrides.replace ?? vi.fn(async (entry: ResourceEntry) => entry),
@@ -571,6 +636,14 @@ function createRepo(overrides: {
                         kind: 'expired-or-missing';
                         key: Key;
                     },
+                    ResourceEntry
+                >(entry),
+            ),
+        startFinalizationRecovery:
+            overrides.startFinalizationRecovery ??
+            vi.fn(async (entry: ResourceEntry) =>
+                Either.ofRight<
+                    { kind: 'expired-or-missing'; key: Key },
                     ResourceEntry
                 >(entry),
             ),

@@ -9,7 +9,7 @@ import {
 import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import {
     ResourceInboxFinalizedByHandlerError,
-    type ResourceInboxRetryExhaustion,
+    readResourceInboxAttemptTelemetry,
 } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { TryWithExhaustedError, TryWithPolicy, tryWithPolicy } from '@shared/resilience/TryWith.ts';
@@ -22,115 +22,52 @@ import type {
     PSqlSql,
     PSqlTransactionSql,
 } from '@shared-server/postgres/PostgresSqlClient.ts';
-import { runInTransaction } from '@shared-server/postgres/run-in-transaction.ts';
 import { type RallarTimingDetails, type RallarTimingSink, recordRallarTiming, timeRallarAsync, } from './timing.ts';
-import { isGroupPolicyDeniedError } from '../group-policy.ts';
-import { hashStateMutationCommand } from '../repositories/StateMutationOutboxRepository.ts';
 import {
     toAppInboxQueueCreatedBy,
     toAppInboxQueueKey,
 } from './app-inbox-queue-key.ts';
+import {
+    AppInboxIdempotencyConflictError,
+    AppInboxReservationConflictError,
+    AppInboxType,
+    type AppInboxEnqueueInput,
+    type AppInboxMessageContext,
+} from './app-inbox-contracts.ts';
+import {
+    classifyAppInboxError,
+    type AppInboxErrorClassification,
+} from './app-inbox-error-classification.ts';
+import {
+    AppInboxTransactionWriter,
+    toFinalizedResourceEntry,
+} from './app-inbox-transaction-writer.ts';
+import {
+    assertMatchingAppInboxCommand,
+    serializeCanonicalJsonWire,
+    toJsonWireAppInboxEnqueue,
+    toLogicalAppInboxCommand,
+} from './app-inbox-command-wire.ts';
 
 export const SIMPLER_GROUP_STATE_APP_INBOX_TOPIC = 'app-inbox.group-state';
 export const SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC = 'app-inbox.client-state';
 
-export enum AppInboxType {
-    CLIENT_PRINCIPAL_UPSERT = 'CLIENT_PRINCIPAL_UPSERT',
-    CLIENT_INSTANCE_UPSERT = 'CLIENT_INSTANCE_UPSERT',
-    CLIENT_SESSION_CONNECT = 'CLIENT_SESSION_CONNECT',
-    CLIENT_SESSION_HEARTBEAT = 'CLIENT_SESSION_HEARTBEAT',
-    CLIENT_SESSION_DISCONNECT = 'CLIENT_SESSION_DISCONNECT',
-    CLIENT_AUTHORISED_WS_CONNECT = 'CLIENT_AUTHORISED_WS_CONNECT',
-    CLIENT_AUTHORISED_WS_DISCONNECT = 'CLIENT_AUTHORISED_WS_DISCONNECT',
-    CLIENT_EXPIRED_SESSIONS = 'CLIENT_EXPIRED_SESSIONS',
-    GROUP_CREATE = 'GROUP_CREATE',
-    GROUP_UPDATE = 'GROUP_UPDATE',
-    GROUP_DIRECTOR_APPOINT = 'GROUP_DIRECTOR_APPOINT',
-    GROUP_JOIN = 'GROUP_JOIN',
-    GROUP_INVITE_CREATE = 'GROUP_INVITE_CREATE',
-    GROUP_INVITE_REVOKE = 'GROUP_INVITE_REVOKE',
-    GROUP_INVITE_ACCEPT = 'GROUP_INVITE_ACCEPT',
-    GROUP_JOIN_CODE_ROTATE = 'GROUP_JOIN_CODE_ROTATE',
-    GROUP_MEMBER_REMOVE = 'GROUP_MEMBER_REMOVE',
-    GROUP_MEMBER_BAN = 'GROUP_MEMBER_BAN',
-    GROUP_MEMBER_UNBAN = 'GROUP_MEMBER_UNBAN',
-    GROUP_MEMBER_ROLE_SET = 'GROUP_MEMBER_ROLE_SET',
-    GROUP_OWNERSHIP_TRANSFER = 'GROUP_OWNERSHIP_TRANSFER',
-    GROUP_MEMBER_UPSERT = 'GROUP_MEMBER_UPSERT',
-    GROUP_PRESENCE_CONNECT = 'GROUP_PRESENCE_CONNECT',
-    GROUP_PRESENCE_HEARTBEAT = 'GROUP_PRESENCE_HEARTBEAT',
-    GROUP_PRESENCE_DISCONNECT = 'GROUP_PRESENCE_DISCONNECT',
-}
-
-export { NonRetryableException };
-
-export class AppInboxIdempotencyConflictError extends Error {
-    readonly code = 'app-inbox-idempotency-conflict';
-    readonly status = 409;
-
-    constructor(
-        readonly resourceId: string,
-        readonly existingCommandHash: string,
-        readonly receivedCommandHash: string,
-    ) {
-        super(`App inbox idempotency conflict for resource ${resourceId}`);
-        this.name = 'AppInboxIdempotencyConflictError';
-    }
-}
-
-export class AppInboxReservationConflictError extends Error {
-    readonly code = 'app-inbox-reservation-conflict';
-    readonly status = 409;
-
-    constructor(readonly key: Key) {
-        super(`App inbox reservation changed before completion: ${JSON.stringify(key)}`);
-        this.name = 'AppInboxReservationConflictError';
-    }
-}
-
-export type AppInboxErrorClassification =
-    | Readonly<{
-        kind: 'terminal';
-        result: unknown;
-    }>
-    | Readonly<{
-        kind: 'retryable';
-        code: string;
-        message: string;
-    }>;
-
-type AppInboxTransactionResourceInbox = Pick<
-    ResourceInboxRepository,
-    'finishReserved'
->;
-
-type AppInboxTransactionResults = Pick<
-    ResourceInboxResultsRepository,
-    'replace'
->;
-
-export type AppInboxTransactionRepositories = (
-    transaction: PSqlTransactionSql,
-) => Readonly<{
-    resourceInbox: AppInboxTransactionResourceInbox;
-    resourceInboxResults: AppInboxTransactionResults;
-}>;
-
-export type AppInboxEnqueueInput<V> = {
-    type: AppInboxType;
-    topicId?: string;
-    resourceId?: string;
-    contextId?: string;
-    senderId?: string;
-    authority?: unknown;
-    data: V;
+export {
+    AppInboxIdempotencyConflictError,
+    AppInboxReservationConflictError,
+    AppInboxType,
+    classifyAppInboxError,
+    NonRetryableException,
 };
-
-export type AppInboxMessageContext = Readonly<{
-    enqueue: AppInboxEnqueueInput<unknown>;
-    message: ALMessage;
-    entry: ResourceEntry;
-}>;
+export type {
+    AppInboxEnqueueInput,
+    AppInboxErrorClassification,
+    AppInboxMessageContext,
+};
+export {
+    createAppInboxRetryExhaustionHandler,
+    createAppInboxRetryExhaustionRecoveryHandler,
+} from './app-inbox-retry-finalization.ts';
 
 export type AppInboxServiceOptions = Readonly<{
     phaseTiming?: boolean;
@@ -139,12 +76,11 @@ export type AppInboxServiceOptions = Readonly<{
     waitMaxRetryIntervalMsecs?: number;
     waitJitterRatio?: number;
     nowEpochMs?: () => number;
-    transactionRepositories?: AppInboxTransactionRepositories;
 }>;
 
 type NormalizedAppInboxServiceOptions = Required<Omit<
     AppInboxServiceOptions,
-    'nowEpochMs' | 'transactionRepositories'
+    'nowEpochMs'
 >>;
 
 export class AppInboxService {
@@ -155,6 +91,7 @@ export class AppInboxService {
 
     private readonly options: NormalizedAppInboxServiceOptions;
     private readonly optionsInput: AppInboxServiceOptions;
+    private readonly transactionWriter: AppInboxTransactionWriter;
 
     constructor(
         public readonly inbox: InboxQueueReader,
@@ -167,6 +104,13 @@ export class AppInboxService {
         options: AppInboxServiceOptions = {},
     ) {
         this.optionsInput = options;
+        this.transactionWriter = new AppInboxTransactionWriter({
+            database,
+            serviceId,
+            timing,
+            nowEpochMs: () => this.nowEpochMs(),
+            toTimingDetails: (context) => this.toMutationTimingDetails(context),
+        });
         this.options = {
             phaseTiming: options.phaseTiming ?? false,
             waitMaxElapsedMsecs: toNonNegativeFiniteNumber(
@@ -202,99 +146,14 @@ export class AppInboxService {
         context: AppInboxMessageContext,
         write: (transaction: PSqlTransactionSql) => Promise<R>,
     ): Promise<R> {
-        const timingDetails = this.toMutationTimingDetails(context);
-        return await timeRallarAsync(
-            this.timing,
-            {
-                component: 'app-inbox-phase',
-                operation: 'transaction',
-                serviceId: this.serviceId,
-                requestId: context.enqueue.resourceId,
-                details: timingDetails,
-            },
-            async () => await runInTransaction(this.database, async (transaction) => {
-                const repositories = this.toTransactionRepositories(transaction);
-                const result = await timeRallarAsync(
-                    this.timing,
-                    {
-                        component: 'app-inbox-phase',
-                        operation: 'write',
-                        serviceId: this.serviceId,
-                        requestId: context.enqueue.resourceId,
-                        details: timingDetails,
-                    },
-                    async () => await write(transaction),
-                );
-                await repositories.resourceInboxResults.replace(
-                    toResourceEntryWithUpdatedResource(
-                        context.entry,
-                        EntityStatus.COMPLETED,
-                        result,
-                    ),
-                );
-                const completed = await repositories.resourceInbox.finishReserved(
-                    context.entry.key,
-                    context.entry.dequeueAudit.attempts,
-                    EntityStatus.COMPLETED,
-                    new Date(this.nowEpochMs()),
-                );
-                if (!completed) {
-                    throw new AppInboxReservationConflictError(context.entry.key);
-                }
-                return result;
-            }),
-        );
+        return await this.transactionWriter.writeMutation(context, write);
     }
 
     protected async writeTerminalFailure(
         context: AppInboxMessageContext,
         error: unknown,
     ): Promise<void> {
-        const timingDetails = {
-            ...this.toMutationTimingDetails(context),
-            classification: 'terminal',
-        };
-        await timeRallarAsync(
-            this.timing,
-            {
-                component: 'app-inbox-phase',
-                operation: 'transaction',
-                serviceId: this.serviceId,
-                requestId: context.enqueue.resourceId,
-                details: timingDetails,
-            },
-            async () => await runInTransaction(this.database, async (transaction) => {
-                const repositories = this.toTransactionRepositories(transaction);
-                await timeRallarAsync(
-                    this.timing,
-                    {
-                        component: 'app-inbox-phase',
-                        operation: 'write',
-                        serviceId: this.serviceId,
-                        requestId: context.enqueue.resourceId,
-                        details: timingDetails,
-                    },
-                    async () => {
-                        await repositories.resourceInboxResults.replace(
-                            toResourceEntryWithUpdatedResource(
-                                context.entry,
-                                EntityStatus.FAILED,
-                                error,
-                            ),
-                        );
-                        const completed = await repositories.resourceInbox.finishReserved(
-                            context.entry.key,
-                            context.entry.dequeueAudit.attempts,
-                            EntityStatus.FAILED,
-                            new Date(this.nowEpochMs()),
-                        );
-                        if (!completed) {
-                            throw new AppInboxReservationConflictError(context.entry.key);
-                        }
-                    },
-                );
-            }),
-        );
+        await this.transactionWriter.writeTerminalFailure(context, error);
     }
 
     public processEntryNoWaiting<V, R = V>(enqueue: AppInboxEnqueueInput<V>) {
@@ -542,9 +401,13 @@ export class AppInboxService {
             type,
             {
                 onMessage: async (message: ALMessage, entry: ResourceEntry) => {
-                    const enqueue = JSON.parse(
-                        message.payload.resource,
-                    ) as AppInboxEnqueueInput<V>;
+                    const fallbackEnqueue: AppInboxEnqueueInput<unknown> = {
+                        type,
+                        resourceId: entry.key.resourceId,
+                        contextId: entry.key.contextId,
+                        data: null,
+                    };
+                    let context: AppInboxMessageContext | undefined;
 
                     await timeRallarAsync(
                         this.timing,
@@ -552,27 +415,31 @@ export class AppInboxService {
                             component: 'app-inbox-handler',
                             operation: String(type),
                             serviceId: this.serviceId,
-                            requestId: enqueue.resourceId,
+                            requestId: entry.key.resourceId,
                             details: {
-                                type: enqueue.type,
+                                type,
                                 topicId: entry.key.topicId,
                                 contextId: entry.key.contextId,
                                 resourceId: entry.key.resourceId,
-                                senderId: enqueue.senderId,
                             },
                         },
                         async () => {
                             try {
+                                const enqueue = JSON.parse(
+                                    message.payload.resource,
+                                ) as AppInboxEnqueueInput<V>;
+                                context = { enqueue, message, entry };
+                                this.transactionWriter.begin(context);
                                 const result = await this.timePhase(
                                     'handler-action',
                                     enqueue,
                                     entry.key,
-                                    async () => await handler(enqueue.data, {
-                                        enqueue,
-                                        message,
-                                        entry,
-                                    }),
+                                    async () => await handler(enqueue.data, context!),
                                 );
+                                const finalization = this.transactionWriter.read(context);
+                                if (finalization.state === 'transaction-finalized') {
+                                    return finalization.result;
+                                }
                                 await this.timePhase(
                                     'write-result',
                                     enqueue,
@@ -587,29 +454,41 @@ export class AppInboxService {
                                     { resultStatus: EntityStatus.COMPLETED },
                                 );
                             } catch (error) {
+                                if (context) {
+                                    const finalization = this.transactionWriter.read(context);
+                                    if (
+                                        finalization.state === 'transaction-finalized' &&
+                                        finalization.status === EntityStatus.COMPLETED
+                                    ) {
+                                        return finalization.result;
+                                    }
+                                }
                                 const classification = classifyAppInboxError(error);
                                 if (classification.kind === 'retryable') {
-                                    this.recordQueueRetryTiming(enqueue, entry, error);
+                                    this.recordQueueRetryTiming(
+                                        context?.enqueue ?? fallbackEnqueue,
+                                        entry,
+                                        classification,
+                                        error,
+                                    );
                                     throw error;
                                 }
 
-                                const context = { enqueue, message, entry };
+                                const terminalContext = context ?? {
+                                    enqueue: fallbackEnqueue,
+                                    message,
+                                    entry,
+                                };
                                 await this.writeTerminalFailure(
-                                    context,
+                                    terminalContext,
                                     classification.result,
                                 );
                                 throw new ResourceInboxFinalizedByHandlerError(
-                                    {
-                                        ...entry,
-                                        status: EntityStatus.FAILED,
-                                        dequeueAudit: {
-                                            ...entry.dequeueAudit,
-                                            endTs: Temporal.Instant.fromEpochMilliseconds(
-                                                this.nowEpochMs(),
-                                            ),
-                                            nextTs: undefined,
-                                        },
-                                    },
+                                    toFinalizedResourceEntry(
+                                        terminalContext,
+                                        EntityStatus.FAILED,
+                                        this.nowEpochMs(),
+                                    ),
                                     error instanceof Error
                                         ? error
                                         : new Error(String(error)),
@@ -624,6 +503,7 @@ export class AppInboxService {
     private recordQueueRetryTiming<V>(
         enqueue: AppInboxEnqueueInput<V>,
         entry: ResourceEntry,
+        classification: Extract<AppInboxErrorClassification, { kind: 'retryable' }>,
         error: unknown,
     ): void {
         recordRallarTiming(
@@ -635,10 +515,18 @@ export class AppInboxService {
                 requestId: enqueue.resourceId,
                 details: {
                     ...this.toTimingDetails(enqueue, entry.key),
-                    attempts: entry.dequeueAudit.attempts,
-                    queueAgeMs: toQueueAgeMs(entry),
-                    errorName: error instanceof Error ? error.name : undefined,
-                    errorMessage: error instanceof Error ? error.message : String(error),
+                    attempt: readResourceInboxAttemptTelemetry(entry)?.attempt ??
+                        entry.dequeueAudit.attempts,
+                    attempts: readResourceInboxAttemptTelemetry(entry)?.attempt ??
+                        entry.dequeueAudit.attempts,
+                    selectedLane: readResourceInboxAttemptTelemetry(entry)?.selectedLane,
+                    queueAgeMs: readResourceInboxAttemptTelemetry(entry)?.queueAgeMs ??
+                        toQueueAgeMs(entry, this.nowEpochMs()),
+                    dueAgeMs: readResourceInboxAttemptTelemetry(entry)?.dueAgeMs ??
+                        toDueAgeMs(entry, this.nowEpochMs()),
+                    classification: classification.kind,
+                    errorCode: classification.code,
+                    errorMessage: classification.message,
                 },
             },
             'ok',
@@ -742,21 +630,6 @@ export class AppInboxService {
         };
     }
 
-    private toTransactionRepositories(
-        transaction: PSqlTransactionSql,
-    ): ReturnType<AppInboxTransactionRepositories> {
-        const databaseRepositories = (
-            this.database as PSqlSql & Readonly<{
-                appInboxTransactionRepositories?: AppInboxTransactionRepositories;
-            }>
-        ).appInboxTransactionRepositories;
-        return this.optionsInput.transactionRepositories?.(transaction) ??
-            databaseRepositories?.(transaction) ?? {
-            resourceInbox: new ResourceInboxRepository(transaction),
-            resourceInboxResults: new ResourceInboxResultsRepository(transaction),
-        };
-    }
-
     private nowEpochMs(): number {
         return this.optionsInput.nowEpochMs?.() ?? Date.now();
     }
@@ -791,327 +664,6 @@ function toAppInboxErrorMessage(resource: string): string {
     } catch {
         return resource;
     }
-}
-
-export function classifyAppInboxError(error: unknown): AppInboxErrorClassification {
-    if (error instanceof AppInboxReservationConflictError) {
-        return {
-            kind: 'retryable',
-            code: error.code,
-            message: error.message,
-        };
-    }
-    const terminal = toTerminalAppInboxError(error);
-    if (terminal !== undefined) {
-        return { kind: 'terminal', result: terminal };
-    }
-    return {
-        kind: 'retryable',
-        code: toErrorCode(error),
-        message: error instanceof Error ? error.message : String(error),
-    };
-}
-
-function toTerminalAppInboxError(error: unknown): unknown | undefined {
-    if (isGroupPolicyDeniedError(error)) {
-        return {
-            error: error.message,
-            code: error.denial.code,
-            message: error.denial.message,
-            details: error.denial.details,
-        };
-    }
-
-    if (error instanceof NonRetryableException) {
-        return error instanceof Error ? error.message : String(error);
-    }
-
-    if (isTerminalDomainError(error)) {
-        return {
-            error: error.message,
-            code: error.code,
-            message: error.message,
-            status: error.status,
-        };
-    }
-
-    return undefined;
-}
-
-export function createAppInboxRetryExhaustionHandler(options: Readonly<{
-    database: PSqlSql;
-    nowEpochMs?: () => number;
-    timing?: RallarTimingSink;
-    transactionRepositories?: AppInboxTransactionRepositories;
-}>): (exhaustion: ResourceInboxRetryExhaustion) => Promise<ResourceEntry> {
-    const nowEpochMs = options.nowEpochMs ?? Date.now;
-    return async (exhaustion) => {
-        if (exhaustion.attempt !== 20) {
-            throw new RangeError(
-                `App inbox exhaustion requires exactly 20 attempts, received ${exhaustion.attempt}`,
-            );
-        }
-        const exhaustedAtEpochMs = nowEpochMs();
-        const diagnostics = {
-            type: 'app-inbox-retry-exhausted',
-            commandIdentity: {
-                contextId: exhaustion.entry.key.contextId,
-                resourceId: exhaustion.entry.key.resourceId,
-                topicId: exhaustion.entry.key.topicId,
-                typeId: exhaustion.entry.typeId,
-            },
-            attempts: exhaustion.attempt,
-            lastError: {
-                code: toErrorCode(exhaustion.error),
-                message: exhaustion.error.message,
-            },
-            queueAgeMs: exhaustion.queueAgeMs,
-            dueAgeMs: exhaustion.dueAgeMs,
-            exhaustedAtEpochMs,
-        } as const;
-        const details = {
-            attempt: exhaustion.attempt,
-            selectedLane: exhaustion.lane,
-            classification: exhaustion.classification,
-            exhaustion: true,
-            queueAgeMs: exhaustion.queueAgeMs,
-            dueAgeMs: exhaustion.dueAgeMs,
-        } as const;
-        return await timeRallarAsync(
-            options.timing,
-            {
-                component: 'app-inbox-phase',
-                operation: 'transaction',
-                requestId: exhaustion.entry.key.resourceId,
-                details,
-            },
-            async () => await runInTransaction(options.database, async (transaction) => {
-                const repositories = options.transactionRepositories?.(transaction) ?? {
-                    resourceInbox: new ResourceInboxRepository(transaction),
-                    resourceInboxResults: new ResourceInboxResultsRepository(transaction),
-                };
-                await timeRallarAsync(
-                    options.timing,
-                    {
-                        component: 'app-inbox-phase',
-                        operation: 'write',
-                        requestId: exhaustion.entry.key.resourceId,
-                        details,
-                    },
-                    async () => {
-                        await repositories.resourceInboxResults.replace(
-                            toResourceEntryWithUpdatedResource(
-                                exhaustion.entry,
-                                EntityStatus.FAILED,
-                                diagnostics,
-                            ),
-                        );
-                        const finished = await repositories.resourceInbox.finishReserved(
-                            exhaustion.entry.key,
-                            exhaustion.attempt,
-                            EntityStatus.FAILED,
-                            new Date(exhaustedAtEpochMs),
-                        );
-                        if (!finished) {
-                            throw new AppInboxReservationConflictError(exhaustion.entry.key);
-                        }
-                    },
-                );
-                return {
-                    ...exhaustion.entry,
-                    status: EntityStatus.FAILED,
-                    dequeueAudit: {
-                        ...exhaustion.entry.dequeueAudit,
-                        endTs: Temporal.Instant.fromEpochMilliseconds(exhaustedAtEpochMs),
-                        nextTs: undefined,
-                    },
-                };
-            }),
-        );
-    };
-}
-
-function toErrorCode(error: unknown): string {
-    return error && typeof error === 'object' && 'code' in error &&
-            typeof error.code === 'string'
-        ? error.code
-        : error instanceof Error
-        ? error.name
-        : 'unknown-error';
-}
-
-async function assertMatchingAppInboxCommand(
-    entry: ResourceEntry,
-    incoming: AppInboxEnqueueInput<unknown>,
-    receivedCommandIdentity: string,
-): Promise<void> {
-    let existing: AppInboxEnqueueInput<unknown>;
-    try {
-        const message = JSON.parse(entry.resource) as ALMessage;
-        existing = JSON.parse(message.payload.resource) as AppInboxEnqueueInput<unknown>;
-    } catch {
-        const receivedCommandHash = await hashStateMutationCommand(
-            toLogicalAppInboxCommand(incoming),
-        );
-        throw new AppInboxIdempotencyConflictError(
-            entry.key.resourceId,
-            'invalid-existing-command',
-            receivedCommandHash,
-        );
-    }
-    const normalizedExisting = toJsonWireAppInboxEnqueue(existing);
-    const existingCommandIdentity = serializeCanonicalJsonWire(
-        toLogicalAppInboxCommand(normalizedExisting),
-    );
-    if (existingCommandIdentity !== receivedCommandIdentity) {
-        const [existingCommandHash, receivedCommandHash] = await Promise.all([
-            hashStateMutationCommand(toLogicalAppInboxCommand(normalizedExisting)),
-            hashStateMutationCommand(toLogicalAppInboxCommand(incoming)),
-        ]);
-        throw new AppInboxIdempotencyConflictError(
-            entry.key.resourceId,
-            existingCommandHash,
-            receivedCommandHash,
-        );
-    }
-}
-
-function toJsonWireAppInboxEnqueue<V>(
-    enqueue: AppInboxEnqueueInput<V>,
-): AppInboxEnqueueInput<V> {
-    return toJsonWireValue(enqueue, '$', new Set()) as AppInboxEnqueueInput<V>;
-}
-
-function toJsonWireValue(
-    value: unknown,
-    path: string,
-    ancestors: Set<object>,
-): unknown {
-    if (value === null || typeof value === 'string' || typeof value === 'boolean') {
-        return value;
-    }
-    if (typeof value === 'number') {
-        if (!Number.isFinite(value)) rejectJsonWire(path, 'contains a non-finite number');
-        return Object.is(value, -0) ? 0 : value;
-    }
-    if (typeof value !== 'object') {
-        rejectJsonWire(path, `contains unsupported ${typeof value}`);
-    }
-    if (ancestors.has(value)) rejectJsonWire(path, 'contains a cycle');
-    ancestors.add(value);
-    try {
-        if (Array.isArray(value)) {
-            const descriptors = Object.getOwnPropertyDescriptors(value);
-            const result: unknown[] = [];
-            for (let index = 0; index < value.length; index++) {
-                const descriptor = descriptors[String(index)];
-                if (!descriptor || !('value' in descriptor)) {
-                    rejectJsonWire(`${path}[${index}]`, 'must be a dense data element');
-                }
-                if (descriptor.value === undefined ||
-                    typeof descriptor.value === 'function' ||
-                    typeof descriptor.value === 'symbol' ||
-                    typeof descriptor.value === 'bigint') {
-                    rejectJsonWire(`${path}[${index}]`, 'contains an unsupported array value');
-                }
-                result.push(toJsonWireValue(
-                    descriptor.value,
-                    `${path}[${index}]`,
-                    ancestors,
-                ));
-            }
-            for (const key of Reflect.ownKeys(descriptors)) {
-                if (typeof key === 'symbol') rejectJsonWire(path, 'contains a symbol key');
-                if (key === 'length' || /^(0|[1-9]\d*)$/u.test(key)) continue;
-                if (descriptors[key]?.enumerable) {
-                    rejectJsonWire(path, `contains unsupported array property ${key}`);
-                }
-            }
-            return result;
-        }
-
-        const prototype = Object.getPrototypeOf(value);
-        if (prototype !== Object.prototype && prototype !== null) {
-            rejectJsonWire(path, 'must contain only plain JSON objects');
-        }
-        const result = Object.create(null) as Record<string, unknown>;
-        const descriptors = Object.getOwnPropertyDescriptors(value);
-        for (const key of Reflect.ownKeys(descriptors)) {
-            if (typeof key === 'symbol') rejectJsonWire(path, 'contains a symbol key');
-            const descriptor = descriptors[key];
-            if (!descriptor.enumerable) continue;
-            if (!('value' in descriptor)) {
-                rejectJsonWire(`${path}.${key}`, 'contains an accessor');
-            }
-            if (descriptor.value === undefined) continue;
-            Object.defineProperty(result, key, {
-                value: toJsonWireValue(
-                    descriptor.value,
-                    `${path}.${key}`,
-                    ancestors,
-                ),
-                enumerable: true,
-                configurable: true,
-                writable: true,
-            });
-        }
-        return result;
-    } finally {
-        ancestors.delete(value);
-    }
-}
-
-function rejectJsonWire(path: string, detail: string): never {
-    throw new TypeError(`App inbox JSON wire ${path} ${detail}`);
-}
-
-function toLogicalAppInboxCommand(enqueue: AppInboxEnqueueInput<unknown>): Readonly<{
-    type: AppInboxType;
-    authority: unknown;
-    data: unknown;
-}> {
-    return {
-        type: enqueue.type,
-        authority: enqueue.authority ?? null,
-        data: enqueue.data,
-    };
-}
-
-function serializeCanonicalJsonWire(value: unknown): string {
-    if (value === null || typeof value !== 'object') {
-        return JSON.stringify(value) as string;
-    }
-    if (Array.isArray(value)) {
-        return `[${value.map(serializeCanonicalJsonWire).join(',')}]`;
-    }
-    const entries = Object.keys(value)
-        .sort(compareJsonWireKeys)
-        .map((key) => {
-            const descriptor = Object.getOwnPropertyDescriptor(value, key);
-            return `${JSON.stringify(key)}:${serializeCanonicalJsonWire(descriptor?.value)}`;
-        });
-    return `{${entries.join(',')}}`;
-}
-
-function compareJsonWireKeys(left: string, right: string): number {
-    return left < right ? -1 : left > right ? 1 : 0;
-}
-
-function isTerminalDomainError(error: unknown): error is Readonly<{
-    code: string;
-    message: string;
-    status: number;
-}> {
-    return Boolean(
-        error instanceof Error &&
-        'code' in error &&
-        typeof error.code === 'string' &&
-        'status' in error &&
-        typeof error.status === 'number' &&
-        Number.isSafeInteger(error.status) &&
-        error.status >= 400 &&
-        error.status < 500,
-    );
 }
 
 function isSerializedPolicyDenial(value: unknown): value is Readonly<{

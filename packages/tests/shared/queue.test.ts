@@ -10,6 +10,98 @@ import { toResourceInboxFairnessReservationOptions } from '@shared/queuebox/Queu
 
 describe('enqueue and dequeue', () => {
 
+    it('runs exhausted AppInbox finalization recovery without invoking the domain computer or generic release', async () => {
+        const exhausted = createQueueEntry(
+            'finalization-recovery',
+            EntityStatus.RESERVED,
+            21,
+        );
+        const reserveFinalizations = vi.fn()
+            .mockResolvedValueOnce(new Map([[exhausted.key, exhausted]]))
+            .mockResolvedValue(new Map());
+        const releaseEntries = vi.fn();
+        const recoverFinalization = vi.fn(async () => undefined);
+        const domainComputer = vi.fn(async () => 'domain-result');
+        const repository = createDequeueRepository({
+            reserveRetryExhaustionFinalizations: reserveFinalizations,
+            releaseEntries,
+        });
+
+        const dequeued = await DequeueResourceEntryController.toDequeuer<string>(
+            repository as never,
+            () => new Set(['APP_INBOX']),
+            () => 1,
+            20,
+            1,
+            toTestResilience(),
+            {
+                onRetryExhaustionRecovery: recoverFinalization,
+            } as never,
+        )
+            .withReturnDequeuedEntries(true)
+            .dequeueForCompute(domainComputer);
+
+        expect(reserveFinalizations).toHaveBeenCalledWith(
+            new Set(['APP_INBOX']),
+            {
+                processingAttempts: 20,
+                maxToReserve: 1,
+                staleAfterMs: 5 * 60 * 1000,
+            },
+        );
+        expect(recoverFinalization).toHaveBeenCalledWith(expect.objectContaining({
+            entry: exhausted,
+            processingAttempts: 20,
+            reservationAttempt: 21,
+            lane: 'FINALIZATION',
+            failure: { source: 'finalization-recovery' },
+        }));
+        expect(domainComputer).not.toHaveBeenCalled();
+        expect(releaseEntries).not.toHaveBeenCalled();
+        expect(dequeued.get((Reservator as unknown as { FINALIZATION: Reservator }).FINALIZATION))
+            .toBeDefined();
+    });
+
+    it('leaves failed finalization reserved for a later generation and eventually finalizes it', async () => {
+        const attempt21 = createQueueEntry('repeated-finalization', EntityStatus.RESERVED, 21);
+        const attempt22 = {
+            ...attempt21,
+            dequeueAudit: { ...attempt21.dequeueAudit, attempts: 22 },
+        };
+        const reserveFinalizations = vi.fn()
+            .mockResolvedValueOnce(new Map([[attempt21.key, attempt21]]))
+            .mockResolvedValueOnce(new Map([[attempt22.key, attempt22]]));
+        const releaseEntries = vi.fn();
+        const domainComputer = vi.fn(async () => 'domain-result');
+        const recoverFinalization = vi.fn()
+            .mockRejectedValueOnce(new Error('finalization write rolled back'))
+            .mockResolvedValueOnce(attempt22);
+        const repository = createDequeueRepository({
+            reserveRetryExhaustionFinalizations: reserveFinalizations,
+            releaseEntries,
+        });
+        const createController = () => DequeueResourceEntryController.toDequeuer<string>(
+            repository as never,
+            () => new Set(['APP_INBOX']),
+            () => 1,
+            20,
+            1,
+            toTestResilience(),
+            { onRetryExhaustionRecovery: recoverFinalization },
+        ).withReturnDequeuedEntries(true);
+
+        const first = await createController().dequeueForCompute(domainComputer);
+        const second = await createController().dequeueForCompute(domainComputer);
+
+        expect(reserveFinalizations).toHaveBeenCalledTimes(2);
+        expect(recoverFinalization.mock.calls.map(([value]) => value.reservationAttempt))
+            .toEqual([21, 22]);
+        expect(first.get(Reservator.FINALIZATION)?.values().next().value?.left).toBeDefined();
+        expect(second.get(Reservator.FINALIZATION)?.values().next().value?.right).toBeDefined();
+        expect(domainComputer).not.toHaveBeenCalled();
+        expect(releaseEntries).not.toHaveBeenCalled();
+    });
+
     it('data successfully queued', async () => {
         const queue = new InMemoryQueueBox(new Map());
         const typeId = 'WHACK';

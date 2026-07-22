@@ -24,7 +24,10 @@ import {
 import { installQueueBoxPubSubBridge } from '@shared-server/rallar-system/pubsub/QueueBoxPubSubBridge.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/services/AppClientInboxService.ts';
 import { AppGroupInboxService } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
-import { createAppInboxRetryExhaustionHandler } from '@shared-server/rallar-system/services/AppInboxService.ts';
+import {
+  createAppInboxRetryExhaustionHandler,
+  createAppInboxRetryExhaustionRecoveryHandler,
+} from '@shared-server/rallar-system/services/AppInboxService.ts';
 import { recordRallarTiming } from '@shared-server/rallar-system/services/timing.ts';
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/services/GroupPresenceSummaryWork.ts';
 import { createRtcTopologyOutboxPublisher } from '@shared-server/rallar-system/services/RtcTopologyOutboxWork.ts';
@@ -252,7 +255,10 @@ function initialise(
       nowEpochMs: now,
       onRetryExhausted: createAppInboxRetryExhaustionHandler({
         database: postgresSql,
-        nowEpochMs: now,
+        timing,
+      }),
+      onRetryExhaustionRecovery: createAppInboxRetryExhaustionRecoveryHandler({
+        database: postgresSql,
         timing,
       }),
       onRetryExhaustionTelemetry: (exhaustion) => {
@@ -263,10 +269,12 @@ function initialise(
             operation: 'retry-exhaustion',
             requestId: exhaustion.entry.key.resourceId,
             details: {
-              attempt: exhaustion.attempt,
+              processingAttempts: exhaustion.processingAttempts,
+              reservationAttempt: exhaustion.reservationAttempt,
               selectedLane: exhaustion.lane,
               classification: exhaustion.classification,
               exhaustion: exhaustion.exhausted,
+              source: exhaustion.failure.source,
               queueAgeMs: exhaustion.queueAgeMs,
               dueAgeMs: exhaustion.dueAgeMs,
             },

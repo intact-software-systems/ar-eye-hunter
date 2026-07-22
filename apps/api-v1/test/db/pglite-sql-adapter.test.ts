@@ -1790,6 +1790,49 @@ Deno.test('ResourceInboxRepository preserves supported expanded-year rollover', 
   });
 });
 
+Deno.test('PGlite reclaims stale AppInbox exhaustion as an exact finalization generation', async () => {
+  await withPGliteSql(async (sql) => {
+    const inbox = new ResourceInboxRepository(sql);
+    const queue = new PSqlQueueBox(inbox);
+    const exhausted = {
+      ...createResourceEntry('pglite-finalization-recovery', {
+        payload: { text: 'recover finalization' },
+        typeId: 'APP_INBOX',
+      }),
+      status: EntityStatus.RESERVED,
+      dequeueAudit: {
+        attempts: 20,
+        startTs: Temporal.Instant.from('2020-01-01T00:00:00Z'),
+      },
+    };
+    await inbox.write(exhausted);
+
+    const recovered = await queue.reserveRetryExhaustionFinalizations(
+      new Set(['APP_INBOX', 'APP_OUTBOX']),
+      {
+        processingAttempts: 20,
+        maxToReserve: 1,
+        staleAfterMs: 300_000,
+      },
+    );
+
+    assert.equal(recovered.size, 1);
+    assert.equal([...recovered.values()][0]?.dequeueAudit.attempts, 21);
+    assert.equal([...recovered.values()][0]?.status, EntityStatus.RESERVED);
+    assert.equal(
+      (await queue.reserveRetryExhaustionFinalizations(
+        new Set(['APP_INBOX']),
+        {
+          processingAttempts: 20,
+          maxToReserve: 1,
+          staleAfterMs: 300_000,
+        },
+      )).size,
+      0,
+    );
+  });
+});
+
 Deno.test('ResourceInboxRepository and ResourceInboxResultsRepository run against PGlite SQL adapter', async () => {
   await withPGliteSql(async (sql) => {
     const inbox = new ResourceInboxRepository(sql);
