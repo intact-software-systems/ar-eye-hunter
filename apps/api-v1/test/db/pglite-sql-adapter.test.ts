@@ -1914,7 +1914,7 @@ Deno.test('ResourceInboxRepository and ResourceInboxResultsRepository run agains
     assert.equal(reserved.right?.dequeueAudit.attempts, 1);
     assert.equal(await inbox.writeIfAbsentOrMatch(active), 'matched');
 
-    assert.equal(await inbox.updateResourceEntry(active.key, EntityStatus.COMPLETED), 1);
+    assert.equal(await inbox.updateResourceEntry(active.key, EntityStatus.COMPLETED, null), 1);
     assert.equal((await inbox.findByKey(active.key))?.status, EntityStatus.COMPLETED);
     assert.equal(await inbox.writeIfAbsentOrMatch(active), 'matched');
     assert.equal(await inbox.deleteExpired(), 1);

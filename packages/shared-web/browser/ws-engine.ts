@@ -59,7 +59,7 @@ export async function initialiseWsEngine(
                         .isAnyEntryToLock(
                             WsQueueBoxClientService.OUTBOX_DEQUEUE_TYPES,
                             resilience.checkReserveTimeouts.isEntryRateLimiter,
-                            resilience.checkFailed.isEntryRateLimiter
+                            resilience.checkFairness.isEntryRateLimiter
                         ),
             runnable:
                 () => wsQueueBox.dequeueOutbox(WsQueueBoxClientService.OUTBOX_DEQUEUE_TYPES, resilience),
@@ -79,7 +79,7 @@ export async function initialiseWsEngine(
                         .isAnyEntryToLock(
                             WsQueueBoxClientService.INBOX_DEQUEUE_TYPES,
                             resilience.checkReserveTimeouts.isEntryRateLimiter,
-                            resilience.checkFailed.isEntryRateLimiter
+                            resilience.checkFairness.isEntryRateLimiter
                         ),
             runnable:
                 () => wsQueueBox.dequeueInbox(WsQueueBoxClientService.INBOX_DEQUEUE_TYPES, resilience),

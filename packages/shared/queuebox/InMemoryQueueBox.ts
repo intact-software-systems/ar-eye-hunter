@@ -6,7 +6,6 @@ import { QueueBoxResourceEntryRepository } from './QueueBoxTypes.ts';
 import {
     COMPLETED_STATUSES,
     EntityStatus,
-    FAILED_STATUS,
     isExpiredResourceEntry,
     Key,
     NEW_AND_RETRY_STATUSES,
@@ -17,6 +16,7 @@ import {
     toResourceEntryKey
 } from './ResourceEntry.ts';
 import { ResilienceDto } from './DequeueResourceEntryController.ts';
+import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from './ResourceInboxRetryPolicy.ts';
 
 export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
     private readonly data: Map<ResourceEntryKeyString, ResourceEntry>;
@@ -141,7 +141,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
     async releaseEntries(
         resources: ResourceEntry[],
         entityStatus: EntityStatus,
-        exponentialBackoffSteps?: Temporal.TimeUnit
+        delayMs: number | null,
     ): Promise<Map<Key, ResourceEntry>> {
         return new Map(
             resources
@@ -151,21 +151,20 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
                         const base = current && !isExpiredResourceEntry(current)
                             ? current
                             : resource;
-                        resource.dequeueAudit = {
+                        const releasedAt = Temporal.Now.instant();
+                        const dequeueAudit = {
                             startTs: resource.dequeueAudit.startTs,
-                            endTs: Temporal.Now.instant(),
-                            nextTs:
-                                exponentialBackoffSteps
-                                    ? this.toExponentialBackoffInstant(exponentialBackoffSteps, resource.dequeueAudit.attempts)
-                                    : undefined,
+                            endTs: releasedAt,
+                            nextTs: delayMs !== null
+                                ? releasedAt.add({ milliseconds: delayMs })
+                                : undefined,
                             attempts: resource.dequeueAudit.attempts
                         };
-                        resource.status = entityStatus;
 
                         const updated = {
                             ...base,
-                            status: resource.status,
-                            dequeueAudit: resource.dequeueAudit,
+                            status: entityStatus,
+                            dequeueAudit,
                         };
 
                         this.data.set(toKeyAsString(resource.key), updated);
@@ -225,6 +224,13 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
                 continue;
             }
 
+            if (
+                entry.status === EntityStatus.FAILED ||
+                entry.dequeueAudit.attempts >= DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
+            ) {
+                continue;
+            }
+
             if (entry.dequeueAudit.nextTs && Temporal.Instant.compare(now, entry.dequeueAudit.nextTs) < 0) {
                 continue;
             }
@@ -246,14 +252,61 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         return reserved;
     }
 
-    async isAnyEntryToLock(typeIds: Set<string>, checkTimeout: RateLimiter, checkFailed: RateLimiter): Promise<boolean> {
-        const isFailedEntryToLock =
-            await RateLimiter.tryToExecuteOrDefault(
-                checkFailed,
-                async () => this.isAnyToLock(typeIds, FAILED_STATUS),
-                false
-            );
+    async reserveOverdueRetryEntries(
+        typeIds: Set<string>,
+        overdueBeforeEpochMs: number,
+        maxToReserve: number,
+    ): Promise<Map<Key, ResourceEntry>> {
+        if (typeIds.size === 0 || maxToReserve <= 0) {
+            return new Map();
+        }
 
+        const overdueBefore = Temporal.Instant.fromEpochMilliseconds(overdueBeforeEpochMs);
+        const now = Temporal.Now.instant();
+        const candidates = [...this.data.entries()]
+            .filter(([, entry]) =>
+                !isExpiredResourceEntry(entry, now) &&
+                typeIds.has(entry.typeId) &&
+                entry.status === EntityStatus.RETRY &&
+                entry.dequeueAudit.attempts < DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts &&
+                entry.dequeueAudit.nextTs !== undefined &&
+                Temporal.Instant.compare(entry.dequeueAudit.nextTs, overdueBefore) <= 0
+            )
+            .sort(([, left], [, right]) =>
+                Temporal.Instant.compare(
+                    left.dequeueAudit.nextTs!,
+                    right.dequeueAudit.nextTs!,
+                )
+            )
+            .slice(0, maxToReserve);
+        const reserved = new Map<Key, ResourceEntry>();
+
+        for (const [key, entry] of candidates) {
+            const selectedNextTs = entry.dequeueAudit.nextTs;
+            const updated = {
+                ...entry,
+                status: EntityStatus.RESERVED,
+                dequeueAudit: {
+                    startTs: now,
+                    endTs: undefined,
+                    nextTs: selectedNextTs,
+                    attempts: entry.dequeueAudit.attempts + 1,
+                },
+            };
+            this.data.set(key, {
+                ...updated,
+                dequeueAudit: {
+                    ...updated.dequeueAudit,
+                    nextTs: undefined,
+                },
+            });
+            reserved.set(toResourceEntryKey(key), updated);
+        }
+
+        return reserved;
+    }
+
+    async isAnyEntryToLock(typeIds: Set<string>, checkTimeout: RateLimiter, _checkFairness: RateLimiter): Promise<boolean> {
         const isTimedOutEntryToLock =
             await RateLimiter.tryToExecuteOrDefault(
                 checkTimeout,
@@ -269,7 +322,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
                 return false;
             });
 
-        return newAndRetryEntryToLock || isTimedOutEntryToLock || isFailedEntryToLock;
+        return newAndRetryEntryToLock || isTimedOutEntryToLock;
     }
 
     private isAnyToLock(typeIds: Set<string>, statusesToFind: ReadonlySet<EntityStatus>) {
@@ -278,6 +331,12 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
                 !isExpiredResourceEntry(entry)
                 && typeIds.has(entry.typeId)
                 && statusesToFind.has(entry.status)
+                && entry.status !== EntityStatus.FAILED
+                && entry.dequeueAudit.attempts < DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
+                && (
+                    !entry.dequeueAudit.nextTs ||
+                    Temporal.Instant.compare(Temporal.Now.instant(), entry.dequeueAudit.nextTs) >= 0
+                )
             ) {
                 return true;
             }
@@ -312,24 +371,6 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         }
 
         return false;
-    }
-
-    private toExponentialBackoffInstant(timeUnit: Temporal.TimeUnit, attempts: number): Temporal.Instant {
-        const num = this.toExponentialBackoff(attempts);
-
-        return timeUnit == 'second'
-            ? Temporal.Now.instant().add({ seconds: num })
-            : Temporal.Now.instant().add({ minutes: num });
-    }
-
-    private toExponentialBackoff(attempts: number): number {
-        return attempts <= 1
-            ? attempts == 0 ? 1 : 2
-            :
-            Math.pow(
-                2,
-                attempts
-            );
     }
 
     async getItem(key: Key): Promise<ResourceEntry | undefined> {

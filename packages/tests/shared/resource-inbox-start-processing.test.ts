@@ -54,6 +54,28 @@ describe('ResourceInboxRepository.startProcessingEntity', () => {
         expect(reserved.right?.dequeueAudit.attempts).toBe(1);
         expect(reserved.right?.dequeueAudit.startTs).toBeDefined();
     });
+
+    it('does not reserve an entry whose processing-attempt budget is exhausted', async () => {
+        const exhausted = {
+            ...createEntry('exhausted-20', Temporal.Now.instant().add({ minutes: 5 })),
+            status: EntityStatus.RETRY,
+            dequeueAudit: {
+                attempts: 20,
+                startTs: Temporal.Now.instant().subtract({ minutes: 1 }),
+                endTs: Temporal.Now.instant().subtract({ seconds: 31 }),
+                nextTs: Temporal.Now.instant().subtract({ seconds: 30 }),
+            },
+        } satisfies ResourceEntry;
+        const harness = createSqlHarness([toRow(exhausted, 1n)]);
+        const repo = new repositoryModule.ResourceInboxRepository(harness.sql);
+
+        const skipped = await repo.startProcessingEntity(exhausted);
+
+        expect(skipped.left).toEqual({
+            kind: 'expired-or-missing',
+            key: exhausted.key,
+        });
+    });
 });
 
 function createSqlHarness(seedRows: ResourceInboxRow[]) {
@@ -76,12 +98,16 @@ function createSqlHarness(seedRows: ResourceInboxRow[]) {
             query.includes('ri_attempts =') &&
             query.includes('expire_ts > now()')
         ) {
-            const [status, attempts, startTs, endTs, nextTs, topicId, resourceId, contextId] =
+            const [status, attempts, startTs, endTs, nextTs, topicId, resourceId, contextId, maxAttempts] =
                 values;
             const key = `${contextId}::${topicId}::${resourceId}`;
             const row = rows.get(key);
 
-            if (!row || Date.parse(row.expire_ts) <= Date.now()) {
+            if (
+                !row ||
+                Date.parse(row.expire_ts) <= Date.now() ||
+                (maxAttempts !== undefined && Number(row.ri_attempts) >= Number(maxAttempts))
+            ) {
                 return [];
             }
 

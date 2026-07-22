@@ -57,7 +57,7 @@ export function initialiseRtcOverlayMulticastManager(
                     .isAnyEntryToLock(
                         WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES,
                         resilience.checkReserveTimeouts.isEntryRateLimiter,
-                        resilience.checkFailed.isEntryRateLimiter,
+                        resilience.checkFairness.isEntryRateLimiter,
                     ),
             runnable: () =>
                 webRtcOverlayMulticastManager.dequeue(
@@ -100,7 +100,7 @@ export function initialiseRtcRxStreamer(
                     .isAnyEntryToLock(
                         WebRtcRxStreamerService.INBOX_DEQUEUE_TYPES,
                         resilience.checkReserveTimeouts.isEntryRateLimiter,
-                        resilience.checkFailed.isEntryRateLimiter,
+                        resilience.checkFairness.isEntryRateLimiter,
                     ),
             runnable: () =>
                 rtcRxStreamer.dequeueInbox(WebRtcRxStreamerService.INBOX_DEQUEUE_TYPES, resilience),

@@ -11,6 +11,13 @@ import { DequeueController, FailureDto, Reservator, SuccessDto } from './Dequeue
 import { DequeueResourceEntryRepository } from './QueueBoxTypes.ts';
 import * as Resource from './ResourceEntry.ts';
 import { EntityStatus, isKeysEqual, ResourceEntry } from './ResourceEntry.ts';
+import {
+    DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
+    ResourceInboxFairnessTelemetry,
+    ResourceInboxRetryPolicy,
+    retryAfterAttempt,
+    toResourceInboxFairnessTelemetry,
+} from './ResourceInboxRetryPolicy.ts';
 
 // -----------------------------------------
 // Minimal domain contracts (adjust/import)
@@ -33,7 +40,7 @@ export class ResilienceDto {
 
     // Duration.ofMinutes(1), Duration.ofHours(1)
     static readonly RATE_LIMITER_RESERVED_TIMEOUT_SLIDING_WINDOW_DURATION_MS = 1 * 60 * 1000;
-    static readonly RATE_LIMITER_FAILED_CHECK_SLIDING_WINDOW_DURATION_MS = 60 * 60 * 1000;
+    static readonly RATE_LIMITER_FAIRNESS_CHECK_SLIDING_WINDOW_DURATION_MS = 60 * 1000;
 
     static readonly MIN_CONSECUTIVE_SUCCESSES = 10;
     // Duration.ofMinutes(15)
@@ -42,9 +49,13 @@ export class ResilienceDto {
     constructor(
         public readonly circuitBreaker: CircuitBreaker,
         public readonly checkReserveTimeouts: InstanceType<typeof ResilienceDto.StatusChecker>,
-        public readonly checkFailed: InstanceType<typeof ResilienceDto.StatusChecker>,
+        public readonly checkFairness: InstanceType<typeof ResilienceDto.StatusChecker>,
         public readonly rateAdjuster: RateAdjuster,
     ) {
+    }
+
+    get checkFailed(): InstanceType<typeof ResilienceDto.StatusChecker> {
+        return this.checkFairness;
     }
 
     success(): void {
@@ -88,15 +99,17 @@ export class ResilienceDto {
             );
         }
 
-        static toFailedEntryChecker(): InstanceType<typeof ResilienceDto.StatusChecker> {
+        static toFairnessEntryChecker(
+            maxSelectionsInWindow: number = ResilienceDto.MAX_NUM_DEQUEUE_IN_WINDOW,
+        ): InstanceType<typeof ResilienceDto.StatusChecker> {
             return new ResilienceDto.StatusChecker(
                 RateLimiter.init(
-                    ResilienceDto.RATE_LIMITER_FAILED_CHECK_SLIDING_WINDOW_DURATION_MS,
+                    ResilienceDto.RATE_LIMITER_FAIRNESS_CHECK_SLIDING_WINDOW_DURATION_MS,
                     ResilienceDto.MAX_NUM_IS_ENTRY_CHECK,
                 ),
                 RateLimiter.init(
-                    ResilienceDto.RATE_LIMITER_FAILED_CHECK_SLIDING_WINDOW_DURATION_MS,
-                    ResilienceDto.MAX_NUM_DEQUEUE_IN_WINDOW,
+                    ResilienceDto.RATE_LIMITER_FAIRNESS_CHECK_SLIDING_WINDOW_DURATION_MS,
+                    maxSelectionsInWindow,
                 ),
             );
         }
@@ -108,6 +121,7 @@ export class ResilienceDto {
         maxRate: number,
         concurrencyIncreaseStep: number,
         concurrencyReduceStep: number,
+        maxFairnessSelectionsInWindow: number = ResilienceDto.MAX_NUM_DEQUEUE_IN_WINDOW,
     ): InstanceType<typeof ResilienceDto> {
         const policy = RateAdjuster.toPolicy(
             initialRate,
@@ -121,7 +135,7 @@ export class ResilienceDto {
         return new ResilienceDto(
             CircuitBreaker.create(circuitBreakerPolicy),
             ResilienceDto.StatusChecker.toReserveEntryTimeoutChecker(),
-            ResilienceDto.StatusChecker.toFailedEntryChecker(),
+            ResilienceDto.StatusChecker.toFairnessEntryChecker(maxFairnessSelectionsInWindow),
             RateAdjuster.create(new RateAdjusterPolicy(
                 policy.initialRate,
                 policy.maxRate,
@@ -141,9 +155,6 @@ export class ResilienceDto {
 export class DequeueResourceEntryController {
     static readonly TIMEOUT_ON_NON_RESPONSIVE_ENTRY_MS = Temporal.Duration.from({ milliseconds: 5 * 60 * 1000 });
 
-    private static readonly RETRY_EXPONENTIAL_BACKOFF_STEPS: Temporal.TimeUnit = 'second';
-    private static readonly FAILED_EXPONENTIAL_BACKOFF_STEPS: Temporal.TimeUnit = 'hour';
-
     // -------------------------
     // Java record ResilienceDto
     // -------------------------
@@ -153,8 +164,23 @@ export class DequeueResourceEntryController {
         maxToReserve: () => number,
         maxRetries: number,
         maxNumToDequeue: number,
-        resilience: InstanceType<typeof ResilienceDto>
+        resilience: InstanceType<typeof ResilienceDto>,
+        options: DequeueResourceEntryOptions = {},
     ): DequeueController<Resource.Key, ResourceEntry, V> {
+        const retryPolicy = options.retryPolicy ?? DEFAULT_RESOURCE_INBOX_RETRY_POLICY;
+        if (maxRetries !== retryPolicy.maxAttempts) {
+            throw new Error(
+                `ResourceInbox retry limit ${maxRetries} must match policy maxAttempts ${retryPolicy.maxAttempts}`,
+            );
+        }
+
+        const nowEpochMs = options.nowEpochMs ?? Date.now;
+        const jitterUnit = options.jitterUnit ?? Math.random;
+        const recordReservationTelemetry =
+            options.onReservationTelemetry ?? ((event: ResourceInboxFairnessTelemetry) => {
+                console.info('ResourceInbox reservation', event);
+            });
+
         return DequeueController
             .create<Resource.Key, ResourceEntry, V>()
             .withInboxTypesToDequeue(typesToDequeue)
@@ -174,15 +200,26 @@ export class DequeueResourceEntryController {
                     maxNumToReserve
                 ),
             )
-            .onFailedEntriesReserveDo(async (types, maxNumToReserve) =>
+            .onFairnessEntriesReserveDo(async (types, maxNumToReserve) =>
                 await RateLimiter.tryToExecuteOrDefault(
-                    resilience.checkFailed.lockEntryRateLimiter,
-                    () =>
-                        dequeueResourceEntryRepository.reserveEntries(
+                    resilience.checkFairness.lockEntryRateLimiter,
+                    async () => {
+                        const selectedAtEpochMs = nowEpochMs();
+                        const reserved = await dequeueResourceEntryRepository.reserveOverdueRetryEntries(
                             types,
-                            new Set([EntityStatus.FAILED]),
-                            maxNumToReserve
-                        ),
+                            selectedAtEpochMs - retryPolicy.staleDueThresholdMs,
+                            maxNumToReserve,
+                        );
+                        for (const entry of reserved.values()) {
+                            recordReservationTelemetry(
+                                toResourceInboxFairnessTelemetry(
+                                    entry,
+                                    selectedAtEpochMs,
+                                ),
+                            );
+                        }
+                        return reserved;
+                    },
                     new Map<Resource.Key, ResourceEntry>(),
                 ),
             )
@@ -215,7 +252,7 @@ export class DequeueResourceEntryController {
                             Array.from(successByKey.values())
                                 .map((dto) => dto.value),
                             EntityStatus.COMPLETED,
-                            undefined,
+                            null,
                         );
 
                     const out = new Map<Resource.Key, SuccessDto<Resource.Key, ResourceEntry, V>>();
@@ -237,34 +274,27 @@ export class DequeueResourceEntryController {
 
                 // failureReleaser
                 async (failureByKey) => {
-                    // Group by next status
-                    const grouped = new Map<EntityStatus, FailureDto<Resource.Key, ResourceEntry>[]>();
-
-                    for (const failure of failureByKey.values()) {
-                        const nextStatus =
-                            DequeueResourceEntryController.isNonRetryableException(failure)
-                                ? EntityStatus.NON_RETRYABLE
-                                : failure.value.dequeueAudit.attempts < maxRetries
-                                    ? EntityStatus.RETRY
-                                    : EntityStatus.FAILED;
-
-                        const list = grouped.get(nextStatus) ?? [];
-                        list.push(failure);
-                        grouped.set(nextStatus, list);
-                    }
-
-                    // Release per group and flatten
                     const out = new Map<Resource.Key, FailureDto<Resource.Key, ResourceEntry>>();
-
-                    for (const [status, failures] of grouped.entries()) {
-                        const released =
-                            await dequeueResourceEntryRepository.releaseEntries(
-                                failures.map((f) => f.value),
-                                status,
-                                status === EntityStatus.RETRY
-                                    ? DequeueResourceEntryController.RETRY_EXPONENTIAL_BACKOFF_STEPS
-                                    : DequeueResourceEntryController.FAILED_EXPONENTIAL_BACKOFF_STEPS,
+                    for (const failure of failureByKey.values()) {
+                        const nonRetryable =
+                            DequeueResourceEntryController.isNonRetryableException(failure);
+                        const decision = nonRetryable
+                            ? { status: 'failed' as const, delayMs: null }
+                            : retryAfterAttempt(
+                                retryPolicy,
+                                failure.value.dequeueAudit.attempts,
+                                jitterUnit(),
                             );
+                        const status = nonRetryable
+                            ? EntityStatus.NON_RETRYABLE
+                            : decision.status === 'retry'
+                                ? EntityStatus.RETRY
+                                : EntityStatus.FAILED;
+                        const released = await dequeueResourceEntryRepository.releaseEntries(
+                            [failure.value],
+                            status,
+                            decision.delayMs,
+                        );
 
                         for (const [k, v] of released.entries()) {
                             const original =
@@ -340,3 +370,10 @@ export class DequeueResourceEntryController {
 // TS doesn't have a built-in RuntimeException; in your codebase you may just use Error.
 // This alias matches the intent of the Java signature.
 export type RuntimeException = Error;
+
+export type DequeueResourceEntryOptions = Readonly<{
+    retryPolicy?: ResourceInboxRetryPolicy;
+    jitterUnit?: () => number;
+    nowEpochMs?: () => number;
+    onReservationTelemetry?: (event: ResourceInboxFairnessTelemetry) => void;
+}>;

@@ -638,7 +638,7 @@ describe('AppClientInboxService', () => {
         service.processExpiredSessionsNoWaiting(60_000);
         await waitForQueueEntryCount(queue, 1);
         let [entry] = await readEntries(queue);
-        await queue.releaseEntries([entry], EntityStatus.RESERVED);
+        await queue.releaseEntries([entry], EntityStatus.RESERVED, null);
 
         service.processExpiredSessionsNoWaiting(120_000);
         await new Promise((resolve) => setTimeout(resolve, 0));
@@ -649,7 +649,7 @@ describe('AppClientInboxService', () => {
             60_000,
         );
 
-        await queue.releaseEntries([entry], EntityStatus.RETRY);
+        await queue.releaseEntries([entry], EntityStatus.RETRY, null);
 
         service.processExpiredSessionsNoWaiting(180_000);
         await new Promise((resolve) => setTimeout(resolve, 0));

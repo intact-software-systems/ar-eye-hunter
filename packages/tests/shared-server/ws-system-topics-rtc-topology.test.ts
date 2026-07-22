@@ -867,7 +867,7 @@ describe('Rallar system websocket topics RTC topology', () => {
         expect(await appOutbox.isAnyEntryToLock(
             OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
             resilience.checkReserveTimeouts.isEntryRateLimiter,
-            resilience.checkFailed.isEntryRateLimiter,
+            resilience.checkFairness.isEntryRateLimiter,
         )).toBe(false);
     });
 
@@ -927,7 +927,7 @@ describe('Rallar system websocket topics RTC topology', () => {
         expect(await appOutbox.isAnyEntryToLock(
             OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
             resilience.checkReserveTimeouts.isEntryRateLimiter,
-            resilience.checkFailed.isEntryRateLimiter,
+            resilience.checkFairness.isEntryRateLimiter,
         )).toBe(false);
         expect(countSentTopologyMessages(createSocketsFrom([
             senderSocket,

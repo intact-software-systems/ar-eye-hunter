@@ -168,6 +168,58 @@ describe('PSqlQueueBox', () => {
 
         expect(reserved.size).toBe(0);
     });
+
+    it('passes the exact millisecond release delay through to PostgreSQL', async () => {
+        const entry = {
+            ...createEntry('retry-delay', EntityStatus.RESERVED),
+            dequeueAudit: {
+                attempts: 1,
+                startTs: Temporal.Now.instant(),
+            },
+        };
+        const updateResourceEntry = vi.fn(async () => 1);
+        const repo = createRepo({ updateResourceEntry });
+        const queue = new PSqlQueueBox(repo as never);
+
+        const released = await queue.releaseEntries([entry], EntityStatus.RETRY, 37);
+        const [updated] = released.values();
+
+        expect(updateResourceEntry).toHaveBeenCalledWith(entry.key, EntityStatus.RETRY, 37);
+        expect(
+            updated?.dequeueAudit.endTs
+                ?.until(updated.dequeueAudit.nextTs!)
+                .total({ unit: 'milliseconds' }),
+        ).toBe(37);
+    });
+
+    it('claims overdue retries through the dedicated PostgreSQL fairness selector', async () => {
+        const nextTs = Temporal.Now.instant().subtract({ seconds: 31 });
+        const retry = {
+            ...createEntry('overdue-retry', EntityStatus.RETRY),
+            dequeueAudit: {
+                attempts: 5,
+                nextTs,
+            },
+        };
+        const findOverdueRetryEntriesSkipLocked = vi.fn(async () =>
+            new Map<Key, ResourceEntry>([[retry.key, retry]])
+        );
+        const repo = createRepo({ findOverdueRetryEntriesSkipLocked });
+        const queue = new PSqlQueueBox(repo as never);
+
+        const reserved = await queue.reserveOverdueRetryEntries(
+            new Set(['type-1']),
+            123_000,
+            4,
+        );
+
+        expect(findOverdueRetryEntriesSkipLocked).toHaveBeenCalledWith(
+            new Set(['type-1']),
+            123_000,
+            4,
+        );
+        expect(reserved.get(retry.key)?.dequeueAudit.nextTs?.toString()).toBe(nextTs.toString());
+    });
 });
 
 describe('PSqlResultsQueueBox', () => {
@@ -229,9 +281,11 @@ describe('PSqlResultsQueueBox', () => {
 function createRepo(overrides: {
     findEntriesSkipLocked?: () => Promise<Map<Key, ResourceEntry>>;
     findTimedOutReservedEntriesSkipLocked?: () => Promise<Map<Key, ResourceEntry>>;
+    findOverdueRetryEntriesSkipLocked?: () => Promise<Map<Key, ResourceEntry>>;
     findAnyByKey?: (key: Key) => Promise<ResourceEntry | null>;
     replace?: (entry: ResourceEntry) => Promise<ResourceEntry>;
     writeIfAbsentOrReplaceExpired?: (entry: ResourceEntry) => Promise<ResourceEntry>;
+    updateResourceEntry?: (key: Key, status: EntityStatus, delayMs: number | null) => Promise<number>;
     startProcessingEntity?: (entry: ResourceEntry) => Promise<
         Either<
             {
@@ -249,10 +303,14 @@ function createRepo(overrides: {
         findTimedOutReservedEntriesSkipLocked:
             overrides.findTimedOutReservedEntriesSkipLocked ??
             vi.fn(async () => new Map<Key, ResourceEntry>()),
+        findOverdueRetryEntriesSkipLocked:
+            overrides.findOverdueRetryEntriesSkipLocked ??
+            vi.fn(async () => new Map<Key, ResourceEntry>()),
         findAnyByKey: overrides.findAnyByKey ?? vi.fn(async () => null),
         replace: overrides.replace ?? vi.fn(async (entry: ResourceEntry) => entry),
         writeIfAbsentOrReplaceExpired:
             overrides.writeIfAbsentOrReplaceExpired ?? vi.fn(async (entry: ResourceEntry) => entry),
+        updateResourceEntry: overrides.updateResourceEntry ?? vi.fn(async () => 1),
         startProcessingEntity:
             overrides.startProcessingEntity ??
             vi.fn(async (entry: ResourceEntry) =>

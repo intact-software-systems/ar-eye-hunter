@@ -4,7 +4,6 @@ import type { PersistenceSetItemOptions } from '@shared/persistence/PersistenceP
 import { RateLimiter } from '@shared/resilience/Resilience.ts';
 import {
     EntityStatus,
-    FAILED_STATUS,
     isExpiredResourceEntry,
     Key,
     NEW_AND_RETRY_STATUSES,
@@ -27,19 +26,7 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
         });
     }
 
-    async isAnyEntryToLock(typeIds: Set<string>, checkTimeout: RateLimiter, checkFailed: RateLimiter): Promise<boolean> {
-
-        const isFailedEntryToLock: boolean =
-            await RateLimiter.tryToExecuteOrDefault(
-                checkFailed,
-                async () =>
-                    await this.repo.isEntriesToLock(
-                        typeIds,
-                        FAILED_STATUS
-                    ),
-                false
-            );
-
+    async isAnyEntryToLock(typeIds: Set<string>, checkTimeout: RateLimiter, _checkFairness: RateLimiter): Promise<boolean> {
         const isTimedOutReservedEntryToLock: boolean =
             await RateLimiter.tryToExecuteOrDefault(
                 checkTimeout,
@@ -57,7 +44,7 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
                 NEW_AND_RETRY_STATUSES
             );
 
-        return isNewAndRetryEntryToLock || isTimedOutReservedEntryToLock || isFailedEntryToLock;
+        return isNewAndRetryEntryToLock || isTimedOutReservedEntryToLock;
     }
 
     async reserveEntries(typeIds: Set<string>, statusIds: Set<EntityStatus>, maxToReserve: number): Promise<Map<Key, ResourceEntry>> {
@@ -106,20 +93,56 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
             });
     }
 
-    async releaseEntries(resources: ResourceEntry[], entityStatus: EntityStatus, exponentialBackoffSteps?: Temporal.TimeUnit): Promise<Map<Key, ResourceEntry>> {
+    async reserveOverdueRetryEntries(
+        typeIds: Set<string>,
+        overdueBeforeEpochMs: number,
+        maxToReserve: number,
+    ): Promise<Map<Key, ResourceEntry>> {
+        return await this.repo.begin(
+            async (txRepo: ResourceInboxRepository) => {
+                const foundEntries = await txRepo.findOverdueRetryEntriesSkipLocked(
+                    typeIds,
+                    overdueBeforeEpochMs,
+                    maxToReserve,
+                );
+                const reservedEntries = new Map<Key, ResourceEntry>();
+
+                for (const entry of foundEntries.values()) {
+                    const selectedNextTs = entry.dequeueAudit.nextTs;
+                    const reserved = await txRepo.startProcessingEntity(entry);
+                    reserved.fold(
+                        () => undefined,
+                        (reservedEntry) => {
+                            reservedEntries.set(entry.key, {
+                                ...reservedEntry,
+                                dequeueAudit: {
+                                    ...reservedEntry.dequeueAudit,
+                                    nextTs: selectedNextTs,
+                                },
+                            });
+                            return undefined;
+                        },
+                    );
+                }
+
+                return reservedEntries;
+            },
+        );
+    }
+
+    async releaseEntries(
+        resources: ResourceEntry[],
+        entityStatus: EntityStatus,
+        delayMs: number | null,
+    ): Promise<Map<Key, ResourceEntry>> {
         return await this.repo.begin(
             async (txRepo: ResourceInboxRepository) => {
 
                 const releasedEntries = new Map<Key, ResourceEntry>();
 
                 for (const entry of resources) {
-
-                    const backoff =
-                        exponentialBackoffSteps
-                            ? PSqlQueueBox.toBackoff(exponentialBackoffSteps, entry.dequeueAudit.attempts)
-                            : undefined;
-
-                    const updated = await txRepo.updateResourceEntry(entry.key, entityStatus, backoff ? backoff.total({ unit: 'milliseconds' }) : undefined);
+                    const releasedAt = Temporal.Now.instant();
+                    const updated = await txRepo.updateResourceEntry(entry.key, entityStatus, delayMs);
                     if (updated <= 0 && Temporal.Instant.compare(Temporal.Now.instant(), entry.audit.expiryTs) < 0) {
                         throw new Error('Entry was not updated in updateResourceEntry ' + JSON.stringify(entry.key));
                     }
@@ -129,9 +152,9 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
                         toUpdatedResourceEntry(
                             entry,
                             entityStatus,
-                            Temporal.Now.instant(),
-                            backoff
-                                ? Temporal.Now.instant().add(backoff)
+                            releasedAt,
+                            delayMs !== null
+                                ? releasedAt.add({ milliseconds: delayMs })
                                 : undefined
                         )
                     );
@@ -139,21 +162,6 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
 
                 return releasedEntries;
             });
-    }
-
-    static toBackoff(exponentialBackoffSteps: Temporal.TimeUnit, attempts: number) {
-        switch (exponentialBackoffSteps) {
-            case 'hour':
-                return Temporal.Duration.from({ hours: Math.pow(2, attempts) });
-            case 'minute':
-                return Temporal.Duration.from({ minutes: Math.pow(2, attempts) });
-            case 'second':
-                return Temporal.Duration.from({ seconds: Math.pow(2, attempts) });
-            case 'millisecond':
-            case 'microsecond':
-            case 'nanosecond':
-                return Temporal.Duration.from({ milliseconds: Math.pow(2, attempts) });
-        }
     }
 
     async enqueue(resourceEntry: ResourceEntry): Promise<ResourceEntry | undefined> {

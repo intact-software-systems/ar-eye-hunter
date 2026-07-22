@@ -37,6 +37,7 @@ export enum Reservator {
     NEW = 'NEW',
     RETRY = 'RETRY',
     FAILED = 'FAILED',
+    FAIRNESS = 'FAIRNESS',
     TIMEOUT = 'TIMEOUT',
 }
 
@@ -78,7 +79,7 @@ export class DequeueController<K, V, T> {
 
     private newReservator?: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>;
     private retryReservator?: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>;
-    private failedReservator?: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>;
+    private fairnessReservator?: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>;
     private timeoutReservator?: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>;
 
     private successReleaser?: (m: Map<K, SuccessDto<K, V, T>>) => Promise<Map<K, SuccessDto<K, V, T>>>;
@@ -134,8 +135,8 @@ export class DequeueController<K, V, T> {
         return this;
     }
 
-    onFailedEntriesReserveDo(failedReservator?: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>): this {
-        this.failedReservator = failedReservator ?? undefined;
+    onFairnessEntriesReserveDo(fairnessReservator?: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>): this {
+        this.fairnessReservator = fairnessReservator ?? undefined;
         return this;
     }
 
@@ -172,13 +173,13 @@ export class DequeueController<K, V, T> {
         computer: (key: K, value: V) => Promise<T>,
     ): Promise<Map<Reservator, Map<K, Either<FailureDto<K, V>, SuccessDto<K, V, T>>>>> {
         if (this.typesToDequeue().size === 0) {
-            this.log.warn('No types provided for callbacks: [newReservator, retryReservator, failedReservator].');
+            this.log.warn('No types provided for callbacks: [newReservator, retryReservator, fairnessReservator].');
         }
         if (!this.retryReservator) {
             this.log.warn('No retry reservator configured. Retries are not performed.');
         }
-        if (!this.failedReservator) {
-            this.log.warn('No failed reservator configured. Retries on failed resources are not performed.');
+        if (!this.fairnessReservator) {
+            this.log.warn('No fairness reservator configured. Overdue retries are not recovered.');
         }
 
         requireNonNull(computer);
@@ -232,15 +233,15 @@ export class DequeueController<K, V, T> {
         );
 
         byReservator.set(
-            Reservator.FAILED,
-            this.failedReservator
+            Reservator.FAIRNESS,
+            this.fairnessReservator
                 ? await DequeueController.dequeueWithTypesAlgorithm<K, V, T>(
                     this.maxNumDequeue,
                     this.maxNumToReserve,
                     this.typesToDequeue,
                     this.returnDequeuedEntries,
                     this.checkIsTypesToDequeue,
-                    this.failedReservator,
+                    this.fairnessReservator,
                     computer,
                     successReleaser,
                     failureReleaser,

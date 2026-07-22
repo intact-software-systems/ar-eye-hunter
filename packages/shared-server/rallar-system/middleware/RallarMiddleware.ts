@@ -268,7 +268,7 @@ export function includeWsQueueBoxEngineTasks(
             wsQBoxServerService.inbox.isAnyEntryToLock(
                 WsQueueBoxServerService.INBOX_DEQUEUE_TYPES,
                 resilienceInbox.checkReserveTimeouts.isEntryRateLimiter,
-                resilienceInbox.checkFailed.isEntryRateLimiter,
+                resilienceInbox.checkFairness.isEntryRateLimiter,
             ),
         runnable: () =>
             wsQBoxServerService.dequeueInbox(
@@ -285,7 +285,7 @@ export function includeWsQueueBoxEngineTasks(
             wsQBoxServerService.outbox.isAnyEntryToLock(
                 WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES,
                 resilienceOutbox.checkReserveTimeouts.isEntryRateLimiter,
-                resilienceOutbox.checkFailed.isEntryRateLimiter,
+                resilienceOutbox.checkFairness.isEntryRateLimiter,
             ),
         runnable: () =>
             wsQBoxServerService.dequeueOutbox(
@@ -308,7 +308,7 @@ export function includeInboxQueueReaderEngineTasks(
             inboxQueueReader.inbox.isAnyEntryToLock(
                 InboxQueueReader.INBOX_DEQUEUE_TYPES,
                 resilience.checkReserveTimeouts.isEntryRateLimiter,
-                resilience.checkFailed.isEntryRateLimiter,
+                resilience.checkFairness.isEntryRateLimiter,
             ),
         runnable: () =>
             inboxQueueReader.dequeueInbox(
@@ -331,7 +331,7 @@ export function includeOutboxQueueReaderEngineTasks(
             outboxQueueReader.outbox.isAnyEntryToLock(
                 OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
                 resilience.checkReserveTimeouts.isEntryRateLimiter,
-                resilience.checkFailed.isEntryRateLimiter,
+                resilience.checkFairness.isEntryRateLimiter,
             ),
         runnable: () =>
             outboxQueueReader.dequeueOutbox(

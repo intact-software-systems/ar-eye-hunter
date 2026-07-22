@@ -11,7 +11,7 @@ export interface DequeueResourceEntryRepository {
     isAnyEntryToLock(
         typeIds: Set<string>,
         checkTimeout: RateLimiter,
-        checkFailed: RateLimiter
+        checkFairness: RateLimiter,
     )
         : Promise<boolean>;
 
@@ -29,10 +29,17 @@ export interface DequeueResourceEntryRepository {
     )
         : Promise<Map<Resource.Key, Resource.ResourceEntry>>;
 
+    reserveOverdueRetryEntries(
+        typeIds: Set<string>,
+        overdueBeforeEpochMs: number,
+        maxToReserve: number,
+    )
+        : Promise<Map<Resource.Key, Resource.ResourceEntry>>;
+
     releaseEntries(
         resources: Resource.ResourceEntry[],
         entityStatus: Resource.EntityStatus,
-        exponentialBackoffSteps?: Temporal.TimeUnit
+        delayMs: number | null,
     )
         : Promise<Map<Resource.Key, Resource.ResourceEntry>>;
 }

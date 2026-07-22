@@ -36,6 +36,50 @@ afterEach(() => {
 });
 
 describe('ResourceInboxRepository', () => {
+    it('claims ordinary retries only when due and never claims failed or expired rows', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:30.000Z'));
+        const capture = createQueryCapture();
+        const repo = new repositoryModule.ResourceInboxRepository(capture.sql);
+
+        await repo.findEntriesSkipLocked(
+            new Set(['APP_INBOX']),
+            new Set([EntityStatus.RETRY, EntityStatus.FAILED]),
+            7,
+        );
+
+        expect(capture.queries).toHaveLength(1);
+        expect(capture.queries[0]?.query).toContain('ri_status <>');
+        expect(capture.queries[0]?.query).toContain('expire_ts >');
+        expect(capture.queries[0]?.query).toContain('next_ts <=');
+        expect(capture.queries[0]?.query).toContain('ri_attempts <');
+        expect(capture.queries[0]?.query).toContain('for update skip locked');
+        expect(capture.queries[0]?.query).not.toContain('start_ts is null or next_ts');
+    });
+
+    it('claims only retry rows at least thirty seconds overdue through the fairness selector', async () => {
+        const capture = createQueryCapture();
+        const repo = new repositoryModule.ResourceInboxRepository(capture.sql);
+        const overdueBeforeEpochMs = Date.parse('2026-01-01T00:00:00.000Z');
+
+        await repo.findOverdueRetryEntriesSkipLocked(
+            new Set(['APP_INBOX']),
+            overdueBeforeEpochMs,
+            3,
+        );
+
+        expect(capture.queries).toHaveLength(1);
+        expect(capture.queries[0]?.query).toContain('ri_status =');
+        expect(capture.queries[0]?.query).toContain('expire_ts >');
+        expect(capture.queries[0]?.query).toContain('next_ts <=');
+        expect(capture.queries[0]?.query).toContain('ri_attempts <');
+        expect(capture.queries[0]?.query).toContain('order by next_ts asc, ri_row_id asc');
+        expect(capture.queries[0]?.query).toContain('for update skip locked');
+        expect(capture.queries[0]?.values).toContain(EntityStatus.RETRY);
+        expect(capture.queries[0]?.values).not.toContain(EntityStatus.FAILED);
+        expect(capture.queries[0]?.values).toContainEqual(new Date(overdueBeforeEpochMs));
+    });
+
     it('inserts immutable outbox content once and matches an operationally advanced replay', async () => {
         vi.useFakeTimers();
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
@@ -681,6 +725,36 @@ describe('ResourceInboxRepository', () => {
         expect(await repo.findByKey(expired.key)).toBeNull();
     });
 });
+
+function createQueryCapture() {
+    const queries: Array<{ query: string; values: readonly unknown[] }> = [];
+    const sql = ((
+        stringsOrValues: TemplateStringsArray | readonly unknown[],
+        ...values: unknown[]
+    ) => {
+        if (!isTemplateCall(stringsOrValues)) {
+            return stringsOrValues;
+        }
+
+        queries.push({
+            query: normalizeQuery(stringsOrValues),
+            values,
+        });
+        return [];
+    }) as {
+        (
+            stringsOrValues: TemplateStringsArray | readonly unknown[],
+            ...values: unknown[]
+        ): unknown;
+        begin: <T>(fn: (sql: unknown) => Promise<T>) => Promise<T>;
+    };
+    sql.begin = async <T>(fn: (sql: unknown) => Promise<T>) => await fn(sql);
+
+    return {
+        queries,
+        sql: sql as never,
+    };
+}
 
 function createSqlHarness() {
     const rows = new Map<string, ResourceInboxRow>();

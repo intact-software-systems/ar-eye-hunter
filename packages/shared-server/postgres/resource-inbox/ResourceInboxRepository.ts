@@ -2,6 +2,7 @@ import { Temporal } from '@js-temporal/polyfill';
 import { Either } from '@shared/resilience/Either.ts';
 import { tryRunInIntervals } from '@shared/resilience/TryWith.ts';
 import { EntityStatus, type Key, type ResourceEntry, } from '@shared/queuebox/ResourceEntry.ts';
+import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import type { PSqlSql, PSqlTransactionSql } from '../PostgresSqlClient.ts';
 import {
     ResourceInboxRow,
@@ -409,9 +410,42 @@ export class ResourceInboxRepository {
             from resource_inbox
             where ri_type_id in ${this.sql([...typeIds])}
               and ri_status in ${this.sql([...statusIds])}
+              and ri_status <> ${EntityStatus.FAILED}
               and expire_ts > ${now}
-              and (start_ts is null or next_ts < ${now})
-            order by ri_row_id
+              and ri_attempts < ${DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts}
+              and (
+                  (ri_status = ${EntityStatus.RETRY} and next_ts <= ${now})
+                  or
+                  (ri_status <> ${EntityStatus.RETRY} and start_ts is null and (next_ts is null or next_ts <= ${now}))
+              )
+            order by next_ts asc nulls first, ri_row_id asc
+                for update skip locked
+            limit ${maxToReserve}
+        `;
+
+        return rowsToMap(rows);
+    }
+
+    async findOverdueRetryEntriesSkipLocked(
+        typeIds: ReadonlySet<string>,
+        overdueBeforeEpochMs: number,
+        maxToReserve: number,
+    ): Promise<Map<string, ResourceEntry>> {
+        if (typeIds.size === 0 || maxToReserve <= 0) {
+            return new Map();
+        }
+
+        const now = new Date();
+        const overdueBefore = new Date(overdueBeforeEpochMs);
+        const rows = await this.sql<ResourceInboxRow[]>`
+            select *
+            from resource_inbox
+            where ri_type_id in ${this.sql([...typeIds])}
+              and ri_status = ${EntityStatus.RETRY}
+              and expire_ts > ${now}
+              and next_ts <= ${overdueBefore}
+              and ri_attempts < ${DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts}
+            order by next_ts asc, ri_row_id asc
                 for update skip locked
             limit ${maxToReserve}
         `;
@@ -463,8 +497,14 @@ export class ResourceInboxRepository {
             from resource_inbox
             where ri_type_id in ${this.sql([...typeIds])}
               and ri_status in ${this.sql([...statusIds])}
+              and ri_status <> ${EntityStatus.FAILED}
               and expire_ts > ${now}
-              and (start_ts is null or next_ts < ${now})
+              and ri_attempts < ${DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts}
+              and (
+                  (ri_status = ${EntityStatus.RETRY} and next_ts <= ${now})
+                  or
+                  (ri_status <> ${EntityStatus.RETRY} and start_ts is null and (next_ts is null or next_ts <= ${now}))
+              )
             limit 1
         `;
 
@@ -556,6 +596,7 @@ export class ResourceInboxRepository {
               and ri_resource_id = ${entry.key.resourceId}
               and fk_ext_bank_id = ${entry.key.contextId}
               and expire_ts > now()
+              and ri_attempts < ${DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts}
             returning *
         `;
 
@@ -570,10 +611,19 @@ export class ResourceInboxRepository {
     async updateResourceEntry(
         key: Key,
         newStatus: EntityStatus,
-        timeUntilNextAttemptMs?: number | null,
+        timeUntilNextAttemptMs: number | null,
     ): Promise<number> {
+        if (
+            timeUntilNextAttemptMs !== null &&
+            (!Number.isSafeInteger(timeUntilNextAttemptMs) || timeUntilNextAttemptMs < 0)
+        ) {
+            throw new Error('Resource inbox release delay must be a non-negative integer or null');
+        }
+
         const endTs = new Date();
-        const nextTs = timeUntilNextAttemptMs != null ? new Date(Date.now() + timeUntilNextAttemptMs) : null;
+        const nextTs = timeUntilNextAttemptMs !== null
+            ? new Date(endTs.getTime() + timeUntilNextAttemptMs)
+            : null;
 
         const rows = await this.sql<{ ri_row_id: bigint }[]>`
             update resource_inbox

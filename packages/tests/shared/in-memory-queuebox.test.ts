@@ -128,7 +128,7 @@ describe('InMemoryQueueBox', () => {
         expect(active.size).toBe(1);
     });
 
-    it('applies exponential backoff timestamps when retry entries are released', async () => {
+    it('applies the exact millisecond delay when retry entries are released', async () => {
         const queue = new InMemoryQueueBox();
         const entry = createEntry('chat.private-text.v1', 'retry-1', {
             status: EntityStatus.RESERVED,
@@ -136,7 +136,7 @@ describe('InMemoryQueueBox', () => {
         });
 
         const released = firstValue(
-            await queue.releaseEntries([entry], EntityStatus.RETRY, 'second'),
+            await queue.releaseEntries([entry], EntityStatus.RETRY, 37),
         );
 
         expect(released.status).toBe(EntityStatus.RETRY);
@@ -146,8 +146,7 @@ describe('InMemoryQueueBox', () => {
         const delayMs = released.dequeueAudit
             .endTs!.until(released.dequeueAudit.nextTs!)
             .total({ unit: 'milliseconds' });
-        expect(delayMs).toBeGreaterThanOrEqual(1_900);
-        expect(delayMs).toBeLessThan(3_000);
+        expect(delayMs).toBe(37);
     });
 });
 

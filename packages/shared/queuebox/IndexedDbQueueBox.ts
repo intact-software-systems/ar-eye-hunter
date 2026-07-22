@@ -7,7 +7,6 @@ import { QueueBoxResourceEntryRepository } from './QueueBoxTypes.ts';
 import {
     COMPLETED_STATUSES,
     EntityStatus,
-    FAILED_STATUS,
     Key,
     NEVER_EXPIRE_TS,
     NEW_AND_RETRY_STATUSES,
@@ -16,6 +15,7 @@ import {
     TIMEOUT_ON_NON_RESPONSIVE_ENTRY,
     toKeyAsString,
 } from './ResourceEntry.ts';
+import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from './ResourceInboxRetryPolicy.ts';
 
 type StoredResourceEntry = Readonly<{
     keyString: ResourceEntryKeyString;
@@ -349,7 +349,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     async releaseEntries(
         resources: ResourceEntry[],
         entityStatus: EntityStatus,
-        exponentialBackoffSteps?: Temporal.TimeUnit,
+        delayMs: number | null,
     ): Promise<Map<Key, ResourceEntry>> {
         if (resources.length === 0) {
             return new Map<Key, ResourceEntry>();
@@ -367,10 +367,6 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             tx.onerror = () => reject(tx.error ?? new Error('IndexedDB releaseEntries failed'));
 
             for (const resource of resources) {
-                const backoff =
-                    exponentialBackoffSteps
-                        ? this.toBackoff(exponentialBackoffSteps, resource.dequeueAudit.attempts)
-                        : undefined;
                 const keyString = toKeyAsString(resource.key);
                 const getRequest = store.get(keyString);
                 getRequest.onerror = () => reject(getRequest.error ?? new Error('IndexedDB get failed during releaseEntries'));
@@ -379,13 +375,16 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                     const current = stored && !this.isExpiredStoredEntry(stored)
                         ? this.toResourceEntry(stored)
                         : resource;
+                    const releasedAt = Temporal.Now.instant();
                     const updated: ResourceEntry = {
                         ...current,
                         status: entityStatus,
                         dequeueAudit: {
                             startTs: resource.dequeueAudit.startTs,
-                            endTs: Temporal.Now.instant(),
-                            nextTs: backoff ? Temporal.Now.instant().add(backoff) : undefined,
+                            endTs: releasedAt,
+                            nextTs: delayMs !== null
+                                ? releasedAt.add({ milliseconds: delayMs })
+                                : undefined,
                             attempts: resource.dequeueAudit.attempts,
                         },
                     };
@@ -487,14 +486,77 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         });
     }
 
-    async isAnyEntryToLock(typeIds: Set<string>, checkTimeout: RateLimiter, checkFailed: RateLimiter): Promise<boolean> {
-        const isFailedEntryToLock =
-            await RateLimiter.tryToExecuteOrDefault(
-                checkFailed,
-                async () => await this.hasAnyReservableEntry(typeIds, FAILED_STATUS),
-                false,
-            );
+    async reserveOverdueRetryEntries(
+        typeIds: Set<string>,
+        overdueBeforeEpochMs: number,
+        maxToReserve: number,
+    ): Promise<Map<Key, ResourceEntry>> {
+        if (typeIds.size === 0 || maxToReserve <= 0) {
+            return new Map();
+        }
 
+        const db = await this.openDb();
+        const reserved = new Map<Key, ResourceEntry>();
+        const now = Temporal.Now.instant();
+        const overdueBefore = Temporal.Instant.fromEpochMilliseconds(overdueBeforeEpochMs);
+
+        return await new Promise<Map<Key, ResourceEntry>>((resolve, reject) => {
+            const tx = db.transaction(this.storeName, 'readwrite');
+            const store = tx.objectStore(this.storeName);
+            const request = store.openCursor();
+
+            tx.oncomplete = () => resolve(reserved);
+            tx.onabort = () => reject(tx.error ?? new Error('IndexedDB fairness reservation aborted'));
+            tx.onerror = () => reject(tx.error ?? new Error('IndexedDB fairness reservation failed'));
+
+            request.onerror = () => reject(request.error ?? new Error('IndexedDB fairness cursor failed'));
+            request.onsuccess = () => {
+                const cursor = request.result;
+                if (!cursor || reserved.size >= maxToReserve) {
+                    return;
+                }
+
+                const stored = cursor.value as StoredResourceEntry;
+                const nextTs = stored.dequeueAudit.nextTs
+                    ? Temporal.Instant.from(stored.dequeueAudit.nextTs)
+                    : undefined;
+                const isOverdueRetry =
+                    !this.isExpiredStoredEntry(stored, now) &&
+                    typeIds.has(stored.typeId) &&
+                    stored.status === EntityStatus.RETRY &&
+                    stored.dequeueAudit.attempts < DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts &&
+                    nextTs !== undefined &&
+                    Temporal.Instant.compare(nextTs, overdueBefore) <= 0;
+                if (!isOverdueRetry) {
+                    cursor.continue();
+                    return;
+                }
+
+                const reservedEntry = this.toReservedEntry(this.toResourceEntry(stored), now);
+                const updated = {
+                    ...reservedEntry,
+                    dequeueAudit: {
+                        ...reservedEntry.dequeueAudit,
+                        nextTs,
+                    },
+                };
+                const updateRequest = cursor.update(this.toStoredEntry({
+                    ...updated,
+                    dequeueAudit: {
+                        ...updated.dequeueAudit,
+                        nextTs: undefined,
+                    },
+                }));
+                updateRequest.onerror = () => reject(updateRequest.error ?? new Error('IndexedDB fairness update failed'));
+                updateRequest.onsuccess = () => {
+                    reserved.set(updated.key, updated);
+                    cursor.continue();
+                };
+            };
+        });
+    }
+
+    async isAnyEntryToLock(typeIds: Set<string>, checkTimeout: RateLimiter, _checkFairness: RateLimiter): Promise<boolean> {
         const isTimedOutEntryToLock =
             await RateLimiter.tryToExecuteOrDefault(
                 checkTimeout,
@@ -508,7 +570,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             console.error('Failed to cleanup entries', e);
         });
 
-        return newAndRetryEntryToLock || isTimedOutEntryToLock || isFailedEntryToLock;
+        return newAndRetryEntryToLock || isTimedOutEntryToLock;
     }
 
     private async hasAnyReservableEntry(
@@ -576,6 +638,13 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             return false;
         }
 
+        if (
+            stored.status === EntityStatus.FAILED ||
+            stored.dequeueAudit.attempts >= DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
+        ) {
+            return false;
+        }
+
         if (!stored.dequeueAudit.nextTs) {
             return true;
         }
@@ -622,23 +691,6 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             ? toInstant(stored.audit.expiryTs)
             : NEVER_EXPIRE_TS;
         return Temporal.Instant.compare(now, expiryTs) >= 0;
-    }
-
-    private toBackoff(exponentialBackoffSteps: Temporal.TimeUnit, attempts: number): Temporal.Duration {
-        switch (exponentialBackoffSteps) {
-            case 'hour':
-                return Temporal.Duration.from({ hours: Math.pow(2, attempts) });
-            case 'minute':
-                return Temporal.Duration.from({ minutes: Math.pow(2, attempts) });
-            case 'second':
-                return Temporal.Duration.from({ seconds: Math.pow(2, attempts) });
-            case 'millisecond':
-            case 'microsecond':
-            case 'nanosecond':
-                return Temporal.Duration.from({ milliseconds: Math.pow(2, attempts) });
-            default:
-                return Temporal.Duration.from({ seconds: Math.pow(2, attempts) });
-        }
     }
 
     private async openDb(): Promise<IDBDatabase> {

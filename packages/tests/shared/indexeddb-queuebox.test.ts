@@ -113,7 +113,7 @@ describe('IndexedDbQueueBox', () => {
         expect(reservedEntry.status).toBe(EntityStatus.RESERVED);
         expect(reservedEntry.dequeueAudit.attempts).toBe(1);
 
-        const released = await reader.releaseEntries([reservedEntry], EntityStatus.COMPLETED);
+        const released = await reader.releaseEntries([reservedEntry], EntityStatus.COMPLETED, null);
 
         expect(firstValue(released).status).toBe(EntityStatus.COMPLETED);
 
@@ -169,11 +169,16 @@ describe('IndexedDbQueueBox', () => {
         const retrying = await queue.releaseEntries(
             [firstValue(reserved)],
             EntityStatus.RETRY,
-            'second',
+            1_000,
         );
 
         const retryEntry = firstValue(retrying);
         expect(retryEntry.dequeueAudit.nextTs).toBeDefined();
+        expect(
+            retryEntry.dequeueAudit.endTs
+                ?.until(retryEntry.dequeueAudit.nextTs!)
+                .total({ unit: 'milliseconds' }),
+        ).toBe(1_000);
 
         const immediatelyReservable = await queue.reserveEntries(
             new Set([typeId]),
@@ -269,7 +274,7 @@ describe('IndexedDbQueueBox', () => {
         ).toBeGreaterThan(0);
     });
 
-    it('reports failed entries as lockable work', async () => {
+    it('does not report failed entries as automatic queue work', async () => {
         const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
         const typeId = 'chat.private-text.v1';
         const queue = new IndexedDbQueueBox({ dbName });
@@ -287,7 +292,7 @@ describe('IndexedDbQueueBox', () => {
             RateLimiter.init(60_000, 1),
         );
 
-        expect(hasWork).toBe(true);
+        expect(hasWork).toBe(false);
     });
 });
 
