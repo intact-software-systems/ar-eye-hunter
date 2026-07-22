@@ -248,7 +248,7 @@ function createTransactionSql(
         if (query.includes('insert into client_state_events')) {
             const event = JSON.parse(values[9] as string) as ClientEvent;
             state.events.set(event.eventId, event);
-            return [];
+            return [{ event_id: event.eventId }];
         }
 
         if (query.includes('insert into resource_inbox_results')) {

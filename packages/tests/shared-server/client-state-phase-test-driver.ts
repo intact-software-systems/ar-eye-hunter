@@ -447,8 +447,9 @@ function toClientTransaction(
             if (typeof eventJson !== 'string') {
                 throw new Error('Client state event JSON is required');
             }
-            await eventStore.appendClientEvent(JSON.parse(eventJson) as ClientEvent);
-            return [];
+            const event = JSON.parse(eventJson) as ClientEvent;
+            await eventStore.appendClientEvent(event);
+            return [{ event_id: event.eventId }];
         }
         if (query.includes('insert into resource_inbox')) {
             const entry = toEntry(values);

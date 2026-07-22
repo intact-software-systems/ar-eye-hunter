@@ -28,6 +28,12 @@ type ClientStateEventRow = Readonly<{
     event_json: string;
 }>;
 
+type ClientStateEventCollisionRow = ClientStateEventRow & Readonly<{
+    application_id: string;
+    workspace_key: string;
+    principal_id: string;
+}>;
+
 type GroupStateEventRow = Readonly<{
     event_id: string;
     event_type: string;
@@ -53,12 +59,28 @@ export class GroupStateEventCollisionError extends Error {
     }
 }
 
+export class ClientStateEventCollisionError extends Error {
+    readonly code = 'client-state-event-collision';
+    readonly status = 409;
+
+    constructor(
+        readonly event: Pick<
+            ClientEvent,
+            'applicationId' | 'workspaceId' | 'principalId' | 'eventId'
+        >,
+    ) {
+        super(`Client state event already exists with divergent content: ${event.eventId}`);
+        this.name = 'ClientStateEventCollisionError';
+    }
+}
+
 export class PSqlClientStateEventRepository implements ClientStateEventStore {
     constructor(private readonly sql: PSqlSql) {}
 
     async appendClientEvent(event: ClientEvent): Promise<void> {
         assertCompleteClientEvent(event, event);
-        await this.sql`
+        const eventJson = JSON.stringify(event);
+        const inserted = await this.sql<{ event_id: string }[]>`
             insert into client_state_events (application_id,
                                              workspace_key,
                                              principal_id,
@@ -78,10 +100,28 @@ export class PSqlClientStateEventRepository implements ClientStateEventStore {
                     ${event.occurredAtEpochMs},
                     ${event.clientInstanceId ?? null},
                     ${event.sessionId ?? null},
-                    ${JSON.stringify(event)})
+                    ${eventJson})
             on conflict (application_id, workspace_key, principal_id, event_id)
                 do nothing
+            returning event_id
         `;
+        if (inserted.length === 1) {
+            return;
+        }
+
+        const [existing] = await this.sql<ClientStateEventCollisionRow[]>`
+            select application_id, workspace_key, principal_id, event_id,
+                   event_type, snapshot_version, occurred_at_epoch_ms,
+                   client_instance_id, session_id, event_json
+            from client_state_events
+            where application_id = ${event.applicationId}
+              and workspace_key = ${toWorkspaceKey(event.workspaceId)}
+              and principal_id = ${event.principalId}
+              and event_id = ${event.eventId}
+        `;
+        if (!existing || !isExactPersistedClientEvent(existing, event, eventJson)) {
+            throw new ClientStateEventCollisionError(event);
+        }
     }
 
     async listClientEvents(
@@ -420,6 +460,23 @@ export class PSqlGroupStateEventRepository implements GroupStateEventStore {
 
 function toWorkspaceKey(workspaceId: string | undefined): string {
     return workspaceId ?? DEFAULT_WORKSPACE_KEY;
+}
+
+function isExactPersistedClientEvent(
+    row: ClientStateEventCollisionRow,
+    event: ClientEvent,
+    eventJson: string,
+): boolean {
+    return row.application_id === event.applicationId &&
+        row.workspace_key === toWorkspaceKey(event.workspaceId) &&
+        row.principal_id === event.principalId &&
+        row.event_id === event.eventId &&
+        row.event_type === event.eventType &&
+        Number(row.snapshot_version) === event.snapshotVersion &&
+        Number(row.occurred_at_epoch_ms) === event.occurredAtEpochMs &&
+        row.client_instance_id === event.clientInstanceId &&
+        row.session_id === event.sessionId &&
+        row.event_json === eventJson;
 }
 
 export class ClientStateEventRepositoryInvariantCorruptionError extends Error {

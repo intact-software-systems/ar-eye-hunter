@@ -27,6 +27,7 @@ import {
   requiresClientWrite,
   toClientMutationCommand,
   toClientMutationIssuedSessionAuthority,
+  toUpsertInstanceCommandInput,
   toUpsertPrincipalCommandInput,
 } from '@shared-server/rallar-system/services/client-state-service.ts';
 import { GroupTopologyManagementService } from '@shared-server/rallar-system/services/group-topology-management-service.ts';
@@ -39,6 +40,7 @@ import {
 import { CoalescedAppOutboxWorkService } from '@shared-server/rallar-system/services/CoalescedAppOutboxWorkService.ts';
 import { AppOutboxType } from '@shared-server/rallar-system/services/AppOutboxService.ts';
 import {
+  ClientStateEventCollisionError,
   PSqlClientStateEventRepository,
   PSqlGroupStateEventRepository,
 } from '@shared-server/postgres/rallar-system/PSqlStateEventRepository.ts';
@@ -283,6 +285,226 @@ Deno.test('PGlite client write commits state, event, and ResourceInbox rows in o
     assert.equal((await events.listClientEvents({ ...scope, principalId: 'bob' })).length, 0);
     for (const entry of rolledBack.outboxEntries) {
       assert.equal(await outbox.findByKey(entry.key), null);
+    }
+  });
+});
+
+async function createPGliteClientEventCollisionFixture(
+  sql: PGliteSql,
+  prefix: string,
+) {
+  const runtime = new PSqlRuntimeStateRepository(sql);
+  const authSessions = new AuthSessionRepository(runtime);
+  const events = new PSqlClientStateEventRepository(sql);
+  const repository = new ClientStateRepository(runtime, { events });
+  const service = createClientStateService({
+    runtimeRepository: runtime,
+    createClientStateEventStore: () => events,
+    serviceId: 'pglite-client-service',
+  });
+  const scope = {
+    applicationId: `${prefix}-app`,
+    workspaceId: `${prefix}-workspace`,
+  };
+  const principalId = `${prefix}-client`;
+  const authority = {
+    clientId: principalId,
+    accessToken: `${prefix}-client-token`,
+    username: principalId,
+    sessionId: `${prefix}-client-session`,
+    issuedAtEpochMs: 1_000,
+    expiresAtEpochMs: FUTURE_MS,
+  } as const;
+  await authSessions.putSession(authority);
+
+  const compute = async (
+    input: ReturnType<typeof toUpsertPrincipalCommandInput>,
+    operation: 'upsertPrincipal' | 'upsertInstance',
+    eventId: string,
+    nowEpochMs: number,
+  ) => {
+    const command = await toClientMutationCommand(
+      input,
+      {
+        nowEpochMs,
+        serviceId: 'pglite-client-service',
+        eventId,
+        attemptCount: 1,
+        expireAtEpochMs: FUTURE_MS,
+      },
+      toClientMutationIssuedSessionAuthority(authority, scope, operation),
+    );
+    const read = await service.read(command);
+    const computed = service.compute(command, read);
+    service.validate(command, read, computed);
+    assert.equal(computed.outcome, 'write');
+    if (computed.outcome !== 'write') throw new Error('Expected applied client write');
+    return computed;
+  };
+
+  const seedRequestId = `${prefix}-seed`;
+  const seed = await compute(
+    toUpsertPrincipalCommandInput(
+      scope,
+      principalId,
+      {
+        username: principalId,
+        displayName: `Before ${prefix}`,
+        actorPrincipalId: principalId,
+        actorSessionId: authority.sessionId,
+        requestId: seedRequestId,
+      },
+      seedRequestId,
+    ),
+    'upsertPrincipal',
+    `${seedRequestId}-event`,
+    2_000,
+  );
+  await sql.begin(async (transaction) => {
+    await service.write(transaction, seed);
+  });
+  const before = await repository.readSnapshot({ ...scope, principalId });
+  assert.ok(before);
+
+  const requestId = `${prefix}-instance`;
+  const clientInstanceId = `${prefix}-browser`;
+  const computed = await compute(
+    toUpsertInstanceCommandInput(
+      scope,
+      principalId,
+      clientInstanceId,
+      {
+        platform: 'web',
+        deviceLabel: prefix,
+        actorPrincipalId: principalId,
+        actorSessionId: authority.sessionId,
+        requestId,
+      },
+      requestId,
+    ),
+    'upsertInstance',
+    `${requestId}-event`,
+    3_000,
+  );
+  return {
+    before,
+    clientInstanceId,
+    computed,
+    events,
+    principalId,
+    repository,
+    requestId,
+    scope,
+    service,
+  };
+}
+
+Deno.test('PGlite client write rejects a divergent event collision and rolls back the aggregate', async () => {
+  await withPGliteSql(async (sql) => {
+    const fixture = await createPGliteClientEventCollisionFixture(sql, 'collision');
+    const divergentEvent: ClientEvent = {
+      ...fixture.computed.event,
+      reason: 'pre-existing divergent event body',
+    };
+    await fixture.events.appendClientEvent(divergentEvent);
+    const eventsBeforeWrite = await fixture.events.listClientEvents({
+      ...fixture.scope,
+      principalId: fixture.principalId,
+    });
+
+    let collisionError: unknown = null;
+    try {
+      await sql.begin(async (transaction) => {
+        await fixture.service.write(transaction, fixture.computed);
+      });
+    } catch (error) {
+      collisionError = error;
+    }
+
+    const outbox = new ResourceInboxRepository(sql);
+    assert.deepEqual(
+      {
+        isTypedCollision: collisionError instanceof ClientStateEventCollisionError,
+        errorName: collisionError instanceof Error ? collisionError.name : null,
+        errorCode: collisionError instanceof Error && 'code' in collisionError
+          ? collisionError.code
+          : null,
+        errorStatus: collisionError instanceof Error && 'status' in collisionError
+          ? collisionError.status
+          : null,
+        snapshot: await fixture.repository.readSnapshot({
+          ...fixture.scope,
+          principalId: fixture.principalId,
+        }),
+        instance: await fixture.repository.findInstance({
+          ...fixture.scope,
+          principalId: fixture.principalId,
+          clientInstanceId: fixture.clientInstanceId,
+        }) ?? null,
+        receipt: await fixture.repository.findIdempotentClientMutationReceipt(
+          { ...fixture.scope, principalId: fixture.principalId },
+          fixture.requestId,
+        ) ?? null,
+        outbox: await Promise.all(
+          fixture.computed.outboxEntries.map((entry) => outbox.findByKey(entry.key)),
+        ),
+        events: await fixture.events.listClientEvents({
+          ...fixture.scope,
+          principalId: fixture.principalId,
+        }),
+      },
+      {
+        isTypedCollision: true,
+        errorName: 'ClientStateEventCollisionError',
+        errorCode: 'client-state-event-collision',
+        errorStatus: 409,
+        snapshot: fixture.before,
+        instance: null,
+        receipt: null,
+        outbox: fixture.computed.outboxEntries.map(() => null),
+        events: eventsBeforeWrite,
+      },
+    );
+  });
+});
+
+Deno.test('PGlite client write accepts an identical pre-existing event and commits once', async () => {
+  await withPGliteSql(async (sql) => {
+    const fixture = await createPGliteClientEventCollisionFixture(sql, 'replay');
+    await fixture.events.appendClientEvent(fixture.computed.event);
+    await sql.begin(async (transaction) => {
+      await fixture.service.write(transaction, fixture.computed);
+    });
+
+    const snapshot = await fixture.repository.readSnapshot({
+      ...fixture.scope,
+      principalId: fixture.principalId,
+    });
+    assert.equal(snapshot?.instances.length, 1);
+    assert.equal(snapshot?.instances[0]?.clientInstanceId, fixture.clientInstanceId);
+    assert.ok(fixture.computed.idempotency);
+    assert.deepEqual(
+      await fixture.repository.findIdempotentClientMutationReceipt(
+        { ...fixture.scope, principalId: fixture.principalId },
+        fixture.requestId,
+      ),
+      fixture.computed.idempotency,
+    );
+    const storedEvents = await fixture.events.listClientEvents({
+      ...fixture.scope,
+      principalId: fixture.principalId,
+    });
+    assert.equal(
+      storedEvents.filter((event) => event.eventId === fixture.computed.event.eventId).length,
+      1,
+    );
+    assert.deepEqual(
+      storedEvents.find((event) => event.eventId === fixture.computed.event.eventId),
+      fixture.computed.event,
+    );
+    const outbox = new ResourceInboxRepository(sql);
+    for (const entry of fixture.computed.outboxEntries) {
+      assert.equal((await outbox.findByKey(entry.key))?.typeId, 'WS_OUTBOX');
     }
   });
 });
@@ -1265,13 +1487,22 @@ Deno.test('PSql state event repositories page by snapshot cursor order', async (
     await clientEvents.appendClientEvent(
       createClientStateEvent('client-middle-snapshot', 3_000, 20),
     );
-    await clientEvents.appendClientEvent(
-      createClientStateEvent('client-filtered', 4_000, 40, 'session-disconnected'),
+    const firstClientDuplicate = createClientStateEvent(
+      'client-filtered',
+      4_000,
+      40,
+      'session-disconnected',
     );
-    await clientEvents.appendClientEvent(
-      createClientStateEvent('client-filtered', 5_000, 50, 'session-disconnected', {
-        reason: 'updated',
-      }),
+    await clientEvents.appendClientEvent(firstClientDuplicate);
+    await clientEvents.appendClientEvent(structuredClone(firstClientDuplicate));
+    await assert.rejects(
+      () =>
+        clientEvents.appendClientEvent(
+          createClientStateEvent('client-filtered', 5_000, 50, 'session-disconnected', {
+            reason: 'updated',
+          }),
+        ),
+      (error) => error instanceof ClientStateEventCollisionError,
     );
 
     const firstClientPage = await clientEvents.listClientEventPage(

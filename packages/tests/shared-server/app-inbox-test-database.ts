@@ -99,8 +99,9 @@ export function createAppInboxTestDatabase(
                 if (typeof eventJson !== 'string') {
                     throw new Error('Client state event JSON is required');
                 }
-                pendingClientEvents.push(JSON.parse(eventJson) as ClientEvent);
-                return [];
+                const event = JSON.parse(eventJson) as ClientEvent;
+                pendingClientEvents.push(event);
+                return [{ event_id: event.eventId }];
             }
             if (query.includes('insert into resource_inbox_results')) {
                 const entry = toResultEntry(values);

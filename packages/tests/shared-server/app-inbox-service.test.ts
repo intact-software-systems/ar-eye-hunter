@@ -58,7 +58,10 @@ import { GroupStateRepository } from '@shared-server/rallar-system/repositories/
 import { InMemoryGroupStateEventStore } from '@shared-server/rallar-system/repositories/StateEventStore.ts';
 import { ClientMutationIdempotencyConflictError } from '@shared-server/rallar-system/services/client-state-service.ts';
 import type { GroupMutationReceipt } from '@shared-server/rallar-system/services/group-state-mutations.ts';
-import { GroupStateEventCollisionError } from '@shared-server/postgres/rallar-system/PSqlStateEventRepository.ts';
+import {
+    ClientStateEventCollisionError,
+    GroupStateEventCollisionError,
+} from '@shared-server/postgres/rallar-system/PSqlStateEventRepository.ts';
 import { StateMutationOutboxCollisionError } from '@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts';
 
 const SCOPE: StateScope = {
@@ -488,6 +491,16 @@ describe('AppInboxService', () => {
     });
 
     it.each([
+        [
+            'client event',
+            new ClientStateEventCollisionError({
+                applicationId: SCOPE.applicationId,
+                workspaceId: SCOPE.workspaceId,
+                principalId: 'alice',
+                eventId: 'collision-event',
+            }),
+            'client-state-event-collision',
+        ],
         [
             'group event',
             new GroupStateEventCollisionError({
