@@ -183,9 +183,11 @@ function toOperationIdentity(entry: ResourceEntry): AppInboxOperationIdentity {
         return toUnavailableOperationIdentity(entry.key.topicId, 'corrupt');
     }
     if (!isRecord(outer) || !isRecord(outer.payload) ||
+        typeof outer.payload.typeId !== 'string' ||
         typeof outer.payload.resource !== 'string') {
         return toUnavailableOperationIdentity(entry.key.topicId, 'corrupt');
     }
+    const dispatchedOperation = outer.payload.typeId;
 
     let command: unknown;
     try {
@@ -196,12 +198,16 @@ function toOperationIdentity(entry: ResourceEntry): AppInboxOperationIdentity {
     if (!isRecord(command) || typeof command.type !== 'string') {
         return toUnavailableOperationIdentity(entry.key.topicId, 'corrupt');
     }
-    if (!APP_INBOX_OPERATIONS.has(command.type) ||
-        !isOperationForTopic(command.type, entry.key.topicId)) {
+    if (!APP_INBOX_OPERATIONS.has(dispatchedOperation) ||
+        !APP_INBOX_OPERATIONS.has(command.type)) {
         return toUnavailableOperationIdentity(entry.key.topicId, 'unavailable');
     }
+    if (dispatchedOperation !== command.type ||
+        !isOperationForTopic(dispatchedOperation, entry.key.topicId)) {
+        return toUnavailableOperationIdentity(entry.key.topicId, 'corrupt');
+    }
     return {
-        operation: command.type as AppInboxType,
+        operation: dispatchedOperation as AppInboxType,
         operationSource: 'command',
     };
 }

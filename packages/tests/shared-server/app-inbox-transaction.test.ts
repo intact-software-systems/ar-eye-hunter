@@ -479,24 +479,80 @@ describe('AppInbox retry exhaustion', () => {
             name: 'corrupt outer JSON',
             resource: '{"secret":"outer-password"',
             operationSource: 'corrupt',
+            operation: 'APP_INBOX_GROUP_OPERATION_UNAVAILABLE',
         },
         {
             name: 'corrupt nested command JSON',
             resource: JSON.stringify({
-                payload: { resource: '{"secret":"nested-password"' },
-            }),
-            operationSource: 'corrupt',
-        },
-        {
-            name: 'unknown removed operation',
-            resource: JSON.stringify({
                 payload: {
-                    resource: JSON.stringify({
-                        type: 'REMOVED_GROUP_OPERATION_password',
-                    }),
+                    typeId: AppInboxType.GROUP_CREATE,
+                    resource: '{"secret":"nested-password"',
                 },
             }),
+            operationSource: 'corrupt',
+            operation: 'APP_INBOX_GROUP_OPERATION_UNAVAILABLE',
+        },
+        {
+            name: 'missing outer dispatch type',
+            resource: toPersistedAppInboxResource({
+                nestedType: AppInboxType.GROUP_CREATE,
+            }),
+            operationSource: 'corrupt',
+            operation: 'APP_INBOX_GROUP_OPERATION_UNAVAILABLE',
+        },
+        {
+            name: 'known outer and nested operation mismatch',
+            resource: toPersistedAppInboxResource({
+                outerType: AppInboxType.GROUP_UPDATE,
+                nestedType: AppInboxType.GROUP_CREATE,
+            }),
+            operationSource: 'corrupt',
+            operation: 'APP_INBOX_GROUP_OPERATION_UNAVAILABLE',
+        },
+        {
+            name: 'missing nested command type',
+            resource: toPersistedAppInboxResource({
+                outerType: AppInboxType.GROUP_CREATE,
+            }),
+            operationSource: 'corrupt',
+            operation: 'APP_INBOX_GROUP_OPERATION_UNAVAILABLE',
+        },
+        {
+            name: 'durable queue topic mismatch',
+            resource: toPersistedAppInboxResource({
+                outerType: AppInboxType.GROUP_CREATE,
+                nestedType: AppInboxType.GROUP_CREATE,
+            }),
+            topicId: 'app-inbox.client-state',
+            operationSource: 'corrupt',
+            operation: 'APP_INBOX_CLIENT_OPERATION_UNAVAILABLE',
+        },
+        {
+            name: 'valid outer nested and topic agreement',
+            resource: toPersistedAppInboxResource({
+                outerType: AppInboxType.GROUP_CREATE,
+                nestedType: AppInboxType.GROUP_CREATE,
+            }),
+            operationSource: 'command',
+            operation: AppInboxType.GROUP_CREATE,
+        },
+        {
+            name: 'unknown removed outer dispatch type',
+            resource: toPersistedAppInboxResource({
+                outerType: 'REMOVED_GROUP_OPERATION_password',
+                nestedType: AppInboxType.GROUP_CREATE,
+            }),
             operationSource: 'unavailable',
+            operation: 'APP_INBOX_GROUP_OPERATION_UNAVAILABLE',
+        },
+        {
+            name: 'unknown removed nested command type',
+            resource: toPersistedAppInboxResource({
+                outerType: AppInboxType.GROUP_CREATE,
+                nestedType: 'REMOVED_GROUP_OPERATION_password',
+            }),
+            operationSource: 'unavailable',
+            operation: 'APP_INBOX_GROUP_OPERATION_UNAVAILABLE',
         },
     ].flatMap((testCase) => [
         { ...testCase, lane: 'initial' as const, attempts: 20 },
@@ -504,11 +560,18 @@ describe('AppInbox retry exhaustion', () => {
     ]))('atomically finalizes $lane exhaustion with $name', async ({
         resource,
         operationSource,
+        operation,
+        topicId,
         lane,
         attempts,
     }) => {
-        const harness = createAtomicHarness({ attempts, entryResource: resource });
+        const harness = createAtomicHarness({
+            attempts,
+            entryResource: resource,
+            entryTopicId: topicId,
+        });
         const domainHandler = vi.fn();
+        harness.service.onStateMessage(AppInboxType.GROUP_CREATE, domainHandler);
         if (lane === 'initial') {
             await createAppInboxRetryExhaustionHandler({
                 database: harness.database.sql,
@@ -523,9 +586,12 @@ describe('AppInbox retry exhaustion', () => {
         expect(harness.database.beginCalls).toBe(1);
         expect(harness.database.state.inbox.get(toKeyAsString(harness.entry.key))?.status)
             .toBe(EntityStatus.FAILED);
+        expect(harness.database.state.inbox.get(toKeyAsString(harness.entry.key))?.dequeueAudit.attempts)
+            .toBe(attempts);
+        expect(stored?.status).toBe(EntityStatus.FAILED);
         expect(JSON.parse(stored!.resource)).toMatchObject({
             commandIdentity: {
-                operation: 'APP_INBOX_GROUP_OPERATION_UNAVAILABLE',
+                operation,
                 operationSource,
             },
             processingAttempts: 20,
@@ -785,14 +851,20 @@ class AtomicDatabase {
 function createAtomicHarness(options: Readonly<{
     attempts?: number;
     entryResource?: string;
+    entryTopicId?: string;
     failResultWrite?: boolean;
     loseReservation?: boolean;
     timing?: (event: RallarTimingEvent) => void;
 }> = {}) {
     const baseEntry = createReservedEntry(options.attempts ?? 7);
-    const entry = options.entryResource === undefined
-        ? baseEntry
-        : { ...baseEntry, resource: options.entryResource };
+    const entry = {
+        ...baseEntry,
+        key: {
+            ...baseEntry.key,
+            topicId: options.entryTopicId ?? baseEntry.key.topicId,
+        },
+        resource: options.entryResource ?? baseEntry.resource,
+    };
     const database = new AtomicDatabase(entry, {
         failResultWrite: options.failResultWrite ?? false,
         loseReservation: options.loseReservation ?? false,
@@ -894,6 +966,19 @@ function createReservedEntry(attempts: number): ResourceEntry {
             startTs: Temporal.Instant.fromEpochMilliseconds(NOW_EPOCH_MS),
         },
     };
+}
+
+function toPersistedAppInboxResource(options: Readonly<{
+    outerType?: string;
+    nestedType?: string;
+}>): string {
+    const command = options.nestedType === undefined
+        ? { data: { secret: 'nested-password' } }
+        : { type: options.nestedType, data: { secret: 'nested-password' } };
+    const payload = options.outerType === undefined
+        ? { resource: JSON.stringify(command) }
+        : { typeId: options.outerType, resource: JSON.stringify(command) };
+    return JSON.stringify({ payload });
 }
 
 function toRecovery(
