@@ -19,7 +19,6 @@ import {
 } from '@shared-server/postgres/al-runtime/createPSqlALRuntimeStores.ts';
 import {
   createRallarMiddleware,
-  type RallarMiddlewareRuntime,
 } from '@shared-server/rallar-system/middleware/RallarMiddleware.ts';
 import { installQueueBoxPubSubBridge } from '@shared-server/rallar-system/pubsub/QueueBoxPubSubBridge.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/services/AppClientInboxService.ts';
@@ -45,11 +44,9 @@ import {
   createGroupStateService,
 } from '@shared-server/rallar-system/services/group-state-service.ts';
 import {
-  type CachedClientStateService,
   createCachedClientStateService,
 } from '@shared-server/rallar-system/services/cached-client-state-service.ts';
 import {
-  type CachedGroupStateService,
   createCachedGroupStateService,
 } from '@shared-server/rallar-system/services/cached-group-state-service.ts';
 import { myPublisherId, myServerId } from './runtime/runtime-identity.ts';
@@ -98,28 +95,11 @@ import {
 } from '@shared-server/rallar-system/repositories/RtcTopologyScalarAuthorityMigration.ts';
 import {
   createRtcTopologyPublicationFanout,
-  type RtcTopologyPublicationFanout,
 } from '@shared-server/rallar-system/pubsub/RtcTopologyClusterTransport.ts';
 import { createApiV1RtcTopologyClusterTransport } from './db/api-v1-rtc-topology-cluster-transport.ts';
+import { requireApiMiddleware, type Middleware } from './middleware-contract.ts';
 
-export type Middleware =
-  & Omit<
-    RallarMiddlewareRuntime,
-    | 'clientStateService'
-    | 'groupStateService'
-    | 'rtcTopologyPublicationRepository'
-    | 'rtcTopologyExecutionRepository'
-    | 'rtcTopologyPublicationFanout'
-    | 'appAuthInboxService'
-  >
-  & Readonly<{
-    clientStateService: CachedClientStateService;
-    groupStateService: CachedGroupStateService;
-    rtcTopologyPublicationRepository: RtcTopologyPublicationRepository;
-    rtcTopologyExecutionRepository: RtcTopologyExecutionRepository;
-    rtcTopologyPublicationFanout: RtcTopologyPublicationFanout;
-    appAuthInboxService: AppAuthInboxService;
-  }>;
+export type { Middleware } from './middleware-contract.ts';
 
 let middleware: Middleware | undefined = undefined;
 const runtimeStateExpiryLifecycle = createRuntimeStateExpiryLifecycle();
@@ -434,53 +414,10 @@ function initialise(
   return requireApiMiddleware(runtime);
 }
 
-function requireApiMiddleware(runtime: RallarMiddlewareRuntime): Middleware {
-  if (!isCachedClientStateService(runtime.clientStateService)) {
-    throw new Error('API middleware requires the cached client state service');
-  }
-  if (!isCachedGroupStateService(runtime.groupStateService)) {
-    throw new Error('API middleware requires the cached group state service');
-  }
-  if (!runtime.rtcTopologyPublicationRepository) {
-    throw new Error('API middleware requires the RTC topology publication repository');
-  }
-  if (!runtime.rtcTopologyExecutionRepository) {
-    throw new Error('API middleware requires the RTC topology execution repository');
-  }
-  if (!runtime.rtcTopologyPublicationFanout) {
-    throw new Error('API middleware requires the RTC topology publication fanout');
-  }
-  if (!runtime.appAuthInboxService) {
-    throw new Error('API middleware requires the auth AppInbox service');
-  }
-
-  return {
-    ...runtime,
-    clientStateService: runtime.clientStateService,
-    groupStateService: runtime.groupStateService,
-    rtcTopologyPublicationRepository: runtime.rtcTopologyPublicationRepository,
-    rtcTopologyExecutionRepository: runtime.rtcTopologyExecutionRepository,
-    rtcTopologyPublicationFanout: runtime.rtcTopologyPublicationFanout,
-    appAuthInboxService: runtime.appAuthInboxService,
-  };
-}
-
 function readRequiredAuthCredentialSecret(): string {
   const secret = Deno.env.get('RALLAR_AUTH_CREDENTIAL_SECRET')?.trim();
   if (!secret) {
     throw new Error('RALLAR_AUTH_CREDENTIAL_SECRET is required');
   }
   return secret;
-}
-
-function isCachedClientStateService(
-  service: RallarMiddlewareRuntime['clientStateService'],
-): service is CachedClientStateService {
-  return 'observeSnapshot' in service;
-}
-
-function isCachedGroupStateService(
-  service: RallarMiddlewareRuntime['groupStateService'],
-): service is CachedGroupStateService {
-  return 'readCurrentSnapshot' in service;
 }

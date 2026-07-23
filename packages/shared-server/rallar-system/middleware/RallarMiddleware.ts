@@ -1,7 +1,7 @@
 import type { ALInboundRuntimeStores } from '@shared/alm/ALInboundMessageRuntime.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/ALOutboundMessageRuntime.ts';
 import { type ALMessage, readALTargetGroupRef, } from '@shared/al-contracts/al-contract.ts';
-import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type {
     DequeueResourceEntryOptions,
     ResilienceDto,
@@ -21,7 +21,6 @@ import type { ClientStateRepository } from '../repositories/ClientStateRepositor
 import type { GroupStateRepository } from '../repositories/GroupStateRepository.ts';
 import type { AppClientInboxService } from '../services/AppClientInboxService.ts';
 import type { AppGroupInboxService } from '../services/AppGroupInboxService.ts';
-import type { AppAuthInboxService } from '../services/AppAuthInboxService.ts';
 import type { ClientStateService } from '../services/client-state-service.ts';
 import type { GroupStateService } from '../services/group-state-service.ts';
 import { resolveStateSyncRecipients } from '../state-sync-routing.ts';
@@ -40,6 +39,12 @@ import {
     createWsStateSyncPublisher,
     type StateSyncPublisher,
 } from '../state-sync-publisher.ts';
+import type {
+    RallarAuthInboxServiceFactory,
+    RallarGroupSnapshotResolverOptions,
+} from './rallar-middleware-options.ts';
+
+export type { RallarGroupSnapshotResolverOptions } from './rallar-middleware-options.ts';
 
 export type RallarStateMutationOutboxOptions =
     & Omit<StateMutationOutboxWorkOptions, 'stateSyncPublisher'>
@@ -68,7 +73,7 @@ export type RallarMiddlewareRuntime = Readonly<{
     appOutboxResilience: ResilienceDto;
     appGroupInboxService: AppGroupInboxService;
     appClientInboxService: AppClientInboxService;
-    appAuthInboxService?: AppAuthInboxService;
+    appAuthInboxService?: ReturnType<RallarAuthInboxServiceFactory>;
     clientStateService: ClientStateService;
     groupStateService: GroupStateService;
     clientsRepository: ClientStateRepository;
@@ -78,19 +83,6 @@ export type RallarMiddlewareRuntime = Readonly<{
     rtcTopologyPublicationFanout?: RtcTopologyPublicationFanout;
     stateMutationOutboxWork?: StateMutationOutboxWorkLike;
     readiness: Promise<void>;
-}>;
-
-export type RallarGroupSnapshotResolverOptions = Readonly<{
-    findGroupSnapshotByRef?: (
-        ref: GroupRef,
-        message: ALMessage,
-    ) => GroupSnapshot | undefined;
-    findGroupSnapshotById?: (groupId: string) => GroupSnapshot | undefined;
-    resolveGroupRef?: (
-        groupId: string,
-        message: ALMessage,
-    ) => GroupRef | undefined;
-    now?: RallarSnapshotPresenceClock;
 }>;
 
 export type CreateRallarMiddlewareOptions = Readonly<{
@@ -123,12 +115,7 @@ export type CreateRallarMiddlewareOptions = Readonly<{
             appInboxResilience: ResilienceDto;
         }>,
     ) => AppClientInboxService;
-    createAppAuthInboxService?: (
-        input: Readonly<{
-            inboxQueueReader: InboxQueueReader;
-            appInboxResilience: ResilienceDto;
-        }>,
-    ) => AppAuthInboxService;
+    createAppAuthInboxService?: RallarAuthInboxServiceFactory;
     resilience: Readonly<{
         inbox: ResilienceDto;
         outbox?: ResilienceDto;

@@ -161,6 +161,7 @@ export class AuthSessionPersistence extends RuntimeStateJsonStore {
         );
         if (!entry) return undefined;
         const value = await decodePersistedOrLegacyAuthSession(entry.value);
+        if (!value) return undefined;
         if (value.sessionId !== sessionId) {
             throw new TypeError('Persisted auth session id identity differs');
         }
@@ -230,16 +231,18 @@ export class AuthSessionPersistence extends RuntimeStateJsonStore {
 
 async function decodePersistedOrLegacyAuthSession(
     input: unknown,
-): Promise<PersistedAuthSession> {
+): Promise<PersistedAuthSession | undefined> {
     try {
         return decodePersistedAuthSession(input);
     } catch (persistedError) {
-        if (!isLegacyPlaintextCompatibilityActive()) throw persistedError;
+        let legacy: IssuedAuthSession;
         try {
-            return await toPersistedAuthSession(decodeLegacyIssuedAuthSession(input));
+            legacy = decodeLegacyIssuedAuthSession(input);
         } catch {
             throw persistedError;
         }
+        if (!isLegacyPlaintextCompatibilityActive()) return undefined;
+        return await toPersistedAuthSession(legacy);
     }
 }
 

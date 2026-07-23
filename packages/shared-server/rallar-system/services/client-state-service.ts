@@ -30,11 +30,9 @@ import {
     toClientSessionExpiryCandidate,
 } from '../repositories/session-expiry.ts';
 import type { ClientStateEventStore } from '../repositories/StateEventStore.ts';
-import {
-    AuthSessionRepository,
-    type IssuedAuthSession,
-    type PersistedAuthSession,
-} from '../repositories/AuthSessionRepository.ts';
+import { AuthSessionRepository } from '../repositories/AuthSessionRepository.ts';
+import type { IssuedAuthSession } from '../repositories/auth-session-types.ts';
+import type { PersistedAuthSession } from '../repositories/auth-persistence-contracts.ts';
 import { hashStateMutationCommand } from '../repositories/StateMutationOutboxRepository.ts';
 import type { StateEventListQuery } from '../state-event-listing.ts';
 import {

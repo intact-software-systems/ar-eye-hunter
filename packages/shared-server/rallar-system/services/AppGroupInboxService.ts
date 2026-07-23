@@ -52,11 +52,9 @@ import {
 } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import type { RallarTimingSink } from './timing.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import {
-    hashAuthSecret,
-    type IssuedAuthSession,
-    type PersistedAuthSession,
-} from '../repositories/AuthSessionRepository.ts';
+import type { IssuedAuthSession } from '../repositories/auth-session-types.ts';
+import type { PersistedAuthSession } from '../repositories/auth-persistence-contracts.ts';
+import { authSessionProofSecret } from './auth-session-proof-secret.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import {
@@ -81,6 +79,11 @@ import {
 import { toRtcRttMutationReceiptId } from '../rtc-topology-identifiers.ts';
 import type { RtcRttAcceptanceReason } from './rtc-rtt-measurement-policy.ts';
 import { validateRtcRttMeasurement } from '../rtc-rtt-persistence-validation.ts';
+
+import {
+    createTopologyMutationAuthorityProof,
+    type TopologyMutationAuthorityProof,
+} from './topology-mutation-authority-proof.ts';
 
 export {
     type AppInboxEnqueueInput,
@@ -277,16 +280,6 @@ export type CreateTopologyAppInboxCommandInput = Readonly<{
     requestId: string;
     capturedAtEpochMs: number;
     payload: TopologyAppInboxRequestPayload;
-}>;
-
-type TopologyMutationAuthorityProof = Readonly<{
-    version: 1;
-    principalId: string;
-    sessionId: string;
-    sessionIssuedAtEpochMs: number;
-    sessionExpiresAtEpochMs: number;
-    commandHash: string;
-    commandMac: string;
 }>;
 
 type TopologyConfigAppInboxAuthority = Readonly<{
@@ -897,7 +890,7 @@ export class AppGroupInboxService extends AppInboxService {
             session.sessionId !== claimed.sessionId ||
             session.issuedAtEpochMs !== claimed.issuedAtEpochMs ||
             session.expiresAtEpochMs !== claimed.expiresAtEpochMs ||
-            session.accessTokenDigest !== await hashAuthSecret(claimed.accessToken) ||
+            session.accessTokenDigest !== await authSessionProofSecret(claimed) ||
             session.expiresAtEpochMs <= this.nowEpochMs()
         ) {
             throw new GroupMutationAuthorizationError(
@@ -1604,47 +1597,6 @@ function toRtcRttAppInboxResult(
         reason: computed.reason,
         affectedGroups: computed.affectedGroups,
         updated: true,
-    };
-}
-
-async function createTopologyMutationAuthorityProof(
-    session: IssuedAuthSession | PersistedAuthSession,
-    commandHash: string,
-): Promise<TopologyMutationAuthorityProof> {
-    const proof = {
-        version: 1,
-        principalId: session.clientId,
-        sessionId: session.sessionId,
-        sessionIssuedAtEpochMs: session.issuedAtEpochMs,
-        sessionExpiresAtEpochMs: session.expiresAtEpochMs,
-        commandHash,
-    } as const;
-    const key = await crypto.subtle.importKey(
-        'raw',
-        new TextEncoder().encode(
-            'accessTokenDigest' in session
-                ? session.accessTokenDigest
-                : await hashAuthSecret(session.accessToken),
-        ),
-        { name: 'HMAC', hash: 'SHA-256' },
-        false,
-        ['sign'],
-    );
-    const bytes = await crypto.subtle.sign(
-        'HMAC',
-        key,
-        new TextEncoder().encode(
-            JSON.stringify({
-                purpose: 'rallar-topology-mutation-authority',
-                ...proof,
-            }),
-        ),
-    );
-    return {
-        ...proof,
-        commandMac: [...new Uint8Array(bytes)]
-            .map((value) => value.toString(16).padStart(2, '0'))
-            .join(''),
     };
 }
 

@@ -9,6 +9,7 @@ import {
 } from '@shared-server/rallar-system/repositories/StateEventStore.ts';
 import type { ClientEvent } from '@shared/api/client-types.ts';
 import type { GroupEvent } from '@shared/api/group-types.ts';
+import { tryExecuteRuntimeStateConditionalMutation } from './app-inbox-runtime-state-mutation.ts';
 
 export type AppInboxTestDatabase = PSqlSql &
     Readonly<{
@@ -78,48 +79,12 @@ export function createAppInboxTestDatabase(
                 );
                 return result.status === 'applied' ? [{ revision: result.revision }] : [];
             }
-            if (
-                query.includes('update runtime_state_store') &&
-                query.includes('returning revision')
-            ) {
-                if (!runtime) {
-                    throw new Error('Runtime-state SQL requires a transaction runtime');
-                }
-                const [value, expireAt, namespace, key, expectedRevision] = values as [
-                    string,
-                    Date,
-                    string,
-                    string,
-                    number,
-                ];
-                const result = await runtime.upsertIfRevision(
-                    namespace,
-                    key,
-                    value,
-                    expireAt.getTime(),
-                    expectedRevision,
-                );
-                return result.status === 'applied' ? [{ revision: result.revision }] : [];
-            }
-            if (
-                query.includes('delete from runtime_state_store') &&
-                query.includes('returning revision')
-            ) {
-                if (!runtime) {
-                    throw new Error('Runtime-state SQL requires a transaction runtime');
-                }
-                const [namespace, key, expectedRevision] = values as [
-                    string,
-                    string,
-                    number,
-                ];
-                const result = await runtime.deleteIfRevision(
-                    namespace,
-                    key,
-                    expectedRevision,
-                );
-                return result.status === 'applied' ? [{ revision: expectedRevision }] : [];
-            }
+            const conditionalMutation = await tryExecuteRuntimeStateConditionalMutation(
+                query,
+                runtime,
+                values,
+            );
+            if (conditionalMutation) return conditionalMutation;
             if (
                 query.includes('insert into runtime_state_store') &&
                 query.includes('do update set')

@@ -33,10 +33,8 @@ import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
 import {
   AuthSessionRepository,
-  hashAuthSecret,
   type IssuedAuthSession,
 } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
-import { AuthUserRepository } from '@shared-server/rallar-system/repositories/AuthUserRepository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/repositories/GroupTopologyConfigRepository.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/repositories/RtcTopologyExecutionRepository.ts';
@@ -115,13 +113,6 @@ import {
   AppInboxService,
   AppInboxType,
 } from '@shared-server/rallar-system/services/AppInboxService.ts';
-import { AppAuthInboxService } from '@shared-server/rallar-system/services/AppAuthInboxService.ts';
-import {
-  captureAuthMutationFacts,
-  createAuthMutationService,
-} from '@shared-server/rallar-system/services/auth-state-mutations.ts';
-import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/services/auth-credential-issuer.ts';
-import { PSqlAdmissionMutationCollector } from '@shared-server/postgres/al-runtime/PSqlAdmissionMutationCollector.ts';
 import { initRallarSystemWsTopics } from '@shared-server/rallar-system/ws-system-topics.ts';
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/services/GroupPresenceSummaryWork.ts';
 import {
@@ -135,9 +126,12 @@ import {
 } from '@shared-server/rallar-system/services/RtcTopologyOutboxWork.ts';
 import { computeRtcTopologyPublicationOutbox } from '@shared-server/rallar-system/services/rtc-topology-ws-outbox-entry.ts';
 import { toResilienceDto } from '../../src/middleware-resilience.ts';
-import { createApiV1SqlClient } from '../../src/db/db.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import * as graphTopologyRoutes from '../../src/routes/graph-topology-routes.ts';
+import {
+  toPersistedAuthSessionFixture,
+  withPGliteSql,
+} from './pglite-auth-test-harness.ts';
 
 const FUTURE_MS = Date.parse('9999-12-31T23:59:59.999Z');
 const PAST_MS = Date.parse('2000-01-01T00:00:00.000Z');
@@ -455,576 +449,6 @@ Deno.test('PGlite AppGroup commits group mutation and summary fan-out through fe
       ).length,
       1,
     );
-  });
-});
-
-Deno.test('PGlite AppAuth atomically commits auth state, results, completion, and ticket CAS', async () => {
-  await withPGliteSql(async (sql) => {
-    const runtime = new PSqlRuntimeStateRepository(sql);
-    const resourceInbox = new ResourceInboxRepository(sql);
-    const resourceResults = new ResourceInboxResultsRepository(sql);
-    const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
-    const secret = 'pglite-auth-secret-0123456789abcdef-extra';
-    const credentialIssuer = createHmacAuthCredentialIssuer(secret);
-    const nowEpochMs = await readPGliteDatabaseEpochMs(sql);
-    const appAuth = new AppAuthInboxService(
-      inboxReader,
-      resourceInbox,
-      resourceResults,
-      sql,
-      createAuthMutationService({
-        runtimeRepository: runtime,
-        serviceId: 'pglite-auth',
-      }),
-      credentialIssuer,
-      'pglite-auth',
-      undefined,
-      {
-        waitMaxElapsedMsecs: 5_000,
-        waitRetryIntervalMsecs: 1,
-        waitMaxRetryIntervalMsecs: 4,
-        waitJitterRatio: 0,
-        nowEpochMs: () => nowEpochMs,
-      },
-    );
-
-    const loginPending = appAuth.issueSession({
-      requestId: 'pglite-auth-session',
-      capturedAtEpochMs: nowEpochMs,
-      clientId: 'client-pglite',
-      username: 'alice',
-      authority: {
-        kind: 'static-client',
-        clientId: 'client-pglite',
-        normalizedUsername: 'alice',
-      },
-      sessionId: 'session-pglite',
-      expiresAtEpochMs: nowEpochMs + 60_000,
-    });
-    await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
-    await inboxReader.dequeueInbox(
-      InboxQueueReader.INBOX_DEQUEUE_TYPES,
-      toResilienceDto(),
-    );
-    const login = await loginPending;
-    assert.ok(login.right);
-    const session = { ...login.right, issuedAtEpochMs: nowEpochMs };
-
-    const [sessionRows] = await sql<{ count: string | number }[]>`
-      select count(*) as count
-      from runtime_state_store
-      where store_namespace in ('auth-sessions:by-token', 'auth-sessions:by-session')
-    `;
-    assert.equal(Number(sessionRows?.count), 2);
-    const [completionRows] = await sql<{ count: string | number }[]>`
-      select count(*) as count
-      from resource_inbox
-      where ri_type_id = 'APP_INBOX' and ri_status = 'COMPLETED'
-    `;
-    const [resultRows] = await sql<{ count: string | number }[]>`
-      select count(*) as count from resource_inbox_results
-    `;
-    assert.equal(Number(completionRows?.count), 1);
-    assert.equal(Number(resultRows?.count), 1);
-
-    const ticketPending = appAuth.issueWebSocketTicket({
-      requestId: 'pglite-ws-ticket',
-      capturedAtEpochMs: nowEpochMs + 1,
-      session,
-      expiresAtEpochMs: nowEpochMs + 30_000,
-    });
-    await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
-    await inboxReader.dequeueInbox(
-      InboxQueueReader.INBOX_DEQUEUE_TYPES,
-      toResilienceDto(),
-    );
-    const issuedTicket = await ticketPending;
-    assert.ok(issuedTicket.right);
-    const ticket = issuedTicket.right.ticket;
-    assert.ok(await new AuthSessionRepository(runtime).findBySessionId(session.sessionId));
-    const ticketDigest = await hashAuthSecret(ticket);
-    assert.ok(await new AuthSessionRepository(runtime).findWebSocketTicketByDigestEntry(
-      ticketDigest,
-    ));
-
-    const consumers = [
-      appAuth.consumeWebSocketTicket({
-        requestId: 'pglite-ws-consume-a',
-        capturedAtEpochMs: nowEpochMs + 2,
-        expectedSessionId: session.sessionId,
-        ticket,
-      }),
-      appAuth.consumeWebSocketTicket({
-        requestId: 'pglite-ws-consume-b',
-        capturedAtEpochMs: nowEpochMs + 2,
-        expectedSessionId: session.sessionId,
-        ticket,
-      }),
-    ];
-    await waitForPGliteQueueRowCount(sql, 'APP_INBOX', 'NEW', 2);
-    await inboxReader.dequeueInbox(
-      InboxQueueReader.INBOX_DEQUEUE_TYPES,
-      toResilienceDto(),
-    );
-    await inboxReader.dequeueInbox(
-      InboxQueueReader.INBOX_DEQUEUE_TYPES,
-      toResilienceDto(),
-    );
-    const consumed = await Promise.all(consumers);
-    assert.equal(consumed.filter((result) => result.right !== undefined).length, 1);
-    assert.equal(consumed.filter((result) => result.left?.status === 404).length, 1);
-    assert.equal(
-      (await runtime.findAllEntries('auth-sessions:ws-tickets')).length,
-      0,
-    );
-
-    const durableRows = await sql<{ resource: unknown }[]>`
-      select store_key || ':' || store_value as resource
-      from runtime_state_store
-      where store_namespace like 'auth-%'
-      union all
-      select ri_resource as resource from resource_inbox
-      union all
-      select ris_resource as resource from resource_inbox_results
-    `;
-    const durableResources = durableRows.map((row) =>
-      typeof row.resource === 'string' ? row.resource : JSON.stringify(row.resource)
-    ).join('\n');
-    assert.equal(durableResources.includes(login.right.accessToken), false);
-    assert.equal(durableResources.includes(ticket), false);
-    assert.equal(durableResources.includes(secret), false);
-  });
-});
-
-Deno.test('PGlite AppAuth rereads registered-user policy after enqueue', async () => {
-  await withPGliteSql(async (sql) => {
-    const runtime = new PSqlRuntimeStateRepository(sql);
-    const resourceInbox = new ResourceInboxRepository(sql);
-    const resourceResults = new ResourceInboxResultsRepository(sql);
-    const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
-    const nowEpochMs = await readPGliteDatabaseEpochMs(sql);
-    const user = {
-      clientId: 'policy-client',
-      username: 'policy-user',
-      normalizedUsername: 'policy-user',
-      displayName: null,
-      passwordHash: 'password-hash',
-      passwordSalt: 'password-salt',
-      passwordAlgorithm: 'pbkdf2-sha256' as const,
-      passwordIterations: 120_000,
-      roles: ['member'],
-      status: 'active' as const,
-      createdAtEpochMs: nowEpochMs,
-      updatedAtEpochMs: nowEpochMs,
-    };
-    const users = new AuthUserRepository(runtime);
-    await users.putUser(user);
-    const appAuth = new AppAuthInboxService(
-      inboxReader,
-      resourceInbox,
-      resourceResults,
-      sql,
-      createAuthMutationService({
-        runtimeRepository: runtime,
-        serviceId: 'pglite-auth-policy',
-      }),
-      createHmacAuthCredentialIssuer(
-        'pglite-auth-policy-secret-0123456789abcdef',
-      ),
-      'pglite-auth-policy',
-      undefined,
-      {
-        waitMaxElapsedMsecs: 5_000,
-        waitRetryIntervalMsecs: 1,
-        waitMaxRetryIntervalMsecs: 4,
-        waitJitterRatio: 0,
-        nowEpochMs: () => nowEpochMs,
-      },
-    );
-    const pending = appAuth.issueSession({
-      requestId: 'pglite-disabled-after-enqueue',
-      capturedAtEpochMs: nowEpochMs,
-      clientId: user.clientId,
-      username: user.username,
-      authority: {
-        kind: 'registered-user',
-        clientId: user.clientId,
-        normalizedUsername: user.normalizedUsername,
-        userRevision: 0,
-      },
-      sessionId: 'pglite-disabled-session',
-      expiresAtEpochMs: nowEpochMs + 60_000,
-    });
-    await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
-    await users.putUser({
-      ...user,
-      status: 'disabled',
-      updatedAtEpochMs: nowEpochMs + 1,
-    });
-    await inboxReader.dequeueInbox(
-      InboxQueueReader.INBOX_DEQUEUE_TYPES,
-      toResilienceDto(),
-    );
-
-    const result = await pending;
-    assert.equal(result.left?.status, 403);
-    assert.equal(
-      await new AuthSessionRepository(runtime).findBySessionId(
-        'pglite-disabled-session',
-      ),
-      undefined,
-    );
-    const rows = await sql<{ ris_status: string; ris_resource: unknown }[]>`
-      select ris_status, ris_resource
-      from resource_inbox_results
-      where ris_resource_id = 'pglite-disabled-after-enqueue'
-    `;
-    assert.equal(rows.length, 1);
-    assert.equal(rows[0].ris_status, 'FAILED');
-    assert.equal(JSON.stringify(rows[0].ris_resource).includes('session-issued'), false);
-  });
-});
-
-Deno.test('PGlite auth and AL production writers roll back sibling conditional mutations', async () => {
-  await withPGliteSql(async (sql) => {
-    const runtime = new PSqlRuntimeStateRepository(sql);
-    const nowEpochMs = await readPGliteDatabaseEpochMs(sql);
-    const credentialIssuer = createHmacAuthCredentialIssuer(
-      'pglite-rollback-secret-0123456789abcdef',
-    );
-    const auth = createAuthMutationService({
-      runtimeRepository: runtime,
-      serviceId: 'pglite-auth-rollback',
-    });
-    const registration = {
-      version: 1,
-      kind: 'register-user',
-      requestId: 'register-rollback',
-      capturedAtEpochMs: nowEpochMs,
-      user: {
-        clientId: 'register-client',
-        username: 'rollback-user',
-        normalizedUsername: 'rollback-user',
-        displayName: null,
-        passwordHash: 'password-hash',
-        passwordSalt: 'password-salt',
-        passwordAlgorithm: 'pbkdf2-sha256',
-        passwordIterations: 120_000,
-        roles: ['member'],
-        status: 'active',
-        createdAtEpochMs: nowEpochMs,
-        updatedAtEpochMs: nowEpochMs,
-      },
-    } as const;
-    const registrationRead = await auth.read(registration);
-    const registrationComputed = auth.compute(
-      registration,
-      registrationRead,
-      await captureAuthMutationFacts(registration, credentialIssuer),
-    );
-    auth.validate(registration, registrationRead, registrationComputed);
-    await runtime.insertIfAbsent(
-      'auth-users:by-client-id',
-      'client=register-client',
-      JSON.stringify({ collision: true }),
-      FUTURE_MS,
-    );
-    await assert.rejects(
-      () => sql.begin((transaction) => auth.write(transaction, registrationComputed)),
-      RuntimeStateWriteConflictError,
-    );
-    assert.equal(
-      await runtime.findEntry('auth-users:by-username', 'username=rollback-user'),
-      undefined,
-    );
-
-    const agentRequestId = 'agent-batch-rollback';
-    const agentAuthority = {
-      clientId: 'agent-client',
-      username: 'alice',
-      sessionId: 'agent-authority-session',
-      accessToken: await credentialIssuer.issueAccessToken('agent-authority-session'),
-      issuedAtEpochMs: nowEpochMs - 1,
-      expiresAtEpochMs: nowEpochMs + 60_000,
-    };
-    await new AuthSessionRepository(runtime).putSession(agentAuthority);
-    const agentFacts = await Promise.all([
-      { agentId: 'rollback-a', sessionId: 'rollback-session-a' },
-      { agentId: 'rollback-b', sessionId: 'rollback-session-b' },
-    ].map(async ({ agentId, sessionId }) => ({
-      agentId,
-      sessionId,
-      accessTokenDigest: await hashAuthSecret(
-        await credentialIssuer.issueAccessToken(sessionId),
-      ),
-      ticketDigest: await hashAuthSecret(
-        await credentialIssuer.issueAgentTicket(agentRequestId, agentId, sessionId),
-      ),
-      clientId: 'agent-client',
-      username: 'alice',
-      issuedAtEpochMs: nowEpochMs,
-      sessionExpiresAtEpochMs: nowEpochMs + 60_000,
-      ticketExpiresAtEpochMs: nowEpochMs + 30_000,
-    })));
-    const agentCommand = {
-      version: 1,
-      kind: 'issue-agent-tickets',
-      requestId: agentRequestId,
-      capturedAtEpochMs: nowEpochMs,
-      authority: {
-        clientId: agentAuthority.clientId,
-        username: agentAuthority.username,
-        sessionId: agentAuthority.sessionId,
-        accessTokenDigest: await hashAuthSecret(agentAuthority.accessToken),
-        issuedAtEpochMs: agentAuthority.issuedAtEpochMs,
-        expiresAtEpochMs: agentAuthority.expiresAtEpochMs,
-      },
-      tickets: agentFacts,
-    } as const;
-    const agentRead = await auth.read(agentCommand);
-    const agentComputed = auth.compute(
-      agentCommand,
-      agentRead,
-      await captureAuthMutationFacts(agentCommand, credentialIssuer),
-    );
-    auth.validate(agentCommand, agentRead, agentComputed);
-    await runtime.insertIfAbsent(
-      'auth-sessions:by-session',
-      'session=rollback-session-b',
-      JSON.stringify({ collision: true }),
-      FUTURE_MS,
-    );
-    await assert.rejects(
-      () => sql.begin((transaction) => auth.write(transaction, agentComputed)),
-      RuntimeStateWriteConflictError,
-    );
-    assert.equal(
-      await runtime.findEntry('auth-sessions:by-session', 'session=rollback-session-a'),
-      undefined,
-    );
-    assert.equal(
-      await runtime.findEntry(
-        'auth-sessions:agent-session-tickets',
-        `ticket-digest=${agentFacts[0].ticketDigest}`,
-      ),
-      undefined,
-    );
-    assert.equal(
-      await runtime.findEntry(
-        'auth-sessions:by-token',
-        `token-digest=${agentFacts[1].accessTokenDigest}`,
-      ),
-      undefined,
-    );
-
-    const admission = new PSqlAdmissionMutationCollector(
-      runtime,
-      'al-admission-rollback',
-    );
-    await runtime.insertIfAbsent(
-      'al-admission-rollback',
-      'sibling-b',
-      JSON.stringify({ collision: true }),
-      FUTURE_MS,
-    );
-    await assert.rejects(
-      () => admission.apply([
-        {
-          kind: 'insert',
-          key: 'sibling-a',
-          expected: 'absent',
-          value: JSON.stringify({ value: 'a' }),
-          expireAtEpochMs: FUTURE_MS,
-        },
-        {
-          kind: 'insert',
-          key: 'sibling-b',
-          expected: 'absent',
-          value: JSON.stringify({ value: 'b' }),
-          expireAtEpochMs: FUTURE_MS,
-        },
-      ]),
-      RuntimeStateWriteConflictError,
-    );
-    assert.equal(
-      await runtime.findEntry('al-admission-rollback', 'sibling-a'),
-      undefined,
-    );
-  });
-});
-
-Deno.test('PGlite logout outbox collision rolls back session deletion and success receipt', async () => {
-  await withPGliteSql(async (sql) => {
-    const runtime = new PSqlRuntimeStateRepository(sql);
-    const resourceInbox = new ResourceInboxRepository(sql);
-    const resourceResults = new ResourceInboxResultsRepository(sql);
-    const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
-    const credentialIssuer = createHmacAuthCredentialIssuer(
-      'pglite-logout-secret-0123456789abcdef',
-    );
-    const nowEpochMs = await readPGliteDatabaseEpochMs(sql);
-    const appAuth = new AppAuthInboxService(
-      inboxReader,
-      resourceInbox,
-      resourceResults,
-      sql,
-      createAuthMutationService({
-        runtimeRepository: runtime,
-        serviceId: 'pglite-auth',
-      }),
-      credentialIssuer,
-      'pglite-auth',
-      undefined,
-      {
-        waitMaxElapsedMsecs: 5_000,
-        waitRetryIntervalMsecs: 1,
-        waitMaxRetryIntervalMsecs: 4,
-        waitJitterRatio: 0,
-        nowEpochMs: () => nowEpochMs,
-      },
-    );
-    const accessToken = await credentialIssuer.issueAccessToken('logout-session');
-    const session = {
-      clientId: 'logout-client',
-      username: 'alice',
-      accessToken,
-      sessionId: 'logout-session',
-      issuedAtEpochMs: nowEpochMs,
-      expiresAtEpochMs: nowEpochMs + 60_000,
-    };
-    await new AuthSessionRepository(runtime).putSession(session);
-    await resourceInbox.writeIfAbsentOrMatch(createResourceEntry(
-      'logout-outbox-collision',
-      {
-        topicId: 'auth.session.logout',
-        contextId: session.sessionId,
-        typeId: 'WS_OUTBOX',
-        payload: { divergent: true },
-      },
-    ));
-
-    const pending = appAuth.logoutSession({
-      requestId: 'logout-outbox-collision',
-      capturedAtEpochMs: nowEpochMs + 1,
-      session,
-    });
-    await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
-    await inboxReader.dequeueInbox(
-      InboxQueueReader.INBOX_DEQUEUE_TYPES,
-      toResilienceDto(),
-    );
-    const failed = await pending;
-    assert.equal(failed.left?.code, 'resource-inbox-invariant-corruption');
-    assert.ok(await new AuthSessionRepository(runtime).findByAccessToken(accessToken));
-    const [outboxRows] = await sql<{ count: string | number }[]>`
-      select count(*) as count
-      from resource_inbox
-      where ri_type_id = 'WS_OUTBOX'
-        and ri_resource_id = 'logout-outbox-collision'
-    `;
-    assert.equal(Number(outboxRows?.count), 1);
-    const results = await sql<{ ris_status: string; ris_resource: unknown }[]>`
-      select ris_status, ris_resource
-      from resource_inbox_results
-      where ris_resource_id = 'logout-outbox-collision'
-    `;
-    assert.equal(results.length, 1);
-    assert.equal(results[0].ris_status, 'FAILED');
-    assert.equal(JSON.stringify(results[0].ris_resource).includes('loggedOut'), false);
-  });
-});
-
-Deno.test('PGlite auth finalization fence rolls back state and result through retry exhaustion', async () => {
-  await withPGliteSql(async (sql) => {
-    const runtime = new PSqlRuntimeStateRepository(sql);
-    const resourceInbox = new ResourceInboxRepository(sql);
-    const resourceResults = new ResourceInboxResultsRepository(sql);
-    const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
-    const credentialIssuer = createHmacAuthCredentialIssuer(
-      'pglite-fence-secret-0123456789abcdef',
-    );
-    const nowEpochMs = await readPGliteDatabaseEpochMs(sql);
-    const appAuth = new AppAuthInboxService(
-      inboxReader,
-      resourceInbox,
-      resourceResults,
-      sql,
-      createAuthMutationService({
-        runtimeRepository: runtime,
-        serviceId: 'pglite-auth',
-      }),
-      credentialIssuer,
-      'pglite-auth',
-      undefined,
-      {
-        waitMaxElapsedMsecs: 5_000,
-        waitRetryIntervalMsecs: 1,
-        waitMaxRetryIntervalMsecs: 4,
-        waitJitterRatio: 0,
-        nowEpochMs: () => nowEpochMs,
-      },
-    );
-    await sql`
-      create function sabotage_auth_finalization() returns trigger
-      language plpgsql as $$
-      begin
-        update resource_inbox
-        set ri_attempts = ri_attempts + 1
-        where ri_resource_id = 'auth-finalization-fence'
-          and ri_status = 'RESERVED';
-        return new;
-      end
-      $$
-    `;
-    await sql`
-      create trigger sabotage_auth_finalization_trigger
-      after insert on runtime_state_store
-      for each row
-      when (new.store_namespace = 'auth-users:by-client-id')
-      execute function sabotage_auth_finalization()
-    `;
-
-    const pending = appAuth.registerUser({
-      requestId: 'auth-finalization-fence',
-      capturedAtEpochMs: nowEpochMs,
-      user: {
-        clientId: 'fence-client',
-        username: 'fence-user',
-        normalizedUsername: 'fence-user',
-        displayName: null,
-        passwordHash: 'password-hash',
-        passwordSalt: 'password-salt',
-        passwordAlgorithm: 'pbkdf2-sha256',
-        passwordIterations: 120_000,
-        roles: ['member'],
-        status: 'active',
-        createdAtEpochMs: nowEpochMs,
-        updatedAtEpochMs: nowEpochMs,
-      },
-    });
-    await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
-    await inboxReader.dequeueInbox(
-      InboxQueueReader.INBOX_DEQUEUE_TYPES,
-      toResilienceDto(),
-    );
-    assert.equal(
-      await runtime.findEntry('auth-users:by-username', 'username=fence-user'),
-      undefined,
-    );
-    assert.equal(
-      await runtime.findEntry('auth-users:by-client-id', 'client=fence-client'),
-      undefined,
-    );
-    const [failedAttemptResults] = await sql<{ count: string | number }[]>`
-      select count(*) as count
-      from resource_inbox_results
-      where ris_resource_id = 'auth-finalization-fence'
-    `;
-    assert.equal(Number(failedAttemptResults?.count), 0);
-
-    const exhausted = await pending;
-    assert.equal(exhausted.right, undefined);
-    assert.ok(exhausted.left);
   });
 });
 
@@ -3914,14 +3338,7 @@ Deno.test('PGlite group-state reads reject complete-contract corruption across p
         issuedAtEpochMs: 1,
         expiresAtEpochMs: 100_000,
       };
-      const persistedAuthority = {
-        clientId: authority.clientId,
-        sessionId: authority.sessionId,
-        accessTokenDigest: await hashAuthSecret(authority.accessToken),
-        username: authority.username,
-        issuedAtEpochMs: authority.issuedAtEpochMs,
-        expiresAtEpochMs: authority.expiresAtEpochMs,
-      };
+      const persistedAuthority = await toPersistedAuthSessionFixture(authority);
       let eventSequence = 0;
       const runtime = new PSqlRuntimeStateRepository(sql);
       const service = createGroupStateService({
@@ -4270,14 +3687,7 @@ Deno.test('PGlite group event collision rolls back the authoritative mutation tr
       issuedAtEpochMs: 1,
       expiresAtEpochMs: 100_000,
     };
-    const persistedAuthority = {
-      clientId: authority.clientId,
-      sessionId: authority.sessionId,
-      accessTokenDigest: await hashAuthSecret(authority.accessToken),
-      username: authority.username,
-      issuedAtEpochMs: authority.issuedAtEpochMs,
-      expiresAtEpochMs: authority.expiresAtEpochMs,
-    };
+    const persistedAuthority = await toPersistedAuthSessionFixture(authority);
     const service = createGroupStateService({
       runtimeRepository: runtime,
       createGroupStateEventStore: createGroupStateEventRepository,
@@ -4366,14 +3776,7 @@ Deno.test('PGlite group summary outbox collision rolls back state event and rece
       issuedAtEpochMs: 1,
       expiresAtEpochMs: 100_000,
     };
-    const persistedAuthority = {
-      clientId: authority.clientId,
-      sessionId: authority.sessionId,
-      accessTokenDigest: await hashAuthSecret(authority.accessToken),
-      username: authority.username,
-      issuedAtEpochMs: authority.issuedAtEpochMs,
-      expiresAtEpochMs: authority.expiresAtEpochMs,
-    };
+    const persistedAuthority = await toPersistedAuthSessionFixture(authority);
     const service = createGroupStateService({
       runtimeRepository: runtime,
       createGroupStateEventStore: createGroupStateEventRepository,
@@ -6041,17 +5444,6 @@ async function createPGliteRemovalPlanningScenario(
   return { authority, previous, service };
 }
 
-async function withPGliteSql(
-  fn: (sql: PGliteSql) => Promise<void>,
-): Promise<void> {
-  const sql = createApiV1SqlClient({ sqlBackend: 'pglite-memory' }) as PGliteSql;
-  try {
-    await fn(sql);
-  } finally {
-    await sql.close();
-  }
-}
-
 async function readPGliteDatabaseEpochMs(sql: PGliteSql): Promise<number> {
   const [clock] = await sql<{ epoch_ms: string | number }[]>`
     select floor(extract(epoch from now()) * 1000)::bigint as epoch_ms
@@ -6134,24 +5526,6 @@ async function waitForPGliteQueueRow(
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
   throw new Error(`Timed out waiting for ${typeId} ${status} queue row`);
-}
-
-async function waitForPGliteQueueRowCount(
-  sql: PGliteSql,
-  typeId: string,
-  status: string,
-  minimum: number,
-): Promise<void> {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
-    const [row] = await sql<{ count: string }[]>`
-      select count(*) as count
-      from resource_inbox
-      where ri_type_id = ${typeId} and ri_status = ${status}
-    `;
-    if (Number(row?.count ?? 0) >= minimum) return;
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  }
-  throw new Error(`Timed out waiting for ${minimum} ${typeId} ${status} queue rows`);
 }
 
 async function applyPGliteGroupMutation(
