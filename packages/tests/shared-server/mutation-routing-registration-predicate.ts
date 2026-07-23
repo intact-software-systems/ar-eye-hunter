@@ -30,11 +30,10 @@ export function filterRegistrationTypes(
   callback: AstNode | undefined,
   evaluateCollection: RegistrationCollectionEvaluator,
 ): RegistrationTypeCollection {
-  if (collection.kind === 'unknown') return collection;
   const predicate = readCallback(callback);
   if (!predicate) return UNKNOWN_REGISTRATION_TYPES;
   const filtered = new Set<string>();
-  let unknown = false;
+  let unknown = collection.kind === 'unknown';
   for (const type of collection.types) {
     const result = evaluateBoolean(
       predicate.body,
@@ -53,10 +52,10 @@ export function mapRegistrationTypes(
   callback: AstNode | undefined,
   evaluateCollection: RegistrationCollectionEvaluator,
 ): RegistrationTypeCollection {
-  if (collection.kind === 'unknown') return collection;
   const mapper = readCallback(callback);
   if (!mapper) return UNKNOWN_REGISTRATION_TYPES;
   const mapped = new Set<string>();
+  let unknown = collection.kind === 'unknown';
   for (const type of collection.types) {
     const result = evaluateMappedValue(
       mapper.body,
@@ -64,10 +63,10 @@ export function mapRegistrationTypes(
       type,
       evaluateCollection,
     );
-    if (result.kind === 'unknown') return unknownRegistrationTypes(mapped);
-    for (const mappedType of result.types) mapped.add(mappedType);
+    if (result.kind === 'unknown') unknown = true;
+    else for (const mappedType of result.types) mapped.add(mappedType);
   }
-  return knownRegistrationTypes(mapped);
+  return unknown ? unknownRegistrationTypes(mapped) : knownRegistrationTypes(mapped);
 }
 
 interface RegistrationCallback {
@@ -88,7 +87,7 @@ function readCallback(value: AstNode | undefined): RegistrationCallback | undefi
       ? unwrap(asNode(statements[0].argument))
       : undefined;
   }
-  return parameter && body ? { parameter, body } : undefined;
+  return body ? { parameter, body } : undefined;
 }
 
 function evaluateBoolean(

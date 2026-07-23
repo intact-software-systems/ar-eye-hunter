@@ -83,6 +83,12 @@ export function findCapabilityMutationCalls(
   const calls = new Set<string>();
   for (
     const call of findFlowSensitiveCapabilityCalls(program, {
+      definitionKey: (value) => {
+        const node = asNode(value);
+        const owner = analysis.bindings.thisKey(node);
+        const name = readPropertyName(node?.key, node?.computed === true, analysis);
+        return owner && name ? `${owner}.${name}` : '';
+      },
       directMethod: (value) => readDirectMethodReference(value, analysis),
       expressionKey: (value) => expressionKey(value, analysis),
       fallbackMethod: (key) => analysis.methods.get(key),

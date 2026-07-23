@@ -1,31 +1,24 @@
 import {
   asCapabilityNode as asNode,
-  asCapabilityNodes as asNodes,
   type MutationBoundaryCapabilityAstNode as AstNode,
   unwrapCapabilityExpression as unwrap,
 } from './mutation-boundary-capability-ast.ts';
+import {
+  type CapabilityFlowAccess,
+  collectClosureExecutionWrites,
+  type FlowCapabilityMethod,
+  type FlowMethodSource,
+  isCapturedFlowWrite,
+  readFlowPatternWrites,
+} from './mutation-boundary-capability-closures.ts';
 
-export type FlowCapabilityMethod = Readonly<{ capability: string; method: string }>;
-
-export interface CapabilityFlowAccess {
-  directMethod(value: unknown): FlowCapabilityMethod | undefined;
-  expressionKey(value: unknown): string;
-  fallbackMethod(key: string): FlowCapabilityMethod | undefined;
-  functionKey(value: unknown): string;
-  memberMethod(sourceKey: string, property: string): FlowCapabilityMethod | undefined;
-  ownerFunctionKey(value: unknown): string;
-  propertyName(value: unknown, computed: boolean): string;
-}
-
-interface MethodSource {
-  readonly direct?: FlowCapabilityMethod;
-  readonly key: string;
-}
+export type { FlowCapabilityMethod } from './mutation-boundary-capability-closures.ts';
 
 interface MethodWrite {
   readonly conditional: boolean;
+  readonly order: number;
   readonly position: number;
-  readonly source: MethodSource;
+  readonly source: FlowMethodSource;
 }
 
 export function findFlowSensitiveCapabilityCalls(
@@ -34,27 +27,47 @@ export function findFlowSensitiveCapabilityCalls(
 ): readonly FlowCapabilityMethod[] {
   const conditionalNodes = findConditionalNodes(program);
   const writes = new Map<string, MethodWrite[]>();
+  let nextOrder = 0;
   walk(program, (node) => {
-    if (node.type === 'VariableDeclarator') {
-      collectPatternWrites(
-        asNode(node.id),
-        asNode(node.init),
-        node,
+    const pattern = node.type === 'VariableDeclarator'
+      ? asNode(node.id)
+      : node.type === 'AssignmentExpression'
+      ? asNode(node.left)
+      : undefined;
+    const value = node.type === 'VariableDeclarator'
+      ? asNode(node.init)
+      : node.type === 'AssignmentExpression'
+      ? asNode(node.right)
+      : undefined;
+    if (!pattern) return;
+    for (const write of readFlowPatternWrites(pattern, value, access)) {
+      if (isCapturedFlowWrite(write, node, access)) continue;
+      addWrite(
+        write.targetKey,
+        write.source,
+        readPosition(node),
         conditionalNodes.has(node),
+        nextOrder++,
         writes,
-        access,
-      );
-    } else if (node.type === 'AssignmentExpression') {
-      collectPatternWrites(
-        asNode(node.left),
-        asNode(node.right),
-        node,
-        conditionalNodes.has(node),
-        writes,
-        access,
       );
     }
   });
+  for (
+    const write of collectClosureExecutionWrites(
+      program,
+      access,
+      (node) => conditionalNodes.has(node),
+    )
+  ) {
+    addWrite(
+      write.targetKey,
+      write.source,
+      write.position,
+      write.conditional,
+      nextOrder++,
+      writes,
+    );
+  }
 
   const calls = new Map<string, FlowCapabilityMethod>();
   walk(program, (node) => {
@@ -67,94 +80,17 @@ export function findFlowSensitiveCapabilityCalls(
   return [...calls.values()];
 }
 
-function collectPatternWrites(
-  pattern: AstNode | undefined,
-  value: AstNode | undefined,
-  writeNode: AstNode,
-  controlConditional: boolean,
-  writes: Map<string, MethodWrite[]>,
-  access: CapabilityFlowAccess,
-  sourceOverride?: MethodSource,
-): void {
-  if (!pattern) return;
-  if (pattern.type === 'AssignmentPattern') {
-    collectPatternWrites(
-      asNode(pattern.left),
-      asNode(pattern.right),
-      writeNode,
-      controlConditional,
-      writes,
-      access,
-    );
-    return;
-  }
-  if (pattern.type === 'Identifier') {
-    const targetKey = access.expressionKey(pattern);
-    addWrite(
-      targetKey,
-      sourceOverride ?? readSource(value, access),
-      writeNode,
-      controlConditional || isClosureWrite(pattern, writeNode, access),
-      writes,
-    );
-    const object = unwrap(value);
-    if (object?.type === 'ObjectExpression') {
-      for (const property of asNodes(object.properties)) {
-        const name = access.propertyName(property.key, property.computed === true);
-        if (!name) continue;
-        addWrite(
-          `${targetKey}.${name}`,
-          readSource(asNode(property.value), access),
-          property,
-          controlConditional || isClosureWrite(pattern, writeNode, access),
-          writes,
-        );
-      }
-    }
-    return;
-  }
-  if (pattern.type === 'MemberExpression' || pattern.type === 'OptionalMemberExpression') {
-    addWrite(
-      access.expressionKey(pattern),
-      sourceOverride ?? readSource(value, access),
-      writeNode,
-      controlConditional || isClosureWrite(pattern, writeNode, access),
-      writes,
-    );
-    return;
-  }
-  if (pattern.type !== 'ObjectPattern') return;
-  const sourceKey = sourceOverride?.key ?? access.expressionKey(value);
-  for (const property of asNodes(pattern.properties)) {
-    if (property.type !== 'ObjectProperty') continue;
-    const name = access.propertyName(property.key, property.computed === true);
-    const target = asNode(property.value);
-    if (!name || !target) continue;
-    collectPatternWrites(
-      target,
-      undefined,
-      writeNode,
-      controlConditional,
-      writes,
-      access,
-      {
-        direct: access.memberMethod(sourceKey, name),
-        key: sourceKey ? `${sourceKey}.${name}` : '',
-      },
-    );
-  }
-}
-
 function addWrite(
   targetKey: string,
-  source: MethodSource,
-  node: AstNode,
+  source: FlowMethodSource,
+  position: number,
   conditional: boolean,
+  order: number,
   writes: Map<string, MethodWrite[]>,
 ): void {
   if (!targetKey) return;
   const entries = writes.get(targetKey) ?? [];
-  entries.push({ conditional, position: readPosition(node), source });
+  entries.push({ conditional, order, position, source });
   writes.set(targetKey, entries);
 }
 
@@ -183,7 +119,10 @@ function resolveKey(
   if (resolving.has(resolutionKey)) return new Set();
   resolving.add(resolutionKey);
   let state = new Map<string, FlowCapabilityMethod>();
-  for (const write of writes.get(key) ?? []) {
+  const orderedWrites = [...writes.get(key) ?? []].toSorted((left, right) =>
+    left.position - right.position || left.order - right.order
+  );
+  for (const write of orderedWrites) {
     if (write.position >= position) continue;
     const source = resolveSource(write.source, write.position, writes, access, resolving);
     if (!write.conditional) {
@@ -197,7 +136,7 @@ function resolveKey(
 }
 
 function resolveSource(
-  source: MethodSource,
+  source: FlowMethodSource,
   position: number,
   writes: ReadonlyMap<string, readonly MethodWrite[]>,
   access: CapabilityFlowAccess,
@@ -205,33 +144,6 @@ function resolveSource(
 ): ReadonlySet<FlowCapabilityMethod> {
   if (source.direct) return new Set([source.direct]);
   return source.key ? resolveKey(source.key, position, writes, access, resolving) : new Set();
-}
-
-function readSource(value: AstNode | undefined, access: CapabilityFlowAccess): MethodSource {
-  return {
-    direct: access.directMethod(value),
-    key: access.expressionKey(value),
-  };
-}
-
-function isClosureWrite(
-  target: AstNode,
-  writeNode: AstNode,
-  access: CapabilityFlowAccess,
-): boolean {
-  const owner = access.ownerFunctionKey(rootIdentifier(target));
-  const writer = access.functionKey(writeNode);
-  return !!owner && !!writer && owner !== writer;
-}
-
-function rootIdentifier(value: AstNode): AstNode | undefined {
-  const node = unwrap(value);
-  if (node?.type === 'Identifier') return node;
-  if (node?.type === 'MemberExpression' || node?.type === 'OptionalMemberExpression') {
-    const object = asNode(node.object);
-    return object ? rootIdentifier(object) : undefined;
-  }
-  return undefined;
 }
 
 function findConditionalNodes(program: AstNode): WeakSet<object> {
