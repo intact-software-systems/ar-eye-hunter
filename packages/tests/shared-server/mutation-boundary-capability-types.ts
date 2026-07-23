@@ -9,6 +9,7 @@ type AstNode = { readonly type: string; readonly [key: string]: unknown };
 export interface CapabilityTypeShape {
   readonly capability?: string;
   readonly members?: ReadonlyMap<string, CapabilityTypeShape>;
+  readonly callResult?: CapabilityTypeShape;
 }
 
 interface ImportedType {
@@ -26,6 +27,10 @@ interface ModuleTypes {
 export interface CapabilityTypeResolver {
   resolveType(value: unknown): CapabilityTypeShape | undefined;
   resolveExpression(value: unknown): CapabilityTypeShape | undefined;
+  resolveImportedCallable(
+    source: string,
+    imported: string,
+  ): CapabilityTypeShape | undefined;
 }
 
 export function createCapabilityTypeResolver(
@@ -67,7 +72,11 @@ export function createCapabilityTypeResolver(
       if (capabilities.has(imported.imported)) {
         return { capability: imported.imported };
       }
-      const importedModule = loadModule(module.filePath, imported.source, modules);
+      const importedModule = loadModule(
+        module.filePath,
+        imported.source,
+        modules,
+      );
       return importedModule ? resolveNamed(importedModule, imported.imported) : undefined;
     } finally {
       resolving.delete(key);
@@ -81,14 +90,21 @@ export function createCapabilityTypeResolver(
     let node = asNode(value);
     if (node?.type === 'TSTypeAnnotation') node = asNode(node.typeAnnotation);
     if (!node) return undefined;
-    if (node.type === 'TSParenthesizedType') return resolveType(node.typeAnnotation, module);
+    if (node.type === 'TSParenthesizedType') {
+      return resolveType(node.typeAnnotation, module);
+    }
     if (node.type === 'TSTypeLiteral' || node.type === 'TSInterfaceBody') {
       return readObjectMembers(node, module);
     }
     if (node.type === 'TSIntersectionType' || node.type === 'TSUnionType') {
-      return mergeShapes(asNodes(node.types).map((item) => resolveType(item, module)));
+      return mergeShapes(
+        asNodes(node.types).map((item) => resolveType(item, module)),
+      );
     }
-    if (node.type !== 'TSTypeReference' && node.type !== 'TSExpressionWithTypeArguments') {
+    if (
+      node.type !== 'TSTypeReference' &&
+      node.type !== 'TSExpressionWithTypeArguments'
+    ) {
       return undefined;
     }
     const typeName = asNode(node.typeName) ?? asNode(node.expression);
@@ -97,11 +113,14 @@ export function createCapabilityTypeResolver(
     );
     if (
       typeName?.type === 'Identifier' &&
-      ['Readonly', 'Required', 'Partial'].includes(readName(typeName)) && parameters[0]
+      ['Readonly', 'Required', 'Partial'].includes(readName(typeName)) &&
+      parameters[0]
     ) {
       return resolveType(parameters[0], module);
     }
-    if (typeName?.type === 'Identifier') return resolveNamed(module, readName(typeName));
+    if (typeName?.type === 'Identifier') {
+      return resolveNamed(module, readName(typeName));
+    }
     if (typeName?.type !== 'TSQualifiedName') return undefined;
     const namespace = module.namespaces.get(readName(typeName.left));
     const capability = readName(typeName.right);
@@ -132,18 +151,24 @@ export function createCapabilityTypeResolver(
     const node = asNode(value);
     if (!node) return undefined;
     if (
-      node.type === 'TSAsExpression' || node.type === 'TSTypeAssertion' ||
+      node.type === 'TSAsExpression' ||
+      node.type === 'TSTypeAssertion' ||
       node.type === 'TypeCastExpression'
     ) {
       return resolveType(node.typeAnnotation, module);
     }
-    if (node.type === 'CallExpression' || node.type === 'OptionalCallExpression') {
+    if (
+      node.type === 'CallExpression' ||
+      node.type === 'OptionalCallExpression'
+    ) {
       const callee = asNode(node.callee);
       return callee?.type === 'Identifier' ? resolveNamed(module, readName(callee)) : undefined;
     }
     if (node.type !== 'NewExpression') return undefined;
     const callee = asNode(node.callee);
-    if (callee?.type === 'Identifier') return resolveNamed(module, readName(callee));
+    if (callee?.type === 'Identifier') {
+      return resolveNamed(module, readName(callee));
+    }
     if (callee?.type !== 'MemberExpression') return undefined;
     const namespace = module.namespaces.get(readName(callee.object));
     const capability = readName(callee.property);
@@ -155,6 +180,11 @@ export function createCapabilityTypeResolver(
   return {
     resolveType: (value) => resolveType(value, root),
     resolveExpression: (value) => resolveExpression(value, root),
+    resolveImportedCallable: (source, imported) => {
+      const module = loadModule(root.filePath, source, modules);
+      const result = module && resolveNamed(module, imported);
+      return result ? { callResult: result } : undefined;
+    },
   };
 }
 
@@ -209,28 +239,42 @@ function loadModule(
   return module;
 }
 
-function resolveTypeModule(fromFile: string, specifier: string): string | undefined {
+function resolveTypeModule(
+  fromFile: string,
+  specifier: string,
+): string | undefined {
   const absolute = specifier.startsWith('.')
     ? path.resolve(path.dirname(fromFile), specifier)
     : specifier.startsWith('@shared-server/')
-    ? path.resolve(`packages/shared-server/${specifier.slice('@shared-server/'.length)}`)
+    ? path.resolve(
+      `packages/shared-server/${specifier.slice('@shared-server/'.length)}`,
+    )
     : undefined;
   if (!absolute) return undefined;
   const relative = normalizePath(path.relative(process.cwd(), absolute));
-  return [relative, `${relative}.ts`, relative.replace(/\.js$/u, '.ts')].find(existsSync);
+  return [relative, `${relative}.ts`, relative.replace(/\.js$/u, '.ts')].find(
+    existsSync,
+  );
 }
 
 function mergeShapes(
   shapes: readonly (CapabilityTypeShape | undefined)[],
 ): CapabilityTypeShape | undefined {
-  const defined = shapes.filter((shape): shape is CapabilityTypeShape => shape !== undefined);
+  const defined = shapes.filter(
+    (shape): shape is CapabilityTypeShape => shape !== undefined,
+  );
   if (defined.length === 0) return undefined;
   const capability = defined.find((shape) => shape.capability)?.capability;
   const members = new Map<string, CapabilityTypeShape>();
   for (const shape of defined) {
     for (const [name, member] of shape.members ?? []) members.set(name, member);
   }
-  return { ...(capability ? { capability } : {}), ...(members.size ? { members } : {}) };
+  const callResult = mergeShapes(defined.map((shape) => shape.callResult));
+  return {
+    ...(capability ? { capability } : {}),
+    ...(members.size ? { members } : {}),
+    ...(callResult ? { callResult } : {}),
+  };
 }
 
 function readPropertyName(value: unknown): string {
@@ -253,7 +297,9 @@ function readString(value: unknown): string {
 }
 
 function asNode(value: unknown): AstNode | undefined {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as AstNode : undefined;
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as AstNode)
+    : undefined;
 }
 
 function asNodes(value: unknown): readonly AstNode[] {

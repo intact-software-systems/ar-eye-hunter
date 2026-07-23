@@ -28,6 +28,7 @@ export function findFlowSensitiveCapabilityCalls(
   const conditionalNodes = findConditionalNodes(program);
   const writes = new Map<string, MethodWrite[]>();
   let nextOrder = 0;
+  let hasCapturedWrites = false;
   walk(program, (node) => {
     const pattern = node.type === 'VariableDeclarator'
       ? asNode(node.id)
@@ -41,7 +42,10 @@ export function findFlowSensitiveCapabilityCalls(
       : undefined;
     if (!pattern) return;
     for (const write of readFlowPatternWrites(pattern, value, access)) {
-      if (isCapturedFlowWrite(write, node, access)) continue;
+      if (isCapturedFlowWrite(write, node, access)) {
+        hasCapturedWrites = true;
+        continue;
+      }
       addWrite(
         write.targetKey,
         write.source,
@@ -52,21 +56,23 @@ export function findFlowSensitiveCapabilityCalls(
       );
     }
   });
-  for (
-    const write of collectClosureExecutionWrites(
-      program,
-      access,
-      (node) => conditionalNodes.has(node),
-    )
-  ) {
-    addWrite(
-      write.targetKey,
-      write.source,
-      write.position,
-      write.conditional,
-      nextOrder++,
-      writes,
-    );
+  if (hasCapturedWrites) {
+    for (
+      const write of collectClosureExecutionWrites(
+        program,
+        access,
+        (node) => conditionalNodes.has(node),
+      )
+    ) {
+      addWrite(
+        write.targetKey,
+        write.source,
+        write.position,
+        write.conditional,
+        nextOrder++,
+        writes,
+      );
+    }
   }
 
   const calls = new Map<string, FlowCapabilityMethod>();

@@ -20,12 +20,31 @@ import {
   resolveCallable,
   unknownLocalCallableResolution,
 } from './mutation-boundary-callable-resolution.ts';
+import {
+  appendCallableAlias,
+  isCapturedCallableWrite,
+  projectCallableResolution,
+  readCallablePatternWrites,
+} from './mutation-boundary-callable-storage.ts';
+import {
+  discoverLocalCallables,
+  indexCallableReferences,
+} from './mutation-boundary-callable-definitions.ts';
 
 interface InvocationContext extends CallableResolutionContext {
+  readonly aliases: Map<string, CallableAliasWrite[]>;
   readonly isConditional: (node: AstNode) => boolean;
 }
 
 type SummaryWrite = Omit<ClosureExecutionWrite, 'position'>;
+interface CallableStoreEffect {
+  readonly conditional: boolean;
+  readonly resolution: CallableResolution;
+  readonly targetKey: string;
+}
+type InvocationEffect =
+  | Readonly<{ kind: 'flow'; write: SummaryWrite }>
+  | Readonly<{ kind: 'store'; write: CallableStoreEffect }>;
 
 export function collectClosureExecutionWrites(
   program: AstNode,
@@ -33,18 +52,20 @@ export function collectClosureExecutionWrites(
   isConditional: (node: AstNode) => boolean,
 ): readonly ClosureExecutionWrite[] {
   const programKey = access.functionKey(program);
-  const definitions = discoverFunctions(program, programKey, access);
+  const definitions = discoverLocalCallables(program, programKey, access);
+  const aliases = new Map<string, CallableAliasWrite[]>();
   const context: InvocationContext = {
     access,
-    aliases: collectCallableAliases(program, access, isConditional),
+    aliases,
     byFunctionKey: new Map(definitions.map((definition) => [
       definition.functionKey,
       definition,
     ])),
-    byReference: indexReferences(definitions),
+    byReference: indexCallableReferences(definitions),
     isConditional,
     resolveCall: resolveReturnedCallable,
   };
+  collectCallableAliases(program, context);
   const roots: AstNode[] = [
     program,
     ...definitions.filter((definition) =>
@@ -59,141 +80,25 @@ export function collectClosureExecutionWrites(
     walkExecution(root, (node) => {
       if (!isCall(node)) return;
       for (const effect of summarizeInvocations(node, context, new Set())) {
-        writes.push({ ...effect, position: readPosition(node) });
+        if (effect.kind === 'store') {
+          appendCallableAlias(aliases, effect.write.targetKey, {
+            ...effect.write,
+            position: readPosition(node),
+            source: undefined,
+          });
+        } else {
+          writes.push({ ...effect.write, position: readPosition(node) });
+        }
       }
     });
   }
   return writes;
 }
 
-function discoverFunctions(
-  program: AstNode,
-  programKey: string,
-  access: CapabilityFlowAccess,
-): readonly LocalCallableDefinition[] {
-  const definitions = new Map<string, LocalCallableDefinition>();
-  const scan = (value: unknown, parentFunctionKey: string): void => {
-    if (!value || typeof value !== 'object') return;
-    if (Array.isArray(value)) {
-      for (const child of value) scan(child, parentFunctionKey);
-      return;
-    }
-    const node = value as AstNode;
-    if (node.type === 'VariableDeclarator') {
-      const reference = access.expressionKey(node.id);
-      const init = unwrap(asNode(node.init));
-      if (isFunction(init)) {
-        recordFunction(
-          init,
-          reference,
-          readPosition(node),
-          parentFunctionKey,
-          definitions,
-          access,
-        );
-      } else if (init?.type === 'ObjectExpression') {
-        recordObjectFunctions(
-          init,
-          reference,
-          readPosition(node),
-          parentFunctionKey,
-          definitions,
-          access,
-        );
-      }
-    }
-    if (isFunction(node)) {
-      const functionKey = access.functionKey(node);
-      const reference = node.type === 'FunctionDeclaration'
-        ? access.expressionKey(node.id)
-        : access.definitionKey(node);
-      recordFunction(
-        node,
-        reference,
-        node.type === 'FunctionDeclaration' ? Number.NEGATIVE_INFINITY : readPosition(node),
-        parentFunctionKey,
-        definitions,
-        access,
-      );
-      for (const [key, child] of Object.entries(node)) {
-        if (!IGNORED_KEYS.has(key)) scan(child, functionKey);
-      }
-      return;
-    }
-    for (const [key, child] of Object.entries(node)) {
-      if (!IGNORED_KEYS.has(key)) scan(child, parentFunctionKey);
-    }
-  };
-  scan(program, programKey);
-  return [...definitions.values()];
-}
-
-function recordObjectFunctions(
-  object: AstNode,
-  reference: string,
-  availableAt: number,
-  parentFunctionKey: string,
-  definitions: Map<string, LocalCallableDefinition>,
-  access: CapabilityFlowAccess,
-): void {
-  if (!reference) return;
-  for (const property of asNodes(object.properties)) {
-    const name = access.propertyName(property.key, property.computed === true);
-    const value = property.type === 'ObjectMethod' ? property : unwrap(asNode(property.value));
-    if (!name || !isFunction(value)) continue;
-    recordFunction(
-      value,
-      `${reference}.${name}`,
-      availableAt,
-      parentFunctionKey,
-      definitions,
-      access,
-    );
-  }
-}
-
-function recordFunction(
-  node: AstNode,
-  reference: string,
-  availableAt: number,
-  parentFunctionKey: string,
-  definitions: Map<string, LocalCallableDefinition>,
-  access: CapabilityFlowAccess,
-): void {
-  const functionKey = access.functionKey(node);
-  const current = definitions.get(functionKey);
-  const references = new Map(current?.references);
-  if (reference) {
-    references.set(reference, Math.min(references.get(reference) ?? availableAt, availableAt));
-  }
-  definitions.set(functionKey, {
-    functionKey,
-    node,
-    parentFunctionKey: current?.parentFunctionKey ?? parentFunctionKey,
-    references,
-  });
-}
-
-function indexReferences(
-  definitions: readonly LocalCallableDefinition[],
-): ReadonlyMap<string, readonly LocalCallableDefinition[]> {
-  const references = new Map<string, LocalCallableDefinition[]>();
-  for (const definition of definitions) {
-    for (const reference of definition.references.keys()) {
-      const candidates = references.get(reference) ?? [];
-      candidates.push(definition);
-      references.set(reference, candidates);
-    }
-  }
-  return references;
-}
-
 function collectCallableAliases(
   program: AstNode,
-  access: CapabilityFlowAccess,
-  isConditional: (node: AstNode) => boolean,
-): ReadonlyMap<string, readonly CallableAliasWrite[]> {
-  const aliases = new Map<string, CallableAliasWrite[]>();
+  context: InvocationContext,
+): void {
   walkAll(program, (node) => {
     const target = node.type === 'VariableDeclarator'
       ? asNode(node.id)
@@ -205,42 +110,41 @@ function collectCallableAliases(
       : node.type === 'AssignmentExpression'
       ? asNode(node.right)
       : undefined;
-    const key = access.expressionKey(target);
-    if (!key || !source) return;
-    const writes = aliases.get(key) ?? [];
-    writes.push({
-      conditional: isConditional(node),
-      position: readPosition(node),
-      source,
-    });
-    aliases.set(key, writes);
+    for (const write of readCallablePatternWrites(target, source, context.access)) {
+      if (isCapturedCallableWrite(write.owner, node, context.access)) continue;
+      appendCallableAlias(context.aliases, write.targetKey, {
+        conditional: context.isConditional(node),
+        position: readPosition(node),
+        projection: write.projection,
+        source: write.source,
+      });
+    }
   });
-  return aliases;
 }
 
 function summarizeInvocations(
   call: AstNode,
   context: InvocationContext,
   activeFunctions: ReadonlySet<string>,
-): readonly SummaryWrite[] {
+): readonly InvocationEffect[] {
   const resolution = resolveCallable(asNode(call.callee), readPosition(call), context, new Set());
-  const writes: SummaryWrite[] = [];
+  const effects: InvocationEffect[] = [];
   for (const target of resolution.targets.values()) {
     if (activeFunctions.has(target.definition.functionKey)) continue;
-    writes.push(...summarizeFunction(
+    effects.push(...summarizeFunction(
       target.definition,
       bindCallArguments(target.definition, call, context),
       activeFunctions,
       context.isConditional(call) || target.conditional || resolution.unknown,
     ));
   }
-  if (resolution.targets.size > 0 || resolution.localProvenance) return writes;
+  if (resolution.targets.size > 0 || resolution.localProvenance) return effects;
   for (const argument of asNodes(call.arguments)) {
     const passed = resolveCallable(argument, readPosition(call), context, new Set());
     if (!passed.localProvenance) continue;
     for (const target of collectCallableTargets(passed).values()) {
       if (activeFunctions.has(target.definition.functionKey)) continue;
-      writes.push(...summarizeFunction(
+      effects.push(...summarizeFunction(
         target.definition,
         context,
         activeFunctions,
@@ -248,7 +152,7 @@ function summarizeInvocations(
       ));
     }
   }
-  return writes;
+  return effects;
 }
 
 function bindCallArguments(
@@ -277,6 +181,14 @@ function resolveReturnedCallable(
   resolving: Set<string>,
 ): CallableResolution {
   const context = baseContext as InvocationContext;
+  const rawCallee = unwrap(asNode(call.callee));
+  if (
+    (rawCallee?.type === 'MemberExpression' ||
+      rawCallee?.type === 'OptionalMemberExpression') &&
+    context.access.propertyName(rawCallee.property, rawCallee.computed === true) === 'bind'
+  ) {
+    return resolveCallable(asNode(rawCallee.object), position, context, resolving);
+  }
   const callees = resolveCallable(asNode(call.callee), position, context, new Set(resolving));
   const returns: CallableResolution[] = [];
   for (const target of callees.targets.values()) {
@@ -292,6 +204,11 @@ function resolveReturnedCallable(
       context,
       nextResolving,
     );
+    const body = unwrap(asNode(target.definition.node.body));
+    if (body?.type !== 'BlockStatement') {
+      returns.push(resolveCallable(body, readPosition(body), targetContext, nextResolving));
+      continue;
+    }
     walkExecution(target.definition.node, (node) => {
       if (node.type !== 'ReturnStatement') return;
       returns.push(resolveCallable(
@@ -316,9 +233,13 @@ function summarizeFunction(
   context: InvocationContext,
   activeFunctions: ReadonlySet<string>,
   invocationConditional: boolean,
-): readonly SummaryWrite[] {
+): readonly InvocationEffect[] {
   const nextActive = new Set(activeFunctions).add(definition.functionKey);
-  const writes: SummaryWrite[] = [];
+  const localAliases = new Map<string, CallableAliasWrite[]>(
+    [...context.aliases].map(([key, writes]) => [key, [...writes]]),
+  );
+  const localContext: InvocationContext = { ...context, aliases: localAliases };
+  const effects: InvocationEffect[] = [];
   walkExecution(definition.node, (node) => {
     const pattern = node.type === 'VariableDeclarator'
       ? asNode(node.id)
@@ -332,20 +253,63 @@ function summarizeFunction(
       : undefined;
     for (const write of readFlowPatternWrites(pattern, value, context.access)) {
       if (!isCapturedFlowWrite(write, node, context.access)) continue;
-      writes.push({
-        ...write,
+      effects.push({
+        kind: 'flow',
+        write: {
+          ...write,
+          conditional: invocationConditional || context.isConditional(node),
+        },
+      });
+    }
+    for (const write of readCallablePatternWrites(pattern, value, context.access)) {
+      if (!isCapturedCallableWrite(write.owner, node, context.access)) continue;
+      let resolution = resolveCallable(
+        write.source,
+        readPosition(node),
+        localContext,
+        new Set(),
+      );
+      resolution = projectCallableResolution(resolution, write.projection);
+      if (!resolution.localProvenance) continue;
+      const effect: CallableStoreEffect = {
         conditional: invocationConditional || context.isConditional(node),
+        resolution,
+        targetKey: write.targetKey,
+      };
+      effects.push({ kind: 'store', write: effect });
+      appendCallableAlias(localAliases, write.targetKey, {
+        ...effect,
+        position: readPosition(node),
+        source: undefined,
       });
     }
     if (!isCall(node)) return;
-    for (const nested of summarizeInvocations(node, context, nextActive)) {
-      writes.push({
-        ...nested,
-        conditional: invocationConditional || context.isConditional(node) || nested.conditional,
-      });
+    for (const nested of summarizeInvocations(node, localContext, nextActive)) {
+      if (nested.kind === 'store') {
+        const write = {
+          ...nested.write,
+          conditional: invocationConditional || context.isConditional(node) ||
+            nested.write.conditional,
+        };
+        effects.push({ kind: 'store', write });
+        appendCallableAlias(localAliases, write.targetKey, {
+          ...write,
+          position: readPosition(node),
+          source: undefined,
+        });
+      } else {
+        effects.push({
+          kind: 'flow',
+          write: {
+            ...nested.write,
+            conditional: invocationConditional || context.isConditional(node) ||
+              nested.write.conditional,
+          },
+        });
+      }
     }
   });
-  return writes;
+  return effects;
 }
 
 function walkExecution(value: AstNode, visit: (node: AstNode) => void): void {

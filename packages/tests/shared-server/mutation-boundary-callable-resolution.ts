@@ -16,6 +16,8 @@ export interface LocalCallableDefinition {
 export interface CallableAliasWrite {
   readonly conditional: boolean;
   readonly position: number;
+  readonly projection?: readonly string[];
+  readonly resolution?: CallableResolution;
   readonly source: AstNode | undefined;
 }
 
@@ -55,6 +57,9 @@ export function resolveCallable(
   if (!node) return emptyResolution(false);
   if (isFunction(node)) return resolveFunction(node, context);
   if (node.type === 'ObjectExpression') return resolveObject(node, position, context, resolving);
+  if (node.type === 'ArrayExpression' || node.type === 'TupleExpression') {
+    return resolveArray(node, position, context, resolving);
+  }
   if (node.type === 'ConditionalExpression' || node.type === 'LogicalExpression') {
     return mergeResolutions([
       resolveCallable(
@@ -119,7 +124,33 @@ function resolveObject(
     const value = property.type === 'ObjectMethod' ? property : asNode(property.value);
     members.set(name, resolveCallable(value, position, context, new Set(resolving)));
   }
-  return { localProvenance: true, members, targets: new Map(), unknown };
+  return {
+    localProvenance: [...members.values()].some((member) => member.localProvenance),
+    members,
+    targets: new Map(),
+    unknown,
+  };
+}
+
+function resolveArray(
+  array: AstNode,
+  position: number,
+  context: CallableResolutionContext,
+  resolving: Set<string>,
+): CallableResolution {
+  const members = new Map<string, CallableResolution>();
+  for (const [index, value] of asNodes(array.elements).entries()) {
+    members.set(
+      String(index),
+      resolveCallable(value, position, context, new Set(resolving)),
+    );
+  }
+  return {
+    localProvenance: [...members.values()].some((member) => member.localProvenance),
+    members,
+    targets: new Map(),
+    unknown: false,
+  };
 }
 
 function resolveMember(
@@ -129,9 +160,19 @@ function resolveMember(
   resolving: Set<string>,
 ): CallableResolution {
   const key = context.access.expressionKey(node);
-  const direct = key ? resolveReferences(key, position, context) : emptyResolution(false);
+  const direct = key
+    ? resolveKey(key, position, context, new Set(resolving))
+    : emptyResolution(false);
   const object = resolveCallable(asNode(node.object), position, context, new Set(resolving));
   const name = context.access.propertyName(node.property, node.computed === true);
+  const lastWrite = [...context.aliases.get(key) ?? []]
+    .filter((write) => write.position < position)
+    .toSorted((left, right) => left.position - right.position)
+    .at(-1);
+  if (lastWrite && !lastWrite.conditional) return direct;
+  if (name && ['call', 'apply', 'bind'].includes(name) && object.localProvenance) {
+    return mergeResolutions([direct, object], false);
+  }
   if (name && object.members.has(name)) {
     return mergeResolutions([direct, object.members.get(name)!], false);
   }
@@ -161,7 +202,11 @@ function resolveKey(
   );
   for (const write of writes) {
     if (write.position >= position) continue;
-    const source = resolveCallable(write.source, write.position, context, resolving);
+    let source = write.resolution ??
+      resolveCallable(write.source, write.position, context, resolving);
+    for (const member of write.projection ?? []) {
+      source = source.members.get(member) ?? emptyResolution(source.localProvenance);
+    }
     resolution = write.conditional ? mergeResolutions([resolution, source], true) : source;
   }
   resolving.delete(resolutionKey);
