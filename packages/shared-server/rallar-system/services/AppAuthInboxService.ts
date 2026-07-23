@@ -3,18 +3,9 @@ import type { ResourceInboxRepository } from '../../postgres/resource-inbox/Reso
 import type { ResourceInboxResultsRepository } from '../../postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import type { PSqlSql } from '../../postgres/PostgresSqlClient.ts';
 import type { RallarTimingSink } from './timing.ts';
-import {
-    AppInboxService,
-    type AppInboxServiceOptions,
-} from './AppInboxService.ts';
-import {
-    AppInboxType,
-    type AppInboxMessageContext,
-} from './app-inbox-contracts.ts';
-import {
-    type AppInboxFailure,
-    toTerminalAppInboxFailure,
-} from './app-inbox-failure.ts';
+import { AppInboxService, type AppInboxServiceOptions } from './AppInboxService.ts';
+import { type AppInboxMessageContext, AppInboxType } from './app-inbox-contracts.ts';
+import { type AppInboxFailure, toTerminalAppInboxFailure } from './app-inbox-failure.ts';
 import { toAppInboxErrorCode } from './app-inbox-error-classification.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import {
@@ -22,16 +13,13 @@ import {
     type AuthMutationPublicResult,
     type AuthMutationResult,
     type AuthMutationService,
-    type IssueAuthSessionCommand,
     captureAuthMutationFacts,
-    decodeAuthMutationResult,
     decodeAuthMutationCommand,
+    decodeAuthMutationResult,
+    type IssueAuthSessionCommand,
 } from './auth-state-mutations.ts';
 import type { AuthCredentialIssuer } from './auth-credential-issuer.ts';
-import {
-    hashAuthSecret,
-    type IssuedAuthSession,
-} from '../repositories/AuthSessionRepository.ts';
+import { hashAuthSecret, type IssuedAuthSession } from '../repositories/AuthSessionRepository.ts';
 import { toAppQueueKey } from './app-inbox-queue-key.ts';
 import type {
     AgentSessionTicketResponse,
@@ -42,6 +30,14 @@ import type {
     WebSocketTicketResponse,
 } from '@shared/api/api-config.ts';
 import type { AuthUser } from '../repositories/AuthUserRepository.ts';
+import {
+    toAuthAppInboxType,
+    toAuthCommandContextId,
+    toAuthCommandSenderId,
+} from './auth-app-inbox-routing.ts';
+import { toAuthMutationPublicResult } from './auth-state-public-results.ts';
+
+export { toAuthAppInboxType } from './auth-app-inbox-routing.ts';
 
 export const AUTH_STATE_APP_INBOX_TOPIC = 'app-inbox.auth-state';
 
@@ -116,9 +112,10 @@ export class AppAuthInboxService extends AppInboxService {
         if (persisted.left !== undefined) return Either.ofLeft(persisted.left);
         if (persisted.right === undefined) throw new Error('Auth AppInbox result is missing');
         return Either.ofRight(
-            await this.toPublicResult(
+            await toAuthMutationPublicResult(
                 decoded,
                 decodeAuthMutationResult(persisted.right),
+                this.credentialIssuer,
             ) as R,
         );
     }
@@ -134,13 +131,15 @@ export class AppAuthInboxService extends AppInboxService {
     }
 
     async issueSession(
-        input: AuthRequestFacts & Readonly<{
-            clientId: string;
-            username: string;
-            sessionId: string;
-            expiresAtEpochMs: number;
-            authority: IssueAuthSessionCommand['authority'];
-        }>,
+        input:
+            & AuthRequestFacts
+            & Readonly<{
+                clientId: string;
+                username: string;
+                sessionId: string;
+                expiresAtEpochMs: number;
+                authority: IssueAuthSessionCommand['authority'];
+            }>,
     ): Promise<Either<AppInboxFailure, LoginResponse>> {
         const accessToken = await this.credentialIssuer.issueAccessToken(input.sessionId);
         return await this.processAuthCommandUntilCompletion({
@@ -180,10 +179,12 @@ export class AppAuthInboxService extends AppInboxService {
     }
 
     async issueWebSocketTicket(
-        input: AuthRequestFacts & Readonly<{
-            session: IssuedAuthSession;
-            expiresAtEpochMs: number;
-        }>,
+        input:
+            & AuthRequestFacts
+            & Readonly<{
+                session: IssuedAuthSession;
+                expiresAtEpochMs: number;
+            }>,
     ): Promise<Either<AppInboxFailure, WebSocketTicketResponse>> {
         const ticket = await this.credentialIssuer.issueWebSocketTicket(
             input.requestId,
@@ -206,10 +207,12 @@ export class AppAuthInboxService extends AppInboxService {
     }
 
     async consumeWebSocketTicket(
-        input: AuthRequestFacts & Readonly<{
-            ticket: string;
-            expectedSessionId: string;
-        }>,
+        input:
+            & AuthRequestFacts
+            & Readonly<{
+                ticket: string;
+                expectedSessionId: string;
+            }>,
     ): Promise<Either<AppInboxFailure, IssuedAuthSession>> {
         return await this.processAuthCommandUntilCompletion({
             version: 1,
@@ -222,12 +225,14 @@ export class AppAuthInboxService extends AppInboxService {
     }
 
     async issueAgentSessionTickets(
-        input: AuthRequestFacts & Readonly<{
-            session: IssuedAuthSession;
-            sessionExpiresAtEpochMs: number;
-            ticketExpiresAtEpochMs: number;
-            agents: readonly Readonly<{ agentId: string; sessionId: string }>[];
-        }>,
+        input:
+            & AuthRequestFacts
+            & Readonly<{
+                session: IssuedAuthSession;
+                sessionExpiresAtEpochMs: number;
+                ticketExpiresAtEpochMs: number;
+                agents: readonly Readonly<{ agentId: string; sessionId: string }>[];
+            }>,
     ): Promise<Either<AppInboxFailure, AgentSessionTicketResponse>> {
         const tickets = await Promise.all(input.agents.map(async (agent) => {
             const accessToken = await this.credentialIssuer.issueAccessToken(agent.sessionId);
@@ -298,182 +303,7 @@ export class AppAuthInboxService extends AppInboxService {
         this.authMutationService.validate(command, read, computed);
         return await this.writeMutation(
             context,
-            async (transaction) =>
-                await this.authMutationService.write(transaction, computed),
+            async (transaction) => await this.authMutationService.write(transaction, computed),
         );
-    }
-
-    private async toPublicResult(
-        command: AuthMutationCommand,
-        result: AuthMutationResult,
-    ): Promise<AuthMutationPublicResult> {
-        switch (command.kind) {
-            case 'register-user':
-                if (!('registeredAtEpochMs' in result)) {
-                    throw new Error('Auth registration result kind differs');
-                }
-                return result;
-            case 'logout-session':
-                if (!('loggedOut' in result)) {
-                    throw new Error('Auth logout result kind differs');
-                }
-                return result;
-            case 'issue-session': {
-                const receipt = requireResultKind(result, 'session-issued');
-                const accessToken = await this.resolveAccessToken(
-                    receipt.sessionId,
-                    receipt.accessTokenDigest,
-                );
-                return {
-                    clientId: receipt.clientId,
-                    username: receipt.username,
-                    accessToken,
-                    sessionId: receipt.sessionId,
-                    expiresAtEpochMs: receipt.expiresAtEpochMs,
-                };
-            }
-            case 'issue-ws-ticket': {
-                const receipt = requireResultKind(result, 'ws-ticket-issued');
-                const ticket = await this.credentialIssuer.issueWebSocketTicket(
-                    command.requestId,
-                    receipt.sessionId,
-                );
-                await requireCredentialDigest(ticket, receipt.ticketDigest);
-                return {
-                    ticket,
-                    sessionId: receipt.sessionId,
-                    expiresAtEpochMs: receipt.expiresAtEpochMs,
-                };
-            }
-            case 'consume-ws-ticket':
-            case 'consume-agent-ticket': {
-                const receipt = requireResultKind(
-                    result,
-                    command.kind === 'consume-ws-ticket'
-                        ? 'ws-ticket-consumed'
-                        : 'agent-ticket-consumed',
-                );
-                const accessToken = await this.resolveAccessToken(
-                    receipt.sessionId,
-                    receipt.accessTokenDigest,
-                );
-                return {
-                    clientId: receipt.clientId,
-                    username: receipt.username,
-                    accessToken,
-                    sessionId: receipt.sessionId,
-                    issuedAtEpochMs: receipt.issuedAtEpochMs,
-                    expiresAtEpochMs: receipt.expiresAtEpochMs,
-                };
-            }
-            case 'issue-agent-tickets': {
-                const receipt = requireResultKind(result, 'agent-tickets-issued');
-                const bySession = new Map(
-                    command.tickets.map((ticket) => [ticket.sessionId, ticket]),
-                );
-                return {
-                    tickets: await Promise.all(receipt.tickets.map(async (ticket) => {
-                        const identity = bySession.get(ticket.sessionId);
-                        if (!identity || identity.agentId !== ticket.agentId) {
-                            throw new Error('Auth agent ticket result identity differs');
-                        }
-                        const plaintext = await this.credentialIssuer.issueAgentTicket(
-                            command.requestId,
-                            ticket.agentId,
-                            ticket.sessionId,
-                        );
-                        await requireCredentialDigest(plaintext, ticket.ticketDigest);
-                        return {
-                            agentId: ticket.agentId,
-                            ticket: plaintext,
-                            sessionId: ticket.sessionId,
-                            expiresAtEpochMs: ticket.expiresAtEpochMs,
-                        };
-                    })),
-                };
-            }
-        }
-    }
-
-    private async resolveAccessToken(
-        sessionId: string,
-        expectedDigest: string,
-    ): Promise<string> {
-        const derived = await this.credentialIssuer.issueAccessToken(sessionId);
-        if (await hashAuthSecret(derived) === expectedDigest) return derived;
-        throw new Error('Auth AppInbox result credential digest differs');
-    }
-}
-
-export function toAuthAppInboxType(command: AuthMutationCommand): AppInboxType {
-    switch (command.kind) {
-        case 'register-user':
-            return AppInboxType.AUTH_USER_REGISTER;
-        case 'issue-session':
-            return AppInboxType.AUTH_SESSION_ISSUE;
-        case 'logout-session':
-            return AppInboxType.AUTH_SESSION_LOGOUT;
-        case 'issue-ws-ticket':
-            return AppInboxType.AUTH_WS_TICKET_ISSUE;
-        case 'consume-ws-ticket':
-            return AppInboxType.AUTH_WS_TICKET_CONSUME;
-        case 'issue-agent-tickets':
-            return AppInboxType.AUTH_AGENT_SESSION_TICKETS_ISSUE;
-        case 'consume-agent-ticket':
-            return AppInboxType.AUTH_AGENT_SESSION_TICKET_CONSUME;
-    }
-}
-
-function toAuthCommandContextId(command: AuthMutationCommand): string {
-    switch (command.kind) {
-        case 'register-user':
-            return command.user.normalizedUsername;
-        case 'issue-session':
-            return command.session.sessionId;
-        case 'logout-session':
-            return command.expected.sessionId;
-        case 'issue-ws-ticket':
-            return command.ticketRecord.sessionId;
-        case 'consume-ws-ticket':
-            return command.expectedSessionId;
-        case 'issue-agent-tickets':
-            return command.tickets.map((ticket) => ticket.sessionId).join(',');
-        case 'consume-agent-ticket':
-            return command.ticketDigest;
-    }
-}
-
-function toAuthCommandSenderId(command: AuthMutationCommand): string {
-    switch (command.kind) {
-        case 'register-user':
-            return command.user.clientId;
-        case 'issue-session':
-            return command.session.clientId;
-        case 'logout-session':
-            return command.expected.clientId;
-        case 'issue-ws-ticket':
-            return command.ticketRecord.clientId;
-        case 'issue-agent-tickets':
-            return command.authority.clientId;
-        case 'consume-ws-ticket':
-        case 'consume-agent-ticket':
-            return command.ticketDigest;
-    }
-}
-
-function requireResultKind<K extends Extract<AuthMutationResult, { kind: string }>['kind']>(
-    result: AuthMutationResult,
-    kind: K,
-): Extract<AuthMutationResult, { kind: K }> {
-    if (typeof result !== 'object' || result === null || !('kind' in result) ||
-        result.kind !== kind) {
-        throw new Error(`Auth AppInbox result kind differs: ${kind}`);
-    }
-    return result as Extract<AuthMutationResult, { kind: K }>;
-}
-
-async function requireCredentialDigest(plaintext: string, expectedDigest: string): Promise<void> {
-    if (await hashAuthSecret(plaintext) !== expectedDigest) {
-        throw new Error('Auth AppInbox result credential digest differs');
     }
 }

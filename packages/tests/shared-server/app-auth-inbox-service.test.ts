@@ -2,9 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { Temporal } from '@js-temporal/polyfill';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
-import {
-    CircuitBreakerPolicy,
-} from '@shared/resilience/Resilience.ts';
+import { CircuitBreakerPolicy } from '@shared/resilience/Resilience.ts';
 import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import {
     EntityStatus,
@@ -21,17 +19,17 @@ import {
 } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 import { AuthUserRepository } from '@shared-server/rallar-system/repositories/AuthUserRepository.ts';
 import {
-    AUTH_STATE_APP_INBOX_TOPIC,
     AppAuthInboxService,
+    AUTH_STATE_APP_INBOX_TOPIC,
 } from '@shared-server/rallar-system/services/AppAuthInboxService.ts';
 import {
     captureAuthMutationFacts,
+    type ConsumeAuthWsTicketCommand,
     createAuthMutationService,
     decodeAuthMutationCommand,
     decodeAuthMutationResult,
     type IssueAuthSessionCommand,
     type IssueAuthWsTicketCommand,
-    type ConsumeAuthWsTicketCommand,
 } from '@shared-server/rallar-system/services/auth-state-mutations.ts';
 import {
     createHmacAuthCredentialIssuer,
@@ -67,15 +65,17 @@ describe('AppAuthInboxService architecture', () => {
             expiresAtEpochMs: 2_000,
         };
         expect(decodePersistedAuthSession(persisted)).toEqual(persisted);
-        for (const invalid of [
-            { ...persisted, accessToken: 'plaintext-token' },
-            { ...persisted, credentialSeed: 'reconstructable' },
-            { ...persisted, accessTokenDigest: 12 },
-            { ...persisted, expiresAtEpochMs: Number.POSITIVE_INFINITY },
-            Object.fromEntries(Object.entries(persisted).filter(([key]) =>
-                key !== 'accessTokenDigest'
-            )),
-        ]) {
+        for (
+            const invalid of [
+                { ...persisted, accessToken: 'plaintext-token' },
+                { ...persisted, credentialSeed: 'reconstructable' },
+                { ...persisted, accessTokenDigest: 12 },
+                { ...persisted, expiresAtEpochMs: Number.POSITIVE_INFINITY },
+                Object.fromEntries(
+                    Object.entries(persisted).filter(([key]) => key !== 'accessTokenDigest'),
+                ),
+            ]
+        ) {
             expect(() => decodePersistedAuthSession(invalid)).toThrow(TypeError);
         }
     });
@@ -173,14 +173,19 @@ describe('AppAuthInboxService architecture', () => {
         for (const result of valid) {
             expect(decodeAuthMutationResult(result)).toEqual(result);
         }
-        for (const invalid of [
-            { ...valid[2], accessToken: 'plaintext-token' },
-            { ...valid[2], unexpected: true },
-            { kind: 'agent-tickets-issued', tickets: [{ ...valid[6].tickets![0], ticket: 'x' }] },
-            { kind: 'agent-tickets-issued', tickets: [null] },
-            { ...valid[3], expiresAtEpochMs: Number.NaN },
-            Object.create({ kind: 'session-issued' }),
-        ]) {
+        for (
+            const invalid of [
+                { ...valid[2], accessToken: 'plaintext-token' },
+                { ...valid[2], unexpected: true },
+                {
+                    kind: 'agent-tickets-issued',
+                    tickets: [{ ...valid[6].tickets![0], ticket: 'x' }],
+                },
+                { kind: 'agent-tickets-issued', tickets: [null] },
+                { ...valid[3], expiresAtEpochMs: Number.NaN },
+                Object.create({ kind: 'session-issued' }),
+            ]
+        ) {
             expect(() => decodeAuthMutationResult(invalid)).toThrow(TypeError);
         }
     });
@@ -208,14 +213,248 @@ describe('AppAuthInboxService architecture', () => {
         } as const;
 
         expect(decodeAuthMutationCommand(command)).toEqual(command);
-        expect(() => decodeAuthMutationCommand({
-            ...command,
+        expect(() =>
+            decodeAuthMutationCommand({
+                ...command,
+                authority: {
+                    kind: 'registered-user',
+                    clientId: 'client-1',
+                    normalizedUsername: 'alice',
+                },
+            })
+        ).toThrow(TypeError);
+    });
+
+    it('rejects equal or reversed session issuance lifecycle timestamps', () => {
+        const base = {
+            version: 1,
+            kind: 'issue-session',
+            requestId: 'invalid-session-lifecycle',
+            capturedAtEpochMs: 1_000,
             authority: {
-                kind: 'registered-user',
+                kind: 'static-client',
                 clientId: 'client-1',
                 normalizedUsername: 'alice',
             },
-        })).toThrow(TypeError);
+            session: {
+                clientId: 'client-1',
+                username: 'alice',
+                sessionId: 'invalid-session',
+                accessTokenDigest: 'digest-1',
+                issuedAtEpochMs: 2_000,
+                expiresAtEpochMs: 2_001,
+            },
+        } as const;
+
+        for (const expiresAtEpochMs of [2_000, 1_999]) {
+            expect(() =>
+                decodeAuthMutationCommand({
+                    ...base,
+                    session: { ...base.session, expiresAtEpochMs },
+                })
+            ).toThrow(/lifecycle/u);
+        }
+    });
+
+    it('does not persist session or success results for malformed lifecycle commands', async () => {
+        const issuedAtEpochMs = Date.now() + 60_000;
+        for (const expiryOffsetMs of [0, -1]) {
+            const expiresAtEpochMs = issuedAtEpochMs + expiryOffsetMs;
+            const queue = new TestResourceInbox();
+            const results = new TestResourceInboxResults();
+            const reader = new InboxQueueReader(queue);
+            const runtime = new FakeRuntimeStateRepository();
+            const credentialIssuer = createHmacAuthCredentialIssuer(
+                'invalid-lifecycle-secret-0123456789abcdef',
+            );
+            const service = new AppAuthInboxService(
+                reader,
+                queue as never,
+                results as never,
+                createAppInboxTestDatabase(queue, results, {
+                    runtimeRepository: runtime,
+                }),
+                createAuthMutationService({
+                    runtimeRepository: runtime,
+                    serviceId: 'auth-test-service',
+                }),
+                credentialIssuer,
+                'auth-test-service',
+            );
+            const command = {
+                version: 1,
+                kind: 'issue-session',
+                requestId: `invalid-lifecycle-${expiryOffsetMs}`,
+                capturedAtEpochMs: issuedAtEpochMs,
+                authority: {
+                    kind: 'static-client',
+                    clientId: 'client-1',
+                    normalizedUsername: 'alice',
+                },
+                session: {
+                    clientId: 'client-1',
+                    username: 'alice',
+                    sessionId: `invalid-session-${expiryOffsetMs}`,
+                    accessTokenDigest: await hashAuthSecret(
+                        await credentialIssuer.issueAccessToken(
+                            `invalid-session-${expiryOffsetMs}`,
+                        ),
+                    ),
+                    issuedAtEpochMs,
+                    expiresAtEpochMs,
+                },
+            } as IssueAuthSessionCommand;
+            const pending = service.processAuthCommandUntilCompletion(command);
+            const firstOutcome = await Promise.race([
+                pending.then(
+                    (value) => ({ kind: 'settled' as const, value }),
+                    (error: unknown) => ({ kind: 'rejected' as const, error }),
+                ),
+                waitForQueuedEntry(queue).then(() => ({ kind: 'queued' as const })),
+            ]);
+            let rejected = firstOutcome.kind === 'rejected';
+            if (firstOutcome.kind === 'queued') {
+                await reader.dequeueInbox(
+                    InboxQueueReader.INBOX_DEQUEUE_TYPES,
+                    createResilience(),
+                );
+                try {
+                    const result = await pending;
+                    rejected = result.right === undefined;
+                } catch {
+                    rejected = true;
+                }
+            }
+
+            expect(rejected).toBe(true);
+            expect(
+                [...runtime.data.keys()].filter((key) =>
+                    key.startsWith('auth-sessions:by-token::') ||
+                    key.startsWith('auth-sessions:by-session::')
+                ),
+            ).toEqual([]);
+            expect(
+                results.allEntries().some((entry) =>
+                    entry.status === EntityStatus.COMPLETED ||
+                    entry.resource.includes('session-issued')
+                ),
+            ).toBe(false);
+        }
+    });
+
+    it('fails closed without consuming corrupt digest-key ticket rows', async () => {
+        const cases = [
+            {
+                namespace: 'auth-sessions:ws-tickets',
+                consume: (
+                    repository: AuthSessionRepository,
+                    ticket: string,
+                ) => repository.consumeWebSocketTicket(ticket),
+                record: (digest: string, now: number) => ({
+                    ticketDigest: digest,
+                    accessTokenDigest: 'access-digest',
+                    sessionId: 'session-1',
+                    clientId: 'client-1',
+                    issuedAtEpochMs: now,
+                    expiresAtEpochMs: now + 1_000,
+                }),
+            },
+            {
+                namespace: 'auth-sessions:agent-session-tickets',
+                consume: (
+                    repository: AuthSessionRepository,
+                    ticket: string,
+                ) => repository.consumeAgentSessionTicket(ticket),
+                record: (digest: string, now: number) => ({
+                    ticketDigest: digest,
+                    accessTokenDigest: 'access-digest',
+                    sessionId: 'session-1',
+                    clientId: 'client-1',
+                    agentId: 'agent-1',
+                    issuedAtEpochMs: now,
+                    expiresAtEpochMs: now + 1_000,
+                }),
+            },
+        ] as const;
+        for (const testCase of cases) {
+            for (const corruption of ['digest', 'plaintext', 'lifecycle'] as const) {
+                const runtime = new FakeRuntimeStateRepository();
+                const repository = new AuthSessionRepository(runtime);
+                const presented = `${testCase.namespace}-${corruption}`;
+                const requestedDigest = await hashAuthSecret(presented);
+                const valid = testCase.record(requestedDigest, 1_000);
+                const value = corruption === 'digest'
+                    ? { ...valid, ticketDigest: 'wrong-digest' }
+                    : corruption === 'plaintext'
+                    ? { ...valid, ticket: 'plaintext-secret' }
+                    : { ...valid, expiresAtEpochMs: valid.issuedAtEpochMs };
+                const key = `ticket-digest=${encodeURIComponent(requestedDigest)}`;
+                await runtime.upsert(
+                    testCase.namespace,
+                    key,
+                    JSON.stringify(value),
+                    Date.now() + 60_000,
+                );
+
+                await expect(testCase.consume(repository, presented))
+                    .rejects.toThrow(TypeError);
+                expect(await runtime.findEntry(testCase.namespace, key)).toBeDefined();
+            }
+        }
+    });
+
+    it('caps legacy plaintext compatibility scans and never falls back to full reads', async () => {
+        const runtime = new FakeRuntimeStateRepository();
+        const findAll = vi.spyOn(runtime, 'findAllEntries');
+        const page = vi.fn(async (
+            namespace: string,
+            keyPrefix: string,
+            options: Readonly<{ afterKey?: string; limit: number }>,
+        ) => (await runtime.findEntriesByPrefix(namespace, keyPrefix))
+            .filter((entry) => options.afterKey === undefined || entry.key > options.afterKey)
+            .slice(0, options.limit)
+        );
+        Object.assign(runtime, { findEntriesByPrefixPage: page });
+        for (let index = 0; index < 300; index += 1) {
+            const token = `legacy-token-${String(index).padStart(3, '0')}`;
+            await runtime.upsert(
+                'auth-sessions:by-token',
+                `token=${encodeURIComponent(token)}`,
+                JSON.stringify({
+                    clientId: `client-${index}`,
+                    username: `user-${index}`,
+                    sessionId: `session-${index}`,
+                    accessToken: token,
+                    issuedAtEpochMs: 1_000,
+                    expiresAtEpochMs: Date.now() + 60_000,
+                }),
+                Date.now() + 60_000,
+            );
+        }
+
+        await expect(new AuthSessionRepository(runtime)
+            .findLegacySessionByAccessTokenDigestEntry('missing-digest'))
+            .rejects.toThrow(/limit/u);
+        expect(findAll).not.toHaveBeenCalled();
+        expect(page).toHaveBeenCalledTimes(1);
+        expect(page.mock.calls[0]?.[2].limit).toBeLessThanOrEqual(129);
+    });
+
+    it('ends legacy plaintext compatibility at its explicit deadline', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2027-01-01T00:00:00.000Z'));
+        try {
+            const runtime = new FakeRuntimeStateRepository();
+            const page = vi.fn(() => Promise.resolve([]));
+            Object.assign(runtime, { findEntriesByPrefixPage: page });
+
+            await expect(new AuthSessionRepository(runtime)
+                .findLegacySessionByAccessTokenDigestEntry('missing-digest'))
+                .rejects.toThrow(/compatibility.*ended/u);
+            expect(page).not.toHaveBeenCalled();
+        } finally {
+            vi.useRealTimers();
+        }
     });
 
     it('allows exactly one websocket-ticket consumer without a domain lock', async () => {
@@ -287,12 +526,12 @@ describe('AppAuthInboxService architecture', () => {
 
     it('keeps auth compute deterministic and free of credential derivation', () => {
         const source = readFileSync(
-            'packages/shared-server/rallar-system/services/auth-state-mutations.ts',
+            'packages/shared-server/rallar-system/services/auth-state-compute.ts',
             'utf8',
         );
         const compute = source.slice(
-            source.indexOf('function computeAuthMutation('),
-            source.indexOf('function validateAuthMutation('),
+            source.indexOf('export function computeAuthMutation('),
+            source.length,
         );
 
         expect(compute).not.toMatch(/credentialIssuer|hashAuthSecret|crypto\./u);
@@ -543,9 +782,11 @@ describe('AppAuthInboxService architecture', () => {
             key.startsWith('auth-sessions:by-token:') ||
             key.startsWith('auth-sessions:by-session:')
         )).toEqual([]);
-        expect(await new AuthSessionRepository(runtime).findBySessionId(
-            'retry-disabled-session',
-        )).toBeUndefined();
+        expect(
+            await new AuthSessionRepository(runtime).findBySessionId(
+                'retry-disabled-session',
+            ),
+        ).toBeUndefined();
     });
 
     it('consumes bounded legacy plaintext ticket rows without queueing their credentials', async () => {
@@ -799,26 +1040,28 @@ describe('AppAuthInboxService architecture', () => {
         expect(durableResult).toBeDefined();
 
         const injectedSecret = 'must-never-appear-in-error';
-        for (const corrupted of [
-            {
-                ...command.session,
-                kind: 'session-issued',
-                accessToken: injectedSecret,
-            },
-            {
-                clientId: command.session.clientId,
-                username: command.session.username,
-                sessionId: command.session.sessionId,
-                kind: 'session-issued',
-                issuedAtEpochMs: command.session.issuedAtEpochMs,
-                expiresAtEpochMs: command.session.expiresAtEpochMs,
-            },
-            {
-                ...command.session,
-                kind: 'session-issued',
-                expiresAtEpochMs: 'tomorrow',
-            },
-        ]) {
+        for (
+            const corrupted of [
+                {
+                    ...command.session,
+                    kind: 'session-issued',
+                    accessToken: injectedSecret,
+                },
+                {
+                    clientId: command.session.clientId,
+                    username: command.session.username,
+                    sessionId: command.session.sessionId,
+                    kind: 'session-issued',
+                    issuedAtEpochMs: command.session.issuedAtEpochMs,
+                    expiresAtEpochMs: command.session.expiresAtEpochMs,
+                },
+                {
+                    ...command.session,
+                    kind: 'session-issued',
+                    expiresAtEpochMs: 'tomorrow',
+                },
+            ]
+        ) {
             await results.replace({
                 ...durableResult!,
                 resource: JSON.stringify(corrupted),
@@ -917,18 +1160,22 @@ describe('AppAuthInboxService architecture', () => {
             3,
         );
         expect(wsTicket.right?.ticket).toBeDefined();
-        expect((await service.issueWebSocketTicket({
-            requestId: 'ws-issue-request',
-            capturedAtEpochMs: now + 2,
-            session,
-            expiresAtEpochMs: now + 30_000,
-        })).right).toEqual(wsTicket.right);
-        expect((await service.issueWebSocketTicket({
-            requestId: 'ws-issue-request',
-            capturedAtEpochMs: now + 2,
-            session,
-            expiresAtEpochMs: now + 30_001,
-        })).left?.status).toBe(409);
+        expect(
+            (await service.issueWebSocketTicket({
+                requestId: 'ws-issue-request',
+                capturedAtEpochMs: now + 2,
+                session,
+                expiresAtEpochMs: now + 30_000,
+            })).right,
+        ).toEqual(wsTicket.right);
+        expect(
+            (await service.issueWebSocketTicket({
+                requestId: 'ws-issue-request',
+                capturedAtEpochMs: now + 2,
+                session,
+                expiresAtEpochMs: now + 30_001,
+            })).left?.status,
+        ).toBe(409);
         const agentTickets = await runAuthCommand(
             service.issueAgentSessionTickets({
                 requestId: 'agent-issue-request',
@@ -959,10 +1206,12 @@ describe('AppAuthInboxService architecture', () => {
         } as const;
         expect((await service.issueAgentSessionTickets(agentIssueInput)).right)
             .toEqual(agentTickets.right);
-        expect((await service.issueAgentSessionTickets({
-            ...agentIssueInput,
-            ticketExpiresAtEpochMs: now + 30_001,
-        })).left?.status).toBe(409);
+        expect(
+            (await service.issueAgentSessionTickets({
+                ...agentIssueInput,
+                ticketExpiresAtEpochMs: now + 30_001,
+            })).left?.status,
+        ).toBe(409);
         const expiredWs = await runAuthCommand(
             service.consumeWebSocketTicket({
                 requestId: 'ws-expired-consume',
@@ -1041,21 +1290,26 @@ describe('AppAuthInboxService architecture', () => {
         );
         const now = Date.now();
 
-        const issued = await runAuthCommand(service.issueAgentSessionTickets({
-            requestId: 'agent-without-authority',
-            capturedAtEpochMs: now,
-            session: {
-                clientId: 'absent-client',
-                username: 'absent-user',
-                sessionId: 'absent-session',
-                accessToken: 'absent-access-token',
-                issuedAtEpochMs: now - 1,
-                expiresAtEpochMs: now + 60_000,
-            },
-            sessionExpiresAtEpochMs: now + 60_000,
-            ticketExpiresAtEpochMs: now + 30_000,
-            agents: [{ agentId: 'agent-a', sessionId: 'agent-session-a' }],
-        }), queue, reader, 1);
+        const issued = await runAuthCommand(
+            service.issueAgentSessionTickets({
+                requestId: 'agent-without-authority',
+                capturedAtEpochMs: now,
+                session: {
+                    clientId: 'absent-client',
+                    username: 'absent-user',
+                    sessionId: 'absent-session',
+                    accessToken: 'absent-access-token',
+                    issuedAtEpochMs: now - 1,
+                    expiresAtEpochMs: now + 60_000,
+                },
+                sessionExpiresAtEpochMs: now + 60_000,
+                ticketExpiresAtEpochMs: now + 30_000,
+                agents: [{ agentId: 'agent-a', sessionId: 'agent-session-a' }],
+            }),
+            queue,
+            reader,
+            1,
+        );
 
         expect(issued.left).toMatchObject({ status: 401 });
         expect(await new AuthSessionRepository(runtime).findBySessionId('agent-session-a'))
@@ -1165,116 +1419,135 @@ describe('AppAuthInboxService architecture', () => {
             .toBeDefined();
     });
 
-    it('selects one CAS winner for concurrent username creation and ticket consumption', async () => {
-        const queue = new TestResourceInbox();
-        const results = new TestResourceInboxResults();
-        const reader = new InboxQueueReader(queue);
-        const runtime = new FakeRuntimeStateRepository();
-        const credentialIssuer = createHmacAuthCredentialIssuer(
-            'concurrent-auth-secret-0123456789abcdef',
-        );
-        const service = new AppAuthInboxService(
-            reader,
-            queue as never,
-            results as never,
-            createAppInboxTestDatabase(queue, results, {
-                runtimeRepository: runtime,
-            }),
-            createAuthMutationService({
-                runtimeRepository: runtime,
-                serviceId: 'auth-test-service',
-            }),
-            credentialIssuer,
-            'auth-test-service',
-        );
-        const now = Date.now();
-        const user = {
-            username: 'same-user',
-            normalizedUsername: 'same-user',
-            displayName: null,
-            passwordHash: 'password-hash',
-            passwordSalt: 'password-salt',
-            passwordAlgorithm: 'pbkdf2-sha256' as const,
-            passwordIterations: 120_000,
-            roles: ['member'],
-            status: 'active' as const,
-            createdAtEpochMs: now,
-            updatedAtEpochMs: now,
-        };
-        const registrations = [
-            service.registerUser({
-                requestId: 'register-race-a',
-                capturedAtEpochMs: now,
-                user: { ...user, clientId: 'client-a' },
-            }),
-            service.registerUser({
-                requestId: 'register-race-b',
-                capturedAtEpochMs: now,
-                user: { ...user, clientId: 'client-b' },
-            }),
-        ];
-        await waitForQueuedEntry(queue, 2);
-        await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
-        await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
-        const registrationResults = await Promise.all(registrations);
-        expect(registrationResults.filter((result) => result.right !== undefined)).toHaveLength(1);
-        expect(registrationResults.filter((result) => result.left?.status === 409)).toHaveLength(1);
-
-        const issuedAtEpochMs = now + 1;
-        const login = await runAuthCommand(service.issueSession({
-            requestId: 'ticket-race-session',
-            capturedAtEpochMs: issuedAtEpochMs,
-            clientId: 'client-a',
-            username: 'same-user',
-            authority: {
-                kind: 'registered-user',
-                clientId: 'client-a',
+    it(
+        'selects one CAS winner for concurrent username creation and ticket consumption',
+        async () => {
+            const queue = new TestResourceInbox();
+            const results = new TestResourceInboxResults();
+            const reader = new InboxQueueReader(queue);
+            const runtime = new FakeRuntimeStateRepository();
+            const credentialIssuer = createHmacAuthCredentialIssuer(
+                'concurrent-auth-secret-0123456789abcdef',
+            );
+            const service = new AppAuthInboxService(
+                reader,
+                queue as never,
+                results as never,
+                createAppInboxTestDatabase(queue, results, {
+                    runtimeRepository: runtime,
+                }),
+                createAuthMutationService({
+                    runtimeRepository: runtime,
+                    serviceId: 'auth-test-service',
+                }),
+                credentialIssuer,
+                'auth-test-service',
+            );
+            const now = Date.now();
+            const user = {
+                username: 'same-user',
                 normalizedUsername: 'same-user',
-                userRevision: 0,
-            },
-            sessionId: 'ticket-race-session',
-            expiresAtEpochMs: now + 60_000,
-        }), queue, reader, 3);
-        const session = { ...login.right!, issuedAtEpochMs };
-        const issuedTicket = await runAuthCommand(service.issueWebSocketTicket({
-            requestId: 'ticket-race-issue',
-            capturedAtEpochMs: now + 2,
-            session,
-            expiresAtEpochMs: now + 30_000,
-        }), queue, reader, 4);
-        const ticket = issuedTicket.right!.ticket;
-        const consumes = [
-            service.consumeWebSocketTicket({
-                requestId: 'ticket-race-consume-a',
-                capturedAtEpochMs: now + 3,
-                expectedSessionId: session.sessionId,
-                ticket,
-            }),
-            service.consumeWebSocketTicket({
-                requestId: 'ticket-race-consume-b',
-                capturedAtEpochMs: now + 3,
-                expectedSessionId: session.sessionId,
-                ticket,
-            }),
-        ];
-        await waitForQueuedEntry(queue, 6);
-        await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
-        await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
-        const consumeResults = await Promise.all(consumes);
-        expect(consumeResults.filter((result) => result.right !== undefined)).toHaveLength(1);
-        expect(consumeResults.filter((result) => result.left?.status === 404)).toHaveLength(1);
-        expect(runtime.locks).toEqual([]);
-    }, 15_000);
+                displayName: null,
+                passwordHash: 'password-hash',
+                passwordSalt: 'password-salt',
+                passwordAlgorithm: 'pbkdf2-sha256' as const,
+                passwordIterations: 120_000,
+                roles: ['member'],
+                status: 'active' as const,
+                createdAtEpochMs: now,
+                updatedAtEpochMs: now,
+            };
+            const registrations = [
+                service.registerUser({
+                    requestId: 'register-race-a',
+                    capturedAtEpochMs: now,
+                    user: { ...user, clientId: 'client-a' },
+                }),
+                service.registerUser({
+                    requestId: 'register-race-b',
+                    capturedAtEpochMs: now,
+                    user: { ...user, clientId: 'client-b' },
+                }),
+            ];
+            await waitForQueuedEntry(queue, 2);
+            await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+            await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+            const registrationResults = await Promise.all(registrations);
+            expect(registrationResults.filter((result) => result.right !== undefined)).toHaveLength(
+                1,
+            );
+            expect(registrationResults.filter((result) => result.left?.status === 409))
+                .toHaveLength(1);
+
+            const issuedAtEpochMs = now + 1;
+            const login = await runAuthCommand(
+                service.issueSession({
+                    requestId: 'ticket-race-session',
+                    capturedAtEpochMs: issuedAtEpochMs,
+                    clientId: 'client-a',
+                    username: 'same-user',
+                    authority: {
+                        kind: 'registered-user',
+                        clientId: 'client-a',
+                        normalizedUsername: 'same-user',
+                        userRevision: 0,
+                    },
+                    sessionId: 'ticket-race-session',
+                    expiresAtEpochMs: now + 60_000,
+                }),
+                queue,
+                reader,
+                3,
+            );
+            const session = { ...login.right!, issuedAtEpochMs };
+            const issuedTicket = await runAuthCommand(
+                service.issueWebSocketTicket({
+                    requestId: 'ticket-race-issue',
+                    capturedAtEpochMs: now + 2,
+                    session,
+                    expiresAtEpochMs: now + 30_000,
+                }),
+                queue,
+                reader,
+                4,
+            );
+            const ticket = issuedTicket.right!.ticket;
+            const consumes = [
+                service.consumeWebSocketTicket({
+                    requestId: 'ticket-race-consume-a',
+                    capturedAtEpochMs: now + 3,
+                    expectedSessionId: session.sessionId,
+                    ticket,
+                }),
+                service.consumeWebSocketTicket({
+                    requestId: 'ticket-race-consume-b',
+                    capturedAtEpochMs: now + 3,
+                    expectedSessionId: session.sessionId,
+                    ticket,
+                }),
+            ];
+            await waitForQueuedEntry(queue, 6);
+            await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+            await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+            const consumeResults = await Promise.all(consumes);
+            expect(consumeResults.filter((result) => result.right !== undefined)).toHaveLength(1);
+            expect(consumeResults.filter((result) => result.left?.status === 404)).toHaveLength(1);
+            expect(runtime.locks).toEqual([]);
+        },
+        15_000,
+    );
 
     it('strictly rejects plaintext or extra auth command fields', () => {
-        expect(() => decodeAuthMutationCommand({
-            version: 1,
-            kind: 'consume-agent-ticket',
-            requestId: 'consume-1',
-            capturedAtEpochMs: 1_000,
-            ticketDigest: 'digest',
-            ticket: 'plaintext',
-        })).toThrow(/fields|plaintext/u);
+        expect(() =>
+            decodeAuthMutationCommand({
+                version: 1,
+                kind: 'consume-agent-ticket',
+                requestId: 'consume-1',
+                capturedAtEpochMs: 1_000,
+                ticketDigest: 'digest',
+                ticket: 'plaintext',
+            })
+        ).toThrow(/fields|plaintext/u);
     });
 });
 

@@ -2,6 +2,7 @@ import type {
     RuntimeStateConditionalDeleteResult,
     RuntimeStateConditionalWriteResult,
     RuntimeStateEntry,
+    RuntimeStateEntryPageOptions,
     RuntimeStateOptimisticTransactionalRepositoryLike,
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import {
@@ -91,6 +92,18 @@ export class FakeRuntimeStateRepository
                 .map(([, entry]) => ({ ...entry }))
                 .sort((left, right) => left.key.localeCompare(right.key)),
         );
+    }
+
+    async findEntriesByPrefixPage(
+        namespace: string,
+        keyPrefix: string,
+        options: RuntimeStateEntryPageOptions,
+    ): Promise<readonly RuntimeStateEntry[]> {
+        return (await this.findEntriesByPrefix(namespace, keyPrefix))
+            .filter((entry) =>
+                options.afterKey === undefined || entry.key > options.afterKey
+            )
+            .slice(0, options.limit);
     }
 
     findEntriesByKeys(
