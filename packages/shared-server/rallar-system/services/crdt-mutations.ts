@@ -6,7 +6,8 @@ import type {
     CrdtMutationRepository,
 } from './crdt-mutation-contracts.ts';
 import { decodeCrdtMutationCommand } from './crdt-mutation-codec.ts';
-import { computeCrdtMutation, validateCrdtMutation } from './crdt-mutation-compute.ts';
+import { computeCrdtMutation } from './crdt-mutation-compute.ts';
+import { validateCrdtMutation } from './crdt-mutation-validate.ts';
 
 export * from './crdt-mutation-contracts.ts';
 export * from './crdt-mutation-codec.ts';

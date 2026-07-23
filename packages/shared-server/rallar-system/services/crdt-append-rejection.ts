@@ -1,4 +1,7 @@
-import type { RallarCrdtAppendRejectionCode } from '@shared/crdt/mod.ts';
+import type {
+    RallarCrdtAppendRejectionCode,
+    RallarCrdtRetryableAppendRejectionCode,
+} from '@shared/crdt/mod.ts';
 
 export function toAppendRejectionCode(code: string): RallarCrdtAppendRejectionCode {
     const supported: readonly RallarCrdtAppendRejectionCode[] = [
@@ -15,7 +18,9 @@ export function toAppendRejectionCode(code: string): RallarCrdtAppendRejectionCo
         : 'storage-failed';
 }
 
-export function isAppendRejectionRetryable(code: RallarCrdtAppendRejectionCode): boolean {
+export function isAppendRejectionRetryable(
+    code: RallarCrdtAppendRejectionCode,
+): code is RallarCrdtRetryableAppendRejectionCode {
     return code === 'storage-failed' || code === 'rate-limited';
 }
 

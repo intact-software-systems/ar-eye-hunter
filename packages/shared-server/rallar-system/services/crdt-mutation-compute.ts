@@ -3,15 +3,16 @@ import {
   createRallarCrdtCompactedSnapshot,
   createRallarCrdtDebugBundle,
   hashRallarCrdtUpdateEnvelope,
+  type RallarCrdtAppendRejected,
   type RallarCrdtAppendResult,
   type RallarCrdtDocumentMetadata,
-  type RallarCrdtSnapshotEnvelope,
   validateRallarCrdtUpdateEnvelope,
   verifyRallarCrdtDebugBundle,
 } from '@shared/crdt/mod.ts';
-import { decodeCrdtMutationResult } from './crdt-mutation-codec.ts';
+import { toCrdtCanonicalSnapshotEnvelope } from './crdt-compact-snapshot.ts';
 import type {
   CrdtAppendCommand,
+  CrdtCanonicalSnapshotEnvelope,
   CrdtEraseMutationResult,
   CrdtMutationCommand,
   CrdtMutationComputed,
@@ -92,14 +93,14 @@ export function computeCrdtMutation(
       ? read.document.snapshotCount + 1
       : read.document.snapshotCount,
   };
-  const snapshot = command.operation === 'compact'
-    ? command.snapshot ?? createRallarCrdtCompactedSnapshot({
+  const snapshot: CrdtCanonicalSnapshotEnvelope | null = command.operation === 'compact'
+    ? command.snapshot ?? toCrdtCanonicalSnapshotEnvelope(createRallarCrdtCompactedSnapshot({
       document: command.document,
       records: read.records,
       reason: command.reason,
       now: () => command.capturedAtEpochMs,
       createSnapshotId: () => command.snapshotId,
-    })
+    }), command.reason)
     : null;
   if (
     snapshot && read.document.quota?.maxDocumentBytes !== undefined &&
@@ -254,7 +255,7 @@ function writeComputed(
   command: Exclude<CrdtMutationCommand, CrdtAppendCommand>,
   read: CrdtMutationRead,
   document: RallarCrdtDocumentMetadata,
-  snapshot: RallarCrdtSnapshotEnvelope | null,
+  snapshot: CrdtCanonicalSnapshotEnvelope | null,
   serviceId: string,
 ): CrdtMutationComputedWrite {
   const resultDetails = toAcceptedAdminResultDetails(command, read, document, snapshot);
@@ -368,32 +369,16 @@ function rejectionResult(
   command: CrdtAppendCommand,
   document: RallarCrdtDocumentMetadata | null,
   code: string,
-): RallarCrdtAppendResult {
+): RallarCrdtAppendRejected {
   const rejectionCode = toAppendRejectionCode(code);
-  return {
+  const rejection = {
     status: 'rejected',
     update: command.update,
     code: rejectionCode,
     reason: appendRejectionReason(rejectionCode),
-    retryable: isAppendRejectionRetryable(rejectionCode),
     ...(document ? { document } : {}),
-  };
-}
-
-export function validateCrdtMutation(
-  command: CrdtMutationCommand,
-  read: CrdtMutationRead,
-  computed: CrdtMutationComputed,
-): void {
-  if (
-    computed.commandId !== command.commandId ||
-    computed.commandHash !== command.commandHash ||
-    computed.documentKey !== command.documentKey
-  ) throw new TypeError('CRDT computed identity differs from command');
-  if (
-    computed.outcome === 'write' &&
-    read.document &&
-    computed.expectedDocumentRevision !== read.document.documentRevision
-  ) throw new TypeError('CRDT computed predecessor differs from read document');
-  decodeCrdtMutationResult(computed.result);
+  } as const;
+  return isAppendRejectionRetryable(rejectionCode)
+    ? { ...rejection, code: rejectionCode, retryable: true }
+    : { ...rejection, code: rejectionCode, retryable: false };
 }

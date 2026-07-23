@@ -3,11 +3,11 @@ import {
   createRallarCrdtErasureAuditEvent,
   hashRallarCrdtUpdateEnvelope,
   type RallarCrdtDocumentMetadata,
-  type RallarCrdtSnapshotEnvelope,
   verifyRallarCrdtDebugBundle,
 } from '@shared/crdt/mod.ts';
 import type {
   CrdtAppendCommand,
+  CrdtCanonicalSnapshotEnvelope,
   CrdtMutationCommand,
   CrdtMutationRead,
   CrdtMutationResult,
@@ -38,7 +38,7 @@ export function toAcceptedAdminResultDetails(
   command: Exclude<CrdtMutationCommand, CrdtAppendCommand>,
   read: CrdtMutationRead,
   document: RallarCrdtDocumentMetadata,
-  snapshot: RallarCrdtSnapshotEnvelope | null,
+  snapshot: CrdtCanonicalSnapshotEnvelope | null,
 ): Record<string, unknown> {
   if (command.operation === 'compact') {
     if (!snapshot) throw new TypeError('Accepted CRDT compaction requires a snapshot');

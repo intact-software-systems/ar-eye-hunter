@@ -13,8 +13,20 @@ set document_revision = greatest(1, update_count + snapshot_count)
 where document_revision < 1;
 
 update crdt_snapshots
-set reason = 'legacy-import'
-where reason is null or btrim(reason) = '';
+set
+  snapshot_envelope = jsonb_set(
+    snapshot_envelope::jsonb,
+    '{metadata,reason}',
+    to_jsonb(case
+      when reason is not null and btrim(reason) <> '' then reason
+      else 'legacy-import'
+    end),
+    true
+  )::text,
+  reason = case
+    when reason is not null and btrim(reason) <> '' then reason
+    else 'legacy-import'
+  end;
 
 alter table crdt_updates
   alter column actor_id set not null,

@@ -1,7 +1,14 @@
 import assert from 'node:assert/strict';
 import { Temporal } from '@js-temporal/polyfill';
+import {
+    RALLAR_CRDT_PROTOCOL_VERSION,
+    type RallarCrdtDocumentRef,
+    type RallarCrdtSnapshotEnvelope,
+    toRallarCrdtDocumentKey,
+} from '@shared/crdt/mod.ts';
 import { PSqlAdminOperationsPruner } from '@shared-server/postgres/admin-operations/PSqlAdminOperationsStatsReader.ts';
 import { PSqlAdminPruneExpiredRepository } from '@shared-server/postgres/admin-operations/PSqlAdminPruneExpiredRepository.ts';
+import { PSqlCrdtLogRepository } from '@shared-server/postgres/crdt/PSqlCrdtLogRepository.ts';
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
@@ -106,53 +113,97 @@ Deno.test('configured CRDT policy parser accepts only the authoritative rollout 
     }
 });
 
-Deno.test('compatible migration normalizes legacy revision and nullable snapshot reason', async () => {
+Deno.test('compatible migration binds omitted legacy snapshot reasons in row and envelope', async () => {
     await withPGliteSql(async (sql) => {
-        const documentKey = 'legacy-document';
+        const fixtures = [
+            { document: legacyDocument('physical'), reason: 'api-v1-admin-compaction' },
+            { document: legacyDocument('null'), reason: null },
+            { document: legacyDocument('blank'), reason: '   ' },
+        ] as const;
         await sql`alter table crdt_snapshots alter column reason drop not null`;
-        await sql`
-            insert into crdt_documents (
-                document_key, application_id, workspace_id, document_scope,
-                document_type, document_id, document_ref, document_revision
-            ) values (
-                ${documentKey}, 'app-1', null, 'app', 'checklist', 'legacy',
-                ${JSON.stringify({
-                    applicationId: 'app-1',
-                    scope: 'app',
-                    documentType: 'checklist',
-                    documentId: 'legacy',
-                })}, 0
-            )
-        `;
-        await sql`
-            insert into crdt_snapshots (
-                document_key, snapshot_id, append_sequence, snapshot_envelope, reason
-            ) values (
-                ${documentKey}, 'legacy-snapshot', 0, ${JSON.stringify({ legacy: true })}, null
-            )
-        `;
+        for (const fixture of fixtures) {
+            const documentKey = toRallarCrdtDocumentKey(fixture.document);
+            const envelope = legacySnapshot(fixture.document);
+            await sql`
+                insert into crdt_documents (
+                    document_key, application_id, workspace_id, document_scope,
+                    document_type, document_id, document_ref, document_revision,
+                    snapshot_count
+                ) values (
+                    ${documentKey}, 'app-1', null, 'app', 'checklist',
+                    ${fixture.document.documentId}, ${JSON.stringify(fixture.document)}, 0, 1
+                )
+            `;
+            await sql`
+                insert into crdt_snapshots (
+                    document_key, snapshot_id, append_sequence, snapshot_envelope,
+                    created_at_ts, reason
+                ) values (
+                    ${documentKey}, ${envelope.snapshotId}, 0, ${JSON.stringify(envelope)},
+                    ${new Date(envelope.createdAtEpochMs)}, ${fixture.reason}
+                )
+            `;
+        }
         const migration = await Deno.readTextFile(new URL(
             '../../prisma/migrations/20260723170000_crdt_trusted_identity_required/migration.sql',
             import.meta.url,
         ));
         await sql.exec(migration);
 
-        const [row] = await sql<{
+        const rows = await sql<{
+            document_key: string;
             document_revision: string | number;
             reason: string | null;
+            snapshot_envelope: string;
             reason_nullable: string;
         }[]>`
-            select d.document_revision, s.reason,
+            select d.document_key, d.document_revision, s.reason, s.snapshot_envelope,
                    c.is_nullable as reason_nullable
             from crdt_documents d
             join crdt_snapshots s on s.document_key = d.document_key
             join information_schema.columns c
               on c.table_name = 'crdt_snapshots' and c.column_name = 'reason'
-            where d.document_key = ${documentKey}
+            order by d.document_id
         `;
-        assert.equal(Number(row?.document_revision), 1);
-        assert.equal(row?.reason, 'legacy-import');
-        assert.equal(row?.reason_nullable, 'NO');
+        assert.deepEqual(rows.map((row) => ({
+            documentId: (JSON.parse(row.snapshot_envelope) as RallarCrdtSnapshotEnvelope)
+                .document.documentId,
+            documentRevision: Number(row.document_revision),
+            logicalReason: (JSON.parse(row.snapshot_envelope) as RallarCrdtSnapshotEnvelope)
+                .metadata.reason,
+            physicalReason: row.reason,
+            reasonNullable: row.reason_nullable,
+        })), [
+            {
+                documentId: 'legacy-blank',
+                documentRevision: 1,
+                logicalReason: 'legacy-import',
+                physicalReason: 'legacy-import',
+                reasonNullable: 'NO',
+            },
+            {
+                documentId: 'legacy-null',
+                documentRevision: 1,
+                logicalReason: 'legacy-import',
+                physicalReason: 'legacy-import',
+                reasonNullable: 'NO',
+            },
+            {
+                documentId: 'legacy-physical',
+                documentRevision: 1,
+                logicalReason: 'api-v1-admin-compaction',
+                physicalReason: 'api-v1-admin-compaction',
+                reasonNullable: 'NO',
+            },
+        ]);
+        const repository = new PSqlCrdtLogRepository(sql);
+        for (const fixture of fixtures) {
+            const snapshot = await repository.readSnapshot(fixture.document);
+            const expectedReason = fixture.reason?.trim()
+                ? fixture.reason
+                : 'legacy-import';
+            assert.equal(snapshot?.metadata.reason, expectedReason);
+        }
     });
 });
 
@@ -309,3 +360,26 @@ Deno.test('real SQL CAS conflict retries from revoked room membership and commit
         assert.equal(JSON.parse(completion!.ris_resource).code, 'authorization-scope-denied');
     });
 });
+
+function legacyDocument(suffix: string): RallarCrdtDocumentRef {
+    return {
+        applicationId: 'app-1',
+        scope: 'app',
+        documentType: 'checklist',
+        documentId: `legacy-${suffix}`,
+    };
+}
+
+function legacySnapshot(document: RallarCrdtDocumentRef): RallarCrdtSnapshotEnvelope {
+    return {
+        protocolVersion: RALLAR_CRDT_PROTOCOL_VERSION,
+        document,
+        snapshotId: `snapshot-${document.documentId}`,
+        schemaVersion: 1,
+        createdAtEpochMs: 10_000,
+        maxLamport: 0,
+        includedUpdateIds: [],
+        value: { legacy: true },
+        metadata: { updateCount: 0 },
+    };
+}

@@ -25,6 +25,10 @@ import type {
   CrdtMutationCommand,
   CreateCrdtMutationCommandInput,
 } from './crdt-mutation-contracts.ts';
+import {
+  requireCrdtCanonicalSnapshotReason,
+  toCrdtCanonicalSnapshotEnvelope,
+} from './crdt-compact-snapshot.ts';
 
 export {
   decodeExactDocumentMetadata,
@@ -42,10 +46,13 @@ export { decodeCrdtMutationResult } from './crdt-mutation-result-codec.ts';
 export async function createCrdtMutationCommand(
   input: CreateCrdtMutationCommandInput,
 ): Promise<CrdtMutationCommand> {
+  const canonicalInput = input.operation === 'compact'
+    ? toCanonicalCompactCommandInput(input)
+    : input;
   const stable = {
-    ...input,
-    deliveryId: input.deliveryId ?? input.commandId,
-    documentKey: toRallarCrdtDocumentKey(input.document),
+    ...canonicalInput,
+    deliveryId: canonicalInput.deliveryId ?? canonicalInput.commandId,
+    documentKey: toRallarCrdtDocumentKey(canonicalInput.document),
     version: 1 as const,
   };
   return decodeCrdtMutationCommand({
@@ -146,7 +153,10 @@ function validateOperationFields(
     ) {
       throw new TypeError('CRDT compact snapshot ID differs from command input');
     }
-    requireString(command.reason, 'reason');
+    requireCrdtCanonicalSnapshotReason(command.reason);
+    if (snapshot !== null && snapshot.metadata.reason !== command.reason) {
+      throw new TypeError('CRDT compact snapshot reason differs from command reason');
+    }
   } else if (operation === 'lifecycle') {
     requireOneOf(
       command.lifecycle,
@@ -163,6 +173,18 @@ function validateOperationFields(
     requireOneOf(command.mode, ['destroy-document', 'redact-payloads'] as const, 'erase mode');
     requireString(command.reason, 'reason');
   }
+}
+
+function toCanonicalCompactCommandInput(
+  input: Extract<CreateCrdtMutationCommandInput, { operation: 'compact' }>,
+): CreateCrdtMutationCommandInput {
+  requireString(input.reason, 'reason');
+  return {
+    ...input,
+    snapshot: input.snapshot === null
+      ? null
+      : toCrdtCanonicalSnapshotEnvelope(input.snapshot, input.reason),
+  };
 }
 
 function decodeLifecycleAction(value: unknown, label: string): Record<string, unknown> {

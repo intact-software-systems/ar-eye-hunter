@@ -102,6 +102,16 @@ export type RallarCrdtAppendRejectionCode =
   | 'update-too-large'
   | 'storage-failed';
 
+export type RallarCrdtRetryableAppendRejectionCode = Extract<
+  RallarCrdtAppendRejectionCode,
+  'storage-failed' | 'rate-limited'
+>;
+
+export type RallarCrdtNonRetryableAppendRejectionCode = Exclude<
+  RallarCrdtAppendRejectionCode,
+  RallarCrdtRetryableAppendRejectionCode
+>;
+
 export type RallarCrdtAppendUpdateInput<TPayload = RallarCrdtOperationBatch> = Readonly<{
   update: RallarCrdtUpdateEnvelope<TPayload>;
   trusted: RallarCrdtTrustedAppendInput;
@@ -122,15 +132,23 @@ export type RallarCrdtAppendDuplicate<TPayload = RallarCrdtOperationBatch> = Rea
   document: RallarCrdtDocumentMetadata;
 }>;
 
-export type RallarCrdtAppendRejected<TPayload = RallarCrdtOperationBatch> = Readonly<{
+type RallarCrdtAppendRejectedBase<TPayload> = Readonly<{
   status: 'rejected';
-  update?: RallarCrdtUpdateEnvelope<TPayload>;
-  code: RallarCrdtAppendRejectionCode;
+  update: RallarCrdtUpdateEnvelope<TPayload>;
   reason: string;
-  retryable: boolean;
   validation?: RallarCrdtValidationResult;
   document?: RallarCrdtDocumentMetadata;
 }>;
+
+export type RallarCrdtAppendRejected<TPayload = RallarCrdtOperationBatch> =
+  | RallarCrdtAppendRejectedBase<TPayload> & Readonly<{
+    code: RallarCrdtRetryableAppendRejectionCode;
+    retryable: true;
+  }>
+  | RallarCrdtAppendRejectedBase<TPayload> & Readonly<{
+    code: RallarCrdtNonRetryableAppendRejectionCode;
+    retryable: false;
+  }>;
 
 export type RallarCrdtAppendResult<TPayload = RallarCrdtOperationBatch> =
   | RallarCrdtAppendAccepted<TPayload>

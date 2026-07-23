@@ -13,6 +13,7 @@ import {
   isAppendRejectionRetryable,
   toAppendRejectionCode,
 } from './crdt-append-rejection.ts';
+import { requireCrdtCanonicalSnapshotReason } from './crdt-compact-snapshot.ts';
 import { decodeExactDebugBundle } from './crdt-debug-bundle-exact-codec.ts';
 import type { CrdtMutationResult } from './crdt-mutation-contracts.ts';
 import {
@@ -91,7 +92,10 @@ export function decodeCrdtMutationResult(value: unknown): CrdtMutationResult {
   }
   if (operation === 'append') decodeAppendResult(result.appendResult);
   else if (operation === 'compact') {
-    if (result.snapshot !== null) decodeExactSnapshotEnvelope(result.snapshot);
+    if (result.snapshot !== null) {
+      const snapshot = decodeExactSnapshotEnvelope(result.snapshot);
+      requireCrdtCanonicalSnapshotReason(snapshot.metadata.reason);
+    }
     if (result.metadata !== null) decodeExactDocumentMetadata(result.metadata);
   } else if (operation === 'lifecycle' && result.metadata !== null) {
     decodeExactDocumentMetadata(result.metadata);

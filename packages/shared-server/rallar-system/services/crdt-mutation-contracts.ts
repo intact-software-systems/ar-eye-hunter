@@ -41,6 +41,12 @@ export type CrdtMutationResponseAudience = Readonly<{
   contextId: string;
 }>;
 
+export type CrdtCanonicalSnapshotEnvelope =
+  & Omit<RallarCrdtSnapshotEnvelope, 'metadata'>
+  & Readonly<{
+    metadata: RallarCrdtSnapshotEnvelope['metadata'] & Readonly<{ reason: string }>;
+  }>;
+
 type CrdtMutationCommandBase = Readonly<{
   version: 1;
   commandId: string;
@@ -74,7 +80,7 @@ export type CrdtSnapshotCompactCommand =
   & Readonly<{
     operation: 'compact';
     snapshotId: string;
-    snapshot: RallarCrdtSnapshotEnvelope | null;
+    snapshot: CrdtCanonicalSnapshotEnvelope | null;
     reason: string;
   }>;
 
@@ -112,10 +118,14 @@ type CreateCrdtMutationCommandVariant<T> =
   & Omit<T, 'version' | 'commandHash' | 'documentKey' | 'deliveryId'>
   & Readonly<{ deliveryId?: string }>;
 
+type CreateCrdtSnapshotCompactCommandInput =
+  & Omit<CreateCrdtMutationCommandVariant<CrdtSnapshotCompactCommand>, 'snapshot'>
+  & Readonly<{ snapshot: RallarCrdtSnapshotEnvelope | null }>;
+
 export type CreateCrdtMutationCommandInput =
   | CreateCrdtMutationCommandVariant<CrdtAppendCommand>
   | CreateCrdtMutationCommandVariant<CrdtProjectionRebuildCommand>
-  | CreateCrdtMutationCommandVariant<CrdtSnapshotCompactCommand>
+  | CreateCrdtSnapshotCompactCommandInput
   | CreateCrdtMutationCommandVariant<CrdtLifecycleCommand>
   | CreateCrdtMutationCommandVariant<CrdtEraseCommand>;
 
@@ -143,7 +153,7 @@ type CrdtMutationComputedBase = Readonly<{
   document: RallarCrdtDocumentMetadata | null;
   update: RallarCrdtUpdateEnvelope | null;
   append: RallarCrdtTrustedAppendMetadata | null;
-  snapshot: RallarCrdtSnapshotEnvelope | null;
+  snapshot: CrdtCanonicalSnapshotEnvelope | null;
   outboxEntries: readonly ResourceEntry[];
   result: CrdtMutationResult;
 }>;
@@ -217,7 +227,7 @@ export type CrdtAppendMutationResult =
 
 export type CrdtCompactMutationResult =
   | CrdtAcceptedMutationResultBase<'compact'> & Readonly<{
-    snapshot: RallarCrdtSnapshotEnvelope;
+    snapshot: CrdtCanonicalSnapshotEnvelope;
     metadata: RallarCrdtDocumentMetadata;
   }>
   | CrdtRejectedMutationResultBase<'compact'> & Readonly<{

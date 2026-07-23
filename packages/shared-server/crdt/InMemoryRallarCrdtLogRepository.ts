@@ -114,7 +114,7 @@ export class InMemoryRallarCrdtLogRepository<
         update: input.update,
         code: 'feature-disabled',
         reason: policyDecision.reason,
-        retryable: policyDecision.retryable,
+        retryable: false,
         document: state.metadata,
       });
     }
