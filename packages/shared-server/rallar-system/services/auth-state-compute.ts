@@ -19,6 +19,7 @@ import type {
     LogoutAuthSessionCommand,
 } from './auth-state-contracts.ts';
 import { AuthMutationRejectedError } from './auth-state-errors.ts';
+import { requireIssueSessionLifecycle } from './auth-session-lifecycle.ts';
 import {
     equalAuthJson,
     requireAuthTicket,
@@ -54,6 +55,7 @@ export function computeAuthMutation(
             };
         case 'issue-session': {
             const session = decodePersistedAuthSession(command.session);
+            requireIssueSessionLifecycle(command.capturedAtEpochMs, session);
             return {
                 ...common,
                 sessions: [{ session }],

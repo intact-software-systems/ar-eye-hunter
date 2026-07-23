@@ -225,7 +225,7 @@ describe('AppAuthInboxService architecture', () => {
         ).toThrow(TypeError);
     });
 
-    it('rejects equal or reversed session issuance lifecycle timestamps', () => {
+    it('binds session issuance lifecycle to the durable command timestamp', () => {
         const base = {
             version: 1,
             kind: 'issue-session',
@@ -241,25 +241,53 @@ describe('AppAuthInboxService architecture', () => {
                 username: 'alice',
                 sessionId: 'invalid-session',
                 accessTokenDigest: 'digest-1',
-                issuedAtEpochMs: 2_000,
-                expiresAtEpochMs: 2_001,
+                issuedAtEpochMs: 1_000,
+                expiresAtEpochMs: 2_000,
             },
         } as const;
 
-        for (const expiresAtEpochMs of [2_000, 1_999]) {
+        for (
+            const session of [
+                { ...base.session, issuedAtEpochMs: 999 },
+                { ...base.session, issuedAtEpochMs: 1_001 },
+                { ...base.session, expiresAtEpochMs: 1_000 },
+                { ...base.session, expiresAtEpochMs: 999 },
+            ]
+        ) {
             expect(() =>
                 decodeAuthMutationCommand({
                     ...base,
-                    session: { ...base.session, expiresAtEpochMs },
+                    session,
                 })
             ).toThrow(/lifecycle/u);
         }
     });
 
     it('does not persist session or success results for malformed lifecycle commands', async () => {
-        const issuedAtEpochMs = Date.now() + 60_000;
-        for (const expiryOffsetMs of [0, -1]) {
-            const expiresAtEpochMs = issuedAtEpochMs + expiryOffsetMs;
+        const capturedAtEpochMs = Date.now() + 60_000;
+        const invalidLifecycles = [
+            {
+                label: 'backdated',
+                issuedAtEpochMs: capturedAtEpochMs - 1,
+                expiresAtEpochMs: capturedAtEpochMs + 60_000,
+            },
+            {
+                label: 'future-issued',
+                issuedAtEpochMs: capturedAtEpochMs + 1,
+                expiresAtEpochMs: capturedAtEpochMs + 60_000,
+            },
+            {
+                label: 'equal-expiry',
+                issuedAtEpochMs: capturedAtEpochMs,
+                expiresAtEpochMs: capturedAtEpochMs,
+            },
+            {
+                label: 'reversed-expiry',
+                issuedAtEpochMs: capturedAtEpochMs,
+                expiresAtEpochMs: capturedAtEpochMs - 1,
+            },
+        ] as const;
+        for (const lifecycle of invalidLifecycles) {
             const queue = new TestResourceInbox();
             const results = new TestResourceInboxResults();
             const reader = new InboxQueueReader(queue);
@@ -284,8 +312,8 @@ describe('AppAuthInboxService architecture', () => {
             const command = {
                 version: 1,
                 kind: 'issue-session',
-                requestId: `invalid-lifecycle-${expiryOffsetMs}`,
-                capturedAtEpochMs: issuedAtEpochMs,
+                requestId: `invalid-lifecycle-${lifecycle.label}`,
+                capturedAtEpochMs,
                 authority: {
                     kind: 'static-client',
                     clientId: 'client-1',
@@ -294,14 +322,14 @@ describe('AppAuthInboxService architecture', () => {
                 session: {
                     clientId: 'client-1',
                     username: 'alice',
-                    sessionId: `invalid-session-${expiryOffsetMs}`,
+                    sessionId: `invalid-session-${lifecycle.label}`,
                     accessTokenDigest: await hashAuthSecret(
                         await credentialIssuer.issueAccessToken(
-                            `invalid-session-${expiryOffsetMs}`,
+                            `invalid-session-${lifecycle.label}`,
                         ),
                     ),
-                    issuedAtEpochMs,
-                    expiresAtEpochMs,
+                    issuedAtEpochMs: lifecycle.issuedAtEpochMs,
+                    expiresAtEpochMs: lifecycle.expiresAtEpochMs,
                 },
             } as IssueAuthSessionCommand;
             const pending = service.processAuthCommandUntilCompletion(command);
@@ -440,18 +468,166 @@ describe('AppAuthInboxService architecture', () => {
         expect(page.mock.calls[0]?.[2].limit).toBeLessThanOrEqual(129);
     });
 
-    it('ends legacy plaintext compatibility at its explicit deadline', async () => {
-        vi.useFakeTimers();
+    it('disables direct legacy compatibility at its explicit deadline', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
         vi.setSystemTime(new Date('2027-01-01T00:00:00.000Z'));
         try {
             const runtime = new FakeRuntimeStateRepository();
-            const page = vi.fn(() => Promise.resolve([]));
-            Object.assign(runtime, { findEntriesByPrefixPage: page });
+            const page = vi.spyOn(runtime, 'findEntriesByPrefixPage');
 
             await expect(new AuthSessionRepository(runtime)
                 .findLegacySessionByAccessTokenDigestEntry('missing-digest'))
-                .rejects.toThrow(/compatibility.*ended/u);
+                .resolves.toBeUndefined();
             expect(page).not.toHaveBeenCalled();
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('preserves normal empty auth outcomes after the legacy cutoff', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(new Date('2027-01-01T00:00:00.000Z'));
+        try {
+            const capturedAtEpochMs = Date.now();
+            const session = {
+                clientId: 'cutoff-client',
+                accessToken: 'cutoff-access-token',
+                username: 'cutoff-user',
+                sessionId: 'cutoff-session',
+                issuedAtEpochMs: capturedAtEpochMs,
+                expiresAtEpochMs: capturedAtEpochMs + 60_000,
+            };
+            const run = async (
+                operation: (service: AppAuthInboxService) => Promise<unknown>,
+            ): Promise<unknown> => {
+                const queue = new TestResourceInbox();
+                const results = new TestResourceInboxResults();
+                const reader = new InboxQueueReader(queue);
+                const runtime = new FakeRuntimeStateRepository();
+                const service = new AppAuthInboxService(
+                    reader,
+                    queue as never,
+                    results as never,
+                    createAppInboxTestDatabase(queue, results, {
+                        runtimeRepository: runtime,
+                    }),
+                    createAuthMutationService({
+                        runtimeRepository: runtime,
+                        serviceId: 'cutoff-auth-service',
+                    }),
+                    createHmacAuthCredentialIssuer(
+                        'cutoff-auth-secret-0123456789abcdef',
+                    ),
+                    'cutoff-auth-service',
+                );
+                const pending = operation(service);
+                await waitForQueuedEntry(queue);
+                await reader.dequeueInbox(
+                    InboxQueueReader.INBOX_DEQUEUE_TYPES,
+                    createResilience(),
+                );
+                return await pending;
+            };
+
+            await expect(run((service) =>
+                service.logoutSession({
+                    requestId: 'cutoff-logout',
+                    capturedAtEpochMs,
+                    session,
+                })
+            )).resolves.toMatchObject({ right: { loggedOut: true } });
+            await expect(run((service) =>
+                service.issueWebSocketTicket({
+                    requestId: 'cutoff-ws-issue',
+                    capturedAtEpochMs,
+                    session,
+                    expiresAtEpochMs: capturedAtEpochMs + 30_000,
+                })
+            )).resolves.toMatchObject({ left: { status: 401 } });
+            await expect(run((service) =>
+                service.issueAgentSessionTickets({
+                    requestId: 'cutoff-agent-issue',
+                    capturedAtEpochMs,
+                    session,
+                    sessionExpiresAtEpochMs: capturedAtEpochMs + 60_000,
+                    ticketExpiresAtEpochMs: capturedAtEpochMs + 30_000,
+                    agents: [{ agentId: 'agent-1', sessionId: 'agent-session-1' }],
+                })
+            )).resolves.toMatchObject({ left: { status: 401 } });
+            await expect(run((service) =>
+                service.consumeWebSocketTicket({
+                    requestId: 'cutoff-ws-missing',
+                    capturedAtEpochMs,
+                    ticket: 'missing-ws-ticket',
+                    expectedSessionId: 'cutoff-session',
+                })
+            )).resolves.toMatchObject({ left: { status: 404 } });
+            await expect(run((service) =>
+                service.consumeAgentSessionTicket({
+                    requestId: 'cutoff-agent-missing',
+                    capturedAtEpochMs,
+                    ticket: 'missing-agent-ticket',
+                })
+            )).resolves.toMatchObject({ left: { status: 404 } });
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('does not scan or accept explicit legacy rows after the cutoff', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(new Date('2027-01-01T00:00:00.000Z'));
+        try {
+            const runtime = new FakeRuntimeStateRepository();
+            const repository = new AuthSessionRepository(runtime);
+            const page = vi.spyOn(runtime, 'findEntriesByPrefixPage');
+            const findEntry = vi.spyOn(runtime, 'findEntry');
+            const expiresAtEpochMs = Date.now() + 60_000;
+            const token = 'cutoff-legacy-token';
+            await runtime.upsert(
+                'auth-sessions:by-token',
+                `token=${encodeURIComponent(token)}`,
+                JSON.stringify({
+                    clientId: 'legacy-client',
+                    username: 'legacy-user',
+                    sessionId: 'legacy-session',
+                    accessToken: token,
+                    issuedAtEpochMs: Date.now(),
+                    expiresAtEpochMs,
+                }),
+                expiresAtEpochMs,
+            );
+            for (
+                const [namespace, ticket, agentId] of [
+                    ['auth-sessions:ws-tickets', 'legacy-ws-ticket', undefined],
+                    ['auth-sessions:agent-session-tickets', 'legacy-agent-ticket', 'agent-1'],
+                ] as const
+            ) {
+                await runtime.upsert(
+                    namespace,
+                    `ticket=${encodeURIComponent(ticket)}`,
+                    JSON.stringify({
+                        ticket,
+                        sessionId: 'legacy-session',
+                        clientId: 'legacy-client',
+                        ...(agentId ? { agentId } : {}),
+                        issuedAtEpochMs: Date.now(),
+                        expiresAtEpochMs,
+                    }),
+                    expiresAtEpochMs,
+                );
+            }
+
+            await expect(repository.findByAccessToken(token)).resolves.toBeUndefined();
+            await expect(repository.consumeWebSocketTicket('legacy-ws-ticket'))
+                .resolves.toBeUndefined();
+            await expect(repository.consumeAgentSessionTicket('legacy-agent-ticket'))
+                .resolves.toBeUndefined();
+            expect(page).not.toHaveBeenCalled();
+            expect(findEntry).not.toHaveBeenCalledWith(
+                'auth-sessions:by-token',
+                `token=${encodeURIComponent(token)}`,
+            );
         } finally {
             vi.useRealTimers();
         }
@@ -515,6 +691,9 @@ describe('AppAuthInboxService architecture', () => {
         const sources = [
             'packages/shared-server/rallar-system/services/auth-login-service.ts',
             'packages/shared-server/rallar-system/repositories/AuthSessionRepository.ts',
+            'packages/shared-server/rallar-system/repositories/auth-session-persistence.ts',
+            'packages/shared-server/rallar-system/repositories/auth-ticket-persistence.ts',
+            'packages/shared-server/rallar-system/repositories/auth-legacy-compatibility.ts',
             'packages/shared-server/postgres/al-runtime/PSqlInboundAdmissionBackend.ts',
             'packages/shared-server/postgres/al-runtime/PSqlOutboundAdmissionBackend.ts',
             'packages/shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts',

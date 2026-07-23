@@ -1,6 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
-import { requireApiAuthSession, requireWsAuthSession, } from '@shared-server/http/request-auth-service.ts';
+import {
+    requireApiAuthSession,
+    requireWsAuthSession,
+} from '@shared-server/http/request-auth-service.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
@@ -22,8 +25,8 @@ describe('request auth service', () => {
                     return name === 'authorization'
                         ? 'Bearer token-1'
                         : name === 'x-client-id'
-                            ? 'client-1'
-                            : undefined;
+                        ? 'client-1'
+                        : undefined;
                 },
             },
             repository,
@@ -37,8 +40,8 @@ describe('request auth service', () => {
                         return name === 'authorization'
                             ? 'Bearer token-1'
                             : name === 'x-client-id'
-                                ? 'client-2'
-                                : undefined;
+                            ? 'client-2'
+                            : undefined;
                     },
                 },
                 repository,
@@ -58,13 +61,15 @@ describe('request auth service', () => {
         };
         const tickets = new Map([['ticket-1', session], ['ticket-2', session]]);
         const appAuthInbox = {
-            consumeWebSocketTicket: async (input: { ticket: string; expectedSessionId: string }) => {
+            consumeWebSocketTicket: (
+                input: { ticket: string; expectedSessionId: string },
+            ) => {
                 const current = tickets.get(input.ticket);
                 if (!current || current.sessionId !== input.expectedSessionId) {
-                    return Either.ofLeft({ message: 'invalid' });
+                    return Promise.resolve(Either.ofLeft({ message: 'invalid' }));
                 }
                 tickets.delete(input.ticket);
-                return Either.ofRight(current);
+                return Promise.resolve(Either.ofRight(current));
             },
         } as never;
 
@@ -147,6 +152,24 @@ describe('request auth service', () => {
             sessionId: 'session-b',
         });
     });
+
+    it('returns the normal invalid-bearer denial after the legacy cutoff', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(new Date('2027-01-01T00:00:00.000Z'));
+        try {
+            const runtime = new FakeRuntimeStateRepository();
+            const page = vi.spyOn(runtime, 'findEntriesByPrefixPage');
+            const repository = new AuthSessionRepository(runtime);
+
+            await expect(requireApiAuthSession(
+                authRequest('missing-token', 'client-1'),
+                repository,
+            )).rejects.toThrow('Unauthorized: Invalid or expired access token');
+            expect(page).not.toHaveBeenCalled();
+        } finally {
+            vi.useRealTimers();
+        }
+    });
 });
 
 function authRequest(accessToken: string, clientId: string): {
@@ -157,8 +180,8 @@ function authRequest(accessToken: string, clientId: string): {
             return name === 'authorization'
                 ? `Bearer ${accessToken}`
                 : name === 'x-client-id'
-                    ? clientId
-                    : undefined;
+                ? clientId
+                : undefined;
         },
     };
 }

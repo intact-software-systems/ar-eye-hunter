@@ -11,6 +11,7 @@ import type {
     AuthMutationResult,
 } from './auth-state-contracts.ts';
 import { requireAuthTicket } from './auth-state-validation-shared.ts';
+import { requireIssueSessionLifecycle } from './auth-session-lifecycle.ts';
 
 export async function writeAuthMutation(
     transaction: PSqlTransactionSql,
@@ -30,6 +31,10 @@ export async function writeAuthMutation(
             requireConditionalWrite(await users.insertByClientId(computed.command.user));
             break;
         case 'issue-session':
+            requireIssueSessionLifecycle(
+                computed.command.capturedAtEpochMs,
+                computed.sessions[0].session,
+            );
             await writeSession(sessions, computed.sessions[0]);
             break;
         case 'logout-session': {

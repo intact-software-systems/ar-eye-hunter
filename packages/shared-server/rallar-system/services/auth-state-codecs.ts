@@ -4,6 +4,7 @@ import {
     decodePersistedWebSocketTicket,
 } from '../repositories/AuthSessionRepository.ts';
 import type { AuthMutationCommand, AuthMutationResult } from './auth-state-contracts.ts';
+import { requireIssueSessionLifecycle } from './auth-session-lifecycle.ts';
 
 export function decodeAuthMutationCommand(input: unknown): AuthMutationCommand {
     const command = requireRecord(input, 'Auth mutation command');
@@ -31,7 +32,10 @@ export function decodeAuthMutationCommand(input: unknown): AuthMutationCommand {
                 'session',
             ]);
             validateSessionAuthority(command.authority);
-            decodePersistedAuthSession(command.session);
+            requireIssueSessionLifecycle(
+                command.capturedAtEpochMs as number,
+                decodePersistedAuthSession(command.session),
+            );
             break;
         case 'logout-session':
             requireExactKeys(command, [

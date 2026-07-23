@@ -9,6 +9,7 @@ import type {
     RegisterAuthUserCommand,
 } from './auth-state-contracts.ts';
 import { AuthMutationRejectedError } from './auth-state-errors.ts';
+import { requireIssueSessionLifecycle } from './auth-session-lifecycle.ts';
 import {
     validateAgentIssueRead,
     validateConsumeAgentTicketRead,
@@ -40,6 +41,10 @@ export function validateAuthMutation(
             );
             return;
         case 'issue-session':
+            requireIssueSessionLifecycle(
+                command.capturedAtEpochMs,
+                computed.sessions[0]?.session ?? command.session,
+            );
             validateIssueSessionRead(
                 computed.sessions[0]?.session,
                 read as Extract<AuthMutationRead, { kind: 'issue-session' }>,
