@@ -1,5 +1,9 @@
 import { parse } from '@babel/parser';
-import { readCapabilityExports } from './mutation-boundary-capability-exports.ts';
+import {
+  type CapabilityTypeResolver,
+  type CapabilityTypeShape,
+  createCapabilityTypeResolver,
+} from './mutation-boundary-capability-types.ts';
 
 const READ_ONLY_CAPABILITY_METHODS = new Map<string, ReadonlySet<string>>([
   [
@@ -35,26 +39,21 @@ export function findCapabilityMutationCalls(
     sourceFilename: filePath,
     plugins: ['typescript', 'importAttributes'],
   }).program;
-  const imports = new Map<string, string>();
-  const namespaces = new Map<string, ReadonlySet<string>>();
+  const resolver = createCapabilityTypeResolver(program as AstNode, filePath);
   const receivers = new Map<string, string>();
+  const methods = new Map<string, Readonly<{ capability: string; method: string }>>();
   const strings = new Map<string, string>();
   const calls = new Set<string>();
-  walk(program, (node) => {
-    if (node.type === 'ImportDeclaration') {
-      readCapabilityImport(node, imports, namespaces);
-    }
-  });
   for (let pass = 0; pass < 8; pass += 1) {
     let changed = false;
     walk(program, (node) => {
-      changed = bindCapabilityNode(node, imports, namespaces, receivers, strings) || changed;
+      changed = bindCapabilityNode(node, resolver, receivers, methods, strings) || changed;
     });
     if (!changed) break;
   }
   walk(program, (node) => {
     if (node.type === 'CallExpression' || node.type === 'OptionalCallExpression') {
-      const call = readCapabilityCall(node.callee, imports, namespaces, receivers, strings);
+      const call = readCapabilityCall(node.callee, receivers, methods, strings);
       if (call && !READ_ONLY_CAPABILITY_METHODS.get(call.capability)?.has(call.method)) {
         calls.add(`${call.capability}.${call.method}`);
       }
@@ -63,30 +62,11 @@ export function findCapabilityMutationCalls(
   return [...calls].toSorted();
 }
 
-function readCapabilityImport(
-  node: AstNode,
-  imports: Map<string, string>,
-  namespaces: Map<string, ReadonlySet<string>>,
-): void {
-  const source = readString(node.source);
-  const exported = readCapabilityExports(source);
-  if (exported.size === 0) return;
-  for (const specifier of asNodes(node.specifiers)) {
-    const local = readName(specifier.local);
-    if (specifier.type === 'ImportNamespaceSpecifier') {
-      if (local) namespaces.set(local, exported);
-      continue;
-    }
-    const imported = readName(specifier.imported);
-    if (local && exported.has(imported)) imports.set(local, imported);
-  }
-}
-
 function bindCapabilityNode(
   node: AstNode,
-  imports: Map<string, string>,
-  namespaces: Map<string, ReadonlySet<string>>,
+  resolver: CapabilityTypeResolver,
   receivers: Map<string, string>,
+  methods: Map<string, Readonly<{ capability: string; method: string }>>,
   strings: Map<string, string>,
 ): boolean {
   if (node.type === 'VariableDeclarator') {
@@ -97,9 +77,9 @@ function bindCapabilityNode(
       id?.typeAnnotation,
       init,
       '',
-      imports,
-      namespaces,
+      resolver,
       receivers,
+      methods,
     );
     return bindString(id, init, strings) || receiverChanged;
   }
@@ -109,9 +89,9 @@ function bindCapabilityNode(
       undefined,
       asNode(node.right),
       '',
-      imports,
-      namespaces,
+      resolver,
       receivers,
+      methods,
     );
   }
   if (isFunction(node)) {
@@ -126,9 +106,9 @@ function bindCapabilityNode(
         parameterProperty && node.type === 'ClassMethod' && node.kind === 'constructor'
           ? 'this.'
           : '',
-        imports,
-        namespaces,
+        resolver,
         receivers,
+        methods,
       ) || changed;
     }
     return changed;
@@ -138,8 +118,8 @@ function bindCapabilityNode(
     node.type === 'PropertyDefinition'
   ) {
     const name = readPropertyName(node.key, false, new Map());
-    const capability = readCapabilityType(node.typeAnnotation, imports, namespaces);
-    return name && capability ? setIfChanged(receivers, `this.${name}`, capability) : false;
+    const shape = resolver.resolveType(node.typeAnnotation);
+    return name && shape ? bindShape(receivers, `this.${name}`, shape) : false;
   }
   return false;
 }
@@ -149,24 +129,30 @@ function bindPattern(
   typeAnnotation: unknown,
   value: AstNode | undefined,
   additionalPrefix: string,
-  imports: Map<string, string>,
-  namespaces: Map<string, ReadonlySet<string>>,
+  resolver: CapabilityTypeResolver,
   receivers: Map<string, string>,
+  methods: Map<string, Readonly<{ capability: string; method: string }>>,
 ): boolean {
   if (!pattern) return false;
   if (pattern.type === 'MemberExpression' || pattern.type === 'OptionalMemberExpression') {
     const target = readExpressionPath(pattern);
     const source = readExpressionPath(value);
-    const capability = receivers.get(source) ||
-      readConstructedCapability(value, imports, namespaces);
-    return target && capability ? setIfChanged(receivers, target, capability) : false;
+    const shape = resolver.resolveExpression(value);
+    const capability = receivers.get(source) || shape?.capability;
+    let changed = target && capability ? setIfChanged(receivers, target, capability) : false;
+    if (target && shape) changed = bindShape(receivers, target, shape) || changed;
+    const method = methods.get(source);
+    return target && method ? setMethodIfChanged(methods, target, method) || changed : changed;
   }
   if (pattern.type === 'Identifier') {
     const name = readName(pattern);
     const source = readExpressionPath(value);
-    const capability = readCapabilityType(typeAnnotation, imports, namespaces) ||
-      readConstructedCapability(value, imports, namespaces) || receivers.get(source) || '';
+    const shape = resolver.resolveType(typeAnnotation) ?? resolver.resolveExpression(value);
+    const capability = shape?.capability || receivers.get(source) || '';
     let changed = capability ? setIfChanged(receivers, name, capability) : false;
+    if (shape) changed = bindShape(receivers, name, shape) || changed;
+    const method = methods.get(source);
+    if (method) changed = setMethodIfChanged(methods, name, method) || changed;
     if (additionalPrefix && capability) {
       changed = setIfChanged(receivers, `${additionalPrefix}${name}`, capability) || changed;
     }
@@ -188,22 +174,43 @@ function bindPattern(
       asNode(pattern.left)?.typeAnnotation ?? typeAnnotation,
       asNode(pattern.right),
       additionalPrefix,
-      imports,
-      namespaces,
+      resolver,
       receivers,
+      methods,
     );
   }
   if (pattern.type !== 'ObjectPattern') return false;
-  const memberTypes = readObjectCapabilityTypes(typeAnnotation, imports, namespaces);
+  const shape = resolver.resolveType(typeAnnotation) ?? resolver.resolveExpression(value);
   const source = readExpressionPath(value);
+  return bindObjectPattern(pattern, shape, source, receivers, methods);
+}
+
+function bindObjectPattern(
+  pattern: AstNode,
+  shape: CapabilityTypeShape | undefined,
+  source: string,
+  receivers: Map<string, string>,
+  methods: Map<string, Readonly<{ capability: string; method: string }>>,
+): boolean {
+  const sourceCapability = receivers.get(source) ?? shape?.capability;
   let changed = false;
   for (const property of asNodes(pattern.properties)) {
     if (property.type !== 'ObjectProperty') continue;
     const propertyName = readPropertyName(property.key, property.computed === true, new Map());
-    const target = asNode(property.value);
-    const capability = memberTypes.get(propertyName) || receivers.get(`${source}.${propertyName}`);
-    if (target?.type === 'Identifier' && capability) {
-      changed = setIfChanged(receivers, readName(target), capability) || changed;
+    const rawTarget = asNode(property.value);
+    const target = rawTarget?.type === 'AssignmentPattern' ? asNode(rawTarget.left) : rawTarget;
+    const memberShape = shape?.members?.get(propertyName);
+    const memberSource = source ? `${source}.${propertyName}` : '';
+    const capability = memberShape?.capability || receivers.get(memberSource);
+    if (target?.type === 'Identifier') {
+      const targetName = readName(target);
+      if (capability) changed = setIfChanged(receivers, targetName, capability) || changed;
+      if (memberShape) changed = bindShape(receivers, targetName, memberShape) || changed;
+      const method = methods.get(memberSource) ??
+        (sourceCapability ? { capability: sourceCapability, method: propertyName } : undefined);
+      if (method) changed = setMethodIfChanged(methods, targetName, method) || changed;
+    } else if (target?.type === 'ObjectPattern') {
+      changed = bindObjectPattern(target, memberShape, memberSource, receivers, methods) || changed;
     }
   }
   return changed;
@@ -219,85 +226,33 @@ function bindString(
   return literal ? setIfChanged(strings, readName(pattern), literal) : false;
 }
 
-function readObjectCapabilityTypes(
-  value: unknown,
-  imports: Map<string, string>,
-  namespaces: Map<string, ReadonlySet<string>>,
-): ReadonlyMap<string, string> {
-  const result = new Map<string, string>();
-  const node = unwrapType(value);
-  if (node?.type !== 'TSTypeLiteral') return result;
-  for (const member of asNodes(node.members)) {
-    if (member.type !== 'TSPropertySignature') continue;
-    const name = readPropertyName(member.key, member.computed === true, new Map());
-    const capability = readCapabilityType(member.typeAnnotation, imports, namespaces);
-    if (name && capability) result.set(name, capability);
-  }
-  return result;
-}
-
-function readCapabilityType(
-  value: unknown,
-  imports: Map<string, string>,
-  namespaces: Map<string, ReadonlySet<string>>,
-): string {
-  const node = unwrapType(value);
-  if (node?.type !== 'TSTypeReference') return '';
-  const typeName = asNode(node.typeName);
-  if (typeName?.type === 'Identifier') return imports.get(readName(typeName)) ?? '';
-  if (typeName?.type !== 'TSQualifiedName') return '';
-  const capability = readName(typeName.right);
-  return namespaces.get(readName(typeName.left))?.has(capability) === true ? capability : '';
-}
-
-function readConstructedCapability(
-  value: unknown,
-  imports: Map<string, string>,
-  namespaces: Map<string, ReadonlySet<string>>,
-): string {
-  const node = asNode(value);
-  if (node?.type !== 'NewExpression') return '';
-  const callee = asNode(node.callee);
-  if (callee?.type === 'Identifier') return imports.get(readName(callee)) ?? '';
-  if (callee?.type !== 'MemberExpression') return '';
-  const capability = readName(callee.property);
-  return namespaces.get(readName(callee.object))?.has(capability) === true ? capability : '';
-}
-
 function readCapabilityCall(
   value: unknown,
-  imports: Map<string, string>,
-  namespaces: Map<string, ReadonlySet<string>>,
   receivers: Map<string, string>,
+  methods: Map<string, Readonly<{ capability: string; method: string }>>,
   strings: Map<string, string>,
 ): Readonly<{ capability: string; method: string }> | undefined {
   const callee = asNode(value);
+  if (callee?.type === 'Identifier') return methods.get(readName(callee));
   if (callee?.type !== 'MemberExpression' && callee?.type !== 'OptionalMemberExpression') {
     return undefined;
   }
   const method = readPropertyName(callee.property, callee.computed === true, strings);
   const object = asNode(callee.object);
-  const capability = receivers.get(readExpressionPath(object)) ||
-    readConstructedCapability(object, imports, namespaces);
+  const capability = receivers.get(readExpressionPath(object));
   return capability && method ? { capability, method } : undefined;
-}
-
-function unwrapType(value: unknown): AstNode | undefined {
-  let node = asNode(value);
-  if (node?.type === 'TSTypeAnnotation') node = asNode(node.typeAnnotation);
-  if (node?.type === 'TSTypeReference') {
-    const typeName = asNode(node.typeName);
-    const parameters = asNodes(
-      (asNode(node.typeParameters) ?? asNode(node.typeArguments))?.params,
-    );
-    if (readName(typeName) === 'Readonly' && parameters[0]) return unwrapType(parameters[0]);
-  }
-  return node;
 }
 
 function readExpressionPath(value: unknown): string {
   const node = asNode(value);
   if (!node) return '';
+  if (
+    node.type === 'TSAsExpression' || node.type === 'TSTypeAssertion' ||
+    node.type === 'TypeCastExpression' || node.type === 'TSNonNullExpression' ||
+    node.type === 'ParenthesizedExpression'
+  ) {
+    return readExpressionPath(node.expression);
+  }
   if (node.type === 'Identifier' || node.type === 'ThisExpression') {
     return node.type === 'ThisExpression' ? 'this' : readName(node);
   }
@@ -349,6 +304,34 @@ function isFunction(node: AstNode): boolean {
 function setIfChanged(map: Map<string, string>, key: string, value: string): boolean {
   if (!key || !value || map.get(key) === value) return false;
   map.set(key, value);
+  return true;
+}
+
+function bindShape(
+  receivers: Map<string, string>,
+  prefix: string,
+  shape: CapabilityTypeShape,
+): boolean {
+  let changed = shape.capability ? setIfChanged(receivers, prefix, shape.capability) : false;
+  for (const [name, member] of shape.members ?? []) {
+    changed = bindShape(receivers, `${prefix}.${name}`, member) || changed;
+  }
+  return changed;
+}
+
+function setMethodIfChanged(
+  methods: Map<string, Readonly<{ capability: string; method: string }>>,
+  key: string,
+  value: Readonly<{ capability: string; method: string }>,
+): boolean {
+  const current = methods.get(key);
+  if (
+    !key ||
+    current?.capability === value.capability && current.method === value.method
+  ) {
+    return false;
+  }
+  methods.set(key, value);
   return true;
 }
 

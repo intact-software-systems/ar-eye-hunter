@@ -6,6 +6,10 @@ import {
   hasReachableAstNode,
   type MutationRoutingAstNode as AstNode,
 } from './mutation-routing-call-graph.ts';
+import {
+  hasLiveAppInboxRegistration,
+  type MutationRoutingProgramLoader,
+} from './mutation-routing-live-registration.ts';
 
 export function findMutationRouteReachabilityIssues(
   item: MutationRouteInventoryEntry,
@@ -14,6 +18,7 @@ export function findMutationRouteReachabilityIssues(
   ownerSource: AstNode,
   containsMarker: (node: AstNode, marker: string) => boolean,
   matchesMarker: (node: AstNode, marker: string) => boolean,
+  loadProgram: MutationRoutingProgramLoader,
 ): readonly string[] {
   const routeKey = `${item.transport}:${item.entrypoint}:${item.type}`;
   const handlers = findRegisteredHandlers(item, source, containsMarker, matchesMarker);
@@ -36,10 +41,11 @@ export function findMutationRouteReachabilityIssues(
   if (
     !hasOwnerDispatch(
       ownerSource,
+      item.ownerSourcePath,
       item.type,
       ownerMethod(item),
-      containsMarker,
       matchesMarker,
+      loadProgram,
     )
   ) {
     issues.push(
@@ -177,10 +183,11 @@ interface ReachableHandoff {
 
 function hasOwnerDispatch(
   program: AstNode,
+  filePath: string,
   type: AppInboxType,
   method: string,
-  containsMarker: (node: AstNode, marker: string) => boolean,
   matchesMarker: (node: AstNode, marker: string) => boolean,
+  loadProgram: MutationRoutingProgramLoader,
 ): boolean {
   const calls = findAll(
     program,
@@ -192,9 +199,13 @@ function hasOwnerDispatch(
     const typeArgument = arguments_[0];
     const handler = arguments_.at(-1);
     const exactType = matchesMarker(typeArgument ?? call, `AppInboxType.${type}`);
-    const loopType = typeArgument?.type === 'Identifier' && containsMarker(
+    const loopType = !!typeArgument && hasLiveAppInboxRegistration(
       program,
-      `AppInboxType.${type}`,
+      filePath,
+      call,
+      typeArgument,
+      type,
+      loadProgram,
     );
     if (!handler || (!exactType && !loopType)) return false;
     const roots = handler.type === 'Identifier'
@@ -204,7 +215,7 @@ function hasOwnerDispatch(
       hasReachableAstNode(
         program,
         root,
-        (node) => readMemberName(asNode(node.callee)) === method,
+        (node) => readCallName(asNode(node.callee)) === method,
       )
     );
   });

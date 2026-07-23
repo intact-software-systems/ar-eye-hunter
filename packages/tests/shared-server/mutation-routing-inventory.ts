@@ -83,7 +83,7 @@ HTTP\tPUT ${GROUP_ITEM_ROUTE}/sessions/:sessionId\tGROUP_PRESENCE_CONNECT\tg\t/s
 HTTP\tPOST ${GROUP_ITEM_ROUTE}/sessions/:sessionId/heartbeat\tGROUP_PRESENCE_HEARTBEAT\tg\t/sessions/:sessionId/heartbeat\tg\tAppInboxType.GROUP_PRESENCE_HEARTBEAT\tG\tAppGroupInboxService.processMutation
 HTTP\tPOST ${GROUP_ITEM_ROUTE}/sessions/:sessionId/disconnect\tGROUP_PRESENCE_DISCONNECT\tg\t/sessions/:sessionId/disconnect\tg\tAppInboxType.GROUP_PRESENCE_DISCONNECT\tG\tAppGroupInboxService.processMutation
 MAINTENANCE\tgroup presence expiry reconciliation\tGROUP_PRESENCE_EXPIRE\te\tenqueuePresenceExpiryReconciliation\te\tenqueueExpiredPresenceSessions\tG\tAppGroupInboxService.processMutation
-WS_LIFECYCLE\twebsocket onClose group cleanup\tGROUP_PRESENCE_SESSION_CLEANUP\tl\tonClose:\tl\tenqueueGroupSessionCleanup\tG\tAppGroupInboxService.processMutation
+WS_LIFECYCLE\twebsocket onClose group cleanup\tGROUP_PRESENCE_SESSION_CLEANUP\tl\tonClose:\tl\tenqueueGroupSessionCleanup\tG\tAppGroupInboxService.processGroupSessionCleanup
 HTTP\tPUT ${TOPOLOGY_ROUTE}/config\tTOPOLOGY_CONFIG_PUT\tt\t/topology/config\tt\tAppInboxType.TOPOLOGY_CONFIG_PUT\tG\tAppGroupInboxService.processTopologyConfigMutation
 HTTP\tDELETE ${TOPOLOGY_ROUTE}/config\tTOPOLOGY_CONFIG_DELETE\tt\t/topology/config\tt\tAppInboxType.TOPOLOGY_CONFIG_DELETE\tG\tAppGroupInboxService.processTopologyConfigMutation
 HTTP\tPUT ${TOPOLOGY_ROUTE}/override\tTOPOLOGY_OVERRIDE_PUT\tt\t/topology/override\tt\tAppInboxType.TOPOLOGY_OVERRIDE_PUT\tG\tAppGroupInboxService.processTopologyConfigMutation
@@ -243,7 +243,7 @@ function checkOwnerMethod(
 ): void {
   const method = item.owner.split('.').at(-1) ?? '';
   const program = sources.readProgram(issues, item.ownerSourcePath, 'owner', item);
-  if (program && !hasClassMethod(program, method)) {
+  if (program && !hasOwnerCallable(program, method)) {
     issues.push(`${key(item)} owner method is absent from ${item.ownerSourcePath}`);
   }
 }
@@ -297,6 +297,7 @@ function checkRegisteredHandlerCallChain(
     owner,
     hasExactMarker,
     hasDirectExactMarker,
+    (filePath) => sources.readProgram(issues, filePath, 'owner dependency', item),
   ));
 }
 
@@ -343,6 +344,16 @@ function hasClassMethod(program: AstNode, method: string): boolean {
     (node) =>
       (node.type === 'ClassMethod' || node.type === 'ClassPrivateMethod') &&
       readIdentifier(asNode(node.key)) === method,
+  );
+}
+
+function hasOwnerCallable(program: AstNode, method: string): boolean {
+  return hasClassMethod(program, method) || someNode(
+    program,
+    (node) =>
+      node.type === 'ImportSpecifier' &&
+      (readIdentifier(asNode(node.local)) === method ||
+        readIdentifier(asNode(node.imported)) === method),
   );
 }
 
