@@ -15,7 +15,11 @@ import {
 } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
-import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+import {
+    AuthSessionRepository,
+    decodePersistedAuthSession,
+} from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+import { AuthUserRepository } from '@shared-server/rallar-system/repositories/AuthUserRepository.ts';
 import {
     AUTH_STATE_APP_INBOX_TOPIC,
     AppAuthInboxService,
@@ -24,6 +28,7 @@ import {
     captureAuthMutationFacts,
     createAuthMutationService,
     decodeAuthMutationCommand,
+    decodeAuthMutationResult,
     type IssueAuthSessionCommand,
     type IssueAuthWsTicketCommand,
     type ConsumeAuthWsTicketCommand,
@@ -50,6 +55,167 @@ describe('AppAuthInboxService architecture', () => {
         expect(AUTH_INBOX_TYPES.map((type) => AppInboxType[type])).toEqual(
             AUTH_INBOX_TYPES,
         );
+    });
+
+    it('strictly decodes token-free persisted auth sessions', () => {
+        const persisted = {
+            clientId: 'client-1',
+            username: 'alice',
+            sessionId: 'session-1',
+            accessTokenDigest: 'digest-1',
+            issuedAtEpochMs: 1_000,
+            expiresAtEpochMs: 2_000,
+        };
+        expect(decodePersistedAuthSession(persisted)).toEqual(persisted);
+        for (const invalid of [
+            { ...persisted, accessToken: 'plaintext-token' },
+            { ...persisted, credentialSeed: 'reconstructable' },
+            { ...persisted, accessTokenDigest: 12 },
+            { ...persisted, expiresAtEpochMs: Number.POSITIVE_INFINITY },
+            Object.fromEntries(Object.entries(persisted).filter(([key]) =>
+                key !== 'accessTokenDigest'
+            )),
+        ]) {
+            expect(() => decodePersistedAuthSession(invalid)).toThrow(TypeError);
+        }
+    });
+
+    it('rejects malformed legacy plaintext session rows instead of widening them', async () => {
+        const runtime = new FakeRuntimeStateRepository();
+        const repository = new AuthSessionRepository(runtime);
+        const expiresAtEpochMs = Date.now() + 60_000;
+        const accessToken = 'legacy-malformed-token';
+        const malformed = JSON.stringify({
+            clientId: 'legacy-client',
+            username: 'legacy-user',
+            sessionId: 'legacy-malformed-session',
+            accessToken,
+            issuedAtEpochMs: 1_000,
+            expiresAtEpochMs,
+            credentialSeed: 'unexpected-reconstruction-material',
+        });
+        await runtime.upsert(
+            'auth-sessions:by-session',
+            'session=legacy-malformed-session',
+            malformed,
+            expiresAtEpochMs,
+        );
+        await runtime.upsert(
+            'auth-sessions:by-token',
+            `token=${encodeURIComponent(accessToken)}`,
+            malformed,
+            expiresAtEpochMs,
+        );
+
+        await expect(repository.findBySessionId('legacy-malformed-session'))
+            .rejects.toThrow(TypeError);
+        await expect(repository.findByAccessToken(accessToken))
+            .rejects.toThrow(TypeError);
+        await expect(repository.findLegacySessionByAccessTokenDigestEntry(
+            await hashAuthSecret(accessToken),
+        )).rejects.toThrow(TypeError);
+    });
+
+    it('strictly decodes every durable auth result variant', () => {
+        const valid = [
+            {
+                clientId: 'client-1',
+                username: 'alice',
+                displayName: null,
+                registeredAtEpochMs: 1_000,
+            },
+            { loggedOut: true },
+            {
+                kind: 'session-issued',
+                clientId: 'client-1',
+                username: 'alice',
+                sessionId: 'session-1',
+                accessTokenDigest: 'digest-1',
+                issuedAtEpochMs: 1_000,
+                expiresAtEpochMs: 2_000,
+            },
+            {
+                kind: 'ws-ticket-issued',
+                ticketDigest: 'ticket-digest',
+                sessionId: 'session-1',
+                issuedAtEpochMs: 1_000,
+                expiresAtEpochMs: 2_000,
+            },
+            {
+                kind: 'ws-ticket-consumed',
+                clientId: 'client-1',
+                username: 'alice',
+                sessionId: 'session-1',
+                accessTokenDigest: 'digest-1',
+                issuedAtEpochMs: 1_000,
+                expiresAtEpochMs: 2_000,
+            },
+            {
+                kind: 'agent-ticket-consumed',
+                clientId: 'client-1',
+                username: 'alice',
+                sessionId: 'session-1',
+                accessTokenDigest: 'digest-1',
+                issuedAtEpochMs: 1_000,
+                expiresAtEpochMs: 2_000,
+            },
+            {
+                kind: 'agent-tickets-issued',
+                tickets: [{
+                    agentId: 'agent-1',
+                    ticketDigest: 'ticket-digest',
+                    sessionId: 'agent-session-1',
+                    issuedAtEpochMs: 1_000,
+                    expiresAtEpochMs: 2_000,
+                }],
+            },
+        ];
+        for (const result of valid) {
+            expect(decodeAuthMutationResult(result)).toEqual(result);
+        }
+        for (const invalid of [
+            { ...valid[2], accessToken: 'plaintext-token' },
+            { ...valid[2], unexpected: true },
+            { kind: 'agent-tickets-issued', tickets: [{ ...valid[6].tickets![0], ticket: 'x' }] },
+            { kind: 'agent-tickets-issued', tickets: [null] },
+            { ...valid[3], expiresAtEpochMs: Number.NaN },
+            Object.create({ kind: 'session-issued' }),
+        ]) {
+            expect(() => decodeAuthMutationResult(invalid)).toThrow(TypeError);
+        }
+    });
+
+    it('requires an exact registered-user authority on session issuance commands', () => {
+        const command = {
+            version: 1,
+            kind: 'issue-session',
+            requestId: 'session-authority-command',
+            capturedAtEpochMs: 1_000,
+            authority: {
+                kind: 'registered-user',
+                clientId: 'client-1',
+                normalizedUsername: 'alice',
+                userRevision: 3,
+            },
+            session: {
+                clientId: 'client-1',
+                username: 'Alice',
+                sessionId: 'session-1',
+                accessTokenDigest: 'digest-1',
+                issuedAtEpochMs: 1_000,
+                expiresAtEpochMs: 2_000,
+            },
+        } as const;
+
+        expect(decodeAuthMutationCommand(command)).toEqual(command);
+        expect(() => decodeAuthMutationCommand({
+            ...command,
+            authority: {
+                kind: 'registered-user',
+                clientId: 'client-1',
+                normalizedUsername: 'alice',
+            },
+        })).toThrow(TypeError);
     });
 
     it('allows exactly one websocket-ticket consumer without a domain lock', async () => {
@@ -161,6 +327,11 @@ describe('AppAuthInboxService architecture', () => {
             kind: 'issue-session',
             requestId: 'issue-session-1',
             capturedAtEpochMs: 1_000,
+            authority: {
+                kind: 'static-client',
+                clientId: 'client-1',
+                normalizedUsername: 'alice',
+            },
             session: {
                 clientId: 'client-1',
                 username: 'alice',
@@ -191,6 +362,192 @@ describe('AppAuthInboxService architecture', () => {
         expect(resultEntry?.resource).toContain(command.session.accessTokenDigest);
     });
 
+    it('denies registered-user session issuance when the user is disabled after enqueue', async () => {
+        const queue = new TestResourceInbox();
+        const results = new TestResourceInboxResults();
+        const reader = new InboxQueueReader(queue);
+        const runtime = new FakeRuntimeStateRepository();
+        const credentialIssuer = createHmacAuthCredentialIssuer(
+            'disabled-user-secret-0123456789abcdef',
+        );
+        const service = new AppAuthInboxService(
+            reader,
+            queue as never,
+            results as never,
+            createAppInboxTestDatabase(queue, results, { runtimeRepository: runtime }),
+            createAuthMutationService({
+                runtimeRepository: runtime,
+                serviceId: 'auth-test-service',
+            }),
+            credentialIssuer,
+            'auth-test-service',
+        );
+        const user = {
+            clientId: 'client-disabled',
+            username: 'disabled-user',
+            normalizedUsername: 'disabled-user',
+            displayName: null,
+            passwordHash: 'password-hash',
+            passwordSalt: 'password-salt',
+            passwordAlgorithm: 'pbkdf2-sha256' as const,
+            passwordIterations: 120_000,
+            roles: ['member'],
+            status: 'active' as const,
+            createdAtEpochMs: 1_000,
+            updatedAtEpochMs: 1_000,
+        };
+        await new AuthUserRepository(runtime).putUser(user);
+        const pending = service.issueSession({
+            requestId: 'disabled-session-request',
+            capturedAtEpochMs: 2_000,
+            clientId: user.clientId,
+            username: user.username,
+            sessionId: 'disabled-session',
+            expiresAtEpochMs: Date.now() + 60_000,
+            authority: {
+                kind: 'registered-user',
+                clientId: user.clientId,
+                normalizedUsername: user.normalizedUsername,
+                userRevision: 0,
+            },
+        } as never);
+        await waitForQueuedEntry(queue);
+        await new AuthUserRepository(runtime).putUser({
+            ...user,
+            status: 'disabled',
+            updatedAtEpochMs: 1_001,
+        });
+        await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+
+        const result = await pending;
+        expect(result.left).toMatchObject({ status: 403 });
+        expect(await new AuthSessionRepository(runtime).findBySessionId('disabled-session'))
+            .toBeUndefined();
+    });
+
+    it('rereads registered-user policy after a conflict is released for retry', async () => {
+        const queue = new TestResourceInbox();
+        const results = new TestResourceInboxResults();
+        const reader = new InboxQueueReader(queue);
+        const runtime = new FakeRuntimeStateRepository();
+        const users = new AuthUserRepository(runtime);
+        const user = {
+            clientId: 'client-retry-disabled',
+            username: 'retry-disabled',
+            normalizedUsername: 'retry-disabled',
+            displayName: null,
+            passwordHash: 'password-hash',
+            passwordSalt: 'password-salt',
+            passwordAlgorithm: 'pbkdf2-sha256' as const,
+            passwordIterations: 120_000,
+            roles: ['member'],
+            status: 'active' as const,
+            createdAtEpochMs: 1_000,
+            updatedAtEpochMs: 1_000,
+        };
+        await users.putUser(user);
+        let conflictInjected = false;
+        let rollbackCount = 0;
+        runtime.beforeConditionalWrite = async (operation, namespace, key) => {
+            if (
+                !conflictInjected && operation === 'insertIfAbsent' &&
+                namespace === 'auth-sessions:by-token'
+            ) {
+                conflictInjected = true;
+                await runtime.upsert(
+                    namespace,
+                    key,
+                    JSON.stringify({ collision: true }),
+                    Date.now() + 60_000,
+                );
+            }
+        };
+        const database = createAppInboxTestDatabase(queue, results, {
+            runtimeRepository: runtime,
+            onTransactionRollback: () => {
+                rollbackCount += 1;
+            },
+        });
+        const service = new AppAuthInboxService(
+            reader,
+            queue as never,
+            results as never,
+            database,
+            createAuthMutationService({
+                runtimeRepository: runtime,
+                serviceId: 'auth-test-service',
+            }),
+            createHmacAuthCredentialIssuer(
+                'retry-disabled-secret-0123456789abcdef',
+            ),
+            'auth-test-service',
+        );
+        const userRead = vi.spyOn(runtime, 'findEntry');
+        const pending = service.issueSession({
+            requestId: 'retry-disabled-session-request',
+            capturedAtEpochMs: 2_000,
+            clientId: user.clientId,
+            username: user.username,
+            sessionId: 'retry-disabled-session',
+            expiresAtEpochMs: Date.now() + 60_000,
+            authority: {
+                kind: 'registered-user',
+                clientId: user.clientId,
+                normalizedUsername: user.normalizedUsername,
+                userRevision: 0,
+            },
+        });
+        await waitForQueuedEntry(queue);
+        await reader.dequeueInbox(
+            InboxQueueReader.INBOX_DEQUEUE_TYPES,
+            createResilience(100),
+        );
+        const [releasedForRetry] = await readEntries(queue);
+        expect(releasedForRetry).toMatchObject({
+            status: EntityStatus.RETRY,
+            dequeueAudit: { attempts: 1 },
+        });
+        await users.putUser({
+            ...user,
+            status: 'disabled',
+            updatedAtEpochMs: 1_001,
+        });
+        await new Promise((resolve) => setTimeout(resolve, 110));
+        await reader.dequeueInbox(
+            InboxQueueReader.INBOX_DEQUEUE_TYPES,
+            createResilience(),
+        );
+
+        const result = await pending;
+        const policyReads = userRead.mock.calls.filter(([namespace]) =>
+            namespace === 'auth-users:by-username' ||
+            namespace === 'auth-users:by-client-id'
+        );
+        expect(result.left).toMatchObject({ status: 403 });
+        expect(conflictInjected).toBe(true);
+        expect(rollbackCount).toBe(1);
+        expect(policyReads).toHaveLength(4);
+        const [failed] = await readEntries(queue);
+        expect(failed).toMatchObject({
+            status: EntityStatus.FAILED,
+            dequeueAudit: { attempts: 2 },
+        });
+        expect(results.allEntries()).toEqual([
+            expect.objectContaining({
+                status: EntityStatus.FAILED,
+                resource: expect.stringContaining('auth-mutation-rejected'),
+            }),
+        ]);
+        expect(results.allEntries()[0]?.resource).not.toContain('session-issued');
+        expect([...runtime.data.keys()].filter((key) =>
+            key.startsWith('auth-sessions:by-token:') ||
+            key.startsWith('auth-sessions:by-session:')
+        )).toEqual([]);
+        expect(await new AuthSessionRepository(runtime).findBySessionId(
+            'retry-disabled-session',
+        )).toBeUndefined();
+    });
+
     it('consumes bounded legacy plaintext ticket rows without queueing their credentials', async () => {
         const queue = new TestResourceInbox();
         const results = new TestResourceInboxResults();
@@ -215,7 +572,7 @@ describe('AppAuthInboxService architecture', () => {
             'auth-test-service',
         );
         const expiresAtEpochMs = Date.now() + 60_000;
-        const legacyAccessToken = 'legacy-access-token-plaintext';
+        const legacyAccessToken = await credentialIssuer.issueAccessToken('legacy-session');
         const session = {
             clientId: 'legacy-client',
             username: 'legacy-user',
@@ -312,18 +669,168 @@ describe('AppAuthInboxService architecture', () => {
         )).toBe(false);
     });
 
-    it('requires the configured HMAC secret to stay stable for ticket result replay', async () => {
-        const first = createHmacAuthCredentialIssuer(
+    it('fails durable result replay after the HMAC secret rotates', async () => {
+        const queue = new TestResourceInbox();
+        const results = new TestResourceInboxResults();
+        const reader = new InboxQueueReader(queue);
+        const runtime = new FakeRuntimeStateRepository();
+        const database = createAppInboxTestDatabase(queue, results, {
+            runtimeRepository: runtime,
+        });
+        const firstIssuer = createHmacAuthCredentialIssuer(
             'first-auth-secret-0123456789abcdef-extra',
         );
-        const second = createHmacAuthCredentialIssuer(
+        const rotatedIssuer = createHmacAuthCredentialIssuer(
             'second-auth-secret-0123456789abcdef-extra',
         );
-        const firstTicket = await first.issueWebSocketTicket('request-1', 'session-1');
-        const secondTicket = await second.issueWebSocketTicket('request-1', 'session-1');
-        expect(firstTicket).not.toBe(secondTicket);
-        expect(() => createHmacAuthCredentialIssuer('short-secret'))
-            .toThrow(/at least 32 characters/u);
+        const mutationService = createAuthMutationService({
+            runtimeRepository: runtime,
+            serviceId: 'auth-test-service',
+        });
+        const firstService = new AppAuthInboxService(
+            reader,
+            queue as never,
+            results as never,
+            database,
+            mutationService,
+            firstIssuer,
+            'auth-test-service',
+        );
+        const firstAccessToken = await firstIssuer.issueAccessToken('rotation-session');
+        const command: IssueAuthSessionCommand = {
+            version: 1,
+            kind: 'issue-session',
+            requestId: 'rotated-secret-replay',
+            capturedAtEpochMs: 1_000,
+            authority: {
+                kind: 'static-client',
+                clientId: 'rotation-client',
+                normalizedUsername: 'rotation-user',
+            },
+            session: {
+                clientId: 'rotation-client',
+                username: 'rotation-user',
+                sessionId: 'rotation-session',
+                accessTokenDigest: await hashAuthSecret(firstAccessToken),
+                issuedAtEpochMs: 1_000,
+                expiresAtEpochMs: Date.now() + 60_000,
+            },
+        };
+        const firstPending = firstService.processAuthCommandUntilCompletion(command);
+        await waitForQueuedEntry(queue);
+        await reader.dequeueInbox(
+            InboxQueueReader.INBOX_DEQUEUE_TYPES,
+            createResilience(),
+        );
+        const firstResult = await firstPending;
+        expect(firstResult.right).toBeDefined();
+
+        const rotatedService = new AppAuthInboxService(
+            reader,
+            queue as never,
+            results as never,
+            database,
+            mutationService,
+            rotatedIssuer,
+            'auth-test-service',
+        );
+        await expect(rotatedService.processAuthCommandUntilCompletion(command))
+            .rejects.toThrow(/digest differs/u);
+        const durableResources = [
+            ...(await readEntries(queue)).map((entry) => entry.resource),
+            ...results.allEntries().map((entry) => entry.resource),
+        ].join('\n');
+        expect(durableResources).not.toContain(firstAccessToken);
+        expect(durableResources).not.toContain(
+            await rotatedIssuer.issueAccessToken('rotation-session'),
+        );
+    });
+
+    it('fails closed when durable auth result rows are corrupted', async () => {
+        const queue = new TestResourceInbox();
+        const results = new TestResourceInboxResults();
+        const reader = new InboxQueueReader(queue);
+        const runtime = new FakeRuntimeStateRepository();
+        const credentialIssuer = createHmacAuthCredentialIssuer(
+            'corrupted-result-secret-0123456789abcdef',
+        );
+        const service = new AppAuthInboxService(
+            reader,
+            queue as never,
+            results as never,
+            createAppInboxTestDatabase(queue, results, {
+                runtimeRepository: runtime,
+            }),
+            createAuthMutationService({
+                runtimeRepository: runtime,
+                serviceId: 'auth-test-service',
+            }),
+            credentialIssuer,
+            'auth-test-service',
+        );
+        const accessToken = await credentialIssuer.issueAccessToken('corrupt-session');
+        const command: IssueAuthSessionCommand = {
+            version: 1,
+            kind: 'issue-session',
+            requestId: 'corrupt-result-replay',
+            capturedAtEpochMs: 1_000,
+            authority: {
+                kind: 'static-client',
+                clientId: 'corrupt-client',
+                normalizedUsername: 'corrupt-user',
+            },
+            session: {
+                clientId: 'corrupt-client',
+                username: 'corrupt-user',
+                sessionId: 'corrupt-session',
+                accessTokenDigest: await hashAuthSecret(accessToken),
+                issuedAtEpochMs: 1_000,
+                expiresAtEpochMs: Date.now() + 60_000,
+            },
+        };
+        const pending = service.processAuthCommandUntilCompletion(command);
+        await waitForQueuedEntry(queue);
+        await reader.dequeueInbox(
+            InboxQueueReader.INBOX_DEQUEUE_TYPES,
+            createResilience(),
+        );
+        expect((await pending).right).toBeDefined();
+        const [durableResult] = results.allEntries();
+        expect(durableResult).toBeDefined();
+
+        const injectedSecret = 'must-never-appear-in-error';
+        for (const corrupted of [
+            {
+                ...command.session,
+                kind: 'session-issued',
+                accessToken: injectedSecret,
+            },
+            {
+                clientId: command.session.clientId,
+                username: command.session.username,
+                sessionId: command.session.sessionId,
+                kind: 'session-issued',
+                issuedAtEpochMs: command.session.issuedAtEpochMs,
+                expiresAtEpochMs: command.session.expiresAtEpochMs,
+            },
+            {
+                ...command.session,
+                kind: 'session-issued',
+                expiresAtEpochMs: 'tomorrow',
+            },
+        ]) {
+            await results.replace({
+                ...durableResult!,
+                resource: JSON.stringify(corrupted),
+            });
+            try {
+                await service.processAuthCommandUntilCompletion(command);
+                throw new Error('Expected corrupted durable auth result to be rejected');
+            } catch (error) {
+                expect(error).toBeInstanceOf(TypeError);
+                expect(String(error)).not.toContain(injectedSecret);
+            }
+        }
     });
 
     it('routes registration, ticket issuance, agent batches, and logout through durable commands', async () => {
@@ -380,6 +887,12 @@ describe('AppAuthInboxService architecture', () => {
                 capturedAtEpochMs: now + 1,
                 clientId: 'client-registered',
                 username: 'registered-user',
+                authority: {
+                    kind: 'registered-user',
+                    clientId: 'client-registered',
+                    normalizedUsername: 'registered-user',
+                    userRevision: 0,
+                },
                 sessionId: 'session-registered',
                 expiresAtEpochMs: now + 60_000,
             }),
@@ -713,6 +1226,12 @@ describe('AppAuthInboxService architecture', () => {
             capturedAtEpochMs: issuedAtEpochMs,
             clientId: 'client-a',
             username: 'same-user',
+            authority: {
+                kind: 'registered-user',
+                clientId: 'client-a',
+                normalizedUsername: 'same-user',
+                userRevision: 0,
+            },
             sessionId: 'ticket-race-session',
             expiresAtEpochMs: now + 60_000,
         }), queue, reader, 3);
@@ -784,15 +1303,25 @@ class TestResourceInboxResults {
     }
 }
 
-function createResilience(): ResilienceDto {
+function createResilience(firstRetryDelayMs?: number): ResilienceDto {
     const duration = Temporal.Duration.from({ seconds: 10 });
-    return ResilienceDto.toResilienceDto(
+    const args = [
         new CircuitBreakerPolicy(10, duration, duration, duration),
         1,
         10,
         1,
         1,
-    );
+    ] as const;
+    if (firstRetryDelayMs === undefined) {
+        return ResilienceDto.toResilienceDto(...args);
+    }
+    return ResilienceDto.toResilienceDto(...args, 10, {
+        maxAttempts: 20,
+        delaysAfterAttemptMs: [firstRetryDelayMs],
+        maxDelayMs: firstRetryDelayMs,
+        jitterRatio: 0,
+        staleDueThresholdMs: 30_000,
+    });
 }
 
 async function readEntries(queue: InMemoryQueueBox): Promise<ResourceEntry[]> {

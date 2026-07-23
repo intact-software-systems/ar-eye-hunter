@@ -1,6 +1,10 @@
 import { Either } from '@shared/resilience/Either.ts';
 import type { GroupEvent, GroupPresenceSession } from '@shared/api/group-types.ts';
-import type { IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+import {
+    hashAuthSecret,
+    type IssuedAuthSession,
+    type PersistedAuthSession,
+} from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import { hashStateMutationCommand } from '@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts';
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
@@ -66,7 +70,7 @@ type TestGroupStateServiceDependencies =
 export function createTestGroupStateRuntime(
     dependencies: TestGroupStateServiceDependencies,
 ): TestGroupStateRuntime {
-    const issued = new Map<string, IssuedAuthSession>();
+    const issued = new Map<string, PersistedAuthSession>();
     const now = dependencies.now ?? (() => Date.now());
     const randomId = dependencies.randomId ?? (() => crypto.randomUUID());
     let testRequestSequence = 0;
@@ -91,7 +95,14 @@ export function createTestGroupStateRuntime(
         authority: IssuedAuthSession,
         receiptOnly: boolean,
     ): Promise<unknown> => {
-        issued.set(authority.sessionId, authority);
+        issued.set(authority.sessionId, {
+            clientId: authority.clientId,
+            username: authority.username,
+            sessionId: authority.sessionId,
+            accessTokenDigest: await hashAuthSecret(authority.accessToken),
+            issuedAtEpochMs: authority.issuedAtEpochMs,
+            expiresAtEpochMs: authority.expiresAtEpochMs,
+        });
         const prepared = await durable.prepareMutation(descriptor, authority);
         let computed: GroupMutationComputed | undefined;
         for (let attempt = 1; attempt <= 3; attempt += 1) {

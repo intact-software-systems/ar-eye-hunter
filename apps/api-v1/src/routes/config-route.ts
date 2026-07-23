@@ -115,6 +115,7 @@ export function init(
                                         capturedAtEpochMs: issuedAtEpochMs,
                                         clientId: loginResponse.clientId,
                                         username: loginResponse.username,
+                                        authority: loginResponse.authority,
                                         sessionId: deps.createTokenId(),
                                         expiresAtEpochMs: issuedAtEpochMs + AUTH_SESSION_TTL_MS,
                                     }),

@@ -2,10 +2,12 @@ import type {
     ALInboundAdmissionBackend,
     ALInboundAdmissionWriteContext,
 } from '@shared/alm/ALInboundAdmissionStore.ts';
+import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
 import type {
     RuntimeStateOptimisticTransactionalRepositoryLike,
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import { PSqlAdmissionMutationCollector } from './PSqlAdmissionMutationCollector.ts';
+import { RuntimeStateWriteConflictError } from '../../runtime-state/optimistic-runtime-state-write.ts';
 
 export class PSqlInboundAdmissionBackend implements ALInboundAdmissionBackend {
     constructor(
@@ -44,7 +46,17 @@ export class PSqlInboundAdmissionBackend implements ALInboundAdmissionBackend {
             },
             remove: async (key) => await collector.remove(key),
         });
-        await collector.apply(collector.mutations());
+        try {
+            await collector.apply(collector.mutations());
+        } catch (error) {
+            if (error instanceof RuntimeStateWriteConflictError) {
+                throw new ALAdmissionBackendConflictError(
+                    'Inbound admission apply conflict',
+                    { cause: error },
+                );
+            }
+            throw error;
+        }
         return result;
     }
 }

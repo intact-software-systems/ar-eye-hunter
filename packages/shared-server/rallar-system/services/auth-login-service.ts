@@ -4,10 +4,12 @@ import {
     AuthUserRepository,
     normalizeUsername,
 } from '../repositories/AuthUserRepository.ts';
+import type { IssueAuthSessionCommand } from './auth-state-mutations.ts';
 
 export type AuthenticatedUserIdentity = Readonly<{
     clientId: string;
     username: string;
+    authority: IssueAuthSessionCommand['authority'];
 }>;
 
 export type LoginClientData = Readonly<{
@@ -31,15 +33,24 @@ export async function authenticateAuthUser(
     loginRequest: LoginRequest,
     options: LoginAuthUserOptions,
 ): Promise<AuthenticatedUserIdentity | undefined> {
-    const registeredUser = await options.userRepository.findByUsername(loginRequest.username);
+    const normalizedUsername = normalizeUsername(loginRequest.username);
+    const registeredUser = await options.userRepository.findByNormalizedUsernameEntry(
+        normalizedUsername,
+    );
     if (registeredUser) {
         if (
-            registeredUser.status !== 'active' ||
-            !(await verifyPassword(loginRequest.password, registeredUser))
+            registeredUser.value.status !== 'active' ||
+            !(await verifyPassword(loginRequest.password, registeredUser.value))
         ) return undefined;
         return {
-            clientId: registeredUser.clientId,
-            username: registeredUser.username,
+            clientId: registeredUser.value.clientId,
+            username: registeredUser.value.username,
+            authority: {
+                kind: 'registered-user',
+                clientId: registeredUser.value.clientId,
+                normalizedUsername: registeredUser.value.normalizedUsername,
+                userRevision: registeredUser.entry.revision,
+            },
         };
     }
     return authenticateStaticClient(loginRequest, options.staticClients ?? []);
@@ -89,6 +100,11 @@ function authenticateStaticClient(
             return {
                 clientId: client.clientId,
                 username: client.username,
+                authority: {
+                    kind: 'static-client',
+                    clientId: client.clientId,
+                    normalizedUsername,
+                },
             };
         }
     }

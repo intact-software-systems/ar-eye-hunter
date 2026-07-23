@@ -52,7 +52,11 @@ import {
 } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import type { RallarTimingSink } from './timing.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import type { IssuedAuthSession } from '../repositories/AuthSessionRepository.ts';
+import {
+    hashAuthSecret,
+    type IssuedAuthSession,
+    type PersistedAuthSession,
+} from '../repositories/AuthSessionRepository.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import {
@@ -881,7 +885,7 @@ export class AppGroupInboxService extends AppInboxService {
     private async requireCurrentTopologySession(
         command: TopologyAppInboxCommand,
         claimed: IssuedAuthSession,
-    ): Promise<IssuedAuthSession> {
+    ): Promise<PersistedAuthSession> {
         const session = await this.groupStateService.readIssuedAuthSession(
             command.actor.sessionId,
         );
@@ -893,7 +897,7 @@ export class AppGroupInboxService extends AppInboxService {
             session.sessionId !== claimed.sessionId ||
             session.issuedAtEpochMs !== claimed.issuedAtEpochMs ||
             session.expiresAtEpochMs !== claimed.expiresAtEpochMs ||
-            session.accessToken !== claimed.accessToken ||
+            session.accessTokenDigest !== await hashAuthSecret(claimed.accessToken) ||
             session.expiresAtEpochMs <= this.nowEpochMs()
         ) {
             throw new GroupMutationAuthorizationError(
@@ -1604,7 +1608,7 @@ function toRtcRttAppInboxResult(
 }
 
 async function createTopologyMutationAuthorityProof(
-    session: IssuedAuthSession,
+    session: IssuedAuthSession | PersistedAuthSession,
     commandHash: string,
 ): Promise<TopologyMutationAuthorityProof> {
     const proof = {
@@ -1617,7 +1621,11 @@ async function createTopologyMutationAuthorityProof(
     } as const;
     const key = await crypto.subtle.importKey(
         'raw',
-        new TextEncoder().encode(session.accessToken),
+        new TextEncoder().encode(
+            'accessTokenDigest' in session
+                ? session.accessTokenDigest
+                : await hashAuthSecret(session.accessToken),
+        ),
         { name: 'HMAC', hash: 'SHA-256' },
         false,
         ['sign'],

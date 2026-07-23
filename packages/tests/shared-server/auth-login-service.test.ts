@@ -55,7 +55,16 @@ describe('auth login service', () => {
             { userRepository },
         );
 
-        expect(first).toEqual({ clientId: 'client-1', username: 'runtime-user' });
+        expect(first).toEqual({
+            clientId: 'client-1',
+            username: 'runtime-user',
+            authority: {
+                kind: 'registered-user',
+                clientId: 'client-1',
+                normalizedUsername: 'runtime-user',
+                userRevision: 0,
+            },
+        });
         expect(second).toEqual(first);
         expect(first).not.toHaveProperty('sessionId');
         expect(first).not.toHaveProperty('accessToken');
@@ -104,6 +113,11 @@ describe('auth login service', () => {
         ).resolves.toEqual({
             clientId: 'static-admin',
             username: 'Admin',
+            authority: {
+                kind: 'static-client',
+                clientId: 'static-admin',
+                normalizedUsername: 'admin',
+            },
         });
     });
 

@@ -29,6 +29,7 @@ import { IndexedDbStringPersistenceProvider } from '../persistence/IndexedDbStri
 import { openIndexedDbWithStore } from '../persistence/openIndexedDb.ts';
 import type { ResourceEntry } from '../queuebox/ResourceEntry.ts';
 import type { ALBufferedOrderedMessageSnapshot } from './ALRuntimeStateStores.ts';
+import { ALAdmissionBackendConflictError } from './ALAdmissionBackendConflictError.ts';
 import type { ALRuntimeStoreRetentionConfig, NormalizedALRuntimeStoreRetentionConfig } from './ALStoreRetention.ts';
 import {
     normalizeALRuntimeStoreRetention,
@@ -687,25 +688,30 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
             return 'committed';
         }
 
-        return await this.backend.write(async tx => {
-            const current = await tx.get<ALVersionedClientRecord>(this.toVersionKey(bundle.senderId));
-            const currentVersion = current?.version;
-            if (currentVersion !== bundle.expectedVersion) {
-                return 'conflict';
-            }
+        try {
+            return await this.backend.write(async tx => {
+                const current = await tx.get<ALVersionedClientRecord>(this.toVersionKey(bundle.senderId));
+                const currentVersion = current?.version;
+                if (currentVersion !== bundle.expectedVersion) {
+                    return 'conflict';
+                }
 
-            for (const mutation of bundle.mutations) {
-                await this.applyMutation(tx, mutation);
-            }
+                for (const mutation of bundle.mutations) {
+                    await this.applyMutation(tx, mutation);
+                }
 
-            for (const effect of bundle.durableEffects) {
-                await this.persistEffect(tx, effect);
-            }
+                for (const effect of bundle.durableEffects) {
+                    await this.persistEffect(tx, effect);
+                }
 
-            await this.bumpVersion(tx, bundle.senderId, currentVersion);
+                await this.bumpVersion(tx, bundle.senderId, currentVersion);
 
-            return 'committed';
-        });
+                return 'committed';
+            });
+        } catch (error) {
+            if (error instanceof ALAdmissionBackendConflictError) return 'conflict';
+            throw error;
+        }
     }
 
     async claimReadyEffects(

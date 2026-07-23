@@ -28,7 +28,7 @@ import {
     computeClientStateSyncEntries,
     type ComputedClientStateSync,
 } from '../state-sync-publisher.ts';
-import type { IssuedAuthSession } from '../repositories/AuthSessionRepository.ts';
+import type { PersistedAuthSession } from '../repositories/AuthSessionRepository.ts';
 
 type NullableActorInput = Readonly<{
     actorPrincipalId: string | null;
@@ -182,7 +182,7 @@ export type ClientMutationIdempotencyRecord = Readonly<{
 }>;
 
 export type ClientMutationRead = Readonly<{
-    authoritySession: IssuedAuthSession | null;
+    authoritySession: PersistedAuthSession | null;
     idempotency: RuntimeStateEntryValue<ClientMutationIdempotencyRecord> | null;
     principal: RuntimeStateEntryValue<ClientPrincipal> | null;
     instance: RuntimeStateEntryValue<ClientInstance> | null;

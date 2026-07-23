@@ -22,11 +22,16 @@ import {
     type AuthMutationPublicResult,
     type AuthMutationResult,
     type AuthMutationService,
+    type IssueAuthSessionCommand,
     captureAuthMutationFacts,
+    decodeAuthMutationResult,
     decodeAuthMutationCommand,
 } from './auth-state-mutations.ts';
 import type { AuthCredentialIssuer } from './auth-credential-issuer.ts';
-import { hashAuthSecret } from '../repositories/AuthSessionRepository.ts';
+import {
+    hashAuthSecret,
+    type IssuedAuthSession,
+} from '../repositories/AuthSessionRepository.ts';
 import { toAppQueueKey } from './app-inbox-queue-key.ts';
 import type {
     AgentSessionTicketResponse,
@@ -37,7 +42,6 @@ import type {
     WebSocketTicketResponse,
 } from '@shared/api/api-config.ts';
 import type { AuthUser } from '../repositories/AuthUserRepository.ts';
-import type { IssuedAuthSession } from '../repositories/AuthSessionRepository.ts';
 
 export const AUTH_STATE_APP_INBOX_TOPIC = 'app-inbox.auth-state';
 
@@ -112,7 +116,10 @@ export class AppAuthInboxService extends AppInboxService {
         if (persisted.left !== undefined) return Either.ofLeft(persisted.left);
         if (persisted.right === undefined) throw new Error('Auth AppInbox result is missing');
         return Either.ofRight(
-            await this.toPublicResult(decoded, persisted.right) as R,
+            await this.toPublicResult(
+                decoded,
+                decodeAuthMutationResult(persisted.right),
+            ) as R,
         );
     }
 
@@ -132,6 +139,7 @@ export class AppAuthInboxService extends AppInboxService {
             username: string;
             sessionId: string;
             expiresAtEpochMs: number;
+            authority: IssueAuthSessionCommand['authority'];
         }>,
     ): Promise<Either<AppInboxFailure, LoginResponse>> {
         const accessToken = await this.credentialIssuer.issueAccessToken(input.sessionId);
@@ -140,6 +148,7 @@ export class AppAuthInboxService extends AppInboxService {
             kind: 'issue-session',
             requestId: input.requestId,
             capturedAtEpochMs: input.capturedAtEpochMs,
+            authority: input.authority,
             session: {
                 clientId: input.clientId,
                 username: input.username,
@@ -392,11 +401,6 @@ export class AppAuthInboxService extends AppInboxService {
     ): Promise<string> {
         const derived = await this.credentialIssuer.issueAccessToken(sessionId);
         if (await hashAuthSecret(derived) === expectedDigest) return derived;
-        const persisted = await this.authMutationService.readSessionById(sessionId);
-        if (
-            persisted &&
-            await hashAuthSecret(persisted.accessToken) === expectedDigest
-        ) return persisted.accessToken;
         throw new Error('Auth AppInbox result credential digest differs');
     }
 }

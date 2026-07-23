@@ -36,6 +36,7 @@ import {
   hashAuthSecret,
   type IssuedAuthSession,
 } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+import { AuthUserRepository } from '@shared-server/rallar-system/repositories/AuthUserRepository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/repositories/GroupTopologyConfigRepository.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/repositories/RtcTopologyExecutionRepository.ts';
@@ -492,6 +493,11 @@ Deno.test('PGlite AppAuth atomically commits auth state, results, completion, an
       capturedAtEpochMs: nowEpochMs,
       clientId: 'client-pglite',
       username: 'alice',
+      authority: {
+        kind: 'static-client',
+        clientId: 'client-pglite',
+        normalizedUsername: 'alice',
+      },
       sessionId: 'session-pglite',
       expiresAtEpochMs: nowEpochMs + 60_000,
     });
@@ -573,6 +579,10 @@ Deno.test('PGlite AppAuth atomically commits auth state, results, completion, an
     );
 
     const durableRows = await sql<{ resource: unknown }[]>`
+      select store_key || ':' || store_value as resource
+      from runtime_state_store
+      where store_namespace like 'auth-%'
+      union all
       select ri_resource as resource from resource_inbox
       union all
       select ris_resource as resource from resource_inbox_results
@@ -583,6 +593,95 @@ Deno.test('PGlite AppAuth atomically commits auth state, results, completion, an
     assert.equal(durableResources.includes(login.right.accessToken), false);
     assert.equal(durableResources.includes(ticket), false);
     assert.equal(durableResources.includes(secret), false);
+  });
+});
+
+Deno.test('PGlite AppAuth rereads registered-user policy after enqueue', async () => {
+  await withPGliteSql(async (sql) => {
+    const runtime = new PSqlRuntimeStateRepository(sql);
+    const resourceInbox = new ResourceInboxRepository(sql);
+    const resourceResults = new ResourceInboxResultsRepository(sql);
+    const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
+    const nowEpochMs = await readPGliteDatabaseEpochMs(sql);
+    const user = {
+      clientId: 'policy-client',
+      username: 'policy-user',
+      normalizedUsername: 'policy-user',
+      displayName: null,
+      passwordHash: 'password-hash',
+      passwordSalt: 'password-salt',
+      passwordAlgorithm: 'pbkdf2-sha256' as const,
+      passwordIterations: 120_000,
+      roles: ['member'],
+      status: 'active' as const,
+      createdAtEpochMs: nowEpochMs,
+      updatedAtEpochMs: nowEpochMs,
+    };
+    const users = new AuthUserRepository(runtime);
+    await users.putUser(user);
+    const appAuth = new AppAuthInboxService(
+      inboxReader,
+      resourceInbox,
+      resourceResults,
+      sql,
+      createAuthMutationService({
+        runtimeRepository: runtime,
+        serviceId: 'pglite-auth-policy',
+      }),
+      createHmacAuthCredentialIssuer(
+        'pglite-auth-policy-secret-0123456789abcdef',
+      ),
+      'pglite-auth-policy',
+      undefined,
+      {
+        waitMaxElapsedMsecs: 5_000,
+        waitRetryIntervalMsecs: 1,
+        waitMaxRetryIntervalMsecs: 4,
+        waitJitterRatio: 0,
+        nowEpochMs: () => nowEpochMs,
+      },
+    );
+    const pending = appAuth.issueSession({
+      requestId: 'pglite-disabled-after-enqueue',
+      capturedAtEpochMs: nowEpochMs,
+      clientId: user.clientId,
+      username: user.username,
+      authority: {
+        kind: 'registered-user',
+        clientId: user.clientId,
+        normalizedUsername: user.normalizedUsername,
+        userRevision: 0,
+      },
+      sessionId: 'pglite-disabled-session',
+      expiresAtEpochMs: nowEpochMs + 60_000,
+    });
+    await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
+    await users.putUser({
+      ...user,
+      status: 'disabled',
+      updatedAtEpochMs: nowEpochMs + 1,
+    });
+    await inboxReader.dequeueInbox(
+      InboxQueueReader.INBOX_DEQUEUE_TYPES,
+      toResilienceDto(),
+    );
+
+    const result = await pending;
+    assert.equal(result.left?.status, 403);
+    assert.equal(
+      await new AuthSessionRepository(runtime).findBySessionId(
+        'pglite-disabled-session',
+      ),
+      undefined,
+    );
+    const rows = await sql<{ ris_status: string; ris_resource: unknown }[]>`
+      select ris_status, ris_resource
+      from resource_inbox_results
+      where ris_resource_id = 'pglite-disabled-after-enqueue'
+    `;
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].ris_status, 'FAILED');
+    assert.equal(JSON.stringify(rows[0].ris_resource).includes('session-issued'), false);
   });
 });
 
@@ -3815,6 +3914,14 @@ Deno.test('PGlite group-state reads reject complete-contract corruption across p
         issuedAtEpochMs: 1,
         expiresAtEpochMs: 100_000,
       };
+      const persistedAuthority = {
+        clientId: authority.clientId,
+        sessionId: authority.sessionId,
+        accessTokenDigest: await hashAuthSecret(authority.accessToken),
+        username: authority.username,
+        issuedAtEpochMs: authority.issuedAtEpochMs,
+        expiresAtEpochMs: authority.expiresAtEpochMs,
+      };
       let eventSequence = 0;
       const runtime = new PSqlRuntimeStateRepository(sql);
       const service = createGroupStateService({
@@ -3822,7 +3929,9 @@ Deno.test('PGlite group-state reads reject complete-contract corruption across p
         createGroupStateEventStore: createGroupStateEventRepository,
         authSessionRepository: {
           findBySessionId: (sessionId) =>
-            Promise.resolve(sessionId === authority.sessionId ? authority : undefined),
+            Promise.resolve(
+              sessionId === authority.sessionId ? persistedAuthority : undefined,
+            ),
         },
         now: () => 10_000,
         randomId: () => `event-${testCase.kind}-${eventSequence++}`,
@@ -4161,12 +4270,22 @@ Deno.test('PGlite group event collision rolls back the authoritative mutation tr
       issuedAtEpochMs: 1,
       expiresAtEpochMs: 100_000,
     };
+    const persistedAuthority = {
+      clientId: authority.clientId,
+      sessionId: authority.sessionId,
+      accessTokenDigest: await hashAuthSecret(authority.accessToken),
+      username: authority.username,
+      issuedAtEpochMs: authority.issuedAtEpochMs,
+      expiresAtEpochMs: authority.expiresAtEpochMs,
+    };
     const service = createGroupStateService({
       runtimeRepository: runtime,
       createGroupStateEventStore: createGroupStateEventRepository,
       authSessionRepository: {
         findBySessionId: (sessionId) =>
-          Promise.resolve(sessionId === authority.sessionId ? authority : undefined),
+          Promise.resolve(
+            sessionId === authority.sessionId ? persistedAuthority : undefined,
+          ),
       },
       now: () => 10_000,
       serviceId: 'pglite-group-service',
@@ -4247,12 +4366,22 @@ Deno.test('PGlite group summary outbox collision rolls back state event and rece
       issuedAtEpochMs: 1,
       expiresAtEpochMs: 100_000,
     };
+    const persistedAuthority = {
+      clientId: authority.clientId,
+      sessionId: authority.sessionId,
+      accessTokenDigest: await hashAuthSecret(authority.accessToken),
+      username: authority.username,
+      issuedAtEpochMs: authority.issuedAtEpochMs,
+      expiresAtEpochMs: authority.expiresAtEpochMs,
+    };
     const service = createGroupStateService({
       runtimeRepository: runtime,
       createGroupStateEventStore: createGroupStateEventRepository,
       authSessionRepository: {
         findBySessionId: (sessionId) =>
-          Promise.resolve(sessionId === authority.sessionId ? authority : undefined),
+          Promise.resolve(
+            sessionId === authority.sessionId ? persistedAuthority : undefined,
+          ),
       },
       now: () => 10_000,
       serviceId: 'pglite-group-summary-collision',

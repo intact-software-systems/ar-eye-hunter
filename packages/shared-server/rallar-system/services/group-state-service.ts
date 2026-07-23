@@ -41,9 +41,11 @@ import type {
 import { GroupStateRepository } from '../repositories/GroupStateRepository.ts';
 import { hashStateMutationCommand } from '../repositories/StateMutationOutboxRepository.ts';
 import type { GroupStateEventStore } from '../repositories/StateEventStore.ts';
-import type {
-    AuthSessionRepository,
-    IssuedAuthSession,
+import {
+    hashAuthSecret,
+    type AuthSessionRepository,
+    type IssuedAuthSession,
+    type PersistedAuthSession,
 } from '../repositories/AuthSessionRepository.ts';
 import {
     computeGroupMutation,
@@ -191,7 +193,7 @@ export type GroupStateService = GroupStateMutationService & Readonly<{
     readSnapshot(ref: GroupRef): Promise<GroupSnapshot | undefined>;
     readStateRevision(ref: GroupRef): Promise<number | undefined>;
     readCausalRevision(ref: GroupRef): Promise<GroupStateCausalRevision | undefined>;
-    readIssuedAuthSession(sessionId: string): Promise<IssuedAuthSession | undefined>;
+    readIssuedAuthSession(sessionId: string): Promise<PersistedAuthSession | undefined>;
     listEvents(ref: GroupRef): Promise<readonly GroupEvent[]>;
     listRecentEvents?(
         ref: GroupRef,
@@ -474,7 +476,7 @@ export function createGroupStateService(
 }
 
 type VerifiedGroupMutationAuthority = Readonly<{
-    session: IssuedAuthSession;
+    session: PersistedAuthSession;
     descriptor: GroupMutationDescriptor;
 }>;
 
@@ -524,7 +526,10 @@ async function verifyGroupMutationAuthority(
         );
     }
     if (!isGroupMutationAuthorityProof(authority)) {
-        if (!await constantTimeSecretEqual(session.accessToken, authority.accessToken)) {
+        if (!await constantTimeSecretEqual(
+            session.accessTokenDigest,
+            await hashAuthSecret(authority.accessToken),
+        )) {
             throw new GroupMutationAuthorizationError(
                 'Authenticated session credential is invalid.',
             );
@@ -612,7 +617,7 @@ function toTrustedMutationDescriptor(
 }
 
 async function createGroupMutationAuthorityProof(
-    session: IssuedAuthSession,
+    session: IssuedAuthSession | PersistedAuthSession,
     descriptor: GroupMutationDescriptor,
 ): Promise<GroupMutationAuthorityProof> {
     return {
@@ -622,7 +627,9 @@ async function createGroupMutationAuthorityProof(
         sessionIssuedAtEpochMs: session.issuedAtEpochMs,
         sessionExpiresAtEpochMs: session.expiresAtEpochMs,
         commandMac: await hmacSha256Hex(
-            session.accessToken,
+            'accessTokenDigest' in session
+                ? session.accessTokenDigest
+                : await hashAuthSecret(session.accessToken),
             canonicalJson({
                 purpose: 'rallar-group-mutation-authority',
                 version: 1,

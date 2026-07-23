@@ -23,7 +23,8 @@ import type {
     ALOutboundRepairAttemptSnapshot,
     ALOutboundSentMessageSnapshot,
 } from './ALRuntimeStateStores.ts';
-import { acceptSupersedenceObservation, } from './ALInboundAdmissionStore.ts';
+import { acceptSupersedenceObservation } from './ALInboundAdmissionStore.ts';
+import { ALAdmissionBackendConflictError } from './ALAdmissionBackendConflictError.ts';
 import { resolveExplicitOutboundMessageExpireAtMs } from './ALMessageExpiry.ts';
 import type { ALRuntimeStoreRetentionConfig, NormalizedALRuntimeStoreRetentionConfig } from './ALStoreRetention.ts';
 import {
@@ -463,24 +464,29 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
             return 'committed';
         }
 
-        return await this.backend.write(async tx => {
-            const current = await tx.get<ALOutboundVersionedClientRecord>(this.toVersionKey(bundle.senderId));
-            const currentVersion = current?.version;
-            if (currentVersion !== bundle.expectedVersion) {
-                return 'conflict';
-            }
+        try {
+            return await this.backend.write(async tx => {
+                const current = await tx.get<ALOutboundVersionedClientRecord>(this.toVersionKey(bundle.senderId));
+                const currentVersion = current?.version;
+                if (currentVersion !== bundle.expectedVersion) {
+                    return 'conflict';
+                }
 
-            for (const mutation of bundle.mutations) {
-                await this.applyMutation(tx, mutation);
-            }
+                for (const mutation of bundle.mutations) {
+                    await this.applyMutation(tx, mutation);
+                }
 
-            for (const effect of bundle.durableEffects) {
-                await this.persistEffect(tx, effect);
-            }
+                for (const effect of bundle.durableEffects) {
+                    await this.persistEffect(tx, effect);
+                }
 
-            await this.bumpVersion(tx, bundle.senderId, currentVersion);
-            return 'committed';
-        });
+                await this.bumpVersion(tx, bundle.senderId, currentVersion);
+                return 'committed';
+            });
+        } catch (error) {
+            if (error instanceof ALAdmissionBackendConflictError) return 'conflict';
+            throw error;
+        }
     }
 
     async acceptControlMessage<TPrepared>(

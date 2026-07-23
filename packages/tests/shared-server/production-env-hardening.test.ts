@@ -45,6 +45,28 @@ describe('production env hardening validation', () => {
     expect(collectApiV1ProductionEnvErrors(env(hardenedApiEnv()))).toEqual([]);
   });
 
+  it('requires a trimmed auth credential secret with at least 32 characters', () => {
+    const secret = 'sensitive-auth-secret-value-never-echo';
+    for (const invalid of ['', '   ', 'x'.repeat(31), `  ${'x'.repeat(31)}  `]) {
+      const errors = collectApiV1ProductionEnvErrors(env({
+        ...hardenedApiEnv(),
+        RALLAR_AUTH_CREDENTIAL_SECRET: invalid,
+      }));
+      expect(errors.map((error) => error.variable)).toContain(
+        'RALLAR_AUTH_CREDENTIAL_SECRET',
+      );
+      if (invalid.trim().length > 0) {
+        expect(JSON.stringify(errors)).not.toContain(invalid.trim());
+      }
+      expect(JSON.stringify(errors)).not.toContain(secret);
+    }
+
+    expect(collectApiV1ProductionEnvErrors(env({
+      ...hardenedApiEnv(),
+      RALLAR_AUTH_CREDENTIAL_SECRET: `  ${'x'.repeat(32)}  `,
+    }))).toEqual([]);
+  });
+
   it('rejects wildcard HTTPS hostnames in production origins', () => {
     expect(collectApiV1ProductionEnvErrors(env({
       ...hardenedApiEnv(),

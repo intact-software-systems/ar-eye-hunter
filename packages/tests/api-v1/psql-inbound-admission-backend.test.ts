@@ -1,13 +1,22 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+    ALInboundMessageRuntime,
+    ALOutboundMessageRuntime,
     createALInboundAdmissionStore,
     createALOutboundAdmissionStore,
+    InMemoryQueueBox,
     newALAckControlMessage,
     newALUnicastMessage,
+    planALMessageHandling,
+    QueueBoxUtilities,
 } from '@shared/mod.ts';
 import { PSqlInboundAdmissionBackend } from '@shared-server/postgres/al-runtime/PSqlInboundAdmissionBackend.ts';
 import { PSqlOutboundAdmissionBackend } from '@shared-server/postgres/al-runtime/PSqlOutboundAdmissionBackend.ts';
 import { RUNTIME_STATE_PREFIX_READ_PAGE_SIZE } from '@shared-server/postgres/al-runtime/runtime-state-prefix-reader.ts';
+import {
+    createPSqlALInboundRuntimeStores,
+    createPSqlALOutboundRuntimeStores,
+} from '@shared-server/postgres/al-runtime/createPSqlALRuntimeStores.ts';
 import type {
     RuntimeStateConditionalDeleteResult,
     RuntimeStateConditionalWriteResult,
@@ -104,6 +113,100 @@ describe('PSqlInboundAdmissionBackend', () => {
             senderId: 'peer-1',
             version: 1,
         });
+    });
+
+    it('translates an inbound apply-time CAS loss to the owner conflict result', async () => {
+        const repository = new FakeRuntimeStateRepository();
+        const namespace = 'psql-test:inbound:apply-conflict';
+        const store = createALInboundAdmissionStore({
+            kind: 'backend',
+            namespace,
+            backend: new PSqlInboundAdmissionBackend(repository, namespace),
+            orderingTrackTtlMs: 60_000,
+            supersedenceTrackTtlMs: 60_000,
+        });
+        repository.conflictNextConditionalWrite = true;
+
+        await expect(store.commitMutations({
+            senderId: 'peer-1',
+            expectedVersion: undefined,
+            mutations: [{
+                kind: 'set-msg-owner',
+                msgId: 'inbound-conflict',
+                senderId: 'peer-1',
+            }],
+        })).resolves.toBe('conflict');
+    });
+
+    it('does not translate an unexpected inbound apply failure into a conflict', async () => {
+        const repository = new FakeRuntimeStateRepository();
+        const namespace = 'psql-test:inbound:apply-error';
+        const store = createALInboundAdmissionStore({
+            kind: 'backend',
+            namespace,
+            backend: new PSqlInboundAdmissionBackend(repository, namespace),
+            orderingTrackTtlMs: 60_000,
+            supersedenceTrackTtlMs: 60_000,
+        });
+        repository.errorNextConditionalWrite = new Error('inbound storage unavailable');
+
+        await expect(store.commitMutations({
+            senderId: 'peer-1',
+            expectedVersion: undefined,
+            mutations: [{
+                kind: 'set-msg-owner',
+                msgId: 'inbound-error',
+                senderId: 'peer-1',
+            }],
+        })).rejects.toThrow('inbound storage unavailable');
+    });
+
+    it('lets the inbound runtime reread and recompute after an apply-time CAS loss', async () => {
+        const repository = new FakeRuntimeStateRepository();
+        const namespace = 'psql-test:inbound:runtime-retry';
+        const plan = vi.fn((msg, fromPeerId, stores) =>
+            planALMessageHandling(msg, {
+                selfPeerId: 'self',
+                fromPeerId,
+                connectedPeerIds: ['peer-1'],
+                groupMemberPeerIds: ['self', 'peer-1'],
+                overlayNeighborPeerIds: [],
+                dedupStore: stores.dedupStore,
+                orderingStore: stores.orderingStore,
+                supersedenceStore: stores.supersedenceStore,
+            })
+        );
+        const compute = vi.spyOn(ALInboundMessageRuntime, 'computeAdmission');
+        const runtime = new ALInboundMessageRuntime({
+            selfPeerId: 'self',
+            inbox: new InMemoryQueueBox(new Map()),
+            stores: createPSqlALInboundRuntimeStores({ namespace, repository }),
+            planIncomingMessage: plan,
+            readStoredEntry: (entry) => JSON.parse(entry.resource),
+            toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox'),
+            dispatchInboxEntry: async () => undefined,
+            sendControlMessage: async () => undefined,
+        });
+        repository.conflictNextConditionalWrite = true;
+        const msg = newALUnicastMessage(
+            'peer-1',
+            { topicId: 'chat', resourceId: 'inbound-runtime-retry', contextId: 'chat-1' },
+            'self',
+            'chat.private-text.v1',
+            { text: 'retry' },
+        );
+
+        await runtime.handleIncomingMessage(msg, 'peer-1');
+
+        expect(compute).toHaveBeenCalledTimes(2);
+        expect(plan).toHaveBeenCalledTimes(4);
+        expect(repository.conflictCount).toBe(1);
+        const admissionNamespace = `${namespace}:inbound:admission`;
+        expect(await repository.findEntry(
+            admissionNamespace,
+            `${admissionNamespace}:version:peer-1`,
+        )).toBeDefined();
+        runtime.dispose();
     });
 
     it('bumps the owning sender version when accepting a control message', async () => {
@@ -269,6 +372,83 @@ describe('PSqlOutboundAdmissionBackend', () => {
         ).toBeUndefined();
     });
 
+    it('translates an outbound apply-time CAS loss to the owner conflict result', async () => {
+        const repository = new FakeRuntimeStateRepository();
+        const namespace = 'psql-test:outbound:apply-conflict';
+        const store = createALOutboundAdmissionStore({
+            kind: 'backend',
+            namespace,
+            backend: new PSqlOutboundAdmissionBackend(repository, namespace),
+            supersedenceTrackTtlMs: 60_000,
+        });
+        repository.conflictNextConditionalWrite = true;
+
+        await expect(store.commitBundle({
+            senderId: 'self',
+            expectedVersion: undefined,
+            mutations: [{
+                kind: 'set-msg-owner',
+                msgId: 'outbound-conflict',
+                senderId: 'self',
+            }],
+            durableEffects: [],
+        })).resolves.toBe('conflict');
+    });
+
+    it('does not translate an unexpected outbound apply failure into a conflict', async () => {
+        const repository = new FakeRuntimeStateRepository();
+        const namespace = 'psql-test:outbound:apply-error';
+        const store = createALOutboundAdmissionStore({
+            kind: 'backend',
+            namespace,
+            backend: new PSqlOutboundAdmissionBackend(repository, namespace),
+            supersedenceTrackTtlMs: 60_000,
+        });
+        repository.errorNextConditionalWrite = new Error('outbound storage unavailable');
+
+        await expect(store.commitBundle({
+            senderId: 'self',
+            expectedVersion: undefined,
+            mutations: [{
+                kind: 'set-msg-owner',
+                msgId: 'outbound-error',
+                senderId: 'self',
+            }],
+            durableEffects: [],
+        })).rejects.toThrow('outbound storage unavailable');
+    });
+
+    it('lets the outbound runtime reread and recompute after an apply-time CAS loss', async () => {
+        const repository = new FakeRuntimeStateRepository();
+        const namespace = 'psql-test:outbound:runtime-retry';
+        const plan = vi.fn(() => ({ persist: true, preparedMessages: [] }));
+        const compute = vi.spyOn(ALOutboundMessageRuntime, 'computeDispatch');
+        const runtime = new ALOutboundMessageRuntime({
+            outbox: new InMemoryQueueBox(new Map()),
+            stores: createPSqlALOutboundRuntimeStores({ namespace, repository }),
+            toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
+            readMessageFromEntry: (entry) => JSON.parse(entry.resource),
+            planOutgoingMessage: plan,
+            sendPreparedMessage: async () => undefined,
+        });
+        repository.conflictNextConditionalWrite = true;
+
+        const result = await runtime.enqueueIfAbsent(
+            createOutboundMessage('outbound-runtime-retry'),
+        );
+
+        expect(result.status).toBe('enqueued');
+        expect(compute).toHaveBeenCalledTimes(2);
+        expect(plan).toHaveBeenCalledTimes(2);
+        expect(repository.conflictCount).toBe(1);
+        const admissionNamespace = `${namespace}:outbound:admission`;
+        expect(await repository.findEntry(
+            admissionNamespace,
+            `${admissionNamespace}:version:self`,
+        )).toBeDefined();
+        runtime.dispose();
+    });
+
     it('bumps the owning sender version when accepting outbound control messages', async () => {
         const repository = new FakeRuntimeStateRepository();
         const namespace = 'psql-test:outbound:admission';
@@ -393,6 +573,9 @@ class FakeRuntimeStateRepository implements RuntimeStateOptimisticTransactionalR
             limit: number;
         }>
     > = [];
+    conflictNextConditionalWrite = false;
+    errorNextConditionalWrite: Error | undefined;
+    conflictCount = 0;
 
     async begin<T>(
         fn: (repository: RuntimeStateOptimisticTransactionalRepositoryLike) => Promise<T>,
@@ -505,6 +688,16 @@ class FakeRuntimeStateRepository implements RuntimeStateOptimisticTransactionalR
             key,
             expectedRevision: null,
         });
+        if (this.errorNextConditionalWrite) {
+            const error = this.errorNextConditionalWrite;
+            this.errorNextConditionalWrite = undefined;
+            throw error;
+        }
+        if (this.conflictNextConditionalWrite) {
+            this.conflictNextConditionalWrite = false;
+            this.conflictCount += 1;
+            return { status: 'conflict' };
+        }
         const compositeKey = this.toKey(namespace, key);
         if (this.data.has(compositeKey)) return { status: 'conflict' };
         this.data.set(compositeKey, {

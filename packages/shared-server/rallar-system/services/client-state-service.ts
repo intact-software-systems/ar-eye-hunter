@@ -33,6 +33,7 @@ import type { ClientStateEventStore } from '../repositories/StateEventStore.ts';
 import {
     AuthSessionRepository,
     type IssuedAuthSession,
+    type PersistedAuthSession,
 } from '../repositories/AuthSessionRepository.ts';
 import { hashStateMutationCommand } from '../repositories/StateMutationOutboxRepository.ts';
 import type { StateEventListQuery } from '../state-event-listing.ts';
@@ -116,7 +117,7 @@ export type ClientStateService = Readonly<{
         atEpochMs: number,
     ): Promise<readonly ClientSessionExpiryCandidate[]>;
     findSessionBySessionId(sessionId: string): Promise<ClientSession | undefined>;
-    readIssuedAuthSession(sessionId: string): Promise<IssuedAuthSession | undefined>;
+    readIssuedAuthSession(sessionId: string): Promise<PersistedAuthSession | undefined>;
     observeSnapshot(snapshot: ClientSnapshot): Promise<ClientSnapshot>;
 }>;
 
@@ -323,7 +324,7 @@ export async function toClientMutationCommand(
 }
 
 export function toClientMutationIssuedSessionAuthority(
-    session: IssuedAuthSession,
+    session: IssuedAuthSession | PersistedAuthSession,
     scope: StateScope,
     operation: Exclude<ClientMutationOperation, 'expireSession'>,
 ): ClientMutationIssuedSessionAuthority {

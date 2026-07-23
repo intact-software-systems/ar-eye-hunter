@@ -5,17 +5,22 @@ export type AuthCredentialIssuer = Readonly<{
 }>;
 
 export function createHmacAuthCredentialIssuer(secret: string): AuthCredentialIssuer {
-    if (typeof secret !== 'string' || secret.length < 32) {
+    if (!isValidAuthCredentialSecret(secret)) {
         throw new Error('RALLAR_AUTH_CREDENTIAL_SECRET must contain at least 32 characters');
     }
+    const normalizedSecret = secret.trim();
     return {
         issueAccessToken: async (sessionId) =>
-            await signCredential(secret, 'access-token', [sessionId]),
+            await signCredential(normalizedSecret, 'access-token', [sessionId]),
         issueWebSocketTicket: async (requestId, sessionId) =>
-            await signCredential(secret, 'ws-ticket', [requestId, sessionId]),
+            await signCredential(normalizedSecret, 'ws-ticket', [requestId, sessionId]),
         issueAgentTicket: async (requestId, agentId, sessionId) =>
-            await signCredential(secret, 'agent-ticket', [requestId, agentId, sessionId]),
+            await signCredential(normalizedSecret, 'agent-ticket', [requestId, agentId, sessionId]),
     };
+}
+
+export function isValidAuthCredentialSecret(secret: unknown): secret is string {
+    return typeof secret === 'string' && secret.trim().length >= 32;
 }
 
 async function signCredential(

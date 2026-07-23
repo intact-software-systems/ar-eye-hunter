@@ -1,3 +1,5 @@
+import { isValidAuthCredentialSecret } from '../rallar-system/services/auth-credential-issuer.ts';
+
 export type EnvReader = Readonly<{
   get(key: string): string | undefined;
 }>;
@@ -42,11 +44,10 @@ export function collectApiV1ProductionEnvErrors(
   requireEquals(errors, env, 'AUTH_REGISTRATION_MODE', 'admin');
   requireAdminClientIds(errors, env);
   requireEquals(errors, env, 'AUTH_STATIC_CLIENTS_MODE', 'disabled');
-  requirePresent(
+  requireValidAuthCredentialSecret(
     errors,
     env,
     'RALLAR_AUTH_CREDENTIAL_SECRET',
-    'Stable auth credential HMAC secret is required.',
   );
   requireEquals(errors, env, 'RALLAR_ICE_MODE', 'metered');
   requirePresent(errors, env, 'METERED_APP_NAME', 'Metered TURN app name is required.');
@@ -155,6 +156,19 @@ function requirePresent(
 ): void {
   if (!readEnv(env, variable)) {
     errors.push({ variable, message });
+  }
+}
+
+function requireValidAuthCredentialSecret(
+  errors: ProductionEnvHardeningErrorDetail[],
+  env: EnvReader,
+  variable: string,
+): void {
+  if (!isValidAuthCredentialSecret(readEnv(env, variable))) {
+    errors.push({
+      variable,
+      message: 'Stable auth credential HMAC secret must contain at least 32 characters.',
+    });
   }
 }
 

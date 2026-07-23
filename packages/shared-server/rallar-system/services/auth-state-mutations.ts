@@ -22,6 +22,7 @@ import {
     hashAuthSecret,
     type IssuedAuthSession,
     type PersistedAgentSessionTicket,
+    type PersistedAuthSession,
     type PersistedWebSocketTicket,
 } from '../repositories/AuthSessionRepository.ts';
 import {
@@ -44,6 +45,18 @@ export type RegisterAuthUserCommand = CommandBase & Readonly<{
 
 export type IssueAuthSessionCommand = CommandBase & Readonly<{
     kind: 'issue-session';
+    authority:
+        | Readonly<{
+            kind: 'registered-user';
+            clientId: string;
+            normalizedUsername: string;
+            userRevision: number;
+        }>
+        | Readonly<{
+            kind: 'static-client';
+            clientId: string;
+            normalizedUsername: string;
+        }>;
     session: Readonly<{
         clientId: string;
         username: string;
@@ -163,8 +176,8 @@ export type AuthMutationResult =
     }>;
 
 type SessionEntries = Readonly<{
-    byToken: RuntimeStateEntryValue<IssuedAuthSession> | null;
-    bySession: RuntimeStateEntryValue<IssuedAuthSession> | null;
+    byToken: RuntimeStateEntryValue<PersistedAuthSession> | null;
+    bySession: RuntimeStateEntryValue<PersistedAuthSession> | null;
 }>;
 
 export type AuthMutationRead =
@@ -173,19 +186,21 @@ export type AuthMutationRead =
         byUsername: RuntimeStateEntryValue<AuthUser> | null;
         byClientId: RuntimeStateEntryValue<AuthUser> | null;
     }>
-    | (Readonly<{ kind: 'issue-session' }> & SessionEntries)
+    | (Readonly<{
+        kind: 'issue-session';
+        userByUsername: RuntimeStateEntryValue<AuthUser> | null;
+        userByClientId: RuntimeStateEntryValue<AuthUser> | null;
+    }> & SessionEntries)
     | (Readonly<{ kind: 'logout-session' }> & SessionEntries)
     | Readonly<{
         kind: 'issue-ws-ticket';
         ticket: RuntimeStateEntryValue<PersistedWebSocketTicket> | null;
-        session: RuntimeStateEntryValue<IssuedAuthSession> | null;
-        sessionAccessTokenDigest: string | null;
+        session: RuntimeStateEntryValue<PersistedAuthSession> | null;
     }>
     | Readonly<{
         kind: 'consume-ws-ticket';
         ticket: RuntimeStateEntryValue<PersistedWebSocketTicket> | null;
-        session: RuntimeStateEntryValue<IssuedAuthSession> | null;
-        sessionAccessTokenDigest: string | null;
+        session: RuntimeStateEntryValue<PersistedAuthSession> | null;
     }>
     | Readonly<{
         kind: 'issue-agent-tickets';
@@ -196,21 +211,15 @@ export type AuthMutationRead =
     | Readonly<{
         kind: 'consume-agent-ticket';
         ticket: RuntimeStateEntryValue<PersistedAgentSessionTicket> | null;
-        session: RuntimeStateEntryValue<IssuedAuthSession> | null;
-        sessionAccessTokenDigest: string | null;
+        session: RuntimeStateEntryValue<PersistedAuthSession> | null;
     }>;
 
 export type AuthMutationFacts = Readonly<{
     kind: AuthMutationCommand['kind'];
-    sessionCredentials: readonly Readonly<{
-        sessionId: string;
-        accessToken: string;
-    }>[];
 }>;
 
 type AuthComputedSession = Readonly<{
-    session: IssuedAuthSession;
-    accessTokenDigest: string;
+    session: PersistedAuthSession;
 }>;
 
 export type AuthMutationComputed = Readonly<{
@@ -224,7 +233,6 @@ export type AuthMutationComputed = Readonly<{
 }>;
 
 export type AuthMutationService = Readonly<{
-    readSessionById(sessionId: string): Promise<IssuedAuthSession | undefined>;
     read(command: AuthMutationCommand): Promise<AuthMutationRead>;
     compute(
         command: AuthMutationCommand,
@@ -249,7 +257,6 @@ export function createAuthMutationService(options: Readonly<{
     const users = new AuthUserRepository(options.runtimeRepository);
     const sessions = new AuthSessionRepository(options.runtimeRepository);
     return {
-        readSessionById: async (sessionId) => await sessions.findBySessionId(sessionId),
         read: async (command) => await readAuthMutation(users, sessions, command),
         compute: (command, read, facts) => computeAuthMutation(
             command,
@@ -267,10 +274,6 @@ export async function captureAuthMutationFacts(
     command: AuthMutationCommand,
     credentialIssuer: AuthCredentialIssuer,
 ): Promise<AuthMutationFacts> {
-    const sessionCredentials: Array<Readonly<{
-        sessionId: string;
-        accessToken: string;
-    }>> = [];
     switch (command.kind) {
         case 'issue-session': {
             const accessToken = await credentialIssuer.issueAccessToken(
@@ -281,10 +284,6 @@ export async function captureAuthMutationFacts(
                 command.session.accessTokenDigest,
                 'Auth session credential digest differs',
             );
-            sessionCredentials.push({
-                sessionId: command.session.sessionId,
-                accessToken,
-            });
             break;
         }
         case 'issue-ws-ticket': {
@@ -319,10 +318,6 @@ export async function captureAuthMutationFacts(
                     ticket.ticketDigest,
                     'Agent credential digest differs',
                 );
-                sessionCredentials.push({
-                    sessionId: ticket.sessionId,
-                    accessToken,
-                });
             }
             break;
         case 'register-user':
@@ -331,7 +326,7 @@ export async function captureAuthMutationFacts(
         case 'consume-agent-ticket':
             break;
     }
-    return { kind: command.kind, sessionCredentials };
+    return { kind: command.kind };
 }
 
 async function readAuthMutation(
@@ -351,6 +346,12 @@ async function readAuthMutation(
         case 'issue-session': {
             return {
                 kind: command.kind,
+                userByUsername: await users.findByNormalizedUsernameEntry(
+                    command.authority.normalizedUsername,
+                ) ?? null,
+                userByClientId: await users.findByClientIdEntry(
+                    command.authority.clientId,
+                ) ?? null,
                 byToken: await sessions.findSessionByAccessTokenDigestEntry(
                     command.session.accessTokenDigest,
                 ) ?? null,
@@ -375,9 +376,6 @@ async function readAuthMutation(
                     command.ticketRecord.ticketDigest,
                 ) ?? null,
                 session,
-                sessionAccessTokenDigest: session
-                    ? await hashAuthSecret(session.value.accessToken)
-                    : null,
             };
         }
         case 'consume-ws-ticket': {
@@ -393,9 +391,6 @@ async function readAuthMutation(
                 kind: command.kind,
                 ticket,
                 session,
-                sessionAccessTokenDigest: session
-                    ? await hashAuthSecret(session.value.accessToken)
-                    : null,
             };
         }
         case 'issue-agent-tickets': {
@@ -435,9 +430,6 @@ async function readAuthMutation(
                 kind: command.kind,
                 ticket,
                 session,
-                sessionAccessTokenDigest: session
-                    ? await hashAuthSecret(session.value.accessToken)
-                    : null,
             };
         }
     }
@@ -456,12 +448,9 @@ async function readExpectedSessionEntries(
     let byToken = await sessions.findSessionByAccessTokenDigestEntry(
         expected.accessTokenDigest,
     ) ?? null;
-    if (
-        !byToken && bySession &&
-        await hashAuthSecret(bySession.value.accessToken) === expected.accessTokenDigest
-    ) {
-        byToken = await sessions.findLegacySessionByAccessTokenEntry(
-            bySession.value.accessToken,
+    if (!byToken) {
+        byToken = await sessions.findLegacySessionByAccessTokenDigestEntry(
+            expected.accessTokenDigest,
         ) ?? null;
     }
     return { byToken, bySession };
@@ -495,25 +484,18 @@ function computeAuthMutation(
                 outcome: isMatchingUserRead(read, command.user) ? 'replay' : 'write',
             };
         case 'issue-session': {
-            const credential = requireSessionCredential(
-                facts,
-                command.session.sessionId,
-            );
-            const session: IssuedAuthSession = {
+            const session: PersistedAuthSession = {
                 clientId: command.session.clientId,
                 username: command.session.username,
                 sessionId: command.session.sessionId,
-                accessToken: credential.accessToken,
+                accessTokenDigest: command.session.accessTokenDigest,
                 issuedAtEpochMs: command.session.issuedAtEpochMs,
                 expiresAtEpochMs: command.session.expiresAtEpochMs,
             };
             return {
                 ...common,
-                sessions: [{
-                    session,
-                    accessTokenDigest: command.session.accessTokenDigest,
-                }],
-                result: toSessionReceipt(session, command.session.accessTokenDigest),
+                sessions: [{ session }],
+                result: toSessionReceipt(session),
                 outcome: isMatchingSessionRead(read, session) ? 'replay' : 'write',
             };
         }
@@ -568,17 +550,15 @@ function computeAuthMutation(
             const persistedTickets: PersistedAgentSessionTicket[] = [];
             const responseTickets = [];
             for (const ticket of command.tickets) {
-                const credential = requireSessionCredential(facts, ticket.sessionId);
                 issuedSessions.push({
                     session: {
                         clientId: ticket.clientId,
                         username: ticket.username,
                         sessionId: ticket.sessionId,
-                        accessToken: credential.accessToken,
+                        accessTokenDigest: ticket.accessTokenDigest,
                         issuedAtEpochMs: ticket.issuedAtEpochMs,
                         expiresAtEpochMs: ticket.sessionExpiresAtEpochMs,
                     },
-                    accessTokenDigest: ticket.accessTokenDigest,
                 });
                 persistedTickets.push({
                     ticketDigest: ticket.ticketDigest,
@@ -648,6 +628,10 @@ function validateAuthMutation(
         case 'issue-session':
             validateIssueSessionRead(
                 computed.sessions[0]?.session,
+                read as Extract<AuthMutationRead, { kind: 'issue-session' }>,
+            );
+            validateIssueSessionUserAuthority(
+                command,
                 read as Extract<AuthMutationRead, { kind: 'issue-session' }>,
             );
             return;
@@ -760,10 +744,7 @@ async function writeSession(
     repository: AuthSessionRepository,
     computed: AuthComputedSession,
 ): Promise<void> {
-    requireConditionalWrite(await repository.insertSessionByTokenDigest(
-        computed.session,
-        computed.accessTokenDigest,
-    ));
+    requireConditionalWrite(await repository.insertSessionByTokenDigest(computed.session));
     requireConditionalWrite(await repository.insertSessionBySessionId(computed.session));
 }
 
@@ -783,8 +764,8 @@ function validateRegisterRead(
 }
 
 function validateIssueSessionRead(
-    session: IssuedAuthSession | undefined,
-    read: Extract<AuthMutationRead, { kind: 'issue-session' }>,
+    session: PersistedAuthSession | undefined,
+    read: Readonly<{ kind: 'issue-session' }> & SessionEntries,
 ): void {
     if (!session) throw new AuthMutationRejectedError('Issued auth session is missing');
     const tokenMatches = !read.byToken || equalJson(read.byToken.value, session);
@@ -794,6 +775,46 @@ function validateIssueSessionRead(
     }
     if ((read.byToken === null) !== (read.bySession === null)) {
         throw new AuthMutationRejectedError('Auth session indexes are inconsistent', 500);
+    }
+}
+
+function validateIssueSessionUserAuthority(
+    command: IssueAuthSessionCommand,
+    read: Extract<AuthMutationRead, { kind: 'issue-session' }>,
+): void {
+    if (
+        command.session.clientId !== command.authority.clientId ||
+        command.session.username.trim().toLowerCase() !==
+            command.authority.normalizedUsername
+    ) {
+        throw new AuthMutationRejectedError('Auth session user authority differs', 403);
+    }
+    if (command.authority.kind === 'static-client') {
+        if (read.userByUsername || read.userByClientId) {
+            throw new AuthMutationRejectedError(
+                'Static auth session authority conflicts with a registered user',
+                403,
+            );
+        }
+        return;
+    }
+    if (
+        !read.userByUsername || !read.userByClientId ||
+        read.userByUsername.entry.revision !== command.authority.userRevision ||
+        read.userByClientId.entry.revision !== command.authority.userRevision ||
+        !equalJson(read.userByUsername.value, read.userByClientId.value)
+    ) {
+        throw new AuthMutationRejectedError('Registered auth user authority is unavailable', 403);
+    }
+    const user = read.userByUsername.value;
+    if (
+        user.status !== 'active' ||
+        user.clientId !== command.authority.clientId ||
+        user.normalizedUsername !== command.authority.normalizedUsername ||
+        user.clientId !== command.session.clientId ||
+        user.username !== command.session.username
+    ) {
+        throw new AuthMutationRejectedError('Registered auth user authority differs', 403);
     }
 }
 
@@ -824,7 +845,7 @@ function validateIssueWsTicketRead(
     if (
         !read.session ||
         read.session.value.clientId !== command.ticketRecord.clientId ||
-        read.sessionAccessTokenDigest !== command.ticketRecord.accessTokenDigest
+        read.session.value.accessTokenDigest !== command.ticketRecord.accessTokenDigest
     ) {
         throw new AuthMutationRejectedError('Websocket ticket session authority differs', 401);
     }
@@ -852,7 +873,7 @@ function validateConsumeWsTicketRead(
         ticket.sessionId !== command.expectedSessionId ||
         !read.session || read.session.value.sessionId !== ticket.sessionId ||
         read.session.value.clientId !== ticket.clientId ||
-        read.sessionAccessTokenDigest !== ticket.accessTokenDigest
+        read.session.value.accessTokenDigest !== ticket.accessTokenDigest
     ) {
         throw new AuthMutationRejectedError('Websocket ticket authority differs', 401);
     }
@@ -956,7 +977,7 @@ function validateConsumeAgentTicketRead(
     if (
         !read.session || read.session.value.sessionId !== ticket.sessionId ||
         read.session.value.clientId !== ticket.clientId ||
-        read.sessionAccessTokenDigest !== ticket.accessTokenDigest
+        read.session.value.accessTokenDigest !== ticket.accessTokenDigest
     ) {
         throw new AuthMutationRejectedError('Agent ticket authority differs', 401);
     }
@@ -971,7 +992,7 @@ function isMatchingUserRead(
         equalJson(read.byUsername.value, user) && equalJson(read.byClientId.value, user);
 }
 
-function isMatchingSessionRead(read: AuthMutationRead, session: IssuedAuthSession): boolean {
+function isMatchingSessionRead(read: AuthMutationRead, session: PersistedAuthSession): boolean {
     return (read.kind === 'issue-session' || read.kind === 'logout-session') &&
         read.byToken !== null && read.bySession !== null &&
         equalJson(read.byToken.value, session) && equalJson(read.bySession.value, session);
@@ -1002,23 +1023,10 @@ function requireMatchingFacts(
     }
 }
 
-function requireSessionCredential(
-    facts: AuthMutationFacts,
-    sessionId: string,
-): Readonly<{ sessionId: string; accessToken: string }> {
-    const matches = facts.sessionCredentials.filter(
-        (credential) => credential.sessionId === sessionId,
-    );
-    if (matches.length !== 1) {
-        throw new AuthMutationRejectedError('Auth session credential facts differ');
-    }
-    return matches[0];
-}
-
 function requireSession(
-    entry: RuntimeStateEntryValue<IssuedAuthSession> | null,
+    entry: RuntimeStateEntryValue<PersistedAuthSession> | null,
     message: string,
-): IssuedAuthSession {
+): PersistedAuthSession {
     if (!entry) throw new AuthMutationRejectedError(message, 404);
     return entry.value;
 }
@@ -1035,15 +1043,14 @@ function requireMatchingKind(command: AuthMutationCommand, read: AuthMutationRea
 }
 
 function toSessionReceipt(
-    session: IssuedAuthSession,
-    accessTokenDigest: string,
+    session: PersistedAuthSession,
 ): Extract<AuthMutationResult, { kind: 'session-issued' }> {
     return {
         kind: 'session-issued',
         clientId: session.clientId,
         username: session.username,
         sessionId: session.sessionId,
-        accessTokenDigest,
+        accessTokenDigest: session.accessTokenDigest,
         issuedAtEpochMs: session.issuedAtEpochMs,
         expiresAtEpochMs: session.expiresAtEpochMs,
     };
@@ -1051,7 +1058,7 @@ function toSessionReceipt(
 
 function toConsumedSessionReceipt(
     kind: 'ws-ticket-consumed' | 'agent-ticket-consumed',
-    session: IssuedAuthSession,
+    session: PersistedAuthSession,
     accessTokenDigest: string,
 ): Extract<AuthMutationResult, { kind: typeof kind }> {
     return {
@@ -1161,8 +1168,27 @@ export function decodeAuthMutationCommand(input: unknown): AuthMutationCommand {
         }
         case 'issue-session': {
             requireExactKeys(command, [
-                'version', 'kind', 'requestId', 'capturedAtEpochMs', 'session',
+                'version', 'kind', 'requestId', 'capturedAtEpochMs', 'authority',
+                'session',
             ]);
+            const authority = requireRecord(command.authority, 'Auth session authority');
+            requireString(authority.clientId, 'Auth session authority clientId');
+            requireString(
+                authority.normalizedUsername,
+                'Auth session authority normalizedUsername',
+            );
+            if (authority.kind === 'registered-user') {
+                requireExactKeys(authority, [
+                    'kind', 'clientId', 'normalizedUsername', 'userRevision',
+                ]);
+                requireTimestamp(authority.userRevision, 'Auth session authority userRevision');
+            } else if (authority.kind === 'static-client') {
+                requireExactKeys(authority, [
+                    'kind', 'clientId', 'normalizedUsername',
+                ]);
+            } else {
+                throw new TypeError('Auth session authority kind is invalid');
+            }
             const session = requireRecord(command.session, 'Auth session command');
             requireExactKeys(session, [
                 'clientId', 'username', 'sessionId', 'accessTokenDigest',
@@ -1255,6 +1281,81 @@ export function decodeAuthMutationCommand(input: unknown): AuthMutationCommand {
     return structuredClone(command) as AuthMutationCommand;
 }
 
+export function decodeAuthMutationResult(input: unknown): AuthMutationResult {
+    const result = requireRecord(input, 'Auth mutation result');
+    if ('registeredAtEpochMs' in result) {
+        requireExactKeys(result, [
+            'clientId', 'username', 'displayName', 'registeredAtEpochMs',
+        ]);
+        requireString(result.clientId, 'Auth result clientId');
+        requireString(result.username, 'Auth result username');
+        if (result.displayName !== null) {
+            requireString(result.displayName, 'Auth result displayName');
+        }
+        requireTimestamp(result.registeredAtEpochMs, 'Auth result registeredAtEpochMs');
+    } else if ('loggedOut' in result) {
+        requireExactKeys(result, ['loggedOut']);
+        if (result.loggedOut !== true) throw new TypeError('Auth logout result is invalid');
+    } else {
+        switch (result.kind) {
+            case 'session-issued':
+            case 'ws-ticket-consumed':
+            case 'agent-ticket-consumed':
+                validateSessionResult(result);
+                break;
+            case 'ws-ticket-issued':
+                requireExactKeys(result, [
+                    'kind', 'ticketDigest', 'sessionId', 'issuedAtEpochMs',
+                    'expiresAtEpochMs',
+                ]);
+                requireString(result.ticketDigest, 'Auth result ticketDigest');
+                requireString(result.sessionId, 'Auth result sessionId');
+                validateResultLifecycle(result);
+                break;
+            case 'agent-tickets-issued':
+                requireExactKeys(result, ['kind', 'tickets']);
+                if (!Array.isArray(result.tickets) || result.tickets.length === 0) {
+                    throw new TypeError('Auth result tickets must be a non-empty array');
+                }
+                for (const inputTicket of result.tickets) {
+                    const ticket = requireRecord(inputTicket, 'Auth result agent ticket');
+                    requireExactKeys(ticket, [
+                        'agentId', 'ticketDigest', 'sessionId', 'issuedAtEpochMs',
+                        'expiresAtEpochMs',
+                    ]);
+                    requireString(ticket.agentId, 'Auth result agentId');
+                    requireString(ticket.ticketDigest, 'Auth result ticketDigest');
+                    requireString(ticket.sessionId, 'Auth result sessionId');
+                    validateResultLifecycle(ticket);
+                }
+                break;
+            default:
+                throw new TypeError('Auth mutation result kind is invalid');
+        }
+    }
+    assertNoPlaintextAuthFields(result);
+    return structuredClone(result) as AuthMutationResult;
+}
+
+function validateSessionResult(result: Readonly<Record<string, unknown>>): void {
+    requireExactKeys(result, [
+        'kind', 'clientId', 'username', 'sessionId', 'accessTokenDigest',
+        'issuedAtEpochMs', 'expiresAtEpochMs',
+    ]);
+    for (const field of [
+        'clientId', 'username', 'sessionId', 'accessTokenDigest',
+    ] as const) requireString(result[field], `Auth result ${field}`);
+    validateResultLifecycle(result);
+}
+
+function validateResultLifecycle(result: Readonly<Record<string, unknown>>): void {
+    requireTimestamp(result.issuedAtEpochMs, 'Auth result issuedAtEpochMs');
+    requireTimestamp(result.expiresAtEpochMs, 'Auth result expiresAtEpochMs');
+    if ((result.issuedAtEpochMs as number) >= (result.expiresAtEpochMs as number)) {
+        throw new TypeError('Auth result lifecycle is invalid');
+    }
+}
+
 function validateAuthUserContract(input: unknown): void {
     const user = requireRecord(input, 'Auth user');
     requireExactKeys(user, [
@@ -1319,8 +1420,9 @@ function assertNoPlaintextAuthFields(value: unknown): void {
 }
 
 function requireRecord(value: unknown, label: string): Readonly<Record<string, unknown>> {
-    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-        throw new TypeError(`${label} must be an object`);
+    if (typeof value !== 'object' || value === null || Array.isArray(value) ||
+        Object.getPrototypeOf(value) !== Object.prototype) {
+        throw new TypeError(`${label} must be a plain JSON object`);
     }
     return value as Readonly<Record<string, unknown>>;
 }
@@ -1332,7 +1434,7 @@ function requireExactKeys(
     const actual = Object.keys(value).sort();
     const expected = [...keys].sort();
     if (!equalJson(actual, expected)) {
-        throw new TypeError('Auth mutation command fields are invalid');
+        throw new TypeError(`Auth mutation fields are invalid: ${actual.join(',')}`);
     }
 }
 
