@@ -1666,7 +1666,7 @@ Deno.test('PGlite AppGroup retries cross-target topology CAS conflicts through R
 
 Deno.test('PGlite AppGroup reuses the first durable topology command and rejects divergent stable identity', async () => {
   await withPGliteSql(async (sql) => {
-    const nowEpochMs = Date.parse('2026-07-23T00:00:00.000Z');
+    const nowEpochMs = await readPGliteDatabaseEpochMs(sql);
     const runtime = new PSqlRuntimeStateRepository(sql);
     const resourceInbox = new ResourceInboxRepository(sql);
     const resourceResults = new ResourceInboxResultsRepository(sql);
@@ -1990,6 +1990,7 @@ Deno.test('PGlite AppGroup reuses the first durable topology command and rejects
     const underOverride = await topology.readConfig(groupRef);
     assert.equal(underOverride.durable?.config.degreeLimit, 3);
     assert.equal(underOverride.temporary?.config.degreeLimit, 4);
+    assert.equal(underOverride.temporary?.expiresAtEpochMs, nowEpochMs + 60_000);
     assert.equal(underOverride.effective.degreeLimit, 4);
 
     const cleared = await processCommand(
@@ -5086,7 +5087,7 @@ async function createPGliteTopologyWorkFixture(
   sql: PGliteSql,
   commandId: string,
 ) {
-  const nowEpochMs = Date.parse('2026-07-23T00:00:00.000Z');
+  const nowEpochMs = await readPGliteDatabaseEpochMs(sql);
   const groupRef = {
     applicationId: commandId,
     workspaceId: 'atomic-work',
@@ -5441,6 +5442,14 @@ async function withPGliteSql(
   } finally {
     await sql.close();
   }
+}
+
+async function readPGliteDatabaseEpochMs(sql: PGliteSql): Promise<number> {
+  const [clock] = await sql<{ epoch_ms: string | number }[]>`
+    select floor(extract(epoch from now()) * 1000)::bigint as epoch_ms
+  `;
+  assert.ok(clock);
+  return Number(clock.epoch_ms);
 }
 
 async function readPGliteAppInboxFailure(
