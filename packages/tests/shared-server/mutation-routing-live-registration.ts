@@ -10,6 +10,11 @@ import {
   evaluateStaticObjectCollection,
 } from './mutation-routing-object-collection.ts';
 import {
+  evaluateMapEntriesProjection,
+  evaluateMapProjection,
+  readStaticCollectionMethod,
+} from './mutation-routing-map-collection.ts';
+import {
   filterRegistrationTypes,
   knownRegistrationTypes,
   mapRegistrationTypes,
@@ -87,7 +92,8 @@ function evaluateTypes(
     return evaluateMember(node, program, filePath, loadProgram, resolving);
   }
   if (node.type === 'NewExpression') {
-    if (!['Set', 'Map'].includes(readName(node.callee))) return UNKNOWN_REGISTRATION_TYPES;
+    if (readName(node.callee) === 'Map') return UNKNOWN_REGISTRATION_TYPES;
+    if (readName(node.callee) !== 'Set') return UNKNOWN_REGISTRATION_TYPES;
     return mergeTypes(
       asNodes(node.arguments).map((argument) =>
         evaluateTypes(argument, program, filePath, loadProgram, resolving)
@@ -125,7 +131,7 @@ function evaluateTypes(
     return UNKNOWN_REGISTRATION_TYPES;
   }
   const callee = asNode(node.callee);
-  const method = readMemberName(callee);
+  const method = readStaticCollectionMethod(callee, program) || readMemberName(callee);
   const collectionMethod = method && ['filter', 'map', 'flatMap', 'values', 'keys', 'entries']
     .includes(method);
   const staticObjectCollection = ['values', 'keys', 'entries'].includes(method) &&
@@ -134,9 +140,20 @@ function evaluateTypes(
   const source = collectionMethod && !staticObjectCollection
     ? asNode(callee?.object)
     : asNodes(node.arguments)[0];
-  const types = evaluateTypes(source, program, filePath, loadProgram, resolving);
   const evaluateCollection = (candidate: AstNode | undefined) =>
     evaluateTypes(candidate, program, filePath, loadProgram, resolving);
+  const mapProjection = evaluateMapProjection(method, source, program, evaluateCollection);
+  if (mapProjection) return mapProjection;
+  if (method === 'map' || method === 'flatMap') {
+    const entriesProjection = evaluateMapEntriesProjection(
+      source,
+      asNodes(node.arguments)[0],
+      program,
+      evaluateCollection,
+    );
+    if (entriesProjection) return entriesProjection;
+  }
+  const types = evaluateTypes(source, program, filePath, loadProgram, resolving);
   if ((method === 'map' || method === 'flatMap') && isStaticObjectEntries(source)) {
     return evaluateObjectEntriesMap(
       asNodes(source?.arguments)[0],
@@ -363,12 +380,10 @@ function visit(value: unknown, visitor: (node: AstNode) => void): void {
 function normalizePath(value: string): string {
   return value.split(path.sep).join('/').replace(/^\.\//u, '');
 }
-
 function readName(value: unknown): string {
   const node = asNode(value);
   return node && typeof node.name === 'string' ? node.name : '';
 }
-
 function readString(value: unknown): string {
   const node = asNode(value);
   return node && typeof node.value === 'string' ? node.value : '';

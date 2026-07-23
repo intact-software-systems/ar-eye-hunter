@@ -12,10 +12,13 @@ import {
 } from './mutation-boundary-capability-closures.ts';
 import {
   type CallableAliasWrite,
+  type CallableResolution,
   type CallableResolutionContext,
+  collectCallableTargets,
   type LocalCallableDefinition,
+  mergeCallableResolutions,
   resolveCallable,
-  toConditionalResolution,
+  unknownLocalCallableResolution,
 } from './mutation-boundary-callable-resolution.ts';
 
 interface InvocationContext extends CallableResolutionContext {
@@ -40,11 +43,15 @@ export function collectClosureExecutionWrites(
     ])),
     byReference: indexReferences(definitions),
     isConditional,
+    resolveCall: resolveReturnedCallable,
   };
   const roots: AstNode[] = [
     program,
     ...definitions.filter((definition) =>
-      definition.parentFunctionKey === programKey && isRootFunction(definition.node)
+      definition.parentFunctionKey === programKey &&
+      ['ArrowFunctionExpression', 'FunctionDeclaration', 'FunctionExpression'].includes(
+        definition.node.type,
+      )
     ).map((definition) => definition.node),
   ];
   const writes: ClosureExecutionWrite[] = [];
@@ -216,27 +223,92 @@ function summarizeInvocations(
   context: InvocationContext,
   activeFunctions: ReadonlySet<string>,
 ): readonly SummaryWrite[] {
-  const resolutions = [
-    resolveCallable(asNode(call.callee), readPosition(call), context, new Set()),
-    ...asNodes(call.arguments).map((argument) =>
-      toConditionalResolution(
-        resolveCallable(argument, readPosition(call), context, new Set()),
-      )
-    ),
-  ];
+  const resolution = resolveCallable(asNode(call.callee), readPosition(call), context, new Set());
   const writes: SummaryWrite[] = [];
-  for (const resolution of resolutions) {
-    for (const target of resolution.targets.values()) {
+  for (const target of resolution.targets.values()) {
+    if (activeFunctions.has(target.definition.functionKey)) continue;
+    writes.push(...summarizeFunction(
+      target.definition,
+      bindCallArguments(target.definition, call, context),
+      activeFunctions,
+      context.isConditional(call) || target.conditional || resolution.unknown,
+    ));
+  }
+  if (resolution.targets.size > 0 || resolution.localProvenance) return writes;
+  for (const argument of asNodes(call.arguments)) {
+    const passed = resolveCallable(argument, readPosition(call), context, new Set());
+    if (!passed.localProvenance) continue;
+    for (const target of collectCallableTargets(passed).values()) {
       if (activeFunctions.has(target.definition.functionKey)) continue;
       writes.push(...summarizeFunction(
         target.definition,
         context,
         activeFunctions,
-        context.isConditional(call) || target.conditional || resolution.unknown,
+        true,
       ));
     }
   }
   return writes;
+}
+
+function bindCallArguments(
+  definition: LocalCallableDefinition,
+  call: AstNode,
+  context: InvocationContext,
+  resolving = new Set<string>(),
+): InvocationContext {
+  const bindings = new Map(context.bindings);
+  const arguments_ = asNodes(call.arguments);
+  for (const [index, parameter] of asNodes(definition.node.params).entries()) {
+    const key = context.access.expressionKey(parameter);
+    if (!key) continue;
+    bindings.set(
+      key,
+      resolveCallable(arguments_[index], readPosition(call), context, new Set(resolving)),
+    );
+  }
+  return { ...context, bindings };
+}
+
+function resolveReturnedCallable(
+  call: AstNode,
+  position: number,
+  baseContext: CallableResolutionContext,
+  resolving: Set<string>,
+): CallableResolution {
+  const context = baseContext as InvocationContext;
+  const callees = resolveCallable(asNode(call.callee), position, context, new Set(resolving));
+  const returns: CallableResolution[] = [];
+  for (const target of callees.targets.values()) {
+    const returnKey = `return:${target.definition.functionKey}`;
+    if (resolving.has(returnKey)) {
+      returns.push(unknownLocalCallableResolution());
+      continue;
+    }
+    const nextResolving = new Set(resolving).add(returnKey);
+    const targetContext = bindCallArguments(
+      target.definition,
+      call,
+      context,
+      nextResolving,
+    );
+    walkExecution(target.definition.node, (node) => {
+      if (node.type !== 'ReturnStatement') return;
+      returns.push(resolveCallable(
+        asNode(node.argument),
+        readPosition(node),
+        targetContext,
+        nextResolving,
+      ));
+    });
+  }
+  if (returns.length === 0) {
+    return callees.localProvenance ? unknownLocalCallableResolution() : callees;
+  }
+  return mergeCallableResolutions(
+    returns,
+    callees.unknown || [...callees.targets.values()].some((target) => target.conditional),
+  );
 }
 
 function summarizeFunction(
@@ -322,14 +394,7 @@ function isFunction(node: AstNode | undefined): node is AstNode {
   ].includes(node.type);
 }
 
-function isRootFunction(node: AstNode): boolean {
-  return ['ArrowFunctionExpression', 'FunctionDeclaration', 'FunctionExpression'].includes(
-    node.type,
-  );
-}
-
 function readPosition(node: AstNode): number {
   return typeof node.start === 'number' ? node.start : Number.MAX_SAFE_INTEGER;
 }
-
 const IGNORED_KEYS = new Set(['loc', 'start', 'end', 'comments', 'tokens']);

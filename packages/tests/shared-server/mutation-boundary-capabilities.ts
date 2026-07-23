@@ -80,6 +80,7 @@ export function findCapabilityMutationCalls(
     });
     if (!changed) break;
   }
+  if (analysis.receivers.size === 0 && analysis.methods.size === 0) return [];
   const calls = new Set<string>();
   for (
     const call of findFlowSensitiveCapabilityCalls(program, {

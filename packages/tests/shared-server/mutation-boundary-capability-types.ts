@@ -55,6 +55,12 @@ export function createCapabilityTypeResolver(
           ...asNodes(declaration.extends).map((item) => resolveType(item.expression, module)),
         ]);
       }
+      if (
+        declaration?.type === 'FunctionDeclaration' ||
+        declaration?.type === 'TSDeclareFunction'
+      ) {
+        return resolveType(declaration.returnType, module);
+      }
       const imported = module.imports.get(name);
       if (!imported) return undefined;
       const capabilities = readCapabilityExports(imported.source);
@@ -131,6 +137,10 @@ export function createCapabilityTypeResolver(
     ) {
       return resolveType(node.typeAnnotation, module);
     }
+    if (node.type === 'CallExpression' || node.type === 'OptionalCallExpression') {
+      const callee = asNode(node.callee);
+      return callee?.type === 'Identifier' ? resolveNamed(module, readName(callee)) : undefined;
+    }
     if (node.type !== 'NewExpression') return undefined;
     const callee = asNode(node.callee);
     if (callee?.type === 'Identifier') return resolveNamed(module, readName(callee));
@@ -158,7 +168,9 @@ function readModuleTypes(program: AstNode, filePath: string): ModuleTypes {
       : statement;
     if (
       declaration?.type === 'TSTypeAliasDeclaration' ||
-      declaration?.type === 'TSInterfaceDeclaration'
+      declaration?.type === 'TSInterfaceDeclaration' ||
+      declaration?.type === 'FunctionDeclaration' ||
+      declaration?.type === 'TSDeclareFunction'
     ) {
       const name = readName(declaration.id);
       if (name) declarations.set(name, declaration);
