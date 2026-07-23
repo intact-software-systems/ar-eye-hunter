@@ -1,138 +1,94 @@
 import { describe, expect, it } from 'vitest';
 import { AuthUserRepository } from '@shared-server/rallar-system/repositories/AuthUserRepository.ts';
-import { loginAuthUser, registerAuthUser, } from '@shared-server/rallar-system/services/auth-login-service.ts';
+import {
+    authenticateAuthUser,
+    prepareAuthUserRegistration,
+} from '@shared-server/rallar-system/services/auth-login-service.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 
 describe('auth login service', () => {
-    it('registers runtime users and validates their passwords', async () => {
+    it('prepares a complete persisted user without writing it', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
-        const registered = await registerAuthUser(
+        const user = await prepareAuthUserRegistration(
             {
-                username: 'new-user',
+                username: '  new-user  ',
                 password: 'secret',
-                displayName: 'New User',
             },
             {
-                runtimeRepository,
-                now: () => 1_234,
+                clientId: 'client-1',
+                capturedAtEpochMs: 1_234,
             },
         );
 
-        expect(registered).toMatchObject({
+        expect(user).toEqual({
+            clientId: 'client-1',
             username: 'new-user',
-            displayName: 'New User',
-            registeredAtEpochMs: 1_234,
+            normalizedUsername: 'new-user',
+            displayName: null,
+            passwordHash: expect.any(String),
+            passwordSalt: expect.any(String),
+            passwordAlgorithm: 'pbkdf2-sha256',
+            passwordIterations: 120_000,
+            roles: ['member'],
+            status: 'active',
+            createdAtEpochMs: 1_234,
+            updatedAtEpochMs: 1_234,
         });
-        expect(runtimeRepository.locks).toHaveLength(1);
+        expect(runtimeRepository.data.size).toBe(0);
+    });
 
+    it('authenticates a prepared runtime user without minting credentials', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
         const userRepository = new AuthUserRepository(runtimeRepository);
+        const user = await prepareAuthUserRegistration(
+            { username: 'runtime-user', password: 'secret', displayName: 'Runtime User' },
+            { clientId: 'client-1', capturedAtEpochMs: 1_234 },
+        );
+        await userRepository.putUser(user);
+
+        const first = await authenticateAuthUser(
+            { username: 'runtime-user', password: 'secret' },
+            { userRepository },
+        );
+        const second = await authenticateAuthUser(
+            { username: 'RUNTIME-USER', password: 'secret' },
+            { userRepository },
+        );
+
+        expect(first).toEqual({ clientId: 'client-1', username: 'runtime-user' });
+        expect(second).toEqual(first);
+        expect(first).not.toHaveProperty('sessionId');
+        expect(first).not.toHaveProperty('accessToken');
         await expect(
-            loginAuthUser(
-                { username: 'new-user', password: 'secret' },
-                { userRepository },
-            ),
-        ).resolves.toMatchObject({
-            clientId: registered.clientId,
-            username: 'new-user',
-        });
-        await expect(
-            loginAuthUser(
-                { username: 'new-user', password: 'wrong' },
+            authenticateAuthUser(
+                { username: 'runtime-user', password: 'wrong' },
                 { userRepository },
             ),
         ).resolves.toBeUndefined();
     });
 
-    it('issues independent sessions for repeat logins by the same runtime user', async () => {
+    it('does not authenticate disabled runtime users', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
-        const registered = await registerAuthUser(
-            {
-                username: 'multi-browser',
-                password: 'secret',
-            },
-            { runtimeRepository },
-        );
         const userRepository = new AuthUserRepository(runtimeRepository);
-
-        const first = await loginAuthUser(
-            { username: 'multi-browser', password: 'secret' },
-            { userRepository },
+        const user = await prepareAuthUserRegistration(
+            { username: 'disabled-user', password: 'secret' },
+            { clientId: 'client-1', capturedAtEpochMs: 1_234 },
         );
-        const second = await loginAuthUser(
-            { username: 'multi-browser', password: 'secret' },
-            { userRepository },
-        );
-
-        expect(first).toMatchObject({
-            clientId: registered.clientId,
-            username: 'multi-browser',
-        });
-        expect(second).toMatchObject({
-            clientId: registered.clientId,
-            username: 'multi-browser',
-        });
-        expect(first?.sessionId).toBeDefined();
-        expect(second?.sessionId).toBeDefined();
-        expect(first?.sessionId).not.toBe(second?.sessionId);
-        expect(first?.accessToken).not.toBe(second?.accessToken);
-    });
-
-    it('returns an explicit null display name when registration omits it', async () => {
-        const registered = await registerAuthUser(
-            {
-                username: 'no-display-name',
-                password: 'secret',
-            },
-            {
-                runtimeRepository: new FakeRuntimeStateRepository(),
-                now: () => 1_234,
-            },
-        );
-
-        expect(registered).toEqual({
-            clientId: expect.any(String),
-            username: 'no-display-name',
-            displayName: null,
-            registeredAtEpochMs: 1_234,
-        });
-    });
-
-    it('rejects duplicate usernames including static client reservations', async () => {
-        const runtimeRepository = new FakeRuntimeStateRepository();
-        await registerAuthUser(
-            { username: 'New-User', password: 'secret' },
-            { runtimeRepository },
-        );
+        await userRepository.putUser({ ...user, status: 'disabled' });
 
         await expect(
-            registerAuthUser(
-                { username: 'new-user', password: 'secret' },
-                { runtimeRepository },
+            authenticateAuthUser(
+                { username: 'disabled-user', password: 'secret' },
+                { userRepository },
             ),
-        ).rejects.toThrow('Auth user already exists: new-user');
-
-        await expect(
-            registerAuthUser(
-                { username: 'admin', password: 'secret' },
-                {
-                    runtimeRepository: new FakeRuntimeStateRepository(),
-                    staticClients: [
-                        {
-                            clientId: 'static-admin',
-                            username: 'Admin',
-                            password: 'secret',
-                        },
-                    ],
-                },
-            ),
-        ).rejects.toThrow('Auth user already exists: admin');
+        ).resolves.toBeUndefined();
     });
 
-    it('falls back to static clients when no runtime user matches', async () => {
+    it('authenticates configured static clients without minting credentials', async () => {
         const userRepository = new AuthUserRepository(new FakeRuntimeStateRepository());
 
         await expect(
-            loginAuthUser(
+            authenticateAuthUser(
                 { username: 'admin', password: 'secret' },
                 {
                     userRepository,
@@ -145,9 +101,38 @@ describe('auth login service', () => {
                     ],
                 },
             ),
-        ).resolves.toMatchObject({
+        ).resolves.toEqual({
             clientId: 'static-admin',
             username: 'Admin',
         });
+    });
+
+    it('rejects configured static usernames while preparing registration', async () => {
+        await expect(
+            prepareAuthUserRegistration(
+                { username: 'admin', password: 'secret' },
+                { clientId: 'client-1', capturedAtEpochMs: 1_234 },
+                [
+                    {
+                        clientId: 'static-admin',
+                        username: 'Admin',
+                        password: 'secret',
+                    },
+                ],
+            ),
+        ).rejects.toThrow('Auth user already exists: admin');
+    });
+
+    it('does not expose direct mutation or credential-minting compatibility APIs', async () => {
+        const [service, publicApi] = await Promise.all([
+            import('@shared-server/rallar-system/services/auth-login-service.ts'),
+            import('@shared-server/mod.ts'),
+        ]);
+
+        expect(service).not.toHaveProperty('registerAuthUser');
+        expect(service).not.toHaveProperty('loginAuthUser');
+        expect(publicApi).not.toHaveProperty('registerAuthUser');
+        expect(publicApi).not.toHaveProperty('loginAuthUser');
+        expect(publicApi).toHaveProperty('AppAuthInboxService');
     });
 });

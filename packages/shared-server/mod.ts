@@ -27,6 +27,9 @@ export * from './rallar-system/services/client-state-snapshot-read-through-cache
 export * from './rallar-system/services/cached-client-state-service.ts';
 export * from './rallar-system/services/cached-group-state-service.ts';
 export * from './rallar-system/services/auth-login-service.ts';
+export * from './rallar-system/services/auth-state-mutations.ts';
+export * from './rallar-system/services/auth-credential-issuer.ts';
+export * from './rallar-system/services/AppAuthInboxService.ts';
 export * from './rallar-system/services/AppClientInboxService.ts';
 export * from './rallar-system/services/AppGroupInboxService.ts';
 export * from './rallar-system/services/AppInboxService.ts';

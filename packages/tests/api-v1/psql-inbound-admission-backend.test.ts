@@ -9,9 +9,11 @@ import { PSqlInboundAdmissionBackend } from '@shared-server/postgres/al-runtime/
 import { PSqlOutboundAdmissionBackend } from '@shared-server/postgres/al-runtime/PSqlOutboundAdmissionBackend.ts';
 import { RUNTIME_STATE_PREFIX_READ_PAGE_SIZE } from '@shared-server/postgres/al-runtime/runtime-state-prefix-reader.ts';
 import type {
+    RuntimeStateConditionalDeleteResult,
+    RuntimeStateConditionalWriteResult,
     RuntimeStateEntry,
     RuntimeStateEntryPageOptions,
-    RuntimeStateTransactionalRepositoryLike,
+    RuntimeStateOptimisticTransactionalRepositoryLike,
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 
 afterEach(() => {
@@ -69,7 +71,7 @@ describe('PSqlInboundAdmissionBackend', () => {
         ]);
     });
 
-    it('locks the sender version key when committing mutations', async () => {
+    it('conditionally advances the sender version without a domain lock', async () => {
         const repository = new FakeRuntimeStateRepository();
         const namespace = 'psql-test:inbound:admission';
         const store = createALInboundAdmissionStore({
@@ -93,10 +95,8 @@ describe('PSqlInboundAdmissionBackend', () => {
         });
 
         expect(status).toBe('committed');
-        expect(repository.lockedKeys).toContainEqual({
-            namespace,
-            key: `${namespace}:version:peer-1`,
-        });
+        expect(repository.lockedKeys).toEqual([]);
+        expect(repository.conditionalWrites.length).toBeGreaterThan(0);
 
         const versionEntry = await repository.findEntry(namespace, `${namespace}:version:peer-1`);
         expect(versionEntry).toBeDefined();
@@ -135,10 +135,7 @@ describe('PSqlInboundAdmissionBackend', () => {
         );
 
         expect(acceptance.handled).toBe(true);
-        expect(repository.lockedKeys).toContainEqual({
-            namespace,
-            key: `${namespace}:version:peer-1`,
-        });
+        expect(repository.lockedKeys).toEqual([]);
 
         const versionEntry = await repository.findEntry(namespace, `${namespace}:version:peer-1`);
         expect(JSON.parse(versionEntry!.value)).toEqual({
@@ -191,7 +188,7 @@ describe('PSqlOutboundAdmissionBackend', () => {
         ]);
     });
 
-    it('locks the sender version key and persists durable effects when committing a bundle', async () => {
+    it('conditionally advances sender version and persists durable effects in one commit', async () => {
         const repository = new FakeRuntimeStateRepository();
         const namespace = 'psql-test:outbound:admission';
         const store = createALOutboundAdmissionStore({
@@ -232,10 +229,7 @@ describe('PSqlOutboundAdmissionBackend', () => {
         });
 
         expect(status).toBe('committed');
-        expect(repository.lockedKeys).toContainEqual({
-            namespace,
-            key: `${namespace}:version:self`,
-        });
+        expect(repository.lockedKeys).toEqual([]);
 
         const versionEntry = await repository.findEntry(namespace, `${namespace}:version:self`);
         expect(JSON.parse(versionEntry!.value)).toEqual({
@@ -267,10 +261,7 @@ describe('PSqlOutboundAdmissionBackend', () => {
 
         expect(claimed).toHaveLength(1);
         expect(claimed[0].effectId).toBe(effectId);
-        expect(repository.lockedKeys).toContainEqual({
-            namespace,
-            key: `${namespace}:effects:claim-lock`,
-        });
+        expect(repository.lockedKeys).toEqual([]);
 
         await store.completeEffect(effectId, 'worker-1');
         expect(
@@ -308,10 +299,7 @@ describe('PSqlOutboundAdmissionBackend', () => {
         );
 
         expect(acceptance.handled).toBe(true);
-        expect(repository.lockedKeys).toContainEqual({
-            namespace,
-            key: `${namespace}:version:self`,
-        });
+        expect(repository.lockedKeys).toEqual([]);
 
         const versionEntry = await repository.findEntry(namespace, `${namespace}:version:self`);
         expect(JSON.parse(versionEntry!.value)).toEqual({
@@ -385,9 +373,15 @@ type TestPreparedOutboundSend = Readonly<{
     msgId: string;
 }>;
 
-class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryLike {
+class FakeRuntimeStateRepository implements RuntimeStateOptimisticTransactionalRepositoryLike {
     readonly data = new Map<string, RuntimeStateEntry>();
     readonly lockedKeys: Array<Readonly<{ namespace: string; key: string }>> = [];
+    readonly conditionalWrites: Array<Readonly<{
+        operation: 'insert' | 'replace' | 'delete';
+        namespace: string;
+        key: string;
+        expectedRevision: number | null;
+    }>> = [];
     readonly findEntriesByPrefixCalls: Array<
         Readonly<{ namespace: string; keyPrefix: string }>
     > = [];
@@ -401,7 +395,7 @@ class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryL
     > = [];
 
     async begin<T>(
-        fn: (repository: RuntimeStateTransactionalRepositoryLike) => Promise<T>,
+        fn: (repository: RuntimeStateOptimisticTransactionalRepositoryLike) => Promise<T>,
     ): Promise<T> {
         return await fn(this);
     }
@@ -497,6 +491,75 @@ class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryL
         }
 
         return deleted;
+    }
+
+    async insertIfAbsent(
+        namespace: string,
+        key: string,
+        value: string,
+        expireAtTimestamp: number,
+    ): Promise<RuntimeStateConditionalWriteResult> {
+        this.conditionalWrites.push({
+            operation: 'insert',
+            namespace,
+            key,
+            expectedRevision: null,
+        });
+        const compositeKey = this.toKey(namespace, key);
+        if (this.data.has(compositeKey)) return { status: 'conflict' };
+        this.data.set(compositeKey, {
+            key,
+            value,
+            expireAtTimestamp,
+            updatedTimestamp: new Date().toISOString(),
+            revision: 0,
+        });
+        return { status: 'applied', revision: 0 };
+    }
+
+    async upsertIfRevision(
+        namespace: string,
+        key: string,
+        value: string,
+        expireAtTimestamp: number,
+        expectedRevision: number,
+    ): Promise<RuntimeStateConditionalWriteResult> {
+        this.conditionalWrites.push({
+            operation: 'replace',
+            namespace,
+            key,
+            expectedRevision,
+        });
+        const compositeKey = this.toKey(namespace, key);
+        const current = this.data.get(compositeKey);
+        if (!current || current.revision !== expectedRevision) return { status: 'conflict' };
+        const revision = current.revision + 1;
+        this.data.set(compositeKey, {
+            key,
+            value,
+            expireAtTimestamp,
+            updatedTimestamp: new Date().toISOString(),
+            revision,
+        });
+        return { status: 'applied', revision };
+    }
+
+    async deleteIfRevision(
+        namespace: string,
+        key: string,
+        expectedRevision: number,
+    ): Promise<RuntimeStateConditionalDeleteResult> {
+        this.conditionalWrites.push({
+            operation: 'delete',
+            namespace,
+            key,
+            expectedRevision,
+        });
+        const compositeKey = this.toKey(namespace, key);
+        const current = this.data.get(compositeKey);
+        if (!current || current.revision !== expectedRevision) return { status: 'conflict' };
+        this.data.delete(compositeKey);
+        return { status: 'applied' };
     }
 
     async lockKey(namespace: string, key: string): Promise<void> {

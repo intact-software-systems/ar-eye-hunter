@@ -481,12 +481,6 @@ export class PSqlRuntimeStateRepository
         return rows.map(toEntry);
     }
 
-    async lockKey(namespace: string, key: string): Promise<void> {
-        await this.sql`
-            select pg_advisory_xact_lock(hashtextextended(${`${namespace}:${key}`}, 0))
-        `;
-    }
-
     async upsert(
         namespace: string,
         key: string,

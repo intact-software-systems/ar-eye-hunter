@@ -32,6 +32,7 @@ values.
 - Set `AUTH_REGISTRATION_MODE=admin`.
 - Set `AUTH_ADMIN_CLIENT_IDS=<runtime admin client ids>`; do not use the default `admin`.
 - Set `AUTH_STATIC_CLIENTS_MODE=disabled`.
+- Set `RALLAR_AUTH_CREDENTIAL_SECRET=<stable high-entropy secret>` with at least 32 characters. Rotating it invalidates reconstruction of outstanding AppInbox auth results and tickets.
 - Set `RALLAR_ICE_MODE=metered`, `METERED_APP_NAME=<secret-ish id>`, `METERED_API_KEY=<secret>`, and optional `METERED_REGION`.
 - If black-box operator tokens are brokered through API-v1, set `RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET=<shared high-entropy secret>`, `RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS=<allowlist>`, and explicit `RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS`.
 

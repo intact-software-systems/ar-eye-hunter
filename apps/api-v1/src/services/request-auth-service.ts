@@ -9,6 +9,7 @@ import {
   createAuthSessionRepository,
   createRuntimeStateRepository,
 } from '../repository/createStateRepositories.ts';
+import { getMiddleware } from '../middleware.ts';
 
 export { toAuthErrorResponse, toAuthSession };
 
@@ -26,7 +27,11 @@ export async function requireWsAuthSession(
     sessionId: string;
     ticket?: string;
   },
-  repository: AuthSessionRepository = createAuthSessionRepository(createRuntimeStateRepository()),
+  appAuthInbox = getMiddleware().appAuthInboxService,
+  facts: Readonly<{ requestId: string; capturedAtEpochMs: number }> = {
+    requestId: crypto.randomUUID(),
+    capturedAtEpochMs: Date.now(),
+  },
 ) {
-  return await requireSharedWsAuthSession(input, repository);
+  return await requireSharedWsAuthSession(input, appAuthInbox, facts);
 }

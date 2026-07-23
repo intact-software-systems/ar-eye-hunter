@@ -168,6 +168,8 @@ export function toApiV1BlackBoxEnvironment(
     env.RALLAR_ICE_MODE = env.RALLAR_ICE_MODE ?? 'local'
     env.RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET = env.RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET
         ?? 'local-api-v1-black-box-operator-secret'
+    env.RALLAR_AUTH_CREDENTIAL_SECRET = env.RALLAR_AUTH_CREDENTIAL_SECRET
+        ?? 'local-api-v1-black-box-auth-credential-secret-v1'
     env.RALLAR_LOGIN_USER_RATE_LIMIT = env.RALLAR_LOGIN_USER_RATE_LIMIT ?? '100'
     env.RALLAR_STATE_STRICT_READ_AUTH = env.RALLAR_STATE_STRICT_READ_AUTH ?? '1'
     env.AUTH_STATIC_CLIENTS_MODE = env.AUTH_STATIC_CLIENTS_MODE ?? 'demo'

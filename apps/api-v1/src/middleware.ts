@@ -24,6 +24,9 @@ import {
 import { installQueueBoxPubSubBridge } from '@shared-server/rallar-system/pubsub/QueueBoxPubSubBridge.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/services/AppClientInboxService.ts';
 import { AppGroupInboxService } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
+import { AppAuthInboxService } from '@shared-server/rallar-system/services/AppAuthInboxService.ts';
+import { createAuthMutationService } from '@shared-server/rallar-system/services/auth-state-mutations.ts';
+import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/services/auth-credential-issuer.ts';
 import { AppOutboxType } from '@shared-server/rallar-system/services/AppOutboxService.ts';
 import {
   createAppInboxRetryExhaustionHandler,
@@ -107,6 +110,7 @@ export type Middleware =
     | 'rtcTopologyPublicationRepository'
     | 'rtcTopologyExecutionRepository'
     | 'rtcTopologyPublicationFanout'
+    | 'appAuthInboxService'
   >
   & Readonly<{
     clientStateService: CachedClientStateService;
@@ -114,6 +118,7 @@ export type Middleware =
     rtcTopologyPublicationRepository: RtcTopologyPublicationRepository;
     rtcTopologyExecutionRepository: RtcTopologyExecutionRepository;
     rtcTopologyPublicationFanout: RtcTopologyPublicationFanout;
+    appAuthInboxService: AppAuthInboxService;
   }>;
 
 let middleware: Middleware | undefined = undefined;
@@ -175,6 +180,9 @@ function initialise(
     clientsRepository,
   });
   const runtimeStateRepository = createRuntimeStateRepository(sql);
+  const credentialIssuer = createHmacAuthCredentialIssuer(
+    readRequiredAuthCredentialSecret(),
+  );
   const rtcRttRepository = new RtcRttRepository(runtimeStateRepository, { now });
   const rtcTopologyPublicationRepository = new RtcTopologyPublicationRepository(
     runtimeStateRepository,
@@ -344,6 +352,21 @@ function initialise(
         appInboxOptions,
       );
     },
+    createAppAuthInboxService: ({ inboxQueueReader }) =>
+      new AppAuthInboxService(
+        inboxQueueReader,
+        resourceInboxRepository,
+        resourceInboxResultsRepository,
+        postgresSql,
+        createAuthMutationService({
+          runtimeRepository: runtimeStateRepository,
+          serviceId: myServerId,
+        }),
+        credentialIssuer,
+        myServerId,
+        timing,
+        appInboxOptions,
+      ),
     resilience: {
       inbox: resilienceInbox,
       outbox: resilienceOutbox,
@@ -427,6 +450,9 @@ function requireApiMiddleware(runtime: RallarMiddlewareRuntime): Middleware {
   if (!runtime.rtcTopologyPublicationFanout) {
     throw new Error('API middleware requires the RTC topology publication fanout');
   }
+  if (!runtime.appAuthInboxService) {
+    throw new Error('API middleware requires the auth AppInbox service');
+  }
 
   return {
     ...runtime,
@@ -435,7 +461,16 @@ function requireApiMiddleware(runtime: RallarMiddlewareRuntime): Middleware {
     rtcTopologyPublicationRepository: runtime.rtcTopologyPublicationRepository,
     rtcTopologyExecutionRepository: runtime.rtcTopologyExecutionRepository,
     rtcTopologyPublicationFanout: runtime.rtcTopologyPublicationFanout,
+    appAuthInboxService: runtime.appAuthInboxService,
   };
+}
+
+function readRequiredAuthCredentialSecret(): string {
+  const secret = Deno.env.get('RALLAR_AUTH_CREDENTIAL_SECRET')?.trim();
+  if (!secret) {
+    throw new Error('RALLAR_AUTH_CREDENTIAL_SECRET is required');
+  }
+  return secret;
 }
 
 function isCachedClientStateService(

@@ -71,6 +71,7 @@ for some Rallar Black Box runs.
 | `AUTH_REGISTRATION_MODE`       | No       | `public` | When set to `admin`, `/api/auth/register` requires an authenticated admin client. Other values behave like public registration.      |
 | `AUTH_ADMIN_CLIENT_IDS`        | No       | `admin`  | Comma-separated platform-admin allow-list for admin-only registration, topology management, CRDT admin routes, admin operations, and admin support explain routes. |
 | `AUTH_STATIC_CLIENTS_MODE`     | No       | `demo`   | `demo` enables bundled local clients such as `admin/admin`, `user/user`, and tests. `disabled` removes static clients from login and registration conflict checks. |
+| `RALLAR_AUTH_CREDENTIAL_SECRET` | Yes     | None     | Stable server-only HMAC secret for deterministically reconstructing AppInbox-issued access tokens and one-time tickets without persisting their plaintext. Must contain at least 32 characters and remain unchanged for the lifetime of outstanding sessions, tickets, and durable results. |
 | `RALLAR_LOGIN_IP_RATE_LIMIT`   | No       | `30`     | Login attempts per client IP per 60 seconds. Must be a positive integer.                                                             |
 | `RALLAR_LOGIN_USER_RATE_LIMIT` | No       | `5`      | Login attempts per client IP plus username per 60 seconds. Must be a positive integer. Root memory-mode scripts raise this to `100`. |
 

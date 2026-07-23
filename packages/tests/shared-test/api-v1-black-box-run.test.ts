@@ -258,6 +258,9 @@ describe('api-v1 black-box run helper', () => {
         expect(env.RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET).toBe(
             'local-api-v1-black-box-operator-secret',
         );
+        expect(env.RALLAR_AUTH_CREDENTIAL_SECRET).toBe(
+            'local-api-v1-black-box-auth-credential-secret-v1',
+        );
         expect(env.AUTH_STATIC_CLIENTS_MODE).toBe('demo');
         expect(env.AUTH_REGISTRATION_MODE).toBe('public');
     });
@@ -359,6 +362,9 @@ describe('api-v1 black-box run helper', () => {
         expect(env.RALLAR_PGLITE_SCHEMA_INIT).toBe('auto');
         expect(env.RALLAR_DB_PUBSUB).toBe('local');
         expect(env.RALLAR_STATE_STRICT_READ_AUTH).toBe('1');
+        expect(env.RALLAR_AUTH_CREDENTIAL_SECRET).toBe(
+            'local-api-v1-black-box-auth-credential-secret-v1',
+        );
         expect(env.AUTH_STATIC_CLIENTS_MODE).toBe('demo');
         expect(env.AUTH_REGISTRATION_MODE).toBe('public');
     });

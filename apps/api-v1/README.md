@@ -9,8 +9,9 @@ concrete game server.
 Set `RALLAR_PRODUCTION_HARDENING=1` or `ENVIRONMENT=prod` to make startup fail closed when
 production-only guardrails are missing. The hardened profile requires Postgres, exact HTTPS CORS
 origins, strict state read authorization, admin-only registration,
-`AUTH_STATIC_CLIENTS_MODE=disabled`, Metered TURN, and explicit black-box operator-token settings
-when control tokens are brokered.
+`AUTH_STATIC_CLIENTS_MODE=disabled`, a stable `RALLAR_AUTH_CREDENTIAL_SECRET` of at least 32
+characters, Metered TURN, and explicit black-box operator-token settings when control tokens are
+brokered.
 
 See [Production Env Hardening Checklist](../../docs/production-env-hardening-checklist.md) and
 [Environment Variables](../../docs/environment-variables.md).

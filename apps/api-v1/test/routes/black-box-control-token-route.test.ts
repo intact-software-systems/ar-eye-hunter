@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
-import type { AuthSession } from '@shared/api/api-config.ts';
+import type { IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 import { verifyRallarBlackBoxOperatorToken } from '@shared-server/http/black-box-operator-token.ts';
 import * as configRoutes from '../../src/routes/config-route.ts';
 
@@ -124,12 +124,13 @@ function createApp(
   return app;
 }
 
-function createAuthSession(clientId: string): AuthSession {
+function createAuthSession(clientId: string): IssuedAuthSession {
   return {
     clientId,
     username: 'alice',
     accessToken: 'access-token',
     sessionId: `${clientId}-session`,
+    issuedAtEpochMs: NOW_EPOCH_MS,
     expiresAtEpochMs: NOW_EPOCH_MS + DEFAULT_TTL_MS,
   };
 }

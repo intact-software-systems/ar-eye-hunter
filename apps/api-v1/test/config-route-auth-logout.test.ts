@@ -1,49 +1,57 @@
 import assert from 'node:assert/strict';
-import { closeLiveAuthSessionSocket } from '../src/routes/config-route.ts';
+import { Hono } from 'jsr:@hono/hono@4.11.9';
+import { Either } from '@shared/resilience/Either.ts';
+import * as configRoutes from '../src/routes/config-route.ts';
 
-Deno.test('logout websocket cleanup closes only the current auth session socket', () => {
-  const calls: Array<{ sessionId: string; code?: number; reason?: string }> = [];
+const SESSION = {
+  clientId: 'client-a',
+  username: 'alice',
+  accessToken: 'access-a',
+  sessionId: 'session-a',
+  issuedAtEpochMs: 1_000,
+  expiresAtEpochMs: 61_000,
+} as const;
 
-  closeLiveAuthSessionSocket('session-a', {
-    readMiddleware: () =>
-      ({
-        wsQBoxServerService: {
-          socket: {
-            closeConnection(
-              sessionId: string,
-              code?: number,
-              reason?: string,
-            ): boolean {
-              calls.push({ sessionId, code, reason });
-              return true;
-            },
-          },
-        },
-      }) as never,
+Deno.test('logout routes the session mutation through AppAuthInbox', async () => {
+  const calls: unknown[] = [];
+  const app = new Hono();
+  configRoutes.init(app, {
+    requireApiAuthSession: () => Promise.resolve(SESSION),
+    now: () => 2_000,
+    createTokenId: () => 'logout-request-1',
+    readAppAuthInbox: () => ({
+      logoutSession: (input: unknown) => {
+        calls.push(input);
+        return Promise.resolve(Either.ofRight({ loggedOut: true }));
+      },
+    }) as never,
   });
 
-  assert.deepEqual(calls, [
-    {
-      sessionId: 'session-a',
-      code: 1000,
-      reason: 'auth-logout',
-    },
-  ]);
+  const response = await app.request('/api/auth/logout', { method: 'POST' });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { loggedOut: true });
+  assert.deepEqual(calls, [{
+    requestId: 'logout-request-1',
+    capturedAtEpochMs: 2_000,
+    session: SESSION,
+  }]);
 });
 
-Deno.test('logout websocket cleanup is best effort when middleware is unavailable', () => {
-  const warnings: unknown[][] = [];
+Deno.test('logout returns the durable AppInbox failure status', async () => {
+  const app = new Hono();
+  configRoutes.init(app, {
+    requireApiAuthSession: () => Promise.resolve(SESSION),
+    readAppAuthInbox: () => ({
+      logoutSession: () => Promise.resolve(Either.ofLeft({
+        message: 'Auth logout authority differs',
+        status: 403,
+      })),
+    }) as never,
+  });
 
-  assert.doesNotThrow(() =>
-    closeLiveAuthSessionSocket('session-a', {
-      readMiddleware: () => {
-        throw new Error('Middleware not initialised');
-      },
-      logger: {
-        warn: (...args: unknown[]) => warnings.push(args),
-      },
-    })
-  );
-  assert.equal(warnings.length, 1);
-  assert.match(String(warnings[0][0]), /Failed to close live websocket session after logout/);
+  const response = await app.request('/api/auth/logout', { method: 'POST' });
+  assert.equal(response.status, 403);
+  assert.deepEqual(await response.json(), {
+    error: 'Auth logout authority differs',
+  });
 });

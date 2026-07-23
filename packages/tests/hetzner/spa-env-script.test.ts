@@ -43,6 +43,28 @@ describe('Hetzner SPA public env wiring', () => {
         }
     });
 
+    it('preserves a stable API auth credential secret across deploys and rollouts', async () => {
+        const deployScript = await readFile(
+            path.join(repoRoot, 'scripts/hetzner/controller/02-deploy-controller.sh'),
+            'utf8',
+        );
+        const rolloutScript = await readFile(
+            path.join(repoRoot, 'scripts/hetzner/controller/08-rollout-controller.sh'),
+            'utf8',
+        );
+
+        expect(deployScript).toContain(
+            'grep -E "^RALLAR_AUTH_CREDENTIAL_SECRET=" /etc/rallar/api-v1.env',
+        );
+        expect(deployScript).toContain(
+            'RALLAR_AUTH_CREDENTIAL_SECRET=${RALLAR_AUTH_CREDENTIAL_SECRET}',
+        );
+        expect(rolloutScript).toContain('ensure_api_auth_credential_secret');
+        expect(rolloutScript).toContain(
+            'update_env_value "/etc/rallar/api-v1.env" "RALLAR_AUTH_CREDENTIAL_SECRET"',
+        );
+    });
+
     it('serves nested SPA entry points before falling back to the operator index', async () => {
         const helper = await readFile(
             path.join(repoRoot, 'scripts/hetzner/controller/rallar-public-spa-env.sh'),

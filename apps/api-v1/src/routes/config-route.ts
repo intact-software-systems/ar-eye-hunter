@@ -1,26 +1,25 @@
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import {
-    AgentSessionTicket,
     AgentSessionTicketRequest,
     AgentSessionTicketResponse,
-    type AuthSession,
     ConsumeAgentSessionTicketRequest,
     ConsumeAgentSessionTicketResponse,
     LoginRequest,
-    LoginResponse,
     LogoutResponse,
     RegisterRequest,
     RegisterResponse,
     WebSocketTicketResponse,
 } from '@shared/api/api-config.ts';
 import * as loginRepository from '../repository/login-repository.ts';
-import { createAuthSessionRepository } from '../repository/createStateRepositories.ts';
-import { requireApiAuthSession, toAuthErrorResponse, toAuthSession, } from '../services/request-auth-service.ts';
+import { requireApiAuthSession, toAuthErrorResponse } from '../services/request-auth-service.ts';
 import { readRateLimiter, readRequestClientKey } from '@shared-server/http/rate-limit-service.ts';
 import { signRallarBlackBoxOperatorToken } from '@shared-server/http/black-box-operator-token.ts';
 import { RateLimiter, RateLimiterPolicy } from '@shared/resilience/Resilience.ts';
-import { getMiddleware, type Middleware } from '../middleware.ts';
-import type { AuthSessionRepository } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+import { getMiddleware } from '../middleware.ts';
+import type { AppAuthInboxService } from '@shared-server/rallar-system/services/AppAuthInboxService.ts';
+import type { IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+import type { AppInboxFailure } from '@shared-server/rallar-system/services/app-inbox-failure.ts';
+import type { Either } from '@shared/resilience/Either.ts';
 
 const AUTH_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const WS_AUTH_TICKET_TTL_MS = 30_000;
@@ -49,20 +48,22 @@ const ADMIN_CLIENT_IDS = new Set(
         .filter((value) => value.length > 0),
 );
 
-type BlackBoxControlTokenAuthSession = Pick<
-    AuthSession,
-    'clientId' | 'username' | 'sessionId' | 'expiresAtEpochMs'
->;
-
 export type ConfigRouteDependencies = Readonly<{
     requireApiAuthSession?: (
         req: { header(name: string): string | undefined },
-    ) => Promise<BlackBoxControlTokenAuthSession>;
+    ) => Promise<IssuedAuthSession>;
     readEnv?: (name: string) => string | undefined;
     now?: () => number;
     createTokenId?: () => string;
-    createOpaqueToken?: () => string;
-    createAuthSessionRepository?: () => AuthSessionRepository;
+    readAppAuthInbox?: () => Pick<
+        AppAuthInboxService,
+        | 'registerUser'
+        | 'issueSession'
+        | 'logoutSession'
+        | 'issueWebSocketTicket'
+        | 'issueAgentSessionTickets'
+        | 'consumeAgentSessionTicket'
+    >;
 }>;
 
 type ResolvedConfigRouteDependencies = Required<ConfigRouteDependencies>;
@@ -107,9 +108,17 @@ export function init(
                                     );
                                 }
 
-                                return toJsonResponse(
-                                    await issueAuthSession(loginResponse),
-                                );
+                                const issuedAtEpochMs = deps.now();
+                                return toJsonResponse(requireAuthMutationResult(
+                                    await deps.readAppAuthInbox().issueSession({
+                                        requestId: deps.createTokenId(),
+                                        capturedAtEpochMs: issuedAtEpochMs,
+                                        clientId: loginResponse.clientId,
+                                        username: loginResponse.username,
+                                        sessionId: deps.createTokenId(),
+                                        expiresAtEpochMs: issuedAtEpochMs + AUTH_SESSION_TTL_MS,
+                                    }),
+                                ));
                             },
                             toJsonResponse({ error: 'Too many login attempts for this user' }, 429),
                         );
@@ -147,10 +156,20 @@ export function init(
                                 await requireRegistrationAdminIfNeeded(c.req);
                                 const registerResponse = await loginRepository.register(
                                     registerRequest,
+                                    {
+                                        now: deps.now,
+                                        createClientId: deps.createTokenId,
+                                    },
                                 );
 
                                 return toJsonResponse<RegisterResponse>(
-                                    registerResponse,
+                                    requireAuthMutationResult(
+                                        await deps.readAppAuthInbox().registerUser({
+                                            requestId: deps.createTokenId(),
+                                            capturedAtEpochMs: registerResponse.createdAtEpochMs,
+                                            user: registerResponse,
+                                        }),
+                                    ),
                                     201,
                                 );
                             },
@@ -169,10 +188,14 @@ export function init(
         '/api/auth/logout',
         async (c) => {
             try {
-                const authSession = await requireApiAuthSession(c.req);
-                await createAuthSessionRepository().deleteSession(authSession);
-                closeLiveAuthSessionSocket(authSession.sessionId);
-                return toJsonResponse({ loggedOut: true } satisfies LogoutResponse);
+                const authSession = await deps.requireApiAuthSession(c.req);
+                return toJsonResponse(requireAuthMutationResult(
+                    await deps.readAppAuthInbox().logoutSession({
+                        requestId: deps.createTokenId(),
+                        capturedAtEpochMs: deps.now(),
+                        session: authSession,
+                    }),
+                ) satisfies LogoutResponse);
             } catch (error) {
                 return toAuthRouteErrorResponse(c, error);
             }
@@ -183,26 +206,22 @@ export function init(
         '/api/auth/ws-ticket',
         async (c) => {
             try {
-                const authSession = await requireApiAuthSession(c.req);
+                const authSession = await deps.requireApiAuthSession(c.req);
 
                 return await RateLimiter.tryToExecuteOrDefault<Response>(
                     readRateLimiter('auth-ws-ticket', authSession.sessionId, WS_TICKET_RATE_LIMIT),
                     async () => {
                         const issuedAtEpochMs = Date.now();
-                        const ticket = toWebSocketTicket();
-                        const response: WebSocketTicketResponse = {
-                            ticket,
-                            sessionId: authSession.sessionId,
-                            expiresAtEpochMs: issuedAtEpochMs + WS_AUTH_TICKET_TTL_MS,
-                        };
-
-                        await createAuthSessionRepository().putWebSocketTicket({
-                            ...response,
-                            clientId: authSession.clientId,
-                            issuedAtEpochMs,
-                        });
-
-                        return toJsonResponse(response);
+                        return toJsonResponse<WebSocketTicketResponse>(
+                            requireAuthMutationResult(
+                                await deps.readAppAuthInbox().issueWebSocketTicket({
+                                    requestId: deps.createTokenId(),
+                                    capturedAtEpochMs: issuedAtEpochMs,
+                                    session: authSession,
+                                    expiresAtEpochMs: issuedAtEpochMs + WS_AUTH_TICKET_TTL_MS,
+                                }),
+                            ),
+                        );
                     },
                     toJsonResponse({ error: 'Too many websocket ticket requests' }, 429),
                 );
@@ -219,44 +238,25 @@ export function init(
                 const authSession = await deps.requireApiAuthSession(c.req);
                 const request = await c.req.json() as AgentSessionTicketRequest;
                 const agentIds = readAgentSessionTicketAgentIds(request);
-                const repository = deps.createAuthSessionRepository();
                 const issuedAtEpochMs = deps.now();
                 const ticketExpiresAtEpochMs = Math.min(
                     authSession.expiresAtEpochMs,
                     issuedAtEpochMs + AGENT_SESSION_TICKET_TTL_MS,
                 );
                 const sessionExpiresAtEpochMs = authSession.expiresAtEpochMs;
-                const tickets: AgentSessionTicket[] = [];
-
-                for (const agentId of agentIds) {
-                    const session: AuthSession & { issuedAtEpochMs: number } = {
-                        clientId: authSession.clientId,
-                        accessToken: toOpaqueToken(deps),
-                        username: authSession.username,
-                        sessionId: `${agentId}-${deps.createOpaqueToken()}`,
-                        expiresAtEpochMs: sessionExpiresAtEpochMs,
-                        issuedAtEpochMs,
-                    };
-                    const ticket = toOpaqueToken(deps);
-
-                    await repository.putSession(session);
-                    await repository.putAgentSessionTicket({
-                        ticket,
-                        sessionId: session.sessionId,
-                        clientId: session.clientId,
-                        agentId,
-                        issuedAtEpochMs,
-                        expiresAtEpochMs: ticketExpiresAtEpochMs,
-                    });
-                    tickets.push({
-                        agentId,
-                        ticket,
-                        sessionId: session.sessionId,
-                        expiresAtEpochMs: ticketExpiresAtEpochMs,
-                    });
-                }
-
-                return toJsonResponse({ tickets } satisfies AgentSessionTicketResponse);
+                return toJsonResponse<AgentSessionTicketResponse>(requireAuthMutationResult(
+                    await deps.readAppAuthInbox().issueAgentSessionTickets({
+                        requestId: deps.createTokenId(),
+                        capturedAtEpochMs: issuedAtEpochMs,
+                        session: authSession,
+                        sessionExpiresAtEpochMs,
+                        ticketExpiresAtEpochMs,
+                        agents: agentIds.map((agentId) => ({
+                            agentId,
+                            sessionId: `${agentId}-${deps.createTokenId()}`,
+                        })),
+                    }),
+                ));
             } catch (error) {
                 return toAuthRouteErrorResponse(c, error);
             }
@@ -275,17 +275,14 @@ export function init(
                     return toJsonResponse({ error: 'Agent session ticket is required.' }, 400);
                 }
 
-                const session = await deps.createAuthSessionRepository()
-                    .consumeAgentSessionTicket(ticket);
-                if (!session) {
-                    return toJsonResponse(
-                        { error: 'Agent session ticket is invalid or expired.' },
-                        404,
-                    );
-                }
-
                 return toJsonResponse(
-                    toAuthSession(session) satisfies ConsumeAgentSessionTicketResponse,
+                    requireAuthMutationResult(
+                        await deps.readAppAuthInbox().consumeAgentSessionTicket({
+                            requestId: deps.createTokenId(),
+                            capturedAtEpochMs: deps.now(),
+                            ticket,
+                        }),
+                    ) satisfies ConsumeAgentSessionTicketResponse,
                 );
             } catch (error) {
                 return toAuthRouteErrorResponse(c, error);
@@ -353,50 +350,9 @@ export function init(
     );
 }
 
-export type CloseLiveAuthSessionSocketOptions = Readonly<{
-    readMiddleware?: () => Middleware;
-    logger?: Pick<Console, 'warn'>;
-}>;
-
-export function closeLiveAuthSessionSocket(
-    sessionId: string,
-    options: CloseLiveAuthSessionSocketOptions = {},
-): void {
-    const logger = options.logger ?? console;
-
-    try {
-        const middleware = options.readMiddleware?.() ?? getMiddleware();
-        middleware.wsQBoxServerService.socket.closeConnection(
-            sessionId,
-            1000,
-            'auth-logout',
-        );
-    } catch (error) {
-        logger.warn(
-            'Failed to close live websocket session after logout:',
-            error,
-        );
-    }
-}
-
 async function readApiConfiguration() {
     const configRepository = await import('../config-repo.ts');
     return configRepository.configuration;
-}
-
-async function issueAuthSession(
-    loginResponse: Omit<LoginResponse, 'expiresAtEpochMs'>,
-): Promise<LoginResponse> {
-    const issuedAtEpochMs = Date.now();
-    const issuedSession = {
-        ...loginResponse,
-        issuedAtEpochMs,
-        expiresAtEpochMs: issuedAtEpochMs + AUTH_SESSION_TTL_MS,
-    };
-
-    await createAuthSessionRepository().putSession(issuedSession);
-
-    return toAuthSession(issuedSession);
 }
 
 async function requireRegistrationAdminIfNeeded(
@@ -412,14 +368,6 @@ async function requireRegistrationAdminIfNeeded(
     if (!ADMIN_CLIENT_IDS.has(authSession.clientId)) {
         throw new Error('Forbidden: admin auth session required to register users');
     }
-}
-
-function toWebSocketTicket(): string {
-    return `${crypto.randomUUID()}${crypto.randomUUID()}`;
-}
-
-function toOpaqueToken(deps: Pick<ResolvedConfigRouteDependencies, 'createOpaqueToken'>): string {
-    return `${deps.createOpaqueToken()}${deps.createOpaqueToken()}`;
 }
 
 function readAgentSessionTicketAgentIds(
@@ -453,10 +401,23 @@ function resolveConfigRouteDependencies(
         readEnv: dependencies.readEnv ?? readDenoEnv,
         now: dependencies.now ?? (() => Date.now()),
         createTokenId: dependencies.createTokenId ?? (() => crypto.randomUUID()),
-        createOpaqueToken: dependencies.createOpaqueToken ?? (() => crypto.randomUUID()),
-        createAuthSessionRepository:
-            dependencies.createAuthSessionRepository ?? createAuthSessionRepository,
+        readAppAuthInbox: dependencies.readAppAuthInbox ?? (() =>
+            getMiddleware().appAuthInboxService),
     };
+}
+
+function requireAuthMutationResult<R>(result: Either<AppInboxFailure, R>): R {
+    if (result.right !== undefined) return result.right;
+    const failure = result.left;
+    if (!failure) throw new Error('Auth mutation result is unavailable');
+    throw new AuthMutationRouteError(failure.message, failure.status);
+}
+
+class AuthMutationRouteError extends Error {
+    constructor(message: string, readonly status: number) {
+        super(message);
+        this.name = 'AuthMutationRouteError';
+    }
 }
 
 function toJsonResponse<T>(data: T, status = 200): Response {
@@ -476,6 +437,9 @@ function toAuthRouteErrorResponse(
     error: unknown,
 ): Response {
     const message = error instanceof Error ? error.message : String(error);
+    if (error instanceof AuthMutationRouteError) {
+        return c.json({ error: message }, error.status);
+    }
     if (message.includes('already exists')) {
         return c.json({ error: message }, 409);
     }

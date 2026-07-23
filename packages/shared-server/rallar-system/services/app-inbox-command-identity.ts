@@ -31,6 +31,7 @@ type AppInboxUnavailableOperation =
 
 const APP_INBOX_CLIENT_TOPIC = 'app-inbox.client-state';
 const APP_INBOX_GROUP_TOPIC = 'app-inbox.group-state';
+const APP_INBOX_AUTH_TOPIC = 'app-inbox.auth-state';
 const APP_INBOX_OPERATIONS = new Set<string>(Object.values(AppInboxType));
 const APP_INBOX_GROUP_OPERATIONS = new Set<AppInboxType>([
   ...Object.values(AppInboxType).filter((operation) => operation.startsWith('GROUP_')),
@@ -45,6 +46,13 @@ const APP_INBOX_OPERATION_SPECIFIC_TOPIC_BY_OPERATION: Readonly<
   Partial<Record<AppInboxType, string>>
 > = {
   [AppInboxType.CLIENT_EXPIRED_SESSIONS]: AppInboxType.CLIENT_EXPIRED_SESSIONS,
+  [AppInboxType.AUTH_USER_REGISTER]: APP_INBOX_AUTH_TOPIC,
+  [AppInboxType.AUTH_SESSION_ISSUE]: APP_INBOX_AUTH_TOPIC,
+  [AppInboxType.AUTH_SESSION_LOGOUT]: APP_INBOX_AUTH_TOPIC,
+  [AppInboxType.AUTH_WS_TICKET_ISSUE]: APP_INBOX_AUTH_TOPIC,
+  [AppInboxType.AUTH_WS_TICKET_CONSUME]: APP_INBOX_AUTH_TOPIC,
+  [AppInboxType.AUTH_AGENT_SESSION_TICKETS_ISSUE]: APP_INBOX_AUTH_TOPIC,
+  [AppInboxType.AUTH_AGENT_SESSION_TICKET_CONSUME]: APP_INBOX_AUTH_TOPIC,
 };
 const OPTIONAL_STRING_FIELDS = [
   'topicId',

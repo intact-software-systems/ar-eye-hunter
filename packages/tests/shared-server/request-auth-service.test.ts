@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 import { requireApiAuthSession, requireWsAuthSession, } from '@shared-server/http/request-auth-service.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
+import { Either } from '@shared/resilience/Either.ts';
 
 describe('request auth service', () => {
     it('validates bearer tokens against x-client-id', async () => {
@@ -46,51 +47,50 @@ describe('request auth service', () => {
     });
 
     it('consumes websocket tickets once and rejects session mismatches', async () => {
-        const repository = new AuthSessionRepository(new FakeRuntimeStateRepository());
         const expiresAtEpochMs = Date.now() + 60_000;
-        await repository.putSession({
+        const session = {
             clientId: 'client-1',
             accessToken: 'token-1',
             username: 'alice',
             sessionId: 'session-1',
             issuedAtEpochMs: 1_000,
             expiresAtEpochMs,
-        });
-        await repository.putWebSocketTicket({
-            ticket: 'ticket-1',
-            clientId: 'client-1',
-            sessionId: 'session-1',
-            issuedAtEpochMs: 1_000,
-            expiresAtEpochMs,
-        });
-        await repository.putWebSocketTicket({
-            ticket: 'ticket-2',
-            clientId: 'client-1',
-            sessionId: 'session-1',
-            issuedAtEpochMs: 1_000,
-            expiresAtEpochMs,
-        });
+        };
+        const tickets = new Map([['ticket-1', session], ['ticket-2', session]]);
+        const appAuthInbox = {
+            consumeWebSocketTicket: async (input: { ticket: string; expectedSessionId: string }) => {
+                const current = tickets.get(input.ticket);
+                if (!current || current.sessionId !== input.expectedSessionId) {
+                    return Either.ofLeft({ message: 'invalid' });
+                }
+                tickets.delete(input.ticket);
+                return Either.ofRight(current);
+            },
+        } as never;
 
         await expect(
             requireWsAuthSession(
                 { sessionId: 'session-1', ticket: 'ticket-1' },
-                repository,
+                appAuthInbox,
+                { requestId: 'consume-1', capturedAtEpochMs: 1_000 },
             ),
         ).resolves.toMatchObject({ clientId: 'client-1' });
 
         await expect(
             requireWsAuthSession(
                 { sessionId: 'session-1', ticket: 'ticket-1' },
-                repository,
+                appAuthInbox,
+                { requestId: 'consume-2', capturedAtEpochMs: 1_001 },
             ),
         ).rejects.toThrow('Unauthorized: Invalid or expired websocket auth ticket');
 
         await expect(
             requireWsAuthSession(
                 { sessionId: 'session-2', ticket: 'ticket-2' },
-                repository,
+                appAuthInbox,
+                { requestId: 'consume-3', capturedAtEpochMs: 1_002 },
             ),
-        ).rejects.toThrow('Unauthorized: Websocket session id does not match auth ticket');
+        ).rejects.toThrow('Unauthorized: Invalid or expired websocket auth ticket');
     });
 
     it('keeps same-user sessions independent when one session logs out', async () => {
@@ -140,27 +140,6 @@ describe('request auth service', () => {
         await expect(
             requireApiAuthSession(
                 authRequest(sessionB.accessToken, sessionB.clientId),
-                repository,
-            ),
-        ).resolves.toMatchObject({
-            clientId: 'client-1',
-            sessionId: 'session-b',
-        });
-        await expect(
-            requireWsAuthSession(
-                {
-                    sessionId: sessionA.sessionId,
-                    ticket: 'ticket-a-before-logout',
-                },
-                repository,
-            ),
-        ).rejects.toThrow('Unauthorized: Invalid or expired websocket auth ticket');
-        await expect(
-            requireWsAuthSession(
-                {
-                    sessionId: sessionB.sessionId,
-                    ticket: 'ticket-b-after-logout',
-                },
                 repository,
             ),
         ).resolves.toMatchObject({

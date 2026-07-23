@@ -445,6 +445,7 @@ RALLAR_STATE_STRICT_READ_AUTH=1
 AUTH_REGISTRATION_MODE=admin
 AUTH_ADMIN_CLIENT_IDS=<runtime-admin-client-ids>
 AUTH_STATIC_CLIENTS_MODE=disabled
+RALLAR_AUTH_CREDENTIAL_SECRET=<stable-high-entropy-secret>
 RALLAR_ICE_MODE=metered
 METERED_APP_NAME=<metered-app>
 METERED_API_KEY=<metered-secret>
@@ -864,6 +865,11 @@ the signed operator token for distributed-run admin operations. Override
 `RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS` to change the default 24 hour TTL, or
 set `RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS` to restrict token brokerage to
 specific authenticated client IDs.
+
+The same scripts independently generate or preserve
+`RALLAR_AUTH_CREDENTIAL_SECRET` in `/etc/rallar/api-v1.env`. Keep it stable
+across rollouts: API-v1 uses it to reconstruct credentials after durable
+AppInbox replay without storing plaintext credentials.
 
 ## Installed Paths
 

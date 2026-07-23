@@ -1,5 +1,9 @@
-import type { RuntimeStateRepositoryLike } from '../../runtime-state/RuntimeStateRepository.ts';
+import type {
+    RuntimeStateConditionalWriteResult,
+    RuntimeStateRepositoryLike,
+} from '../../runtime-state/RuntimeStateRepository.ts';
 import { RuntimeStateJsonStore } from '../../runtime-state/RuntimeStateJsonStore.ts';
+import type { RuntimeStateEntryValue } from '../../runtime-state/RuntimeStateJsonStore.ts';
 
 const AUTH_USERS_BY_USERNAME_NAMESPACE = 'auth-users:by-username';
 const AUTH_USERS_BY_CLIENT_ID_NAMESPACE = 'auth-users:by-client-id';
@@ -10,7 +14,7 @@ export type AuthUser = Readonly<{
     clientId: string;
     username: string;
     normalizedUsername: string;
-    displayName?: string;
+    displayName: string | null;
     passwordHash: string;
     passwordSalt: string;
     passwordAlgorithm: 'pbkdf2-sha256';
@@ -39,12 +43,41 @@ export class AuthUserRepository extends RuntimeStateJsonStore {
         );
     }
 
+    async insertByNormalizedUsername(
+        user: AuthUser,
+    ): Promise<RuntimeStateConditionalWriteResult> {
+        return await this.putValueIfAbsent(
+            AUTH_USERS_BY_USERNAME_NAMESPACE,
+            this.normalizedUsernameKey(user.normalizedUsername),
+            user,
+        );
+    }
+
+    async insertByClientId(
+        user: AuthUser,
+    ): Promise<RuntimeStateConditionalWriteResult> {
+        return await this.putValueIfAbsent(
+            AUTH_USERS_BY_CLIENT_ID_NAMESPACE,
+            this.clientIdKey(user.clientId),
+            user,
+        );
+    }
+
     async findByUsername(username: string): Promise<AuthUser | undefined> {
         return await this.findByNormalizedUsername(normalizeUsername(username));
     }
 
     async findByNormalizedUsername(normalizedUsername: string): Promise<AuthUser | undefined> {
         return await this.getValue<AuthUser>(
+            AUTH_USERS_BY_USERNAME_NAMESPACE,
+            this.normalizedUsernameKey(normalizedUsername),
+        );
+    }
+
+    async findByNormalizedUsernameEntry(
+        normalizedUsername: string,
+    ): Promise<RuntimeStateEntryValue<AuthUser> | undefined> {
+        return await this.getEntryValue<AuthUser>(
             AUTH_USERS_BY_USERNAME_NAMESPACE,
             this.normalizedUsernameKey(normalizedUsername),
         );
@@ -57,11 +90,20 @@ export class AuthUserRepository extends RuntimeStateJsonStore {
         );
     }
 
-    usernameLockKey(normalizedUsername: string): string {
+    async findByClientIdEntry(
+        clientId: string,
+    ): Promise<RuntimeStateEntryValue<AuthUser> | undefined> {
+        return await this.getEntryValue<AuthUser>(
+            AUTH_USERS_BY_CLIENT_ID_NAMESPACE,
+            this.clientIdKey(clientId),
+        );
+    }
+
+    normalizedUsernameStorageKey(normalizedUsername: string): string {
         return this.normalizedUsernameKey(normalizedUsername);
     }
 
-    usernameLockNamespace(): string {
+    normalizedUsernameNamespace(): string {
         return AUTH_USERS_BY_USERNAME_NAMESPACE;
     }
 

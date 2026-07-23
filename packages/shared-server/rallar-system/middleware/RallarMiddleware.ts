@@ -21,6 +21,7 @@ import type { ClientStateRepository } from '../repositories/ClientStateRepositor
 import type { GroupStateRepository } from '../repositories/GroupStateRepository.ts';
 import type { AppClientInboxService } from '../services/AppClientInboxService.ts';
 import type { AppGroupInboxService } from '../services/AppGroupInboxService.ts';
+import type { AppAuthInboxService } from '../services/AppAuthInboxService.ts';
 import type { ClientStateService } from '../services/client-state-service.ts';
 import type { GroupStateService } from '../services/group-state-service.ts';
 import { resolveStateSyncRecipients } from '../state-sync-routing.ts';
@@ -67,6 +68,7 @@ export type RallarMiddlewareRuntime = Readonly<{
     appOutboxResilience: ResilienceDto;
     appGroupInboxService: AppGroupInboxService;
     appClientInboxService: AppClientInboxService;
+    appAuthInboxService?: AppAuthInboxService;
     clientStateService: ClientStateService;
     groupStateService: GroupStateService;
     clientsRepository: ClientStateRepository;
@@ -121,6 +123,12 @@ export type CreateRallarMiddlewareOptions = Readonly<{
             appInboxResilience: ResilienceDto;
         }>,
     ) => AppClientInboxService;
+    createAppAuthInboxService?: (
+        input: Readonly<{
+            inboxQueueReader: InboxQueueReader;
+            appInboxResilience: ResilienceDto;
+        }>,
+    ) => AppAuthInboxService;
     resilience: Readonly<{
         inbox: ResilienceDto;
         outbox?: ResilienceDto;
@@ -191,6 +199,10 @@ export function createRallarMiddleware(
         wsQBoxServerService,
         appInboxResilience,
     });
+    const appAuthInboxService = options.createAppAuthInboxService?.({
+        inboxQueueReader,
+        appInboxResilience,
+    });
     const stateMutationOutboxWork = stateMutationOutboxOptions
         ? new StateMutationOutboxWork({
             repository: stateMutationOutboxOptions.repository,
@@ -249,6 +261,7 @@ export function createRallarMiddleware(
         appOutboxResilience,
         appGroupInboxService,
         appClientInboxService,
+        appAuthInboxService,
         groupStateService: appGroupInboxService.groupStateService,
         clientStateService: appClientInboxService.clientStateService,
         clientsRepository: options.clientsRepository,

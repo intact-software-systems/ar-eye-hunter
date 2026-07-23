@@ -102,6 +102,25 @@ export function createAppInboxTestDatabase(
                 return result.status === 'applied' ? [{ revision: result.revision }] : [];
             }
             if (
+                query.includes('delete from runtime_state_store') &&
+                query.includes('returning revision')
+            ) {
+                if (!runtime) {
+                    throw new Error('Runtime-state SQL requires a transaction runtime');
+                }
+                const [namespace, key, expectedRevision] = values as [
+                    string,
+                    string,
+                    number,
+                ];
+                const result = await runtime.deleteIfRevision(
+                    namespace,
+                    key,
+                    expectedRevision,
+                );
+                return result.status === 'applied' ? [{ revision: expectedRevision }] : [];
+            }
+            if (
                 query.includes('insert into runtime_state_store') &&
                 query.includes('do update set')
             ) {

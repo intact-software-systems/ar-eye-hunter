@@ -2,15 +2,11 @@ import assert from 'node:assert/strict';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import type {
   AgentSessionTicketResponse,
-  AuthSession,
   ConsumeAgentSessionTicketResponse,
 } from '@shared/api/api-config.ts';
-import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
-import type {
-  RuntimeStateEntry,
-  RuntimeStateTransactionalRepositoryLike,
-} from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import * as configRoutes from '../../src/routes/config-route.ts';
+import { Either } from '@shared/resilience/Either.ts';
+import type { IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 
 const NOW_EPOCH_MS = Date.now();
 
@@ -31,10 +27,44 @@ Deno.test('agent session ticket route rejects unauthenticated issue requests', a
 });
 
 Deno.test('agent session ticket route mints distinct same-user sessions and consumes a ticket once', async () => {
-  const runtimeRepository = new FakeRuntimeStateRepository();
+  const sessions = new Map<string, ConsumeAgentSessionTicketResponse>();
   const app = createApp({
     requireApiAuthSession: () => Promise.resolve(createAuthSession()),
-    createAuthSessionRepository: () => new AuthSessionRepository(runtimeRepository),
+    readAppAuthInbox: () => ({
+      issueAgentSessionTickets: (input: {
+        agents: readonly { agentId: string; sessionId: string }[];
+        ticketExpiresAtEpochMs: number;
+        sessionExpiresAtEpochMs: number;
+      }) => Promise.resolve(Either.ofRight({
+        tickets: input.agents.map(({ agentId, sessionId }) => {
+          const ticket = `ticket-for-${sessionId}-long-enough`;
+          sessions.set(ticket, {
+            clientId: 'alice-client',
+            username: 'alice',
+            accessToken: `access-for-${sessionId}-long-enough`,
+            sessionId,
+            expiresAtEpochMs: input.sessionExpiresAtEpochMs,
+          });
+          return {
+            agentId,
+            ticket,
+            sessionId,
+            expiresAtEpochMs: input.ticketExpiresAtEpochMs,
+          };
+        }),
+      })),
+      consumeAgentSessionTicket: (input: { ticket: string }) => {
+        const session = sessions.get(input.ticket);
+        if (!session) {
+          return Promise.resolve(Either.ofLeft({
+            message: 'Agent session ticket is invalid or expired.',
+            status: 404,
+          }));
+        }
+        sessions.delete(input.ticket);
+        return Promise.resolve(Either.ofRight(session));
+      },
+    }) as never,
     now: () => NOW_EPOCH_MS,
   });
 
@@ -91,124 +121,13 @@ function createApp(
   return app;
 }
 
-function createAuthSession(): AuthSession {
+function createAuthSession(): IssuedAuthSession {
   return {
     clientId: 'alice-client',
     username: 'alice',
     accessToken: 'operator-token',
     sessionId: 'operator-session',
+    issuedAtEpochMs: NOW_EPOCH_MS,
     expiresAtEpochMs: NOW_EPOCH_MS + 86_400_000,
   };
-}
-
-class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryLike {
-  readonly data = new Map<string, RuntimeStateEntry>();
-
-  async begin<T>(
-    fn: (repository: RuntimeStateTransactionalRepositoryLike) => Promise<T>,
-  ): Promise<T> {
-    return await fn(this);
-  }
-
-  findEntry(
-    namespace: string,
-    key: string,
-  ): Promise<RuntimeStateEntry | undefined> {
-    const entry = this.data.get(this.toKey(namespace, key));
-    return Promise.resolve(entry ? { ...entry } : undefined);
-  }
-
-  findAllEntries(namespace: string): Promise<readonly RuntimeStateEntry[]> {
-    return Promise.resolve(
-      [...this.data.entries()]
-        .filter(([compositeKey]) => this.toNamespace(compositeKey) === namespace)
-        .map(([, entry]) => ({ ...entry }))
-        .sort((left, right) => left.key.localeCompare(right.key)),
-    );
-  }
-
-  findEntriesByPrefix(
-    namespace: string,
-    keyPrefix: string,
-  ): Promise<readonly RuntimeStateEntry[]> {
-    return Promise.resolve(
-      [...this.data.entries()]
-        .filter(
-          ([compositeKey]) =>
-            this.toNamespace(compositeKey) === namespace &&
-            this.toStoreKey(compositeKey).startsWith(keyPrefix),
-        )
-        .map(([, entry]) => ({ ...entry }))
-        .sort((left, right) => left.key.localeCompare(right.key)),
-    );
-  }
-
-  findEntriesByKeys(
-    namespace: string,
-    keys: readonly string[],
-  ): Promise<readonly RuntimeStateEntry[]> {
-    const keySet = new Set(keys);
-    return Promise.resolve(
-      [...this.data.entries()]
-        .filter(([compositeKey]) =>
-          this.toNamespace(compositeKey) === namespace &&
-          keySet.has(this.toStoreKey(compositeKey))
-        )
-        .map(([, entry]) => ({ ...entry }))
-        .sort((left, right) => left.key.localeCompare(right.key)),
-    );
-  }
-
-  upsert(
-    namespace: string,
-    key: string,
-    value: string,
-    expireAtTimestamp: number,
-  ): Promise<void> {
-    const compositeKey = this.toKey(namespace, key);
-    const current = this.data.get(compositeKey);
-    this.data.set(compositeKey, {
-      key,
-      value,
-      expireAtTimestamp,
-      updatedTimestamp: new Date().toISOString(),
-      revision: current ? current.revision + 1 : 0,
-    });
-    return Promise.resolve();
-  }
-
-  deleteByKey(namespace: string, key: string): Promise<void> {
-    this.data.delete(this.toKey(namespace, key));
-    return Promise.resolve();
-  }
-
-  deleteExpired(namespace: string): Promise<number> {
-    let deleted = 0;
-    for (const [compositeKey, entry] of this.data.entries()) {
-      if (this.toNamespace(compositeKey) !== namespace) {
-        continue;
-      }
-      if (entry.expireAtTimestamp > Date.now()) {
-        continue;
-      }
-      this.data.delete(compositeKey);
-      deleted += 1;
-    }
-    return Promise.resolve(deleted);
-  }
-
-  async lockKey(_namespace: string, _key: string): Promise<void> {
-  }
-
-  private toKey(namespace: string, key: string): string {
-    return `${namespace}::${key}`;
-  }
-
-  private toNamespace(compositeKey: string): string {
-    return compositeKey.split('::', 1)[0] ?? '';
-  }
-
-  private toStoreKey(compositeKey: string): string {
-    return compositeKey.slice(this.toNamespace(compositeKey).length + 2);
-  }
 }

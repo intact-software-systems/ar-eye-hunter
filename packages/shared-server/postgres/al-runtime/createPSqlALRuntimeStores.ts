@@ -18,9 +18,9 @@ import {
     resolveALOutboundRuntimeStores,
 } from '@shared/alm/ALRuntimeStoreRegistry.ts';
 import {
-    isRuntimeStateTransactionalRepositoryLike,
+    isRuntimeStateOptimisticTransactionalRepositoryLike,
+    type RuntimeStateOptimisticTransactionalRepositoryLike,
     type RuntimeStateRepositoryLike,
-    type RuntimeStateTransactionalRepositoryLike,
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import type { PSqlSql } from '../PostgresSqlClient.ts';
 import { PSqlRuntimeStateRepository } from '../runtime-state/PSqlRuntimeStateRepository.ts';
@@ -49,7 +49,7 @@ function resolvePSqlRuntimeStoreContext(
     direction: RuntimeStoreDirection,
     options: PSqlALRuntimeStoreFactoryOptions,
 ): Readonly<{
-    repository: RuntimeStateTransactionalRepositoryLike;
+    repository: RuntimeStateOptimisticTransactionalRepositoryLike;
     namespace: string;
 }> {
     const repository = options.repository ??
@@ -60,9 +60,9 @@ function resolvePSqlRuntimeStoreContext(
         throw new Error(`PSql ${direction} runtime stores require a repository or sql client`);
     }
 
-    if (!isRuntimeStateTransactionalRepositoryLike(repository)) {
+    if (!isRuntimeStateOptimisticTransactionalRepositoryLike(repository)) {
         throw new Error(
-            `PSql ${direction} runtime stores require a transactional RuntimeStateRepository`,
+            `PSql ${direction} runtime stores require an optimistic transactional RuntimeStateRepository`,
         );
     }
 

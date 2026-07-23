@@ -61,7 +61,6 @@ export type RuntimeStateTransactionalRepositoryLike = RuntimeStateRepositoryLike
             namespace: string,
             keys: readonly string[],
         ): Promise<readonly RuntimeStateEntry[]>;
-        lockKey(namespace: string, key: string): Promise<void>;
     }>;
 
 export type RuntimeStateOptimisticTransactionalRepositoryLike =
@@ -88,8 +87,7 @@ export function isRuntimeStateTransactionalRepositoryLike(
 ): repository is RuntimeStateTransactionalRepositoryLike {
     return 'begin' in repository &&
         'findEntriesByPrefix' in repository &&
-        'findEntriesByKeys' in repository &&
-        'lockKey' in repository;
+        'findEntriesByKeys' in repository;
 }
 
 export function isRuntimeStateConditionalRepositoryLike(

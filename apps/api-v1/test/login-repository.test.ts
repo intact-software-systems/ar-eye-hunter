@@ -6,7 +6,7 @@ import type {
   RuntimeStateTransactionalRepositoryLike,
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 
-Deno.test('register creates a runtime user that can log in', async () => {
+Deno.test('register prepares a mandatory user command without writing before AppInbox', async () => {
   const runtimeRepository = new FakeRuntimeStateRepository();
   const registered = await register(
     {
@@ -15,16 +15,19 @@ Deno.test('register creates a runtime user that can log in', async () => {
       displayName: 'New User',
     },
     {
-      runtimeRepository,
       now: () => 1_234,
+      createClientId: () => 'client-1',
     },
   );
 
   assert.equal(registered.username, 'new-user');
   assert.equal(registered.displayName, 'New User');
-  assert.equal(registered.registeredAtEpochMs, 1_234);
+  assert.equal(registered.createdAtEpochMs, 1_234);
+  assert.equal(registered.displayName, 'New User');
+  assert.equal(runtimeRepository.data.size, 0);
 
   const userRepository = new AuthUserRepository(runtimeRepository);
+  await userRepository.putUser(registered);
   const session = await login(
     {
       username: 'new-user',
@@ -53,33 +56,6 @@ Deno.test('register creates a runtime user that can log in', async () => {
   );
 });
 
-Deno.test('register rejects duplicate usernames case-insensitively', async () => {
-  const runtimeRepository = new FakeRuntimeStateRepository();
-  await register(
-    {
-      username: 'New-User',
-      password: 'secret',
-    },
-    {
-      runtimeRepository,
-    },
-  );
-
-  await assert.rejects(
-    () =>
-      register(
-        {
-          username: 'new-user',
-          password: 'secret',
-        },
-        {
-          runtimeRepository,
-        },
-      ),
-    /Auth user already exists: new-user/,
-  );
-});
-
 Deno.test('register rejects usernames reserved by static dev clients', async () => {
   await assert.rejects(
     () =>
@@ -88,9 +64,7 @@ Deno.test('register rejects usernames reserved by static dev clients', async () 
           username: 'admin',
           password: 'secret',
         },
-        {
-          runtimeRepository: new FakeRuntimeStateRepository(),
-        },
+        {},
       ),
     /Auth user already exists: admin/,
   );
@@ -105,14 +79,13 @@ Deno.test('AUTH_STATIC_CLIENTS_MODE=disabled removes demo clients and frees rese
         password: 'secret',
         displayName: 'Runtime Admin',
       },
-      {
-        runtimeRepository,
-      },
+      {},
     );
 
     assert.equal(registered.username, 'admin');
 
     const userRepository = new AuthUserRepository(runtimeRepository);
+    await userRepository.putUser(registered);
     assert.equal(
       await login(
         {

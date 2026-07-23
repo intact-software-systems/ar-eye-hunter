@@ -1,22 +1,19 @@
-import type { LoginRequest, LoginResponse, RegisterRequest, RegisterResponse } from '@shared/api/api-config.ts';
-import { type AuthUser, AuthUserRepository, normalizeUsername, } from '../repositories/AuthUserRepository.ts';
+import type { LoginRequest, RegisterRequest } from '@shared/api/api-config.ts';
 import {
-    isRuntimeStateTransactionalRepositoryLike,
-    type RuntimeStateRepositoryLike,
-} from '../../runtime-state/RuntimeStateRepository.ts';
+    type AuthUser,
+    AuthUserRepository,
+    normalizeUsername,
+} from '../repositories/AuthUserRepository.ts';
 
-export type LoginSessionSeed = Omit<LoginResponse, 'expiresAtEpochMs'>;
+export type AuthenticatedUserIdentity = Readonly<{
+    clientId: string;
+    username: string;
+}>;
 
 export type LoginClientData = Readonly<{
     clientId: string;
     username: string;
     password: string;
-}>;
-
-export type RegisterAuthUserOptions = Readonly<{
-    runtimeRepository: RuntimeStateRepositoryLike;
-    staticClients?: readonly LoginClientData[];
-    now?: () => number;
 }>;
 
 export type LoginAuthUserOptions = Readonly<{
@@ -30,106 +27,59 @@ const PASSWORD_HASH_BITS = 256;
 const PASSWORD_SALT_BYTES = 16;
 const USERNAME_PATTERN = /^[a-zA-Z0-9._-]+$/;
 
-export async function registerAuthUser(
-    request: RegisterRequest,
-    options: RegisterAuthUserOptions,
-): Promise<RegisterResponse> {
-    const now = options.now ?? (() => Date.now());
-
-    if (isRuntimeStateTransactionalRepositoryLike(options.runtimeRepository)) {
-        return await options.runtimeRepository.begin(
-            async (repository) =>
-                await registerWithRepository(
-                    request,
-                    repository,
-                    options.staticClients ?? [],
-                    now,
-                ),
-        );
-    }
-
-    return await registerWithRepository(
-        request,
-        options.runtimeRepository,
-        options.staticClients ?? [],
-        now,
-    );
-}
-
-export async function loginAuthUser(
+export async function authenticateAuthUser(
     loginRequest: LoginRequest,
     options: LoginAuthUserOptions,
-): Promise<LoginSessionSeed | undefined> {
+): Promise<AuthenticatedUserIdentity | undefined> {
     const registeredUser = await options.userRepository.findByUsername(loginRequest.username);
-
     if (registeredUser) {
         if (
             registeredUser.status !== 'active' ||
             !(await verifyPassword(loginRequest.password, registeredUser))
-        ) {
-            return undefined;
-        }
-
-        return toLoginSessionSeed(registeredUser);
+        ) return undefined;
+        return {
+            clientId: registeredUser.clientId,
+            username: registeredUser.username,
+        };
     }
-
-    return loginStaticClient(loginRequest, options.staticClients ?? []);
+    return authenticateStaticClient(loginRequest, options.staticClients ?? []);
 }
 
-async function registerWithRepository(
+export async function prepareAuthUserRegistration(
     request: RegisterRequest,
-    runtimeRepository: RuntimeStateRepositoryLike,
-    staticClients: readonly LoginClientData[],
-    now: () => number,
-): Promise<RegisterResponse> {
+    facts: Readonly<{
+        clientId: string;
+        capturedAtEpochMs: number;
+    }>,
+    staticClients: readonly LoginClientData[] = [],
+): Promise<AuthUser> {
     const username = validateUsername(request.username);
     const normalizedUsername = normalizeUsername(username);
     validatePassword(request.password);
-    const displayName = validateDisplayName(request.displayName);
-    const userRepository = new AuthUserRepository(runtimeRepository);
-
-    if (isRuntimeStateTransactionalRepositoryLike(runtimeRepository)) {
-        await runtimeRepository.lockKey(
-            userRepository.usernameLockNamespace(),
-            userRepository.usernameLockKey(normalizedUsername),
-        );
-    }
-
-    if (
-        (await userRepository.findByNormalizedUsername(normalizedUsername)) ||
-        staticClients.some(
-            (client) => normalizeUsername(client.username) === normalizedUsername,
-        )
-    ) {
-        throw new Error(`Auth user already exists: ${username}`);
-    }
-
-    const timestamp = now();
+    if (staticClients.some((client) =>
+        normalizeUsername(client.username) === normalizedUsername
+    )) throw new Error(`Auth user already exists: ${username}`);
     const password = await hashPassword(request.password);
-    const user: AuthUser = {
-        clientId: crypto.randomUUID(),
+    return {
+        clientId: facts.clientId,
         username,
         normalizedUsername,
-        displayName,
+        displayName: validateDisplayName(request.displayName) ?? null,
         passwordHash: password.hash,
         passwordSalt: password.salt,
         passwordAlgorithm: PASSWORD_ALGORITHM,
         passwordIterations: PASSWORD_ITERATIONS,
         roles: ['member'],
         status: 'active',
-        createdAtEpochMs: timestamp,
-        updatedAtEpochMs: timestamp,
+        createdAtEpochMs: facts.capturedAtEpochMs,
+        updatedAtEpochMs: facts.capturedAtEpochMs,
     };
-
-    await userRepository.putUser(user);
-
-    return toRegisterResponse(user);
 }
 
-function loginStaticClient(
+function authenticateStaticClient(
     loginRequest: LoginRequest,
     staticClients: readonly LoginClientData[],
-): LoginSessionSeed | undefined {
+): AuthenticatedUserIdentity | undefined {
     const normalizedUsername = normalizeUsername(loginRequest.username);
     for (const client of staticClients) {
         if (
@@ -138,32 +88,12 @@ function loginStaticClient(
         ) {
             return {
                 clientId: client.clientId,
-                accessToken: toAccessToken(),
                 username: client.username,
-                sessionId: toSessionId(),
             };
         }
     }
 
     return undefined;
-}
-
-function toLoginSessionSeed(user: AuthUser): LoginSessionSeed {
-    return {
-        clientId: user.clientId,
-        accessToken: toAccessToken(),
-        username: user.username,
-        sessionId: toSessionId(),
-    };
-}
-
-function toRegisterResponse(user: AuthUser): RegisterResponse {
-    return {
-        clientId: user.clientId,
-        username: user.username,
-        displayName: user.displayName ?? null,
-        registeredAtEpochMs: user.createdAtEpochMs,
-    };
 }
 
 function validateUsername(username: string): string {
@@ -206,14 +136,6 @@ function validateDisplayName(displayName: string | undefined): string | undefine
     }
 
     return trimmed;
-}
-
-function toSessionId() {
-    return crypto.randomUUID();
-}
-
-function toAccessToken() {
-    return `${crypto.randomUUID()}${crypto.randomUUID()}`;
 }
 
 async function hashPassword(password: string): Promise<{ hash: string; salt: string }> {

@@ -364,6 +364,23 @@ ensure_operator_token_secret() {
   update_env_value "/etc/rallar/control-server.env" "RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET" "${secret}"
 }
 
+ensure_api_auth_credential_secret() {
+  local secret="${RALLAR_AUTH_CREDENTIAL_SECRET:-}"
+
+  if [[ -z "${secret}" ]]; then
+    secret="$(read_env_value "/etc/rallar/api-v1.env" "RALLAR_AUTH_CREDENTIAL_SECRET")"
+  fi
+  if [[ -z "${secret}" ]]; then
+    secret="$(openssl rand -hex 32)"
+  fi
+  if (( ${#secret} < 32 )); then
+    echo "RALLAR_AUTH_CREDENTIAL_SECRET must contain at least 32 characters." >&2
+    exit 1
+  fi
+
+  update_env_value "/etc/rallar/api-v1.env" "RALLAR_AUTH_CREDENTIAL_SECRET" "${secret}"
+}
+
 update_api_cors_origins() {
   apply_rallar_public_cors_defaults
   update_env_value "/etc/rallar/api-v1.env" "CORS_ORIGINS" "${RALLAR_API_CORS_ORIGINS}"
@@ -504,6 +521,9 @@ update_control_allowed_origins
 
 echo "==> Ensuring black-box operator token broker secret"
 ensure_operator_token_secret
+
+echo "==> Ensuring stable API auth credential secret"
+ensure_api_auth_credential_secret
 
 echo "==> Writing Caddyfile"
 write_rallar_controller_caddyfile

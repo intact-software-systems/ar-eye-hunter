@@ -42,6 +42,12 @@ export function collectApiV1ProductionEnvErrors(
   requireEquals(errors, env, 'AUTH_REGISTRATION_MODE', 'admin');
   requireAdminClientIds(errors, env);
   requireEquals(errors, env, 'AUTH_STATIC_CLIENTS_MODE', 'disabled');
+  requirePresent(
+    errors,
+    env,
+    'RALLAR_AUTH_CREDENTIAL_SECRET',
+    'Stable auth credential HMAC secret is required.',
+  );
   requireEquals(errors, env, 'RALLAR_ICE_MODE', 'metered');
   requirePresent(errors, env, 'METERED_APP_NAME', 'Metered TURN app name is required.');
   requirePresent(errors, env, 'METERED_API_KEY', 'Metered TURN API key is required.');

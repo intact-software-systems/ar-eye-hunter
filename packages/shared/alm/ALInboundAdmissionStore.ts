@@ -371,7 +371,6 @@ export type ALInboundAdmissionBackend = Readonly<{
 export type ALInboundAdmissionWriteContext = Readonly<{
     get<V>(key: string): Promise<V | undefined>;
     list<V>(prefix: string): Promise<readonly Readonly<{ key: string; value: V; }>[]>;
-    lock?(key: string): Promise<void>;
     set<V>(key: string, value: V, expireAtTimestamp?: number): Promise<void>;
     remove(key: string): Promise<void>;
 }>;
@@ -689,7 +688,6 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         }
 
         return await this.backend.write(async tx => {
-            await tx.lock?.(this.toVersionKey(bundle.senderId));
             const current = await tx.get<ALVersionedClientRecord>(this.toVersionKey(bundle.senderId));
             const currentVersion = current?.version;
             if (currentVersion !== bundle.expectedVersion) {
@@ -721,7 +719,6 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         }
 
         return await this.backend.write(async tx => {
-            await tx.lock?.(this.toEffectClaimKey());
             const claimed: ALPersistedInboundEffect[] = [];
             const effects = [...await tx.list<ALPersistedInboundEffect | StoredALPersistedInboundEffect>(this.toEffectPrefix())]
                 .map(entry => toPersistedInboundEffect(entry.value))
@@ -1145,7 +1142,6 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         senderId: string,
         currentVersion?: number,
     ): Promise<void> {
-        await tx.lock?.(this.toVersionKey(senderId));
         const version = currentVersion ?? (await tx.get<ALVersionedClientRecord>(this.toVersionKey(senderId)))?.version;
         await tx.set(
             this.toVersionKey(senderId),
@@ -1282,8 +1278,6 @@ class InMemoryAdmissionBackend implements ALInboundAdmissionBackend {
             return await fn({
                 get: async key => await this.get(key),
                 list: async prefix => await this.list(prefix),
-                lock: async () => {
-                },
                 set: async (key, value, expireAtTimestamp = NEVER_EXPIRE_AT_TIMESTAMP) => {
                     this.state.data.set(
                         key,
@@ -1403,8 +1397,6 @@ class IndexedDbAdmissionBackend implements ALInboundAdmissionBackend {
                 });
                 return values;
             },
-            lock: async () => {
-            },
             set: async (key, value, expireAtTimestamp = NEVER_EXPIRE_AT_TIMESTAMP) => {
                 await requestToPromise(
                     store.put({
@@ -1495,8 +1487,6 @@ class PersistenceProviderAdmissionBackend implements ALInboundAdmissionBackend {
             return await fn({
                 get: async key => await this.get(key),
                 list: async prefix => await this.list(prefix),
-                lock: async () => {
-                },
                 set: async (key, value, expireAtTimestamp = NEVER_EXPIRE_AT_TIMESTAMP) => {
                     await this.provider.setItem(
                         key,

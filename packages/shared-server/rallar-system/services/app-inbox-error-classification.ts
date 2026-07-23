@@ -32,6 +32,7 @@ const TERMINAL_CODES = new Set([
     'app-inbox-malformed-command',
     'app-inbox-idempotency-conflict',
     'app-inbox-lifecycle-rejected',
+    'auth-mutation-rejected',
     'client-mutation-idempotency-conflict',
     'client-mutation-rejected',
     'client-state-event-collision',
