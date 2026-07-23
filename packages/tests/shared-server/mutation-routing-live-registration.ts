@@ -7,7 +7,11 @@ import {
 } from './mutation-routing-call-graph.ts';
 import {
   filterRegistrationTypes,
+  knownRegistrationTypes,
   mapRegistrationTypes,
+  type RegistrationTypeCollection,
+  UNKNOWN_REGISTRATION_TYPES,
+  unknownRegistrationTypes,
 } from './mutation-routing-registration-predicate.ts';
 
 export type MutationRoutingProgramLoader = (filePath: string) => AstNode | undefined;
@@ -29,7 +33,10 @@ export function hasLiveAppInboxRegistration(
       readBoundNames(node.left).has(binding),
   );
   if (loop) {
-    return evaluateTypes(asNode(loop.right), program, filePath, loadProgram).has(expectedType);
+    return hasKnownType(
+      evaluateTypes(asNode(loop.right), program, filePath, loadProgram),
+      expectedType,
+    );
   }
   const iteration = findAstNode(program, (node) => {
     if (node.type !== 'CallExpression' || readMemberName(asNode(node.callee)) !== 'forEach') {
@@ -41,12 +48,10 @@ export function hasLiveAppInboxRegistration(
     );
   });
   const callee = asNode(iteration?.callee);
-  return !!callee && evaluateTypes(
-    asNode(callee.object),
-    program,
-    filePath,
-    loadProgram,
-  ).has(expectedType);
+  return !!callee && hasKnownType(
+    evaluateTypes(asNode(callee.object), program, filePath, loadProgram),
+    expectedType,
+  );
 }
 
 function evaluateTypes(
@@ -55,11 +60,11 @@ function evaluateTypes(
   filePath: string,
   loadProgram: MutationRoutingProgramLoader,
   resolving = new Set<string>(),
-): Set<string> {
+): RegistrationTypeCollection {
   const node = unwrap(value);
-  if (!node) return new Set();
+  if (!node) return UNKNOWN_REGISTRATION_TYPES;
   const direct = readAppInboxType(node);
-  if (direct) return new Set([direct]);
+  if (direct) return knownRegistrationTypes([direct]);
   if (node.type === 'ArrayExpression' || node.type === 'TupleExpression') {
     return mergeTypes(
       asNodes(node.elements).map((element) =>
@@ -91,6 +96,7 @@ function evaluateTypes(
     return evaluateMember(node, program, filePath, loadProgram, resolving);
   }
   if (node.type === 'NewExpression') {
+    if (!['Set', 'Map'].includes(readName(node.callee))) return UNKNOWN_REGISTRATION_TYPES;
     return mergeTypes(
       asNodes(node.arguments).map((argument) =>
         evaluateTypes(argument, program, filePath, loadProgram, resolving)
@@ -108,13 +114,24 @@ function evaluateTypes(
         resolving,
       );
     }
-    return intersectTypes(
-      evaluateTypes(asNode(node.consequent), program, filePath, loadProgram, resolving),
-      evaluateTypes(asNode(node.alternate), program, filePath, loadProgram, resolving),
+    const consequent = evaluateTypes(
+      asNode(node.consequent),
+      program,
+      filePath,
+      loadProgram,
+      resolving,
     );
+    const alternate = evaluateTypes(
+      asNode(node.alternate),
+      program,
+      filePath,
+      loadProgram,
+      resolving,
+    );
+    return equalKnownTypes(consequent, alternate) ? consequent : UNKNOWN_REGISTRATION_TYPES;
   }
   if (node.type !== 'CallExpression' && node.type !== 'OptionalCallExpression') {
-    return new Set();
+    return UNKNOWN_REGISTRATION_TYPES;
   }
   const callee = asNode(node.callee);
   const method = readMemberName(callee);
@@ -122,7 +139,7 @@ function evaluateTypes(
     .includes(method);
   const staticObjectCollection = ['values', 'keys', 'entries'].includes(method) &&
     readName(callee?.object) === 'Object';
-  if (!collectionMethod) return new Set();
+  if (!collectionMethod) return UNKNOWN_REGISTRATION_TYPES;
   const source = collectionMethod && !staticObjectCollection
     ? asNode(callee?.object)
     : asNodes(node.arguments)[0];
@@ -144,9 +161,9 @@ function evaluateIdentifier(
   filePath: string,
   loadProgram: MutationRoutingProgramLoader,
   resolving: Set<string>,
-): Set<string> {
+): RegistrationTypeCollection {
   const key = `${filePath}:${name}`;
-  if (!name || resolving.has(key)) return new Set();
+  if (!name || resolving.has(key)) return UNKNOWN_REGISTRATION_TYPES;
   resolving.add(key);
   try {
     const declaration = findAstNode(
@@ -157,12 +174,12 @@ function evaluateIdentifier(
       return evaluateTypes(asNode(declaration.init), program, filePath, loadProgram, resolving);
     }
     const imported = findImport(program, name);
-    if (!imported) return new Set();
+    if (!imported) return UNKNOWN_REGISTRATION_TYPES;
     const importedPath = resolveModulePath(filePath, imported.source);
     const importedProgram = importedPath && loadProgram(importedPath);
     return importedPath && importedProgram
       ? evaluateExport(imported.imported, importedProgram, importedPath, loadProgram, resolving)
-      : new Set();
+      : UNKNOWN_REGISTRATION_TYPES;
   } finally {
     resolving.delete(key);
   }
@@ -174,9 +191,9 @@ function evaluateExport(
   filePath: string,
   loadProgram: MutationRoutingProgramLoader,
   resolving: Set<string>,
-): Set<string> {
+): RegistrationTypeCollection {
   const local = evaluateIdentifier(name, program, filePath, loadProgram, resolving);
-  if (local.size > 0) return local;
+  if (local.kind === 'known') return local;
   for (const statement of asNodes(program.body)) {
     if (statement.type === 'ExportNamedDeclaration') {
       const specifier = asNodes(statement.specifiers).find((candidate) =>
@@ -201,9 +218,9 @@ function evaluateExport(
     const nextProgram = nextPath && loadProgram(nextPath);
     if (!nextPath || !nextProgram) continue;
     const found = evaluateExport(name, nextProgram, nextPath, loadProgram, resolving);
-    if (found.size > 0) return found;
+    if (found.kind === 'known') return found;
   }
-  return new Set();
+  return UNKNOWN_REGISTRATION_TYPES;
 }
 
 function evaluateMember(
@@ -212,21 +229,23 @@ function evaluateMember(
   filePath: string,
   loadProgram: MutationRoutingProgramLoader,
   resolving: Set<string>,
-): Set<string> {
+): RegistrationTypeCollection {
   const property = readName(node.property) || readString(node.property);
   const object = unwrap(asNode(node.object));
-  if (object?.type !== 'Identifier') return new Set();
+  if (object?.type !== 'Identifier') return UNKNOWN_REGISTRATION_TYPES;
   const declaration = findAstNode(
     program,
     (candidate) =>
       candidate.type === 'VariableDeclarator' && readName(candidate.id) === readName(object),
   );
   const initializer = unwrap(asNode(declaration?.init));
-  if (initializer?.type !== 'ObjectExpression') return new Set();
+  if (initializer?.type !== 'ObjectExpression') return UNKNOWN_REGISTRATION_TYPES;
   const member = asNodes(initializer.properties).find((candidate) =>
     (readName(candidate.key) || readString(candidate.key)) === property
   );
-  return evaluateTypes(asNode(member?.value), program, filePath, loadProgram, resolving);
+  return member
+    ? evaluateTypes(asNode(member.value), program, filePath, loadProgram, resolving)
+    : UNKNOWN_REGISTRATION_TYPES;
 }
 
 function findImport(
@@ -276,12 +295,29 @@ function containsNode(value: unknown, expected: AstNode): boolean {
   return findAstNode(value, (node) => node === expected) !== undefined;
 }
 
-function mergeTypes(types: readonly Set<string>[]): Set<string> {
-  return new Set(types.flatMap((items) => [...items]));
+function mergeTypes(
+  collections: readonly RegistrationTypeCollection[],
+): RegistrationTypeCollection {
+  const types = new Set<string>();
+  let unknown = false;
+  for (const collection of collections) {
+    if (collection.kind === 'unknown') unknown = true;
+    for (const type of collection.types) types.add(type);
+  }
+  return unknown ? unknownRegistrationTypes(types) : knownRegistrationTypes(types);
 }
 
-function intersectTypes(left: ReadonlySet<string>, right: ReadonlySet<string>): Set<string> {
-  return new Set([...left].filter((type) => right.has(type)));
+function equalKnownTypes(
+  left: RegistrationTypeCollection,
+  right: RegistrationTypeCollection,
+): boolean {
+  if (left.kind === 'unknown' || right.kind === 'unknown') return false;
+  return left.types.size === right.types.size &&
+    [...left.types].every((type) => right.types.has(type));
+}
+
+function hasKnownType(collection: RegistrationTypeCollection, expectedType: string): boolean {
+  return collection.types.has(expectedType);
 }
 
 function unwrap(value: AstNode | undefined): AstNode | undefined {

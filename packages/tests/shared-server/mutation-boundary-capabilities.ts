@@ -19,6 +19,10 @@ import {
   createMutationBoundaryLexicalBindings,
   type MutationBoundaryLexicalBindings,
 } from './mutation-boundary-lexical-bindings.ts';
+import {
+  findFlowSensitiveCapabilityCalls,
+  type FlowCapabilityMethod,
+} from './mutation-boundary-capability-flow.ts';
 
 const READ_ONLY_CAPABILITY_METHODS = new Map<string, ReadonlySet<string>>([
   [
@@ -43,7 +47,7 @@ const READ_ONLY_CAPABILITY_METHODS = new Map<string, ReadonlySet<string>>([
   ],
 ]);
 
-type CapabilityMethod = Readonly<{ capability: string; method: string }>;
+type CapabilityMethod = FlowCapabilityMethod;
 
 interface CapabilityAnalysis {
   readonly resolver: CapabilityTypeResolver;
@@ -77,13 +81,24 @@ export function findCapabilityMutationCalls(
     if (!changed) break;
   }
   const calls = new Set<string>();
-  walk(program, (node) => {
-    if (node.type !== 'CallExpression' && node.type !== 'OptionalCallExpression') return;
-    const call = readCapabilityCall(node.callee, analysis);
-    if (call && !READ_ONLY_CAPABILITY_METHODS.get(call.capability)?.has(call.method)) {
+  for (
+    const call of findFlowSensitiveCapabilityCalls(program, {
+      directMethod: (value) => readDirectMethodReference(value, analysis),
+      expressionKey: (value) => expressionKey(value, analysis),
+      fallbackMethod: (key) => analysis.methods.get(key),
+      functionKey: (value) => analysis.bindings.functionKey(value),
+      memberMethod: (sourceKey, property) => {
+        const capability = analysis.receivers.get(sourceKey);
+        return capability ? { capability, method: property } : undefined;
+      },
+      ownerFunctionKey: (value) => analysis.bindings.identifierFunctionKey(value),
+      propertyName: (value, computed) => readPropertyName(value, computed, analysis),
+    })
+  ) {
+    if (!READ_ONLY_CAPABILITY_METHODS.get(call.capability)?.has(call.method)) {
       calls.add(`${call.capability}.${call.method}`);
     }
-  });
+  }
   return [...calls].toSorted();
 }
 
@@ -285,19 +300,16 @@ function bindString(
     : false;
 }
 
-function readCapabilityCall(
+function readDirectMethodReference(
   value: unknown,
   analysis: CapabilityAnalysis,
 ): CapabilityMethod | undefined {
-  const callee = unwrapExpression(asNode(value));
-  if (callee?.type === 'Identifier') {
-    return analysis.methods.get(analysis.bindings.identifierKey(callee));
-  }
-  if (callee?.type !== 'MemberExpression' && callee?.type !== 'OptionalMemberExpression') {
+  const node = unwrapExpression(asNode(value));
+  if (node?.type !== 'MemberExpression' && node?.type !== 'OptionalMemberExpression') {
     return undefined;
   }
-  const method = readPropertyName(callee.property, callee.computed === true, analysis);
-  const capability = analysis.receivers.get(expressionKey(callee.object, analysis));
+  const method = readPropertyName(node.property, node.computed === true, analysis);
+  const capability = analysis.receivers.get(expressionKey(node.object, analysis));
   return capability && method ? { capability, method } : undefined;
 }
 

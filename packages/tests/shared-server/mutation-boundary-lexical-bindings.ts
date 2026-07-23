@@ -10,6 +10,8 @@ interface Scope {
 
 export interface MutationBoundaryLexicalBindings {
   identifierKey(value: unknown): string;
+  identifierFunctionKey(value: unknown): string;
+  functionKey(value: unknown): string;
   thisKey(value: unknown): string;
 }
 
@@ -18,6 +20,7 @@ export function createMutationBoundaryLexicalBindings(
 ): MutationBoundaryLexicalBindings {
   const nodeScopes = new WeakMap<object, Scope>();
   const declarations = new WeakMap<object, string>();
+  const bindingScopes = new Map<string, Scope>();
   let nextScopeId = 1;
   let nextClassId = 1;
 
@@ -39,6 +42,7 @@ export function createMutationBoundaryLexicalBindings(
     if (!key) {
       key = `binding:${scope.id}:${name}`;
       scope.bindings.set(name, key);
+      bindingScopes.set(key, scope);
     }
     if (node) declarations.set(node, key);
     return key;
@@ -180,10 +184,27 @@ export function createMutationBoundaryLexicalBindings(
     return name ? `unbound:${name}` : '';
   };
 
+  const functionKey = (scope: Scope | undefined): string => {
+    let current = scope;
+    while (current && current.kind !== 'function' && current.kind !== 'program') {
+      current = current.parent;
+    }
+    return current ? `function:${current.id}` : '';
+  };
+
   return {
     identifierKey: (value) => {
       const node = asNode(value);
       return node?.type === 'Identifier' ? resolve(node) : '';
+    },
+    identifierFunctionKey: (value) => {
+      const node = asNode(value);
+      if (node?.type !== 'Identifier') return '';
+      return functionKey(bindingScopes.get(resolve(node)));
+    },
+    functionKey: (value) => {
+      const node = asNode(value);
+      return functionKey(node && nodeScopes.get(node));
     },
     thisKey: (value) => {
       const node = asNode(value);

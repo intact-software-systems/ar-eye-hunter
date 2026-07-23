@@ -1,42 +1,73 @@
 import type { MutationRoutingAstNode as AstNode } from './mutation-routing-call-graph.ts';
 
-export type RegistrationCollectionEvaluator = (value: AstNode | undefined) => Set<string>;
+export type RegistrationTypeCollection =
+  | Readonly<{ kind: 'known'; types: ReadonlySet<string> }>
+  | Readonly<{ kind: 'unknown'; types: ReadonlySet<string> }>;
+
+export type RegistrationCollectionEvaluator = (
+  value: AstNode | undefined,
+) => RegistrationTypeCollection;
+
+export const UNKNOWN_REGISTRATION_TYPES: RegistrationTypeCollection = {
+  kind: 'unknown',
+  types: new Set(),
+};
+
+export function knownRegistrationTypes(
+  types: Iterable<string>,
+): RegistrationTypeCollection {
+  return { kind: 'known', types: new Set(types) };
+}
+
+export function unknownRegistrationTypes(
+  provenTypes: Iterable<string> = [],
+): RegistrationTypeCollection {
+  return { kind: 'unknown', types: new Set(provenTypes) };
+}
 
 export function filterRegistrationTypes(
-  types: ReadonlySet<string>,
+  collection: RegistrationTypeCollection,
   callback: AstNode | undefined,
   evaluateCollection: RegistrationCollectionEvaluator,
-): Set<string> {
+): RegistrationTypeCollection {
+  if (collection.kind === 'unknown') return collection;
   const predicate = readCallback(callback);
-  if (!predicate) return new Set();
+  if (!predicate) return UNKNOWN_REGISTRATION_TYPES;
   const filtered = new Set<string>();
-  for (const type of types) {
-    if (evaluateBoolean(predicate.body, predicate.parameter, type, evaluateCollection) === true) {
-      filtered.add(type);
-    }
+  let unknown = false;
+  for (const type of collection.types) {
+    const result = evaluateBoolean(
+      predicate.body,
+      predicate.parameter,
+      type,
+      evaluateCollection,
+    );
+    if (result === undefined) unknown = true;
+    else if (result) filtered.add(type);
   }
-  return filtered;
+  return unknown ? unknownRegistrationTypes(filtered) : knownRegistrationTypes(filtered);
 }
 
 export function mapRegistrationTypes(
-  types: ReadonlySet<string>,
+  collection: RegistrationTypeCollection,
   callback: AstNode | undefined,
   evaluateCollection: RegistrationCollectionEvaluator,
-): Set<string> {
+): RegistrationTypeCollection {
+  if (collection.kind === 'unknown') return collection;
   const mapper = readCallback(callback);
-  if (!mapper) return new Set();
+  if (!mapper) return UNKNOWN_REGISTRATION_TYPES;
   const mapped = new Set<string>();
-  for (const type of types) {
-    for (
-      const result of evaluateMappedValue(
-        mapper.body,
-        mapper.parameter,
-        type,
-        evaluateCollection,
-      )
-    ) mapped.add(result);
+  for (const type of collection.types) {
+    const result = evaluateMappedValue(
+      mapper.body,
+      mapper.parameter,
+      type,
+      evaluateCollection,
+    );
+    if (result.kind === 'unknown') return unknownRegistrationTypes(mapped);
+    for (const mappedType of result.types) mapped.add(mappedType);
   }
-  return mapped;
+  return knownRegistrationTypes(mapped);
 }
 
 interface RegistrationCallback {
@@ -115,7 +146,9 @@ function evaluateBoolean(
   if (readMemberName(callee) !== 'includes') return undefined;
   const sought = readTypeValue(asNodes(node.arguments)[0], parameter, candidate);
   if (sought === undefined) return undefined;
-  return evaluateCollection(asNode(callee?.object)).has(sought);
+  const collection = evaluateCollection(asNode(callee?.object));
+  if (collection.types.has(sought)) return true;
+  return collection.kind === 'known' ? false : undefined;
 }
 
 function evaluateMappedValue(
@@ -123,26 +156,28 @@ function evaluateMappedValue(
   parameter: string,
   candidate: string,
   evaluateCollection: RegistrationCollectionEvaluator,
-): ReadonlySet<string> {
+): RegistrationTypeCollection {
   const node = unwrap(value);
-  if (!node) return new Set();
+  if (!node) return UNKNOWN_REGISTRATION_TYPES;
   const direct = readTypeValue(node, parameter, candidate);
-  if (direct !== undefined) return new Set([direct]);
+  if (direct !== undefined) return knownRegistrationTypes([direct]);
   if (node.type === 'ArrayExpression' || node.type === 'TupleExpression') {
-    return new Set(
-      asNodes(node.elements).flatMap((element) => [
-        ...evaluateMappedValue(element, parameter, candidate, evaluateCollection),
-      ]),
-    );
+    const mapped = new Set<string>();
+    for (const element of asNodes(node.elements)) {
+      const result = evaluateMappedValue(element, parameter, candidate, evaluateCollection);
+      if (result.kind === 'unknown') return result;
+      for (const type of result.types) mapped.add(type);
+    }
+    return knownRegistrationTypes(mapped);
   }
-  if (node.type !== 'ConditionalExpression') return new Set();
+  if (node.type !== 'ConditionalExpression') return UNKNOWN_REGISTRATION_TYPES;
   const test = asNode(node.test) && evaluateBoolean(
     asNode(node.test)!,
     parameter,
     candidate,
     evaluateCollection,
   );
-  if (test === undefined) return new Set();
+  if (test === undefined) return UNKNOWN_REGISTRATION_TYPES;
   return evaluateMappedValue(
     asNode(test ? node.consequent : node.alternate)!,
     parameter,
