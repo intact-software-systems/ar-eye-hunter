@@ -12,6 +12,7 @@ import { ClientStateRepository } from '@shared-server/rallar-system/repositories
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/services/AppClientInboxService.ts';
 import { AppGroupInboxService } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
+import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import {
   type ClientStateService,
   createClientStateService,
@@ -132,4 +133,35 @@ export function pauseNextPGliteLifecycleRead(
     return read;
   };
   return { reached, resume: release };
+}
+
+export async function assertPGliteQueuedTypes(
+  sql: PGliteSql,
+  types: readonly AppInboxType[],
+): Promise<void> {
+  for (const type of types) {
+    const [row] = await sql<{ count: string }[]>`
+      select count(*) as count from resource_inbox
+      where ri_type_id = 'APP_INBOX' and ri_resource like ${`%${type}%`}
+    `;
+    assertPGliteQueueRow(Number(row?.count ?? 0) >= 1, type);
+  }
+}
+
+export async function assertPGliteQueueRetriedAndCompleted(
+  sql: PGliteSql,
+  key: Readonly<{ topicId: string; resourceId: string; contextId: string }>,
+): Promise<void> {
+  const [row] = await sql<{ status: string; attempts: number }[]>`
+    select ri_status as status, ri_attempts as attempts from resource_inbox
+    where ri_topic_id = ${key.topicId} and ri_resource_id = ${key.resourceId}
+      and fk_ext_bank_id = ${key.contextId}
+  `;
+  if (row?.status !== 'COMPLETED' || Number(row.attempts) < 2) {
+    throw new Error('Expected AppInbox to complete after a full retry');
+  }
+}
+
+function assertPGliteQueueRow(found: boolean, type: AppInboxType): void {
+  if (!found) throw new Error(`Expected a real ${type} queue row`);
 }

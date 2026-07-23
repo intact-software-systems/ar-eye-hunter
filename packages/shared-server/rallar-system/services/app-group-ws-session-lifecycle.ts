@@ -103,7 +103,7 @@ export async function processGroupPresenceConnect(
     ...identity,
     generationId: operation.input.generationId,
     generationStartedAtEpochMs: observedAtEpochMs,
-    expireAtEpochMs: input.command.facts.expireAtEpochMs,
+    expireAtEpochMs: resourceInboxRetryExpiryAtEpochMs(observedAtEpochMs),
   }, lifecycleRead);
   return await input.commitMutation(computed, lifecycleGuard);
 }
@@ -189,9 +189,6 @@ function toGroupCloseFacts(
     generationStartedAtEpochMs: connection.generationStartedAtEpochMs,
     disconnectedAtEpochMs: input.disconnectedAtEpochMs,
     reason: input.reason,
-    expireAtEpochMs: resourceInboxRetryExpiryAtEpochMs(
-      input.disconnectedAtEpochMs,
-      Math.max(input.disconnectedAtEpochMs, connection.expiresAtEpochMs),
-    ),
+    expireAtEpochMs: resourceInboxRetryExpiryAtEpochMs(input.disconnectedAtEpochMs),
   };
 }

@@ -5,9 +5,9 @@ import { AppInboxType } from '@shared-server/rallar-system/services/app-inbox-co
 import {
   findAstNode,
   findRouteRegistration,
-  hasReachableAstNode,
   type MutationRoutingAstNode,
 } from './mutation-routing-call-graph.ts';
+import { findMutationRouteReachabilityIssues } from './mutation-routing-reachability.ts';
 
 export interface MutationRouteInventoryEntry {
   readonly transport: 'HTTP' | 'WS_INBOX' | 'WS_LIFECYCLE' | 'MAINTENANCE';
@@ -286,21 +286,18 @@ function checkRegisteredHandlerCallChain(
   item: MutationRouteInventoryEntry,
   sources: SourceReader,
 ): void {
-  if (item.transport !== 'HTTP' || item.sourcePath !== item.enqueueSourcePath) return;
-  const [method, routePath] = item.entrypoint.split(' ');
-  const program = sources.readProgram(issues, item.sourcePath, 'call chain', item);
-  if (!program) return;
-  const registration = findRouteRegistration(program, method.toLowerCase(), routePath);
-  const handler = registration ? asNodes(registration.arguments)[1] : undefined;
-  if (
-    !handler ||
-    !hasReachableAstNode(program, handler, (node) => hasExactMarker(node, item.enqueueMarker))
-  ) {
-    issues.push(
-      `${key(item)} registered handler is not connected to ` +
-        `${item.enqueueMarker} with AppInboxType.${item.type}`,
-    );
-  }
+  const source = sources.readProgram(issues, item.sourcePath, 'call chain', item);
+  const enqueue = sources.readProgram(issues, item.enqueueSourcePath, 'call chain', item);
+  const owner = sources.readProgram(issues, item.ownerSourcePath, 'owner dispatch', item);
+  if (!source || !enqueue || !owner) return;
+  issues.push(...findMutationRouteReachabilityIssues(
+    item,
+    source,
+    enqueue,
+    owner,
+    hasExactMarker,
+    hasDirectExactMarker,
+  ));
 }
 
 function hasRouteRegistration(program: AstNode, method: string, routePath: string): boolean {
@@ -308,44 +305,36 @@ function hasRouteRegistration(program: AstNode, method: string, routePath: strin
 }
 
 function hasExactMarker(program: AstNode, marker: string): boolean {
+  return someNode(program, (node) => hasDirectExactMarker(node, marker));
+}
+
+function hasDirectExactMarker(program: AstNode, marker: string): boolean {
   const member = marker.match(/^(\w+)\.(\w+)$/);
   if (member) {
-    return someNode(program, (node) => {
-      const memberPath = readMemberPath(node);
-      return memberPath === marker || memberPath.endsWith(`.${marker}`);
-    });
+    const memberPath = readMemberPath(program);
+    return memberPath === marker || memberPath.endsWith(`.${marker}`);
   }
   const quoted = marker.match(/^'([^']+)'$/);
-  if (quoted) return someNode(program, (node) => readString(node) === quoted[1]);
+  if (quoted) return readString(program) === quoted[1];
   const comparison = marker.match(/^(\w+) === '([^']+)'$/);
   if (comparison) {
-    return someNode(
-      program,
-      (node) =>
-        node.type === 'BinaryExpression' && node.operator === '===' &&
-        readIdentifier(asNode(node.left)) === comparison[1] &&
-        readString(asNode(node.right)) === comparison[2],
-    );
+    return program.type === 'BinaryExpression' && program.operator === '===' &&
+      readIdentifier(asNode(program.left)) === comparison[1] &&
+      readString(asNode(program.right)) === comparison[2];
   }
   const call = marker.match(/^(?:(\w+)\.)?(\w+)\((?:[^']*'([^']+)')?/);
   if (call) {
-    return someNode(program, (node) => {
-      if (node.type !== 'CallExpression') return false;
-      const callee = asNode(node.callee);
-      if (readCallName(callee) !== call[2]) return false;
-      if (call[1] && readIdentifier(asNode(callee?.object)) !== call[1]) return false;
-      return !call[3] ||
-        asNodes(node.arguments).some((argument) => readString(argument) === call[3]);
-    });
+    if (program.type !== 'CallExpression') return false;
+    const callee = asNode(program.callee);
+    if (readCallName(callee) !== call[2]) return false;
+    if (call[1] && readIdentifier(asNode(callee?.object)) !== call[1]) return false;
+    return !call[3] ||
+      asNodes(program.arguments).some((argument) => readString(argument) === call[3]);
   }
   const property = marker.replace(/:$/, '');
-  return someNode(
-    program,
-    (node) =>
-      readIdentifier(node) === property || readMemberName(node) === property ||
-      ((node.type === 'ObjectProperty' || node.type === 'ObjectMethod') &&
-        readIdentifier(asNode(node.key)) === property),
-  );
+  return readIdentifier(program) === property || readMemberName(program) === property ||
+    ((program.type === 'ObjectProperty' || program.type === 'ObjectMethod') &&
+      readIdentifier(asNode(program.key)) === property);
 }
 
 function hasClassMethod(program: AstNode, method: string): boolean {

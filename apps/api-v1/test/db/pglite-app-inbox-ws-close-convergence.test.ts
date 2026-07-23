@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 
 import type { StateScope } from '@shared/api/state-types.ts';
+import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import {
   type GroupCreateAppInboxPayload,
@@ -15,6 +16,8 @@ import { toResilienceDto } from '../../src/middleware-resilience.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import { FUTURE_MS, waitForPGliteQueueRow, withPGliteSql } from './pglite-auth-test-harness.ts';
 import {
+  assertPGliteQueuedTypes as assertQueuedTypes,
+  assertPGliteQueueRetriedAndCompleted as assertQueueRetriedAndCompleted,
   createPGliteAppInboxWsCloseHarness as createHarness,
   pauseNextPGliteLifecycleRead as pauseNextLifecycleRead,
 } from './pglite-app-inbox-ws-close-test-harness.ts';
@@ -224,7 +227,7 @@ Deno.test('PGlite group cleanup tombstone suppresses a delayed presence connect 
   });
 });
 
-Deno.test('PGlite group cleanup removes an active independent presence generation', async () => {
+Deno.test('PGlite lost-close group guard has bounded physical expiry before cleanup', async () => {
   await withPGliteSql(async (sql) => {
     const harness = await createHarness(sql);
     const groupId = 'pglite-independent-presence';
@@ -264,6 +267,19 @@ Deno.test('PGlite group cleanup removes an active independent presence generatio
       ).length,
       1,
     );
+    const lifecycle = await harness.groupState.sessionGenerationLifecycle.read({
+      scope: {
+        kind: 'group',
+        ...SCOPE,
+        principalId: harness.authority.clientId,
+      },
+      sessionId: harness.authority.sessionId,
+    });
+    const expectedExpiry = resourceInboxRetryExpiryAtEpochMs(wsStartedAtEpochMs - 50);
+    assert.equal(lifecycle.state?.status, 'open');
+    assert.equal(lifecycle.state?.expireAtEpochMs, expectedExpiry);
+    assert.equal(lifecycle.entry?.expireAtTimestamp, expectedExpiry);
+    assert.ok(expectedExpiry < FUTURE_MS);
 
     await harness.group.enqueueGroupSessionCleanup({
       connection: toAuthorisedWsClientConnectEnqueue({
@@ -282,6 +298,11 @@ Deno.test('PGlite group cleanup removes an active independent presence generatio
       ),
       [],
     );
+    const closed = await harness.groupState.sessionGenerationLifecycle.read(lifecycle.identity);
+    const expectedCloseExpiry = resourceInboxRetryExpiryAtEpochMs(wsStartedAtEpochMs + 100);
+    assert.equal(closed.state?.status, 'closed');
+    assert.equal(closed.state?.expireAtEpochMs, expectedCloseExpiry);
+    assert.equal(closed.entry?.expireAtTimestamp, expectedCloseExpiry);
   });
 });
 
@@ -367,27 +388,4 @@ async function release(sql: PGliteSql, key: QueueKey): Promise<void> {
     where ri_topic_id = ${key.topicId} and ri_resource_id = ${key.resourceId}
       and fk_ext_bank_id = ${key.contextId}
   `;
-}
-
-async function assertQueueRetriedAndCompleted(
-  sql: PGliteSql,
-  key: QueueKey,
-): Promise<void> {
-  const [row] = await sql<{ status: string; attempts: number }[]>`
-    select ri_status as status, ri_attempts as attempts from resource_inbox
-    where ri_topic_id = ${key.topicId} and ri_resource_id = ${key.resourceId}
-      and fk_ext_bank_id = ${key.contextId}
-  `;
-  assert.equal(row?.status, 'COMPLETED');
-  assert.ok(Number(row?.attempts ?? 0) >= 2, 'Expected AppInbox to perform a full retry');
-}
-
-async function assertQueuedTypes(sql: PGliteSql, types: readonly AppInboxType[]) {
-  for (const type of types) {
-    const [row] = await sql<{ count: string }[]>`
-      select count(*) as count from resource_inbox
-      where ri_type_id = 'APP_INBOX' and ri_resource like ${`%${type}%`}
-    `;
-    assert.ok(Number(row?.count ?? 0) >= 1, `Expected a real ${type} queue row`);
-  }
 }

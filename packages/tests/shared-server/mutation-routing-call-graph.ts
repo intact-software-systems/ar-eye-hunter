@@ -28,13 +28,65 @@ export function hasReachableAstNode(
     const current = pending.shift()!;
     if (visited.has(current)) continue;
     visited.add(current);
-    if (findAstNode(current, predicate)) return true;
-    for (const callName of collectCallNames(current)) {
+    const scan = scanExecutedNodes(current, predicate);
+    if (scan.matched) return true;
+    pending.push(...scan.callbacks.filter((callback) => !visited.has(callback)));
+    for (const callName of scan.callNames) {
       const target = functions.get(callName);
       if (target && !visited.has(target)) pending.push(target);
     }
   }
   return false;
+}
+
+function scanExecutedNodes(
+  root: MutationRoutingAstNode,
+  predicate: (node: MutationRoutingAstNode) => boolean,
+): Readonly<{
+  matched: boolean;
+  callNames: ReadonlySet<string>;
+  callbacks: readonly MutationRoutingAstNode[];
+}> {
+  let matched = false;
+  const callNames = new Set<string>();
+  const callbacks: MutationRoutingAstNode[] = [];
+  const scan = (value: unknown, isRoot = false): void => {
+    if (!value || typeof value !== 'object' || matched) return;
+    if (Array.isArray(value)) {
+      for (const child of value) scan(child);
+      return;
+    }
+    const node = value as MutationRoutingAstNode;
+    if (!isRoot && isFunctionNode(node)) return;
+    if (typeof node.type === 'string' && predicate(node)) {
+      matched = true;
+      return;
+    }
+    if (node.type === 'CallExpression' || node.type === 'OptionalCallExpression') {
+      const name = readCallName(asNode(node.callee));
+      if (name) callNames.add(name);
+      callbacks.push(...asNodes(node.arguments).filter(isFunctionNode));
+    } else if (node.type === 'ReturnStatement') {
+      const returned = asNode(node.argument);
+      if (returned && isFunctionNode(returned)) callbacks.push(returned);
+    }
+    for (const [name, child] of Object.entries(node)) {
+      if (!['loc', 'start', 'end', 'comments', 'tokens'].includes(name)) scan(child);
+    }
+  };
+  scan(root, true);
+  return { matched, callNames, callbacks };
+}
+
+function isFunctionNode(node: MutationRoutingAstNode): boolean {
+  return [
+    'FunctionDeclaration',
+    'FunctionExpression',
+    'ArrowFunctionExpression',
+    'ObjectMethod',
+    'ClassMethod',
+    'ClassPrivateMethod',
+  ].includes(node.type);
 }
 
 export function findAstNode(
@@ -74,20 +126,22 @@ function collectLocalFunctions(
         name && init &&
         (init.type === 'ArrowFunctionExpression' || init.type === 'FunctionExpression')
       ) functions.set(name, init);
+    } else if (
+      node.type === 'ClassMethod' || node.type === 'ClassPrivateMethod' ||
+      node.type === 'ObjectMethod'
+    ) {
+      const name = readIdentifier(asNode(node.key));
+      if (name) functions.set(name, node);
+    } else if (node.type === 'ObjectProperty') {
+      const name = readIdentifier(asNode(node.key));
+      const value = asNode(node.value);
+      if (
+        name && value &&
+        (value.type === 'ArrowFunctionExpression' || value.type === 'FunctionExpression')
+      ) functions.set(name, value);
     }
   });
   return functions;
-}
-
-function collectCallNames(node: MutationRoutingAstNode): readonly string[] {
-  const names = new Set<string>();
-  visitAll(node, (candidate) => {
-    if (candidate.type === 'CallExpression' || candidate.type === 'OptionalCallExpression') {
-      const name = readCallName(asNode(candidate.callee));
-      if (name) names.add(name);
-    }
-  });
-  return [...names];
 }
 
 function visitAll(value: unknown, visit: (node: MutationRoutingAstNode) => void): void {
