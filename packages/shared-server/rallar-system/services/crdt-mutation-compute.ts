@@ -21,7 +21,11 @@ import type {
   CrdtMutationRead,
 } from './crdt-mutation-contracts.ts';
 import { toAppendOutbox, toCrdtAuditOutbox } from './crdt-mutation-outbox.ts';
-import { appendRejectionReason, toAppendRejectionCode } from './crdt-append-rejection.ts';
+import {
+  appendRejectionReason,
+  isAppendRejectionRetryable,
+  toAppendRejectionCode,
+} from './crdt-append-rejection.ts';
 import {
   toAcceptedAdminResultDetails,
   toCrdtMutationResult,
@@ -371,7 +375,7 @@ function rejectionResult(
     update: command.update,
     code: rejectionCode,
     reason: appendRejectionReason(rejectionCode),
-    retryable: rejectionCode === 'storage-failed' || rejectionCode === 'rate-limited',
+    retryable: isAppendRejectionRetryable(rejectionCode),
     ...(document ? { document } : {}),
   };
 }

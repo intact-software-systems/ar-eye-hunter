@@ -380,11 +380,11 @@ export class WsQueueBoxServerService {
         message: ALMessage,
         connectionId: string,
     ): Promise<void> {
-        const fromPeerId =
-            this.targetResolver.resolvePeerIdForConnection?.(connectionId, message) ??
-            message.id.senderId ??
+        const fromPeerId = this.targetResolver.resolvePeerIdForConnection?.(connectionId, message) ??
             connectionId;
-
+        if (message.id.senderId !== fromPeerId) {
+            return;
+        }
         await this.inboundRuntime.handleIncomingMessage(message, fromPeerId);
     }
 

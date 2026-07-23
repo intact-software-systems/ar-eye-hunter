@@ -18,6 +18,7 @@ import {
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
+import { ConnectionContext, JsonWebSocketServer } from '@shared/mod.ts';
 import { installRallarCrdtWsTopics } from '@shared-server/crdt/RallarCrdtServer.ts';
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
@@ -53,8 +54,15 @@ Deno.test('browser WS ingress resolves real auth identity and rereads revoke thr
   await withPGliteSql(async (sql) => {
     const fixture = await createFixture(sql);
     await fixture.addCurrentSession(SESSION_A);
+    await fixture.addCurrentSession(SESSION_B);
 
-    await fixture.facade.handle(message(SESSION_A, 'transport-1', update('update-1')));
+    await fixture.send(
+      SESSION_B,
+      message(SESSION_A, 'forged-transport', update('forged-update')),
+    );
+    assert.deepEqual(await readDurableEffects(sql), { mutations: 0, work: 0 });
+
+    await fixture.send(SESSION_A, message(SESSION_A, 'transport-1', update('update-1')));
     await drain(fixture.service, sql, 1);
 
     const [persisted] = await sql<{
@@ -70,8 +78,7 @@ Deno.test('browser WS ingress resolves real auth identity and rereads revoke thr
       session_id: SESSION_A,
     });
 
-    await fixture.addCurrentSession(SESSION_B);
-    await fixture.facade.handle(message(SESSION_B, 'transport-2', update('update-1')));
+    await fixture.send(SESSION_B, message(SESSION_B, 'transport-2', update('update-1')));
     await drain(fixture.service, sql, 2);
     const replayResults = await readResults(sql);
     assert.deepEqual(
@@ -85,7 +92,7 @@ Deno.test('browser WS ingress resolves real auth identity and rereads revoke thr
       ],
     );
 
-    await fixture.facade.handle(message(SESSION_B, 'transport-3', update('update-2')));
+    await fixture.send(SESSION_B, message(SESSION_B, 'transport-3', update('update-2')));
     await fixture.revokeAuthSession(SESSION_B);
     await drain(fixture.service, sql, 3);
     const revoked = (await readResults(sql)).at(-1);
@@ -106,7 +113,8 @@ Deno.test('production app-scope authorization rejects a foreign application cont
       documentId: 'foreign-document',
     };
 
-    await fixture.facade.handle(
+    await fixture.send(
+      SESSION_A,
       message(SESSION_A, 'foreign-transport', update('foreign-update', foreign)),
     );
     await drain(fixture.service, sql, 1);
@@ -150,13 +158,15 @@ async function createFixture(
     }],
   });
   const queue = new InMemoryQueueBox();
+  const socketServer = new JsonWebSocketServer();
+  const sockets = new Map<string, FakeSocket>();
   const wsService = new WsQueueBoxServerService(
     queue,
     queue,
-    fakeSocket() as never,
+    socketServer,
     'server-1',
   );
-  const facade = new RallarServerWsFacade(wsService);
+  const facade = new RallarServerWsFacade(wsService).install();
   installRallarCrdtWsTopics(facade, {
     mutationIngress: createCrdtWsMutationIngress(service, 'server-1'),
     allowAppDocuments: true,
@@ -168,7 +178,11 @@ async function createFixture(
   });
   return {
     service,
-    facade,
+    send: async (connectionId: string, value: ReturnType<typeof message>) => {
+      const socket = sockets.get(connectionId);
+      assert.ok(socket);
+      await socket.dispatchMessage(value);
+    },
     addCurrentSession: async (sessionId: string) => {
       await auth.insertSessionBySessionId(
         await toPersistedAuthSessionFixture({
@@ -181,6 +195,9 @@ async function createFixture(
         }),
       );
       await clients.insertSession(clientSession(sessionId));
+      const socket = new FakeSocket();
+      sockets.set(sessionId, socket);
+      socketServer.addConnection(new ConnectionContext(sessionId, socket as never));
     },
     revokeAuthSession: async (sessionId: string) => {
       const stored = await auth.findSessionBySessionIdEntry(sessionId);
@@ -217,6 +234,18 @@ async function readResults(sql: Parameters<Parameters<typeof withPGliteSql>[0]>[
       code: string | null;
     }
   );
+}
+
+async function readDurableEffects(
+  sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0],
+): Promise<Readonly<{ mutations: number; work: number }>> {
+  const [row] = await sql<{ mutations: string; work: string }[]>`
+        select
+          (select count(*) from crdt_updates)::text as mutations,
+          (select count(*) from resource_inbox
+           where ri_type_id in ('APP_INBOX', 'APP_OUTBOX', 'WS_OUTBOX'))::text as work
+    `;
+  return { mutations: Number(row?.mutations), work: Number(row?.work) };
 }
 
 function message(
@@ -338,16 +367,23 @@ function audit(): AuditStamp {
   };
 }
 
-function fakeSocket() {
-  return {
-    connections: new Map(),
-    onMessageDo() {
-      return this;
-    },
-    send() {},
-    encode(value: unknown) {
-      return { text: JSON.stringify(value), data: value };
-    },
-    sendEncoded() {},
-  };
+class FakeSocket {
+  readonly readyState = WebSocket.OPEN;
+  private readonly listeners = new Map<string, Array<(event: MessageEvent) => void>>();
+
+  addEventListener(type: string, listener: (event: MessageEvent) => void): void {
+    const listeners = this.listeners.get(type) ?? [];
+    listeners.push(listener);
+    this.listeners.set(type, listeners);
+  }
+
+  send(_data: string): void {
+  }
+
+  async dispatchMessage(value: ReturnType<typeof message>): Promise<void> {
+    const event = { data: JSON.stringify(value) } as MessageEvent;
+    for (const listener of this.listeners.get('message') ?? []) {
+      await listener(event);
+    }
+  }
 }

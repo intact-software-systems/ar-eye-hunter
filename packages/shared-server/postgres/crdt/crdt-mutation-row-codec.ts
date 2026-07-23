@@ -184,6 +184,7 @@ export function toSnapshot(
   lastAppendSequence: number,
 ): RallarCrdtSnapshotEnvelope {
   const snapshot = decodeExactSnapshotEnvelope(JSON.parse(row.snapshot_envelope));
+  const expectedReason = snapshot.metadata.reason ?? 'legacy-import';
   if (
     row.document_key !== expectedDocumentKey ||
     row.snapshot_id !== snapshot.snapshotId ||
@@ -192,7 +193,7 @@ export function toSnapshot(
     Number(row.append_sequence) > lastAppendSequence ||
     new Date(row.created_at_ts).getTime() !== snapshot.createdAtEpochMs ||
     (typeof row.reason !== 'string' || row.reason.length === 0) ||
-    (snapshot.metadata.reason !== undefined && row.reason !== snapshot.metadata.reason) ||
+    row.reason !== expectedReason ||
     toRallarCrdtDocumentKey(snapshot.document) !== expectedDocumentKey ||
     toRallarCrdtDocumentKey(expectedDocument) !== expectedDocumentKey ||
     !validateRallarCrdtSnapshotEnvelope(snapshot).valid

@@ -93,7 +93,6 @@ import {
   type RallarCrdtOperationBatch,
   type RallarCrdtSnapshotEnvelope,
   type RallarCrdtUpdateEnvelope,
-  toRallarCrdtDocumentKey,
 } from '@shared/crdt/mod.ts';
 import {
   EntityStatus,
@@ -5414,22 +5413,6 @@ async function applyPreparedPGliteGroupMutation(
   await sql.begin(async (transaction) => {
     await service.write(transaction, computed);
   });
-}
-
-async function readCrdtStoredUpdateBytes(
-  sql: PGliteSql,
-  document: RallarCrdtDocumentRef,
-): Promise<number> {
-  const rows = await sql<{ stored_update_bytes: string | number }[]>`
-        select stored_update_bytes
-        from crdt_documents
-        where document_key = ${toRallarCrdtDocumentKey(document)}
-    `;
-  return Number(rows[0]?.stored_update_bytes ?? 0);
-}
-
-function byteLengthOfSerializedJson(serialized: string): number {
-  return new TextEncoder().encode(serialized).byteLength;
 }
 
 function createClientStateEvent(

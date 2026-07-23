@@ -1,6 +1,5 @@
 import type { ActorId, PrincipalId } from '../api/group-types.ts';
 import {
-    canonicalRallarCrdtJson,
     hashRallarCrdtJson,
     hashRallarCrdtUpdateEnvelope,
 } from './crdt-hash.ts';

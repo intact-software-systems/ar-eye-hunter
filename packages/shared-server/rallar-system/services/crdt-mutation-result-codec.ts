@@ -8,7 +8,11 @@ import {
   toRallarCrdtDocumentKey,
 } from '@shared/crdt/mod.ts';
 
-import { appendRejectionReason, toAppendRejectionCode } from './crdt-append-rejection.ts';
+import {
+  appendRejectionReason,
+  isAppendRejectionRetryable,
+  toAppendRejectionCode,
+} from './crdt-append-rejection.ts';
 import { decodeExactDebugBundle } from './crdt-debug-bundle-exact-codec.ts';
 import type { CrdtMutationResult } from './crdt-mutation-contracts.ts';
 import {
@@ -254,6 +258,9 @@ function decodeAppendResult(value: unknown): void {
     throw new TypeError('CRDT append rejection reason differs from code');
   }
   if (typeof append.retryable !== 'boolean') throw new TypeError('append retryable is invalid');
+  if (append.retryable !== isAppendRejectionRetryable(supportedCode)) {
+    throw new TypeError('CRDT append rejection retryable differs from code');
+  }
   decodeExactUpdateEnvelope(append.update);
   if ('validation' in append) decodeExactValidationResult(append.validation);
   if ('document' in append) decodeExactDocumentMetadata(append.document);

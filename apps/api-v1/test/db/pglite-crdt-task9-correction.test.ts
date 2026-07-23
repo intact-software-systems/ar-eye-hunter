@@ -363,6 +363,6 @@ function snapshot(snapshotId: string, value: unknown) {
     maxLamport: 0,
     includedUpdateIds: [],
     value,
-    metadata: { updateCount: 0 },
+    metadata: { updateCount: 0, reason: 'app-inbox-compaction' },
   };
 }

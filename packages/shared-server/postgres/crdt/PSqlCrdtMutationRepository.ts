@@ -288,14 +288,18 @@ async function insertSnapshot(
   snapshot: RallarCrdtSnapshotEnvelope,
   appendSequence: number,
 ): Promise<void> {
+  const reason = snapshot.metadata.reason ?? 'app-inbox-compaction';
+  const persistedSnapshot = snapshot.metadata.reason === undefined
+    ? { ...snapshot, metadata: { ...snapshot.metadata, reason } }
+    : snapshot;
   await sql`
         insert into crdt_snapshots (
             document_key, snapshot_id, append_sequence, snapshot_envelope,
             created_at_ts, reason
         ) values (
             ${documentKey}, ${snapshot.snapshotId}, ${appendSequence},
-            ${JSON.stringify(snapshot)}, ${new Date(snapshot.createdAtEpochMs)},
-            ${snapshot.metadata.reason ?? 'app-inbox-compaction'}
+            ${JSON.stringify(persistedSnapshot)}, ${new Date(snapshot.createdAtEpochMs)},
+            ${reason}
         )
     `;
 }

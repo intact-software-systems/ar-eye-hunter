@@ -7,9 +7,16 @@ export function toAppendRejectionCode(code: string): RallarCrdtAppendRejectionCo
         'invalid-update', 'quota-exceeded', 'rate-limited',
         'schema-version-not-allowed', 'update-too-large', 'storage-failed',
     ];
+    if (code.startsWith('authentication-') || code.startsWith('authorization-')) {
+        return 'authorization-denied';
+    }
     return supported.includes(code as RallarCrdtAppendRejectionCode)
         ? code as RallarCrdtAppendRejectionCode
         : 'storage-failed';
+}
+
+export function isAppendRejectionRetryable(code: RallarCrdtAppendRejectionCode): boolean {
+    return code === 'storage-failed' || code === 'rate-limited';
 }
 
 export function appendRejectionReason(code: RallarCrdtAppendRejectionCode): string {

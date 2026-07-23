@@ -1291,15 +1291,6 @@ function toDocumentRef(document: RallarCrdtDocumentRef): string {
   ].join('/');
 }
 
-function unavailableFact(label: string, source: string): AdminSupportFact {
-  return {
-    label,
-    source,
-    value: 'unavailable',
-    certainty: 'unavailable',
-  };
-}
-
 function requireQueueKey(value: Key | undefined): Key {
   if (!value || !value.topicId || !value.resourceId || !value.contextId) {
     throw new Error('Admin support queue explanation requires queueKey.');

@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
     RALLAR_CRDT_OPERATION_VERSION,
     RALLAR_CRDT_PROTOCOL_VERSION,
+    hashRallarCrdtUpdateEnvelope,
     type RallarCrdtDocumentMetadata,
     type RallarCrdtDocumentRef,
+    type RallarCrdtAppendRejectionCode,
     type RallarCrdtUpdateEnvelope,
     toRallarCrdtDocumentKey,
 } from '@shared/crdt/mod.ts';
@@ -20,6 +22,7 @@ import {
     decodeCrdtMutationResult,
 } from '@shared-server/rallar-system/services/crdt-mutations.ts';
 import { computeCrdtMutation } from '@shared-server/rallar-system/services/crdt-mutation-compute.ts';
+import { appendRejectionReason } from '@shared-server/rallar-system/services/crdt-append-rejection.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
     applicationId: 'app-1',
@@ -88,6 +91,95 @@ describe('Task 9 correction 4 mutation contracts', () => {
                 appendResult: { ...appendResult, reason: 'forged reason' },
             })
         ).toThrow(/reason|rejection/i);
+    });
+
+    it('produces and decodes retryability exactly for every append rejection code', async () => {
+        const command = await appendCommand();
+        const producerCases = [
+            {
+                read: {
+                    ...emptyRead(),
+                    authorized: false,
+                    authorizationCode: 'authorization-scope-denied',
+                },
+                code: 'authorization-denied',
+                retryable: false,
+            },
+            {
+                read: {
+                    ...existingRead(),
+                    document: { ...metadata(), quota: { maxUpdateCount: 2 } },
+                },
+                code: 'quota-exceeded',
+                retryable: false,
+            },
+            {
+                read: {
+                    ...existingRead(),
+                    document: { ...metadata(), quota: { maxUpdatesPerMinutePerActor: 1 } },
+                    actorUpdatesInWindow: 1,
+                },
+                code: 'rate-limited',
+                retryable: true,
+            },
+        ] as const;
+        for (const expected of producerCases) {
+            const computed = computeCrdtMutation(command, expected.read, 'server-1');
+            expect(computed.result.appendResult).toMatchObject({
+                code: expected.code,
+                retryable: expected.retryable,
+            });
+            expect(() => decodeCrdtMutationResult(computed.result)).not.toThrow();
+        }
+
+        const rejected = computeCrdtMutation(command, {
+            ...emptyRead(),
+            authorized: false,
+            authorizationCode: 'authorization-denied',
+        }, 'server-1');
+        const appendResult = rejected.result.appendResult as Record<string, unknown>;
+        for (const code of appendRejectionCodes()) {
+            const retryable = code === 'storage-failed' || code === 'rate-limited';
+            expect(() => decodeCrdtMutationResult({
+                ...rejected.result,
+                code,
+                appendResult: {
+                    ...appendResult,
+                    code,
+                    reason: appendRejectionReason(code),
+                    retryable: !retryable,
+                },
+            })).toThrow(/retryable|rejection/i);
+        }
+    });
+
+    it('rejects retryability on an admin integrity result', async () => {
+        const command = await rebuildCommand();
+        const value = update('integrity-update');
+        const rejected = computeCrdtMutation(command, {
+            ...existingRead(),
+            records: [{
+                document: DOCUMENT,
+                documentKey: toRallarCrdtDocumentKey(DOCUMENT),
+                update: value,
+                append: {
+                    appendSequence: 1,
+                    acceptedAtEpochMs: 1_000,
+                    actorId: 'client-42',
+                    principalId: 'alice',
+                    sessionId: 'session-99',
+                    serverId: 'server-1',
+                    authorizationScope: 'principal',
+                    acceptedUpdateHash: `${hashRallarCrdtUpdateEnvelope(value)}-corrupt`,
+                },
+            }],
+        }, 'server-1');
+
+        expect(rejected.result).toMatchObject({ status: 'rejected', code: 'integrity-invalid' });
+        expect(() => decodeCrdtMutationResult({
+            ...rejected.result,
+            retryable: false,
+        })).toThrow(/field|key|result/i);
     });
 
     it('binds compact and rebuild payloads to outer metadata revision and sequence', async () => {
@@ -266,4 +358,21 @@ function emptyRead() {
 
 function existingRead() {
     return { ...emptyRead(), document: metadata() };
+}
+
+function appendRejectionCodes(): readonly RallarCrdtAppendRejectionCode[] {
+    return [
+        'authorization-denied',
+        'document-archived',
+        'document-destroyed',
+        'document-quarantined',
+        'duplicate-hash-mismatch',
+        'feature-disabled',
+        'invalid-update',
+        'quota-exceeded',
+        'rate-limited',
+        'schema-version-not-allowed',
+        'update-too-large',
+        'storage-failed',
+    ];
 }

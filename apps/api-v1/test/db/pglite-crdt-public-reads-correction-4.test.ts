@@ -89,6 +89,78 @@ Deno.test('public CRDT snapshot read fails closed on physical snapshot identity 
   });
 });
 
+Deno.test('public and mutation CRDT reads reject reason-only snapshot corruption', async () => {
+  await withPGliteSql(async (sql) => {
+    const { command, service } = await append(sql);
+    await insertSnapshot(sql);
+    await sql`update crdt_snapshots set reason = 'forged-reason'`;
+
+    await assert.rejects(
+      new PSqlCrdtLogRepository(sql).readSnapshot(DOCUMENT),
+      /snapshot|identity|corrupt/i,
+    );
+    await assert.rejects(service.read(command), /snapshot|identity|corrupt/i);
+  });
+});
+
+Deno.test('public CRDT read permits only the canonical legacy reason fallback', async () => {
+  await withPGliteSql(async (sql) => {
+    await append(sql);
+    await insertSnapshot(sql);
+    await sql`
+      update crdt_snapshots
+      set snapshot_envelope = ${JSON.stringify(snapshotEnvelope(undefined))},
+          reason = 'legacy-import'
+    `;
+    const repository = new PSqlCrdtLogRepository(sql);
+
+    assert.equal((await repository.readSnapshot(DOCUMENT))?.snapshotId, 'snapshot-1');
+    await sql`update crdt_snapshots set reason = 'arbitrary-legacy-reason'`;
+    await assert.rejects(repository.readSnapshot(DOCUMENT), /snapshot|identity|corrupt/i);
+  });
+});
+
+Deno.test('mutation write persists one canonical snapshot reason in row and envelope', async () => {
+  await withPGliteSql(async (sql) => {
+    const { service } = await append(sql);
+    const compact = await createCrdtMutationCommand({
+      operation: 'compact',
+      commandId: 'compact-with-default-reason',
+      actor: {
+        actorId: 'client-42',
+        principalId: 'alice',
+        sessionId: 'session-99',
+        serverId: 'server-1',
+      },
+      capturedAtEpochMs: 3_000,
+      expireAtEpochMs: 500_000,
+      document: DOCUMENT,
+      responseAudience: {
+        kind: 'admin',
+        senderSessionId: 'session-99',
+        topicId: 'crdt.admin',
+        contextId: 'group-1',
+      },
+      snapshotId: 'snapshot-1',
+      snapshot: snapshotEnvelope(undefined),
+      reason: 'app-inbox-compaction',
+    });
+    const read = await service.read(compact);
+    const computed = service.compute(compact, read);
+    service.validate(compact, read, computed);
+    await sql.begin(async (transaction) => await service.write(transaction, computed));
+    const [stored] = await sql<{ snapshot_envelope: string; reason: string }[]>`
+      select snapshot_envelope, reason from crdt_snapshots
+    `;
+
+    assert.equal(stored?.reason, 'app-inbox-compaction');
+    assert.equal(
+      (JSON.parse(stored!.snapshot_envelope) as RallarCrdtSnapshotEnvelope).metadata.reason,
+      stored?.reason,
+    );
+  });
+});
+
 Deno.test('public CRDT integrity and export fail closed instead of reporting corrupt rows', async () => {
   await withPGliteSql(async (sql) => {
     await append(sql);
@@ -147,22 +219,13 @@ async function append(sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0]) {
   const computed = service.compute(command, read);
   service.validate(command, read, computed);
   await sql.begin(async (transaction) => await service.write(transaction, computed));
+  return { command, service };
 }
 
 async function insertSnapshot(
   sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0],
 ): Promise<void> {
-  const snapshot: RallarCrdtSnapshotEnvelope = {
-    protocolVersion: RALLAR_CRDT_PROTOCOL_VERSION,
-    document: DOCUMENT,
-    snapshotId: 'snapshot-1',
-    schemaVersion: 1,
-    createdAtEpochMs: 3_000,
-    maxLamport: 1,
-    includedUpdateIds: ['update-1'],
-    value: { title: 'one' },
-    metadata: { updateCount: 1, reason: 'test-snapshot' },
-  };
+  const snapshot = snapshotEnvelope('test-snapshot');
   const [{ document_key: documentKey }] = await sql<{ document_key: string }[]>`
         select document_key from crdt_documents
     `;
@@ -176,6 +239,20 @@ async function insertSnapshot(
         )
     `;
   await sql`update crdt_documents set snapshot_count = 1`;
+}
+
+function snapshotEnvelope(reason: string | undefined): RallarCrdtSnapshotEnvelope {
+  return {
+    protocolVersion: RALLAR_CRDT_PROTOCOL_VERSION,
+    document: DOCUMENT,
+    snapshotId: 'snapshot-1',
+    schemaVersion: 1,
+    createdAtEpochMs: 3_000,
+    maxLamport: 1,
+    includedUpdateIds: ['update-1'],
+    value: { title: 'one' },
+    metadata: { updateCount: 1, ...(reason === undefined ? {} : { reason }) },
+  };
 }
 
 function update(): RallarCrdtUpdateEnvelope {
