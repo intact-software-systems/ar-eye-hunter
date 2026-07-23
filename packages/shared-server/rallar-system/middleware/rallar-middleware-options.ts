@@ -1,5 +1,6 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { ClientPrincipalRef, ClientSnapshot } from '@shared/api/client-types.ts';
 import type { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import type { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import type { AppAuthInboxService } from '../services/AppAuthInboxService.ts';
@@ -13,37 +14,43 @@ export type { AppAdminInboxService } from '../services/AppAdminInboxService.ts';
 export type { AppCrdtInboxService } from '../services/AppCrdtInboxService.ts';
 
 export type RallarAuthInboxServiceFactory = (
-    input: Readonly<{
-        inboxQueueReader: InboxQueueReader;
-        appInboxResilience: ResilienceDto;
-    }>,
+  input: Readonly<{
+    inboxQueueReader: InboxQueueReader;
+    appInboxResilience: ResilienceDto;
+  }>,
 ) => AppAuthInboxService;
 
 export type RallarCrdtInboxServiceFactory = (
-    input: Readonly<{
-        inboxQueueReader: InboxQueueReader;
-        appInboxResilience: ResilienceDto;
-    }>,
+  input: Readonly<{
+    inboxQueueReader: InboxQueueReader;
+    outboxQueueReader: OutboxQueueReader;
+    appInboxResilience: ResilienceDto;
+    wakeQueueEngine: () => void;
+  }>,
 ) => AppCrdtInboxService;
 
 export type RallarAdminInboxServiceFactory = (
-    input: Readonly<{
-        inboxQueueReader: InboxQueueReader;
-        outboxQueueReader: OutboxQueueReader;
-        appInboxResilience: ResilienceDto;
-        wakeQueueEngine: () => void;
-    }>,
+  input: Readonly<{
+    inboxQueueReader: InboxQueueReader;
+    outboxQueueReader: OutboxQueueReader;
+    appInboxResilience: ResilienceDto;
+    wakeQueueEngine: () => void;
+  }>,
 ) => AppAdminInboxService;
 
 export type RallarGroupSnapshotResolverOptions = Readonly<{
-    findGroupSnapshotByRef?: (
-        ref: GroupRef,
-        message: ALMessage,
-    ) => GroupSnapshot | undefined;
-    findGroupSnapshotById?: (groupId: string) => GroupSnapshot | undefined;
-    resolveGroupRef?: (
-        groupId: string,
-        message: ALMessage,
-    ) => GroupRef | undefined;
-    now?: RallarSnapshotPresenceClock;
+  findClientSnapshotByRef?: (
+    ref: ClientPrincipalRef,
+    message: ALMessage,
+  ) => ClientSnapshot | undefined;
+  findGroupSnapshotByRef?: (
+    ref: GroupRef,
+    message: ALMessage,
+  ) => GroupSnapshot | undefined;
+  findGroupSnapshotById?: (groupId: string) => GroupSnapshot | undefined;
+  resolveGroupRef?: (
+    groupId: string,
+    message: ALMessage,
+  ) => GroupRef | undefined;
+  now?: RallarSnapshotPresenceClock;
 }>;

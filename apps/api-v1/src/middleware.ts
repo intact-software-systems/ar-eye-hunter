@@ -25,7 +25,7 @@ import { AppClientInboxService } from '@shared-server/rallar-system/services/App
 import { AppGroupInboxService } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 import { AppAuthInboxService } from '@shared-server/rallar-system/services/AppAuthInboxService.ts';
 import {
-  createApiMutationInboxFactories, readConfiguredAdminClientIds,
+  createConfiguredApiMutationInboxFactories,
 } from './services/create-api-mutation-inbox-factories.ts';
 import { createAuthMutationService } from '@shared-server/rallar-system/services/auth-state-mutations.ts';
 import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/services/auth-credential-issuer.ts';
@@ -100,7 +100,7 @@ import {
   createRtcTopologyPublicationFanout,
 } from '@shared-server/rallar-system/pubsub/RtcTopologyClusterTransport.ts';
 import { createApiV1RtcTopologyClusterTransport } from './db/api-v1-rtc-topology-cluster-transport.ts';
-import { requireApiMiddleware, type Middleware } from './middleware-contract.ts';
+import { type Middleware, requireApiMiddleware } from './middleware-contract.ts';
 export type { Middleware } from './middleware-contract.ts';
 let middleware: Middleware | undefined = undefined;
 const runtimeStateExpiryLifecycle = createRuntimeStateExpiryLifecycle();
@@ -113,9 +113,7 @@ export function getMiddleware(): Middleware {
 }
 export function initialiseMiddleware() {
   shutdownMiddlewareBackgroundTasks();
-  const expiryStartupGeneration = runtimeStateExpiryLifecycle
-    .beginStartupGeneration();
-  middleware = initialise(expiryStartupGeneration);
+  middleware = initialise(runtimeStateExpiryLifecycle.beginStartupGeneration());
   return middleware;
 }
 export function shutdownMiddlewareBackgroundTasks(): void {
@@ -157,7 +155,6 @@ function initialise(
   });
   const runtimeStateRepository = createRuntimeStateRepository(sql);
   const authSessionRepository = createAuthSessionRepository(runtimeStateRepository);
-  const adminClientIds = readConfiguredAdminClientIds();
   const credentialIssuer = createHmacAuthCredentialIssuer(
     readRequiredAuthCredentialSecret(),
   );
@@ -262,6 +259,7 @@ function initialise(
     webSocketServer,
     wsRuntimeName,
     findGroupSnapshotByRef: (ref) => groupSnapshotReadThroughCache.findByRef(ref),
+    findClientSnapshotByRef: (ref) => clientSnapshotReadThroughCache.findByRef(ref),
     inboundStores: resolveServerWsQBoxALInboundRuntimeStores(wsRuntimeName),
     outboundStores: resolveServerWsQBoxALOutboundRuntimeStores(wsRuntimeName),
     createAppGroupInboxService: ({
@@ -343,13 +341,14 @@ function initialise(
         timing,
         appInboxOptions,
       ),
-    ...createApiMutationInboxFactories({
-      resourceInboxRepository, resourceInboxResultsRepository,
-      database: postgresSql, serviceId: myServerId, timing, options: appInboxOptions,
-      currentAuthority: {
-        readSession: (sessionId) => authSessionRepository.findBySessionId(sessionId),
-        adminClientIds,
-      },
+    ...createConfiguredApiMutationInboxFactories({
+      resourceInboxRepository,
+      resourceInboxResultsRepository,
+      database: postgresSql,
+      serviceId: myServerId,
+      timing,
+      options: appInboxOptions,
+      readSession: (sessionId) => authSessionRepository.findBySessionId(sessionId),
     }),
     resilience: {
       inbox: resilienceInbox,

@@ -140,10 +140,10 @@ model crdt_updates {
   update_id            String
   update_envelope      String
   accepted_update_hash String
-  actor_id             String?
-  principal_id         String?
-  session_id           String?
-  server_id            String?
+  actor_id             String
+  principal_id         String
+  session_id           String
+  server_id            String
   authorization_scope  String
   accepted_at_ts       DateTime       @default(now()) @db.Timestamptz(6)
   document             crdt_documents @relation(fields: [document_key], references: [document_key], onDelete: Cascade, map: "crdt_updates_document_fk")

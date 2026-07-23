@@ -1,99 +1,138 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import {
-    RALLAR_CRDT_OPERATION_VERSION,
-    RALLAR_CRDT_PROTOCOL_VERSION,
-    type RallarCrdtDocumentRef,
-    type RallarCrdtUpdateEnvelope,
+  RALLAR_CRDT_OPERATION_VERSION,
+  RALLAR_CRDT_PROTOCOL_VERSION,
+  type RallarCrdtDocumentRef,
+  type RallarCrdtUpdateEnvelope,
 } from '@shared/crdt/mod.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import {
-    AppCrdtInboxService,
-} from '@shared-server/rallar-system/services/AppCrdtInboxService.ts';
+import { AppCrdtInboxService } from '@shared-server/rallar-system/services/AppCrdtInboxService.ts';
 import { createCrdtMutationService } from '@shared-server/rallar-system/services/crdt-mutations.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
-    applicationId: 'app-1', workspaceId: 'workspace-1', scope: 'room',
-    documentType: 'checklist', documentId: 'document-1',
-    roomRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'group-1' },
+  applicationId: 'app-1',
+  workspaceId: 'workspace-1',
+  scope: 'room',
+  documentType: 'checklist',
+  documentId: 'document-1',
+  roomRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'group-1' },
 };
 
 describe('Task 9 CRDT production AppInbox ingress', () => {
-    it('propagates a durable AppInbox enqueue failure to WS ingress', async () => {
-        const reader = new CapturingInboxReader(true);
-        const service = appCrdt(reader);
-        const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-        try {
-            await expect(service.createAndEnqueueAppend(input(update('update-1'), 1_000)))
-                .rejects.toThrow('injected durable enqueue failure');
-        } finally {
-            error.mockRestore();
-        }
-    });
+  it('propagates a durable AppInbox enqueue failure to WS ingress', async () => {
+    const reader = new CapturingInboxReader(true);
+    const service = appCrdt(reader);
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      await expect(service.createAndEnqueueAppend(input(update('update-1'), 1_000)))
+        .rejects.toThrow('injected durable enqueue failure');
+    } finally {
+      error.mockRestore();
+    }
+  });
 
-    it('uses identical durable command facts for semantic retransmission', async () => {
-        const reader = new CapturingInboxReader(false);
-        const service = appCrdt(reader);
-        const semantic = update('stable-update');
+  it('uses trusted ingress time and a bounded expiry instead of update-authored time', async () => {
+    const reader = new CapturingInboxReader(false);
+    const service = appCrdt(reader);
+    const semantic = update('stable-update');
 
-        await service.createAndEnqueueAppend(input(semantic, 1_000));
-        await service.createAndEnqueueAppend(input(semantic, 9_000));
-        await vi.waitFor(() => expect(reader.messages).toHaveLength(2));
+    await service.createAndEnqueueAppend(input(semantic, 1_000));
+    await vi.waitFor(() => expect(reader.messages).toHaveLength(1));
 
-        const commands = reader.messages.map((message) =>
-            JSON.parse(message.payload.resource).data
-        );
-        expect(commands[1]).toEqual(commands[0]);
-    });
+    const command = JSON.parse(reader.messages[0]!.payload.resource).data;
+    expect(command.capturedAtEpochMs).toBe(1_000);
+    expect(command.expireAtEpochMs).toBe(61_000);
+    expect(command.capturedAtEpochMs).not.toBe(semantic.createdAtEpochMs);
+  });
+
+  it('gives reconnect delivery a new AppInbox identity while retaining update replay identity', async () => {
+    const reader = new CapturingInboxReader(false);
+    const service = appCrdt(reader);
+    const semantic = update('reconnect-update');
+
+    await service.createAndEnqueueAppend(input(semantic, 1_000, 'session-1', 'delivery-1'));
+    await service.createAndEnqueueAppend(input(semantic, 2_000, 'session-2', 'delivery-2'));
+    await vi.waitFor(() => expect(reader.messages).toHaveLength(2));
+
+    const commands = reader.messages.map((message) => JSON.parse(message.payload.resource).data);
+    expect(commands[0].update.updateId).toBe(commands[1].update.updateId);
+    expect(commands[0].commandId).not.toBe(commands[1].commandId);
+    expect(commands[0].actor.sessionId).not.toBe(commands[1].actor.sessionId);
+  });
 });
 
 class CapturingInboxReader extends InboxQueueReader {
-    readonly messages: ALMessage[] = [];
+  readonly messages: ALMessage[] = [];
 
-    constructor(private readonly fail: boolean) {
-        super(new InMemoryQueueBox());
-    }
+  constructor(private readonly fail: boolean) {
+    super(new InMemoryQueueBox());
+  }
 
-    override async enqueueIfAbsent(message: ALMessage): Promise<ResourceEntry> {
-        this.messages.push(structuredClone(message));
-        if (this.fail) throw new Error('injected durable enqueue failure');
-        return await super.enqueueIfAbsent(message);
-    }
+  override async enqueueIfAbsent(message: ALMessage): Promise<ResourceEntry> {
+    this.messages.push(structuredClone(message));
+    if (this.fail) throw new Error('injected durable enqueue failure');
+    return await super.enqueueIfAbsent(message);
+  }
 }
 
 function appCrdt(inbox: InboxQueueReader): AppCrdtInboxService {
-    const repository = {
-        readMutation: () => Promise.reject(new Error('not processed')),
-        writeMutation: () => Promise.reject(new Error('not processed')),
-        writeOutbox: () => Promise.reject(new Error('not processed')),
-    };
-    return new AppCrdtInboxService(
-        inbox,
-        {} as never,
-        {} as never,
-        {} as never,
-        createCrdtMutationService({ repository, createWriter: () => repository, serviceId: 'server-1' }),
-        'server-1',
-    );
+  const repository = {
+    readMutation: () => Promise.reject(new Error('not processed')),
+    writeMutation: () => Promise.reject(new Error('not processed')),
+    writeOutbox: () => Promise.reject(new Error('not processed')),
+  };
+  return new AppCrdtInboxService(
+    inbox,
+    {} as never,
+    {} as never,
+    {} as never,
+    createCrdtMutationService({
+      repository,
+      createWriter: () => repository,
+      serviceId: 'server-1',
+    }),
+    'server-1',
+  );
 }
 
-function input(updateEnvelope: RallarCrdtUpdateEnvelope, receivedAtEpochMs: number) {
-    return {
-        update: updateEnvelope,
-        actor: { actorId: 'client-1', principalId: 'client-1', sessionId: 'session-1', serverId: 'server-1' },
-        responseAudience: { kind: 'room' as const, senderSessionId: 'session-1', topicId: 'room.crdt', contextId: 'group-1' },
-        capturedAtEpochMs: receivedAtEpochMs,
-        expireAtEpochMs: receivedAtEpochMs + 60_000,
-    };
+function input(
+  updateEnvelope: RallarCrdtUpdateEnvelope,
+  receivedAtEpochMs: number,
+  sessionId = 'session-1',
+  deliveryId = `delivery-${receivedAtEpochMs}`,
+) {
+  return {
+    update: updateEnvelope,
+    deliveryId,
+    actor: { actorId: 'client-1', principalId: 'client-1', sessionId, serverId: 'server-1' },
+    responseAudience: {
+      kind: 'room' as const,
+      senderSessionId: sessionId,
+      topicId: 'room.crdt',
+      contextId: 'group-1',
+    },
+    capturedAtEpochMs: receivedAtEpochMs,
+    expireAtEpochMs: receivedAtEpochMs + 60_000,
+  };
 }
 
 function update(updateId: string): RallarCrdtUpdateEnvelope {
-    return {
-        protocolVersion: RALLAR_CRDT_PROTOCOL_VERSION, document: DOCUMENT, updateId,
-        replicaId: 'replica-1', lamport: 1, parents: [], schemaVersion: 1,
-        operationVersion: RALLAR_CRDT_OPERATION_VERSION, createdAtEpochMs: 900,
-        payload: { kind: 'batch', operations: [{ kind: 'register.set', path: ['title'], policy: 'lww', value: updateId }] },
-    };
+  return {
+    protocolVersion: RALLAR_CRDT_PROTOCOL_VERSION,
+    document: DOCUMENT,
+    updateId,
+    replicaId: 'replica-1',
+    lamport: 1,
+    parents: [],
+    schemaVersion: 1,
+    operationVersion: RALLAR_CRDT_OPERATION_VERSION,
+    createdAtEpochMs: 900,
+    payload: {
+      kind: 'batch',
+      operations: [{ kind: 'register.set', path: ['title'], policy: 'lww', value: updateId }],
+    },
+  };
 }

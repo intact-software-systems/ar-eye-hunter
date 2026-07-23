@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import { Either } from '@shared/resilience/Either.ts';
+import { toUnavailableAppInboxFailure } from '@shared-server/rallar-system/services/app-inbox-failure.ts';
+import { createApiAdminMutationGateway } from '../../src/services/create-api-admin-mutation-gateway.ts';
 import * as adminOperationsRoutes from '../../src/routes/admin-operations-routes.ts';
 
 const NOW_EPOCH_MS = 1_700_000_000_000;
@@ -157,6 +160,33 @@ Deno.test('admin operations metrics reset forwards request body and admin sessio
       adminSession: ADMIN_SESSION,
     },
   ]);
+});
+
+Deno.test('admin prune pending completion preserves its typed 503 response', async () => {
+  const gateway = createApiAdminMutationGateway({
+    appAdmin: {
+      pruneExpired: () => Promise.resolve(Either.ofLeft(toUnavailableAppInboxFailure())),
+    } as never,
+    appCrdt: {} as never,
+    appGroup: {} as never,
+    now: () => NOW_EPOCH_MS,
+  });
+  const app = createApp({ operations: { pruneExpired: gateway.pruneExpired } });
+
+  const response = await app.request('/api/admin/operations/maintenance/prune-expired', {
+    method: 'POST',
+    headers: {
+      authorization: 'Bearer admin-token',
+      'x-client-id': 'platform-admin',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ requestId: 'pending-prune', dryRun: false }),
+  });
+
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), {
+    error: 'App inbox entry did not complete within the wait budget',
+  });
 });
 
 function createApp(

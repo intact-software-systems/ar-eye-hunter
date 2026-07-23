@@ -9,16 +9,19 @@ import {
 import { PSqlCrdtLogRepository } from '@shared-server/postgres/crdt/PSqlCrdtLogRepository.ts';
 import { PSqlCrdtMutationRepository } from '@shared-server/postgres/crdt/PSqlCrdtMutationRepository.ts';
 import {
+  type CrdtMutationCommand,
   CrdtMutationConflictError,
   createCrdtMutationCommand,
   createCrdtMutationService,
-  type CrdtMutationCommand,
 } from '@shared-server/rallar-system/services/crdt-mutations.ts';
 import { withPGliteSql } from './pglite-auth-test-harness.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
-  applicationId: 'app-1', workspaceId: 'workspace-1', scope: 'room',
-  documentType: 'checklist', documentId: 'document-1',
+  applicationId: 'app-1',
+  workspaceId: 'workspace-1',
+  scope: 'room',
+  documentType: 'checklist',
+  documentId: 'document-1',
   roomRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'group-1' },
 };
 
@@ -72,6 +75,114 @@ Deno.test('CRDT persisted row decoding fails closed on physical/logical identity
   });
 });
 
+Deno.test('CRDT persisted metadata decoding validates counters and nested policies', async () => {
+  await withPGliteSql(async (sql) => {
+    const service = mutationService(sql);
+    const input = await command('metadata-base', 'metadata-update', 1_000);
+    await apply(sql, service, input);
+    await sql`
+      update crdt_documents set update_count = -1, projection_ids = '{"not":"an-array"}'
+      where document_key = ${input.documentKey}
+    `;
+    await assert.rejects(
+      service.read(await command('metadata-read', 'metadata-next', 2_000)),
+      /metadata|counter|projection|corrupt/i,
+    );
+  });
+});
+
+Deno.test('CRDT update decoding binds physical update_id to the envelope updateId', async () => {
+  await withPGliteSql(async (sql) => {
+    const service = mutationService(sql);
+    const original = await command('physical-update-command', 'logical-update-id', 1_000);
+    await apply(sql, service, original);
+    await sql`
+      update crdt_updates set update_id = 'physical-update-id'
+      where document_key = ${original.documentKey}
+    `;
+    const lookup = await command('lookup-physical-command', 'physical-update-id', 2_000);
+    await assert.rejects(service.read(lookup), /update.*identity|corrupt/i);
+  });
+});
+
+Deno.test('CRDT durable trusted identity columns are mandatory', async () => {
+  await withPGliteSql(async (sql) => {
+    const rows = await sql<{ column_name: string; is_nullable: string }[]>`
+      select column_name, is_nullable from information_schema.columns
+      where table_name = 'crdt_updates'
+        and column_name in ('actor_id', 'principal_id', 'session_id', 'server_id')
+      order by column_name
+    `;
+    assert.deepEqual(rows, [
+      { column_name: 'actor_id', is_nullable: 'NO' },
+      { column_name: 'principal_id', is_nullable: 'NO' },
+      { column_name: 'server_id', is_nullable: 'NO' },
+      { column_name: 'session_id', is_nullable: 'NO' },
+    ]);
+  });
+});
+
+Deno.test('CRDT snapshot decoding binds physical identity, sequence, time, and reason', async () => {
+  await withPGliteSql(async (sql) => {
+    const service = mutationService(sql);
+    const original = await command('snapshot-base', 'snapshot-update', 1_000);
+    await apply(sql, service, original);
+    const envelope = snapshot('logical-snapshot-id', 'snapshot-value');
+    await sql`
+      insert into crdt_snapshots (
+        document_key, snapshot_id, append_sequence, snapshot_envelope, created_at_ts, reason
+      ) values (
+        ${original.documentKey}, 'physical-snapshot-id', 99, ${JSON.stringify(envelope)},
+        ${new Date(9_999)}, 'physical-reason'
+      )
+    `;
+    const compact = await createCrdtMutationCommand({
+      operation: 'compact',
+      commandId: 'snapshot-read',
+      actor: {
+        actorId: 'actor-1',
+        principalId: 'client-1',
+        sessionId: 'session-1',
+        serverId: 'server-1',
+      },
+      capturedAtEpochMs: 2_000,
+      expireAtEpochMs: 62_000,
+      document: DOCUMENT,
+      responseAudience: {
+        kind: 'admin',
+        senderSessionId: 'session-1',
+        topicId: 'crdt.admin',
+        contextId: original.documentKey,
+      },
+      snapshot: null,
+      reason: 'read-corrupt-snapshot',
+    });
+    await assert.rejects(service.read(compact), /snapshot.*identity|corrupt/i);
+  });
+});
+
+Deno.test('CRDT quota accounts for every retained snapshot byte', async () => {
+  await withPGliteSql(async (sql) => {
+    const service = mutationService(sql);
+    const original = await command('all-snapshot-base', 'all-snapshot-update', 1_000);
+    await apply(sql, service, original);
+    for (const [id, value] of [['snapshot-a', 'a'.repeat(700)], ['snapshot-b', 'b'.repeat(700)]]) {
+      await sql`
+        insert into crdt_snapshots (
+          document_key, snapshot_id, append_sequence, snapshot_envelope, created_at_ts, reason
+        ) values (
+          ${original.documentKey}, ${id}, 1, ${JSON.stringify(snapshot(id, value))},
+          ${new Date(10_000)}, 'app-inbox-compaction'
+        )
+      `;
+    }
+    const observed = await service.read(
+      await command('all-snapshot-read', 'all-snapshot-next', 2_000),
+    );
+    assert.ok(observed.storedSnapshotBytes > 1_400);
+  });
+});
+
 Deno.test('CRDT read includes current actor-rate and snapshot-byte policy facts', async () => {
   await withPGliteSql(async (sql) => {
     const service = mutationService(sql);
@@ -79,10 +190,12 @@ Deno.test('CRDT read includes current actor-rate and snapshot-byte policy facts'
     await apply(sql, service, first);
     await sql`
       update crdt_documents
-      set quota_policy = ${JSON.stringify({
+      set quota_policy = ${
+      JSON.stringify({
         maxUpdatesPerMinutePerActor: 1,
         maxDocumentBytes: 10_000,
-      })}
+      })
+    }
       where document_key = ${first.documentKey}
     `;
     await sql`
@@ -92,7 +205,7 @@ Deno.test('CRDT read includes current actor-rate and snapshot-byte policy facts'
       ) values (
         ${first.documentKey}, 'snapshot-policy', 1,
         ${JSON.stringify(snapshot('snapshot-policy', 'x'.repeat(2_000)))},
-        ${new Date(10_000)}, 'policy-test'
+        ${new Date(10_000)}, 'app-inbox-compaction'
       )
     `;
     const second = await command('rate-second', 'rate-second', 11_000);
@@ -100,9 +213,13 @@ Deno.test('CRDT read includes current actor-rate and snapshot-byte policy facts'
     const computed = service.compute(second, observed);
     assert.equal((observed as { actorUpdatesInWindow?: number }).actorUpdatesInWindow, 1);
     assert.ok((observed as { storedSnapshotBytes?: number }).storedSnapshotBytes! > 1_000);
-    assert.deepEqual({ outcome: computed.outcome, code: 'code' in computed ? computed.code : null }, {
-      outcome: 'rejected', code: 'rate-limited',
-    });
+    assert.deepEqual(
+      { outcome: computed.outcome, code: 'code' in computed ? computed.code : null },
+      {
+        outcome: 'rejected',
+        code: 'rate-limited',
+      },
+    );
   });
 });
 
@@ -135,12 +252,16 @@ Deno.test('overlapping CRDT transaction writers keep one winner and no lost coun
       const read = await service.read(entry);
       return service.compute(entry, read);
     }));
-    const writes = await Promise.allSettled(computed.map(async (entry) =>
-      await sql.begin(async (transaction) => await service.write(transaction, entry))
-    ));
+    const writes = await Promise.allSettled(
+      computed.map(async (entry) =>
+        await sql.begin(async (transaction) => await service.write(transaction, entry))
+      ),
+    );
     assert.equal(writes.filter((result) => result.status === 'fulfilled').length, 1);
     assert.equal(writes.filter((result) => result.status === 'rejected').length, 1);
-    const [metadata] = await sql<{ update_count: string | number; last_append_sequence: string | number }[]>`
+    const [metadata] = await sql<
+      { update_count: string | number; last_append_sequence: string | number }[]
+    >`
       select update_count, last_append_sequence from crdt_documents
     `;
     assert.equal(Number(metadata?.update_count), 2);
@@ -150,11 +271,17 @@ Deno.test('overlapping CRDT transaction writers keep one winner and no lost coun
 
 function mutationService(sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0]) {
   return createCrdtMutationService({
-    repository: new PSqlCrdtMutationRepository(sql, () => Promise.resolve(true)),
-    createWriter: (transaction) => new PSqlCrdtMutationRepository(
-      transaction,
+    repository: new PSqlCrdtMutationRepository(
+      sql,
       () => Promise.resolve(true),
+      [{ documentType: 'checklist', rollout: 'production' }],
     ),
+    createWriter: (transaction) =>
+      new PSqlCrdtMutationRepository(
+        transaction,
+        () => Promise.resolve(true),
+        [{ documentType: 'checklist', rollout: 'production' }],
+      ),
     serviceId: 'server-1',
   });
 }
@@ -172,11 +299,25 @@ async function apply(
 
 async function command(commandId: string, updateId: string, capturedAtEpochMs: number) {
   return await createCrdtMutationCommand({
-    operation: 'append', commandId,
-    actor: { actorId: 'actor-1', principalId: 'client-1', sessionId: 'session-1', serverId: 'server-1' },
-    capturedAtEpochMs, expireAtEpochMs: capturedAtEpochMs + 60_000,
-    document: DOCUMENT, update: update(updateId, capturedAtEpochMs), authorizationScope: 'room',
-    responseAudience: { kind: 'room', senderSessionId: 'session-1', topicId: 'room.crdt', contextId: 'group-1' },
+    operation: 'append',
+    commandId,
+    actor: {
+      actorId: 'actor-1',
+      principalId: 'client-1',
+      sessionId: 'session-1',
+      serverId: 'server-1',
+    },
+    capturedAtEpochMs,
+    expireAtEpochMs: capturedAtEpochMs + 60_000,
+    document: DOCUMENT,
+    update: update(updateId, capturedAtEpochMs),
+    authorizationScope: 'room',
+    responseAudience: {
+      kind: 'room',
+      senderSessionId: 'session-1',
+      topicId: 'room.crdt',
+      contextId: 'group-1',
+    },
   });
 }
 
@@ -186,16 +327,29 @@ function update(updateId: string, createdAtEpochMs: number): RallarCrdtUpdateEnv
     operations: [{ kind: 'register.set', path: ['title'], policy: 'lww', value: updateId }],
   };
   return {
-    protocolVersion: RALLAR_CRDT_PROTOCOL_VERSION, document: DOCUMENT, updateId,
-    replicaId: 'replica-1', lamport: createdAtEpochMs, parents: [], schemaVersion: 1,
-    operationVersion: RALLAR_CRDT_OPERATION_VERSION, createdAtEpochMs, payload,
+    protocolVersion: RALLAR_CRDT_PROTOCOL_VERSION,
+    document: DOCUMENT,
+    updateId,
+    replicaId: 'replica-1',
+    lamport: createdAtEpochMs,
+    parents: [],
+    schemaVersion: 1,
+    operationVersion: RALLAR_CRDT_OPERATION_VERSION,
+    createdAtEpochMs,
+    payload,
   };
 }
 
 function snapshot(snapshotId: string, value: unknown) {
   return {
-    protocolVersion: RALLAR_CRDT_PROTOCOL_VERSION, document: DOCUMENT,
-    snapshotId, schemaVersion: 1, createdAtEpochMs: 10_000,
-    maxLamport: 0, includedUpdateIds: [], value, metadata: { updateCount: 0 },
+    protocolVersion: RALLAR_CRDT_PROTOCOL_VERSION,
+    document: DOCUMENT,
+    snapshotId,
+    schemaVersion: 1,
+    createdAtEpochMs: 10_000,
+    maxLamport: 0,
+    includedUpdateIds: [],
+    value,
+    metadata: { updateCount: 0 },
   };
 }

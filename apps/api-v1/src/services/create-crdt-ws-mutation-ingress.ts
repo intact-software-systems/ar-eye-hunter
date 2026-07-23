@@ -1,6 +1,4 @@
-import type {
-  RallarCrdtServerMutationIngress,
-} from '@shared-server/crdt/RallarCrdtServer.ts';
+import type { RallarCrdtServerMutationIngress } from '@shared-server/crdt/RallarCrdtServer.ts';
 import type {
   AppCrdtInboxService,
 } from '@shared-server/rallar-system/services/AppCrdtInboxService.ts';
@@ -14,6 +12,7 @@ export function createCrdtWsMutationIngress(
       const trusted = accepted.trusted;
       await appCrdt.createAndEnqueueAppend({
         update: accepted.envelope,
+        deliveryId: `${trusted.sessionId ?? trusted.senderId}:${accepted.raw.id.msgId}`,
         actor: {
           actorId: trusted.senderId,
           principalId: trusted.principalId,

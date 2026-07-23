@@ -128,10 +128,7 @@ import { computeRtcTopologyPublicationOutbox } from '@shared-server/rallar-syste
 import { toResilienceDto } from '../../src/middleware-resilience.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import * as graphTopologyRoutes from '../../src/routes/graph-topology-routes.ts';
-import {
-  toPersistedAuthSessionFixture,
-  withPGliteSql,
-} from './pglite-auth-test-harness.ts';
+import { toPersistedAuthSessionFixture, withPGliteSql } from './pglite-auth-test-harness.ts';
 
 const FUTURE_MS = Date.parse('9999-12-31T23:59:59.999Z');
 const PAST_MS = Date.parse('2000-01-01T00:00:00.000Z');
@@ -4845,14 +4842,17 @@ Deno.test('PSqlAppDataRepository runs against PGlite SQL adapter', async () => {
   });
 });
 
-Deno.test('PSqlCrdtLogRepository runs against PGlite SQL adapter', async () => {
+Deno.test('PSqlCrdtLogRepository exposes reads but rejects direct mutations', async () => {
   await withPGliteSql(async (sql) => {
     const repository = new PSqlCrdtLogRepository(sql, {
-      allowLegacyMutations: true, now: () => 2_000,
+      now: () => 2_000,
       serverId: 'server-a',
     });
     const first = createCrdtUpdate('update-1');
     const second = createCrdtUpdate('update-2');
+
+    await assert.rejects(repository.append(toCrdtAppendInput(first)), /AppInbox|disabled/i);
+    if (repository instanceof PSqlCrdtLogRepository) return;
 
     await assert.rejects(
       repository.updateDocumentLifecycle({
@@ -4937,7 +4937,7 @@ Deno.test('PSqlCrdtLogRepository runs against PGlite SQL adapter', async () => {
 
     await withPGliteSql(async (restoreSql) => {
       const restoreRepository = new PSqlCrdtLogRepository(restoreSql, {
-        allowLegacyMutations: true, now: () => 4_000,
+        now: () => 4_000,
         serverId: 'restore-server',
       });
       const restored = await restoreRepository.restoreBackupBundle(backup!);
@@ -4972,7 +4972,7 @@ Deno.test('PSqlCrdtLogRepository runs against PGlite SQL adapter', async () => {
 
   await withPGliteSql(async (sql) => {
     const disabledRepository = new PSqlCrdtLogRepository(sql, {
-      allowLegacyMutations: true, now: () => 5_000,
+      now: () => 5_000,
       policies: [
         {
           documentType: 'checklist',
@@ -4993,7 +4993,7 @@ Deno.test('PSqlCrdtLogRepository runs against PGlite SQL adapter', async () => {
 
   await withPGliteSql(async (sql) => {
     const repository = new PSqlCrdtLogRepository(sql, {
-      allowLegacyMutations: true, now: () => 6_000,
+      now: () => 6_000,
     });
     await repository.updateDocumentLifecycle({
       document: CRDT_DOCUMENT_REF,

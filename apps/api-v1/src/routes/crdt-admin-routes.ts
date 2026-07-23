@@ -7,9 +7,7 @@ import type {
   RallarCrdtDocumentRef,
   RallarCrdtListDocumentsInput,
 } from '@shared/crdt/mod.ts';
-import {
-  RALLAR_CRDT_PROTOCOL_VERSION,
-} from '@shared/crdt/mod.ts';
+import { RALLAR_CRDT_PROTOCOL_VERSION } from '@shared/crdt/mod.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { requireApiAuthSession, toAuthErrorResponse } from '../services/request-auth-service.ts';
 
@@ -185,12 +183,13 @@ async function withAdminError(
     const result = await execute();
     return c.json({ ok: true, result });
   } catch (error) {
+    const status = readErrorStatus(error);
     return c.json(
       {
         ok: false,
         error: error instanceof Error ? error.message : String(error),
       },
-      400,
+      status,
     );
   }
 }
@@ -214,10 +213,20 @@ async function requireCrdtAdminSession(
     : true;
 
   if (!authorized) {
-    throw new Error('Forbidden: CRDT admin authorization required.');
+    throw Object.assign(new Error('Forbidden: CRDT admin authorization required.'), {
+      status: 403,
+    });
   }
 
   return session;
+}
+
+function readErrorStatus(error: unknown): 400 | 401 | 403 | 404 | 409 | 429 | 503 {
+  if (!error || typeof error !== 'object' || !('status' in error)) return 400;
+  const status = Number((error as { status: unknown }).status);
+  return [400, 401, 403, 404, 409, 429, 503].includes(status)
+    ? status as 400 | 401 | 403 | 404 | 409 | 429 | 503
+    : 400;
 }
 
 async function readJson<T>(c: Context): Promise<T> {

@@ -1,16 +1,18 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
 import {
-    toRallarCrdtDocumentKey,
-    type RallarCrdtDocumentLifecycleState,
-    type RallarCrdtDocumentRef,
-    type RallarCrdtAuditSink,
-    type RallarCrdtQuotaPolicy,
-    type RallarCrdtRetentionPolicy,
-    type RallarCrdtSnapshotEnvelope,
-    type RallarCrdtUpdateEnvelope,
+  type RallarCrdtAuditEvent,
+  type RallarCrdtAuditSink,
+  type RallarCrdtDocumentLifecycleState,
+  type RallarCrdtDocumentRef,
+  type RallarCrdtQuotaPolicy,
+  type RallarCrdtRetentionPolicy,
+  type RallarCrdtSnapshotEnvelope,
+  type RallarCrdtUpdateEnvelope,
+  toRallarCrdtDocumentKey,
 } from '@shared/crdt/mod.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import type { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import type { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import type { PSqlSql } from '../../postgres/PostgresSqlClient.ts';
 import type { ResourceInboxRepository } from '../../postgres/resource-inbox/ResourceInboxRepository.ts';
 import type { ResourceInboxResultsRepository } from '../../postgres/resource-inbox/ResourceInboxResultsRepository.ts';
@@ -19,285 +21,353 @@ import type { AppInboxFailure } from './app-inbox-failure.ts';
 import { AppInboxService, type AppInboxServiceOptions } from './AppInboxService.ts';
 import { type AppInboxMessageContext, AppInboxType } from './app-inbox-contracts.ts';
 import {
-    CRDT_MUTATION_INBOX_TYPES,
-    createCrdtMutationCommand,
-    decodeCrdtMutationCommand,
-    decodeCrdtMutationResult,
-    type CrdtAppendCommand,
-    type CrdtMutationActor,
-    type CrdtMutationCommand,
-    type CrdtMutationResponseAudience,
-    type CrdtMutationResult,
-    type CrdtMutationService,
+  CRDT_MUTATION_INBOX_TYPES,
+  type CrdtAppendCommand,
+  type CrdtMutationActor,
+  type CrdtMutationCommand,
+  type CrdtMutationResponseAudience,
+  type CrdtMutationResult,
+  type CrdtMutationService,
+  createCrdtMutationCommand,
+  decodeCrdtMutationCommand,
+  decodeCrdtMutationResult,
 } from './crdt-mutations.ts';
 import type { RallarTimingSink } from './timing.ts';
+import { CRDT_AUDIT_APP_OUTBOX_TYPE } from './crdt-mutation-outbox.ts';
 
 export const CRDT_APP_INBOX_TOPIC = 'app-inbox.crdt-state';
 
 export type CrdtAdminMutationOperation =
-    | 'rebuild-projection'
-    | 'compact'
-    | 'lifecycle'
-    | 'erase';
+  | 'rebuild-projection'
+  | 'compact'
+  | 'lifecycle'
+  | 'erase';
 
 export class AppCrdtInboxService extends AppInboxService {
-    private audit: RallarCrdtAuditSink | undefined;
+  private audit: RallarCrdtAuditSink | undefined;
+  private readonly wakeQueueEngine: (() => void) | undefined;
 
-    constructor(
-        public override readonly inbox: InboxQueueReader,
-        public override readonly resourceInbox: ResourceInboxRepository,
-        public override readonly resourceInboxResults: ResourceInboxResultsRepository,
-        database: PSqlSql,
-        public readonly mutationService: CrdtMutationService,
-        public override readonly serviceId: string,
-        timing?: RallarTimingSink,
-        options?: AppInboxServiceOptions,
-        effects: Readonly<{ audit?: RallarCrdtAuditSink }> = {},
-    ) {
-        super(
-            inbox,
-            resourceInbox,
-            resourceInboxResults,
-            database,
-            serviceId,
-            CRDT_APP_INBOX_TOPIC,
-            timing,
-            options,
-        );
-        this.audit = effects.audit;
-        for (const type of CRDT_MUTATION_INBOX_TYPES) {
-            this.onStateMessage<unknown>(
-                type,
-                async (data, context) => await this.processCommand(data, context),
-            );
+  constructor(
+    public override readonly inbox: InboxQueueReader,
+    public override readonly resourceInbox: ResourceInboxRepository,
+    public override readonly resourceInboxResults: ResourceInboxResultsRepository,
+    database: PSqlSql,
+    public readonly mutationService: CrdtMutationService,
+    public override readonly serviceId: string,
+    timing?: RallarTimingSink,
+    options?: AppInboxServiceOptions,
+    effects: Readonly<{
+      audit?: RallarCrdtAuditSink;
+      outboxQueueReader?: OutboxQueueReader;
+      wakeQueueEngine?: () => void;
+    }> = {},
+  ) {
+    super(
+      inbox,
+      resourceInbox,
+      resourceInboxResults,
+      database,
+      serviceId,
+      CRDT_APP_INBOX_TOPIC,
+      timing,
+      options,
+    );
+    this.audit = effects.audit;
+    this.wakeQueueEngine = effects.wakeQueueEngine;
+    effects.outboxQueueReader?.onOutboxMessageDo(CRDT_AUDIT_APP_OUTBOX_TYPE, {
+      onMessage: async (message) => {
+        if (message.payload.contentType !== 'application/json') {
+          throw new TypeError('CRDT audit outbox content type is invalid');
         }
+        const event = decodeCrdtAuditEvent(JSON.parse(message.payload.resource));
+        if (!this.audit) throw new Error('CRDT audit sink is unavailable');
+        await this.audit.record(event);
+      },
+    });
+    for (const type of CRDT_MUTATION_INBOX_TYPES) {
+      this.onStateMessage<unknown>(
+        type,
+        async (data, context) => await this.processCommand(data, context),
+      );
     }
+  }
 
-    setAuditSink(audit: RallarCrdtAuditSink | undefined): void {
-        this.audit = audit;
-    }
+  setAuditSink(audit: RallarCrdtAuditSink | undefined): void {
+    this.audit = audit;
+  }
 
-    async processCrdtCommandUntilCompletion(
-        command: CrdtMutationCommand,
-    ): Promise<Either<AppInboxFailure, CrdtMutationResult>> {
-        const decoded = decodeCrdtMutationCommand(command);
-        return await this.processEntryUntilCompletionResult({
-            type: toCrdtAppInboxType(decoded),
-            topicId: CRDT_APP_INBOX_TOPIC,
-            resourceId: decoded.commandId,
-            contextId: decoded.documentKey,
-            senderId: decoded.actor.sessionId,
-            data: decoded,
-        });
-    }
+  async processCrdtCommandUntilCompletion(
+    command: CrdtMutationCommand,
+  ): Promise<Either<AppInboxFailure, CrdtMutationResult>> {
+    const decoded = decodeCrdtMutationCommand(command);
+    return await this.processEntryUntilCompletionResult({
+      type: toCrdtAppInboxType(decoded),
+      topicId: CRDT_APP_INBOX_TOPIC,
+      resourceId: decoded.commandId,
+      contextId: decoded.documentKey,
+      senderId: decoded.actor.sessionId,
+      data: decoded,
+    });
+  }
 
-    processCrdtCommandNoWaiting(command: CrdtMutationCommand): void {
-        const decoded = decodeCrdtMutationCommand(command);
-        this.processEntryNoWaiting({
-            type: toCrdtAppInboxType(decoded),
-            topicId: CRDT_APP_INBOX_TOPIC,
-            resourceId: decoded.commandId,
-            contextId: decoded.documentKey,
-            senderId: decoded.actor.sessionId,
-            data: decoded,
-        });
-    }
+  processCrdtCommandNoWaiting(command: CrdtMutationCommand): void {
+    const decoded = decodeCrdtMutationCommand(command);
+    this.processEntryNoWaiting({
+      type: toCrdtAppInboxType(decoded),
+      topicId: CRDT_APP_INBOX_TOPIC,
+      resourceId: decoded.commandId,
+      contextId: decoded.documentKey,
+      senderId: decoded.actor.sessionId,
+      data: decoded,
+    });
+  }
 
-    async createAndEnqueueAppend(input: Readonly<{
-        update: RallarCrdtUpdateEnvelope;
-        actor: CrdtMutationActor;
-        responseAudience: CrdtMutationResponseAudience;
-        capturedAtEpochMs: number;
-        expireAtEpochMs: number;
-    }>): Promise<CrdtAppendCommand> {
-        const command = await createCrdtMutationCommand({
-            operation: 'append',
-            commandId: input.update.updateId,
-            actor: input.actor,
-            capturedAtEpochMs: input.update.createdAtEpochMs,
-            expireAtEpochMs: 253_402_300_799_999,
-            document: input.update.document,
-            responseAudience: input.responseAudience,
-            update: input.update,
-            authorizationScope: input.update.document.scope,
-        });
-        if (command.operation !== 'append') throw new TypeError('CRDT append command is invalid');
-        await this.enqueueEntryDurably({
-            type: toCrdtAppInboxType(command),
-            topicId: CRDT_APP_INBOX_TOPIC,
-            resourceId: command.commandId,
-            contextId: command.documentKey,
-            senderId: command.actor.sessionId,
-            data: command,
-        });
-        return command;
-    }
+  async createAndEnqueueAppend(
+    input: Readonly<{
+      update: RallarCrdtUpdateEnvelope;
+      deliveryId: string;
+      actor: CrdtMutationActor;
+      responseAudience: CrdtMutationResponseAudience;
+      capturedAtEpochMs: number;
+      expireAtEpochMs: number;
+    }>,
+  ): Promise<CrdtAppendCommand> {
+    const command = await createCrdtMutationCommand({
+      operation: 'append',
+      commandId: input.deliveryId,
+      actor: input.actor,
+      capturedAtEpochMs: input.capturedAtEpochMs,
+      expireAtEpochMs: Math.min(
+        input.expireAtEpochMs,
+        input.capturedAtEpochMs + 60_000,
+      ),
+      document: input.update.document,
+      responseAudience: input.responseAudience,
+      update: input.update,
+      authorizationScope: input.update.document.scope,
+    });
+    if (command.operation !== 'append') throw new TypeError('CRDT append command is invalid');
+    await this.enqueueEntryDurably({
+      type: toCrdtAppInboxType(command),
+      topicId: CRDT_APP_INBOX_TOPIC,
+      resourceId: command.commandId,
+      contextId: command.documentKey,
+      senderId: command.actor.sessionId,
+      data: command,
+    });
+    return command;
+  }
 
-    async processAdminMutationUntilCompletion(
-        operation: CrdtAdminMutationOperation,
-        input: Readonly<{ adminSession: AuthSession; request: unknown }>,
-    ): Promise<unknown> {
-        const command = await this.createAdminCommand(operation, input);
-        const completed = await this.processCrdtCommandUntilCompletion(command);
-        if (completed.left !== undefined) {
-            throw Object.assign(new Error(completed.left.message), completed.left);
-        }
-        if (completed.right === undefined) throw new Error('CRDT AppInbox result is missing');
-        return toAdminPublicResult(decodeCrdtMutationResult(completed.right));
+  async processAdminMutationUntilCompletion(
+    operation: CrdtAdminMutationOperation,
+    input: Readonly<{ adminSession: AuthSession; request: unknown }>,
+  ): Promise<unknown> {
+    const command = await this.createAdminCommand(operation, input);
+    const completed = await this.processCrdtCommandUntilCompletion(command);
+    if (completed.left !== undefined) {
+      throw Object.assign(new Error(completed.left.message), completed.left);
     }
+    if (completed.right === undefined) throw new Error('CRDT AppInbox result is missing');
+    const result = decodeCrdtMutationResult(completed.right);
+    if (result.status === 'rejected') throw toAdminMutationError(result.code);
+    return toAdminPublicResult(result);
+  }
 
-    private async processCommand(
-        input: unknown,
-        context: AppInboxMessageContext,
-    ): Promise<CrdtMutationResult> {
-        const command = decodeCrdtMutationCommand(input);
-        const expectedKey = toAppQueueKey({
-            topicId: CRDT_APP_INBOX_TOPIC,
-            resourceId: command.commandId,
-            contextId: command.documentKey,
-        });
-        if (
-            toCrdtAppInboxType(command) !== context.enqueue.type ||
-            expectedKey.resourceId !== context.entry.key.resourceId ||
-            expectedKey.contextId !== context.entry.key.contextId
-        ) throw new TypeError('CRDT AppInbox command identity differs from queue key');
-        const read = await this.mutationService.read(command);
-        const computed = this.mutationService.compute(command, read);
-        this.mutationService.validate(command, read, computed);
-        const result = await this.writeMutation(
-            context,
-            async (transaction) => await this.mutationService.write(transaction, computed),
-        );
-        if (
-            result.operation === 'erase' &&
-            result.status === 'accepted' &&
-            result.auditEvent !== null
-        ) await this.audit?.record(result.auditEvent);
-        return result;
+  private async processCommand(
+    input: unknown,
+    context: AppInboxMessageContext,
+  ): Promise<CrdtMutationResult> {
+    const command = decodeCrdtMutationCommand(input);
+    const expectedKey = toAppQueueKey({
+      topicId: CRDT_APP_INBOX_TOPIC,
+      resourceId: command.commandId,
+      contextId: command.documentKey,
+    });
+    if (
+      toCrdtAppInboxType(command) !== context.enqueue.type ||
+      expectedKey.resourceId !== context.entry.key.resourceId ||
+      expectedKey.contextId !== context.entry.key.contextId
+    ) throw new TypeError('CRDT AppInbox command identity differs from queue key');
+    const read = await this.mutationService.read(command);
+    const computed = this.mutationService.compute(command, read);
+    this.mutationService.validate(command, read, computed);
+    const result = await this.writeMutation(
+      context,
+      async (transaction) => await this.mutationService.write(transaction, computed),
+    );
+    if (result.operation === 'erase' && result.status === 'accepted') {
+      this.wakeQueueEngine?.();
     }
+    return result;
+  }
 
-    private async createAdminCommand(
-        operation: CrdtAdminMutationOperation,
-        input: Readonly<{ adminSession: AuthSession; request: unknown }>,
-    ): Promise<CrdtMutationCommand> {
-        const request = requireRecord(input.request);
-        const document = requireDocument(request.document);
-        const capturedAtEpochMs = this.nowEpochMs();
-        const common = {
-            commandId: readString(request.requestId) ?? crypto.randomUUID(),
-            actor: {
-                actorId: input.adminSession.clientId,
-                principalId: input.adminSession.username,
-                sessionId: input.adminSession.sessionId,
-                serverId: this.serviceId,
-            },
-            capturedAtEpochMs,
-            expireAtEpochMs: capturedAtEpochMs + 60_000,
-            document,
-            responseAudience: {
-                kind: 'admin' as const,
-                senderSessionId: input.adminSession.sessionId,
-                topicId: 'crdt.admin',
-                contextId: toRallarCrdtDocumentKey(document),
-            },
-        };
-        if (operation === 'rebuild-projection') {
-            return await createCrdtMutationCommand({
-                ...common,
-                operation,
-                projectionId: readString(request.projectionId) ?? 'default',
-            });
-        }
-        if (operation === 'compact') {
-            return await createCrdtMutationCommand({
-                ...common,
-                operation,
-                snapshot: request.snapshot === undefined
-                    ? null
-                    : request.snapshot as RallarCrdtSnapshotEnvelope,
-                reason: readString(request.reason) ?? 'api-v1-admin-compaction',
-            });
-        }
-        if (operation === 'lifecycle') {
-            return await createCrdtMutationCommand({
-                ...common,
-                operation,
-                lifecycle: requireLifecycle(request.lifecycle),
-                retention: (request.retention ?? null) as RallarCrdtRetentionPolicy | null,
-                quota: (request.quota ?? null) as RallarCrdtQuotaPolicy | null,
-                projectionIds: readStringArray(request.projectionIds),
-            });
-        }
-        return await createCrdtMutationCommand({
-            ...common,
-            operation,
-            mode: request.mode === 'redact-payloads' ? 'redact-payloads' : 'destroy-document',
-            reason: readString(request.reason) ?? 'api-v1-admin-erasure-workflow',
-        });
+  private async createAdminCommand(
+    operation: CrdtAdminMutationOperation,
+    input: Readonly<{ adminSession: AuthSession; request: unknown }>,
+  ): Promise<CrdtMutationCommand> {
+    const request = requireRecord(input.request);
+    const document = requireDocument(request.document);
+    const capturedAtEpochMs = this.nowEpochMs();
+    const common = {
+      commandId: readString(request.requestId) ?? crypto.randomUUID(),
+      actor: {
+        actorId: input.adminSession.clientId,
+        principalId: input.adminSession.username,
+        sessionId: input.adminSession.sessionId,
+        serverId: this.serviceId,
+      },
+      capturedAtEpochMs,
+      expireAtEpochMs: capturedAtEpochMs + 60_000,
+      document,
+      responseAudience: {
+        kind: 'admin' as const,
+        senderSessionId: input.adminSession.sessionId,
+        topicId: 'crdt.admin',
+        contextId: toRallarCrdtDocumentKey(document),
+      },
+    };
+    if (operation === 'rebuild-projection') {
+      return await createCrdtMutationCommand({
+        ...common,
+        operation,
+        projectionId: readString(request.projectionId) ?? 'default',
+      });
     }
+    if (operation === 'compact') {
+      return await createCrdtMutationCommand({
+        ...common,
+        operation,
+        snapshot: request.snapshot === undefined
+          ? null
+          : request.snapshot as RallarCrdtSnapshotEnvelope,
+        reason: readString(request.reason) ?? 'api-v1-admin-compaction',
+      });
+    }
+    if (operation === 'lifecycle') {
+      return await createCrdtMutationCommand({
+        ...common,
+        operation,
+        lifecycle: requireLifecycle(request.lifecycle),
+        retentionAction: toLifecycleAction<RallarCrdtRetentionPolicy>(request, 'retention'),
+        quotaAction: toLifecycleAction<RallarCrdtQuotaPolicy>(request, 'quota'),
+        projectionIdsAction: toLifecycleAction<readonly string[]>(request, 'projectionIds'),
+      });
+    }
+    return await createCrdtMutationCommand({
+      ...common,
+      operation,
+      mode: request.mode === 'redact-payloads' ? 'redact-payloads' : 'destroy-document',
+      reason: readString(request.reason) ?? 'api-v1-admin-erasure-workflow',
+    });
+  }
 }
 
 function toAdminPublicResult(result: CrdtMutationResult): unknown {
-    if (result.operation === 'compact') {
-        return {
-            document: result.snapshot?.document ?? null,
-            documentKey: result.documentKey,
-            appendSequence: result.appendSequence,
-            snapshot: result.snapshot,
-        };
-    }
-    if (result.operation === 'lifecycle') return result.metadata;
-    if (result.operation === 'rebuild-projection') return result.integrity;
-    if (result.operation === 'erase') {
-        return {
-            request: result.request,
-            auditEvent: result.auditEvent,
-            ...(result.redactedBundle === null
-                ? { metadata: result.metadata }
-                : { redactedBundle: result.redactedBundle }),
-        };
-    }
-    return result;
+  if (result.operation === 'compact') {
+    return {
+      document: result.snapshot?.document ?? null,
+      documentKey: result.documentKey,
+      appendSequence: result.appendSequence,
+      snapshot: result.snapshot,
+    };
+  }
+  if (result.operation === 'lifecycle') return result.metadata;
+  if (result.operation === 'rebuild-projection') return result.integrity;
+  if (result.operation === 'erase') {
+    return {
+      request: result.request,
+      auditEvent: result.auditEvent,
+      ...(result.redactedBundle === null
+        ? { metadata: result.metadata }
+        : { redactedBundle: result.redactedBundle }),
+    };
+  }
+  return result;
 }
 
 export function toCrdtAppInboxType(command: CrdtMutationCommand): AppInboxType {
-    switch (command.operation) {
-        case 'append': return AppInboxType.CRDT_UPDATE_APPEND;
-        case 'rebuild-projection': return AppInboxType.CRDT_PROJECTION_REBUILD;
-        case 'compact': return AppInboxType.CRDT_SNAPSHOT_COMPACT;
-        case 'lifecycle': return AppInboxType.CRDT_LIFECYCLE_UPDATE;
-        case 'erase': return AppInboxType.CRDT_ERASE;
-    }
+  switch (command.operation) {
+    case 'append':
+      return AppInboxType.CRDT_UPDATE_APPEND;
+    case 'rebuild-projection':
+      return AppInboxType.CRDT_PROJECTION_REBUILD;
+    case 'compact':
+      return AppInboxType.CRDT_SNAPSHOT_COMPACT;
+    case 'lifecycle':
+      return AppInboxType.CRDT_LIFECYCLE_UPDATE;
+    case 'erase':
+      return AppInboxType.CRDT_ERASE;
+  }
 }
 
 function requireRecord(value: unknown): Record<string, unknown> {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
-        throw new TypeError('CRDT admin request must be an object');
-    }
-    return value as Record<string, unknown>;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new TypeError('CRDT admin request must be an object');
+  }
+  return value as Record<string, unknown>;
 }
 
 function requireDocument(value: unknown): RallarCrdtDocumentRef {
-    if (!value || typeof value !== 'object') throw new TypeError('CRDT document is required');
-    toRallarCrdtDocumentKey(value as RallarCrdtDocumentRef);
-    return value as RallarCrdtDocumentRef;
+  if (!value || typeof value !== 'object') throw new TypeError('CRDT document is required');
+  toRallarCrdtDocumentKey(value as RallarCrdtDocumentRef);
+  return value as RallarCrdtDocumentRef;
 }
 
 function readString(value: unknown): string | null {
-    return typeof value === 'string' && value.length > 0 ? value : null;
+  return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
-function readStringArray(value: unknown): readonly string[] {
-    if (value === undefined) return [];
-    if (!Array.isArray(value) || value.some((entry) => typeof entry !== 'string')) {
-        throw new TypeError('CRDT projectionIds are invalid');
-    }
-    return value;
+function toLifecycleAction<T>(request: Record<string, unknown>, key: string) {
+  if (!(key in request)) return { kind: 'preserve' as const };
+  if (request[key] === null) return { kind: 'clear' as const };
+  if (
+    key === 'projectionIds' &&
+    (!Array.isArray(request[key]) || request[key].some((entry) => typeof entry !== 'string'))
+  ) {
+    throw new TypeError('CRDT projectionIds are invalid');
+  }
+  if (
+    key !== 'projectionIds' &&
+    (!request[key] || typeof request[key] !== 'object' || Array.isArray(request[key]))
+  ) {
+    throw new TypeError(`CRDT ${key} is invalid`);
+  }
+  return { kind: 'set' as const, value: request[key] as T };
+}
+
+function toAdminMutationError(code: string | null): Error {
+  const status = code === 'document-not-found'
+    ? 404
+    : code === 'authorization-denied' || code === 'feature-disabled'
+    ? 403
+    : code === 'rate-limited'
+    ? 429
+    : code?.includes('conflict') || code?.includes('mismatch')
+    ? 409
+    : 400;
+  return Object.assign(new Error(`CRDT admin mutation rejected: ${code ?? 'unknown'}`), {
+    code: code ?? 'crdt-admin-mutation-rejected',
+    status,
+  });
+}
+
+function decodeCrdtAuditEvent(value: unknown): RallarCrdtAuditEvent {
+  const event = requireRecord(value);
+  const expected = ['kind', 'atEpochMs', 'documentKey', 'principalId', 'reason', 'metadata'];
+  if (
+    Object.keys(event).sort().join('\0') !== expected.sort().join('\0') ||
+    !['erase', 'redact'].includes(String(event.kind)) ||
+    !Number.isSafeInteger(event.atEpochMs) || Number(event.atEpochMs) < 0 ||
+    [event.documentKey, event.principalId, event.reason].some((field) =>
+      typeof field !== 'string' || field.length === 0
+    ) || !event.metadata || typeof event.metadata !== 'object' || Array.isArray(event.metadata)
+  ) throw new TypeError('CRDT audit outbox event is invalid');
+  return event as unknown as RallarCrdtAuditEvent;
 }
 
 function requireLifecycle(value: unknown): RallarCrdtDocumentLifecycleState {
-    if (!['active', 'archived', 'destroyed', 'quarantined'].includes(String(value))) {
-        throw new TypeError('CRDT lifecycle is invalid');
-    }
-    return value as RallarCrdtDocumentLifecycleState;
+  if (!['active', 'archived', 'destroyed', 'quarantined'].includes(String(value))) {
+    throw new TypeError('CRDT lifecycle is invalid');
+  }
+  return value as RallarCrdtDocumentLifecycleState;
 }
