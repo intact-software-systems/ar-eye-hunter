@@ -374,7 +374,7 @@ describe('JsonWebSocketServer', () => {
         });
 
         expect(server.connections.get('session-1')?.socket).toBe(second);
-        expect(lifecycle).toEqual([]);
+        expect(lifecycle).toEqual(['close:session-1:false']);
 
         second.readyState = FakeWebSocket.CLOSED;
         await second.emit('close', {
@@ -384,7 +384,7 @@ describe('JsonWebSocketServer', () => {
         });
 
         expect(server.connections.has('session-1')).toBe(false);
-        expect(lifecycle).toEqual(['close:session-1:true']);
+        expect(lifecycle).toEqual(['close:session-1:false', 'close:session-1:true']);
     });
 
     it('can close a live connection by id for auth logout', () => {

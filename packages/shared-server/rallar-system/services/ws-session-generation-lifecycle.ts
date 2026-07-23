@@ -6,11 +6,29 @@ import type {
 } from '../../runtime-state/RuntimeStateRepository.ts';
 import { RuntimeStateWriteConflictError } from '../../runtime-state/optimistic-runtime-state-write.ts';
 
-const SESSION_GENERATION_LIFECYCLE_NAMESPACE = 'ws-session-generation-lifecycle';
-const SESSION_GENERATION_LIFECYCLE_EXPIRE_AT_EPOCH_MS = 253_402_300_799_999;
+const SESSION_CLOSE_HIGH_WATER_NAMESPACE = 'ws-session-close-high-water';
 
-export interface WsSessionGenerationFacts {
+export type WsSessionHighWaterScope =
+  | Readonly<{
+    kind: 'client';
+    applicationId: string;
+    workspaceId: string;
+    principalId: string;
+    clientInstanceId: string;
+  }>
+  | Readonly<{
+    kind: 'group';
+    applicationId: string;
+    workspaceId: string;
+    principalId: string;
+  }>;
+
+export interface WsSessionHighWaterIdentity {
+  readonly scope: WsSessionHighWaterScope;
   readonly sessionId: string;
+}
+
+export interface WsSessionGenerationFacts extends WsSessionHighWaterIdentity {
   readonly generationId: string;
   readonly generationStartedAtEpochMs: number;
 }
@@ -18,37 +36,38 @@ export interface WsSessionGenerationFacts {
 export interface WsSessionGenerationCloseFacts extends WsSessionGenerationFacts {
   readonly disconnectedAtEpochMs: number;
   readonly reason: string;
+  readonly expireAtEpochMs: number;
 }
 
-export type WsSessionGenerationLifecycleState = Readonly<{
-  version: 1;
-  sessionId: string;
-  generationId: string;
-  generationStartedAtEpochMs: number;
-  status: 'open' | 'closed';
-  disconnectedAtEpochMs: number | null;
-  reason: string | null;
-}>;
+export interface WsSessionCloseHighWaterState extends WsSessionGenerationCloseFacts {
+  readonly version: 2;
+}
 
-export type WsSessionGenerationLifecycleRead = Readonly<{
-  key: string;
-  entry: RuntimeStateEntry | null;
-  state: WsSessionGenerationLifecycleState | null;
-}>;
+export interface WsSessionGenerationLifecycleRead {
+  readonly identity: WsSessionHighWaterIdentity;
+  readonly key: string;
+  readonly entry: RuntimeStateEntry | null;
+  readonly state: WsSessionCloseHighWaterState | null;
+}
 
-export type WsSessionGenerationLifecycleComputed = Readonly<{
-  outcome: 'none' | 'insert' | 'update';
-  key: string;
-  expectedRevision: number | null;
-  state: WsSessionGenerationLifecycleState;
-}>;
+export interface WsSessionGenerationLifecycleComputed {
+  readonly outcome: 'none' | 'insert' | 'update';
+  readonly key: string;
+  readonly expectedRevision: number | null;
+  readonly state: WsSessionCloseHighWaterState;
+}
 
 export interface WsSessionGenerationLifecycleService {
-  read(facts: WsSessionGenerationFacts): Promise<WsSessionGenerationLifecycleRead>;
-  computeOpen(
+  read(identity: WsSessionHighWaterIdentity): Promise<WsSessionGenerationLifecycleRead>;
+  isGenerationClosed(
     facts: WsSessionGenerationFacts,
     read: WsSessionGenerationLifecycleRead,
-  ): WsSessionGenerationLifecycleComputed;
+  ): boolean;
+  isObservedAtClosed(
+    identity: WsSessionHighWaterIdentity,
+    observedAtEpochMs: number,
+    read: WsSessionGenerationLifecycleRead,
+  ): boolean;
   computeClosed(
     facts: WsSessionGenerationCloseFacts,
     read: WsSessionGenerationLifecycleRead,
@@ -63,35 +82,36 @@ export function createWsSessionGenerationLifecycleService(
   repository: RuntimeStateOptimisticTransactionalRepositoryLike,
 ): WsSessionGenerationLifecycleService {
   return {
-    read: async (facts) => {
-      validateFacts(facts);
-      const key = toLifecycleKey(facts);
-      const entry = await repository.findEntry(SESSION_GENERATION_LIFECYCLE_NAMESPACE, key);
+    read: async (identity) => {
+      validateIdentity(identity);
+      const key = toLifecycleKey(identity);
+      const entry = await repository.findEntry(SESSION_CLOSE_HIGH_WATER_NAMESPACE, key);
       return {
+        identity,
         key,
         entry: entry ?? null,
-        state: entry ? readLifecycleState(entry.value, facts) : null,
+        state: entry ? readHighWaterState(entry.value, identity) : null,
       };
     },
-    computeOpen: (facts, read) => {
+    isGenerationClosed: (facts, read) => {
+      validateGenerationFacts(facts);
       validateRead(facts, read);
-      const open = toOpenState(facts);
-      if (!read.entry) return toComputed('insert', read, open);
-      if (read.state?.status === 'closed') return toComputed('none', read, read.state);
-      return toComputed('update', read, open);
+      return read.state !== null && compareGeneration(facts, read.state) <= 0;
+    },
+    isObservedAtClosed: (identity, observedAtEpochMs, read) => {
+      validateRead(identity, read);
+      validateTimestamp(observedAtEpochMs, 'WebSocket session observation');
+      return read.state !== null && observedAtEpochMs <= read.state.disconnectedAtEpochMs;
     },
     computeClosed: (facts, read) => {
       validateCloseFacts(facts);
       validateRead(facts, read);
-      const closed = toClosedState(facts);
-      if (!read.entry) return toComputed('insert', read, closed);
-      if (read.state?.status === 'closed') {
-        if (!sameLifecycleState(read.state, closed)) {
-          throw new TypeError('WebSocket session generation close facts differ');
-        }
-        return toComputed('none', read, read.state);
-      }
-      return toComputed('update', read, closed);
+      const incoming = toHighWaterState(facts);
+      if (!read.state) return toComputed('insert', read, incoming);
+      const selected = selectHighWater(read.state, incoming);
+      return sameHighWaterState(read.state, selected)
+        ? toComputed('none', read, read.state)
+        : toComputed('update', read, selected);
     },
     write: async (transaction, computed) => {
       if (computed.outcome === 'none') return;
@@ -99,16 +119,16 @@ export function createWsSessionGenerationLifecycleService(
       const value = JSON.stringify(computed.state);
       const result = computed.outcome === 'insert'
         ? await target.insertIfAbsent(
-          SESSION_GENERATION_LIFECYCLE_NAMESPACE,
+          SESSION_CLOSE_HIGH_WATER_NAMESPACE,
           computed.key,
           value,
-          SESSION_GENERATION_LIFECYCLE_EXPIRE_AT_EPOCH_MS,
+          computed.state.expireAtEpochMs,
         )
         : await target.upsertIfRevision(
-          SESSION_GENERATION_LIFECYCLE_NAMESPACE,
+          SESSION_CLOSE_HIGH_WATER_NAMESPACE,
           computed.key,
           value,
-          SESSION_GENERATION_LIFECYCLE_EXPIRE_AT_EPOCH_MS,
+          computed.state.expireAtEpochMs,
           requireExpectedRevision(computed),
         );
       if (result.status === 'conflict') throw new RuntimeStateWriteConflictError();
@@ -116,10 +136,38 @@ export function createWsSessionGenerationLifecycleService(
   };
 }
 
+function selectHighWater(
+  current: WsSessionCloseHighWaterState,
+  incoming: WsSessionCloseHighWaterState,
+): WsSessionCloseHighWaterState {
+  const order = compareClose(incoming, current);
+  const winner = order > 0 ? incoming : current;
+  const expireAtEpochMs = Math.max(current.expireAtEpochMs, incoming.expireAtEpochMs);
+  return expireAtEpochMs === winner.expireAtEpochMs
+    ? winner
+    : { ...winner, expireAtEpochMs };
+}
+
+function compareClose(
+  left: WsSessionGenerationCloseFacts,
+  right: WsSessionGenerationCloseFacts,
+): number {
+  return compareGeneration(left, right) ||
+    left.disconnectedAtEpochMs - right.disconnectedAtEpochMs;
+}
+
+function compareGeneration(
+  left: Pick<WsSessionGenerationFacts, 'generationStartedAtEpochMs' | 'generationId'>,
+  right: Pick<WsSessionGenerationFacts, 'generationStartedAtEpochMs' | 'generationId'>,
+): number {
+  return left.generationStartedAtEpochMs - right.generationStartedAtEpochMs ||
+    left.generationId.localeCompare(right.generationId);
+}
+
 function toComputed(
   outcome: WsSessionGenerationLifecycleComputed['outcome'],
   read: WsSessionGenerationLifecycleRead,
-  state: WsSessionGenerationLifecycleState,
+  state: WsSessionCloseHighWaterState,
 ): WsSessionGenerationLifecycleComputed {
   return {
     outcome,
@@ -129,97 +177,102 @@ function toComputed(
   };
 }
 
-function toOpenState(facts: WsSessionGenerationFacts): WsSessionGenerationLifecycleState {
-  return {
-    version: 1,
-    ...facts,
-    status: 'open',
-    disconnectedAtEpochMs: null,
-    reason: null,
-  };
-}
-
-function toClosedState(
+function toHighWaterState(
   facts: WsSessionGenerationCloseFacts,
-): WsSessionGenerationLifecycleState {
-  return {
-    version: 1,
-    sessionId: facts.sessionId,
-    generationId: facts.generationId,
-    generationStartedAtEpochMs: facts.generationStartedAtEpochMs,
-    status: 'closed',
-    disconnectedAtEpochMs: facts.disconnectedAtEpochMs,
-    reason: facts.reason,
-  };
+): WsSessionCloseHighWaterState {
+  return { version: 2, ...facts };
 }
 
-function readLifecycleState(
+function readHighWaterState(
   value: string,
-  facts: WsSessionGenerationFacts,
-): WsSessionGenerationLifecycleState {
-  const state = JSON.parse(value) as WsSessionGenerationLifecycleState;
-  if (
-    state.version !== 1 ||
-    state.sessionId !== facts.sessionId ||
-    state.generationId !== facts.generationId ||
-    state.generationStartedAtEpochMs !== facts.generationStartedAtEpochMs ||
-    !['open', 'closed'].includes(state.status) ||
-    (state.status === 'open' &&
-      (state.disconnectedAtEpochMs !== null || state.reason !== null)) ||
-    (state.status === 'closed' &&
-      (!Number.isSafeInteger(state.disconnectedAtEpochMs) || !state.reason))
-  ) {
-    throw new TypeError('WebSocket session generation lifecycle state is invalid');
+  identity: WsSessionHighWaterIdentity,
+): WsSessionCloseHighWaterState {
+  const state = JSON.parse(value) as WsSessionCloseHighWaterState;
+  validateCloseFacts(state);
+  if (state.version !== 2 || !sameIdentity(state, identity)) {
+    throw new TypeError('WebSocket session close high-water state is invalid');
   }
   return state;
 }
 
 function validateRead(
-  facts: WsSessionGenerationFacts,
+  identity: WsSessionHighWaterIdentity,
   read: WsSessionGenerationLifecycleRead,
 ): void {
-  validateFacts(facts);
-  if (read.key !== toLifecycleKey(facts) || (read.entry === null) !== (read.state === null)) {
-    throw new TypeError('WebSocket session generation lifecycle read is invalid');
+  validateIdentity(identity);
+  if (
+    read.key !== toLifecycleKey(identity) ||
+    !sameIdentity(read.identity, identity) ||
+    (read.entry === null) !== (read.state === null)
+  ) {
+    throw new TypeError('WebSocket session close high-water read is invalid');
   }
 }
 
-function validateFacts(facts: WsSessionGenerationFacts): void {
-  if (
-    !facts.sessionId ||
-    !facts.generationId ||
-    !Number.isSafeInteger(facts.generationStartedAtEpochMs) ||
-    facts.generationStartedAtEpochMs < 0
-  ) {
-    throw new TypeError('WebSocket session generation facts are invalid');
+function validateGenerationFacts(facts: WsSessionGenerationFacts): void {
+  validateIdentity(facts);
+  if (!facts.generationId) {
+    throw new TypeError('WebSocket generation id is required');
   }
+  validateTimestamp(facts.generationStartedAtEpochMs, 'WebSocket generation start');
 }
 
 function validateCloseFacts(facts: WsSessionGenerationCloseFacts): void {
-  validateFacts(facts);
+  validateGenerationFacts(facts);
+  validateTimestamp(facts.disconnectedAtEpochMs, 'WebSocket disconnect');
+  validateTimestamp(facts.expireAtEpochMs, 'WebSocket close high-water expiry');
   if (
-    !Number.isSafeInteger(facts.disconnectedAtEpochMs) ||
     facts.disconnectedAtEpochMs < facts.generationStartedAtEpochMs ||
+    facts.expireAtEpochMs < facts.disconnectedAtEpochMs ||
     !facts.reason
   ) {
-    throw new TypeError('WebSocket session generation close facts are invalid');
+    throw new TypeError('WebSocket session close facts are invalid');
   }
 }
 
-function toLifecycleKey(facts: WsSessionGenerationFacts): string {
-  return [facts.sessionId, facts.generationId].map(encodeURIComponent).join(':');
+function validateIdentity(identity: WsSessionHighWaterIdentity): void {
+  const scope = identity.scope;
+  if (
+    !identity.sessionId || !scope.applicationId || !scope.workspaceId ||
+    !scope.principalId || (scope.kind === 'client' && !scope.clientInstanceId)
+  ) {
+    throw new TypeError('WebSocket session high-water identity is invalid');
+  }
+}
+
+function validateTimestamp(value: number, label: string): void {
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new TypeError(`${label} must be a non-negative safe integer`);
+  }
+}
+
+function sameIdentity(
+  left: WsSessionHighWaterIdentity,
+  right: WsSessionHighWaterIdentity,
+): boolean {
+  return toLifecycleKey(left) === toLifecycleKey(right);
+}
+
+function toLifecycleKey(identity: WsSessionHighWaterIdentity): string {
+  const scope = identity.scope;
+  const values = scope.kind === 'client'
+    ? [scope.kind, scope.applicationId, scope.workspaceId, scope.principalId,
+      scope.clientInstanceId, identity.sessionId]
+    : [scope.kind, scope.applicationId, scope.workspaceId, scope.principalId,
+      identity.sessionId];
+  return values.map(encodeURIComponent).join(':');
 }
 
 function requireExpectedRevision(computed: WsSessionGenerationLifecycleComputed): number {
   if (computed.expectedRevision === null) {
-    throw new TypeError('WebSocket session generation update revision is missing');
+    throw new TypeError('WebSocket session close high-water update revision is missing');
   }
   return computed.expectedRevision;
 }
 
-function sameLifecycleState(
-  left: WsSessionGenerationLifecycleState,
-  right: WsSessionGenerationLifecycleState,
+function sameHighWaterState(
+  left: WsSessionCloseHighWaterState,
+  right: WsSessionCloseHighWaterState,
 ): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }

@@ -9,6 +9,7 @@ import {
 } from '@shared-server/rallar-system/services/authorised-ws-client-app-inbox.ts';
 import type { ClientAuthorisedWsSessionConnectAppInboxPayload } from '@shared-server/rallar-system/services/AppClientInboxService.ts';
 import type { RallarWsLifecycleCloseInput } from '@shared-server/rallar-system/services/ws-lifecycle-service.ts';
+import type { GroupPresenceSessionCleanupAppInboxPayload } from '@shared-server/rallar-system/services/app-group-ws-session-lifecycle.ts';
 
 const AUTHORISED_CONNECTIONS = new Map<
   string,
@@ -109,20 +110,34 @@ export function toAuthorisedWsClientInput(
 export function toAuthorisedWsClientDisconnectInput(
   input: RallarWsLifecycleCloseInput,
 ): ToAuthorisedWsClientDisconnectEnqueueInput {
-  const key = toAuthorisedConnectionKey(input.sessionId, input.generationId);
-  const connection = AUTHORISED_CONNECTIONS.get(key);
-  if (
-    !connection ||
-    connection.generationStartedAtEpochMs !== input.generationStartedAtEpochMs
-  ) {
-    throw new Error('Trusted authorised WebSocket connection facts are unavailable');
-  }
-  AUTHORISED_CONNECTIONS.delete(key);
   return {
-    connection,
+    connection: readAuthorisedWsConnection(input),
     disconnectedAtEpochMs: input.disconnectedAtEpochMs,
     reason: input.reason,
   };
+}
+
+export function toGroupPresenceSessionCleanupInput(
+  input: RallarWsLifecycleCloseInput,
+): GroupPresenceSessionCleanupAppInboxPayload {
+  return {
+    connection: readAuthorisedWsConnection(input),
+    disconnectedAtEpochMs: input.disconnectedAtEpochMs,
+    reason: input.reason,
+  };
+}
+
+export function releaseAuthorisedWsCloseFacts(
+  input: RallarWsLifecycleCloseInput,
+): void {
+  const key = toAuthorisedConnectionKey(input.sessionId, input.generationId);
+  const connection = AUTHORISED_CONNECTIONS.get(key);
+  if (
+    connection &&
+    connection.generationStartedAtEpochMs === input.generationStartedAtEpochMs
+  ) {
+    AUTHORISED_CONNECTIONS.delete(key);
+  }
 }
 
 function rememberAuthorisedWsConnection(
@@ -134,6 +149,20 @@ function rememberAuthorisedWsConnection(
     toAuthorisedConnectionKey(sessionId, generationId),
     connection,
   );
+}
+
+function readAuthorisedWsConnection(
+  input: RallarWsLifecycleCloseInput,
+): ClientAuthorisedWsSessionConnectAppInboxPayload {
+  const key = toAuthorisedConnectionKey(input.sessionId, input.generationId);
+  const connection = AUTHORISED_CONNECTIONS.get(key);
+  if (
+    !connection ||
+    connection.generationStartedAtEpochMs !== input.generationStartedAtEpochMs
+  ) {
+    throw new Error('Trusted authorised WebSocket connection facts are unavailable');
+  }
+  return connection;
 }
 
 function toAuthorisedConnectionKey(sessionId: string, generationId: string): string {

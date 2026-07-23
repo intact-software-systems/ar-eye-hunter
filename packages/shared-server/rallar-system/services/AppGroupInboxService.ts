@@ -79,7 +79,6 @@ import {
 import { toRtcRttMutationReceiptId } from '../rtc-topology-identifiers.ts';
 import type { RtcRttAcceptanceReason } from './rtc-rtt-measurement-policy.ts';
 import { validateRtcRttMeasurement } from '../rtc-rtt-persistence-validation.ts';
-import type { WsSessionGenerationLifecycleComputed } from './ws-session-generation-lifecycle.ts';
 import {
     processGroupPresenceConnect,
     processGroupSessionCleanup,
@@ -978,8 +977,8 @@ export class AppGroupInboxService extends AppInboxService {
                 command,
                 groupStateService: this.groupStateService,
                 writeMutation: async (write) => await this.writeMutation(context, write),
-                commitMutation: async (computed, lifecycle) =>
-                    await this.commitMutation(context, command, computed, lifecycle),
+                commitMutation: async (computed) =>
+                    await this.commitMutation(context, command, computed),
             });
         }
         const read = await this.groupStateService.read(command);
@@ -992,17 +991,10 @@ export class AppGroupInboxService extends AppInboxService {
         context: AppInboxMessageContext,
         command: GroupStateMutationCommand,
         computed: GroupMutationComputed,
-        lifecycleComputed?: WsSessionGenerationLifecycleComputed,
     ): Promise<unknown> {
         const result = await this.writeMutation(
             context,
             async (transaction) => {
-                if (lifecycleComputed) {
-                    await this.groupStateService.sessionGenerationLifecycle.write(
-                        transaction,
-                        lifecycleComputed,
-                    );
-                }
                 if (computed.outcome === 'idempotency-conflict') {
                     throw new TypeError(
                         'Validated group idempotency conflict is unreachable',

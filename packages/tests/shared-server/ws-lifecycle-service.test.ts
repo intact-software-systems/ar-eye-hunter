@@ -9,7 +9,7 @@ type WebSocketLifecycleCallbacks = Readonly<{
       generationId: string;
       generationStartedAtEpochMs: number;
     }>,
-  ) => Promise<void>;
+  ) => void | Promise<void>;
 }>;
 
 describe('ws lifecycle service', () => {
@@ -30,6 +30,8 @@ describe('ws lifecycle service', () => {
       now: () => 2_000,
       enqueueClientSessionDisconnect: vi.fn(() => Promise.resolve()),
       enqueueGroupSessionCleanup: vi.fn(() => Promise.resolve()),
+      releaseCloseFacts: vi.fn(),
+      retry: retryConfig(),
     };
 
     initWsLifecycle(wsQBoxServerService, handlers);
@@ -38,6 +40,7 @@ describe('ws lifecycle service', () => {
       generationId: 'generation-1',
       generationStartedAtEpochMs: 1_000,
     });
+    await flushLifecycle();
 
     const closeFacts = {
       sessionId: 'session-1',
@@ -50,13 +53,16 @@ describe('ws lifecycle service', () => {
     expect(handlers.enqueueGroupSessionCleanup).toHaveBeenCalledWith(closeFacts);
   });
 
-  it('propagates durable enqueue failure after attempting both cleanup commands', async () => {
+  it('schedules durable enqueue failure after attempting both cleanup commands', async () => {
     const callbacks = new Map<string, WebSocketLifecycleCallbacks>();
     const failure = new Error('durable client cleanup unavailable');
+    const scheduled: Array<() => Promise<void>> = [];
     const handlers = {
       now: () => 2_000,
       enqueueClientSessionDisconnect: vi.fn(() => Promise.reject(failure)),
       enqueueGroupSessionCleanup: vi.fn(() => Promise.resolve()),
+      releaseCloseFacts: vi.fn(),
+      retry: retryConfig(scheduled),
     };
     const service = {
       socket: {
@@ -67,13 +73,65 @@ describe('ws lifecycle service', () => {
     } as unknown as WsQueueBoxServerService;
     initWsLifecycle(service, handlers);
 
-    await expect(
-      callbacks.get('handle-ws-lifecycle')?.onClose?.({
-        id: 'session-1',
-        generationId: 'generation-1',
-        generationStartedAtEpochMs: 1_000,
-      }),
-    ).rejects.toBe(failure);
+    await callbacks.get('handle-ws-lifecycle')?.onClose?.({
+      id: 'session-1',
+      generationId: 'generation-1',
+      generationStartedAtEpochMs: 1_000,
+    });
+    await flushLifecycle();
     expect(handlers.enqueueGroupSessionCleanup).toHaveBeenCalledOnce();
+    expect(scheduled).toHaveLength(1);
+  });
+
+  it('clamps close capture time to each monotonic websocket generation start', async () => {
+    const callbacks = new Map<string, WebSocketLifecycleCallbacks>();
+    const captured: number[] = [];
+    const handlers = {
+      now: () => 900,
+      enqueueClientSessionDisconnect: vi.fn((input: { disconnectedAtEpochMs: number }) => {
+        captured.push(input.disconnectedAtEpochMs);
+        return Promise.resolve();
+      }),
+      enqueueGroupSessionCleanup: vi.fn(() => Promise.resolve()),
+      releaseCloseFacts: vi.fn(),
+      retry: retryConfig(),
+    };
+    const service = {
+      socket: {
+        onWebsocketCallbacksDo(id: string, callback: WebSocketLifecycleCallbacks) {
+          callbacks.set(id, callback);
+        },
+      },
+    } as unknown as WsQueueBoxServerService;
+    initWsLifecycle(service, handlers);
+
+    await callbacks.get('handle-ws-lifecycle')?.onClose?.({
+      id: 'session-1',
+      generationId: 'generation-a',
+      generationStartedAtEpochMs: 1_000,
+    });
+    await flushLifecycle();
+    await callbacks.get('handle-ws-lifecycle')?.onClose?.({
+      id: 'session-1',
+      generationId: 'generation-b',
+      generationStartedAtEpochMs: 1_001,
+    });
+
+    expect(captured).toEqual([1_000, 1_001]);
   });
 });
+
+function retryConfig(scheduled: Array<() => Promise<void>> = []) {
+  return {
+    delaysMs: [1],
+    schedule: (_delayMs: number, retry: () => Promise<void>) => {
+      scheduled.push(retry);
+      return () => undefined;
+    },
+  };
+}
+
+async function flushLifecycle(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
+}

@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { parse } from '@babel/parser';
 
 import { AppInboxType } from '@shared-server/rallar-system/services/app-inbox-contracts.ts';
 
@@ -50,8 +51,8 @@ HTTP\tPUT ${CLIENT_ROUTE}/:principalId/instances/:clientInstanceId/sessions/:ses
 HTTP\tPOST ${CLIENT_ROUTE}/:principalId/instances/:clientInstanceId/sessions/:sessionId/heartbeat\tCLIENT_SESSION_HEARTBEAT\tc\t/sessions/:sessionId/heartbeat\tc\tprocessClientAppInbox\tC\tAppClientInboxService.processCommand
 HTTP\tPOST ${CLIENT_ROUTE}/:principalId/instances/:clientInstanceId/sessions/:sessionId/disconnect\tCLIENT_SESSION_DISCONNECT\tc\t/sessions/:sessionId/disconnect\tc\tprocessClientAppInbox\tC\tAppClientInboxService.processCommand
 HTTP\tGET /api/ws/:sessionId upgrade\tAUTH_WS_TICKET_CONSUME\tw\t'/api/ws/:sessionId'\trq\trequireSharedWsAuthSession\tA\tAppAuthInboxService.processCommand
-HTTP\tGET /api/ws/:sessionId upgrade\tCLIENT_AUTHORISED_WS_CONNECT\tw\t'/api/ws/:sessionId'\tw\tenqueueAuthorisedWsClientConnect\tC\tAppClientInboxService.processCommand
-WS_LIFECYCLE\twebsocket onClose\tCLIENT_AUTHORISED_WS_DISCONNECT\tl\tonClose:\tl\tenqueueClientSessionDisconnect\tC\tAppClientInboxService.processCommand
+HTTP\tGET /api/ws/:sessionId upgrade\tCLIENT_AUTHORISED_WS_CONNECT\tw\t'/api/ws/:sessionId'\tw\tenqueueAuthorisedWsClientConnect\tC\tAppClientInboxService.processAuthorisedWsConnect
+WS_LIFECYCLE\twebsocket onClose\tCLIENT_AUTHORISED_WS_DISCONNECT\tl\tonClose:\tl\tenqueueClientSessionDisconnect\tC\tAppClientInboxService.processAuthorisedWsDisconnect
 MAINTENANCE\tclient session expiry reconciliation\tCLIENT_EXPIRED_SESSIONS\te\tenqueuePresenceExpiryReconciliation\te\tenqueueExpiredSessions\tC\tAppClientInboxService.processExpiredSessionCommands
 HTTP\tPOST /api/auth/register\tAUTH_USER_REGISTER\ta\t'/api/auth/register'\ta\tregisterUser\tA\tAppAuthInboxService.processCommand
 HTTP\tPOST /api/auth/login\tAUTH_SESSION_ISSUE\ta\t'/api/auth/login'\ta\tissueSession\tA\tAppAuthInboxService.processCommand
@@ -104,6 +105,16 @@ export function validateMutationRouteInventory(
   inventory: readonly MutationRouteInventoryEntry[],
 ): readonly string[] {
   const issues: string[] = [];
+  if (inventory.length !== 50) issues.push(`Expected 50 entrypoints, found ${inventory.length}`);
+  if (new Set(inventory.map((item) => item.type)).size !== 46) {
+    issues.push('Inventory must cover all 46 AppInbox command types');
+  }
+  const seen = new Set<string>();
+  for (const item of inventory) {
+    const itemKey = key(item);
+    if (seen.has(itemKey)) issues.push(`Duplicate mutation route: ${itemKey}`);
+    seen.add(itemKey);
+  }
   const canonicalByKey = new Map(MUTATION_ROUTE_INVENTORY.map((item) => [key(item), item]));
   for (const item of inventory) {
     const canonical = canonicalByKey.get(key(item));
@@ -123,16 +134,16 @@ export function validateMutationRouteInventory(
     ) {
       if (item[field] !== canonical[field]) issues.push(`${key(item)} has incorrect ${field}`);
     }
-    checkMarker(issues, item.sourcePath, item.registrationMarker, 'registration', item);
-    checkMarker(issues, item.enqueueSourcePath, item.enqueueMarker, 'enqueue', item);
-    checkMarker(issues, item.ownerSourcePath, `AppInboxType.${item.type}`, 'type ownership', item);
-    checkMarker(issues, item.ownerSourcePath, item.owner.split('.').at(-1) ?? '', 'owner', item);
-  }
-  if (inventory === MUTATION_ROUTE_INVENTORY) {
-    if (inventory.length !== 50) issues.push(`Expected 50 entrypoints, found ${inventory.length}`);
-    if (new Set(inventory.map((item) => item.type)).size !== 46) {
-      issues.push('Inventory must cover all 46 AppInbox command types');
-    }
+    checkRegistration(issues, item);
+    checkAstMarker(issues, item.enqueueSourcePath, item.enqueueMarker, 'enqueue', item);
+    checkAstMarker(
+      issues,
+      item.ownerSourcePath,
+      `AppInboxType.${item.type}`,
+      'type ownership',
+      item,
+    );
+    checkOwnerMethod(issues, item);
   }
   return issues;
 }
@@ -175,18 +186,172 @@ function key(item: MutationRouteInventoryEntry): string {
   return `${item.transport}:${item.entrypoint}:${item.type}`;
 }
 
-function checkMarker(
+function checkRegistration(
+  issues: string[],
+  item: MutationRouteInventoryEntry,
+): void {
+  if (item.transport !== 'HTTP') {
+    checkAstMarker(issues, item.sourcePath, item.registrationMarker, 'registration', item);
+    return;
+  }
+  const [method, rawPath] = item.entrypoint.split(' ');
+  const routePath = rawPath;
+  const program = readProgram(issues, item.sourcePath, 'registration', item);
+  if (!program) return;
+  if (!hasRouteRegistration(program, method.toLowerCase(), routePath)) {
+    issues.push(`${key(item)} registration is absent from ${item.sourcePath}`);
+  }
+}
+
+function checkAstMarker(
   issues: string[],
   filePath: string,
   marker: string,
   label: string,
   item: MutationRouteInventoryEntry,
 ): void {
-  try {
-    if (!readFileSync(filePath, 'utf8').includes(marker)) {
-      issues.push(`${key(item)} ${label} marker is absent from ${filePath}`);
-    }
-  } catch {
-    issues.push(`${key(item)} ${label} source does not exist: ${filePath}`);
+  const program = readProgram(issues, filePath, label, item);
+  if (program && !hasExactMarker(program, marker)) {
+    issues.push(`${key(item)} ${label} marker is absent from ${filePath}`);
   }
+}
+
+function checkOwnerMethod(issues: string[], item: MutationRouteInventoryEntry): void {
+  const method = item.owner.split('.').at(-1) ?? '';
+  const program = readProgram(issues, item.ownerSourcePath, 'owner', item);
+  if (program && !hasClassMethod(program, method)) {
+    issues.push(`${key(item)} owner method is absent from ${item.ownerSourcePath}`);
+  }
+}
+
+type AstNode = { readonly type: string; readonly [key: string]: unknown };
+
+const programCache = new Map<string, AstNode>();
+
+function readProgram(
+  issues: string[],
+  filePath: string,
+  label: string,
+  item: MutationRouteInventoryEntry,
+): AstNode | undefined {
+  const cached = programCache.get(filePath);
+  if (cached) return cached;
+  try {
+    const program = parse(readFileSync(filePath, 'utf8'), {
+      sourceType: 'module',
+      sourceFilename: filePath,
+      plugins: ['typescript', 'importAttributes'],
+    }).program as AstNode;
+    programCache.set(filePath, program);
+    return program;
+  } catch {
+    issues.push(`${key(item)} ${label} source cannot be parsed: ${filePath}`);
+    return undefined;
+  }
+}
+
+function hasRouteRegistration(program: AstNode, method: string, routePath: string): boolean {
+  return someNode(program, (node) => {
+    if (node.type !== 'CallExpression') return false;
+    const callee = asNode(node.callee);
+    const arguments_ = asNodes(node.arguments);
+    return readMemberName(callee) === method && readString(arguments_[0]) === routePath;
+  });
+}
+
+function hasExactMarker(program: AstNode, marker: string): boolean {
+  const member = marker.match(/^(\w+)\.(\w+)$/);
+  if (member) {
+    return someNode(program, (node) => {
+      const memberPath = readMemberPath(node);
+      return memberPath === marker || memberPath.endsWith(`.${marker}`);
+    });
+  }
+  const quoted = marker.match(/^'([^']+)'$/);
+  if (quoted) return someNode(program, (node) => readString(node) === quoted[1]);
+  const comparison = marker.match(/^(\w+) === '([^']+)'$/);
+  if (comparison) {
+    return someNode(
+      program,
+      (node) =>
+        node.type === 'BinaryExpression' && node.operator === '===' &&
+        readIdentifier(asNode(node.left)) === comparison[1] &&
+        readString(asNode(node.right)) === comparison[2],
+    );
+  }
+  const call = marker.match(/^(?:(\w+)\.)?(\w+)\((?:[^']*'([^']+)')?/);
+  if (call) {
+    return someNode(program, (node) => {
+      if (node.type !== 'CallExpression') return false;
+      const callee = asNode(node.callee);
+      if (readCallName(callee) !== call[2]) return false;
+      if (call[1] && readIdentifier(asNode(callee?.object)) !== call[1]) return false;
+      return !call[3] ||
+        asNodes(node.arguments).some((argument) => readString(argument) === call[3]);
+    });
+  }
+  const property = marker.replace(/:$/, '');
+  return someNode(
+    program,
+    (node) =>
+      readIdentifier(node) === property || readMemberName(node) === property ||
+      ((node.type === 'ObjectProperty' || node.type === 'ObjectMethod') &&
+        readIdentifier(asNode(node.key)) === property),
+  );
+}
+
+function hasClassMethod(program: AstNode, method: string): boolean {
+  return someNode(
+    program,
+    (node) =>
+      (node.type === 'ClassMethod' || node.type === 'ClassPrivateMethod') &&
+      readIdentifier(asNode(node.key)) === method,
+  );
+}
+
+function someNode(value: unknown, predicate: (node: AstNode) => boolean): boolean {
+  if (!value || typeof value !== 'object') return false;
+  if (Array.isArray(value)) return value.some((item) => someNode(item, predicate));
+  const node = value as AstNode;
+  if (typeof node.type === 'string' && predicate(node)) return true;
+  return Object.entries(node).some(([name, child]) =>
+    !['loc', 'start', 'end', 'comments', 'tokens'].includes(name) && someNode(child, predicate)
+  );
+}
+
+function readCallName(node: AstNode | undefined): string {
+  return readIdentifier(node) || readMemberName(node);
+}
+
+function readMemberName(node: AstNode | undefined): string {
+  return node?.type === 'MemberExpression' || node?.type === 'OptionalMemberExpression'
+    ? readIdentifier(asNode(node.property))
+    : '';
+}
+
+function readMemberPath(node: AstNode | undefined): string {
+  if (!node) return '';
+  if (node.type === 'Identifier') return readIdentifier(node);
+  if (node.type !== 'MemberExpression' && node.type !== 'OptionalMemberExpression') return '';
+  const object = readMemberPath(asNode(node.object));
+  const property = readIdentifier(asNode(node.property));
+  return object && property ? `${object}.${property}` : '';
+}
+
+function readIdentifier(node: AstNode | undefined): string {
+  return node && typeof node.name === 'string' ? node.name : '';
+}
+
+function readString(node: AstNode | undefined): string {
+  return node && typeof node.value === 'string' ? node.value : '';
+}
+
+function asNode(value: unknown): AstNode | undefined {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as AstNode : undefined;
+}
+
+function asNodes(value: unknown): readonly AstNode[] {
+  return Array.isArray(value)
+    ? value.map(asNode).filter((node): node is AstNode => node !== undefined)
+    : [];
 }

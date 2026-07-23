@@ -1,6 +1,7 @@
 import { parse } from '@babel/parser';
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync } from 'node:fs';
 import path from 'node:path';
+import { findMutationBoundaryViolationsFromRootFiles } from './mutation-boundary-traversal.ts';
 
 const FORBIDDEN_DIRECT_MUTATORS = new Set([
   'registerAuthUser',
@@ -48,6 +49,7 @@ const FORBIDDEN_IMPORT_STEMS = [
 ] as const;
 
 const APP_INBOX_RECEIVER_FACTORIES = new Set(['readAppAuthInbox']);
+const EXACT_APP_INBOX_RECEIVERS = new Set(['appAuthInbox']);
 
 export const ALLOWED_DIRECT_BOUNDARY_CALLS = new Set([
   'exportBackupBundle',
@@ -74,11 +76,16 @@ export interface MutationBoundaryViolation {
 }
 
 export function findMutationBoundaryViolations(): readonly MutationBoundaryViolation[] {
-  return mutationBoundaryFiles().map((filePath) =>
-    analyzeMutationBoundarySource(readFileSync(filePath, 'utf8'), filePath)
-  ).filter((violation) =>
-    violation.directMutatorCalls.length > 0 || violation.mutatingImports.length > 0
-  );
+  return findMutationBoundaryViolationsFromRoots(mutationBoundaryFiles());
+}
+
+export function findMutationBoundaryViolationsFromRoots(
+  roots: readonly string[],
+): readonly MutationBoundaryViolation[] {
+  return findMutationBoundaryViolationsFromRootFiles({
+    roots,
+    analyze: analyzeMutationBoundarySource,
+  });
 }
 
 export function analyzeMutationBoundarySource(
@@ -220,7 +227,12 @@ function isKnownAppInboxCall(value: unknown): boolean {
     (callee.type !== 'MemberExpression' && callee.type !== 'OptionalMemberExpression')
   ) return false;
   const receiver = asNode(callee.object);
-  if (!receiver || (receiver.type !== 'CallExpression' && receiver.type !== 'OptionalCallExpression')) {
+  if (receiver?.type === 'Identifier') {
+    return EXACT_APP_INBOX_RECEIVERS.has(readNodeName(receiver));
+  }
+  if (
+    !receiver || (receiver.type !== 'CallExpression' && receiver.type !== 'OptionalCallExpression')
+  ) {
     return false;
   }
   const factory = asNode(receiver.callee);
@@ -261,9 +273,7 @@ function readStringLiteral(value: unknown): string | undefined {
 }
 
 function asNode(value: unknown): AstNode | undefined {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? value as AstNode
-    : undefined;
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as AstNode : undefined;
 }
 
 function asNodeArray(value: unknown): readonly AstNode[] {

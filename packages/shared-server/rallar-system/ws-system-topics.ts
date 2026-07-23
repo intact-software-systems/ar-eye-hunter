@@ -91,7 +91,8 @@ export function initRallarSystemWsTopics(
         new RallarRtcTopologyService(
             options.rtcTopologyOptions,
         );
-    const rtcTopologyRuntimeState = options.rtcTopologyRepositories;
+    const rtcTopologyPersistence = resolveRtcTopologyPersistence(options);
+    const rtcTopologyRuntimeState = rtcTopologyPersistence.repositories;
     const rtcTopologyFlushTimers = new Map<string, RtcTopologyFlushTimer>();
     let globalGraphRttRecomputeTimer: ReturnType<typeof setTimeout> | undefined;
     const scheduleGlobalGraphRttRecompute = (): void => {
@@ -197,6 +198,7 @@ export function initRallarSystemWsTopics(
         rtcTopologyService,
         rtcTopologyAppOutbox?.publisher,
         rtcTopologyRuntimeState,
+        rtcTopologyPersistence.declared,
         scheduleGlobalGraphRttRecompute,
         findGroupSnapshotByRef,
         options.enqueueRtcRttMutation,
@@ -364,6 +366,7 @@ function initRttTopic(
     rtcTopologyService: RallarRtcTopologyService,
     rtcTopologyWorkPublisher?: RtcTopologyWorkPublisher,
     runtimeState?: RtcTopologyRuntimeState,
+    persistentRuntimeDeclared = false,
     scheduleGlobalGraphRttRecompute: () => void = () => {
     },
     findGroupSnapshotByRef?: GroupTopologyGroupSnapshotReader,
@@ -379,7 +382,7 @@ function initRttTopic(
 
             console.log(`Received RTT message: ${data.payload.resource}`);
 
-            if (runtimeState) {
+            if (persistentRuntimeDeclared) {
                 if (!enqueueRtcRttMutation) {
                     throw new TypeError(
                         'RTC RTT persistence requires durable AppInbox enqueue',
@@ -436,6 +439,22 @@ function initRttTopic(
             }
         },
     });
+}
+
+function resolveRtcTopologyPersistence(
+    options: InitRallarSystemWsTopicsOptions,
+): Readonly<{
+    declared: boolean;
+    repositories: RtcTopologyRuntimeState | undefined;
+}> {
+    if (options.rtcTopologyRuntimeState && options.rtcTopologyRepositories) {
+        throw new TypeError('Conflicting RTC topology runtime declarations');
+    }
+    return {
+        declared: options.rtcTopologyRuntimeState !== undefined ||
+            options.rtcTopologyRepositories !== undefined,
+        repositories: options.rtcTopologyRepositories,
+    };
 }
 
 type RtcRttUpdateResult = RtcRttAcceptanceResult & Readonly<{

@@ -1,8 +1,6 @@
-import { Temporal } from '@js-temporal/polyfill';
 import { describe, expect, it } from 'vitest';
 
 import type { StateScope } from '@shared/api/state-types.ts';
-import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
@@ -25,12 +23,16 @@ import {
   type GroupStateWritten,
 } from '@shared-server/rallar-system/services/group-state-service.ts';
 import { createAppInboxTestDatabase } from './app-inbox-test-database.ts';
+import { TestResourceInbox, TestResourceInboxResults } from './app-auth-inbox-test-harness.ts';
 import {
-  createResilience,
-  readEntries,
-  TestResourceInbox,
-  TestResourceInboxResults,
-} from './app-auth-inbox-test-harness.ts';
+  delayEntry,
+  groupPresenceFacts,
+  processNext,
+  queuedTypes,
+  releaseEntry,
+  requireQueuedType,
+  waitForQueuedType,
+} from './app-inbox-queue-entry-test-helpers.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 
 const SCOPE: StateScope = {
@@ -106,11 +108,13 @@ describe('AppInbox websocket close convergence', () => {
     const harness = await createHarness();
     await createRoom(harness, 'connect-first-room');
     const facts = closeFacts(harness.authSession, 'group-connect-first', 30);
+    const presence = groupPresenceFacts(facts, 'presence-connect-first', -50);
 
-    const pending = enqueueGroupConnect(harness, 'connect-first-room', facts);
+    const pending = enqueueGroupConnect(harness, 'connect-first-room', facts, presence);
     await waitForQueuedType(harness.queue, AppInboxType.GROUP_PRESENCE_CONNECT);
     await processNext(harness.reader);
-    await pending;
+    expect((await pending).right).toBeDefined();
+    expect(await activeGroupSessionCount(harness, 'connect-first-room')).toBe(1);
     const cleanupCount = await enqueueGroupClose(harness.group, facts);
     expect(cleanupCount).toBe(1);
     await processNext(harness.reader);
@@ -122,8 +126,9 @@ describe('AppInbox websocket close convergence', () => {
     const harness = await createHarness();
     await createRoom(harness, 'cleanup-first-room');
     const facts = closeFacts(harness.authSession, 'group-cleanup-first', 40);
+    const presence = groupPresenceFacts(facts, 'presence-cleanup-first', -50);
 
-    const pending = enqueueGroupConnect(harness, 'cleanup-first-room', facts);
+    const pending = enqueueGroupConnect(harness, 'cleanup-first-room', facts, presence);
     const connect = await waitForQueuedType(
       harness.queue,
       AppInboxType.GROUP_PRESENCE_CONNECT,
@@ -140,6 +145,60 @@ describe('AppInbox websocket close convergence', () => {
     expect(await queuedTypes(harness.queue)).toContain(
       AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP,
     );
+  });
+
+  it('suppresses an older delayed client generation after a newer generation closes first', async () => {
+    const harness = await createHarness();
+    const older = closeFacts(harness.authSession, 'client-generation-a', 50);
+    const newer = closeFacts(harness.authSession, 'client-generation-b', 60);
+    const olderConnect = await harness.client.enqueueAuthorisedWsClientConnect({
+      authSession: older.authSession,
+      generationId: older.generationId,
+      input: older.input,
+    });
+    const newerConnect = await harness.client.enqueueAuthorisedWsClientConnect({
+      authSession: newer.authSession,
+      generationId: newer.generationId,
+      input: newer.input,
+    });
+    await delayEntry(harness.queue, olderConnect);
+    await delayEntry(harness.queue, newerConnect);
+
+    await enqueueClientClose(harness.client, newer);
+    await processNext(harness.reader);
+    await releaseEntry(harness.queue, olderConnect);
+    await processNext(harness.reader);
+    await releaseEntry(harness.queue, newerConnect);
+    await processNext(harness.reader);
+
+    const snapshot = await harness.clients.readSnapshot({
+      ...SCOPE,
+      principalId: harness.authSession.clientId,
+    });
+    expect(snapshot?.activeSessions ?? []).toEqual([]);
+  });
+
+  it('does not let an older close disconnect a newer active client generation', async () => {
+    const harness = await createHarness();
+    const older = closeFacts(harness.authSession, 'client-generation-a', 70);
+    const newer = closeFacts(harness.authSession, 'client-generation-b', 80);
+
+    await harness.client.enqueueAuthorisedWsClientConnect({
+      authSession: newer.authSession,
+      generationId: newer.generationId,
+      input: newer.input,
+    });
+    await processNext(harness.reader);
+    await enqueueClientClose(harness.client, older);
+    await processNext(harness.reader);
+
+    const snapshot = await harness.clients.readSnapshot({
+      ...SCOPE,
+      principalId: harness.authSession.clientId,
+    });
+    expect(snapshot?.activeSessions.map((session) => session.generationId)).toEqual([
+      newer.generationId,
+    ]);
   });
 });
 async function createHarness() {
@@ -231,19 +290,12 @@ async function enqueueGroupClose(
   service: AppGroupInboxService,
   facts: AuthorisedWsCloseFacts,
 ): Promise<number> {
-  const close = service.enqueueGroupSessionCleanup as unknown as (
-    input: Readonly<{
-      sessionId: string;
-      generationId: string;
-      generationStartedAtEpochMs: number;
-      disconnectedAtEpochMs: number;
-      reason: string;
-    }>,
-  ) => Promise<number>;
-  return await close.call(service, {
-    sessionId: facts.authSession.sessionId,
-    generationId: facts.generationId,
-    generationStartedAtEpochMs: facts.input.connectedAtEpochMs,
+  return await service.enqueueGroupSessionCleanup({
+    connection: toAuthorisedWsClientConnectEnqueue({
+      authSession: facts.authSession,
+      generationId: facts.generationId,
+      input: facts.input,
+    }).data,
     disconnectedAtEpochMs: facts.disconnectedAtEpochMs,
     reason: facts.reason,
   });
@@ -285,13 +337,18 @@ function enqueueGroupConnect(
   harness: Awaited<ReturnType<typeof createHarness>>,
   groupId: string,
   facts: AuthorisedWsCloseFacts,
+  presence: Readonly<{
+    generationId: string;
+    connectedAtEpochMs: number;
+    expiresAtEpochMs: number;
+  }> = groupPresenceFacts(facts, facts.generationId, 0),
 ) {
   return processAuthenticated<GroupPresenceConnectAppInboxPayload, GroupStateWritten>(
     harness.group,
     harness.authSession,
     {
       type: AppInboxType.GROUP_PRESENCE_CONNECT,
-      resourceId: `presence-${groupId}-${facts.generationId}`,
+      resourceId: `presence-${groupId}-${presence.generationId}`,
       contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${groupId}`,
       senderId: harness.authSession.clientId,
       data: {
@@ -300,12 +357,13 @@ function enqueueGroupConnect(
         sessionId: facts.authSession.sessionId,
         request: {
           principalId: facts.authSession.clientId,
-          generationId: facts.generationId,
-          connectedAtEpochMs: facts.input.connectedAtEpochMs,
-          expiresAtEpochMs: facts.input.expiresAtEpochMs,
+          generationId: presence.generationId,
+          connectedAtEpochMs: presence.connectedAtEpochMs,
+          lastHeartbeatAtEpochMs: presence.connectedAtEpochMs,
+          expiresAtEpochMs: presence.expiresAtEpochMs,
           actorPrincipalId: facts.authSession.clientId,
           actorSessionId: facts.authSession.sessionId,
-          requestId: `presence-${groupId}-${facts.generationId}`,
+          requestId: `presence-${groupId}-${presence.generationId}`,
         },
       },
     },
@@ -324,67 +382,9 @@ async function activeGroupSessionCount(
   harness: Awaited<ReturnType<typeof createHarness>>,
   groupId: string,
 ): Promise<number> {
-  const snapshot = await harness.groups.readSnapshot({ ...SCOPE, groupId });
-  return snapshot?.activeSessions.length ?? 0;
-}
-
-async function processNext(reader: InboxQueueReader): Promise<void> {
-  await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
-}
-
-async function delayEntry(queue: TestResourceInbox, entry: ResourceEntry): Promise<void> {
-  await queue.enqueue({
-    ...entry,
-    status: EntityStatus.RETRY,
-    dequeueAudit: {
-      ...entry.dequeueAudit,
-      nextTs: Temporal.Instant.fromEpochMilliseconds(NOW_EPOCH_MS + 1_000_000),
-    },
-  });
-}
-
-async function releaseEntry(queue: TestResourceInbox, entry: ResourceEntry): Promise<void> {
-  await queue.enqueue({
-    ...entry,
-    status: EntityStatus.NEW,
-    dequeueAudit: { ...entry.dequeueAudit, nextTs: undefined },
-  });
-}
-
-async function requireQueuedType(
-  queue: TestResourceInbox,
-  type: AppInboxType,
-): Promise<ResourceEntry> {
-  const entry = (await queueEntries(queue)).find((candidate) => readType(candidate) === type);
-  if (!entry) throw new Error(`Expected queued AppInbox type ${type}`);
-  return entry;
-}
-
-async function waitForQueuedType(
-  queue: TestResourceInbox,
-  type: AppInboxType,
-): Promise<ResourceEntry> {
-  for (let attempt = 0; attempt < 50; attempt += 1) {
-    const entry = (await queueEntries(queue)).find((candidate) =>
-      readType(candidate) === type && candidate.status === EntityStatus.NEW
-    );
-    if (entry) return entry;
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  }
-  throw new Error(`Expected queued AppInbox type ${type}`);
-}
-
-async function queuedTypes(queue: TestResourceInbox): Promise<readonly AppInboxType[]> {
-  return (await queueEntries(queue)).map(readType);
-}
-
-async function queueEntries(queue: TestResourceInbox): Promise<readonly ResourceEntry[]> {
-  return await readEntries(queue);
-}
-
-function readType(entry: ResourceEntry): AppInboxType {
-  const message = JSON.parse(entry.resource) as { payload: { resource: string } };
-  return (JSON.parse(message.payload.resource) as { type: AppInboxType }).type;
+  return (await harness.groups.listAllPresenceSessions()).filter((session) =>
+    session.groupId === groupId && session.disconnectedAtEpochMs === null
+  ).length;
 }
 
 function issuedSession(clientId: string, sessionId: string): IssuedAuthSession {

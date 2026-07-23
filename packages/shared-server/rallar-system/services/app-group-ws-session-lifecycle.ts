@@ -1,4 +1,5 @@
 import type { PSqlTransactionSql } from '../../postgres/PostgresSqlClient.ts';
+import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import type { GroupMutationComputed } from './group-state-mutations.ts';
 import type {
   GroupMutationPreparation,
@@ -10,20 +11,30 @@ import type { AppInboxEnqueueInput } from './AppInboxService.ts';
 import { AppInboxType } from './AppInboxService.ts';
 import type {
   WsSessionGenerationCloseFacts,
-  WsSessionGenerationLifecycleComputed,
+  WsSessionHighWaterIdentity,
 } from './ws-session-generation-lifecycle.ts';
+import type { ClientAuthorisedWsSessionConnectAppInboxPayload } from './AppClientInboxService.ts';
 
-export type GroupPresenceSessionCleanupAppInboxPayload = WsSessionGenerationCloseFacts;
+export interface GroupPresenceSessionCleanupAppInboxPayload {
+  readonly connection: ClientAuthorisedWsSessionConnectAppInboxPayload;
+  readonly disconnectedAtEpochMs: number;
+  readonly reason: string;
+}
 
 export function toGroupSessionCleanupEnqueue(
   input: GroupPresenceSessionCleanupAppInboxPayload,
   serviceId: string,
 ): AppInboxEnqueueInput<GroupPresenceSessionCleanupAppInboxPayload> {
+  const connection = input.connection;
   return {
     type: AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP,
-    resourceId: ['group-presence-session-cleanup', input.sessionId, input.generationId]
+    resourceId: [
+      'group-presence-session-cleanup',
+      connection.authSession.sessionId,
+      connection.generationId,
+    ]
       .map(encodeURIComponent).join(':'),
-    contextId: input.sessionId,
+    contextId: connection.authSession.sessionId,
     senderId: serviceId,
     data: input,
   };
@@ -56,38 +67,35 @@ export async function processGroupPresenceConnect(
     command: GroupStateMutationCommand;
     groupStateService: GroupStateService;
     writeMutation: WriteMutation;
-    commitMutation(
-      computed: GroupMutationComputed,
-      lifecycle: WsSessionGenerationLifecycleComputed,
-    ): Promise<unknown>;
+    commitMutation(computed: GroupMutationComputed): Promise<unknown>;
   }>,
 ): Promise<unknown> {
   const operation = input.command.command;
   if (operation.operation !== 'connectPresence') {
     throw new TypeError('Group presence connect command is invalid');
   }
-  const facts = {
+  const observedAtEpochMs = operation.input.connectedAtEpochMs ??
+    input.command.facts.nowEpochMs;
+  const identity = toGroupHighWaterIdentity({
+    scope: operation.aggregateRef,
+    principalId: operation.input.principalId,
     sessionId: operation.sessionId,
-    generationId: operation.input.generationId,
-    generationStartedAtEpochMs: operation.input.connectedAtEpochMs ??
-      input.command.facts.nowEpochMs,
-  };
+  });
   const lifecycle = input.groupStateService.sessionGenerationLifecycle;
-  const lifecycleRead = await lifecycle.read(facts);
-  const lifecycleComputed = lifecycle.computeOpen(facts, lifecycleRead);
-  if (lifecycleComputed.state.status === 'closed') {
+  const lifecycleRead = await lifecycle.read(identity);
+  if (lifecycle.isObservedAtClosed(identity, observedAtEpochMs, lifecycleRead)) {
     return await input.writeMutation(() =>
       Promise.resolve({
         status: 'inactive',
-        sessionId: facts.sessionId,
-        generationId: facts.generationId,
+        sessionId: operation.sessionId,
+        generationId: operation.input.generationId,
       })
     );
   }
   const read = await input.groupStateService.read(input.command);
   const computed = input.groupStateService.compute(input.command, read);
   input.groupStateService.validate(input.command, read, computed);
-  return await input.commitMutation(computed, lifecycleComputed);
+  return await input.commitMutation(computed);
 }
 
 export async function processGroupSessionCleanup(
@@ -99,10 +107,16 @@ export async function processGroupSessionCleanup(
     wakeQueue?: () => void;
   }>,
 ): Promise<unknown> {
+  const closeFacts = toGroupCloseFacts(input.facts);
   const lifecycle = input.groupStateService.sessionGenerationLifecycle;
-  const lifecycleRead = await lifecycle.read(input.facts);
-  const lifecycleComputed = lifecycle.computeClosed(input.facts, lifecycleRead);
-  const preparations = await input.groupStateService.prepareSessionCleanupMutations(input.facts);
+  const lifecycleRead = await lifecycle.read(closeFacts);
+  const lifecycleComputed = lifecycle.computeClosed(closeFacts, lifecycleRead);
+  const preparations = await input.groupStateService.prepareSessionCleanupMutations({
+    scope: input.facts.connection.scope,
+    authSession: input.facts.connection.authSession,
+    principalId: input.facts.connection.principalId,
+    disconnectedAtEpochMs: input.facts.disconnectedAtEpochMs,
+  });
   const mutations = await Promise.all(preparations.map(async (prepared) => {
     const command: GroupStateMutationCommand = {
       authorityProof: prepared.authorityProof,
@@ -124,11 +138,48 @@ export async function processGroupSessionCleanup(
     }
     return {
       status: 'inactive',
-      sessionId: input.facts.sessionId,
-      generationId: input.facts.generationId,
+      sessionId: input.facts.connection.authSession.sessionId,
+      generationId: input.facts.connection.generationId,
       affectedGroups: mutations.length,
     };
   });
   input.wakeQueue?.();
   return result;
+}
+
+function toGroupHighWaterIdentity(input: Readonly<{
+  scope: Readonly<{ applicationId: string; workspaceId: string }>;
+  principalId: string;
+  sessionId: string;
+}>): WsSessionHighWaterIdentity {
+  return {
+    scope: {
+      kind: 'group',
+      applicationId: input.scope.applicationId,
+      workspaceId: input.scope.workspaceId,
+      principalId: input.principalId,
+    },
+    sessionId: input.sessionId,
+  };
+}
+
+function toGroupCloseFacts(
+  input: GroupPresenceSessionCleanupAppInboxPayload,
+): WsSessionGenerationCloseFacts {
+  const connection = input.connection;
+  return {
+    ...toGroupHighWaterIdentity({
+      scope: connection.scope,
+      principalId: connection.principalId,
+      sessionId: connection.authSession.sessionId,
+    }),
+    generationId: connection.generationId,
+    generationStartedAtEpochMs: connection.generationStartedAtEpochMs,
+    disconnectedAtEpochMs: input.disconnectedAtEpochMs,
+    reason: input.reason,
+    expireAtEpochMs: resourceInboxRetryExpiryAtEpochMs(
+      input.disconnectedAtEpochMs,
+      Math.max(input.disconnectedAtEpochMs, connection.expiresAtEpochMs),
+    ),
+  };
 }

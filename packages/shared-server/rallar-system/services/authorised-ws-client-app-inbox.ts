@@ -5,7 +5,7 @@ import {
 } from '@shared/api/state-types.ts';
 import type { IssuedAuthSession } from '../repositories/AuthSessionRepository.ts';
 import type { RegisterAuthorisedWsClientInput } from './client-state-service.ts';
-import { toClientMutationIssuedSessionAuthority } from './client-state-service.ts';
+import { toClientMutationIssuedSessionAuthority } from './client-mutation-authority.ts';
 import type { AppInboxEnqueueInput } from './AppInboxService.ts';
 import { AppInboxType } from './AppInboxService.ts';
 import type {

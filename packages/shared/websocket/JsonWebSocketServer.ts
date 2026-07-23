@@ -1,7 +1,7 @@
 export interface WebSocketServerCallbacks {
     onConnection?: (ctx: ConnectionContext) => void;
     onError?: (ctx: ConnectionContext, ev: Event) => void;
-    onClose?: (ctx: ConnectionContext, ev: CloseEvent) => void;
+    onClose?: (ctx: ConnectionContext, ev: CloseEvent) => void | Promise<void>;
 
     /**
      * Called when a client sends non-JSON text (JSON.parse fails).
@@ -161,14 +161,18 @@ export class JsonWebSocketServer {
         ctx.socket.addEventListener(
             'close',
             (ev: CloseEvent) => {
-                if (this.connections.get(ctx.id) !== ctx) {
-                    return;
+                if (this.connections.get(ctx.id) === ctx) {
+                    this.connections.delete(ctx.id);
                 }
-                this.connections.delete(ctx.id);
 
                 for (const cb of this.webSocketServerCallbacks.values()) {
                     try {
-                        cb.onClose?.(ctx, ev);
+                        const completion = cb.onClose?.(ctx, ev);
+                        if (completion) {
+                            void Promise.resolve(completion).catch((error) => {
+                                console.error('Callback onClose failed:', error);
+                            });
+                        }
                     } catch (e) {
                         console.error('Callback onClose failed:', e);
                     }

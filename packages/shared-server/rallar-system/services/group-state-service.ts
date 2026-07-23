@@ -67,8 +67,11 @@ import {
     hmacSha256Hex,
     sha256CanonicalJson,
 } from './group-state-crypto.ts';
-import { createWsSessionGenerationLifecycleService, type WsSessionGenerationCloseFacts, type WsSessionGenerationLifecycleService } from './ws-session-generation-lifecycle.ts';
-
+import { createWsSessionGenerationLifecycleService, type WsSessionGenerationLifecycleService } from './ws-session-generation-lifecycle.ts';
+import {
+    type GroupSessionCleanupInput,
+    readGroupSessionCleanupCandidates,
+} from './group-session-cleanup.ts';
 export type GroupWritten = Readonly<{
   snapshot: GroupSnapshot;
   event: GroupEvent;
@@ -81,7 +84,6 @@ export type GroupStateWritten = Readonly<{
     status: 'created' | 'ok' | 'error';
     result: Either<string, GroupMutationWritten>;
 }>;
-
 export type GroupJoinCodeMutationWritten =
   & GroupJoinCodeResponse
   & Readonly<{ event: GroupEvent | null }>;
@@ -185,7 +187,7 @@ export type GroupStateService = GroupStateMutationService & Readonly<{
         atEpochMs: number,
     ): Promise<readonly GroupMutationPreparation[]>;
     prepareSessionCleanupMutations(
-        input: WsSessionGenerationCloseFacts,
+        input: GroupSessionCleanupInput,
     ): Promise<readonly GroupMutationPreparation[]>;
     listSnapshots(scope: GroupScope): Promise<readonly GroupSnapshot[]>;
     listSnapshotsPage(
@@ -368,13 +370,11 @@ export function createGroupStateRuntime(
             ));
         },
         prepareSessionCleanupMutations: async (input) => {
-            const candidates = (await repositoryFor(runtime).listAllPresenceSessions())
-                .filter((session) =>
-                    session.sessionId === input.sessionId &&
-                    session.generationId === input.generationId &&
-                    session.generationVersion === input.generationStartedAtEpochMs &&
-                    session.disconnectedAtEpochMs === null
-                );
+            const candidates = await readGroupSessionCleanupCandidates(
+                repositoryFor(runtime),
+                dependencies.authSessionRepository,
+                input,
+            );
             return await Promise.all(candidates.map((session) =>
                 prepareInternalMutation(
                     toSessionCleanupCommand(session, input.disconnectedAtEpochMs),

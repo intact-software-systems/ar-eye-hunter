@@ -72,14 +72,16 @@ Deno.test('PGlite group cleanup tombstone suppresses a delayed presence connect 
     const harness = await createHarness(sql);
     const groupId = 'pglite-cleanup-first';
     await createRoom(harness, groupId, sql);
-    const generationId = 'pglite-group-close-first';
-    const connectedAtEpochMs = Date.now() - 1_000;
+    const wsGenerationId = 'pglite-ws-generation-close-first';
+    const wsStartedAtEpochMs = Date.now() - 900;
+    const presenceGenerationId = crypto.randomUUID();
+    const presenceConnectedAtEpochMs = wsStartedAtEpochMs - 50;
     const pending = harness.group.processAuthenticatedEntryUntilCompletion<
       GroupPresenceConnectAppInboxPayload,
       GroupStateWritten
     >({
       type: AppInboxType.GROUP_PRESENCE_CONNECT,
-      resourceId: `presence-${generationId}`,
+      resourceId: `presence-${presenceGenerationId}`,
       contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${groupId}`,
       senderId: harness.authority.clientId,
       data: {
@@ -88,12 +90,13 @@ Deno.test('PGlite group cleanup tombstone suppresses a delayed presence connect 
         sessionId: harness.authority.sessionId,
         request: {
           principalId: harness.authority.clientId,
-          generationId,
-          connectedAtEpochMs,
+          generationId: presenceGenerationId,
+          connectedAtEpochMs: presenceConnectedAtEpochMs,
+          lastHeartbeatAtEpochMs: presenceConnectedAtEpochMs,
           expiresAtEpochMs: FUTURE_MS,
           actorPrincipalId: harness.authority.clientId,
           actorSessionId: harness.authority.sessionId,
-          requestId: `presence-${generationId}`,
+          requestId: `presence-${presenceGenerationId}`,
         },
       },
     }, harness.authority);
@@ -101,10 +104,12 @@ Deno.test('PGlite group cleanup tombstone suppresses a delayed presence connect 
     await delay(sql, connectKey);
     assert.equal(
       await harness.group.enqueueGroupSessionCleanup({
-        sessionId: harness.authority.sessionId,
-        generationId,
-        generationStartedAtEpochMs: connectedAtEpochMs,
-        disconnectedAtEpochMs: connectedAtEpochMs + 1,
+        connection: toAuthorisedWsClientConnectEnqueue({
+          authSession: harness.authority,
+          generationId: wsGenerationId,
+          input: { ...SCOPE, connectedAtEpochMs: wsStartedAtEpochMs },
+        }).data,
+        disconnectedAtEpochMs: wsStartedAtEpochMs + 1,
         reason: 'socket-closed',
       }),
       1,
@@ -120,6 +125,67 @@ Deno.test('PGlite group cleanup tombstone suppresses a delayed presence connect 
       AppInboxType.GROUP_PRESENCE_CONNECT,
       AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP,
     ]);
+  });
+});
+
+Deno.test('PGlite group cleanup removes an active independent presence generation', async () => {
+  await withPGliteSql(async (sql) => {
+    const harness = await createHarness(sql);
+    const groupId = 'pglite-independent-presence';
+    await createRoom(harness, groupId, sql);
+    const wsStartedAtEpochMs = Date.now() - 500;
+    const presenceGenerationId = crypto.randomUUID();
+    const pending = harness.group.processAuthenticatedEntryUntilCompletion<
+      GroupPresenceConnectAppInboxPayload,
+      GroupStateWritten
+    >({
+      type: AppInboxType.GROUP_PRESENCE_CONNECT,
+      resourceId: `presence-${presenceGenerationId}`,
+      contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${groupId}`,
+      senderId: harness.authority.clientId,
+      data: {
+        scope: SCOPE,
+        groupId,
+        sessionId: harness.authority.sessionId,
+        request: {
+          principalId: harness.authority.clientId,
+          generationId: presenceGenerationId,
+          connectedAtEpochMs: wsStartedAtEpochMs - 50,
+          lastHeartbeatAtEpochMs: wsStartedAtEpochMs - 50,
+          expiresAtEpochMs: FUTURE_MS,
+          actorPrincipalId: harness.authority.clientId,
+          actorSessionId: harness.authority.sessionId,
+          requestId: `presence-${presenceGenerationId}`,
+        },
+      },
+    }, harness.authority);
+    await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
+    await processNext(harness.reader);
+    assert.ok((await pending).right);
+    assert.equal(
+      (await harness.groups.listAllPresenceSessions()).filter((session) =>
+        session.groupId === groupId && session.disconnectedAtEpochMs === null
+      ).length,
+      1,
+    );
+
+    await harness.group.enqueueGroupSessionCleanup({
+      connection: toAuthorisedWsClientConnectEnqueue({
+        authSession: harness.authority,
+        generationId: 'different-ws-generation',
+        input: { ...SCOPE, connectedAtEpochMs: wsStartedAtEpochMs },
+      }).data,
+      disconnectedAtEpochMs: wsStartedAtEpochMs + 100,
+      reason: 'socket-closed',
+    });
+    await processNext(harness.reader);
+
+    assert.deepEqual(
+      (await harness.groups.listAllPresenceSessions()).filter((session) =>
+        session.groupId === groupId && session.disconnectedAtEpochMs === null
+      ),
+      [],
+    );
   });
 });
 

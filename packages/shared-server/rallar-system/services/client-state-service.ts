@@ -31,7 +31,6 @@ import {
 } from '../repositories/session-expiry.ts';
 import type { ClientStateEventStore } from '../repositories/StateEventStore.ts';
 import { AuthSessionRepository } from '../repositories/AuthSessionRepository.ts';
-import type { IssuedAuthSession } from '../repositories/auth-session-types.ts';
 import type { PersistedAuthSession } from '../repositories/auth-persistence-contracts.ts';
 import { hashStateMutationCommand } from '../repositories/StateMutationOutboxRepository.ts';
 import type { StateEventListQuery } from '../state-event-listing.ts';
@@ -44,16 +43,17 @@ import {
     type ClientMutationComputedWrite,
     type ClientMutationFacts,
     ClientMutationIdempotencyConflictError,
-    type ClientMutationIssuedSessionAuthority,
-    type ClientMutationOperation,
     type ClientMutationRead,
     type ClientMutationReceipt,
     ClientMutationRejectedError,
-    type ClientMutationSystemAuthority,
     computeClientMutation,
     validateClientMutation,
     validateClientMutationCommand,
 } from './client-state-mutations.ts';
+export {
+    toClientMutationIssuedSessionAuthority,
+    toClientMutationSystemAuthority,
+} from './client-mutation-authority.ts';
 import { nowMs, type RallarTimingSink, recordRallarTiming, timeRallarAsync } from './timing.ts';
 import {
     createWsSessionGenerationLifecycleService,
@@ -320,33 +320,6 @@ export async function toClientMutationCommand(
     } as ClientMutationCommand;
     validateClientMutationCommand(command);
     return command;
-}
-
-export function toClientMutationIssuedSessionAuthority(
-    session: IssuedAuthSession | PersistedAuthSession,
-    scope: StateScope,
-    operation: Exclude<ClientMutationOperation, 'expireSession'>,
-): ClientMutationIssuedSessionAuthority {
-    return {
-        kind: 'issued-session',
-        version: 1,
-        principalId: session.clientId,
-        sessionId: session.sessionId,
-        sessionIssuedAtEpochMs: session.issuedAtEpochMs,
-        sessionExpiresAtEpochMs: session.expiresAtEpochMs,
-        applicationId: scope.applicationId,
-        workspaceId: scope.workspaceId,
-        operation,
-    };
-}
-
-export function toClientMutationSystemAuthority(serviceId: string): ClientMutationSystemAuthority {
-    return {
-        kind: 'system',
-        version: 1,
-        serviceId,
-        operation: 'expireSession',
-    };
 }
 
 export function requiresClientWrite(

@@ -54,7 +54,11 @@ import * as crdtAdminRoutes from './routes/crdt-admin-routes.ts';
 import * as adminOperationsRoutes from './routes/admin-operations-routes.ts';
 import * as adminSupportRoutes from './routes/admin-support-routes.ts';
 import * as swaggerRoutes from './routes/swagger-routes.ts';
-import { initWsLifecycle as initSharedWsLifecycle } from '@shared-server/rallar-system/services/ws-lifecycle-service.ts';
+import {
+  initWsLifecycle as initSharedWsLifecycle,
+  scheduleWsLifecycleRetry,
+} from '@shared-server/rallar-system/services/ws-lifecycle-service.ts';
+import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { sql } from './db/db.ts';
 import { readApiV1DatabaseBackendConfig } from './db/database-config.ts';
 import { readApiV1DatabasePubSubConfig } from './db/database-pubsub-config.ts';
@@ -268,9 +272,6 @@ export function createRallarServer(
             observeClientSnapshot: async (snapshot) => {
               await runtime.clientStateService.observeSnapshot(snapshot);
             },
-            rtcTopologyRuntimeState: {
-              repository: runtimeStateRepository,
-            },
             rtcTopologyRepositories: {
               topologyConfig: topologyConfigRepository,
               groupState: groupStateRepository,
@@ -310,15 +311,26 @@ export function createRallarServer(
         });
       },
       installWebSocketLifecycle: (runtime) => {
-        initSharedWsLifecycle(runtime.wsQBoxServerService, {
+        const lifecycle = initSharedWsLifecycle(runtime.wsQBoxServerService, {
           now,
           enqueueClientSessionDisconnect: (input) =>
             runtime.appClientInboxService.enqueueAuthorisedWsClientDisconnect(
               wsRoutes.toAuthorisedWsClientDisconnectInput(input),
             ),
           enqueueGroupSessionCleanup: (input) =>
-            runtime.appGroupInboxService.enqueueGroupSessionCleanup(input),
+            runtime.appGroupInboxService.enqueueGroupSessionCleanup(
+              wsRoutes.toGroupPresenceSessionCleanupInput(input),
+            ),
+          releaseCloseFacts: wsRoutes.releaseAuthorisedWsCloseFacts,
+          retry: {
+            delaysMs: [
+              ...DEFAULT_RESOURCE_INBOX_RETRY_POLICY.delaysAfterAttemptMs,
+              DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxDelayMs,
+            ],
+            schedule: scheduleWsLifecycleRetry,
+          },
         });
+        registerMiddlewareBackgroundTask(lifecycle.stop);
       },
     },
     routes: {

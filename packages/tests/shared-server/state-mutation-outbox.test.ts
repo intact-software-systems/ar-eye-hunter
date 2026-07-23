@@ -2816,7 +2816,9 @@ describe('state mutation outbox middleware work', () => {
         );
         const installed = initRallarSystemWsTopics(ws, {
             initDynamicTopics: false,
+            rtcTopologyManagement: {} as never,
             rtcTopologyAppOutbox: {
+                database: {} as never,
                 outboxQueueReader,
                 executionRepository: new RtcTopologyExecutionRepository(
                     new FakeRuntimeStateRepository(),
@@ -2828,11 +2830,9 @@ describe('state mutation outbox middleware work', () => {
                 },
             },
         });
-
         await installed.rtcTopologyWorkPublisher!.enqueueForGroupSnapshot(
             createGroupSnapshot(1),
         );
-
         expect(await queue.getAllKeys()).toHaveLength(1);
     });
 });

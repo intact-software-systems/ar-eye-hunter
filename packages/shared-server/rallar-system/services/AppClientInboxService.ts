@@ -35,6 +35,7 @@ import {
     SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
 } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import { isCompletedOrFailed } from '@shared/queuebox/ResourceEntry.ts';
+import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import type { RallarTimingSink } from './timing.ts';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import type { AppInboxMessageContext } from './app-inbox-contracts.ts';
@@ -292,8 +293,7 @@ export class AppClientInboxService extends AppInboxService {
         const lifecycle = this.clientStateService.sessionGenerationLifecycle;
         const lifecycleFacts = toWsSessionGenerationFacts(connection);
         const lifecycleRead = await lifecycle.read(lifecycleFacts);
-        const lifecycleComputed = lifecycle.computeOpen(lifecycleFacts, lifecycleRead);
-        if (lifecycleComputed.state.status === 'closed') {
+        if (lifecycle.isGenerationClosed(lifecycleFacts, lifecycleRead)) {
             return await this.writeMutation(context, () =>
                 Promise.resolve({
                     status: 'inactive',
@@ -336,7 +336,7 @@ export class AppClientInboxService extends AppInboxService {
         const read = await this.clientStateService.read(command);
         const computed = this.clientStateService.compute(command, read);
         this.clientStateService.validate(command, read, computed);
-        return await this.commitComputed(context, computed, lifecycleComputed);
+        return await this.commitComputed(context, computed);
     }
 
     private async processAuthorisedWsDisconnect(
@@ -349,6 +349,10 @@ export class AppClientInboxService extends AppInboxService {
             ...toWsSessionGenerationFacts(connection),
             disconnectedAtEpochMs: input.disconnectedAtEpochMs,
             reason: input.reason,
+            expireAtEpochMs: resourceInboxRetryExpiryAtEpochMs(
+                input.disconnectedAtEpochMs,
+                Math.max(input.disconnectedAtEpochMs, connection.expiresAtEpochMs),
+            ),
         };
         const lifecycleRead = await lifecycle.read(lifecycleFacts);
         const lifecycleComputed = lifecycle.computeClosed(lifecycleFacts, lifecycleRead);
@@ -525,6 +529,12 @@ function toWsSessionGenerationFacts(
     connection: ClientAuthorisedWsSessionConnectAppInboxPayload,
 ): WsSessionGenerationFacts {
     return {
+        scope: {
+            kind: 'client',
+            ...connection.scope,
+            principalId: connection.principalId,
+            clientInstanceId: connection.clientInstanceId,
+        },
         sessionId: connection.authSession.sessionId,
         generationId: connection.generationId,
         generationStartedAtEpochMs: connection.generationStartedAtEpochMs,
