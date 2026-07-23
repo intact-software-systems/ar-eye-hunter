@@ -8,9 +8,7 @@ import type {
 import type { StateScope } from '@shared/api/state-types.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
-import {
-    ResourceInboxResultsRepository
-} from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
+import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import type {
     ClientStateService,
     ClientStateWritten,
@@ -19,13 +17,13 @@ import type {
 import {
     requiresClientWrite,
     toClientMutationCommand,
+    toClientMutationIssuedSessionAuthority,
+    toClientMutationSystemAuthority,
     toClientStateWritten,
     toConnectCommandInput,
     toDisconnectCommandInput,
     toExpiryCommandInput,
     toHeartbeatCommandInput,
-    toClientMutationIssuedSessionAuthority,
-    toClientMutationSystemAuthority,
     toUpsertInstanceCommandInput,
     toUpsertPrincipalCommandInput,
 } from '@shared-server/rallar-system/services/client-state-service.ts';
@@ -46,19 +44,25 @@ import type {
     ClientMutationCommandInput,
     ClientMutationComputed,
 } from './client-state-mutations.ts';
+import { validateClientMutationAuthorityPolicy } from './client-state-mutations.ts';
 import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import type { IssuedAuthSession } from '../repositories/AuthSessionRepository.ts';
 import {
     toAuthorisedWsClientConnectEnqueue,
+    type ToAuthorisedWsClientConnectEnqueueInput,
     toAuthorisedWsClientDisconnectEnqueue,
-    toAuthorisedWsClientScope,
+    type ToAuthorisedWsClientDisconnectEnqueueInput,
 } from './authorised-ws-client-app-inbox.ts';
+import type {
+    WsSessionGenerationFacts,
+    WsSessionGenerationLifecycleComputed,
+} from './ws-session-generation-lifecycle.ts';
 
 export {
-    AppInboxService,
-    AppInboxType,
     type AppInboxEnqueueInput,
+    AppInboxService,
     type AppInboxServiceOptions,
+    AppInboxType,
 } from '@shared-server/rallar-system/services/AppInboxService.ts';
 
 export type ClientPrincipalUpsertAppInboxPayload = Readonly<{
@@ -101,12 +105,20 @@ export type ClientSessionDisconnectAppInboxPayload = Readonly<{
 export type ClientAuthorisedWsSessionConnectAppInboxPayload = Readonly<{
     authSession: Omit<IssuedAuthSession, 'accessToken'>;
     generationId: string;
-    input: RegisterAuthorisedWsClientInput;
+    generationStartedAtEpochMs: number;
+    scope: StateScope;
+    principalId: string;
+    clientInstanceId: string;
+    displayName: string;
+    userAgent: string | null;
+    platform: NonNullable<RegisterAuthorisedWsClientInput['platform']>;
+    capabilities: readonly string[];
+    expiresAtEpochMs: number;
 }>;
 
 export type ClientAuthorisedWsSessionDisconnectAppInboxPayload = Readonly<{
-    sessionId: string;
-    generationId: string;
+    connection: ClientAuthorisedWsSessionConnectAppInboxPayload;
+    disconnectedAtEpochMs: number;
     reason: string;
 }>;
 
@@ -213,82 +225,11 @@ export class AppClientInboxService extends AppInboxService {
         );
         this.onStateMessage<ClientAuthorisedWsSessionConnectAppInboxPayload>(
             AppInboxType.CLIENT_AUTHORISED_WS_CONNECT,
-            async (session, context) => {
-                const scope = toAuthorisedWsClientScope(session.input);
-                const principalId = session.input.principalId ?? session.authSession.clientId;
-                const clientInstanceId =
-                    session.input.clientInstanceId ?? session.authSession.clientId;
-                const requestId =
-                    `authorised-ws:connect:${session.authSession.sessionId}:${session.generationId}`;
-                return await this.processCommand(
-                    context,
-                    toConnectCommandInput(
-                        'connectAuthorisedWsSession',
-                        scope,
-                        principalId,
-                        clientInstanceId,
-                        session.authSession.sessionId,
-                        {
-                            generationId: session.generationId,
-                            presenceState: 'online',
-                            transport: 'ws',
-                            connectionId: session.generationId,
-                            connectedAtEpochMs: session.input.connectedAtEpochMs,
-                            expiresAtEpochMs:
-                                session.input.expiresAtEpochMs ??
-                                session.authSession.expiresAtEpochMs,
-                            actorPrincipalId: principalId,
-                            actorSessionId: session.authSession.sessionId,
-                            requestId,
-                        },
-                        requestId,
-                        {
-                            platform: session.input.platform,
-                            userAgent: session.input.userAgent,
-                            capabilities: session.input.capabilities,
-                            principalUsername: session.authSession.username,
-                            principalDisplayName:
-                                session.input.displayName ?? session.authSession.username,
-                            principalRoles: ['member'],
-                        },
-                    ),
-                );
-            },
+            async (session, context) => await this.processAuthorisedWsConnect(session, context),
         );
         this.onStateMessage<ClientAuthorisedWsSessionDisconnectAppInboxPayload>(
             AppInboxType.CLIENT_AUTHORISED_WS_DISCONNECT,
-            async (input, context) => {
-                const session = await this.clientStateService.findSessionBySessionId(
-                    input.sessionId,
-                );
-                if (!session) {
-                    throw new NonRetryableException(
-                        `Durable client connection generation not found: ${input.sessionId}`,
-                    );
-                }
-                return await this.processCommand(
-                    context,
-                    toDisconnectCommandInput(
-                        'disconnectAuthorisedWsSession',
-                        {
-                            applicationId: session.applicationId,
-                            workspaceId: session.workspaceId,
-                        },
-                        session.principalId,
-                        session.clientInstanceId,
-                        input.sessionId,
-                        {
-                            generationId: input.generationId,
-                            reason: input.reason,
-                            actorPrincipalId: session.principalId,
-                            actorSessionId: input.sessionId,
-                            requestId:
-                                `authorised-ws:disconnect:${input.sessionId}:${input.generationId}`,
-                        },
-                        context.entry.key.resourceId,
-                    ),
-                );
-            },
+            async (input, context) => await this.processAuthorisedWsDisconnect(input, context),
         );
         this.onStateMessage<ClientExpiredSessionsAppInboxPayload>(
             AppInboxType.CLIENT_EXPIRED_SESSIONS,
@@ -301,9 +242,9 @@ export class AppClientInboxService extends AppInboxService {
         enqueue: AppInboxEnqueueInput<V>,
     ): Promise<import('@shared/resilience/Either.ts').Either<string, R>> {
         void enqueue;
-        return Promise.reject(new NonRetryableException(
-            'Authenticated client mutation authority is required.',
-        ));
+        return Promise.reject(
+            new NonRetryableException('Authenticated client mutation authority is required.'),
+        );
     }
 
     public override processEntryUntilCompletionIf<V, R = V>(
@@ -312,9 +253,9 @@ export class AppClientInboxService extends AppInboxService {
     ): Promise<import('@shared/resilience/Either.ts').Either<string, R>> {
         void enqueue;
         void enqueueIf;
-        return Promise.reject(new NonRetryableException(
-            'Authenticated client mutation authority is required.',
-        ));
+        return Promise.reject(
+            new NonRetryableException('Authenticated client mutation authority is required.'),
+        );
     }
 
     public async processAuthenticatedEntryUntilCompletion<V, R = V>(
@@ -344,6 +285,109 @@ export class AppClientInboxService extends AppInboxService {
         return await this.commitComputed(context, computed);
     }
 
+    private async processAuthorisedWsConnect(
+        connection: ClientAuthorisedWsSessionConnectAppInboxPayload,
+        context: AppInboxMessageContext,
+    ): Promise<unknown> {
+        const lifecycle = this.clientStateService.sessionGenerationLifecycle;
+        const lifecycleFacts = toWsSessionGenerationFacts(connection);
+        const lifecycleRead = await lifecycle.read(lifecycleFacts);
+        const lifecycleComputed = lifecycle.computeOpen(lifecycleFacts, lifecycleRead);
+        if (lifecycleComputed.state.status === 'closed') {
+            return await this.writeMutation(context, () =>
+                Promise.resolve({
+                    status: 'inactive',
+                    sessionId: connection.authSession.sessionId,
+                    generationId: connection.generationId,
+                }),
+            );
+        }
+        const requestId = `authorised-ws:connect:${connection.authSession.sessionId}:${connection.generationId}`;
+        const command = await this.toCommand(
+            context,
+            toConnectCommandInput(
+                'connectAuthorisedWsSession',
+                connection.scope,
+                connection.principalId,
+                connection.clientInstanceId,
+                connection.authSession.sessionId,
+                {
+                    generationId: connection.generationId,
+                    presenceState: 'online',
+                    transport: 'ws',
+                    connectionId: connection.generationId,
+                    connectedAtEpochMs: connection.generationStartedAtEpochMs,
+                    expiresAtEpochMs: connection.expiresAtEpochMs,
+                    actorPrincipalId: connection.principalId,
+                    actorSessionId: connection.authSession.sessionId,
+                    requestId,
+                },
+                requestId,
+                {
+                    platform: connection.platform,
+                    userAgent: connection.userAgent ?? undefined,
+                    capabilities: connection.capabilities,
+                    principalUsername: connection.authSession.username,
+                    principalDisplayName: connection.displayName,
+                    principalRoles: ['member'],
+                },
+            ),
+        );
+        const read = await this.clientStateService.read(command);
+        const computed = this.clientStateService.compute(command, read);
+        this.clientStateService.validate(command, read, computed);
+        return await this.commitComputed(context, computed, lifecycleComputed);
+    }
+
+    private async processAuthorisedWsDisconnect(
+        input: ClientAuthorisedWsSessionDisconnectAppInboxPayload,
+        context: AppInboxMessageContext,
+    ): Promise<unknown> {
+        const connection = input.connection;
+        const lifecycle = this.clientStateService.sessionGenerationLifecycle;
+        const lifecycleFacts = {
+            ...toWsSessionGenerationFacts(connection),
+            disconnectedAtEpochMs: input.disconnectedAtEpochMs,
+            reason: input.reason,
+        };
+        const lifecycleRead = await lifecycle.read(lifecycleFacts);
+        const lifecycleComputed = lifecycle.computeClosed(lifecycleFacts, lifecycleRead);
+        const command = await this.toCommand(
+            context,
+            toDisconnectCommandInput(
+                'disconnectAuthorisedWsSession',
+                connection.scope,
+                connection.principalId,
+                connection.clientInstanceId,
+                connection.authSession.sessionId,
+                {
+                    generationId: connection.generationId,
+                    disconnectedAtEpochMs: input.disconnectedAtEpochMs,
+                    reason: input.reason,
+                    actorPrincipalId: connection.principalId,
+                    actorSessionId: connection.authSession.sessionId,
+                    requestId: `authorised-ws:disconnect:${connection.authSession.sessionId}:${connection.generationId}`,
+                },
+                context.entry.key.resourceId,
+            ),
+        );
+        const read = await this.clientStateService.read(command);
+        if (!read.session) {
+            validateClientMutationAuthorityPolicy(command, read);
+            return await this.writeMutation(context, async (transaction) => {
+                await lifecycle.write(transaction, lifecycleComputed);
+                return {
+                    status: 'inactive',
+                    sessionId: connection.authSession.sessionId,
+                    generationId: connection.generationId,
+                };
+            });
+        }
+        const computed = this.clientStateService.compute(command, read);
+        this.clientStateService.validate(command, read, computed);
+        return await this.commitComputed(context, computed, lifecycleComputed);
+    }
+
     private async toCommand(
         context: AppInboxMessageContext,
         input: ClientMutationCommandInput,
@@ -369,12 +413,19 @@ export class AppClientInboxService extends AppInboxService {
     private async commitComputed(
         context: AppInboxMessageContext,
         computed: ClientMutationComputed,
+        lifecycleComputed?: WsSessionGenerationLifecycleComputed,
     ): Promise<ClientStateWritten> {
         if (computed.outcome === 'idempotency-conflict') {
             throw new Error('Validated client idempotency conflict is unreachable');
         }
         const written = toClientStateWritten(computed);
         const result = await this.writeMutation(context, async (transaction) => {
+            if (lifecycleComputed) {
+                await this.clientStateService.sessionGenerationLifecycle.write(
+                    transaction,
+                    lifecycleComputed,
+                );
+            }
             if (requiresClientWrite(computed)) {
                 await this.clientStateService.write(transaction, computed);
             }
@@ -413,71 +464,43 @@ export class AppClientInboxService extends AppInboxService {
         return committed;
     }
 
-    public async processAuthorisedWsClientConnect(
-        authSession: IssuedAuthSession,
-        generationId: string,
-        input?: RegisterAuthorisedWsClientInput,
-    ) {
+    public async processAuthorisedWsClientConnect(input: ToAuthorisedWsClientConnectEnqueueInput) {
         return await super.processEntryUntilCompletion<
             ClientAuthorisedWsSessionConnectAppInboxPayload,
             ClientStateWritten
-        >(toAuthorisedWsClientConnectEnqueue(authSession, generationId, input));
+        >(toAuthorisedWsClientConnectEnqueue(input));
     }
 
-    public async enqueueAuthorisedWsClientConnect(
-        authSession: IssuedAuthSession,
-        generationId: string,
-        input?: RegisterAuthorisedWsClientInput,
-    ) {
-        return await super.enqueue(
-            toAuthorisedWsClientConnectEnqueue(authSession, generationId, input),
-        );
+    public async enqueueAuthorisedWsClientConnect(input: ToAuthorisedWsClientConnectEnqueueInput) {
+        return await super.enqueue(toAuthorisedWsClientConnectEnqueue(input));
     }
 
     public async processAuthorisedWsClientDisconnect(
-        sessionId: string,
-        generationId: string,
-        reason?: string,
+        input: ToAuthorisedWsClientDisconnectEnqueueInput,
     ) {
         return await super.processEntryUntilCompletion<
             ClientAuthorisedWsSessionDisconnectAppInboxPayload,
             ClientStateWritten
-        >(await toAuthorisedWsClientDisconnectEnqueue(
-            this.clientStateService,
-            sessionId,
-            generationId,
-            reason,
-        ));
+        >(toAuthorisedWsClientDisconnectEnqueue(input));
     }
 
     public async enqueueAuthorisedWsClientDisconnect(
-        sessionId: string,
-        generationId: string,
-        reason?: string,
+        input: ToAuthorisedWsClientDisconnectEnqueueInput,
     ) {
-        return await super.enqueue(await toAuthorisedWsClientDisconnectEnqueue(
-            this.clientStateService,
-            sessionId,
-            generationId,
-            reason,
-        ));
+        return await super.enqueue(toAuthorisedWsClientDisconnectEnqueue(input));
     }
 
     public async processExpiredSessions(atEpochMs: number = Date.now()) {
         return await super.processEntryUntilCompletionIf<
             ClientExpiredSessionsAppInboxPayload,
             readonly ClientStateWritten[]
-        >(
-            this.toExpiredSessionsEnqueue(atEpochMs),
-            entry => isCompletedOrFailed(entry.status),
-        );
+        >(this.toExpiredSessionsEnqueue(atEpochMs), (entry) => isCompletedOrFailed(entry.status));
     }
 
     public async enqueueExpiredSessions(atEpochMs: number = Date.now()) {
-        return await super.enqueue(this.toExpiredSessionsEnqueue(
-            atEpochMs,
-            `expire-client-sessions-${atEpochMs}`,
-        ));
+        return await super.enqueue(
+            this.toExpiredSessionsEnqueue(atEpochMs, `expire-client-sessions-${atEpochMs}`),
+        );
     }
 
     private toExpiredSessionsEnqueue(
@@ -498,6 +521,16 @@ export class AppClientInboxService extends AppInboxService {
     }
 }
 
+function toWsSessionGenerationFacts(
+    connection: ClientAuthorisedWsSessionConnectAppInboxPayload,
+): WsSessionGenerationFacts {
+    return {
+        sessionId: connection.authSession.sessionId,
+        generationId: connection.generationId,
+        generationStartedAtEpochMs: connection.generationStartedAtEpochMs,
+    };
+}
+
 type AuthenticatedClientMutationIngress = Readonly<{
     scope: StateScope;
     operation: Exclude<ClientMutationCommand['operation'], 'expireSession'>;
@@ -513,14 +546,8 @@ function readAuthenticatedClientMutationIngress(
 ): AuthenticatedClientMutationIngress {
     const data = requireClientIngressRecord(enqueue.data, 'Client mutation payload');
     const scope = readClientIngressScope(data.scope);
-    const principalId = requireClientIngressString(
-        data.principalId,
-        'Client mutation principalId',
-    );
-    const request = requireClientIngressRecord(
-        data.request,
-        'Client mutation request',
-    );
+    const principalId = requireClientIngressString(data.principalId, 'Client mutation principalId');
+    const request = requireClientIngressRecord(data.request, 'Client mutation request');
     const actorPrincipalId = readNullableClientIngressString(
         request.actorPrincipalId,
         'Client mutation actorPrincipalId',
@@ -529,10 +556,7 @@ function readAuthenticatedClientMutationIngress(
         request.actorSessionId,
         'Client mutation actorSessionId',
     );
-    const senderId = requireClientIngressString(
-        enqueue.senderId,
-        'Client mutation senderId',
-    );
+    const senderId = requireClientIngressString(enqueue.senderId, 'Client mutation senderId');
     switch (enqueue.type) {
         case AppInboxType.CLIENT_PRINCIPAL_UPSERT:
             return {
@@ -545,10 +569,7 @@ function readAuthenticatedClientMutationIngress(
                 senderId,
             };
         case AppInboxType.CLIENT_INSTANCE_UPSERT:
-            requireClientIngressString(
-                data.clientInstanceId,
-                'Client mutation clientInstanceId',
-            );
+            requireClientIngressString(data.clientInstanceId, 'Client mutation clientInstanceId');
             return {
                 scope,
                 operation: 'upsertInstance',
@@ -561,22 +582,17 @@ function readAuthenticatedClientMutationIngress(
         case AppInboxType.CLIENT_SESSION_CONNECT:
         case AppInboxType.CLIENT_SESSION_HEARTBEAT:
         case AppInboxType.CLIENT_SESSION_DISCONNECT:
-            requireClientIngressString(
-                data.clientInstanceId,
-                'Client mutation clientInstanceId',
-            );
+            requireClientIngressString(data.clientInstanceId, 'Client mutation clientInstanceId');
             return {
                 scope,
-                operation: enqueue.type === AppInboxType.CLIENT_SESSION_CONNECT
-                    ? 'connectSession'
-                    : enqueue.type === AppInboxType.CLIENT_SESSION_HEARTBEAT
-                    ? 'heartbeatSession'
-                    : 'disconnectSession',
+                operation:
+                    enqueue.type === AppInboxType.CLIENT_SESSION_CONNECT
+                        ? 'connectSession'
+                        : enqueue.type === AppInboxType.CLIENT_SESSION_HEARTBEAT
+                          ? 'heartbeatSession'
+                          : 'disconnectSession',
                 principalId,
-                sessionId: requireClientIngressString(
-                    data.sessionId,
-                    'Client mutation sessionId',
-                ),
+                sessionId: requireClientIngressString(data.sessionId, 'Client mutation sessionId'),
                 actorPrincipalId,
                 actorSessionId,
                 senderId,
@@ -593,7 +609,9 @@ function validateIssuedClientMutationIngress(
     ingress: AuthenticatedClientMutationIngress,
 ): void {
     if (
-        !authority.accessToken || !authority.sessionId || !authority.clientId ||
+        !authority.accessToken ||
+        !authority.sessionId ||
+        !authority.clientId ||
         authority.issuedAtEpochMs >= authority.expiresAtEpochMs ||
         authority.expiresAtEpochMs <= Date.now()
     ) {
@@ -604,11 +622,9 @@ function validateIssuedClientMutationIngress(
     if (
         ingress.principalId !== authority.clientId ||
         ingress.senderId !== authority.clientId ||
-        ingress.actorPrincipalId !== null &&
-            ingress.actorPrincipalId !== authority.clientId ||
-        ingress.actorSessionId !== null &&
-            ingress.actorSessionId !== authority.sessionId ||
-        ingress.sessionId !== null && ingress.sessionId !== authority.sessionId
+        (ingress.actorPrincipalId !== null && ingress.actorPrincipalId !== authority.clientId) ||
+        (ingress.actorSessionId !== null && ingress.actorSessionId !== authority.sessionId) ||
+        (ingress.sessionId !== null && ingress.sessionId !== authority.sessionId)
     ) {
         throw new NonRetryableException(
             'Authenticated client mutation principal or session authority differs.',
@@ -666,9 +682,10 @@ function readClientMutationAuthority(
                 value.serviceId,
                 'Client mutation authority serviceId',
             ),
-            operation: value.operation === 'expireSession'
-                ? value.operation
-                : invalidClientAuthorityOperation(),
+            operation:
+                value.operation === 'expireSession'
+                    ? value.operation
+                    : invalidClientAuthorityOperation(),
         };
         if (operation !== 'expireSession') {
             throw new NonRetryableException(
@@ -718,20 +735,12 @@ function readClientIngressScope(value: unknown): StateScope {
             scope.applicationId,
             'Client mutation applicationId',
         ),
-        workspaceId: requireClientIngressString(
-            scope.workspaceId,
-            'Client mutation workspaceId',
-        ),
+        workspaceId: requireClientIngressString(scope.workspaceId, 'Client mutation workspaceId'),
     };
 }
 
-function readNullableClientIngressString(
-    value: unknown,
-    label: string,
-): string | null {
-    return value === undefined || value === null
-        ? null
-        : requireClientIngressString(value, label);
+function readNullableClientIngressString(value: unknown, label: string): string | null {
+    return value === undefined || value === null ? null : requireClientIngressString(value, label);
 }
 
 function requireClientIngressString(value: unknown, label: string): string {

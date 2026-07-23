@@ -3,12 +3,8 @@ import {
   DEFAULT_STATE_WORKSPACE_ID,
   type StateScope,
 } from '@shared/api/state-types.ts';
-import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import type { IssuedAuthSession } from '../repositories/AuthSessionRepository.ts';
-import type {
-  ClientStateService,
-  RegisterAuthorisedWsClientInput,
-} from './client-state-service.ts';
+import type { RegisterAuthorisedWsClientInput } from './client-state-service.ts';
 import { toClientMutationIssuedSessionAuthority } from './client-state-service.ts';
 import type { AppInboxEnqueueInput } from './AppInboxService.ts';
 import { AppInboxType } from './AppInboxService.ts';
@@ -17,88 +13,64 @@ import type {
   ClientAuthorisedWsSessionDisconnectAppInboxPayload,
 } from './AppClientInboxService.ts';
 
+export interface ToAuthorisedWsClientConnectEnqueueInput {
+  readonly authSession: IssuedAuthSession;
+  readonly generationId: string;
+  readonly input?: RegisterAuthorisedWsClientInput;
+}
+
+export interface ToAuthorisedWsClientDisconnectEnqueueInput {
+  readonly connection: ClientAuthorisedWsSessionConnectAppInboxPayload;
+  readonly disconnectedAtEpochMs: number;
+  readonly reason: string;
+}
+
 export function toAuthorisedWsClientConnectEnqueue(
-  authSession: IssuedAuthSession,
-  generationId: string,
-  input?: RegisterAuthorisedWsClientInput,
+  input: ToAuthorisedWsClientConnectEnqueueInput,
 ): AppInboxEnqueueInput<ClientAuthorisedWsSessionConnectAppInboxPayload> {
-  const scope = toAuthorisedWsClientScope(input);
-  const principalId = input?.principalId ?? authSession.clientId;
-  const clientInstanceId = input?.clientInstanceId ?? authSession.clientId;
+  const connection = toAuthorisedWsClientConnection(input);
   return {
     type: AppInboxType.CLIENT_AUTHORISED_WS_CONNECT,
-    resourceId: toAuthorisedWsClientConnectResourceId(
-      scope,
-      principalId,
-      clientInstanceId,
-      authSession.sessionId,
-      generationId,
-    ),
-    contextId: toClientAppInboxContextId(scope, principalId),
-    senderId: authSession.clientId,
+    resourceId: toAuthorisedWsClientConnectResourceId(connection),
+    contextId: toClientAppInboxContextId(connection.scope, connection.principalId),
+    senderId: connection.authSession.clientId,
     authority: toClientMutationIssuedSessionAuthority(
-      authSession,
-      scope,
+      input.authSession,
+      connection.scope,
       'connectAuthorisedWsSession',
     ),
-    data: {
-      authSession: {
-        clientId: authSession.clientId,
-        username: authSession.username,
-        sessionId: authSession.sessionId,
-        issuedAtEpochMs: authSession.issuedAtEpochMs,
-        expiresAtEpochMs: authSession.expiresAtEpochMs,
-      },
-      generationId,
-      input: input ?? {},
-    },
+    data: connection,
   };
 }
 
-export async function toAuthorisedWsClientDisconnectEnqueue(
-  clientStateService: ClientStateService,
-  sessionId: string,
-  generationId: string,
-  reason?: string,
-): Promise<AppInboxEnqueueInput<ClientAuthorisedWsSessionDisconnectAppInboxPayload>> {
-  const [authSession, session] = await Promise.all([
-    clientStateService.readIssuedAuthSession(sessionId),
-    clientStateService.findSessionBySessionId(sessionId),
-  ]);
-  if (!authSession || !session) {
-    throw new NonRetryableException(
-      `Durable authorised WebSocket authority not found: ${sessionId}`,
-    );
-  }
-  const scope = {
-    applicationId: session.applicationId,
-    workspaceId: session.workspaceId,
-  };
-  if (authSession.clientId !== session.principalId) {
-    throw new NonRetryableException(
-      'Durable authorised WebSocket principal differs from auth session.',
-    );
-  }
+export function toAuthorisedWsClientDisconnectEnqueue(
+  input: ToAuthorisedWsClientDisconnectEnqueueInput,
+): AppInboxEnqueueInput<ClientAuthorisedWsSessionDisconnectAppInboxPayload> {
+  const connection = input.connection;
   return {
     type: AppInboxType.CLIENT_AUTHORISED_WS_DISCONNECT,
-    resourceId: `authorised-ws-disconnect-${sessionId}-${generationId}`,
-    contextId: sessionId,
-    senderId: sessionId,
+    resourceId: `authorised-ws-disconnect-${
+      encodeURIComponent(
+        connection.authSession.sessionId,
+      )
+    }-${encodeURIComponent(connection.generationId)}`,
+    contextId: connection.authSession.sessionId,
+    senderId: connection.authSession.sessionId,
     authority: toClientMutationIssuedSessionAuthority(
-      authSession,
-      scope,
+      toIssuedAuthSession(connection.authSession),
+      connection.scope,
       'disconnectAuthorisedWsSession',
     ),
     data: {
-      sessionId,
-      generationId,
-      reason: reason ?? 'websocket-closed',
+      connection,
+      disconnectedAtEpochMs: input.disconnectedAtEpochMs,
+      reason: input.reason,
     },
   };
 }
 
 export function toAuthorisedWsClientScope(
-  input?: RegisterAuthorisedWsClientInput,
+  input: RegisterAuthorisedWsClientInput | undefined,
 ): StateScope {
   return {
     applicationId: input?.applicationId ?? DEFAULT_STATE_APPLICATION_ID,
@@ -106,21 +78,44 @@ export function toAuthorisedWsClientScope(
   };
 }
 
+function toAuthorisedWsClientConnection(
+  input: ToAuthorisedWsClientConnectEnqueueInput,
+): ClientAuthorisedWsSessionConnectAppInboxPayload {
+  const scope = toAuthorisedWsClientScope(input.input);
+  const authSession = input.authSession;
+  const principalId = input.input?.principalId ?? authSession.clientId;
+  return {
+    authSession: {
+      clientId: authSession.clientId,
+      username: authSession.username,
+      sessionId: authSession.sessionId,
+      issuedAtEpochMs: authSession.issuedAtEpochMs,
+      expiresAtEpochMs: authSession.expiresAtEpochMs,
+    },
+    generationId: input.generationId,
+    generationStartedAtEpochMs: input.input?.connectedAtEpochMs ?? authSession.issuedAtEpochMs,
+    scope,
+    principalId,
+    clientInstanceId: input.input?.clientInstanceId ?? authSession.clientId,
+    displayName: input.input?.displayName ?? authSession.username,
+    userAgent: input.input?.userAgent ?? null,
+    platform: input.input?.platform ?? 'web',
+    capabilities: input.input?.capabilities ?? [],
+    expiresAtEpochMs: input.input?.expiresAtEpochMs ?? authSession.expiresAtEpochMs,
+  };
+}
+
 function toAuthorisedWsClientConnectResourceId(
-  scope: StateScope,
-  principalId: string,
-  clientInstanceId: string,
-  sessionId: string,
-  generationId: string,
+  connection: ClientAuthorisedWsSessionConnectAppInboxPayload,
 ): string {
   return [
     'authorised-ws-connect',
-    scope.applicationId,
-    scope.workspaceId,
-    principalId,
-    clientInstanceId,
-    sessionId,
-    generationId,
+    connection.scope.applicationId,
+    connection.scope.workspaceId,
+    connection.principalId,
+    connection.clientInstanceId,
+    connection.authSession.sessionId,
+    connection.generationId,
   ].map(encodeURIComponent).join(':');
 }
 
@@ -128,4 +123,13 @@ function toClientAppInboxContextId(scope: StateScope, principalId: string): stri
   return [scope.applicationId, scope.workspaceId, principalId]
     .map(encodeURIComponent)
     .join(':');
+}
+
+function toIssuedAuthSession(
+  authSession: ClientAuthorisedWsSessionConnectAppInboxPayload['authSession'],
+): IssuedAuthSession {
+  return {
+    ...authSession,
+    accessToken: '',
+  };
 }

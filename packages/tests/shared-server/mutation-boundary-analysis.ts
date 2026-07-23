@@ -39,6 +39,16 @@ const FORBIDDEN_MUTATING_IMPORTS = new Set([
   'RtcTopologySnapshotRepository',
 ]);
 
+const FORBIDDEN_IMPORT_STEMS = [
+  'GroupTopologyManagementService',
+  'GroupTopologyConfigRepository',
+  'GroupStateRepository',
+  'RtcRttRepository',
+  'RtcTopologySnapshotRepository',
+] as const;
+
+const APP_INBOX_RECEIVER_FACTORIES = new Set(['readAppAuthInbox']);
+
 export const ALLOWED_DIRECT_BOUNDARY_CALLS = new Set([
   'exportBackupBundle',
   'exportDebugBundle',
@@ -64,25 +74,59 @@ export interface MutationBoundaryViolation {
 }
 
 export function findMutationBoundaryViolations(): readonly MutationBoundaryViolation[] {
-  return mutationBoundaryFiles().map((filePath) => {
-    const analysis = analyzeTypeScript(readFileSync(filePath, 'utf8'), filePath);
-    return {
-      filePath,
-      directMutatorCalls: analysis.memberCallNames.filter((name) =>
-        FORBIDDEN_DIRECT_MUTATORS.has(name) && !ALLOWED_DIRECT_BOUNDARY_CALLS.has(name)
-      ),
-      mutatingImports: analysis.valueImportNames.filter((name) =>
-        FORBIDDEN_MUTATING_IMPORTS.has(name)
-      ),
-    };
-  }).filter((violation) =>
+  return mutationBoundaryFiles().map((filePath) =>
+    analyzeMutationBoundarySource(readFileSync(filePath, 'utf8'), filePath)
+  ).filter((violation) =>
     violation.directMutatorCalls.length > 0 || violation.mutatingImports.length > 0
   );
 }
 
-interface SourceBoundaryAnalysis {
-  readonly memberCallNames: readonly string[];
-  readonly valueImportNames: readonly string[];
+export function analyzeMutationBoundarySource(
+  source: string,
+  filePath: string,
+): MutationBoundaryViolation {
+  const program = parse(source, {
+    sourceType: 'module',
+    sourceFilename: filePath,
+    createImportExpressions: true,
+    plugins: ['typescript', 'importAttributes'],
+  }).program;
+  const directMutatorCalls = new Set<string>();
+  const mutatingImports = new Set<string>();
+  const directAliases = new Map<string, string>();
+
+  walk(program, (node) => {
+    if (node.type === 'ImportDeclaration') {
+      readImportDeclaration(node, mutatingImports, directAliases);
+      return;
+    }
+    if (node.type === 'ImportExpression') {
+      const sourceValue = readStringLiteral(node.source);
+      if (sourceValue && isForbiddenImportSource(sourceValue)) {
+        mutatingImports.add(sourceValue);
+      }
+      return;
+    }
+    if (node.type === 'VariableDeclarator') {
+      readDirectAliases(node, directAliases);
+      return;
+    }
+    if (node.type !== 'CallExpression' && node.type !== 'OptionalCallExpression') return;
+    const callName = readCallName(node.callee, directAliases);
+    if (
+      callName &&
+      FORBIDDEN_DIRECT_MUTATORS.has(callName) &&
+      !isKnownAppInboxCall(node.callee)
+    ) {
+      directMutatorCalls.add(callName);
+    }
+  });
+
+  return {
+    filePath,
+    directMutatorCalls: [...directMutatorCalls].toSorted(),
+    mutatingImports: [...mutatingImports].toSorted(),
+  };
 }
 
 function mutationBoundaryFiles(): readonly string[] {
@@ -91,42 +135,102 @@ function mutationBoundaryFiles(): readonly string[] {
     .map((name) => path.join('apps/api-v1/src/routes', name));
   return [
     ...routeFiles,
+    'apps/api-v1/src/services/create-api-admin-mutation-gateway.ts',
+    'apps/api-v1/src/services/create-crdt-ws-mutation-ingress.ts',
+    'apps/api-v1/src/services/request-auth-service.ts',
     'packages/shared-server/crdt/RallarCrdtServer.ts',
     'packages/shared-server/rallar-system/ws-system-topics.ts',
+    'packages/shared-server/rallar-system/ws-rtc-topology-runtime.ts',
+    'packages/shared-server/rallar-system/services/authorised-ws-client-app-inbox.ts',
+    'packages/shared-server/rallar-system/services/presence-expiry-reconciliation-service.ts',
     'packages/shared-server/rallar-system/services/ws-lifecycle-service.ts',
   ];
 }
 
-function analyzeTypeScript(source: string, filePath: string): SourceBoundaryAnalysis {
-  const program = parse(source, {
-    sourceType: 'module',
-    sourceFilename: filePath,
-    createImportExpressions: true,
-    plugins: ['typescript', 'importAttributes'],
-  }).program;
-  const memberCallNames: string[] = [];
-  const valueImportNames: string[] = [];
+type AstNode = { readonly type: string; readonly [key: string]: unknown };
 
-  walk(program, (node) => {
-    if (node.type === 'ImportDeclaration') {
-      if (node.importKind === 'type') return;
-      for (const specifier of node.specifiers ?? []) {
-        if (specifier.type === 'ImportSpecifier' && specifier.importKind !== 'type') {
-          valueImportNames.push(readNodeName(specifier.imported));
-        }
-      }
-      return;
+function readImportDeclaration(
+  node: AstNode,
+  mutatingImports: Set<string>,
+  directAliases: Map<string, string>,
+): void {
+  if (node.importKind === 'type') return;
+  const source = readStringLiteral(node.source) ?? '';
+  const forbiddenSource = isForbiddenImportSource(source);
+  for (const rawSpecifier of asNodeArray(node.specifiers)) {
+    if (rawSpecifier.importKind === 'type') continue;
+    const imported = readNodeName(rawSpecifier.imported);
+    const local = readNodeName(rawSpecifier.local);
+    if (FORBIDDEN_MUTATING_IMPORTS.has(imported)) mutatingImports.add(imported);
+    if (
+      forbiddenSource &&
+      (rawSpecifier.type === 'ImportDefaultSpecifier' ||
+        rawSpecifier.type === 'ImportNamespaceSpecifier')
+    ) {
+      mutatingImports.add(local || source);
     }
-    if (node.type !== 'CallExpression' && node.type !== 'OptionalCallExpression') return;
-    const callee = node.callee;
-    if (callee?.type !== 'MemberExpression' && callee?.type !== 'OptionalMemberExpression') return;
-    if (!isAppInboxReceiver(callee.object)) memberCallNames.push(readNodeName(callee.property));
-  });
-
-  return { memberCallNames, valueImportNames };
+    if (FORBIDDEN_DIRECT_MUTATORS.has(imported) && local) {
+      directAliases.set(local, imported);
+    }
+  }
 }
 
-type AstNode = { readonly type: string; readonly [key: string]: unknown };
+function readDirectAliases(node: AstNode, aliases: Map<string, string>): void {
+  const id = asNode(node.id);
+  const init = asNode(node.init);
+  if (!id || !init) return;
+  if (id.type === 'Identifier') {
+    const memberName = readMemberName(init);
+    if (memberName && FORBIDDEN_DIRECT_MUTATORS.has(memberName)) {
+      aliases.set(readNodeName(id), memberName);
+    }
+    return;
+  }
+  if (id.type !== 'ObjectPattern') return;
+  for (const property of asNodeArray(id.properties)) {
+    const importedName = readNodeName(property.key);
+    if (!FORBIDDEN_DIRECT_MUTATORS.has(importedName)) continue;
+    const local = asNode(property.value);
+    const localName = local?.type === 'AssignmentPattern'
+      ? readNodeName(asNode(local.left))
+      : readNodeName(local);
+    if (localName) aliases.set(localName, importedName);
+  }
+}
+
+function readCallName(value: unknown, aliases: Map<string, string>): string {
+  const node = asNode(value);
+  if (!node) return '';
+  if (node.type === 'Identifier') {
+    const name = readNodeName(node);
+    return aliases.get(name) ?? name;
+  }
+  return readMemberName(node);
+}
+
+function readMemberName(node: AstNode): string {
+  if (node.type !== 'MemberExpression' && node.type !== 'OptionalMemberExpression') return '';
+  return readNodeName(node.property);
+}
+
+function isKnownAppInboxCall(value: unknown): boolean {
+  const callee = asNode(value);
+  if (
+    !callee ||
+    (callee.type !== 'MemberExpression' && callee.type !== 'OptionalMemberExpression')
+  ) return false;
+  const receiver = asNode(callee.object);
+  if (!receiver || (receiver.type !== 'CallExpression' && receiver.type !== 'OptionalCallExpression')) {
+    return false;
+  }
+  const factory = asNode(receiver.callee);
+  return factory !== undefined && APP_INBOX_RECEIVER_FACTORIES.has(readMemberName(factory));
+}
+
+function isForbiddenImportSource(source: string): boolean {
+  const fileName = source.split('/').at(-1) ?? source;
+  return FORBIDDEN_IMPORT_STEMS.some((stem) => fileName.includes(stem));
+}
 
 function walk(value: unknown, visit: (node: AstNode) => void): void {
   if (!value || typeof value !== 'object') return;
@@ -142,8 +246,8 @@ function walk(value: unknown, visit: (node: AstNode) => void): void {
 }
 
 function readNodeName(value: unknown): string {
-  if (!value || typeof value !== 'object') return '';
-  const node = value as { name?: unknown; value?: unknown };
+  const node = asNode(value);
+  if (!node) return '';
   return typeof node.name === 'string'
     ? node.name
     : typeof node.value === 'string'
@@ -151,14 +255,19 @@ function readNodeName(value: unknown): string {
     : '';
 }
 
-function isAppInboxReceiver(value: unknown): boolean {
-  if (!value || typeof value !== 'object') return false;
-  const node = value as AstNode;
-  if (node.type === 'Identifier') return /App.*Inbox/u.test(readNodeName(node));
-  if (node.type === 'CallExpression' || node.type === 'OptionalCallExpression') {
-    const callee = node.callee;
-    return !!callee && typeof callee === 'object' &&
-      /App.*Inbox/u.test(readNodeName((callee as AstNode).property));
-  }
-  return false;
+function readStringLiteral(value: unknown): string | undefined {
+  const node = asNode(value);
+  return node && typeof node.value === 'string' ? node.value : undefined;
+}
+
+function asNode(value: unknown): AstNode | undefined {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as AstNode
+    : undefined;
+}
+
+function asNodeArray(value: unknown): readonly AstNode[] {
+  return Array.isArray(value)
+    ? value.map(asNode).filter((node): node is AstNode => node !== undefined)
+    : [];
 }

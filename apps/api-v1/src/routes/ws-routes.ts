@@ -3,6 +3,17 @@ import { getMiddleware } from '../middleware.ts';
 import { requireWsAuthSession, toAuthErrorResponse } from '../services/request-auth-service.ts';
 import { ConnectionContext } from '@shared/websocket/JsonWebSocketServer.ts';
 import type { RegisterAuthorisedWsClientInput } from '@shared-server/rallar-system/services/client-state-service.ts';
+import {
+  toAuthorisedWsClientConnectEnqueue,
+  type ToAuthorisedWsClientDisconnectEnqueueInput,
+} from '@shared-server/rallar-system/services/authorised-ws-client-app-inbox.ts';
+import type { ClientAuthorisedWsSessionConnectAppInboxPayload } from '@shared-server/rallar-system/services/AppClientInboxService.ts';
+import type { RallarWsLifecycleCloseInput } from '@shared-server/rallar-system/services/ws-lifecycle-service.ts';
+
+const AUTHORISED_CONNECTIONS = new Map<
+  string,
+  ClientAuthorisedWsSessionConnectAppInboxPayload
+>();
 
 export function init(app: Hono): void {
   app.get(
@@ -32,18 +43,24 @@ export function init(app: Hono): void {
           authSession.sessionId,
           upgraded.socket,
         );
+        const connectInput = {
+          authSession,
+          generationId: connection.generationId,
+          input: toAuthorisedWsClientInput(
+            requestUrl,
+            userAgent,
+            connection.generationStartedAtEpochMs,
+          ),
+        };
+        rememberAuthorisedWsConnection(
+          connection.id,
+          connection.generationId,
+          toAuthorisedWsClientConnectEnqueue(connectInput).data,
+        );
         socketServer.addConnection(connection);
 
         await getMiddleware().appClientInboxService
-          .enqueueAuthorisedWsClientConnect(
-            authSession,
-            connection.generationId,
-            toAuthorisedWsClientInput(
-              requestUrl,
-              userAgent,
-              connection.generationStartedAtEpochMs,
-            ),
-          );
+          .enqueueAuthorisedWsClientConnect(connectInput);
 
         console.log(`Upgrading connection for ID: ${sessionId}`);
 
@@ -87,6 +104,40 @@ export function toAuthorisedWsClientInput(
     ...(userAgent ? { userAgent } : {}),
     ...(connectedAtEpochMs === undefined ? {} : { connectedAtEpochMs }),
   };
+}
+
+export function toAuthorisedWsClientDisconnectInput(
+  input: RallarWsLifecycleCloseInput,
+): ToAuthorisedWsClientDisconnectEnqueueInput {
+  const key = toAuthorisedConnectionKey(input.sessionId, input.generationId);
+  const connection = AUTHORISED_CONNECTIONS.get(key);
+  if (
+    !connection ||
+    connection.generationStartedAtEpochMs !== input.generationStartedAtEpochMs
+  ) {
+    throw new Error('Trusted authorised WebSocket connection facts are unavailable');
+  }
+  AUTHORISED_CONNECTIONS.delete(key);
+  return {
+    connection,
+    disconnectedAtEpochMs: input.disconnectedAtEpochMs,
+    reason: input.reason,
+  };
+}
+
+function rememberAuthorisedWsConnection(
+  sessionId: string,
+  generationId: string,
+  connection: ClientAuthorisedWsSessionConnectAppInboxPayload,
+): void {
+  AUTHORISED_CONNECTIONS.set(
+    toAuthorisedConnectionKey(sessionId, generationId),
+    connection,
+  );
+}
+
+function toAuthorisedConnectionKey(sessionId: string, generationId: string): string {
+  return [sessionId, generationId].map(encodeURIComponent).join(':');
 }
 
 function isWebSocketUpgradeHeader(upgrade?: string): boolean {

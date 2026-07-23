@@ -26,10 +26,7 @@ import { GroupStateRepository } from '@shared-server/rallar-system/repositories/
 import { RtcRttRepository } from '@shared-server/rallar-system/repositories/RtcRttRepository.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/repositories/RtcTopologySnapshotRepository.ts';
 import { GroupTopologyManagementService } from '@shared-server/rallar-system/services/group-topology-management-service.ts';
-import {
-  PSqlAdminOperationsPruner,
-  PSqlAdminOperationsStatsReader,
-} from '@shared-server/postgres/admin-operations/PSqlAdminOperationsStatsReader.ts';
+import { PSqlAdminOperationsStatsReader } from '@shared-server/postgres/admin-operations/PSqlAdminOperationsStatsReader.ts';
 import { AdminSupportService } from '@shared-server/rallar-system/admin-support/AdminSupportService.ts';
 import { PSqlAdminSupportReader } from '@shared-server/postgres/admin-support/PSqlAdminSupportReader.ts';
 import { sendStateSyncMessage } from '@shared-server/rallar-system/state-sync-routing.ts';
@@ -199,6 +196,9 @@ export function createRallarServer(
     openConnectionIds: [],
     connections: [],
   };
+  if (!middleware.appAdminInboxService || !middleware.appCrdtInboxService) {
+    throw new Error('Admin database mutations require AppInbox services');
+  }
   const adminOperations = new AdminOperationsService({
     now,
     serverId: myServerId,
@@ -208,21 +208,16 @@ export function createRallarServer(
       sqlBackend: databaseConfig.sqlBackend,
       dbPubSub: databasePubSubConfig.mode,
     }),
-    pruner: new PSqlAdminOperationsPruner(sql as unknown as PSqlSql),
     wsStatus: () => rallarApplication?.ws.status() ?? emptyWsStatus,
     readRtcTopologyMetrics: () => rtcTopologyService.readMetrics(),
     resetRtcTopologyMetrics: () => rtcTopologyService.resetMetrics(),
-    topologyManagement,
     crdtAdminRepository: crdtLogRepository,
-    crdtAuditSink: options.crdtAuditSink,
-    ...(middleware.appAdminInboxService && middleware.appCrdtInboxService
-      ? { mutationGateway: createApiAdminMutationGateway({
-        appAdmin: middleware.appAdminInboxService,
-        appCrdt: middleware.appCrdtInboxService,
-        appGroup: middleware.appGroupInboxService,
-        now,
-      }) }
-      : {}),
+    mutationGateway: createApiAdminMutationGateway({
+      appAdmin: middleware.appAdminInboxService,
+      appCrdt: middleware.appCrdtInboxService,
+      appGroup: middleware.appGroupInboxService,
+      now,
+    }),
     timing,
   });
   const adminSupport = new AdminSupportService({
@@ -292,8 +287,7 @@ export function createRallarServer(
               findGroupSnapshotByRef: (ref, cacheOptions) =>
                 runtime.groupStateService.readSnapshotAtLeast(ref, cacheOptions ?? {}),
             },
-            enqueueRtcRttMutation: (input) =>
-              middleware.appGroupInboxService.enqueueRtcRtt(input),
+            enqueueRtcRttMutation: (input) => middleware.appGroupInboxService.enqueueRtcRtt(input),
           },
         );
         const unregister = registerMiddlewareBackgroundTask(systemTopics.stop);
@@ -317,15 +311,13 @@ export function createRallarServer(
       },
       installWebSocketLifecycle: (runtime) => {
         initSharedWsLifecycle(runtime.wsQBoxServerService, {
-          enqueueClientSessionDisconnect: (sessionId, generationId) =>
+          now,
+          enqueueClientSessionDisconnect: (input) =>
             runtime.appClientInboxService.enqueueAuthorisedWsClientDisconnect(
-                sessionId,
-                generationId,
-              ),
-          enqueueGroupSessionCleanup: (
-            sessionId,
-            _request,
-          ) => runtime.appGroupInboxService.enqueueGroupSessionCleanup(sessionId, now()),
+              wsRoutes.toAuthorisedWsClientDisconnectInput(input),
+            ),
+          enqueueGroupSessionCleanup: (input) =>
+            runtime.appGroupInboxService.enqueueGroupSessionCleanup(input),
         });
       },
     },

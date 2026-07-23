@@ -24,6 +24,7 @@ import {
 } from '@shared-server/rallar-system/ws-system-topics.ts';
 import { createRtcTopologyOutboxPublisher } from '@shared-server/rallar-system/services/RtcTopologyOutboxWork.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
+import { GroupTopologyManagementService } from '@shared-server/rallar-system/services/group-topology-management-service.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/repositories/RtcTopologyExecutionRepository.ts';
 import { RtcTopologyPublicationRepository } from '@shared-server/rallar-system/repositories/RtcTopologyPublicationRepository.ts';
 import {
@@ -36,7 +37,7 @@ import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 
 describe('Rallar system websocket topics RTC topology', () => {
-    it('broadcasts overlay topology after accepted group snapshots', async () => {
+    it('does not run a process-local topology fallback for inbound group snapshots', async () => {
         configureTestCacheRepositories();
 
         const server = new JsonWebSocketServer();
@@ -86,73 +87,14 @@ describe('Rallar system websocket topics RTC topology', () => {
         const sentTypes = [...senderSocket.sent, ...peerSocket.sent]
             .map((sent) => sent.payload.typeId);
 
-        expect(sentTypes).toContain(AppTopics.overlayTopology);
+        expect(sentTypes).not.toContain(AppTopics.overlayTopology);
         expect(outsideSocket.sent).toEqual([]);
-
-        const topology = peerSocket.sent
-            .find((sent) => sent.payload.typeId === AppTopics.overlayTopology);
-        expect(topology?.targets).toMatchObject({
-            mode: 'broadcast',
-            scope: 'room',
-            groupRef: {
-                applicationId: group.group.applicationId,
-                workspaceId: group.group.workspaceId,
-                groupId: group.group.groupId,
-            },
-        });
         expect(topologyService.readMetrics()).toMatchObject({
-            topologyPublishAttemptCount: 1,
-            topologyPublishedCount: 1,
+            topologyPublishAttemptCount: 0,
+            topologyPublishedCount: 0,
             topologyPublishSkippedUnchangedCount: 0,
         });
-        expect(updateGroupTopology).toHaveBeenCalledWith(
-            group,
-            expect.any(Array),
-            expect.objectContaining({
-                topologyOptions: {
-                    topologyKind: 'auto',
-                    degreeLimit: 5,
-                    treeMinSize: 5,
-                    meshMinSize: 16,
-                    meshParamK: 2,
-                },
-            }),
-        );
-
-        const unchangedGroup = {
-            ...group,
-            stateRevision: 2,
-            causalRevision: {
-                ...group.causalRevision,
-                groupRevision: 2,
-            },
-            group: {
-                ...group.group,
-                snapshotVersion: 2,
-            },
-        };
-        await senderSocket.dispatchMessage(
-            newALBroadcastMessage(
-                'session-a',
-                newALEventRoute(
-                    AppTopics.groupStateSnapshot,
-                    unchangedGroup.group.groupId,
-                    'group-snapshot-2',
-                ),
-                'room',
-                AppTopics.groupStateSnapshot,
-                unchangedGroup,
-                {
-                    groupRef: unchangedGroup.group,
-                },
-            ),
-        );
-
-        expect(topologyService.readMetrics()).toMatchObject({
-            topologyPublishAttemptCount: 2,
-            topologyPublishedCount: 2,
-            topologyPublishSkippedUnchangedCount: 0,
-        });
+        expect(updateGroupTopology).not.toHaveBeenCalled();
     });
 
     it('queues immutable app-outbox work with canonical identity without scheduling from inbound snapshots', async () => {
@@ -188,6 +130,7 @@ describe('Rallar system websocket topics RTC topology', () => {
         });
         initRallarSystemWsTopics(service, {
             rtcTopologyService: topologyService,
+            rtcTopologyManagement: createTopologyManagement(topologyService),
             rtcTopologyRuntimeState: {
                 repository: runtimeRepository,
             },
@@ -493,7 +436,7 @@ describe('Rallar system websocket topics RTC topology', () => {
         expect(latestRttById().read('session-a::session-c')).toBeUndefined();
     });
 
-    it('debounces and coalesces RTT-triggered overlay topology broadcasts', async () => {
+    it('does not schedule process-local topology work after RTT messages', async () => {
         vi.useFakeTimers();
         vi.setSystemTime(1_000);
 
@@ -589,20 +532,7 @@ describe('Rallar system websocket topics RTC topology', () => {
             expect(countSentTopologyMessages(sockets)).toBe(0);
 
             await vi.advanceTimersByTimeAsync(1);
-            expect(countSentTopologyMessages(sockets)).toBe(5);
-
-            const topology = senderSocket.sent.find((sent) =>
-                sent.payload.typeId === AppTopics.overlayTopology
-            );
-            const snapshot = topology
-                ? JSON.parse(topology.payload.resource) as {
-                version?: number;
-                nextHopsBySessionId?: Record<string, readonly string[]>;
-            }
-                : undefined;
-
-            expect(snapshot?.version).toBe(2);
-            expect(snapshot?.nextHopsBySessionId?.['session-a']).toHaveLength(4);
+            expect(countSentTopologyMessages(sockets)).toBe(0);
         } finally {
             vi.useRealTimers();
         }
@@ -625,6 +555,7 @@ describe('Rallar system websocket topics RTC topology', () => {
             'server-1',
         );
         initRallarSystemWsTopics(service, {
+            rtcTopologyManagement: createTopologyManagement(),
             rtcTopologyAppOutbox: {
                 outboxQueueReader,
                 ...createTopologyExecutionDependencies(
@@ -679,6 +610,7 @@ describe('Rallar system websocket topics RTC topology', () => {
             'server-1',
         );
         initRallarSystemWsTopics(service, {
+            rtcTopologyManagement: createTopologyManagement(),
             rtcTopologyAppOutbox: {
                 outboxQueueReader,
                 ...createTopologyExecutionDependencies(
@@ -761,6 +693,10 @@ describe('Rallar system websocket topics RTC topology', () => {
                 rtcTopologyOptions: {
                     rttRebuildDebounceMs: 100,
                 },
+                rtcTopologyManagement: createTopologyManagement(
+                    undefined,
+                    findGroupSnapshotByRef,
+                ),
                 rtcTopologyAppOutbox: {
                     outboxQueueReader,
                     ...createTopologyExecutionDependencies(
@@ -1062,6 +998,19 @@ function createTopologyExecutionDependencies(
             server,
         }),
     };
+}
+
+function createTopologyManagement(
+    topologyService = new RallarRtcTopologyService(),
+    findGroupSnapshotByRef: (ref: GroupSnapshot['group']) =>
+        | GroupSnapshot
+        | undefined
+        | Promise<GroupSnapshot | undefined> = () => undefined,
+): GroupTopologyManagementService {
+    return new GroupTopologyManagementService({
+        findGroupSnapshotByRef,
+        topologyService,
+    });
 }
 
 function createUnusedDatabase(): PSqlSql {

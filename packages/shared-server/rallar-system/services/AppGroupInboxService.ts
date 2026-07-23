@@ -79,6 +79,15 @@ import {
 import { toRtcRttMutationReceiptId } from '../rtc-topology-identifiers.ts';
 import type { RtcRttAcceptanceReason } from './rtc-rtt-measurement-policy.ts';
 import { validateRtcRttMeasurement } from '../rtc-rtt-persistence-validation.ts';
+import type { WsSessionGenerationLifecycleComputed } from './ws-session-generation-lifecycle.ts';
+import {
+    processGroupPresenceConnect,
+    processGroupSessionCleanup,
+    requireTopologyManagementService,
+    toExpiredPresenceEnqueue,
+    toGroupSessionCleanupEnqueue,
+    type GroupPresenceSessionCleanupAppInboxPayload,
+} from './app-group-ws-session-lifecycle.ts';
 
 import {
     createTopologyMutationAuthorityProof,
@@ -202,6 +211,8 @@ export type GroupPresenceDisconnectAppInboxPayload = Readonly<{
     sessionId: string;
     request: DisconnectGroupPresenceSessionRequest;
 }>;
+
+export type { GroupPresenceSessionCleanupAppInboxPayload } from './app-group-ws-session-lifecycle.ts';
 
 export type TopologyAppInboxOperation =
     | 'putConfig'
@@ -376,31 +387,18 @@ export class AppGroupInboxService extends AppInboxService {
     ): Promise<number> {
         const preparations = await this.groupStateService.prepareExpiredPresenceMutations(
                 atEpochMs,
-            );
+        );
         for (const preparation of preparations) {
-            await this.enqueueInternalMutation(
-                AppInboxType.GROUP_PRESENCE_EXPIRE,
-                preparation,
-            );
+            await super.enqueue(toExpiredPresenceEnqueue(preparation));
         }
         return preparations.length;
     }
 
     public async enqueueGroupSessionCleanup(
-        sessionId: string,
-        disconnectedAtEpochMs: number,
+        input: GroupPresenceSessionCleanupAppInboxPayload,
     ): Promise<number> {
-        const preparations = await this.groupStateService.prepareSessionCleanupMutations(
-                sessionId,
-                disconnectedAtEpochMs,
-            );
-        for (const preparation of preparations) {
-            await this.enqueueInternalMutation(
-                AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP,
-                preparation,
-            );
-        }
-        return preparations.length;
+        await super.enqueue(toGroupSessionCleanupEnqueue(input, this.serviceId));
+        return 1;
     }
 
     public override processEntryNoWaiting<V, R = V>(
@@ -604,9 +602,21 @@ export class AppGroupInboxService extends AppInboxService {
             _payload: unknown,
             context: AppInboxMessageContext,
         ) => await this.processMutation(context);
-        for (const type of GROUP_MUTATION_INBOX_TYPES) {
+        for (const type of GROUP_MUTATION_INBOX_TYPES.filter(
+            (candidate) => candidate !== AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP,
+        )) {
             this.onStateMessage(type, processMutation);
         }
+        this.onStateMessage<GroupPresenceSessionCleanupAppInboxPayload>(
+            AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP,
+            async (payload, context) => await processGroupSessionCleanup({
+                facts: payload,
+                attemptCount: context.entry.dequeueAudit.attempts,
+                groupStateService: this.groupStateService,
+                writeMutation: async (write) => await this.writeMutation(context, write),
+                wakeQueue: this.wakeQueue,
+            }),
+        );
         const processTopology = async (
             _payload: unknown,
             context: AppInboxMessageContext,
@@ -671,7 +681,7 @@ export class AppGroupInboxService extends AppInboxService {
                 authority,
             );
         }
-        const service = this.requireTopologyManagementService();
+        const service = requireTopologyManagementService(this.topologyManagementService);
         const preparation = await service.prepareTopologyConfigMutation({
             command: toTopologyConfigMutationCommand(authority.command),
             commandHash: authority.command.commandHash,
@@ -721,7 +731,7 @@ export class AppGroupInboxService extends AppInboxService {
         context: AppInboxMessageContext,
         authority: TopologyReconfigureAppInboxAuthority,
     ): Promise<unknown> {
-        const service = this.requireTopologyManagementService();
+        const service = requireTopologyManagementService(this.topologyManagementService);
         if (authority.command.payload.operation !== 'reconfigureTopology') {
             throw new TypeError('Topology reconfigure authority operation is invalid');
         }
@@ -948,29 +958,6 @@ export class AppGroupInboxService extends AppInboxService {
         }
     }
 
-    private requireTopologyManagementService(): GroupTopologyManagementService {
-        if (!this.topologyManagementService) {
-            throw new TypeError(
-                'Topology management service is not configured',
-            );
-        }
-        return this.topologyManagementService;
-    }
-
-    private async enqueueInternalMutation(
-        type:
-            | AppInboxType.GROUP_PRESENCE_EXPIRE
-            | AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP,
-        preparation: GroupMutationPreparation,
-    ): Promise<ResourceEntry> {
-        return await super.enqueue({
-            type,
-            resourceId: preparation.queueResourceId,
-            authority: preparation,
-            data: { commandId: preparation.command.commandId },
-        });
-    }
-
     private async processMutation(
         context: AppInboxMessageContext,
     ): Promise<unknown> {
@@ -986,6 +973,15 @@ export class AppGroupInboxService extends AppInboxService {
                 attemptCount: context.entry.dequeueAudit.attempts,
             },
         };
+        if (command.command.operation === 'connectPresence') {
+            return await processGroupPresenceConnect({
+                command,
+                groupStateService: this.groupStateService,
+                writeMutation: async (write) => await this.writeMutation(context, write),
+                commitMutation: async (computed, lifecycle) =>
+                    await this.commitMutation(context, command, computed, lifecycle),
+            });
+        }
         const read = await this.groupStateService.read(command);
         const computed = this.groupStateService.compute(command, read);
         this.groupStateService.validate(command, read, computed);
@@ -996,10 +992,17 @@ export class AppGroupInboxService extends AppInboxService {
         context: AppInboxMessageContext,
         command: GroupStateMutationCommand,
         computed: GroupMutationComputed,
+        lifecycleComputed?: WsSessionGenerationLifecycleComputed,
     ): Promise<unknown> {
         const result = await this.writeMutation(
             context,
             async (transaction) => {
+                if (lifecycleComputed) {
+                    await this.groupStateService.sessionGenerationLifecycle.write(
+                        transaction,
+                        lifecycleComputed,
+                    );
+                }
                 if (computed.outcome === 'idempotency-conflict') {
                     throw new TypeError(
                         'Validated group idempotency conflict is unreachable',

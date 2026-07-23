@@ -67,31 +67,28 @@ import {
     hmacSha256Hex,
     sha256CanonicalJson,
 } from './group-state-crypto.ts';
+import { createWsSessionGenerationLifecycleService, type WsSessionGenerationCloseFacts, type WsSessionGenerationLifecycleService } from './ws-session-generation-lifecycle.ts';
 
 export type GroupWritten = Readonly<{
-    snapshot: GroupSnapshot;
-    event: GroupEvent;
+  snapshot: GroupSnapshot;
+  event: GroupEvent;
 }>;
-
 export type GroupMutationWritten = Readonly<{
-    snapshot: GroupSnapshot;
-    event: GroupEvent | null;
+  snapshot: GroupSnapshot;
+  event: GroupEvent | null;
 }>;
-
 export type GroupStateWritten = Readonly<{
     status: 'created' | 'ok' | 'error';
     result: Either<string, GroupMutationWritten>;
 }>;
 
 export type GroupJoinCodeMutationWritten =
-    & GroupJoinCodeResponse
-    & Readonly<{ event: GroupEvent | null }>;
-
+  & GroupJoinCodeResponse
+  & Readonly<{ event: GroupEvent | null }>;
 export type GroupJoinCodeWritten = Readonly<{
-    status: 'ok' | 'error';
-    result: Either<string, GroupJoinCodeMutationWritten>;
+  status: 'ok' | 'error';
+  result: Either<string, GroupJoinCodeMutationWritten>;
 }>;
-
 export type GroupSnapshotPageOptions = Readonly<{
     afterKey?: string;
     limit: number;
@@ -179,6 +176,7 @@ export type GroupStateMutationService = Readonly<{
 }>;
 
 export type GroupStateService = GroupStateMutationService & Readonly<{
+    sessionGenerationLifecycle: WsSessionGenerationLifecycleService;
     prepareMutation(
         descriptor: GroupMutationDescriptor,
         authority: IssuedAuthSession,
@@ -187,8 +185,7 @@ export type GroupStateService = GroupStateMutationService & Readonly<{
         atEpochMs: number,
     ): Promise<readonly GroupMutationPreparation[]>;
     prepareSessionCleanupMutations(
-        sessionId: string,
-        disconnectedAtEpochMs: number,
+        input: WsSessionGenerationCloseFacts,
     ): Promise<readonly GroupMutationPreparation[]>;
     listSnapshots(scope: GroupScope): Promise<readonly GroupSnapshot[]>;
     listSnapshotsPage(
@@ -358,6 +355,7 @@ export function createGroupStateRuntime(
     };
 
     const service: GroupStateService = {
+        sessionGenerationLifecycle: createWsSessionGenerationLifecycleService(runtime),
         prepareMutation,
         prepareExpiredPresenceMutations: async (atEpochMs) => {
             const candidates = (await repositoryFor(runtime).listAllPresenceSessions())
@@ -369,17 +367,19 @@ export function createGroupStateRuntime(
                 prepareInternalMutation(toExpiryCommand(session, atEpochMs), 'expiry', atEpochMs)
             ));
         },
-        prepareSessionCleanupMutations: async (sessionId, disconnectedAtEpochMs) => {
+        prepareSessionCleanupMutations: async (input) => {
             const candidates = (await repositoryFor(runtime).listAllPresenceSessions())
                 .filter((session) =>
-                    session.sessionId === sessionId &&
+                    session.sessionId === input.sessionId &&
+                    session.generationId === input.generationId &&
+                    session.generationVersion === input.generationStartedAtEpochMs &&
                     session.disconnectedAtEpochMs === null
                 );
             return await Promise.all(candidates.map((session) =>
                 prepareInternalMutation(
-                    toSessionCleanupCommand(session, disconnectedAtEpochMs),
+                    toSessionCleanupCommand(session, input.disconnectedAtEpochMs),
                     'session-cleanup',
-                    disconnectedAtEpochMs,
+                    input.disconnectedAtEpochMs,
                 )
             ));
         },

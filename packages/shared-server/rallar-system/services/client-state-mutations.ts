@@ -1024,7 +1024,7 @@ function validateClientMutationRead(
     }
 }
 
-function validateClientMutationAuthorityPolicy(
+export function validateClientMutationAuthorityPolicy(
     command: ClientMutationCommand,
     read: ClientMutationRead,
 ): void {

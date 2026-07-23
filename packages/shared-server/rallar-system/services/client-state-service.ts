@@ -36,34 +36,32 @@ import type { PersistedAuthSession } from '../repositories/auth-persistence-cont
 import { hashStateMutationCommand } from '../repositories/StateMutationOutboxRepository.ts';
 import type { StateEventListQuery } from '../state-event-listing.ts';
 import {
-    ClientMutationIdempotencyConflictError,
-    ClientMutationRejectedError,
     assertNeverClientMutationComputed,
-    computeClientMutation,
+    type ClientMutationAuthority,
     type ClientMutationCommand,
     type ClientMutationCommandInput,
     type ClientMutationComputed,
     type ClientMutationComputedWrite,
     type ClientMutationFacts,
-    type ClientMutationRead,
-    type ClientMutationReceipt,
-    type ClientMutationAuthority,
+    ClientMutationIdempotencyConflictError,
     type ClientMutationIssuedSessionAuthority,
     type ClientMutationOperation,
+    type ClientMutationRead,
+    type ClientMutationReceipt,
+    ClientMutationRejectedError,
     type ClientMutationSystemAuthority,
+    computeClientMutation,
     validateClientMutation,
     validateClientMutationCommand,
 } from './client-state-mutations.ts';
+import { nowMs, type RallarTimingSink, recordRallarTiming, timeRallarAsync } from './timing.ts';
 import {
-    nowMs,
-    recordRallarTiming,
-    timeRallarAsync,
-    type RallarTimingSink,
-} from './timing.ts';
+    createWsSessionGenerationLifecycleService,
+    type WsSessionGenerationLifecycleService,
+} from './ws-session-generation-lifecycle.ts';
 
 export { ClientMutationIdempotencyConflictError, ClientMutationRejectedError };
 export type { ClientMutationReceipt };
-
 export type RegisterAuthorisedWsClientInput = Readonly<{
     applicationId?: string;
     workspaceId?: string;
@@ -76,18 +74,16 @@ export type RegisterAuthorisedWsClientInput = Readonly<{
     connectedAtEpochMs?: number;
     expiresAtEpochMs?: number;
 }>;
-
 export type ClientMutationWritten = Readonly<{
     snapshot: ClientSnapshot;
     event: ClientEvent | null;
 }>;
-
 export type ClientStateWritten = Readonly<{
     status: 'ok';
     result: Either<string, ClientMutationWritten>;
 }>;
-
 export type ClientStateService = Readonly<{
+    sessionGenerationLifecycle: WsSessionGenerationLifecycleService;
     listSnapshots(scope: ClientScope): Promise<readonly ClientSnapshot[]>;
     readSnapshot(ref: ClientPrincipalRef): Promise<ClientSnapshot | undefined>;
     readPresenceSnapshot(ref: ClientPrincipalRef): Promise<ClientPresenceSnapshot | undefined>;
@@ -127,7 +123,6 @@ export type ClientStateServiceDependencies = Readonly<{
     serviceId: string;
     timing?: RallarTimingSink;
 }>;
-
 export function createClientStateService(
     dependencies: ClientStateServiceDependencies,
 ): ClientStateService {
@@ -137,8 +132,8 @@ export function createClientStateService(
         new ClientStateRepository(runtime, {
             events: dependencies.createClientStateEventStore?.(runtime),
         });
-
     const service: ClientStateService = {
+        sessionGenerationLifecycle: createWsSessionGenerationLifecycleService(runtimeRepository),
         listSnapshots: async (scope) => await repositoryFor(runtimeRepository).listSnapshots(scope),
         readSnapshot: async (ref) => await repositoryFor(runtimeRepository).readSnapshot(ref),
         readPresenceSnapshot: async (ref) =>
@@ -173,7 +168,7 @@ export function createClientStateService(
             await findClientSessionBySessionId(repositoryFor(runtimeRepository), sessionId),
         readIssuedAuthSession: async (sessionId) =>
             await authSessionRepository.findBySessionId(sessionId),
-        observeSnapshot: async (snapshot) => snapshot,
+        observeSnapshot: (snapshot) => Promise.resolve(snapshot),
     };
 
     return withClientStateServiceTiming(service, dependencies.timing, dependencies.serviceId);
@@ -184,32 +179,33 @@ async function readClientMutation(
     authSessionRepository: Pick<AuthSessionRepository, 'findBySessionId'>,
     command: ClientMutationCommand,
 ): Promise<ClientMutationRead> {
-    const instanceRef = 'clientInstanceId' in command
-        ? { ...command.aggregateRef, clientInstanceId: command.clientInstanceId }
-        : null;
-    const sessionRef = instanceRef && 'sessionId' in command
-        ? { ...instanceRef, sessionId: command.sessionId }
-        : null;
+    const instanceRef =
+        'clientInstanceId' in command
+            ? {
+                  ...command.aggregateRef,
+                  clientInstanceId: command.clientInstanceId,
+              }
+            : null;
+    const sessionRef =
+        instanceRef && 'sessionId' in command
+            ? { ...instanceRef, sessionId: command.sessionId }
+            : null;
     const [authoritySession, idempotency, principal, instance, session, snapshot] =
         await Promise.all([
-        command.authority.kind === 'issued-session'
-            ? authSessionRepository.findBySessionId(command.authority.sessionId)
-            : Promise.resolve(undefined),
-        command.requestId === null
-            ? Promise.resolve(undefined)
-            : repository.findIdempotentClientMutationReceiptEntry(
-                command.aggregateRef,
-                command.requestId,
-            ),
-        repository.findPrincipalEntry(command.aggregateRef),
-        instanceRef
-            ? repository.findInstanceEntry(instanceRef)
-            : Promise.resolve(undefined),
-        sessionRef
-            ? repository.findSessionEntry(sessionRef)
-            : Promise.resolve(undefined),
-        repository.readSnapshot(command.aggregateRef),
-    ]);
+            command.authority.kind === 'issued-session'
+                ? authSessionRepository.findBySessionId(command.authority.sessionId)
+                : Promise.resolve(undefined),
+            command.requestId === null
+                ? Promise.resolve(undefined)
+                : repository.findIdempotentClientMutationReceiptEntry(
+                      command.aggregateRef,
+                      command.requestId,
+                  ),
+            repository.findPrincipalEntry(command.aggregateRef),
+            instanceRef ? repository.findInstanceEntry(instanceRef) : Promise.resolve(undefined),
+            sessionRef ? repository.findSessionEntry(sessionRef) : Promise.resolve(undefined),
+            repository.readSnapshot(command.aggregateRef),
+        ]);
     const receiptEvent =
         !idempotency || idempotency.value.receipt.eventId === null
             ? null
@@ -253,8 +249,8 @@ async function writeClientMutation(
         computed.principal.operation === 'insert'
             ? await repository.insertPrincipal(computed.principal.value)
             : await repository.updatePrincipal(
-                computed.principal.value,
-                computed.principal.expectedRevision,
+                  computed.principal.value,
+                  computed.principal.expectedRevision,
               ),
     );
 
@@ -289,16 +285,18 @@ async function writeChildCandidate(
     if (candidate.operation === 'none') return;
     if (kind === 'instance') {
         const value = candidate.value as Parameters<ClientStateRepository['insertInstance']>[0];
-        requireConditionalWrite(candidate.operation === 'insert'
-            ? await repository.insertInstance(value)
-            : await repository.updateInstance(value, candidate.expectedRevision),
+        requireConditionalWrite(
+            candidate.operation === 'insert'
+                ? await repository.insertInstance(value)
+                : await repository.updateInstance(value, candidate.expectedRevision),
         );
         return;
     }
     const value = candidate.value as Parameters<ClientStateRepository['insertSession']>[0];
-    requireConditionalWrite(candidate.operation === 'insert'
-        ? await repository.insertSession(value)
-        : await repository.updateSession(value, candidate.expectedRevision),
+    requireConditionalWrite(
+        candidate.operation === 'insert'
+            ? await repository.insertSession(value)
+            : await repository.updateSession(value, candidate.expectedRevision),
     );
 }
 
@@ -314,7 +312,10 @@ export async function toClientMutationCommand(
         authority,
         facts: {
             ...facts,
-            commandHash: await hashStateMutationCommand({ ...input, authority }),
+            commandHash: await hashStateMutationCommand({
+                ...input,
+                authority,
+            }),
         },
     } as ClientMutationCommand;
     validateClientMutationCommand(command);
@@ -339,9 +340,7 @@ export function toClientMutationIssuedSessionAuthority(
     };
 }
 
-export function toClientMutationSystemAuthority(
-    serviceId: string,
-): ClientMutationSystemAuthority {
+export function toClientMutationSystemAuthority(serviceId: string): ClientMutationSystemAuthority {
     return {
         kind: 'system',
         version: 1,
@@ -484,14 +483,10 @@ export function toConnectCommandInput(
             expiresAtEpochMs: request.expiresAtEpochMs ?? null,
             instancePlatform: instance.platform ?? null,
             instanceUserAgent: instance.userAgent ?? null,
-            instanceCapabilities: instance.capabilities
-                ? [...instance.capabilities]
-                : null,
+            instanceCapabilities: instance.capabilities ? [...instance.capabilities] : null,
             principalUsername: instance.principalUsername ?? null,
             principalDisplayName: instance.principalDisplayName ?? null,
-            principalRoles: instance.principalRoles
-                ? [...instance.principalRoles]
-                : null,
+            principalRoles: instance.principalRoles ? [...instance.principalRoles] : null,
             ...toActorInput(request),
         },
     };
@@ -590,11 +585,12 @@ export function toExpiryCommandInput(
     };
 }
 
-function toActorInput(request: Readonly<{
-    actorPrincipalId?: string;
-    actorSessionId?: string;
-    reason?: string;
-    traceId?: string;
+function toActorInput(
+    request: Readonly<{
+        actorPrincipalId?: string;
+        actorSessionId?: string;
+        reason?: string;
+        traceId?: string;
     }>,
 ) {
     return {
@@ -613,7 +609,8 @@ async function findClientSessionBySessionId(
     return (
         sessions.find(
             (session) =>
-        session.sessionId === sessionId && session.status === 'active' &&
+                session.sessionId === sessionId &&
+                session.status === 'active' &&
                 session.disconnectedAtEpochMs === null,
         ) ?? sessions.find((session) => session.sessionId === sessionId)
     );
@@ -625,22 +622,25 @@ function withClientStateServiceTiming(
     serviceId: string,
 ): ClientStateService {
     if (!timing) return service;
-    const timed = <T>(operation: string, details: Record<string, unknown>, action: () => Promise<T>,
+    const timed = <T>(
+        operation: string,
+        details: Record<string, unknown>,
+        action: () => Promise<T>,
     ) =>
         timeRallarAsync(
-            timing, {
-            component: 'client-state-service',
-            operation,
-            serviceId,
-            requestId: typeof details.requestId === 'string' ? details.requestId : undefined,
-            applicationId: typeof details.applicationId === 'string'
-                ? details.applicationId : undefined,
-            workspaceId: typeof details.workspaceId === 'string'
-                ? details.workspaceId : undefined,
-            principalId: typeof details.principalId === 'string'
-                ? details.principalId : undefined,
-            sessionId: typeof details.sessionId === 'string'
-                ? details.sessionId : undefined,
+            timing,
+            {
+                component: 'client-state-service',
+                operation,
+                serviceId,
+                requestId: typeof details.requestId === 'string' ? details.requestId : undefined,
+                applicationId:
+                    typeof details.applicationId === 'string' ? details.applicationId : undefined,
+                workspaceId:
+                    typeof details.workspaceId === 'string' ? details.workspaceId : undefined,
+                principalId:
+                    typeof details.principalId === 'string' ? details.principalId : undefined,
+                sessionId: typeof details.sessionId === 'string' ? details.sessionId : undefined,
             },
             action,
         );

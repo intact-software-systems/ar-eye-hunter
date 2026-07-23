@@ -36,15 +36,13 @@ export function createCachedGroupStateService(options: Readonly<{
     cache: CachedGroupStateServiceCache;
 }>): CachedGroupStateService {
     return {
+        sessionGenerationLifecycle: options.durable.sessionGenerationLifecycle,
         prepareMutation: async (descriptor, authority) =>
             await options.durable.prepareMutation(descriptor, authority),
         prepareExpiredPresenceMutations: async (atEpochMs) =>
             await options.durable.prepareExpiredPresenceMutations(atEpochMs),
-        prepareSessionCleanupMutations: async (sessionId, disconnectedAtEpochMs) =>
-            await options.durable.prepareSessionCleanupMutations(
-                sessionId,
-                disconnectedAtEpochMs,
-            ),
+        prepareSessionCleanupMutations: async (input) =>
+            await options.durable.prepareSessionCleanupMutations(input),
         read: async (command) => await options.durable.read(command),
         compute: (command, read) => options.durable.compute(command, read),
         validate: (command, read, computed) =>
