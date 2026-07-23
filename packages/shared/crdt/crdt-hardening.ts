@@ -1057,6 +1057,7 @@ export function toRallarCrdtAppendRejectionCategory(
 ): RallarCrdtHardeningErrorCategory {
     switch (code) {
         case 'storage-failed':
+        case 'rate-limited':
             return 'retryable.server';
         case 'authorization-denied':
             return 'permanent.authorization';
@@ -1071,7 +1072,6 @@ export function toRallarCrdtAppendRejectionCategory(
         case 'document-destroyed':
         case 'document-quarantined':
         case 'feature-disabled':
-        case 'rate-limited':
             return 'permanent.authorization';
     }
 }

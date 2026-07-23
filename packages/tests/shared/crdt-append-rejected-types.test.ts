@@ -2,10 +2,78 @@ import { describe, expect, it } from 'vitest';
 import {
     RALLAR_CRDT_OPERATION_VERSION,
     RALLAR_CRDT_PROTOCOL_VERSION,
+    toRallarCrdtAppendRejectionCategory,
     type RallarCrdtAppendRejected,
+    type RallarCrdtAppendRejectionCode,
     type RallarCrdtDocumentRef,
+    type RallarCrdtHardeningErrorCategory,
     type RallarCrdtUpdateEnvelope,
 } from '../../shared/crdt/mod.ts';
+
+type RallarCrdtRetryableCodeFromPublicUnion = Extract<
+    RallarCrdtAppendRejected,
+    { readonly retryable: true }
+>['code'];
+
+type AppendRejectionExpectationByCode = Readonly<{
+    [Code in RallarCrdtAppendRejectionCode]: Readonly<{
+        retryable: Code extends RallarCrdtRetryableCodeFromPublicUnion
+            ? true
+            : false;
+        category: RallarCrdtHardeningErrorCategory;
+    }>;
+}>;
+
+const APPEND_REJECTION_EXPECTATIONS = {
+    'authorization-denied': {
+        retryable: false,
+        category: 'permanent.authorization',
+    },
+    'document-archived': {
+        retryable: false,
+        category: 'permanent.authorization',
+    },
+    'document-destroyed': {
+        retryable: false,
+        category: 'permanent.authorization',
+    },
+    'document-quarantined': {
+        retryable: false,
+        category: 'permanent.authorization',
+    },
+    'duplicate-hash-mismatch': {
+        retryable: false,
+        category: 'permanent.validation',
+    },
+    'feature-disabled': {
+        retryable: false,
+        category: 'permanent.authorization',
+    },
+    'invalid-update': {
+        retryable: false,
+        category: 'permanent.validation',
+    },
+    'quota-exceeded': {
+        retryable: false,
+        category: 'permanent.quota',
+    },
+    'rate-limited': {
+        retryable: true,
+        category: 'retryable.server',
+    },
+    'schema-version-not-allowed': {
+        retryable: false,
+        category: 'permanent.validation',
+    },
+    'update-too-large': {
+        retryable: false,
+        category: 'permanent.quota',
+    },
+    'storage-failed': {
+        retryable: true,
+        category: 'retryable.server',
+    },
+} as const satisfies AppendRejectionExpectationByCode;
 
 const update = createUpdate();
 const storageRejected = {
@@ -60,6 +128,22 @@ const storageNonRetryable = {
 const invalidStorageRetryability: RallarCrdtAppendRejected = storageNonRetryable;
 
 describe('RallarCrdtAppendRejected type contract', () => {
+    it('classifies every rejection consistently with exact retryability', () => {
+        const codes = Object.keys(
+            APPEND_REJECTION_EXPECTATIONS,
+        ) as RallarCrdtAppendRejectionCode[];
+
+        for (const code of codes) {
+            const expectation = APPEND_REJECTION_EXPECTATIONS[code];
+            const category = toRallarCrdtAppendRejectionCategory(code);
+
+            expect(category).toBe(expectation.category);
+            expect(category.startsWith('retryable.')).toBe(
+                expectation.retryable,
+            );
+        }
+    });
+
     it('carries the exact retryability discriminant and mandatory update', () => {
         expect([
             storageRejected.retryable,
