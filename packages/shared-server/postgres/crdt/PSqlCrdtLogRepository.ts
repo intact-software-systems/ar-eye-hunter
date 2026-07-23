@@ -2,6 +2,7 @@ import {
   createRallarCrdtAdminDocumentStatus,
   createRallarCrdtBackupBundle,
   createRallarCrdtDebugBundle,
+  evaluateRallarCrdtFeaturePolicy,
   fromRallarCrdtAppendCursor,
   type RallarCrdtAdminLogRepository,
   type RallarCrdtAppendBatchInput,
@@ -14,7 +15,6 @@ import {
   type RallarCrdtDebugBundle,
   type RallarCrdtDebugBundleRedaction,
   type RallarCrdtDocumentAdminPage,
-  type RallarCrdtDocumentLifecycleState,
   type RallarCrdtDocumentMetadata,
   type RallarCrdtDocumentRef,
   type RallarCrdtDocumentTypePolicy,
@@ -25,12 +25,8 @@ import {
   type RallarCrdtListUpdatesInput,
   type RallarCrdtMetricsSink,
   type RallarCrdtOperationBatch,
-  type RallarCrdtQuotaPolicy,
   type RallarCrdtRestoreResult,
-  type RallarCrdtRetentionPolicy,
   type RallarCrdtSnapshotEnvelope,
-  type RallarCrdtTrustedAppendMetadata,
-  type RallarCrdtUpdateEnvelope,
   type RallarCrdtUpdatePage,
   type RallarCrdtValidationOptions,
   type RallarCrdtWriteSnapshotInput,
@@ -40,6 +36,15 @@ import {
 } from '@shared/crdt/mod.ts';
 import type { PSqlSql } from '../PostgresSqlClient.ts';
 import { rejectDirectCrdtMutation } from './psql-crdt-legacy-mutation.ts';
+import {
+  type DocumentRow,
+  type SnapshotRow,
+  toMetadata,
+  toRecord,
+  toSnapshot,
+  toStoredMetadata,
+  type UpdateRow,
+} from './crdt-mutation-row-codec.ts';
 
 export type PSqlCrdtLogRepositoryOptions = Readonly<{
   now?: () => number;
@@ -49,42 +54,6 @@ export type PSqlCrdtLogRepositoryOptions = Readonly<{
   metrics?: RallarCrdtMetricsSink;
   audit?: RallarCrdtAuditSink;
   readonly [legacyOption: string]: unknown;
-}>;
-
-type CrdtDocumentRow = Readonly<{
-  document_key: string;
-  document_ref: string;
-  document_revision: number | string;
-  lifecycle: string;
-  created_at_ts: Date | string;
-  updated_at_ts: Date | string;
-  archived_at_ts: Date | string | null;
-  destroyed_at_ts: Date | string | null;
-  last_append_sequence: number | string;
-  update_count: number | string;
-  snapshot_count: number | string;
-  stored_update_bytes: number | string;
-  retention_policy: string | null;
-  quota_policy: string | null;
-  projection_ids: string | null;
-}>;
-
-type CrdtUpdateRow = Readonly<{
-  document_key: string;
-  append_sequence: number | string;
-  update_id: string;
-  update_envelope: string;
-  accepted_update_hash: string;
-  actor_id: string | null;
-  principal_id: string | null;
-  session_id: string | null;
-  server_id: string | null;
-  authorization_scope: string;
-  accepted_at_ts: Date | string;
-}>;
-
-type CrdtSnapshotRow = Readonly<{
-  snapshot_envelope: string;
 }>;
 
 export class PSqlCrdtLogRepository<
@@ -100,7 +69,9 @@ export class PSqlCrdtLogRepository<
     options: PSqlCrdtLogRepositoryOptions = {},
   ) {
     this.now = options.now ?? Date.now;
-    this.policies = options.policies ?? [];
+    this.policies = options.policies?.length
+      ? options.policies
+      : [{ documentType: '*', rollout: 'disabled' }];
     this.audit = options.audit;
   }
 
@@ -120,11 +91,12 @@ export class PSqlCrdtLogRepository<
     input: RallarCrdtListUpdatesInput,
   ): Promise<RallarCrdtUpdatePage<TPayload>> {
     const documentKey = toRallarCrdtDocumentKey(input.document);
+    const metadata = await this.readDocumentMetadata(input.document);
     const afterSequence = input.afterSequence ??
       fromRallarCrdtAppendCursor(input.afterCursor) ??
       0;
     const limit = Math.max(0, input.limit ?? 100);
-    const rows = await this.sql<CrdtUpdateRow[]>`
+    const rows = await this.sql<UpdateRow[]>`
             select document_key,
                    append_sequence,
                    update_id,
@@ -142,8 +114,11 @@ export class PSqlCrdtLogRepository<
             order by append_sequence
             limit ${limit + 1}
         `;
+    if (!metadata && rows.length > 0) {
+      throw new TypeError('CRDT persisted update has no document');
+    }
     const selected = rows.slice(0, limit);
-    const records = selected.map((row) => toUpdateRecord<TPayload>(row, input.document));
+    const records = selected.map((row) => toRecord<TPayload>(row, input.document));
     const lastSequence = records.at(-1)?.append.appendSequence;
 
     return {
@@ -159,18 +134,34 @@ export class PSqlCrdtLogRepository<
   async readSnapshot(
     document: RallarCrdtDocumentRef,
   ): Promise<RallarCrdtSnapshotEnvelope<TValue> | undefined> {
-    const rows = await this.sql<CrdtSnapshotRow[]>`
-            select snapshot_envelope
+    const documentKey = toRallarCrdtDocumentKey(document);
+    const metadata = await this.readDocumentMetadata(document);
+    const rows = await this.sql<SnapshotRow[]>`
+            select document_key, snapshot_id, append_sequence, snapshot_envelope,
+                   created_at_ts, reason,
+                   sum(octet_length(snapshot_envelope)) over () as snapshot_bytes,
+                   count(*) over () as snapshot_count
             from crdt_snapshots
-            where document_key = ${toRallarCrdtDocumentKey(document)}
+            where document_key = ${documentKey}
             order by append_sequence desc, created_at_ts desc
             limit 1
         `;
-
+    if (!metadata) {
+      if (rows.length > 0) {
+        throw new TypeError('CRDT persisted snapshot has no document');
+      }
+      return undefined;
+    }
+    if (Number(rows[0]?.snapshot_count ?? 0) !== metadata.snapshotCount) {
+      throw new TypeError('CRDT persisted snapshot count differs from document');
+    }
     return rows[0]
-      ? (JSON.parse(
-        rows[0].snapshot_envelope,
-      ) as RallarCrdtSnapshotEnvelope<TValue>)
+      ? toSnapshot(
+        rows[0],
+        documentKey,
+        document,
+        metadata.lastAppendSequence,
+      ) as RallarCrdtSnapshotEnvelope<TValue>
       : undefined;
   }
 
@@ -186,6 +177,7 @@ export class PSqlCrdtLogRepository<
     return await readDocumentMetadataByKey(
       this.sql,
       toRallarCrdtDocumentKey(document),
+      document,
     );
   }
 
@@ -198,8 +190,13 @@ export class PSqlCrdtLogRepository<
   async listDocuments(
     input: RallarCrdtListDocumentsInput = {},
   ): Promise<RallarCrdtDocumentAdminPage> {
-    const rows = await this.sql<CrdtDocumentRow[]>`
+    const rows = await this.sql<DocumentRow[]>`
             select document_key,
+                   application_id,
+                   workspace_id,
+                   document_scope,
+                   document_type,
+                   document_id,
                    document_ref,
                    document_revision,
                    lifecycle,
@@ -219,7 +216,7 @@ export class PSqlCrdtLogRepository<
         `;
     const limit = Math.max(0, input.limit ?? 100);
     const documents = rows
-      .map(toDocumentMetadata)
+      .map(toStoredMetadata)
       .filter((metadata) => matchesDocumentListInput(metadata, input));
     const startIndex = input.cursor
       ? documents.findIndex(
@@ -350,20 +347,11 @@ export class PSqlCrdtLogRepository<
   }
 
   private rolloutFor(document: RallarCrdtDocumentRef) {
-    return (
-      this.policies.find(
-        (policy) =>
-          (policy.documentType === '*' ||
-            policy.documentType === document.documentType) &&
-          (policy.scope === undefined ||
-            policy.scope === 'any' ||
-            policy.scope === document.scope) &&
-          (policy.applicationId === undefined ||
-            policy.applicationId === document.applicationId) &&
-          (policy.workspaceId === undefined ||
-            policy.workspaceId === document.workspaceId),
-      )?.rollout ?? 'production'
-    );
+    return evaluateRallarCrdtFeaturePolicy({
+      document,
+      operation: 'durable-append',
+      policies: this.policies,
+    }).rollout;
   }
 
   private recordAudit(
@@ -401,10 +389,15 @@ function matchesDocumentListInput(
 async function readDocumentMetadataByKey(
   sql: PSqlSql,
   documentKey: string,
-  _forUpdate = false,
+  document: RallarCrdtDocumentRef,
 ): Promise<RallarCrdtDocumentMetadata | undefined> {
-  const rows = await sql<CrdtDocumentRow[]>`
+  const rows = await sql<DocumentRow[]>`
             select document_key,
+                   application_id,
+                   workspace_id,
+                   document_scope,
+                   document_type,
+                   document_id,
                    document_ref,
                    document_revision,
                    lifecycle,
@@ -424,75 +417,5 @@ async function readDocumentMetadataByKey(
             limit 1
         `;
 
-  return rows[0] ? toDocumentMetadata(rows[0]) : undefined;
-}
-
-function toDocumentMetadata(row: CrdtDocumentRow): RallarCrdtDocumentMetadata {
-  return {
-    document: JSON.parse(row.document_ref) as RallarCrdtDocumentRef,
-    documentKey: row.document_key,
-    documentRevision: Number(row.document_revision),
-    lifecycle: row.lifecycle as RallarCrdtDocumentLifecycleState,
-    createdAtEpochMs: toEpochMs(row.created_at_ts),
-    updatedAtEpochMs: toEpochMs(row.updated_at_ts),
-    archivedAtEpochMs: toOptionalEpochMs(row.archived_at_ts) ?? null,
-    destroyedAtEpochMs: toOptionalEpochMs(row.destroyed_at_ts) ?? null,
-    lastAppendSequence: Number(row.last_append_sequence),
-    updateCount: Number(row.update_count),
-    snapshotCount: Number(row.snapshot_count),
-    storedUpdateBytes: Number(row.stored_update_bytes),
-    retention: parseNullableJson<RallarCrdtRetentionPolicy>(
-      row.retention_policy,
-    ) ?? null,
-    quota: parseNullableJson<RallarCrdtQuotaPolicy>(row.quota_policy) ?? null,
-    projectionIds: parseNullableJson<readonly string[]>(row.projection_ids) ?? [],
-  };
-}
-
-function toUpdateRecord<TPayload extends RallarCrdtOperationBatch>(
-  row: CrdtUpdateRow,
-  document: RallarCrdtDocumentRef,
-): RallarCrdtDurableUpdateRecord<TPayload> {
-  return {
-    document,
-    documentKey: row.document_key,
-    update: JSON.parse(
-      row.update_envelope,
-    ) as RallarCrdtUpdateEnvelope<TPayload>,
-    append: toAppendMetadata(row),
-  };
-}
-
-function toAppendMetadata(row: CrdtUpdateRow): RallarCrdtTrustedAppendMetadata {
-  return {
-    appendSequence: Number(row.append_sequence),
-    acceptedAtEpochMs: toEpochMs(row.accepted_at_ts),
-    actorId: requireTrustedId(row.actor_id ?? undefined, 'actorId'),
-    principalId: requireTrustedId(row.principal_id ?? undefined, 'principalId'),
-    sessionId: requireTrustedId(row.session_id ?? undefined, 'sessionId'),
-    serverId: requireTrustedId(row.server_id ?? undefined, 'serverId'),
-    authorizationScope: row.authorization_scope as never,
-    acceptedUpdateHash: row.accepted_update_hash,
-  };
-}
-
-function requireTrustedId(value: string | undefined, label: string): string {
-  if (!value) throw new TypeError(`CRDT trusted ${label} is required`);
-  return value;
-}
-
-function toEpochMs(value: Date | string): number {
-  const timestamp = value instanceof Date ? value.getTime() : Date.parse(value);
-  if (!Number.isFinite(timestamp)) {
-    throw new Error(`Invalid CRDT timestamp: ${String(value)}`);
-  }
-  return timestamp;
-}
-
-function toOptionalEpochMs(value: Date | string | null): number | undefined {
-  return value === null ? undefined : toEpochMs(value);
-}
-
-function parseNullableJson<T>(value: string | null): T | undefined {
-  return value === null ? undefined : (JSON.parse(value) as T);
+  return rows[0] ? toMetadata(rows[0], documentKey, document) : undefined;
 }

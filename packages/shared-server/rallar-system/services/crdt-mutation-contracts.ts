@@ -44,6 +44,7 @@ export type CrdtMutationResponseAudience = Readonly<{
 type CrdtMutationCommandBase = Readonly<{
   version: 1;
   commandId: string;
+  deliveryId: string;
   commandHash: string;
   actor: CrdtMutationActor;
   capturedAtEpochMs: number;
@@ -107,12 +108,16 @@ export type CrdtMutationCommand =
   | CrdtLifecycleCommand
   | CrdtEraseCommand;
 
+type CreateCrdtMutationCommandVariant<T> =
+  & Omit<T, 'version' | 'commandHash' | 'documentKey' | 'deliveryId'>
+  & Readonly<{ deliveryId?: string }>;
+
 export type CreateCrdtMutationCommandInput =
-  | Omit<CrdtAppendCommand, 'version' | 'commandHash' | 'documentKey'>
-  | Omit<CrdtProjectionRebuildCommand, 'version' | 'commandHash' | 'documentKey'>
-  | Omit<CrdtSnapshotCompactCommand, 'version' | 'commandHash' | 'documentKey'>
-  | Omit<CrdtLifecycleCommand, 'version' | 'commandHash' | 'documentKey'>
-  | Omit<CrdtEraseCommand, 'version' | 'commandHash' | 'documentKey'>;
+  | CreateCrdtMutationCommandVariant<CrdtAppendCommand>
+  | CreateCrdtMutationCommandVariant<CrdtProjectionRebuildCommand>
+  | CreateCrdtMutationCommandVariant<CrdtSnapshotCompactCommand>
+  | CreateCrdtMutationCommandVariant<CrdtLifecycleCommand>
+  | CreateCrdtMutationCommandVariant<CrdtEraseCommand>;
 
 export type CrdtMutationRead = Readonly<{
   document: RallarCrdtDocumentMetadata | null;
@@ -165,53 +170,91 @@ export type CrdtMutationComputed =
   | CrdtMutationComputedReplay
   | CrdtMutationComputedRejected;
 
-type CrdtMutationResultBase = Readonly<{
+type CrdtAcceptedMutationResultBase<TOperation extends CrdtMutationCommand['operation']> = Readonly<{
   version: 1;
-  operation: CrdtMutationCommand['operation'];
-  status: 'accepted' | 'replay' | 'rejected';
+  operation: TOperation;
+  status: 'accepted';
+  commandId: string;
+  documentKey: string;
+  documentRevision: number;
+  appendSequence: number;
+  code: null;
+}>;
+
+type CrdtReplayMutationResultBase<TOperation extends CrdtMutationCommand['operation']> = Readonly<{
+  version: 1;
+  operation: TOperation;
+  status: 'replay';
+  commandId: string;
+  documentKey: string;
+  documentRevision: number;
+  appendSequence: number;
+  code: null;
+}>;
+
+type CrdtRejectedMutationResultBase<TOperation extends CrdtMutationCommand['operation']> = Readonly<{
+  version: 1;
+  operation: TOperation;
+  status: 'rejected';
   commandId: string;
   documentKey: string;
   documentRevision: number | null;
-  appendSequence: number | null;
-  code: string | null;
+  appendSequence: null;
+  code: string;
 }>;
 
 export type CrdtAppendMutationResult =
-  & CrdtMutationResultBase
-  & Readonly<{
+  | CrdtAcceptedMutationResultBase<'append'> & Readonly<{
     operation: 'append';
-    appendResult: RallarCrdtAppendResult;
+    appendResult: Extract<RallarCrdtAppendResult, { status: 'accepted' }>;
+  }>
+  | CrdtReplayMutationResultBase<'append'> & Readonly<{
+    appendResult: Extract<RallarCrdtAppendResult, { status: 'duplicate' }>;
+  }>
+  | CrdtRejectedMutationResultBase<'append'> & Readonly<{
+    appendResult: Extract<RallarCrdtAppendResult, { status: 'rejected' }>;
   }>;
 
 export type CrdtCompactMutationResult =
-  & CrdtMutationResultBase
-  & Readonly<{
-    operation: 'compact';
-    snapshot: RallarCrdtSnapshotEnvelope | null;
+  | CrdtAcceptedMutationResultBase<'compact'> & Readonly<{
+    snapshot: RallarCrdtSnapshotEnvelope;
+    metadata: RallarCrdtDocumentMetadata;
+  }>
+  | CrdtRejectedMutationResultBase<'compact'> & Readonly<{
+    snapshot: null;
+    metadata: null;
   }>;
 
 export type CrdtLifecycleMutationResult =
-  & CrdtMutationResultBase
-  & Readonly<{
-    operation: 'lifecycle';
-    metadata: RallarCrdtDocumentMetadata | null;
+  | CrdtAcceptedMutationResultBase<'lifecycle'> & Readonly<{
+    metadata: RallarCrdtDocumentMetadata;
+  }>
+  | CrdtRejectedMutationResultBase<'lifecycle'> & Readonly<{
+    metadata: null;
   }>;
 
 export type CrdtRebuildMutationResult =
-  & CrdtMutationResultBase
-  & Readonly<{
-    operation: 'rebuild-projection';
-    integrity: RallarCrdtIntegrityReport | null;
+  | CrdtAcceptedMutationResultBase<'rebuild-projection'> & Readonly<{
+    integrity: RallarCrdtIntegrityReport;
+    metadata: RallarCrdtDocumentMetadata;
+  }>
+  | CrdtRejectedMutationResultBase<'rebuild-projection'> & Readonly<{
+    integrity: null;
+    metadata: null;
   }>;
 
 export type CrdtEraseMutationResult =
-  & CrdtMutationResultBase
-  & Readonly<{
-    operation: 'erase';
-    request: RallarCrdtErasureRequest | null;
-    auditEvent: RallarCrdtAuditEvent | null;
-    metadata: RallarCrdtDocumentMetadata | null;
+  | CrdtAcceptedMutationResultBase<'erase'> & Readonly<{
+    request: RallarCrdtErasureRequest;
+    auditEvent: RallarCrdtAuditEvent;
+    metadata: RallarCrdtDocumentMetadata;
     redactedBundle: RallarCrdtDebugBundle | null;
+  }>
+  | CrdtRejectedMutationResultBase<'erase'> & Readonly<{
+    request: null;
+    auditEvent: null;
+    metadata: null;
+    redactedBundle: null;
   }>;
 
 export type CrdtMutationResult =

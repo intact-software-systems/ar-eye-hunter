@@ -100,16 +100,17 @@ function toWsOutbox(
   typeId: string,
   payload: unknown,
 ): ResourceEntry {
+  const effectId = effect === 'reply' ? command.deliveryId : command.commandId;
   const message = {
     id: {
       v: 2,
-      msgId: `crdt:${command.commandId}:${effect}`,
+      msgId: `crdt:${effectId}:${effect}`,
       ts: command.capturedAtEpochMs,
       senderId: serviceId,
     },
     route: {
       topicId: command.responseAudience.topicId,
-      resourceId: `crdt:${command.commandId}:${effect}`,
+      resourceId: `crdt:${effectId}:${effect}`,
       contextId: command.responseAudience.contextId,
     },
     targets: toTargets(command, effect),

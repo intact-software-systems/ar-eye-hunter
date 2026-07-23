@@ -72,6 +72,22 @@ export function createApiCrdtInboxService(
     {
       outboxQueueReader: input.outboxQueueReader,
       wakeQueueEngine: input.wakeQueueEngine,
+      resolveCurrentSession: async (sessionId, atEpochMs) => {
+        const session = await input.currentAuthority?.readSession(sessionId);
+        if (!session || session.expiresAtEpochMs <= atEpochMs) {
+          throw Object.assign(new Error('CRDT current session is unavailable'), {
+            code: 'authentication-missing',
+            status: 401,
+          });
+        }
+        if (session.sessionId !== sessionId) {
+          throw Object.assign(new Error('CRDT current session identity differs'), {
+            code: 'authorization-forbidden',
+            status: 403,
+          });
+        }
+        return session;
+      },
     },
   );
 }

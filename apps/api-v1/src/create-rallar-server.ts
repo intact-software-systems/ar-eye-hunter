@@ -45,6 +45,7 @@ import { getApiTimingSink } from './services/timing-service.ts';
 import { createApiV1RoomWsAuthorizer } from './services/ws-topic-room-authorizer.ts';
 import { createCrdtWsMutationIngress } from './services/create-crdt-ws-mutation-ingress.ts';
 import { createApiAdminMutationGateway } from './services/create-api-admin-mutation-gateway.ts';
+import { readConfiguredCrdtPolicies } from './services/create-api-mutation-inbox-factories.ts';
 import * as configRoutes from './routes/config-route.ts';
 import * as wsRoutes from './routes/ws-routes.ts';
 import * as iceRoutes from './routes/ice-route.ts';
@@ -81,11 +82,13 @@ export type CreateRallarServerOptions = Readonly<{
 export function createRallarServer(
   options: CreateRallarServerOptions = {},
 ): RallarServerApplication<Middleware, Hono> {
+  const crdtPolicies = readConfiguredCrdtPolicies();
   const middleware = options.middleware ?? initialiseMiddleware();
   const crdtLogRepository = options.crdtLogRepository ??
     new PSqlCrdtLogRepository(sql as unknown as PSqlSql, {
       serverId: myServerId,
       audit: options.crdtAuditSink,
+      policies: crdtPolicies,
     });
   middleware.appCrdtInboxService?.setAuditSink(options.crdtAuditSink);
   const runtimeStateRepository = createRuntimeStateRepository(sql);
@@ -311,6 +314,8 @@ export function createRallarServer(
             myServerId,
           ),
           allowPrincipalDocuments: true,
+          allowAppDocuments: true,
+          policies: crdtPolicies,
         });
       },
       installWebSocketLifecycle: (runtime) => {

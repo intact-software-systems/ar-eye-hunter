@@ -30,6 +30,7 @@ import { toUnavailableAppInboxFailure } from './app-inbox-failure.ts';
 import { AppInboxService, type AppInboxServiceOptions } from './AppInboxService.ts';
 import { type AppInboxMessageContext, AppInboxType } from './app-inbox-contracts.ts';
 import type { RallarTimingSink } from './timing.ts';
+import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 
 export const ADMIN_APP_INBOX_TOPIC = 'app-inbox.admin-operations';
 
@@ -126,7 +127,7 @@ export class AppAdminInboxService extends AppInboxService {
       requestedBy: input.adminSession.clientId,
       requestedSessionId: input.adminSession.sessionId,
       capturedAtEpochMs,
-      expireAtEpochMs: capturedAtEpochMs + 60_000,
+      expireAtEpochMs: resourceInboxRetryExpiryAtEpochMs(capturedAtEpochMs),
       dryRun: request.dryRun === undefined ? true : requireBoolean(request.dryRun),
       categories,
       appData,

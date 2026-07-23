@@ -9,7 +9,10 @@ import type { AppInboxServiceOptions } from '@shared-server/rallar-system/servic
 import type { RallarTimingSink } from '@shared-server/rallar-system/services/timing.ts';
 import { createApiAdminInboxService } from './create-api-admin-inbox-service.ts';
 import { createApiCrdtInboxService } from './create-api-crdt-inbox-service.ts';
-import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
+import {
+  decodeRallarCrdtDocumentTypePolicies,
+  type RallarCrdtDocumentTypePolicy,
+} from '@shared/crdt/mod.ts';
 
 export type CurrentMutationSession = Readonly<{
   clientId: string;
@@ -112,29 +115,9 @@ export function readConfiguredAdminClientIds(): readonly string[] {
 }
 
 export function readConfiguredCrdtPolicies():
-    | readonly RallarCrdtDocumentTypePolicy[]
-    | undefined {
-    const source = Deno.env.get('RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON');
-    if (!source) return undefined;
-    const value = JSON.parse(source) as unknown;
-    if (!Array.isArray(value)) {
-        throw new TypeError('RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON must be an array');
-    }
-    if (value.length === 0) return undefined;
-    for (const policy of value) {
-        if (
-            !policy || typeof policy !== 'object' || Array.isArray(policy) ||
-            typeof (policy as Record<string, unknown>).documentType !== 'string' ||
-            ![
-                'disabled',
-                'experimental-local',
-                'experimental-live',
-                'durable-beta',
-                'production',
-            ].includes(String((policy as Record<string, unknown>).rollout))
-        ) {
-            throw new TypeError('RALLAR_CRDT document policy is invalid');
-        }
-    }
-    return value as readonly RallarCrdtDocumentTypePolicy[];
+  | readonly RallarCrdtDocumentTypePolicy[]
+  | undefined {
+  const source = Deno.env.get('RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON');
+  if (!source) return undefined;
+  return decodeRallarCrdtDocumentTypePolicies(JSON.parse(source) as unknown);
 }

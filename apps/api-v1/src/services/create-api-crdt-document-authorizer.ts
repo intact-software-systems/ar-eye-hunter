@@ -1,4 +1,5 @@
 import type { ClientPrincipalRef, ClientSnapshot } from '@shared/api/client-types.ts';
+import { DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
@@ -45,17 +46,26 @@ export function createApiCrdtDocumentAuthorizer(
                 command.responseAudience.kind !== 'principal' ||
                 command.responseAudience.contextId !== document.principalId
             ) return denied();
-            if (document.workspaceId === undefined) return allowed();
-            const snapshot = await options.readClientSnapshot({
-                applicationId: document.applicationId,
-                workspaceId: document.workspaceId,
-                principalId: document.principalId,
-            });
-            const active = snapshot?.principal.status === 'active' &&
-                snapshot.activeSessions.some((candidate) =>
-                    candidate.sessionId === session.sessionId && candidate.status === 'active'
-                );
-            return active ? allowed() : denied();
+            return await authorizeCurrentClientDocument(
+                options,
+                document.applicationId,
+                document.workspaceId,
+                document.principalId,
+                session.sessionId,
+            );
+        }
+        if (document.scope === 'app') {
+            if (
+                command.responseAudience.kind !== 'app' ||
+                command.responseAudience.contextId !== document.applicationId
+            ) return denied();
+            return await authorizeCurrentClientDocument(
+                options,
+                document.applicationId,
+                document.workspaceId,
+                command.actor.principalId,
+                session.sessionId,
+            );
         }
         return denied();
     };
@@ -65,13 +75,11 @@ export function findCurrentClientSnapshot(
     cache: ClientStateSnapshotReadThroughCache,
     ref: Readonly<{ applicationId: string; workspaceId?: string; principalId: string }>,
 ): ClientSnapshot | undefined {
-    return ref.workspaceId === undefined
-        ? undefined
-        : cache.findByRef({
-            applicationId: ref.applicationId,
-            workspaceId: ref.workspaceId,
-            principalId: ref.principalId,
-        });
+    return cache.findByRef({
+        applicationId: ref.applicationId,
+        workspaceId: ref.workspaceId ?? DEFAULT_STATE_WORKSPACE_ID,
+        principalId: ref.principalId,
+    });
 }
 
 export function createApiCrdtMutationInboxFactories(input: Readonly<{
@@ -114,4 +122,24 @@ function allowed(): Readonly<{ allowed: true; code: 'allowed' }> {
 
 function denied(): Readonly<{ allowed: false; code: 'authorization-scope-denied' }> {
     return { allowed: false, code: 'authorization-scope-denied' };
+}
+
+async function authorizeCurrentClientDocument(
+    options: ApiCrdtDocumentAuthorizerOptions,
+    applicationId: string,
+    workspaceId: string | undefined,
+    principalId: string,
+    sessionId: string,
+): Promise<ReturnType<typeof allowed> | ReturnType<typeof denied>> {
+    const snapshot = await options.readClientSnapshot({
+        applicationId,
+        workspaceId: workspaceId ?? DEFAULT_STATE_WORKSPACE_ID,
+        principalId,
+    });
+    const active = snapshot?.principal.status === 'active' &&
+        snapshot.activeSessions.some((candidate) =>
+            candidate.sessionId === sessionId && candidate.status === 'active' &&
+            candidate.expiresAtEpochMs > options.nowEpochMs()
+        );
+    return active ? allowed() : denied();
 }

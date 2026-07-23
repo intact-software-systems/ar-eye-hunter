@@ -186,15 +186,17 @@ function productionService(
     options: { nowEpochMs: () => now },
     currentAuthority: {
       readSession: (sessionId) =>
-        Promise.resolve(
-          isAllowed()
-            ? {
-              clientId: 'client-1',
-              sessionId,
-              expiresAtEpochMs: now + 60_000,
-            }
-            : null,
-        ),
+        Promise.resolve({
+          clientId: 'client-1',
+          username: 'client-1',
+          sessionId,
+          expiresAtEpochMs: now + 60_000,
+        }),
+      authorizeDocument: () =>
+        Promise.resolve({
+          allowed: isAllowed(),
+          code: isAllowed() ? 'allowed' : 'authorization-denied',
+        }),
       adminClientIds: ['client-1'],
     },
     policies: allow ? [{ documentType: 'checklist', rollout: 'production' }] : undefined,

@@ -1,0 +1,202 @@
+import assert from 'node:assert/strict';
+import {
+  RALLAR_CRDT_OPERATION_VERSION,
+  RALLAR_CRDT_PROTOCOL_VERSION,
+  type RallarCrdtDocumentRef,
+  type RallarCrdtSnapshotEnvelope,
+  type RallarCrdtUpdateEnvelope,
+} from '@shared/crdt/mod.ts';
+import { PSqlCrdtLogRepository } from '@shared-server/postgres/crdt/PSqlCrdtLogRepository.ts';
+import { PSqlCrdtMutationRepository } from '@shared-server/postgres/crdt/PSqlCrdtMutationRepository.ts';
+import {
+  createCrdtMutationCommand,
+  createCrdtMutationService,
+} from '@shared-server/rallar-system/services/crdt-mutations.ts';
+import { withPGliteSql } from './pglite-auth-test-harness.ts';
+
+const DOCUMENT: RallarCrdtDocumentRef = {
+  applicationId: 'app-1',
+  workspaceId: 'workspace-1',
+  scope: 'room',
+  documentType: 'checklist',
+  documentId: 'document-1',
+  roomRef: {
+    applicationId: 'app-1',
+    workspaceId: 'workspace-1',
+    groupId: 'group-1',
+  },
+};
+
+Deno.test('public CRDT catch-up and debug export decode exact persisted rows', async () => {
+  await withPGliteSql(async (sql) => {
+    await append(sql);
+    await insertSnapshot(sql);
+    const repository = new PSqlCrdtLogRepository(sql, {
+      policies: [{ documentType: 'checklist', rollout: 'production' }],
+    });
+
+    const page = await repository.listAfter({ document: DOCUMENT });
+    const snapshot = await repository.readSnapshot(DOCUMENT);
+    const bundle = await repository.exportDebugBundle(DOCUMENT);
+
+    assert.deepEqual(page.records.map((record) => record.update.updateId), ['update-1']);
+    assert.equal(snapshot?.snapshotId, 'snapshot-1');
+    assert.deepEqual(bundle.records.map((record) => record.update.updateId), ['update-1']);
+  });
+});
+
+Deno.test('public CRDT metadata and admin listing fail closed on physical identity corruption', async () => {
+  await withPGliteSql(async (sql) => {
+    await append(sql);
+    await sql`
+            update crdt_documents set application_id = 'foreign-app'
+        `;
+    const repository = new PSqlCrdtLogRepository(sql);
+
+    await assert.rejects(
+      repository.readDocumentMetadata(DOCUMENT),
+      /document|identity|corrupt/i,
+    );
+    await assert.rejects(
+      repository.listDocuments(),
+      /document|identity|corrupt/i,
+    );
+  });
+});
+
+Deno.test('public CRDT catch-up fails closed on physical update identity corruption', async () => {
+  await withPGliteSql(async (sql) => {
+    await append(sql);
+    await sql`update crdt_updates set update_id = 'physical-update-id'`;
+
+    await assert.rejects(
+      new PSqlCrdtLogRepository(sql).listAfter({ document: DOCUMENT }),
+      /update|identity|corrupt/i,
+    );
+  });
+});
+
+Deno.test('public CRDT snapshot read fails closed on physical snapshot identity corruption', async () => {
+  await withPGliteSql(async (sql) => {
+    await append(sql);
+    await insertSnapshot(sql);
+    await sql`update crdt_snapshots set snapshot_id = 'physical-snapshot-id'`;
+
+    await assert.rejects(
+      new PSqlCrdtLogRepository(sql).readSnapshot(DOCUMENT),
+      /snapshot|identity|corrupt/i,
+    );
+  });
+});
+
+Deno.test('public CRDT integrity and export fail closed instead of reporting corrupt rows', async () => {
+  await withPGliteSql(async (sql) => {
+    await append(sql);
+    await sql`update crdt_updates set accepted_update_hash = 'forged-hash'`;
+    const repository = new PSqlCrdtLogRepository(sql);
+
+    await assert.rejects(
+      repository.exportDebugBundle(DOCUMENT),
+      /update|hash|identity|corrupt/i,
+    );
+    await assert.rejects(
+      repository.verifyIntegrity(DOCUMENT),
+      /update|hash|identity|corrupt/i,
+    );
+  });
+});
+
+async function append(sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0]) {
+  const repository = new PSqlCrdtMutationRepository(
+    sql,
+    () => Promise.resolve(true),
+    [{ documentType: 'checklist', rollout: 'production' }],
+  );
+  const service = createCrdtMutationService({
+    repository,
+    createWriter: (transaction) =>
+      new PSqlCrdtMutationRepository(
+        transaction,
+        () => Promise.resolve(true),
+        [{ documentType: 'checklist', rollout: 'production' }],
+      ),
+    serviceId: 'server-1',
+  });
+  const command = await createCrdtMutationCommand({
+    operation: 'append',
+    commandId: 'command-1',
+    actor: {
+      actorId: 'client-42',
+      principalId: 'alice',
+      sessionId: 'session-99',
+      serverId: 'server-1',
+    },
+    capturedAtEpochMs: 2_000,
+    expireAtEpochMs: 500_000,
+    document: DOCUMENT,
+    responseAudience: {
+      kind: 'room',
+      senderSessionId: 'session-99',
+      topicId: 'crdt.room',
+      contextId: 'group-1',
+    },
+    authorizationScope: 'room',
+    update: update(),
+  });
+  const read = await service.read(command);
+  const computed = service.compute(command, read);
+  service.validate(command, read, computed);
+  await sql.begin(async (transaction) => await service.write(transaction, computed));
+}
+
+async function insertSnapshot(
+  sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0],
+): Promise<void> {
+  const snapshot: RallarCrdtSnapshotEnvelope = {
+    protocolVersion: RALLAR_CRDT_PROTOCOL_VERSION,
+    document: DOCUMENT,
+    snapshotId: 'snapshot-1',
+    schemaVersion: 1,
+    createdAtEpochMs: 3_000,
+    maxLamport: 1,
+    includedUpdateIds: ['update-1'],
+    value: { title: 'one' },
+    metadata: { updateCount: 1, reason: 'test-snapshot' },
+  };
+  const [{ document_key: documentKey }] = await sql<{ document_key: string }[]>`
+        select document_key from crdt_documents
+    `;
+  await sql`
+        insert into crdt_snapshots (
+            document_key, snapshot_id, append_sequence, snapshot_envelope,
+            created_at_ts, reason
+        ) values (
+            ${documentKey}, ${snapshot.snapshotId}, 1, ${JSON.stringify(snapshot)},
+            ${new Date(snapshot.createdAtEpochMs)}, 'test-snapshot'
+        )
+    `;
+  await sql`update crdt_documents set snapshot_count = 1`;
+}
+
+function update(): RallarCrdtUpdateEnvelope {
+  return {
+    protocolVersion: RALLAR_CRDT_PROTOCOL_VERSION,
+    document: DOCUMENT,
+    updateId: 'update-1',
+    replicaId: 'replica-1',
+    lamport: 1,
+    parents: [],
+    schemaVersion: 1,
+    operationVersion: RALLAR_CRDT_OPERATION_VERSION,
+    createdAtEpochMs: 1_000,
+    payload: {
+      kind: 'batch',
+      operations: [{
+        kind: 'register.set',
+        path: ['title'],
+        policy: 'lww',
+        value: 'one',
+      }],
+    },
+  };
+}

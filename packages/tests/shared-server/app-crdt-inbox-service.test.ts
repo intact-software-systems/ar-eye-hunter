@@ -16,6 +16,7 @@ import {
     type RallarCrdtDocumentMetadata,
     type RallarCrdtDocumentRef,
     type RallarCrdtUpdateEnvelope,
+    toRallarCrdtDocumentKey,
 } from '@shared/crdt/mod.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
@@ -162,6 +163,7 @@ describe('CRDT AppInbox mutation contracts', () => {
         repository.metadata = createMetadata({
             lifecycle: 'archived',
             documentRevision: 1,
+            archivedAtEpochMs: 1_000,
         });
         const retried = await compute(service, command);
 
@@ -240,7 +242,7 @@ function createMetadata(
 ): RallarCrdtDocumentMetadata {
     return {
         document: DOCUMENT,
-        documentKey: 'app-1/workspace-1/room/checklist/document-1',
+        documentKey: toRallarCrdtDocumentKey(DOCUMENT),
         documentRevision: 0,
         lifecycle: 'active',
         createdAtEpochMs: 1_000,

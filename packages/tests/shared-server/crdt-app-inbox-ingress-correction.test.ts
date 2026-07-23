@@ -7,6 +7,7 @@ import {
   type RallarCrdtUpdateEnvelope,
 } from '@shared/crdt/mod.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
+import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { AppCrdtInboxService } from '@shared-server/rallar-system/services/AppCrdtInboxService.ts';
@@ -44,7 +45,7 @@ describe('Task 9 CRDT production AppInbox ingress', () => {
 
     const command = JSON.parse(reader.messages[0]!.payload.resource).data;
     expect(command.capturedAtEpochMs).toBe(1_000);
-    expect(command.expireAtEpochMs).toBe(61_000);
+    expect(command.expireAtEpochMs).toBe(resourceInboxRetryExpiryAtEpochMs(1_000));
     expect(command.capturedAtEpochMs).not.toBe(semantic.createdAtEpochMs);
   });
 
@@ -59,7 +60,8 @@ describe('Task 9 CRDT production AppInbox ingress', () => {
 
     const commands = reader.messages.map((message) => JSON.parse(message.payload.resource).data);
     expect(commands[0].update.updateId).toBe(commands[1].update.updateId);
-    expect(commands[0].commandId).not.toBe(commands[1].commandId);
+    expect(commands[0].commandId).toBe(commands[1].commandId);
+    expect(commands[0].deliveryId).not.toBe(commands[1].deliveryId);
     expect(commands[0].actor.sessionId).not.toBe(commands[1].actor.sessionId);
   });
 });

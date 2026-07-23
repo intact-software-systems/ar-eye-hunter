@@ -2,6 +2,7 @@ import { Temporal } from '@js-temporal/polyfill';
 import { describe, expect, it } from 'vitest';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import {
   ADMIN_PRUNE_APP_OUTBOX_TOPIC,
   type AdminPruneExpiredRepository,
@@ -91,7 +92,7 @@ describe('AdminPruneExpiredWork', () => {
     expect(repository.calls[0]).toBe('progress');
     expect(repository.writtenEntries).toHaveLength(1);
     expect(repository.finished).toEqual([entry.key]);
-    expect(computed.next?.expireAtEpochMs).toBe(NOW + 60_000);
+    expect(computed.next?.expireAtEpochMs).toBe(resourceInboxRetryExpiryAtEpochMs(NOW));
   });
 
   it('excludes the currently executing resource-inbox row from its page', async () => {
@@ -176,9 +177,11 @@ describe('AdminPruneExpiredWork', () => {
     const command = decodeAdminPruneWork(entry);
     const computed = work.compute(command, await work.read(command));
 
-    expect(computed.next?.expireAtEpochMs).toBe(NOW + 110_000);
+    expect(computed.next?.expireAtEpochMs).toBe(
+      resourceInboxRetryExpiryAtEpochMs(NOW + 50_000),
+    );
     expect(computed.aggregateSuccessor.audit.expiryTs.epochMilliseconds)
-      .toBe(NOW + 110_000);
+      .toBe(resourceInboxRetryExpiryAtEpochMs(NOW + 50_000));
   });
 
   it('rejects forged multi-category work and page-size widening', () => {
@@ -255,7 +258,12 @@ class MemoryPruneRepository implements AdminPruneExpiredRepository {
       requestedBy: 'admin-1',
       requestedSessionId: 'session-1',
       categories: ['runtime-state', 'resource-inbox', 'resource-inbox-results', 'app-data'],
-      expiredRows: {},
+      expiredRows: {
+        'runtime-state': 3,
+        'resource-inbox': 3,
+        'resource-inbox-results': 3,
+        'app-data': 3,
+      },
     });
     const entry = toAdminPruneAggregateEntry(aggregate);
     return Promise.resolve({ aggregate, resource: entry.resource });

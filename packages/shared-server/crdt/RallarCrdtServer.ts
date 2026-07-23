@@ -50,8 +50,7 @@ export type RallarCrdtServerEnvelopeKind =
 export type RallarCrdtServerTopicScope = 'room' | 'app';
 export type RallarCrdtServerTrustedMetadata = Readonly<{
     senderId: string;
-    principalId: string;
-    sessionId?: string;
+    sessionId: string;
     claimedActorId?: string;
     claimedSessionId?: string;
     receivedAtEpochMs: number;
@@ -765,10 +764,9 @@ function toTrustedMetadata(
 
     return {
         senderId: context.senderId,
-        principalId: context.senderId,
-        sessionId: message.raw.id.sessionId,
+        sessionId: context.senderId,
         claimedActorId: envelope.actorId,
-        claimedSessionId: envelope.sessionId,
+        claimedSessionId: envelope.sessionId ?? message.raw.id.sessionId,
         receivedAtEpochMs: message.receivedAtEpochMs,
         topicId: message.raw.route.topicId,
         typeId: message.raw.payload.typeId,

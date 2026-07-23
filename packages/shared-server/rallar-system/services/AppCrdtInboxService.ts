@@ -34,6 +34,12 @@ import {
 } from './crdt-mutations.ts';
 import type { RallarTimingSink } from './timing.ts';
 import { CRDT_AUDIT_APP_OUTBOX_TYPE } from './crdt-mutation-outbox.ts';
+import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
+import {
+  type AuthenticatedCrdtAppendInput,
+  createAndEnqueueAuthenticatedCrdtAppend,
+  type ResolveCurrentCrdtMutationSession,
+} from './crdt-authenticated-append.ts';
 
 export const CRDT_APP_INBOX_TOPIC = 'app-inbox.crdt-state';
 
@@ -46,6 +52,7 @@ export type CrdtAdminMutationOperation =
 export class AppCrdtInboxService extends AppInboxService {
   private audit: RallarCrdtAuditSink | undefined;
   private readonly wakeQueueEngine: (() => void) | undefined;
+  private readonly resolveCurrentSession: ResolveCurrentCrdtMutationSession | undefined;
 
   constructor(
     public override readonly inbox: InboxQueueReader,
@@ -60,6 +67,7 @@ export class AppCrdtInboxService extends AppInboxService {
       audit?: RallarCrdtAuditSink;
       outboxQueueReader?: OutboxQueueReader;
       wakeQueueEngine?: () => void;
+      resolveCurrentSession?: ResolveCurrentCrdtMutationSession;
     }> = {},
   ) {
     super(
@@ -74,6 +82,7 @@ export class AppCrdtInboxService extends AppInboxService {
     );
     this.audit = effects.audit;
     this.wakeQueueEngine = effects.wakeQueueEngine;
+    this.resolveCurrentSession = effects.resolveCurrentSession;
     effects.outboxQueueReader?.onOutboxMessageDo(CRDT_AUDIT_APP_OUTBOX_TYPE, {
       onMessage: async (message) => {
         if (message.payload.contentType !== 'application/json') {
@@ -103,7 +112,7 @@ export class AppCrdtInboxService extends AppInboxService {
     return await this.processEntryUntilCompletionResult({
       type: toCrdtAppInboxType(decoded),
       topicId: CRDT_APP_INBOX_TOPIC,
-      resourceId: decoded.commandId,
+      resourceId: decoded.deliveryId,
       contextId: decoded.documentKey,
       senderId: decoded.actor.sessionId,
       data: decoded,
@@ -115,7 +124,7 @@ export class AppCrdtInboxService extends AppInboxService {
     this.processEntryNoWaiting({
       type: toCrdtAppInboxType(decoded),
       topicId: CRDT_APP_INBOX_TOPIC,
-      resourceId: decoded.commandId,
+      resourceId: decoded.deliveryId,
       contextId: decoded.documentKey,
       senderId: decoded.actor.sessionId,
       data: decoded,
@@ -134,12 +143,13 @@ export class AppCrdtInboxService extends AppInboxService {
   ): Promise<CrdtAppendCommand> {
     const command = await createCrdtMutationCommand({
       operation: 'append',
-      commandId: input.deliveryId,
+      commandId: input.update.updateId,
+      deliveryId: input.deliveryId,
       actor: input.actor,
       capturedAtEpochMs: input.capturedAtEpochMs,
-      expireAtEpochMs: Math.min(
+      expireAtEpochMs: resourceInboxRetryExpiryAtEpochMs(
+        input.capturedAtEpochMs,
         input.expireAtEpochMs,
-        input.capturedAtEpochMs + 60_000,
       ),
       document: input.update.document,
       responseAudience: input.responseAudience,
@@ -150,12 +160,22 @@ export class AppCrdtInboxService extends AppInboxService {
     await this.enqueueEntryDurably({
       type: toCrdtAppInboxType(command),
       topicId: CRDT_APP_INBOX_TOPIC,
-      resourceId: command.commandId,
+      resourceId: command.deliveryId,
       contextId: command.documentKey,
       senderId: command.actor.sessionId,
       data: command,
     });
     return command;
+  }
+
+  async createAndEnqueueAuthenticatedAppend(
+    input: AuthenticatedCrdtAppendInput,
+  ): Promise<CrdtAppendCommand> {
+    return await createAndEnqueueAuthenticatedCrdtAppend(input, {
+      serviceId: this.serviceId,
+      resolveCurrentSession: this.resolveCurrentSession,
+      enqueue: async (append) => await this.createAndEnqueueAppend(append),
+    });
   }
 
   async processAdminMutationUntilCompletion(
@@ -180,7 +200,7 @@ export class AppCrdtInboxService extends AppInboxService {
     const command = decodeCrdtMutationCommand(input);
     const expectedKey = toAppQueueKey({
       topicId: CRDT_APP_INBOX_TOPIC,
-      resourceId: command.commandId,
+      resourceId: command.deliveryId,
       contextId: command.documentKey,
     });
     if (
@@ -217,7 +237,7 @@ export class AppCrdtInboxService extends AppInboxService {
         serverId: this.serviceId,
       },
       capturedAtEpochMs,
-      expireAtEpochMs: capturedAtEpochMs + 60_000,
+      expireAtEpochMs: resourceInboxRetryExpiryAtEpochMs(capturedAtEpochMs),
       document,
       responseAudience: {
         kind: 'admin' as const,

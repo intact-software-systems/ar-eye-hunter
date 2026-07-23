@@ -751,12 +751,11 @@ export class WsQueueBoxServerService {
 
         switch (targets.mode) {
             case 'unicast': {
-                const resolved = this.targetResolver.resolvePeerRecipients?.(
-                    targets.toPeerId,
-                    message,
-                );
-                if (resolved && resolved.length > 0) {
-                    return dedupRecipients(resolved);
+                if (this.targetResolver.resolvePeerRecipients) {
+                    return dedupRecipients(this.targetResolver.resolvePeerRecipients(
+                        targets.toPeerId,
+                        message,
+                    ));
                 }
 
                 return [{
@@ -794,13 +793,15 @@ export class WsQueueBoxServerService {
             return [];
         }
 
-        const recipients = peerIds.flatMap((peerId) =>
-            this.targetResolver.resolvePeerRecipients?.(peerId, message) ??
-            [{
+        const recipients = peerIds.flatMap((peerId) => {
+            if (this.targetResolver.resolvePeerRecipients) {
+                return this.targetResolver.resolvePeerRecipients(peerId, message);
+            }
+            return [{
                 peerId,
                 connectionId: peerId,
-            }]
-        );
+            }];
+        });
 
         return dedupRecipients(recipients);
     }
@@ -825,13 +826,12 @@ export class WsQueueBoxServerService {
         message: ALMessage,
         encoded?: EncodedJsonWebSocketMessage,
     ): number {
-        const recipients =
-            this.targetResolver.resolvePeerRecipients?.(peerId, message) ??
-            [];
-        const deduped = recipients.length > 0 ? dedupRecipients(recipients) : [{
-            peerId,
-            connectionId: peerId,
-        }];
+        const deduped = this.targetResolver.resolvePeerRecipients
+            ? dedupRecipients(this.targetResolver.resolvePeerRecipients(peerId, message))
+            : [{
+                peerId,
+                connectionId: peerId,
+            }];
 
         const encodedMessage = encoded ?? this.tryEncodeDirectMessage(message);
         if (!encodedMessage) {

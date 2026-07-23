@@ -55,8 +55,29 @@ export function resourceInboxRetryHorizonMs(
     return horizonMs;
 }
 
-export const DEFAULT_RESOURCE_INBOX_RETRY_HORIZON_MS =
-    resourceInboxRetryHorizonMs(DEFAULT_RESOURCE_INBOX_RETRY_POLICY);
+export const DEFAULT_RESOURCE_INBOX_RETRY_HORIZON_MS = resourceInboxRetryHorizonMs(
+    DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
+);
+
+export function resourceInboxRetryExpiryAtEpochMs(
+    capturedAtEpochMs: number,
+    requestedExpireAtEpochMs = capturedAtEpochMs,
+): number {
+    if (
+        !Number.isSafeInteger(capturedAtEpochMs) || capturedAtEpochMs < 0 ||
+        !Number.isSafeInteger(requestedExpireAtEpochMs) ||
+        requestedExpireAtEpochMs < capturedAtEpochMs
+    ) {
+        throw new TypeError('Resource inbox retry expiry input is invalid');
+    }
+    const minimumExpireAtEpochMs = capturedAtEpochMs +
+        DEFAULT_RESOURCE_INBOX_RETRY_HORIZON_MS +
+        RESOURCE_INBOX_RETRY_PROCESSING_MARGIN_MS;
+    if (!Number.isSafeInteger(minimumExpireAtEpochMs)) {
+        throw new RangeError('Resource inbox retry expiry exceeds the safe timestamp range');
+    }
+    return Math.max(requestedExpireAtEpochMs, minimumExpireAtEpochMs);
+}
 
 export function retryAfterAttempt(
     policy: ResourceInboxRetryPolicy,
@@ -71,8 +92,7 @@ export function retryAfterAttempt(
         policy.delaysAfterAttemptMs[attempts - 1] ?? policy.maxDelayMs,
         policy.maxDelayMs,
     );
-    const jitterMultiplier =
-        1 - policy.jitterRatio + (2 * policy.jitterRatio * jitterUnit);
+    const jitterMultiplier = 1 - policy.jitterRatio + (2 * policy.jitterRatio * jitterUnit);
     const delayMs = Math.max(1, Math.round(baseDelayMs * jitterMultiplier));
 
     return { status: 'retry', delayMs };

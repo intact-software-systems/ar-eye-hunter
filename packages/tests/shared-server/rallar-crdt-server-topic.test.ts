@@ -79,7 +79,7 @@ describe('installRallarCrdtWsTopics', () => {
         envelope: update,
         trusted: expect.objectContaining({
           senderId: 'peer-1',
-          principalId: 'peer-1',
+          sessionId: 'peer-1',
           topicId: RALLAR_CRDT_ROOM_TOPIC_ID,
           typeId: RALLAR_CRDT_UPDATE_TYPE_ID,
           roomId: 'room-1',

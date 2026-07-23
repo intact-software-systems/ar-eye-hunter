@@ -31,6 +31,7 @@ import {
 } from './exact-object-codec.ts';
 import { decodeExactDebugBundle } from './crdt-debug-bundle-exact-codec.ts';
 import { decodeExactUpdateEnvelope } from './crdt-update-exact-codec.ts';
+import { appendRejectionReason, toAppendRejectionCode } from './crdt-append-rejection.ts';
 
 export {
   decodeExactDocumentMetadata,
@@ -54,6 +55,7 @@ export async function createCrdtMutationCommand(
 ): Promise<CrdtMutationCommand> {
   const stable = {
     ...input,
+    deliveryId: input.deliveryId ?? input.commandId,
     documentKey: toRallarCrdtDocumentKey(input.document),
     version: 1 as const,
   };
@@ -90,6 +92,7 @@ export function decodeCrdtMutationCommand(value: unknown): CrdtMutationCommand {
   requireExactKeys(command, allowed, 'CRDT mutation command');
   if (command.version !== 1) throw new TypeError('CRDT mutation version is invalid');
   requireString(command.commandId, 'commandId');
+  requireString(command.deliveryId, 'deliveryId');
   requireString(command.commandHash, 'commandHash');
   requireEpoch(command.capturedAtEpochMs, 'capturedAtEpochMs');
   requireEpoch(command.expireAtEpochMs, 'expireAtEpochMs');
@@ -137,11 +140,11 @@ export function decodeCrdtMutationResult(value: unknown): CrdtMutationResult {
   const operationKeys = operation === 'append'
     ? ['appendResult']
     : operation === 'compact'
-    ? ['snapshot']
+    ? ['snapshot', 'metadata']
     : operation === 'lifecycle'
     ? ['metadata']
     : operation === 'rebuild-projection'
-    ? ['integrity']
+    ? ['integrity', 'metadata']
     : ['request', 'auditEvent', 'metadata', 'redactedBundle'];
   requireExactKeys(result, [
     'version',
@@ -155,19 +158,37 @@ export function decodeCrdtMutationResult(value: unknown): CrdtMutationResult {
     ...operationKeys,
   ], 'CRDT mutation result');
   if (result.version !== 1) throw new TypeError('CRDT mutation result version is invalid');
-  requireOneOf(result.status, ['accepted', 'replay', 'rejected'] as const, 'result status');
+  const status = requireOneOf(
+    result.status,
+    ['accepted', 'replay', 'rejected'] as const,
+    'result status',
+  );
+  if (status === 'replay' && operation !== 'append') {
+    throw new TypeError('CRDT mutation replay status is valid only for append');
+  }
   requireString(result.commandId, 'result commandId');
   requireString(result.documentKey, 'result documentKey');
   requireNullableInteger(result.documentRevision, 'result documentRevision');
   requireNullableInteger(result.appendSequence, 'result appendSequence');
   if (result.code !== null) requireString(result.code, 'result code');
+  if (status === 'rejected') {
+    if (result.appendSequence !== null || result.code === null) {
+      throw new TypeError('CRDT rejected result sequence or code is inconsistent');
+    }
+  } else if (
+    result.documentRevision === null || result.appendSequence === null || result.code !== null
+  ) {
+    throw new TypeError('CRDT accepted result revision, sequence, or code is inconsistent');
+  }
   if (operation === 'append') decodeAppendResult(result.appendResult);
-  else if (operation === 'compact' && result.snapshot !== null) {
-    decodeExactSnapshotEnvelope(result.snapshot);
+  else if (operation === 'compact') {
+    if (result.snapshot !== null) decodeExactSnapshotEnvelope(result.snapshot);
+    if (result.metadata !== null) decodeExactDocumentMetadata(result.metadata);
   } else if (operation === 'lifecycle' && result.metadata !== null) {
     decodeExactDocumentMetadata(result.metadata);
-  } else if (operation === 'rebuild-projection' && result.integrity !== null) {
-    decodeExactIntegrityReport(result.integrity);
+  } else if (operation === 'rebuild-projection') {
+    if (result.integrity !== null) decodeExactIntegrityReport(result.integrity);
+    if (result.metadata !== null) decodeExactDocumentMetadata(result.metadata);
   } else if (operation === 'erase') {
     if (result.request !== null) decodeExactErasureRequest(result.request);
     if (result.auditEvent !== null) decodeExactErasureAuditEvent(result.auditEvent);
@@ -209,10 +230,11 @@ function validateResultConsistency(
         trusted.acceptedUpdateHash !== hashRallarCrdtUpdateEnvelope(update)
       ) throw new TypeError('CRDT append result document, revision, or sequence differs');
     } else {
-      const update = append.update as RallarCrdtUpdateEnvelope | undefined;
+      const update = append.update as RallarCrdtUpdateEnvelope;
       const document = append.document as RallarCrdtDocumentMetadata | undefined;
       if (
-        (update && toRallarCrdtDocumentKey(update.document) !== result.documentKey) ||
+        toRallarCrdtDocumentKey(update.document) !== result.documentKey ||
+        ((result.documentRevision === null) !== (document === undefined)) ||
         (document && (
           document.documentKey !== result.documentKey ||
           document.documentRevision !== result.documentRevision
@@ -221,15 +243,23 @@ function validateResultConsistency(
     }
     return;
   }
-  const nested = operation === 'compact'
-    ? result.snapshot
-    : operation === 'lifecycle'
-    ? result.metadata
-    : operation === 'rebuild-projection'
-    ? result.integrity
-    : result.request;
-  if (rejected !== (nested === null)) {
-    throw new TypeError(`CRDT ${operation} result status and payload are inconsistent`);
+  if (operation === 'compact' || operation === 'lifecycle' || operation === 'rebuild-projection') {
+    const metadata = result.metadata as RallarCrdtDocumentMetadata | null;
+    const operationPayload = operation === 'compact'
+      ? result.snapshot
+      : operation === 'rebuild-projection'
+      ? result.integrity
+      : metadata;
+    if (rejected !== (metadata === null) || rejected !== (operationPayload === null)) {
+      throw new TypeError(`CRDT ${operation} result status and payload are inconsistent`);
+    }
+    if (
+      !rejected && (
+        metadata!.documentKey !== result.documentKey ||
+        metadata!.documentRevision !== result.documentRevision ||
+        metadata!.lastAppendSequence !== result.appendSequence
+      )
+    ) throw new TypeError(`CRDT ${operation} result metadata revision or sequence differs`);
   }
   if (!rejected && operation === 'lifecycle') {
     const metadata = result.metadata as RallarCrdtDocumentMetadata;
@@ -252,6 +282,9 @@ function validateResultConsistency(
     }
   }
   if (!rejected && operation === 'erase') {
+    if (result.request === null || result.auditEvent === null || result.metadata === null) {
+      throw new TypeError('CRDT erase accepted result payload is inconsistent');
+    }
     const request = result.request as Record<string, unknown>;
     const auditEvent = result.auditEvent as Record<string, unknown>;
     const metadata = result.metadata as RallarCrdtDocumentMetadata;
@@ -268,9 +301,15 @@ function validateResultConsistency(
       auditEvent.kind !== (mode === 'redact-payloads' ? 'redact' : 'erase') ||
       metadata.documentKey !== result.documentKey ||
       metadata.documentRevision !== result.documentRevision ||
+      metadata.lastAppendSequence !== result.appendSequence ||
       (bundle !== null && bundle.documentKey !== result.documentKey) ||
       (bundle !== null) !== (mode === 'redact-payloads')
     ) throw new TypeError('CRDT erase result document or revision differs');
+  } else if (rejected && operation === 'erase') {
+    if (
+      result.request !== null || result.auditEvent !== null || result.metadata !== null ||
+      result.redactedBundle !== null
+    ) throw new TypeError('CRDT erase rejected result payload is inconsistent');
   }
 }
 
@@ -290,18 +329,27 @@ function decodeAppendResult(value: unknown): void {
   }
   const keys = [
     'status',
+    'update',
     'code',
     'reason',
     'retryable',
-    ...('update' in append ? ['update'] : []),
     ...('validation' in append ? ['validation'] : []),
     ...('document' in append ? ['document'] : []),
   ];
   requireExactKeys(append, keys, 'CRDT append rejection');
   requireString(append.code, 'append rejection code');
   requireString(append.reason, 'append rejection reason');
+  const code = append.code;
+  const reason = append.reason;
+  const supportedCode = toAppendRejectionCode(code);
+  if (supportedCode !== code) {
+    throw new TypeError('CRDT append rejection code is invalid');
+  }
+  if (appendRejectionReason(supportedCode) !== reason) {
+    throw new TypeError('CRDT append rejection reason differs from code');
+  }
   if (typeof append.retryable !== 'boolean') throw new TypeError('append retryable is invalid');
-  if ('update' in append) decodeExactUpdateEnvelope(append.update);
+  decodeExactUpdateEnvelope(append.update);
   if ('validation' in append) decodeExactValidationResult(append.validation);
   if ('document' in append) decodeExactDocumentMetadata(append.document);
 }
@@ -376,6 +424,7 @@ const commonCommandKeys = [
   'version',
   'operation',
   'commandId',
+  'deliveryId',
   'commandHash',
   'actor',
   'capturedAtEpochMs',

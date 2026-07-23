@@ -5,32 +5,26 @@ import type {
 
 export function createCrdtWsMutationIngress(
   appCrdt: AppCrdtInboxService,
-  serverId: string,
+  _serverId: string,
 ): RallarCrdtServerMutationIngress {
   return {
     enqueueUpdate: async (accepted) => {
       const trusted = accepted.trusted;
-      await appCrdt.createAndEnqueueAppend({
+      await appCrdt.createAndEnqueueAuthenticatedAppend({
         update: accepted.envelope,
-        deliveryId: `${trusted.sessionId ?? trusted.senderId}:${accepted.raw.id.msgId}`,
-        actor: {
-          actorId: trusted.senderId,
-          principalId: trusted.principalId,
-          sessionId: trusted.sessionId ?? trusted.senderId,
-          serverId,
-        },
+        deliveryId: accepted.raw.id.msgId,
+        trustedSessionId: trusted.sessionId,
         responseAudience: {
           kind: accepted.envelope.document.scope === 'room'
             ? 'room'
             : accepted.envelope.document.scope === 'principal'
             ? 'principal'
             : 'app',
-          senderSessionId: trusted.sessionId ?? trusted.senderId,
           topicId: accepted.raw.route.topicId,
           contextId: accepted.raw.route.contextId,
         },
         capturedAtEpochMs: trusted.receivedAtEpochMs,
-        expireAtEpochMs: trusted.receivedAtEpochMs + 60_000,
+        expireAtEpochMs: trusted.receivedAtEpochMs,
       });
     },
   };

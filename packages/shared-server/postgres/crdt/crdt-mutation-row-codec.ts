@@ -7,10 +7,11 @@ import {
   type RallarCrdtDocumentTypePolicy,
   type RallarCrdtDurableUpdateRecord,
   type RallarCrdtFeatureDecision,
+  type RallarCrdtOperationBatch,
   type RallarCrdtQuotaPolicy,
   type RallarCrdtRetentionPolicy,
   type RallarCrdtSnapshotEnvelope,
-  type RallarCrdtTrustedAppendMetadata,
+  type RallarCrdtUpdateEnvelope,
   toRallarCrdtDocumentKey,
   validateRallarCrdtSnapshotEnvelope,
 } from '@shared/crdt/mod.ts';
@@ -132,11 +133,18 @@ export function toMetadata(
   });
 }
 
-export function toRecord(
+export function toStoredMetadata(row: DocumentRow): RallarCrdtDocumentMetadata {
+  const document = decodeDocumentRef(row.document_ref);
+  return toMetadata(row, row.document_key, document);
+}
+
+export function toRecord<TPayload extends RallarCrdtOperationBatch>(
   row: UpdateRow,
   document: RallarCrdtDocumentRef,
-): RallarCrdtDurableUpdateRecord {
-  const update = decodeExactUpdateEnvelope(JSON.parse(row.update_envelope));
+): RallarCrdtDurableUpdateRecord<TPayload> {
+  const update = decodeExactUpdateEnvelope(
+    JSON.parse(row.update_envelope),
+  ) as RallarCrdtUpdateEnvelope<TPayload>;
   const expectedKey = toRallarCrdtDocumentKey(document);
   const appendSequence = Number(row.append_sequence);
   const acceptedAtEpochMs = new Date(row.accepted_at_ts).getTime();

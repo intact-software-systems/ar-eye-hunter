@@ -61,7 +61,7 @@ export class PSqlAdminPruneExpiredRepository implements AdminPruneExpiredReposit
         const rows = await transaction<{ ris_row_id: number | string }[]>`
             update resource_inbox_results
             set ris_resource = ${next.resource}, ris_status = ${next.status},
-                expire_ts = ${new Date(Number(next.audit.expiryTs.epochMilliseconds))}
+                expire_ts = ${next.audit.expiryTs.toString()}
             where ris_topic_id = ${key.topicId}
               and ris_resource_id = ${key.resourceId}
               and fk_ext_bank_id = ${key.contextId}

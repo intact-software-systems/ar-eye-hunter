@@ -1,5 +1,6 @@
 import type { AdminPruneExpiredCategory } from '@shared/api/admin-operations-types.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import type { PSqlSql, PSqlTransactionSql } from '../../postgres/PostgresSqlClient.ts';
 import { runInTransaction } from '../../postgres/run-in-transaction.ts';
 import {
@@ -171,7 +172,7 @@ export class AdminPruneExpiredWork {
         requestedBy: command.requestedBy,
         requestedSessionId: command.requestedSessionId,
         capturedAtEpochMs: command.capturedAtEpochMs,
-        expireAtEpochMs: read.nowEpochMs + 60_000,
+        expireAtEpochMs: resourceInboxRetryExpiryAtEpochMs(read.nowEpochMs),
         pageSize: command.pageSize,
         afterCursor: cursor,
         pageIndex: command.pageIndex + 1,
@@ -195,7 +196,7 @@ export class AdminPruneExpiredWork {
           ...aggregate,
           expireAtEpochMs: Math.max(
             aggregate.expireAtEpochMs,
-            read.nowEpochMs + 60_000,
+            resourceInboxRetryExpiryAtEpochMs(read.nowEpochMs),
           ),
         },
       ),

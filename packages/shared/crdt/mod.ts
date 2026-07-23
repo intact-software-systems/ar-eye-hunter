@@ -5,5 +5,6 @@ export * from './crdt-document-key.ts';
 export * from './crdt-durable-log.ts';
 export * from './crdt-encryption.ts';
 export * from './crdt-hardening.ts';
+export * from './crdt-policy-codec.ts';
 export * from './crdt-hash.ts';
 export * from './crdt-operations.ts';
