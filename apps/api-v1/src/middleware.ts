@@ -24,6 +24,8 @@ import { installQueueBoxPubSubBridge } from '@shared-server/rallar-system/pubsub
 import { AppClientInboxService } from '@shared-server/rallar-system/services/AppClientInboxService.ts';
 import { AppGroupInboxService } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 import { AppAuthInboxService } from '@shared-server/rallar-system/services/AppAuthInboxService.ts';
+import { createApiCrdtInboxService } from './services/create-api-crdt-inbox-service.ts';
+import { createApiAdminInboxService } from './services/create-api-admin-inbox-service.ts';
 import { createAuthMutationService } from '@shared-server/rallar-system/services/auth-state-mutations.ts';
 import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/services/auth-credential-issuer.ts';
 import { AppOutboxType } from '@shared-server/rallar-system/services/AppOutboxService.ts';
@@ -98,20 +100,16 @@ import {
 } from '@shared-server/rallar-system/pubsub/RtcTopologyClusterTransport.ts';
 import { createApiV1RtcTopologyClusterTransport } from './db/api-v1-rtc-topology-cluster-transport.ts';
 import { requireApiMiddleware, type Middleware } from './middleware-contract.ts';
-
 export type { Middleware } from './middleware-contract.ts';
-
 let middleware: Middleware | undefined = undefined;
 const runtimeStateExpiryLifecycle = createRuntimeStateExpiryLifecycle();
 const middlewareBackgroundTaskStops = new Set<() => void>();
-
 export function getMiddleware(): Middleware {
   if (middleware === undefined) {
     throw new Error('Middleware not initialised');
   }
   return middleware;
 }
-
 export function initialiseMiddleware() {
   shutdownMiddlewareBackgroundTasks();
   const expiryStartupGeneration = runtimeStateExpiryLifecycle
@@ -119,19 +117,16 @@ export function initialiseMiddleware() {
   middleware = initialise(expiryStartupGeneration);
   return middleware;
 }
-
 export function shutdownMiddlewareBackgroundTasks(): void {
   const stops = [...middlewareBackgroundTaskStops];
   middlewareBackgroundTaskStops.clear();
   for (const stop of stops) stop();
   runtimeStateExpiryLifecycle.stop();
 }
-
 export function registerMiddlewareBackgroundTask(stop: () => void): () => void {
   middlewareBackgroundTaskStops.add(stop);
   return () => middlewareBackgroundTaskStops.delete(stop);
 }
-
 function initialise(
   expiryStartupGeneration: ReturnType<
     typeof runtimeStateExpiryLifecycle.beginStartupGeneration
@@ -183,7 +178,6 @@ function initialise(
     ),
     server: webSocketServer,
   });
-
   configureServerWsQBoxALRuntimeStores(wsRuntimeName, { sql: postgresSql });
   initResourceInboxExpiryEviction(queueBox.repo).catch((e) =>
     console.error('Failed to initialise resource inbox expiry eviction:', e)
@@ -226,7 +220,6 @@ function initialise(
       e,
     )
   );
-
   const runtime = createRallarMiddleware({
     inbox: queueBox,
     outbox: queueBox,
@@ -347,6 +340,17 @@ function initialise(
         timing,
         appInboxOptions,
       ),
+    createAppCrdtInboxService: ({ inboxQueueReader }) =>
+      createApiCrdtInboxService({
+        inboxQueueReader, resourceInboxRepository, resourceInboxResultsRepository,
+        database: postgresSql, serviceId: myServerId, timing, options: appInboxOptions,
+      }),
+    createAppAdminInboxService: ({ inboxQueueReader, outboxQueueReader, wakeQueueEngine }) =>
+      createApiAdminInboxService({
+        inboxQueueReader, outboxQueueReader, wakeQueueEngine,
+        resourceInboxRepository, resourceInboxResultsRepository,
+        database: postgresSql, serviceId: myServerId, timing, options: appInboxOptions,
+      }),
     resilience: {
       inbox: resilienceInbox,
       outbox: resilienceOutbox,
@@ -393,7 +397,6 @@ function initialise(
     rtcTopologyPublicationFanout,
     readiness: rtcTopologyPublicationFanout.readiness,
   });
-
   if (shouldInstallQueuePubSubBridge(pubSubConfig)) {
     installQueueBoxPubSubBridge({
       wsQBoxServerService: runtime.wsQBoxServerService,
@@ -404,16 +407,13 @@ function initialise(
       timing,
     });
   }
-
   initPresenceExpiryReconciliation({
     appClientInboxService: runtime.appClientInboxService,
     appGroupInboxService: runtime.appGroupInboxService,
   })
     .catch((e) => console.error('Failed to initialise presence expiry reconciliation:', e));
-
   return requireApiMiddleware(runtime);
 }
-
 function readRequiredAuthCredentialSecret(): string {
   const secret = Deno.env.get('RALLAR_AUTH_CREDENTIAL_SECRET')?.trim();
   if (!secret) {

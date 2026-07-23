@@ -42,24 +42,21 @@ import {
   readAdminCrdtErasureMode,
   readAdminCrdtLifecycle,
 } from './crdt-admin-validation.ts';
-
+import type { AdminOperationsMutationGateway } from './admin-operations-mutation-gateway.ts';
 export type AdminOperationsReadInput = Readonly<{
   adminSession: AuthSession;
   scope?: StateScope;
 }>;
-
 export type AdminOperationsWriteInput<TRequest> = Readonly<{
   adminSession: AuthSession;
   request: TRequest;
 }>;
-
 export type AdminOperationsStatsReader = Readonly<{
   readQueues(input: AdminOperationsReadInput): Promise<AdminOperationsQueuesResponse>;
   readState(input: AdminOperationsReadInput): Promise<AdminOperationsStateResponse>;
   readCrdt(input: AdminOperationsReadInput): Promise<AdminOperationsCrdtResponse>;
   readSystem(input: AdminOperationsReadInput): Promise<AdminOperationsSystemResponse>;
 }>;
-
 export type AdminOperationsPruner = Readonly<{
   countExpired(
     category: AdminPruneExpiredCategory,
@@ -70,18 +67,15 @@ export type AdminOperationsPruner = Readonly<{
     options: AdminPruneExpiredOptions,
   ): Promise<number>;
 }>;
-
 export type AdminPruneExpiredOptions = Readonly<{
   appData?: Readonly<{
     namespace?: string;
     storeName?: string;
   }>;
 }>;
-
 export type AdminOperationsTopologyManagement = Readonly<{
   reconfigureGroupTopology(input: unknown): Promise<unknown>;
 }>;
-
 export type AdminOperationsServiceOptions = Readonly<{
   now: () => number;
   serverId?: string;
@@ -94,6 +88,7 @@ export type AdminOperationsServiceOptions = Readonly<{
   crdtAdminRepository?: Partial<RallarCrdtAdminLogRepository>;
   crdtAuditSink?: RallarCrdtAuditSink;
   timing?: RallarTimingSink;
+  mutationGateway?: AdminOperationsMutationGateway;
 }>;
 
 export type AdminRealtimeWsStatus = Readonly<{
@@ -241,6 +236,7 @@ export class AdminOperationsService {
   async recomputeTopology(
     input: AdminOperationsWriteInput<AdminTopologyRecomputeRequest>,
   ): Promise<AdminOperationResultResponse> {
+    if (this.options.mutationGateway) return await this.options.mutationGateway.recomputeTopology(input) as AdminOperationResultResponse;
     return await this.timeWrite('topology.recompute', input, async () => {
       if (!input.request.groupRef) {
         throw new Error('Admin topology recompute requires groupRef.');
@@ -269,6 +265,7 @@ export class AdminOperationsService {
   async pruneExpired(
     input: AdminOperationsWriteInput<AdminPruneExpiredRequest>,
   ): Promise<AdminOperationResultResponse> {
+    if (this.options.mutationGateway) return await this.options.mutationGateway.pruneExpired(input) as AdminOperationResultResponse;
     return await this.timeWrite('maintenance.prune-expired', input, async () => {
       if (!this.options.pruner) {
         throw new Error('Admin expiry pruning is not configured.');
@@ -340,6 +337,7 @@ export class AdminOperationsService {
   }
 
   async compactCrdt(input: AdminOperationsWriteInput<unknown>): Promise<unknown> {
+    if (this.options.mutationGateway) return await this.options.mutationGateway.compactCrdt(input);
     return await this.timeWrite('crdt.compact', input, async () => {
       const repository = this.requireCrdtRepository('writeSnapshot');
       const body = readObject(input.request) as {
@@ -378,6 +376,7 @@ export class AdminOperationsService {
   async updateCrdtLifecycle(
     input: AdminOperationsWriteInput<RallarCrdtLifecycleInput>,
   ): Promise<unknown> {
+    if (this.options.mutationGateway) return await this.options.mutationGateway.updateCrdtLifecycle(input);
     return await this.timeWrite('crdt.lifecycle', input, async () => {
       const body = readObject(input.request);
       const lifecycle = readAdminCrdtLifecycle(body.lifecycle);
@@ -391,6 +390,7 @@ export class AdminOperationsService {
   }
 
   async eraseCrdt(input: AdminOperationsWriteInput<unknown>): Promise<unknown> {
+    if (this.options.mutationGateway) return await this.options.mutationGateway.eraseCrdt(input);
     return await this.timeWrite('crdt.erase', input, async () => {
       const body = readObject(input.request) as {
         document?: RallarCrdtDocumentRef;

@@ -114,6 +114,7 @@ model crdt_documents {
   document_type        String
   document_id          String
   document_ref         String
+  document_revision    BigInt    @default(0)
   lifecycle            String    @default("active")
   created_at_ts        DateTime  @default(now()) @db.Timestamptz(6)
   updated_at_ts        DateTime  @default(now()) @db.Timestamptz(6)

@@ -164,6 +164,7 @@ CREATE TABLE IF NOT EXISTS crdt_documents
     document_type        text                     NOT NULL,
     document_id          text                     NOT NULL,
     document_ref         text                     NOT NULL,
+    document_revision    bigint                   NOT NULL DEFAULT 0,
     lifecycle            text                     NOT NULL DEFAULT 'active',
     created_at_ts        timestamp with time zone NOT NULL DEFAULT now(),
     updated_at_ts        timestamp with time zone NOT NULL DEFAULT now(),

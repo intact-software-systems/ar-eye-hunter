@@ -1,7 +1,6 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import {
-    RALLAR_CRDT_APPEND_RESPONSE_TYPE_ID,
     RALLAR_CRDT_APP_TOPIC_ID,
     RALLAR_CRDT_CATCH_UP_REQUEST_TYPE_ID,
     RALLAR_CRDT_CATCH_UP_RESPONSE_TYPE_ID,
@@ -11,7 +10,6 @@ import {
     RALLAR_CRDT_UPDATE_TYPE_ID,
     RALLAR_CRDT_PROTOCOL_VERSION,
     evaluateRallarCrdtFeaturePolicy,
-    type RallarCrdtAppendResponseEnvelope,
     type RallarCrdtCatchUpRequestEnvelope,
     type RallarCrdtCatchUpResponseEnvelope,
     type RallarCrdtDocumentRef,
@@ -41,19 +39,16 @@ import type {
     RallarServerWsMessageContext,
     RallarServerWsTopicDefinition,
 } from '../rallar-facade/ws-topic-router.ts';
-
+import { appendLegacyRallarCrdtWsUpdate } from './LegacyRallarCrdtWsAppend.ts';
 export const RALLAR_CRDT_SERVER_DEFAULT_MAX_UPDATE_BYTES = 16 * 1024;
 export const RALLAR_CRDT_SERVER_DEFAULT_MAX_SYNC_BYTES = 64 * 1024;
-
 export type RallarCrdtServerEnvelopeKind =
     | 'update'
     | 'sync-request'
     | 'sync-response'
     | 'catch-up-request'
     | 'catch-up-response';
-
 export type RallarCrdtServerTopicScope = 'room' | 'app';
-
 export type RallarCrdtServerTrustedMetadata = Readonly<{
     senderId: string;
     principalId: string;
@@ -66,7 +61,6 @@ export type RallarCrdtServerTrustedMetadata = Readonly<{
     roomId?: string;
     roomRef?: GroupRef;
 }>;
-
 export type RallarCrdtServerAcceptedEnvelope =
     | Readonly<{
           kind: 'update';
@@ -96,9 +90,13 @@ export type RallarCrdtServerAcceptedEnvelope =
           kind: 'catch-up-response';
           envelope: RallarCrdtCatchUpResponseEnvelope;
           trusted: RallarCrdtServerTrustedMetadata;
-          raw: ALMessage;
+	      raw: ALMessage;
       }>;
-
+export type RallarCrdtServerMutationIngress = Readonly<{
+    enqueueUpdate(
+        accepted: Extract<RallarCrdtServerAcceptedEnvelope, { kind: 'update' }>,
+    ): Promise<void>;
+}>;
 export type RallarCrdtServerDocumentAuthorizationInput = Readonly<{
     kind: RallarCrdtServerEnvelopeKind;
     document: RallarCrdtDocumentRef;
@@ -106,7 +104,6 @@ export type RallarCrdtServerDocumentAuthorizationInput = Readonly<{
     trusted: RallarCrdtServerTrustedMetadata;
     raw: ALMessage;
 }>;
-
 export type RallarCrdtServerTopicBridgeOptions = Readonly<{
     allowedDocumentTypes?: readonly string[];
     allowedSchemaVersions?: readonly number[];
@@ -118,6 +115,7 @@ export type RallarCrdtServerTopicBridgeOptions = Readonly<{
     allowAppDocuments?: boolean;
     allowPrincipalDocuments?: boolean;
     logRepository?: RallarCrdtUpdateLogRepository;
+    mutationIngress?: RallarCrdtServerMutationIngress;
     policies?: readonly RallarCrdtDocumentTypePolicy[];
     resolvePrincipalSessionIds?: (
         input: RallarCrdtServerPrincipalFanoutInput,
@@ -129,32 +127,27 @@ export type RallarCrdtServerTopicBridgeOptions = Readonly<{
         accepted: RallarCrdtServerAcceptedEnvelope,
     ) => void | Promise<void>;
 }>;
-
 export type RallarCrdtServerPrincipalFanoutInput = Readonly<{
     document: RallarCrdtDocumentRef;
     update: RallarCrdtUpdateEnvelope;
     trusted: RallarCrdtServerTrustedMetadata;
     raw: ALMessage;
 }>;
-
 export type RallarCrdtServerTopicBridge = Readonly<{
     topicIds: readonly string[];
     definitions: readonly RallarServerWsTopicDefinition[];
     unsubscribeHandlers(): void;
 }>;
-
 export type RallarCrdtServerWsTopicInstaller = Pick<
     RallarServerWsFacade,
     'defineTopic' | 'on'
 >;
-
 export type RallarCrdtServerLiveValidationContext = Readonly<{
     topicId: string;
     typeId: string;
     roomId?: string;
     roomRef?: GroupRef;
 }>;
-
 export function installRallarCrdtWsTopics(
     ws: RallarCrdtServerWsTopicInstaller,
     options: RallarCrdtServerTopicBridgeOptions = {},
@@ -171,11 +164,10 @@ export function installRallarCrdtWsTopics(
         createRallarCrdtTopicDefinition('catch-up-request', 'app', options),
         createRallarCrdtTopicDefinition('catch-up-response', 'app', options),
     ];
-
     definitions.forEach((definition) => ws.defineTopic(definition));
 
     const shouldInstallHandlers =
-        options.onAcceptedEnvelope || options.logRepository;
+        options.onAcceptedEnvelope || options.logRepository || options.mutationIngress;
     const unsubscribes = shouldInstallHandlers
         ? definitions.map((definition) =>
               ws.on(
@@ -294,11 +286,19 @@ function createAcceptedEnvelopeHandler(
         if (!kind) {
             return;
         }
-        if (kind === 'update' && options.logRepository) {
-            await appendAndFanOutDurableUpdate(
+        if (kind === 'update' && options.mutationIngress) {
+            await options.mutationIngress.enqueueUpdate({
+                kind,
+                envelope: message.payload as RallarCrdtUpdateEnvelope,
+                trusted: toTrustedMetadata(message, context),
+                raw: message.raw,
+            });
+        } else if (kind === 'update' && options.logRepository) {
+            await appendLegacyRallarCrdtWsUpdate(
                 message as RallarServerWsMessage<RallarCrdtUpdateEnvelope>,
                 context,
                 options,
+                toTrustedMetadata(message, context),
             );
         } else if (kind === 'catch-up-request' && options.logRepository) {
             await respondToDurableCatchUpRequest(
@@ -360,101 +360,6 @@ async function respondToDurableCatchUpRequest(
         ),
         'live-only',
     );
-}
-
-async function appendAndFanOutDurableUpdate(
-    message: RallarServerWsMessage<RallarCrdtUpdateEnvelope>,
-    context: RallarServerWsMessageContext<unknown>,
-    options: RallarCrdtServerTopicBridgeOptions,
-): Promise<void> {
-    const trusted = toTrustedMetadata(message, context);
-    const result = await options.logRepository?.append({
-        update: message.payload,
-        trusted: {
-            actorId: trusted.senderId,
-            principalId: trusted.principalId,
-            sessionId: trusted.sessionId,
-            serverId: context.service.name,
-            authorizationScope: message.payload.document.scope as never,
-        },
-    });
-
-    if (!result) {
-        return;
-    }
-
-    const response: RallarCrdtAppendResponseEnvelope = {
-        protocolVersion: RALLAR_CRDT_PROTOCOL_VERSION,
-        requestId: message.payload.updateId,
-        document: message.payload.document,
-        acceptedAtEpochMs:
-            result.status === 'rejected'
-                ? Date.now()
-                : result.append.acceptedAtEpochMs,
-        results: [result],
-    };
-    await context.proxy.toPeer(
-        context.senderId,
-        newALUntargetedMessage(
-            context.service.name,
-            newALEventRoute(
-                message.raw.route.topicId,
-                message.raw.route.contextId,
-                message.payload.updateId,
-            ),
-            RALLAR_CRDT_APPEND_RESPONSE_TYPE_ID,
-            response,
-        ),
-        'live-only',
-    );
-
-    if (result.status === 'accepted') {
-        if (message.payload.document.scope === 'principal') {
-            await fanOutPrincipalDurableUpdate(message, context, options);
-            return;
-        }
-        await context.proxy.toTargets(
-            message.raw,
-            options.fanout ?? 'live-only',
-        );
-    }
-}
-
-async function fanOutPrincipalDurableUpdate(
-    message: RallarServerWsMessage<RallarCrdtUpdateEnvelope>,
-    context: RallarServerWsMessageContext<unknown>,
-    options: RallarCrdtServerTopicBridgeOptions,
-): Promise<void> {
-    const document = message.payload.document;
-    const sessionIds = await Promise.resolve(
-        options.resolvePrincipalSessionIds?.({
-            document,
-            update: message.payload,
-            trusted: toTrustedMetadata(message, context),
-            raw: message.raw,
-        }) ?? [],
-    );
-    const targetMessage = newALUntargetedMessage(
-        context.service.name,
-        newALEventRoute(
-            RALLAR_CRDT_APP_TOPIC_ID,
-            document.principalId ?? document.documentId,
-            message.payload.updateId,
-        ),
-        RALLAR_CRDT_UPDATE_TYPE_ID,
-        message.payload,
-    );
-
-    for (const sessionId of sessionIds) {
-        if (sessionId === context.senderId) {
-            continue;
-        }
-        await context.proxy.toPeer(
-            sessionId,
-            targetMessage,
-            options.fanout ?? 'live-only',
-        );
-    }
 }
 
 async function authorizeAcceptedEnvelope(

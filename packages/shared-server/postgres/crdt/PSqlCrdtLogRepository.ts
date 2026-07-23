@@ -59,6 +59,7 @@ export type PSqlCrdtLogRepositoryOptions = Readonly<{
 type CrdtDocumentRow = Readonly<{
     document_key: string;
     document_ref: string;
+    document_revision: number | string;
     lifecycle: string;
     created_at_ts: Date | string;
     updated_at_ts: Date | string;
@@ -67,6 +68,7 @@ type CrdtDocumentRow = Readonly<{
     last_append_sequence: number | string;
     update_count: number | string;
     snapshot_count: number | string;
+    stored_update_bytes: number | string;
     retention_policy: string | null;
     quota_policy: string | null;
     projection_ids: string | null;
@@ -133,10 +135,7 @@ export class PSqlCrdtLogRepository<
             });
         }
 
-        return await this.sql.begin(
-            async (tx) =>
-                await this.appendInTransaction(tx, input, startedAtEpochMs),
-        );
+        return await this.appendInTransaction(this.sql, input, startedAtEpochMs);
     }
 
     async appendBatch(
@@ -258,8 +257,8 @@ export class PSqlCrdtLogRepository<
         }
 
         const documentKey = toRallarCrdtDocumentKey(input.snapshot.document);
-        await this.sql.begin(async (tx) => {
-            await ensureDocument(tx, input.snapshot.document, this.now());
+        const tx = this.sql;
+        await ensureDocument(tx, input.snapshot.document, this.now());
             const metadata = await requireDocumentMetadataByKey(
                 tx,
                 documentKey,
@@ -303,7 +302,8 @@ export class PSqlCrdtLogRepository<
             `;
             await tx`
                 update crdt_documents
-                set updated_at_ts  = ${toPgDate(input.snapshot.createdAtEpochMs)},
+                set document_revision = document_revision + 1,
+                    updated_at_ts  = ${toPgDate(input.snapshot.createdAtEpochMs)},
                     snapshot_count = (
                         select count(*)
                         from crdt_snapshots
@@ -311,7 +311,6 @@ export class PSqlCrdtLogRepository<
                     )
                 where document_key = ${documentKey}
             `;
-        });
         if (input.reason?.includes('compact')) {
             this.recordAudit('compact', documentKey, {
                 appendSequence: input.appendSequence,
@@ -336,8 +335,8 @@ export class PSqlCrdtLogRepository<
         const documentKey = toRallarCrdtDocumentKey(input.document);
         const changedAtEpochMs = input.changedAtEpochMs ?? this.now();
 
-        const metadata = await this.sql.begin(async (tx) => {
-            await ensureDocument(tx, input.document, changedAtEpochMs);
+        const tx = this.sql;
+        await ensureDocument(tx, input.document, changedAtEpochMs);
             const current = await requireDocumentMetadataByKey(tx, documentKey);
             const archivedAtEpochMs =
                 lifecycle === 'archived'
@@ -350,10 +349,11 @@ export class PSqlCrdtLogRepository<
 
             await tx`
                 update crdt_documents
-                set lifecycle       = ${lifecycle},
+                set document_revision = document_revision + 1,
+                    lifecycle       = ${lifecycle},
                     updated_at_ts   = ${toPgDate(changedAtEpochMs)},
-                    archived_at_ts  = ${toNullablePgDate(archivedAtEpochMs)},
-                    destroyed_at_ts = ${toNullablePgDate(destroyedAtEpochMs)},
+                    archived_at_ts  = ${toNullablePgDate(archivedAtEpochMs ?? undefined)},
+                    destroyed_at_ts = ${toNullablePgDate(destroyedAtEpochMs ?? undefined)},
                     retention_policy = ${serializeNullableJson(
                         input.retention ?? current.retention,
                     )},
@@ -364,8 +364,7 @@ export class PSqlCrdtLogRepository<
                 where document_key = ${documentKey}
             `;
 
-            return await requireDocumentMetadataByKey(tx, documentKey);
-        });
+        const metadata = await requireDocumentMetadataByKey(tx, documentKey);
         const auditKind = toLifecycleAuditKind(lifecycle);
         if (auditKind) {
             this.recordAudit(auditKind, documentKey, {
@@ -381,6 +380,7 @@ export class PSqlCrdtLogRepository<
         const rows = await this.sql<CrdtDocumentRow[]>`
             select document_key,
                    document_ref,
+                   document_revision,
                    lifecycle,
                    created_at_ts,
                    updated_at_ts,
@@ -389,6 +389,7 @@ export class PSqlCrdtLogRepository<
                    last_append_sequence,
                    update_count,
                    snapshot_count,
+                   stored_update_bytes,
                    retention_policy,
                    quota_policy,
                    projection_ids
@@ -493,7 +494,7 @@ export class PSqlCrdtLogRepository<
             );
         }
 
-        const result = await this.sql.begin(async (tx) => {
+        const tx = this.sql;
             const existing = await readDocumentMetadataByKey(
                 tx,
                 bundle.documentKey,
@@ -563,15 +564,14 @@ export class PSqlCrdtLogRepository<
                 `;
             }
 
-            return {
-                document: bundle.document,
-                documentKey: bundle.documentKey,
-                restoredUpdateCount: bundle.records.length,
-                restoredSnapshot: bundle.snapshot !== undefined,
-                firstAppendSequence: bundle.integrity.firstAppendSequence,
-                lastAppendSequence: bundle.integrity.lastAppendSequence,
-            };
-        });
+        const result = {
+            document: bundle.document,
+            documentKey: bundle.documentKey,
+            restoredUpdateCount: bundle.records.length,
+            restoredSnapshot: bundle.snapshot !== undefined,
+            firstAppendSequence: bundle.integrity.firstAppendSequence,
+            lastAppendSequence: bundle.integrity.lastAppendSequence,
+        };
         this.recordAudit('restore', bundle.documentKey, {
             updateCount: bundle.records.length,
             overwrite: options.overwrite === true,
@@ -798,7 +798,8 @@ export class PSqlCrdtLogRepository<
         `;
         await tx`
             update crdt_documents
-            set last_append_sequence = ${appendSequence},
+            set document_revision    = document_revision + 1,
+                last_append_sequence = ${appendSequence},
                 update_count         = update_count + 1,
                 stored_update_bytes  = stored_update_bytes + ${storedUpdateBytes},
                 updated_at_ts        = ${toPgDate(acceptedAtEpochMs)}
@@ -971,6 +972,7 @@ async function insertDocumentMetadata(
                                     document_type,
                                     document_id,
                                     document_ref,
+                                    document_revision,
                                     lifecycle,
                                     created_at_ts,
                                     updated_at_ts,
@@ -979,6 +981,7 @@ async function insertDocumentMetadata(
                                     last_append_sequence,
                                     update_count,
                                     snapshot_count,
+                                    stored_update_bytes,
                                     retention_policy,
                                     quota_policy,
                                     projection_ids)
@@ -989,14 +992,16 @@ async function insertDocumentMetadata(
                 ${metadata.document.documentType},
                 ${metadata.document.documentId},
                 ${serializeJson(metadata.document)},
+                ${metadata.documentRevision},
                 ${metadata.lifecycle},
                 ${toPgDate(metadata.createdAtEpochMs)},
                 ${toPgDate(metadata.updatedAtEpochMs)},
-                ${toNullablePgDate(metadata.archivedAtEpochMs)},
-                ${toNullablePgDate(metadata.destroyedAtEpochMs)},
+                ${toNullablePgDate(metadata.archivedAtEpochMs ?? undefined)},
+                ${toNullablePgDate(metadata.destroyedAtEpochMs ?? undefined)},
                 ${metadata.lastAppendSequence},
                 ${metadata.updateCount},
                 ${metadata.snapshotCount},
+                ${metadata.storedUpdateBytes},
                 ${serializeNullableJson(metadata.retention)},
                 ${serializeNullableJson(metadata.quota)},
                 ${serializeNullableJson(metadata.projectionIds)})
@@ -1085,12 +1090,12 @@ function matchesDocumentListInput(
 async function readDocumentMetadataByKey(
     sql: PSqlSql,
     documentKey: string,
-    forUpdate = false,
+    _forUpdate = false,
 ): Promise<RallarCrdtDocumentMetadata | undefined> {
-    const rows = forUpdate
-        ? await sql<CrdtDocumentRow[]>`
+    const rows = await sql<CrdtDocumentRow[]>`
             select document_key,
                    document_ref,
+                   document_revision,
                    lifecycle,
                    created_at_ts,
                    updated_at_ts,
@@ -1099,25 +1104,7 @@ async function readDocumentMetadataByKey(
                    last_append_sequence,
                    update_count,
                    snapshot_count,
-                   retention_policy,
-                   quota_policy,
-                   projection_ids
-            from crdt_documents
-            where document_key = ${documentKey}
-            limit 1
-            for update
-        `
-        : await sql<CrdtDocumentRow[]>`
-            select document_key,
-                   document_ref,
-                   lifecycle,
-                   created_at_ts,
-                   updated_at_ts,
-                   archived_at_ts,
-                   destroyed_at_ts,
-                   last_append_sequence,
-                   update_count,
-                   snapshot_count,
+                   stored_update_bytes,
                    retention_policy,
                    quota_policy,
                    projection_ids
@@ -1149,19 +1136,21 @@ function toDocumentMetadata(row: CrdtDocumentRow): RallarCrdtDocumentMetadata {
     return {
         document: JSON.parse(row.document_ref) as RallarCrdtDocumentRef,
         documentKey: row.document_key,
+        documentRevision: Number(row.document_revision),
         lifecycle: row.lifecycle as RallarCrdtDocumentLifecycleState,
         createdAtEpochMs: toEpochMs(row.created_at_ts),
         updatedAtEpochMs: toEpochMs(row.updated_at_ts),
-        archivedAtEpochMs: toOptionalEpochMs(row.archived_at_ts),
-        destroyedAtEpochMs: toOptionalEpochMs(row.destroyed_at_ts),
+        archivedAtEpochMs: toOptionalEpochMs(row.archived_at_ts) ?? null,
+        destroyedAtEpochMs: toOptionalEpochMs(row.destroyed_at_ts) ?? null,
         lastAppendSequence: Number(row.last_append_sequence),
         updateCount: Number(row.update_count),
         snapshotCount: Number(row.snapshot_count),
+        storedUpdateBytes: Number(row.stored_update_bytes),
         retention: parseNullableJson<RallarCrdtRetentionPolicy>(
             row.retention_policy,
-        ),
-        quota: parseNullableJson<RallarCrdtQuotaPolicy>(row.quota_policy),
-        projectionIds: parseNullableJson<readonly string[]>(row.projection_ids),
+        ) ?? null,
+        quota: parseNullableJson<RallarCrdtQuotaPolicy>(row.quota_policy) ?? null,
+        projectionIds: parseNullableJson<readonly string[]>(row.projection_ids) ?? [],
     };
 }
 

@@ -38,7 +38,6 @@ import {
     validateRallarCrdtUpdateEnvelope,
     verifyRallarCrdtDebugBundle,
 } from '@shared/crdt/mod.ts';
-
 export type InMemoryRallarCrdtLogRepositoryOptions<
     TPayload extends RallarCrdtOperationBatch = RallarCrdtOperationBatch,
 > = Readonly<{
@@ -50,13 +49,11 @@ export type InMemoryRallarCrdtLogRepositoryOptions<
     metrics?: RallarCrdtMetricsSink;
     audit?: RallarCrdtAuditSink;
 }>;
-
 type DocumentState<TPayload, TValue> = {
     metadata: RallarCrdtDocumentMetadata;
     records: RallarCrdtDurableUpdateRecord<TPayload>[];
     snapshot?: RallarCrdtSnapshotEnvelope<TValue>;
 };
-
 export class InMemoryRallarCrdtLogRepository<
     TPayload extends RallarCrdtOperationBatch = RallarCrdtOperationBatch,
     TValue = unknown,
@@ -72,7 +69,6 @@ export class InMemoryRallarCrdtLogRepository<
     private readonly policies: readonly RallarCrdtDocumentTypePolicy[];
     private readonly metrics?: RallarCrdtMetricsSink;
     private readonly audit?: RallarCrdtAuditSink;
-
     constructor(
         options: InMemoryRallarCrdtLogRepositoryOptions<TPayload> = {},
     ) {
@@ -84,7 +80,6 @@ export class InMemoryRallarCrdtLogRepository<
         this.metrics = options.metrics;
         this.audit = options.audit;
     }
-
     async append(
         input: RallarCrdtAppendUpdateInput<TPayload>,
     ): Promise<RallarCrdtAppendResult<TPayload>> {
@@ -104,7 +99,6 @@ export class InMemoryRallarCrdtLogRepository<
                 validation,
             });
         }
-
         const state = this.getOrCreateDocument(input.update.document);
         const policyDecision = evaluateRallarCrdtFeaturePolicy({
             document: input.update.document,
@@ -151,7 +145,6 @@ export class InMemoryRallarCrdtLogRepository<
                 document: state.metadata,
             });
         }
-
         const existing = state.records.find(
             (record) => record.update.updateId === input.update.updateId,
         );
@@ -165,7 +158,6 @@ export class InMemoryRallarCrdtLogRepository<
                     document: state.metadata,
                 });
             }
-
             return this.recordAppendResult(startedAtEpochMs, {
                 status: 'rejected',
                 update: input.update,
@@ -175,7 +167,6 @@ export class InMemoryRallarCrdtLogRepository<
                 document: state.metadata,
             });
         }
-
         if (
             state.metadata.quota?.maxUpdateCount !== undefined &&
             state.metadata.updateCount >= state.metadata.quota.maxUpdateCount
@@ -239,7 +230,6 @@ export class InMemoryRallarCrdtLogRepository<
                 document: state.metadata,
             });
         }
-
         const appendSequence = state.metadata.lastAppendSequence + 1;
         const acceptedAtEpochMs = input.trusted.acceptedAtEpochMs ?? this.now();
         const append = {
@@ -258,13 +248,14 @@ export class InMemoryRallarCrdtLogRepository<
             update: input.update,
             append,
         };
-
         state.records.push(record);
         state.metadata = {
             ...state.metadata,
+            documentRevision: state.metadata.documentRevision + 1,
             updatedAtEpochMs: acceptedAtEpochMs,
             lastAppendSequence: appendSequence,
             updateCount: state.records.length,
+            storedUpdateBytes: state.metadata.storedUpdateBytes + updateBytes,
         };
 
         await this.hooks?.onAppendAccepted?.(record);
@@ -386,6 +377,7 @@ export class InMemoryRallarCrdtLogRepository<
         state.snapshot = input.snapshot;
         state.metadata = {
             ...state.metadata,
+            documentRevision: state.metadata.documentRevision + 1,
             updatedAtEpochMs: input.snapshot.createdAtEpochMs,
             snapshotCount: state.metadata.snapshotCount + 1,
         };
@@ -411,6 +403,7 @@ export class InMemoryRallarCrdtLogRepository<
         const changedAtEpochMs = input.changedAtEpochMs ?? this.now();
         state.metadata = {
             ...state.metadata,
+            documentRevision: state.metadata.documentRevision + 1,
             lifecycle: input.lifecycle,
             updatedAtEpochMs: changedAtEpochMs,
             archivedAtEpochMs:
@@ -708,12 +701,19 @@ export class InMemoryRallarCrdtLogRepository<
             metadata: {
                 document,
                 documentKey,
+                documentRevision: 0,
                 lifecycle: 'active',
                 createdAtEpochMs: now,
                 updatedAtEpochMs: now,
+                archivedAtEpochMs: null,
+                destroyedAtEpochMs: null,
                 lastAppendSequence: 0,
                 updateCount: 0,
                 snapshotCount: 0,
+                storedUpdateBytes: 0,
+                retention: null,
+                quota: null,
+                projectionIds: [],
             },
             records: [],
         };

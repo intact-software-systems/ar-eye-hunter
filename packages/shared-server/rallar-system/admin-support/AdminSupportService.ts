@@ -950,13 +950,13 @@ function crdtTimeline(
       'CRDT document metadata was updated.',
     ),
     toTimeline(
-      metadata.archivedAtEpochMs,
+      metadata.archivedAtEpochMs ?? undefined,
       'crdt-admin-log',
       'crdt.archived',
       'CRDT document was archived.',
     ),
     toTimeline(
-      metadata.destroyedAtEpochMs,
+      metadata.destroyedAtEpochMs ?? undefined,
       'crdt-admin-log',
       'crdt.destroyed',
       'CRDT document was destroyed.',

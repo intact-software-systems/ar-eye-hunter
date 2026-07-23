@@ -70,17 +70,19 @@ export type RallarCrdtTrustedAppendMetadata = Readonly<{
 export type RallarCrdtDocumentMetadata = Readonly<{
     document: RallarCrdtDocumentRef;
     documentKey: string;
+    documentRevision: number;
     lifecycle: RallarCrdtDocumentLifecycleState;
     createdAtEpochMs: number;
     updatedAtEpochMs: number;
-    archivedAtEpochMs?: number;
-    destroyedAtEpochMs?: number;
+    archivedAtEpochMs: number | null;
+    destroyedAtEpochMs: number | null;
     lastAppendSequence: RallarCrdtAppendSequence;
     updateCount: number;
     snapshotCount: number;
-    retention?: RallarCrdtRetentionPolicy;
-    quota?: RallarCrdtQuotaPolicy;
-    projectionIds?: readonly string[];
+    storedUpdateBytes: number;
+    retention: RallarCrdtRetentionPolicy | null;
+    quota: RallarCrdtQuotaPolicy | null;
+    projectionIds: readonly string[];
 }>;
 
 export type RallarCrdtDurableUpdateRecord<TPayload = RallarCrdtOperationBatch> =

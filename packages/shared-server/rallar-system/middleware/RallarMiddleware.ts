@@ -40,30 +40,27 @@ import {
     type StateSyncPublisher,
 } from '../state-sync-publisher.ts';
 import type {
+    RallarAdminInboxServiceFactory,
     RallarAuthInboxServiceFactory,
+    RallarCrdtInboxServiceFactory,
     RallarGroupSnapshotResolverOptions,
 } from './rallar-middleware-options.ts';
-
 export type { RallarGroupSnapshotResolverOptions } from './rallar-middleware-options.ts';
-
 export type RallarStateMutationOutboxOptions =
     & Omit<StateMutationOutboxWorkOptions, 'stateSyncPublisher'>
     & Readonly<{
         stateSyncPublisher?: StateSyncPublisher;
         stateSyncServerId?: string;
     }>;
-
 export type RallarStateMutationOutboxFactoryInput = Readonly<{
     outboxQueueReader: OutboxQueueReader;
     wakeQueueEngine: () => void;
 }>;
-
 export type RallarStateMutationOutboxConfiguration =
     | RallarStateMutationOutboxOptions
     | ((
-        input: RallarStateMutationOutboxFactoryInput,
+	    input: RallarStateMutationOutboxFactoryInput,
     ) => RallarStateMutationOutboxOptions);
-
 export type RallarMiddlewareRuntime = Readonly<{
     qboxEngine: InboxOutboxEngine;
     wsQBoxServerService: WsQueueBoxServerService;
@@ -74,6 +71,8 @@ export type RallarMiddlewareRuntime = Readonly<{
     appGroupInboxService: AppGroupInboxService;
     appClientInboxService: AppClientInboxService;
     appAuthInboxService?: ReturnType<RallarAuthInboxServiceFactory>;
+    appAdminInboxService?: ReturnType<RallarAdminInboxServiceFactory>;
+    appCrdtInboxService?: ReturnType<RallarCrdtInboxServiceFactory>;
     clientStateService: ClientStateService;
     groupStateService: GroupStateService;
     clientsRepository: ClientStateRepository;
@@ -84,7 +83,6 @@ export type RallarMiddlewareRuntime = Readonly<{
     stateMutationOutboxWork?: StateMutationOutboxWorkLike;
     readiness: Promise<void>;
 }>;
-
 export type CreateRallarMiddlewareOptions = Readonly<{
     inbox: QueueBoxResourceEntryRepository;
     outbox?: QueueBoxResourceEntryRepository;
@@ -116,6 +114,8 @@ export type CreateRallarMiddlewareOptions = Readonly<{
         }>,
     ) => AppClientInboxService;
     createAppAuthInboxService?: RallarAuthInboxServiceFactory;
+    createAppAdminInboxService?: RallarAdminInboxServiceFactory;
+    createAppCrdtInboxService?: RallarCrdtInboxServiceFactory;
     resilience: Readonly<{
         inbox: ResilienceDto;
         outbox?: ResilienceDto;
@@ -130,12 +130,10 @@ export type CreateRallarMiddlewareOptions = Readonly<{
     stateMutationOutbox?: RallarStateMutationOutboxConfiguration;
     readiness?: Promise<void>;
 }>;
-
 export function createRallarMiddleware(
     options: CreateRallarMiddlewareOptions,
 ): RallarMiddlewareRuntime {
     initialiseServerCacheRepositories();
-
     const qboxEngine = new InboxOutboxEngine();
     const webSocketServer = options.webSocketServer ?? new JsonWebSocketServer();
     const targetResolver =
@@ -146,7 +144,6 @@ export function createRallarMiddleware(
             resolveGroupRef: options.resolveGroupRef,
             now: options.now,
         });
-
     const wsQBoxServerService = new WsQueueBoxServerService(
         options.inbox,
         options.outbox ?? options.inbox,
@@ -190,6 +187,13 @@ export function createRallarMiddleware(
         inboxQueueReader,
         appInboxResilience,
     });
+    const appAdminInboxService = options.createAppAdminInboxService?.({
+        inboxQueueReader, outboxQueueReader, appInboxResilience, wakeQueueEngine,
+    });
+    const appCrdtInboxService = options.createAppCrdtInboxService?.({
+        inboxQueueReader,
+        appInboxResilience,
+    });
     const stateMutationOutboxWork = stateMutationOutboxOptions
         ? new StateMutationOutboxWork({
             repository: stateMutationOutboxOptions.repository,
@@ -215,7 +219,6 @@ export function createRallarMiddleware(
             pageSize: stateMutationOutboxOptions.pageSize,
         })
         : undefined;
-
     includeWsQueueBoxEngineTasks(
         qboxEngine,
         wsQBoxServerService,
@@ -238,7 +241,6 @@ export function createRallarMiddleware(
             stateMutationOutboxWork,
         );
     }
-
     return {
         qboxEngine,
         wsQBoxServerService,
@@ -249,6 +251,8 @@ export function createRallarMiddleware(
         appGroupInboxService,
         appClientInboxService,
         appAuthInboxService,
+        appAdminInboxService,
+        appCrdtInboxService,
         groupStateService: appGroupInboxService.groupStateService,
         clientStateService: appClientInboxService.clientStateService,
         clientsRepository: options.clientsRepository,
@@ -261,7 +265,6 @@ export function createRallarMiddleware(
         readiness: options.readiness ?? Promise.resolve(),
     };
 }
-
 export function includeWsQueueBoxEngineTasks(
     engine: InboxOutboxEngine,
     wsQBoxServerService: WsQueueBoxServerService,
@@ -283,7 +286,6 @@ export function includeWsQueueBoxEngineTasks(
             ),
         ongoingTasks: [],
     });
-
     engine.includeTask(WsQueueBoxServerService.OUTBOX_ENQUEUE_TYPE, {
         name: WsQueueBoxServerService.OUTBOX_ENQUEUE_TYPE,
         maxConcurrency: () => 1,
@@ -300,7 +302,6 @@ export function includeWsQueueBoxEngineTasks(
         ongoingTasks: [],
     });
 }
-
 export function includeInboxQueueReaderEngineTasks(
     engine: InboxOutboxEngine,
     inboxQueueReader: InboxQueueReader,
@@ -322,7 +323,6 @@ export function includeInboxQueueReaderEngineTasks(
         ongoingTasks: [],
     });
 }
-
 export function includeOutboxQueueReaderEngineTasks(
     engine: InboxOutboxEngine,
     outboxQueueReader: OutboxQueueReader,
@@ -344,7 +344,6 @@ export function includeOutboxQueueReaderEngineTasks(
         ongoingTasks: [],
     });
 }
-
 export function includeStateMutationOutboxEngineTask(
     engine: InboxOutboxEngine,
     work: StateMutationOutboxWorkLike,

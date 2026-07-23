@@ -601,8 +601,8 @@ export function createRallarCrdtAdminDocumentStatus(input: {
         lastAppendSequence: input.metadata.lastAppendSequence,
         updatedAtEpochMs: input.metadata.updatedAtEpochMs,
         health: input.health,
-        retention: input.metadata.retention,
-        quota: input.metadata.quota,
+        ...(input.metadata.retention === null ? {} : { retention: input.metadata.retention }),
+        ...(input.metadata.quota === null ? {} : { quota: input.metadata.quota }),
         quarantineReason: input.quarantineReason,
     };
 }

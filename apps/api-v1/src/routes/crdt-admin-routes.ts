@@ -5,32 +5,41 @@ import type {
   RallarCrdtCatchUpRequestEnvelope,
   RallarCrdtCatchUpResponseEnvelope,
   RallarCrdtDocumentRef,
-  RallarCrdtErasureRequest,
-  RallarCrdtLifecycleInput,
   RallarCrdtListDocumentsInput,
-  RallarCrdtSnapshotEnvelope,
 } from '@shared/crdt/mod.ts';
 import {
-  createRallarCrdtCompactedSnapshot,
-  createRallarCrdtErasureAuditEvent,
   RALLAR_CRDT_PROTOCOL_VERSION,
 } from '@shared/crdt/mod.ts';
-import type { PrincipalId } from '@shared/api/group-types.ts';
-import type { IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
 import { requireApiAuthSession, toAuthErrorResponse } from '../services/request-auth-service.ts';
+
+export type RallarCrdtAdminMutationOperation =
+  | 'rebuild-projection'
+  | 'compact'
+  | 'lifecycle'
+  | 'erase';
+
+export type RallarCrdtAdminMutations = Readonly<{
+  processAdminMutationUntilCompletion(
+    operation: RallarCrdtAdminMutationOperation,
+    input: Readonly<{ adminSession: AuthSession; request: unknown }>,
+  ): Promise<unknown>;
+}>;
 
 export type RallarCrdtAdminRoutesOptions = Readonly<{
   repository: RallarCrdtAdminLogRepository;
+  mutations?: RallarCrdtAdminMutations;
   audit?: RallarCrdtAuditSink;
   now?: () => number;
   requireAuth?: boolean;
   adminClientIds?: readonly string[];
   authorizeAdmin?: (
     input: Readonly<{
-      session: IssuedAuthSession;
+      session: AuthSession;
       context: Context;
     }>,
   ) => boolean | Promise<boolean>;
+  requireApiAdminSession?: (context: Context) => Promise<AuthSession>;
 }>;
 
 export function init(app: Hono, options: RallarCrdtAdminRoutesOptions): void {
@@ -131,110 +140,41 @@ export function init(app: Hono, options: RallarCrdtAdminRoutesOptions): void {
     '/api/crdt/admin/documents/rebuild-projection',
     (c) =>
       withAdminError(c, async () => {
-        const body = await readJson<{
-          document?: RallarCrdtDocumentRef;
-          projectionId?: string;
-        }>(c);
-        return await options.repository.rebuildProjection(
-          readDocument(body),
-          body.projectionId,
-        );
+        return await mutate(c, options, 'rebuild-projection', await readJson(c));
       }),
   );
 
   app.post('/api/crdt/admin/documents/compact', (c) =>
     withAdminError(c, async () => {
-      const body = await readJson<{
-        document?: RallarCrdtDocumentRef;
-        reason?: string;
-        snapshot?: RallarCrdtSnapshotEnvelope;
-      }>(c);
-      const document = readDocument(body);
-      const backup = await options.repository.exportBackupBundle(document);
-      if (!backup) {
-        throw new Error('CRDT document does not exist.');
-      }
-
-      const reason = body.reason ?? 'api-v1-admin-compaction';
-      const snapshot = body.snapshot ??
-        createRallarCrdtCompactedSnapshot({
-          document,
-          records: backup.records,
-          reason,
-          now: options.now,
-        });
-      await options.repository.writeSnapshot({
-        snapshot,
-        appendSequence: backup.metadata.lastAppendSequence,
-        reason,
-      });
-
-      return {
-        document,
-        documentKey: backup.documentKey,
-        appendSequence: backup.metadata.lastAppendSequence,
-        snapshot,
-      };
+      return await mutate(c, options, 'compact', await readJson(c));
     }));
 
   app.post('/api/crdt/admin/documents/lifecycle', (c) =>
     withAdminError(
       c,
-      async () =>
-        await options.repository.updateDocumentLifecycle(
-          await readJson<RallarCrdtLifecycleInput>(c),
-        ),
+      async () => await mutate(c, options, 'lifecycle', await readJson(c)),
     ));
 
   app.post('/api/crdt/admin/documents/erase', (c) =>
     withAdminError(c, async () => {
-      const body = await readJson<{
-        document?: RallarCrdtDocumentRef;
-        requestedBy?: PrincipalId;
-        reason?: string;
-        mode?: RallarCrdtErasureRequest['mode'];
-      }>(c);
-      const document = readDocument(body);
-      const mode = body.mode === 'redact-payloads' ? 'redact-payloads' : 'destroy-document';
-      const reason = body.reason ?? 'api-v1-admin-erasure-workflow';
-      const request: RallarCrdtErasureRequest = {
-        document,
-        requestedAtEpochMs: options.now?.() ?? Date.now(),
-        requestedBy: body.requestedBy ??
-          ((c.req.header('x-client-id') ?? 'api-v1-admin') as PrincipalId),
-        reason,
-        mode,
-      };
-      const auditEvent = createRallarCrdtErasureAuditEvent(request);
-      await options.audit?.record(auditEvent);
-
-      if (mode === 'redact-payloads') {
-        const redactedBundle = await options.repository.exportDebugBundle(document, {
-          reason,
-          redaction: {
-            payloadsRedacted: true,
-            reason,
-          },
-        });
-        return {
-          request,
-          auditEvent,
-          redactedBundle,
-        };
-      }
-
-      const metadata = await options.repository.updateDocumentLifecycle({
-        document,
-        lifecycle: 'destroyed',
-        changedAtEpochMs: request.requestedAtEpochMs,
-      });
-
-      return {
-        request,
-        auditEvent,
-        metadata,
-      };
+      return await mutate(c, options, 'erase', await readJson(c));
     }));
+}
+
+async function mutate(
+  context: Context,
+  options: RallarCrdtAdminRoutesOptions,
+  operation: RallarCrdtAdminMutationOperation,
+  request: unknown,
+): Promise<unknown> {
+  if (!options.mutations) {
+    throw new Error('CRDT AppInbox mutations are not configured.');
+  }
+  const adminSession = await requireCrdtAdminSession(context, options);
+  return await options.mutations.processAdminMutationUntilCompletion(
+    operation,
+    { adminSession, request },
+  );
 }
 
 async function withAdminError(
@@ -258,8 +198,10 @@ async function withAdminError(
 async function requireCrdtAdminSession(
   c: Context,
   options: RallarCrdtAdminRoutesOptions,
-): Promise<IssuedAuthSession> {
-  const session = await requireApiAuthSession(c.req);
+): Promise<AuthSession> {
+  const session = options.requireApiAdminSession
+    ? await options.requireApiAdminSession(c)
+    : await requireApiAuthSession(c.req);
   const authorized = options.authorizeAdmin !== undefined
     ? await Promise.resolve(
       options.authorizeAdmin({

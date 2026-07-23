@@ -43,6 +43,8 @@ import { initialiseMiddleware, registerMiddlewareBackgroundTask } from './middle
 import { getApiRtcTopologyServiceOptions } from './services/rtc-topology-config.ts';
 import { getApiTimingSink } from './services/timing-service.ts';
 import { createApiV1RoomWsAuthorizer } from './services/ws-topic-room-authorizer.ts';
+import { createCrdtWsMutationIngress } from './services/create-crdt-ws-mutation-ingress.ts';
+import { createApiAdminMutationGateway } from './services/create-api-admin-mutation-gateway.ts';
 import * as configRoutes from './routes/config-route.ts';
 import * as wsRoutes from './routes/ws-routes.ts';
 import * as iceRoutes from './routes/ice-route.ts';
@@ -209,6 +211,14 @@ export function createRallarServer(
     topologyManagement,
     crdtAdminRepository: crdtLogRepository,
     crdtAuditSink: options.crdtAuditSink,
+    ...(middleware.appAdminInboxService && middleware.appCrdtInboxService
+      ? { mutationGateway: createApiAdminMutationGateway({
+        appAdmin: middleware.appAdminInboxService,
+        appCrdt: middleware.appCrdtInboxService,
+        appGroup: middleware.appGroupInboxService,
+        now,
+      }) }
+      : {}),
     timing,
   });
   const adminSupport = new AdminSupportService({
@@ -292,6 +302,9 @@ export function createRallarServer(
         };
         installRallarCrdtWsTopics(ws, {
           logRepository: crdtLogRepository,
+          mutationIngress: middleware.appCrdtInboxService
+            ? createCrdtWsMutationIngress(middleware.appCrdtInboxService, myServerId)
+            : undefined,
         });
       },
       installWebSocketLifecycle: (runtime) => {
@@ -349,6 +362,7 @@ export function createRallarServer(
         (app) =>
           crdtAdminRoutes.init(app, {
             repository: crdtLogRepository,
+            mutations: middleware.appCrdtInboxService,
             audit: options.crdtAuditSink,
             adminClientIds,
           }),

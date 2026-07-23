@@ -28,9 +28,7 @@ import {
   validatePersistedGroupMember,
   validatePersistedGroupPresenceSession,
 } from '../../rallar-system/services/group-state-mutations.ts';
-
 const DEFAULT_RECENT_EVENT_WINDOW_MS = 15 * 60 * 1_000;
-
 export type PSqlAdminOperationsStatsReaderOptions = Readonly<{
   now: () => number;
   recentEventWindowMs?: number;
@@ -38,54 +36,44 @@ export type PSqlAdminOperationsStatsReaderOptions = Readonly<{
   sqlBackend?: string;
   dbPubSub?: string;
 }>;
-
 export class AdminOperationsStateInvariantCorruptionError extends Error {
   readonly code = 'admin-operations-state-invariant-corruption';
-
   constructor(message: string) {
     super(message);
     this.name = 'AdminOperationsStateInvariantCorruptionError';
   }
 }
-
 type CountRow = Readonly<{
   count: number | string | bigint;
 }>;
-
 type RuntimeStateRow = Readonly<{
   store_key: string;
   store_value: string;
 }>;
-
 type QueueTypeStatusRow = Readonly<{
   type_id: string;
   status: string;
   count: number | string | bigint;
 }>;
-
 type StatusCountRow = Readonly<{
   status: string;
   count: number | string | bigint;
 }>;
-
 type CrrdtScopeTypeRow = Readonly<{
   document_scope: string;
   document_type: string;
   count: number | string | bigint;
 }>;
-
 type CrdtStorageRow = Readonly<{
   updates: number | string | bigint | null;
   snapshots: number | string | bigint | null;
   stored_update_bytes: number | string | bigint | null;
 }>;
-
 export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReader {
   constructor(
     private readonly sql: PSqlSql,
     private readonly options: PSqlAdminOperationsStatsReaderOptions,
   ) {}
-
   async readQueues(_input: AdminOperationsReadInput): Promise<AdminOperationsQueuesResponse> {
     const [queueTotal, queueExpired, queueGroups, resultTotal, resultExpired, resultGroups] =
       await Promise.all([
@@ -96,7 +84,6 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
         this.countExpired('resource_inbox_results', 'expire_ts'),
         this.queueGroups('resource_inbox_results'),
       ]);
-
     return {
       ...this.base(),
       queueRows: {
@@ -113,12 +100,10 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
       },
     };
   }
-
   async readState(input: AdminOperationsReadInput): Promise<AdminOperationsStateResponse> {
     if (!input.scope) {
       return await this.readGlobalState();
     }
-
     const scope = input.scope;
     const [
       principalRows,
@@ -156,7 +141,6 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
         .map((row) => readCanonicalGroupMemberIdentity(row, 'session'))
         .filter((identity): identity is string => identity !== undefined),
     );
-
     return {
       ...this.base(scope),
       clients: {
@@ -178,7 +162,6 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
       },
     };
   }
-
   private async readGlobalState(): Promise<AdminOperationsStateResponse> {
     const [
       totalPrincipals,
@@ -210,7 +193,6 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
         .map((row) => readCanonicalGroupMemberIdentity(row, 'session'))
         .filter((identity): identity is string => identity !== undefined),
     );
-
     return {
       ...this.base(),
       clients: {
@@ -232,7 +214,6 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
       },
     };
   }
-
   async readCrdt(input: AdminOperationsReadInput): Promise<AdminOperationsCrdtResponse> {
     const scope = input.scope;
     const [total, byLifecycle, byScopeType, storage] = await Promise.all([
@@ -241,7 +222,6 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
       this.countCrdtByScopeType(scope),
       this.readCrdtStorage(scope),
     ]);
-
     return {
       ...this.base(scope),
       documents: {
@@ -252,7 +232,6 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
       storage,
     };
   }
-
   async readSystem(_input: AdminOperationsReadInput): Promise<AdminOperationsSystemResponse> {
     const [
       runtimeRows,
@@ -273,7 +252,6 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
       this.countClientEvents(),
       this.countGroupEvents(),
     ]);
-
     return {
       ...this.base(),
       runtimeState: {
@@ -296,7 +274,6 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
       },
     };
   }
-
   private base(scope?: StateScope) {
     return {
       generatedAtEpochMs: this.options.now(),
@@ -305,7 +282,6 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
       warnings: [],
     };
   }
-
   private async countRows(table: string): Promise<number> {
     switch (table) {
       case 'resource_inbox':
@@ -336,7 +312,6 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
         throw new Error(`Unsupported admin count table: ${table}`);
     }
   }
-
   private async countExpired(table: string, column: string): Promise<number> {
     if (table === 'resource_inbox' && column === 'expire_ts') {
       return toNumber(
@@ -368,7 +343,6 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
     }
     throw new Error(`Unsupported admin expired count: ${table}.${column}`);
   }
-
   private async queueGroups(
     table: 'resource_inbox' | 'resource_inbox_results',
   ): Promise<readonly AdminCountByTypeStatus[]> {
@@ -385,7 +359,6 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
                 group by ris_type_id, ris_status
                 order by ris_type_id, ris_status
             `;
-
     return rows.map(toTypeStatusCount);
   }
 
@@ -693,20 +666,35 @@ export class PSqlAdminOperationsPruner implements AdminOperationsPruner {
     switch (category) {
       case 'runtime-state':
         return (await this.sql<{ store_key: string }[]>`
+                    with expired as (
+                      select store_namespace, store_key from runtime_state_store
+                      where expire_at_ts <= now()
+                      order by store_namespace, store_key limit 100
+                    )
                     delete from runtime_state_store
-                    where expire_at_ts <= now()
+                    where (store_namespace, store_key) in (
+                      select store_namespace, store_key from expired
+                    )
                     returning store_key
                 `).length;
       case 'resource-inbox':
         return (await this.sql<{ ri_row_id: string | number }[]>`
+                    with expired as (
+                      select ri_row_id from resource_inbox
+                      where expire_ts <= now() order by ri_row_id limit 100
+                    )
                     delete from resource_inbox
-                    where expire_ts <= now()
+                    where ri_row_id in (select ri_row_id from expired)
                     returning ri_row_id
                 `).length;
       case 'resource-inbox-results':
         return (await this.sql<{ ris_row_id: string | number }[]>`
+                    with expired as (
+                      select ris_row_id from resource_inbox_results
+                      where expire_ts <= now() order by ris_row_id limit 100
+                    )
                     delete from resource_inbox_results
-                    where expire_ts <= now()
+                    where ris_row_id in (select ris_row_id from expired)
                     returning ris_row_id
                 `).length;
       case 'app-data':
@@ -741,17 +729,29 @@ export class PSqlAdminOperationsPruner implements AdminOperationsPruner {
     const namespace = requireAppDataNamespace(options);
     if (options.appData?.storeName) {
       return (await this.sql<{ data_key: string }[]>`
+                with expired as (
+                  select data_key from app_data_store
+                  where app_namespace = ${namespace}
+                    and store_name = ${options.appData.storeName}
+                    and expire_at_ts <= now()
+                  order by data_key limit 100
+                )
                 delete from app_data_store
                 where app_namespace = ${namespace}
                   and store_name = ${options.appData.storeName}
-                  and expire_at_ts <= now()
+                  and data_key in (select data_key from expired)
                 returning data_key
             `).length;
     }
     return (await this.sql<{ data_key: string }[]>`
+            with expired as (
+              select store_name, data_key from app_data_store
+              where app_namespace = ${namespace} and expire_at_ts <= now()
+              order by store_name, data_key limit 100
+            )
             delete from app_data_store
             where app_namespace = ${namespace}
-              and expire_at_ts <= now()
+              and (store_name, data_key) in (select store_name, data_key from expired)
             returning data_key
         `).length;
   }
