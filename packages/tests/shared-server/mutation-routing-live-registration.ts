@@ -5,6 +5,10 @@ import {
   findAstNode,
   type MutationRoutingAstNode as AstNode,
 } from './mutation-routing-call-graph.ts';
+import {
+  filterRegistrationTypes,
+  mapRegistrationTypes,
+} from './mutation-routing-registration-predicate.ts';
 
 export type MutationRoutingProgramLoader = (filePath: string) => AstNode | undefined;
 
@@ -94,23 +98,43 @@ function evaluateTypes(
     );
   }
   if (node.type === 'ConditionalExpression') {
-    return mergeTypes([
+    const test = asNode(node.test);
+    if (test?.type === 'BooleanLiteral') {
+      return evaluateTypes(
+        asNode(test.value === true ? node.consequent : node.alternate),
+        program,
+        filePath,
+        loadProgram,
+        resolving,
+      );
+    }
+    return intersectTypes(
       evaluateTypes(asNode(node.consequent), program, filePath, loadProgram, resolving),
       evaluateTypes(asNode(node.alternate), program, filePath, loadProgram, resolving),
-    ]);
+    );
   }
   if (node.type !== 'CallExpression' && node.type !== 'OptionalCallExpression') {
     return new Set();
   }
   const callee = asNode(node.callee);
   const method = readMemberName(callee);
-  const source =
-    method && ['filter', 'map', 'flatMap', 'values', 'keys', 'entries'].includes(method)
-      ? asNode(callee?.object)
-      : asNodes(node.arguments)[0];
+  const collectionMethod = method && ['filter', 'map', 'flatMap', 'values', 'keys', 'entries']
+    .includes(method);
+  const staticObjectCollection = ['values', 'keys', 'entries'].includes(method) &&
+    readName(callee?.object) === 'Object';
+  if (!collectionMethod) return new Set();
+  const source = collectionMethod && !staticObjectCollection
+    ? asNode(callee?.object)
+    : asNodes(node.arguments)[0];
   const types = evaluateTypes(source, program, filePath, loadProgram, resolving);
-  if (method !== 'filter') return types;
-  for (const excluded of collectExcludedTypes(asNodes(node.arguments)[0])) types.delete(excluded);
+  const evaluateCollection = (candidate: AstNode | undefined) =>
+    evaluateTypes(candidate, program, filePath, loadProgram, resolving);
+  if (method === 'filter') {
+    return filterRegistrationTypes(types, asNodes(node.arguments)[0], evaluateCollection);
+  }
+  if (method === 'map' || method === 'flatMap') {
+    return mapRegistrationTypes(types, asNodes(node.arguments)[0], evaluateCollection);
+  }
   return types;
 }
 
@@ -223,18 +247,6 @@ function findImport(
   return undefined;
 }
 
-function collectExcludedTypes(value: AstNode | undefined): ReadonlySet<string> {
-  const excluded = new Set<string>();
-  visit(value, (node) => {
-    if (node.type !== 'BinaryExpression' || !['!=', '!=='].includes(String(node.operator))) return;
-    const left = readAppInboxType(asNode(node.left));
-    const right = readAppInboxType(asNode(node.right));
-    if (left) excluded.add(left);
-    if (right) excluded.add(right);
-  });
-  return excluded;
-}
-
 function resolveModulePath(fromFile: string, specifier: string): string | undefined {
   const absolute = specifier.startsWith('.')
     ? path.resolve(path.dirname(fromFile), specifier)
@@ -266,6 +278,10 @@ function containsNode(value: unknown, expected: AstNode): boolean {
 
 function mergeTypes(types: readonly Set<string>[]): Set<string> {
   return new Set(types.flatMap((items) => [...items]));
+}
+
+function intersectTypes(left: ReadonlySet<string>, right: ReadonlySet<string>): Set<string> {
+  return new Set([...left].filter((type) => right.has(type)));
 }
 
 function unwrap(value: AstNode | undefined): AstNode | undefined {
