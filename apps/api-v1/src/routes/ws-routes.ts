@@ -140,6 +140,15 @@ export function releaseAuthorisedWsCloseFacts(
   }
 }
 
+export function hasAuthorisedWsCloseFacts(
+  input: RallarWsLifecycleCloseInput,
+): boolean {
+  const connection = AUTHORISED_CONNECTIONS.get(
+    toAuthorisedConnectionKey(input.sessionId, input.generationId),
+  );
+  return connection?.generationStartedAtEpochMs === input.generationStartedAtEpochMs;
+}
+
 function rememberAuthorisedWsConnection(
   sessionId: string,
   generationId: string,

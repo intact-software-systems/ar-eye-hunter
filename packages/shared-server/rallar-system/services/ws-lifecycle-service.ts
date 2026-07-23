@@ -17,6 +17,7 @@ export interface RallarWsLifecycleHandlers {
   now(): number;
   enqueueClientSessionDisconnect(input: RallarWsLifecycleCloseInput): Promise<unknown>;
   enqueueGroupSessionCleanup(input: RallarWsLifecycleCloseInput): Promise<unknown>;
+  hasCloseFacts(input: RallarWsLifecycleCloseInput): boolean;
   releaseCloseFacts(input: RallarWsLifecycleCloseInput): void;
   readonly retry: RallarWsLifecycleRetryConfig;
 }
@@ -31,6 +32,7 @@ interface PendingClose {
   readonly input: RallarWsLifecycleCloseInput;
   readonly attempts: number;
   readonly cancelScheduledRetry: (() => void) | null;
+  readonly token: object;
 }
 
 export function initWsLifecycle(
@@ -47,23 +49,33 @@ export function initWsLifecycle(
     pending.delete(closeKey(input));
     handlers.releaseCloseFacts(input);
   };
-  const schedule = (input: RallarWsLifecycleCloseInput, attempts: number): void => {
-    if (stopped) return;
+  const schedule = (entry: PendingClose): void => {
+    const current = pending.get(closeKey(entry.input));
+    if (
+      stopped || current?.token !== entry.token ||
+      !handlers.hasCloseFacts(entry.input)
+    ) return;
+    const attempts = entry.attempts;
     const delayIndex = Math.min(attempts - 1, handlers.retry.delaysMs.length - 1);
     const cancelScheduledRetry = handlers.retry.schedule(
       handlers.retry.delaysMs[delayIndex]!,
-      async () => await writeClose(input),
+      async () => await writeClose(entry.input, entry.token),
     );
-    pending.set(closeKey(input), { input, attempts, cancelScheduledRetry });
+    pending.set(closeKey(entry.input), { ...entry, cancelScheduledRetry });
   };
-  const writeClose = async (input: RallarWsLifecycleCloseInput): Promise<void> => {
-    if (stopped || pending.get(closeKey(input))?.input !== input) return;
-    const attempts = (pending.get(closeKey(input))?.attempts ?? 0) + 1;
-    pending.set(closeKey(input), {
+  const writeClose = async (
+    input: RallarWsLifecycleCloseInput,
+    token: object,
+  ): Promise<void> => {
+    const current = pending.get(closeKey(input));
+    if (stopped || current?.token !== token || !handlers.hasCloseFacts(input)) return;
+    const attempted: PendingClose = {
       input,
-      attempts,
+      attempts: current.attempts + 1,
       cancelScheduledRetry: null,
-    });
+      token,
+    };
+    pending.set(closeKey(input), attempted);
     try {
       await Promise.all([
         handlers.enqueueClientSessionDisconnect(input),
@@ -72,7 +84,7 @@ export function initWsLifecycle(
       release(input);
     } catch (error) {
       console.error('WebSocket lifecycle durable enqueue failed:', error);
-      schedule(input, attempts);
+      schedule(attempted);
     }
   };
   const observeClose = (input: RallarWsLifecycleCloseInput): void => {
@@ -85,15 +97,24 @@ export function initWsLifecycle(
       }
     }
     const existing = pending.get(closeKey(input));
-    if (existing || [...pending.values()].some((candidate) =>
-      candidate.input.sessionId === input.sessionId &&
-      compareGeneration(candidate.input, input) > 0
-    )) {
+    if (
+      existing ||
+      [...pending.values()].some((candidate) =>
+        candidate.input.sessionId === input.sessionId &&
+        compareGeneration(candidate.input, input) > 0
+      )
+    ) {
       if (!existing) handlers.releaseCloseFacts(input);
       return;
     }
-    pending.set(closeKey(input), { input, attempts: 0, cancelScheduledRetry: null });
-    void writeClose(input);
+    const entry: PendingClose = {
+      input,
+      attempts: 0,
+      cancelScheduledRetry: null,
+      token: {},
+    };
+    pending.set(closeKey(input), entry);
+    void writeClose(input, entry.token);
   };
 
   wsQBoxServerService.socket.onWebsocketCallbacksDo('handle-ws-lifecycle', {
@@ -117,7 +138,7 @@ export function initWsLifecycle(
     retryPending: async () => {
       await Promise.all([...pending.values()].map(async (entry) => {
         entry.cancelScheduledRetry?.();
-        await writeClose(entry.input);
+        await writeClose(entry.input, entry.token);
       }));
     },
     stop: () => {

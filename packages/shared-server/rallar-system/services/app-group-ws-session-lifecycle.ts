@@ -11,6 +11,7 @@ import type { AppInboxEnqueueInput } from './AppInboxService.ts';
 import { AppInboxType } from './AppInboxService.ts';
 import type {
   WsSessionGenerationCloseFacts,
+  WsSessionGenerationLifecycleComputed,
   WsSessionHighWaterIdentity,
 } from './ws-session-generation-lifecycle.ts';
 import type { ClientAuthorisedWsSessionConnectAppInboxPayload } from './AppClientInboxService.ts';
@@ -67,7 +68,10 @@ export async function processGroupPresenceConnect(
     command: GroupStateMutationCommand;
     groupStateService: GroupStateService;
     writeMutation: WriteMutation;
-    commitMutation(computed: GroupMutationComputed): Promise<unknown>;
+    commitMutation(
+      computed: GroupMutationComputed,
+      lifecycleGuard: WsSessionGenerationLifecycleComputed,
+    ): Promise<unknown>;
   }>,
 ): Promise<unknown> {
   const operation = input.command.command;
@@ -95,7 +99,13 @@ export async function processGroupPresenceConnect(
   const read = await input.groupStateService.read(input.command);
   const computed = input.groupStateService.compute(input.command, read);
   input.groupStateService.validate(input.command, read, computed);
-  return await input.commitMutation(computed);
+  const lifecycleGuard = lifecycle.computeConnectGuard({
+    ...identity,
+    generationId: operation.input.generationId,
+    generationStartedAtEpochMs: observedAtEpochMs,
+    expireAtEpochMs: input.command.facts.expireAtEpochMs,
+  }, lifecycleRead);
+  return await input.commitMutation(computed, lifecycleGuard);
 }
 
 export async function processGroupSessionCleanup(
@@ -147,11 +157,13 @@ export async function processGroupSessionCleanup(
   return result;
 }
 
-function toGroupHighWaterIdentity(input: Readonly<{
-  scope: Readonly<{ applicationId: string; workspaceId: string }>;
-  principalId: string;
-  sessionId: string;
-}>): WsSessionHighWaterIdentity {
+function toGroupHighWaterIdentity(
+  input: Readonly<{
+    scope: Readonly<{ applicationId: string; workspaceId: string }>;
+    principalId: string;
+    sessionId: string;
+  }>,
+): WsSessionHighWaterIdentity {
   return {
     scope: {
       kind: 'group',

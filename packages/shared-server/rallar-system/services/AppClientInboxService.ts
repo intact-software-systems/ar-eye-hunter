@@ -336,7 +336,14 @@ export class AppClientInboxService extends AppInboxService {
         const read = await this.clientStateService.read(command);
         const computed = this.clientStateService.compute(command, read);
         this.clientStateService.validate(command, read, computed);
-        return await this.commitComputed(context, computed);
+        const lifecycleGuard = lifecycle.computeConnectGuard({
+            ...lifecycleFacts,
+            expireAtEpochMs: resourceInboxRetryExpiryAtEpochMs(
+                connection.generationStartedAtEpochMs,
+                connection.expiresAtEpochMs,
+            ),
+        }, lifecycleRead);
+        return await this.commitComputed(context, computed, lifecycleGuard);
     }
 
     private async processAuthorisedWsDisconnect(

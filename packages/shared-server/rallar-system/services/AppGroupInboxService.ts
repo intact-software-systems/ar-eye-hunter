@@ -87,6 +87,7 @@ import {
     toGroupSessionCleanupEnqueue,
     type GroupPresenceSessionCleanupAppInboxPayload,
 } from './app-group-ws-session-lifecycle.ts';
+import type { WsSessionGenerationLifecycleComputed } from './ws-session-generation-lifecycle.ts';
 
 import {
     createTopologyMutationAuthorityProof,
@@ -977,8 +978,8 @@ export class AppGroupInboxService extends AppInboxService {
                 command,
                 groupStateService: this.groupStateService,
                 writeMutation: async (write) => await this.writeMutation(context, write),
-                commitMutation: async (computed) =>
-                    await this.commitMutation(context, command, computed),
+                commitMutation: async (computed, lifecycleGuard) =>
+                    await this.commitMutation(context, command, computed, lifecycleGuard),
             });
         }
         const read = await this.groupStateService.read(command);
@@ -991,10 +992,17 @@ export class AppGroupInboxService extends AppInboxService {
         context: AppInboxMessageContext,
         command: GroupStateMutationCommand,
         computed: GroupMutationComputed,
+        lifecycleGuard?: WsSessionGenerationLifecycleComputed,
     ): Promise<unknown> {
         const result = await this.writeMutation(
             context,
             async (transaction) => {
+                if (lifecycleGuard) {
+                    await this.groupStateService.sessionGenerationLifecycle.write(
+                        transaction,
+                        lifecycleGuard,
+                    );
+                }
                 if (computed.outcome === 'idempotency-conflict') {
                     throw new TypeError(
                         'Validated group idempotency conflict is unreachable',

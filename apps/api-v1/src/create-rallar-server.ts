@@ -321,6 +321,7 @@ export function createRallarServer(
             runtime.appGroupInboxService.enqueueGroupSessionCleanup(
               wsRoutes.toGroupPresenceSessionCleanupInput(input),
             ),
+          hasCloseFacts: wsRoutes.hasAuthorisedWsCloseFacts,
           releaseCloseFacts: wsRoutes.releaseAuthorisedWsCloseFacts,
           retry: {
             delaysMs: [

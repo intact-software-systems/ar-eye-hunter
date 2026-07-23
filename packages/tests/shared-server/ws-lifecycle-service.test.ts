@@ -30,6 +30,7 @@ describe('ws lifecycle service', () => {
       now: () => 2_000,
       enqueueClientSessionDisconnect: vi.fn(() => Promise.resolve()),
       enqueueGroupSessionCleanup: vi.fn(() => Promise.resolve()),
+      hasCloseFacts: () => true,
       releaseCloseFacts: vi.fn(),
       retry: retryConfig(),
     };
@@ -61,6 +62,7 @@ describe('ws lifecycle service', () => {
       now: () => 2_000,
       enqueueClientSessionDisconnect: vi.fn(() => Promise.reject(failure)),
       enqueueGroupSessionCleanup: vi.fn(() => Promise.resolve()),
+      hasCloseFacts: () => true,
       releaseCloseFacts: vi.fn(),
       retry: retryConfig(scheduled),
     };
@@ -93,6 +95,7 @@ describe('ws lifecycle service', () => {
         return Promise.resolve();
       }),
       enqueueGroupSessionCleanup: vi.fn(() => Promise.resolve()),
+      hasCloseFacts: () => true,
       releaseCloseFacts: vi.fn(),
       retry: retryConfig(),
     };

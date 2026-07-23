@@ -15,6 +15,79 @@ interface LifecycleRuntime {
 }
 
 describe('real websocket close lifecycle retry ownership', () => {
+  it('ignores an old in-flight failure after a newer generation succeeds', async () => {
+    const server = new JsonWebSocketServer();
+    const oldSocket = new CloseSocket();
+    const newSocket = new CloseSocket();
+    const service = new WsQueueBoxServerService(
+      new InMemoryQueueBox(new Map()),
+      new InMemoryQueueBox(new Map()),
+      server,
+      'server-1',
+    );
+    const oldFailure = deferred<void>();
+    const oldStarted = deferred<void>();
+    const trusted = new Set(['session-1:generation-old', 'session-1:generation-new']);
+    const scheduled: Array<() => Promise<void>> = [];
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    process.on('unhandledRejection', onUnhandled);
+
+    try {
+      const runtime = initWsLifecycle(service, {
+        now: () => 1_100,
+        enqueueClientSessionDisconnect: async (input) => {
+          if (input.generationId === 'generation-old') {
+            oldStarted.resolve();
+            await oldFailure.promise;
+          }
+        },
+        enqueueGroupSessionCleanup: () => Promise.resolve(),
+        hasCloseFacts: (input) => trusted.has(closeKey(input)),
+        releaseCloseFacts: (input) => trusted.delete(closeKey(input)),
+        retry: {
+          delaysMs: [1, 2, 4],
+          schedule: (_delayMs, retry) => {
+            scheduled.push(retry);
+            return () => {
+              const index = scheduled.indexOf(retry);
+              if (index >= 0) scheduled.splice(index, 1);
+            };
+          },
+        },
+      } as never) as unknown as LifecycleRuntime;
+      server.addConnection(server.createConnectionContext(
+        'session-1',
+        oldSocket as never,
+        'generation-old',
+        1_000,
+      ));
+      oldSocket.dispatchClose();
+      await oldStarted.promise;
+
+      server.addConnection(server.createConnectionContext(
+        'session-1',
+        newSocket as never,
+        'generation-new',
+        1_001,
+      ));
+      newSocket.dispatchClose();
+      await flushAsyncEvents();
+      oldFailure.reject(new Error('late old failure'));
+      await flushAsyncEvents();
+
+      expect(unhandled).toEqual([]);
+      expect(runtime.getPendingCloseCount()).toBe(0);
+      expect(scheduled).toEqual([]);
+      expect(trusted).toEqual(new Set());
+      runtime.stop();
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+      consoleError.mockRestore();
+    }
+  });
+
   it('retains trusted facts after storage failure and retries without an unhandled rejection', async () => {
     const server = new JsonWebSocketServer();
     const socket = new CloseSocket();
@@ -52,6 +125,7 @@ describe('real websocket close lifecycle retry ownership', () => {
           expect(trusted.has(closeKey(input))).toBe(true);
           return writeDurableRow(durableRows, 'group', input);
         },
+        hasCloseFacts: (input) => trusted.has(closeKey(input)),
         releaseCloseFacts: (input) => {
           trusted.delete(closeKey(input));
         },
@@ -115,6 +189,7 @@ describe('real websocket close lifecycle retry ownership', () => {
         closed.push(`group:${input.generationId}`);
         return Promise.resolve();
       },
+      hasCloseFacts: () => true,
       releaseCloseFacts: () => undefined,
       retry: {
         delaysMs: [1],
@@ -196,4 +271,18 @@ class CloseSocket {
     const event = { code: 1000, reason: 'closed' } as CloseEvent;
     for (const listener of this.listeners.get('close') ?? []) listener(event);
   }
+}
+
+function deferred<T>(): Readonly<{
+  promise: Promise<T>;
+  resolve(value: T): void;
+  reject(reason: unknown): void;
+}> {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
 }

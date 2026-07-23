@@ -39,9 +39,27 @@ export interface WsSessionGenerationCloseFacts extends WsSessionGenerationFacts 
   readonly expireAtEpochMs: number;
 }
 
-export interface WsSessionCloseHighWaterState extends WsSessionGenerationCloseFacts {
-  readonly version: 2;
+export interface WsSessionGenerationGuardFacts extends WsSessionGenerationFacts {
+  readonly expireAtEpochMs: number;
 }
+
+type WsSessionOpenGuardState = Readonly<
+  WsSessionGenerationGuardFacts & {
+    version: 3;
+    status: 'open';
+  }
+>;
+
+type WsSessionClosedHighWaterState = Readonly<
+  WsSessionGenerationCloseFacts & {
+    version: 3;
+    status: 'closed';
+  }
+>;
+
+export type WsSessionCloseHighWaterState =
+  | WsSessionOpenGuardState
+  | WsSessionClosedHighWaterState;
 
 export interface WsSessionGenerationLifecycleRead {
   readonly identity: WsSessionHighWaterIdentity;
@@ -72,6 +90,10 @@ export interface WsSessionGenerationLifecycleService {
     facts: WsSessionGenerationCloseFacts,
     read: WsSessionGenerationLifecycleRead,
   ): WsSessionGenerationLifecycleComputed;
+  computeConnectGuard(
+    facts: WsSessionGenerationGuardFacts,
+    read: WsSessionGenerationLifecycleRead,
+  ): WsSessionGenerationLifecycleComputed;
   write(
     transaction: PSqlTransactionSql,
     computed: WsSessionGenerationLifecycleComputed,
@@ -96,22 +118,38 @@ export function createWsSessionGenerationLifecycleService(
     isGenerationClosed: (facts, read) => {
       validateGenerationFacts(facts);
       validateRead(facts, read);
-      return read.state !== null && compareGeneration(facts, read.state) <= 0;
+      return read.state?.status === 'closed' && compareGeneration(facts, read.state) <= 0;
     },
     isObservedAtClosed: (identity, observedAtEpochMs, read) => {
       validateRead(identity, read);
       validateTimestamp(observedAtEpochMs, 'WebSocket session observation');
-      return read.state !== null && observedAtEpochMs <= read.state.disconnectedAtEpochMs;
+      return read.state?.status === 'closed' &&
+        observedAtEpochMs <= read.state.disconnectedAtEpochMs;
     },
     computeClosed: (facts, read) => {
       validateCloseFacts(facts);
       validateRead(facts, read);
       const incoming = toHighWaterState(facts);
       if (!read.state) return toComputed('insert', read, incoming);
+      if (read.state.status === 'open') return toComputed('update', read, incoming);
       const selected = selectHighWater(read.state, incoming);
       return sameHighWaterState(read.state, selected)
         ? toComputed('none', read, read.state)
         : toComputed('update', read, selected);
+    },
+    computeConnectGuard: (facts, read) => {
+      validateGuardFacts(facts);
+      validateRead(facts, read);
+      if (!read.state) return toComputed('insert', read, toOpenState(facts));
+      const expireAtEpochMs = Math.max(read.state.expireAtEpochMs, facts.expireAtEpochMs);
+      const state = read.state.status === 'closed'
+        ? { ...read.state, expireAtEpochMs }
+        : toOpenState(
+          compareGeneration(facts, read.state) >= 0
+            ? { ...facts, expireAtEpochMs }
+            : { ...read.state, expireAtEpochMs },
+        );
+      return toComputed('update', read, state);
     },
     write: async (transaction, computed) => {
       if (computed.outcome === 'none') return;
@@ -137,15 +175,13 @@ export function createWsSessionGenerationLifecycleService(
 }
 
 function selectHighWater(
-  current: WsSessionCloseHighWaterState,
-  incoming: WsSessionCloseHighWaterState,
-): WsSessionCloseHighWaterState {
+  current: WsSessionClosedHighWaterState,
+  incoming: WsSessionClosedHighWaterState,
+): WsSessionClosedHighWaterState {
   const order = compareClose(incoming, current);
   const winner = order > 0 ? incoming : current;
   const expireAtEpochMs = Math.max(current.expireAtEpochMs, incoming.expireAtEpochMs);
-  return expireAtEpochMs === winner.expireAtEpochMs
-    ? winner
-    : { ...winner, expireAtEpochMs };
+  return expireAtEpochMs === winner.expireAtEpochMs ? winner : { ...winner, expireAtEpochMs };
 }
 
 function compareClose(
@@ -179,19 +215,39 @@ function toComputed(
 
 function toHighWaterState(
   facts: WsSessionGenerationCloseFacts,
-): WsSessionCloseHighWaterState {
-  return { version: 2, ...facts };
+): WsSessionClosedHighWaterState {
+  return { version: 3, status: 'closed', ...facts };
+}
+
+function toOpenState(
+  facts: WsSessionGenerationGuardFacts,
+): WsSessionOpenGuardState {
+  return { version: 3, status: 'open', ...facts };
 }
 
 function readHighWaterState(
   value: string,
   identity: WsSessionHighWaterIdentity,
 ): WsSessionCloseHighWaterState {
-  const state = JSON.parse(value) as WsSessionCloseHighWaterState;
-  validateCloseFacts(state);
-  if (state.version !== 2 || !sameIdentity(state, identity)) {
+  const decoded = JSON.parse(value) as
+    | WsSessionCloseHighWaterState
+    | Readonly<
+      WsSessionGenerationCloseFacts & { version: 2 }
+    >;
+  if (decoded.version === 2) {
+    validateCloseFacts(decoded);
+    if (!sameIdentity(decoded, identity)) {
+      throw new TypeError('WebSocket session close high-water state is invalid');
+    }
+    return { ...decoded, version: 3, status: 'closed' };
+  }
+  const state = decoded;
+  if (state.version !== 3 || !sameIdentity(state, identity)) {
     throw new TypeError('WebSocket session close high-water state is invalid');
   }
+  if (state.status === 'closed') validateCloseFacts(state);
+  else if (state.status === 'open') validateGuardFacts(state);
+  else throw new TypeError('WebSocket session close high-water state is invalid');
   return state;
 }
 
@@ -215,6 +271,14 @@ function validateGenerationFacts(facts: WsSessionGenerationFacts): void {
     throw new TypeError('WebSocket generation id is required');
   }
   validateTimestamp(facts.generationStartedAtEpochMs, 'WebSocket generation start');
+}
+
+function validateGuardFacts(facts: WsSessionGenerationGuardFacts): void {
+  validateGenerationFacts(facts);
+  validateTimestamp(facts.expireAtEpochMs, 'WebSocket session guard expiry');
+  if (facts.expireAtEpochMs < facts.generationStartedAtEpochMs) {
+    throw new TypeError('WebSocket session guard facts are invalid');
+  }
 }
 
 function validateCloseFacts(facts: WsSessionGenerationCloseFacts): void {
@@ -256,10 +320,15 @@ function sameIdentity(
 function toLifecycleKey(identity: WsSessionHighWaterIdentity): string {
   const scope = identity.scope;
   const values = scope.kind === 'client'
-    ? [scope.kind, scope.applicationId, scope.workspaceId, scope.principalId,
-      scope.clientInstanceId, identity.sessionId]
-    : [scope.kind, scope.applicationId, scope.workspaceId, scope.principalId,
-      identity.sessionId];
+    ? [
+      scope.kind,
+      scope.applicationId,
+      scope.workspaceId,
+      scope.principalId,
+      scope.clientInstanceId,
+      identity.sessionId,
+    ]
+    : [scope.kind, scope.applicationId, scope.workspaceId, scope.principalId, identity.sessionId];
   return values.map(encodeURIComponent).join(':');
 }
 

@@ -2,6 +2,12 @@ import { readFileSync } from 'node:fs';
 import { parse } from '@babel/parser';
 
 import { AppInboxType } from '@shared-server/rallar-system/services/app-inbox-contracts.ts';
+import {
+  findAstNode,
+  findRouteRegistration,
+  hasReachableAstNode,
+  type MutationRoutingAstNode,
+} from './mutation-routing-call-graph.ts';
 
 export interface MutationRouteInventoryEntry {
   readonly transport: 'HTTP' | 'WS_INBOX' | 'WS_LIFECYCLE' | 'MAINTENANCE';
@@ -43,7 +49,6 @@ const OWNERS = {
   D: 'packages/shared-server/rallar-system/services/AppCrdtInboxService.ts',
   N: 'packages/shared-server/rallar-system/services/AppAdminInboxService.ts',
 } as const;
-
 const INVENTORY_ROWS = `
 HTTP\tPUT ${CLIENT_ROUTE}/:principalId/principal\tCLIENT_PRINCIPAL_UPSERT\tc\t/clients/:principalId/principal\tc\tprocessClientAppInbox\tC\tAppClientInboxService.processCommand
 HTTP\tPUT ${CLIENT_ROUTE}/:principalId/instances/:clientInstanceId\tCLIENT_INSTANCE_UPSERT\tc\t/instances/:clientInstanceId\tc\tprocessClientAppInbox\tC\tAppClientInboxService.processCommand
@@ -101,10 +106,16 @@ export const MUTATION_ROUTE_INVENTORY: readonly MutationRouteInventoryEntry[] = 
   INVENTORY_ROWS,
 );
 
+export interface MutationRouteValidationOptions {
+  readonly sourceOverrides?: ReadonlyMap<string, string>;
+}
+
 export function validateMutationRouteInventory(
   inventory: readonly MutationRouteInventoryEntry[],
+  options: MutationRouteValidationOptions = {},
 ): readonly string[] {
   const issues: string[] = [];
+  const sources = createSourceReader(options);
   if (inventory.length !== 50) issues.push(`Expected 50 entrypoints, found ${inventory.length}`);
   if (new Set(inventory.map((item) => item.type)).size !== 46) {
     issues.push('Inventory must cover all 46 AppInbox command types');
@@ -134,16 +145,18 @@ export function validateMutationRouteInventory(
     ) {
       if (item[field] !== canonical[field]) issues.push(`${key(item)} has incorrect ${field}`);
     }
-    checkRegistration(issues, item);
-    checkAstMarker(issues, item.enqueueSourcePath, item.enqueueMarker, 'enqueue', item);
+    checkRegistration(issues, item, sources);
+    checkAstMarker(issues, item.enqueueSourcePath, item.enqueueMarker, 'enqueue', item, sources);
     checkAstMarker(
       issues,
       item.ownerSourcePath,
       `AppInboxType.${item.type}`,
       'type ownership',
       item,
+      sources,
     );
-    checkOwnerMethod(issues, item);
+    checkOwnerMethod(issues, item, sources);
+    checkRegisteredHandlerCallChain(issues, item, sources);
   }
   return issues;
 }
@@ -185,18 +198,25 @@ function decodeInventory(rows: string): readonly MutationRouteInventoryEntry[] {
 function key(item: MutationRouteInventoryEntry): string {
   return `${item.transport}:${item.entrypoint}:${item.type}`;
 }
-
 function checkRegistration(
   issues: string[],
   item: MutationRouteInventoryEntry,
+  sources: SourceReader,
 ): void {
   if (item.transport !== 'HTTP') {
-    checkAstMarker(issues, item.sourcePath, item.registrationMarker, 'registration', item);
+    checkAstMarker(
+      issues,
+      item.sourcePath,
+      item.registrationMarker,
+      'registration',
+      item,
+      sources,
+    );
     return;
   }
   const [method, rawPath] = item.entrypoint.split(' ');
   const routePath = rawPath;
-  const program = readProgram(issues, item.sourcePath, 'registration', item);
+  const program = sources.readProgram(issues, item.sourcePath, 'registration', item);
   if (!program) return;
   if (!hasRouteRegistration(program, method.toLowerCase(), routePath)) {
     issues.push(`${key(item)} registration is absent from ${item.sourcePath}`);
@@ -209,54 +229,82 @@ function checkAstMarker(
   marker: string,
   label: string,
   item: MutationRouteInventoryEntry,
+  sources: SourceReader,
 ): void {
-  const program = readProgram(issues, filePath, label, item);
+  const program = sources.readProgram(issues, filePath, label, item);
   if (program && !hasExactMarker(program, marker)) {
     issues.push(`${key(item)} ${label} marker is absent from ${filePath}`);
   }
 }
-
-function checkOwnerMethod(issues: string[], item: MutationRouteInventoryEntry): void {
+function checkOwnerMethod(
+  issues: string[],
+  item: MutationRouteInventoryEntry,
+  sources: SourceReader,
+): void {
   const method = item.owner.split('.').at(-1) ?? '';
-  const program = readProgram(issues, item.ownerSourcePath, 'owner', item);
+  const program = sources.readProgram(issues, item.ownerSourcePath, 'owner', item);
   if (program && !hasClassMethod(program, method)) {
     issues.push(`${key(item)} owner method is absent from ${item.ownerSourcePath}`);
   }
 }
 
-type AstNode = { readonly type: string; readonly [key: string]: unknown };
+type AstNode = MutationRoutingAstNode;
 
-const programCache = new Map<string, AstNode>();
+interface SourceReader {
+  readProgram(
+    issues: string[],
+    filePath: string,
+    label: string,
+    item: MutationRouteInventoryEntry,
+  ): AstNode | undefined;
+}
 
-function readProgram(
+function createSourceReader(options: MutationRouteValidationOptions): SourceReader {
+  const cache = new Map<string, AstNode>();
+  return {
+    readProgram: (issues, filePath, label, item) => {
+      const cached = cache.get(filePath);
+      if (cached) return cached;
+      try {
+        const source = options.sourceOverrides?.get(filePath) ?? readFileSync(filePath, 'utf8');
+        const program = parse(source, {
+          sourceType: 'module',
+          sourceFilename: filePath,
+          plugins: ['typescript', 'importAttributes'],
+        }).program as AstNode;
+        cache.set(filePath, program);
+        return program;
+      } catch {
+        issues.push(`${key(item)} ${label} source cannot be parsed: ${filePath}`);
+        return undefined;
+      }
+    },
+  };
+}
+function checkRegisteredHandlerCallChain(
   issues: string[],
-  filePath: string,
-  label: string,
   item: MutationRouteInventoryEntry,
-): AstNode | undefined {
-  const cached = programCache.get(filePath);
-  if (cached) return cached;
-  try {
-    const program = parse(readFileSync(filePath, 'utf8'), {
-      sourceType: 'module',
-      sourceFilename: filePath,
-      plugins: ['typescript', 'importAttributes'],
-    }).program as AstNode;
-    programCache.set(filePath, program);
-    return program;
-  } catch {
-    issues.push(`${key(item)} ${label} source cannot be parsed: ${filePath}`);
-    return undefined;
+  sources: SourceReader,
+): void {
+  if (item.transport !== 'HTTP' || item.sourcePath !== item.enqueueSourcePath) return;
+  const [method, routePath] = item.entrypoint.split(' ');
+  const program = sources.readProgram(issues, item.sourcePath, 'call chain', item);
+  if (!program) return;
+  const registration = findRouteRegistration(program, method.toLowerCase(), routePath);
+  const handler = registration ? asNodes(registration.arguments)[1] : undefined;
+  if (
+    !handler ||
+    !hasReachableAstNode(program, handler, (node) => hasExactMarker(node, item.enqueueMarker))
+  ) {
+    issues.push(
+      `${key(item)} registered handler is not connected to ` +
+        `${item.enqueueMarker} with AppInboxType.${item.type}`,
+    );
   }
 }
 
 function hasRouteRegistration(program: AstNode, method: string, routePath: string): boolean {
-  return someNode(program, (node) => {
-    if (node.type !== 'CallExpression') return false;
-    const callee = asNode(node.callee);
-    const arguments_ = asNodes(node.arguments);
-    return readMemberName(callee) === method && readString(arguments_[0]) === routePath;
-  });
+  return findRouteRegistration(program, method, routePath) !== undefined;
 }
 
 function hasExactMarker(program: AstNode, marker: string): boolean {
@@ -310,13 +358,7 @@ function hasClassMethod(program: AstNode, method: string): boolean {
 }
 
 function someNode(value: unknown, predicate: (node: AstNode) => boolean): boolean {
-  if (!value || typeof value !== 'object') return false;
-  if (Array.isArray(value)) return value.some((item) => someNode(item, predicate));
-  const node = value as AstNode;
-  if (typeof node.type === 'string' && predicate(node)) return true;
-  return Object.entries(node).some(([name, child]) =>
-    !['loc', 'start', 'end', 'comments', 'tokens'].includes(name) && someNode(child, predicate)
-  );
+  return findAstNode(value, predicate) !== undefined;
 }
 
 function readCallName(node: AstNode | undefined): string {

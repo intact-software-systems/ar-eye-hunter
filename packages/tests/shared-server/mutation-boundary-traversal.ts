@@ -17,12 +17,12 @@ const EXACT_RESOLVED_HANDOFFS = new Set([
   'apps/api-v1/src/services/client-state-service.ts',
   'apps/api-v1/src/services/group-state-service.ts',
   'packages/shared/mod.ts',
-  'packages/shared-server/mod.ts',
   'packages/shared-server/rallar-system/services/AppAdminInboxService.ts',
   'packages/shared-server/rallar-system/services/AppAuthInboxService.ts',
   'packages/shared-server/rallar-system/services/AppClientInboxService.ts',
   'packages/shared-server/rallar-system/services/AppCrdtInboxService.ts',
   'packages/shared-server/rallar-system/services/AppGroupInboxService.ts',
+  'packages/shared-server/rallar-system/services/app-inbox-retry-finalization.ts',
   'packages/shared-server/rallar-system/services/RtcTopologyOutboxWork.ts',
 ]);
 
@@ -34,27 +34,35 @@ interface TraversalInput {
 export function findMutationBoundaryViolationsFromRootFiles(
   input: TraversalInput,
 ): readonly MutationBoundaryViolation[] {
-  const pending = input.roots.map(normalizePath);
-  const visited = new Set<string>();
+  const pending = input.roots.map((root) => ({ filePath: normalizePath(root), inspect: true }));
+  const visited = new Map<string, boolean>();
   const violations: MutationBoundaryViolation[] = [];
 
   while (pending.length > 0) {
-    const filePath = pending.shift()!;
-    if (visited.has(filePath)) continue;
-    visited.add(filePath);
+    const next = pending.shift()!;
+    const filePath = next.filePath;
+    if (visited.get(filePath) === true || (visited.has(filePath) && !next.inspect)) continue;
+    visited.set(filePath, next.inspect);
     if (EXACT_RESOLVED_HANDOFFS.has(filePath)) continue;
     const source = readFileSync(filePath, 'utf8');
-    const violation = input.analyze(source, filePath);
-    if (violation.directMutatorCalls.length > 0 || violation.mutatingImports.length > 0) {
-      violations.push(violation);
+    if (next.inspect) {
+      const violation = input.analyze(source, filePath);
+      if (violation.directMutatorCalls.length > 0 || violation.mutatingImports.length > 0) {
+        violations.push(violation);
+      }
     }
     for (const imported of readRuntimeImportSources(source, filePath)) {
-      const resolved = resolveLocalImport(filePath, imported);
+      const resolved = resolveLocalImport(filePath, imported.source);
       if (
-        resolved && !visited.has(resolved) &&
+        resolved && visited.get(resolved) !== true &&
         (isProductionSource(resolved) || isExplicitFixtureSource(resolved, input.roots))
       ) {
-        pending.push(resolved);
+        pending.push({
+          filePath: resolved,
+          inspect: next.inspect && !(
+            filePath === 'packages/shared-server/mod.ts' && imported.kind === 'export'
+          ),
+        });
       }
     }
   }
@@ -62,31 +70,34 @@ export function findMutationBoundaryViolationsFromRootFiles(
   return violations.toSorted((left, right) => left.filePath.localeCompare(right.filePath));
 }
 
-function readRuntimeImportSources(source: string, filePath: string): readonly string[] {
+function readRuntimeImportSources(
+  source: string,
+  filePath: string,
+): readonly Readonly<{ source: string; kind: 'import' | 'export' }>[] {
   const program = parse(source, {
     sourceType: 'module',
     sourceFilename: filePath,
     createImportExpressions: true,
     plugins: ['typescript', 'importAttributes'],
   }).program;
-  const imports = new Set<string>();
+  const imports = new Map<string, 'import' | 'export'>();
 
   walk(program, (node) => {
     if (node.type === 'ImportDeclaration') {
       if (node.importKind === 'type') return;
       const specifiers = asNodeArray(node.specifiers);
       if (specifiers.length > 0 && specifiers.every((item) => item.importKind === 'type')) return;
-      addStringLiteral(imports, node.source);
+      addStringLiteral(imports, node.source, 'import');
       return;
     }
     if (node.type === 'ExportNamedDeclaration' || node.type === 'ExportAllDeclaration') {
-      if (node.exportKind !== 'type') addStringLiteral(imports, node.source);
+      if (node.exportKind !== 'type') addStringLiteral(imports, node.source, 'export');
       return;
     }
-    if (node.type === 'ImportExpression') addStringLiteral(imports, node.source);
+    if (node.type === 'ImportExpression') addStringLiteral(imports, node.source, 'import');
   });
 
-  return [...imports];
+  return [...imports].map(([source, kind]) => ({ source, kind }));
 }
 
 function resolveLocalImport(fromFile: string, specifier: string): string | undefined {
@@ -141,9 +152,13 @@ function walk(value: unknown, visit: (node: AstNode) => void): void {
   }
 }
 
-function addStringLiteral(target: Set<string>, value: unknown): void {
+function addStringLiteral(
+  target: Map<string, 'import' | 'export'>,
+  value: unknown,
+  kind: 'import' | 'export',
+): void {
   const node = asNode(value);
-  if (node && typeof node.value === 'string') target.add(node.value);
+  if (node && typeof node.value === 'string') target.set(node.value, kind);
 }
 
 function asNode(value: unknown): AstNode | undefined {

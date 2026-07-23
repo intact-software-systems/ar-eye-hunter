@@ -2,35 +2,131 @@ import assert from 'node:assert/strict';
 
 import type { StateScope } from '@shared/api/state-types.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
-import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
-import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
-import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
 import {
-  createClientStateEventRepository,
-  createGroupStateEventRepository,
-} from '@shared-server/postgres/rallar-system/createStateRepositories.ts';
-import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
-import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
-import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
-import { AppClientInboxService } from '@shared-server/rallar-system/services/AppClientInboxService.ts';
-import {
-  AppGroupInboxService,
   type GroupCreateAppInboxPayload,
   type GroupPresenceConnectAppInboxPayload,
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import { toAuthorisedWsClientConnectEnqueue } from '@shared-server/rallar-system/services/authorised-ws-client-app-inbox.ts';
-import { createClientStateService } from '@shared-server/rallar-system/services/client-state-service.ts';
 import {
-  createGroupStateService,
   type GroupStateWritten,
 } from '@shared-server/rallar-system/services/group-state-service.ts';
 import { toResilienceDto } from '../../src/middleware-resilience.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import { FUTURE_MS, waitForPGliteQueueRow, withPGliteSql } from './pglite-auth-test-harness.ts';
+import {
+  createPGliteAppInboxWsCloseHarness as createHarness,
+  pauseNextPGliteLifecycleRead as pauseNextLifecycleRead,
+} from './pglite-app-inbox-ws-close-test-harness.ts';
 
 const SCOPE: StateScope = { applicationId: 'ar-eye-hunter', workspaceId: 'default' };
+
+Deno.test('PGlite client connect conflicts when close commits after lifecycle read', async () => {
+  await withPGliteSql(async (sql) => {
+    const harness = await createHarness(sql);
+    const generationId = 'pglite-client-interleaved';
+    const connectedAtEpochMs = Date.now() - 1_000;
+    const connectInput = {
+      authSession: harness.authority,
+      generationId,
+      input: { ...SCOPE, connectedAtEpochMs, expiresAtEpochMs: FUTURE_MS },
+    } as const;
+    const pause = pauseNextLifecycleRead(harness.clientState);
+    const connectEntry = await harness.client.enqueueAuthorisedWsClientConnect(connectInput);
+    const staleConnect = processNext(harness.reader);
+    await pause.reached;
+
+    await harness.client.enqueueAuthorisedWsClientDisconnect({
+      connection: toAuthorisedWsClientConnectEnqueue(connectInput).data,
+      disconnectedAtEpochMs: connectedAtEpochMs + 1,
+      reason: 'socket-closed',
+    });
+    await processNext(harness.secondReader);
+    pause.resume();
+    await staleConnect;
+
+    assert.deepEqual(
+      (await harness.clients.readSnapshot({
+        ...SCOPE,
+        principalId: harness.authority.clientId,
+      }))?.activeSessions ?? [],
+      [],
+    );
+    await assertQueueRetriedAndCompleted(sql, connectEntry.key);
+    assert.deepEqual(
+      (await harness.clients.readSnapshot({
+        ...SCOPE,
+        principalId: harness.authority.clientId,
+      }))?.activeSessions ?? [],
+      [],
+    );
+  });
+});
+
+Deno.test('PGlite group connect conflicts when cleanup commits after lifecycle read', async () => {
+  await withPGliteSql(async (sql) => {
+    const harness = await createHarness(sql);
+    const groupId = 'pglite-group-interleaved';
+    await createRoom(harness, groupId, sql);
+    const wsGenerationId = 'pglite-group-ws-interleaved';
+    const wsStartedAtEpochMs = Date.now() - 900;
+    const presenceGenerationId = crypto.randomUUID();
+    const pause = pauseNextLifecycleRead(harness.groupState);
+    const pending = harness.group.processAuthenticatedEntryUntilCompletion<
+      GroupPresenceConnectAppInboxPayload,
+      GroupStateWritten
+    >({
+      type: AppInboxType.GROUP_PRESENCE_CONNECT,
+      resourceId: `presence-${presenceGenerationId}`,
+      contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${groupId}`,
+      senderId: harness.authority.clientId,
+      data: {
+        scope: SCOPE,
+        groupId,
+        sessionId: harness.authority.sessionId,
+        request: {
+          principalId: harness.authority.clientId,
+          generationId: presenceGenerationId,
+          connectedAtEpochMs: wsStartedAtEpochMs - 50,
+          lastHeartbeatAtEpochMs: wsStartedAtEpochMs - 50,
+          expiresAtEpochMs: FUTURE_MS,
+          actorPrincipalId: harness.authority.clientId,
+          actorSessionId: harness.authority.sessionId,
+          requestId: `presence-${presenceGenerationId}`,
+        },
+      },
+    }, harness.authority);
+    const connectKey = await waitForTypeKey(sql, AppInboxType.GROUP_PRESENCE_CONNECT);
+    const staleConnect = processNext(harness.reader);
+    await pause.reached;
+
+    await harness.group.enqueueGroupSessionCleanup({
+      connection: toAuthorisedWsClientConnectEnqueue({
+        authSession: harness.authority,
+        generationId: wsGenerationId,
+        input: { ...SCOPE, connectedAtEpochMs: wsStartedAtEpochMs },
+      }).data,
+      disconnectedAtEpochMs: wsStartedAtEpochMs + 1,
+      reason: 'socket-closed',
+    });
+    await processNext(harness.secondReader);
+    pause.resume();
+    await staleConnect;
+
+    assert.deepEqual(
+      (await harness.groups.readSnapshot({ ...SCOPE, groupId }))
+        ?.activeSessions ?? [],
+      [],
+    );
+    await assertQueueRetriedAndCompleted(sql, connectKey);
+    assert.ok((await pending).right);
+    assert.deepEqual(
+      (await harness.groups.readSnapshot({ ...SCOPE, groupId }))
+        ?.activeSessions ?? [],
+      [],
+    );
+  });
+});
 
 Deno.test('PGlite client close tombstone suppresses a delayed AppInbox connect row', async () => {
   await withPGliteSql(async (sql) => {
@@ -189,67 +285,6 @@ Deno.test('PGlite group cleanup removes an active independent presence generatio
   });
 });
 
-async function createHarness(sql: PGliteSql) {
-  const runtime = new PSqlRuntimeStateRepository(sql);
-  const resourceInbox = new ResourceInboxRepository(sql);
-  const resourceResults = new ResourceInboxResultsRepository(sql);
-  const reader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
-  const authority = {
-    clientId: 'owner',
-    username: 'owner',
-    sessionId: 'owner-session',
-    accessToken: 'owner-token',
-    issuedAtEpochMs: Date.now() - 2_000,
-    expiresAtEpochMs: FUTURE_MS,
-  };
-  const authSessions = new AuthSessionRepository(runtime);
-  await authSessions.putSession(authority);
-  const options = {
-    waitMaxElapsedMsecs: 5_000,
-    waitRetryIntervalMsecs: 1,
-    waitMaxRetryIntervalMsecs: 4,
-    waitJitterRatio: 0,
-  } as const;
-  const groupEvents = createGroupStateEventRepository(runtime);
-  return {
-    authority,
-    reader,
-    client: new AppClientInboxService(
-      reader,
-      resourceInbox,
-      resourceResults,
-      sql,
-      createClientStateService({
-        runtimeRepository: runtime,
-        createClientStateEventStore: createClientStateEventRepository,
-        serviceId: 'pglite-close-test',
-      }),
-      'pglite-close-test',
-      undefined,
-      options,
-    ),
-    group: new AppGroupInboxService(
-      reader,
-      resourceInbox,
-      resourceResults,
-      sql,
-      createGroupStateService({
-        runtimeRepository: runtime,
-        createGroupStateEventStore: createGroupStateEventRepository,
-        authSessionRepository: authSessions,
-        serviceId: 'pglite-close-test',
-      }),
-      'pglite-close-test',
-      undefined,
-      options,
-    ),
-    clients: new ClientStateRepository(runtime, {
-      events: createClientStateEventRepository(runtime),
-    }),
-    groups: new GroupStateRepository(runtime, { events: groupEvents }),
-  };
-}
-
 async function createRoom(
   harness: Awaited<ReturnType<typeof createHarness>>,
   groupId: string,
@@ -332,6 +367,19 @@ async function release(sql: PGliteSql, key: QueueKey): Promise<void> {
     where ri_topic_id = ${key.topicId} and ri_resource_id = ${key.resourceId}
       and fk_ext_bank_id = ${key.contextId}
   `;
+}
+
+async function assertQueueRetriedAndCompleted(
+  sql: PGliteSql,
+  key: QueueKey,
+): Promise<void> {
+  const [row] = await sql<{ status: string; attempts: number }[]>`
+    select ri_status as status, ri_attempts as attempts from resource_inbox
+    where ri_topic_id = ${key.topicId} and ri_resource_id = ${key.resourceId}
+      and fk_ext_bank_id = ${key.contextId}
+  `;
+  assert.equal(row?.status, 'COMPLETED');
+  assert.ok(Number(row?.attempts ?? 0) >= 2, 'Expected AppInbox to perform a full retry');
 }
 
 async function assertQueuedTypes(sql: PGliteSql, types: readonly AppInboxType[]) {

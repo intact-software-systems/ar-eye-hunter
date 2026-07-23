@@ -1,6 +1,7 @@
 import { parse } from '@babel/parser';
 import { readdirSync } from 'node:fs';
 import path from 'node:path';
+import { findCapabilityMutationCalls } from './mutation-boundary-capabilities.ts';
 import { findMutationBoundaryViolationsFromRootFiles } from './mutation-boundary-traversal.ts';
 
 const FORBIDDEN_DIRECT_MUTATORS = new Set([
@@ -101,6 +102,9 @@ export function analyzeMutationBoundarySource(
   const directMutatorCalls = new Set<string>();
   const mutatingImports = new Set<string>();
   const directAliases = new Map<string, string>();
+  for (const call of findCapabilityMutationCalls(source, filePath)) {
+    directMutatorCalls.add(call);
+  }
 
   walk(program, (node) => {
     if (node.type === 'ImportDeclaration') {
