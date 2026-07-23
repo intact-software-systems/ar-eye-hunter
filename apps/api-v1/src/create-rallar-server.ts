@@ -87,6 +87,7 @@ export function createRallarServer(
       serverId: myServerId,
       audit: options.crdtAuditSink,
     });
+  middleware.appCrdtInboxService?.setAuditSink(options.crdtAuditSink);
   const runtimeStateRepository = createRuntimeStateRepository(sql);
   const configuredRtcTopologyOptions = options.rtcTopologyOptions ??
     getApiRtcTopologyServiceOptions();

@@ -1,6 +1,7 @@
 import {
     hashRallarCrdtJson,
     toRallarCrdtDocumentKey,
+    validateRallarCrdtUpdateEnvelope,
     validateRallarCrdtSnapshotEnvelope,
     type RallarCrdtDocumentRef,
     type RallarCrdtSnapshotEnvelope,
@@ -76,21 +77,67 @@ export function decodeCrdtMutationCommand(value: unknown): CrdtMutationCommand {
 
 export function decodeCrdtMutationResult(value: unknown): CrdtMutationResult {
     const result = requireRecord(value, 'CRDT mutation result');
-    requireExactKeys(result, [
-        'version', 'operation', 'status', 'commandId', 'documentKey',
-        'documentRevision', 'appendSequence', 'code',
-    ], 'CRDT mutation result');
-    if (result.version !== 1) throw new TypeError('CRDT mutation result version is invalid');
-    requireOneOf(result.operation, [
+    const operation = requireOneOf(result.operation, [
         'append', 'rebuild-projection', 'compact', 'lifecycle', 'erase',
     ] as const, 'result operation');
+    const operationKeys = operation === 'append'
+        ? ['appendResult']
+        : operation === 'compact'
+        ? ['snapshot']
+        : operation === 'lifecycle'
+        ? ['metadata']
+        : operation === 'rebuild-projection'
+        ? ['integrity']
+        : ['request', 'auditEvent', 'metadata', 'redactedBundle'];
+    requireExactKeys(result, [
+        'version', 'operation', 'status', 'commandId', 'documentKey',
+        'documentRevision', 'appendSequence', 'code', ...operationKeys,
+    ], 'CRDT mutation result');
+    if (result.version !== 1) throw new TypeError('CRDT mutation result version is invalid');
     requireOneOf(result.status, ['accepted', 'replay', 'rejected'] as const, 'result status');
     requireString(result.commandId, 'result commandId');
     requireString(result.documentKey, 'result documentKey');
     requireNullableInteger(result.documentRevision, 'result documentRevision');
     requireNullableInteger(result.appendSequence, 'result appendSequence');
     if (result.code !== null) requireString(result.code, 'result code');
+    if (operation === 'append') decodeAppendResult(result.appendResult);
+    else if (operation === 'compact' && result.snapshot !== null) {
+        if (!validateRallarCrdtSnapshotEnvelope(result.snapshot).valid) {
+            throw new TypeError('CRDT compact result snapshot is invalid');
+        }
+    } else if (operation === 'lifecycle' && result.metadata !== null) {
+        requireRecord(result.metadata, 'CRDT lifecycle result metadata');
+    } else if (operation === 'rebuild-projection' && result.integrity !== null) {
+        requireRecord(result.integrity, 'CRDT rebuild result integrity');
+    } else if (operation === 'erase') {
+        for (const field of ['request', 'auditEvent', 'metadata', 'redactedBundle']) {
+            if (result[field] !== null) requireRecord(result[field], `CRDT erase result ${field}`);
+        }
+    }
     return result as unknown as CrdtMutationResult;
+}
+
+function decodeAppendResult(value: unknown): void {
+    const append = requireRecord(value, 'CRDT append result');
+    const status = requireOneOf(append.status, ['accepted', 'duplicate', 'rejected'] as const, 'append status');
+    if (status === 'accepted' || status === 'duplicate') {
+        requireExactKeys(append, ['status', 'update', 'append', 'document'], 'CRDT append result');
+        decodeExactUpdateEnvelope(append.update);
+        requireRecord(append.append, 'CRDT append metadata');
+        requireRecord(append.document, 'CRDT append document metadata');
+        return;
+    }
+    const keys = [
+        'status', 'code', 'reason', 'retryable',
+        ...('update' in append ? ['update'] : []),
+        ...('validation' in append ? ['validation'] : []),
+        ...('document' in append ? ['document'] : []),
+    ];
+    requireExactKeys(append, keys, 'CRDT append rejection');
+    requireString(append.code, 'append rejection code');
+    requireString(append.reason, 'append rejection reason');
+    if (typeof append.retryable !== 'boolean') throw new TypeError('append retryable is invalid');
+    if ('update' in append) decodeExactUpdateEnvelope(append.update);
 }
 
 function validateOperationFields(
@@ -99,7 +146,7 @@ function validateOperationFields(
     document: RallarCrdtDocumentRef,
 ): void {
     if (operation === 'append') {
-        const update = command.update as RallarCrdtUpdateEnvelope;
+        const update = decodeExactUpdateEnvelope(command.update);
         if (toRallarCrdtDocumentKey(update.document) !== toRallarCrdtDocumentKey(document)) {
             throw new TypeError('CRDT update document differs');
         }
@@ -108,6 +155,13 @@ function validateOperationFields(
     else if (operation === 'compact') {
         if (command.snapshot !== null && !validateRallarCrdtSnapshotEnvelope(command.snapshot as RallarCrdtSnapshotEnvelope).valid) {
             throw new TypeError('CRDT compact snapshot is invalid');
+        }
+        if (
+            command.snapshot !== null &&
+            toRallarCrdtDocumentKey((command.snapshot as RallarCrdtSnapshotEnvelope).document) !==
+                toRallarCrdtDocumentKey(document)
+        ) {
+            throw new TypeError('CRDT compact snapshot document differs from command document');
         }
         requireString(command.reason, 'reason');
     } else if (operation === 'lifecycle') {
@@ -125,6 +179,35 @@ function validateOperationFields(
         requireOneOf(command.mode, ['destroy-document', 'redact-payloads'] as const, 'erase mode');
         requireString(command.reason, 'reason');
     }
+}
+
+export function decodeExactUpdateEnvelope(value: unknown): RallarCrdtUpdateEnvelope {
+    const update = requireRecord(value, 'CRDT update envelope');
+    const allowed = [
+        'protocolVersion', 'document', 'updateId', 'replicaId', 'lamport', 'parents',
+        'schemaVersion', 'operationVersion', 'createdAtEpochMs', 'payload',
+        ...('actorId' in update ? ['actorId'] : []),
+        ...('sessionId' in update ? ['sessionId'] : []),
+        ...('causalFrontier' in update ? ['causalFrontier'] : []),
+        ...('hash' in update ? ['hash'] : []),
+    ];
+    requireExactKeys(update, allowed, 'CRDT update envelope');
+    const document = requireRecord(update.document, 'CRDT update document');
+    const documentKeys = [
+        'applicationId', 'scope', 'documentType', 'documentId',
+        ...('workspaceId' in document ? ['workspaceId'] : []),
+        ...('roomRef' in document ? ['roomRef'] : []),
+        ...('principalId' in document ? ['principalId'] : []),
+        ...('customScope' in document ? ['customScope'] : []),
+    ];
+    requireExactKeys(document, documentKeys, 'CRDT update document');
+    if ('roomRef' in document) {
+        const roomRef = requireRecord(document.roomRef, 'CRDT update roomRef');
+        requireExactKeys(roomRef, ['applicationId', 'workspaceId', 'groupId'], 'CRDT update roomRef');
+    }
+    const validation = validateRallarCrdtUpdateEnvelope(update);
+    if (!validation.valid) throw new TypeError('CRDT update envelope is invalid');
+    return update as unknown as RallarCrdtUpdateEnvelope;
 }
 
 const commonCommandKeys = [

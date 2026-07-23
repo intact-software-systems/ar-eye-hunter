@@ -32,6 +32,8 @@ type AppInboxUnavailableOperation =
 const APP_INBOX_CLIENT_TOPIC = 'app-inbox.client-state';
 const APP_INBOX_GROUP_TOPIC = 'app-inbox.group-state';
 const APP_INBOX_AUTH_TOPIC = 'app-inbox.auth-state';
+const APP_INBOX_CRDT_TOPIC = 'app-inbox.crdt-state';
+const APP_INBOX_ADMIN_TOPIC = 'app-inbox.admin-operations';
 const APP_INBOX_OPERATIONS = new Set<string>(Object.values(AppInboxType));
 const APP_INBOX_GROUP_OPERATIONS = new Set<AppInboxType>([
   ...Object.values(AppInboxType).filter((operation) => operation.startsWith('GROUP_')),
@@ -53,6 +55,12 @@ const APP_INBOX_OPERATION_SPECIFIC_TOPIC_BY_OPERATION: Readonly<
   [AppInboxType.AUTH_WS_TICKET_CONSUME]: APP_INBOX_AUTH_TOPIC,
   [AppInboxType.AUTH_AGENT_SESSION_TICKETS_ISSUE]: APP_INBOX_AUTH_TOPIC,
   [AppInboxType.AUTH_AGENT_SESSION_TICKET_CONSUME]: APP_INBOX_AUTH_TOPIC,
+  [AppInboxType.CRDT_UPDATE_APPEND]: APP_INBOX_CRDT_TOPIC,
+  [AppInboxType.CRDT_PROJECTION_REBUILD]: APP_INBOX_CRDT_TOPIC,
+  [AppInboxType.CRDT_SNAPSHOT_COMPACT]: APP_INBOX_CRDT_TOPIC,
+  [AppInboxType.CRDT_LIFECYCLE_UPDATE]: APP_INBOX_CRDT_TOPIC,
+  [AppInboxType.CRDT_ERASE]: APP_INBOX_CRDT_TOPIC,
+  [AppInboxType.ADMIN_PRUNE_EXPIRED]: APP_INBOX_ADMIN_TOPIC,
 };
 const OPTIONAL_STRING_FIELDS = [
   'topicId',

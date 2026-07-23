@@ -4,16 +4,11 @@ import { ResourceInboxRepository } from '../resource-inbox/ResourceInboxReposito
 import { ResourceInboxResultsRepository } from '../resource-inbox/ResourceInboxResultsRepository.ts';
 import type {
     AdminPruneExpiredRepository,
+    AdminPruneCandidatePage,
     AdminPrunePageComputed,
-    AdminPrunePageRead,
     AdminPrunePageWork,
 } from '../../rallar-system/admin-operations/AdminPruneExpiredWork.ts';
-import {
-    advanceAdminPruneAggregate,
-    decodeAdminPruneAggregate,
-    toAdminPruneAggregateEntry,
-    toAdminPruneAggregateKey,
-} from '../../rallar-system/admin-operations/admin-prune-progress.ts';
+import { decodeAdminPruneAggregate, toAdminPruneAggregateKey } from '../../rallar-system/admin-operations/admin-prune-progress.ts';
 
 type RuntimeRow = Readonly<{ store_namespace: string; store_key: string }>;
 type ResourceRow = Readonly<{ ri_row_id: number | string }>;
@@ -26,7 +21,7 @@ export class PSqlAdminPruneExpiredRepository implements AdminPruneExpiredReposit
         _serviceId: string,
     ) {}
 
-    async readPage(input: Parameters<AdminPruneExpiredRepository['readPage']>[0]): Promise<AdminPrunePageRead> {
+    async readPage(input: Parameters<AdminPruneExpiredRepository['readPage']>[0]): Promise<AdminPruneCandidatePage> {
         switch (input.category) {
             case 'runtime-state': return await readRuntimePage(this.sql, input);
             case 'resource-inbox': return await readResourcePage(this.sql, input);
@@ -40,11 +35,17 @@ export class PSqlAdminPruneExpiredRepository implements AdminPruneExpiredReposit
         command: AdminPrunePageWork,
         rowIds: readonly string[],
     ): Promise<number> {
-        let deleted = 0;
-        for (const rowId of rowIds) {
-            deleted += await deleteRow(transaction, command, rowId);
-        }
-        return deleted;
+        if (rowIds.length === 0) return 0;
+        return await deletePageRows(transaction, command, rowIds);
+    }
+
+    async readAggregate(jobId: string) {
+        const key = toAdminPruneAggregateKey(jobId);
+        const current = await new ResourceInboxResultsRepository(this.sql).findAnyByKey(key);
+        if (!current) throw new Error('Admin prune aggregate was not found');
+        const aggregate = decodeAdminPruneAggregate(JSON.parse(current.resource));
+        if (aggregate.jobId !== jobId) throw new TypeError('Admin prune aggregate identity is corrupt');
+        return { aggregate, resource: current.resource };
     }
 
     async writeOutbox(transaction: PSqlTransactionSql, entry: ResourceEntry): Promise<void> {
@@ -55,18 +56,15 @@ export class PSqlAdminPruneExpiredRepository implements AdminPruneExpiredReposit
         transaction: PSqlTransactionSql,
         computed: AdminPrunePageComputed,
     ): Promise<void> {
-        const key = toAdminPruneAggregateKey(computed.jobId);
-        const current = await new ResourceInboxResultsRepository(transaction).findAnyByKey(key);
-        if (!current) throw new Error('Admin prune aggregate was not found');
-        const aggregate = decodeAdminPruneAggregate(JSON.parse(current.resource));
-        const next = toAdminPruneAggregateEntry(advanceAdminPruneAggregate(aggregate, computed));
+        const next = computed.aggregateSuccessor;
+        const key = next.key;
         const rows = await transaction<{ ris_row_id: number | string }[]>`
             update resource_inbox_results
             set ris_resource = ${next.resource}, ris_status = ${next.status}
             where ris_topic_id = ${key.topicId}
               and ris_resource_id = ${key.resourceId}
               and fk_ext_bank_id = ${key.contextId}
-              and ris_resource = ${current.resource}
+              and ris_resource = ${computed.expectedAggregate}
             returning ris_row_id
         `;
         if (rows.length !== 1) {
@@ -79,12 +77,13 @@ export class PSqlAdminPruneExpiredRepository implements AdminPruneExpiredReposit
     async finishReserved(
         transaction: PSqlTransactionSql,
         entry: ResourceEntry,
+        finishedAtEpochMs: number,
     ): Promise<boolean> {
         return await new ResourceInboxRepository(transaction).finishReserved(
             entry.key,
             entry.dequeueAudit.attempts,
             EntityStatus.COMPLETED,
-            new Date(),
+            new Date(finishedAtEpochMs),
         );
     }
 }
@@ -92,7 +91,7 @@ export class PSqlAdminPruneExpiredRepository implements AdminPruneExpiredReposit
 async function readRuntimePage(
     sql: PSqlSql,
     input: Parameters<AdminPruneExpiredRepository['readPage']>[0],
-): Promise<AdminPrunePageRead> {
+): Promise<AdminPruneCandidatePage> {
     const [namespace, key] = decodeTuple(input.afterCursor, 2);
     const rows = await sql<RuntimeRow[]>`
         select store_namespace, store_key
@@ -108,7 +107,7 @@ async function readRuntimePage(
 async function readResourcePage(
     sql: PSqlSql,
     input: Parameters<AdminPruneExpiredRepository['readPage']>[0],
-): Promise<AdminPrunePageRead> {
+): Promise<AdminPruneCandidatePage> {
     const after = input.afterCursor === null ? 0 : requireInteger(input.afterCursor);
     const rows = await sql<ResourceRow[]>`
         select ri_row_id
@@ -125,7 +124,7 @@ async function readResourcePage(
 async function readResultsPage(
     sql: PSqlSql,
     input: Parameters<AdminPruneExpiredRepository['readPage']>[0],
-): Promise<AdminPrunePageRead> {
+): Promise<AdminPruneCandidatePage> {
     const after = input.afterCursor === null ? 0 : requireInteger(input.afterCursor);
     const rows = await sql<ResultsRow[]>`
         select ris_row_id
@@ -140,7 +139,7 @@ async function readResultsPage(
 async function readAppDataPage(
     sql: PSqlSql,
     input: Parameters<AdminPruneExpiredRepository['readPage']>[0],
-): Promise<AdminPrunePageRead> {
+): Promise<AdminPruneCandidatePage> {
     if (!input.appData) throw new TypeError('App-data prune requires namespace');
     const [storeName, dataKey] = decodeTuple(input.afterCursor, 2);
     const rows = input.appData.storeName === null
@@ -162,50 +161,68 @@ async function readAppDataPage(
     return page(rows.map((row) => JSON.stringify([row.store_name, row.data_key])), input.pageSize);
 }
 
-async function deleteRow(
+async function deletePageRows(
     sql: PSqlSql,
     command: AdminPrunePageWork,
-    rowId: string,
+    rowIds: readonly string[],
 ): Promise<number> {
     switch (command.category) {
         case 'runtime-state': {
-            const [namespace, key] = decodeTuple(rowId, 2);
             return (await sql<RuntimeRow[]>`
-                delete from runtime_state_store
-                where store_namespace = ${namespace} and store_key = ${key}
+                with expired as (
+                    select value::jsonb ->> 0 as store_namespace,
+                           value::jsonb ->> 1 as store_key
+                    from jsonb_array_elements_text(${JSON.stringify(rowIds)}::jsonb)
+                )
+                delete from runtime_state_store target using expired
+                where target.store_namespace = expired.store_namespace
+                  and target.store_key = expired.store_key
                   and expire_at_ts <= ${new Date(command.capturedAtEpochMs)}
-                returning store_namespace, store_key
+                returning target.store_namespace, target.store_key
             `).length;
         }
         case 'resource-inbox':
             return (await sql<ResourceRow[]>`
-                delete from resource_inbox
-                where ri_row_id = ${requireInteger(rowId)}
+                with expired as (
+                    select value::bigint as ri_row_id
+                    from jsonb_array_elements_text(${JSON.stringify(rowIds)}::jsonb)
+                )
+                delete from resource_inbox target using expired
+                where target.ri_row_id = expired.ri_row_id
                   and expire_ts <= ${new Date(command.capturedAtEpochMs)}
-                returning ri_row_id
+                returning target.ri_row_id
             `).length;
         case 'resource-inbox-results':
             return (await sql<ResultsRow[]>`
-                delete from resource_inbox_results
-                where ris_row_id = ${requireInteger(rowId)}
+                with expired as (
+                    select value::bigint as ris_row_id
+                    from jsonb_array_elements_text(${JSON.stringify(rowIds)}::jsonb)
+                )
+                delete from resource_inbox_results target using expired
+                where target.ris_row_id = expired.ris_row_id
                   and expire_ts <= ${new Date(command.capturedAtEpochMs)}
-                returning ris_row_id
+                returning target.ris_row_id
             `).length;
         case 'app-data': {
             if (!command.appData) throw new TypeError('App-data prune requires namespace');
-            const [storeName, dataKey] = decodeTuple(rowId, 2);
             return (await sql<AppDataRow[]>`
-                delete from app_data_store
-                where app_namespace = ${command.appData.namespace}
-                  and store_name = ${storeName} and data_key = ${dataKey}
+                with expired as (
+                    select value::jsonb ->> 0 as store_name,
+                           value::jsonb ->> 1 as data_key
+                    from jsonb_array_elements_text(${JSON.stringify(rowIds)}::jsonb)
+                )
+                delete from app_data_store target using expired
+                where target.app_namespace = ${command.appData.namespace}
+                  and target.store_name = expired.store_name
+                  and target.data_key = expired.data_key
                   and expire_at_ts <= ${new Date(command.capturedAtEpochMs)}
-                returning store_name, data_key
+                returning target.store_name, target.data_key
             `).length;
         }
     }
 }
 
-function page(rowIds: readonly string[], size: number): AdminPrunePageRead {
+function page(rowIds: readonly string[], size: number): AdminPruneCandidatePage {
     return { rowIds: rowIds.slice(0, size), hasMore: rowIds.length > size };
 }
 

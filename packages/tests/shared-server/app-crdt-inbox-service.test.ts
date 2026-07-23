@@ -250,6 +250,7 @@ function createMetadata(
         lastAppendSequence: 0,
         updateCount: 0,
         snapshotCount: 0,
+        storedUpdateBytes: 0,
         retention: null,
         quota: null,
         projectionIds: [],
@@ -271,9 +272,16 @@ class MemoryCrdtMutationRepository implements CrdtMutationRepository {
         return Promise.resolve({
             document: this.metadata,
             existingUpdate: this.updates.at(-1) ?? null,
+            existingAppend: null,
             records: [],
             snapshot: null,
             authorized: true,
+            authorizationCode: 'allowed',
+            featureDecision: {
+                allowed: true, code: 'allowed', reason: 'test', rollout: 'production', retryable: false,
+            },
+            actorUpdatesInWindow: 0,
+            storedSnapshotBytes: 0,
         });
     }
 

@@ -24,8 +24,9 @@ import { installQueueBoxPubSubBridge } from '@shared-server/rallar-system/pubsub
 import { AppClientInboxService } from '@shared-server/rallar-system/services/AppClientInboxService.ts';
 import { AppGroupInboxService } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 import { AppAuthInboxService } from '@shared-server/rallar-system/services/AppAuthInboxService.ts';
-import { createApiCrdtInboxService } from './services/create-api-crdt-inbox-service.ts';
-import { createApiAdminInboxService } from './services/create-api-admin-inbox-service.ts';
+import {
+  createApiMutationInboxFactories, readConfiguredAdminClientIds,
+} from './services/create-api-mutation-inbox-factories.ts';
 import { createAuthMutationService } from '@shared-server/rallar-system/services/auth-state-mutations.ts';
 import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/services/auth-credential-issuer.ts';
 import { AppOutboxType } from '@shared-server/rallar-system/services/AppOutboxService.ts';
@@ -155,6 +156,8 @@ function initialise(
     clientsRepository,
   });
   const runtimeStateRepository = createRuntimeStateRepository(sql);
+  const authSessionRepository = createAuthSessionRepository(runtimeStateRepository);
+  const adminClientIds = readConfiguredAdminClientIds();
   const credentialIssuer = createHmacAuthCredentialIssuer(
     readRequiredAuthCredentialSecret(),
   );
@@ -268,7 +271,7 @@ function initialise(
     }) => {
       const durable = createGroupStateService({
         runtimeRepository: runtimeStateRepository,
-        authSessionRepository: createAuthSessionRepository(runtimeStateRepository),
+        authSessionRepository,
         createGroupStateEventStore: createGroupStateEventRepository,
         serviceId: myServerId,
         timing,
@@ -340,17 +343,14 @@ function initialise(
         timing,
         appInboxOptions,
       ),
-    createAppCrdtInboxService: ({ inboxQueueReader }) =>
-      createApiCrdtInboxService({
-        inboxQueueReader, resourceInboxRepository, resourceInboxResultsRepository,
-        database: postgresSql, serviceId: myServerId, timing, options: appInboxOptions,
-      }),
-    createAppAdminInboxService: ({ inboxQueueReader, outboxQueueReader, wakeQueueEngine }) =>
-      createApiAdminInboxService({
-        inboxQueueReader, outboxQueueReader, wakeQueueEngine,
-        resourceInboxRepository, resourceInboxResultsRepository,
-        database: postgresSql, serviceId: myServerId, timing, options: appInboxOptions,
-      }),
+    ...createApiMutationInboxFactories({
+      resourceInboxRepository, resourceInboxResultsRepository,
+      database: postgresSql, serviceId: myServerId, timing, options: appInboxOptions,
+      currentAuthority: {
+        readSession: (sessionId) => authSessionRepository.findBySessionId(sessionId),
+        adminClientIds,
+      },
+    }),
     resilience: {
       inbox: resilienceInbox,
       outbox: resilienceOutbox,

@@ -38,6 +38,8 @@ const TERMINAL_CODES = new Set([
     'client-state-event-collision',
     'client-state-event-repository-invariant-corruption',
     'client-state-repository-invariant-corruption',
+    'admin-prune-authority-denied',
+    'crdt-authority-denied',
     'group-mutation-authority-denied',
     'group-mutation-idempotency-conflict',
     'group-mutation-rejected',

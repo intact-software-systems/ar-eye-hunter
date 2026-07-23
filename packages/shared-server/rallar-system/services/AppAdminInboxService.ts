@@ -53,7 +53,17 @@ export type AdminPruneEnqueueResult = Readonly<{
 
 type AdminPruneRead = Readonly<{
     expiredRows: Readonly<Record<AdminPruneExpiredCategory, number>>;
+    authority: Readonly<{ allowed: boolean; code: string }>;
+    nowEpochMs: number;
 }>;
+
+export type AdminPruneAuthorityReader = (
+    input: Readonly<{
+        requestedBy: string;
+        requestedSessionId: string;
+        nowEpochMs: number;
+    }>,
+) => Promise<Readonly<{ allowed: boolean; code: string }>>;
 
 type AdminPruneComputed = Readonly<{
     result: AdminPruneEnqueueResult;
@@ -74,6 +84,8 @@ export class AppAdminInboxService extends AppInboxService {
         private readonly pageSize: number,
         timing?: RallarTimingSink,
         options?: AppInboxServiceOptions,
+        private readonly readAuthority: AdminPruneAuthorityReader = () =>
+            Promise.resolve({ allowed: false, code: 'current-authority-reader-missing' }),
     ) {
         super(
             inbox,
@@ -161,23 +173,41 @@ export class AppAdminInboxService extends AppInboxService {
     }
 
     private async read(command: AdminPruneCommand): Promise<AdminPruneRead> {
-        const pairs = await Promise.all(ADMIN_PRUNE_EXPIRED_CATEGORIES.map(async (category) => [
-            category,
-            command.categories.includes(category)
-                ? await this.pruner.countExpired(category, command.appData === null
-                    ? {}
-                    : { appData: {
-                        namespace: command.appData.namespace,
-                        ...(command.appData.storeName === null
-                            ? {}
-                            : { storeName: command.appData.storeName }),
-                    } })
-                : 0,
-        ] as const));
-        return { expiredRows: Object.fromEntries(pairs) as Record<AdminPruneExpiredCategory, number> };
+        const nowEpochMs = this.nowEpochMs();
+        const [pairs, authority] = await Promise.all([
+            Promise.all(ADMIN_PRUNE_EXPIRED_CATEGORIES.map(async (category) => [
+                category,
+                command.categories.includes(category)
+                    ? await this.pruner.countExpired(category, command.appData === null
+                        ? {}
+                        : { appData: {
+                            namespace: command.appData.namespace,
+                            ...(command.appData.storeName === null
+                                ? {}
+                                : { storeName: command.appData.storeName }),
+                        } })
+                    : 0,
+            ] as const)),
+            this.readAuthority({
+                requestedBy: command.requestedBy,
+                requestedSessionId: command.requestedSessionId,
+                nowEpochMs,
+            }),
+        ]);
+        return {
+            expiredRows: Object.fromEntries(pairs) as Record<AdminPruneExpiredCategory, number>,
+            authority,
+            nowEpochMs,
+        };
     }
 
     private compute(command: AdminPruneCommand, read: AdminPruneRead): AdminPruneComputed {
+        if (!read.authority.allowed || command.expireAtEpochMs <= read.nowEpochMs) {
+            throw Object.assign(new Error('Admin prune current authority is denied'), {
+                code: 'admin-prune-authority-denied',
+                status: 403,
+            });
+        }
         const results = command.categories.map((category) => ({
             category,
             expiredRows: read.expiredRows[category],
@@ -190,6 +220,8 @@ export class AppAdminInboxService extends AppInboxService {
                 kind: 'page',
                 jobId: command.jobId,
                 category,
+                requestedBy: command.requestedBy,
+                requestedSessionId: command.requestedSessionId,
                 capturedAtEpochMs: command.capturedAtEpochMs,
                 expireAtEpochMs: command.expireAtEpochMs,
                 pageSize: command.pageSize,
@@ -206,6 +238,8 @@ export class AppAdminInboxService extends AppInboxService {
                     generatedAtEpochMs: command.capturedAtEpochMs,
                     expireAtEpochMs: command.expireAtEpochMs,
                     serverId: this.serviceId,
+                    requestedBy: command.requestedBy,
+                    requestedSessionId: command.requestedSessionId,
                     categories: command.categories,
                     expiredRows: read.expiredRows,
                 })),

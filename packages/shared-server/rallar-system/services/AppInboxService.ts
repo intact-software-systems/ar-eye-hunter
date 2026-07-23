@@ -56,6 +56,7 @@ import {
     toTerminalAppInboxFailure,
     toUnavailableAppInboxFailure,
 } from './app-inbox-failure.ts';
+import { toLegacyAppInboxFailure } from './app-inbox-legacy-failure.ts';
 
 export const SIMPLER_GROUP_STATE_APP_INBOX_TOPIC = 'app-inbox.group-state';
 export const SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC = 'app-inbox.client-state';
@@ -186,6 +187,30 @@ export class AppInboxService {
             .catch((err) => {
                 console.error(`Error processing entry without waiting: ${err}`);
             });
+    }
+
+    /**
+     * Durably records an AppInbox command and returns only after the enqueue and
+     * idempotency check have completed. Processing remains asynchronous.
+     */
+    public async enqueueEntryDurably<V>(
+        enqueue: AppInboxEnqueueInput<V>,
+    ): Promise<void> {
+        await this.processEntryUntilCompletionInternal<V, V>(
+            enqueue,
+            false,
+            true,
+            async (key, wireEnqueue) => {
+                return await this.inbox.enqueueIfAbsent(
+                    newALUntargetedMessage(
+                        toAppInboxQueueCreatedBy(this.serviceId),
+                        newALRoute(key.topicId, key.contextId, key.resourceId),
+                        wireEnqueue.type.toString(),
+                        wireEnqueue,
+                    ),
+                );
+            },
+        );
     }
 
     // use this from client/group cleanup of expired
@@ -670,46 +695,6 @@ export class AppInboxService {
             contextId: enqueue.contextId ?? enqueue.senderId ?? 'rallar-server',
         });
     }
-}
-
-function toLegacyAppInboxFailure(failure: AppInboxFailure): string {
-    if (failure.version === 'legacy-string.v0') {
-        return failure.message;
-    }
-    if (failure.version === 'legacy-object.v0') {
-        return JSON.stringify({
-            error: failure.message,
-            code: failure.code,
-            message: failure.message,
-            status: failure.status,
-            ...(failure.denial?.details === null || failure.denial === null
-                ? {}
-                : { details: failure.denial.details }),
-        });
-    }
-    if (failure.version === 'legacy-retry-exhausted.v0') {
-        return JSON.stringify(failure.legacyWire);
-    }
-    if (failure.code === 'app-inbox-non-retryable') {
-        return failure.message;
-    }
-    if (failure.denial !== null) {
-        return JSON.stringify({
-            error: failure.message.startsWith('Forbidden:')
-                ? failure.message
-                : `Forbidden: ${failure.denial.message}`,
-            code: failure.denial.code,
-            message: failure.denial.message,
-            ...(failure.denial.details === null
-                ? {}
-                : { details: failure.denial.details }),
-        });
-    }
-    if (failure.version === 'canonical.v1') {
-        const { version: _version, ...persisted } = failure;
-        return JSON.stringify(persisted);
-    }
-    return JSON.stringify(failure);
 }
 
 function toNonNegativeFiniteNumber(

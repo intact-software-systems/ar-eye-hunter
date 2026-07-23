@@ -6,14 +6,12 @@ import {
     newALBroadcastMessage,
     newALRoute,
     RALLAR_CRDT_APP_TOPIC_ID,
-    RALLAR_CRDT_APPEND_RESPONSE_TYPE_ID,
     RALLAR_CRDT_CATCH_UP_REQUEST_TYPE_ID,
     RALLAR_CRDT_CATCH_UP_RESPONSE_TYPE_ID,
     RALLAR_CRDT_OPERATION_VERSION,
     RALLAR_CRDT_PROTOCOL_VERSION,
     RALLAR_CRDT_ROOM_TOPIC_ID,
     RALLAR_CRDT_UPDATE_TYPE_ID,
-    type RallarCrdtAppendResponseEnvelope,
     type RallarCrdtCatchUpResponseEnvelope,
     type RallarCrdtDocumentRef,
     type RallarCrdtOperationBatch,
@@ -360,7 +358,7 @@ describe('installRallarCrdtWsTopics', () => {
         }
     });
 
-    it('appends to the durable log, ACKs the sender, and fans out accepted updates when a log repository is configured', async () => {
+    it('hands accepted updates to durable mutation ingress without direct append or fanout', async () => {
         const { facade, socket } = createFacade({
             authorizeRoomMessage: () => true,
         });
@@ -368,8 +366,10 @@ describe('installRallarCrdtWsTopics', () => {
             now: () => 2_000,
             serverId: 'server-1',
         });
+        const accepted: unknown[] = [];
         installRallarCrdtWsTopics(facade, {
             logRepository,
+            mutationIngress: { enqueueUpdate: (entry) => { accepted.push(entry); return Promise.resolve(); } },
         });
         const update = createUpdateEnvelope();
         const message = newALBroadcastMessage(
@@ -385,39 +385,13 @@ describe('installRallarCrdtWsTopics', () => {
 
         await facade.handle(message);
 
-        const appendAck = socket.sent.find(
-            (entry) =>
-                entry.data.payload.typeId ===
-                RALLAR_CRDT_APPEND_RESPONSE_TYPE_ID,
-        );
-        expect(appendAck?.connectionId).toBe('conn-1');
-        const response = JSON.parse(
-            appendAck?.data.payload.resource ?? '{}',
-        ) as RallarCrdtAppendResponseEnvelope;
-        expect(response.results[0]).toMatchObject({
-            status: 'accepted',
-            append: {
-                appendSequence: 1,
-                acceptedAtEpochMs: 2_000,
-                principalId: 'peer-1',
-                serverId: 'server-1',
-                authorizationScope: 'room',
-            },
-        });
-        expect(
-            socket.sent
-                .filter(
-                    (entry) =>
-                        entry.data.payload.typeId ===
-                        RALLAR_CRDT_UPDATE_TYPE_ID,
-                )
-                .map((entry) => entry.connectionId)
-                .sort(),
-        ).toEqual(['conn-1', 'conn-2', 'conn-3']);
+        expect(accepted).toHaveLength(1);
+        expect(accepted[0]).toMatchObject({ kind: 'update', envelope: update });
+        expect(socket.sent).toHaveLength(0);
         expect(
             (await logRepository.readDocumentMetadata(roomDocumentRef))
             ?.updateCount,
-        ).toBe(1);
+        ).toBeUndefined();
     });
 
     it('responds to durable WS catch-up requests from the append log', async () => {
@@ -494,16 +468,17 @@ describe('installRallarCrdtWsTopics', () => {
         expect(response.page.lastSequence).toBe(2);
     });
 
-    it('fans out accepted principal updates only after durable append', async () => {
+    it('hands principal updates to durable mutation ingress without live fanout', async () => {
         const { facade, socket } = createFacade();
         const logRepository = new InMemoryRallarCrdtLogRepository({
             now: () => 2_000,
             serverId: 'server-1',
         });
+        const accepted: unknown[] = [];
         installRallarCrdtWsTopics(facade, {
             allowPrincipalDocuments: true,
             logRepository,
-            resolvePrincipalSessionIds: () => ['peer-1', 'peer-2', 'peer-3'],
+            mutationIngress: { enqueueUpdate: (entry) => { accepted.push(entry); return Promise.resolve(); } },
         });
         const update = createUpdateEnvelope({
             document: principalDocumentRef,
@@ -522,39 +497,16 @@ describe('installRallarCrdtWsTopics', () => {
 
         await facade.handle(message);
 
-        const appendAck = socket.sent.find(
-            (entry) =>
-                entry.data.payload.typeId ===
-                RALLAR_CRDT_APPEND_RESPONSE_TYPE_ID,
-        );
-        expect(appendAck?.connectionId).toBe('conn-1');
-        const response = JSON.parse(
-            appendAck?.data.payload.resource ?? '{}',
-        ) as RallarCrdtAppendResponseEnvelope;
-        expect(response.results[0]).toMatchObject({
-            status: 'accepted',
-            append: {
-                authorizationScope: 'principal',
-                principalId: 'peer-1',
-            },
-        });
-        expect(
-            socket.sent
-                .filter(
-                    (entry) =>
-                        entry.data.payload.typeId ===
-                        RALLAR_CRDT_UPDATE_TYPE_ID,
-                )
-                .map((entry) => entry.connectionId)
-                .sort(),
-        ).toEqual(['conn-2', 'conn-3']);
+        expect(accepted).toHaveLength(1);
+        expect(accepted[0]).toMatchObject({ kind: 'update', envelope: update });
+        expect(socket.sent).toHaveLength(0);
         expect(
             (await logRepository.readDocumentMetadata(principalDocumentRef))
                 ?.updateCount,
-        ).toBe(1);
+        ).toBeUndefined();
     });
 
-    it('ACKs durable append rejections without fanning out the rejected update', async () => {
+    it('does not run lifecycle rejection or fanout before AppInbox processing', async () => {
         const { facade, socket } = createFacade({
             authorizeRoomMessage: () => true,
         });
@@ -566,8 +518,10 @@ describe('installRallarCrdtWsTopics', () => {
             lifecycle: 'archived',
             changedAtEpochMs: 1_500,
         });
+        const accepted: unknown[] = [];
         installRallarCrdtWsTopics(facade, {
             logRepository,
+            mutationIngress: { enqueueUpdate: (entry) => { accepted.push(entry); return Promise.resolve(); } },
         });
         const update = createUpdateEnvelope();
         const message = newALBroadcastMessage(
@@ -583,24 +537,8 @@ describe('installRallarCrdtWsTopics', () => {
 
         await facade.handle(message);
 
-        expect(
-            socket.sent.filter(
-                (entry) =>
-                    entry.data.payload.typeId === RALLAR_CRDT_UPDATE_TYPE_ID,
-            ),
-        ).toHaveLength(0);
-        const appendAck = socket.sent.find(
-            (entry) =>
-                entry.data.payload.typeId ===
-                RALLAR_CRDT_APPEND_RESPONSE_TYPE_ID,
-        );
-        const response = JSON.parse(
-            appendAck?.data.payload.resource ?? '{}',
-        ) as RallarCrdtAppendResponseEnvelope;
-        expect(response.results[0]).toMatchObject({
-            status: 'rejected',
-            code: 'document-archived',
-        });
+        expect(accepted).toHaveLength(1);
+        expect(socket.sent).toHaveLength(0);
     });
 });
 

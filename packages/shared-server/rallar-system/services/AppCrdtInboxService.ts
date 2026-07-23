@@ -3,6 +3,7 @@ import {
     toRallarCrdtDocumentKey,
     type RallarCrdtDocumentLifecycleState,
     type RallarCrdtDocumentRef,
+    type RallarCrdtAuditSink,
     type RallarCrdtQuotaPolicy,
     type RallarCrdtRetentionPolicy,
     type RallarCrdtSnapshotEnvelope,
@@ -40,6 +41,8 @@ export type CrdtAdminMutationOperation =
     | 'erase';
 
 export class AppCrdtInboxService extends AppInboxService {
+    private audit: RallarCrdtAuditSink | undefined;
+
     constructor(
         public override readonly inbox: InboxQueueReader,
         public override readonly resourceInbox: ResourceInboxRepository,
@@ -49,6 +52,7 @@ export class AppCrdtInboxService extends AppInboxService {
         public override readonly serviceId: string,
         timing?: RallarTimingSink,
         options?: AppInboxServiceOptions,
+        effects: Readonly<{ audit?: RallarCrdtAuditSink }> = {},
     ) {
         super(
             inbox,
@@ -60,12 +64,17 @@ export class AppCrdtInboxService extends AppInboxService {
             timing,
             options,
         );
+        this.audit = effects.audit;
         for (const type of CRDT_MUTATION_INBOX_TYPES) {
             this.onStateMessage<unknown>(
                 type,
                 async (data, context) => await this.processCommand(data, context),
             );
         }
+    }
+
+    setAuditSink(audit: RallarCrdtAuditSink | undefined): void {
+        this.audit = audit;
     }
 
     async processCrdtCommandUntilCompletion(
@@ -105,29 +114,36 @@ export class AppCrdtInboxService extends AppInboxService {
             operation: 'append',
             commandId: input.update.updateId,
             actor: input.actor,
-            capturedAtEpochMs: input.capturedAtEpochMs,
-            expireAtEpochMs: input.expireAtEpochMs,
+            capturedAtEpochMs: input.update.createdAtEpochMs,
+            expireAtEpochMs: 253_402_300_799_999,
             document: input.update.document,
             responseAudience: input.responseAudience,
             update: input.update,
             authorizationScope: input.update.document.scope,
         });
         if (command.operation !== 'append') throw new TypeError('CRDT append command is invalid');
-        this.processCrdtCommandNoWaiting(command);
+        await this.enqueueEntryDurably({
+            type: toCrdtAppInboxType(command),
+            topicId: CRDT_APP_INBOX_TOPIC,
+            resourceId: command.commandId,
+            contextId: command.documentKey,
+            senderId: command.actor.sessionId,
+            data: command,
+        });
         return command;
     }
 
     async processAdminMutationUntilCompletion(
         operation: CrdtAdminMutationOperation,
         input: Readonly<{ adminSession: AuthSession; request: unknown }>,
-    ): Promise<CrdtMutationResult> {
+    ): Promise<unknown> {
         const command = await this.createAdminCommand(operation, input);
         const completed = await this.processCrdtCommandUntilCompletion(command);
         if (completed.left !== undefined) {
             throw Object.assign(new Error(completed.left.message), completed.left);
         }
         if (completed.right === undefined) throw new Error('CRDT AppInbox result is missing');
-        return decodeCrdtMutationResult(completed.right);
+        return toAdminPublicResult(decodeCrdtMutationResult(completed.right));
     }
 
     private async processCommand(
@@ -148,10 +164,16 @@ export class AppCrdtInboxService extends AppInboxService {
         const read = await this.mutationService.read(command);
         const computed = this.mutationService.compute(command, read);
         this.mutationService.validate(command, read, computed);
-        return await this.writeMutation(
+        const result = await this.writeMutation(
             context,
             async (transaction) => await this.mutationService.write(transaction, computed),
         );
+        if (
+            result.operation === 'erase' &&
+            result.status === 'accepted' &&
+            result.auditEvent !== null
+        ) await this.audit?.record(result.auditEvent);
+        return result;
     }
 
     private async createAdminCommand(
@@ -213,6 +235,29 @@ export class AppCrdtInboxService extends AppInboxService {
             reason: readString(request.reason) ?? 'api-v1-admin-erasure-workflow',
         });
     }
+}
+
+function toAdminPublicResult(result: CrdtMutationResult): unknown {
+    if (result.operation === 'compact') {
+        return {
+            document: result.snapshot?.document ?? null,
+            documentKey: result.documentKey,
+            appendSequence: result.appendSequence,
+            snapshot: result.snapshot,
+        };
+    }
+    if (result.operation === 'lifecycle') return result.metadata;
+    if (result.operation === 'rebuild-projection') return result.integrity;
+    if (result.operation === 'erase') {
+        return {
+            request: result.request,
+            auditEvent: result.auditEvent,
+            ...(result.redactedBundle === null
+                ? { metadata: result.metadata }
+                : { redactedBundle: result.redactedBundle }),
+        };
+    }
+    return result;
 }
 
 export function toCrdtAppInboxType(command: CrdtMutationCommand): AppInboxType {

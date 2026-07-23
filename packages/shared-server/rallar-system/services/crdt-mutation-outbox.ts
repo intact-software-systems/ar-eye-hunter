@@ -4,28 +4,30 @@ import {
     RALLAR_CRDT_APPEND_RESPONSE_TYPE_ID,
     RALLAR_CRDT_PROTOCOL_VERSION,
     RALLAR_CRDT_UPDATE_TYPE_ID,
+    type RallarCrdtAppendResult,
 } from '@shared/crdt/mod.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { toAppQueueCreatedBy } from './app-inbox-queue-key.ts';
 import type {
     CrdtAppendCommand,
-    CrdtEraseCommand,
-    CrdtMutationResult,
 } from './crdt-mutation-contracts.ts';
 
 export function toAppendOutbox(
     command: CrdtAppendCommand,
-    response: CrdtMutationResult,
+    response: RallarCrdtAppendResult,
     serviceId: string,
+    fanout: boolean,
 ): readonly ResourceEntry[] {
-    return [
+    const reply =
         toWsOutbox(command, serviceId, 'reply', RALLAR_CRDT_APPEND_RESPONSE_TYPE_ID, {
             protocolVersion: RALLAR_CRDT_PROTOCOL_VERSION,
             requestId: command.update.updateId,
             document: command.document,
             acceptedAtEpochMs: command.capturedAtEpochMs,
             results: [response],
-        }),
+        });
+    return fanout ? [
+        reply,
         toWsOutbox(
             command,
             serviceId,
@@ -33,7 +35,7 @@ export function toAppendOutbox(
             RALLAR_CRDT_UPDATE_TYPE_ID,
             command.update,
         ),
-    ];
+    ] : [reply];
 }
 
 function toWsOutbox(
@@ -86,44 +88,6 @@ function toTargets(command: CrdtAppendCommand, effect: 'reply' | 'fanout') {
         scope: 'world' as const,
         exceptPeerIds: [command.responseAudience.senderSessionId],
     };
-}
-
-export function toAuditOutbox(command: CrdtEraseCommand, serviceId: string): ResourceEntry {
-    const message = {
-        id: {
-            v: 2,
-            msgId: `crdt:${command.commandId}:audit`,
-            ts: command.capturedAtEpochMs,
-            senderId: serviceId,
-        },
-        route: {
-            topicId: 'crdt.audit',
-            resourceId: `crdt:${command.commandId}:audit`,
-            contextId: command.documentKey,
-        },
-        targets: { mode: 'all', scope: 'global' },
-        constraints: { expiresAtMs: command.expireAtEpochMs },
-        payload: {
-            typeId: 'CRDT_ERASURE_AUDIT',
-            contentType: 'application/json',
-            resource: JSON.stringify({
-                commandId: command.commandId,
-                document: command.document,
-                requestedBy: command.actor.principalId,
-                requestedAtEpochMs: command.capturedAtEpochMs,
-                reason: command.reason,
-                mode: command.mode,
-            }),
-        },
-        audit: { createdBy: serviceId, createdTs: command.capturedAtEpochMs },
-    };
-    return toResourceEntry(
-        message,
-        EnqueuedType.APP_OUTBOX,
-        command.capturedAtEpochMs,
-        command.expireAtEpochMs,
-        serviceId,
-    );
 }
 
 function toResourceEntry(

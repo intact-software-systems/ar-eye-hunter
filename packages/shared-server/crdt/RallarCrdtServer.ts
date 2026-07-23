@@ -39,7 +39,6 @@ import type {
     RallarServerWsMessageContext,
     RallarServerWsTopicDefinition,
 } from '../rallar-facade/ws-topic-router.ts';
-import { appendLegacyRallarCrdtWsUpdate } from './LegacyRallarCrdtWsAppend.ts';
 export const RALLAR_CRDT_SERVER_DEFAULT_MAX_UPDATE_BYTES = 16 * 1024;
 export const RALLAR_CRDT_SERVER_DEFAULT_MAX_SYNC_BYTES = 64 * 1024;
 export type RallarCrdtServerEnvelopeKind =
@@ -247,8 +246,8 @@ function createRallarCrdtTopicDefinition(
         scope: topicScope,
         maxPayloadBytes,
         fanout:
-            options.logRepository &&
-            (kind === 'update' || kind === 'catch-up-request')
+            (kind === 'update' && options.mutationIngress) ||
+            (kind === 'catch-up-request' && options.logRepository)
                 ? 'none'
                 : (options.fanout ?? 'live-only'),
         validate: (value, context) =>
@@ -293,13 +292,6 @@ function createAcceptedEnvelopeHandler(
                 trusted: toTrustedMetadata(message, context),
                 raw: message.raw,
             });
-        } else if (kind === 'update' && options.logRepository) {
-            await appendLegacyRallarCrdtWsUpdate(
-                message as RallarServerWsMessage<RallarCrdtUpdateEnvelope>,
-                context,
-                options,
-                toTrustedMetadata(message, context),
-            );
         } else if (kind === 'catch-up-request' && options.logRepository) {
             await respondToDurableCatchUpRequest(
                 message as RallarServerWsMessage<RallarCrdtCatchUpRequestEnvelope>,
@@ -608,8 +600,7 @@ function validateLiveDocumentScope(
     if (
         document.scope === 'principal' &&
         options.allowPrincipalDocuments === true &&
-        options.logRepository &&
-        options.resolvePrincipalSessionIds
+        options.mutationIngress
     ) {
         return issues;
     }
@@ -619,7 +610,7 @@ function validateLiveDocumentScope(
             path: '$.document.scope',
             code: 'unsupported-live-document-scope',
             message:
-                'app.crdt principal live messages require durable append and an explicit principal session resolver.',
+                'app.crdt principal live messages require durable AppInbox mutation ingress.',
         });
         return issues;
     }

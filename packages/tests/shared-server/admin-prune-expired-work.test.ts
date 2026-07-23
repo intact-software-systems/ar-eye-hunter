@@ -10,6 +10,10 @@ import {
     decodeAdminPruneWork,
     type AdminPruneExpiredRepository,
 } from '@shared-server/rallar-system/admin-operations/AdminPruneExpiredWork.ts';
+import {
+    createAdminPruneAggregate,
+    toAdminPruneAggregateEntry,
+} from '@shared-server/rallar-system/admin-operations/admin-prune-progress.ts';
 
 const NOW = 1_700_000_000_000;
 
@@ -47,6 +51,7 @@ describe('AdminPruneExpiredWork', () => {
             serviceId: 'server-1',
             pageSize: 2,
             now: () => NOW,
+            readAuthority: () => Promise.resolve({ allowed: true, code: 'allowed' }),
         });
         const entry = createReservedEntry({
             kind: 'page',
@@ -91,6 +96,7 @@ describe('AdminPruneExpiredWork', () => {
             serviceId: 'server-1',
             pageSize: 3,
             now: () => NOW,
+            readAuthority: () => Promise.resolve({ allowed: true, code: 'allowed' }),
         });
         const entry = createReservedEntry({
             kind: 'page',
@@ -108,7 +114,7 @@ describe('AdminPruneExpiredWork', () => {
         const read = await work.read(command);
 
         expect(repository.lastExcludedResourceId).toBe(entry.key.resourceId);
-        expect(read.rowIds).toEqual(['10', '12']);
+        expect(read.rowIds).toEqual(['10', '11', '12']);
     });
 
     it('rolls deletion and successor back when reservation fencing fails', async () => {
@@ -120,6 +126,7 @@ describe('AdminPruneExpiredWork', () => {
             serviceId: 'server-1',
             pageSize: 2,
             now: () => NOW,
+            readAuthority: () => Promise.resolve({ allowed: true, code: 'allowed' }),
         });
         const entry = createReservedEntry({
             kind: 'page',
@@ -202,6 +209,21 @@ class MemoryPruneRepository implements AdminPruneExpiredRepository {
         });
     }
 
+    readAggregate(jobId: string) {
+        const aggregate = createAdminPruneAggregate({
+            jobId,
+            generatedAtEpochMs: NOW,
+            expireAtEpochMs: NOW + 60_000,
+            serverId: 'server-1',
+            requestedBy: 'admin-1',
+            requestedSessionId: 'session-1',
+            categories: ['runtime-state', 'resource-inbox', 'resource-inbox-results', 'app-data'],
+            expiredRows: {},
+        });
+        const entry = toAdminPruneAggregateEntry(aggregate);
+        return Promise.resolve({ aggregate, resource: entry.resource });
+    }
+
     deletePage(_transaction: never, _command: unknown, rowIds: readonly string[]) {
         this.deleted.push(...rowIds);
         return Promise.resolve(rowIds.length);
@@ -224,28 +246,35 @@ class MemoryPruneRepository implements AdminPruneExpiredRepository {
 }
 
 function createReservedEntry(work: unknown, resourceId = 'prune-work-1'): ResourceEntry {
+    const normalized = {
+        ...(work as Record<string, unknown>),
+        requestedBy: 'admin-1',
+        requestedSessionId: 'session-1',
+    };
+    const jobId = String(normalized.jobId);
+    const computedResourceId = `${jobId}:${String(normalized.category)}:${String(normalized.pageIndex)}`;
     const createdTs = Temporal.Instant.fromEpochMilliseconds(NOW)
         .toZonedDateTimeISO('UTC')
         .toPlainDateTime();
     return {
         key: {
             topicId: ADMIN_PRUNE_APP_OUTBOX_TOPIC,
-            resourceId,
-            contextId: 'prune-job',
+            resourceId: computedResourceId,
+            contextId: jobId,
         },
         resource: JSON.stringify({
-            id: { v: 2, msgId: resourceId, ts: NOW, senderId: 'server-1' },
+            id: { v: 2, msgId: computedResourceId, ts: NOW, senderId: 'server-1' },
             route: {
                 topicId: ADMIN_PRUNE_APP_OUTBOX_TOPIC,
-                resourceId,
-                contextId: 'prune-job',
+                resourceId: computedResourceId,
+                contextId: jobId,
             },
             targets: { mode: 'all', scope: 'global' },
             constraints: { expiresAtMs: NOW + 60_000 },
             payload: {
                 typeId: 'ADMIN_PRUNE_EXPIRED',
                 contentType: 'application/json',
-                resource: JSON.stringify(work),
+                resource: JSON.stringify(normalized),
             },
             audit: { createdBy: 'server-1', createdTs: NOW },
         }),
@@ -253,7 +282,7 @@ function createReservedEntry(work: unknown, resourceId = 'prune-work-1'): Resour
         status: EntityStatus.RESERVED,
         audit: {
             date: createdTs.toPlainTime(),
-            createdBy: 'app:server-1',
+            createdBy: 'server-1',
             createdTs,
             expiryTs: Temporal.Instant.fromEpochMilliseconds(NOW + 60_000),
         },

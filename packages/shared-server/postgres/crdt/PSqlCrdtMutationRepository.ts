@@ -1,10 +1,7 @@
 import {
+    type RallarCrdtDocumentTypePolicy,
     type RallarCrdtDocumentLifecycleState,
     type RallarCrdtDocumentMetadata,
-    type RallarCrdtDocumentRef,
-    type RallarCrdtDurableUpdateRecord,
-    type RallarCrdtQuotaPolicy,
-    type RallarCrdtRetentionPolicy,
     type RallarCrdtSnapshotEnvelope,
     type RallarCrdtTrustedAppendMetadata,
     type RallarCrdtUpdateEnvelope,
@@ -19,49 +16,35 @@ import {
     type CrdtMutationRead,
     type CrdtMutationRepository,
 } from '../../rallar-system/services/crdt-mutation-contracts.ts';
+import {
+    type DocumentRow,
+    type SnapshotRow,
+    type UpdateRow,
+    toDate,
+    toFeatureDecision,
+    toJson,
+    toMetadata,
+    toRecord,
+    toSnapshot,
+} from './crdt-mutation-row-codec.ts';
 
-type DocumentRow = Readonly<{
-    document_key: string;
-    document_ref: string;
-    document_revision: number | string;
-    lifecycle: string;
-    created_at_ts: Date | string;
-    updated_at_ts: Date | string;
-    archived_at_ts: Date | string | null;
-    destroyed_at_ts: Date | string | null;
-    last_append_sequence: number | string;
-    update_count: number | string;
-    snapshot_count: number | string;
-    stored_update_bytes: number | string;
-    retention_policy: string | null;
-    quota_policy: string | null;
-    projection_ids: string | null;
+export type CrdtMutationAuthorityDecision = Readonly<{
+    allowed: boolean;
+    code: string;
 }>;
-
-type UpdateRow = Readonly<{
-    document_key: string;
-    append_sequence: number | string;
-    update_envelope: string;
-    accepted_update_hash: string;
-    actor_id: string | null;
-    principal_id: string | null;
-    session_id: string | null;
-    server_id: string | null;
-    authorization_scope: string;
-    accepted_at_ts: Date | string;
-}>;
-
-type SnapshotRow = Readonly<{ snapshot_envelope: string }>;
 
 export class PSqlCrdtMutationRepository implements CrdtMutationRepository {
     constructor(
         private readonly sql: PSqlSql,
-        private readonly authorize: (command: CrdtMutationCommand) => Promise<boolean> =
-            () => Promise.resolve(true),
+        private readonly authorize: (
+            command: CrdtMutationCommand,
+        ) => Promise<boolean | CrdtMutationAuthorityDecision> =
+            () => Promise.resolve({ allowed: false, code: 'current-authority-reader-missing' }),
+        private readonly policies: readonly RallarCrdtDocumentTypePolicy[] = [],
     ) {}
 
     async readMutation(command: CrdtMutationCommand): Promise<CrdtMutationRead> {
-        const [documents, updates, records, snapshots, authorized] = await Promise.all([
+        const [documents, updates, records, snapshots, authority, actorRate] = await Promise.all([
             readDocument(this.sql, command.documentKey),
             command.operation === 'append'
                 ? readUpdate(this.sql, command.documentKey, command.update.updateId)
@@ -71,17 +54,33 @@ export class PSqlCrdtMutationRepository implements CrdtMutationRepository {
                 : Promise.resolve([]),
             readSnapshot(this.sql, command.documentKey),
             this.authorize(command),
+            command.operation === 'append'
+                ? readActorUpdatesInWindow(this.sql, command)
+                : Promise.resolve([{ actor_updates_in_window: 0 }]),
         ]);
+        const document = documents[0]
+            ? toMetadata(documents[0], command.documentKey, command.document)
+            : null;
+        const existingRecord = updates[0]
+            ? toRecord(updates[0], command.document)
+            : null;
+        const snapshot = snapshots[0]
+            ? toSnapshot(snapshots[0], command.documentKey, command.document)
+            : null;
+        const authorityDecision = typeof authority === 'boolean'
+            ? { allowed: authority, code: authority ? 'allowed' : 'authorization-denied' }
+            : authority;
         return {
-            document: documents[0] ? toMetadata(documents[0]) : null,
-            existingUpdate: updates[0]
-                ? JSON.parse(updates[0].update_envelope) as RallarCrdtUpdateEnvelope
-                : null,
+            document,
+            existingUpdate: existingRecord?.update ?? null,
+            existingAppend: existingRecord?.append ?? null,
             records: records.map((row) => toRecord(row, command.document)),
-            snapshot: snapshots[0]
-                ? JSON.parse(snapshots[0].snapshot_envelope) as RallarCrdtSnapshotEnvelope
-                : null,
-            authorized,
+            snapshot,
+            authorized: authorityDecision.allowed,
+            authorizationCode: authorityDecision.code,
+            featureDecision: toFeatureDecision(command, this.policies),
+            actorUpdatesInWindow: Number(actorRate[0]?.actor_updates_in_window ?? 0),
+            storedSnapshotBytes: Number(snapshots[0]?.snapshot_bytes ?? 0),
         };
     }
 
@@ -92,6 +91,8 @@ export class PSqlCrdtMutationRepository implements CrdtMutationRepository {
                 this.sql,
                 computed.document,
                 computed.expectedDocumentRevision,
+                computed.expectedDocumentLifecycle,
+                computed.expectedAppendSequence,
             );
         if (!guarded) throw new CrdtMutationConflictError(computed.documentKey);
         if (computed.update && computed.append) {
@@ -115,7 +116,8 @@ export class PSqlCrdtMutationRepository implements CrdtMutationRepository {
 
 async function readDocument(sql: PSqlSql, documentKey: string): Promise<DocumentRow[]> {
     return await sql<DocumentRow[]>`
-        select document_key, document_ref, document_revision, lifecycle,
+        select document_key, application_id, workspace_id, document_scope,
+               document_type, document_id, document_ref, document_revision, lifecycle,
                created_at_ts, updated_at_ts, archived_at_ts, destroyed_at_ts,
                last_append_sequence, update_count, snapshot_count, stored_update_bytes,
                retention_policy, quota_policy, projection_ids
@@ -153,11 +155,26 @@ async function readUpdates(sql: PSqlSql, documentKey: string): Promise<UpdateRow
 
 async function readSnapshot(sql: PSqlSql, documentKey: string): Promise<SnapshotRow[]> {
     return await sql<SnapshotRow[]>`
-        select snapshot_envelope
+        select document_key, snapshot_envelope,
+               octet_length(snapshot_envelope) as snapshot_bytes
         from crdt_snapshots
         where document_key = ${documentKey}
         order by append_sequence desc, created_at_ts desc
         limit 1
+    `;
+}
+
+async function readActorUpdatesInWindow(
+    sql: PSqlSql,
+    command: Extract<CrdtMutationCommand, { operation: 'append' }>,
+): Promise<Readonly<{ actor_updates_in_window: number | string }>[]> {
+    return await sql<Readonly<{ actor_updates_in_window: number | string }>[]>`
+        select count(*) as actor_updates_in_window
+        from crdt_updates
+        where document_key = ${command.documentKey}
+          and actor_id = ${command.actor.actorId}
+          and accepted_at_ts > ${new Date(command.capturedAtEpochMs - 60_000)}
+          and accepted_at_ts <= ${new Date(command.capturedAtEpochMs)}
     `;
 }
 
@@ -190,7 +207,10 @@ async function updateDocument(
     sql: PSqlSql,
     metadata: RallarCrdtDocumentMetadata,
     expectedRevision: number,
+    expectedLifecycle: RallarCrdtDocumentLifecycleState | 'absent',
+    expectedAppendSequence: number | 'absent',
 ): Promise<boolean> {
+    if (expectedLifecycle === 'absent' || expectedAppendSequence === 'absent') return false;
     const rows = await sql<{ document_key: string }[]>`
         update crdt_documents
         set document_revision = ${metadata.documentRevision}, lifecycle = ${metadata.lifecycle},
@@ -205,6 +225,8 @@ async function updateDocument(
             projection_ids = ${JSON.stringify(metadata.projectionIds)}
         where document_key = ${metadata.documentKey}
           and document_revision = ${expectedRevision}
+          and lifecycle = ${expectedLifecycle}
+          and last_append_sequence = ${expectedAppendSequence}
         returning document_key
     `;
     return rows.length === 1;
@@ -246,58 +268,4 @@ async function insertSnapshot(
             ${'app-inbox-compaction'}
         )
     `;
-}
-
-function toMetadata(row: DocumentRow): RallarCrdtDocumentMetadata {
-    return {
-        document: JSON.parse(row.document_ref) as RallarCrdtDocumentRef,
-        documentKey: row.document_key,
-        documentRevision: Number(row.document_revision),
-        lifecycle: row.lifecycle as RallarCrdtDocumentLifecycleState,
-        createdAtEpochMs: new Date(row.created_at_ts).getTime(),
-        updatedAtEpochMs: new Date(row.updated_at_ts).getTime(),
-        archivedAtEpochMs: toEpoch(row.archived_at_ts),
-        destroyedAtEpochMs: toEpoch(row.destroyed_at_ts),
-        lastAppendSequence: Number(row.last_append_sequence),
-        updateCount: Number(row.update_count),
-        snapshotCount: Number(row.snapshot_count),
-        storedUpdateBytes: Number(row.stored_update_bytes),
-        retention: fromJson<RallarCrdtRetentionPolicy>(row.retention_policy),
-        quota: fromJson<RallarCrdtQuotaPolicy>(row.quota_policy),
-        projectionIds: fromJson<readonly string[]>(row.projection_ids) ?? [],
-    };
-}
-
-function toRecord(row: UpdateRow, document: RallarCrdtDocumentRef): RallarCrdtDurableUpdateRecord {
-    return {
-        document,
-        documentKey: row.document_key,
-        update: JSON.parse(row.update_envelope) as RallarCrdtUpdateEnvelope,
-        append: {
-            appendSequence: Number(row.append_sequence),
-            acceptedAtEpochMs: new Date(row.accepted_at_ts).getTime(),
-            actorId: row.actor_id ?? undefined,
-            principalId: row.principal_id ?? undefined,
-            sessionId: row.session_id ?? undefined,
-            serverId: row.server_id ?? undefined,
-            authorizationScope: row.authorization_scope as RallarCrdtTrustedAppendMetadata['authorizationScope'],
-            acceptedUpdateHash: row.accepted_update_hash,
-        },
-    };
-}
-
-function toDate(epochMs: number | null): Date | null {
-    return epochMs === null ? null : new Date(epochMs);
-}
-
-function toEpoch(value: Date | string | null): number | null {
-    return value === null ? null : new Date(value).getTime();
-}
-
-function toJson(value: unknown): string | null {
-    return value === null ? null : JSON.stringify(value);
-}
-
-function fromJson<T>(value: string | null): T | null {
-    return value === null ? null : JSON.parse(value) as T;
 }

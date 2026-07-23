@@ -46,6 +46,7 @@ import {
 } from '@shared/crdt/mod.ts';
 import type { PSqlSql } from '../PostgresSqlClient.ts';
 import { readAdminCrdtLifecycle } from '../../rallar-system/admin-operations/crdt-admin-validation.ts';
+import { assertLegacyCrdtMutationAllowed } from './psql-crdt-legacy-mutation.ts';
 
 export type PSqlCrdtLogRepositoryOptions = Readonly<{
     now?: () => number;
@@ -54,6 +55,7 @@ export type PSqlCrdtLogRepositoryOptions = Readonly<{
     policies?: readonly RallarCrdtDocumentTypePolicy[];
     metrics?: RallarCrdtMetricsSink;
     audit?: RallarCrdtAuditSink;
+    allowLegacyMutations?: boolean;
 }>;
 
 type CrdtDocumentRow = Readonly<{
@@ -102,6 +104,7 @@ export class PSqlCrdtLogRepository<
     private readonly policies: readonly RallarCrdtDocumentTypePolicy[];
     private readonly metrics?: RallarCrdtMetricsSink;
     private readonly audit?: RallarCrdtAuditSink;
+    private readonly allowLegacyMutations: boolean;
 
     constructor(
         private readonly sql: PSqlSql,
@@ -113,11 +116,13 @@ export class PSqlCrdtLogRepository<
         this.policies = options.policies ?? [];
         this.metrics = options.metrics;
         this.audit = options.audit;
+        this.allowLegacyMutations = options.allowLegacyMutations === true;
     }
 
     async append(
         input: RallarCrdtAppendUpdateInput<TPayload>,
     ): Promise<RallarCrdtAppendResult<TPayload>> {
+        assertLegacyCrdtMutationAllowed(this.allowLegacyMutations);
         const startedAtEpochMs = this.now();
         const validation = validateRallarCrdtUpdateEnvelope(
             input.update,
@@ -251,6 +256,7 @@ export class PSqlCrdtLogRepository<
     async writeSnapshot(
         input: RallarCrdtWriteSnapshotInput<TValue>,
     ): Promise<void> {
+        assertLegacyCrdtMutationAllowed(this.allowLegacyMutations);
         const validation = validateRallarCrdtSnapshotEnvelope(input.snapshot);
         if (!validation.valid) {
             throw new Error('CRDT snapshot envelope failed validation.');
@@ -331,6 +337,7 @@ export class PSqlCrdtLogRepository<
     async updateDocumentLifecycle(
         input: RallarCrdtLifecycleInput,
     ): Promise<RallarCrdtDocumentMetadata> {
+        assertLegacyCrdtMutationAllowed(this.allowLegacyMutations);
         const lifecycle = readAdminCrdtLifecycle(input.lifecycle);
         const documentKey = toRallarCrdtDocumentKey(input.document);
         const changedAtEpochMs = input.changedAtEpochMs ?? this.now();
@@ -487,6 +494,7 @@ export class PSqlCrdtLogRepository<
             overwrite?: boolean;
         }> = {},
     ): Promise<RallarCrdtRestoreResult> {
+        assertLegacyCrdtMutationAllowed(this.allowLegacyMutations);
         const report = verifyRallarCrdtDebugBundle(bundle);
         if (!report.valid) {
             throw new Error(
@@ -593,6 +601,7 @@ export class PSqlCrdtLogRepository<
         document: RallarCrdtDocumentRef,
         projectionId = 'default',
     ): Promise<RallarCrdtIntegrityReport> {
+        assertLegacyCrdtMutationAllowed(this.allowLegacyMutations);
         const report = await this.verifyIntegrity(document);
         if (report.valid) {
             const current = await this.readDocumentMetadata(document);

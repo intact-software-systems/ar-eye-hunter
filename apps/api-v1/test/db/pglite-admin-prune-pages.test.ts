@@ -6,6 +6,7 @@ import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource
 import type { AdminPrunePageWork } from '@shared-server/rallar-system/admin-operations/AdminPruneExpiredWork.ts';
 import {
   createAdminPruneAggregate,
+  advanceAdminPruneAggregate,
   toAdminPruneAggregateEntry,
   toAdminPruneAggregateKey,
 } from '@shared-server/rallar-system/admin-operations/admin-prune-progress.ts';
@@ -46,6 +47,8 @@ Deno.test('admin prune PSQL repository reads and deletes one deterministic page'
       kind: 'page',
       jobId: 'job-1',
       category: 'runtime-state',
+      requestedBy: 'admin',
+      requestedSessionId: 'session-1',
       capturedAtEpochMs: now,
       expireAtEpochMs: now + 60_000,
       pageSize: 2,
@@ -95,22 +98,31 @@ Deno.test('admin prune PSQL progress CAS completes the aggregate result', async 
       generatedAtEpochMs: now,
       expireAtEpochMs: now + 60_000,
       serverId: 'server-1',
+      requestedBy: 'admin',
+      requestedSessionId: 'session-1',
       categories: ['runtime-state'],
       expiredRows: { 'runtime-state': 2 },
     });
-    await new ResourceInboxResultsRepository(sql).replace(
-      toAdminPruneAggregateEntry(aggregate),
-    );
+    const aggregateEntry = toAdminPruneAggregateEntry(aggregate);
+    await new ResourceInboxResultsRepository(sql).replace(aggregateEntry);
 
     const repository = new PSqlAdminPruneExpiredRepository(sql, 'server-1');
     await sql.begin(async (transaction) => {
-      await repository.writeProgress(transaction, {
+      const page = {
         kind: 'page',
         jobId: 'job-aggregate',
         category: 'runtime-state',
         rowIds: ['1', '2'],
         deletedRows: 2,
         next: null,
+      } as const;
+      await repository.writeProgress(transaction, {
+        ...page,
+        expectedAggregate: aggregateEntry.resource,
+        aggregateSuccessor: toAdminPruneAggregateEntry(
+          advanceAdminPruneAggregate(aggregate, page),
+        ),
+        finishedAtEpochMs: now,
       });
     });
 

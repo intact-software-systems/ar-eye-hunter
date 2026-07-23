@@ -31,10 +31,13 @@ const DOCUMENT: RallarCrdtDocumentRef = {
 
 Deno.test('CRDT mutation CAS commits state and logical WS outbox atomically', async () => {
   await withPGliteSql(async (sql) => {
-    const repository = new PSqlCrdtMutationRepository(sql);
+    const repository = new PSqlCrdtMutationRepository(sql, () => Promise.resolve(true));
     const service = createCrdtMutationService({
       repository,
-      createWriter: (transaction) => new PSqlCrdtMutationRepository(transaction),
+      createWriter: (transaction) => new PSqlCrdtMutationRepository(
+        transaction,
+        () => Promise.resolve(true),
+      ),
       serviceId: 'server-1',
     });
     const first = await command('command-1', 'update-1', 1_000);
@@ -73,11 +76,14 @@ Deno.test('CRDT mutation CAS commits state and logical WS outbox atomically', as
 
 Deno.test('CRDT mutation rolls metadata and update back when outbox write fails', async () => {
   await withPGliteSql(async (sql) => {
-    const repository = new PSqlCrdtMutationRepository(sql);
+    const repository = new PSqlCrdtMutationRepository(sql, () => Promise.resolve(true));
     const failingService = createCrdtMutationService({
       repository,
       createWriter: (transaction): CrdtMutationRepository => {
-        const writer = new PSqlCrdtMutationRepository(transaction);
+        const writer = new PSqlCrdtMutationRepository(
+          transaction,
+          () => Promise.resolve(true),
+        );
         return {
           readMutation: (command) => writer.readMutation(command),
           writeMutation: (computed) => writer.writeMutation(computed),
