@@ -5,12 +5,12 @@ import {
 } from './mutation-boundary-capability-ast.ts';
 import {
   type CapabilityFlowAccess,
-  collectClosureExecutionWrites,
   type FlowCapabilityMethod,
   type FlowMethodSource,
   isCapturedFlowWrite,
   readFlowPatternWrites,
 } from './mutation-boundary-capability-closures.ts';
+import { collectClosureExecutionWrites } from './mutation-boundary-capability-invocations.ts';
 
 export type { FlowCapabilityMethod } from './mutation-boundary-capability-closures.ts';
 

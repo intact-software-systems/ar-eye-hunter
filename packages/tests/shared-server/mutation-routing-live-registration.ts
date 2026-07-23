@@ -6,6 +6,10 @@ import {
   type MutationRoutingAstNode as AstNode,
 } from './mutation-routing-call-graph.ts';
 import {
+  evaluateObjectEntriesMap,
+  evaluateStaticObjectCollection,
+} from './mutation-routing-object-collection.ts';
+import {
   filterRegistrationTypes,
   knownRegistrationTypes,
   mapRegistrationTypes,
@@ -72,20 +76,7 @@ function evaluateTypes(
       ),
     );
   }
-  if (node.type === 'ObjectExpression') {
-    return mergeTypes(
-      asNodes(node.properties).flatMap((property) => [
-        evaluateTypes(asNode(property.key), program, filePath, loadProgram, resolving),
-        evaluateTypes(
-          asNode(property.value ?? property.argument),
-          program,
-          filePath,
-          loadProgram,
-          resolving,
-        ),
-      ]),
-    );
-  }
+  if (node.type === 'ObjectExpression') return UNKNOWN_REGISTRATION_TYPES;
   if (node.type === 'SpreadElement') {
     return evaluateTypes(asNode(node.argument), program, filePath, loadProgram, resolving);
   }
@@ -146,6 +137,16 @@ function evaluateTypes(
   const types = evaluateTypes(source, program, filePath, loadProgram, resolving);
   const evaluateCollection = (candidate: AstNode | undefined) =>
     evaluateTypes(candidate, program, filePath, loadProgram, resolving);
+  if ((method === 'map' || method === 'flatMap') && isStaticObjectEntries(source)) {
+    return evaluateObjectEntriesMap(
+      asNodes(source?.arguments)[0],
+      asNodes(node.arguments)[0],
+      evaluateCollection,
+    );
+  }
+  if (staticObjectCollection) {
+    return evaluateStaticObjectCollection(method, source, evaluateCollection);
+  }
   if (method === 'filter') {
     return filterRegistrationTypes(types, asNodes(node.arguments)[0], evaluateCollection);
   }
@@ -153,6 +154,13 @@ function evaluateTypes(
     return mapRegistrationTypes(types, asNodes(node.arguments)[0], evaluateCollection);
   }
   return types;
+}
+
+function isStaticObjectEntries(value: AstNode | undefined): boolean {
+  const node = unwrap(value);
+  if (node?.type !== 'CallExpression' && node?.type !== 'OptionalCallExpression') return false;
+  const callee = asNode(node.callee);
+  return readMemberName(callee) === 'entries' && readName(callee?.object) === 'Object';
 }
 
 function evaluateIdentifier(
