@@ -189,28 +189,22 @@ export class AppInboxService {
             });
     }
 
-    /**
-     * Durably records an AppInbox command and returns only after the enqueue and
-     * idempotency check have completed. Processing remains asynchronous.
-     */
-    public async enqueueEntryDurably<V>(
+    public async enqueue<V>(
         enqueue: AppInboxEnqueueInput<V>,
-    ): Promise<void> {
-        await this.processEntryUntilCompletionInternal<V, V>(
-            enqueue,
-            false,
-            true,
-            async (key, wireEnqueue) => {
-                return await this.inbox.enqueueIfAbsent(
-                    newALUntargetedMessage(
-                        toAppInboxQueueCreatedBy(this.serviceId),
-                        newALRoute(key.topicId, key.contextId, key.resourceId),
-                        wireEnqueue.type.toString(),
-                        wireEnqueue,
-                    ),
-                );
-            },
+    ): Promise<ResourceEntry> {
+        const wireEnqueue = toJsonWireAppInboxEnqueue(enqueue);
+        const key = this.toKey(wireEnqueue);
+        const receivedIdentity = serializeCanonicalJsonWire(
+            toLogicalAppInboxCommand(wireEnqueue),
         );
+        const entry = await this.inbox.enqueueIfAbsent(newALUntargetedMessage(
+            toAppInboxQueueCreatedBy(this.serviceId),
+            newALRoute(key.topicId, key.contextId, key.resourceId),
+            wireEnqueue.type.toString(),
+            wireEnqueue,
+        ));
+        await assertMatchingAppInboxCommand(entry, wireEnqueue, receivedIdentity);
+        return entry;
     }
 
     // use this from client/group cleanup of expired

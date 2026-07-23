@@ -2079,11 +2079,9 @@ Deno.test('PGlite AppGroup reuses the first durable topology command and rejects
     const wsTopics = initRallarSystemWsTopics(wsService, {
       rtcTopologyService: new RallarRtcTopologyService({ now: () => nowEpochMs }),
       rtcTopologyRuntimeState: { repository: runtime },
-      processRtcRttMutation: async (input) => {
+      enqueueRtcRttMutation: async (input) => {
         wsIngressCapturedAt.push(input.capturedAtEpochMs);
-        const result = await appGroup.processRtcRttUntilCompletion(input);
-        if (result.right !== undefined) return result.right;
-        throw new Error(result.left ?? 'RTC RTT AppInbox processing failed');
+        return await appGroup.enqueueRtcRtt(input);
       },
     });
     const rtt = {

@@ -21,8 +21,8 @@ describe('ws lifecycle service', () => {
             },
         } as unknown as WsQueueBoxServerService;
         const handlers = {
-            disconnectClientSession: vi.fn(async () => undefined),
-            disconnectGroupSessionsBySessionId: vi.fn(async () => undefined),
+            enqueueClientSessionDisconnect: vi.fn(async () => undefined),
+            enqueueGroupSessionCleanup: vi.fn(async () => undefined),
         };
 
         initWsLifecycle(wsQBoxServerService, handlers);
@@ -31,16 +31,39 @@ describe('ws lifecycle service', () => {
             generationId: 'generation-1',
         });
 
-        expect(handlers.disconnectClientSession).toHaveBeenCalledWith(
+        expect(handlers.enqueueClientSessionDisconnect).toHaveBeenCalledWith(
             'session-1',
             'generation-1',
         );
-        expect(handlers.disconnectGroupSessionsBySessionId).toHaveBeenCalledWith(
+        expect(handlers.enqueueGroupSessionCleanup).toHaveBeenCalledWith(
             'session-1',
             {
                 actorSessionId: 'session-1',
                 reason: 'socket-closed',
             },
         );
+    });
+
+    it('propagates durable enqueue failure after attempting both cleanup commands', async () => {
+        const callbacks = new Map<string, WebSocketLifecycleCallbacks>();
+        const failure = new Error('durable client cleanup unavailable');
+        const handlers = {
+            enqueueClientSessionDisconnect: vi.fn(() => Promise.reject(failure)),
+            enqueueGroupSessionCleanup: vi.fn(async () => undefined),
+        };
+        const service = {
+            socket: {
+                onWebsocketCallbacksDo(id: string, callback: WebSocketLifecycleCallbacks) {
+                    callbacks.set(id, callback);
+                },
+            },
+        } as unknown as WsQueueBoxServerService;
+        initWsLifecycle(service, handlers);
+
+        await expect(callbacks.get('handle-ws-lifecycle')?.onClose?.({
+            id: 'session-1',
+            generationId: 'generation-1',
+        })).rejects.toBe(failure);
+        expect(handlers.enqueueGroupSessionCleanup).toHaveBeenCalledOnce();
     });
 });

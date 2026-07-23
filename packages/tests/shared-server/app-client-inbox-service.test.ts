@@ -944,36 +944,6 @@ describe('AppClientInboxService', () => {
         expect(publisher.publishClientEvent).not.toHaveBeenCalled();
     });
 
-    it('keeps at most one active no-wait client expiry entry across timestamps', async () => {
-        const queue = new TestResourceInbox();
-        const reader = new InboxQueueReader(queue);
-        const results = new TestResourceInboxResults();
-        const clientStateService = createClientStateServiceStub({
-            listExpiredSessionCandidates: vi.fn(async () => []),
-        });
-        const service = new AppClientInboxService(
-            reader,
-            queue as never,
-            results as never,
-            createAppInboxTestDatabase(queue, results),
-            clientStateService,
-            'server-12345678',
-        );
-
-        service.processExpiredSessionsNoWaiting(60_000);
-        service.processExpiredSessionsNoWaiting(120_000);
-
-        await waitForQueueEntryCount(queue, 1);
-        const entries = await readEntries(queue);
-
-        expect(activeEntries(entries)).toHaveLength(1);
-        expect(entries[0].key.resourceId).toBe('expire-client-sessions');
-        expect(readEnqueuedData<ClientExpiredSessionsAppInboxPayload>(entries[0]).atEpochMs).toBe(
-            60_000,
-        );
-        expect(clientStateService.listExpiredSessionCandidates).not.toHaveBeenCalled();
-    });
-
     it('keeps at most one active waiting client expiry entry across timestamps', async () => {
         const queue = new TestResourceInbox();
         const reader = new InboxQueueReader(queue);
@@ -1012,54 +982,7 @@ describe('AppClientInboxService', () => {
         expect(listExpiredSessionCandidates).toHaveBeenLastCalledWith(60_000);
     });
 
-    it('does not replace reserved or retry client expiry entries', async () => {
-        const queue = new TestResourceInbox();
-        const reader = new InboxQueueReader(queue);
-        const results = new TestResourceInboxResults();
-        const clientStateService = createClientStateServiceStub({
-            listExpiredSessionCandidates: vi.fn(async () => []),
-        });
-        const service = new AppClientInboxService(
-            reader,
-            queue as never,
-            results as never,
-            createAppInboxTestDatabase(queue, results),
-            clientStateService,
-            'server-12345678',
-        );
-
-        service.processExpiredSessionsNoWaiting(60_000);
-        await waitForQueueEntryCount(queue, 1);
-        let [entry] = await readEntries(queue);
-        const reserved = await queue.reserveEntries(
-            new Set([entry.typeId]),
-            new Set([EntityStatus.NEW]),
-            1,
-        );
-        [entry] = reserved.values();
-
-        service.processExpiredSessionsNoWaiting(120_000);
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        [entry] = await readEntries(queue);
-        expect(activeEntries([entry])).toHaveLength(1);
-        expect(entry.status).toBe(EntityStatus.RESERVED);
-        expect(readEnqueuedData<ClientExpiredSessionsAppInboxPayload>(entry).atEpochMs).toBe(
-            60_000,
-        );
-
-        await queue.releaseEntries([entry], { status: EntityStatus.RETRY, delayMs: 1 });
-
-        service.processExpiredSessionsNoWaiting(180_000);
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        [entry] = await readEntries(queue);
-        expect(activeEntries([entry])).toHaveLength(1);
-        expect(entry.status).toBe(EntityStatus.RETRY);
-        expect(readEnqueuedData<ClientExpiredSessionsAppInboxPayload>(entry).atEpochMs).toBe(
-            60_000,
-        );
-    });
-
-    it('skips active client expiry entries and replaces completed ones', async () => {
+    it('durably enqueues each client expiry reconciliation tick', async () => {
         const queue = new TestResourceInbox();
         const reader = new InboxQueueReader(queue);
         const results = new TestResourceInboxResults();
@@ -1076,35 +999,12 @@ describe('AppClientInboxService', () => {
             'server-12345678',
         );
 
-        service.processExpiredSessionsNoWaiting(60_000);
-        service.processExpiredSessionsNoWaiting(120_000);
-
-        await waitForQueueEntryCount(queue, 1);
-        let [entry] = await readEntries(queue);
-        expect(activeEntries([entry])).toHaveLength(1);
-        expect(entry.key.resourceId).toBe('expire-client-sessions');
-        expect(readEnqueuedData<ClientExpiredSessionsAppInboxPayload>(entry).atEpochMs).toBe(
-            60_000,
-        );
-
-        await reader.dequeueInbox(
-            InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
-        expect(listExpiredSessionCandidates).toHaveBeenCalledTimes(1);
-        expect(listExpiredSessionCandidates).toHaveBeenLastCalledWith(60_000);
-
-        service.processExpiredSessionsNoWaiting(120_000);
-
-        await waitForQueueEntryStatus(queue, EntityStatus.NEW);
-        [entry] = await readEntries(queue);
-        expect(entry.status).toBe(EntityStatus.NEW);
-        expect(readEnqueuedData<ClientExpiredSessionsAppInboxPayload>(entry).atEpochMs).toBe(
-            120_000,
-        );
-
-        await reader.dequeueInbox(
-            InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
-        expect(listExpiredSessionCandidates).toHaveBeenCalledTimes(2);
-        expect(listExpiredSessionCandidates).toHaveBeenLastCalledWith(120_000);
+        const first = await service.enqueueExpiredSessions(60_000);
+        const second = await service.enqueueExpiredSessions(120_000);
+        expect(first.key.resourceId).toBe('expire-client-sessions-60000');
+        expect(second.key.resourceId).toBe('expire-client-sessions-120000');
+        expect(await readEntries(queue)).toHaveLength(2);
+        expect(listExpiredSessionCandidates).not.toHaveBeenCalled();
     });
 
     it('returns a left result when a client inbox mutation handler fails with a non-retryable error', async () => {

@@ -5,11 +5,7 @@ import type {
     UpsertClientInstanceRequest,
     UpsertClientPrincipalRequest,
 } from '@shared/api/state-types.ts';
-import {
-    DEFAULT_STATE_APPLICATION_ID,
-    DEFAULT_STATE_WORKSPACE_ID,
-    type StateScope,
-} from '@shared/api/state-types.ts';
+import type { StateScope } from '@shared/api/state-types.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import {
@@ -52,6 +48,11 @@ import type {
 } from './client-state-mutations.ts';
 import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import type { IssuedAuthSession } from '../repositories/AuthSessionRepository.ts';
+import {
+    toAuthorisedWsClientConnectEnqueue,
+    toAuthorisedWsClientDisconnectEnqueue,
+    toAuthorisedWsClientScope,
+} from './authorised-ws-client-app-inbox.ts';
 
 export {
     AppInboxService,
@@ -296,24 +297,24 @@ export class AppClientInboxService extends AppInboxService {
         );
     }
 
-    public override async processEntryUntilCompletion<V, R = V>(
+    public override processEntryUntilCompletion<V, R = V>(
         enqueue: AppInboxEnqueueInput<V>,
     ): Promise<import('@shared/resilience/Either.ts').Either<string, R>> {
         void enqueue;
-        throw new NonRetryableException(
+        return Promise.reject(new NonRetryableException(
             'Authenticated client mutation authority is required.',
-        );
+        ));
     }
 
-    public override async processEntryUntilCompletionIf<V, R = V>(
+    public override processEntryUntilCompletionIf<V, R = V>(
         enqueue: AppInboxEnqueueInput<V>,
         enqueueIf: (entry: import('@shared/queuebox/ResourceEntry.ts').ResourceEntry) => boolean,
     ): Promise<import('@shared/resilience/Either.ts').Either<string, R>> {
         void enqueue;
         void enqueueIf;
-        throw new NonRetryableException(
+        return Promise.reject(new NonRetryableException(
             'Authenticated client mutation authority is required.',
-        );
+        ));
     }
 
     public async processAuthenticatedEntryUntilCompletion<V, R = V>(
@@ -417,41 +418,20 @@ export class AppClientInboxService extends AppInboxService {
         generationId: string,
         input?: RegisterAuthorisedWsClientInput,
     ) {
-        const scope = toAuthorisedWsClientScope(input);
-        const principalId = input?.principalId ?? authSession.clientId;
-        const clientInstanceId = input?.clientInstanceId ?? authSession.clientId;
-
         return await super.processEntryUntilCompletion<
             ClientAuthorisedWsSessionConnectAppInboxPayload,
             ClientStateWritten
-        >({
-            type: AppInboxType.CLIENT_AUTHORISED_WS_CONNECT,
-            resourceId: toAuthorisedWsClientConnectResourceId(
-                scope,
-                principalId,
-                clientInstanceId,
-                authSession.sessionId,
-                generationId,
-            ),
-            contextId: toClientAppInboxContextId(scope, principalId),
-            senderId: authSession.clientId,
-            authority: toClientMutationIssuedSessionAuthority(
-                authSession,
-                scope,
-                'connectAuthorisedWsSession',
-            ),
-            data: {
-                authSession: {
-                    clientId: authSession.clientId,
-                    username: authSession.username,
-                    sessionId: authSession.sessionId,
-                    issuedAtEpochMs: authSession.issuedAtEpochMs,
-                    expiresAtEpochMs: authSession.expiresAtEpochMs,
-                },
-                generationId,
-                input: input ?? {},
-            },
-        });
+        >(toAuthorisedWsClientConnectEnqueue(authSession, generationId, input));
+    }
+
+    public async enqueueAuthorisedWsClientConnect(
+        authSession: IssuedAuthSession,
+        generationId: string,
+        input?: RegisterAuthorisedWsClientInput,
+    ) {
+        return await super.enqueue(
+            toAuthorisedWsClientConnectEnqueue(authSession, generationId, input),
+        );
     }
 
     public async processAuthorisedWsClientDisconnect(
@@ -459,44 +439,28 @@ export class AppClientInboxService extends AppInboxService {
         generationId: string,
         reason?: string,
     ) {
-        const disconnectReason = reason ?? 'websocket-closed';
-        const [authSession, session] = await Promise.all([
-            this.clientStateService.readIssuedAuthSession(sessionId),
-            this.clientStateService.findSessionBySessionId(sessionId),
-        ]);
-        if (!authSession || !session) {
-            throw new NonRetryableException(
-                `Durable authorised WebSocket authority not found: ${sessionId}`,
-            );
-        }
-        const scope = {
-            applicationId: session.applicationId,
-            workspaceId: session.workspaceId,
-        };
-        if (authSession.clientId !== session.principalId) {
-            throw new NonRetryableException(
-                'Durable authorised WebSocket principal differs from auth session.',
-            );
-        }
         return await super.processEntryUntilCompletion<
             ClientAuthorisedWsSessionDisconnectAppInboxPayload,
             ClientStateWritten
-        >({
-            type: AppInboxType.CLIENT_AUTHORISED_WS_DISCONNECT,
-            resourceId: `authorised-ws-disconnect-${sessionId}-${generationId}`,
-            contextId: sessionId,
-            senderId: sessionId,
-            authority: toClientMutationIssuedSessionAuthority(
-                authSession,
-                scope,
-                'disconnectAuthorisedWsSession',
-            ),
-            data: {
-                sessionId,
-                generationId,
-                reason: disconnectReason,
-            },
-        });
+        >(await toAuthorisedWsClientDisconnectEnqueue(
+            this.clientStateService,
+            sessionId,
+            generationId,
+            reason,
+        ));
+    }
+
+    public async enqueueAuthorisedWsClientDisconnect(
+        sessionId: string,
+        generationId: string,
+        reason?: string,
+    ) {
+        return await super.enqueue(await toAuthorisedWsClientDisconnectEnqueue(
+            this.clientStateService,
+            sessionId,
+            generationId,
+            reason,
+        ));
     }
 
     public async processExpiredSessions(atEpochMs: number = Date.now()) {
@@ -509,20 +473,21 @@ export class AppClientInboxService extends AppInboxService {
         );
     }
 
-    public processExpiredSessionsNoWaiting(atEpochMs: number = Date.now()): void {
-        super.processEntryNoWaitingIf<ClientExpiredSessionsAppInboxPayload>(
-            this.toExpiredSessionsEnqueue(atEpochMs),
-            entry => isCompletedOrFailed(entry.status),
-        );
+    public async enqueueExpiredSessions(atEpochMs: number = Date.now()) {
+        return await super.enqueue(this.toExpiredSessionsEnqueue(
+            atEpochMs,
+            `expire-client-sessions-${atEpochMs}`,
+        ));
     }
 
     private toExpiredSessionsEnqueue(
-        atEpochMs: number
+        atEpochMs: number,
+        resourceId: string = 'expire-client-sessions',
     ): AppInboxEnqueueInput<ClientExpiredSessionsAppInboxPayload> {
         return {
             type: AppInboxType.CLIENT_EXPIRED_SESSIONS,
             topicId: AppInboxType.CLIENT_EXPIRED_SESSIONS,
-            resourceId: `expire-client-sessions`,
+            resourceId,
             contextId: 'expire-client-sessions',
             senderId: this.serviceId,
             authority: toClientMutationSystemAuthority(this.serviceId),
@@ -788,42 +753,4 @@ function requireClientAuthorityVersion(value: unknown): 1 {
         throw new NonRetryableException('Client mutation authority version is invalid.');
     }
     return value;
-}
-
-function toAuthorisedWsClientScope(
-    input?: RegisterAuthorisedWsClientInput,
-): StateScope {
-    return {
-        applicationId: input?.applicationId ?? DEFAULT_STATE_APPLICATION_ID,
-        workspaceId: input?.workspaceId ?? DEFAULT_STATE_WORKSPACE_ID,
-    };
-}
-
-function toAuthorisedWsClientConnectResourceId(
-    scope: StateScope,
-    principalId: string,
-    clientInstanceId: string,
-    sessionId: string,
-    generationId: string,
-): string {
-    return [
-        'authorised-ws-connect',
-        scope.applicationId,
-        scope.workspaceId,
-        principalId,
-        clientInstanceId,
-        sessionId,
-        generationId,
-    ].map(encodeURIComponent).join(':');
-}
-
-function toClientAppInboxContextId(
-    scope: StateScope,
-    principalId: string,
-): string {
-    return [
-        scope.applicationId,
-        scope.workspaceId,
-        principalId,
-    ].map(encodeURIComponent).join(':');
 }

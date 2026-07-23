@@ -157,7 +157,7 @@ export class AppCrdtInboxService extends AppInboxService {
       authorizationScope: input.update.document.scope,
     });
     if (command.operation !== 'append') throw new TypeError('CRDT append command is invalid');
-    await this.enqueueEntryDurably({
+    await this.enqueue({
       type: toCrdtAppInboxType(command),
       topicId: CRDT_APP_INBOX_TOPIC,
       resourceId: command.deliveryId,

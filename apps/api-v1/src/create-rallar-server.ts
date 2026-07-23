@@ -278,6 +278,7 @@ export function createRallarServer(
             },
             rtcTopologyRepositories: {
               topologyConfig: topologyConfigRepository,
+              groupState: groupStateRepository,
               topologySnapshots: topologySnapshotRepository,
               rtts: rttRepository,
             },
@@ -291,12 +292,8 @@ export function createRallarServer(
               findGroupSnapshotByRef: (ref, cacheOptions) =>
                 runtime.groupStateService.readSnapshotAtLeast(ref, cacheOptions ?? {}),
             },
-            processRtcRttMutation: async (input) => {
-              const result = await middleware.appGroupInboxService
-                .processRtcRttUntilCompletion(input);
-              if (result.right !== undefined) return result.right;
-              throw new Error(result.left ?? 'RTC RTT AppInbox processing failed');
-            },
+            enqueueRtcRttMutation: (input) =>
+              middleware.appGroupInboxService.enqueueRtcRtt(input),
           },
         );
         const unregister = registerMiddlewareBackgroundTask(systemTopics.stop);
@@ -320,26 +317,15 @@ export function createRallarServer(
       },
       installWebSocketLifecycle: (runtime) => {
         initSharedWsLifecycle(runtime.wsQBoxServerService, {
-          disconnectClientSession: async (sessionId, generationId) => {
-            const result = await runtime.appClientInboxService
-              .processAuthorisedWsClientDisconnect(
+          enqueueClientSessionDisconnect: (sessionId, generationId) =>
+            runtime.appClientInboxService.enqueueAuthorisedWsClientDisconnect(
                 sessionId,
                 generationId,
-              );
-            result.fold(
-              (error) => {
-                throw new Error(error);
-              },
-              () => undefined,
-            );
-          },
-          disconnectGroupSessionsBySessionId: async (
+              ),
+          enqueueGroupSessionCleanup: (
             sessionId,
             _request,
-          ) => {
-            await runtime.appGroupInboxService
-              .processDisconnectedPresenceSessionsNoWaiting(sessionId, now());
-          },
+          ) => runtime.appGroupInboxService.enqueueGroupSessionCleanup(sessionId, now()),
         });
       },
     },

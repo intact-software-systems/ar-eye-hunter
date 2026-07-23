@@ -493,207 +493,6 @@ describe('Rallar system websocket topics RTC topology', () => {
         expect(latestRttById().read('session-a::session-c')).toBeUndefined();
     });
 
-    it('rejects over-degree RTT measurements with runtime-state storage', async () => {
-        configureTestCacheRepositories();
-        const runtimeRepository = new FakeRuntimeStateRepository();
-        const group = createGroupSnapshot('room-1', [
-            'session-a',
-            'session-b',
-            'session-c',
-        ]);
-        const processRtcRttMutation = vi.fn()
-            .mockResolvedValueOnce({
-                accepted: true,
-                reason: 'accepted',
-                affectedGroups: [group],
-                updated: true,
-            })
-            .mockResolvedValueOnce({
-                accepted: false,
-                reason: 'over-degree',
-                affectedGroups: [group],
-                updated: false,
-            });
-        const { sockets } = createRttHarness(['session-a', 'session-b', 'session-c'], {
-            rtcTopologyOptions: {
-                rttReportingDegreeLimit: 1,
-            },
-            runtimeRepository,
-            processRtcRttMutation,
-        });
-        groupStateSnapshotsRepository.setGroupStateSnapshot(group);
-
-        await dispatchRtt(sockets.get('session-a')!, 'session-a', {
-            sessionIdFrom: 'session-a',
-            sessionIdTo: 'session-b',
-            rttMs: 12,
-            createdAtEpochMs: 1,
-            version: 1,
-        }, group);
-        await dispatchRtt(sockets.get('session-a')!, 'session-a', {
-            sessionIdFrom: 'session-a',
-            sessionIdTo: 'session-c',
-            rttMs: 13,
-            createdAtEpochMs: 2,
-            version: 2,
-        }, group);
-
-        expect(processRtcRttMutation).toHaveBeenCalledTimes(2);
-        expect(latestRttById().read('session-a::session-b'))
-            .toBeDefined();
-        expect(latestRttById().read('session-a::session-c'))
-            .toBeUndefined();
-    });
-
-    it('rejects runtime-state over-degree RTT measurements across active groups', async () => {
-        configureTestCacheRepositories();
-        const runtimeRepository = new FakeRuntimeStateRepository();
-        const groupOne = createGroupSnapshot('room-1', ['session-a', 'session-b']);
-        const groupTwo = createGroupSnapshot('room-2', ['session-a', 'session-c']);
-        const processRtcRttMutation = vi.fn()
-            .mockResolvedValueOnce({
-                accepted: true,
-                reason: 'accepted',
-                affectedGroups: [groupOne],
-                updated: true,
-            })
-            .mockResolvedValueOnce({
-                accepted: false,
-                reason: 'over-degree',
-                affectedGroups: [groupTwo],
-                updated: false,
-            });
-        const { sockets } = createRttHarness(['session-a', 'session-b', 'session-c'], {
-            rtcTopologyOptions: {
-                rttReportingDegreeLimit: 1,
-            },
-            runtimeRepository,
-            processRtcRttMutation,
-        });
-        groupStateSnapshotsRepository.setGroupStateSnapshot(groupOne);
-        groupStateSnapshotsRepository.setGroupStateSnapshot(groupTwo);
-
-        await dispatchRtt(sockets.get('session-a')!, 'session-a', {
-            sessionIdFrom: 'session-a',
-            sessionIdTo: 'session-b',
-            rttMs: 12,
-            createdAtEpochMs: 1,
-            version: 1,
-        }, groupOne);
-        await dispatchRtt(sockets.get('session-a')!, 'session-a', {
-            sessionIdFrom: 'session-a',
-            sessionIdTo: 'session-c',
-            rttMs: 13,
-            createdAtEpochMs: 2,
-            version: 2,
-        }, groupTwo);
-
-        expect(processRtcRttMutation).toHaveBeenCalledTimes(2);
-        expect(latestRttById().read('session-a::session-b'))
-            .toBeDefined();
-        expect(latestRttById().read('session-a::session-c'))
-            .toBeUndefined();
-    });
-
-    it('accepts runtime-state measurements without locking RTT endpoints', async () => {
-        configureTestCacheRepositories();
-        const runtimeRepository = new FakeRuntimeStateRepository();
-        vi.spyOn(runtimeRepository, 'lockKey').mockRejectedValue(
-            new Error('RTT endpoint locks are forbidden'),
-        );
-        const group = createGroupSnapshot('room-1', ['session-a', 'session-b']);
-        const processRtcRttMutation = vi.fn().mockResolvedValue({
-            accepted: true,
-            reason: 'accepted',
-            affectedGroups: [group],
-            updated: true,
-        });
-        const { sockets } = createRttHarness(['session-a', 'session-b'], {
-            runtimeRepository,
-            processRtcRttMutation,
-        });
-        groupStateSnapshotsRepository.setGroupStateSnapshot(group);
-
-        await dispatchRtt(sockets.get('session-a')!, 'session-a', {
-            sessionIdFrom: 'session-a',
-            sessionIdTo: 'session-b',
-            rttMs: 12,
-            createdAtEpochMs: 1,
-            version: 1,
-        }, group);
-
-        expect(processRtcRttMutation).toHaveBeenCalledOnce();
-        expect(latestRttById().read('session-a::session-b')).toBeDefined();
-        expect(runtimeRepository.locks).toEqual([]);
-    });
-
-    it('delegates exact and divergent WS RTT replay to AppInbox before local effects', async () => {
-        configureTestCacheRepositories();
-        const runtimeRepository = new FakeRuntimeStateRepository();
-        const group = createGroupSnapshot('room-1', ['session-a', 'session-b']);
-        const conflict = Object.assign(
-            new Error('RTC RTT idempotency conflict'),
-            { code: 'rtc-rtt-idempotency-conflict' },
-        );
-        const processRtcRttMutation = vi.fn()
-            .mockResolvedValueOnce({
-                accepted: true,
-                reason: 'accepted',
-                affectedGroups: [group],
-                updated: false,
-            })
-            .mockRejectedValueOnce(conflict);
-        const { sockets, topologyService } = createRttHarness(
-            ['session-a', 'session-b'],
-            { runtimeRepository, processRtcRttMutation },
-        );
-        groupStateSnapshotsRepository.setGroupStateSnapshot(group);
-        const rtt = {
-            sessionIdFrom: 'session-a',
-            sessionIdTo: 'session-b',
-            rttMs: 12,
-            createdAtEpochMs: 1,
-            version: 1,
-        };
-        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
-        const observeRtt = vi.spyOn(vivaldiService, 'observeRtt').mockClear();
-        const queueRttTopologyUpdate = vi.spyOn(
-            topologyService,
-            'queueRttTopologyUpdate',
-        ).mockClear();
-        try {
-            await expect(dispatchRtt(
-                sockets.get('session-a')!,
-                'session-a',
-                rtt,
-                group,
-            )).resolves.toBeUndefined();
-            await expect(dispatchRtt(
-                sockets.get('session-a')!,
-                'session-a',
-                { ...rtt, rttMs: 99 },
-                group,
-            )).resolves.toBeUndefined();
-
-            expect(processRtcRttMutation).toHaveBeenCalledTimes(2);
-            expect(processRtcRttMutation).toHaveBeenNthCalledWith(
-                1,
-                expect.objectContaining({
-                    rtt,
-                    alSenderId: 'session-a',
-                }),
-            );
-            expect(observeRtt).not.toHaveBeenCalled();
-            expect(queueRttTopologyUpdate).not.toHaveBeenCalled();
-            expect(consoleError).toHaveBeenCalledWith(
-                'Error calling onMessage callback',
-                expect.objectContaining({ code: 'rtc-rtt-idempotency-conflict' }),
-            );
-        } finally {
-            consoleError.mockRestore();
-        }
-    });
-
     it('debounces and coalesces RTT-triggered overlay topology broadcasts', async () => {
         vi.useFakeTimers();
         vi.setSystemTime(1_000);
@@ -1173,8 +972,8 @@ function createRttHarness(
     options: Readonly<{
         rtcTopologyOptions?: ConstructorParameters<typeof RallarRtcTopologyService>[0];
         runtimeRepository?: FakeRuntimeStateRepository;
-        processRtcRttMutation?:
-            InitRallarSystemWsTopicsOptions['processRtcRttMutation'];
+        enqueueRtcRttMutation?:
+            InitRallarSystemWsTopicsOptions['enqueueRtcRttMutation'];
     }> = {},
 ): {
     readonly sockets: Map<string, FakeSocket>;
@@ -1200,7 +999,7 @@ function createRttHarness(
         ...(options.runtimeRepository
             ? { rtcTopologyRuntimeState: { repository: options.runtimeRepository } }
             : {}),
-        processRtcRttMutation: options.processRtcRttMutation,
+        enqueueRtcRttMutation: options.enqueueRtcRttMutation,
     });
 
     return { sockets, topologyService };

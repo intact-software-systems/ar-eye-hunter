@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { findMutationBoundaryViolations } from './mutation-boundary-analysis.ts';
 
 const serviceRoot = 'packages/shared-server/rallar-system/services';
 const repositoryRoot = 'packages/shared-server/rallar-system/repositories';
@@ -115,6 +116,10 @@ describe('read/compute/validate/write implementation contract', () => {
         expect(sources.appGroup).toContain('this.writeMutation(');
         expect(sources.appGroup).toContain('AppInboxType.RTC_RTT_SUBMIT');
         expect(sources.appGroup).toContain('AppInboxType.TOPOLOGY_RECONFIGURE');
+    });
+
+    it('keeps transport boundaries free of direct mutators and persistence owners', () => {
+        expect(findMutationBoundaryViolations()).toEqual([]);
     });
 
     it('writes topology config state, receipt, authority fence, and APP_OUTBOX atomically', () => {

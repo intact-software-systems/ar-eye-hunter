@@ -18,23 +18,20 @@ export async function initPresenceExpiryReconciliation(
     const now = options.now ?? (() => Date.now());
 
     await tryRunInIntervals(
-        () => {
-            enqueuePresenceExpiryReconciliation(runtime, now());
-        },
+        () => enqueuePresenceExpiryReconciliation(runtime, now()),
         options.intervalMsecs ?? DEFAULT_PRESENCE_EXPIRY_RECONCILIATION_INTERVAL_MSECS,
     );
 }
 
-export function enqueuePresenceExpiryReconciliation(
+export async function enqueuePresenceExpiryReconciliation(
     runtime: Pick<
         RallarMiddlewareRuntime,
         'appClientInboxService' | 'appGroupInboxService'
     >,
     atEpochMs: number,
-): void {
-    runtime.appClientInboxService.processExpiredSessionsNoWaiting(atEpochMs);
-    void runtime.appGroupInboxService.processExpiredPresenceSessionsNoWaiting(atEpochMs)
-        .catch((error) => {
-            console.error('Failed to reconcile expired group presence sessions:', error);
-        });
+): Promise<void> {
+    await Promise.all([
+        runtime.appClientInboxService.enqueueExpiredSessions(atEpochMs),
+        runtime.appGroupInboxService.enqueueExpiredPresenceSessions(atEpochMs),
+    ]);
 }

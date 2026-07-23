@@ -34,8 +34,8 @@ export function init(app: Hono): void {
         );
         socketServer.addConnection(connection);
 
-        const clientStateWritten = await getMiddleware().appClientInboxService
-          .processAuthorisedWsClientConnect(
+        await getMiddleware().appClientInboxService
+          .enqueueAuthorisedWsClientConnect(
             authSession,
             connection.generationId,
             toAuthorisedWsClientInput(
@@ -44,12 +44,6 @@ export function init(app: Hono): void {
               connection.generationStartedAtEpochMs,
             ),
           );
-        clientStateWritten.fold(
-          (error) => {
-            throw new Error(error);
-          },
-          () => undefined,
-        );
 
         console.log(`Upgrading connection for ID: ${sessionId}`);
 

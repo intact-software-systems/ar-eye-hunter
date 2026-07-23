@@ -371,14 +371,14 @@ export async function toTopologyAppInboxCommand(
 }
 
 export class AppGroupInboxService extends AppInboxService {
-    public async processExpiredPresenceSessionsNoWaiting(
+    public async enqueueExpiredPresenceSessions(
         atEpochMs: number,
     ): Promise<number> {
         const preparations = await this.groupStateService.prepareExpiredPresenceMutations(
                 atEpochMs,
             );
         for (const preparation of preparations) {
-            this.enqueueInternalMutation(
+            await this.enqueueInternalMutation(
                 AppInboxType.GROUP_PRESENCE_EXPIRE,
                 preparation,
             );
@@ -386,7 +386,7 @@ export class AppGroupInboxService extends AppInboxService {
         return preparations.length;
     }
 
-    public async processDisconnectedPresenceSessionsNoWaiting(
+    public async enqueueGroupSessionCleanup(
         sessionId: string,
         disconnectedAtEpochMs: number,
     ): Promise<number> {
@@ -395,7 +395,7 @@ export class AppGroupInboxService extends AppInboxService {
                 disconnectedAtEpochMs,
             );
         for (const preparation of preparations) {
-            this.enqueueInternalMutation(
+            await this.enqueueInternalMutation(
                 AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP,
                 preparation,
             );
@@ -525,13 +525,13 @@ export class AppGroupInboxService extends AppInboxService {
         this.rtcRttDependencies = dependencies;
     }
 
-    async processRtcRttUntilCompletion(
+    async enqueueRtcRtt(
         input: Readonly<{
         rtt: RttMeasurementInfo;
         alSenderId: string;
         capturedAtEpochMs: number;
         }>,
-    ): Promise<Either<string, RtcRttAppInboxResult>> {
+    ): Promise<ResourceEntry> {
         const session = await this.groupStateService.readIssuedAuthSession(
             input.alSenderId,
         );
@@ -566,10 +566,7 @@ export class AppGroupInboxService extends AppInboxService {
             session,
             command.commandHash,
         );
-        return await super.processEntryUntilCompletion<
-            RtcRttAppInboxCommand,
-            RtcRttAppInboxResult
-        >({
+        return await super.enqueue<RtcRttAppInboxCommand>({
             type: AppInboxType.RTC_RTT_SUBMIT,
             resourceId: requestId,
             data: command,
@@ -960,13 +957,13 @@ export class AppGroupInboxService extends AppInboxService {
         return this.topologyManagementService;
     }
 
-    private enqueueInternalMutation(
+    private async enqueueInternalMutation(
         type:
             | AppInboxType.GROUP_PRESENCE_EXPIRE
             | AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP,
         preparation: GroupMutationPreparation,
-    ): void {
-        super.processEntryNoWaiting({
+    ): Promise<ResourceEntry> {
+        return await super.enqueue({
             type,
             resourceId: preparation.queueResourceId,
             authority: preparation,
