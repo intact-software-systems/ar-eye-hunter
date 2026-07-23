@@ -8,8 +8,22 @@ update crdt_updates set
   server_id = coalesce(server_id, 'legacy:unknown-server')
 where actor_id is null or principal_id is null or session_id is null or server_id is null;
 
+update crdt_documents
+set document_revision = greatest(1, update_count + snapshot_count)
+where document_revision < 1;
+
+update crdt_snapshots
+set reason = 'legacy-import'
+where reason is null or btrim(reason) = '';
+
 alter table crdt_updates
   alter column actor_id set not null,
   alter column principal_id set not null,
   alter column session_id set not null,
   alter column server_id set not null;
+
+alter table crdt_documents
+  alter column document_revision set default 1;
+
+alter table crdt_snapshots
+  alter column reason set not null;

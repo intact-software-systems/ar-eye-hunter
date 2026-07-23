@@ -301,11 +301,16 @@ export function createRallarServer(
           unregister();
           systemTopics.stop();
         };
+        if (!middleware.appCrdtInboxService) {
+          throw new Error('CRDT websocket topics require AppInbox mutation ingress');
+        }
         installRallarCrdtWsTopics(ws, {
           logRepository: crdtLogRepository,
-          mutationIngress: middleware.appCrdtInboxService
-            ? createCrdtWsMutationIngress(middleware.appCrdtInboxService, myServerId)
-            : undefined,
+          mutationIngress: createCrdtWsMutationIngress(
+            middleware.appCrdtInboxService,
+            myServerId,
+          ),
+          allowPrincipalDocuments: true,
         });
       },
       installWebSocketLifecycle: (runtime) => {

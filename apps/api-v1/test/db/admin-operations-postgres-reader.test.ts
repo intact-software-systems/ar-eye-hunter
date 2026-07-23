@@ -1078,33 +1078,33 @@ Deno.test('PSqlAdminOperationsPruner counts and deletes only expired supported r
   await withPGliteSql(async (sql) => {
     await seedAdminOperationsRows(sql);
     const pruner = new PSqlAdminOperationsPruner(sql);
-
-    assert.equal(await pruner.countExpired('runtime-state', {}), 2);
-    assert.equal(await pruner.countExpired('resource-inbox', {}), 1);
-    assert.equal(await pruner.countExpired('resource-inbox-results', {}), 1);
+    const cutoff = { cutoffEpochMs: Date.now() };
+    assert.equal(await pruner.countExpired('runtime-state', cutoff), 2);
+    assert.equal(await pruner.countExpired('resource-inbox', cutoff), 1);
+    assert.equal(await pruner.countExpired('resource-inbox-results', cutoff), 1);
     assert.equal(
       await pruner.countExpired('app-data', {
-        appData: { namespace: 'app-ns', storeName: 'settings' },
+        ...cutoff, appData: { namespace: 'app-ns', storeName: 'settings' },
       }),
       1,
     );
 
-    assert.equal(await pruner.pruneExpired('runtime-state', {}), 2);
-    assert.equal(await pruner.pruneExpired('resource-inbox', {}), 1);
-    assert.equal(await pruner.pruneExpired('resource-inbox-results', {}), 1);
+    assert.equal(await pruner.pruneExpired('runtime-state', cutoff), 2);
+    assert.equal(await pruner.pruneExpired('resource-inbox', cutoff), 1);
+    assert.equal(await pruner.pruneExpired('resource-inbox-results', cutoff), 1);
     assert.equal(
       await pruner.pruneExpired('app-data', {
-        appData: { namespace: 'app-ns', storeName: 'settings' },
+        ...cutoff, appData: { namespace: 'app-ns', storeName: 'settings' },
       }),
       1,
     );
 
-    assert.equal(await pruner.countExpired('runtime-state', {}), 0);
-    assert.equal(await pruner.countExpired('resource-inbox', {}), 0);
-    assert.equal(await pruner.countExpired('resource-inbox-results', {}), 0);
+    assert.equal(await pruner.countExpired('runtime-state', cutoff), 0);
+    assert.equal(await pruner.countExpired('resource-inbox', cutoff), 0);
+    assert.equal(await pruner.countExpired('resource-inbox-results', cutoff), 0);
     assert.equal(
       await pruner.countExpired('app-data', {
-        appData: { namespace: 'app-ns', storeName: 'settings' },
+        ...cutoff, appData: { namespace: 'app-ns', storeName: 'settings' },
       }),
       0,
     );

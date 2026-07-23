@@ -34,7 +34,14 @@ export function computeCrdtMutation(
   read: CrdtMutationRead,
   serviceId: string,
 ): CrdtMutationComputed {
-  if (!read.authorized) return rejected(command, read, 'authorization-denied', serviceId);
+  if (!read.authorized) {
+    return rejected(
+      command,
+      read,
+      read.authorizationCode === 'allowed' ? 'authorization-denied' : read.authorizationCode,
+      serviceId,
+    );
+  }
   if (!read.featureDecision.allowed) return rejected(command, read, 'feature-disabled', serviceId);
   if (command.operation === 'append') return computeAppend(command, read, serviceId);
   if (!read.document) return rejected(command, read, 'document-not-found', serviceId);
@@ -87,6 +94,7 @@ export function computeCrdtMutation(
       records: read.records,
       reason: command.reason,
       now: () => command.capturedAtEpochMs,
+      createSnapshotId: () => command.snapshotId,
     })
     : null;
   if (
@@ -343,7 +351,9 @@ function rejected(
     append: null,
     snapshot: null,
     code,
-    outboxEntries: command.operation === 'append' && code !== 'authorization-denied'
+    outboxEntries: command.operation === 'append' && read.authorized &&
+        !code.startsWith('authorization-') &&
+        !code.startsWith('authentication-')
       ? toAppendOutbox(command, appendResult!, serviceId, false)
       : [],
     result: response,

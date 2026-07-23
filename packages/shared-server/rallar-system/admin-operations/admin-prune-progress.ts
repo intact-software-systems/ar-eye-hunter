@@ -93,6 +93,9 @@ export function advanceAdminPruneAggregate(
     const results = aggregate.results.map((result) => result.category === page.category
         ? { ...result, deletedRows: result.deletedRows + page.deletedRows }
         : result);
+    if (results.some((result) => result.deletedRows > result.expiredRows)) {
+        throw new TypeError('Admin prune deleted rows exceed captured expired rows');
+    }
     return {
         ...aggregate,
         revision: aggregate.revision + 1,
@@ -114,13 +117,23 @@ export function decodeAdminPruneAggregate(value: unknown): AdminPruneAggregate {
         throw new TypeError('Admin prune aggregate is invalid');
     }
     if (
+        isNonNegativeSafeInteger(value.generatedAtEpochMs) &&
+        isNonNegativeSafeInteger(value.expireAtEpochMs) &&
+        value.expireAtEpochMs <= value.generatedAtEpochMs
+    ) throw new TypeError('Admin prune aggregate expiry must follow generation');
+    if (Array.isArray(value.results) && value.results.length === 0) {
+        throw new TypeError('Admin prune aggregate results must not be empty');
+    }
+    if (
         !isNonEmptyString(value.jobId) || !isNonNegativeSafeInteger(value.generatedAtEpochMs) ||
-        !isNonNegativeSafeInteger(value.expireAtEpochMs) || !isNonEmptyString(value.serverId) ||
+        !isNonNegativeSafeInteger(value.expireAtEpochMs) ||
+        value.expireAtEpochMs <= value.generatedAtEpochMs || !isNonEmptyString(value.serverId) ||
         !isNonEmptyString(value.requestedBy) || !isNonEmptyString(value.requestedSessionId) ||
         value.operation !== 'maintenance.prune-expired' ||
         (value.status !== 'pending' && value.status !== 'completed') ||
         typeof value.changed !== 'boolean' || !Array.isArray(value.warnings) || value.warnings.length !== 0 ||
-        !Array.isArray(value.completedCategories) || !Array.isArray(value.results)
+        !Array.isArray(value.completedCategories) || !Array.isArray(value.results) ||
+        value.results.length === 0
     ) throw new TypeError('Admin prune aggregate fields are invalid');
     const completed = value.completedCategories.map(readCategory);
     if (new Set(completed).size !== completed.length) {
@@ -135,6 +148,9 @@ export function decodeAdminPruneAggregate(value: unknown): AdminPruneAggregate {
             !isNonNegativeSafeInteger(entry.deletedRows) ||
             entry.dryRun !== false
         ) throw new TypeError('Admin prune aggregate result fields are invalid');
+        if (entry.deletedRows > entry.expiredRows) {
+            throw new TypeError('Admin prune aggregate deleted rows exceed expired rows');
+        }
         return { category, deletedRows: entry.deletedRows as number };
     });
     const categories = results.map((entry) => entry.category);
@@ -143,6 +159,9 @@ export function decodeAdminPruneAggregate(value: unknown): AdminPruneAggregate {
     }
     if (completed.some((category) => !categories.includes(category))) {
         throw new TypeError('Admin prune aggregate completion category is invalid');
+    }
+    if ((value.revision as number) < completed.length) {
+        throw new TypeError('Admin prune aggregate revision precedes completion progress');
     }
     const isComplete = completed.length === categories.length;
     if ((value.status === 'completed') !== isComplete) {

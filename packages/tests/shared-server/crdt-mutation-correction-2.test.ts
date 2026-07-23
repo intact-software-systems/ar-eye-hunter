@@ -108,6 +108,7 @@ describe('Task 9 correction 2 exact contracts and fanout', () => {
       expireAtEpochMs: 62_000,
       document: DOCUMENT,
       responseAudience: audience(),
+      snapshotId: 'compact-1-snapshot',
       snapshot: null,
       reason: 'quota-test',
     });

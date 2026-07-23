@@ -136,6 +136,10 @@ Deno.test('CRDT snapshot decoding binds physical identity, sequence, time, and r
         ${new Date(9_999)}, 'physical-reason'
       )
     `;
+    await sql`
+      update crdt_documents set snapshot_count = 1
+      where document_key = ${original.documentKey}
+    `;
     const compact = await createCrdtMutationCommand({
       operation: 'compact',
       commandId: 'snapshot-read',
@@ -154,6 +158,7 @@ Deno.test('CRDT snapshot decoding binds physical identity, sequence, time, and r
         topicId: 'crdt.admin',
         contextId: original.documentKey,
       },
+      snapshotId: 'snapshot-read',
       snapshot: null,
       reason: 'read-corrupt-snapshot',
     });
@@ -176,6 +181,10 @@ Deno.test('CRDT quota accounts for every retained snapshot byte', async () => {
         )
       `;
     }
+    await sql`
+      update crdt_documents set snapshot_count = 2
+      where document_key = ${original.documentKey}
+    `;
     const observed = await service.read(
       await command('all-snapshot-read', 'all-snapshot-next', 2_000),
     );
@@ -207,6 +216,10 @@ Deno.test('CRDT read includes current actor-rate and snapshot-byte policy facts'
         ${JSON.stringify(snapshot('snapshot-policy', 'x'.repeat(2_000)))},
         ${new Date(10_000)}, 'app-inbox-compaction'
       )
+    `;
+    await sql`
+      update crdt_documents set snapshot_count = 1
+      where document_key = ${first.documentKey}
     `;
     const second = await command('rate-second', 'rate-second', 11_000);
     const observed = await service.read(second);

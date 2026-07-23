@@ -1,11 +1,8 @@
 import {
-  byteLengthOfRallarCrdtJson,
   createRallarCrdtAdminDocumentStatus,
   createRallarCrdtBackupBundle,
   createRallarCrdtDebugBundle,
-  evaluateRallarCrdtFeaturePolicy,
   fromRallarCrdtAppendCursor,
-  hashRallarCrdtUpdateEnvelope,
   type RallarCrdtAdminLogRepository,
   type RallarCrdtAppendBatchInput,
   type RallarCrdtAppendBatchResult,
@@ -95,10 +92,7 @@ export class PSqlCrdtLogRepository<
   TValue = unknown,
 > implements RallarCrdtAdminLogRepository<TPayload, TValue> {
   private readonly now: () => number;
-  private readonly serverId?: string;
-  private readonly validation?: RallarCrdtValidationOptions;
   private readonly policies: readonly RallarCrdtDocumentTypePolicy[];
-  private readonly metrics?: RallarCrdtMetricsSink;
   private readonly audit?: RallarCrdtAuditSink;
 
   constructor(
@@ -106,10 +100,7 @@ export class PSqlCrdtLogRepository<
     options: PSqlCrdtLogRepositoryOptions = {},
   ) {
     this.now = options.now ?? Date.now;
-    this.serverId = options.serverId;
-    this.validation = options.validation;
     this.policies = options.policies ?? [];
-    this.metrics = options.metrics;
     this.audit = options.audit;
   }
 
@@ -336,226 +327,6 @@ export class PSqlCrdtLogRepository<
     return rejectDirectCrdtMutation();
   }
 
-  private async appendInTransaction(
-    tx: PSqlSql,
-    input: RallarCrdtAppendUpdateInput<TPayload>,
-    startedAtEpochMs: number,
-  ): Promise<RallarCrdtAppendResult<TPayload>> {
-    const actorId = requireTrustedId(input.trusted.actorId, 'actorId');
-    const principalId = requireTrustedId(input.trusted.principalId, 'principalId');
-    const sessionId = requireTrustedId(input.trusted.sessionId, 'sessionId');
-    const serverId = requireTrustedId(input.trusted.serverId ?? this.serverId, 'serverId');
-    const acceptedAtEpochMs = input.trusted.acceptedAtEpochMs ?? this.now();
-    const documentKey = toRallarCrdtDocumentKey(input.update.document);
-    await ensureDocument(tx, input.update.document, acceptedAtEpochMs);
-    const metadata = await requireDocumentMetadataByKey(
-      tx,
-      documentKey,
-      true,
-    );
-    const policyDecision = evaluateRallarCrdtFeaturePolicy({
-      document: input.update.document,
-      operation: 'durable-append',
-      policies: this.policies,
-    });
-    if (!policyDecision.allowed) {
-      return this.recordAppendResult(startedAtEpochMs, {
-        status: 'rejected',
-        update: input.update,
-        code: 'feature-disabled',
-        reason: policyDecision.reason,
-        retryable: policyDecision.retryable,
-        document: metadata,
-      });
-    }
-    const acceptedUpdateHash = hashRallarCrdtUpdateEnvelope(input.update);
-    const duplicateRows = await tx<CrdtUpdateRow[]>`
-            select document_key,
-                   append_sequence,
-                   update_id,
-                   update_envelope,
-                   accepted_update_hash,
-                   actor_id,
-                   principal_id,
-                   session_id,
-                   server_id,
-                   authorization_scope,
-                   accepted_at_ts
-            from crdt_updates
-            where document_key = ${documentKey}
-              and update_id = ${input.update.updateId}
-            limit 1
-        `;
-    const duplicate = duplicateRows[0];
-    if (duplicate) {
-      const append = toAppendMetadata(duplicate);
-      if (append.acceptedUpdateHash === acceptedUpdateHash) {
-        return this.recordAppendResult(startedAtEpochMs, {
-          status: 'duplicate',
-          update: input.update,
-          append,
-          document: metadata,
-        });
-      }
-
-      return this.recordAppendResult(startedAtEpochMs, {
-        status: 'rejected',
-        update: input.update,
-        code: 'duplicate-hash-mismatch',
-        reason: 'CRDT updateId already exists with a different canonical hash.',
-        retryable: false,
-        document: metadata,
-      });
-    }
-
-    if (metadata.lifecycle === 'archived') {
-      return this.recordAppendResult(startedAtEpochMs, {
-        status: 'rejected',
-        update: input.update,
-        code: 'document-archived',
-        reason: 'CRDT document is archived and no longer accepts writes.',
-        retryable: false,
-        document: metadata,
-      });
-    }
-    if (metadata.lifecycle === 'destroyed') {
-      return this.recordAppendResult(startedAtEpochMs, {
-        status: 'rejected',
-        update: input.update,
-        code: 'document-destroyed',
-        reason: 'CRDT document is destroyed and no longer accepts writes.',
-        retryable: false,
-        document: metadata,
-      });
-    }
-    if (metadata.lifecycle === 'quarantined') {
-      return this.recordAppendResult(startedAtEpochMs, {
-        status: 'rejected',
-        update: input.update,
-        code: 'document-quarantined',
-        reason: 'CRDT document is quarantined and no longer accepts writes.',
-        retryable: false,
-        document: metadata,
-      });
-    }
-    if (
-      metadata.quota?.maxUpdateCount !== undefined &&
-      metadata.updateCount >= metadata.quota.maxUpdateCount
-    ) {
-      return this.recordAppendResult(startedAtEpochMs, {
-        status: 'rejected',
-        update: input.update,
-        code: 'quota-exceeded',
-        reason: 'CRDT document update quota is exhausted.',
-        retryable: false,
-        document: metadata,
-      });
-    }
-    const updateQuotaBytes = byteLengthOfRallarCrdtJson(input.update);
-    if (
-      metadata.quota?.maxUpdateBytes !== undefined &&
-      updateQuotaBytes > metadata.quota.maxUpdateBytes
-    ) {
-      return this.recordAppendResult(startedAtEpochMs, {
-        status: 'rejected',
-        update: input.update,
-        code: 'update-too-large',
-        reason: 'CRDT update exceeds the document update-byte quota.',
-        retryable: false,
-        document: metadata,
-      });
-    }
-    if (metadata.quota?.maxDocumentBytes !== undefined) {
-      const storedBytes = await readStoredDocumentBytes(tx, documentKey);
-      if (
-        storedBytes.totalBytes + updateQuotaBytes >
-          metadata.quota.maxDocumentBytes
-      ) {
-        return this.recordAppendResult(startedAtEpochMs, {
-          status: 'rejected',
-          update: input.update,
-          code: 'quota-exceeded',
-          reason: 'CRDT document exceeds the document-byte quota.',
-          retryable: false,
-          document: metadata,
-        });
-      }
-    }
-    if (
-      await isRateLimited(
-        tx,
-        documentKey,
-        actorId,
-        principalId,
-        acceptedAtEpochMs,
-        metadata.quota?.maxUpdatesPerMinutePerActor,
-      )
-    ) {
-      return this.recordAppendResult(startedAtEpochMs, {
-        status: 'rejected',
-        update: input.update,
-        code: 'rate-limited',
-        reason: 'CRDT document actor update-rate limit is exhausted.',
-        retryable: true,
-        document: metadata,
-      });
-    }
-
-    const appendSequence = metadata.lastAppendSequence + 1;
-    const serializedUpdate = serializeJson(input.update);
-    const storedUpdateBytes = byteLengthOfSerializedJson(serializedUpdate);
-    await tx`
-            insert into crdt_updates (document_key,
-                                      append_sequence,
-                                      update_id,
-                                      update_envelope,
-                                      accepted_update_hash,
-                                      actor_id,
-                                      principal_id,
-                                      session_id,
-                                      server_id,
-                                      authorization_scope,
-                                      accepted_at_ts)
-            values (${documentKey},
-                    ${appendSequence},
-                    ${input.update.updateId},
-                    ${serializedUpdate},
-                    ${acceptedUpdateHash},
-                    ${actorId},
-                    ${principalId},
-                    ${sessionId},
-                    ${serverId},
-                    ${input.trusted.authorizationScope},
-                    ${toPgDate(acceptedAtEpochMs)})
-        `;
-    await tx`
-            update crdt_documents
-            set document_revision    = document_revision + 1,
-                last_append_sequence = ${appendSequence},
-                update_count         = update_count + 1,
-                stored_update_bytes  = stored_update_bytes + ${storedUpdateBytes},
-                updated_at_ts        = ${toPgDate(acceptedAtEpochMs)}
-            where document_key = ${documentKey}
-        `;
-
-    const document = await requireDocumentMetadataByKey(tx, documentKey);
-    return this.recordAppendResult(startedAtEpochMs, {
-      status: 'accepted',
-      update: input.update,
-      append: {
-        appendSequence,
-        acceptedAtEpochMs,
-        actorId,
-        principalId,
-        sessionId,
-        serverId,
-        authorizationScope: input.trusted.authorizationScope,
-        acceptedUpdateHash,
-      },
-      document,
-    });
-  }
-
   private async readAllRecords(
     document: RallarCrdtDocumentRef,
   ): Promise<RallarCrdtDurableUpdateRecord<TPayload>[]> {
@@ -595,44 +366,6 @@ export class PSqlCrdtLogRepository<
     );
   }
 
-  private recordAppendResult(
-    startedAtEpochMs: number,
-    result: RallarCrdtAppendResult<TPayload>,
-  ): RallarCrdtAppendResult<TPayload> {
-    const document = result.update?.document ?? result.document?.document;
-    const documentKey = document ? toRallarCrdtDocumentKey(document) : result.document?.documentKey;
-    void this.metrics?.record({
-      name: 'crdt.server.append.ms',
-      value: Math.max(0, this.now() - startedAtEpochMs),
-      atEpochMs: this.now(),
-      documentKey,
-      tags: {
-        status: result.status,
-      },
-    });
-    if (result.status === 'rejected') {
-      void this.metrics?.record({
-        name: 'crdt.server.append.rejected.count',
-        value: 1,
-        atEpochMs: this.now(),
-        documentKey,
-        tags: {
-          code: result.code,
-        },
-      });
-      this.recordAudit('reject', documentKey, {
-        code: result.code,
-        retryable: result.retryable,
-      });
-    } else {
-      this.recordAudit('append', documentKey, {
-        status: result.status,
-        appendSequence: result.append.appendSequence,
-      });
-    }
-    return result;
-  }
-
   private recordAudit(
     kind: RallarCrdtAuditEventKind,
     documentKey: string | undefined,
@@ -645,95 +378,6 @@ export class PSqlCrdtLogRepository<
       metadata,
     });
   }
-}
-
-async function ensureDocument(
-  sql: PSqlSql,
-  document: RallarCrdtDocumentRef,
-  nowEpochMs: number,
-): Promise<void> {
-  await sql`
-        insert into crdt_documents (document_key,
-                                    application_id,
-                                    workspace_id,
-                                    document_scope,
-                                    document_type,
-                                    document_id,
-                                    document_ref,
-                                    created_at_ts,
-                                    updated_at_ts)
-        values (${toRallarCrdtDocumentKey(document)},
-                ${document.applicationId},
-                ${document.workspaceId},
-                ${document.scope},
-                ${document.documentType},
-                ${document.documentId},
-                ${serializeJson(document)},
-                ${toPgDate(nowEpochMs)},
-                ${toPgDate(nowEpochMs)})
-        on conflict (document_key) do nothing
-    `;
-}
-
-async function isRateLimited(
-  sql: PSqlSql,
-  documentKey: string,
-  actorId: string | undefined,
-  principalId: string | undefined,
-  acceptedAtEpochMs: number,
-  maxUpdatesPerMinutePerActor: number | undefined,
-): Promise<boolean> {
-  if (maxUpdatesPerMinutePerActor === undefined) {
-    return false;
-  }
-
-  const actorKey = actorId ?? principalId;
-  if (!actorKey) {
-    return false;
-  }
-
-  const rows = await sql<ReadonlyArray<{ count: number | string }>>`
-        select count(*) as count
-        from crdt_updates
-        where document_key = ${documentKey}
-          and accepted_at_ts >= ${toPgDate(acceptedAtEpochMs - 60_000)}
-          and coalesce(actor_id, principal_id) = ${actorKey}
-    `;
-
-  return Number(rows[0]?.count ?? 0) >= maxUpdatesPerMinutePerActor;
-}
-
-async function readStoredDocumentBytes(
-  sql: PSqlSql,
-  documentKey: string,
-): Promise<{
-  updateBytes: number;
-  snapshotBytes: number;
-  totalBytes: number;
-}> {
-  const rows = await sql<
-    ReadonlyArray<{
-      update_bytes: number | string | null;
-      snapshot_bytes: number | string | null;
-    }>
-  >`
-        select stored_update_bytes as update_bytes,
-               coalesce((
-                   select max(octet_length(snapshot_envelope))
-                   from crdt_snapshots
-                   where document_key = ${documentKey}
-               ), 0) as snapshot_bytes
-        from crdt_documents
-        where document_key = ${documentKey}
-        limit 1
-    `;
-  const updateBytes = Number(rows[0]?.update_bytes ?? 0);
-  const snapshotBytes = Number(rows[0]?.snapshot_bytes ?? 0);
-  return {
-    updateBytes,
-    snapshotBytes,
-    totalBytes: updateBytes + snapshotBytes,
-  };
 }
 
 function matchesDocumentListInput(
@@ -781,22 +425,6 @@ async function readDocumentMetadataByKey(
         `;
 
   return rows[0] ? toDocumentMetadata(rows[0]) : undefined;
-}
-
-async function requireDocumentMetadataByKey(
-  sql: PSqlSql,
-  documentKey: string,
-  forUpdate = false,
-): Promise<RallarCrdtDocumentMetadata> {
-  const metadata = await readDocumentMetadataByKey(
-    sql,
-    documentKey,
-    forUpdate,
-  );
-  if (!metadata) {
-    throw new Error(`Missing CRDT document row: ${documentKey}`);
-  }
-  return metadata;
 }
 
 function toDocumentMetadata(row: CrdtDocumentRow): RallarCrdtDocumentMetadata {
@@ -853,13 +481,6 @@ function requireTrustedId(value: string | undefined, label: string): string {
   return value;
 }
 
-function toPgDate(timestamp: number): Date {
-  if (!Number.isFinite(timestamp)) {
-    throw new Error('CRDT timestamp must be finite.');
-  }
-  return new Date(timestamp);
-}
-
 function toEpochMs(value: Date | string): number {
   const timestamp = value instanceof Date ? value.getTime() : Date.parse(value);
   if (!Number.isFinite(timestamp)) {
@@ -870,18 +491,6 @@ function toEpochMs(value: Date | string): number {
 
 function toOptionalEpochMs(value: Date | string | null): number | undefined {
   return value === null ? undefined : toEpochMs(value);
-}
-
-function serializeJson(value: unknown): string {
-  const serialized = JSON.stringify(value);
-  if (serialized === undefined) {
-    throw new Error('CRDT SQL values must be JSON serializable.');
-  }
-  return serialized;
-}
-
-function byteLengthOfSerializedJson(serialized: string): number {
-  return new TextEncoder().encode(serialized).byteLength;
 }
 
 function parseNullableJson<T>(value: string | null): T | undefined {

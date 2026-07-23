@@ -114,7 +114,7 @@ model crdt_documents {
   document_type        String
   document_id          String
   document_ref         String
-  document_revision    BigInt    @default(0)
+  document_revision    BigInt    @default(1)
   lifecycle            String    @default("active")
   created_at_ts        DateTime  @default(now()) @db.Timestamptz(6)
   updated_at_ts        DateTime  @default(now()) @db.Timestamptz(6)
@@ -160,7 +160,7 @@ model crdt_snapshots {
   append_sequence   BigInt
   snapshot_envelope String
   created_at_ts     DateTime       @default(now()) @db.Timestamptz(6)
-  reason            String?
+  reason            String
   document          crdt_documents @relation(fields: [document_key], references: [document_key], onDelete: Cascade, map: "crdt_snapshots_document_fk")
 
   @@id([document_key, snapshot_id], map: "crdt_snapshots_pk")

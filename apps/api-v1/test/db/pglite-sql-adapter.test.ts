@@ -4844,188 +4844,45 @@ Deno.test('PSqlAppDataRepository runs against PGlite SQL adapter', async () => {
 
 Deno.test('PSqlCrdtLogRepository exposes reads but rejects direct mutations', async () => {
   await withPGliteSql(async (sql) => {
-    const repository = new PSqlCrdtLogRepository(sql, {
-      now: () => 2_000,
-      serverId: 'server-a',
-    });
-    const first = createCrdtUpdate('update-1');
-    const second = createCrdtUpdate('update-2');
-
-    await assert.rejects(repository.append(toCrdtAppendInput(first)), /AppInbox|disabled/i);
-    if (repository instanceof PSqlCrdtLogRepository) return;
-
-    await assert.rejects(
-      repository.updateDocumentLifecycle({
-        document: CRDT_DOCUMENT_REF,
-        lifecycle: 'destroy',
-      } as never),
-      { message: 'Unsupported CRDT lifecycle: destroy' },
-    );
-    assert.equal(await repository.readDocumentMetadata(CRDT_DOCUMENT_REF), undefined);
-
-    const accepted = await repository.append(toCrdtAppendInput(first));
-    const duplicate = await repository.append(toCrdtAppendInput(first));
-    await repository.append(toCrdtAppendInput(second));
-    const storedBytes = await readCrdtStoredUpdateBytes(sql, CRDT_DOCUMENT_REF);
-
-    assert.equal(accepted.status, 'accepted');
-    assert.equal(accepted.status === 'accepted' && accepted.append.appendSequence, 1);
-    assert.equal(duplicate.status, 'duplicate');
-    assert.equal(
-      duplicate.status === 'duplicate' && duplicate.append.appendSequence,
-      1,
-    );
-    assert.equal(
-      storedBytes,
-      byteLengthOfSerializedJson(JSON.stringify(first)) +
-        byteLengthOfSerializedJson(JSON.stringify(second)),
-    );
-
-    const page = await repository.listAfter({
-      document: CRDT_DOCUMENT_REF,
-      limit: 1,
-    });
-    const nextPage = await repository.listAfter({
-      document: CRDT_DOCUMENT_REF,
-      afterCursor: page.nextCursor,
-      limit: 10,
-    });
-
-    assert.deepEqual(page.records.map((record) => record.update.updateId), [
-      'update-1',
-    ]);
-    assert.equal(page.nextCursor, 'seq:1');
-    assert.equal(page.hasMore, true);
-    assert.deepEqual(nextPage.records.map((record) => record.update.updateId), [
-      'update-2',
-    ]);
-
+    const repository = new PSqlCrdtLogRepository(sql);
+    const update = createCrdtUpdate('update-1');
     const snapshot: RallarCrdtSnapshotEnvelope = {
       protocolVersion: RALLAR_CRDT_PROTOCOL_VERSION,
       document: CRDT_DOCUMENT_REF,
       snapshotId: 'snapshot-1',
       schemaVersion: 1,
       createdAtEpochMs: 2_500,
-      maxLamport: 2,
-      includedUpdateIds: ['update-1', 'update-2'],
-      value: {
-        title: 'Title update-2',
-      },
-      metadata: {
-        updateCount: 2,
-      },
+      maxLamport: 1,
+      includedUpdateIds: [],
+      value: {},
+      metadata: { updateCount: 0 },
     };
-    await repository.writeSnapshot({
+
+    await assert.rejects(repository.append(toCrdtAppendInput(update)), /AppInbox|disabled/i);
+    await assert.rejects(repository.appendBatch({
+      document: CRDT_DOCUMENT_REF,
+      updates: [toCrdtAppendInput(update)],
+    }), /AppInbox|disabled/i);
+    await assert.rejects(repository.writeSnapshot({
       snapshot,
-      appendSequence: 2,
-    });
-    assert.deepEqual(await repository.readSnapshot(CRDT_DOCUMENT_REF), snapshot);
-
-    const list = await repository.listDocuments({
-      documentType: 'checklist',
-    });
-    const debugBundle = await repository.exportDebugBundle(CRDT_DOCUMENT_REF, {
-      reason: 'pglite-test',
-    });
-    const backup = await repository.exportBackupBundle(CRDT_DOCUMENT_REF);
-    const integrity = await repository.verifyIntegrity(CRDT_DOCUMENT_REF);
-
-    assert.equal(list.documents.length, 1);
-    assert.equal(debugBundle.integrity.updateCount, 2);
-    assert.equal(backup?.integrity.updateCount, 2);
-    assert.equal(integrity.valid, true);
-
-    await withPGliteSql(async (restoreSql) => {
-      const restoreRepository = new PSqlCrdtLogRepository(restoreSql, {
-        now: () => 4_000,
-        serverId: 'restore-server',
-      });
-      const restored = await restoreRepository.restoreBackupBundle(backup!);
-
-      assert.equal(restored.restoredUpdateCount, 2);
-      assert.equal(restored.firstAppendSequence, 1);
-      assert.equal(restored.lastAppendSequence, 2);
-      assert.equal(
-        (await restoreRepository.verifyIntegrity(CRDT_DOCUMENT_REF)).valid,
-        true,
-      );
-    });
-
-    await repository.rebuildProjection(CRDT_DOCUMENT_REF, 'checklist-summary');
-    assert.deepEqual(
-      (await repository.readDocumentMetadata(CRDT_DOCUMENT_REF))?.projectionIds,
-      ['checklist-summary'],
-    );
-
-    await repository.updateDocumentLifecycle({
+      appendSequence: 0,
+    }), /AppInbox|disabled/i);
+    await assert.rejects(repository.updateDocumentLifecycle({
       document: CRDT_DOCUMENT_REF,
       lifecycle: 'archived',
-      changedAtEpochMs: 3_000,
-    });
-    const rejected = await repository.append(
-      toCrdtAppendInput(createCrdtUpdate('update-3')),
+    }), /AppInbox|disabled/i);
+    await assert.rejects(repository.restoreBackupBundle({} as never), /AppInbox|disabled/i);
+    await assert.rejects(
+      repository.rebuildProjection(CRDT_DOCUMENT_REF, 'checklist-summary'),
+      /AppInbox|disabled/i,
     );
 
-    assert.equal(rejected.status, 'rejected');
-    assert.equal(rejected.status === 'rejected' && rejected.code, 'document-archived');
-  });
-
-  await withPGliteSql(async (sql) => {
-    const disabledRepository = new PSqlCrdtLogRepository(sql, {
-      now: () => 5_000,
-      policies: [
-        {
-          documentType: 'checklist',
-          rollout: 'disabled',
-          flags: {
-            killSwitchReason: 'maintenance',
-          },
-        },
-      ],
-    });
-    const disabled = await disabledRepository.append(
-      toCrdtAppendInput(createCrdtUpdate('disabled-1')),
-    );
-
-    assert.equal(disabled.status, 'rejected');
-    assert.equal(disabled.status === 'rejected' && disabled.code, 'feature-disabled');
-  });
-
-  await withPGliteSql(async (sql) => {
-    const repository = new PSqlCrdtLogRepository(sql, {
-      now: () => 6_000,
-    });
-    await repository.updateDocumentLifecycle({
+    assert.equal(await repository.readDocumentMetadata(CRDT_DOCUMENT_REF), undefined);
+    assert.equal(await repository.readSnapshot(CRDT_DOCUMENT_REF), undefined);
+    assert.deepEqual((await repository.listAfter({
       document: CRDT_DOCUMENT_REF,
-      lifecycle: 'active',
-      quota: {
-        maxUpdatesPerMinutePerActor: 1,
-      },
-    });
-
-    assert.equal(
-      (await repository.append(toCrdtAppendInput(createCrdtUpdate('rate-1'))))
-        .status,
-      'accepted',
-    );
-    const rateLimited = await repository.append(
-      toCrdtAppendInput(createCrdtUpdate('rate-2')),
-    );
-    assert.equal(rateLimited.status, 'rejected');
-    assert.equal(rateLimited.status === 'rejected' && rateLimited.code, 'rate-limited');
-
-    await repository.updateDocumentLifecycle({
-      document: CRDT_DOCUMENT_REF,
-      lifecycle: 'quarantined',
-    });
-    const quarantined = await repository.append(
-      toCrdtAppendInput(createCrdtUpdate('rate-3')),
-    );
-    assert.equal(quarantined.status, 'rejected');
-    assert.equal(
-      quarantined.status === 'rejected' && quarantined.code,
-      'document-quarantined',
-    );
+    })).records, []);
+    assert.deepEqual((await repository.listDocuments()).documents, []);
   });
 });
 

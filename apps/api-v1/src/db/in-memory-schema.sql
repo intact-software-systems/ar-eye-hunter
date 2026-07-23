@@ -164,7 +164,7 @@ CREATE TABLE IF NOT EXISTS crdt_documents
     document_type        text                     NOT NULL,
     document_id          text                     NOT NULL,
     document_ref         text                     NOT NULL,
-    document_revision    bigint                   NOT NULL DEFAULT 0,
+    document_revision    bigint                   NOT NULL DEFAULT 1,
     lifecycle            text                     NOT NULL DEFAULT 'active',
     created_at_ts        timestamp with time zone NOT NULL DEFAULT now(),
     updated_at_ts        timestamp with time zone NOT NULL DEFAULT now(),
@@ -221,7 +221,7 @@ CREATE TABLE IF NOT EXISTS crdt_snapshots
     append_sequence   bigint                   NOT NULL,
     snapshot_envelope text                     NOT NULL,
     created_at_ts     timestamp with time zone NOT NULL DEFAULT now(),
-    reason            text,
+    reason            text                     NOT NULL,
 
     CONSTRAINT crdt_snapshots_pk PRIMARY KEY (document_key, snapshot_id),
     CONSTRAINT crdt_snapshots_document_fk FOREIGN KEY (document_key)

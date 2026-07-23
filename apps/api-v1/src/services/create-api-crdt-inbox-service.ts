@@ -12,6 +12,7 @@ import {
 import type { RallarTimingSink } from '@shared-server/rallar-system/services/timing.ts';
 import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
 import type { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
+import type { CurrentMutationAuthority } from './create-api-mutation-inbox-factories.ts';
 
 export function createApiCrdtInboxService(
   input: Readonly<{
@@ -22,18 +23,7 @@ export function createApiCrdtInboxService(
     serviceId: string;
     timing?: RallarTimingSink;
     options?: AppInboxServiceOptions;
-    currentAuthority?: Readonly<{
-      readSession(sessionId: string): Promise<
-        | Readonly<{
-          clientId: string;
-          sessionId: string;
-          expiresAtEpochMs: number;
-        }>
-        | null
-        | undefined
-      >;
-      adminClientIds: readonly string[];
-    }>;
+    currentAuthority?: CurrentMutationAuthority;
     policies?: readonly RallarCrdtDocumentTypePolicy[];
     outboxQueueReader?: OutboxQueueReader;
     wakeQueueEngine?: () => void;
@@ -42,21 +32,28 @@ export function createApiCrdtInboxService(
   const authorize = async (command: CrdtMutationCommand) => {
     const session = await input.currentAuthority?.readSession(command.actor.sessionId);
     const nowEpochMs = input.options?.nowEpochMs?.() ?? Date.now();
-    const allowed = Boolean(
-      session &&
-        session.clientId === command.actor.actorId &&
-        session.sessionId === command.actor.sessionId &&
-        session.expiresAtEpochMs > nowEpochMs &&
-        command.responseAudience.senderSessionId === session.sessionId &&
-        (command.responseAudience.kind !== 'admin' ||
-          input.currentAuthority?.adminClientIds.includes(session.clientId)),
-    );
-    return {
-      allowed,
-      code: allowed ? 'allowed' : 'crdt-authority-denied',
-    };
+    if (!session) return { allowed: false, code: 'authentication-missing' };
+    if (session.expiresAtEpochMs <= nowEpochMs) {
+      return { allowed: false, code: 'authentication-expired' };
+    }
+    if (
+      session.clientId !== command.actor.actorId ||
+      session.username !== command.actor.principalId ||
+      session.sessionId !== command.actor.sessionId ||
+      command.responseAudience.senderSessionId !== session.sessionId
+    ) return { allowed: false, code: 'authorization-forbidden' };
+    if (command.responseAudience.kind === 'admin') {
+      const allowed = Boolean(input.currentAuthority?.adminClientIds.includes(session.clientId));
+      return { allowed, code: allowed ? 'allowed' : 'authorization-forbidden' };
+    }
+    if (!input.currentAuthority) {
+      return { allowed: false, code: 'authorization-scope-denied' };
+    }
+    return await input.currentAuthority.authorizeDocument(command, session);
   };
-  const policies = input.policies ?? [{ documentType: '*', rollout: 'disabled' as const }];
+  const policies = input.policies && input.policies.length > 0
+    ? input.policies
+    : [{ documentType: '*', rollout: 'disabled' as const }];
   const repository = new PSqlCrdtMutationRepository(input.database, authorize, policies);
   return new AppCrdtInboxService(
     input.inboxQueueReader,

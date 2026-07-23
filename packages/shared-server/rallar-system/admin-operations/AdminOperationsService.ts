@@ -43,6 +43,8 @@ import {
   readAdminCrdtLifecycle,
 } from './crdt-admin-validation.ts';
 import type { AdminOperationsMutationGateway } from './admin-operations-mutation-gateway.ts';
+import type { AdminPruneExpiredOptions } from './admin-prune-options.ts';
+export type { AdminPruneExpiredOptions } from './admin-prune-options.ts';
 export type AdminOperationsReadInput = Readonly<{
   adminSession: AuthSession;
   scope?: StateScope;
@@ -66,12 +68,6 @@ export type AdminOperationsPruner = Readonly<{
     category: AdminPruneExpiredCategory,
     options: AdminPruneExpiredOptions,
   ): Promise<number>;
-}>;
-export type AdminPruneExpiredOptions = Readonly<{
-  appData?: Readonly<{
-    namespace?: string;
-    storeName?: string;
-  }>;
 }>;
 export type AdminOperationsTopologyManagement = Readonly<{
   reconfigureGroupTopology(input: unknown): Promise<unknown>;
@@ -274,7 +270,7 @@ export class AdminOperationsService {
       const request = readObject(input.request);
       const dryRun = readOptionalBoolean(request.dryRun, 'dryRun') ?? true;
       const categories = readPruneExpiredCategories(request.categories);
-      const options = { appData: readAppDataPruneOptions(request.appData) };
+      const options = { cutoffEpochMs: this.options.now(), appData: readAppDataPruneOptions(request.appData) };
       const results = [];
       let changed = false;
 

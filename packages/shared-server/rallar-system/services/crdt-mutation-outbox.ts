@@ -8,6 +8,10 @@ import {
   type RallarCrdtAuditEvent,
 } from '@shared/crdt/mod.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import {
+    DEFAULT_RESOURCE_INBOX_RETRY_HORIZON_MS,
+    RESOURCE_INBOX_RETRY_PROCESSING_MARGIN_MS,
+} from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { toAppQueueCreatedBy, toAppQueueKey } from './app-inbox-queue-key.ts';
 import type { CrdtAppendCommand } from './crdt-mutation-contracts.ts';
 
@@ -53,6 +57,11 @@ export function toCrdtAuditOutbox(
     }>,
   serviceId: string,
 ): ResourceEntry {
+  const auditExpireAtEpochMs = Math.max(
+    command.expireAtEpochMs,
+    command.capturedAtEpochMs + DEFAULT_RESOURCE_INBOX_RETRY_HORIZON_MS +
+      RESOURCE_INBOX_RETRY_PROCESSING_MARGIN_MS,
+  );
   const route = toAppQueueKey({
     topicId: CRDT_AUDIT_APP_OUTBOX_TOPIC,
     resourceId: command.commandId,
@@ -67,7 +76,7 @@ export function toCrdtAuditOutbox(
     },
     route,
     targets: { mode: 'broadcast' as const, scope: 'all' as const },
-    constraints: { expiresAtMs: command.expireAtEpochMs },
+    constraints: { expiresAtMs: auditExpireAtEpochMs },
     payload: {
       typeId: CRDT_AUDIT_APP_OUTBOX_TYPE,
       contentType: 'application/json',
@@ -79,7 +88,7 @@ export function toCrdtAuditOutbox(
     message,
     EnqueuedType.APP_OUTBOX,
     command.capturedAtEpochMs,
-    command.expireAtEpochMs,
+    auditExpireAtEpochMs,
     serviceId,
   );
 }

@@ -72,6 +72,7 @@ export type CrdtSnapshotCompactCommand =
   & CrdtMutationCommandBase
   & Readonly<{
     operation: 'compact';
+    snapshotId: string;
     snapshot: RallarCrdtSnapshotEnvelope | null;
     reason: string;
   }>;

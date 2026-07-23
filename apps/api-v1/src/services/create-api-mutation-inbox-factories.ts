@@ -11,16 +11,23 @@ import { createApiAdminInboxService } from './create-api-admin-inbox-service.ts'
 import { createApiCrdtInboxService } from './create-api-crdt-inbox-service.ts';
 import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
 
-type CurrentMutationAuthority = Readonly<{
+export type CurrentMutationSession = Readonly<{
+  clientId: string;
+  username: string;
+  sessionId: string;
+  expiresAtEpochMs: number;
+}>;
+
+export type CurrentMutationAuthority = Readonly<{
   readSession(sessionId: string): Promise<
-    | Readonly<{
-      clientId: string;
-      sessionId: string;
-      expiresAtEpochMs: number;
-    }>
+    | CurrentMutationSession
     | null
     | undefined
   >;
+  authorizeDocument(
+    command: import('@shared-server/rallar-system/services/crdt-mutations.ts').CrdtMutationCommand,
+    session: CurrentMutationSession,
+  ): Promise<Readonly<{ allowed: boolean; code: string }>>;
   adminClientIds: readonly string[];
 }>;
 
@@ -80,12 +87,19 @@ export function createConfiguredApiMutationInboxFactories(
       Parameters<typeof createApiMutationInboxFactories>[0],
       'currentAuthority' | 'crdtPolicies'
     >
-    & Readonly<{ readSession: CurrentMutationAuthority['readSession'] }>,
+    & Readonly<{
+      readSession: CurrentMutationAuthority['readSession'];
+      authorizeDocument: CurrentMutationAuthority['authorizeDocument'];
+    }>,
 ): ReturnType<typeof createApiMutationInboxFactories> {
-  const { readSession, ...base } = input;
+  const { readSession, authorizeDocument, ...base } = input;
   return createApiMutationInboxFactories({
     ...base,
-    currentAuthority: { readSession, adminClientIds: readConfiguredAdminClientIds() },
+    currentAuthority: {
+      readSession,
+      authorizeDocument,
+      adminClientIds: readConfiguredAdminClientIds(),
+    },
     crdtPolicies: readConfiguredCrdtPolicies(),
   });
 }
@@ -97,21 +111,30 @@ export function readConfiguredAdminClientIds(): readonly string[] {
     .filter((value) => value.length > 0);
 }
 
-export function readConfiguredCrdtPolicies(): readonly RallarCrdtDocumentTypePolicy[] {
-  const source = Deno.env.get('RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON');
-  if (!source) return [];
-  const value = JSON.parse(source) as unknown;
-  if (!Array.isArray(value)) {
-    throw new TypeError('RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON must be an array');
-  }
-  for (const policy of value) {
-    if (
-      !policy || typeof policy !== 'object' || Array.isArray(policy) ||
-      typeof (policy as Record<string, unknown>).documentType !== 'string' ||
-      !['disabled', 'experimental', 'beta', 'production'].includes(
-        String((policy as Record<string, unknown>).rollout),
-      )
-    ) throw new TypeError('RALLAR_CRDT document policy is invalid');
-  }
-  return value as readonly RallarCrdtDocumentTypePolicy[];
+export function readConfiguredCrdtPolicies():
+    | readonly RallarCrdtDocumentTypePolicy[]
+    | undefined {
+    const source = Deno.env.get('RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON');
+    if (!source) return undefined;
+    const value = JSON.parse(source) as unknown;
+    if (!Array.isArray(value)) {
+        throw new TypeError('RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON must be an array');
+    }
+    if (value.length === 0) return undefined;
+    for (const policy of value) {
+        if (
+            !policy || typeof policy !== 'object' || Array.isArray(policy) ||
+            typeof (policy as Record<string, unknown>).documentType !== 'string' ||
+            ![
+                'disabled',
+                'experimental-local',
+                'experimental-live',
+                'durable-beta',
+                'production',
+            ].includes(String((policy as Record<string, unknown>).rollout))
+        ) {
+            throw new TypeError('RALLAR_CRDT document policy is invalid');
+        }
+    }
+    return value as readonly RallarCrdtDocumentTypePolicy[];
 }

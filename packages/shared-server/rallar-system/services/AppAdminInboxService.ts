@@ -184,7 +184,10 @@ export class AppAdminInboxService extends AppInboxService {
           command.categories.includes(category)
             ? await this.pruner.countExpired(
               category,
-              command.appData === null ? {} : {
+              command.appData === null ? {
+                cutoffEpochMs: command.capturedAtEpochMs,
+              } : {
+                cutoffEpochMs: command.capturedAtEpochMs,
                 appData: {
                   namespace: command.appData.namespace,
                   ...(command.appData.storeName === null

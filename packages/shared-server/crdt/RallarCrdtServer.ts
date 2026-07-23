@@ -199,6 +199,14 @@ export function validateRallarCrdtServerLiveEnvelope(
     const base = validateEnvelopeByKind(kind, value, validationOptions);
     const issues = [...base.issues];
 
+    if (kind === 'update' && !options.mutationIngress) {
+        issues.push({
+            path: '$',
+            code: 'mutation-ingress-required',
+            message: 'CRDT updates require durable mutation ingress.',
+        });
+    }
+
     if (base.valid) {
         const document = readEnvelopeDocument(value);
         if (!document) {
@@ -246,8 +254,7 @@ function createRallarCrdtTopicDefinition(
         scope: topicScope,
         maxPayloadBytes,
         fanout:
-            (kind === 'update' && options.mutationIngress) ||
-            (kind === 'catch-up-request' && options.logRepository)
+            kind === 'update' || (kind === 'catch-up-request' && options.logRepository)
                 ? 'none'
                 : (options.fanout ?? 'live-only'),
         validate: (value, context) =>

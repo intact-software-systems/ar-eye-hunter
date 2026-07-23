@@ -39,6 +39,32 @@
       }
     },
     {
+      "name": "rejectMissingCrdtMutationAuth",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/admin/operations/crdt/lifecycle",
+        "body": {
+          "document": {
+            "applicationId": "app-1",
+            "workspaceId": "workspace-1",
+            "scope": "principal",
+            "documentType": "checklist",
+            "documentId": "doc-1",
+            "principalId": "principal-1"
+          },
+          "lifecycle": "active"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "error": "Unauthorized: Missing bearer token"
+        }
+      }
+    },
+    {
       "name": "loginDemoAdmin",
       "type": "http",
       "connection": "api",

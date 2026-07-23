@@ -48,14 +48,16 @@ const principalDocumentRef: RallarCrdtDocumentRef = {
 };
 
 describe('installRallarCrdtWsTopics', () => {
-  it('validates and fans out accepted room CRDT updates without durable tables', async () => {
+  it('accepts room CRDT updates only through durable mutation ingress', async () => {
     const accepted = vi.fn();
+    const enqueueUpdate = vi.fn().mockResolvedValue(undefined);
     const { facade, socket, outbox } = createFacade({
       authorizeRoomMessage: () => true,
     });
     installRallarCrdtWsTopics(facade, {
       allowedDocumentTypes: ['checklist'],
       onAcceptedEnvelope: accepted,
+      mutationIngress: { enqueueUpdate },
     });
     const update = createUpdateEnvelope();
     const message = newALBroadcastMessage(
@@ -85,16 +87,11 @@ describe('installRallarCrdtWsTopics', () => {
         }),
       }),
     );
-    expect(socket.sent.map((entry) => entry.connectionId).sort()).toEqual([
-      'conn-1',
-      'conn-2',
-      'conn-3',
-    ]);
-    expect(
-      socket.sent.every(
-        (entry) => entry.data.payload.typeId === RALLAR_CRDT_UPDATE_TYPE_ID,
-      ),
-    ).toBe(true);
+    expect(enqueueUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'update',
+      envelope: update,
+    }));
+    expect(socket.sent).toEqual([]);
     expect(
       (outbox as unknown as { data: ReadonlyMap<unknown, unknown> }).data.size,
     ).toBe(0);

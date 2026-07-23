@@ -6,6 +6,7 @@ import {
   type RallarCrdtDocumentRef,
   type RallarCrdtSnapshotEnvelope,
   type RallarCrdtUpdateEnvelope,
+  toRallarCrdtDocumentKey,
 } from '@shared/crdt/mod.ts';
 import {
   type CrdtMutationCommand,
@@ -101,6 +102,7 @@ describe('Task 9 CRDT correction contracts', () => {
     await expect(createCrdtMutationCommand({
       ...adminBase('compact'),
       operation: 'compact',
+      snapshotId: 'wrong-snapshot',
       snapshot: snapshotFor(other, 'wrong-snapshot', {}),
       reason: 'compact',
     })).rejects.toThrow(/snapshot.*document/i);
@@ -112,6 +114,7 @@ describe('Task 9 CRDT correction contracts', () => {
       await createCrdtMutationCommand({
         ...adminBase('compact'),
         operation: 'compact',
+        snapshotId: 'compact-snapshot',
         snapshot: null,
         reason: 'compact',
       }),
@@ -286,7 +289,7 @@ function snapshotFor(
 function metadata(overrides: Partial<RallarCrdtDocumentMetadata> = {}): RallarCrdtDocumentMetadata {
   return {
     document: DOCUMENT,
-    documentKey: 'app-1/workspace-1/room/checklist/document-1',
+    documentKey: toRallarCrdtDocumentKey(DOCUMENT),
     documentRevision: 1,
     lifecycle: 'active',
     createdAtEpochMs: 500,

@@ -71,9 +71,16 @@ export function decodeAdminPruneCommand(value: unknown): AdminPruneCommand {
     requireString(command.requestedSessionId, 'requestedSessionId');
     requireEpoch(command.capturedAtEpochMs, 'capturedAtEpochMs');
     requireEpoch(command.expireAtEpochMs, 'expireAtEpochMs');
+    if ((command.expireAtEpochMs as number) <= (command.capturedAtEpochMs as number)) {
+        throw new TypeError('Admin prune expiry must follow capture time');
+    }
     if (typeof command.dryRun !== 'boolean') throw new TypeError('dryRun must be boolean');
     requireCategories(command.categories);
     decodeAppData(command.appData);
+    const includesAppData = (command.categories as readonly unknown[]).includes('app-data');
+    if (includesAppData !== (command.appData !== null)) {
+        throw new TypeError('Admin prune app-data category and details differ');
+    }
     requirePageSize(command.pageSize);
     const { commandHash: _hash, ...stable } = command;
     if (hashRallarCrdtJson(stable) !== command.commandHash) {
@@ -168,10 +175,19 @@ function decodePageWork(value: unknown): AdminPrunePageWork {
     requireString(work.requestedSessionId, 'requestedSessionId');
     requireEpoch(work.capturedAtEpochMs, 'capturedAtEpochMs');
     requireEpoch(work.expireAtEpochMs, 'expireAtEpochMs');
+    if ((work.expireAtEpochMs as number) <= (work.capturedAtEpochMs as number)) {
+        throw new TypeError('Admin prune page expiry must follow capture time');
+    }
     requirePageSize(work.pageSize);
     if (work.afterCursor !== null) requireString(work.afterCursor, 'afterCursor');
     requireEpoch(work.pageIndex, 'pageIndex');
     decodeAppData(work.appData);
+    if (((work.pageIndex as number) === 0) !== (work.afterCursor === null)) {
+        throw new TypeError('Admin prune page cursor differs from page index');
+    }
+    if ((work.category === 'app-data') !== (work.appData !== null)) {
+        throw new TypeError('Admin prune app-data category and details differ');
+    }
     return work as unknown as AdminPrunePageWork;
 }
 

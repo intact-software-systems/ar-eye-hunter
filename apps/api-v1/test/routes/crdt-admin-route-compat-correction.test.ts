@@ -136,6 +136,35 @@ Deno.test('actual CRDT admin routes preserve compact/lifecycle/erase responses a
     assert.equal(missing.response.status, 404);
     assert.equal(missing.body.ok, false);
 
+    await sql`
+      update crdt_documents
+      set quota_policy = ${JSON.stringify({ maxDocumentBytes: 1 })}
+      where document_key = ${initial.documentKey}
+    `;
+    const beforeQuotaRejection = await mutationCounts(sql, initial.documentKey);
+    const quotaRejected = await postAndProcessRaw(
+      app,
+      inbox,
+      sql,
+      '/api/crdt/admin/documents/compact',
+      {
+        requestId: 'quota-rejected-route',
+        document: DOCUMENT,
+        reason: 'quota-rejected-route',
+      },
+    );
+    assert.equal(quotaRejected.response.status, 409);
+    assert.equal(quotaRejected.body.ok, false);
+    assert.deepEqual(
+      await mutationCounts(sql, initial.documentKey),
+      beforeQuotaRejection,
+    );
+    await sql`
+      update crdt_documents
+      set quota_policy = ${JSON.stringify({ maxDocumentBytes: 100000 })}
+      where document_key = ${initial.documentKey}
+    `;
+
     const compact = await postAndProcess<{
       ok: boolean;
       result: {
@@ -204,6 +233,89 @@ Deno.test('actual CRDT admin routes preserve compact/lifecycle/erase responses a
     assert.equal(Number(completedAudit?.count), 1);
   });
 });
+
+Deno.test('actual CRDT admin Hono routes preserve 401 and 403 denials', async () => {
+    const unauthorized = new Hono();
+    routes.init(unauthorized, {
+        repository: {} as never,
+        mutations: {
+            processAdminMutationUntilCompletion: () => {
+                throw new Error('mutation must not run');
+            },
+        } as never,
+        requireAuth: false,
+        requireApiAdminSession: () => {
+            throw Object.assign(new Error('Unauthorized: expired session'), { status: 401 });
+        },
+    });
+    const unauthorizedResponse = await unauthorized.request(
+        '/api/crdt/admin/documents/compact',
+        {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ document: DOCUMENT }),
+        },
+    );
+    assert.equal(unauthorizedResponse.status, 401);
+    assert.equal((await unauthorizedResponse.json()).ok, false);
+
+    const forbidden = new Hono();
+    routes.init(forbidden, {
+        repository: {} as never,
+        mutations: {
+            processAdminMutationUntilCompletion: () => {
+                throw new Error('mutation must not run');
+            },
+        } as never,
+        requireAuth: false,
+        requireApiAdminSession: () => Promise.resolve({
+            clientId: 'non-admin',
+            username: 'non-admin',
+            sessionId: 'session-1',
+            accessToken: 'token',
+            expiresAtEpochMs: Date.now() + 60_000,
+        }),
+        authorizeAdmin: () => false,
+    });
+    const forbiddenResponse = await forbidden.request(
+        '/api/crdt/admin/documents/compact',
+        {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ document: DOCUMENT }),
+        },
+    );
+    assert.equal(forbiddenResponse.status, 403);
+    assert.equal((await forbiddenResponse.json()).ok, false);
+});
+
+async function mutationCounts(
+    sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0],
+    documentKey: string,
+) {
+    const [counts] = await sql<{
+        revision: string | number;
+        snapshots: string | number;
+        updates: string | number;
+        outbox: string | number;
+    }[]>`
+      select
+        (select document_revision from crdt_documents where document_key = ${documentKey})
+          as revision,
+        (select count(*) from crdt_snapshots where document_key = ${documentKey})
+          as snapshots,
+        (select count(*) from crdt_updates where document_key = ${documentKey})
+          as updates,
+        (select count(*) from resource_inbox where ri_type_id in ('WS_OUTBOX', 'APP_OUTBOX'))
+          as outbox
+    `;
+    return {
+        revision: Number(counts!.revision),
+        snapshots: Number(counts!.snapshots),
+        updates: Number(counts!.updates),
+        outbox: Number(counts!.outbox),
+    };
+}
 
 async function postAndProcess<T>(
   app: Hono,

@@ -57,19 +57,20 @@ export function createWsServerTargetResolver(
   };
   return {
     resolvePeerRecipients: (peerId, message) => {
-      const context = webSocketServer.connections.get(peerId);
-      if (context?.isOpen) return [{ peerId, connectionId: peerId }];
       const principalRef = readCrdtPrincipalRef(message, peerId);
       const snapshot = principalRef
         ? options.findClientSnapshotByRef?.(principalRef, message)
         : undefined;
-      return snapshot?.activeSessions.filter((session) =>
+      if (snapshot) return snapshot.activeSessions.filter((session) =>
         isClientSnapshotSessionLive(session, options.now?.() ?? Date.now()) &&
         webSocketServer.connections.get(session.sessionId)?.isOpen
       ).map((session) => ({
         peerId: session.sessionId,
         connectionId: session.connectionId ?? session.sessionId,
-      })) ?? [];
+      }));
+      if (principalRef) return [];
+      const context = webSocketServer.connections.get(peerId);
+      return context?.isOpen ? [{ peerId, connectionId: peerId }] : [];
     },
     resolveGroupRecipients,
     resolveBroadcastRecipients: (scope, message) =>
@@ -91,11 +92,11 @@ function readCrdtPrincipalRef(message: ALMessage, principalId: string) {
     if (
       document?.scope !== 'principal' || document.principalId !== principalId ||
       typeof document.applicationId !== 'string' ||
-      typeof document.workspaceId !== 'string'
+      ('workspaceId' in document && typeof document.workspaceId !== 'string')
     ) return undefined;
     return {
       applicationId: document.applicationId,
-      workspaceId: document.workspaceId,
+      ...('workspaceId' in document ? { workspaceId: document.workspaceId as string } : {}),
       principalId,
     };
   } catch {

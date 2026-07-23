@@ -15,7 +15,15 @@ import {
   validateRallarCrdtSnapshotEnvelope,
 } from '@shared/crdt/mod.ts';
 import type { CrdtMutationCommand } from '../../rallar-system/services/crdt-mutation-contracts.ts';
-import { decodeExactUpdateEnvelope } from '../../rallar-system/services/crdt-mutation-codec.ts';
+import {
+  decodeExactDocumentMetadata,
+  decodeExactDocumentRef,
+  decodeExactQuotaPolicy,
+  decodeExactRetentionPolicy,
+  decodeExactSnapshotEnvelope,
+  decodeExactTrustedAppendMetadata,
+  decodeExactUpdateEnvelope,
+} from '../../rallar-system/services/crdt-mutation-codec.ts';
 
 export type DocumentRow = Readonly<{
   document_key: string;
@@ -62,6 +70,7 @@ export type SnapshotRow = Readonly<{
   created_at_ts: Date | string;
   reason: string;
   snapshot_bytes: number | string;
+  snapshot_count: number | string;
 }>;
 
 export function toMetadata(
@@ -72,6 +81,8 @@ export function toMetadata(
   const document = decodeDocumentRef(row.document_ref);
   const logicalKey = toRallarCrdtDocumentKey(document);
   const expectedKey = toRallarCrdtDocumentKey(expectedDocument);
+  const archivedAtEpochMs = toEpoch(row.archived_at_ts);
+  const destroyedAtEpochMs = toEpoch(row.destroyed_at_ts);
   if (
     row.document_key !== expectedDocumentKey || logicalKey !== row.document_key ||
     expectedKey !== row.document_key || row.application_id !== document.applicationId ||
@@ -97,19 +108,20 @@ export function toMetadata(
     counters[0] < 1 || !['active', 'archived', 'destroyed', 'quarantined'].includes(lifecycle) ||
     !Number.isSafeInteger(createdAtEpochMs) || !Number.isSafeInteger(updatedAtEpochMs) ||
     createdAtEpochMs < 0 || updatedAtEpochMs < createdAtEpochMs ||
-    !isRetentionPolicy(retention) || !isQuotaPolicy(quota) ||
+    (retention !== null && !decodePolicy(() => decodeExactRetentionPolicy(retention))) ||
+    (quota !== null && !decodePolicy(() => decodeExactQuotaPolicy(quota))) ||
     !Array.isArray(projectionIds) || projectionIds.some((id) => typeof id !== 'string' || !id) ||
     new Set(projectionIds).size !== projectionIds.length
   ) throw new TypeError('CRDT persisted document metadata is corrupt');
-  return {
+  return decodeExactDocumentMetadata({
     document,
     documentKey: row.document_key,
     documentRevision: counters[0],
     lifecycle,
     createdAtEpochMs,
     updatedAtEpochMs,
-    archivedAtEpochMs: toEpoch(row.archived_at_ts),
-    destroyedAtEpochMs: toEpoch(row.destroyed_at_ts),
+    archivedAtEpochMs,
+    destroyedAtEpochMs,
     lastAppendSequence: counters[1],
     updateCount: counters[2],
     snapshotCount: counters[3],
@@ -117,7 +129,7 @@ export function toMetadata(
     retention,
     quota,
     projectionIds,
-  };
+  });
 }
 
 export function toRecord(
@@ -126,29 +138,34 @@ export function toRecord(
 ): RallarCrdtDurableUpdateRecord {
   const update = decodeExactUpdateEnvelope(JSON.parse(row.update_envelope));
   const expectedKey = toRallarCrdtDocumentKey(document);
+  const appendSequence = Number(row.append_sequence);
+  const acceptedAtEpochMs = new Date(row.accepted_at_ts).getTime();
   if (
     row.document_key !== expectedKey ||
     row.update_id !== update.updateId ||
     toRallarCrdtDocumentKey(update.document) !== expectedKey ||
     hashRallarCrdtUpdateEnvelope(update) !== row.accepted_update_hash ||
     row.actor_id === null || row.principal_id === null ||
-    row.session_id === null || row.server_id === null
+    row.session_id === null || row.server_id === null ||
+    !Number.isSafeInteger(appendSequence) || appendSequence <= 0 ||
+    !Number.isSafeInteger(acceptedAtEpochMs) || acceptedAtEpochMs < 0 ||
+    row.authorization_scope !== document.scope
   ) throw new TypeError('CRDT persisted update identity is corrupt');
+  const append = decodeExactTrustedAppendMetadata({
+    appendSequence,
+    acceptedAtEpochMs,
+    actorId: row.actor_id,
+    principalId: row.principal_id,
+    sessionId: row.session_id,
+    serverId: row.server_id,
+    authorizationScope: row.authorization_scope,
+    acceptedUpdateHash: row.accepted_update_hash,
+  });
   return {
     document,
     documentKey: row.document_key,
     update,
-    append: {
-      appendSequence: Number(row.append_sequence),
-      acceptedAtEpochMs: new Date(row.accepted_at_ts).getTime(),
-      actorId: row.actor_id,
-      principalId: row.principal_id,
-      sessionId: row.session_id,
-      serverId: row.server_id,
-      authorizationScope: row
-        .authorization_scope as RallarCrdtTrustedAppendMetadata['authorizationScope'],
-      acceptedUpdateHash: row.accepted_update_hash,
-    },
+    append,
   };
 }
 
@@ -158,7 +175,7 @@ export function toSnapshot(
   expectedDocument: RallarCrdtDocumentRef,
   lastAppendSequence: number,
 ): RallarCrdtSnapshotEnvelope {
-  const snapshot = JSON.parse(row.snapshot_envelope) as RallarCrdtSnapshotEnvelope;
+  const snapshot = decodeExactSnapshotEnvelope(JSON.parse(row.snapshot_envelope));
   if (
     row.document_key !== expectedDocumentKey ||
     row.snapshot_id !== snapshot.snapshotId ||
@@ -166,7 +183,8 @@ export function toSnapshot(
     Number(row.append_sequence) < 0 ||
     Number(row.append_sequence) > lastAppendSequence ||
     new Date(row.created_at_ts).getTime() !== snapshot.createdAtEpochMs ||
-    row.reason !== (snapshot.metadata.reason ?? 'app-inbox-compaction') ||
+    (typeof row.reason !== 'string' || row.reason.length === 0) ||
+    (snapshot.metadata.reason !== undefined && row.reason !== snapshot.metadata.reason) ||
     toRallarCrdtDocumentKey(snapshot.document) !== expectedDocumentKey ||
     toRallarCrdtDocumentKey(expectedDocument) !== expectedDocumentKey ||
     !validateRallarCrdtSnapshotEnvelope(snapshot).valid
@@ -178,20 +196,15 @@ export function toFeatureDecision(
   command: CrdtMutationCommand,
   policies: readonly RallarCrdtDocumentTypePolicy[],
 ): RallarCrdtFeatureDecision {
-  if (command.operation === 'append' || command.operation === 'rebuild-projection') {
-    return evaluateRallarCrdtFeaturePolicy({
-      document: command.document,
-      operation: command.operation === 'append' ? 'durable-append' : 'projection-rebuild',
-      policies,
-    });
-  }
-  return {
-    allowed: true,
-    code: 'allowed',
-    reason: 'No feature gate applies to this administrative mutation.',
-    rollout: 'production',
-    retryable: false,
-  };
+  return evaluateRallarCrdtFeaturePolicy({
+    document: command.document,
+    operation: command.operation === 'append'
+      ? 'durable-append'
+      : command.operation === 'rebuild-projection'
+      ? 'projection-rebuild'
+      : 'admin-export',
+    policies,
+  });
 }
 
 export function toDate(epochMs: number | null): Date | null {
@@ -203,26 +216,7 @@ export function toJson(value: unknown): string | null {
 }
 
 function decodeDocumentRef(value: string): RallarCrdtDocumentRef {
-  const document = JSON.parse(value) as unknown;
-  if (!document || typeof document !== 'object' || Array.isArray(document)) {
-    throw new TypeError('CRDT persisted document identity is corrupt');
-  }
-  const record = document as Record<string, unknown>;
-  const allowed = [
-    'applicationId',
-    'scope',
-    'documentType',
-    'documentId',
-    ...('workspaceId' in record ? ['workspaceId'] : []),
-    ...('roomRef' in record ? ['roomRef'] : []),
-    ...('principalId' in record ? ['principalId'] : []),
-    ...('customScope' in record ? ['customScope'] : []),
-  ];
-  if (Object.keys(record).sort().join('\0') !== allowed.sort().join('\0')) {
-    throw new TypeError('CRDT persisted document identity is corrupt');
-  }
-  toRallarCrdtDocumentKey(record as RallarCrdtDocumentRef);
-  return record as RallarCrdtDocumentRef;
+  return decodeExactDocumentRef(JSON.parse(value), 'CRDT persisted document identity');
 }
 
 function toEpoch(value: Date | string | null): number | null {
@@ -233,41 +227,11 @@ function fromJson<T>(value: string | null): T | null {
   return value === null ? null : JSON.parse(value) as T;
 }
 
-function isRetentionPolicy(value: unknown): value is RallarCrdtRetentionPolicy | null {
-  if (value === null) return true;
-  if (!isExactOptionalRecord(value, ['mode'], ['ttlMs', 'sensitivePayloads', 'reason'])) {
+function decodePolicy(decode: () => unknown): boolean {
+  try {
+    decode();
+    return true;
+  } catch {
     return false;
   }
-  return ['retain', 'redact-after', 'delete-after'].includes(String(value.mode)) &&
-    (value.ttlMs === undefined || isPositiveInteger(value.ttlMs)) &&
-    (value.sensitivePayloads === undefined || typeof value.sensitivePayloads === 'boolean') &&
-    (value.reason === undefined || typeof value.reason === 'string');
-}
-
-function isQuotaPolicy(value: unknown): value is RallarCrdtQuotaPolicy | null {
-  if (value === null) return true;
-  const keys = [
-    'maxUpdateBytes',
-    'maxDocumentBytes',
-    'maxUpdateCount',
-    'maxPendingUpdatesPerReplica',
-    'maxUpdatesPerMinutePerActor',
-  ];
-  return isExactOptionalRecord(value, [], keys) &&
-    keys.every((key) => value[key] === undefined || isPositiveInteger(value[key]));
-}
-
-function isExactOptionalRecord(
-  value: unknown,
-  required: readonly string[],
-  optional: readonly string[],
-): value is Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  const keys = Object.keys(value);
-  return required.every((key) => keys.includes(key)) &&
-    keys.every((key) => required.includes(key) || optional.includes(key));
-}
-
-function isPositiveInteger(value: unknown): boolean {
-  return Number.isSafeInteger(value) && Number(value) > 0;
 }

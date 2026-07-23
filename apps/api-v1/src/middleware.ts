@@ -25,8 +25,9 @@ import { AppClientInboxService } from '@shared-server/rallar-system/services/App
 import { AppGroupInboxService } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 import { AppAuthInboxService } from '@shared-server/rallar-system/services/AppAuthInboxService.ts';
 import {
-  createConfiguredApiMutationInboxFactories,
-} from './services/create-api-mutation-inbox-factories.ts';
+  createApiCrdtMutationInboxFactories,
+  findCurrentClientSnapshot,
+} from './services/create-api-crdt-document-authorizer.ts';
 import { createAuthMutationService } from '@shared-server/rallar-system/services/auth-state-mutations.ts';
 import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/services/auth-credential-issuer.ts';
 import { AppOutboxType } from '@shared-server/rallar-system/services/AppOutboxService.ts';
@@ -259,7 +260,7 @@ function initialise(
     webSocketServer,
     wsRuntimeName,
     findGroupSnapshotByRef: (ref) => groupSnapshotReadThroughCache.findByRef(ref),
-    findClientSnapshotByRef: (ref) => clientSnapshotReadThroughCache.findByRef(ref),
+    findClientSnapshotByRef: (ref) => findCurrentClientSnapshot(clientSnapshotReadThroughCache, ref),
     inboundStores: resolveServerWsQBoxALInboundRuntimeStores(wsRuntimeName),
     outboundStores: resolveServerWsQBoxALOutboundRuntimeStores(wsRuntimeName),
     createAppGroupInboxService: ({
@@ -341,14 +342,12 @@ function initialise(
         timing,
         appInboxOptions,
       ),
-    ...createConfiguredApiMutationInboxFactories({
-      resourceInboxRepository,
-      resourceInboxResultsRepository,
+    ...createApiCrdtMutationInboxFactories({
       database: postgresSql,
       serviceId: myServerId,
       timing,
       options: appInboxOptions,
-      readSession: (sessionId) => authSessionRepository.findBySessionId(sessionId),
+      repositories: { authSessionRepository, groupsRepository, clientsRepository },
     }),
     resilience: {
       inbox: resilienceInbox,

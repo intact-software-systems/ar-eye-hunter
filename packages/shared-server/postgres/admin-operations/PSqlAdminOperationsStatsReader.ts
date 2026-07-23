@@ -13,8 +13,8 @@ import type {
   AdminOperationsPruner,
   AdminOperationsReadInput,
   AdminOperationsStatsReader,
-  AdminPruneExpiredOptions,
 } from '../../rallar-system/admin-operations/AdminOperationsService.ts';
+import type { AdminPruneExpiredOptions } from '../../rallar-system/admin-operations/admin-prune-options.ts';
 import type { PSqlSql } from '../PostgresSqlClient.ts';
 import {
   decodeGroupStateGroupStorageKey,
@@ -639,19 +639,19 @@ export class PSqlAdminOperationsPruner implements AdminOperationsPruner {
       case 'runtime-state':
         return toNumber(
           (await this.sql<CountRow[]>`
-                    select count(*) as count from runtime_state_store where expire_at_ts <= now()
+                    select count(*) as count from runtime_state_store where expire_at_ts <= ${new Date(options.cutoffEpochMs)}
                 `)[0]?.count,
         );
       case 'resource-inbox':
         return toNumber(
           (await this.sql<CountRow[]>`
-                    select count(*) as count from resource_inbox where expire_ts <= now()
+                    select count(*) as count from resource_inbox where expire_ts <= ${new Date(options.cutoffEpochMs)}
                 `)[0]?.count,
         );
       case 'resource-inbox-results':
         return toNumber(
           (await this.sql<CountRow[]>`
-                    select count(*) as count from resource_inbox_results where expire_ts <= now()
+                    select count(*) as count from resource_inbox_results where expire_ts <= ${new Date(options.cutoffEpochMs)}
                 `)[0]?.count,
         );
       case 'app-data':
@@ -668,7 +668,7 @@ export class PSqlAdminOperationsPruner implements AdminOperationsPruner {
         return (await this.sql<{ store_key: string }[]>`
                     with expired as (
                       select store_namespace, store_key from runtime_state_store
-                      where expire_at_ts <= now()
+                      where expire_at_ts <= ${new Date(options.cutoffEpochMs)}
                       order by store_namespace, store_key limit 100
                     )
                     delete from runtime_state_store
@@ -681,7 +681,7 @@ export class PSqlAdminOperationsPruner implements AdminOperationsPruner {
         return (await this.sql<{ ri_row_id: string | number }[]>`
                     with expired as (
                       select ri_row_id from resource_inbox
-                      where expire_ts <= now() order by ri_row_id limit 100
+                      where expire_ts <= ${new Date(options.cutoffEpochMs)} order by ri_row_id limit 100
                     )
                     delete from resource_inbox
                     where ri_row_id in (select ri_row_id from expired)
@@ -691,7 +691,7 @@ export class PSqlAdminOperationsPruner implements AdminOperationsPruner {
         return (await this.sql<{ ris_row_id: string | number }[]>`
                     with expired as (
                       select ris_row_id from resource_inbox_results
-                      where expire_ts <= now() order by ris_row_id limit 100
+                      where expire_ts <= ${new Date(options.cutoffEpochMs)} order by ris_row_id limit 100
                     )
                     delete from resource_inbox_results
                     where ris_row_id in (select ris_row_id from expired)
@@ -711,7 +711,7 @@ export class PSqlAdminOperationsPruner implements AdminOperationsPruner {
                 from app_data_store
                 where app_namespace = ${namespace}
                   and store_name = ${options.appData.storeName}
-                  and expire_at_ts <= now()
+                  and expire_at_ts <= ${new Date(options.cutoffEpochMs)}
             `)[0]?.count,
       );
     }
@@ -720,7 +720,7 @@ export class PSqlAdminOperationsPruner implements AdminOperationsPruner {
             select count(*) as count
             from app_data_store
             where app_namespace = ${namespace}
-              and expire_at_ts <= now()
+              and expire_at_ts <= ${new Date(options.cutoffEpochMs)}
         `)[0]?.count,
     );
   }
@@ -733,7 +733,7 @@ export class PSqlAdminOperationsPruner implements AdminOperationsPruner {
                   select data_key from app_data_store
                   where app_namespace = ${namespace}
                     and store_name = ${options.appData.storeName}
-                    and expire_at_ts <= now()
+                    and expire_at_ts <= ${new Date(options.cutoffEpochMs)}
                   order by data_key limit 100
                 )
                 delete from app_data_store
@@ -746,7 +746,7 @@ export class PSqlAdminOperationsPruner implements AdminOperationsPruner {
     return (await this.sql<{ data_key: string }[]>`
             with expired as (
               select store_name, data_key from app_data_store
-              where app_namespace = ${namespace} and expire_at_ts <= now()
+              where app_namespace = ${namespace} and expire_at_ts <= ${new Date(options.cutoffEpochMs)}
               order by store_name, data_key limit 100
             )
             delete from app_data_store

@@ -39,6 +39,25 @@ export const DEFAULT_RESOURCE_INBOX_RETRY_POLICY: ResourceInboxRetryPolicy = {
     staleDueThresholdMs: 30_000,
 };
 
+export const RESOURCE_INBOX_RETRY_PROCESSING_MARGIN_MS = 60_000;
+
+export function resourceInboxRetryHorizonMs(
+    policy: ResourceInboxRetryPolicy = DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
+): number {
+    let horizonMs = 0;
+    for (let attempt = 1; attempt < policy.maxAttempts; attempt += 1) {
+        const baseDelayMs = Math.min(
+            policy.delaysAfterAttemptMs[attempt - 1] ?? policy.maxDelayMs,
+            policy.maxDelayMs,
+        );
+        horizonMs += Math.max(1, Math.ceil(baseDelayMs * (1 + policy.jitterRatio)));
+    }
+    return horizonMs;
+}
+
+export const DEFAULT_RESOURCE_INBOX_RETRY_HORIZON_MS =
+    resourceInboxRetryHorizonMs(DEFAULT_RESOURCE_INBOX_RETRY_POLICY);
+
 export function retryAfterAttempt(
     policy: ResourceInboxRetryPolicy,
     attempts: number,

@@ -1,6 +1,6 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import type { ClientPrincipalRef, ClientSnapshot } from '@shared/api/client-types.ts';
+import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import type { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import type { AppAuthInboxService } from '../services/AppAuthInboxService.ts';
@@ -38,9 +38,15 @@ export type RallarAdminInboxServiceFactory = (
   }>,
 ) => AppAdminInboxService;
 
+export type RallarCrdtPrincipalSnapshotRef = Readonly<{
+  applicationId: string;
+  workspaceId?: string;
+  principalId: string;
+}>;
+
 export type RallarGroupSnapshotResolverOptions = Readonly<{
   findClientSnapshotByRef?: (
-    ref: ClientPrincipalRef,
+    ref: RallarCrdtPrincipalSnapshotRef,
     message: ALMessage,
   ) => ClientSnapshot | undefined;
   findGroupSnapshotByRef?: (

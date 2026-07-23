@@ -234,12 +234,14 @@ export class AppCrdtInboxService extends AppInboxService {
       });
     }
     if (operation === 'compact') {
+      const snapshot = request.snapshot === undefined
+        ? null
+        : request.snapshot as RallarCrdtSnapshotEnvelope;
       return await createCrdtMutationCommand({
         ...common,
         operation,
-        snapshot: request.snapshot === undefined
-          ? null
-          : request.snapshot as RallarCrdtSnapshotEnvelope,
+        snapshotId: snapshot?.snapshotId ?? crypto.randomUUID(),
+        snapshot,
         reason: readString(request.reason) ?? 'api-v1-admin-compaction',
       });
     }
@@ -336,15 +338,13 @@ function toLifecycleAction<T>(request: Record<string, unknown>, key: string) {
 }
 
 function toAdminMutationError(code: string | null): Error {
-  const status = code === 'document-not-found'
+  const status = code?.startsWith('authentication-')
+    ? 401
+    : code === 'document-not-found'
     ? 404
-    : code === 'authorization-denied' || code === 'feature-disabled'
+    : code?.startsWith('authorization-') || code === 'feature-disabled'
     ? 403
-    : code === 'rate-limited'
-    ? 429
-    : code?.includes('conflict') || code?.includes('mismatch')
-    ? 409
-    : 400;
+    : 409;
   return Object.assign(new Error(`CRDT admin mutation rejected: ${code ?? 'unknown'}`), {
     code: code ?? 'crdt-admin-mutation-rejected',
     status,

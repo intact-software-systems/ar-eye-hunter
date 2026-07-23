@@ -1,12 +1,48 @@
 import {
   hashRallarCrdtJson,
+  hashRallarCrdtUpdateEnvelope,
+  type RallarCrdtDocumentMetadata,
   type RallarCrdtDocumentRef,
   type RallarCrdtSnapshotEnvelope,
+  type RallarCrdtTrustedAppendMetadata,
   type RallarCrdtUpdateEnvelope,
   toRallarCrdtDocumentKey,
-  validateRallarCrdtSnapshotEnvelope,
-  validateRallarCrdtUpdateEnvelope,
 } from '@shared/crdt/mod.ts';
+import {
+  decodeExactDocumentMetadata,
+  decodeExactDocumentRef,
+  decodeExactErasureAuditEvent,
+  decodeExactErasureRequest,
+  decodeExactIntegrityReport,
+  decodeExactProjectionIds,
+  decodeExactQuotaPolicy,
+  decodeExactRetentionPolicy,
+  decodeExactSnapshotEnvelope,
+  decodeExactTrustedAppendMetadata,
+  decodeExactValidationResult,
+} from './crdt-mutation-value-codec.ts';
+import {
+  requireEpoch,
+  requireExactKeys,
+  requireNullableInteger,
+  requireOneOf,
+  requireRecord,
+  requireString,
+} from './exact-object-codec.ts';
+import { decodeExactDebugBundle } from './crdt-debug-bundle-exact-codec.ts';
+import { decodeExactUpdateEnvelope } from './crdt-update-exact-codec.ts';
+
+export {
+  decodeExactDocumentMetadata,
+  decodeExactDocumentRef,
+  decodeExactProjectionIds,
+  decodeExactQuotaPolicy,
+  decodeExactRetentionPolicy,
+  decodeExactSnapshotEnvelope,
+  decodeExactTrustedAppendMetadata,
+  decodeExactValidationResult,
+  decodeExactUpdateEnvelope,
+};
 import type {
   CrdtMutationCommand,
   CrdtMutationResult,
@@ -46,7 +82,7 @@ export function decodeCrdtMutationCommand(value: unknown): CrdtMutationCommand {
       : operation === 'rebuild-projection'
       ? ['projectionId']
       : operation === 'compact'
-      ? ['snapshot', 'reason']
+      ? ['snapshotId', 'snapshot', 'reason']
       : operation === 'lifecycle'
       ? ['lifecycle', 'retentionAction', 'quotaAction', 'projectionIdsAction']
       : ['mode', 'reason'],
@@ -73,7 +109,7 @@ export function decodeCrdtMutationCommand(value: unknown): CrdtMutationCommand {
   requireString(audience.senderSessionId, 'senderSessionId');
   requireString(audience.topicId, 'topicId');
   requireString(audience.contextId, 'contextId');
-  const document = command.document as RallarCrdtDocumentRef;
+  const document = decodeExactDocumentRef(command.document, 'CRDT command document');
   if (toRallarCrdtDocumentKey(document) !== command.documentKey) {
     throw new TypeError('CRDT command document key differs from document');
   }
@@ -127,17 +163,16 @@ export function decodeCrdtMutationResult(value: unknown): CrdtMutationResult {
   if (result.code !== null) requireString(result.code, 'result code');
   if (operation === 'append') decodeAppendResult(result.appendResult);
   else if (operation === 'compact' && result.snapshot !== null) {
-    if (!validateRallarCrdtSnapshotEnvelope(result.snapshot).valid) {
-      throw new TypeError('CRDT compact result snapshot is invalid');
-    }
+    decodeExactSnapshotEnvelope(result.snapshot);
   } else if (operation === 'lifecycle' && result.metadata !== null) {
-    requireRecord(result.metadata, 'CRDT lifecycle result metadata');
+    decodeExactDocumentMetadata(result.metadata);
   } else if (operation === 'rebuild-projection' && result.integrity !== null) {
-    requireRecord(result.integrity, 'CRDT rebuild result integrity');
+    decodeExactIntegrityReport(result.integrity);
   } else if (operation === 'erase') {
-    for (const field of ['request', 'auditEvent', 'metadata', 'redactedBundle']) {
-      if (result[field] !== null) requireRecord(result[field], `CRDT erase result ${field}`);
-    }
+    if (result.request !== null) decodeExactErasureRequest(result.request);
+    if (result.auditEvent !== null) decodeExactErasureAuditEvent(result.auditEvent);
+    if (result.metadata !== null) decodeExactDocumentMetadata(result.metadata);
+    if (result.redactedBundle !== null) decodeExactDebugBundle(result.redactedBundle);
   }
   validateResultConsistency(result, operation);
   return result as unknown as CrdtMutationResult;
@@ -161,6 +196,29 @@ function validateResultConsistency(
     if (append.status !== expected) {
       throw new TypeError('CRDT append result status is inconsistent');
     }
+    if (!rejected) {
+      const update = append.update as RallarCrdtUpdateEnvelope;
+      const trusted = append.append as RallarCrdtTrustedAppendMetadata;
+      const document = append.document as RallarCrdtDocumentMetadata;
+      if (
+        result.documentKey !== document.documentKey ||
+        result.documentKey !== toRallarCrdtDocumentKey(update.document) ||
+        result.documentRevision !== document.documentRevision ||
+        result.appendSequence !== trusted.appendSequence ||
+        document.lastAppendSequence < trusted.appendSequence ||
+        trusted.acceptedUpdateHash !== hashRallarCrdtUpdateEnvelope(update)
+      ) throw new TypeError('CRDT append result document, revision, or sequence differs');
+    } else {
+      const update = append.update as RallarCrdtUpdateEnvelope | undefined;
+      const document = append.document as RallarCrdtDocumentMetadata | undefined;
+      if (
+        (update && toRallarCrdtDocumentKey(update.document) !== result.documentKey) ||
+        (document && (
+          document.documentKey !== result.documentKey ||
+          document.documentRevision !== result.documentRevision
+        ))
+      ) throw new TypeError('CRDT append rejection document or revision differs');
+    }
     return;
   }
   const nested = operation === 'compact'
@@ -172,6 +230,47 @@ function validateResultConsistency(
     : result.request;
   if (rejected !== (nested === null)) {
     throw new TypeError(`CRDT ${operation} result status and payload are inconsistent`);
+  }
+  if (!rejected && operation === 'lifecycle') {
+    const metadata = result.metadata as RallarCrdtDocumentMetadata;
+    if (
+      metadata.documentKey !== result.documentKey ||
+      metadata.documentRevision !== result.documentRevision ||
+      metadata.lastAppendSequence !== result.appendSequence
+    ) throw new TypeError('CRDT lifecycle result document, revision, or sequence differs');
+  }
+  if (!rejected && operation === 'compact') {
+    const snapshot = result.snapshot as RallarCrdtSnapshotEnvelope;
+    if (toRallarCrdtDocumentKey(snapshot.document) !== result.documentKey) {
+      throw new TypeError('CRDT compact result document differs');
+    }
+  }
+  if (!rejected && operation === 'rebuild-projection') {
+    const integrity = result.integrity as Record<string, unknown>;
+    if (integrity.documentKey !== result.documentKey) {
+      throw new TypeError('CRDT rebuild result document differs');
+    }
+  }
+  if (!rejected && operation === 'erase') {
+    const request = result.request as Record<string, unknown>;
+    const auditEvent = result.auditEvent as Record<string, unknown>;
+    const metadata = result.metadata as RallarCrdtDocumentMetadata;
+    const bundle = result.redactedBundle as Record<string, unknown> | null;
+    const auditMetadata = auditEvent.metadata as Record<string, unknown>;
+    const mode = request.mode;
+    if (
+      toRallarCrdtDocumentKey(request.document as RallarCrdtDocumentRef) !== result.documentKey ||
+      auditEvent.documentKey !== result.documentKey ||
+      auditEvent.atEpochMs !== request.requestedAtEpochMs ||
+      auditEvent.principalId !== request.requestedBy ||
+      auditEvent.reason !== request.reason ||
+      auditMetadata.mode !== mode ||
+      auditEvent.kind !== (mode === 'redact-payloads' ? 'redact' : 'erase') ||
+      metadata.documentKey !== result.documentKey ||
+      metadata.documentRevision !== result.documentRevision ||
+      (bundle !== null && bundle.documentKey !== result.documentKey) ||
+      (bundle !== null) !== (mode === 'redact-payloads')
+    ) throw new TypeError('CRDT erase result document or revision differs');
   }
 }
 
@@ -185,8 +284,8 @@ function decodeAppendResult(value: unknown): void {
   if (status === 'accepted' || status === 'duplicate') {
     requireExactKeys(append, ['status', 'update', 'append', 'document'], 'CRDT append result');
     decodeExactUpdateEnvelope(append.update);
-    requireRecord(append.append, 'CRDT append metadata');
-    requireRecord(append.document, 'CRDT append document metadata');
+    decodeExactTrustedAppendMetadata(append.append);
+    decodeExactDocumentMetadata(append.document);
     return;
   }
   const keys = [
@@ -203,6 +302,8 @@ function decodeAppendResult(value: unknown): void {
   requireString(append.reason, 'append rejection reason');
   if (typeof append.retryable !== 'boolean') throw new TypeError('append retryable is invalid');
   if ('update' in append) decodeExactUpdateEnvelope(append.update);
+  if ('validation' in append) decodeExactValidationResult(append.validation);
+  if ('document' in append) decodeExactDocumentMetadata(append.document);
 }
 
 function validateOperationFields(
@@ -223,18 +324,20 @@ function validateOperationFields(
   } else if (operation === 'rebuild-projection') {
     requireString(command.projectionId, 'projectionId');
   } else if (operation === 'compact') {
+    requireString(command.snapshotId, 'snapshotId');
+    const snapshot = command.snapshot === null
+      ? null
+      : decodeExactSnapshotEnvelope(command.snapshot);
     if (
-      command.snapshot !== null &&
-      !validateRallarCrdtSnapshotEnvelope(command.snapshot as RallarCrdtSnapshotEnvelope).valid
-    ) {
-      throw new TypeError('CRDT compact snapshot is invalid');
-    }
-    if (
-      command.snapshot !== null &&
-      toRallarCrdtDocumentKey((command.snapshot as RallarCrdtSnapshotEnvelope).document) !==
-        toRallarCrdtDocumentKey(document)
+      snapshot !== null &&
+      toRallarCrdtDocumentKey(snapshot.document) !== toRallarCrdtDocumentKey(document)
     ) {
       throw new TypeError('CRDT compact snapshot document differs from command document');
+    }
+    if (
+      snapshot !== null && snapshot.snapshotId !== command.snapshotId
+    ) {
+      throw new TypeError('CRDT compact snapshot ID differs from command input');
     }
     requireString(command.reason, 'reason');
   } else if (operation === 'lifecycle') {
@@ -243,13 +346,12 @@ function validateOperationFields(
       ['active', 'archived', 'destroyed', 'quarantined'] as const,
       'lifecycle',
     );
-    decodeLifecycleAction(command.retentionAction, 'retention');
-    decodeLifecycleAction(command.quotaAction, 'quota');
+    const retention = decodeLifecycleAction(command.retentionAction, 'retention');
+    if (retention.kind === 'set') decodeExactRetentionPolicy(retention.value);
+    const quota = decodeLifecycleAction(command.quotaAction, 'quota');
+    if (quota.kind === 'set') decodeExactQuotaPolicy(quota.value);
     const projections = decodeLifecycleAction(command.projectionIdsAction, 'projectionIds');
-    if (
-      projections.kind === 'set' &&
-      (!Array.isArray(projections.value) || projections.value.some((id) => typeof id !== 'string'))
-    ) throw new TypeError('projectionIds are invalid');
+    if (projections.kind === 'set') decodeExactProjectionIds(projections.value);
   } else {
     requireOneOf(command.mode, ['destroy-document', 'redact-payloads'] as const, 'erase mode');
     requireString(command.reason, 'reason');
@@ -264,50 +366,10 @@ function decodeLifecycleAction(value: unknown, label: string): Record<string, un
     `${label} action kind`,
   );
   requireExactKeys(action, kind === 'set' ? ['kind', 'value'] : ['kind'], `${label} action`);
-  if (kind === 'set' && (action.value === null || typeof action.value !== 'object')) {
+  if (kind === 'set' && action.value === null) {
     throw new TypeError(`${label} action value is invalid`);
   }
   return action;
-}
-
-export function decodeExactUpdateEnvelope(value: unknown): RallarCrdtUpdateEnvelope {
-  const update = requireRecord(value, 'CRDT update envelope');
-  const allowed = [
-    'protocolVersion',
-    'document',
-    'updateId',
-    'replicaId',
-    'lamport',
-    'parents',
-    'schemaVersion',
-    'operationVersion',
-    'createdAtEpochMs',
-    'payload',
-    ...('actorId' in update ? ['actorId'] : []),
-    ...('sessionId' in update ? ['sessionId'] : []),
-    ...('causalFrontier' in update ? ['causalFrontier'] : []),
-    ...('hash' in update ? ['hash'] : []),
-  ];
-  requireExactKeys(update, allowed, 'CRDT update envelope');
-  const document = requireRecord(update.document, 'CRDT update document');
-  const documentKeys = [
-    'applicationId',
-    'scope',
-    'documentType',
-    'documentId',
-    ...('workspaceId' in document ? ['workspaceId'] : []),
-    ...('roomRef' in document ? ['roomRef'] : []),
-    ...('principalId' in document ? ['principalId'] : []),
-    ...('customScope' in document ? ['customScope'] : []),
-  ];
-  requireExactKeys(document, documentKeys, 'CRDT update document');
-  if ('roomRef' in document) {
-    const roomRef = requireRecord(document.roomRef, 'CRDT update roomRef');
-    requireExactKeys(roomRef, ['applicationId', 'workspaceId', 'groupId'], 'CRDT update roomRef');
-  }
-  const validation = validateRallarCrdtUpdateEnvelope(update);
-  if (!validation.valid) throw new TypeError('CRDT update envelope is invalid');
-  return update as unknown as RallarCrdtUpdateEnvelope;
 }
 
 const commonCommandKeys = [
@@ -322,46 +384,3 @@ const commonCommandKeys = [
   'documentKey',
   'responseAudience',
 ];
-
-function requireRecord(value: unknown, label: string): Record<string, unknown> {
-  if (
-    !value || typeof value !== 'object' || Array.isArray(value) ||
-    Object.getPrototypeOf(value) !== Object.prototype
-  ) {
-    throw new TypeError(`${label} must be an exact object`);
-  }
-  return value as Record<string, unknown>;
-}
-
-function requireExactKeys(
-  value: Record<string, unknown>,
-  keys: readonly string[],
-  label: string,
-): void {
-  if (Object.keys(value).sort().join('\0') !== [...keys].sort().join('\0')) {
-    throw new TypeError(`${label} fields are invalid`);
-  }
-}
-
-function requireString(value: unknown, label: string): asserts value is string {
-  if (typeof value !== 'string' || value.length === 0) {
-    throw new TypeError(`${label} must be a non-empty string`);
-  }
-}
-
-function requireEpoch(value: unknown, label: string): void {
-  if (!Number.isSafeInteger(value) || (value as number) < 0) {
-    throw new TypeError(`${label} must be a non-negative safe integer`);
-  }
-}
-
-function requireNullableInteger(value: unknown, label: string): void {
-  if (value !== null) requireEpoch(value, label);
-}
-
-function requireOneOf<T extends string>(value: unknown, values: readonly T[], label: string): T {
-  if (typeof value !== 'string' || !values.includes(value as T)) {
-    throw new TypeError(`${label} is invalid`);
-  }
-  return value as T;
-}
