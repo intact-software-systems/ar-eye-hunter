@@ -117,8 +117,9 @@ transaction, its conditional guard is first, and a conflict restarts at
 `read`. Retries use `DEFAULT_RUNTIME_STATE_WRITE_BACKOFF_MS` (`[0, 2, 8]` ms),
 `waitForRuntimeStateWriteRetry`, and `RuntimeStateRetryExhaustedError`.
 
-Client/group/topology-config effects use `StateMutationOutboxRepository`.
-Guarded state, compact `MutationReceipt` authority, the outbox rows, and any
+Client/group/topology-config effects use direct transaction-bound `ResourceInbox`
+APP_OUTBOX/WS_OUTBOX entries. Guarded state, compact `MutationReceipt` authority,
+the outbox rows, and any
 event commit atomically. RTC topology similarly commits its snapshot guard,
 work claim, and immutable publication atomically; RTT commits endpoint guards,
 measurement, receipt, and recompute intents atomically. The async drainers own
@@ -321,7 +322,7 @@ transaction duration is measurable.
 | Group presence summaries | `GroupStateRepository` / `GroupPresenceSummaryWork` | `runtime_state_store` namespace `group-state:presence-summary` | Group snapshot cache after convergence | Optimistic materialized view with required `GroupStateCausalRevision`; recomputation emits topology work asynchronously. |
 | Group events | `GroupStateRepository` through `GroupStateEventStore` | `group_state_events` | Live event callbacks, no durable browser event cache | Appended on mutations. Paged by `(snapshot_version, occurred_at_epoch_ms, event_id)`. Broadcast over WS as `group-state.event`; `rallar.rooms.onEvent(...)` can observe live events, while `data-caches.ts` does not apply event payloads to snapshot caches. |
 | Client/group/topology mutation receipts | Domain repositories | `runtime_state_store` idempotency namespaces | No logical cache | Compact `MutationReceipt` authority; exact replay returns the winner without storing a full snapshot graph. |
-| State mutation outbox | `StateMutationOutboxRepository` | `runtime_state_store` state-mutation outbox namespace | No logical cache | Insert-only transaction-local intents for client/group state sync, presence-summary convergence, and topology recompute. `StateMutationOutboxWork` drains them after commit. |
+| Direct mutation effects | `ResourceInboxRepository` | `resource_inbox` APP_OUTBOX/WS_OUTBOX entries | No logical cache | Immutable transaction-local entries for client/group state sync, presence-summary convergence, and topology recompute. QueueBox workers drain them after commit. |
 | RTC topology snapshots | `RtcTopologySnapshotRepository` | `runtime_state_store` scoped topology namespace | Process-local observed topology | Expected-revision snapshot CAS; equal authority with different content is corruption. |
 | RTC topology work claims/publications | `RtcTopologyPublicationRepository` / `RtcTopologyExecutionRepository` | `runtime_state_store` scoped receipt/publication namespaces | Loaded on delivery | Snapshot guard, compact work claim, and immutable publication commit atomically. |
 | RTC RTT measurements/admissions/receipts/intents | `RtcRttRepository` | `runtime_state_store` scoped RTT namespaces | Process-local observed RTT/graph values | Endpoint-admission guards precede measurement, compact receipt, and every per-group recompute-intent insert. |
@@ -547,7 +548,7 @@ HTTP and lifecycle mutations enter through `AppGroupInboxService`, which calls
 `validateGroupMutation` run before `writeGroupMutation` opens the short
 transaction. Metadata/roster mutations guard the group; presence mutations
 guard the session. Receipt, outbox, and event are atomic with accepted state.
-`AppGroupInboxService` completes the command; `StateMutationOutboxWork` owns
+`AppGroupInboxService` completes the command; APP_OUTBOX/WS_OUTBOX workers own
 state sync and presence-summary convergence after commit.
 
 ### ICE And Graph
@@ -584,9 +585,9 @@ There are two common paths.
 State sync path:
 
 1. A client/group mutation commits guarded state, compact receipt, event, and
-   `StateMutationOutboxRepository` intent in one transaction.
-2. `StateMutationOutboxWork` loads the committed authority and publishes the
-   state-sync effect idempotently; group work also schedules summary convergence.
+   immutable `ResourceInbox` effects in one transaction.
+2. APP_OUTBOX/WS_OUTBOX workers publish state-sync effects idempotently; group
+   work also schedules summary convergence.
 3. `StateSyncPublisher` updates the process snapshot cache and enqueues the AL
    snapshot/event message into durable WS QueueBox.
 4. `InboxOutboxEngine` dequeues the WS outbox entry.

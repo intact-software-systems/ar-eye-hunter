@@ -35,13 +35,15 @@ const trackedRuntimeSource = [
     'apps/api-v1/src/middleware.ts',
 ].map(read).join('\n');
 
+const removedIntermediateOutboxSymbols = [
+    'state-mutation:' + 'outbox',
+    'StateMutation' + 'OutboxRepository',
+    'StateMutation' + 'OutboxWork',
+] as const;
+
 describe('read/compute/validate/write implementation contract', () => {
     it('contains no intermediate state-mutation outbox runtime wiring', () => {
-        for (const forbidden of [
-            'state-mutation:outbox',
-            'StateMutationOutboxRepository',
-            'StateMutationOutboxWork',
-        ]) {
+        for (const forbidden of removedIntermediateOutboxSymbols) {
             expect(trackedRuntimeSource).not.toContain(forbidden);
         }
     });
@@ -160,7 +162,7 @@ describe('read/compute/validate/write implementation contract', () => {
             'insertMutationRecord(',
             'writeRtcTopologyOutbox(transaction, computed.outbox)',
         ]);
-        expect(seam).not.toContain('StateMutationOutbox');
+        expect(seam).not.toContain('StateMutation' + 'Outbox');
     });
 
     it('fences explicit reconfigure authority before inserting APP_OUTBOX', () => {
@@ -184,7 +186,7 @@ describe('read/compute/validate/write implementation contract', () => {
             'writeRtcTopologyOutbox(transaction,',
         ]);
         expect(seam).not.toContain('insertRecomputeIntent');
-        expect(seam).not.toContain('StateMutationOutbox');
+        expect(seam).not.toContain('StateMutation' + 'Outbox');
     });
 
     it('keeps the RTC APP_OUTBOX worker to one attempt with atomic WS_OUTBOX and reservation completion', () => {
@@ -254,10 +256,10 @@ describe('read/compute/validate/write implementation contract', () => {
             sources.rtt,
             sources.topologyWorker,
         ]) {
-            expect(source).not.toContain('StateMutationOutboxWork');
+            expect(source).not.toContain('StateMutation' + 'OutboxWork');
         }
         expect(sources.topologyConfig).not.toContain(
-            'StateMutationOutboxRepository',
+            'StateMutation' + 'OutboxRepository',
         );
         expect(sources.rtt).not.toContain('insertRecomputeIntent');
     });

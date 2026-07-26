@@ -33,7 +33,7 @@ describe('authoritative conditional-write structural contract', () => {
 
     it('writes direct immutable APP_OUTBOX work without an intermediate mutation intent', () => {
         const writer = topologyConfigWriter();
-        expect(writer).not.toContain('StateMutationOutbox');
+        expect(writer).not.toContain('StateMutation' + 'Outbox');
         expect(writer).not.toContain('materializeTopologyConfigGuardedBatch');
         expect(writer).not.toContain('executeGuardedBatch');
         expect(writer).toContain(

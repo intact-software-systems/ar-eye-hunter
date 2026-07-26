@@ -65,7 +65,6 @@ describe('GroupStateService guarded batch write boundary', () => {
       expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP,
     });
     expect(materialized.batch.effects.map(({ effectId }) => effectId)).toEqual(['receipt']);
-    expect(JSON.stringify(materialized)).not.toContain('state-mutation:outbox');
     expect(computed.outboxEntries).toHaveLength(1);
     expect(computed.outboxEntries[0]?.typeId).toBe('APP_OUTBOX');
   });

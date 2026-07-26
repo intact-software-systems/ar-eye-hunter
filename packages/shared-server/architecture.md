@@ -43,8 +43,8 @@ The implementation guard covers these exact operation families:
 
 | Family | Ordered phase symbols | First write guard | Atomic dependent effects |
 | --- | --- | --- | --- |
-| Client mutation | `readClientMutation`, `computeClientMutation`, `validateClientMutation`, `writeClientMutation` | principal insert/CAS | children, compact client `MutationReceipt`, `StateMutationOutboxRepository` row, event |
-| Group mutation | `readGroupMutation`, `computeGroupMutation`, `validateGroupMutation`, `writeGroupMutation` | group aggregate or presence-session insert/CAS/delete | admission/member rows, compact group `MutationReceipt`, `StateMutationOutboxRepository` row, event |
+| Client mutation | `readClientMutation`, `computeClientMutation`, `validateClientMutation`, `writeClientMutation` | principal insert/CAS | children, compact client `MutationReceipt`, direct `ResourceInbox` effects, event |
+| Group mutation | `readGroupMutation`, `computeGroupMutation`, `validateGroupMutation`, `writeGroupMutation` | group aggregate or presence-session insert/CAS/delete | admission/member rows, compact group `MutationReceipt`, direct `ResourceInbox` effects, event |
 | Topology config mutation | `readTopologyConfigMutation`, `computeTopologyConfigMutation`, `validateTopologyConfigMutation`, `writeTopologyConfigMutation` | group authority fence, then config/override guard | invariant/target generations, compact receipt, recompute outbox |
 | RTC topology mutation | `readTopologyMutation`, `computeTopologyMutation`, `validateTopologyMutation`, `writeTopologyMutation` | topology snapshot CAS | work claim and immutable publication when the computed variant carries a publication |
 | RTC RTT mutation | `readRttMutation`, `computeRttMutation`, `validateRttMutation`, `writeRttMutation` | lexically ordered endpoint-admission guards | measurement, compact receipt, every computed recompute intent |
@@ -68,13 +68,10 @@ The implemented `MutationReceipt` family consists of
 snapshots. Group state and downstream effects carry the two-component
 `GroupStateCausalRevision` (`groupRevision`, `presenceRevision`).
 
-Client/group/topology-config writes insert a `StateMutationOutboxRepository`
-record inside the same transaction as guarded state, receipt, and event where
-the operation has an event. The repository's authoritative insert is
-insert-only: a collision is a typed failure that rolls back the transaction;
-it never loads a winner. `StateMutationOutboxWork` publishes state sync and
-enqueues topology recomputation asynchronously, so AppInbox owns command
-ingress but does not publish committed mutation effects inline.
+Client/group/topology-config writes insert immutable `ResourceInbox` APP_OUTBOX
+or WS_OUTBOX entries in the same transaction as guarded state, receipt, and any
+event. A collision is a typed failure that rolls back the transaction; AppInbox
+owns command ingress but does not publish committed mutation effects inline.
 
 RTC topology execution atomically guards the snapshot and inserts its compact
 work claim plus immutable publication. RTT acceptance guards endpoint

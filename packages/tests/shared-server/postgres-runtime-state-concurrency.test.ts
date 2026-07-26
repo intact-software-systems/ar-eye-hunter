@@ -44,6 +44,10 @@ import {
     executeRttMutation as executeRttMutationService,
 } from '@shared-server/rallar-system/services/rtc-rtt-mutation-service.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
+import {
+    expectPendingDirectResourceOutboxEvidence,
+    findDirectResourceOutboxEvidence,
+} from './direct-resource-outbox-evidence.ts';
 
 type PostgresSql = PSqlSql & Readonly<{
     end(): Promise<void>;
@@ -433,16 +437,9 @@ describe('Postgres runtime-state conditional-write concurrency', () => {
                             revision: 1,
                         },
                     });
-                const outbox = new StateMutationOutboxRepository(firstRuntime);
-                const exactRecords = await Promise.all(results.map(({ receipt }) =>
-                    outbox.find(receipt.outboxId!)
-                ));
-                expect(exactRecords.map((stored) => stored?.record.commandId).sort())
-                    .toEqual([`${applicationId}-a`, `${applicationId}-b`]);
-                expect(exactRecords.every((stored) =>
-                    stored?.record.effects.length === 1 &&
-                    stored.record.effects[0] === 'rtc-topology-recompute'
-                )).toBe(true);
+                const resourceIds = results.map(({ receipt }) => receipt.outboxId!);
+                const entries = await findDirectResourceOutboxEvidence(firstSql, resourceIds);
+                expectPendingDirectResourceOutboxEvidence(entries, resourceIds);
             } finally {
                 await Promise.allSettled(clients.map(async (client) => {
                     await client`
@@ -686,22 +683,9 @@ describe('Postgres runtime-state conditional-write concurrency', () => {
             const sql = await createSql(requireDatabaseUrl());
             try {
                 const runtime = new PSqlRuntimeStateRepository(sql);
-                const stored = await new StateMutationOutboxRepository(runtime)
-                    .find(outboxIds[0]);
-                expect(stored?.record).toMatchObject({
-                    outboxId: outboxIds[0],
-                    commandId: receipt.commandId,
-                    commandHash: receipt.commandHash,
-                    kind: 'group',
-                    aggregateRef: groupRef,
-                    effects: ['rtc-topology-recompute'],
-                    delivery: { status: 'delivered' },
-                });
-                const pending = await listAllPendingTopologyOutboxes(
-                    new StateMutationOutboxRepository(runtime),
-                );
-                expect(pending.some((entry) => entry.record.outboxId === outboxIds[0]))
-                    .toBe(false);
+                const entries = await findDirectResourceOutboxEvidence(sql, outboxIds);
+                expect(entries).toHaveLength(1);
+                expect(entries[0]?.resource).toContain(receipt.commandId);
                 expect(await new GroupTopologyConfigRepository(runtime).findConfig(groupRef))
                     .toMatchObject({
                         version: receipt.acceptedVersion,
@@ -1073,8 +1057,7 @@ describe('Postgres runtime-state conditional-write concurrency', () => {
                 const [{ count }] = await clients[0]!<{ count: number }[]>`
                     select count(*)::int as count
                     from runtime_state_store
-                    where store_namespace = ${STATE_MUTATION_OUTBOX_NAMESPACE}
-                      and store_value like ${`%${applicationId}%`}
+                    where ri_resource_id like ${`%${applicationId}%`}
                 `;
                 expect(count).toBe(0);
             } finally {
@@ -1323,7 +1306,7 @@ function expectCompactTopologyWorkerOutput(output: TopologyWorkerOutput): void {
 }
 
 async function expectPendingTopologyWorkerOutboxes(
-    runtime: PSqlRuntimeStateRepository,
+    sql: PSqlSql,
     outputs: readonly TopologyWorkerOutput[],
 ): Promise<void> {
     outputs.forEach((output) => {
@@ -1333,33 +1316,10 @@ async function expectPendingTopologyWorkerOutboxes(
     });
     const outboxIds = outputs.map((output) => output.outboxIds[0]!);
     expect(new Set(outboxIds).size).toBe(outboxIds.length);
-    const records = await listAllPendingTopologyOutboxes(
-        new StateMutationOutboxRepository(runtime),
+    expectPendingDirectResourceOutboxEvidence(
+        await findDirectResourceOutboxEvidence(sql, outboxIds),
+        outboxIds,
     );
-    const recordsById = new Map(records.map((stored) => [stored.record.outboxId, stored]));
-    expect(outboxIds.every((outboxId) => recordsById.has(outboxId))).toBe(true);
-    for (const outboxId of outboxIds) {
-        expect(recordsById.get(outboxId)?.record).toMatchObject({
-            outboxId,
-            kind: 'group',
-            effects: ['rtc-topology-recompute'],
-            delivery: { status: 'pending' },
-            attempts: { last: { status: 'never-attempted' } },
-        });
-    }
-}
-
-async function listAllPendingTopologyOutboxes(
-    repository: StateMutationOutboxRepository,
-): Promise<readonly StoredStateMutationOutboxRecord[]> {
-    const records: StoredStateMutationOutboxRecord[] = [];
-    let afterKey: string | undefined;
-    do {
-        const page = await repository.listPendingPage({ afterKey, limit: 100 });
-        records.push(...page.records);
-        afterKey = page.nextAfterKey ?? undefined;
-    } while (afterKey !== undefined);
-    return records;
 }
 
 function isGroupRefRecord(value: unknown): value is GroupRef {

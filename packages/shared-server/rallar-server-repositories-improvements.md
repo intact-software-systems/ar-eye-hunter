@@ -4,8 +4,8 @@ Status: historical hardening log. This document records implementation evidence,
 past risks, and deferred ideas. Use `architecture.md` and
 `rallar-server-repositories.md` for the active server architecture. In
 particular, current client/group/topology-config mutations commit an insert-only
-`StateMutationOutboxRepository` intent with guarded state and compact receipt.
-AppInbox remains command ingress, while restart-safe outbox work owns state-sync
+direct `ResourceInbox` effects with guarded state and compact receipt. AppInbox
+remains command ingress, while restart-safe QueueBox work owns state-sync
 publication and topology recomputation. Earlier AppInbox-plus-post-commit
 publication descriptions below are retained only as historical context.
 
@@ -1152,7 +1152,7 @@ the full decision surface.
 Client, group, topology-config, RTC topology, and RTT orchestration now exposes
 direct `read`, `compute`, `validate`, and `write` phases. The `compute` and
 `validate` phases are pure; only `write` opens the transaction, and its
-conditional guard is first. `StateMutationOutboxRepository` makes externally
+conditional guard is first. Direct `ResourceInbox` writes make externally
 effectful outbox rows atomic with guarded state and the compact
 `MutationReceipt` family. Group and presence authority uses
 `GroupStateCausalRevision`; presence uses a per-session guard and does not

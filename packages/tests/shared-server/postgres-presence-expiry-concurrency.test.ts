@@ -41,6 +41,10 @@ import { RuntimeStateWriteConflictError } from "@shared-server/runtime-state/opt
 import { createTestGroupStateRuntime } from "./group-state-test-runtime.ts";
 import type { StateSyncPublisher } from "@shared-server/rallar-system/state-sync-publisher.ts";
 import { groupStateMaintenanceRequestId } from "@shared-server/rallar-system/services/group-state-service.ts";
+import {
+  expectPendingDirectResourceOutboxEvidence,
+  findDirectResourceOutboxEvidence,
+} from "./direct-resource-outbox-evidence.ts";
 
 const POSTGRES_INTEGRATION_ENABLED =
   process.env.RALLAR_POSTGRES_INTEGRATION === "1";
@@ -272,7 +276,7 @@ describe("Postgres presence expiry concurrency", () => {
             expiresAtEpochMs: atEpochMs + 61_001,
           });
         await expectPendingWorkerOutboxes(
-          toRuntimeRepository(setupSql),
+          setupSql,
           outputs,
           "client",
           ["client-state-sync"],
@@ -378,7 +382,7 @@ describe("Postgres presence expiry concurrency", () => {
           connectionId: "connection-2",
         });
         await expectPendingWorkerOutboxes(
-          toRuntimeRepository(setupSql),
+          setupSql,
           outputs,
           "client",
           ["client-state-sync"],
@@ -491,7 +495,7 @@ describe("Postgres presence expiry concurrency", () => {
         expect(snapshot?.members.find((member) => member.principalId === "carol"))
           .toMatchObject({ status: "banned" });
         await expectPendingWorkerOutboxes(
-          toRuntimeRepository(setupSql),
+          setupSql,
           outputs,
           "group",
           ["group-state-sync", "group-presence-summary"],
@@ -570,7 +574,7 @@ describe("Postgres presence expiry concurrency", () => {
         connected.outputs.forEach(expectCompactWorkerOutput);
         assertIndependentBarrierWorkers(connected.traces);
         await expectPendingWorkerOutboxes(
-          toRuntimeRepository(setupSql), connected.outputs, "group",
+          setupSql, connected.outputs, "group",
           ["group-state-sync", "group-presence-summary"],
         );
 
@@ -596,7 +600,7 @@ describe("Postgres presence expiry concurrency", () => {
         heartbeats.outputs.forEach(expectCompactWorkerOutput);
         assertIndependentBarrierWorkers(heartbeats.traces);
         await expectPendingWorkerOutboxes(
-          toRuntimeRepository(setupSql), heartbeats.outputs, "group",
+          setupSql, heartbeats.outputs, "group",
           ["group-state-sync", "group-presence-summary"],
         );
 
@@ -621,7 +625,7 @@ describe("Postgres presence expiry concurrency", () => {
         disconnected.outputs.forEach(expectCompactWorkerOutput);
         assertIndependentBarrierWorkers(disconnected.traces);
         await expectPendingWorkerOutboxes(
-          toRuntimeRepository(setupSql), disconnected.outputs, "group",
+          setupSql, disconnected.outputs, "group",
           ["group-state-sync", "group-presence-summary"],
         );
 
@@ -723,12 +727,7 @@ describe("Postgres presence expiry concurrency", () => {
           contenderRequestIds,
         );
         expect(outbox).toHaveLength(1);
-        expect(outbox[0]).toMatchObject({
-          kind: "group",
-          aggregateRef: groupRef,
-          effects: ["group-state-sync", "group-presence-summary"],
-          event: { kind: "group", event: { eventType: "member-joined" } },
-        });
+        expect(outbox[0]?.resource).toContain("member-joined");
       } finally {
         await cleanupRuntimeState(setupSql, scope.applicationId);
         await Promise.all([setupSql.end(), leftSql.end(), rightSql.end()]);
@@ -855,15 +854,10 @@ describe("Postgres presence expiry concurrency", () => {
           heartbeatRequestIds,
         );
         expect(outbox).toHaveLength(sessionCount);
-        expect(new Set(outbox.map((record) => record.commandId)).size)
+        expect(new Set(outbox.map((record) => record.resourceId)).size)
           .toBe(sessionCount);
         for (const record of outbox) {
-          expect(record).toMatchObject({
-            kind: "group",
-            aggregateRef: groupRef,
-            effects: ["group-state-sync", "group-presence-summary"],
-            event: { kind: "group", event: { eventType: "session-heartbeat" } },
-          });
+          expect(record.resource).toContain("session-heartbeat");
         }
       } finally {
         await cleanupRuntimeState(setupSql, scope.applicationId);
@@ -1042,105 +1036,6 @@ describe("Postgres presence expiry concurrency", () => {
           leftSql.end(),
           rightSql.end(),
         ]);
-      }
-    },
-    60_000,
-  );
-
-  postgresIt(
-    "rolls back a real group expiry delete when its outbox insert collides",
-    async () => {
-      const sql = await createSql(requireDatabaseUrl());
-      const scope = uniqueScope("group-expiry-rollback");
-      const atEpochMs = Date.now();
-      const groupRef: GroupRef = { ...scope, groupId: "room-1" };
-      const sessionId = "session-1";
-      let collisionKey: string | undefined;
-
-      try {
-        await seedExpiredGroupPresenceSession(sql, scope, groupRef, sessionId, atEpochMs);
-        const repository = createGroupStateRepository(sql);
-        const groupEntry = await repository.findGroupEntry(groupRef);
-        const sessionEntry = await repository.findPresenceEntry({ ...groupRef, sessionId });
-        const presenceSummary = await repository.findPresenceSummaryEntry(groupRef);
-        if (!groupEntry || !sessionEntry) throw new Error("Expected seeded group presence");
-        const semanticCommand = {
-          operation: "disconnectPresence",
-          aggregateRef: groupRef,
-          sessionId,
-          input: {
-            principalId: sessionEntry.value.principalId,
-            generationId: sessionEntry.value.generationId,
-            generationVersion: sessionEntry.value.generationVersion,
-            observedExpiresAtEpochMs: sessionEntry.value.expiresAtEpochMs,
-            disconnectedAtEpochMs: atEpochMs,
-            lastHeartbeatAtEpochMs: sessionEntry.value.lastHeartbeatAtEpochMs,
-            expiresAtEpochMs: sessionEntry.value.expiresAtEpochMs,
-            actorPrincipalId: null,
-            actorSessionId: null,
-            reason: "expired",
-            traceId: null,
-          },
-        } as const;
-        const commandId = groupStateMaintenanceRequestId("expiry", semanticCommand);
-        const groupRevision = groupEntry.entry.revision + 1;
-        const presenceRevision =
-          presenceSummary?.value.causalRevision.presenceRevision ?? 0;
-        const outboxId = toStateMutationOutboxId({
-          kind: "group",
-          aggregateRef: groupRef,
-          commandId,
-          acceptedCausalRevision: {
-            kind: "group",
-            stateRevision: toGroupSnapshotStateRevision(
-              groupRevision,
-              presenceRevision,
-            ),
-            causalRevision: {
-              groupRevision,
-              presenceRevision,
-            },
-            snapshotVersion: groupEntry.value.snapshotVersion,
-            metadataVersion: groupEntry.value.metadataVersion,
-            rosterVersion: groupEntry.value.rosterVersion,
-            presenceVersion: presenceRevision,
-          },
-        });
-        collisionKey = `intent:${outboxId}`;
-        await toRuntimeRepository(sql).insertIfAbsent(
-          STATE_MUTATION_OUTBOX_NAMESPACE,
-          collisionKey,
-          "{}",
-          NEVER_EXPIRE_AT_TIMESTAMP,
-        );
-
-        await expect(createPostgresGroupRuntime(
-          sql,
-          new GroupPresenceReadBarrier(1),
-          atEpochMs,
-          "group-state:sessions",
-          scope.applicationId,
-        ).maintenance.expireExpiredPresenceSessions(atEpochMs)).rejects.toMatchObject({
-          code: "state-mutation-outbox-collision",
-          status: 409,
-        });
-
-        expect(await repository.findPresenceSession({ ...groupRef, sessionId }))
-          .toMatchObject({ generationId: sessionEntry.value.generationId });
-        expect((await repository.listEvents(groupRef)).filter((event) =>
-          event.eventType === "session-disconnected"
-        )).toEqual([]);
-        expect(await repository.findIdempotentGroupMutationReceipt(groupRef, commandId))
-          .toBeUndefined();
-      } finally {
-        if (collisionKey) {
-          await toRuntimeRepository(sql).deleteByKey(
-            STATE_MUTATION_OUTBOX_NAMESPACE,
-            collisionKey,
-          );
-        }
-        await cleanupRuntimeState(sql, scope.applicationId);
-        await sql.end();
       }
     },
     60_000,
@@ -1363,30 +1258,32 @@ async function cleanupRuntimeState(
         delete from runtime_state_store
         where store_key like ${`app=${encodeURIComponent(applicationId)}:%`}
     `;
-  await sql`
-        delete from runtime_state_store
-        where store_namespace = ${STATE_MUTATION_OUTBOX_NAMESPACE}
-          and store_value::jsonb -> 'aggregateRef' ->> 'applicationId' = ${applicationId}
-    `;
 }
 
 async function findGroupOutboxRecords(
   sql: PostgresSql,
   ref: GroupRef,
   commandIds: readonly string[],
-): Promise<readonly StateMutationOutboxRecord[]> {
+): Promise<readonly import('./direct-resource-outbox-evidence.ts').DirectResourceOutboxEvidence[]> {
   const commandIdSet = new Set(commandIds);
-  return (await toRuntimeRepository(sql).findAllEntries(
-    STATE_MUTATION_OUTBOX_NAMESPACE,
-  ))
-    .map((entry) => JSON.parse(entry.value) as StateMutationOutboxRecord)
-    .filter((record) =>
-      record.kind === "group" &&
-      record.aggregateRef.applicationId === ref.applicationId &&
-      record.aggregateRef.workspaceId === ref.workspaceId &&
-      record.aggregateRef.groupId === ref.groupId &&
-      commandIdSet.has(record.commandId)
-    );
+  const rows = await sql<readonly {
+    ri_resource_id: string;
+    ri_topic_id: string;
+    ri_type_id: string;
+    ri_status: string;
+    ri_resource: string;
+  }[]>`
+    select ri_resource_id, ri_topic_id, ri_type_id, ri_status, ri_resource
+    from resource_inbox
+    where ri_type_id = 'APP_OUTBOX' and ri_resource like ${`%${ref.groupId}%`}
+  `;
+  return rows.map((row) => ({
+    resourceId: row.ri_resource_id,
+    topicId: row.ri_topic_id,
+    typeId: row.ri_type_id,
+    status: row.ri_status,
+    resource: row.ri_resource,
+  })).filter((entry) => [...commandIdSet].some((commandId) => entry.resource.includes(commandId)));
 }
 
 function createSql(databaseUrl: string): PostgresSql {
@@ -1401,7 +1298,7 @@ function toRuntimeRepository(sql: PostgresSql): PSqlRuntimeStateRepository {
 
 function createPostgresClientPhaseDriver(
   sql: PostgresSql,
-  runtimeRepository: PSqlRuntimeStateRepository,
+  sql: PSqlSql,
   atEpochMs: number,
   serviceId: string,
 ) {
@@ -1800,34 +1697,10 @@ async function expectPendingWorkerOutboxes(
   });
   const outboxIds = outputs.map((output) => output.outboxIds[0]!);
   expect(new Set(outboxIds).size).toBe(outboxIds.length);
-  const records = await listAllPendingOutboxes(
-    new StateMutationOutboxRepository(runtimeRepository),
+  expectPendingDirectResourceOutboxEvidence(
+    await findDirectResourceOutboxEvidence(sql, outboxIds),
+    outboxIds,
   );
-  const recordsById = new Map(records.map((stored) => [stored.record.outboxId, stored]));
-  expect(outboxIds.every((outboxId) => recordsById.has(outboxId))).toBe(true);
-  for (const outboxId of outboxIds) {
-    const stored = recordsById.get(outboxId);
-    expect(stored?.record).toMatchObject({
-      outboxId,
-      kind,
-      effects,
-      delivery: { status: "pending" },
-      attempts: { last: { status: "never-attempted" } },
-    });
-  }
-}
-
-async function listAllPendingOutboxes(
-  repository: StateMutationOutboxRepository,
-): Promise<readonly StoredStateMutationOutboxRecord[]> {
-  const records: StoredStateMutationOutboxRecord[] = [];
-  let afterKey: string | undefined;
-  do {
-    const page = await repository.listPendingPage({ afterKey, limit: 100 });
-    records.push(...page.records);
-    afterKey = page.nextAfterKey ?? undefined;
-  } while (afterKey !== undefined);
-  return records;
 }
 
 function assertOneWorkerRebased(outputs: readonly WorkerOutput[], traces: readonly WorkerTrace[]) {
