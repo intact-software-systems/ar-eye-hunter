@@ -14,11 +14,6 @@ import {
     GROUP_TOPOLOGY_CONFIG_NAMESPACE,
     GroupTopologyConfigRepository,
 } from '@shared-server/rallar-system/repositories/GroupTopologyConfigRepository.ts';
-import {
-    STATE_MUTATION_OUTBOX_NAMESPACE,
-    StateMutationOutboxRepository,
-    type StoredStateMutationOutboxRecord,
-} from '@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import {
     GroupTopologyManagementService,

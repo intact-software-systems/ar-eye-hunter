@@ -18,7 +18,34 @@ const sources = {
     rtt: read(`${serviceRoot}/rtc-rtt-mutation-service.ts`),
 };
 
+const trackedRuntimeSource = [
+    `${serviceRoot}/AppInboxService.ts`,
+    `${serviceRoot}/client-state-service.ts`,
+    `${serviceRoot}/group-state-service.ts`,
+    `${serviceRoot}/group-state-mutations.ts`,
+    `${serviceRoot}/group-topology-config-mutations.ts`,
+    `${serviceRoot}/group-topology-management-service.ts`,
+    `${serviceRoot}/GroupPresenceSummaryWork.ts`,
+    `${serviceRoot}/rtc-rtt-mutation-service.ts`,
+    `${serviceRoot}/canonical-command-hash.ts`,
+    `${repositoryRoot}/RtcTopologyPublicationRepository.ts`,
+    `${repositoryRoot}/RtcTopologyScalarAuthorityMigration.ts`,
+    'packages/shared-server/rallar-system/middleware/RallarMiddleware.ts',
+    'packages/shared-server/mod.ts',
+    'apps/api-v1/src/middleware.ts',
+].map(read).join('\n');
+
 describe('read/compute/validate/write implementation contract', () => {
+    it('contains no intermediate state-mutation outbox runtime wiring', () => {
+        for (const forbidden of [
+            'state-mutation:outbox',
+            'StateMutationOutboxRepository',
+            'StateMutationOutboxWork',
+        ]) {
+            expect(trackedRuntimeSource).not.toContain(forbidden);
+        }
+    });
+
     it.each([
         {
             name: 'client AppInbox',

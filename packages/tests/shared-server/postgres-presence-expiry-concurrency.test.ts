@@ -41,13 +41,6 @@ import { RuntimeStateWriteConflictError } from "@shared-server/runtime-state/opt
 import { createTestGroupStateRuntime } from "./group-state-test-runtime.ts";
 import type { StateSyncPublisher } from "@shared-server/rallar-system/state-sync-publisher.ts";
 import { groupStateMaintenanceRequestId } from "@shared-server/rallar-system/services/group-state-service.ts";
-import {
-  STATE_MUTATION_OUTBOX_NAMESPACE,
-  StateMutationOutboxRepository,
-  type StoredStateMutationOutboxRecord,
-  type StateMutationOutboxRecord,
-  toStateMutationOutboxId,
-} from "@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts";
 
 const POSTGRES_INTEGRATION_ENABLED =
   process.env.RALLAR_POSTGRES_INTEGRATION === "1";

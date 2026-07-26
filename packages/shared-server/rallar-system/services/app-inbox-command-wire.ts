@@ -4,6 +4,10 @@ import { readCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topolog
 import { validateRtcRttMeasurement } from '../rtc-rtt-persistence-validation.ts';
 import { hashCanonicalCommand } from './canonical-command-hash.ts';
 import {
+  serializeCanonicalMutationCommand,
+  type JsonWireValue,
+} from './mutation-command-identity.ts';
+import {
   type AppInboxEnqueueInput,
   AppInboxIdempotencyConflictError,
   AppInboxType,
@@ -257,15 +261,7 @@ function readFiniteNumberOrNull(value: unknown): void {
 }
 
 export function serializeCanonicalJsonWire(value: unknown): string {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value) as string;
-  if (Array.isArray(value)) return `[${value.map(serializeCanonicalJsonWire).join(',')}]`;
-  const entries = Object.keys(value)
-    .sort((left, right) => left < right ? -1 : left > right ? 1 : 0)
-    .map((key) => {
-      const descriptor = Object.getOwnPropertyDescriptor(value, key);
-      return `${JSON.stringify(key)}:${serializeCanonicalJsonWire(descriptor?.value)}`;
-    });
-  return `{${entries.join(',')}}`;
+  return serializeCanonicalMutationCommand(value as JsonWireValue);
 }
 
 function toJsonWireValue(value: unknown, path: string, ancestors: Set<object>): unknown {

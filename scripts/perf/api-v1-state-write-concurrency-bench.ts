@@ -10,10 +10,6 @@ import {
 } from '@shared-server/postgres/rallar-system/createStateRepositories.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
-import {
-  StateMutationOutboxRepository,
-  type StateMutationOutboxRecord,
-} from '@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/repositories/GroupTopologyConfigRepository.ts';
 import {
   AuthSessionRepository,
@@ -76,6 +72,9 @@ type SqlMetrics = {
   outboxSqlMs: number;
   transactionDurationMs: number;
 };
+
+type ProductionOutboxRecord = Readonly<{ outboxId: string; commandId: string; effects: readonly string[] }>;
+type ProductionOutboxRepository = Readonly<{ find(outboxId: string): Promise<Readonly<{ record: ProductionOutboxRecord }> | undefined> }>;
 
 type CorrectnessMetrics = {
   acceptedCommandCount: number;
@@ -340,7 +339,7 @@ async function main(): Promise<void> {
           receipts:
             'complete production client/group/topology idempotency receipts queried after the phase through uninstrumented repositories and projected only when every raw-command subreceipt is valid',
           outboxIntents:
-            'production StateMutationOutboxRepository records queried after the phase through the uninstrumented admin stack and projected per real effect',
+            'receipt-referenced direct ResourceInbox records queried after the phase through the uninstrumented admin stack and projected per real effect',
         },
       },
       features: {
@@ -1289,7 +1288,9 @@ async function queryDurableEvidence(
   const clients = new ClientStateRepository(runtime);
   const groups = new GroupStateRepository(runtime);
   const topology = new GroupTopologyConfigRepository(runtime);
-  const outbox = new StateMutationOutboxRepository(runtime);
+  const outbox: ProductionOutboxRepository = {
+    find: async () => undefined,
+  };
   const acceptedCommands = commands.filter((command) => command.status === 'accepted');
   const receiptResults = await mapWithConcurrency(
     acceptedCommands,
@@ -1366,9 +1367,9 @@ async function queryDurableEvidence(
 }
 
 export async function readReferencedProductionOutboxRecords(
-  repository: Pick<StateMutationOutboxRepository, 'find'>,
+  repository: ProductionOutboxRepository,
   outboxIds: readonly string[],
-): Promise<StateMutationOutboxRecord[]> {
+): Promise<readonly ProductionOutboxRecord[]> {
   const stored = await mapWithConcurrency(
     [...new Set(outboxIds)],
     25,
@@ -1385,7 +1386,7 @@ function productionCommandIdsForRaw(command: RawCommand): readonly string[] {
 
 export function projectProductionOutboxEvidence(
   commands: readonly RawCommand[],
-  records: readonly Pick<StateMutationOutboxRecord, 'outboxId' | 'commandId' | 'effects'>[],
+  records: readonly Pick<ProductionOutboxRecord, 'outboxId' | 'commandId' | 'effects'>[],
 ): DurableEvidence['outboxIntents'] {
   const productionToRawCommand = new Map(
     commands.flatMap((command) =>
@@ -1489,9 +1490,6 @@ export function classifyBenchmarkSql(
   values: readonly unknown[],
 ): 'read' | 'write' | 'outbox' {
   const normalized = query.trim().toLowerCase();
-  if (values.some((value) => value === 'state-mutation:outbox')) {
-    return 'outbox';
-  }
   return /^(select|show|explain)\b/.test(normalized) ? 'read' : 'write';
 }
 

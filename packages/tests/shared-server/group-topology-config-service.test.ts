@@ -365,7 +365,7 @@ describe('group topology config service', () => {
             'Math.random',
             'randomUUID',
             '.begin(',
-            'new StateMutationOutboxRepository',
+            'hashMutationCommand',
             'publisher',
             'topologyService',
             ]

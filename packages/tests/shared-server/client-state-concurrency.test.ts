@@ -5,7 +5,6 @@ import {
     ClientStateRepository,
     ClientStateRepositoryInvariantCorruptionError,
 } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
-import { STATE_MUTATION_OUTBOX_NAMESPACE } from '@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts';
 import { ClientMutationIdempotencyConflictError } from '@shared-server/rallar-system/services/client-state-service.ts';
 import {
     computeClientMutation,
@@ -1143,12 +1142,6 @@ class AggregateBarrierRepository extends FakeRuntimeStateRepository {
     private principalReadsArrived = 0;
     private releasePrincipalReads: (() => void) | undefined;
     private aggregateTransactionTail: Promise<void> = Promise.resolve();
-    private outboxConflictsRemaining = 0;
-
-    failNextOutboxInsert(): void {
-        this.outboxConflictsRemaining += 1;
-    }
-
     armPrincipalReadBarrier(readers: number): void {
         this.principalReadsRemaining = readers;
         this.principalReadsArrived = 0;
@@ -1190,21 +1183,6 @@ class AggregateBarrierRepository extends FakeRuntimeStateRepository {
         }
     }
 
-    override insertIfAbsent(
-        namespace: string,
-        key: string,
-        value: string,
-        expireAtTimestamp: number,
-    ): Promise<RuntimeStateConditionalWriteResult> {
-        if (
-            namespace === STATE_MUTATION_OUTBOX_NAMESPACE
-            && this.outboxConflictsRemaining > 0
-        ) {
-            this.outboxConflictsRemaining -= 1;
-            return Promise.resolve({ status: 'conflict' });
-        }
-        return super.insertIfAbsent(namespace, key, value, expireAtTimestamp);
-    }
 }
 
 class AlwaysConflictingPrincipalRepository extends AggregateBarrierRepository {

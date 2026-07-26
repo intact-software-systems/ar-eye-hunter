@@ -2,7 +2,7 @@ import { Either } from '@shared/resilience/Either.ts';
 import type { GroupEvent, GroupPresenceSession } from '@shared/api/group-types.ts';
 import { persistAuthSession, type AuthSession, type StoredAuthSession } from './auth-fixture.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
-import { hashStateMutationCommand } from '@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts';
+import { hashMutationCommand, type JsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import {
     isRuntimeStateGuardedBatchRepositoryLike,
@@ -173,7 +173,7 @@ export function createTestGroupStateRuntime(
         authority: GroupMutationFacts['internalAuthority'],
         atEpochMs: number,
     ): Promise<Exclude<GroupMutationComputed, { outcome: 'idempotency-conflict' }>> => {
-        const commandHash = await hashStateMutationCommand(command);
+        const commandHash = await hashMutationCommand(command as JsonWireValue);
         let computed: GroupMutationComputed | undefined;
         for (let attempt = 1; attempt <= 3; attempt += 1) {
             const read = await import('@shared-server/rallar-system/services/group-state-mutation-read.ts')

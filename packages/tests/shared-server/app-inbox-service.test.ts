@@ -62,7 +62,6 @@ import {
     ClientStateEventCollisionError,
     GroupStateEventCollisionError,
 } from '@shared-server/postgres/rallar-system/PSqlStateEventRepository.ts';
-import { StateMutationOutboxCollisionError } from '@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts';
 
 const SCOPE: StateScope = {
     applicationId: 'ar-eye-hunter',
@@ -510,11 +509,6 @@ describe('AppInboxService', () => {
                 eventId: 'collision-event',
             }),
             'group-state-event-collision',
-        ],
-        [
-            'state mutation outbox',
-            new StateMutationOutboxCollisionError('collision-outbox'),
-            'state-mutation-outbox-collision',
         ],
     ])('stores %s collision as terminal without queue retry', async (_label, error, code) => {
         const queue = new TestResourceInbox();

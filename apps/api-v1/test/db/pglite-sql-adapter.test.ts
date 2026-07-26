@@ -59,7 +59,10 @@ import {
 import { GroupTopologyManagementService } from '@shared-server/rallar-system/services/group-topology-management-service.ts';
 import { materializeRtcOverlayTopologyBroadcastMessage } from '@shared-server/rallar-system/services/group-topology-management-service.ts';
 import type { GroupTopologyConfigMutationCommand } from '@shared-server/rallar-system/services/group-topology-config-mutations.ts';
-import { hashStateMutationCommand } from '@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts';
+import {
+  hashMutationCommand,
+  type JsonWireValue,
+} from '@shared-server/rallar-system/services/mutation-command-identity.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
 import {
   groupStateGroupStorageKey,
@@ -409,7 +412,6 @@ Deno.test('PGlite AppGroup commits group mutation and summary fan-out through fe
       ),
       1,
     );
-    assert.equal((await runtime.findAllEntries('state-mutation:outbox')).length, 0);
 
     await outboxReader.dequeueOutbox(
       OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
@@ -1658,7 +1660,6 @@ Deno.test('PGlite AppGroup retries cross-target topology CAS conflicts through R
       outboxRows.map((row) => (JSON.parse(row.ri_resource) as ALMessage).id.msgId).sort(),
       [firstReceipt.receipt.outboxId, secondReceipt.receipt.outboxId].sort(),
     );
-    assert.equal((await runtime.findAllEntries('state-mutation:outbox')).length, 0);
   });
 });
 
@@ -2595,7 +2596,7 @@ Deno.test('PGlite topology authority fence rejects an archive overlapping the st
     );
     const preparation = await service.prepareTopologyConfigMutation({
       command,
-      commandHash: await hashStateMutationCommand(command),
+      commandHash: await hashMutationCommand(command as JsonWireValue),
       capturedAtEpochMs: 1_000,
     });
     pauseFirstRead = true;
@@ -3736,10 +3737,6 @@ Deno.test('PGlite group event collision rolls back the authoritative mutation tr
       await repository.findIdempotentGroupMutationReceipt(ref, 'collision-request'),
       undefined,
     );
-    const collisionOutbox = (await runtime.findAllEntries('state-mutation:outbox'))
-      .map((entry) => JSON.parse(entry.value) as { commandId?: string })
-      .filter((record) => record.commandId === 'collision-request');
-    assert.deepEqual(collisionOutbox, []);
     const collisionRows = await sql<{ count: string }[]>`
       select count(*) as count
       from group_state_events

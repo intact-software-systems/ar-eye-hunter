@@ -42,10 +42,10 @@ import {
 } from './app-inbox-transaction-writer.ts';
 import {
     assertMatchingAppInboxCommand,
-    serializeCanonicalJsonWire,
     toJsonWireAppInboxEnqueue,
     toLogicalAppInboxCommand,
 } from './app-inbox-command-wire.ts';
+import { serializeCanonicalMutationCommand, type JsonWireValue } from './mutation-command-identity.ts';
 import {
     AppInboxCommandIdentityError,
     validateAppInboxCommandIdentity,
@@ -194,8 +194,8 @@ export class AppInboxService {
     ): Promise<ResourceEntry> {
         const wireEnqueue = toJsonWireAppInboxEnqueue(enqueue);
         const key = this.toKey(wireEnqueue);
-        const receivedIdentity = serializeCanonicalJsonWire(
-            toLogicalAppInboxCommand(wireEnqueue),
+        const receivedIdentity = serializeCanonicalMutationCommand(
+            toLogicalAppInboxCommand(wireEnqueue) as JsonWireValue,
         );
         const entry = await this.inbox.enqueueIfAbsent(newALUntargetedMessage(
             toAppInboxQueueCreatedBy(this.serviceId),
@@ -297,8 +297,8 @@ export class AppInboxService {
         const wireEnqueue = toJsonWireAppInboxEnqueue(enqueue);
         const key: Key = this.toKey(wireEnqueue);
         const receivedCommandIdentity = enforceCommandIdentity
-            ? serializeCanonicalJsonWire(
-                toLogicalAppInboxCommand(wireEnqueue),
+            ? serializeCanonicalMutationCommand(
+                toLogicalAppInboxCommand(wireEnqueue) as JsonWireValue,
             )
             : undefined;
 

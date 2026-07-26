@@ -39,7 +39,7 @@ import type {
     RuntimeStateOptimisticTransactionalRepositoryLike,
 } from '../../runtime-state/RuntimeStateRepository.ts';
 import { GroupStateRepository } from '../repositories/GroupStateRepository.ts';
-import { hashStateMutationCommand } from '../repositories/StateMutationOutboxRepository.ts';
+import { hashMutationCommand, type JsonWireValue } from './mutation-command-identity.ts';
 import type { GroupStateEventStore } from '../repositories/StateEventStore.ts';
 import type { AuthSessionRepository } from '../repositories/AuthSessionRepository.ts';
 import type { IssuedAuthSession } from '../repositories/auth-session-types.ts';
@@ -282,7 +282,7 @@ export function createGroupStateRuntime(
                 randomId,
             );
             validateGroupMutationCommand(command);
-            const commandHash = await hashStateMutationCommand(command);
+            const commandHash = await hashMutationCommand(command as JsonWireValue);
             const resolvedJoinCode = resolveCommandJoinCode(command, commandHash);
             const facts: Omit<GroupMutationFacts, 'attemptCount'> = {
                 nowEpochMs: now(),
@@ -333,7 +333,7 @@ export function createGroupStateRuntime(
         atEpochMs: number,
     ): Promise<GroupMutationPreparation> => {
         validateGroupMutationCommand(command);
-        const commandHash = await hashStateMutationCommand(command);
+        const commandHash = await hashMutationCommand(command as JsonWireValue);
         const facts: Omit<GroupMutationFacts, 'attemptCount'> = {
             nowEpochMs: atEpochMs,
             expireAtEpochMs: GROUP_MUTATION_QUEUE_EXPIRE_AT_EPOCH_MS,
@@ -426,7 +426,7 @@ export function createGroupStateRuntime(
                 );
             }
             const command = toDescriptorCommand(verified.descriptor, randomId);
-            const commandHash = await hashStateMutationCommand(command);
+            const commandHash = await hashMutationCommand(command as JsonWireValue);
             if (
                 canonicalJson(command) !== canonicalJson(prepared.command) ||
                 commandHash !== prepared.facts.commandHash ||

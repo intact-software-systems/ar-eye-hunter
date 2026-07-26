@@ -30,7 +30,7 @@ import { validateTopologySnapshot } from '../rtc-topology-snapshot-contract.ts';
 import { rtcTopologySemanticEqual } from '../rtc-topology-semantic-equality.ts';
 import { validatePersistedALMessage } from '../services/al-message-persistence-validation.ts';
 import { validateRtcTopologyPublication } from '../rtc-topology-publication-validation.ts';
-import { hashStateMutationCommand } from './StateMutationOutboxRepository.ts';
+import { hashMutationCommand, type JsonWireValue } from '../services/mutation-command-identity.ts';
 import { RtcTopologySnapshotRepository } from './RtcTopologySnapshotRepository.ts';
 
 export type { RtcTopologyPublication } from '../rtc-topology-publication-contract.ts';
@@ -73,11 +73,11 @@ export async function hashRtcTopologyExecutionCommand(
     publication: RtcTopologyPublication,
 ): Promise<string> {
     validateRtcTopologyPublication(publication, publication.groupRef);
-    return await hashStateMutationCommand({
+    return await hashMutationCommand({
         kind: 'rtc-topology-execution',
         schemaVersion: 1,
         publication,
-    });
+    } as unknown as JsonWireValue);
 }
 
 export function createRtcTopologyExecutionReceipt(

@@ -46,7 +46,7 @@ import {
     writeRttMutation,
 } from '@shared-server/rallar-system/services/rtc-rtt-mutation-service.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
-import { hashStateMutationCommand } from '@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts';
+import { hashMutationCommand, type JsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
 import type { RtcTopologyWorkPublisher } from '@shared-server/rallar-system/services/RtcTopologyOutboxWork.ts';
 import type { ALMessage } from '@shared/mod.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
@@ -71,7 +71,7 @@ async function executeRttMutation(input: TestExecuteRttMutationInput) {
         rtt: input.command.rtt,
         alSenderId: input.command.alSenderId,
     };
-    const commandHash = await hashStateMutationCommand(request);
+    const commandHash = await hashMutationCommand(request as JsonWireValue);
     for (let attemptCount = 1; attemptCount <= 20; attemptCount += 1) {
         try {
             const read = await readRttMutation(input.repository, request);
@@ -2064,10 +2064,10 @@ describe('RTC topology runtime-state repositories', () => {
             rttMs: 1, createdAtEpochMs: 1, version: 1,
         };
         const receiptId = toRtcRttMutationReceiptId(baseRtt);
-        const commandHash = await hashStateMutationCommand({
+        const commandHash = await hashMutationCommand({
             rtt: baseRtt,
             alSenderId: 'session-a',
-        });
+        } as JsonWireValue);
         const affectedGroupRef = {
             applicationId: 'app-1',
             workspaceId: 'workspace-1',

@@ -16,7 +16,6 @@ import type {
     StateScope,
 } from '@shared/api/state-types.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
-import { STATE_MUTATION_OUTBOX_NAMESPACE } from '@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts';
 import {
     createGroupStateService as createDurableGroupStateService,
     GroupMutationIdempotencyConflictError,
@@ -1474,7 +1473,6 @@ describe('convergent group and presence state', () => {
             groupRef('ephemeral-rejection-room'),
             'rejected-duplicate-create',
         )).toBeUndefined();
-        expect(await outboxFor(runtime, 'rejected-duplicate-create')).toEqual([]);
         expect((await repository.listEvents(groupRef('ephemeral-rejection-room')))
             .filter((event) => event.requestId === 'rejected-duplicate-create'))
             .toEqual([]);
@@ -3023,7 +3021,6 @@ describe('convergent group and presence state', () => {
         expect((await new GroupStateRepository(runtime).listEvents(ref)).filter((event) =>
             event.eventType === 'session-disconnected'
         )).toEqual([]);
-        expect(await outboxFor(runtime, 'expire-group-presence')).toEqual([]);
     });
 
     it('fences heartbeat/disconnect and stale expiry across presence generations without a group write', async () => {
@@ -4110,7 +4107,6 @@ class GroupBarrierRepository extends FakeRuntimeStateRepository {
     private admissionReadsArrived = 0;
     private releaseAdmissionReads: (() => void) | undefined;
     private barrierTransactionTail: Promise<void> = Promise.resolve();
-    private outboxConflictsRemaining = 0;
     private presenceSummaryConflictsRemaining = 0;
     private groupConflictsRemaining = 0;
     private presenceDeleteConflictsRemaining = 0;
@@ -4120,10 +4116,6 @@ class GroupBarrierRepository extends FakeRuntimeStateRepository {
 
     failNextPresenceSummaryCas(): void {
         this.presenceSummaryConflictsRemaining = 1;
-    }
-
-    failNextOutboxInsert(): void {
-        this.outboxConflictsRemaining += 1;
     }
 
     failNextGroupCas(count: number): void {
@@ -4251,13 +4243,6 @@ class GroupBarrierRepository extends FakeRuntimeStateRepository {
     ): Promise<RuntimeStateConditionalWriteResult> {
         this.conditionalOperations.push(`insert:${namespace}`);
         this.recordGuard(namespace);
-        if (
-            namespace === STATE_MUTATION_OUTBOX_NAMESPACE &&
-            this.outboxConflictsRemaining > 0
-        ) {
-            this.outboxConflictsRemaining -= 1;
-            return Promise.resolve({ status: 'conflict' });
-        }
         return super.insertIfAbsent(namespace, key, value, expireAtTimestamp);
     }
 
@@ -4526,12 +4511,6 @@ async function requireSnapshot(runtime: GroupBarrierRepository, groupId: string)
     const snapshot = await new GroupStateRepository(runtime).readSnapshot(groupRef(groupId));
     if (!snapshot) throw new Error(`Missing group snapshot: ${groupId}`);
     return snapshot;
-}
-
-async function outboxFor(runtime: GroupBarrierRepository, commandIdPrefix: string) {
-    return (await runtime.findAllEntries(STATE_MUTATION_OUTBOX_NAMESPACE))
-        .map((entry) => JSON.parse(entry.value))
-        .filter((record) => String(record.commandId).startsWith(commandIdPrefix));
 }
 
 function groupRef(groupId: string): GroupRef {

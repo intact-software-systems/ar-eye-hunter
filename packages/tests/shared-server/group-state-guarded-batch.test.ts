@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { Group, GroupEvent, GroupRef } from '@shared/api/group-types.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import {
   groupStateGroupStorageKey,
@@ -8,12 +8,6 @@ import {
   groupStateMemberStorageKey,
 } from '@shared-server/rallar-system/group-state-storage-keys.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
-import {
-  createStateMutationOutboxRecord,
-  STATE_MUTATION_OUTBOX_NAMESPACE,
-  stateMutationOutboxStorageKey,
-} from '@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts';
-import type { GroupMutationReceipt } from '@shared-server/rallar-system/services/group-state-mutations.ts';
 import { createTestGroupStateService } from './group-state-test-runtime.ts';
 import {
   ApplyingGuardedBatchRepository,
@@ -126,32 +120,6 @@ describe('GroupStateService guarded runtime-state batch', () => {
     expect(eventStore.events).toEqual([event]);
   });
 });
-
-export function expectedGroupOutbox(
-  group: Group,
-  event: GroupEvent,
-  receipt: GroupMutationReceipt,
-  createdAtEpochMs: number,
-) {
-  return createStateMutationOutboxRecord({
-    kind: 'group',
-    aggregateRef: receipt.aggregateRef,
-    commandId: receipt.commandId,
-    commandHash: receipt.commandHash,
-    createdAtEpochMs,
-    acceptedCausalRevision: {
-      kind: 'group',
-      stateRevision: receipt.stateRevision,
-      causalRevision: receipt.causalRevision,
-      snapshotVersion: group.snapshotVersion,
-      metadataVersion: group.metadataVersion,
-      rosterVersion: group.rosterVersion,
-      presenceVersion: receipt.causalRevision.presenceRevision,
-    },
-    effects: ['group-state-sync', 'group-presence-summary'],
-    event: { kind: 'group', event },
-  });
-}
 
 export function groupRef(groupId: string): GroupRef {
   return { ...SCOPE, groupId };

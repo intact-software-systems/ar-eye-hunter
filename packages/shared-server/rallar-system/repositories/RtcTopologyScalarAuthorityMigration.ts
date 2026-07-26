@@ -19,7 +19,7 @@ import {
     RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE,
 } from './RtcTopologyPublicationRepository.ts';
 import { RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE } from './RtcTopologySnapshotRepository.ts';
-import { hashStateMutationCommand } from './StateMutationOutboxRepository.ts';
+import { hashMutationCommand, type JsonWireValue } from '../services/mutation-command-identity.ts';
 
 export const RTC_TOPOLOGY_SCALAR_RECOMPUTE_NAMESPACE =
     'rtc-topology:scalar-recompute';
@@ -389,7 +389,7 @@ async function newRecomputeRequest(
         status: 'pending',
         migrationId: options.migrationId,
         observedAtEpochMs: options.observedAtEpochMs,
-        commandHash: await hashStateMutationCommand(command),
+        commandHash: await hashMutationCommand(command as JsonWireValue),
         groupRef,
         requestId: `scalar-authority-cutover:${groupKey}`,
     };

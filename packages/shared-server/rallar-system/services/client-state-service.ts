@@ -32,7 +32,7 @@ import {
 import type { ClientStateEventStore } from '../repositories/StateEventStore.ts';
 import { AuthSessionRepository } from '../repositories/AuthSessionRepository.ts';
 import type { PersistedAuthSession } from '../repositories/auth-persistence-contracts.ts';
-import { hashStateMutationCommand } from '../repositories/StateMutationOutboxRepository.ts';
+import { hashMutationCommand, type JsonWireValue } from './mutation-command-identity.ts';
 import type { StateEventListQuery } from '../state-event-listing.ts';
 import {
     assertNeverClientMutationComputed,
@@ -312,10 +312,10 @@ export async function toClientMutationCommand(
         authority,
         facts: {
             ...facts,
-            commandHash: await hashStateMutationCommand({
+            commandHash: await hashMutationCommand({
                 ...input,
                 authority,
-            }),
+            } as JsonWireValue),
         },
     } as ClientMutationCommand;
     validateClientMutationCommand(command);

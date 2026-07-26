@@ -198,15 +198,15 @@ describe('API-v1 state-write performance artifact contract', () => {
     ]);
   });
 
-  it('classifies the production outbox namespace from bound SQL values', async () => {
+  it('classifies direct ResourceInbox persistence as a write', async () => {
     const bench = await import(
       '../../../scripts/perf/api-v1-state-write-concurrency-bench.ts'
     ) as Record<string, (...args: any[]) => any>;
 
     expect(bench.classifyBenchmarkSql(
       'insert into runtime_state_store values ($1, $2)',
-      ['state-mutation:outbox', 'record-1'],
-    )).toBe('outbox');
+      ['resource_inbox', 'record-1'],
+    )).toBe('write');
     expect(bench.classifyBenchmarkSql(
       'insert into runtime_state_store values ($1, $2)',
       ['group-state:groups', 'group-1'],

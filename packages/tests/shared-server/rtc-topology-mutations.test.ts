@@ -37,7 +37,7 @@ describe('RTC topology mutation phases', () => {
             /\b(?:Date|Temporal)\b/,
             /random/i,
             /(?:Deno|process)\.env/,
-            /hashStateMutationCommand/,
+            /hashMutationCommand/,
             /recordRallarTiming|performance\.now/,
             /\b(?:async|await)\b/,
         ];

@@ -27,7 +27,7 @@ const convergentWriteVocabulary = [
     'DEFAULT_RUNTIME_STATE_WRITE_BACKOFF_MS',
     'waitForRuntimeStateWriteRetry',
     'RuntimeStateRetryExhaustedError',
-    'StateMutationOutboxRepository',
+    'ResourceInboxRepository',
     'MutationReceipt',
     'GroupStateCausalRevision',
 ] as const;
