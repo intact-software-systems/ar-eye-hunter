@@ -33,48 +33,6 @@ export function resolveSwitchEntries(
   };
 }
 
-export function readSwitchFallthroughStatements(
-  rawCases: unknown,
-  entryIndex: number,
-): readonly AstNode[] {
-  const cases = asNodes(rawCases);
-  const statements: AstNode[] = [];
-  for (const switchCase of cases.slice(entryIndex)) {
-    const consequent = asNodes(switchCase.consequent);
-    for (const statement of consequent) {
-      statements.push(statement);
-      if (hasAbruptCompletion(statement)) return statements;
-    }
-  }
-  return statements;
-}
-
-export function hasAbruptCompletion(value: unknown): boolean {
-  const node = asNode(value);
-  if (!node) return false;
-  if (
-    node.type === 'BreakStatement' ||
-    node.type === 'ReturnStatement' ||
-    node.type === 'ThrowStatement'
-  ) return true;
-  if (node.type === 'BlockStatement') {
-    return sequenceHasAbruptCompletion(node.body);
-  }
-  if (node.type === 'IfStatement') {
-    return !!node.alternate &&
-      hasAbruptCompletion(node.consequent) &&
-      hasAbruptCompletion(node.alternate);
-  }
-  return false;
-}
-
-function sequenceHasAbruptCompletion(value: unknown): boolean {
-  for (const statement of asNodes(value)) {
-    if (hasAbruptCompletion(statement)) return true;
-  }
-  return false;
-}
-
 function staticValueEquals(
   value: unknown,
   expected: unknown,
