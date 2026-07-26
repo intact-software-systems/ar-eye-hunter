@@ -10,10 +10,9 @@ import {
 } from './mutation-execution-ast.ts';
 import {
   bindExecutionLoopPath,
-  classifyCollectionLoopOutcomes,
+  classifyLoopBodyOutcomes,
   coalesceExecutionPaths,
   completeExecutionPaths,
-  consumeSimpleLoopCompletions,
   consumeUnlabeledBreak,
   type MutationExecutionAdapter,
   type MutationExecutionAstNode as AstNode,
@@ -324,14 +323,20 @@ function executeLoop<State>(
       : true;
     if (truth === false) return [path];
     const bodyPath = truth === undefined ? withExecutionBranch(path, node, 0, 1, true) : path;
-    let body = executeNode(node.body, [bodyPath], adapter, rootFunction);
-    body = consumeSimpleLoopCompletions(body, label);
+    const body = classifyLoopBodyOutcomes(
+      executeNode(node.body, [bodyPath], adapter, rootFunction),
+      label,
+    );
+    let phase = body.continuing;
     if (node.type === 'ForStatement') {
-      body = executeNode(node.update, body, adapter, rootFunction);
+      phase = executeNode(node.update, phase, adapter, rootFunction);
     } else if (node.type === 'DoWhileStatement') {
-      body = executeNode(node.test, body, adapter, rootFunction);
+      phase = executeNode(node.test, phase, adapter, rootFunction);
     }
-    return restoreExecutionContext([...(truth === undefined ? [path] : []), ...body], path);
+    return restoreExecutionContext(
+      [...(truth === undefined ? [path] : []), ...phase, ...body.exited, ...body.escaped],
+      path,
+    );
   });
 }
 
@@ -356,7 +361,7 @@ function executeCollectionLoop<State>(
         1,
         true,
       );
-      const body = classifyCollectionLoopOutcomes(
+      const body = classifyLoopBodyOutcomes(
         executeNode(node.body, [bodyPath], adapter, rootFunction),
         label,
       );
@@ -369,7 +374,7 @@ function executeCollectionLoop<State>(
       const iteration = active.map((candidate) =>
         bindExecutionLoopPath(candidate, node.left, element ? [element] : [], !element, adapter)
       );
-      const outcomes = classifyCollectionLoopOutcomes(
+      const outcomes = classifyLoopBodyOutcomes(
         executeNode(node.body, iteration, adapter, rootFunction),
         label,
       );

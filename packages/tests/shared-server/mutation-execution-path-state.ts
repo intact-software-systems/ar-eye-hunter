@@ -64,18 +64,6 @@ export function consumesLoopCompletion<State>(
     (path.completion.label === undefined || path.completion.label === label);
 }
 
-export function consumeSimpleLoopCompletions<State>(
-  paths: readonly MutationExecutionPath<State>[],
-  label: string | undefined,
-): readonly MutationExecutionPath<State>[] {
-  return paths.map((path) =>
-    consumesLoopCompletion(path, 'break', label) ||
-      consumesLoopCompletion(path, 'continue', label)
-      ? consumeExecutionCompletion(path)
-      : path
-  );
-}
-
 export function visitExecutionPaths<State>(
   node: MutationExecutionAstNode,
   paths: readonly MutationExecutionPath<State>[],
@@ -90,7 +78,7 @@ export function visitExecutionPaths<State>(
   }));
 }
 
-export function classifyCollectionLoopOutcomes<State>(
+export function classifyLoopBodyOutcomes<State>(
   paths: readonly MutationExecutionPath<State>[],
   label: string | undefined,
 ): Readonly<{
