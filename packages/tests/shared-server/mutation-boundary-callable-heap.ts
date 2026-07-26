@@ -5,36 +5,46 @@ import {
 import type { CapabilityFlowAccess } from './mutation-boundary-capability-closures.ts';
 import type { CallableAliasWrite } from './mutation-boundary-callable-resolution.ts';
 import { appendCallableAlias } from './mutation-boundary-callable-storage.ts';
+import type { ExecutionBranch } from './mutation-boundary-execution-walk.ts';
+import { executionWriteScenarios } from './mutation-execution-branches.ts';
+
+export interface CallableHeapAliasWrite {
+  readonly branches?: readonly ExecutionBranch[];
+  readonly conditional: boolean;
+  readonly position: number;
+  readonly sourceKeys: ReadonlySet<string>;
+}
 
 export interface CallableHeapContext {
   readonly access: CapabilityFlowAccess;
   readonly aliases: Map<string, CallableAliasWrite[]>;
-  readonly heapRoots: Map<string, string>;
+  readonly heapRoots: Map<string, CallableHeapAliasWrite[]>;
 }
 
 export function unionStoredAliases(
   target: AstNode | undefined,
   source: AstNode | undefined,
   context: CallableHeapContext,
+  write: Omit<CallableHeapAliasWrite, 'sourceKeys'>,
 ): boolean {
   const left = unwrap(target);
   if (!left) return false;
   if (left.type === 'AssignmentPattern') {
-    return unionStoredAliases(unwrap(left.left), source ?? unwrap(left.right), context);
+    return unionStoredAliases(unwrap(left.left), source ?? unwrap(left.right), context, write);
   }
   if (left.type === 'RestElement') {
-    return unionStoredAliases(unwrap(left.argument), source, context);
+    return unionStoredAliases(unwrap(left.argument), source, context, write);
   }
   if (left.type === 'ObjectPattern') {
-    return unionObjectPattern(left, source, context);
+    return unionObjectPattern(left, source, context, write);
   }
   if (left.type === 'ArrayPattern') {
-    return unionArrayPattern(left, source, context);
+    return unionArrayPattern(left, source, context, write);
   }
   if (left.type !== 'Identifier') return false;
   const targetKey = context.access.expressionKey(left);
-  const sourceKey = resolveStoredReference(source, context);
-  return setHeapRoot(targetKey, sourceKey, context.heapRoots);
+  const sourceKeys = resolveStoredReferences(source, context, write.position);
+  return appendHeapAlias(targetKey, sourceKeys, write, context.heapRoots);
 }
 
 export function appendInvocationAlias(
@@ -42,41 +52,60 @@ export function appendInvocationAlias(
   key: string,
   write: CallableAliasWrite,
 ): void {
-  appendCallableAlias(
-    context.aliases,
-    canonicalStorageKey(key, context.heapRoots),
-    write,
-  );
+  const storedKeys = key.includes('.')
+    ? canonicalStorageKeys(key, context.heapRoots, write.position)
+    : new Set([key]);
+  for (const storedKey of storedKeys) {
+    appendCallableAlias(context.aliases, storedKey, write);
+  }
 }
 
 export function canonicalStorageKey(
   key: string,
-  roots: ReadonlyMap<string, string>,
+  roots: ReadonlyMap<string, readonly CallableHeapAliasWrite[]>,
+  position: number,
 ): string {
-  let current = key;
-  const visited = new Set<string>();
-  while (current && !visited.has(current)) {
-    visited.add(current);
-    const root = [...roots.keys()]
-      .filter(
-        (candidate) => current === candidate || current.startsWith(`${candidate}.`),
-      )
-      .toSorted((left, right) => right.length - left.length)[0];
-    if (!root) break;
-    const replacement = roots.get(root);
-    if (!replacement) break;
-    current = `${replacement}${current.slice(root.length)}`;
+  const keys = canonicalStorageKeys(key, roots, position);
+  return keys.size === 1 ? [...keys][0] : key;
+}
+
+export function canonicalStorageKeys(
+  key: string,
+  roots: ReadonlyMap<string, readonly CallableHeapAliasWrite[]>,
+  position: number,
+): ReadonlySet<string> {
+  const root = [...roots.keys()]
+    .filter(
+      (candidate) => key === candidate || key.startsWith(`${candidate}.`),
+    )
+    .toSorted((left, right) => right.length - left.length)[0];
+  if (!root) return new Set([key]);
+  const writes = [...roots.get(root) ?? []]
+    .filter((write) => write.position < position)
+    .toSorted((left, right) => left.position - right.position);
+  const replacements = new Set<string>();
+  for (const scenario of executionWriteScenarios(writes)) {
+    let state = new Set([root]);
+    for (const write of scenario) {
+      const conditionWithoutBranch = write.conditional && !write.branches?.length;
+      state = conditionWithoutBranch
+        ? new Set([...state, ...write.sourceKeys])
+        : new Set(write.sourceKeys);
+    }
+    for (const replacement of state) replacements.add(replacement);
   }
-  return current;
+  return new Set([...replacements].map((replacement) => `${replacement}${key.slice(root.length)}`));
 }
 
 function unionObjectPattern(
   pattern: AstNode,
   source: AstNode | undefined,
   context: CallableHeapContext,
+  write: Omit<CallableHeapAliasWrite, 'sourceKeys'>,
 ): boolean {
-  const sourceKey = resolveStoredReference(source, context);
-  if (!sourceKey) return false;
+  const sourceKeys = resolveStoredReferences(source, context, write.position);
+  if (sourceKeys.size !== 1) return false;
+  const sourceKey = [...sourceKeys][0];
   let changed = false;
   const properties = Array.isArray(pattern.properties) ? pattern.properties : [];
   for (const rawProperty of properties) {
@@ -88,6 +117,7 @@ function unionObjectPattern(
       unwrap(property.value),
       referenceNode(`${sourceKey}.${name}`),
       context,
+      write,
     ) || changed;
   }
   return changed;
@@ -97,9 +127,11 @@ function unionArrayPattern(
   pattern: AstNode,
   source: AstNode | undefined,
   context: CallableHeapContext,
+  write: Omit<CallableHeapAliasWrite, 'sourceKeys'>,
 ): boolean {
-  const sourceKey = resolveStoredReference(source, context);
-  if (!sourceKey) return false;
+  const sourceKeys = resolveStoredReferences(source, context, write.position);
+  if (sourceKeys.size !== 1) return false;
+  const sourceKey = [...sourceKeys][0];
   let changed = false;
   const elements = Array.isArray(pattern.elements) ? pattern.elements : [];
   for (const [index, rawElement] of elements.entries()) {
@@ -109,48 +141,56 @@ function unionArrayPattern(
       element,
       referenceNode(`${sourceKey}.${index}`),
       context,
+      write,
     ) || changed;
   }
   return changed;
 }
 
-function resolveStoredReference(
+function resolveStoredReferences(
   value: AstNode | undefined,
   context: CallableHeapContext,
-): string {
+  position: number,
+): ReadonlySet<string> {
   const node = unwrap(value);
-  if (!node) return '';
+  if (!node) return new Set();
   if (node.type === 'ConditionalExpression') {
     const truth = context.access.staticTruth(node.test);
     if (truth !== undefined) {
-      return resolveStoredReference(
+      return resolveStoredReferences(
         unwrap(truth ? node.consequent : node.alternate),
         context,
+        position,
       );
     }
-    const consequent = resolveStoredReference(unwrap(node.consequent), context);
-    const alternate = resolveStoredReference(unwrap(node.alternate), context);
-    return consequent && consequent === alternate ? consequent : '';
+    return new Set([
+      ...resolveStoredReferences(unwrap(node.consequent), context, position),
+      ...resolveStoredReferences(unwrap(node.alternate), context, position),
+    ]);
   }
   if (node.type === 'SequenceExpression') {
     const expressions = Array.isArray(node.expressions) ? node.expressions : [];
-    return resolveStoredReference(unwrap(expressions.at(-1) as AstNode), context);
+    return resolveStoredReferences(
+      unwrap(expressions.at(-1) as AstNode),
+      context,
+      position,
+    );
   }
   const syntheticKey = typeof node.syntheticKey === 'string' ? node.syntheticKey : '';
   const key = syntheticKey || context.access.expressionKey(node);
-  return canonicalStorageKey(key, context.heapRoots);
+  return key ? canonicalStorageKeys(key, context.heapRoots, position) : new Set();
 }
 
-function setHeapRoot(
+function appendHeapAlias(
   targetKey: string,
-  sourceKey: string,
-  roots: Map<string, string>,
+  sourceKeys: ReadonlySet<string>,
+  write: Omit<CallableHeapAliasWrite, 'sourceKeys'>,
+  roots: Map<string, CallableHeapAliasWrite[]>,
 ): boolean {
-  if (!targetKey || !sourceKey) return false;
-  const canonicalTarget = canonicalStorageKey(targetKey, roots);
-  if (canonicalTarget === sourceKey) return true;
-  if (roots.get(targetKey) === sourceKey) return true;
-  roots.set(targetKey, sourceKey);
+  if (!targetKey || sourceKeys.size === 0) return false;
+  const writes = roots.get(targetKey) ?? [];
+  writes.push({ ...write, sourceKeys });
+  roots.set(targetKey, writes);
   return true;
 }
 

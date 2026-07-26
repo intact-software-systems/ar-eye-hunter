@@ -3,7 +3,7 @@ import {
   type CapabilityTypeShape,
 } from './mutation-boundary-capability-types.ts';
 import type { MutationBoundaryLexicalValues } from './mutation-boundary-lexical-values.ts';
-import { readExactStaticString } from './mutation-static-semantics.ts';
+import { resolveStaticPropertyKeys } from './mutation-static-semantics.ts';
 
 type AstNode = { readonly type: string; readonly [key: string]: unknown };
 
@@ -101,19 +101,30 @@ export function createCapabilityValueResolver(
       node.type === 'MemberExpression' ||
       node.type === 'OptionalMemberExpression'
     ) {
-      const property = readMemberName(node, lexical);
+      const property = readMemberKeys(node, lexical);
       const object = unwrap(asNode(node.object));
       if (object?.type === 'Identifier') {
         const imported = lexical.importBinding(object);
-        if (imported?.namespace && property) {
-          return types.resolveImportedCallable(imported.source, property);
+        if (imported?.namespace) {
+          return mergeMemberShapes(
+            property,
+            (name) => types.resolveImportedCallable(imported.source, name),
+          );
         }
       }
       const objectShape = resolve(object);
-      if (property && objectShape?.namespace) {
-        return types.resolveImportedCallable(objectShape.namespace, property);
+      const namespace = objectShape?.namespace;
+      if (namespace) {
+        return mergeMemberShapes(
+          property,
+          (name) => types.resolveImportedCallable(namespace, name),
+        );
       }
-      return property ? objectShape?.members?.get(property) : undefined;
+      return mergeMemberShapes(
+        property,
+        (name) => objectShape?.members?.get(name),
+        objectShape?.members,
+      );
     }
     if (
       node.type === 'CallExpression' ||
@@ -124,7 +135,7 @@ export function createCapabilityValueResolver(
         callee?.type === 'MemberExpression' ||
         callee?.type === 'OptionalMemberExpression'
       ) {
-        const method = readMemberName(callee, lexical);
+        const method = readExactMemberName(callee, lexical);
         if (['call', 'apply', 'bind'].includes(method)) {
           const target = resolve(callee.object);
           return method === 'bind' ? target : target?.callResult;
@@ -192,14 +203,36 @@ function mergeShapes(
   };
 }
 
-function readMemberName(
+function readMemberKeys(
+  member: AstNode,
+  lexical: MutationBoundaryLexicalValues,
+): { readonly names: ReadonlySet<string>; readonly unknown: boolean } {
+  const property = asNode(member.property);
+  if (!property) return { names: new Set(), unknown: true };
+  if (member.computed !== true) {
+    const name = readName(property);
+    return { names: new Set(name ? [name] : []), unknown: !name };
+  }
+  return resolveStaticPropertyKeys(property, lexical);
+}
+
+function readExactMemberName(
   member: AstNode,
   lexical: MutationBoundaryLexicalValues,
 ): string {
-  const property = asNode(member.property);
-  if (!property) return '';
-  if (member.computed !== true) return readName(property);
-  return readExactStaticString(property, lexical);
+  const keys = readMemberKeys(member, lexical);
+  return keys.names.size === 1 && !keys.unknown ? [...keys.names][0] : '';
+}
+
+function mergeMemberShapes(
+  keys: { readonly names: ReadonlySet<string>; readonly unknown: boolean },
+  read: (name: string) => CapabilityTypeShape | undefined,
+  unknownMembers?: ReadonlyMap<string, CapabilityTypeShape>,
+): CapabilityTypeShape | undefined {
+  const shapes = [...keys.names].map(read);
+  if (keys.unknown && unknownMembers) shapes.push(...unknownMembers.values());
+  if (keys.unknown) shapes.push(undefined);
+  return mergeShapes(shapes);
 }
 
 function visit(value: unknown, visitor: (node: AstNode) => void): void {

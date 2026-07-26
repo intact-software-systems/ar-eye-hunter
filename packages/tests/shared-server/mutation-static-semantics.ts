@@ -9,6 +9,11 @@ export interface StaticValueResolution {
   readonly values: ReadonlySet<StaticPrimitive>;
 }
 
+export interface StaticPropertyKeyResolution {
+  readonly names: ReadonlySet<string>;
+  readonly unknown: boolean;
+}
+
 export function resolveStaticValues(
   value: unknown,
   lexical?: MutationBoundaryLexicalValues,
@@ -103,6 +108,23 @@ export function readExactStaticString(
       !resolved.unknownFalsy && !resolved.unknownTruthy
     ? strings[0]
     : '';
+}
+
+export function resolveStaticPropertyKeys(
+  value: unknown,
+  lexical?: MutationBoundaryLexicalValues,
+): StaticPropertyKeyResolution {
+  const resolved = resolveStaticValues(value, lexical);
+  const names = new Set(
+    [...resolved.values].flatMap((candidate) =>
+      typeof candidate === 'string' || typeof candidate === 'number' ? [String(candidate)] : []
+    ),
+  );
+  return {
+    names,
+    unknown: resolved.unknownFalsy || resolved.unknownTruthy ||
+      names.size !== resolved.values.size,
+  };
 }
 
 function resolveLogical(

@@ -6,6 +6,9 @@ import {
 } from './mutation-boundary-capability-ast.ts';
 import type { CapabilityFlowAccess } from './mutation-boundary-capability-closures.ts';
 import type { InvocationArgumentSlot } from './mutation-boundary-call-arguments.ts';
+import type { ExecutionBranch } from './mutation-boundary-execution-walk.ts';
+import { executionWriteScenarios } from './mutation-execution-branches.ts';
+import { projectCallableResolution } from './mutation-boundary-callable-storage.ts';
 
 export interface LocalCallableDefinition {
   readonly functionKey: string;
@@ -15,6 +18,7 @@ export interface LocalCallableDefinition {
 }
 
 export interface CallableAliasWrite {
+  readonly branches?: readonly ExecutionBranch[];
   readonly conditional: boolean;
   readonly position: number;
   readonly projection?: readonly string[];
@@ -42,7 +46,7 @@ export interface CallableResolutionContext {
   readonly bindings?: ReadonlyMap<string, CallableResolution>;
   readonly byFunctionKey: ReadonlyMap<string, LocalCallableDefinition>;
   readonly byReference: ReadonlyMap<string, readonly LocalCallableDefinition[]>;
-  readonly storageKey?: (key: string) => string;
+  readonly storageKey?: (key: string, position: number) => string;
   readonly resolveCall?: (
     call: AstNode,
     position: number,
@@ -166,7 +170,7 @@ function resolveMember(
   resolving: Set<string>,
 ): CallableResolution {
   const rawKey = context.access.expressionKey(node);
-  const key = rawKey ? (context.storageKey?.(rawKey) ?? rawKey) : '';
+  const key = rawKey ? (context.storageKey?.(rawKey, position) ?? rawKey) : '';
   const direct = key
     ? resolveKey(key, position, context, new Set(resolving))
     : emptyResolution(false);
@@ -174,7 +178,7 @@ function resolveMember(
   const name = context.access.propertyName(node.property, node.computed === true);
   const rawObjectKey = context.access.expressionKey(node.object);
   const wildcardKey = rawObjectKey
-    ? (context.storageKey?.(`${rawObjectKey}.*`) ?? `${rawObjectKey}.*`)
+    ? (context.storageKey?.(`${rawObjectKey}.*`, position) ?? `${rawObjectKey}.*`)
     : '';
   const wildcard = wildcardKey
     ? resolveKey(wildcardKey, position, context, new Set(resolving))
@@ -206,16 +210,17 @@ function resolveKey(
   context: CallableResolutionContext,
   resolving: Set<string>,
 ): CallableResolution {
-  key = context.storageKey?.(key) ?? key;
+  key = context.storageKey?.(key, position) ?? key;
   const bound = context.bindings?.get(key);
   if (bound) return bound;
   const resolutionKey = `${key}:${position}`;
   if (resolving.has(resolutionKey)) return emptyResolution(true);
   resolving.add(resolutionKey);
-  let resolution = resolveReferences(key, position, context);
+  const initial = resolveReferences(key, position, context);
   const ancestor = key.endsWith('.*') ? undefined : [...context.aliases.keys()]
     .filter((candidate) => key.startsWith(`${candidate}.`))
     .toSorted((left, right) => right.length - left.length)[0];
+  let resolution = initial;
   if (ancestor) {
     const ancestorResolution = resolveKey(
       ancestor,
@@ -225,40 +230,46 @@ function resolveKey(
     );
     const projection = key.slice(ancestor.length + 1).split('.');
     resolution = mergeResolutions(
-      [resolution, projectResolution(ancestorResolution, projection)],
+      [initial, projectCallableResolution(ancestorResolution, projection)],
       false,
     );
   }
-  const writes = [...(context.aliases.get(key) ?? [])].toSorted(
-    (left, right) => left.position - right.position,
-  );
-  for (const write of writes) {
-    if (write.position >= position) continue;
-    let source = write.resolution ??
-      resolveCallable(write.source, write.position, context, resolving);
-    let sourceKey = context.access.expressionKey(write.source);
-    for (const member of write.projection ?? []) {
-      sourceKey = sourceKey ? `${sourceKey}.${member}` : '';
-      const storedKey = sourceKey ? (context.storageKey?.(sourceKey) ?? sourceKey) : '';
-      source = storedKey && context.aliases.has(storedKey)
-        ? resolveKey(storedKey, write.position, context, resolving)
-        : (source.members.get(member) ?? emptyResolution(source.localProvenance));
-    }
-    resolution = write.conditional ? mergeResolutions([resolution, source], true) : source;
-  }
+  const result = resolveAliasWrites(key, position, context, resolving, resolution);
   resolving.delete(resolutionKey);
-  return resolution;
+  return result;
 }
 
-function projectResolution(
-  resolution: CallableResolution,
-  projection: readonly string[],
+function resolveAliasWrites(
+  key: string,
+  position: number,
+  context: CallableResolutionContext,
+  resolving: Set<string>,
+  initial: CallableResolution,
 ): CallableResolution {
-  let current = resolution;
-  for (const member of projection) {
-    current = current.members.get(member) ?? emptyResolution(current.localProvenance);
-  }
-  return current;
+  const writes = [...(context.aliases.get(key) ?? [])].toSorted(
+    (left, right) => left.position - right.position,
+  ).filter((write) => write.position < position);
+  const scenarios = executionWriteScenarios(writes).map((scenario) => {
+    let resolution = initial;
+    for (const write of scenario) {
+      let source = write.resolution ??
+        resolveCallable(write.source, write.position, context, resolving);
+      let sourceKey = context.access.expressionKey(write.source);
+      for (const member of write.projection ?? []) {
+        sourceKey = sourceKey ? `${sourceKey}.${member}` : '';
+        const storedKey = sourceKey
+          ? (context.storageKey?.(sourceKey, write.position) ?? sourceKey)
+          : '';
+        source = storedKey && context.aliases.has(storedKey)
+          ? resolveKey(storedKey, write.position, context, resolving)
+          : (source.members.get(member) ?? emptyResolution(source.localProvenance));
+      }
+      const conditionWithoutBranch = write.conditional && !write.branches?.length;
+      resolution = conditionWithoutBranch ? mergeResolutions([resolution, source], true) : source;
+    }
+    return resolution;
+  });
+  return scenarios.length === 1 ? scenarios[0] : mergeResolutions(scenarios, true);
 }
 
 function resolveReferences(

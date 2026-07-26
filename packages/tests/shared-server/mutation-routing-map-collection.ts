@@ -294,11 +294,6 @@ function readName(value: unknown): string {
   return node && typeof node.name === 'string' ? node.name : '';
 }
 
-function readString(value: unknown): string {
-  const node = asNode(value);
-  return node && typeof node.value === 'string' ? node.value : '';
-}
-
 function readNumber(value: unknown): number | undefined {
   const node = asNode(value);
   return node?.type === 'NumericLiteral' && typeof node.value === 'number' ? node.value : undefined;

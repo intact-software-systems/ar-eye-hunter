@@ -1,7 +1,11 @@
 import type { MutationBoundaryCapabilityAstNode as AstNode } from './mutation-boundary-capability-ast.ts';
 
 import type { MutationBoundaryLexicalValues } from './mutation-boundary-lexical-values.ts';
-import { evaluateStaticTruth, resolveStaticValues } from './mutation-static-semantics.ts';
+import { evaluateStaticTruth } from './mutation-static-semantics.ts';
+import {
+  readSwitchFallthroughStatements,
+  resolveSwitchEntries,
+} from './mutation-switch-semantics.ts';
 
 export interface ExecutionWalkOptions {
   readonly lexical?: MutationBoundaryLexicalValues;
@@ -9,7 +13,15 @@ export interface ExecutionWalkOptions {
 }
 
 export interface ExecutionVisitContext {
+  readonly branches: readonly ExecutionBranch[];
   readonly conditional: boolean;
+}
+
+export interface ExecutionBranch {
+  readonly alternativeCount: number;
+  readonly alternativeIndex: number;
+  readonly group: object;
+  readonly optional: boolean;
 }
 
 export function walkExecution(
@@ -18,10 +30,14 @@ export function walkExecution(
   options: ExecutionWalkOptions = {},
 ): void {
   const rootFunction = isFunction(value) ? value : undefined;
-  const scan = (child: unknown, conditional: boolean): void => {
+  const scan = (
+    child: unknown,
+    conditional: boolean,
+    branches: readonly ExecutionBranch[],
+  ): void => {
     if (!child || typeof child !== 'object') return;
     if (Array.isArray(child)) {
-      for (const item of child) scan(item, conditional);
+      for (const item of child) scan(item, conditional, branches);
       return;
     }
     const node = child as AstNode;
@@ -29,10 +45,10 @@ export function walkExecution(
       options.nestedFunctions !== 'include' &&
       isFunction(node) && node !== rootFunction
     ) return;
-    visit(node, { conditional });
-    scanReachableChildren(node, conditional, scan, options.lexical);
+    visit(node, { branches, conditional });
+    scanReachableChildren(node, conditional, branches, scan, options.lexical);
   };
-  scan(rootFunction ? rootFunction.body : value, false);
+  scan(rootFunction ? rootFunction.body : value, false, []);
 }
 
 export function walkReachableAst(
@@ -83,92 +99,147 @@ function isFunction(node: AstNode | undefined): node is AstNode {
 function scanReachableChildren(
   node: AstNode,
   conditional: boolean,
-  scan: (value: unknown, conditional: boolean) => void,
+  branches: readonly ExecutionBranch[],
+  scan: (
+    value: unknown,
+    conditional: boolean,
+    branches: readonly ExecutionBranch[],
+  ) => void,
   lexical: MutationBoundaryLexicalValues | undefined,
 ): void {
   if (node.type === 'IfStatement' || node.type === 'ConditionalExpression') {
-    scan(node.test, conditional);
+    scan(node.test, conditional, branches);
     const truth = evaluateStaticTruth(node.test, lexical);
-    if (truth !== false) scan(node.consequent, conditional || truth === undefined);
-    if (truth !== true) scan(node.alternate, conditional || truth === undefined);
+    const unknown = truth === undefined;
+    const optional = !node.alternate;
+    if (truth !== false) {
+      scan(
+        node.consequent,
+        conditional || unknown,
+        unknown ? [...branches, branch(node, 0, 2, optional)] : branches,
+      );
+    }
+    if (truth !== true) {
+      scan(
+        node.alternate,
+        conditional || unknown,
+        unknown ? [...branches, branch(node, 1, 2, optional)] : branches,
+      );
+    }
     return;
   }
   if (node.type === 'LogicalExpression') {
-    scan(node.left, conditional);
+    scan(node.left, conditional, branches);
     const truth = evaluateStaticTruth(node.left, lexical);
     const reachesRight = node.operator === '&&'
       ? truth !== false
       : node.operator === '||'
       ? truth !== true
       : true;
-    if (reachesRight) scan(node.right, conditional || truth === undefined);
+    if (reachesRight) {
+      scan(
+        node.right,
+        conditional || truth === undefined,
+        truth === undefined ? [...branches, branch(node, 0, 1, true)] : branches,
+      );
+    }
     return;
   }
   if (node.type === 'SwitchStatement') {
-    scan(node.discriminant, conditional);
-    scanSwitch(node, conditional, scan, lexical);
+    scan(node.discriminant, conditional, branches);
+    scanSwitch(node, conditional, branches, scan, lexical);
     return;
   }
   if (node.type === 'ForStatement') {
-    scan(node.init, conditional);
-    scan(node.test, conditional);
+    scan(node.init, conditional, branches);
+    scan(node.test, conditional, branches);
     const truth = node.test ? evaluateStaticTruth(node.test, lexical) : true;
     if (truth !== false) {
-      scan(node.body, conditional || truth === undefined);
-      scan(node.update, conditional || truth === undefined);
+      const loopBranches = truth === undefined ? [...branches, branch(node, 0, 1, true)] : branches;
+      scan(node.body, conditional || truth === undefined, loopBranches);
+      scan(node.update, conditional || truth === undefined, loopBranches);
     }
     return;
   }
   if (node.type === 'WhileStatement') {
-    scan(node.test, conditional);
+    scan(node.test, conditional, branches);
     const truth = evaluateStaticTruth(node.test, lexical);
-    if (truth !== false) scan(node.body, conditional || truth === undefined);
+    if (truth !== false) {
+      scan(
+        node.body,
+        conditional || truth === undefined,
+        truth === undefined ? [...branches, branch(node, 0, 1, true)] : branches,
+      );
+    }
     return;
   }
   if (node.type === 'DoWhileStatement') {
-    scan(node.body, conditional);
-    scan(node.test, conditional);
+    scan(node.body, conditional, branches);
+    scan(node.test, conditional, branches);
     return;
   }
   if (node.type === 'ForOfStatement' || node.type === 'ForInStatement') {
-    scan(node.left, conditional);
-    scan(node.right, conditional);
+    scan(node.left, conditional, branches);
+    scan(node.right, conditional, branches);
     const values = node.type === 'ForOfStatement'
       ? readExactCollectionLength(node.right, lexical)
       : undefined;
-    if (values !== 0) scan(node.body, conditional || values === undefined);
+    if (values !== 0) {
+      scan(
+        node.body,
+        conditional || values === undefined,
+        values === undefined ? [...branches, branch(node, 0, 1, true)] : branches,
+      );
+    }
     return;
   }
   for (const [key, nested] of Object.entries(node)) {
-    if (!IGNORED_KEYS.has(key)) scan(nested, conditional);
+    if (!IGNORED_KEYS.has(key)) scan(nested, conditional, branches);
   }
 }
 
 function scanSwitch(
   node: AstNode,
   conditional: boolean,
-  scan: (value: unknown, conditional: boolean) => void,
+  branches: readonly ExecutionBranch[],
+  scan: (
+    value: unknown,
+    conditional: boolean,
+    branches: readonly ExecutionBranch[],
+  ) => void,
   lexical: MutationBoundaryLexicalValues | undefined,
 ): void {
-  const discriminant = resolveStaticValues(node.discriminant, lexical);
-  const exact = discriminant.values.size === 1 &&
-      !discriminant.unknownFalsy && !discriminant.unknownTruthy
-    ? [...discriminant.values][0]
-    : undefined;
   const cases = asNodes(node.cases);
-  if (exact === undefined) {
-    for (const switchCase of cases) {
-      scan(switchCase.test, conditional);
-      scan(switchCase.consequent, true);
-    }
-    return;
+  const entries = resolveSwitchEntries(node.discriminant, cases, lexical);
+  const alternative = entries.entryIndices.length > 1 || entries.noMatchPossible;
+  if (alternative) {
+    for (const switchCase of cases) scan(switchCase.test, conditional, branches);
   }
-  const matching = cases.find((switchCase) => {
-    if (!switchCase.test) return false;
-    const candidate = resolveStaticValues(switchCase.test, lexical);
-    return candidate.values.size === 1 && [...candidate.values][0] === exact;
-  }) ?? cases.find((switchCase) => !switchCase.test);
-  if (matching) scan(matching.consequent, conditional);
+  for (const [alternativeIndex, entryIndex] of entries.entryIndices.entries()) {
+    const entryBranches = alternative
+      ? [
+        ...branches,
+        branch(
+          node,
+          alternativeIndex,
+          entries.entryIndices.length,
+          entries.noMatchPossible,
+        ),
+      ]
+      : branches;
+    for (const statement of readSwitchFallthroughStatements(cases, entryIndex)) {
+      scan(statement, conditional || alternative, entryBranches);
+    }
+  }
+}
+
+function branch(
+  group: object,
+  alternativeIndex: number,
+  alternativeCount: number,
+  optional: boolean,
+): ExecutionBranch {
+  return { alternativeCount, alternativeIndex, group, optional };
 }
 
 function readExactCollectionLength(

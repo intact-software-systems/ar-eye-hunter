@@ -3,7 +3,11 @@ import type {
   LexicalValueResolution,
   MutationBoundaryLexicalValues,
 } from './mutation-boundary-lexical-values.ts';
-import { evaluateStaticTruth, resolveStaticValues } from './mutation-static-semantics.ts';
+import { evaluateStaticTruth } from './mutation-static-semantics.ts';
+import {
+  readSwitchFallthroughStatements,
+  resolveSwitchEntries,
+} from './mutation-switch-semantics.ts';
 
 export interface RoutingExecutionPath<Value> {
   readonly lexical: MutationBoundaryLexicalValues;
@@ -134,18 +138,16 @@ function executeSwitch<Value>(
   path: RoutingExecutionPath<Value>,
   visitCall: RoutingCallVisitor<Value>,
 ): readonly RoutingExecutionPath<Value>[] {
-  const exact = exactStaticValue(resolveStaticValues(node.discriminant, path.lexical));
   const cases = asNodes(node.cases);
-  if (exact.found) {
-    const matching = cases.find((candidate) =>
-      staticValueEquals(candidate.test, exact.value, path.lexical)
-    ) ?? cases.find((candidate) => !candidate.test);
-    return matching ? executeSequence(rawValues(matching.consequent), [path], visitCall) : [path];
-  }
-  const alternatives = cases.map((candidate) =>
-    executeSequence(rawValues(candidate.consequent), [path], visitCall)
+  const entries = resolveSwitchEntries(node.discriminant, cases, path.lexical);
+  const alternatives = entries.entryIndices.map((entryIndex) =>
+    executeSequence(
+      readSwitchFallthroughStatements(cases, entryIndex),
+      [path],
+      visitCall,
+    )
   );
-  if (!cases.some((candidate) => !candidate.test)) alternatives.push([path]);
+  if (entries.noMatchPossible) alternatives.push([path]);
   return alternatives.flat();
 }
 
@@ -242,25 +244,6 @@ function readLoopIdentifier(value: unknown): AstNode | undefined {
   const node = asNode(value);
   if (node?.type === 'VariableDeclaration') return asNode(asNodes(node.declarations)[0]?.id);
   return node?.type === 'Identifier' ? node : undefined;
-}
-
-function staticValueEquals(
-  value: unknown,
-  expected: unknown,
-  lexical: MutationBoundaryLexicalValues,
-): boolean {
-  const resolution = resolveStaticValues(value, lexical);
-  return resolution.values.size === 1 && [...resolution.values][0] === expected &&
-    !resolution.unknownFalsy && !resolution.unknownTruthy;
-}
-
-function exactStaticValue(resolution: ReturnType<typeof resolveStaticValues>): {
-  readonly found: boolean;
-  readonly value: unknown;
-} {
-  return resolution.values.size === 1 && !resolution.unknownFalsy && !resolution.unknownTruthy
-    ? { found: true, value: [...resolution.values][0] }
-    : { found: false, value: undefined };
 }
 
 function isFunction(node: AstNode): boolean {

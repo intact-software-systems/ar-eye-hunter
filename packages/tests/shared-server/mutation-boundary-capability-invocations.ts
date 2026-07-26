@@ -18,6 +18,7 @@ import {
 } from './mutation-boundary-call-arguments.ts';
 import {
   appendInvocationAlias,
+  type CallableHeapAliasWrite,
   canonicalStorageKey,
   unionStoredAliases,
 } from './mutation-boundary-callable-heap.ts';
@@ -51,15 +52,19 @@ import {
   walkExecution,
   walkReachableAst,
 } from './mutation-boundary-execution-walk.ts';
+import { readInvocationCallablePosition } from './mutation-boundary-invocation-position.ts';
 
 interface InvocationContext extends CallableResolutionContext {
+  readonly activeFunctionKey?: string;
   readonly aliases: Map<string, CallableAliasWrite[]>;
-  readonly heapRoots: Map<string, string>;
+  readonly heapRoots: Map<string, CallableHeapAliasWrite[]>;
   readonly isConditional: (node: AstNode) => boolean;
+  readonly invocationPosition?: number;
 }
 
 type SummaryWrite = Omit<ClosureExecutionWrite, 'position'>;
 interface CallableStoreEffect {
+  readonly branches?: CallableAliasWrite['branches'];
   readonly conditional: boolean;
   readonly resolution: CallableResolution;
   readonly targetKey: string;
@@ -76,7 +81,7 @@ export function collectClosureExecutionWrites(
   const programKey = access.functionKey(program);
   const definitions = discoverLocalCallables(program, programKey, access);
   const aliases = new Map<string, CallableAliasWrite[]>();
-  const heapRoots = new Map<string, string>();
+  const heapRoots = new Map<string, CallableHeapAliasWrite[]>();
   const context: InvocationContext = {
     access,
     aliases,
@@ -85,7 +90,7 @@ export function collectClosureExecutionWrites(
     byReference: indexCallableReferences(definitions),
     isConditional,
     resolveCall: resolveReturnedCallable,
-    storageKey: (key) => canonicalStorageKey(key, heapRoots),
+    storageKey: (key, position) => canonicalStorageKey(key, heapRoots, position),
   };
   collectCallableAliases(program, context);
   const roots: AstNode[] = [
@@ -121,7 +126,7 @@ export function collectClosureExecutionWrites(
 }
 
 function collectCallableAliases(program: AstNode, context: InvocationContext): void {
-  walkReachableAst(program, (node) => {
+  walkReachableAst(program, (node, execution) => {
     const target = node.type === 'VariableDeclarator'
       ? asNode(node.id)
       : node.type === 'AssignmentExpression'
@@ -138,14 +143,18 @@ function collectCallableAliases(program: AstNode, context: InvocationContext): v
       context,
       new Set(),
     );
-    if (
-      sourceResolution.members.size > 0 &&
-      unionStoredAliases(target, source, context)
-    ) return;
+    if (sourceResolution.members.size > 0) {
+      unionStoredAliases(target, source, context, {
+        branches: execution.branches,
+        conditional: execution.conditional,
+        position: readPosition(node),
+      });
+    }
     for (const write of readCallablePatternWrites(target, source, context.access)) {
       if (isCapturedCallableWrite(write.owner, node, context.access)) continue;
       appendInvocationAlias(context, write.targetKey, {
-        conditional: context.isConditional(node),
+        branches: execution.branches,
+        conditional: execution.conditional,
         position: readPosition(node),
         projection: write.projection,
         source: write.source,
@@ -160,7 +169,16 @@ function summarizeInvocations(
   activeFunctions: ReadonlySet<string>,
 ): readonly InvocationEffect[] {
   if (readCallFamily(call, context.access) === 'bind') return [];
-  const resolution = resolveCallable(asNode(call.callee), readPosition(call), context, new Set());
+  const callPosition = readInvocationCallablePosition(
+    asNode(call.callee),
+    readPosition(call),
+    {
+      activeFunctionKey: context.activeFunctionKey,
+      invocationPosition: context.invocationPosition,
+      lexical: context.access.lexical,
+    },
+  );
+  const resolution = resolveCallable(asNode(call.callee), callPosition, context, new Set());
   const effects: InvocationEffect[] = [];
   for (const target of resolution.targets.values()) {
     if (activeFunctions.has(target.definition.functionKey)) continue;
@@ -176,6 +194,7 @@ function summarizeInvocations(
         ),
         activeFunctions,
         context.isConditional(call) || target.conditional || resolution.unknown,
+        readPosition(call),
       ),
     );
   }
@@ -185,7 +204,15 @@ function summarizeInvocations(
     if (!passed.localProvenance) continue;
     for (const target of collectCallableTargets(passed).values()) {
       if (activeFunctions.has(target.definition.functionKey)) continue;
-      effects.push(...summarizeFunction(target.definition, context, activeFunctions, true));
+      effects.push(
+        ...summarizeFunction(
+          target.definition,
+          context,
+          activeFunctions,
+          true,
+          readPosition(call),
+        ),
+      );
     }
   }
   return effects;
@@ -285,14 +312,20 @@ function summarizeFunction(
   context: InvocationContext,
   activeFunctions: ReadonlySet<string>,
   invocationConditional: boolean,
+  invocationPosition: number,
 ): readonly InvocationEffect[] {
   const nextActive = new Set(activeFunctions).add(definition.functionKey);
   const localAliases = new Map<string, CallableAliasWrite[]>(
     [...context.aliases].map(([key, writes]) => [key, [...writes]]),
   );
-  const localContext: InvocationContext = { ...context, aliases: localAliases };
+  const localContext: InvocationContext = {
+    ...context,
+    activeFunctionKey: definition.functionKey,
+    aliases: localAliases,
+    invocationPosition,
+  };
   const effects: InvocationEffect[] = [];
-  walkExecution(definition.node, (node) => {
+  walkExecution(definition.node, (node, execution) => {
     const pattern = node.type === 'VariableDeclarator'
       ? asNode(node.id)
       : node.type === 'AssignmentExpression'
@@ -319,6 +352,7 @@ function summarizeFunction(
       resolution = projectCallableResolution(resolution, write.projection);
       if (!resolution.localProvenance) continue;
       const effect: CallableStoreEffect = {
+        branches: execution.branches,
         conditional: invocationConditional || context.isConditional(node),
         resolution,
         targetKey: write.targetKey,
