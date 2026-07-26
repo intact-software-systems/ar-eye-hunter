@@ -5,7 +5,10 @@ import {
   unwrapCapabilityExpression as unwrap,
 } from './mutation-boundary-capability-ast.ts';
 
-export type FlowCapabilityMethod = Readonly<{ capability: string; method: string }>;
+export type FlowCapabilityMethod = Readonly<{
+  capability: string;
+  method: string;
+}>;
 
 export interface CapabilityFlowAccess {
   definitionKey(value: unknown): string;
@@ -13,7 +16,10 @@ export interface CapabilityFlowAccess {
   expressionKey(value: unknown): string;
   fallbackMethod(key: string): FlowCapabilityMethod | undefined;
   functionKey(value: unknown): string;
-  memberMethod(sourceKey: string, property: string): FlowCapabilityMethod | undefined;
+  memberMethod(
+    sourceKey: string,
+    property: string,
+  ): FlowCapabilityMethod | undefined;
   ownerFunctionKey(value: unknown): string;
   propertyName(value: unknown, computed: boolean): string;
 }
@@ -42,19 +48,36 @@ export function readFlowPatternWrites(
 ): readonly FlowPatternWrite[] {
   if (!pattern) return [];
   if (pattern.type === 'AssignmentPattern') {
-    return readFlowPatternWrites(asNode(pattern.left), asNode(pattern.right), access);
+    return readFlowPatternWrites(
+      asNode(pattern.left),
+      asNode(pattern.right),
+      access,
+    );
+  }
+  if (pattern.type === 'RestElement') {
+    return readFlowPatternWrites(
+      asNode(pattern.argument),
+      value,
+      access,
+      sourceOverride,
+    );
   }
   if (pattern.type === 'Identifier') {
     const targetKey = access.expressionKey(pattern);
-    const writes: FlowPatternWrite[] = [{
-      owner: pattern,
-      source: sourceOverride ?? readSource(value, access),
-      targetKey,
-    }];
+    const writes: FlowPatternWrite[] = [
+      {
+        owner: pattern,
+        source: sourceOverride ?? readSource(value, access),
+        targetKey,
+      },
+    ];
     const object = unwrap(value);
     if (object?.type === 'ObjectExpression') {
       for (const property of asNodes(object.properties)) {
-        const name = access.propertyName(property.key, property.computed === true);
+        const name = access.propertyName(
+          property.key,
+          property.computed === true,
+        );
         if (!name) continue;
         writes.push({
           owner: pattern,
@@ -65,12 +88,36 @@ export function readFlowPatternWrites(
     }
     return writes;
   }
-  if (pattern.type === 'MemberExpression' || pattern.type === 'OptionalMemberExpression') {
-    return [{
-      owner: rootIdentifier(pattern) ?? pattern,
-      source: sourceOverride ?? readSource(value, access),
-      targetKey: access.expressionKey(pattern),
-    }];
+  if (
+    pattern.type === 'MemberExpression' ||
+    pattern.type === 'OptionalMemberExpression'
+  ) {
+    return [
+      {
+        owner: rootIdentifier(pattern) ?? pattern,
+        source: sourceOverride ?? readSource(value, access),
+        targetKey: access.expressionKey(pattern),
+      },
+    ];
+  }
+  if (pattern.type === 'ArrayPattern') {
+    const elements = Array.isArray(pattern.elements) ? pattern.elements : [];
+    const sourceElements = Array.isArray(value?.elements) ? value.elements : [];
+    const sourceKey = sourceOverride?.key ?? access.expressionKey(value);
+    return elements.flatMap((rawTarget, index) => {
+      const target = asNode(rawTarget);
+      if (!target) return [];
+      const directValue = asNode(sourceElements[index]);
+      return readFlowPatternWrites(
+        target,
+        directValue,
+        access,
+        directValue ? undefined : {
+          direct: access.memberMethod(sourceKey, String(index)),
+          key: sourceKey ? `${sourceKey}.${index}` : '',
+        },
+      );
+    });
   }
   if (pattern.type !== 'ObjectPattern') return [];
   const writes: FlowPatternWrite[] = [];
@@ -80,10 +127,12 @@ export function readFlowPatternWrites(
     const name = access.propertyName(property.key, property.computed === true);
     const target = asNode(property.value);
     if (!name || !target) continue;
-    writes.push(...readFlowPatternWrites(target, undefined, access, {
-      direct: access.memberMethod(sourceKey, name),
-      key: sourceKey ? `${sourceKey}.${name}` : '',
-    }));
+    writes.push(
+      ...readFlowPatternWrites(target, undefined, access, {
+        direct: access.memberMethod(sourceKey, name),
+        key: sourceKey ? `${sourceKey}.${name}` : '',
+      }),
+    );
   }
   return writes;
 }
@@ -98,14 +147,23 @@ export function isCapturedFlowWrite(
   return !!owner && !!writer && owner !== writer;
 }
 
-function readSource(value: AstNode | undefined, access: CapabilityFlowAccess): FlowMethodSource {
-  return { direct: access.directMethod(value), key: access.expressionKey(value) };
+function readSource(
+  value: AstNode | undefined,
+  access: CapabilityFlowAccess,
+): FlowMethodSource {
+  return {
+    direct: access.directMethod(value),
+    key: access.expressionKey(value),
+  };
 }
 
 function rootIdentifier(value: AstNode): AstNode | undefined {
   const node = unwrap(value);
   if (node?.type === 'Identifier') return node;
-  if (node?.type === 'MemberExpression' || node?.type === 'OptionalMemberExpression') {
+  if (
+    node?.type === 'MemberExpression' ||
+    node?.type === 'OptionalMemberExpression'
+  ) {
     const object = asNode(node.object);
     return object ? rootIdentifier(object) : undefined;
   }

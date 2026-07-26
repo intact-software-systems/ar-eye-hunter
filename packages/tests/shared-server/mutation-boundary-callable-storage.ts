@@ -33,37 +33,48 @@ export function readCallablePatternWrites(
       projection,
     );
   }
+  if (node.type === 'RestElement') {
+    return readCallablePatternWrites(
+      asNode(node.argument),
+      source,
+      access,
+      projection,
+    );
+  }
   if (node.type === 'Identifier') {
     const targetKey = access.expressionKey(node);
     return targetKey ? [{ owner: node, projection, source, targetKey }] : [];
   }
-  if (node.type === 'MemberExpression' || node.type === 'OptionalMemberExpression') {
+  if (
+    node.type === 'MemberExpression' ||
+    node.type === 'OptionalMemberExpression'
+  ) {
     const targetKey = access.expressionKey(node);
     return targetKey
       ? [{ owner: rootIdentifier(node) ?? node, projection, source, targetKey }]
       : [];
   }
   if (node.type === 'ArrayPattern') {
-    return asNodes(node.elements).flatMap((element, index) =>
-      readCallablePatternWrites(
-        element,
-        source,
-        access,
-        [...projection, String(index)],
-      )
-    );
+    const elements = Array.isArray(node.elements) ? node.elements : [];
+    return elements.flatMap((element, index) => {
+      const item = asNode(element);
+      return item
+        ? readCallablePatternWrites(item, source, access, [
+          ...projection,
+          String(index),
+        ])
+        : [];
+    });
   }
   if (node.type !== 'ObjectPattern') return [];
   return asNodes(node.properties).flatMap((property) => {
     if (property.type !== 'ObjectProperty') return [];
     const name = access.propertyName(property.key, property.computed === true);
     return name
-      ? readCallablePatternWrites(
-        asNode(property.value),
-        source,
-        access,
-        [...projection, name],
-      )
+      ? readCallablePatternWrites(asNode(property.value), source, access, [
+        ...projection,
+        name,
+      ])
       : [];
   });
 }
@@ -75,7 +86,9 @@ export function isCapturedCallableWrite(
 ): boolean {
   const ownerFunction = access.ownerFunctionKey(owner);
   const writerFunction = access.functionKey(writeNode);
-  return !!ownerFunction && !!writerFunction && ownerFunction !== writerFunction;
+  return (
+    !!ownerFunction && !!writerFunction && ownerFunction !== writerFunction
+  );
 }
 
 export function appendCallableAlias(
@@ -112,7 +125,10 @@ export function projectCallableResolution(
 function rootIdentifier(value: AstNode): AstNode | undefined {
   const node = unwrap(value);
   if (node?.type === 'Identifier') return node;
-  if (node?.type === 'MemberExpression' || node?.type === 'OptionalMemberExpression') {
+  if (
+    node?.type === 'MemberExpression' ||
+    node?.type === 'OptionalMemberExpression'
+  ) {
     const object = asNode(node.object);
     return object ? rootIdentifier(object) : undefined;
   }

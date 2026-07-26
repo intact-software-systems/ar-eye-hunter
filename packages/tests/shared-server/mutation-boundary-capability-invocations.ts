@@ -11,7 +11,20 @@ import {
   readFlowPatternWrites,
 } from './mutation-boundary-capability-closures.ts';
 import {
+  readCallFamily,
+  resolveDefaultParameter,
+  resolveInvocationArguments,
+  unwrapCallableParameter,
+} from './mutation-boundary-call-arguments.ts';
+import {
+  appendInvocationAlias,
+  canonicalStorageKey,
+  unionStoredAliases,
+} from './mutation-boundary-callable-heap.ts';
+import {
+  bindCallableResolution,
   type CallableAliasWrite,
+  callableArrayResolution,
   type CallableResolution,
   type CallableResolutionContext,
   collectCallableTargets,
@@ -21,7 +34,6 @@ import {
   unknownLocalCallableResolution,
 } from './mutation-boundary-callable-resolution.ts';
 import {
-  appendCallableAlias,
   isCapturedCallableWrite,
   projectCallableResolution,
   readCallablePatternWrites,
@@ -30,9 +42,16 @@ import {
   discoverLocalCallables,
   indexCallableReferences,
 } from './mutation-boundary-callable-definitions.ts';
+import {
+  isCall,
+  readPosition,
+  walkAll,
+  walkExecution,
+} from './mutation-boundary-execution-walk.ts';
 
 interface InvocationContext extends CallableResolutionContext {
   readonly aliases: Map<string, CallableAliasWrite[]>;
+  readonly heapRoots: Map<string, string>;
   readonly isConditional: (node: AstNode) => boolean;
 }
 
@@ -54,26 +73,29 @@ export function collectClosureExecutionWrites(
   const programKey = access.functionKey(program);
   const definitions = discoverLocalCallables(program, programKey, access);
   const aliases = new Map<string, CallableAliasWrite[]>();
+  const heapRoots = new Map<string, string>();
   const context: InvocationContext = {
     access,
     aliases,
-    byFunctionKey: new Map(definitions.map((definition) => [
-      definition.functionKey,
-      definition,
-    ])),
+    heapRoots,
+    byFunctionKey: new Map(definitions.map((definition) => [definition.functionKey, definition])),
     byReference: indexCallableReferences(definitions),
     isConditional,
     resolveCall: resolveReturnedCallable,
+    storageKey: (key) => canonicalStorageKey(key, heapRoots),
   };
   collectCallableAliases(program, context);
   const roots: AstNode[] = [
     program,
-    ...definitions.filter((definition) =>
-      definition.parentFunctionKey === programKey &&
-      ['ArrowFunctionExpression', 'FunctionDeclaration', 'FunctionExpression'].includes(
-        definition.node.type,
+    ...definitions
+      .filter(
+        (definition) =>
+          definition.parentFunctionKey === programKey &&
+          ['ArrowFunctionExpression', 'FunctionDeclaration', 'FunctionExpression'].includes(
+            definition.node.type,
+          ),
       )
-    ).map((definition) => definition.node),
+      .map((definition) => definition.node),
   ];
   const writes: ClosureExecutionWrite[] = [];
   for (const root of roots) {
@@ -81,7 +103,7 @@ export function collectClosureExecutionWrites(
       if (!isCall(node)) return;
       for (const effect of summarizeInvocations(node, context, new Set())) {
         if (effect.kind === 'store') {
-          appendCallableAlias(aliases, effect.write.targetKey, {
+          appendInvocationAlias(context, effect.write.targetKey, {
             ...effect.write,
             position: readPosition(node),
             source: undefined,
@@ -95,10 +117,7 @@ export function collectClosureExecutionWrites(
   return writes;
 }
 
-function collectCallableAliases(
-  program: AstNode,
-  context: InvocationContext,
-): void {
+function collectCallableAliases(program: AstNode, context: InvocationContext): void {
   walkAll(program, (node) => {
     const target = node.type === 'VariableDeclarator'
       ? asNode(node.id)
@@ -110,9 +129,10 @@ function collectCallableAliases(
       : node.type === 'AssignmentExpression'
       ? asNode(node.right)
       : undefined;
+    if (unionStoredAliases(target, source, context)) return;
     for (const write of readCallablePatternWrites(target, source, context.access)) {
       if (isCapturedCallableWrite(write.owner, node, context.access)) continue;
-      appendCallableAlias(context.aliases, write.targetKey, {
+      appendInvocationAlias(context, write.targetKey, {
         conditional: context.isConditional(node),
         position: readPosition(node),
         projection: write.projection,
@@ -127,16 +147,25 @@ function summarizeInvocations(
   context: InvocationContext,
   activeFunctions: ReadonlySet<string>,
 ): readonly InvocationEffect[] {
+  if (readCallFamily(call, context.access) === 'bind') return [];
   const resolution = resolveCallable(asNode(call.callee), readPosition(call), context, new Set());
   const effects: InvocationEffect[] = [];
   for (const target of resolution.targets.values()) {
     if (activeFunctions.has(target.definition.functionKey)) continue;
-    effects.push(...summarizeFunction(
-      target.definition,
-      bindCallArguments(target.definition, call, context),
-      activeFunctions,
-      context.isConditional(call) || target.conditional || resolution.unknown,
-    ));
+    effects.push(
+      ...summarizeFunction(
+        target.definition,
+        bindCallArguments(
+          target.definition,
+          call,
+          context,
+          target.boundArguments,
+          target.boundUnknown,
+        ),
+        activeFunctions,
+        context.isConditional(call) || target.conditional || resolution.unknown,
+      ),
+    );
   }
   if (resolution.targets.size > 0 || resolution.localProvenance) return effects;
   for (const argument of asNodes(call.arguments)) {
@@ -144,12 +173,7 @@ function summarizeInvocations(
     if (!passed.localProvenance) continue;
     for (const target of collectCallableTargets(passed).values()) {
       if (activeFunctions.has(target.definition.functionKey)) continue;
-      effects.push(...summarizeFunction(
-        target.definition,
-        context,
-        activeFunctions,
-        true,
-      ));
+      effects.push(...summarizeFunction(target.definition, context, activeFunctions, true));
     }
   }
   return effects;
@@ -159,17 +183,29 @@ function bindCallArguments(
   definition: LocalCallableDefinition,
   call: AstNode,
   context: InvocationContext,
+  boundArguments: readonly CallableResolution[] = [],
+  boundUnknown = false,
   resolving = new Set<string>(),
 ): InvocationContext {
   const bindings = new Map(context.bindings);
-  const arguments_ = asNodes(call.arguments);
-  for (const [index, parameter] of asNodes(definition.node.params).entries()) {
+  const invoked = resolveInvocationArguments(call, context, resolving);
+  const arguments_ = [...boundArguments, ...invoked.values];
+  for (const [index, rawParameter] of asNodes(definition.node.params).entries()) {
+    const parameter = unwrapCallableParameter(rawParameter);
     const key = context.access.expressionKey(parameter);
     if (!key) continue;
-    bindings.set(
-      key,
-      resolveCallable(arguments_[index], readPosition(call), context, new Set(resolving)),
-    );
+    if (rawParameter.type === 'RestElement') {
+      bindings.set(
+        key,
+        callableArrayResolution(arguments_.slice(index), boundUnknown || invoked.unknown),
+      );
+      continue;
+    }
+    const invocationIndex = index - boundArguments.length;
+    const argument = invocationIndex >= 0 && invoked.defaulted.has(invocationIndex)
+      ? resolveDefaultParameter(rawParameter, call, context, resolving)
+      : (arguments_[index] ?? resolveDefaultParameter(rawParameter, call, context, resolving));
+    bindings.set(key, argument);
   }
   return { ...context, bindings };
 }
@@ -183,11 +219,12 @@ function resolveReturnedCallable(
   const context = baseContext as InvocationContext;
   const rawCallee = unwrap(asNode(call.callee));
   if (
-    (rawCallee?.type === 'MemberExpression' ||
-      rawCallee?.type === 'OptionalMemberExpression') &&
+    (rawCallee?.type === 'MemberExpression' || rawCallee?.type === 'OptionalMemberExpression') &&
     context.access.propertyName(rawCallee.property, rawCallee.computed === true) === 'bind'
   ) {
-    return resolveCallable(asNode(rawCallee.object), position, context, resolving);
+    const target = resolveCallable(asNode(rawCallee.object), position, context, resolving);
+    const arguments_ = resolveInvocationArguments(call, context, resolving);
+    return bindCallableResolution(target, arguments_.values, arguments_.unknown);
   }
   const callees = resolveCallable(asNode(call.callee), position, context, new Set(resolving));
   const returns: CallableResolution[] = [];
@@ -202,6 +239,8 @@ function resolveReturnedCallable(
       target.definition,
       call,
       context,
+      target.boundArguments,
+      target.boundUnknown,
       nextResolving,
     );
     const body = unwrap(asNode(target.definition.node.body));
@@ -211,12 +250,9 @@ function resolveReturnedCallable(
     }
     walkExecution(target.definition.node, (node) => {
       if (node.type !== 'ReturnStatement') return;
-      returns.push(resolveCallable(
-        asNode(node.argument),
-        readPosition(node),
-        targetContext,
-        nextResolving,
-      ));
+      returns.push(
+        resolveCallable(asNode(node.argument), readPosition(node), targetContext, nextResolving),
+      );
     });
   }
   if (returns.length === 0) {
@@ -263,12 +299,7 @@ function summarizeFunction(
     }
     for (const write of readCallablePatternWrites(pattern, value, context.access)) {
       if (!isCapturedCallableWrite(write.owner, node, context.access)) continue;
-      let resolution = resolveCallable(
-        write.source,
-        readPosition(node),
-        localContext,
-        new Set(),
-      );
+      let resolution = resolveCallable(write.source, readPosition(node), localContext, new Set());
       resolution = projectCallableResolution(resolution, write.projection);
       if (!resolution.localProvenance) continue;
       const effect: CallableStoreEffect = {
@@ -277,7 +308,7 @@ function summarizeFunction(
         targetKey: write.targetKey,
       };
       effects.push({ kind: 'store', write: effect });
-      appendCallableAlias(localAliases, write.targetKey, {
+      appendInvocationAlias(localContext, write.targetKey, {
         ...effect,
         position: readPosition(node),
         source: undefined,
@@ -292,7 +323,7 @@ function summarizeFunction(
             nested.write.conditional,
         };
         effects.push({ kind: 'store', write });
-        appendCallableAlias(localAliases, write.targetKey, {
+        appendInvocationAlias(localContext, write.targetKey, {
           ...write,
           position: readPosition(node),
           source: undefined,
@@ -311,54 +342,3 @@ function summarizeFunction(
   });
   return effects;
 }
-
-function walkExecution(value: AstNode, visit: (node: AstNode) => void): void {
-  const rootFunction = isFunction(value) ? value : undefined;
-  const scan = (child: unknown): void => {
-    if (!child || typeof child !== 'object') return;
-    if (Array.isArray(child)) {
-      for (const item of child) scan(item);
-      return;
-    }
-    const node = child as AstNode;
-    if (isFunction(node) && node !== rootFunction) return;
-    visit(node);
-    for (const [key, nested] of Object.entries(node)) {
-      if (!IGNORED_KEYS.has(key)) scan(nested);
-    }
-  };
-  scan(rootFunction ? rootFunction.body : value);
-}
-
-function walkAll(value: unknown, visit: (node: AstNode) => void): void {
-  if (!value || typeof value !== 'object') return;
-  if (Array.isArray(value)) {
-    for (const child of value) walkAll(child, visit);
-    return;
-  }
-  const node = value as AstNode;
-  if (typeof node.type === 'string') visit(node);
-  for (const [key, child] of Object.entries(node)) {
-    if (!IGNORED_KEYS.has(key)) walkAll(child, visit);
-  }
-}
-
-function isCall(node: AstNode): boolean {
-  return node.type === 'CallExpression' || node.type === 'OptionalCallExpression';
-}
-
-function isFunction(node: AstNode | undefined): node is AstNode {
-  return !!node && [
-    'ArrowFunctionExpression',
-    'FunctionDeclaration',
-    'FunctionExpression',
-    'ObjectMethod',
-    'ClassMethod',
-    'ClassPrivateMethod',
-  ].includes(node.type);
-}
-
-function readPosition(node: AstNode): number {
-  return typeof node.start === 'number' ? node.start : Number.MAX_SAFE_INTEGER;
-}
-const IGNORED_KEYS = new Set(['loc', 'start', 'end', 'comments', 'tokens']);

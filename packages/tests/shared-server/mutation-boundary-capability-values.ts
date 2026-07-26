@@ -13,6 +13,7 @@ export interface CapabilityValueResolver {
 export function createCapabilityValueResolver(
   lexical: MutationBoundaryLexicalValues,
   types: CapabilityTypeResolver,
+  boundShape: (key: string) => CapabilityTypeShape | undefined = () => undefined,
 ): CapabilityValueResolver {
   const memo = new WeakMap<object, CapabilityTypeShape | null>();
   const resolving = new Set<object>();
@@ -20,7 +21,8 @@ export function createCapabilityValueResolver(
   const resolve = (value: unknown): CapabilityTypeShape | undefined => {
     const raw = asNode(value);
     if (
-      raw?.type === 'TSAsExpression' || raw?.type === 'TSTypeAssertion' ||
+      raw?.type === 'TSAsExpression' ||
+      raw?.type === 'TSTypeAssertion' ||
       raw?.type === 'TypeCastExpression'
     ) {
       return types.resolveExpression(raw) ?? resolve(raw.expression);
@@ -39,12 +41,13 @@ export function createCapabilityValueResolver(
 
   const resolveUncached = (node: AstNode): CapabilityTypeShape | undefined => {
     if (node.type === 'Identifier') {
+      const bound = boundShape(lexical.bindings.identifierKey(node));
+      if (bound) return bound;
       const imported = lexical.importBinding(node);
-      if (imported && !imported.namespace) {
-        return types.resolveImportedCallable(
-          imported.source,
-          imported.imported,
-        );
+      if (imported) {
+        return imported.namespace
+          ? { namespace: imported.source }
+          : types.resolveImportedCallable(imported.source, imported.imported);
       }
       const resolved = lexical.resolveIdentifier(node);
       return resolved.unknown ? undefined : mergeShapes(resolved.values.map(resolve));
@@ -75,6 +78,15 @@ export function createCapabilityValueResolver(
       }
       return members.size ? { members } : undefined;
     }
+    if (node.type === 'ArrayExpression' || node.type === 'TupleExpression') {
+      const members = new Map<string, CapabilityTypeShape>();
+      const elements = Array.isArray(node.elements) ? node.elements : [];
+      for (const [index, element] of elements.entries()) {
+        const shape = resolve(element);
+        if (shape) members.set(String(index), shape);
+      }
+      return members.size ? { members } : undefined;
+    }
     if (
       node.type === 'ConditionalExpression' ||
       node.type === 'LogicalExpression'
@@ -88,7 +100,7 @@ export function createCapabilityValueResolver(
       node.type === 'MemberExpression' ||
       node.type === 'OptionalMemberExpression'
     ) {
-      const property = readName(node.property) || readString(node.property);
+      const property = readMemberName(node, lexical);
       const object = unwrap(asNode(node.object));
       if (object?.type === 'Identifier') {
         const imported = lexical.importBinding(object);
@@ -96,13 +108,28 @@ export function createCapabilityValueResolver(
           return types.resolveImportedCallable(imported.source, property);
         }
       }
-      return property ? resolve(object)?.members?.get(property) : undefined;
+      const objectShape = resolve(object);
+      if (property && objectShape?.namespace) {
+        return types.resolveImportedCallable(objectShape.namespace, property);
+      }
+      return property ? objectShape?.members?.get(property) : undefined;
     }
     if (
       node.type === 'CallExpression' ||
       node.type === 'OptionalCallExpression'
     ) {
-      return resolve(node.callee)?.callResult;
+      const callee = unwrap(asNode(node.callee));
+      if (
+        callee?.type === 'MemberExpression' ||
+        callee?.type === 'OptionalMemberExpression'
+      ) {
+        const method = readMemberName(callee, lexical);
+        if (['call', 'apply', 'bind'].includes(method)) {
+          const target = resolve(callee.object);
+          return method === 'bind' ? target : target?.callResult;
+        }
+      }
+      return resolve(callee)?.callResult;
     }
     if (node.type === 'SequenceExpression') {
       return resolve(asNodes(node.expressions).at(-1));
@@ -130,7 +157,9 @@ function mergeShapes(
   const defined = shapes.filter(
     (shape): shape is CapabilityTypeShape => shape !== undefined,
   );
-  if (!defined.length || defined.length !== shapes.length) return undefined;
+  if (!defined.length) return undefined;
+  const uncertain = defined.length !== shapes.length ||
+    defined.some((shape) => shape.uncertain === true);
   const capabilities = new Set(
     defined.map((shape) => shape.capability).filter(Boolean),
   );
@@ -146,12 +175,35 @@ function mergeShapes(
     if (member) members.set(name, member);
   }
   const callResult = mergeShapes(defined.map((shape) => shape.callResult));
-  if (!capability && !members.size && !callResult) return undefined;
+  const namespaces = new Set(
+    defined.map((shape) => shape.namespace).filter(Boolean),
+  );
+  const namespace = namespaces.size === 1 ? [...namespaces][0] : undefined;
+  if (!capability && !members.size && !callResult && !namespace) {
+    return undefined;
+  }
   return {
     ...(capability ? { capability } : {}),
     ...(members.size ? { members } : {}),
     ...(callResult ? { callResult } : {}),
+    ...(namespace ? { namespace } : {}),
+    ...(uncertain ? { uncertain: true } : {}),
   };
+}
+
+function readMemberName(
+  member: AstNode,
+  lexical: MutationBoundaryLexicalValues,
+): string {
+  const property = asNode(member.property);
+  if (!property) return '';
+  if (member.computed !== true) return readName(property);
+  const direct = readString(property);
+  if (direct) return direct;
+  if (property.type !== 'Identifier') return '';
+  const resolved = lexical.resolveIdentifier(property);
+  if (resolved.unknown || resolved.values.length !== 1) return '';
+  return readString(resolved.values[0]);
 }
 
 function visit(value: unknown, visitor: (node: AstNode) => void): void {
@@ -161,8 +213,9 @@ function visit(value: unknown, visitor: (node: AstNode) => void): void {
   if (node !== value || isFunction(node)) return;
   for (const [key, child] of Object.entries(node)) {
     if (!IGNORED_KEYS.has(key)) {
-      if (Array.isArray(child)) { for (const item of child) visit(item, visitor); }
-      else visit(child, visitor);
+      if (Array.isArray(child)) {
+        for (const item of child) visit(item, visitor);
+      } else visit(child, visitor);
     }
   }
 }

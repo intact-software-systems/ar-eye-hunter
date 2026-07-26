@@ -10,6 +10,8 @@ export interface CapabilityTypeShape {
   readonly capability?: string;
   readonly members?: ReadonlyMap<string, CapabilityTypeShape>;
   readonly callResult?: CapabilityTypeShape;
+  readonly namespace?: string;
+  readonly uncertain?: boolean;
 }
 
 interface ImportedType {

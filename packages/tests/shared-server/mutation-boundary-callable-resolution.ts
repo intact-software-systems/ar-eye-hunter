@@ -22,6 +22,8 @@ export interface CallableAliasWrite {
 }
 
 interface CallableTarget {
+  readonly boundArguments: readonly CallableResolution[];
+  readonly boundUnknown: boolean;
   readonly conditional: boolean;
   readonly definition: LocalCallableDefinition;
 }
@@ -39,6 +41,7 @@ export interface CallableResolutionContext {
   readonly bindings?: ReadonlyMap<string, CallableResolution>;
   readonly byFunctionKey: ReadonlyMap<string, LocalCallableDefinition>;
   readonly byReference: ReadonlyMap<string, readonly LocalCallableDefinition[]>;
+  readonly storageKey?: (key: string) => string;
   readonly resolveCall?: (
     call: AstNode,
     position: number,
@@ -56,25 +59,30 @@ export function resolveCallable(
   const node = unwrap(value);
   if (!node) return emptyResolution(false);
   if (isFunction(node)) return resolveFunction(node, context);
-  if (node.type === 'ObjectExpression') return resolveObject(node, position, context, resolving);
+  if (node.type === 'ObjectExpression') {
+    return resolveObject(node, position, context, resolving);
+  }
   if (node.type === 'ArrayExpression' || node.type === 'TupleExpression') {
     return resolveArray(node, position, context, resolving);
   }
   if (node.type === 'ConditionalExpression' || node.type === 'LogicalExpression') {
-    return mergeResolutions([
-      resolveCallable(
-        asNode(node.type === 'ConditionalExpression' ? node.consequent : node.left),
-        position,
-        context,
-        new Set(resolving),
-      ),
-      resolveCallable(
-        asNode(node.type === 'ConditionalExpression' ? node.alternate : node.right),
-        position,
-        context,
-        new Set(resolving),
-      ),
-    ], true);
+    return mergeResolutions(
+      [
+        resolveCallable(
+          asNode(node.type === 'ConditionalExpression' ? node.consequent : node.left),
+          position,
+          context,
+          new Set(resolving),
+        ),
+        resolveCallable(
+          asNode(node.type === 'ConditionalExpression' ? node.alternate : node.right),
+          position,
+          context,
+          new Set(resolving),
+        ),
+      ],
+      true,
+    );
   }
   if (node.type === 'SequenceExpression') {
     return resolveCallable(asNodes(node.expressions).at(-1), position, context, resolving);
@@ -93,10 +101,7 @@ export function resolveCallable(
   return resolveKey(key, position, context, resolving);
 }
 
-function resolveFunction(
-  node: AstNode,
-  context: CallableResolutionContext,
-): CallableResolution {
+function resolveFunction(node: AstNode, context: CallableResolutionContext): CallableResolution {
   const definition = context.byFunctionKey.get(context.access.functionKey(node));
   return definition ? targetResolution(definition) : emptyResolution(true);
 }
@@ -139,11 +144,11 @@ function resolveArray(
   resolving: Set<string>,
 ): CallableResolution {
   const members = new Map<string, CallableResolution>();
-  for (const [index, value] of asNodes(array.elements).entries()) {
-    members.set(
-      String(index),
-      resolveCallable(value, position, context, new Set(resolving)),
-    );
+  const elements = Array.isArray(array.elements) ? array.elements : [];
+  for (const [index, rawValue] of elements.entries()) {
+    const value = asNode(rawValue);
+    if (!value) continue;
+    members.set(String(index), resolveCallable(value, position, context, new Set(resolving)));
   }
   return {
     localProvenance: [...members.values()].some((member) => member.localProvenance),
@@ -159,13 +164,14 @@ function resolveMember(
   context: CallableResolutionContext,
   resolving: Set<string>,
 ): CallableResolution {
-  const key = context.access.expressionKey(node);
+  const rawKey = context.access.expressionKey(node);
+  const key = rawKey ? (context.storageKey?.(rawKey) ?? rawKey) : '';
   const direct = key
     ? resolveKey(key, position, context, new Set(resolving))
     : emptyResolution(false);
   const object = resolveCallable(asNode(node.object), position, context, new Set(resolving));
   const name = context.access.propertyName(node.property, node.computed === true);
-  const lastWrite = [...context.aliases.get(key) ?? []]
+  const lastWrite = [...(context.aliases.get(key) ?? [])]
     .filter((write) => write.position < position)
     .toSorted((left, right) => left.position - right.position)
     .at(-1);
@@ -191,21 +197,27 @@ function resolveKey(
   context: CallableResolutionContext,
   resolving: Set<string>,
 ): CallableResolution {
+  key = context.storageKey?.(key) ?? key;
   const bound = context.bindings?.get(key);
   if (bound) return bound;
   const resolutionKey = `${key}:${position}`;
   if (resolving.has(resolutionKey)) return emptyResolution(true);
   resolving.add(resolutionKey);
   let resolution = resolveReferences(key, position, context);
-  const writes = [...context.aliases.get(key) ?? []].toSorted((left, right) =>
-    left.position - right.position
+  const writes = [...(context.aliases.get(key) ?? [])].toSorted(
+    (left, right) => left.position - right.position,
   );
   for (const write of writes) {
     if (write.position >= position) continue;
     let source = write.resolution ??
       resolveCallable(write.source, write.position, context, resolving);
+    let sourceKey = context.access.expressionKey(write.source);
     for (const member of write.projection ?? []) {
-      source = source.members.get(member) ?? emptyResolution(source.localProvenance);
+      sourceKey = sourceKey ? `${sourceKey}.${member}` : '';
+      const storedKey = sourceKey ? (context.storageKey?.(sourceKey) ?? sourceKey) : '';
+      source = storedKey && context.aliases.has(storedKey)
+        ? resolveKey(storedKey, write.position, context, resolving)
+        : (source.members.get(member) ?? emptyResolution(source.localProvenance));
     }
     resolution = write.conditional ? mergeResolutions([resolution, source], true) : source;
   }
@@ -239,14 +251,45 @@ export function unknownLocalCallableResolution(): CallableResolution {
   return emptyResolution(true);
 }
 
+export function callableArrayResolution(
+  values: readonly CallableResolution[],
+  unknown: boolean,
+): CallableResolution {
+  const members = new Map(values.map((value, index) => [String(index), value]));
+  return {
+    localProvenance: values.some((value) => value.localProvenance),
+    members,
+    targets: new Map(),
+    unknown: unknown || values.some((value) => value.unknown),
+  };
+}
+
 export function collectCallableTargets(
   resolution: CallableResolution,
 ): CallableResolution['targets'] {
   const targets = new Map(resolution.targets);
   for (const member of resolution.members.values()) {
-    for (const [key, target] of collectCallableTargets(member)) targets.set(key, target);
+    for (const [key, target] of collectCallableTargets(member)) {
+      targets.set(key, target);
+    }
   }
   return targets;
+}
+
+export function bindCallableResolution(
+  resolution: CallableResolution,
+  boundArguments: readonly CallableResolution[],
+  boundUnknown: boolean,
+): CallableResolution {
+  const targets = new Map<string, CallableTarget>();
+  for (const [key, target] of resolution.targets) {
+    targets.set(key, {
+      ...target,
+      boundArguments: [...target.boundArguments, ...boundArguments],
+      boundUnknown: target.boundUnknown || boundUnknown,
+    });
+  }
+  return { ...resolution, targets };
 }
 
 function mergeResolutions(
@@ -265,6 +308,8 @@ function mergeResolutions(
       const current = targets.get(target.definition.functionKey);
       targets.set(target.definition.functionKey, {
         definition: target.definition,
+        boundArguments: target.boundArguments,
+        boundUnknown: target.boundUnknown,
         conditional: conditional || target.conditional || current?.conditional === true,
       });
     }
@@ -273,16 +318,26 @@ function mergeResolutions(
     localProvenance: resolutions.some((resolution) => resolution.localProvenance),
     members,
     targets,
-    unknown: resolutions.some((resolution) => resolution.unknown),
+    unknown: resolutions.some((resolution) => resolution.unknown) ||
+      (conditional &&
+        resolutions.some((resolution) => resolution.localProvenance) &&
+        resolutions.some((resolution) => !resolution.localProvenance)),
   };
 }
 
 function targetResolution(definition: LocalCallableDefinition): CallableResolution {
   return resolutionFromTargets(
-    new Map([[
-      definition.functionKey,
-      { conditional: false, definition },
-    ]]),
+    new Map([
+      [
+        definition.functionKey,
+        {
+          boundArguments: [],
+          boundUnknown: false,
+          conditional: false,
+          definition,
+        },
+      ],
+    ]),
     false,
   );
 }
@@ -291,20 +346,33 @@ function resolutionFromTargets(
   targets: ReadonlyMap<string, CallableTarget>,
   unknown: boolean,
 ): CallableResolution {
-  return { localProvenance: targets.size > 0, members: new Map(), targets, unknown };
+  return {
+    localProvenance: targets.size > 0,
+    members: new Map(),
+    targets,
+    unknown,
+  };
 }
 
 function emptyResolution(localProvenance: boolean): CallableResolution {
-  return { localProvenance, members: new Map(), targets: new Map(), unknown: localProvenance };
+  return {
+    localProvenance,
+    members: new Map(),
+    targets: new Map(),
+    unknown: localProvenance,
+  };
 }
 
 function isFunction(node: AstNode | undefined): node is AstNode {
-  return !!node && [
-    'ArrowFunctionExpression',
-    'FunctionDeclaration',
-    'FunctionExpression',
-    'ObjectMethod',
-    'ClassMethod',
-    'ClassPrivateMethod',
-  ].includes(node.type);
+  return (
+    !!node &&
+    [
+      'ArrowFunctionExpression',
+      'FunctionDeclaration',
+      'FunctionExpression',
+      'ObjectMethod',
+      'ClassMethod',
+      'ClassPrivateMethod',
+    ].includes(node.type)
+  );
 }

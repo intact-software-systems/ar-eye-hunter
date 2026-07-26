@@ -13,6 +13,7 @@ import {
 } from './mutation-boundary-capability-access.ts';
 import { bindCapabilityNode } from './mutation-boundary-capability-provenance.ts';
 import { createCapabilityTypeResolver } from './mutation-boundary-capability-types.ts';
+import type { CapabilityTypeShape } from './mutation-boundary-capability-types.ts';
 import { createCapabilityValueResolver } from './mutation-boundary-capability-values.ts';
 import { findFlowSensitiveCapabilityCalls } from './mutation-boundary-capability-flow.ts';
 import { createMutationBoundaryLexicalValues } from './mutation-boundary-lexical-values.ts';
@@ -51,20 +52,26 @@ export function findCapabilityMutationCalls(
   }).program as AstNode;
   const resolver = createCapabilityTypeResolver(program, filePath);
   const lexical = createMutationBoundaryLexicalValues(program);
+  const shapes = new Map<string, CapabilityTypeShape>();
   const analysis: CapabilityBindingAnalysis = {
     resolver,
-    values: createCapabilityValueResolver(lexical, resolver),
+    values: createCapabilityValueResolver(lexical, resolver, (key) => shapes.get(key)),
     bindings: lexical.bindings,
     receivers: new Map(),
     methods: new Map(),
+    shapes,
     strings: new Map(),
   };
-  for (let pass = 0; pass < 8; pass += 1) {
+  const visitedStates = new Set<string>();
+  while (true) {
     let changed = false;
     walk(program, (node) => {
       changed = bindCapabilityNode(node, analysis) || changed;
     });
     if (!changed) break;
+    const state = capabilityStateKey(analysis);
+    if (visitedStates.has(state)) break;
+    visitedStates.add(state);
   }
   const calls = new Set<string>();
   for (
@@ -96,4 +103,15 @@ export function findCapabilityMutationCalls(
     }
   }
   return [...calls].toSorted();
+}
+
+function capabilityStateKey(analysis: CapabilityBindingAnalysis): string {
+  const entries = <Value>(map: ReadonlyMap<string, Value>) =>
+    [...map].toSorted(([left], [right]) => left.localeCompare(right));
+  return JSON.stringify([
+    entries(analysis.receivers),
+    entries(analysis.methods),
+    entries(analysis.shapes).map(([key]) => key),
+    entries(analysis.strings),
+  ]);
 }

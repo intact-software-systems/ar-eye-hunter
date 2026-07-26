@@ -1,5 +1,6 @@
 import type { MutationRoutingAstNode as AstNode } from './mutation-routing-call-graph.ts';
 import type { MutationBoundaryLexicalValues } from './mutation-boundary-lexical-values.ts';
+import { isProvenGlobalBuiltin } from './mutation-routing-lexical-evaluation.ts';
 import {
   knownRegistrationTypes,
   type RegistrationTypeCollection,
@@ -105,7 +106,10 @@ function resolveMap(
     if (left === null || right === null) return null;
     return [...left, ...right];
   }
-  if (node?.type !== 'NewExpression' || readName(node.callee) !== 'Map') {
+  if (
+    node?.type !== 'NewExpression' ||
+    !isProvenGlobalBuiltin(asNode(node.callee), 'Map', lexical)
+  ) {
     return undefined;
   }
   return resolveEntryAlternatives(
@@ -166,7 +170,10 @@ function resolveEntryAlternatives(
   const entries = new Map<string, MapEntry>();
   for (const candidate of asNodes(node.elements)) {
     const tuple = unwrap(candidate);
-    if (tuple?.type !== 'ArrayExpression' && tuple?.type !== 'TupleExpression') {
+    if (
+      tuple?.type !== 'ArrayExpression' &&
+      tuple?.type !== 'TupleExpression'
+    ) {
       return null;
     }
     const [keyNode, valueNode] = asNodes(tuple.elements);

@@ -15,6 +15,7 @@ import {
   createMutationBoundaryLexicalValues,
   type MutationBoundaryLexicalValues,
 } from './mutation-boundary-lexical-values.ts';
+import { readInvocationLexicals } from './mutation-routing-invocation-lexical.ts';
 import {
   filterRegistrationTypes,
   knownRegistrationTypes,
@@ -26,6 +27,7 @@ import {
 import {
   evaluateLexicalIdentifier,
   evaluateLexicalMember,
+  isProvenGlobalBuiltin,
   isStaticObjectEntries,
   type MutationRoutingProgramLoader,
   readAppInboxType,
@@ -52,13 +54,18 @@ export function hasLiveAppInboxRegistration(
       readBoundNames(node.left).has(binding),
   );
   if (loop) {
+    const invocationLexicals = readInvocationLexicals(program, loop, lexical);
     return hasKnownType(
-      evaluateTypes(
-        asNode(loop.right),
-        program,
-        filePath,
-        loadProgram,
-        lexical,
+      mergeTypes(
+        invocationLexicals.map((invocationLexical) =>
+          evaluateTypes(
+            asNode(loop.right),
+            program,
+            filePath,
+            loadProgram,
+            invocationLexical,
+          )
+        ),
       ),
       expectedType,
     );
@@ -114,7 +121,15 @@ function evaluateTypes(
       nextPath: string,
       nextLexical: MutationBoundaryLexicalValues,
       nextResolving: Set<string>,
-    ) => evaluateTypes(candidate, nextProgram, nextPath, loadProgram, nextLexical, nextResolving),
+    ) =>
+      evaluateTypes(
+        candidate,
+        nextProgram,
+        nextPath,
+        loadProgram,
+        nextLexical,
+        nextResolving,
+      ),
   };
   const direct = readAppInboxType(node);
   if (direct) return knownRegistrationTypes([direct]);
@@ -144,25 +159,21 @@ function evaluateTypes(
     );
   }
   if (node.type === 'Identifier') {
-    return evaluateLexicalIdentifier(
-      node,
-      lexicalContext,
-      resolving,
-    );
+    return evaluateLexicalIdentifier(node, lexicalContext, resolving);
   }
   if (
     node.type === 'MemberExpression' ||
     node.type === 'OptionalMemberExpression'
   ) {
-    return evaluateLexicalMember(
-      node,
-      lexicalContext,
-      resolving,
-    );
+    return evaluateLexicalMember(node, lexicalContext, resolving);
   }
   if (node.type === 'NewExpression') {
-    if (readName(node.callee) === 'Map') return UNKNOWN_REGISTRATION_TYPES;
-    if (readName(node.callee) !== 'Set') return UNKNOWN_REGISTRATION_TYPES;
+    if (isProvenGlobalBuiltin(asNode(node.callee), 'Map', lexical)) {
+      return UNKNOWN_REGISTRATION_TYPES;
+    }
+    if (!isProvenGlobalBuiltin(asNode(node.callee), 'Set', lexical)) {
+      return UNKNOWN_REGISTRATION_TYPES;
+    }
     return mergeTypes(
       asNodes(node.arguments).map((argument) =>
         evaluateTypes(
@@ -217,7 +228,7 @@ function evaluateTypes(
   const collectionMethod = method &&
     ['filter', 'map', 'flatMap', 'values', 'keys', 'entries'].includes(method);
   const staticObjectCollection = ['values', 'keys', 'entries'].includes(method) &&
-    readName(callee?.object) === 'Object';
+    isProvenGlobalBuiltin(asNode(callee?.object), 'Object', lexical);
   if (!collectionMethod) return UNKNOWN_REGISTRATION_TYPES;
   const source = collectionMethod && !staticObjectCollection
     ? asNode(callee?.object)
@@ -257,7 +268,7 @@ function evaluateTypes(
   );
   if (
     (method === 'map' || method === 'flatMap') &&
-    isStaticObjectEntries(source)
+    isStaticObjectEntries(source, lexical)
   ) {
     return evaluateObjectEntriesMap(
       asNodes(source?.arguments)[0],
