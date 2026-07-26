@@ -1056,7 +1056,7 @@ describe('Postgres runtime-state conditional-write concurrency', () => {
                     .toBe('archived');
                 const [{ count }] = await clients[0]!<{ count: number }[]>`
                     select count(*)::int as count
-                    from runtime_state_store
+                    from resource_inbox
                     where ri_resource_id like ${`%${applicationId}%`}
                 `;
                 expect(count).toBe(0);

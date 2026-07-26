@@ -18,6 +18,14 @@ export type DirectResourceOutboxEvidence = Readonly<{
     resource: string;
 }>;
 
+export type ExpectedDirectResourceOutboxEvidence = Readonly<{
+    resourceId: string;
+    topicId: string;
+    typeId: string;
+    status: string;
+    payloadIncludes: readonly string[];
+}>;
+
 export async function findDirectResourceOutboxEvidence(
     sql: PSqlSql,
     resourceIds: readonly string[],
@@ -56,5 +64,45 @@ export function expectPendingDirectResourceOutboxEvidence(
         if (!entry.resource.includes(resourceId)) {
             throw new Error(`Direct outbox payload does not bind ${resourceId}`);
         }
+    }
+}
+
+export function expectDirectResourceOutboxEvidence(
+    entries: readonly DirectResourceOutboxEvidence[],
+    expectedEntries: readonly ExpectedDirectResourceOutboxEvidence[],
+): void {
+    const byResourceId = new Map(entries.map((entry) => [entry.resourceId, entry]));
+    for (const expected of expectedEntries) {
+        const entry = byResourceId.get(expected.resourceId);
+        if (!entry) throw new Error(`Missing direct outbox entry: ${expected.resourceId}`);
+        if (entry.typeId !== expected.typeId) {
+            throw new Error(`Unexpected direct outbox type for ${expected.resourceId}: ${entry.typeId}`);
+        }
+        if (entry.topicId !== expected.topicId) {
+            throw new Error(`Unexpected direct outbox topic for ${expected.resourceId}: ${entry.topicId}`);
+        }
+        if (entry.status !== expected.status) {
+            throw new Error(`Unexpected direct outbox status for ${expected.resourceId}: ${entry.status}`);
+        }
+        for (const payload of expected.payloadIncludes) {
+            if (!entry.resource.includes(payload)) {
+                throw new Error(`Direct outbox payload does not bind ${payload}`);
+            }
+        }
+    }
+}
+
+export function expectAppOutboxWsLink(
+    appEntry: DirectResourceOutboxEvidence,
+    wsEntry: DirectResourceOutboxEvidence,
+): void {
+    if (appEntry.typeId !== EnqueuedType.APP_OUTBOX) {
+        throw new Error(`Expected APP_OUTBOX: ${appEntry.resourceId}`);
+    }
+    if (wsEntry.typeId !== EnqueuedType.WS_OUTBOX) {
+        throw new Error(`Expected WS_OUTBOX: ${wsEntry.resourceId}`);
+    }
+    if (!wsEntry.resource.includes(appEntry.resourceId)) {
+        throw new Error(`WS_OUTBOX does not link APP_OUTBOX: ${appEntry.resourceId}`);
     }
 }

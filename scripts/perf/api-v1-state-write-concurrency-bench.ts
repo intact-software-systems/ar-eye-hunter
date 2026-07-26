@@ -1288,9 +1288,7 @@ async function queryDurableEvidence(
   const clients = new ClientStateRepository(runtime);
   const groups = new GroupStateRepository(runtime);
   const topology = new GroupTopologyConfigRepository(runtime);
-  const outbox: ProductionOutboxRepository = {
-    find: async () => undefined,
-  };
+  const outbox = createProductionOutboxRepository(sql);
   const acceptedCommands = commands.filter((command) => command.status === 'accepted');
   const receiptResults = await mapWithConcurrency(
     acceptedCommands,
@@ -1376,6 +1374,45 @@ export async function readReferencedProductionOutboxRecords(
     async (outboxId) => await repository.find(outboxId),
   );
   return stored.flatMap((entry) => entry ? [entry.record] : []);
+}
+
+export function createProductionOutboxRepository(sql: Sql): ProductionOutboxRepository {
+  return {
+    find: async (outboxId) => {
+      const rows = await sql<readonly { ri_resource_id: string; ri_topic_id: string; ri_type_id: string; ri_resource: string }[]>`
+        select ri_resource_id, ri_topic_id, ri_type_id, ri_resource
+        from resource_inbox
+        where ri_resource_id = ${outboxId}
+      `;
+      const row = rows[0];
+      if (!row) return undefined;
+      return {
+        record: {
+          outboxId: row.ri_resource_id,
+          commandId: readDirectResourceCommandId(row.ri_resource) ?? row.ri_resource_id,
+          effects: [`${row.ri_type_id}:${row.ri_topic_id}`],
+        },
+      };
+    },
+  };
+}
+
+function readDirectResourceCommandId(resource: string): string | undefined {
+  try {
+    return findCommandId(JSON.parse(resource));
+  } catch {
+    return undefined;
+  }
+}
+
+function findCommandId(value: unknown): string | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  if ('commandId' in value && typeof value.commandId === 'string') return value.commandId;
+  for (const child of Object.values(value)) {
+    const commandId = findCommandId(child);
+    if (commandId) return commandId;
+  }
+  return undefined;
 }
 
 function productionCommandIdsForRaw(command: RawCommand): readonly string[] {

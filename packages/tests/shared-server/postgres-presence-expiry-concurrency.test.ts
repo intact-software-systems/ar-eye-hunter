@@ -1298,10 +1298,10 @@ function toRuntimeRepository(sql: PostgresSql): PSqlRuntimeStateRepository {
 
 function createPostgresClientPhaseDriver(
   sql: PostgresSql,
-  sql: PSqlSql,
   atEpochMs: number,
   serviceId: string,
 ) {
+  const runtimeRepository = toRuntimeRepository(sql);
   const service = createClientStateService({
     runtimeRepository,
     createClientStateEventStore: createClientStateEventRepository,
@@ -1685,7 +1685,7 @@ function expectCompactWorkerOutput(output: WorkerOutput): void {
 }
 
 async function expectPendingWorkerOutboxes(
-  runtimeRepository: PSqlRuntimeStateRepository,
+  sql: PSqlSql,
   outputs: readonly WorkerOutput[],
   kind: "client" | "group",
   effects: readonly string[],
