@@ -1,7 +1,9 @@
 import type { MutationRoutingAstNode as AstNode } from './mutation-routing-call-graph.ts';
-import type {
-  LexicalValueResolution,
-  MutationBoundaryLexicalValues,
+import {
+  type LexicalValueResolution,
+  type MutationBoundaryLexicalValues,
+  withExecutedMutationBoundaryLexicalWrite,
+  withMutationBoundaryLexicalOverrides,
 } from './mutation-boundary-lexical-values.ts';
 import { executeMutationPaths } from './mutation-execution-outcomes.ts';
 
@@ -20,7 +22,7 @@ export function collectRoutingExecutionPaths<Value>(
   lexical: MutationBoundaryLexicalValues,
   visitCall: RoutingCallVisitor<Value>,
 ): readonly RoutingExecutionPath<Value>[] {
-  const paths = executeMutationPaths(
+  const paths = executeMutationPaths<RoutingExecutionPath<Value>>(
     root,
     [{ lexical, values: [] }],
     {
@@ -31,6 +33,10 @@ export function collectRoutingExecutionPaths<Value>(
         node.type === 'CallExpression' || node.type === 'OptionalCallExpression'
           ? visitCall(node as AstNode, path)
           : path,
+      writeLexical: (node, path) => ({
+        ...path,
+        lexical: withExecutedMutationBoundaryLexicalWrite(path.lexical, node),
+      }),
     },
   );
   return paths.map((path) => path.state);
@@ -40,13 +46,7 @@ export function withRoutingLexicalOverrides(
   lexical: MutationBoundaryLexicalValues,
   overrides: ReadonlyMap<string, LexicalValueResolution>,
 ): MutationBoundaryLexicalValues {
-  return {
-    ...lexical,
-    resolveIdentifier: (value, position) => {
-      const key = lexical.bindings.identifierKey(value);
-      return overrides.get(key) ?? lexical.resolveIdentifier(value, position);
-    },
-  };
+  return withMutationBoundaryLexicalOverrides(lexical, overrides);
 }
 
 function withLoopValue<Value>(

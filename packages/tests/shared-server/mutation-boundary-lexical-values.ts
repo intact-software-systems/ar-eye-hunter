@@ -28,6 +28,13 @@ export interface MutationBoundaryLexicalValues {
   importBinding(value: unknown): LexicalImportBinding | undefined;
 }
 
+interface MutationBoundaryLexicalOverlay {
+  readonly overrides: ReadonlyMap<string, LexicalValueResolution>;
+  readonly root: MutationBoundaryLexicalValues;
+}
+
+const LEXICAL_OVERLAYS = new WeakMap<object, MutationBoundaryLexicalOverlay>();
+
 export function createMutationBoundaryLexicalValues(
   program: AstNode,
 ): MutationBoundaryLexicalValues {
@@ -127,6 +134,103 @@ export function createMutationBoundaryLexicalValues(
       return node?.type === 'Identifier' ? imports.get(bindings.identifierKey(node)) : undefined;
     },
   };
+}
+
+export function withMutationBoundaryLexicalOverrides(
+  lexical: MutationBoundaryLexicalValues,
+  overrides: ReadonlyMap<string, LexicalValueResolution>,
+): MutationBoundaryLexicalValues {
+  const prior = LEXICAL_OVERLAYS.get(lexical);
+  const merged = new Map(prior?.overrides);
+  for (const [key, resolution] of overrides) merged.set(key, resolution);
+  const root = prior?.root ?? lexical;
+  const overlaid: MutationBoundaryLexicalValues = {
+    ...lexical,
+    resolveIdentifier: (value, position) => {
+      const key = lexical.bindings.identifierKey(value);
+      return merged.get(key) ?? root.resolveIdentifier(value, position);
+    },
+  };
+  LEXICAL_OVERLAYS.set(overlaid, { overrides: merged, root });
+  return overlaid;
+}
+
+export function withExecutedMutationBoundaryLexicalWrite(
+  lexical: MutationBoundaryLexicalValues,
+  node: AstNode,
+): MutationBoundaryLexicalValues {
+  const target = node.type === 'VariableDeclarator'
+    ? asNode(node.id)
+    : node.type === 'AssignmentExpression'
+    ? asNode(node.left)
+    : node.type === 'UpdateExpression'
+    ? asNode(node.argument)
+    : undefined;
+  if (target?.type !== 'Identifier') return lexical;
+  const key = lexical.bindings.identifierKey(target);
+  if (!key) return lexical;
+  const exact = node.type === 'VariableDeclarator' ||
+    (node.type === 'AssignmentExpression' && node.operator === '=');
+  const value = node.type === 'VariableDeclarator'
+    ? asNode(node.init)
+    : node.type === 'AssignmentExpression'
+    ? asNode(node.right)
+    : undefined;
+  return withMutationBoundaryLexicalOverrides(
+    lexical,
+    new Map([[
+      key,
+      { values: exact && value ? [value] : [], unknown: !exact || !value },
+    ]]),
+  );
+}
+
+export function mutationBoundaryLexicalValuesEqual(
+  left: MutationBoundaryLexicalValues | undefined,
+  right: MutationBoundaryLexicalValues | undefined,
+): boolean {
+  if (left === right) return true;
+  if (!left || !right) return false;
+  const leftOverlay = LEXICAL_OVERLAYS.get(left);
+  const rightOverlay = LEXICAL_OVERLAYS.get(right);
+  if (!leftOverlay || !rightOverlay || leftOverlay.root !== rightOverlay.root) return false;
+  if (leftOverlay.overrides.size !== rightOverlay.overrides.size) return false;
+  return [...leftOverlay.overrides].every(([key, resolution]) => {
+    const candidate = rightOverlay.overrides.get(key);
+    return !!candidate && lexicalResolutionsEqual(resolution, candidate, left);
+  });
+}
+
+function lexicalResolutionsEqual(
+  left: LexicalValueResolution,
+  right: LexicalValueResolution,
+  lexical: MutationBoundaryLexicalValues,
+): boolean {
+  if (left.unknown !== right.unknown || left.values.length !== right.values.length) return false;
+  const unmatched = [...right.values];
+  for (const value of left.values) {
+    const index = unmatched.findIndex((candidate) => lexicalNodesEqual(value, candidate, lexical));
+    if (index < 0) return false;
+    unmatched.splice(index, 1);
+  }
+  return true;
+}
+
+function lexicalNodesEqual(
+  left: AstNode,
+  right: AstNode,
+  lexical: MutationBoundaryLexicalValues,
+): boolean {
+  if (left === right) return true;
+  if (left.type !== right.type) return false;
+  if (left.type === 'Identifier') {
+    return lexical.bindings.identifierKey(left) === lexical.bindings.identifierKey(right);
+  }
+  if (left.type === 'NullLiteral') return true;
+  return (
+    ['BooleanLiteral', 'NumericLiteral', 'StringLiteral'].includes(left.type) &&
+    left.value === right.value
+  );
 }
 
 type AppendWrite = (

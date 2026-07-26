@@ -10,11 +10,11 @@ import {
 } from './mutation-execution-ast.ts';
 import {
   bindExecutionLoopPath,
+  classifyExecutionLoopTest,
   classifyLoopBodyOutcomes,
   coalesceExecutionPaths,
   completeExecutionPaths,
   consumeUnlabeledBreak,
-  DIVERGE_COMPLETION,
   type MutationExecutionAdapter,
   type MutationExecutionAstNode as AstNode,
   type MutationExecutionPath,
@@ -22,6 +22,7 @@ import {
   restoreExecutionContext,
   visitExecutionPaths as visitPaths,
   withExecutionBranch,
+  writeExecutionLexicalPaths,
 } from './mutation-execution-path-state.ts';
 import { evaluateStaticTruth } from './mutation-static-semantics.ts';
 import { resolveSwitchEntries } from './mutation-switch-semantics.ts';
@@ -83,8 +84,9 @@ function executeNode<State>(
   if (node.type === 'SwitchStatement') {
     return [...carried, ...executeSwitch(node, entered, adapter, rootFunction)];
   }
-  if (isLoop(node)) {
-    return [...carried, ...executeLoop(node, entered, adapter, rootFunction, loopLabel)];
+  const loopNode = asNode(node);
+  if (isLoop(loopNode)) {
+    return [...carried, ...executeLoop(loopNode, entered, adapter, rootFunction, loopLabel)];
   }
   if (node.type === 'LabeledStatement') {
     return [...carried, ...executeLabeled(node, entered, adapter, rootFunction)];
@@ -113,7 +115,7 @@ function executeNode<State>(
       );
     }
   }
-  return [...carried, ...current];
+  return [...carried, ...writeExecutionLexicalPaths(node, current, adapter)];
 }
 
 function executeSequence<State>(
@@ -334,17 +336,11 @@ function executeLoop<State>(
     let phase = body.continuing;
     if (node.type === 'ForStatement') {
       phase = executeNode(node.update, phase, adapter, rootFunction);
-    } else if (node.type === 'DoWhileStatement') {
+    }
+    if (node.test) {
       phase = executeNode(node.test, phase, adapter, rootFunction);
     }
-    phase = phase.map((candidate) =>
-      candidate.completion.kind === 'normal' &&
-        (node.type === 'DoWhileStatement'
-          ? evaluateStaticTruth(node.test, adapter.lexical(candidate.state)) === true
-          : truth === true)
-        ? { ...candidate, completion: DIVERGE_COMPLETION }
-        : candidate
-    );
+    phase = classifyExecutionLoopTest(phase, node.test, adapter);
     return restoreExecutionContext(
       [...(truth === undefined ? [path] : []), ...phase, ...body.exited, ...body.escaped],
       path,

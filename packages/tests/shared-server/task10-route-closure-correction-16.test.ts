@@ -117,7 +117,7 @@ describe('Task 10 route-closure correction 16 contracts', () => {
             continue;
         } while (registerC16(undefined, 'keys'));
         registerC16(undefined, 'values');`);
-    expectBothProjections(doIssues);
+    expectProjection(doIssues, 'GROUP_CREATE', 'GROUP_UPDATE');
   });
 
   it('retains return and throw beyond update, test, and post-loop statements', () => {
@@ -216,11 +216,6 @@ function doWhile(body: string, test: string): AstNode {
 
 function projectionState(issues: readonly string[]): readonly boolean[] {
   return [hasMissingIssue(issues, 'GROUP_CREATE'), hasMissingIssue(issues, 'GROUP_UPDATE')];
-}
-
-function expectBothProjections(issues: readonly string[]): void {
-  expect(hasMissingIssue(issues, 'GROUP_CREATE')).toBe(false);
-  expect(hasMissingIssue(issues, 'GROUP_UPDATE')).toBe(false);
 }
 
 function expectNeitherProjection(issues: readonly string[]): void {

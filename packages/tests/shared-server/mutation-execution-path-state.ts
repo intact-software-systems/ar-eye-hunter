@@ -1,4 +1,5 @@
 import type { MutationBoundaryLexicalValues } from './mutation-boundary-lexical-values.ts';
+import { evaluateStaticTruth } from './mutation-static-semantics.ts';
 
 export type MutationExecutionAstNode = {
   readonly type: string;
@@ -44,6 +45,7 @@ export interface MutationExecutionAdapter<State> {
     values: readonly (MutationExecutionAstNode | undefined)[],
     unknown: boolean,
   ) => State;
+  readonly writeLexical?: (node: MutationExecutionAstNode, state: State) => State;
   readonly statesEqual?: (left: State, right: State) => boolean;
 }
 
@@ -78,6 +80,36 @@ export function visitExecutionPaths<State>(
       conditional: path.conditional,
     }),
   }));
+}
+
+export function writeExecutionLexicalPaths<State>(
+  node: MutationExecutionAstNode,
+  paths: readonly MutationExecutionPath<State>[],
+  adapter: MutationExecutionAdapter<State>,
+): readonly MutationExecutionPath<State>[] {
+  if (
+    !adapter.writeLexical ||
+    !['AssignmentExpression', 'UpdateExpression', 'VariableDeclarator'].includes(node.type)
+  ) return paths;
+  return paths.map((path) =>
+    path.completion.kind === 'normal'
+      ? { ...path, state: adapter.writeLexical!(node, path.state) }
+      : path
+  );
+}
+
+export function classifyExecutionLoopTest<State>(
+  paths: readonly MutationExecutionPath<State>[],
+  test: unknown,
+  adapter: MutationExecutionAdapter<State>,
+): readonly MutationExecutionPath<State>[] {
+  return paths.flatMap((path) => {
+    if (path.completion.kind !== 'normal') return [path];
+    const truth = test ? evaluateStaticTruth(test, adapter.lexical(path.state)) : true;
+    if (truth === false) return [path];
+    const divergent = { ...path, completion: DIVERGE_COMPLETION };
+    return truth === true ? [divergent] : [path, divergent];
+  });
 }
 
 export function classifyLoopBodyOutcomes<State>(

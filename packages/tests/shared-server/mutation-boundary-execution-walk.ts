@@ -1,9 +1,14 @@
 import type { MutationBoundaryCapabilityAstNode as AstNode } from './mutation-boundary-capability-ast.ts';
 
-import type { MutationBoundaryLexicalValues } from './mutation-boundary-lexical-values.ts';
-import { executeMutationPaths, type ExecutionBranch } from './mutation-execution-outcomes.ts';
+import {
+  type MutationBoundaryLexicalValues,
+  mutationBoundaryLexicalValuesEqual,
+  withExecutedMutationBoundaryLexicalWrite,
+} from './mutation-boundary-lexical-values.ts';
+import { executeMutationPaths } from './mutation-execution-outcomes.ts';
+import type { ExecutionBranch } from './mutation-execution-path-state.ts';
 
-export type { ExecutionBranch } from './mutation-execution-outcomes.ts';
+export type { ExecutionBranch } from './mutation-execution-path-state.ts';
 
 export interface ExecutionWalkOptions {
   readonly lexical?: MutationBoundaryLexicalValues;
@@ -20,14 +25,16 @@ export function walkExecution(
   visit: (node: AstNode, context: ExecutionVisitContext) => void,
   options: ExecutionWalkOptions = {},
 ): void {
-  executeMutationPaths(value, [undefined], {
-    lexical: () => options.lexical,
+  executeMutationPaths(value, [options.lexical], {
+    lexical: (lexical) => lexical,
     nestedFunctions: options.nestedFunctions ?? 'skip',
-    statesEqual: () => true,
-    visit: (node, state, context) => {
+    statesEqual: mutationBoundaryLexicalValuesEqual,
+    visit: (node, lexical, context) => {
       visit(node as AstNode, context);
-      return state;
+      return lexical;
     },
+    writeLexical: (node, lexical) =>
+      lexical ? withExecutedMutationBoundaryLexicalWrite(lexical, node) : lexical,
   });
 }
 
