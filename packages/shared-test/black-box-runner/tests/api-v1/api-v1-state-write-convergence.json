@@ -746,7 +746,6 @@
       "expect": {
         "status": 200,
         "body": {
-          "deleted": true,
           "receipt": {
             "acceptedVersion": "integer",
             "outboxIds": [
@@ -1589,6 +1588,70 @@
               "degreeLimit": 4
             }
           }
+        }
+      }
+    },
+    {
+      "name": "exposeStateWriteEvidence",
+      "type": "set.state-write-evidence",
+      "output": "stateWriteEvidence",
+      "request": {
+        "stateWriteEvidence": {
+          "match": "{applicationId}",
+          "commandTypes": [
+            "GROUP_CREATE", "GROUP_MEMBER_UPSERT", "GROUP_PRESENCE_CONNECT",
+            "GROUP_PRESENCE_HEARTBEAT", "GROUP_PRESENCE_DISCONNECT",
+            "TOPOLOGY_CONFIG_PUT", "TOPOLOGY_CONFIG_DELETE"
+          ],
+          "commandIdPrefixes": [
+            "create-bounded-", "activate-primary-contender-", "activate-secondary-contender-",
+            "connect-generation-", "connect-expiry-probe-", "reconnect-generation-",
+            "put-", "delete-"
+          ],
+          "minimumMatchedRows": 10,
+          "expectedEffectsByCommandType": {
+            "GROUP_CREATE": ["group-presence-summary"],
+            "GROUP_MEMBER_UPSERT": ["group-presence-summary"],
+            "GROUP_PRESENCE_CONNECT": ["group-presence-summary"],
+            "GROUP_PRESENCE_HEARTBEAT": ["group-presence-summary"],
+            "GROUP_PRESENCE_DISCONNECT": ["group-presence-summary"],
+            "TOPOLOGY_CONFIG_PUT": ["rtc-topology-recompute"],
+            "TOPOLOGY_CONFIG_DELETE": ["rtc-topology-recompute"]
+          },
+          "overdueRecoveryFixture": {
+            "commandType": "TOPOLOGY_CONFIG_PUT",
+            "commandIdPrefix": "put-final-config-",
+            "overdueByMs": 65000,
+            "timeoutMs": 20000
+          }
+        }
+      }
+    },
+    {
+      "name": "assertAtomicAppInboxCompletion",
+      "type": "assert",
+      "actual": {
+        "atomicCompletionFailures": "{stateWriteEvidence.atomicCompletionFailures}",
+        "intermediateMutationIntents": "{stateWriteEvidence.intermediateMutationIntents}",
+        "overdueRecovered": "{stateWriteEvidence.overdueRecoveryFixture.recovered}",
+        "notBeforeSatisfied": "{stateWriteEvidence.overdueRecoveryFixture.notBeforeSatisfied}",
+        "overdueAtClaim": "{stateWriteEvidence.overdueRecoveryFixture.overdueAtClaim}",
+        "finalEffect": "{stateWriteEvidence.resourceOutbox.0}",
+        "mutationStatus": "{resultsByName.putFinalTopologyConfig.0.status}"
+      },
+      "expect": {
+        "body": {
+          "atomicCompletionFailures": 0,
+          "intermediateMutationIntents": [],
+          "overdueRecovered": true,
+          "notBeforeSatisfied": true,
+          "overdueAtClaim": true,
+          "finalEffect": {
+            "resourceId": "string", "topicId": "string", "typeId": "string",
+            "status": "COMPLETED", "commandId": "string",
+            "appInboxResourceId": "string", "effectKind": "string"
+          },
+          "mutationStatus": "SUCCESS"
         }
       }
     },

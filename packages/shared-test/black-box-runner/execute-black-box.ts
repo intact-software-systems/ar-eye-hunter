@@ -1475,15 +1475,17 @@ function toSetFailureStatus(config: any, interaction: any, result: string, detai
 async function executeSetInteraction(interaction: any, config: any, context: any): Promise<any> {
     const output = interaction.request.output;
     const transform = interaction.request.transform ?? interaction.request.derive;
-    let value = interaction.request.value !== undefined
-        ? interaction.request.value
-        : interaction.response.actual;
+    let value = interaction.request.value !== undefined ? interaction.request.value : interaction.response.actual;
+    const evidence = interaction.request.stateWriteEvidence;
     const delayMs = Number.parseInt(String(interaction.request.delayMs ?? 0), 10);
 
+    if (evidence !== undefined) {
+        const collector = context.options.stateWriteEvidenceCollector;
+        if (typeof collector !== 'function') throw new Error('State-write evidence collector is unavailable.');
+        value = await collector(evidence);
+    }
     if (!output) {
-        return toSetFailureStatus(
-            config,
-            interaction,
+        return toSetFailureStatus(config, interaction,
             'Set step is missing output. Use output to name the stored value.',
         );
     }
@@ -1518,9 +1520,7 @@ async function executeSetInteraction(interaction: any, config: any, context: any
         );
     }
 
-    if (Number.isFinite(delayMs) && delayMs > 0) {
-        await sleep(delayMs);
-    }
+    if (Number.isFinite(delayMs) && delayMs > 0) await sleep(delayMs);
 
     return toSetSuccessStatus(config, interaction, value);
 }
@@ -3590,9 +3590,6 @@ function executeBlackBoxRecursive(
             return executeBlackBoxRecursive(interactions, ++index, options, context)
                 .then(d => {
                     return { ...data, ...d };
-                })
-                .catch(e => {
-                    return { ...data, ...e };
                 });
         }
 
@@ -3600,25 +3597,28 @@ function executeBlackBoxRecursive(
     };
 
     const startedAtEpochMs = Date.now();
+    const interactionWithConfig = interactions[index];
 
-    return executeInteraction(interactions[index], context)
+    return Promise.resolve()
+        .then(() => executeInteraction(interactionWithConfig, context))
+        .catch(error => {
+            const interaction = toExecutableInteraction(interactionWithConfig);
+            const request = interaction?.request || {};
+            return {
+                name: toInteractionName(interactionWithConfig),
+                status: FAILURE,
+                result: 'Interaction execution failed',
+                exception: error instanceof Error ? error.message : String(error),
+                scenarioExecutionNumber: request.scenarioExecutionNumber,
+                interactionExecutionNumber: request.interactionExecutionNumber,
+                repeatIndex: request.repeatIndex,
+                interaction,
+            };
+        })
         .then(data => {
             const endedAtEpochMs = Date.now();
-            return executeNext({
-                ...data,
-                startedAtEpochMs,
-                endedAtEpochMs,
-                durationMs: endedAtEpochMs - startedAtEpochMs,
-            });
-        })
-        .catch(e => {
-            const endedAtEpochMs = Date.now();
-            return executeNext({
-                ...e,
-                startedAtEpochMs,
-                endedAtEpochMs,
-                durationMs: endedAtEpochMs - startedAtEpochMs,
-            });
+            return executeNext({ ...data, startedAtEpochMs, endedAtEpochMs,
+                durationMs: endedAtEpochMs - startedAtEpochMs });
         });
 }
 

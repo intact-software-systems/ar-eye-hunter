@@ -55,7 +55,7 @@ describe('GroupStateRepository authority fence', () => {
             .resolves.toEqual({ status: 'conflict' });
     });
 
-    it('reports the post-fence causal group revision without changing snapshot versions', async () => {
+    it('keeps domain causal revision stable across physical authority fences', async () => {
         const runtime = new FakeRuntimeStateRepository();
         const repository = new GroupStateRepository(runtime);
         const { group, owner } = fixture();
@@ -65,9 +65,13 @@ describe('GroupStateRepository authority fence', () => {
         await repository.advanceAuthorityFence(before!.authorityGuard);
         const after = await repository.readSnapshotWithAuthorityGuard(group);
 
-        expect(after!.snapshot.causalRevision.groupRevision).toBe(
-            before!.snapshot.causalRevision.groupRevision + 1,
-        );
+        expect(after!.snapshot.causalRevision.groupRevision)
+            .toBe(before!.snapshot.causalRevision.groupRevision);
+        expect(after!.authorityGuard.causalGroupRevision)
+            .toBe(before!.authorityGuard.causalGroupRevision);
+        expect(await repository.readCausalRevision(group)).toMatchObject({
+            groupRevision: group.snapshotVersion,
+        });
         expect(after!.snapshot.group).toEqual(before!.snapshot.group);
     });
 

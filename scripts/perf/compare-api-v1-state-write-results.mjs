@@ -26,12 +26,17 @@ export const LEGACY_STATE_WRITE_MUTATION_CONTRACT = Object.freeze({
 });
 
 export const PRODUCTION_STATE_WRITE_MUTATION_CONTRACT = Object.freeze({
-  'profile-instance': Object.freeze(['client-state-sync', 'client-state-sync']),
-  membership: Object.freeze(['group-state-sync', 'group-presence-summary']),
-  'presence-connect': Object.freeze(['group-state-sync', 'group-presence-summary']),
-  'presence-heartbeat': Object.freeze(['group-state-sync', 'group-presence-summary']),
-  'presence-disconnect': Object.freeze(['group-state-sync', 'group-presence-summary']),
-  config: Object.freeze(['group-state-sync', 'group-presence-summary']),
+  'profile-instance': Object.freeze([
+    'principal-state:snapshot',
+    'principal-state:event',
+    'principal-state:snapshot',
+    'principal-state:event',
+  ]),
+  membership: Object.freeze(['group-presence-summary']),
+  'presence-connect': Object.freeze(['group-presence-summary']),
+  'presence-heartbeat': Object.freeze(['group-presence-summary']),
+  'presence-disconnect': Object.freeze(['group-presence-summary']),
+  config: Object.freeze(['group-presence-summary']),
   'topology-source': Object.freeze(['rtc-topology-recompute']),
 });
 
@@ -134,6 +139,9 @@ function validateStateWriteArtifactInternal(
   validateMeasurement(artifact.measurement, errors);
   validateFeatures(artifact.features, errors);
   const durableContract = durableContractForArtifact(artifact);
+  if (durableContract.name === 'production') {
+    validateFinalEvidenceSources(artifact.measurement, errors);
+  }
 
   if (!isDenseArray(artifact.workloads)) {
     errors.push('workloads must be a dense array');
@@ -340,6 +348,15 @@ function validateMeasurement(measurement, errors) {
     ) {
       errors.push(`measurement.counterSources.${source} must be a non-empty disclosure`);
     }
+  }
+}
+
+function validateFinalEvidenceSources(measurement, errors) {
+  if (measurement?.counterSources?.outbox !== 'resource_inbox') {
+    errors.push('measurement.counterSources.outbox must equal resource_inbox');
+  }
+  if (measurement?.counterSources?.attempts !== 'app_inbox.ri_attempts') {
+    errors.push('measurement.counterSources.attempts must equal app_inbox.ri_attempts');
   }
 }
 
@@ -736,6 +753,9 @@ function deriveAttempts(observations, commandsById, path, errors, durableContrac
         'state-write-command-envelope.prerequisite-exhausted:',
       );
     if (prerequisiteHistory) {
+      if (durableContract.name === 'production') {
+        errors.push(`${path}: ${commandId}/${operationId} service-local prerequisite evidence is forbidden`);
+      }
       const prerequisite = history[0].source.slice(
         'state-write-command-envelope.prerequisite-exhausted:'.length,
       );
@@ -789,9 +809,7 @@ function deriveAttempts(observations, commandsById, path, errors, durableContrac
         }
       }
     }
-    const expectedFirstAttempt = durableContract.name === 'production' && !prerequisiteHistory
-      ? 0
-      : 1;
+    const expectedFirstAttempt = 1;
     if (firstAttempt !== expectedFirstAttempt) {
       errors.push(
         `${path}: ${commandId}/${operationId} ${durableContract.name} attempts must ` +
@@ -799,27 +817,16 @@ function deriveAttempts(observations, commandsById, path, errors, durableContrac
       );
     }
     if (durableContract.name === 'production' && !prerequisiteHistory) {
-      const command = commandsById.get(commandId);
       for (const observation of history) {
-        const serviceComponent = command?.kind === 'profile-instance'
-          ? 'client-state-service'
-          : command?.kind === 'topology-source'
-          ? 'group-topology-config-service'
-          : 'group-state-service';
-        const expectedSource = observation.outcome === 'accepted'
-          ? command?.kind === 'topology-source'
-            ? durableContract.topologyDiagnostic
-              ? observation.source === 'production-return:topology-config'
-              : /^group-topology-config-service\.mutation\.(write|validate)$/.test(
-                observation.source,
-              )
-            : observation.source === `${serviceComponent}.mutation.write` ||
-              observation.source === `${serviceComponent}.mutation.validate`
-          : observation.source === `${serviceComponent}.mutation.conflict`;
-        if (!expectedSource) {
+        if (
+          observation.source !== 'app_inbox.ri_attempts' ||
+          !isNonNegativeNumber(observation.retryDelayMs) ||
+          !isNonNegativeNumber(observation.dueAgeMs) ||
+          !['fast', 'fairness', 'timeout'].includes(observation.selectedLane)
+        ) {
           errors.push(
-            `${path}: ${commandId}/${operationId} production attempt source is not a ` +
-              'production mutation timing event',
+            `${path}: ${commandId}/${operationId} production attempt source is not ` +
+              'durable app_inbox.ri_attempts evidence',
           );
           break;
         }
@@ -848,10 +855,10 @@ function deriveAttempts(observations, commandsById, path, errors, durableContrac
         terminal.source.startsWith(
           'state-write-command-envelope.prerequisite-exhausted:',
         );
-      const productionExhaustion = terminal.source.endsWith('.mutation.conflict') &&
+      const productionExhaustion = terminal.source === 'app_inbox.ri_attempts' &&
         history.slice(0, -1).some((observation) =>
           observation.outcome === 'conflicted' &&
-          observation.source.endsWith('.mutation.conflict')
+          observation.source === 'app_inbox.ri_attempts'
         );
       if (!prerequisiteTerminal && !productionExhaustion) {
         errors.push(
@@ -942,6 +949,9 @@ function deriveDurableCorrectness(
   allowDbwLinkedDurableDefects,
   durableContract,
 ) {
+  if (durableContract.name === 'production' && !durableContract.topologyDiagnostic) {
+    return deriveFinalDurableCorrectness(sample, commandsById, path, errors);
+  }
   const receipts = sample.durable?.receiptCommandIds;
   const intents = sample.durable?.outboxIntents;
   const receiptIds = Array.isArray(receipts) ? receipts : [];
@@ -1050,6 +1060,148 @@ function deriveDurableCorrectness(
   };
 }
 
+function deriveFinalDurableCorrectness(sample, commandsById, path, errors) {
+  const evidence = sample.durableEvidence;
+  if (!isObject(evidence)) {
+    errors.push(`${path}.durableEvidence must be an object`);
+    return emptyDurableCorrectness();
+  }
+  for (const field of ['appInbox', 'receipts', 'resourceOutbox', 'intermediateMutationIntents']) {
+    if (!isDenseArray(evidence[field])) {
+      errors.push(`${path}.durableEvidence.${field} must be a dense array`);
+    }
+  }
+  if (!isDenseArray(evidence.intermediateMutationIntents, 0)) {
+    errors.push(`${path}.durableEvidence.intermediateMutationIntents must be exactly empty`);
+  }
+  if (!Number.isInteger(evidence.atomicCompletionFailures) || evidence.atomicCompletionFailures < 0) {
+    errors.push(`${path}.durableEvidence.atomicCompletionFailures must be a non-negative integer`);
+  }
+  const appInbox = Array.isArray(evidence.appInbox) ? evidence.appInbox : [];
+  const receipts = Array.isArray(evidence.receipts) ? evidence.receipts : [];
+  const resourceOutbox = Array.isArray(evidence.resourceOutbox) ? evidence.resourceOutbox : [];
+  validateAppInboxEvidence(appInbox, commandsById, path, errors);
+  const acceptedCommands = [...commandsById.values()].filter((command) => command.status === 'accepted');
+  const receiptIds = receipts.map((receipt, index) => {
+    if (!isObject(receipt) || typeof receipt.commandId !== 'string' ||
+      !commandsById.has(receipt.commandId) || !isDenseStringArray(receipt.receiptIds) ||
+      !isDenseStringArray(receipt.outboxIds)) {
+      errors.push(`${path}.durableEvidence.receipts[${index}] is malformed or unlinked`);
+    }
+    return receipt?.commandId;
+  });
+  if (!sameStringArray(receiptIds.toSorted(), acceptedCommands.map((entry) => entry.commandId).toSorted())) {
+    errors.push(`${path}.durableEvidence receipts must match accepted command IDs exactly`);
+  }
+  const effectIds = new Set();
+  const actualEffects = resourceOutbox.map((effect, index) => {
+    if (!isObject(effect) || typeof effect.effectId !== 'string' || effect.effectId.length === 0 ||
+      typeof effect.commandId !== 'string' || !commandsById.has(effect.commandId) ||
+      typeof effect.effectKind !== 'string' || effect.effectKind.length === 0 ||
+      typeof effect.resourceId !== 'string' || effect.resourceId.length === 0 ||
+      !['APP_OUTBOX', 'WS_OUTBOX'].includes(effect.typeId) ||
+      typeof effect.topicId !== 'string' || effect.topicId.length === 0) {
+      errors.push(`${path}.durableEvidence.resourceOutbox[${index}] is malformed or unlinked`);
+    }
+    if (effectIds.has(effect?.effectId)) {
+      errors.push(`${path}.durableEvidence resource outbox effect IDs must be unique`);
+    }
+    effectIds.add(effect?.effectId);
+    return `${effect?.commandId}\u0000${effect?.effectKind}`;
+  }).toSorted();
+  const expectedEffects = acceptedCommands.flatMap((command) =>
+    PRODUCTION_STATE_WRITE_MUTATION_CONTRACT[command.kind].map((effectKind) =>
+      `${command.commandId}\u0000${effectKind}`
+    )
+  ).toSorted();
+  if (!sameStringArray(actualEffects, expectedEffects)) {
+    errors.push(`${path}.durableEvidence resource outbox does not match the mutation contract`);
+  }
+  const atomicFailures = deriveAtomicCompletionFailures(
+    acceptedCommands,
+    appInbox,
+    receipts,
+    resourceOutbox,
+  );
+  compareNumber(
+    evidence.atomicCompletionFailures,
+    atomicFailures,
+    `${path}.durableEvidence.atomicCompletionFailures`,
+    errors,
+    'same-observation durable completion',
+  );
+  compareNumber(
+    sample.correctness?.atomicCompletionFailures,
+    atomicFailures,
+    `${path}.correctness.atomicCompletionFailures`,
+    errors,
+    'same-observation durable completion',
+  );
+  return {
+    receiptCount: receipts.length,
+    effectfulCommandCount: acceptedCommands.filter((command) =>
+      PRODUCTION_STATE_WRITE_MUTATION_CONTRACT[command.kind].length > 0
+    ).length,
+    requiredOutboxIntentCount: expectedEffects.length,
+    outboxIntentCount: resourceOutbox.length,
+  };
+}
+
+function validateAppInboxEvidence(entries, commandsById, path, errors) {
+  const identities = new Set();
+  for (const [index, entry] of entries.entries()) {
+    if (!isObject(entry) || typeof entry.commandId !== 'string' ||
+      !commandsById.has(entry.commandId) || typeof entry.operationId !== 'string' ||
+      entry.operationId.length === 0 || typeof entry.resourceId !== 'string' ||
+      entry.resourceId.length === 0 || entry.status !== 'COMPLETED' ||
+      entry.resultStatus !== 'COMPLETED' || !Number.isInteger(entry.attempts) ||
+      entry.attempts < 1 || !isNonNegativeNumber(entry.retryDelayMs) ||
+      !isNonNegativeNumber(entry.dueAgeMs) ||
+      !['fast', 'fairness', 'timeout'].includes(entry.selectedLane) ||
+      !isNonNegativeNumber(entry.transactionDurationMs)) {
+      errors.push(`${path}.durableEvidence.appInbox[${index}] is malformed or incomplete`);
+    }
+    const identity = `${entry?.commandId}\u0000${entry?.operationId}`;
+    if (identities.has(identity)) {
+      errors.push(`${path}.durableEvidence AppInbox command/operation identities must be unique`);
+    }
+    identities.add(identity);
+  }
+}
+
+function deriveAtomicCompletionFailures(commands, appInbox, receipts, resourceOutbox) {
+  return commands.filter((command) => {
+    const expectedOperations = command.kind === 'profile-instance'
+      ? ['profile', 'instance']
+      : ['command'];
+    const completedOperations = appInbox.filter((entry) =>
+      entry?.commandId === command.commandId && entry.status === 'COMPLETED' &&
+      entry.resultStatus === 'COMPLETED'
+    ).map((entry) => entry.operationId).toSorted();
+    const receipt = receipts.find((entry) => entry?.commandId === command.commandId);
+    const expectedEffects = PRODUCTION_STATE_WRITE_MUTATION_CONTRACT[command.kind].toSorted();
+    const actualEffects = resourceOutbox.filter((entry) => entry?.commandId === command.commandId)
+      .map((entry) => entry.effectKind).toSorted();
+    return !sameStringArray(completedOperations, expectedOperations.toSorted()) ||
+      !receipt || !sameStringArray(actualEffects, expectedEffects);
+  }).length;
+}
+
+function emptyDurableCorrectness() {
+  return {
+    receiptCount: 0,
+    effectfulCommandCount: 0,
+    requiredOutboxIntentCount: 0,
+    outboxIntentCount: 0,
+  };
+}
+
+function isDenseStringArray(value) {
+  return isDenseArray(value) && value.every((entry) =>
+    typeof entry === 'string' && entry.length > 0
+  );
+}
+
 function validateMetrics(metrics, path, errors) {
   if (!isObject(metrics)) {
     errors.push(`${path} must be an object`);
@@ -1112,9 +1264,14 @@ function canDeriveWorkloadSample(sample) {
       typeof observation.terminal === 'boolean' &&
       typeof observation.source === 'string'
     ) &&
-    isObject(sample.durable) &&
-    isDenseArray(sample.durable.receiptCommandIds) &&
-    isDenseArray(sample.durable.outboxIntents) &&
+    ((isObject(sample.durable) &&
+      isDenseArray(sample.durable.receiptCommandIds) &&
+      isDenseArray(sample.durable.outboxIntents)) ||
+      (isObject(sample.durableEvidence) &&
+        isDenseArray(sample.durableEvidence.appInbox) &&
+        isDenseArray(sample.durableEvidence.receipts) &&
+        isDenseArray(sample.durableEvidence.resourceOutbox) &&
+        isDenseArray(sample.durableEvidence.intermediateMutationIntents))) &&
     isObject(sample.correctness) &&
     isDenseArray(sample.correctness.dbwFindings) &&
     isObject(sample.sql) &&
@@ -1154,7 +1311,9 @@ function deriveWorkloadSummary(samples, mutationContract) {
     timingsMs: medianObject(samples.map((sample) => sample.timingsMs)),
     correctness: {
       acceptedCommandCount: accepted,
-      receiptCount: sum(samples.map((sample) => sample.durable.receiptCommandIds.length)),
+      receiptCount: sum(samples.map((sample) =>
+        sample.durableEvidence?.receipts?.length ?? sample.durable.receiptCommandIds.length
+      )),
       effectfulCommandCount: sum(
         samples.map((sample) =>
           sample.commands.filter((command) =>
@@ -1172,7 +1331,16 @@ function deriveWorkloadSummary(samples, mutationContract) {
           0,
         )
       )),
-      outboxIntentCount: sum(samples.map((sample) => sample.durable.outboxIntents.length)),
+      outboxIntentCount: sum(samples.map((sample) =>
+        sample.durableEvidence?.resourceOutbox?.length ?? sample.durable.outboxIntents.length
+      )),
+      ...(samples.some((sample) => sample.durableEvidence)
+        ? {
+          atomicCompletionFailures: sum(samples.map((sample) =>
+            sample.durableEvidence?.atomicCompletionFailures ?? 0
+          )),
+        }
+        : {}),
       dbwFindings,
     },
   };
@@ -1241,6 +1409,15 @@ function validateDerivedSummary(summary, derived, path, errors) {
       'raw durable samples',
     );
   }
+  if (Object.hasOwn(derived.correctness, 'atomicCompletionFailures')) {
+    compareNumber(
+      summary?.correctness?.atomicCompletionFailures,
+      derived.correctness.atomicCompletionFailures,
+      `${path}.correctness.atomicCompletionFailures`,
+      errors,
+      'raw durable samples',
+    );
+  }
   if (
     !sameStringArray(
       [...(summary?.correctness?.dbwFindings ?? [])].sort(),
@@ -1270,6 +1447,9 @@ function correctnessFailures(correctness) {
     failures.push(
       `required outbox intents (${correctness.requiredOutboxIntentCount}) != actual intents (${correctness.outboxIntentCount})`,
     );
+  }
+  if ((correctness.atomicCompletionFailures ?? 0) !== 0) {
+    failures.push(`atomic completion failures (${correctness.atomicCompletionFailures}) != 0`);
   }
   return failures;
 }

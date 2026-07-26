@@ -648,17 +648,17 @@ export class GroupTopologyManagementService {
     ): Promise<ReconcileGroupTopologyResult> {
         return await this.computeGroupTopology(group, previous);
     }
-
     async readTopologyPlanningAuthority(
         groupRef: GroupRef,
         requestOptions?: GroupTopologyConfigPatch,
         knownGroup?: GroupSnapshot,
+        useKnownGroupRevision: boolean = false,
     ): Promise<GroupTopologyPlanningAuthority> {
         const currentGroup = knownGroup
             ? await this.findTopologyPlanningGroupSnapshot(groupRef, knownGroup)
             : undefined;
         const group = knownGroup
-            ? selectTopologyPlanningGroup(knownGroup, currentGroup)
+            ? selectTopologyPlanningGroup(knownGroup, currentGroup, useKnownGroupRevision)
             : await this.findCurrentGroupSnapshot(groupRef);
         const [config, rttMeasurements] = await Promise.all([
             this.readResolvedTopologyConfig(group.group, requestOptions),
@@ -671,7 +671,6 @@ export class GroupTopologyManagementService {
             nowEpochMs: this.options.topologyService.readNowEpochMs(),
         };
     }
-
     computeTopologyFromAuthority(
         authority: GroupTopologyPlanningAuthority,
         previous: RallarOverlayTopologySnapshot | undefined,
@@ -1224,13 +1223,14 @@ function isGroupTopologyActiveAt(
 function selectTopologyPlanningGroup(
     knownGroup: GroupSnapshot,
     currentGroup: GroupSnapshot | undefined,
+    useKnownGroupRevision: boolean,
 ): GroupSnapshot {
     if (!currentGroup) return knownGroup;
     const comparison = compareGroupCausalRevision(
         readGroupCausalRevision(currentGroup),
         readGroupCausalRevision(knownGroup),
     );
-    if (comparison === 'dominates') return currentGroup;
+    if (comparison === 'dominates') return useKnownGroupRevision ? knownGroup : currentGroup;
     if (comparison === 'dominated') return knownGroup;
     if (comparison === 'incomparable') {
         throw new GroupStateSnapshotIncomparableError(knownGroup.group);

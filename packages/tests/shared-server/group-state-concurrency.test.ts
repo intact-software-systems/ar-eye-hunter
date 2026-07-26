@@ -2255,9 +2255,16 @@ describe('convergent group and presence state', () => {
             );
         }
     });
-
-    it('rejects equal-content corruption and non-dominating presence summary writes', () => {
-        const group = createMutationRead().group!;
+    it('rebases stale presence-summary reads and validates dominating writes', () => {
+        const storedGroup = createMutationRead().group!;
+        const groupValue = { ...storedGroup.value, displayName: 'After' };
+        const group = { ...storedGroup, value: groupValue,
+            entry: { ...storedGroup.entry, value: JSON.stringify(groupValue), revision: 40 },
+        };
+        const noOp = computeGroupMutation({ command: createMutationCommand(),
+            read: { ...createMutationRead(), group }, facts: createMutationFacts() });
+        expect(noOp).toMatchObject({ outcome: 'no-op', receipt: {
+            causalRevision: { groupRevision: 1, presenceRevision: 0 } } });
         const base: GroupPresenceSummary = {
             ...groupRef('pure-room'),
             causalRevision: { groupRevision: 1, presenceRevision: 0 },
@@ -2285,62 +2292,55 @@ describe('convergent group and presence state', () => {
             presenceSessions: [],
             current,
         };
-
+        const canonical = computeGroupPresenceSummary({
+            ref: groupRef('pure-room'), read, nowEpochMs: 2_000,
+        });
+        expect(canonical).toEqual(
+            { outcome: 'no-op', evaluatedAtEpochMs: 2_000, summary: base });
         expect(() => validateGroupPresenceSummary({
-            ref: groupRef('pure-room'),
-            read,
-            computed: {
-                outcome: 'no-op',
-                summary: {
-                    ...base,
-                    activePrincipalIds: ['corrupt'],
-                    activePrincipalCount: 1,
-                },
-            },
-        })).toThrow(/equal.*different content|facts are inconsistent|canonical/i);
-
-        const aheadValue = {
-            ...base,
-            causalRevision: { groupRevision: 2, presenceRevision: 0 },
+            ref: groupRef('pure-room'), read, computed: canonical,
+        })).not.toThrow();
+        const staleSession = presenceFor('alice', 'stale-session', 'stale-generation');
+        const divergentValue = { ...base,
+            activePrincipalIds: ['alice'], activeSessionIds: ['stale-session'],
+            activeSessions: [staleSession], activePrincipalCount: 1, activeSessionCount: 1,
         };
-        const ahead = {
-            ...read,
-            current: {
-                ...current,
-                entry: {
-                    ...current.entry,
-                    value: JSON.stringify(aheadValue),
-                },
-                value: aheadValue,
-            },
-        };
+        const divergent = { ...read, current: { ...current,
+            entry: { ...current.entry, value: JSON.stringify(divergentValue) },
+            value: divergentValue,
+        } };
+        const write = computeGroupPresenceSummary({
+            ref: groupRef('pure-room'), read: divergent, nowEpochMs: 2_000,
+        });
+        expect(write).toMatchObject({ outcome: 'write', summary: {
+            causalRevision: { groupRevision: 1, presenceRevision: 1 },
+        } });
+        expect(() => validateGroupPresenceSummary({
+            ref: groupRef('pure-room'), read: divergent, computed: write,
+        })).not.toThrow();
+        const aheadValue = { ...divergentValue,
+            causalRevision: { groupRevision: 2, presenceRevision: 1 } };
+        const ahead = { ...read, current: { ...current,
+            entry: { ...current.entry, value: JSON.stringify(aheadValue) },
+            value: aheadValue,
+        } };
         const concurrent = computeGroupPresenceSummary({
-            ref: groupRef('pure-room'),
-            read: ahead,
-            nowEpochMs: 2_000,
+            ref: groupRef('pure-room'), read: ahead, nowEpochMs: 2_000,
         });
-        expect(concurrent).toMatchObject({
-            outcome: 'write',
-            summary: {
-                causalRevision: { groupRevision: 1, presenceRevision: 1 },
-            },
-        });
+        expect(concurrent).toEqual(
+            { outcome: 'no-op', evaluatedAtEpochMs: 2_000, summary: aheadValue });
         expect(() => validateGroupPresenceSummary({
-            ref: groupRef('pure-room'),
-            read: ahead,
-            computed: concurrent,
-        })).toThrow(/advance.*causal tuple|incomparable/i);
-
+            ref: groupRef('pure-room'), read: ahead, computed: concurrent,
+        })).not.toThrow();
         expect(() => validateGroupPresenceSummary({
             ref: groupRef('pure-room'),
             read: {
                 ...read,
                 current: rekey(current, `${groupPresenceSummaryStorageKey()}:wrong`),
             },
-            computed: { outcome: 'no-op', summary: base },
+            computed: { outcome: 'no-op', evaluatedAtEpochMs: 2_000, summary: base },
         })).toThrow(/canonical|key/i);
     });
-
     it('rebases simultaneous create and last-slot joins through the group guard', async () => {
         const runtime = new GroupBarrierRepository();
         const firstCreate = createService(runtime, 1_000).createGroup(SCOPE, {
@@ -3462,11 +3462,12 @@ describe('convergent group and presence state', () => {
                     expiresAtEpochMs: observedAtEpochMs - 1,
                     updated: lifecycleAudit,
                 };
-            expect(await repository.updateGroup(group, stored.entry.revision))
+            expect(await repository.updateGroup({
+                ...group, snapshotVersion: stored.value.snapshotVersion + 1,
+            }, stored.entry.revision))
                 .toMatchObject({ status: 'applied' });
             expectedPresenceRevisions.set(testCase.groupId, presenceRevision);
         }
-
         const direct = (await Promise.all(
             cases.map(({ groupId }) => repository.readSnapshot(groupRef(groupId))),
         )).filter((snapshot): snapshot is NonNullable<typeof snapshot> =>
@@ -3474,7 +3475,6 @@ describe('convergent group and presence state', () => {
         );
         const listed = await repository.listSnapshots(SCOPE);
         const paged = (await repository.listSnapshotsPage(SCOPE, { limit: 10 })).snapshots;
-
         for (const snapshots of [direct, listed, paged]) {
             expect(snapshots).toHaveLength(cases.length);
             for (const snapshot of snapshots) {

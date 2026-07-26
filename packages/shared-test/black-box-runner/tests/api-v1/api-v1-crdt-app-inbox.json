@@ -1,0 +1,165 @@
+{
+  "variables": {
+    "rallarApiBaseUrl": { "env": "RALLAR_API_BASE_URL", "default": "http://127.0.0.1:18080" },
+    "rallarApiBaseUrlSecondary": { "env": "RALLAR_API_BASE_URL_SECONDARY", "default": "http://127.0.0.1:18081" },
+    "rallarWsBaseUrl": { "env": "RALLAR_WS_BASE_URL", "default": "ws://127.0.0.1:18080" },
+    "rallarWsBaseUrlSecondary": { "env": "RALLAR_WS_BASE_URL_SECONDARY", "default": "ws://127.0.0.1:18081" },
+    "applicationId": { "env": "RALLAR_BB_APPLICATION_ID", "default": "rallar-server" },
+    "workspaceId": { "env": "RALLAR_BB_WORKSPACE_ID", "default": "default" },
+    "runId": { "env": "RALLAR_BB_RUN_ID", "default": "local" }
+  },
+  "execution": { "correlation": { "injectHeaders": true, "injectPayloads": false } },
+  "connections": {
+    "apiPrimary": { "type": "http", "baseUrl": "{rallarApiBaseUrl}", "headers": { "Content-Type": "application/json" }, "timeoutMs": 10000 },
+    "apiSecondary": { "type": "http", "baseUrl": "{rallarApiBaseUrlSecondary}", "headers": { "Content-Type": "application/json" }, "timeoutMs": 10000 },
+    "wsPrimary": { "type": "ws", "timeoutMs": 20000 },
+    "wsSecondary": { "type": "ws", "timeoutMs": 20000 }
+  },
+  "steps": [
+    {
+      "name": "loginCrdtWriter",
+      "type": "http",
+      "connection": "apiPrimary",
+      "request": {
+        "method": "POST", "path": "/api/auth/login",
+        "body": { "username": "admin", "password": "admin" },
+        "outputs": {
+          "crdtClientId": "body.clientId", "crdtSessionId": "body.sessionId",
+          "crdtAccessToken": { "path": "body.accessToken", "secret": true }
+        }
+      },
+      "expect": { "status": 200, "body": { "clientId": "admin", "sessionId": "string", "accessToken": "string" } }
+    },
+    {
+      "name": "deriveCrdtAuthHeader", "type": "set", "output": "crdtAuthHeader",
+      "secret": true, "redactAs": "crdtAuthHeader",
+      "transform": { "concat": ["Bearer ", { "path": "outputs.crdtAccessToken" }] }
+    },
+    {
+      "name": "loginCrdtReader", "type": "http", "connection": "apiSecondary",
+      "request": {
+        "method": "POST", "path": "/api/auth/login",
+        "body": { "username": "admin", "password": "admin" },
+        "outputs": {
+          "crdtReaderClientId": "body.clientId", "crdtReaderSessionId": "body.sessionId",
+          "crdtReaderAccessToken": { "path": "body.accessToken", "secret": true }
+        }
+      },
+      "expect": { "status": 200, "body": { "clientId": "admin", "sessionId": "string", "accessToken": "string" } }
+    },
+    {
+      "name": "deriveCrdtReaderAuthHeader", "type": "set", "output": "crdtReaderAuthHeader",
+      "secret": true, "redactAs": "crdtReaderAuthHeader",
+      "transform": { "concat": ["Bearer ", { "path": "outputs.crdtReaderAccessToken" }] }
+    },
+    {
+      "name": "captureCrdtCreatedAt", "type": "set", "output": "crdtCreatedAtEpochMs",
+      "transform": { "timestamp": true }
+    },
+    {
+      "name": "issuePrimaryCrdtWsTicket", "type": "http", "connection": "apiPrimary",
+      "request": {
+        "method": "POST", "path": "/api/auth/ws-ticket",
+        "headers": { "Authorization": "{crdtAuthHeader}", "x-client-id": "{crdtClientId}" },
+        "outputs": { "primaryCrdtWsTicket": { "path": "body.ticket", "secret": true } }
+      },
+      "expect": { "status": 200, "body": { "ticket": "string", "sessionId": "{crdtSessionId}" } }
+    },
+    {
+      "name": "issueSecondaryCrdtWsTicket", "type": "http", "connection": "apiSecondary",
+      "request": {
+        "method": "POST", "path": "/api/auth/ws-ticket",
+        "headers": { "Authorization": "{crdtReaderAuthHeader}", "x-client-id": "{crdtReaderClientId}" },
+        "outputs": { "secondaryCrdtWsTicket": { "path": "body.ticket", "secret": true } }
+      },
+      "expect": { "status": 200, "body": { "ticket": "string", "sessionId": "{crdtReaderSessionId}" } }
+    },
+    {
+      "name": "derivePrimaryCrdtWsUrl", "type": "set", "output": "primaryCrdtWsUrl",
+      "secret": true, "redactAs": "primaryCrdtWsUrl",
+      "transform": { "concat": [{ "path": "variables.rallarWsBaseUrl" }, "/api/ws/{crdtSessionId}?ticket=", { "urlEncode": { "path": "outputs.primaryCrdtWsTicket" } }] }
+    },
+    {
+      "name": "deriveSecondaryCrdtWsUrl", "type": "set", "output": "secondaryCrdtWsUrl",
+      "secret": true, "redactAs": "secondaryCrdtWsUrl",
+      "transform": { "concat": [{ "path": "variables.rallarWsBaseUrlSecondary" }, "/api/ws/{crdtReaderSessionId}?ticket=", { "urlEncode": { "path": "outputs.secondaryCrdtWsTicket" } }] }
+    },
+    { "name": "openPrimaryCrdtSocket", "type": "ws.open", "connection": "wsPrimary", "request": { "url": "{primaryCrdtWsUrl}" } },
+    {
+      "name": "wsPrimaryAuthorizationReady", "type": "ws.wait", "connection": "wsPrimary",
+      "expect": { "connection": "wsPrimary", "withinMs": 15000, "consume": true, "messages": [{
+        "route": { "topicId": "client-state.snapshot" }, "payload": { "typeId": "client-state.snapshot" }
+      }] }
+    },
+    { "name": "openSecondaryCrdtSocket", "type": "ws.open", "connection": "wsSecondary", "request": { "url": "{secondaryCrdtWsUrl}" } },
+    {
+      "name": "wsSecondaryAuthorizationReady", "type": "ws.wait", "connection": "wsSecondary",
+      "expect": { "connection": "wsSecondary", "withinMs": 15000, "consume": true, "messages": [{
+        "route": { "topicId": "client-state.snapshot" }, "payload": { "typeId": "client-state.snapshot" }
+      }] }
+    },
+    {
+      "name": "encodeCrdtUpdate", "type": "set", "output": "crdtUpdateResource",
+      "transform": { "jsonStringify": {
+        "protocolVersion": 1,
+        "document": { "applicationId": "{applicationId}", "workspaceId": "{workspaceId}", "scope": "app", "documentType": "black-box-map", "documentId": "crdt-doc-{runId}" },
+        "updateId": "crdt-update-{runId}", "replicaId": "primary-{runId}", "actorId": "{crdtClientId}", "sessionId": "{crdtSessionId}",
+        "lamport": 1, "parents": [], "schemaVersion": 1, "operationVersion": 1, "createdAtEpochMs": "{crdtCreatedAtEpochMs}",
+        "payload": { "kind": "batch", "operations": [{ "jsonParse": { "concat": ["{", "\"kind\":\"register.set\",\"path\":[\"title\"],\"policy\":\"lww\",\"value\":\"durable-{runId}\"", "}"] } }] }
+      } }
+    },
+    {
+      "name": "appendCrdtUpdateThroughPrimary", "type": "ws.send", "connection": "wsPrimary",
+      "request": {
+        "send": {
+          "id": { "v": 2, "msgId": "crdt-delivery-{runId}", "ts": 0, "senderId": "{crdtSessionId}", "sessionId": "{crdtSessionId}" },
+          "route": { "topicId": "app.crdt", "resourceId": "crdt-update-{runId}", "contextId": "{applicationId}" },
+          "targets": { "mode": "broadcast", "scope": "world" },
+          "delivery": { "reliability": "best-effort", "ack": "none" },
+          "payload": {
+            "typeId": "rallar.crdt.update.v1", "contentType": "application/json",
+            "resource": "{crdtUpdateResource}"
+          }
+        }
+      }
+    },
+    {
+      "name": "observeCommittedAppendReply", "type": "ws.wait", "connection": "wsPrimary",
+      "request": { "outputs": { "appendReplyPayload": "matchedMessages.0.matchedMessage.data.payload.resource" } },
+      "expect": { "connection": "wsPrimary", "withinMs": 20000, "consume": true, "messages": [{ "route": { "topicId": "app.crdt" }, "payload": { "typeId": "rallar.crdt.append-response.v1" } }] }
+    },
+    {
+      "name": "observeDurableFanoutOnSecondary", "type": "ws.wait", "connection": "wsSecondary",
+      "request": { "outputs": { "secondaryFanoutPayload": "matchedMessages.0.matchedMessage.data.payload.resource" } },
+      "expect": { "connection": "wsSecondary", "withinMs": 20000, "consume": true, "messages": [{ "route": { "topicId": "app.crdt" }, "payload": { "typeId": "rallar.crdt.update.v1" } }] }
+    },
+    {
+      "name": "readCommittedCrdtThroughSecondary", "type": "http", "connection": "apiSecondary",
+      "request": {
+        "method": "POST", "path": "/api/crdt/catch-up",
+        "headers": { "Authorization": "{crdtReaderAuthHeader}", "x-client-id": "{crdtReaderClientId}" },
+        "body": {
+          "protocolVersion": 1, "requestId": "catch-up-{runId}", "replicaId": "secondary-{runId}",
+          "createdAtEpochMs": "{crdtCreatedAtEpochMs}", "includeSnapshot": true,
+          "document": { "applicationId": "{applicationId}", "workspaceId": "{workspaceId}", "scope": "app", "documentType": "black-box-map", "documentId": "crdt-doc-{runId}" }
+        },
+        "outputs": { "durableCrdtUpdateId": "body.result.page.records.0.update.updateId" }
+      },
+      "expect": { "status": 200, "body": { "ok": true, "result": { "protocolVersion": 1, "page": { "records": [{ "update": { "updateId": "crdt-update-{runId}" } }], "hasMore": false } } } }
+    },
+    {
+      "name": "exposeStateWriteEvidence", "type": "set.state-write-evidence", "output": "stateWriteEvidence",
+      "request": { "stateWriteEvidence": {
+        "match": "crdt-update-{runId}", "commandTypes": ["CRDT_UPDATE_APPEND"], "minimumMatchedRows": 1,
+        "expectedEffectsByCommandType": { "CRDT_UPDATE_APPEND": ["crdt-append-reply", "crdt-update-fanout"] }
+      } }
+    },
+    {
+      "name": "assertAtomicAppInboxCompletion", "type": "assert",
+      "actual": { "atomicCompletionFailures": "{stateWriteEvidence.atomicCompletionFailures}", "intermediateMutationIntents": "{stateWriteEvidence.intermediateMutationIntents}", "completedAppInboxStatus": "{stateWriteEvidence.completedAppInboxStatus}", "appendReply": "{appendReplyPayload}", "durableFanout": "{secondaryFanoutPayload}", "durableUpdateId": "{durableCrdtUpdateId}" },
+      "expect": { "body": { "atomicCompletionFailures": 0, "intermediateMutationIntents": [], "completedAppInboxStatus": "COMPLETED", "appendReply": "string", "durableFanout": "string", "durableUpdateId": "crdt-update-{runId}" } }
+    },
+    { "name": "closePrimaryCrdtSocket", "type": "ws.close", "connection": "wsPrimary", "request": { "code": 1000, "reason": "done" } },
+    { "name": "closeSecondaryCrdtSocket", "type": "ws.close", "connection": "wsSecondary", "request": { "code": 1000, "reason": "done" } }
+  ]
+}

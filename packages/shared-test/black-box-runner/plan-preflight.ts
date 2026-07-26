@@ -1,15 +1,8 @@
-import {
-    validateBlackBoxRunnerScenarioRecipe,
-} from './schema.ts'
-import type {
-    JsonSchemaValidationIssue,
-} from '../rallar-bb-test/schema.ts'
-
+import { validateBlackBoxRunnerScenarioRecipe } from './schema.ts'
+import type { JsonSchemaValidationIssue } from '../rallar-bb-test/schema.ts'
 type JsonRecord = Record<string, unknown>
-
 export type BlackBoxRunnerPreflightProfile = 'compat' | 'strict'
 export type BlackBoxRunnerPreflightSeverity = 'error' | 'warning'
-
 export type BlackBoxRunnerEnvRequirement = Readonly<{
     variableName: string
     envName: string
@@ -318,9 +311,7 @@ function isRecord(value: unknown): value is JsonRecord {
 }
 
 function asRecord(value: unknown): JsonRecord {
-    return isRecord(value)
-        ? value
-        : {}
+    return isRecord(value) ? value : {}
 }
 
 function includePreflight(expandedConfig: JsonRecord): BlackBoxRunnerPlanPreflight['includes'] {
@@ -876,7 +867,15 @@ function strictProfileIssues(
         }
 
         if (type.startsWith('set') || type.startsWith('derive')) {
-            if (typeof (step.output ?? request.output) !== 'string') {
+            const output = step.output ?? request.output
+            const stateWriteEvidence = step.stateWriteEvidence ?? request.stateWriteEvidence
+            if (output === 'stateWriteEvidence' && !isRecord(stateWriteEvidence)) {
+                issues.push({
+                    severity: 'error', code: 'STRICT_STATE_WRITE_EVIDENCE_SOURCE',
+                    message: 'Strict stateWriteEvidence must come from the persisted-state collector.', path,
+                })
+            }
+            if (typeof output !== 'string') {
                 issues.push({
                     severity: 'error',
                     code: 'STRICT_SET_OUTPUT',
@@ -890,7 +889,8 @@ function strictProfileIssues(
                 step.transform === undefined &&
                 request.transform === undefined &&
                 step.derive === undefined &&
-                request.derive === undefined
+                request.derive === undefined &&
+                stateWriteEvidence === undefined
             ) {
                 issues.push({
                     severity: 'error',

@@ -231,15 +231,9 @@ export function createRtcTopologyWorkHandler(options: Readonly<{
                     work.groupSnapshot.group,
                     fromCanonicalGroupTopologyConfigPatch(work.requestOptions),
                     work.groupSnapshot,
+                    work.kind === 'group-revision',
                 );
             const group = authority.group;
-            if (
-                work.kind === 'group-revision' &&
-                work.sourceGroupStateRevision < readGroupStateRevision(group)
-            ) {
-                await finishRtcTopologyWork(options.database, entry);
-                return;
-            }
             const computedTopology = options.topologyManagement
                 .computeTopologyFromAuthority(authority, read.snapshot?.value);
             const publicationExpireAtTimestamp = work.publish
@@ -310,11 +304,11 @@ export function createRtcTopologyWorkHandler(options: Readonly<{
                 }
                 await finishRtcTopologyReservation(transaction, entry);
             });
-            options.topologyManagement.observeCommittedTopology(
-                group,
-                computed.snapshotGuard.candidate,
-            );
-            if (computed.snapshotGuard.candidate.state === 'removed') {
+            const committedSnapshot = computed.outcome === 'write'
+                ? computed.snapshotGuard.candidate
+                : computed.currentGuard.current;
+            options.topologyManagement.observeCommittedTopology(group, committedSnapshot);
+            if (committedSnapshot.state === 'removed') {
                 options.onInactiveOverlay?.(work.overlayId);
             }
             if (publication) {

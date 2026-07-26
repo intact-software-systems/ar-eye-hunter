@@ -1254,7 +1254,7 @@ function toAtomicResultEntry(values: readonly unknown[]): ResourceEntry {
         audit: {
             date: Temporal.PlainTime.from('00:00:00'),
             createdBy: createdBy as string,
-            createdTs: Temporal.PlainDateTime.from(createdTs as string),
+            createdTs: Temporal.PlainDateTime.from(String(createdTs).replace(/Z$/u, '')),
             expiryTs: String(expiryTs).endsWith('Z')
                 ? Temporal.Instant.from(expiryTs as string)
                 : Temporal.PlainDateTime.from(expiryTs as string).toZonedDateTime('UTC')

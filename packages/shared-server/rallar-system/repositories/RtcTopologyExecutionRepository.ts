@@ -108,14 +108,23 @@ export class RtcTopologyExecutionRepository {
 
     async writeTopologyMutation(
         transaction: PSqlTransactionSql,
-        computed: Extract<RtcTopologyMutationComputed, { outcome: 'write' }>,
+        computed: Extract<
+            RtcTopologyMutationComputed,
+            { outcome: 'write' | 'publish-superseded' }
+        >,
     ): Promise<'committed'> {
         const publicationWrite = requirePublicationWrite(computed);
         const runtime = new PSqlRuntimeStateRepository(transaction);
         const snapshots = new RtcTopologySnapshotRepository(runtime);
+        const snapshotGuard = computed.outcome === 'write'
+            ? computed.snapshotGuard
+            : {
+                expectedRevision: computed.currentGuard.expectedRevision,
+                candidate: computed.currentGuard.current,
+            };
         const guard = await snapshots.commitSnapshotGuard(
-            computed.snapshotGuard.candidate,
-            computed.snapshotGuard.expectedRevision,
+            snapshotGuard.candidate,
+            snapshotGuard.expectedRevision,
         );
         if (guard.status === 'conflict') {
             throw new RuntimeStateWriteConflictError();
@@ -219,7 +228,10 @@ export class RtcTopologyExecutionRepository {
 }
 
 function requirePublicationWrite(
-    computed: Extract<RtcTopologyMutationComputed, { outcome: 'write' }>,
+    computed: Extract<
+        RtcTopologyMutationComputed,
+        { outcome: 'write' | 'publish-superseded' }
+    >,
 ): Readonly<{
     publication: RtcTopologyPublication;
     expireAtTimestamp: number;

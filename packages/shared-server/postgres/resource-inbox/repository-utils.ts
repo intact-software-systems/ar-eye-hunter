@@ -132,10 +132,9 @@ export function toSystemDate(entry: ResourceEntry): string {
 export function toPgTimestamp(
     t: Temporal.PlainDateTime | Temporal.Instant,
 ): string {
-    // For timestamp(6) without timezone, sending ISO-like strings is fine.
-    // - PlainDateTime: "YYYY-MM-DDTHH:mm:ss.sss"
-    // - Instant: "YYYY-MM-DDTHH:mm:ss.sssZ" (Postgres parses this too)
-    return t.toString();
+    // postgres.js serializes a zone-less string as process-local time. The
+    // domain PlainDateTime is a UTC wall clock, so make that zone explicit.
+    return t instanceof Temporal.Instant ? t.toString() : `${t.toString()}Z`;
 }
 
 export function parseTemporalPlainDateTime(ts: string | Date): Temporal.PlainDateTime {

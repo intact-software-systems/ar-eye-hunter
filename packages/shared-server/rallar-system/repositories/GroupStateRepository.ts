@@ -305,7 +305,7 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
         ]);
         return stored
             ? {
-                groupRevision: stored.entry.revision + 1,
+                groupRevision: stored.value.snapshotVersion,
                 presenceRevision:
                     summary?.value.causalRevision.presenceRevision ?? 0,
             }
@@ -403,7 +403,7 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
                     membersByGroupId.get(stored.value.groupId) ?? [],
                     summariesByGroupId.get(stored.value.groupId),
                     sessionsByGroupId.get(stored.value.groupId) ?? [],
-                    stored.entry.revision + 1,
+                    stored.value.snapshotVersion,
                     observedAtEpochMs,
                 );
             }),
@@ -506,7 +506,7 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
                     candidate.members,
                     candidate.summary,
                     candidate.sessions,
-                    after.entry.revision + 1,
+                    after.value.snapshotVersion,
                     observedAtEpochMs,
                 );
             }),
@@ -823,7 +823,7 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
                     members,
                     summary,
                     sessions,
-                    stored.entry.revision + 1,
+                    stored.value.snapshotVersion,
                     observedAtEpochMs,
                 ),
                 authorityGuard: toGroupStateAuthorityGuard(ref, stored),
@@ -846,7 +846,7 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
                     members,
                     presence.summary,
                     presence.sessions,
-                    stored.entry.revision + 1,
+                    stored.value.snapshotVersion,
                     observedAtEpochMs,
                 ),
                 authorityGuard: toGroupStateAuthorityGuard(ref, stored),
@@ -995,10 +995,8 @@ function toGroupStateAuthorityGuard(
 ): GroupStateAuthorityGuard {
     const canonical = canonicalStoredGroup(stored, ref);
     assertAuthorityFencePhysicalExpiry(canonical);
-    return {
-        groupRef: { ...ref },
-        entry: { ...stored.entry },
-        causalGroupRevision: stored.entry.revision + 1,
+    return { groupRef: { ...ref }, entry: { ...stored.entry },
+        causalGroupRevision: canonical.value.snapshotVersion,
     };
 }
 
@@ -1017,7 +1015,7 @@ function assertGroupStateAuthorityGuard(
         !Number.isSafeInteger(entry.revision) ||
         entry.revision < 0 ||
         !Number.isSafeInteger(guard.causalGroupRevision) ||
-        guard.causalGroupRevision !== entry.revision + 1
+        guard.causalGroupRevision < 1
     ) {
         throw new TypeError('Group authority guard entry is invalid');
     }
@@ -1039,6 +1037,8 @@ function assertGroupStateAuthorityGuard(
                 : 'Stored authority-fence group JSON is invalid',
         );
     }
+    if (guard.causalGroupRevision !== value.snapshotVersion) throw new TypeError(
+        'Group authority guard causal mismatch');
     const stored = { entry, value };
     assertAuthorityFencePhysicalExpiry(stored);
     return stored;

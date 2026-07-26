@@ -665,19 +665,19 @@ export class AppInboxService {
             senderId: enqueue.senderId,
         };
     }
-
     private toMutationTimingDetails(
         context: AppInboxMessageContext,
     ): RallarTimingDetails {
         const nowEpochMs = this.nowEpochMs();
+        const telemetry = readResourceInboxAttemptTelemetry(context.entry);
         return {
             ...this.toTimingDetails(context.enqueue, context.entry.key),
-            attempt: context.entry.dequeueAudit.attempts,
-            queueAgeMs: toQueueAgeMs(context.entry, nowEpochMs),
-            dueAgeMs: toDueAgeMs(context.entry, nowEpochMs),
+            attempt: telemetry?.attempt ?? context.entry.dequeueAudit.attempts,
+            selectedLane: telemetry?.selectedLane,
+            queueAgeMs: telemetry?.queueAgeMs ?? toQueueAgeMs(context.entry, nowEpochMs),
+            dueAgeMs: telemetry?.dueAgeMs ?? toDueAgeMs(context.entry, nowEpochMs),
         };
     }
-
     protected nowEpochMs(): number {
         return this.optionsInput.nowEpochMs?.() ?? Date.now();
     }

@@ -8,6 +8,7 @@ import {
     hasSameGroupPresenceSummaryImmutableEntry,
     isCanonicalGroupPresenceSummaryEntry,
 } from './GroupPresenceSummaryEntryContract.ts';
+import { isCanonicalRtcTopologyWorkEntry } from './RtcTopologyWorkEntryContract.ts';
 
 export type { PersistenceProvider } from '../persistence/PersistenceProvider.ts';
 
@@ -116,11 +117,20 @@ export function isIdempotentHandlerFinalizedRelease(
         if (!commonFinalization) return false;
         if (reserved.typeId === EnqueuedType.APP_INBOX) return true;
 
-        return reserved.typeId === EnqueuedType.APP_OUTBOX &&
-            current.resource === reserved.resource &&
+        if (
+            reserved.typeId !== EnqueuedType.APP_OUTBOX ||
+            current.resource !== reserved.resource
+        ) return false;
+
+        if (
             isCanonicalGroupPresenceSummaryEntry(reserved) &&
-            isCanonicalGroupPresenceSummaryEntry(current) &&
-            hasSameGroupPresenceSummaryImmutableEntry(current, reserved);
+            isCanonicalGroupPresenceSummaryEntry(current)
+        ) {
+            return hasSameGroupPresenceSummaryImmutableEntry(current, reserved);
+        }
+
+        return isCanonicalRtcTopologyWorkEntry(reserved) &&
+            isCanonicalRtcTopologyWorkEntry(current);
     } catch {
         return false;
     }

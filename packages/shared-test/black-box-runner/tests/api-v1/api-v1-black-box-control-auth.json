@@ -208,7 +208,7 @@
       "expect": {
         "status": 404,
         "body": {
-          "error": "Agent session ticket is invalid or expired."
+          "error": "Auth ticket is invalid or consumed"
         }
       }
     },

@@ -4,6 +4,8 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import type { ScenarioInput } from './scenario-algorithm.ts';
 import * as scenarioAlgorithms from './scenario-algorithm.ts';
+import { collectApiV1StateWriteEvidence } from './api-v1-state-write-evidence.ts';
+import { withBoundedArtifactReportResults } from './artifact-report-bounds.ts';
 import {
     collectBlackBoxRunnerEnvRequirements,
     explainBlackBoxRunnerPlan,
@@ -11,7 +13,6 @@ import {
     type BlackBoxRunnerPreflightProfile,
 } from './plan-preflight.ts';
 import utils from './utils.ts';
-
 type CliOptions = {
     config: string
     workingDirectory?: string
@@ -2326,7 +2327,6 @@ async function writeArtifacts(report: any, dir: string): Promise<void> {
     await Deno.mkdir(dir, {
         recursive: true,
     });
-
     const artifactReport = withArtifactReport(withConfiguredArtifactLimits(report));
     const selection = selectArtifactEvents(artifactReport);
     const events = artifactEventsWithTruncation(selection);
@@ -2341,8 +2341,9 @@ async function writeArtifacts(report: any, dir: string): Promise<void> {
         correlation: artifactReport.correlation,
         command: sync.redactBlackBoxData(process.argv, resolvedVariables.redactions),
     };
-
-    await Deno.writeTextFile(artifactPath(dir, 'report.json'), JSON.stringify(artifactReport, null, 2));
+    const boundedReport = withBoundedArtifactReportResults(artifactReport,
+        configuredArtifactOptions().maxReportResults);
+    await Deno.writeTextFile(artifactPath(dir, 'report.json'), JSON.stringify(boundedReport, null, 2));
     await Deno.writeTextFile(artifactPath(dir, 'events.jsonl'), events.map(toJsonLine).join(''));
     await Deno.writeTextFile(artifactPath(dir, 'failures.json'), JSON.stringify(failureBundle(artifactReport), null, 2));
     await Deno.writeTextFile(artifactPath(dir, 'metadata.json'), JSON.stringify(metadata, null, 2));
@@ -2361,7 +2362,6 @@ async function writeArtifacts(report: any, dir: string): Promise<void> {
         artifactPath(dir, 'artifact-index.json'),
         JSON.stringify(sync.redactBlackBoxData(selection.index, resolvedVariables.redactions), null, 2),
     );
-
     if (trafficExpansion.artifact) {
         await Deno.writeTextFile(
             artifactPath(dir, 'expanded-plan.json'),
@@ -3347,6 +3347,7 @@ async function executeOnce(includePostRunAssertions = true, runIndex = 1): Promi
         correlation: correlationConfig,
         runnerRunId: correlationConfig.runnerRunId,
         runIndex,
+        stateWriteEvidenceCollector: collectApiV1StateWriteEvidence,
     });
     return withFinalReportChecks(withTrafficPlanReport(withSoakReport(report)), includePostRunAssertions);
 }
@@ -3363,7 +3364,6 @@ async function executeScale(): Promise<any> {
         if (runs.length > 0) {
             await sleep(delayMs);
         }
-
         const runIndex = runs.length + 1;
         const runStartedAtEpochMs = Date.now();
         const report = await executeOnce(false, runIndex);
@@ -3406,8 +3406,8 @@ if (preflightMode) {
             if (artifactDir) {
                 await writeArtifacts(report, artifactDir);
             }
-
-            console.log(JSON.stringify(report, null, 2));
+            console.log(JSON.stringify(withBoundedArtifactReportResults(
+                report, configuredArtifactOptions().maxReportResults), null, 2));
 
             if (hasReportFailures(report)) {
                 process.exit(1);

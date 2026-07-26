@@ -1,7 +1,6 @@
 /// <reference lib="deno.ns" />
-
+import { verifyApiV1FairnessProof } from './api-v1-fairness-proof.ts'
 export type ApiV1BlackBoxBackend = 'postgres' | 'pglite-memory'
-
 export type ApiV1BlackBoxOptions = Readonly<{
     backend: ApiV1BlackBoxBackend
     port: number
@@ -15,7 +14,6 @@ export type ApiV1BlackBoxOptions = Readonly<{
     runMigrations: boolean
     recipesOnly: boolean
 }>
-
 export type WaitForManagedApiReadyInput = Readonly<{
     baseUrl: string
     logPath: string
@@ -66,6 +64,7 @@ const REPO_ROOT = new URL('../../../', SCRIPT_DIR)
 const API_CONFIG_PATH = 'apps/api-v1/deno.json'
 const API_ENTRYPOINT = 'apps/api-v1/src/main.ts'
 const API_V1_CLUSTER_MATRIX_PROFILE = 'api-v1-black-box-cluster'
+export const API_V1_STATE_WRITE_EVIDENCE_OUTPUT = 'stateWriteEvidence'
 const DEFAULT_DATABASE_URL = 'postgres://app:app@localhost:5432/appdb'
 const LOG_TAIL_MAX_BYTES = 4096
 const MANAGED_SECRET_ENV_KEY = /(?:^|_)(?:PASSWORD|PASSWD|TOKEN|SECRET|DATABASE_URL|API_KEY|ACCESS_KEY|PRIVATE_KEY|CREDENTIALS?)(?:_|$)/i
@@ -165,6 +164,7 @@ export function toApiV1BlackBoxEnvironment(
             `ws://127.0.0.1:${options.secondaryPort}`
     }
     env.RALLAR_BB_RUN_ID = options.runId
+    env.RALLAR_STATE_WRITE_EVIDENCE_OUTPUT = API_V1_STATE_WRITE_EVIDENCE_OUTPUT
     env.RALLAR_ICE_MODE = env.RALLAR_ICE_MODE ?? 'local'
     env.RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET = env.RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET
         ?? 'local-api-v1-black-box-operator-secret'
@@ -781,7 +781,6 @@ async function main(): Promise<void> {
         plan: ManagedApiServerPlan
         server: ManagedApiServer
     }>> = []
-
     await Deno.mkdir(artifactDir, { recursive: true })
     if (options.runMigrations) {
         await runCommand(['npm', 'run', 'db:migrate'], env)
@@ -806,6 +805,7 @@ async function main(): Promise<void> {
         }
 
         await runRecipeMatrix(options, env, artifactDir)
+        await verifyApiV1FairnessProof(artifactDir, servers.map(({ plan }) => plan.logPath))
     } finally {
         await Promise.allSettled(
             [...servers].reverse().map(({ server }) => stopServer(server.child)),

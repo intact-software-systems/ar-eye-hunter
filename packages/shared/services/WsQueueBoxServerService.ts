@@ -109,17 +109,10 @@ export type WsOutboxDeliveryOutcome =
         reason: string;
     }>;
 
-type WsServerPreparedMessage =
-    | Readonly<{
-        kind: 'recipient';
-        peerId: string;
-        connectionId: string;
-        message: ALMessage;
-    }>
-    | Readonly<{
-        kind: 'no-current-recipient';
-        message: ALMessage;
-    }>;
+type WsServerPreparedMessage = Readonly<
+    | { kind: 'recipient'; peerId: string; connectionId: string; message: ALMessage }
+    | { kind: 'cluster-local-complete'; message: ALMessage }
+>;
 
 export class WsQueueBoxServerService {
     private static readonly ALL_IN: string = '*';
@@ -142,15 +135,15 @@ export class WsQueueBoxServerService {
 
     private readonly onOutboxWebSocketMessageCallbacks =
         new Map<string, OnWebSocketServerMessageCallback<ALMessage>>();
-
+    private outboxClusterPublisher?: (
+        message: ALMessage,
+        entry: ResourceEntry,
+    ) => Promise<void>;
     private readonly inboundRuntime: ALInboundMessageRuntime;
     private readonly outboundRuntime: ALOutboundMessageRuntime<WsServerPreparedMessage>;
     private readonly qosProvider?: ALQosInputProvider;
     private readonly targetResolver: WsServerTargetResolver;
-    private readonly outboundDeliveryOutcome?: (
-        outcome: WsOutboxDeliveryOutcome,
-    ) => void;
-
+    private readonly outboundDeliveryOutcome?: (outcome: WsOutboxDeliveryOutcome) => void;
     constructor(
         public readonly inbox: QueueBoxResourceEntryRepository,
         public readonly outbox: QueueBoxResourceEntryRepository,
@@ -180,6 +173,11 @@ export class WsQueueBoxServerService {
                     this.planOutgoingMessage(message, 'immediate'),
                 planDequeuedMessage: (message) =>
                     this.planOutgoingMessage(message, 'dequeue'),
+                beforeDequeueDispatch: (message, entry) => {
+                    const publisher = this.outboxClusterPublisher;
+                    if (!publisher) return false;
+                    return publisher(message, entry).then(() => message.targets !== undefined);
+                },
                 sendPreparedMessage: async (prepared, _phase) =>
                     await this.sendPreparedMessage(prepared),
                 planRepairMessage: async (message, request) =>
@@ -289,6 +287,13 @@ export class WsQueueBoxServerService {
 
     removeOutboxMessageCallback(id: string): boolean {
         return this.onOutboxWebSocketMessageCallbacks.delete(id);
+    }
+
+    onOutboxClusterPublishDo(
+        publisher: (message: ALMessage, entry: ResourceEntry) => Promise<void>,
+    ): WsQueueBoxServerService {
+        this.outboxClusterPublisher = publisher;
+        return this;
     }
 
     onAllInboxMessagesDo(
@@ -525,12 +530,8 @@ export class WsQueueBoxServerService {
                 },
                 (recipients: readonly WsServerResolvedRecipient[]) => ({
                     persist,
-                    preparedMessages: recipients.length === 0 &&
-                            phase === 'dequeue'
-                        ? [{
-                            kind: 'no-current-recipient' as const,
-                            message,
-                        }]
+                    preparedMessages: phase === 'dequeue' && this.outboxClusterPublisher
+                        ? [{ kind: 'cluster-local-complete' as const, message }]
                         : recipients.map((recipient) => ({
                             kind: 'recipient' as const,
                             peerId: recipient.peerId,
@@ -566,7 +567,13 @@ export class WsQueueBoxServerService {
         }
 
         const recipients = this.resolveRecipients(message);
-        if (recipients.length === 0 && !options.representNoCurrentRecipient) {
+        if (recipients.length === 0) {
+            if (options.representNoCurrentRecipient) {
+                this.recordOutboundDeliveryOutcome({
+                    status: 'no-current-recipient',
+                    messageId: message.id.msgId,
+                });
+            }
             return Either.ofLeft(
                 WsQueueBoxServerService.toNoResolvedRecipientsReason(
                     targets.mode,
@@ -660,14 +667,7 @@ export class WsQueueBoxServerService {
     private async sendPreparedMessage(
         prepared: WsServerPreparedMessage,
     ): Promise<Readonly<{ status: 'sent' | 'no-targets' }>> {
-        if (prepared.kind === 'no-current-recipient') {
-            this.recordOutboundDeliveryOutcome({
-                status: 'no-current-recipient',
-                messageId: prepared.message.id.msgId,
-            });
-            return { status: 'no-targets' };
-        }
-
+        if (prepared.kind === 'cluster-local-complete') return { status: 'sent' };
         try {
             this.socket.send(prepared.connectionId, prepared.message);
             this.recordOutboundDeliveryOutcome({

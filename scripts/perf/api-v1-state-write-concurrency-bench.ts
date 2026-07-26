@@ -1,6 +1,14 @@
 import process from 'node:process';
 import { dirname, normalize } from 'node:path';
 import postgres, { type Sql } from 'postgres';
+import { Temporal } from '@js-temporal/polyfill';
+import { CircuitBreakerPolicy } from '@shared/resilience/Resilience.ts';
+import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
+import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
+import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
+import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
@@ -11,23 +19,25 @@ import {
 import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/repositories/GroupTopologyConfigRepository.ts';
+import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state-storage-keys.ts';
 import {
   AuthSessionRepository,
   type IssuedAuthSession,
 } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
-import {
-  type ClientStateService,
-  createClientStateService,
-} from '@shared-server/rallar-system/services/client-state-service.ts';
+import { createClientStateService } from '@shared-server/rallar-system/services/client-state-service.ts';
 import { validateClientMutationIdempotencyRecord } from '@shared-server/rallar-system/services/client-state-mutations.ts';
 import { validateGroupTopologyConfigMutationRecord } from '@shared-server/rallar-system/services/group-topology-config-mutations.ts';
-import {
-  createGroupStateService,
-  type GroupStateService,
-} from '@shared-server/rallar-system/services/group-state-service.ts';
+import { createGroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
 import { GroupTopologyManagementService } from '@shared-server/rallar-system/services/group-topology-management-service.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
-import { RuntimeStateRetryExhaustedError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+import {
+  AppClientInboxService,
+} from '@shared-server/rallar-system/services/AppClientInboxService.ts';
+import {
+  AppGroupInboxService,
+  toTopologyAppInboxCommand,
+} from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
+import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import {
   type RallarTimingEvent,
   type RallarTimingSink,
@@ -73,7 +83,14 @@ type SqlMetrics = {
   transactionDurationMs: number;
 };
 
-type ProductionOutboxRecord = Readonly<{ outboxId: string; commandId: string; effects: readonly string[] }>;
+type ProductionOutboxRecord = Readonly<{
+  outboxId: string;
+  typeId: 'APP_OUTBOX' | 'WS_OUTBOX';
+  topicId: string;
+  effectKind: string;
+  canonicalCommandId?: string;
+  commandIds: readonly string[];
+}>;
 type ProductionOutboxRepository = Readonly<{ find(outboxId: string): Promise<Readonly<{ record: ProductionOutboxRecord }> | undefined> }>;
 
 type CorrectnessMetrics = {
@@ -82,6 +99,7 @@ type CorrectnessMetrics = {
   effectfulCommandCount: number;
   requiredOutboxIntentCount: number;
   outboxIntentCount: number;
+  atomicCompletionFailures: number;
   dbwFindings: string[];
 };
 
@@ -128,15 +146,44 @@ type AttemptObservation = {
   outcome: 'accepted' | 'conflicted' | 'exhausted';
   terminal: boolean;
   source: string;
+  retryDelayMs?: number;
+  dueAgeMs?: number;
+  selectedLane?: 'fast' | 'fairness' | 'timeout';
 };
 type DurableEvidence = {
-  receiptCommandIds: string[];
-  outboxIntents: Array<{ intentId: string; commandId: string; intentKind: string }>;
+  appInbox: AppInboxAttemptEvidence[];
+  receipts: MutationReceiptEvidence[];
+  resourceOutbox: ResourceOutboxEvidence[];
+  intermediateMutationIntents: [];
+  atomicCompletionFailures: number;
 };
 type ProductionReceiptEvidence = {
   commandId: string;
+  receiptIds: readonly string[];
   outboxIds: readonly string[];
 };
+type AppInboxAttemptEvidence = Readonly<{
+  commandId: string;
+  operationId: string;
+  resourceId: string;
+  topicId: string;
+  status: string;
+  resultStatus: string;
+  attempts: number;
+  retryDelayMs: number;
+  dueAgeMs: number;
+  selectedLane: 'fast' | 'fairness' | 'timeout';
+  transactionDurationMs: number;
+}>;
+type MutationReceiptEvidence = ProductionReceiptEvidence;
+type ResourceOutboxEvidence = Readonly<{
+  effectId: string;
+  resourceId: string;
+  commandId: string;
+  effectKind: string;
+  typeId: 'APP_OUTBOX' | 'WS_OUTBOX';
+  topicId: string;
+}>;
 type RunSample = {
   runIndex: number;
   durationMs: number;
@@ -151,7 +198,7 @@ type RunSample = {
   commands: RawCommand[];
   attemptObservations: AttemptObservation[];
   stackCommandCounts: [number, number];
-  durable: DurableEvidence;
+  durableEvidence: DurableEvidence;
 };
 type WorkloadSummary = Pick<
   RunSample,
@@ -170,9 +217,10 @@ type RunContext = {
 };
 
 type ServiceRuntime = {
-  client: ClientStateService;
-  group: GroupStateService;
-  topology: GroupTopologyManagementService;
+  client: AppClientInboxService;
+  group: AppGroupInboxService;
+  inbox: InboxQueueReader;
+  resilience: ResilienceDto;
   serviceId: string;
 };
 
@@ -191,13 +239,6 @@ type PgCounters = {
 type PSqlSavepointMethod = <T>(
   fn: (sql: PSqlTransactionSql) => Promise<T>,
 ) => Promise<T>;
-
-const NOOP_PUBLISHER = {
-  publishClientSnapshot: () => Promise.resolve(),
-  publishClientEvent: () => Promise.resolve(),
-  publishGroupSnapshot: () => Promise.resolve(),
-  publishGroupEvent: () => Promise.resolve(),
-};
 
 export function createBenchmarkAuthSession(
   scope: StateScope,
@@ -312,7 +353,7 @@ async function main(): Promise<void> {
         warmupRuns: options.warmup,
         measuredRuns: options.runs,
         concurrency: options.concurrency,
-        mutationTimingExcludes: ['setup', 'auth-session insertion', 'http'],
+        mutationTimingExcludes: ['setup', 'auth-session insertion', 'http', 'evidence queries'],
         tailSamplesDiscarded: false,
         counterSources: {
           sql:
@@ -333,20 +374,19 @@ async function main(): Promise<void> {
           writeTiming:
             'production client/group/topology mutation.write timing-sink events',
           outboxTiming:
-            'runtime-state SQL carrying the state-mutation:outbox namespace through the postgres.js wrapper',
-          attempts:
-            'production client/group/topology mutation.conflict timing events plus returned success or typed exhaustion; synthetic terminals exist only for disclosed exhausted prerequisites',
+            'direct APP_OUTBOX/WS_OUTBOX resource_inbox SQL through the postgres.js wrapper',
+          outbox: 'resource_inbox',
+          attempts: 'app_inbox.ri_attempts',
           receipts:
             'complete production client/group/topology idempotency receipts queried after the phase through uninstrumented repositories and projected only when every raw-command subreceipt is valid',
-          outboxIntents:
-            'receipt-referenced direct ResourceInbox records queried after the phase through the uninstrumented admin stack and projected per real effect',
+          outboxIntents: 'legacy counter name retained only for governed baseline compatibility',
         },
       },
       features: {
          presenceSplitFromGroupAggregate: true,
          governance: 'task10-post-remediation-candidate',
          evidence:
-           'Production receipts, mutation outbox records, and exact retry timings including topology config mutations',
+           'Transactional AppInbox completion, receipts, and direct ResourceInbox effects',
       },
       regressionReasons: [],
       workloads,
@@ -389,7 +429,6 @@ async function runWorkloadPhase(input: {
   const cpuBefore = process.cpuUsage();
   const lockSampler = startLockWaitSampler(input.adminSql, `${input.runId}-service-`);
   const rawCommands: RawCommand[] = [];
-  const exhaustedKindsByClient = new Map<number, Set<MutationKind>>();
   const startedAt = performance.now();
 
   try {
@@ -402,36 +441,19 @@ async function runWorkloadPhase(input: {
           const stackIndex = selectServiceStack(commandIndex, runtimes.length);
           const commandId = commandIdentifier(scope, command);
           const commandStartedAt = performance.now();
-          const exhaustedKinds = exhaustedKindsByClient.get(command.clientIndex) ??
-            new Set<MutationKind>();
-          exhaustedKindsByClient.set(command.clientIndex, exhaustedKinds);
-          const terminal = await resolveBenchmarkCommandTerminal(
-            kind,
-            exhaustedKinds,
-            async () =>
-              await executeMeasuredCommand(
-                runtimes[stackIndex]!,
-                scope,
-                command,
-                commandId,
-                timing,
-              ),
+          await executeMeasuredCommand(
+            runtimes[stackIndex]!,
+            scope,
+            command,
+            commandId,
+            timing,
           );
-          if (terminal.source === 'prerequisite') {
-            recordPrerequisiteExhaustion(
-              timing,
-              runtimes[stackIndex]!,
-              commandId,
-              terminal.prerequisite,
-              performance.now() - commandStartedAt,
-            );
-          }
           return {
             commandId,
             kind,
             latencyMs: performance.now() - commandStartedAt,
             stackIndex,
-            status: terminal.status,
+            status: 'accepted' as const,
           };
         },
       );
@@ -451,11 +473,9 @@ async function runWorkloadPhase(input: {
     scope,
     rawCommands,
     input.workload.groups,
-  );
-  const attemptObservations = deriveProductionAttemptObservations(
     context.timingEvents,
-    rawCommands,
   );
+  const attemptObservations = deriveAppInboxAttemptObservations(durable.appInbox, rawCommands);
   const accepted = rawCommands.filter((command) => command.status === 'accepted').length;
   const attempts = attemptObservations.length;
   const outcomes: OutcomeMetrics = {
@@ -511,7 +531,7 @@ async function runWorkloadPhase(input: {
     commands: rawCommands,
     attemptObservations,
     stackCommandCounts,
-    durable,
+    durableEvidence: durable,
   };
   return sample;
 }
@@ -528,88 +548,6 @@ export async function rethrowAfterCleanup(
   throw error;
 }
 
-export function isBenchmarkRetryExhaustion(
-  error: unknown,
-): error is RuntimeStateRetryExhaustedError {
-  return error instanceof RuntimeStateRetryExhaustedError;
-}
-
-export async function resolveBenchmarkCommandTerminal(
-  kind: MutationKind,
-  exhaustedKinds: Set<MutationKind>,
-  action: () => Promise<void>,
-): Promise<
-  | Readonly<{ status: 'accepted'; source: 'production' }>
-  | Readonly<{ status: 'exhausted'; source: 'production' }>
-  | Readonly<{
-    status: 'exhausted';
-    source: 'prerequisite';
-    prerequisite: 'membership' | 'presence-connect';
-  }>
-> {
-  const prerequisite = benchmarkCommandPrerequisite(kind, exhaustedKinds);
-  if (prerequisite) {
-    return { status: 'exhausted', source: 'prerequisite', prerequisite };
-  }
-  try {
-    await action();
-    return { status: 'accepted', source: 'production' };
-  } catch (error) {
-    if (!isBenchmarkRetryExhaustion(error)) {
-      throw error;
-    }
-    exhaustedKinds.add(kind);
-    return { status: 'exhausted', source: 'production' };
-  }
-}
-
-function benchmarkCommandPrerequisite(
-  kind: MutationKind,
-  exhaustedKinds: ReadonlySet<MutationKind>,
-): 'membership' | 'presence-connect' | undefined {
-  if (
-    (kind === 'presence-connect' ||
-      kind === 'presence-heartbeat' ||
-      kind === 'presence-disconnect') &&
-    exhaustedKinds.has('membership')
-  ) {
-    return 'membership';
-  }
-  if (
-    (kind === 'presence-heartbeat' || kind === 'presence-disconnect') &&
-    exhaustedKinds.has('presence-connect')
-  ) {
-    return 'presence-connect';
-  }
-  return undefined;
-}
-
-function recordPrerequisiteExhaustion(
-  timing: RallarTimingSink,
-  runtime: ServiceRuntime,
-  requestId: string,
-  prerequisite: 'membership' | 'presence-connect',
-  durationMs: number,
-): void {
-  recordRallarTiming(
-    timing,
-    {
-      component: 'state-write-command-envelope',
-      operation: `prerequisite-exhausted:${prerequisite}`,
-      serviceId: runtime.serviceId,
-      requestId,
-      details: {
-        operationId: 'command',
-        attempt: 1,
-        outcome: 'exhausted',
-        terminal: true,
-        prerequisite,
-      },
-    },
-    'error',
-    durationMs,
-  );
-}
 
 function createServiceRuntime(
   sql: Sql,
@@ -620,33 +558,67 @@ function createServiceRuntime(
   const instrumentedSql = createInstrumentedSql(sql as unknown as PSqlSql, context, timing);
   const runtimeRepository = new PSqlRuntimeStateRepository(instrumentedSql);
   const authSessionRepository = new AuthSessionRepository(runtimeRepository);
-  const group = createGroupStateService({
+  const groupState = createGroupStateService({
     runtimeRepository,
     createGroupStateEventStore: createGroupStateEventRepository,
-    syncPublisher: NOOP_PUBLISHER,
     serviceId,
     timing,
     authSessionRepository,
   });
-  return {
-    client: createClientStateService({
+  const resourceInbox = new ResourceInboxRepository(instrumentedSql);
+  const inbox = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
+  const results = new ResourceInboxResultsRepository(instrumentedSql);
+  const client = new AppClientInboxService(
+    inbox,
+    resourceInbox,
+    results,
+    instrumentedSql,
+    createClientStateService({
       runtimeRepository,
       createClientStateEventStore: createClientStateEventRepository,
-      syncPublisher: NOOP_PUBLISHER,
       serviceId,
       timing,
-    }),
-    group,
-    topology: new GroupTopologyManagementService({
-      findGroupSnapshotByRef: (ref) => group.readSnapshot(ref),
-      groupStateRepository: new GroupStateRepository(runtimeRepository),
-      configRepository: new GroupTopologyConfigRepository(runtimeRepository),
-      topologyService: new RallarRtcTopologyService(),
-      timing,
-      serviceId,
     }),
     serviceId,
+    timing,
+    { waitRetryIntervalMsecs: 1, waitMaxRetryIntervalMsecs: 5, waitJitterRatio: 0 },
+  );
+  const group = new AppGroupInboxService(
+    inbox,
+    resourceInbox,
+    results,
+    instrumentedSql,
+    groupState,
+    serviceId,
+    timing,
+    { waitRetryIntervalMsecs: 1, waitMaxRetryIntervalMsecs: 5, waitJitterRatio: 0 },
+  );
+  group.setTopologyManagementService(new GroupTopologyManagementService({
+    findGroupSnapshotByRef: (ref) => groupState.readSnapshot(ref),
+    groupStateRepository: new GroupStateRepository(runtimeRepository),
+    configRepository: new GroupTopologyConfigRepository(runtimeRepository),
+    topologyService: new RallarRtcTopologyService(),
+    timing,
+    serviceId,
+  }));
+  return {
+    client,
+    group,
+    inbox,
+    resilience: createBenchmarkResilience(),
+    serviceId,
   };
+}
+
+function createBenchmarkResilience(): ResilienceDto {
+  const duration = Temporal.Duration.from({ seconds: 10 });
+  return ResilienceDto.toResilienceDto(
+    new CircuitBreakerPolicy(100, duration, duration, duration),
+    REQUIRED_CONCURRENCY,
+    REQUIRED_CONCURRENCY,
+    1,
+    1,
+  );
 }
 
 export function createInstrumentedSql(
@@ -788,226 +760,181 @@ async function executeMutation(
   }>,
   timing: RallarTimingSink,
 ): Promise<void> {
+  void timing;
+  const clientContextId = inboxContextId(scope.applicationId, scope.workspaceId, command.principalId);
+  const groupContextId = inboxContextId(scope.applicationId, scope.workspaceId, command.groupId);
   switch (kind) {
     case 'profile-instance': {
-      const profile = requireClientMutation(
-        await observeProductionAttempt(
-          timing,
-          runtime,
-          `${command.requestId}-profile`,
-          'upsertPrincipal',
-          () =>
-            runtime.client.upsertPrincipal(
-              scope,
-              command.principalId,
-              {
-                username: command.principalId,
-                displayName: `${command.principalId}-measured`,
-                metadata: { source: 'state-write-benchmark' },
-                actorPrincipalId: command.principalId,
-                requestId: `${command.requestId}-profile`,
-              },
-            ),
-        ),
+      await runAppInboxMutation(runtime, () =>
+        runtime.client.processAuthenticatedEntryUntilCompletion({
+          type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
+          resourceId: `${command.requestId}-profile`,
+          contextId: clientContextId,
+          senderId: command.principalId,
+          data: {
+            scope,
+            principalId: command.principalId,
+            request: {
+              username: command.principalId,
+              displayName: `${command.principalId}-measured`,
+              metadata: { source: 'state-write-benchmark' },
+              actorPrincipalId: command.principalId,
+              requestId: `${command.requestId}-profile`,
+            },
+          },
+        }, command.clientAuthority)
       );
-      const instance = requireClientMutation(
-        await observeProductionAttempt(
-          timing,
-          runtime,
-          `${command.requestId}-instance`,
-          'upsertInstance',
-          () =>
-            runtime.client.upsertInstance(
-              scope,
-              command.principalId,
-              command.instanceId,
-              {
-                status: 'active',
-                platform: 'web',
-                appVersion: 'task-0b',
-                capabilities: ['state-write-benchmark'],
-                actorPrincipalId: command.principalId,
-                requestId: `${command.requestId}-instance`,
-              },
-            ),
-        ),
+      await runAppInboxMutation(runtime, () =>
+        runtime.client.processAuthenticatedEntryUntilCompletion({
+          type: AppInboxType.CLIENT_INSTANCE_UPSERT,
+          resourceId: `${command.requestId}-instance`,
+          contextId: clientContextId,
+          senderId: command.principalId,
+          data: {
+            scope,
+            principalId: command.principalId,
+            clientInstanceId: command.instanceId,
+            request: {
+              status: 'active', platform: 'web', appVersion: 'task-12',
+              capabilities: ['state-write-benchmark'],
+              actorPrincipalId: command.principalId,
+              requestId: `${command.requestId}-instance`,
+            },
+          },
+        }, command.clientAuthority)
       );
-      void profile;
-      void instance;
       return;
     }
     case 'membership': {
-      const written = requireGroupMutation(
-        await observeProductionAttempt(
-          timing,
-          runtime,
-          command.requestId,
-          'upsertMember',
-          () =>
-            runtime.group.upsertMember(
-              scope,
-              command.groupId,
-              command.principalId,
-              {
-                role: 'member',
-                status: 'active',
-                actorPrincipalId: command.ownerId,
-                requestId: command.requestId,
-              },
-              command.ownerAuthority,
-            ),
-        ),
+      await runAppInboxMutation(runtime, () =>
+        runtime.group.processAuthenticatedEntryUntilCompletion({
+          type: AppInboxType.GROUP_MEMBER_UPSERT,
+          resourceId: command.requestId,
+          contextId: groupContextId,
+          senderId: command.principalId,
+          data: {
+            scope, groupId: command.groupId, principalId: command.principalId,
+            request: {
+              status: 'active', actorPrincipalId: command.principalId,
+              requestId: command.requestId,
+            },
+          },
+        }, command.clientAuthority)
       );
-      void written;
       return;
     }
     case 'presence-connect': {
-      const written = requireGroupMutation(
-        await observeProductionAttempt(
-          timing,
-          runtime,
-          command.requestId,
-          'connectPresenceSession',
-          () =>
-            runtime.group.connectPresenceSession(
-              scope,
-              command.groupId,
-              command.sessionId,
-              {
-                principalId: command.principalId,
-                generationId: command.generationId,
-                connectedAtEpochMs: command.timestamp,
-                lastHeartbeatAtEpochMs: command.timestamp,
-                expiresAtEpochMs: command.timestamp + 60_000,
-                actorPrincipalId: command.principalId,
-                actorSessionId: command.sessionId,
-                requestId: command.requestId,
-              },
-              command.clientAuthority,
-            ),
-        ),
-      );
-      void written;
+      await runGroupPresenceMutation(runtime, command, scope, groupContextId,
+        AppInboxType.GROUP_PRESENCE_CONNECT, {
+          principalId: command.principalId, generationId: command.generationId,
+          connectedAtEpochMs: command.timestamp,
+          lastHeartbeatAtEpochMs: command.timestamp,
+          expiresAtEpochMs: command.timestamp + 60_000,
+          actorPrincipalId: command.principalId, actorSessionId: command.sessionId,
+          requestId: command.requestId,
+        });
       return;
     }
     case 'presence-heartbeat': {
-      const written = requireGroupMutation(
-        await observeProductionAttempt(
-          timing,
-          runtime,
-          command.requestId,
-          'heartbeatPresenceSession',
-          () =>
-            runtime.group.heartbeatPresenceSession(
-              scope,
-              command.groupId,
-              command.sessionId,
-              {
-                principalId: command.principalId,
-                generationId: command.generationId,
-                lastHeartbeatAtEpochMs: command.timestamp + 1_000,
-                expiresAtEpochMs: command.timestamp + 61_000,
-                actorPrincipalId: command.principalId,
-                actorSessionId: command.sessionId,
-                requestId: command.requestId,
-              },
-              command.clientAuthority,
-            ),
-        ),
-      );
-      void written;
+      await runGroupPresenceMutation(runtime, command, scope, groupContextId,
+        AppInboxType.GROUP_PRESENCE_HEARTBEAT, {
+          principalId: command.principalId, generationId: command.generationId,
+          lastHeartbeatAtEpochMs: command.timestamp + 1_000,
+          expiresAtEpochMs: command.timestamp + 61_000,
+          actorPrincipalId: command.principalId, actorSessionId: command.sessionId,
+          requestId: command.requestId,
+        });
       return;
     }
     case 'presence-disconnect': {
-      const written = requireGroupMutation(
-        await observeProductionAttempt(
-          timing,
-          runtime,
-          command.requestId,
-          'disconnectPresenceSession',
-          () =>
-            runtime.group.disconnectPresenceSession(
-              scope,
-              command.groupId,
-              command.sessionId,
-              {
-                principalId: command.principalId,
-                generationId: command.generationId,
-                disconnectedAtEpochMs: command.timestamp + 2_000,
-                lastHeartbeatAtEpochMs: command.timestamp + 1_000,
-                expiresAtEpochMs: command.timestamp + 61_000,
-                actorPrincipalId: command.principalId,
-                actorSessionId: command.sessionId,
-                requestId: command.requestId,
-              },
-              command.clientAuthority,
-            ),
-        ),
-      );
-      void written;
+      await runGroupPresenceMutation(runtime, command, scope, groupContextId,
+        AppInboxType.GROUP_PRESENCE_DISCONNECT, {
+          principalId: command.principalId, generationId: command.generationId,
+          disconnectedAtEpochMs: command.timestamp + 2_000,
+          lastHeartbeatAtEpochMs: command.timestamp + 1_000,
+          expiresAtEpochMs: command.timestamp + 61_000,
+          actorPrincipalId: command.principalId, actorSessionId: command.sessionId,
+          requestId: command.requestId,
+        });
       return;
     }
     case 'config': {
-      const written = requireGroupMutation(
-        await observeProductionAttempt(
-          timing,
-          runtime,
-          command.requestId,
-          'updateGroup',
-          () =>
-            runtime.group.updateGroup(
-              scope,
-              command.groupId,
-              {
-                metadata: { benchmarkConfigSource: command.requestId },
-                actorPrincipalId: command.ownerId,
-                requestId: command.requestId,
-              },
-              command.ownerAuthority,
-            ),
-        ),
+      await runAppInboxMutation(runtime, () =>
+        runtime.group.processAuthenticatedEntryUntilCompletion({
+          type: AppInboxType.GROUP_UPDATE,
+          resourceId: command.requestId,
+          contextId: groupContextId,
+          senderId: command.ownerId,
+          data: {
+            scope, groupId: command.groupId,
+            request: {
+              metadata: { benchmarkConfigSource: command.requestId },
+              actorPrincipalId: command.ownerId,
+              requestId: command.requestId,
+            },
+          },
+        }, command.ownerAuthority)
       );
-      void written;
       return;
     }
     case 'topology-source': {
-      const result = await observeProductionAttempt(
-        timing,
-        runtime,
-        command.requestId,
-        'putConfig',
-        () =>
-          runtime.topology.putConfig({
-            groupRef: { ...scope, groupId: command.groupId },
-            config: {
-              topologyKind: command.timestamp % 2 === 0 ? 'tree' : 'mesh',
-              degreeLimit: 5,
-              treeMinSize: 5,
-              meshMinSize: 16,
-              meshParamK: 2,
-            },
-            updatedByPrincipalId: command.ownerId,
-            requestId: command.requestId,
-          }),
+      const data = await toTopologyAppInboxCommand({
+        actor: { principalId: command.ownerId, sessionId: command.ownerAuthority.sessionId },
+        groupRef: { ...scope, groupId: command.groupId },
+        requestId: command.requestId,
+        capturedAtEpochMs: command.timestamp,
+        payload: { operation: 'putConfig', config: {
+          topologyKind: command.timestamp % 2 === 0 ? 'tree' : 'mesh',
+          degreeLimit: 5, treeMinSize: 5, meshMinSize: 16, meshParamK: 2,
+        } },
+      });
+      await runAppInboxMutation(runtime, () =>
+        runtime.group.processAuthenticatedEntryUntilCompletion({
+          type: AppInboxType.TOPOLOGY_CONFIG_PUT,
+          resourceId: command.requestId,
+          contextId: groupContextId,
+          senderId: command.ownerId,
+          data,
+        }, command.ownerAuthority)
       );
-      void result;
       return;
     }
   }
 }
 
-async function observeProductionAttempt<T>(
-  timing: RallarTimingSink,
+async function runGroupPresenceMutation(
   runtime: ServiceRuntime,
-  requestId: string,
-  operation: string,
-  action: () => Promise<T>,
-): Promise<T> {
-  void timing;
-  void runtime;
-  void requestId;
-  void operation;
-  return await action();
+  command: Parameters<typeof executeMutation>[3],
+  scope: StateScope,
+  contextId: string,
+  type: AppInboxType,
+  request: Record<string, unknown>,
+): Promise<void> {
+  await runAppInboxMutation(runtime, () =>
+    runtime.group.processAuthenticatedEntryUntilCompletion({
+      type, resourceId: command.requestId, contextId,
+      senderId: command.principalId,
+      data: { scope, groupId: command.groupId, sessionId: command.sessionId, request },
+    }, command.clientAuthority)
+  );
+}
+
+async function runAppInboxMutation(
+  runtime: ServiceRuntime,
+  start: () => Promise<{ fold(left: (value: string) => never, right: (value: unknown) => unknown): unknown }>,
+): Promise<void> {
+  let settled = false;
+  const pending = start().finally(() => settled = true);
+  while (!settled) {
+    await runtime.inbox.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, runtime.resilience);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  const result = await pending;
+  result.fold((error) => { throw new Error(error); }, () => undefined);
+}
+
+function inboxContextId(...parts: string[]): string {
+  return parts.map(encodeURIComponent).join(':');
 }
 
 async function seedCompleteState(
@@ -1018,25 +945,12 @@ async function seedCompleteState(
   const pgSql = sql as unknown as PSqlSql;
   const runtimeRepository = new PSqlRuntimeStateRepository(pgSql);
   const authSessionRepository = new AuthSessionRepository(runtimeRepository);
-  const client = createClientStateService({
-    runtimeRepository,
-    createClientStateEventStore: createClientStateEventRepository,
-    syncPublisher: NOOP_PUBLISHER,
-    serviceId: 'state-write-bench-seed',
-  });
-  const group = createGroupStateService({
-    runtimeRepository,
-    createGroupStateEventStore: createGroupStateEventRepository,
-    syncPublisher: NOOP_PUBLISHER,
-    serviceId: 'state-write-bench-seed',
-    authSessionRepository,
-  });
-  const topology = new GroupTopologyManagementService({
-    findGroupSnapshotByRef: (ref) => group.readSnapshot(ref),
-    groupStateRepository: new GroupStateRepository(runtimeRepository),
-    configRepository: new GroupTopologyConfigRepository(runtimeRepository),
-    topologyService: new RallarRtcTopologyService(),
-  });
+  const runtime = createServiceRuntime(
+    sql,
+    'state-write-bench-seed',
+    newRunContext(),
+    () => undefined,
+  );
 
   await mapWithConcurrency(
     Array.from({ length: workload.groups }, (_, groupIndex) => groupIndex),
@@ -1049,32 +963,22 @@ async function seedCompleteState(
         `owner-session-${groupIndex}`,
       );
       await authSessionRepository.putSession(authority);
-      requireGroupMutation(
-        await group.createGroup(scope, {
-          groupId: `group-${groupIndex}`,
-          displayName: `State Write Benchmark Group ${groupIndex}`,
-          kind: 'room',
-          joinMode: 'open',
-          maxMembers: CLIENT_COUNT + 1,
-          maxSessionsPerMember: 4,
-          metadata: { benchmark: true },
-          createdByPrincipalId: ownerId,
-          actorPrincipalId: ownerId,
-          requestId: `seed-group-${groupIndex}`,
-        }, authority),
+      const groupId = `group-${groupIndex}`;
+      await runAppInboxMutation(runtime, () =>
+        runtime.group.processAuthenticatedEntryUntilCompletion({
+          type: AppInboxType.GROUP_CREATE,
+          resourceId: `seed-group-${groupIndex}`,
+          contextId: inboxContextId(scope.applicationId, scope.workspaceId, groupId),
+          senderId: ownerId,
+          data: { scope, request: {
+            groupId, displayName: `State Write Benchmark Group ${groupIndex}`,
+            kind: 'room', joinMode: 'open', maxMembers: CLIENT_COUNT + 1,
+            maxSessionsPerMember: 4, metadata: { benchmark: true },
+            createdByPrincipalId: ownerId, actorPrincipalId: ownerId,
+            actorSessionId: authority.sessionId, requestId: `seed-group-${groupIndex}`,
+          } },
+        }, authority)
       );
-      await topology.putConfig({
-        groupRef: { ...scope, groupId: `group-${groupIndex}` },
-        config: {
-          topologyKind: 'auto',
-          degreeLimit: 5,
-          treeMinSize: 5,
-          meshMinSize: 16,
-          meshParamK: 2,
-        },
-        updatedByPrincipalId: ownerId,
-        requestId: `seed-topology-${groupIndex}`,
-      });
     },
   );
 
@@ -1083,33 +987,35 @@ async function seedCompleteState(
     REQUIRED_CONCURRENCY,
     async (clientIndex) => {
       const principalId = `client-${clientIndex}`;
-      await authSessionRepository.putSession(createBenchmarkAuthSession(
+      const authority = createBenchmarkAuthSession(
         scope,
         principalId,
         `client-session-${clientIndex}`,
-      ));
-      requireClientMutation(
-        await client.upsertPrincipal(scope, principalId, {
-          username: principalId,
-          displayName: `Seed Client ${clientIndex}`,
-          status: 'active',
-          actorPrincipalId: principalId,
-          requestId: `seed-principal-${clientIndex}`,
-        }),
       );
-      requireClientMutation(
-        await client.upsertInstance(
-          scope,
-          principalId,
-          `instance-${clientIndex}`,
-          {
-            status: 'active',
-            platform: 'web',
-            appVersion: 'seed',
-            actorPrincipalId: principalId,
-            requestId: `seed-instance-${clientIndex}`,
-          },
-        ),
+      await authSessionRepository.putSession(authority);
+      const contextId = inboxContextId(scope.applicationId, scope.workspaceId, principalId);
+      await runAppInboxMutation(runtime, () =>
+        runtime.client.processAuthenticatedEntryUntilCompletion({
+          type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
+          resourceId: `seed-principal-${clientIndex}`,
+          contextId, senderId: principalId,
+          data: { scope, principalId, request: {
+            username: principalId, displayName: `Seed Client ${clientIndex}`,
+            status: 'active', actorPrincipalId: principalId,
+            requestId: `seed-principal-${clientIndex}`,
+          } },
+        }, authority)
+      );
+      await runAppInboxMutation(runtime, () =>
+        runtime.client.processAuthenticatedEntryUntilCompletion({
+          type: AppInboxType.CLIENT_INSTANCE_UPSERT,
+          resourceId: `seed-instance-${clientIndex}`,
+          contextId, senderId: principalId,
+          data: { scope, principalId, clientInstanceId: `instance-${clientIndex}`, request: {
+            status: 'active', platform: 'web', appVersion: 'seed',
+            actorPrincipalId: principalId, requestId: `seed-instance-${clientIndex}`,
+          } },
+        }, authority)
       );
     },
   );
@@ -1123,22 +1029,6 @@ function createCommands(workload: typeof WORKLOADS[number]): MutationCommand[] {
       groupIndex: clientIndex % workload.groups,
     }))
   );
-}
-
-function requireClientMutation(
-  written: Awaited<ReturnType<ClientStateService['upsertPrincipal']>>,
-) {
-  if (!written.result.right) {
-    throw new Error(`Client mutation rejected: ${String(written.result.left)}`);
-  }
-  return written.result.right;
-}
-
-function requireGroupMutation(written: Awaited<ReturnType<GroupStateService['updateGroup']>>) {
-  if (!written.result.right) {
-    throw new Error(`Group mutation rejected: ${String(written.result.left)}`);
-  }
-  return written.result.right;
 }
 
 function commandIdentifier(scope: StateScope, command: MutationCommand): string {
@@ -1169,120 +1059,12 @@ function productionPhaseDuration(
   );
 }
 
-export function deriveProductionAttemptObservations(
-  events: readonly RallarTimingEvent[],
-  commands: readonly RawCommand[],
-): AttemptObservation[] {
-  return commands.flatMap<AttemptObservation>((command): AttemptObservation[] => {
-    const prerequisite = events.find((event) =>
-      event.component === 'state-write-command-envelope' &&
-      event.requestId === command.commandId &&
-      event.details?.outcome === 'exhausted' &&
-      (typeof event.details?.prerequisite === 'string' ||
-        event.operation.startsWith('prerequisite-exhausted:'))
-    );
-    if (prerequisite) {
-      return [{
-        commandId: command.commandId,
-        operationId: 'command' as const,
-        attempt: 1,
-        outcome: 'exhausted' as const,
-        terminal: true,
-        source: `${prerequisite.component}.${prerequisite.operation}`,
-      }];
-    }
-
-    const operations = command.kind === 'profile-instance'
-      ? [
-        { operationId: 'profile', requestId: `${command.commandId}-profile` },
-        { operationId: 'instance', requestId: `${command.commandId}-instance` },
-      ] as const
-      : [{ operationId: 'command', requestId: command.commandId }] as const;
-    const attempted = operations.filter((operation) =>
-      command.status === 'accepted' || events.some((event) =>
-        event.requestId === operation.requestId &&
-        (event.component === 'client-state-service' ||
-          event.component === 'group-state-service' ||
-          event.component === 'group-topology-config-service')
-      )
-    );
-    const exhaustedOperationId = command.status === 'exhausted'
-      ? attempted.at(-1)?.operationId
-      : undefined;
-
-    return attempted.flatMap((operation) => {
-      const conflicts = events.filter((event) =>
-        event.requestId === operation.requestId &&
-        event.operation === 'mutation.conflict' &&
-        (event.component === 'client-state-service' ||
-          event.component === 'group-state-service' ||
-          event.component === 'group-topology-config-service')
-      ).toSorted((left, right) =>
-        Number(left.details?.attempt) - Number(right.details?.attempt)
-      );
-      for (const event of conflicts) {
-        if (!Number.isSafeInteger(event.details?.attempt) || Number(event.details?.attempt) < 0) {
-          throw new Error(`Invalid production conflict attempt for ${operation.requestId}`);
-        }
-      }
-      const exhausted = exhaustedOperationId === operation.operationId;
-      if (exhausted && conflicts.length === 0) {
-        throw new Error(`Production exhaustion lacks conflict timing for ${operation.requestId}`);
-      }
-      const observations: AttemptObservation[] = conflicts.map((event, index) => {
-        const terminal = exhausted && index === conflicts.length - 1;
-        return {
-          commandId: command.commandId,
-          operationId: operation.operationId,
-          attempt: Number(event.details?.attempt),
-          outcome: terminal ? 'exhausted' as const : 'conflicted' as const,
-          terminal,
-          source: `${event.component}.${event.operation}`,
-        };
-      });
-      if (!exhausted) {
-        const successfulPhases = events.filter((event) =>
-          event.requestId === operation.requestId &&
-          (event.operation === 'mutation.write' || event.operation === 'mutation.validate') &&
-          (event.component === 'client-state-service' ||
-            event.component === 'group-state-service' ||
-            event.component === 'group-topology-config-service') &&
-          event.status === 'ok' &&
-          Number.isSafeInteger(event.details?.attempt) &&
-          Number(event.details?.attempt) >= 0
-        );
-        const preferredPhases = successfulPhases.some((event) =>
-            event.operation === 'mutation.write'
-          )
-          ? successfulPhases.filter((event) => event.operation === 'mutation.write')
-          : successfulPhases;
-        const terminalPhase = preferredPhases.toSorted((left, right) =>
-          Number(left.details?.attempt) - Number(right.details?.attempt)
-        ).at(-1);
-        if (!terminalPhase) {
-          throw new Error(
-            `Accepted production mutation lacks write/validate timing for ${operation.requestId}`,
-          );
-        }
-        observations.push({
-          commandId: command.commandId,
-          operationId: operation.operationId,
-          attempt: terminalPhase ? Number(terminalPhase.details?.attempt) : 0,
-          outcome: 'accepted',
-          terminal: true,
-          source: `${terminalPhase!.component}.${terminalPhase!.operation}`,
-        });
-      }
-      return observations;
-    });
-  });
-}
-
 async function queryDurableEvidence(
   sql: Sql,
   scope: StateScope,
   commands: readonly RawCommand[],
   groupCount: number,
+  timingEvents: readonly RallarTimingEvent[],
 ): Promise<DurableEvidence> {
   const runtime = new PSqlRuntimeStateRepository(sql as unknown as PSqlSql);
   const clients = new ClientStateRepository(runtime);
@@ -1315,6 +1097,7 @@ async function queryDurableEvidence(
         }
         return {
           commandId: command.commandId,
+          receiptIds: productionCommandIds,
           outboxIds: receipts.flatMap((receipt) => receipt?.receipt.outboxIds ?? []),
         };
       }
@@ -1332,6 +1115,7 @@ async function queryDurableEvidence(
         }
         return {
           commandId: command.commandId,
+          receiptIds: [command.commandId],
           outboxIds: receipt?.receipt.outboxIds ?? [],
         };
       }
@@ -1342,6 +1126,7 @@ async function queryDurableEvidence(
       if (!isValidatedReceiptIdentity(receipt, command.commandId)) return undefined;
       return {
         commandId: command.commandId,
+        receiptIds: [command.commandId],
         outboxIds: receipt?.receipt.outboxIds ?? [],
       };
     },
@@ -1349,19 +1134,100 @@ async function queryDurableEvidence(
   const receipts = receiptResults.filter(
     (receipt): receipt is ProductionReceiptEvidence => receipt !== undefined,
   );
-  const receiptCommandIds = receipts.map((receipt) => receipt.commandId);
-  const productionRecords = await readReferencedProductionOutboxRecords(
-    outbox,
-    receipts.flatMap((receipt) => receipt.outboxIds),
-  );
-
-  const outboxIntents = projectProductionOutboxEvidence(commands, productionRecords);
-  return {
-    receiptCommandIds: receiptCommandIds.toSorted(),
-    outboxIntents: outboxIntents.toSorted((left, right) =>
-      left.intentId.localeCompare(right.intentId)
+  const receiptsByCommand = new Map(receipts.map((receipt) => [receipt.commandId, receipt]));
+  const productionRecords = await readReferencedProductionOutboxRecords(outbox, commands.flatMap(
+    (command) => productionOutboxLookupIds(
+      command, scope, groupCount, receiptsByCommand.get(command.commandId)?.outboxIds ?? [],
     ),
+  ));
+
+  const appInbox = await readAppInboxEvidence(sql, scope, commands, timingEvents);
+  const resourceOutbox = projectProductionOutboxEvidence(commands, receipts, productionRecords);
+  const provisional = {
+    appInbox: appInbox.toSorted((left, right) => left.resourceId.localeCompare(right.resourceId)),
+    receipts: receipts.toSorted((left, right) => left.commandId.localeCompare(right.commandId)),
+    resourceOutbox: resourceOutbox.toSorted((left, right) => left.effectId.localeCompare(right.effectId)),
+    intermediateMutationIntents: [] as [],
+    atomicCompletionFailures: 0,
   };
+  return {
+    ...provisional,
+    atomicCompletionFailures: countAtomicCompletionFailures(commands, provisional),
+  };
+}
+
+async function readAppInboxEvidence(
+  sql: Sql,
+  scope: StateScope,
+  commands: readonly RawCommand[],
+  timingEvents: readonly RallarTimingEvent[],
+): Promise<AppInboxAttemptEvidence[]> {
+  const rows = await sql<readonly {
+    ri_resource_id: string; ri_topic_id: string; ri_resource: string; ri_status: string;
+    ri_attempts: number | string; retry_delay_ms: number | string; due_age_ms: number | string;
+    result_status: string | null;
+  }[]>`
+    select i.ri_resource_id, i.ri_topic_id, i.ri_resource, i.ri_status, i.ri_attempts,
+           coalesce(greatest(0, extract(epoch from (i.next_ts - i.end_ts)) * 1000), 0)::float8 as retry_delay_ms,
+           coalesce(greatest(0, extract(epoch from (now() - i.next_ts)) * 1000), 0)::float8 as due_age_ms,
+           r.ris_status as result_status
+    from resource_inbox i
+    left join resource_inbox_results r
+      on r.fk_ext_bank_id = i.fk_ext_bank_id
+     and r.ris_resource_id = i.ri_resource_id
+     and r.ris_topic_id = i.ri_topic_id
+    where i.ri_type_id = 'APP_INBOX'
+      and i.ri_resource like ${`%${scope.applicationId}%`}
+  `;
+  const byProductionId = new Map(commands.flatMap((command) =>
+    productionCommandIdsForRaw(command).map((productionId, index) => [productionId, {
+      commandId: command.commandId,
+      operationId: command.kind === 'profile-instance' ? index === 0 ? 'profile' : 'instance' : 'command',
+    }] as const)
+  ));
+  return rows.flatMap((row) => {
+    const ids = readAllCommandIds(row.ri_resource);
+    const link = ids.map((id) => byProductionId.get(id)).find((entry) => entry !== undefined);
+    if (!link) return [];
+    const transaction = timingEvents.filter((event) =>
+      event.component === 'app-inbox-phase' && event.operation === 'transaction' &&
+      (event.requestId === row.ri_resource_id || ids.includes(event.requestId ?? ''))
+    ).at(-1);
+    const dueAgeMs = Number(transaction?.details?.dueAgeMs ?? row.due_age_ms);
+    return [{
+      ...link,
+      resourceId: row.ri_resource_id,
+      topicId: row.ri_topic_id,
+      status: row.ri_status,
+      resultStatus: row.result_status ?? 'MISSING',
+      attempts: Number(row.ri_attempts),
+      retryDelayMs: Number(row.retry_delay_ms),
+      dueAgeMs,
+      selectedLane: dueAgeMs >= 30_000 ? 'fairness' as const : 'fast' as const,
+      transactionDurationMs: transaction?.durationMs ?? 0,
+    }];
+  });
+}
+
+export function deriveAppInboxAttemptObservations(
+  evidence: readonly AppInboxAttemptEvidence[],
+  commands: readonly RawCommand[],
+): AttemptObservation[] {
+  const accepted = new Set(commands.filter((entry) => entry.status === 'accepted').map((entry) => entry.commandId));
+  return evidence.flatMap((entry) => Array.from({ length: entry.attempts }, (_, index) => {
+    const terminal = index + 1 === entry.attempts;
+    return {
+      commandId: entry.commandId,
+      operationId: entry.operationId,
+      attempt: index + 1,
+      outcome: terminal ? accepted.has(entry.commandId) ? 'accepted' as const : 'exhausted' as const : 'conflicted' as const,
+      terminal,
+      source: 'app_inbox.ri_attempts',
+      retryDelayMs: terminal ? 0 : entry.retryDelayMs,
+      dueAgeMs: entry.dueAgeMs,
+      selectedLane: entry.selectedLane,
+    };
+  }));
 }
 
 export async function readReferencedProductionOutboxRecords(
@@ -1389,30 +1255,80 @@ export function createProductionOutboxRepository(sql: Sql): ProductionOutboxRepo
       return {
         record: {
           outboxId: row.ri_resource_id,
-          commandId: readDirectResourceCommandId(row.ri_resource) ?? row.ri_resource_id,
-          effects: [`${row.ri_type_id}:${row.ri_topic_id}`],
+          typeId: requireOutboxType(row.ri_type_id),
+          topicId: row.ri_topic_id,
+          effectKind: readResourceEffectKind(row),
+          canonicalCommandId: readCanonicalEffectCommandId(row.ri_resource),
+          commandIds: readAllCommandIds(row.ri_resource),
         },
       };
     },
   };
 }
 
-function readDirectResourceCommandId(resource: string): string | undefined {
+export function readAllCommandIds(resource: string): string[] {
   try {
-    return findCommandId(JSON.parse(resource));
+    return [...new Set(findCommandIds(JSON.parse(resource)))];
+  } catch {
+    return [];
+  }
+}
+
+export function readCanonicalEffectCommandId(resource: string): string | undefined {
+  try {
+    const envelope = JSON.parse(resource) as { id?: { msgId?: unknown } };
+    return effectIdentityCommandIds(envelope.id?.msgId)[0];
   } catch {
     return undefined;
   }
 }
 
-function findCommandId(value: unknown): string | undefined {
-  if (!value || typeof value !== 'object') return undefined;
-  if ('commandId' in value && typeof value.commandId === 'string') return value.commandId;
-  for (const child of Object.values(value)) {
-    const commandId = findCommandId(child);
-    if (commandId) return commandId;
+function findCommandIds(value: unknown): string[] {
+  if (typeof value === 'string' && (value.startsWith('{') || value.startsWith('['))) {
+    try {
+      return findCommandIds(JSON.parse(value));
+    } catch {
+      return [];
+    }
   }
-  return undefined;
+  if (!value || typeof value !== 'object') return [];
+  const record = value as Record<string, unknown>;
+  return [
+    ...(typeof record.commandId === 'string' ? [record.commandId] : []),
+    ...(typeof record.requestId === 'string' ? [record.requestId] : []),
+    ...effectIdentityCommandIds(record.msgId),
+    ...effectIdentityCommandIds(record.resourceId),
+    ...Object.values(record).flatMap(findCommandIds),
+  ];
+}
+
+function effectIdentityCommandIds(value: unknown): string[] {
+  if (typeof value !== 'string') return [];
+  for (const marker of [
+    ':rtc-topology-recompute:', ':group-presence-summary:', ':principal-state:',
+  ]) {
+    const index = value.indexOf(marker);
+    if (index > 0) return [value.slice(0, index)];
+  }
+  return [];
+}
+
+export function productionOutboxLookupIds(
+  command: RawCommand,
+  scope: StateScope,
+  groupCount: number,
+  receiptOutboxIds: readonly string[],
+): readonly string[] {
+  if (command.kind !== 'topology-source') return receiptOutboxIds;
+  const clientIndex = Number(command.commandId.slice(command.commandId.lastIndexOf(':') + 1));
+  if (!Number.isSafeInteger(clientIndex) || clientIndex < 0) return [];
+  const contextId = groupStateGroupStorageKey({
+    ...scope,
+    groupId: `group-${clientIndex % groupCount}`,
+  });
+  return receiptOutboxIds.map((resourceId) => toAppQueueKey({
+    topicId: 'app-outbox.rtc-topology', resourceId, contextId,
+  }).resourceId);
 }
 
 function productionCommandIdsForRaw(command: RawCommand): readonly string[] {
@@ -1423,25 +1339,47 @@ function productionCommandIdsForRaw(command: RawCommand): readonly string[] {
 
 export function projectProductionOutboxEvidence(
   commands: readonly RawCommand[],
-  records: readonly Pick<ProductionOutboxRecord, 'outboxId' | 'commandId' | 'effects'>[],
-): DurableEvidence['outboxIntents'] {
-  const productionToRawCommand = new Map(
-    commands.flatMap((command) =>
-      productionCommandIdsForRaw(command).map((productionCommandId) => [
-        productionCommandId,
-        command,
-      ] as const)
-    ),
-  );
+  receipts: readonly ProductionReceiptEvidence[],
+  records: readonly ProductionOutboxRecord[],
+): DurableEvidence['resourceOutbox'] {
+  const rawByProductionId = new Map(commands.flatMap((command) =>
+    productionCommandIdsForRaw(command).map((productionId) => [productionId, command.commandId])
+  ));
+  const receiptCommands = new Set(receipts.map((receipt) => receipt.commandId));
+  const known = new Set(commands.map((command) => command.commandId));
   return records.flatMap((record) => {
-    const command = productionToRawCommand.get(record.commandId);
-    if (!command) return [];
-    return record.effects.map((effect) => ({
-      intentId: `${record.outboxId}:${effect}`,
-      commandId: command.commandId,
-      intentKind: effect,
-    }));
+    const commandId = record.canonicalCommandId === undefined
+      ? undefined
+      : rawByProductionId.get(record.canonicalCommandId);
+    if (!commandId || !known.has(commandId) || !receiptCommands.has(commandId)) return [];
+    return [{
+      effectId: `${record.outboxId}:${record.typeId}:${record.topicId}`,
+      resourceId: record.outboxId,
+      commandId,
+      effectKind: record.effectKind,
+      typeId: record.typeId,
+      topicId: record.topicId,
+    }];
   });
+}
+
+function requireOutboxType(value: string): 'APP_OUTBOX' | 'WS_OUTBOX' {
+  if (value !== 'APP_OUTBOX' && value !== 'WS_OUTBOX') {
+    throw new Error(`Receipt references non-outbox ResourceInbox row: ${value}`);
+  }
+  return value;
+}
+
+export function readResourceEffectKind(row: Readonly<{
+  ri_resource_id: string; ri_topic_id: string; ri_type_id: string; ri_resource: string;
+}>): string {
+  if (row.ri_topic_id === 'app-outbox.group-presence-summary') return 'group-presence-summary';
+  if (row.ri_topic_id === 'app-outbox.rtc-topology') return 'rtc-topology-recompute';
+  if (row.ri_type_id === 'WS_OUTBOX') {
+    if (row.ri_topic_id === 'client-state.snapshot') return 'principal-state:snapshot';
+    if (row.ri_topic_id === 'client-state.event') return 'principal-state:event';
+  }
+  throw new Error(`Unrecognized final ResourceInbox effect ${row.ri_type_id}:${row.ri_topic_id}`);
 }
 
 export function isValidProductionReceipt(value: unknown, requestId: string): boolean {
@@ -1496,12 +1434,34 @@ function deriveCorrectness(
   const dbwFindings: string[] = [];
   return {
     acceptedCommandCount,
-    receiptCount: durable.receiptCommandIds.length,
+    receiptCount: durable.receipts.length,
     effectfulCommandCount,
     requiredOutboxIntentCount,
-    outboxIntentCount: durable.outboxIntents.length,
+    outboxIntentCount: durable.resourceOutbox.length,
+    atomicCompletionFailures: durable.atomicCompletionFailures,
     dbwFindings,
   };
+}
+
+function countAtomicCompletionFailures(
+  commands: readonly RawCommand[],
+  durable: Pick<DurableEvidence, 'appInbox' | 'receipts' | 'resourceOutbox'>,
+): number {
+  return commands.filter((command) => command.status === 'accepted').filter((command) => {
+    const expectedOperations = command.kind === 'profile-instance'
+      ? ['instance', 'profile']
+      : ['command'];
+    const completed = durable.appInbox.filter((entry) =>
+      entry.commandId === command.commandId && entry.status === 'COMPLETED' &&
+      entry.resultStatus === 'COMPLETED'
+    ).map((entry) => entry.operationId).toSorted();
+    const receipt = durable.receipts.find((entry) => entry.commandId === command.commandId);
+    const expectedEffects = [...PRODUCTION_STATE_WRITE_MUTATION_CONTRACT[command.kind]].toSorted();
+    const actualEffects = durable.resourceOutbox.filter((entry) => entry.commandId === command.commandId)
+      .map((entry) => entry.effectKind).toSorted();
+    return JSON.stringify(completed) !== JSON.stringify(expectedOperations) || !receipt ||
+      JSON.stringify(actualEffects) !== JSON.stringify(expectedEffects);
+  }).length;
 }
 
 function observeSql(
@@ -1527,6 +1487,10 @@ export function classifyBenchmarkSql(
   values: readonly unknown[],
 ): 'read' | 'write' | 'outbox' {
   const normalized = query.trim().toLowerCase();
+  if (
+    normalized.includes('resource_inbox') &&
+    values.some((value) => value === 'APP_OUTBOX' || value === 'WS_OUTBOX')
+  ) return 'outbox';
   return /^(select|show|explain)\b/.test(normalized) ? 'read' : 'write';
 }
 
@@ -1656,6 +1620,9 @@ function summarizeSamples(samples: readonly RunSample[]): WorkloadSummary {
         samples.map((sample) => sample.correctness.requiredOutboxIntentCount),
       ),
       outboxIntentCount: sum(samples.map((sample) => sample.correctness.outboxIntentCount)),
+      atomicCompletionFailures: sum(
+        samples.map((sample) => sample.correctness.atomicCompletionFailures),
+      ),
       dbwFindings: [...new Set(samples.flatMap((sample) => sample.correctness.dbwFindings))],
     },
   };

@@ -992,7 +992,7 @@ describe('black-box runner recipe matrix', () => {
         });
 
         const topologyPoll = afterChurn.find(step => step.name === 'pollFinalTopologyEffects');
-        expect(topologyPoll).toMatchObject({ type: 'loop', count: 5, intervalMs: 250 });
+        expect(topologyPoll).toMatchObject({ type: 'loop', count: 5, intervalMs: 5_000 });
         const topologyPollSteps = topologyPoll?.steps as Array<Record<string, unknown>>;
         expect(topologyPollSteps).toHaveLength(5);
         groupIds.forEach(groupId => {

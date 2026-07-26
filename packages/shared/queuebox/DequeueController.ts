@@ -241,15 +241,15 @@ export class DequeueController<K, V, T> {
         );
 
         byReservator.set(
-            Reservator.RETRY,
-            this.retryReservator
+            Reservator.FAIRNESS,
+            this.fairnessReservator
                 ? await DequeueController.dequeueWithTypesAlgorithm<K, V, T>(
                     this.maxNumDequeue,
                     this.maxNumToReserve,
                     this.typesToDequeue,
                     this.returnDequeuedEntries,
                     this.checkIsTypesToDequeue,
-                    this.retryReservator,
+                    this.fairnessReservator,
                     computer,
                     successReleaser,
                     failureReleaser,
@@ -262,15 +262,15 @@ export class DequeueController<K, V, T> {
         );
 
         byReservator.set(
-            Reservator.FAIRNESS,
-            this.fairnessReservator
+            Reservator.RETRY,
+            this.retryReservator
                 ? await DequeueController.dequeueWithTypesAlgorithm<K, V, T>(
                     this.maxNumDequeue,
                     this.maxNumToReserve,
                     this.typesToDequeue,
                     this.returnDequeuedEntries,
                     this.checkIsTypesToDequeue,
-                    this.fairnessReservator,
+                    this.retryReservator,
                     computer,
                     successReleaser,
                     failureReleaser,

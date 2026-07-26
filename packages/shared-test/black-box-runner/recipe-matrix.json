@@ -979,6 +979,30 @@
       "description": "Two-server state-write convergence gate for bounded membership, reused-session fencing, topology config receipts, and causal history."
     },
     {
+      "id": "api-v1-crdt-app-inbox",
+      "recipe": "tests/api-v1/api-v1-crdt-app-inbox.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "profiles": ["api-v1-black-box-cluster", "api-v1-black-box-crdt"],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-crdt-app-inbox",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API primary",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          },
+          {
+            "name": "Rallar API secondary",
+            "env": "RALLAR_API_BASE_URL_SECONDARY",
+            "default": "http://127.0.0.1:18081"
+          }
+        ]
+      },
+      "description": "Two-server CRDT AppInbox gate for authenticated append, committed reply, durable fanout, and catch-up."
+    },
+    {
       "id": "api-v1-state-medium-scale-churn",
       "recipe": "tests/api-v1/api-v1-state-medium-scale-churn.json",
       "category": "api-v1-black-box",

@@ -160,6 +160,81 @@
       }
     },
     {
+      "name": "runBoundedPruneToCompletion",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/admin/operations/maintenance/prune-expired",
+        "headers": {
+          "Authorization": "{adminAuthHeader}",
+          "x-client-id": "{adminClientId}"
+        },
+        "body": {
+          "requestId": "bounded-prune-{adminClientId}",
+          "dryRun": false,
+          "categories": ["runtime-state", "resource-inbox-results"],
+          "reason": "black-box-bounded-prune"
+        },
+        "outputs": {
+          "boundedPruneStatus": "body.status",
+          "boundedPruneResults": "body.results"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "operation": "maintenance.prune-expired",
+          "status": "completed",
+          "jobId": "string",
+          "results": [
+            { "category": "runtime-state", "expiredRows": "integer", "deletedRows": "integer", "dryRun": false },
+            { "category": "resource-inbox-results", "expiredRows": "integer", "deletedRows": "integer", "dryRun": false }
+          ]
+        }
+      }
+    },
+    {
+      "name": "exposeStateWriteEvidence",
+      "type": "set.state-write-evidence",
+      "output": "stateWriteEvidence",
+      "request": {
+        "stateWriteEvidence": {
+          "match": "bounded-prune-{adminClientId}",
+          "commandTypes": ["ADMIN_PRUNE_EXPIRED"],
+          "minimumMatchedRows": 1,
+          "expectedEffectsByCommandType": {
+            "ADMIN_PRUNE_EXPIRED": [
+              "admin-prune-page", "admin-prune-page"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "assertAtomicAppInboxCompletion",
+      "type": "assert",
+      "actual": {
+        "atomicCompletionFailures": "{stateWriteEvidence.atomicCompletionFailures}",
+        "intermediateMutationIntents": "{stateWriteEvidence.intermediateMutationIntents}",
+        "completedAppInboxStatus": "{stateWriteEvidence.completedAppInboxStatus}",
+        "pruneStatus": "{boundedPruneStatus}",
+        "boundedPages": "{boundedPruneResults}"
+      },
+      "expect": {
+        "body": {
+          "atomicCompletionFailures": 0,
+          "intermediateMutationIntents": [],
+          "completedAppInboxStatus": "COMPLETED",
+          "pruneStatus": "completed",
+          "boundedPages": [
+            { "category": "runtime-state", "expiredRows": "integer", "deletedRows": "integer", "dryRun": false },
+            { "category": "resource-inbox-results", "expiredRows": "integer", "deletedRows": "integer", "dryRun": false }
+          ]
+        }
+      }
+    },
+    {
       "name": "rejectInvalidCrdtLifecycle",
       "type": "http",
       "connection": "api",
@@ -184,7 +259,7 @@
       "expect": {
         "status": 400,
         "body": {
-          "error": "Unsupported CRDT lifecycle: destroy"
+          "error": "CRDT lifecycle is invalid"
         }
       }
     },
@@ -213,7 +288,7 @@
       "expect": {
         "status": 400,
         "body": {
-          "error": "Unsupported CRDT erasure mode: redact-payload"
+          "error": "CRDT command document is invalid"
         }
       }
     },

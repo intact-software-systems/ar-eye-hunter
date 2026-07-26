@@ -410,6 +410,20 @@
       }
     },
     {
+      "name": "wsPrimaryAuthorizationReady",
+      "type": "ws.wait",
+      "connection": "wsPrimary",
+      "expect": {
+        "connection": "wsPrimary",
+        "withinMs": 15000,
+        "consume": true,
+        "messages": [{
+          "route": { "topicId": "client-state.snapshot" },
+          "payload": { "typeId": "client-state.snapshot" }
+        }]
+      }
+    },
+    {
       "name": "createBobWebSocketTicketOnSecondary",
       "type": "http",
       "connection": "apiSecondary",
@@ -469,6 +483,20 @@
       }
     },
     {
+      "name": "wsSecondaryAuthorizationReady",
+      "type": "ws.wait",
+      "connection": "wsSecondary",
+      "expect": {
+        "connection": "wsSecondary",
+        "withinMs": 15000,
+        "consume": true,
+        "messages": [{
+          "route": { "topicId": "client-state.snapshot" },
+          "payload": { "typeId": "client-state.snapshot" }
+        }]
+      }
+    },
+    {
       "name": "commitConcurrentGroupRevisions",
       "type": "parallel",
       "maxConcurrency": 2,
@@ -493,7 +521,7 @@
                   "role": "admin"
                 },
                 "outputs": {
-                  "roleMutationRevision": "body.stateRevision"
+                  "roleMutationRevision": "body.causalRevision.groupRevision"
                 }
               },
               "expect": {
@@ -527,7 +555,7 @@
                   "description": "Concurrent update from the secondary API server"
                 },
                 "outputs": {
-                  "groupMutationRevision": "body.stateRevision"
+                  "groupMutationRevision": "body.causalRevision.groupRevision"
                 }
               },
               "expect": {
@@ -662,8 +690,8 @@
       "name": "assertPrimaryExactRevisions",
       "type": "assert",
       "actual": {
-        "firstRevision": "{primaryFirstTopology.sourceGroupStateRevision}",
-        "secondRevision": "{primarySecondTopology.sourceGroupStateRevision}"
+        "firstRevision": "{primaryFirstTopology.sourceGroupStateCausalRevision.groupRevision}",
+        "secondRevision": "{primarySecondTopology.sourceGroupStateCausalRevision.groupRevision}"
       },
       "expect": {
         "anyOf": [
@@ -682,8 +710,8 @@
       "name": "assertSecondaryExactRevisions",
       "type": "assert",
       "actual": {
-        "firstRevision": "{secondaryFirstTopology.sourceGroupStateRevision}",
-        "secondRevision": "{secondarySecondTopology.sourceGroupStateRevision}"
+        "firstRevision": "{secondaryFirstTopology.sourceGroupStateCausalRevision.groupRevision}",
+        "secondRevision": "{secondarySecondTopology.sourceGroupStateCausalRevision.groupRevision}"
       },
       "expect": {
         "anyOf": [
@@ -710,7 +738,10 @@
       "expect": {
         "body": {
           "primaryFirst": {
-            "sourceGroupStateRevision": "integer",
+            "sourceGroupStateCausalRevision": {
+              "groupRevision": "integer",
+              "presenceRevision": "integer"
+            },
             "state": "active",
             "version": "integer",
             "groupRef": {
@@ -721,7 +752,10 @@
             "activeSessionIds": ["{aliceSessionId}", "{bobSessionId}"]
           },
           "primarySecond": {
-            "sourceGroupStateRevision": "integer",
+            "sourceGroupStateCausalRevision": {
+              "groupRevision": "integer",
+              "presenceRevision": "integer"
+            },
             "state": "active",
             "version": "integer",
             "groupRef": {
@@ -732,7 +766,10 @@
             "activeSessionIds": ["{aliceSessionId}", "{bobSessionId}"]
           },
           "secondaryFirst": {
-            "sourceGroupStateRevision": "integer",
+            "sourceGroupStateCausalRevision": {
+              "groupRevision": "integer",
+              "presenceRevision": "integer"
+            },
             "state": "active",
             "version": "integer",
             "groupRef": {
@@ -743,7 +780,10 @@
             "activeSessionIds": ["{aliceSessionId}", "{bobSessionId}"]
           },
           "secondarySecond": {
-            "sourceGroupStateRevision": "integer",
+            "sourceGroupStateCausalRevision": {
+              "groupRevision": "integer",
+              "presenceRevision": "integer"
+            },
             "state": "active",
             "version": "integer",
             "groupRef": {

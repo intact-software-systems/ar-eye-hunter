@@ -281,10 +281,12 @@ export type GroupPresenceSummaryRead = Readonly<{
 export type GroupPresenceSummaryComputed =
     | Readonly<{
         outcome: 'no-op';
+        evaluatedAtEpochMs: number;
         summary: GroupPresenceSummary;
     }>
     | Readonly<{
         outcome: 'write';
+        evaluatedAtEpochMs: number;
         operation: 'insert' | 'update';
         expectedRevision: number | null;
         summary: GroupPresenceSummary;
@@ -1814,12 +1816,12 @@ export function computeGroupPresenceSummary(input: Readonly<{
 }>): GroupPresenceSummaryComputed {
     const { ref, read, nowEpochMs } = input;
     const content = deriveGroupPresenceSummaryContent(read, nowEpochMs);
-    const groupRevision = read.group.entry.revision + 1;
+    const groupRevision = read.group.value.snapshotVersion;
     const current = read.current?.value;
-    if (current &&
+    if (current && (current.causalRevision.groupRevision > groupRevision ||
         current.causalRevision.groupRevision === groupRevision &&
-        jsonEquals(summaryContent(current), content)) {
-        return { outcome: 'no-op', summary: current };
+        jsonEquals(summaryContent(current), content))) {
+        return { outcome: 'no-op', evaluatedAtEpochMs: nowEpochMs, summary: current };
     }
     const summary: GroupPresenceSummary = {
         applicationId: ref.applicationId,
@@ -1835,6 +1837,7 @@ export function computeGroupPresenceSummary(input: Readonly<{
     };
     return {
         outcome: 'write',
+        evaluatedAtEpochMs: nowEpochMs,
         operation: read.current ? 'update' : 'insert',
         expectedRevision: read.current?.entry.revision ?? null,
         summary,
@@ -1870,21 +1873,21 @@ export function validateGroupPresenceSummary(input: Readonly<{
         );
         validatePresenceSummaryValue(read.current.value, ref);
     }
-
     const summary = computed.summary;
     validatePresenceSummaryValue(summary, ref);
-    const expectedContent = deriveGroupPresenceSummaryContent(
-        read,
-        summary.computedAtEpochMs,
-    );
-    const groupRevision = read.group.entry.revision + 1;
+    requirePositiveSafeInteger(computed.evaluatedAtEpochMs,
+        'Group presence summary evaluatedAtEpochMs');
+    const expectedContent = deriveGroupPresenceSummaryContent(read,
+        computed.evaluatedAtEpochMs);
+    const groupRevision = read.group.value.snapshotVersion;
     const current = read.current?.value;
-    const expectedNoOp = current !== undefined &&
+    const expectedNoOp = current !== undefined && (
+        current.causalRevision.groupRevision > groupRevision ||
         current.causalRevision.groupRevision === groupRevision &&
-        jsonEquals(summaryContent(current), expectedContent);
+        jsonEquals(summaryContent(current), expectedContent));
     const shape = computed as unknown as Record<string, unknown>;
     if (computed.outcome === 'no-op') {
-        assertExactKeys(shape, ['outcome', 'summary'],
+        assertExactKeys(shape, ['outcome', 'evaluatedAtEpochMs', 'summary'],
             'Group presence summary computed result');
         if (!expectedNoOp || !current || !jsonEquals(summary, current)) {
             throw new TypeError(
@@ -1892,7 +1895,8 @@ export function validateGroupPresenceSummary(input: Readonly<{
             );
         }
     } else {
-        assertExactKeys(shape, ['outcome', 'operation', 'expectedRevision', 'summary'],
+        assertExactKeys(shape,
+            ['outcome', 'evaluatedAtEpochMs', 'operation', 'expectedRevision', 'summary'],
             'Group presence summary computed result');
         const expectedSummary: GroupPresenceSummary = {
             applicationId: ref.applicationId,
@@ -1904,7 +1908,7 @@ export function validateGroupPresenceSummary(input: Readonly<{
                     (current?.causalRevision.presenceRevision ?? 0) + 1,
             },
             ...expectedContent,
-            computedAtEpochMs: summary.computedAtEpochMs,
+            computedAtEpochMs: computed.evaluatedAtEpochMs,
         };
         if (expectedNoOp ||
             computed.operation !== (read.current ? 'update' : 'insert') ||
@@ -2854,11 +2858,7 @@ function writeResult(
 ): GroupMutationComputed {
     const group = input.eventGroup ??
         (input.guard.kind === 'group' ? input.guard.value : requireGroup(read, command.aggregateRef).value);
-    const groupRevision = input.guard.kind === 'group'
-        ? input.guard.operation === 'insert'
-            ? 1
-            : input.guard.expectedRevision + 2
-        : requireGroup(read, command.aggregateRef).entry.revision + 1;
+    const groupRevision = group.snapshotVersion;
     const presenceRevision = read.presenceSummary?.value.causalRevision.presenceRevision ?? 0;
     const causalRevision = { groupRevision, presenceRevision };
     const event = newGroupEvent(
@@ -2989,7 +2989,7 @@ function receiptFor(
 
 function currentCausalRevision(read: GroupMutationRead): GroupStateCausalRevision {
     return {
-        groupRevision: read.group ? read.group.entry.revision + 1 : 0,
+        groupRevision: read.group?.value.snapshotVersion ?? 0,
         presenceRevision: read.presenceSummary?.value.causalRevision.presenceRevision ?? 0,
     };
 }

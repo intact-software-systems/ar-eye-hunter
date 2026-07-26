@@ -7,7 +7,10 @@ import type { PSqlTransactionSql } from '../../postgres/PostgresSqlClient.ts';
 import { ResourceInboxRepository } from '../../postgres/resource-inbox/ResourceInboxRepository.ts';
 import type { RtcTopologyPublication } from '../rtc-topology-publication-contract.ts';
 import { validateRtcTopologyPublication } from '../rtc-topology-publication-validation.ts';
-import { toAppQueueCreatedBy } from './app-inbox-queue-key.ts';
+import {
+    toAppQueueCreatedBy,
+    toAppQueueKey,
+} from './app-inbox-queue-key.ts';
 
 export function computeRtcTopologyPublicationOutbox(
     publication: RtcTopologyPublication,
@@ -29,7 +32,11 @@ export function computeRtcTopologyPublicationOutbox(
         .toZonedDateTimeISO('UTC')
         .toPlainDateTime();
     return {
-        key: message.route,
+        key: toAppQueueKey({
+            topicId: message.route.topicId,
+            resourceId: message.id.msgId,
+            contextId: message.route.contextId,
+        }),
         resource: JSON.stringify(message),
         typeId: EnqueuedType.WS_OUTBOX,
         status: EntityStatus.NEW,

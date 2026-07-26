@@ -112,6 +112,104 @@
       }
     },
     {
+      "name": "issueSingleUseAgentTicket",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/agent-session-tickets",
+        "headers": {
+          "Authorization": "{disposableAuthHeader}",
+          "x-client-id": "{disposableClientId}"
+        },
+        "body": { "agentIds": ["ticket-race-{runId}"] },
+        "outputs": {
+          "singleUseAgentTicket": { "path": "body.tickets.0.ticket", "secret": true }
+        }
+      },
+      "expect": { "status": 200, "body": { "tickets": [{ "ticket": "string" }] } }
+    },
+    {
+      "name": "raceSingleUseAgentTicket",
+      "type": "parallel",
+      "maxConcurrency": 2,
+      "timeoutMs": 10000,
+      "groups": [
+        {
+          "name": "ticket-consumer-one",
+          "steps": [{
+            "name": "consumeSingleUseAgentTicketOne",
+            "type": "http",
+            "connection": "api",
+            "request": {
+              "method": "POST",
+              "path": "/api/auth/agent-session-tickets/consume",
+              "body": { "ticket": "{singleUseAgentTicket}" }
+            },
+            "expect": { "statusCode": [200, 404] }
+          }]
+        },
+        {
+          "name": "ticket-consumer-two",
+          "steps": [{
+            "name": "consumeSingleUseAgentTicketTwo",
+            "type": "http",
+            "connection": "api",
+            "request": {
+              "method": "POST",
+              "path": "/api/auth/agent-session-tickets/consume",
+              "body": { "ticket": "{singleUseAgentTicket}" }
+            },
+            "expect": { "statusCode": [200, 404] }
+          }]
+        }
+      ]
+    },
+    {
+      "name": "assertSingleTicketConsumption",
+      "type": "assert",
+      "actual": {
+        "statuses": [
+          "{resultsByName.consumeSingleUseAgentTicketOne.0.actual.statusCode}",
+          "{resultsByName.consumeSingleUseAgentTicketTwo.0.actual.statusCode}"
+        ]
+      },
+      "expect": { "anyOf": [{ "statuses": [200, 404] }, { "statuses": [404, 200] }] }
+    },
+    {
+      "name": "exposeStateWriteEvidence",
+      "type": "set.state-write-evidence",
+      "output": "stateWriteEvidence",
+      "request": {
+        "stateWriteEvidence": {
+          "match": "ticket-race-{runId}",
+          "commandTypes": ["AUTH_AGENT_SESSION_TICKET_CONSUME"],
+          "minimumMatchedRows": 2,
+          "expectedEffectsByCommandType": {
+            "AUTH_AGENT_SESSION_TICKET_CONSUME": []
+          }
+        }
+      }
+    },
+    {
+      "name": "assertAtomicAppInboxCompletion",
+      "type": "assert",
+      "actual": {
+        "atomicCompletionFailures": "{stateWriteEvidence.atomicCompletionFailures}",
+        "intermediateMutationIntents": "{stateWriteEvidence.intermediateMutationIntents}",
+        "completedAppInboxCount": "{stateWriteEvidence.completedAppInboxCount}",
+        "failedAppInboxCount": "{stateWriteEvidence.failedAppInboxCount}"
+      },
+      "expect": {
+        "body": {
+          "atomicCompletionFailures": 0,
+          "intermediateMutationIntents": [],
+          "completedAppInboxCount": 1,
+          "failedAppInboxCount": 1
+        }
+      }
+    },
+    {
       "name": "logoutDisposableUser",
       "type": "http",
       "connection": "api",

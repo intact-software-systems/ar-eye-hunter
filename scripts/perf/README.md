@@ -112,16 +112,13 @@ npm run perf:api-v1:state-write -- \
   --out=tmp/perf/api-v1-state-write-baseline.json
 ```
 
-The harness constructs two independent PostgreSQL service/repository stacks
+The harness constructs two independent PostgreSQL AppInbox stacks
 against one database. It seeds complete client and group state before every
 warmup and measured phase, then resets measurement state. Setup, including
 deterministic auth-session insertion, and HTTP routing are not included in
-mutation latency. Each authoritative group mutation still performs production
-auth-session lookup and revalidation inside the measured service call, and that
-SQL is included in the harness counters and timings. If a membership or
-presence-connect command exhausts production retries, causally dependent
-presence commands are recorded as explicit exhausted-prerequisite terminals
-without invoking an invalid service call or writing receipts/outbox intents.
+mutation latency. Each authoritative command is enqueued, retried, and completed
+by the production AppInbox transaction boundary; authorization revalidation and
+its SQL remain measured.
 Every workload uses 100
 clients, concurrency 10, and the same deterministic mix: profile/instance,
 membership, presence connect/heartbeat/disconnect, group config, and topology
@@ -130,40 +127,37 @@ and one (`hot`).
 
 Artifacts use schema `rallar.api-v1.state-write.v3`. Each measured run retains
 exactly 700 command records and latencies (100 of every mutation kind), balanced
-service-stack counts, and production-service timing observations for attempts.
+service-stack counts, and durable AppInbox attempt observations.
 It also includes latency percentiles, throughput, SQL/row/serialized-byte
 metrics, transaction and production phase timings, PostgreSQL lock/buffer/WAL
 counters, and process CPU time. PostgreSQL buffer and WAL counters are captured
 immediately before and after each measured phase; lock waits are sampled from
 `pg_stat_activity` while the phase runs.
 
-Attempt observations use production client/group/topology-config service timing events. Each operation has
-an `operationId`, exact zero-based production attempt numbers, nonterminal
-`conflicted` observations with their production attempt numbers, and exactly
-one final `accepted` or `exhausted` observation. Acceptance is the attempt after
-the last conflict; typed retry exhaustion terminates at the final conflict.
-Profile and instance are separate production operations; the other mutation
-kinds use one command operation. A causal command deliberately not invoked
-after a prerequisite failure instead gets an explicitly labeled synthetic
-prerequisite terminal.
+Attempt observations use durable `resource_inbox.ri_attempts` values for
+`APP_INBOX` rows. Each operation has a one-based attempt number, exact retry
+delay, persisted due age, selected `fast`, `fairness`, or `timeout` lane, and a
+final accepted or exhausted outcome. Profile and instance remain separate
+operations; the other mutation kinds use one command operation. Candidate
+artifacts reject service-local retry timing and synthetic prerequisite records.
 Command accepted/exhausted outcomes, conflict counts, attempt counts, and
 attempts per accepted mutation are derived from these histories. Coherent hot
 baseline exhaustion is representable; comparison permits candidate hot
 exhaustion only up to that baseline while requiring zero in uncontended/shared.
 
-The timed command ends with the production service call. After the measured
-phase, the harness queries production client/group/topology-config idempotency receipts and
-`StateMutationOutboxRepository` through an uninstrumented admin SQL stack.
+The timed command ends with AppInbox completion. After the measured phase, the
+harness queries completed `APP_INBOX` rows/results, production idempotency
+receipts, and final `APP_OUTBOX`/`WS_OUTBOX` rows from `resource_inbox` through
+an uninstrumented admin SQL stack.
 Profile-instance counts as received only when both profile and instance
 subcommand receipts are present and complete; a group command uses its exact
-request-ID receipt. Production outbox IDs and effects are projected without
-inventing evidence: two `client-state-sync` effects for profile-instance, and
-`group-state-sync` plus `group-presence-summary` for every accepted group
-mutation, including heartbeat, plus one `rtc-topology-recompute` effect for
-each accepted topology-source mutation. These post-phase evidence queries are excluded
-from command latency, SQL/resource deltas, and mutation timing. The Task 5
-producer requires complete topology receipts, real outbox records, and exact
-zero-based mutation timings and emits no topology DBW exception. Every metric source is disclosed in
+request-ID receipt. Production effect IDs and kinds are projected without
+inventing evidence: principal snapshot/event effects for profile-instance,
+`group-presence-summary` for group mutations, and `rtc-topology-recompute` for
+topology-source. Intermediate mutation-intent evidence is forbidden.
+`atomicCompletionFailures` requires each completed AppInbox result, receipt,
+and exact final effects in the same observation. These evidence queries are
+excluded from command latency and measurement counters. Every metric source is disclosed in
 `measurement.counterSources`.
 
 Compare a candidate with its unmodified baseline:
@@ -187,11 +181,11 @@ from raw records before applying comparison gates. Standalone validation
 preserves the immutable governed pre-remediation legacy contract. A
 non-candidate production diagnostic may retain only the exact DBW-06/DBW-12
 topology-source receipt/effect gap. Candidate comparison always applies the
-production durable contract with strict unique receipt/intent ID, command, and
+production durable contract with strict unique receipt/final-effect ID, command, and
 effect linkage; candidate DBW tags cannot waive those invariants.
 DBW retention never waives record structure: every receipt is a nonempty raw
-command ID, every outbox record has nonempty intent/command/kind strings and a
-raw-command reference, and finding IDs must match the governed `DBW-...`
+command ID, every final ResourceInbox record has nonempty effect/command/topic/type
+identity and a raw-command reference, and finding IDs must match the governed `DBW-...`
 format. The legacy waiver is selected only by governed baseline metadata; there
 is no permissive either-contract candidate path.
 Validation and comparison are total over parsed JSON-like input: malformed
@@ -199,7 +193,8 @@ nested samples, unsupported mutation kinds, missing evidence containers, or
 invalid derivation records produce path-oriented baseline/candidate errors
 instead of throwing from summary or durable-contract derivation.
 All contract arrays must be dense: workloads, samples, raw commands, attempt and
-latency records, stack counts, receipts, outbox intents, DBW findings, mutation
+latency records, stack counts, AppInbox rows, receipts, ResourceInbox effects,
+DBW findings, mutation
 mix/exclusions, and regression reasons reject JavaScript holes before any
 iteration, equality check, derivation, or baseline waiver.
 

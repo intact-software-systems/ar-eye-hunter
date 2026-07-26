@@ -789,9 +789,7 @@ function validateTopologyConfigRead(
         !read.groupAuthorityGuard ||
         !sameGroupRef(read.groupAuthorityGuard.groupRef, command.aggregateRef) ||
         read.groupAuthorityGuard.causalGroupRevision !==
-            read.groupSnapshot.causalRevision.groupRevision ||
-        read.groupAuthorityGuard.entry.revision + 1 !==
-            read.groupAuthorityGuard.causalGroupRevision
+            read.groupSnapshot.causalRevision.groupRevision
     ) {
         throw new TypeError(
             'Topology config group authority guard differs from its snapshot',

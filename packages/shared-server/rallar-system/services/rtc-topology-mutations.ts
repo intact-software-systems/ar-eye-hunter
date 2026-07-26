@@ -22,6 +22,8 @@ import {
     RTC_RTT_MUTATION_RETENTION_MS,
     validateRtcRttWriteCandidate,
 } from '../rtc-rtt-persistence-validation.ts';
+import { computeStaleTopologyPublication } from './rtc-topology-stale-publication.ts';
+import type { RtcTopologyStaleMutationComputed } from './rtc-topology-stale-publication.ts';
 import {
     evaluateRtcRttMeasurement,
     type RtcRttAcceptanceReason,
@@ -31,19 +33,16 @@ export type RtcTopologyPublicationClaim = Readonly<{
     receipt: RtcTopologyPublicationWorkClaim;
     publication: RtcTopologyPublication;
 }>;
-
 export type RtcTopologyMutationRead = Readonly<{
     snapshot: RuntimeStateEntryValue<RallarOverlayTopologySnapshot> | null;
     publicationClaim: RtcTopologyPublicationClaim | null;
 }>;
-
 export type RtcTopologyMutationInput = Readonly<{
     read: RtcTopologyMutationRead;
     candidate: RallarOverlayTopologySnapshot | null;
     publication: RtcTopologyPublication | null;
     facts: RtcTopologyMutationFacts;
 }>;
-
 export type RtcTopologyMutationFacts =
     | Readonly<{
         publicationExpireAtTimestamp: null;
@@ -55,7 +54,6 @@ export type RtcTopologyMutationFacts =
         commandHash: string;
         attemptCount: number;
     }>;
-
 export type RtcTopologyMutationComputed =
     | Readonly<{
         outcome: 'loaded';
@@ -68,10 +66,7 @@ export type RtcTopologyMutationComputed =
             | 'publication-ahead-of-snapshot'
             | 'incomparable-causal-revision';
     }>
-    | Readonly<{
-        outcome: 'superseded';
-        current: RallarOverlayTopologySnapshot;
-    }>
+    | RtcTopologyStaleMutationComputed
     | (
         Readonly<{
             outcome: 'write';
@@ -93,7 +88,6 @@ export type RtcTopologyMutationComputed =
             }>
         )
     );
-
 export function computeTopologyMutation(
     input: RtcTopologyMutationInput,
 ): RtcTopologyMutationComputed {
@@ -152,7 +146,11 @@ export function computeTopologyMutation(
     const current = input.read.snapshot?.value;
     const observation = decideTopologySnapshot(current, input.candidate);
     if (observation === 'stale') {
-        return { outcome: 'superseded', current: current! };
+        return computeStaleTopologyPublication({
+            current: input.read.snapshot!,
+            publication: input.publication,
+            ...input.facts,
+        });
     }
     if (observation === 'incomparable') {
         return {
@@ -244,7 +242,10 @@ export function validateTopologyMutation(
     ) {
         throw new TypeError('RTC topology publication differs from candidate identity');
     }
-    if (input.publication && input.computed.outcome === 'write') {
+    if (
+        input.publication &&
+        ['write', 'publish-superseded'].includes(input.computed.outcome)
+    ) {
         const publicationSnapshot = assertPublicationSelfConsistent(input.publication);
         if (!rtcTopologySemanticEqual(publicationSnapshot, input.candidate)) {
             throw new TypeError('RTC topology publication payload differs from candidate');
@@ -714,7 +715,6 @@ function requireRttAuthority(
         facts: facts as RtcRttMutationLifecycleFacts & Readonly<{ commandHash: string }>,
     };
 }
-
 
 function peersForEndpoint(
     endpointId: string,

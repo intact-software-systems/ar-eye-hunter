@@ -94,6 +94,7 @@ export type ALOutboundMessageRuntimeInput<TPrepared> = Readonly<{
     readMessageFromEntry: (entry: ResourceEntry) => ALMessage;
     planOutgoingMessage: (msg: ALMessage) => ALOutboundDispatchPlan<TPrepared>;
     planDequeuedMessage?: (msg: ALMessage) => ALOutboundDispatchPlan<TPrepared>;
+    beforeDequeueDispatch?: (msg: ALMessage, entry: ResourceEntry) => boolean | Promise<boolean>;
     sendPreparedMessage: (
         prepared: TPrepared,
         phase: ALOutboundDispatchPhase,
@@ -107,13 +108,11 @@ export type ALOutboundMessageRuntimeInput<TPrepared> = Readonly<{
     diagnostics?: ALOutboundRuntimeDiagnosticsSink;
     nowMs?: () => number;
 }>;
-
 export type ALOutboundRuntimeStores = Readonly<{
     admissionStore?: ALOutboundAdmissionStore;
     supersedenceStore?: unknown;
     stateStore?: ALOutboundRuntimeStateStore;
 }>;
-
 export type ALOutboundRuntimeDiagnosticsEvent =
     | Readonly<{
     kind: 'sender-queue-wait';
@@ -298,7 +297,6 @@ export class ALOutboundMessageRuntime<TPrepared> {
             reason: computed.reason,
         };
     }
-
     async dequeue(
         typesToDequeue: Set<string>,
         resilience: ResilienceDto,
@@ -306,19 +304,20 @@ export class ALOutboundMessageRuntime<TPrepared> {
         if (this.disposed) {
             return;
         }
-
         await this.ready();
         if (this.disposed) {
             return;
         }
-
         await QueueBoxUtilities.defaultDequeue(
             this.input.outbox,
             typesToDequeue,
             resilience,
             async (entry) => {
                 const msg = this.input.readMessageFromEntry(entry);
-                await this.commitDispatchPlanWithRetry(
+                const clusterDispatch = this.input.beforeDequeueDispatch?.(msg, entry);
+                const clusterPublished = clusterDispatch === undefined || typeof clusterDispatch === 'boolean'
+                    ? clusterDispatch ?? false : await clusterDispatch;
+                const computed = await this.commitDispatchPlanWithRetry(
                     msg,
                     this.input.planDequeuedMessage ??
                         this.input.planOutgoingMessage,
@@ -328,6 +327,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
                         fallbackEntry: entry,
                     },
                 );
+                if (computed.status === 'no-route' && !clusterPublished) throw new Error(computed.reason);
             },
         );
     }
@@ -664,7 +664,6 @@ export class ALOutboundMessageRuntime<TPrepared> {
         if (this.disposed) {
             return;
         }
-
         void this.startEffectDrain().catch(error => {
             console.error('Failed to drain outbound durable effects', error);
         });
@@ -684,6 +683,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
             this.effectDrainPromise = this.runDurableEffectDrainLoop()
                 .catch(error => {
                     console.error('Outbound durable effect drain failed', error);
+                    this.scheduleEffectDrainAt(this.readNowMs() + this.toEffectRetryDelayMs(0));
                 })
                 .finally(() => {
                     this.effectDrainPromise = undefined;

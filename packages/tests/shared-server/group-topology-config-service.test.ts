@@ -54,7 +54,7 @@ describe('group topology config service', () => {
                 invariantGeneration: null,
                 idempotency: null,
                 groupSnapshot: createGroupSnapshot(),
-                groupAuthorityGuard: createGroupAuthorityGuard(),
+                groupAuthorityGuard: createGroupAuthorityGuard(40),
             },
             facts: {
                 requestedAtEpochMs: 1_000,
@@ -715,7 +715,7 @@ function createGroupSnapshot(): GroupSnapshot {
     };
 }
 
-function createGroupAuthorityGuard() {
+function createGroupAuthorityGuard(revision = 0) {
     const group = createGroupSnapshot().group;
     return {
         groupRef: createGroupRef(),
@@ -725,7 +725,7 @@ function createGroupAuthorityGuard() {
             value: JSON.stringify(group),
             expireAtTimestamp: Number.MAX_SAFE_INTEGER,
             updatedTimestamp: new Date(0).toISOString(),
-            revision: 0,
+            revision,
         },
     };
 }

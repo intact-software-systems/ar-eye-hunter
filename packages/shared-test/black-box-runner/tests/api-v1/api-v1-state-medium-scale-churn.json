@@ -59,6 +59,10 @@
     "correlation": {
       "injectHeaders": true,
       "injectPayloads": false
+    },
+    "artifact": {
+      "maxEvents": 25,
+      "maxReportResults": 25
     }
   },
   "connections": {
@@ -8931,6 +8935,47 @@
       ]
     },
     {
+      "name": "exposeStateWriteEvidence",
+      "type": "set.state-write-evidence",
+      "output": "stateWriteEvidence",
+      "request": {
+        "stateWriteEvidence": {
+          "match": "{applicationId}",
+          "commandTypes": [
+            "GROUP_MEMBER_UPSERT", "TOPOLOGY_CONFIG_PUT", "TOPOLOGY_CONFIG_DELETE"
+          ],
+          "commandIdPrefixes": ["lane-", "control-"],
+          "minimumMatchedRows": 600,
+          "evidenceSampleLimit": 1,
+          "expectedEffectsByCommandType": {
+            "GROUP_MEMBER_UPSERT": ["group-presence-summary"],
+            "TOPOLOGY_CONFIG_PUT": ["rtc-topology-recompute"],
+            "TOPOLOGY_CONFIG_DELETE": ["rtc-topology-recompute"]
+          }
+        }
+      }
+    },
+    {
+      "name": "assertAtomicAppInboxCompletion",
+      "type": "assert",
+      "actual": {
+        "atomicCompletionFailures": "{stateWriteEvidence.atomicCompletionFailures}",
+        "intermediateMutationIntents": "{stateWriteEvidence.intermediateMutationIntents}",
+        "completedAppInboxStatus": "{stateWriteEvidence.completedAppInboxStatus}",
+        "naturalBoundedRetryObserved": "{stateWriteEvidence.naturalBoundedRetryObserved}",
+        "mutationStatus": "{resultsByName.runMediumScaleStateChurn.0.status}"
+      },
+      "expect": {
+        "body": {
+          "atomicCompletionFailures": 0,
+          "intermediateMutationIntents": [],
+          "completedAppInboxStatus": "COMPLETED",
+          "naturalBoundedRetryObserved": true,
+          "mutationStatus": "SUCCESS"
+        }
+      }
+    },
+    {
       "name": "assertFinalBoundedConvergenceAndCausalHistory",
       "type": "assert",
       "actual": {
@@ -9433,7 +9478,7 @@
       "name": "pollFinalTopologyEffects",
       "type": "loop",
       "count": 5,
-      "intervalMs": 250,
+      "intervalMs": 5000,
       "steps": [
         {
           "name": "observeonePublishedTopologyEffect{loop.iteration}",

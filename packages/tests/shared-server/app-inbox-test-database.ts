@@ -340,7 +340,7 @@ function toResultEntry(values: readonly unknown[]): ResourceEntry {
             date: Temporal.PlainDate.from(systemDate as string).toPlainDateTime()
                 .toPlainTime(),
             createdBy: createdBy as string,
-            createdTs: Temporal.PlainDateTime.from(createdTs as string),
+            createdTs: toPlainDateTime(createdTs),
             expiryTs: String(expiryTs).endsWith('Z')
                 ? Temporal.Instant.from(expiryTs as string)
                 : Temporal.PlainDateTime.from(expiryTs as string).toZonedDateTime('UTC')

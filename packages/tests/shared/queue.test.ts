@@ -288,8 +288,8 @@ describe('resource inbox retry and fairness lanes', () => {
         expect(optionsSeen).toHaveLength(4);
         expect(optionsSeen).toEqual([
             { maxToReserve: 1, maxAttempts: 2 },
-            { maxToReserve: 1, maxAttempts: 2 },
             { maxToReserve: 1, maxAttempts: 2, maxToScan: 8 },
+            { maxToReserve: 1, maxAttempts: 2 },
             { maxToReserve: 1, maxAttempts: 2 },
         ]);
     });
