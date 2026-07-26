@@ -24,6 +24,13 @@ import {
     retryAfterAttempt,
     toResourceInboxFairnessTelemetry,
 } from './ResourceInboxRetryPolicy.ts';
+import {
+    readResourceInboxAttemptTelemetry,
+    recordResourceInboxAttemptRelease,
+    rememberResourceInboxAttemptTelemetry,
+    type ResourceInboxAttemptReleaseTelemetry,
+} from './ResourceInboxAttemptTelemetry.ts';
+export { readResourceInboxAttemptTelemetry } from './ResourceInboxAttemptTelemetry.ts';
 
 // -----------------------------------------
 // Minimal domain contracts (adjust/import)
@@ -64,22 +71,6 @@ export type ResourceInboxRetryExhaustionRecovery = Readonly<{
     selectedDueAtEpochMs: number;
     finalizedAtEpochMs: number;
 }>;
-
-export type ResourceInboxAttemptTelemetry = Readonly<{
-    selectedLane: Reservator;
-    queueAgeMs: number;
-    dueAgeMs: number;
-    attempt: number;
-    selectedDueAtEpochMs: number;
-}>;
-
-const attemptTelemetryByEntry = new WeakMap<ResourceEntry, ResourceInboxAttemptTelemetry>();
-
-export function readResourceInboxAttemptTelemetry(
-    entry: ResourceEntry,
-): ResourceInboxAttemptTelemetry | undefined {
-    return attemptTelemetryByEntry.get(entry);
-}
 
 export class ResourceInboxFinalizedByHandlerError extends Error {
     readonly code = 'resource-inbox-finalized-by-handler';
@@ -273,11 +264,7 @@ export class DequeueResourceEntryController {
         ): Map<Resource.Key, ResourceEntry> => {
             const selectedAtEpochMs = nowEpochMs();
             for (const entry of entries.values()) {
-                attemptTelemetryByEntry.set(entry, toAttemptTelemetry(
-                    entry,
-                    lane,
-                    selectedAtEpochMs,
-                ));
+                rememberResourceInboxAttemptTelemetry(entry, lane, selectedAtEpochMs);
             }
             return entries;
         };
@@ -304,14 +291,9 @@ export class DequeueResourceEntryController {
                     );
                     const entries = new Map<Resource.Key, ResourceEntry>();
                     for (const [key, selection] of selections) {
-                        attemptTelemetryByEntry.set(
-                            selection.entry,
-                            toAttemptTelemetry(
-                                selection.entry,
-                                Reservator.FINALIZATION,
-                                selectedAtEpochMs,
-                                Number(selection.selectedDueTs.epochMilliseconds),
-                            ),
+                        rememberResourceInboxAttemptTelemetry(
+                            selection.entry, Reservator.FINALIZATION, selectedAtEpochMs,
+                            Number(selection.selectedDueTs.epochMilliseconds),
                         );
                         entries.set(key, selection.entry);
                     }
@@ -375,14 +357,9 @@ export class DequeueResourceEntryController {
                                     selectedAtEpochMs,
                                 ),
                             );
-                            attemptTelemetryByEntry.set(
-                                selection.entry,
-                                toAttemptTelemetry(
-                                    selection.entry,
-                                    Reservator.FAIRNESS,
-                                    selectedAtEpochMs,
-                                    Number(selection.selectedDueTs.epochMilliseconds),
-                                ),
+                            rememberResourceInboxAttemptTelemetry(
+                                selection.entry, Reservator.FAIRNESS, selectedAtEpochMs,
+                                Number(selection.selectedDueTs.epochMilliseconds),
                             );
                         }
                         return new Map(
@@ -437,6 +414,13 @@ export class DequeueResourceEntryController {
                             throw new Error(`Missing success dto for key: ${String(k)}`);
                         }
 
+                        recordResourceInboxAttemptRelease(
+                            options.onAttemptReleaseTelemetry,
+                            original.value,
+                            v,
+                            'accepted',
+                        );
+
                         out.set(k, new SuccessDto(k, v, original.computedValue));
                     }
 
@@ -448,6 +432,14 @@ export class DequeueResourceEntryController {
                     const out = new Map<Resource.Key, FailureDto<Resource.Key, ResourceEntry>>();
                     for (const failure of failureByKey.values()) {
                         if (failure.exception instanceof ResourceInboxFinalizedByHandlerError) {
+                            recordResourceInboxAttemptRelease(
+                                options.onAttemptReleaseTelemetry,
+                                failure.value,
+                                failure.exception.entry,
+                                failure.exception.entry.status === EntityStatus.COMPLETED
+                                    ? 'accepted'
+                                    : 'non-retryable',
+                            );
                             out.set(
                                 failure.key,
                                 new FailureDto(
@@ -520,6 +512,13 @@ export class DequeueResourceEntryController {
                                 throw new Error(`Missing failure dto for key: ${String(k)}`);
                             }
 
+                            recordResourceInboxAttemptRelease(
+                                options.onAttemptReleaseTelemetry,
+                                original.value,
+                                v,
+                                nonRetryable ? 'non-retryable' : 'retryable',
+                            );
+
                             out.set(k, new FailureDto(k, v, original.exception));
                         }
                     }
@@ -591,6 +590,7 @@ export type DequeueResourceEntryOptions = Readonly<{
     jitterUnit?: () => number;
     nowEpochMs?: () => number;
     onReservationTelemetry?: (event: ResourceInboxFairnessTelemetry) => void;
+    onAttemptReleaseTelemetry?: (event: ResourceInboxAttemptReleaseTelemetry) => void;
     onRetryExhausted?: (
         exhaustion: ResourceInboxRetryExhaustion,
     ) => Promise<ResourceEntry>;
@@ -649,27 +649,6 @@ function toRetryExhaustionRecovery(
         dueAgeMs: telemetry.dueAgeMs,
         selectedDueAtEpochMs: telemetry.selectedDueAtEpochMs,
         finalizedAtEpochMs,
-    };
-}
-
-function toAttemptTelemetry(
-    entry: ResourceEntry,
-    selectedLane: Reservator,
-    selectedAtEpochMs: number,
-    selectedDueAtEpochMs?: number,
-): ResourceInboxAttemptTelemetry {
-    const createdAtEpochMs = Number(entry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds);
-    const dueAtEpochMs = selectedDueAtEpochMs ?? Number(
-        entry.dequeueAudit.nextTs?.epochMilliseconds ??
-        entry.dequeueAudit.startTs?.epochMilliseconds ??
-        selectedAtEpochMs,
-    );
-    return {
-        selectedLane,
-        queueAgeMs: Math.max(0, selectedAtEpochMs - createdAtEpochMs),
-        dueAgeMs: Math.max(0, selectedAtEpochMs - dueAtEpochMs),
-        attempt: entry.dequeueAudit.attempts,
-        selectedDueAtEpochMs: dueAtEpochMs,
     };
 }
 

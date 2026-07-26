@@ -217,7 +217,6 @@ describe('enqueue and dequeue', () => {
         expect(success).toBeDefined();
         expect(success?.computedValue).toEqual(helloWorld);
     });
-
 });
 
 describe('resource inbox retry and fairness lanes', () => {
@@ -527,6 +526,7 @@ describe('resource inbox retry and fairness lanes', () => {
         expect(resilience.checkFairness.lockEntryRateLimiter.allow()).toBe(true);
         expect(resilience.checkFairness.lockEntryRateLimiter.allow()).toBe(false);
     });
+
 });
 
 function createQueueEntry(

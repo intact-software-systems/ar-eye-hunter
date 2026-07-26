@@ -355,8 +355,12 @@ function validateFinalEvidenceSources(measurement, errors) {
   if (measurement?.counterSources?.outbox !== 'resource_inbox') {
     errors.push('measurement.counterSources.outbox must equal resource_inbox');
   }
-  if (measurement?.counterSources?.attempts !== 'app_inbox.ri_attempts') {
-    errors.push('measurement.counterSources.attempts must equal app_inbox.ri_attempts');
+  if (measurement?.counterSources?.attempts !==
+    'resource_inbox.release.telemetry+app_inbox.ri_attempts reconciliation') {
+    errors.push(
+      'measurement.counterSources.attempts must equal ' +
+        'resource_inbox.release.telemetry+app_inbox.ri_attempts reconciliation',
+    );
   }
 }
 
@@ -595,6 +599,7 @@ function validateSample(
     path,
     errors,
     durableContract,
+    sample.durableEvidence?.appInbox,
   );
   compareNumber(
     sample.outcomes?.attempts,
@@ -695,7 +700,14 @@ function validateSample(
   );
 }
 
-function deriveAttempts(observations, commandsById, path, errors, durableContract) {
+function deriveAttempts(
+  observations,
+  commandsById,
+  path,
+  errors,
+  durableContract,
+  appInboxEvidence,
+) {
   if (!isDenseArray(observations)) {
     errors.push(`${path}.attemptObservations must be a dense array`);
     return { attempts: 0, conflicted: 0, exhausted: 0, accepted: 0 };
@@ -819,14 +831,14 @@ function deriveAttempts(observations, commandsById, path, errors, durableContrac
     if (durableContract.name === 'production' && !prerequisiteHistory) {
       for (const observation of history) {
         if (
-          observation.source !== 'app_inbox.ri_attempts' ||
+          observation.source !== 'resource_inbox.release.telemetry' ||
           !isNonNegativeNumber(observation.retryDelayMs) ||
           !isNonNegativeNumber(observation.dueAgeMs) ||
           !['fast', 'fairness', 'timeout'].includes(observation.selectedLane)
         ) {
           errors.push(
             `${path}: ${commandId}/${operationId} production attempt source is not ` +
-              'durable app_inbox.ri_attempts evidence',
+              'production ResourceInbox release telemetry',
           );
           break;
         }
@@ -840,6 +852,19 @@ function deriveAttempts(observations, commandsById, path, errors, durableContrac
         break;
       }
     }
+    if (durableContract.name === 'production' && !prerequisiteHistory) {
+      const durableAttempt = Array.isArray(appInboxEvidence)
+        ? appInboxEvidence.find((entry) => entry?.commandId === commandId &&
+          entry?.operationId === operationId)
+        : undefined;
+      if (!durableAttempt || durableAttempt.attempts !== history.length ||
+        durableAttempt.attempts !== history.at(-1)?.attempt) {
+        errors.push(
+          `${path}: ${commandId}/${operationId} observed attempts must reconcile exactly ` +
+            'to durable AppInbox attempts',
+        );
+      }
+    }
     const terminals = history.filter((observation) => observation.terminal === true);
     if (terminals.length !== 1) {
       errors.push(`${path}: ${commandId}/${operationId} must have exactly one terminal outcome`);
@@ -849,16 +874,23 @@ function deriveAttempts(observations, commandsById, path, errors, durableContrac
     if (history.slice(0, -1).some((observation) => observation.outcome !== 'conflicted')) {
       errors.push(`${path}: ${commandId}/${operationId} only conflicts may precede a terminal`);
     }
+    if (history.slice(0, -1).some((observation) =>
+      !isNonNegativeNumber(observation.retryDelayMs) || observation.retryDelayMs <= 0
+    )) {
+      errors.push(
+        `${path}: ${commandId}/${operationId} nonterminal conflict retryDelayMs must be positive`,
+      );
+    }
     const terminal = terminals[0];
     if (terminal?.outcome === 'exhausted') {
       const prerequisiteTerminal = history.length === 1 &&
         terminal.source.startsWith(
           'state-write-command-envelope.prerequisite-exhausted:',
         );
-      const productionExhaustion = terminal.source === 'app_inbox.ri_attempts' &&
+      const productionExhaustion = terminal.source === 'resource_inbox.release.telemetry' &&
         history.slice(0, -1).some((observation) =>
           observation.outcome === 'conflicted' &&
-          observation.source === 'app_inbox.ri_attempts'
+          observation.source === 'resource_inbox.release.telemetry'
         );
       if (!prerequisiteTerminal && !productionExhaustion) {
         errors.push(
@@ -1085,8 +1117,17 @@ function deriveFinalDurableCorrectness(sample, commandsById, path, errors) {
   const receiptIds = receipts.map((receipt, index) => {
     if (!isObject(receipt) || typeof receipt.commandId !== 'string' ||
       !commandsById.has(receipt.commandId) || !isDenseStringArray(receipt.receiptIds) ||
-      !isDenseStringArray(receipt.outboxIds)) {
+      !isDenseStringArray(receipt.outboxIds) ||
+      !['logical-msg-id', 'physical-resource-id'].includes(receipt.identityKind)) {
       errors.push(`${path}.durableEvidence.receipts[${index}] is malformed or unlinked`);
+    }
+    if (isDenseStringArray(receipt?.receiptIds) &&
+      new Set(receipt.receiptIds).size !== receipt.receiptIds.length) {
+      errors.push(`${path}.durableEvidence.receipts[${index}] receipt IDs must be unique`);
+    }
+    if (isDenseStringArray(receipt?.outboxIds) &&
+      new Set(receipt.outboxIds).size !== receipt.outboxIds.length) {
+      errors.push(`${path}.durableEvidence.receipts[${index}] outbox IDs must be unique`);
     }
     return receipt?.commandId;
   });
@@ -1099,6 +1140,7 @@ function deriveFinalDurableCorrectness(sample, commandsById, path, errors) {
       typeof effect.commandId !== 'string' || !commandsById.has(effect.commandId) ||
       typeof effect.effectKind !== 'string' || effect.effectKind.length === 0 ||
       typeof effect.resourceId !== 'string' || effect.resourceId.length === 0 ||
+      typeof effect.outboxId !== 'string' || effect.outboxId.length === 0 ||
       !['APP_OUTBOX', 'WS_OUTBOX'].includes(effect.typeId) ||
       typeof effect.topicId !== 'string' || effect.topicId.length === 0) {
       errors.push(`${path}.durableEvidence.resourceOutbox[${index}] is malformed or unlinked`);
@@ -1116,6 +1158,16 @@ function deriveFinalDurableCorrectness(sample, commandsById, path, errors) {
   ).toSorted();
   if (!sameStringArray(actualEffects, expectedEffects)) {
     errors.push(`${path}.durableEvidence resource outbox does not match the mutation contract`);
+  }
+  for (const receipt of receipts) {
+    const exactEffects = resourceOutbox.filter((effect) =>
+      effect?.commandId === receipt?.commandId
+    ).map((effect) => effect.effectId).toSorted();
+    if (!sameStringArray((receipt?.outboxIds ?? []).toSorted(), exactEffects)) {
+      errors.push(
+        `${path}.durableEvidence receipt outbox IDs must match exact ResourceInbox effects`,
+      );
+    }
   }
   const atomicFailures = deriveAtomicCompletionFailures(
     acceptedCommands,
@@ -1161,12 +1213,44 @@ function validateAppInboxEvidence(entries, commandsById, path, errors) {
       !isNonNegativeNumber(entry.transactionDurationMs)) {
       errors.push(`${path}.durableEvidence.appInbox[${index}] is malformed or incomplete`);
     }
+    if (!isValidPersistedResult(entry, commandsById.get(entry?.commandId))) {
+      errors.push(
+        `${path}.durableEvidence.appInbox[${index}] persisted durable result is malformed`,
+      );
+    }
     const identity = `${entry?.commandId}\u0000${entry?.operationId}`;
     if (identities.has(identity)) {
       errors.push(`${path}.durableEvidence AppInbox command/operation identities must be unique`);
     }
     identities.add(identity);
   }
+}
+
+function isValidPersistedResult(entry, command) {
+  if (!isObject(entry) || !isObject(command) || typeof entry.commandType !== 'string' ||
+    !isObject(entry.durableResult)) return false;
+  const result = entry.durableResult;
+  if (command.kind === 'profile-instance') {
+    return entry.commandType.startsWith('CLIENT_') && result.status === 'ok' &&
+      isObject(result.result?.right) && isObject(result.result.right.snapshot) &&
+      Object.hasOwn(result.result.right, 'event');
+  }
+  if (command.kind.startsWith('presence-')) {
+    return entry.commandType.startsWith('GROUP_PRESENCE_') &&
+      result.commandId === command.commandId && typeof result.outcome === 'string' &&
+      Number.isSafeInteger(result.attemptCount) && isDenseStringArray(result.outboxIds) &&
+      new Set(result.outboxIds).size === result.outboxIds.length;
+  }
+  if (command.kind === 'topology-source') {
+    const receipt = result.receipt;
+    return entry.commandType.startsWith('TOPOLOGY_') && isObject(receipt) &&
+      receipt.commandId === command.commandId && typeof receipt.outcome === 'string' &&
+      Number.isSafeInteger(receipt.attemptCount) && isDenseStringArray(receipt.outboxIds) &&
+      new Set(receipt.outboxIds).size === receipt.outboxIds.length;
+  }
+  return entry.commandType.startsWith('GROUP_') &&
+    ['ok', 'created'].includes(result.status) && isObject(result.result?.right) &&
+    isObject(result.result.right.snapshot) && Object.hasOwn(result.result.right, 'event');
 }
 
 function deriveAtomicCompletionFailures(commands, appInbox, receipts, resourceOutbox) {

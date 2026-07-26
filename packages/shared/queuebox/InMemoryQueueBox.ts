@@ -188,7 +188,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         const released = new Map<Key, ResourceEntry>();
 
         for (const current of currentEntries) {
-            if (current.status === EntityStatus.COMPLETED) {
+            if (current.status !== EntityStatus.RESERVED) {
                 released.set(current.key, current);
                 continue;
             }

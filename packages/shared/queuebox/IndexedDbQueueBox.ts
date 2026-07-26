@@ -416,7 +416,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                         tx.abort();
                         return;
                     }
-                    if (current.status === EntityStatus.COMPLETED) {
+                    if (current.status !== EntityStatus.RESERVED) {
                         released.set(current.key, current);
                         return;
                     }

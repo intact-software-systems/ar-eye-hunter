@@ -192,7 +192,9 @@ describe('API-v1 state-write recipe evidence', () => {
             ri_row_id: 1, ri_resource_id: 'inbox-1', ri_topic_id: 'app-inbox.group-state',
             fk_ext_bank_id: 'scope', ri_status: 'COMPLETED', ri_attempts: 2,
             start_ts: new Date(1), end_ts: new Date(2), next_ts: null,
-            result_status: 'COMPLETED', result_resource: '{"outboxIds":["receipt-1"]}',
+            result_status: 'COMPLETED', result_resource: JSON.stringify({
+                status: 'ok', result: { right: { snapshot: {}, event: null } },
+            }),
             ri_resource: JSON.stringify({ payload: {
                 typeId: 'GROUP_MEMBER_UPSERT',
                 resource: JSON.stringify({ command: { commandId: 'cmd-1', requestId: 'cmd-1' } }),

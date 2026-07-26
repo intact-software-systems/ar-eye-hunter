@@ -1,6 +1,12 @@
 import process from 'node:process';
 import postgres, { type Sql } from 'postgres';
-
+import {
+    collectEvidenceNamedStrings,
+    nestedEvidenceJson,
+    parseEvidenceJson,
+    type ReceiptEffectIdentityKind,
+    validatePersistedAppInboxResult,
+} from './api-v1-state-write-result-evidence.ts';
 type EvidenceSpec = Readonly<{
     match: string
     commandTypes?: readonly string[]
@@ -15,7 +21,6 @@ type EvidenceSpec = Readonly<{
         timeoutMs?: number
     }>
 }>
-
 type OutboxRow = Readonly<{
     ri_resource_id: string
     ri_topic_id: string
@@ -53,6 +58,11 @@ type ParsedInboxRow = Readonly<{
     endAt: string | null
     nextAt: string | null
     outboxIds: readonly string[]
+    durableResult: unknown
+    durableResultValid: boolean
+    durableResultFailure?: string
+    receipt?: Readonly<{ commandId: string; outboxIds: readonly string[];
+        identityKind: ReceiptEffectIdentityKind }>
 }>
 
 type OverdueRecoveryEvidence = Readonly<{
@@ -76,44 +86,17 @@ type OverdueRecoveryEvidence = Readonly<{
 
 const DEFAULT_DATABASE_URL = 'postgres://app:app@localhost:5432/appdb';
 
-function parseJson(value: string | null): unknown {
-    if (!value) return undefined;
-    try {
-        return JSON.parse(value);
-    } catch {
-        return undefined;
-    }
-}
-
-function nestedJson(value: unknown): unknown {
-    if (typeof value !== 'string') return value;
-    const parsed = parseJson(value);
-    return parsed === undefined ? value : parsed;
-}
-
-function collectNamedStrings(value: unknown, names: ReadonlySet<string>, into: Set<string>): void {
-    const candidate = nestedJson(value);
-    if (!candidate || typeof candidate !== 'object') return;
-    if (Array.isArray(candidate)) {
-        candidate.forEach((item) => collectNamedStrings(item, names, into));
-        return;
-    }
-    for (const [key, child] of Object.entries(candidate)) {
-        if (names.has(key) && typeof child === 'string') into.add(child);
-        if (names.has(key) && Array.isArray(child)) {
-            child.filter((item): item is string => typeof item === 'string').forEach((item) => into.add(item));
-        }
-        collectNamedStrings(child, names, into);
-    }
-}
-
 function parseRow(row: InboxRow): ParsedInboxRow {
-    const envelope = parseJson(row.ri_resource) as { payload?: { typeId?: unknown } } | undefined;
+    const envelope = parseEvidenceJson(row.ri_resource) as { payload?: { typeId?: unknown } } | undefined;
     const commandType = typeof envelope?.payload?.typeId === 'string' ? envelope.payload.typeId : 'UNKNOWN';
     const commandIds = new Set<string>();
-    const outboxIds = new Set<string>();
-    collectNamedStrings(envelope, new Set(['commandId', 'deliveryId', 'jobId', 'requestId', 'updateId']), commandIds);
-    collectNamedStrings(parseJson(row.result_resource), new Set(['outboxId', 'outboxIds']), outboxIds);
+    collectEvidenceNamedStrings(envelope, new Set(['commandId', 'deliveryId', 'jobId', 'requestId', 'updateId']), commandIds);
+    const resultEvidence = validatePersistedAppInboxResult({
+        commandType,
+        commandIds: [...commandIds],
+        resultStatus: row.result_status ?? 'MISSING',
+        resultResource: row.result_resource,
+    });
     const iso = (value: Date | string | null): string | null => value ? new Date(value).toISOString() : null;
     return {
         rowId: Number(row.ri_row_id), resourceId: row.ri_resource_id,
@@ -121,12 +104,18 @@ function parseRow(row: InboxRow): ParsedInboxRow {
         commandType, commandIds: [...commandIds].sort(), status: row.ri_status,
         resultStatus: row.result_status ?? 'MISSING', attempts: Number(row.ri_attempts),
         startAt: iso(row.start_ts), endAt: iso(row.end_ts), nextAt: iso(row.next_ts),
-        outboxIds: [...outboxIds].sort(),
+        outboxIds: [...(resultEvidence.receipt?.outboxIds ?? [])].sort(),
+        durableResult: resultEvidence.result,
+        durableResultValid: resultEvidence.valid,
+        ...(resultEvidence.failure ? { durableResultFailure: resultEvidence.failure } : {}),
+        ...(resultEvidence.receipt ? { receipt: resultEvidence.receipt } : {}),
     };
 }
 
-function canonicalEffect(row: OutboxRow): Readonly<{ commandId: string; effectKind: string }> | undefined {
-    const envelope = parseJson(row.ri_resource) as {
+function canonicalEffect(row: OutboxRow): Readonly<{
+    commandId: string; effectKind: string; outboxId: string
+}> | undefined {
+    const envelope = parseEvidenceJson(row.ri_resource) as {
         id?: { msgId?: unknown }
         route?: { contextId?: unknown }
         payload?: { typeId?: unknown; resource?: unknown }
@@ -135,7 +124,9 @@ function canonicalEffect(row: OutboxRow): Readonly<{ commandId: string; effectKi
     if (typeof msgId !== 'string') return undefined;
     for (const marker of [':rtc-topology-recompute:', ':group-presence-summary:', ':principal-state:']) {
         const index = msgId.indexOf(marker);
-        if (index > 0) return { commandId: msgId.slice(0, index), effectKind: effectKind(row) };
+        if (index > 0) {
+            return { commandId: msgId.slice(0, index), effectKind: effectKind(row), outboxId: msgId };
+        }
     }
     const crdt = /^crdt:(.+):(reply|fanout)$/.exec(msgId);
     if (row.ri_type_id === 'WS_OUTBOX' && crdt &&
@@ -144,14 +135,15 @@ function canonicalEffect(row: OutboxRow): Readonly<{ commandId: string; effectKi
         return {
             commandId: crdt[1],
             effectKind: crdt[2] === 'reply' ? 'crdt-append-reply' : 'crdt-update-fanout',
+            outboxId: msgId,
         };
     }
-    const admin = nestedJson(envelope?.payload?.resource) as Record<string, unknown> | undefined;
+    const admin = nestedEvidenceJson(envelope?.payload?.resource) as Record<string, unknown> | undefined;
     if (row.ri_type_id === 'APP_OUTBOX' && row.ri_topic_id === 'rallar.admin.prune-expired' &&
         envelope?.payload?.typeId === 'ADMIN_PRUNE_EXPIRED' && admin?.kind === 'page' &&
         typeof admin.jobId === 'string' && typeof admin.category === 'string' &&
         envelope.route?.contextId === admin.jobId) {
-        return { commandId: admin.jobId, effectKind: 'admin-prune-page' };
+        return { commandId: admin.jobId, effectKind: 'admin-prune-page', outboxId: msgId };
     }
     return undefined;
 }
@@ -189,7 +181,8 @@ export function deriveApiV1StateWriteEvidence(
     const statusResultFailures = appInbox.filter((row) =>
         (row.status === 'COMPLETED' && row.resultStatus !== 'COMPLETED') ||
         (row.status === 'FAILED' && row.resultStatus !== 'FAILED') ||
-        !['COMPLETED', 'FAILED'].includes(row.status)
+        !['COMPLETED', 'FAILED'].includes(row.status) ||
+        !row.durableResultValid
     ).length;
     const inboxByCommandId = new Map(appInbox.flatMap((row) =>
         row.commandIds.map((commandId) => [commandId, row] as const)
@@ -200,7 +193,8 @@ export function deriveApiV1StateWriteEvidence(
         const command = inboxByCommandId.get(canonical.commandId);
         if (!command) return [];
         return [{
-            resourceId: row.ri_resource_id, topicId: row.ri_topic_id,
+            resourceId: row.ri_resource_id, outboxId: canonical.outboxId,
+            topicId: row.ri_topic_id,
             typeId: row.ri_type_id, status: row.ri_status,
             commandId: canonical.commandId, appInboxResourceId: command.resourceId,
             effectKind: canonical.effectKind,
@@ -213,9 +207,15 @@ export function deriveApiV1StateWriteEvidence(
     const effectFailures = appInbox.filter((row) => {
         const expected = spec.expectedEffectsByCommandType?.[row.commandType];
         if (!expected || row.status !== 'COMPLETED') return false;
-        const actual = resourceOutbox.filter((effect) => effect.appInboxResourceId === row.resourceId)
-            .map((effect) => effect.effectKind);
-        return !sameMultiset(expected, actual);
+        const effects = resourceOutbox.filter((effect) => effect.appInboxResourceId === row.resourceId);
+        const actual = effects.map((effect) => effect.effectKind);
+        const receiptIds = row.receipt?.outboxIds;
+        return !sameMultiset(expected, actual) ||
+            (receiptIds !== undefined && !sameMultiset(
+                receiptIds,
+                effects.map((effect) => row.receipt?.identityKind === 'logical-msg-id'
+                    ? effect.outboxId : effect.resourceId),
+            ));
     });
     const naturalBoundedRetries = appInbox.filter((row) =>
         row.status === 'COMPLETED' && row.resultStatus === 'COMPLETED' &&

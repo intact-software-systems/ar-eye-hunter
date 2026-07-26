@@ -134,12 +134,14 @@ counters, and process CPU time. PostgreSQL buffer and WAL counters are captured
 immediately before and after each measured phase; lock waits are sampled from
 `pg_stat_activity` while the phase runs.
 
-Attempt observations use durable `resource_inbox.ri_attempts` values for
-`APP_INBOX` rows. Each operation has a one-based attempt number, exact retry
-delay, persisted due age, selected `fast`, `fairness`, or `timeout` lane, and a
-final accepted or exhausted outcome. Profile and instance remain separate
-operations; the other mutation kinds use one command operation. Candidate
-artifacts reject service-local retry timing and synthetic prerequisite records.
+Attempt observations come from actual ResourceInbox release telemetry and are
+reconciled exactly with durable `resource_inbox.ri_attempts` values for
+`APP_INBOX` rows. Each operation has a one-based attempt number, observed retry
+delay and due age, selected `fast`, `fairness`, or `timeout` lane, and a final
+accepted or exhausted outcome. Profile and instance remain separate operations;
+the other mutation kinds use one command operation. Candidate artifacts reject
+service-local retry timing, invented attempt expansion, and synthetic
+prerequisite records.
 Command accepted/exhausted outcomes, conflict counts, attempt counts, and
 attempts per accepted mutation are derived from these histories. Coherent hot
 baseline exhaustion is representable; comparison permits candidate hot
@@ -154,7 +156,9 @@ subcommand receipts are present and complete; a group command uses its exact
 request-ID receipt. Production effect IDs and kinds are projected without
 inventing evidence: principal snapshot/event effects for profile-instance,
 `group-presence-summary` for group mutations, and `rtc-topology-recompute` for
-topology-source. Intermediate mutation-intent evidence is forbidden.
+topology-source. Receipt linkage records the command-specific immutable identity:
+physical ResourceInbox keys for client/group receipts and outer envelope
+`id.msgId` for topology receipts. Intermediate mutation-intent evidence is forbidden.
 `atomicCompletionFailures` requires each completed AppInbox result, receipt,
 and exact final effects in the same observation. These evidence queries are
 excluded from command latency and measurement counters. Every metric source is disclosed in

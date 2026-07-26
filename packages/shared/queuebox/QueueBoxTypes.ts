@@ -105,6 +105,18 @@ export function isIdempotentHandlerFinalizedRelease(
     disposition: ResourceInboxReleaseDisposition,
 ): boolean {
     try {
+        const remoteDeliveryRequeue =
+            disposition.status === Resource.EntityStatus.COMPLETED &&
+            disposition.delayMs === null &&
+            reserved.typeId === EnqueuedType.WS_OUTBOX &&
+            reserved.status === Resource.EntityStatus.RESERVED &&
+            current.status === Resource.EntityStatus.RETRY &&
+            current.typeId === reserved.typeId &&
+            current.resource === reserved.resource &&
+            Resource.isKeysEqual(current.key, reserved.key) &&
+            current.dequeueAudit.attempts === reserved.dequeueAudit.attempts &&
+            !Resource.isExpiredResourceEntry(current);
+        if (remoteDeliveryRequeue) return true;
         const commonFinalization =
             disposition.status === Resource.EntityStatus.COMPLETED &&
             disposition.delayMs === null &&

@@ -21,7 +21,8 @@ describe('API-v1 state-write final durable evidence', () => {
   it('accepts a complete AppInbox/ResourceInbox candidate and legacy baseline', () => {
     const candidate = artifact(true);
     expect(candidate.measurement.counterSources.outbox).toBe('resource_inbox');
-    expect(candidate.measurement.counterSources.attempts).toBe('app_inbox.ri_attempts');
+    expect(candidate.measurement.counterSources.attempts)
+      .toBe('resource_inbox.release.telemetry+app_inbox.ri_attempts reconciliation');
     expect(candidate.workloads[0].samples[0].durableEvidence.intermediateMutationIntents)
       .toEqual([]);
     expect(candidate.workloads[0].samples[0].correctness.atomicCompletionFailures).toBe(0);
@@ -36,7 +37,7 @@ describe('API-v1 state-write final durable evidence', () => {
     sample.attemptObservations[0].source = 'group-state-service.mutation.conflict';
     expect(validateStateWriteArtifact(candidate)).toEqual(expect.arrayContaining([
       expect.stringContaining('intermediateMutationIntents must be exactly empty'),
-      expect.stringContaining('durable app_inbox.ri_attempts evidence'),
+      expect.stringContaining('production ResourceInbox release telemetry'),
     ]));
   });
 
@@ -64,6 +65,45 @@ describe('API-v1 state-write final durable evidence', () => {
     const lane = artifact(true);
     lane.workloads[0].samples[0].durableEvidence.appInbox[0].selectedLane = 'unknown';
     expect(validateStateWriteArtifact(lane)).not.toEqual([]);
+  });
+
+  it('rejects invented retry history and zero-delay nonterminal conflicts', () => {
+    const invented = artifact(true);
+    const inventedSample = invented.workloads[0].samples[0];
+    inventedSample.attemptObservations.splice(1, 0, {
+      ...inventedSample.attemptObservations[0], attempt: 2,
+    });
+    expect(validateStateWriteArtifact(invented)).toEqual(expect.arrayContaining([
+      expect.stringContaining('must reconcile exactly to durable AppInbox attempts'),
+    ]));
+
+    const zeroDelay = artifact(true);
+    const sample = zeroDelay.workloads[0].samples[0];
+    const first = sample.attemptObservations[0];
+    first.outcome = 'conflicted';
+    first.terminal = false;
+    first.retryDelayMs = 0;
+    sample.attemptObservations.splice(1, 0, {
+      ...first, attempt: 2, outcome: 'accepted', terminal: true,
+    });
+    sample.durableEvidence.appInbox[0].attempts = 2;
+    expect(validateStateWriteArtifact(zeroDelay)).toEqual(expect.arrayContaining([
+      expect.stringContaining('nonterminal conflict retryDelayMs must be positive'),
+    ]));
+  });
+
+  it('rejects malformed durable results and receipt/effect identity mismatches', () => {
+    const malformed = artifact(true);
+    delete malformed.workloads[0].samples[0].durableEvidence.appInbox[0].durableResult;
+    expect(validateStateWriteArtifact(malformed)).toEqual(expect.arrayContaining([
+      expect.stringContaining('persisted durable result is malformed'),
+    ]));
+
+    const mismatched = artifact(true);
+    mismatched.workloads[0].samples[0].durableEvidence.receipts[0].outboxIds = ['invented-effect'];
+    expect(validateStateWriteArtifact(mismatched)).toEqual(expect.arrayContaining([
+      expect.stringContaining('receipt outbox IDs must match exact ResourceInbox effects'),
+    ]));
   });
 
   it('is total over malformed nested candidate evidence', () => {
@@ -121,15 +161,21 @@ describe('API-v1 state-write final durable evidence', () => {
       latencyMs: 1, status: 'accepted',
     } as const;
     const topologyRecord = {
-      outboxId: 'stored-effect', typeId: 'APP_OUTBOX', topicId: 'app-outbox.rtc-topology',
+      resourceId: 'stored-effect',
+      outboxId: 'topology-command:rtc-topology-recompute:group-revision:group=1;presence=0',
+      typeId: 'APP_OUTBOX', topicId: 'app-outbox.rtc-topology',
       effectKind: 'rtc-topology-recompute', canonicalCommandId: 'topology-command',
       commandIds: ['topology-command', 'config-command'],
     } as const;
     expect(bench.projectProductionOutboxEvidence(
       [topologyCommand],
-      [{ commandId: 'topology-command', receiptIds: ['topology-command'], outboxIds: ['effect'] }],
+      [{ commandId: 'topology-command', receiptIds: ['topology-command'],
+        outboxIds: [topologyRecord.outboxId], identityKind: 'logical-msg-id' }],
       [topologyRecord],
-    )[0]?.commandId).toBe('topology-command');
+    )[0]).toMatchObject({
+      commandId: 'topology-command', effectId: topologyRecord.outboxId,
+      resourceId: 'stored-effect', outboxId: topologyRecord.outboxId,
+    });
     expect(bench.projectProductionOutboxEvidence([topologyCommand], [], [topologyRecord])).toEqual([]);
     expect(bench.productionOutboxLookupIds(
       { kind: 'topology-source', commandId: 'bench:topology-source:7', stackIndex: 0, latencyMs: 1, status: 'accepted' },
@@ -214,7 +260,7 @@ function sample(runIndex: number, candidate: boolean): any {
       attempt: index + 1,
       outcome: index + 1 === entry.attempts ? 'accepted' : 'conflicted',
       terminal: index + 1 === entry.attempts,
-      source: 'app_inbox.ri_attempts', retryDelayMs: 0, dueAgeMs: 0, selectedLane: 'fast',
+      source: 'resource_inbox.release.telemetry', retryDelayMs: 0, dueAgeMs: 0, selectedLane: 'fast',
     })))
     : commands.flatMap((command) => operations(command).map((operationId) => ({
       commandId: command.commandId, operationId, attempt: 1, outcome: 'accepted',
@@ -244,17 +290,31 @@ function finalEvidence(commands: any[]): any {
     commandId: command.commandId, operationId,
     resourceId: `${command.commandId}:${operationId}`, topicId: 'app-inbox.state',
     status: 'COMPLETED', resultStatus: 'COMPLETED', attempts: 1,
+    commandType: command.kind === 'profile-instance' ? 'CLIENT_INSTANCE_UPSERT' :
+      command.kind === 'topology-source' ? 'TOPOLOGY_CONFIG_PUT' :
+      command.kind.startsWith('presence-') ? 'GROUP_PRESENCE_CONNECT' : 'GROUP_MEMBER_UPSERT',
+    durableResult: command.kind === 'profile-instance'
+      ? { status: 'ok', result: { right: { snapshot: {}, event: null } } }
+      : command.kind === 'topology-source'
+      ? { receipt: { commandId: command.commandId, outcome: 'applied', attemptCount: 1,
+        outboxIds: PRODUCTION_STATE_WRITE_MUTATION_CONTRACT[command.kind].map((_, index) => `${command.commandId}:effect:${index}`) } }
+      : command.kind.startsWith('presence-')
+      ? { commandId: command.commandId, outcome: 'applied', attemptCount: 1,
+        outboxIds: PRODUCTION_STATE_WRITE_MUTATION_CONTRACT[command.kind].map((_, index) => `${command.commandId}:effect:${index}`) }
+      : { status: 'ok', result: { right: { snapshot: {}, event: null } } },
     retryDelayMs: 0, dueAgeMs: 0, selectedLane: 'fast', transactionDurationMs: 1,
   })));
   const receipts = commands.map((command) => ({
     commandId: command.commandId,
     receiptIds: operations(command).map((operationId) => `${command.commandId}:${operationId}`),
     outboxIds: PRODUCTION_STATE_WRITE_MUTATION_CONTRACT[command.kind].map((_, index) => `${command.commandId}:effect:${index}`),
+    identityKind: command.kind === 'topology-source' ? 'logical-msg-id' : 'physical-resource-id',
   }));
   const resourceOutbox = commands.flatMap((command) =>
     PRODUCTION_STATE_WRITE_MUTATION_CONTRACT[command.kind].map((effectKind, index) => ({
       effectId: `${command.commandId}:effect:${index}`,
       resourceId: `${command.commandId}:effect:${index}`,
+      outboxId: `${command.commandId}:effect:${index}`,
       commandId: command.commandId, effectKind,
       typeId: effectKind.startsWith('principal-state') ? 'WS_OUTBOX' : 'APP_OUTBOX',
       topicId: effectKind,
@@ -318,7 +378,9 @@ function sources(candidate: boolean): Record<string, string> {
     sharedBuffers: 'pg_stat_database', wal: 'pg WAL LSN', readTiming: 'AppInbox read phase',
     computeTiming: 'AppInbox compute phase', validateTiming: 'AppInbox validate phase',
     writeTiming: 'AppInbox write phase', outboxTiming: 'ResourceInbox SQL',
-    attempts: candidate ? 'app_inbox.ri_attempts' : 'legacy service timing',
+    attempts: candidate
+      ? 'resource_inbox.release.telemetry+app_inbox.ri_attempts reconciliation'
+      : 'legacy service timing',
     receipts: 'same-observation mutation receipts', outboxIntents: 'legacy compatibility disclosure',
     ...(candidate ? { outbox: 'resource_inbox' } : {}),
   };

@@ -21,6 +21,8 @@ import {
   type QueueBoxPubSubBridge,
   type QueueBoxPubSubMessage,
 } from '@shared-server/rallar-system/pubsub/QueueBoxPubSubBridge.ts';
+import { requeueRemoteWsOutboxDeliveryFailure } from
+  '@shared-server/rallar-system/pubsub/RemoteWsOutboxDeliveryFailure.ts';
 
 describe('durable WS outbox owner misses', () => {
   it('retries a non-owner miss so the process with the target socket can deliver', async () => {
@@ -210,6 +212,65 @@ describe('durable WS outbox owner misses', () => {
 
     expect(readEntry(outbox).status).toBe(EntityStatus.RETRY);
   });
+
+  it.each(['before', 'after'] as const)(
+    'durably retries a remote owner send failure %s claimant completion',
+    async (race) => {
+      const outbox = new InMemoryQueueBox();
+      const original = QueueBoxUtilities.toResourceEntryFromMsg(
+        createUnicastMessage(), EnqueuedType.WS_OUTBOX,
+      );
+      await outbox.enqueue(original);
+      const bus = race === 'before' ? createBridgeBus() : createFireAndForgetBridgeBus();
+      const claimant = createService(outbox, createSocket(), 'claimant', () => []);
+      const remoteSocket = createSocket();
+      remoteSocket.sendEncoded.mockImplementationOnce(() => {
+        throw new Error('simulated remote socket failure');
+      });
+      const remote = createService(outbox, remoteSocket, 'remote', () => [
+        { peerId: 'writer-session', connectionId: 'writer-session' },
+      ]);
+      const remoteRetryPolicy = {
+        ...createResilience().retryPolicy,
+        delaysAfterAttemptMs: [50, 50],
+        maxDelayMs: 50,
+      };
+      installQueueBoxPubSubBridge({
+        wsQBoxServerService: claimant, bridge: bus, channel: 'ws', publisherId: 'claimant', delivery: 'key',
+      });
+      installQueueBoxPubSubBridge({
+        wsQBoxServerService: remote, bridge: bus, channel: 'ws', publisherId: 'remote', delivery: 'key',
+        retryPolicy: remoteRetryPolicy, jitterUnit: () => 0,
+      });
+
+      await claimant.dequeueOutbox(WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, createResilience());
+      await bus.drain?.();
+
+      const retry = readEntry(outbox);
+      expect(retry.status).toBe(EntityStatus.RETRY);
+      expect(retry.resource).toBe(original.resource);
+      expect((JSON.parse(retry.resource) as ALMessage).id.msgId).toBe('durable-reply-1');
+      await expect(requeueRemoteWsOutboxDeliveryFailure(outbox, retry, {
+        retryPolicy: remoteRetryPolicy, jitterUnit: () => 0,
+      })).resolves.toBeUndefined();
+      await expect(requeueRemoteWsOutboxDeliveryFailure(
+        outbox,
+        { ...retry, resource: `${retry.resource} ` },
+        { retryPolicy: remoteRetryPolicy, jitterUnit: () => 0 },
+      )).resolves.toBeUndefined();
+
+      await new Promise((resolve) => setTimeout(resolve, 55));
+      await claimant.dequeueOutbox(WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, createResilience());
+      await bus.drain?.();
+
+      expect(readEntry(outbox)).toMatchObject({
+        status: EntityStatus.COMPLETED,
+        resource: original.resource,
+        dequeueAudit: { attempts: 2 },
+      });
+      expect(remoteSocket.sendEncoded).toHaveBeenCalledTimes(2);
+    },
+  );
 });
 
 function createUnicastMessage(): ALMessage {
@@ -256,6 +317,24 @@ function createBridgeBus(): QueueBoxPubSubBridge {
     subscribe: async (_channel, subscriber) => { subscribers.push(subscriber); },
     publish: async (_channel, message) => {
       await Promise.all(subscribers.map(async (subscriber) => await subscriber(message)));
+    },
+  };
+}
+
+function createFireAndForgetBridgeBus(): QueueBoxPubSubBridge & { drain(): Promise<void> } {
+  const subscribers: ((message: QueueBoxPubSubMessage) => Promise<void> | void)[] = [];
+  let published: QueueBoxPubSubMessage[] = [];
+  return {
+    subscribe: async (_channel, subscriber) => { subscribers.push(subscriber); },
+    publish: async (_channel, message) => {
+      published.push(message);
+    },
+    drain: async () => {
+      const current = published;
+      published = [];
+      await Promise.allSettled(current.flatMap((message) =>
+        subscribers.map(async (subscriber) => await subscriber(message))
+      ));
     },
   };
 }

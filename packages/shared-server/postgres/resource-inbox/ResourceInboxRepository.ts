@@ -1,6 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { Either } from '@shared/resilience/Either.ts';
-import { tryRunInIntervals } from '@shared/resilience/TryWith.ts';
 import { EntityStatus, type Key, type ResourceEntry, } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
@@ -18,8 +17,11 @@ import {
     toPgTimestamp,
     toSystemDate
 } from './repository-utils.ts';
-
-export const RESOURCE_INBOX_EXPIRY_EVICTION_INTERVAL_MS = 15_000;
+import { requeueObservedResourceInboxDeliveryFailure } from './resource-inbox-delivery-failure.ts';
+export {
+    initResourceInboxExpiryEviction,
+    RESOURCE_INBOX_EXPIRY_EVICTION_INTERVAL_MS,
+} from './ResourceInboxMaintenance.ts';
 
 export type StartProcessingEntitySkipped = Readonly<{
     kind: 'expired-or-missing';
@@ -898,6 +900,13 @@ export class ResourceInboxRepository {
         return rows.length === 1;
     }
 
+    async requeueObservedDeliveryFailure(
+        observed: ResourceEntry,
+        disposition: ResourceInboxReleaseDisposition,
+    ): Promise<ResourceEntry | null> {
+        return await requeueObservedResourceInboxDeliveryFailure(this.sql, observed, disposition);
+    }
+
     async upsert(entry: ResourceEntry): Promise<ResourceEntry> {
         const systemDate = toSystemDate(entry);
 
@@ -1086,19 +1095,4 @@ function toPostgresTimestamp6(
         smallestUnit: 'microsecond',
         roundingMode: 'halfEven',
     });
-}
-
-export async function initResourceInboxExpiryEviction(
-    repository: Pick<ResourceInboxRepository, 'deleteExpired'>,
-    intervalMs: number = RESOURCE_INBOX_EXPIRY_EVICTION_INTERVAL_MS,
-): Promise<void> {
-    await tryRunInIntervals(
-        async () => {
-            const removed = await repository.deleteExpired();
-            if (removed > 0) {
-                console.log(`Evicted expired resource_inbox rows: ${removed}`);
-            }
-        },
-        intervalMs,
-    );
 }

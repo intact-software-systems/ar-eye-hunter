@@ -1,6 +1,10 @@
 import { Temporal } from '@js-temporal/polyfill';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { EntityStatus, isKeysEqual, NEVER_EXPIRE_TS, type ResourceEntry, } from '@shared/queuebox/ResourceEntry.ts';
+import {
+    DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
+    type ResourceInboxRetryPolicy,
+} from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
 import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
 import {
@@ -8,6 +12,7 @@ import {
     type RallarTimingDetails,
     type RallarTimingSink,
 } from '../services/timing.ts';
+import { requeueRemoteWsOutboxDeliveryFailure } from './RemoteWsOutboxDeliveryFailure.ts';
 
 export type QueueBoxPubSubMessageKey = Readonly<{
     topicId: string;
@@ -53,6 +58,8 @@ export type InstallQueueBoxPubSubBridgeOptions = Readonly<{
     publisherId: string;
     delivery?: QueueBoxPubSubDelivery;
     timing?: RallarTimingSink;
+    retryPolicy?: ResourceInboxRetryPolicy;
+    jitterUnit?: () => number;
 }>;
 
 export function installQueueBoxPubSubBridge(
@@ -65,6 +72,8 @@ export function installQueueBoxPubSubBridge(
         publisherId,
         delivery = 'entry',
         timing,
+        retryPolicy = DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
+        jitterUnit = Math.random,
     } = options;
 
     wsQBoxServerService.onAllInboxMessagesDo({
@@ -126,7 +135,18 @@ export function installQueueBoxPubSubBridge(
                     failedCount: result.failedCount,
                 });
                 if (result.failedCount > 0) {
-                    throw new Error(`Failed ${result.failedCount} local WS outbox sends`);
+                    const requeued = await requeueRemoteWsOutboxDeliveryFailure(
+                        wsQBoxServerService.outbox,
+                        entry,
+                        { retryPolicy, jitterUnit },
+                    );
+                    recordPubSubTiming(timing, 'outbox-remote-send-failed', message, {
+                        localPublisherId: publisherId,
+                        recipientCount: result.recipientCount,
+                        failedCount: result.failedCount,
+                        durableStatus: requeued?.status ?? 'stale',
+                        reservationAttempt: entry.dequeueAudit.attempts,
+                    });
                 }
                 return;
             }

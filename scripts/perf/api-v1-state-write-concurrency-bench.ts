@@ -4,6 +4,8 @@ import postgres, { type Sql } from 'postgres';
 import { Temporal } from '@js-temporal/polyfill';
 import { CircuitBreakerPolicy } from '@shared/resilience/Resilience.ts';
 import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import type { ResourceInboxAttemptReleaseTelemetry } from
+  '@shared/queuebox/ResourceInboxAttemptTelemetry.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
@@ -47,6 +49,12 @@ import {
   STATE_WRITE_ARTIFACT_SCHEMA_VERSION,
   PRODUCTION_STATE_WRITE_MUTATION_CONTRACT,
 } from './compare-api-v1-state-write-results.mjs';
+import {
+  deriveAppInboxAttemptObservations,
+  parsePersistedResult,
+  readAppInboxCommandType,
+} from './api-v1-state-write-attempt-evidence.ts';
+export { deriveAppInboxAttemptObservations } from './api-v1-state-write-attempt-evidence.ts';
 
 const DEFAULT_DATABASE_URL = 'postgres://app:app@localhost:5432/appdb';
 const CLIENT_COUNT = 100;
@@ -84,7 +92,7 @@ type SqlMetrics = {
 };
 
 type ProductionOutboxRecord = Readonly<{
-  outboxId: string;
+  resourceId: string; outboxId: string;
   typeId: 'APP_OUTBOX' | 'WS_OUTBOX';
   topicId: string;
   effectKind: string;
@@ -160,7 +168,7 @@ type DurableEvidence = {
 type ProductionReceiptEvidence = {
   commandId: string;
   receiptIds: readonly string[];
-  outboxIds: readonly string[];
+  outboxIds: readonly string[]; identityKind: 'logical-msg-id' | 'physical-resource-id';
 };
 type AppInboxAttemptEvidence = Readonly<{
   commandId: string;
@@ -174,11 +182,12 @@ type AppInboxAttemptEvidence = Readonly<{
   dueAgeMs: number;
   selectedLane: 'fast' | 'fairness' | 'timeout';
   transactionDurationMs: number;
+  commandType: string;
+  durableResult: unknown;
 }>;
 type MutationReceiptEvidence = ProductionReceiptEvidence;
 type ResourceOutboxEvidence = Readonly<{
-  effectId: string;
-  resourceId: string;
+  effectId: string; resourceId: string; outboxId: string;
   commandId: string;
   effectKind: string;
   typeId: 'APP_OUTBOX' | 'WS_OUTBOX';
@@ -214,6 +223,7 @@ type WorkloadSummary = Pick<
 type RunContext = {
   sql: SqlMetrics;
   timingEvents: RallarTimingEvent[];
+  attemptReleases: ResourceInboxAttemptReleaseTelemetry[];
 };
 
 type ServiceRuntime = {
@@ -376,7 +386,8 @@ async function main(): Promise<void> {
           outboxTiming:
             'direct APP_OUTBOX/WS_OUTBOX resource_inbox SQL through the postgres.js wrapper',
           outbox: 'resource_inbox',
-          attempts: 'app_inbox.ri_attempts',
+          attempts:
+            'resource_inbox.release.telemetry+app_inbox.ri_attempts reconciliation',
           receipts:
             'complete production client/group/topology idempotency receipts queried after the phase through uninstrumented repositories and projected only when every raw-command subreceipt is valid',
           outboxIntents: 'legacy counter name retained only for governed baseline compatibility',
@@ -475,7 +486,11 @@ async function runWorkloadPhase(input: {
     input.workload.groups,
     context.timingEvents,
   );
-  const attemptObservations = deriveAppInboxAttemptObservations(durable.appInbox, rawCommands);
+  const attemptObservations = deriveAppInboxAttemptObservations(
+    context.attemptReleases,
+    durable.appInbox,
+    rawCommands,
+  );
   const accepted = rawCommands.filter((command) => command.status === 'accepted').length;
   const attempts = attemptObservations.length;
   const outcomes: OutcomeMetrics = {
@@ -547,8 +562,6 @@ export async function rethrowAfterCleanup(
   }
   throw error;
 }
-
-
 function createServiceRuntime(
   sql: Sql,
   serviceId: string,
@@ -566,7 +579,9 @@ function createServiceRuntime(
     authSessionRepository,
   });
   const resourceInbox = new ResourceInboxRepository(instrumentedSql);
-  const inbox = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
+  const inbox = new InboxQueueReader(new PSqlQueueBox(resourceInbox), {
+    onAttemptReleaseTelemetry: (event) => context.attemptReleases.push(event),
+  });
   const results = new ResourceInboxResultsRepository(instrumentedSql);
   const client = new AppClientInboxService(
     inbox,
@@ -1098,7 +1113,7 @@ async function queryDurableEvidence(
         return {
           commandId: command.commandId,
           receiptIds: productionCommandIds,
-          outboxIds: receipts.flatMap((receipt) => receipt?.receipt.outboxIds ?? []),
+          outboxIds: receipts.flatMap((receipt) => receipt?.receipt.outboxIds ?? []), identityKind: 'physical-resource-id',
         };
       }
       if (command.kind === 'topology-source') {
@@ -1116,7 +1131,7 @@ async function queryDurableEvidence(
         return {
           commandId: command.commandId,
           receiptIds: [command.commandId],
-          outboxIds: receipt?.receipt.outboxIds ?? [],
+          outboxIds: receipt?.receipt.outboxIds ?? [], identityKind: 'logical-msg-id',
         };
       }
       const receipt = await groups.findIdempotentGroupMutationReceipt(
@@ -1127,7 +1142,7 @@ async function queryDurableEvidence(
       return {
         commandId: command.commandId,
         receiptIds: [command.commandId],
-        outboxIds: receipt?.receipt.outboxIds ?? [],
+        outboxIds: receipt?.receipt.outboxIds ?? [], identityKind: 'physical-resource-id',
       };
     },
   );
@@ -1165,12 +1180,12 @@ async function readAppInboxEvidence(
   const rows = await sql<readonly {
     ri_resource_id: string; ri_topic_id: string; ri_resource: string; ri_status: string;
     ri_attempts: number | string; retry_delay_ms: number | string; due_age_ms: number | string;
-    result_status: string | null;
+    result_status: string | null; result_resource: string | null;
   }[]>`
     select i.ri_resource_id, i.ri_topic_id, i.ri_resource, i.ri_status, i.ri_attempts,
            coalesce(greatest(0, extract(epoch from (i.next_ts - i.end_ts)) * 1000), 0)::float8 as retry_delay_ms,
            coalesce(greatest(0, extract(epoch from (now() - i.next_ts)) * 1000), 0)::float8 as due_age_ms,
-           r.ris_status as result_status
+           r.ris_status as result_status, r.ris_resource as result_resource
     from resource_inbox i
     left join resource_inbox_results r
       on r.fk_ext_bank_id = i.fk_ext_bank_id
@@ -1205,29 +1220,10 @@ async function readAppInboxEvidence(
       dueAgeMs,
       selectedLane: dueAgeMs >= 30_000 ? 'fairness' as const : 'fast' as const,
       transactionDurationMs: transaction?.durationMs ?? 0,
+      commandType: readAppInboxCommandType(row.ri_resource),
+      durableResult: parsePersistedResult(row.result_resource),
     }];
   });
-}
-
-export function deriveAppInboxAttemptObservations(
-  evidence: readonly AppInboxAttemptEvidence[],
-  commands: readonly RawCommand[],
-): AttemptObservation[] {
-  const accepted = new Set(commands.filter((entry) => entry.status === 'accepted').map((entry) => entry.commandId));
-  return evidence.flatMap((entry) => Array.from({ length: entry.attempts }, (_, index) => {
-    const terminal = index + 1 === entry.attempts;
-    return {
-      commandId: entry.commandId,
-      operationId: entry.operationId,
-      attempt: index + 1,
-      outcome: terminal ? accepted.has(entry.commandId) ? 'accepted' as const : 'exhausted' as const : 'conflicted' as const,
-      terminal,
-      source: 'app_inbox.ri_attempts',
-      retryDelayMs: terminal ? 0 : entry.retryDelayMs,
-      dueAgeMs: entry.dueAgeMs,
-      selectedLane: entry.selectedLane,
-    };
-  }));
 }
 
 export async function readReferencedProductionOutboxRecords(
@@ -1245,8 +1241,9 @@ export async function readReferencedProductionOutboxRecords(
 export function createProductionOutboxRepository(sql: Sql): ProductionOutboxRepository {
   return {
     find: async (outboxId) => {
-      const rows = await sql<readonly { ri_resource_id: string; ri_topic_id: string; ri_type_id: string; ri_resource: string }[]>`
-        select ri_resource_id, ri_topic_id, ri_type_id, ri_resource
+      const rows = await sql<readonly { ri_resource_id: string; ri_topic_id: string; ri_type_id: string; ri_resource: string; outbox_id: string }[]>`
+        select ri_resource_id, ri_topic_id, ri_type_id, ri_resource,
+               ri_resource::jsonb #>> '{id,msgId}' as outbox_id
         from resource_inbox
         where ri_resource_id = ${outboxId}
       `;
@@ -1254,7 +1251,7 @@ export function createProductionOutboxRepository(sql: Sql): ProductionOutboxRepo
       if (!row) return undefined;
       return {
         record: {
-          outboxId: row.ri_resource_id,
+          resourceId: row.ri_resource_id, outboxId: row.outbox_id,
           typeId: requireOutboxType(row.ri_type_id),
           topicId: row.ri_topic_id,
           effectKind: readResourceEffectKind(row),
@@ -1345,16 +1342,18 @@ export function projectProductionOutboxEvidence(
   const rawByProductionId = new Map(commands.flatMap((command) =>
     productionCommandIdsForRaw(command).map((productionId) => [productionId, command.commandId])
   ));
-  const receiptCommands = new Set(receipts.map((receipt) => receipt.commandId));
+  const receiptByCommand = new Map(receipts.map((receipt) => [receipt.commandId, receipt]));
   const known = new Set(commands.map((command) => command.commandId));
   return records.flatMap((record) => {
     const commandId = record.canonicalCommandId === undefined
       ? undefined
       : rawByProductionId.get(record.canonicalCommandId);
-    if (!commandId || !known.has(commandId) || !receiptCommands.has(commandId)) return [];
+    const receipt = commandId === undefined ? undefined : receiptByCommand.get(commandId);
+    const effectId = receipt?.identityKind === 'logical-msg-id'
+      ? record.outboxId : record.resourceId;
+    if (!commandId || !known.has(commandId) || !receipt?.outboxIds.includes(effectId)) return [];
     return [{
-      effectId: `${record.outboxId}:${record.typeId}:${record.topicId}`,
-      resourceId: record.outboxId,
+      effectId, resourceId: record.resourceId, outboxId: record.outboxId,
       commandId,
       effectKind: record.effectKind,
       typeId: record.typeId,
@@ -1677,6 +1676,7 @@ function newRunContext(): RunContext {
       transactionDurationMs: 0,
     },
     timingEvents: [],
+    attemptReleases: [],
   };
 }
 
