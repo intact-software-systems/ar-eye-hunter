@@ -9,42 +9,26 @@ import type { ClientSessionRef } from "@shared/api/client-types.ts";
 import type { AuditStamp, Group, GroupEvent, GroupRef } from "@shared/api/group-types.ts";
 import { toGroupSnapshotStateRevision } from "@shared/api/group-client-views.ts";
 import type {
-  ConnectClientSessionRequest,
   StateScope,
 } from "@shared/api/state-types.ts";
 import { NEVER_EXPIRE_AT_TIMESTAMP } from "@shared/persistence/PersistenceProvider.ts";
 import type { PSqlSql } from "@shared-server/postgres/PostgresSqlClient.ts";
 import type { RuntimeStateEntry } from "@shared-server/runtime-state/RuntimeStateRepository.ts";
 import {
-  createClientStateEventRepository,
   createClientStateRepository,
   createGroupStateEventRepository,
   createGroupStateRepository,
 } from "@shared-server/postgres/rallar-system/createStateRepositories.ts";
 import { PSqlRuntimeStateRepository } from "@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts";
-import {
-  createClientStateService,
-  requiresClientWrite,
-  toClientMutationCommand,
-  toClientMutationIssuedSessionAuthority,
-  toClientMutationSystemAuthority,
-  toConnectCommandInput,
-  toExpiryCommandInput,
-} from "@shared-server/rallar-system/services/client-state-service.ts";
-import type {
-  ClientMutationCommandInput,
-  ClientMutationComputed,
-} from "@shared-server/rallar-system/services/client-state-mutations.ts";
-import { AuthSessionRepository } from "@shared-server/rallar-system/repositories/AuthSessionRepository.ts";
-import type { IssuedAuthSession } from "@shared-server/rallar-system/repositories/AuthSessionRepository.ts";
-import { RuntimeStateWriteConflictError } from "@shared-server/runtime-state/optimistic-runtime-state-write.ts";
 import { createTestGroupStateRuntime } from "./group-state-test-runtime.ts";
 import type { StateSyncPublisher } from "@shared-server/rallar-system/state-sync-publisher.ts";
 import { groupStateMaintenanceRequestId } from "@shared-server/rallar-system/services/group-state-service.ts";
+import { createPostgresClientPhaseDriver } from "./postgres-client-phase-driver.ts";
+import { findDirectResourceOutboxEvidence } from "./direct-resource-outbox-evidence.ts";
 import {
-  expectPendingDirectResourceOutboxEvidence,
-  findDirectResourceOutboxEvidence,
-} from "./direct-resource-outbox-evidence.ts";
+  expectWorkerOutboxLifecycleEvidence,
+  type WorkerOutboxEffect,
+} from "./postgres-worker-outbox-evidence.ts";
 
 const POSTGRES_INTEGRATION_ENABLED =
   process.env.RALLAR_POSTGRES_INTEGRATION === "1";
@@ -279,7 +263,7 @@ describe("Postgres presence expiry concurrency", () => {
           setupSql,
           outputs,
           "client",
-          ["client-state-sync"],
+          ["principal-state:snapshot", "principal-state:event"],
         );
       } finally {
         await Promise.allSettled(handles.map((handle) => handle.done));
@@ -385,7 +369,7 @@ describe("Postgres presence expiry concurrency", () => {
           setupSql,
           outputs,
           "client",
-          ["client-state-sync"],
+          ["principal-state:snapshot", "principal-state:event"],
         );
         expect(JSON.stringify(outputs)).not.toMatch(/DATABASE_URL|accessToken|commandMac|app:app/u);
       } finally {
@@ -498,7 +482,7 @@ describe("Postgres presence expiry concurrency", () => {
           setupSql,
           outputs,
           "group",
-          ["group-state-sync", "group-presence-summary"],
+          ["group-presence-summary"],
         );
       } finally {
         await Promise.allSettled(handles.map((handle) => handle.done));
@@ -575,7 +559,7 @@ describe("Postgres presence expiry concurrency", () => {
         assertIndependentBarrierWorkers(connected.traces);
         await expectPendingWorkerOutboxes(
           setupSql, connected.outputs, "group",
-          ["group-state-sync", "group-presence-summary"],
+          ["group-presence-summary"],
         );
 
         const heartbeatInputs: readonly WorkerInput[] = principals.map((principalId, index) => ({
@@ -601,7 +585,7 @@ describe("Postgres presence expiry concurrency", () => {
         assertIndependentBarrierWorkers(heartbeats.traces);
         await expectPendingWorkerOutboxes(
           setupSql, heartbeats.outputs, "group",
-          ["group-state-sync", "group-presence-summary"],
+          ["group-presence-summary"],
         );
 
         const disconnectInputs: readonly WorkerInput[] = principals.map((principalId, index) => ({
@@ -626,7 +610,7 @@ describe("Postgres presence expiry concurrency", () => {
         assertIndependentBarrierWorkers(disconnected.traces);
         await expectPendingWorkerOutboxes(
           setupSql, disconnected.outputs, "group",
-          ["group-state-sync", "group-presence-summary"],
+          ["group-presence-summary"],
         );
 
         const repository = createGroupStateRepository(setupSql);
@@ -1180,12 +1164,12 @@ async function seedExpiredClientSession(
   sessionRef: ClientSessionRef,
   atEpochMs: number,
 ): Promise<void> {
-  await createPostgresClientPhaseDriver(
+  await createPostgresClientPhaseDriver({
     sql,
-    toRuntimeRepository(sql),
-    atEpochMs - 10_000,
-    "postgres-expiry-test-setup",
-  ).connectSession(
+    runtimeRepository: toRuntimeRepository(sql),
+    atEpochMs: atEpochMs - 10_000,
+    serviceId: "postgres-expiry-test-setup",
+  }).connectSession(
     scope,
     sessionRef.principalId,
     sessionRef.clientInstanceId,
@@ -1296,103 +1280,6 @@ function toRuntimeRepository(sql: PostgresSql): PSqlRuntimeStateRepository {
   return new PSqlRuntimeStateRepository(sql as unknown as PSqlSql);
 }
 
-function createPostgresClientPhaseDriver(
-  sql: PostgresSql,
-  atEpochMs: number,
-  serviceId: string,
-) {
-  const runtimeRepository = toRuntimeRepository(sql);
-  const service = createClientStateService({
-    runtimeRepository,
-    createClientStateEventStore: createClientStateEventRepository,
-    serviceId,
-  });
-  const execute = async (
-    commandInput: ClientMutationCommandInput,
-    authority: IssuedAuthSession | null,
-  ): Promise<ClientMutationComputed> => {
-    for (let attempt = 1; attempt <= 8; attempt += 1) {
-      const command = await toClientMutationCommand(
-        commandInput,
-        {
-          nowEpochMs: atEpochMs,
-          serviceId,
-          eventId: `postgres-client-event:${commandInput.commandId}`,
-          attemptCount: attempt,
-          expireAtEpochMs: atEpochMs + 24 * 60 * 60 * 1_000,
-        },
-        commandInput.operation === "expireSession"
-          ? toClientMutationSystemAuthority(serviceId)
-          : authority
-          ? toClientMutationIssuedSessionAuthority(
-            authority,
-            commandInput.aggregateRef,
-            commandInput.operation,
-          )
-          : missingPostgresClientAuthority(),
-      );
-      const read = await service.read(command);
-      const computed = service.compute(command, read);
-      service.validate(command, read, computed);
-      try {
-        if (requiresClientWrite(computed)) {
-          await sql.begin(async (transaction) => await service.write(transaction, computed));
-        }
-        return computed;
-      } catch (error) {
-        if (!(error instanceof RuntimeStateWriteConflictError) || attempt === 8) throw error;
-        await new Promise((resolve) => setTimeout(resolve, Math.min(16, 2 ** (attempt - 1))));
-      }
-    }
-    throw new Error("Postgres client AppInbox-equivalent attempts exhausted");
-  };
-
-  return {
-    connectSession: async (
-      scope: StateScope,
-      principalId: string,
-      clientInstanceId: string,
-      sessionId: string,
-      request: ConnectClientSessionRequest,
-    ) => {
-      const authority: IssuedAuthSession = {
-        clientId: principalId,
-        accessToken: `${sessionId}-postgres-test-token`,
-        username: principalId,
-        sessionId,
-        issuedAtEpochMs: Math.max(0, atEpochMs - 1),
-        expiresAtEpochMs: atEpochMs + 24 * 60 * 60 * 1_000,
-      };
-      await new AuthSessionRepository(runtimeRepository).putSession(authority);
-      return await execute(
-        toConnectCommandInput(
-          "connectSession",
-          scope,
-          principalId,
-          clientInstanceId,
-          sessionId,
-          request,
-          request.requestId ?? `postgres-connect:${sessionId}`,
-          {},
-        ),
-        authority,
-      );
-    },
-    expireExpiredSessions: async (expiryAtEpochMs: number) => {
-      const written: ClientMutationComputed[] = [];
-      for (const candidate of await service.listExpiredSessionCandidates(expiryAtEpochMs)) {
-        const computed = await execute(toExpiryCommandInput(candidate), null);
-        if (computed.outcome === "write") written.push(computed);
-      }
-      return written;
-    },
-  };
-}
-
-function missingPostgresClientAuthority(): never {
-  throw new Error("Issued client authority is required");
-}
-
 function createPostgresClientService(
   sql: PostgresSql,
   barrier: PrincipalReadBarrier,
@@ -1404,12 +1291,12 @@ function createPostgresClientService(
     barrier,
     applicationId,
   );
-  return createPostgresClientPhaseDriver(
+  return createPostgresClientPhaseDriver({
     sql,
     runtimeRepository,
     atEpochMs,
-    "postgres-client-cas-worker",
-  );
+    serviceId: "postgres-client-cas-worker",
+  });
 }
 
 function createPostgresGroupRuntime(
@@ -1539,12 +1426,12 @@ async function seedConnectedClientSession(
   sessionRef: ClientSessionRef,
   atEpochMs: number,
 ): Promise<void> {
-  await createPostgresClientPhaseDriver(
+  await createPostgresClientPhaseDriver({
     sql,
-    toRuntimeRepository(sql),
+    runtimeRepository: toRuntimeRepository(sql),
     atEpochMs,
-    "postgres-worker-client-setup",
-  ).connectSession(scope, sessionRef.principalId, sessionRef.clientInstanceId, sessionRef.sessionId, {
+    serviceId: "postgres-worker-client-setup",
+  }).connectSession(scope, sessionRef.principalId, sessionRef.clientInstanceId, sessionRef.sessionId, {
     generationId: "generation-1",
     connectionId: "connection-1",
     connectedAtEpochMs: atEpochMs,
@@ -1679,8 +1566,10 @@ function expectCompactWorkerOutput(output: WorkerOutput): void {
   expect(output.attemptCount).toBeGreaterThanOrEqual(1);
   expect(output.attemptCount).toBeLessThanOrEqual(3);
   if (output.domainStatus === "applied") {
-    expect(output.outboxIds).toHaveLength(1);
-    expect(output.outboxIds[0]).toMatch(/\S/u);
+    expect(output.outboxIds).toHaveLength(
+      output.operation.startsWith("client-") ? 2 : 1,
+    );
+    output.outboxIds.forEach((outboxId) => expect(outboxId).toMatch(/\S/u));
   }
 }
 
@@ -1688,18 +1577,14 @@ async function expectPendingWorkerOutboxes(
   sql: PSqlSql,
   outputs: readonly WorkerOutput[],
   kind: "client" | "group",
-  effects: readonly string[],
+  effects: readonly WorkerOutboxEffect[],
 ): Promise<void> {
-  outputs.forEach((output) => {
-    expect(output.domainStatus).toBe("applied");
-    expect(output.outboxIds).toHaveLength(1);
-    expect(output.outboxIds[0]).toMatch(/\S/u);
-  });
-  const outboxIds = outputs.map((output) => output.outboxIds[0]!);
-  expect(new Set(outboxIds).size).toBe(outboxIds.length);
-  expectPendingDirectResourceOutboxEvidence(
+  const outboxIds = outputs.flatMap((output) => output.outboxIds);
+  expectWorkerOutboxLifecycleEvidence(
     await findDirectResourceOutboxEvidence(sql, outboxIds),
-    outboxIds,
+    outputs,
+    kind,
+    effects,
   );
 }
 

@@ -26,6 +26,16 @@ export type ExpectedDirectResourceOutboxEvidence = Readonly<{
     payloadIncludes: readonly string[];
 }>;
 
+export type ExpectedAppOutboxWsLink = Readonly<{
+    appResourceId: string;
+    wsResourceId: string;
+}>;
+
+export type DirectResourceOutboxLifecycleExpectation = Readonly<{
+    entries: readonly ExpectedDirectResourceOutboxEvidence[];
+    appToWsLinks: readonly ExpectedAppOutboxWsLink[];
+}>;
+
 export async function findDirectResourceOutboxEvidence(
     sql: PSqlSql,
     resourceIds: readonly string[],
@@ -104,5 +114,21 @@ export function expectAppOutboxWsLink(
     }
     if (!wsEntry.resource.includes(appEntry.resourceId)) {
         throw new Error(`WS_OUTBOX does not link APP_OUTBOX: ${appEntry.resourceId}`);
+    }
+}
+
+export function expectDirectResourceOutboxLifecycle(
+    entries: readonly DirectResourceOutboxEvidence[],
+    expected: DirectResourceOutboxLifecycleExpectation,
+): void {
+    expectDirectResourceOutboxEvidence(entries, expected.entries);
+    const byResourceId = new Map(entries.map((entry) => [entry.resourceId, entry]));
+    for (const link of expected.appToWsLinks) {
+        const appEntry = byResourceId.get(link.appResourceId);
+        const wsEntry = byResourceId.get(link.wsResourceId);
+        if (!appEntry || !wsEntry) {
+            throw new Error(`Missing APP_OUTBOX/WS_OUTBOX link: ${link.appResourceId}`);
+        }
+        expectAppOutboxWsLink(appEntry, wsEntry);
     }
 }

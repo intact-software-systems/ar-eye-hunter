@@ -4,6 +4,7 @@ import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import {
     expectAppOutboxWsLink,
     expectDirectResourceOutboxEvidence,
+    expectDirectResourceOutboxLifecycle,
 } from './direct-resource-outbox-evidence.ts';
 
 describe('direct resource outbox evidence', () => {
@@ -38,6 +39,29 @@ describe('direct resource outbox evidence', () => {
             resourceId: 'ws-work', topicId: 'ws-outbox.group-state',
             typeId: EnqueuedType.WS_OUTBOX, status: EntityStatus.NEW,
             resource: '{"source":"app-work"}',
+        })).not.toThrow();
+    });
+
+    it('checks APP-to-WS receipt linkage as part of a complete lifecycle', () => {
+        expect(() => expectDirectResourceOutboxLifecycle([{
+            resourceId: 'app-work', topicId: 'app-outbox.rtc-topology',
+            typeId: EnqueuedType.APP_OUTBOX, status: EntityStatus.NEW,
+            resource: '{"commandId":"app-work"}',
+        }, {
+            resourceId: 'ws-work', topicId: 'ws-outbox.group-state',
+            typeId: EnqueuedType.WS_OUTBOX, status: EntityStatus.NEW,
+            resource: '{"source":"app-work"}',
+        }], {
+            entries: [{
+                resourceId: 'app-work', topicId: 'app-outbox.rtc-topology',
+                typeId: EnqueuedType.APP_OUTBOX, status: EntityStatus.NEW,
+                payloadIncludes: ['app-work'],
+            }, {
+                resourceId: 'ws-work', topicId: 'ws-outbox.group-state',
+                typeId: EnqueuedType.WS_OUTBOX, status: EntityStatus.NEW,
+                payloadIncludes: ['app-work'],
+            }],
+            appToWsLinks: [{ appResourceId: 'app-work', wsResourceId: 'ws-work' }],
         })).not.toThrow();
     });
 });
