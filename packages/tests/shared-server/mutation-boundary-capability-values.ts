@@ -3,6 +3,7 @@ import {
   type CapabilityTypeShape,
 } from './mutation-boundary-capability-types.ts';
 import type { MutationBoundaryLexicalValues } from './mutation-boundary-lexical-values.ts';
+import { readExactStaticString } from './mutation-static-semantics.ts';
 
 type AstNode = { readonly type: string; readonly [key: string]: unknown };
 
@@ -198,12 +199,7 @@ function readMemberName(
   const property = asNode(member.property);
   if (!property) return '';
   if (member.computed !== true) return readName(property);
-  const direct = readString(property);
-  if (direct) return direct;
-  if (property.type !== 'Identifier') return '';
-  const resolved = lexical.resolveIdentifier(property);
-  if (resolved.unknown || resolved.values.length !== 1) return '';
-  return readString(resolved.values[0]);
+  return readExactStaticString(property, lexical);
 }
 
 function visit(value: unknown, visitor: (node: AstNode) => void): void {

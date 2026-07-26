@@ -12,12 +12,15 @@ import type {
   CapabilityTypeShape,
 } from './mutation-boundary-capability-types.ts';
 import type { MutationBoundaryLexicalBindings } from './mutation-boundary-lexical-bindings.ts';
+import type { MutationBoundaryLexicalValues } from './mutation-boundary-lexical-values.ts';
 import type { FlowCapabilityMethod } from './mutation-boundary-capability-flow.ts';
+import { readExactStaticString } from './mutation-static-semantics.ts';
 
 export interface CapabilityBindingAnalysis {
   readonly resolver: CapabilityTypeResolver;
   readonly values: CapabilityValueResolver;
   readonly bindings: MutationBoundaryLexicalBindings;
+  readonly lexical: MutationBoundaryLexicalValues;
   readonly receivers: Map<string, string>;
   readonly methods: Map<string, FlowCapabilityMethod>;
   readonly shapes: Map<string, CapabilityTypeShape>;
@@ -43,7 +46,7 @@ export function readDirectCapabilityMethod(
   const capability = analysis.receivers.get(
     capabilityExpressionKey(node.object, analysis),
   );
-  return capability && method ? { capability, method } : undefined;
+  return capability ? { capability, method: method || '<unknown>' } : undefined;
 }
 
 export function readCapabilityMethod(
@@ -70,7 +73,7 @@ export function readCapabilityMethod(
     node.computed === true,
     analysis,
   );
-  return capability && method ? { capability, method } : undefined;
+  return capability ? { capability, method: method || '<unknown>' } : undefined;
 }
 
 export function capabilityExpressionKey(
@@ -109,11 +112,9 @@ export function readCapabilityPropertyName(
   }
   if (node.type === 'PrivateName') return readName(node.id);
   if (node.type === 'Identifier') {
-    return computed
-      ? (analysis.strings.get(analysis.bindings.identifierKey(node)) ?? '')
-      : readName(node);
+    return computed ? readExactStaticString(node, analysis.lexical) : readName(node);
   }
-  return readLiteralString(node);
+  return computed ? readExactStaticString(node, analysis.lexical) : readLiteralString(node);
 }
 
 export function isCapabilityFunction(node: AstNode): boolean {

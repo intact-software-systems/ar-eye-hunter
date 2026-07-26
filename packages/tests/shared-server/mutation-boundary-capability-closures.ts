@@ -4,6 +4,7 @@ import {
   type MutationBoundaryCapabilityAstNode as AstNode,
   unwrapCapabilityExpression as unwrap,
 } from './mutation-boundary-capability-ast.ts';
+import type { MutationBoundaryLexicalValues } from './mutation-boundary-lexical-values.ts';
 
 export type FlowCapabilityMethod = Readonly<{
   capability: string;
@@ -22,6 +23,8 @@ export interface CapabilityFlowAccess {
   ): FlowCapabilityMethod | undefined;
   ownerFunctionKey(value: unknown): string;
   propertyName(value: unknown, computed: boolean): string;
+  readonly lexical: MutationBoundaryLexicalValues;
+  staticTruth(value: unknown): boolean | undefined;
 }
 
 export interface FlowMethodSource {

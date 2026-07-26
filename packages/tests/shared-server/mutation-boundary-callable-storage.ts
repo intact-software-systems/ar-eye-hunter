@@ -49,7 +49,9 @@ export function readCallablePatternWrites(
     node.type === 'MemberExpression' ||
     node.type === 'OptionalMemberExpression'
   ) {
-    const targetKey = access.expressionKey(node);
+    const directKey = access.expressionKey(node);
+    const objectKey = access.expressionKey(node.object);
+    const targetKey = directKey || (objectKey ? `${objectKey}.*` : '');
     return targetKey
       ? [{ owner: rootIdentifier(node) ?? node, projection, source, targetKey }]
       : [];

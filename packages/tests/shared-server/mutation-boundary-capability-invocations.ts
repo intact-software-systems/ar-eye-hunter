@@ -12,7 +12,7 @@ import {
 } from './mutation-boundary-capability-closures.ts';
 import {
   readCallFamily,
-  resolveDefaultParameter,
+  resolveArgumentSlot,
   resolveInvocationArguments,
   unwrapCallableParameter,
 } from './mutation-boundary-call-arguments.ts';
@@ -22,17 +22,20 @@ import {
   unionStoredAliases,
 } from './mutation-boundary-callable-heap.ts';
 import {
-  bindCallableResolution,
   type CallableAliasWrite,
-  callableArrayResolution,
   type CallableResolution,
   type CallableResolutionContext,
-  collectCallableTargets,
   type LocalCallableDefinition,
   mergeCallableResolutions,
   resolveCallable,
   unknownLocalCallableResolution,
 } from './mutation-boundary-callable-resolution.ts';
+import {
+  bindCallableResolution,
+  callableArrayResolution,
+  collectCallableTargets,
+} from './mutation-boundary-callable-collections.ts';
+import type { InvocationArgumentSlot } from './mutation-boundary-call-arguments.ts';
 import {
   isCapturedCallableWrite,
   projectCallableResolution,
@@ -45,8 +48,8 @@ import {
 import {
   isCall,
   readPosition,
-  walkAll,
   walkExecution,
+  walkReachableAst,
 } from './mutation-boundary-execution-walk.ts';
 
 interface InvocationContext extends CallableResolutionContext {
@@ -112,13 +115,13 @@ export function collectClosureExecutionWrites(
           writes.push({ ...effect.write, position: readPosition(node) });
         }
       }
-    });
+    }, { lexical: access.lexical });
   }
   return writes;
 }
 
 function collectCallableAliases(program: AstNode, context: InvocationContext): void {
-  walkAll(program, (node) => {
+  walkReachableAst(program, (node) => {
     const target = node.type === 'VariableDeclarator'
       ? asNode(node.id)
       : node.type === 'AssignmentExpression'
@@ -129,7 +132,16 @@ function collectCallableAliases(program: AstNode, context: InvocationContext): v
       : node.type === 'AssignmentExpression'
       ? asNode(node.right)
       : undefined;
-    if (unionStoredAliases(target, source, context)) return;
+    const sourceResolution = resolveCallable(
+      source,
+      readPosition(node),
+      context,
+      new Set(),
+    );
+    if (
+      sourceResolution.members.size > 0 &&
+      unionStoredAliases(target, source, context)
+    ) return;
     for (const write of readCallablePatternWrites(target, source, context.access)) {
       if (isCapturedCallableWrite(write.owner, node, context.access)) continue;
       appendInvocationAlias(context, write.targetKey, {
@@ -139,7 +151,7 @@ function collectCallableAliases(program: AstNode, context: InvocationContext): v
         source: write.source,
       });
     }
-  });
+  }, { lexical: context.access.lexical });
 }
 
 function summarizeInvocations(
@@ -183,13 +195,13 @@ function bindCallArguments(
   definition: LocalCallableDefinition,
   call: AstNode,
   context: InvocationContext,
-  boundArguments: readonly CallableResolution[] = [],
+  boundArguments: readonly InvocationArgumentSlot[] = [],
   boundUnknown = false,
   resolving = new Set<string>(),
 ): InvocationContext {
   const bindings = new Map(context.bindings);
   const invoked = resolveInvocationArguments(call, context, resolving);
-  const arguments_ = [...boundArguments, ...invoked.values];
+  const arguments_ = [...boundArguments, ...invoked.slots];
   for (const [index, rawParameter] of asNodes(definition.node.params).entries()) {
     const parameter = unwrapCallableParameter(rawParameter);
     const key = context.access.expressionKey(parameter);
@@ -197,15 +209,19 @@ function bindCallArguments(
     if (rawParameter.type === 'RestElement') {
       bindings.set(
         key,
-        callableArrayResolution(arguments_.slice(index), boundUnknown || invoked.unknown),
+        callableArrayResolution(
+          arguments_.slice(index).map((slot) =>
+            resolveArgumentSlot(slot, rawParameter, call, context, resolving)
+          ),
+          boundUnknown || invoked.unknown,
+        ),
       );
       continue;
     }
-    const invocationIndex = index - boundArguments.length;
-    const argument = invocationIndex >= 0 && invoked.defaulted.has(invocationIndex)
-      ? resolveDefaultParameter(rawParameter, call, context, resolving)
-      : (arguments_[index] ?? resolveDefaultParameter(rawParameter, call, context, resolving));
-    bindings.set(key, argument);
+    bindings.set(
+      key,
+      resolveArgumentSlot(arguments_[index], rawParameter, call, context, resolving),
+    );
   }
   return { ...context, bindings };
 }
@@ -224,7 +240,7 @@ function resolveReturnedCallable(
   ) {
     const target = resolveCallable(asNode(rawCallee.object), position, context, resolving);
     const arguments_ = resolveInvocationArguments(call, context, resolving);
-    return bindCallableResolution(target, arguments_.values, arguments_.unknown);
+    return bindCallableResolution(target, arguments_.slots, arguments_.unknown);
   }
   const callees = resolveCallable(asNode(call.callee), position, context, new Set(resolving));
   const returns: CallableResolution[] = [];
@@ -253,7 +269,7 @@ function resolveReturnedCallable(
       returns.push(
         resolveCallable(asNode(node.argument), readPosition(node), targetContext, nextResolving),
       );
-    });
+    }, { lexical: context.access.lexical });
   }
   if (returns.length === 0) {
     return callees.localProvenance ? unknownLocalCallableResolution() : callees;
@@ -339,6 +355,6 @@ function summarizeFunction(
         });
       }
     }
-  });
+  }, { lexical: context.access.lexical });
   return effects;
 }

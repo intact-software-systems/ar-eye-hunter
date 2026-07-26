@@ -5,6 +5,7 @@ import {
   unwrapCapabilityExpression as unwrap,
 } from './mutation-boundary-capability-ast.ts';
 import type { CapabilityFlowAccess } from './mutation-boundary-capability-closures.ts';
+import type { InvocationArgumentSlot } from './mutation-boundary-call-arguments.ts';
 
 export interface LocalCallableDefinition {
   readonly functionKey: string;
@@ -22,7 +23,7 @@ export interface CallableAliasWrite {
 }
 
 interface CallableTarget {
-  readonly boundArguments: readonly CallableResolution[];
+  readonly boundArguments: readonly InvocationArgumentSlot[];
   readonly boundUnknown: boolean;
   readonly conditional: boolean;
   readonly definition: LocalCallableDefinition;
@@ -171,6 +172,13 @@ function resolveMember(
     : emptyResolution(false);
   const object = resolveCallable(asNode(node.object), position, context, new Set(resolving));
   const name = context.access.propertyName(node.property, node.computed === true);
+  const rawObjectKey = context.access.expressionKey(node.object);
+  const wildcardKey = rawObjectKey
+    ? (context.storageKey?.(`${rawObjectKey}.*`) ?? `${rawObjectKey}.*`)
+    : '';
+  const wildcard = wildcardKey
+    ? resolveKey(wildcardKey, position, context, new Set(resolving))
+    : emptyResolution(false);
   const lastWrite = [...(context.aliases.get(key) ?? [])]
     .filter((write) => write.position < position)
     .toSorted((left, right) => left.position - right.position)
@@ -180,11 +188,12 @@ function resolveMember(
     return mergeResolutions([direct, object], false);
   }
   if (name && object.members.has(name)) {
-    return mergeResolutions([direct, object.members.get(name)!], false);
+    return mergeResolutions([direct, object.members.get(name)!, wildcard], false);
   }
   if (object.members.size > 0 && !name) {
-    return mergeResolutions([direct, ...object.members.values()], true);
+    return mergeResolutions([direct, wildcard, ...object.members.values()], true);
   }
+  if (wildcard.localProvenance) return mergeResolutions([direct, wildcard], true);
   if (direct.targets.size > 0) return direct;
   return object.localProvenance
     ? { ...emptyResolution(true), unknown: true }
@@ -204,6 +213,22 @@ function resolveKey(
   if (resolving.has(resolutionKey)) return emptyResolution(true);
   resolving.add(resolutionKey);
   let resolution = resolveReferences(key, position, context);
+  const ancestor = key.endsWith('.*') ? undefined : [...context.aliases.keys()]
+    .filter((candidate) => key.startsWith(`${candidate}.`))
+    .toSorted((left, right) => right.length - left.length)[0];
+  if (ancestor) {
+    const ancestorResolution = resolveKey(
+      ancestor,
+      position,
+      context,
+      resolving,
+    );
+    const projection = key.slice(ancestor.length + 1).split('.');
+    resolution = mergeResolutions(
+      [resolution, projectResolution(ancestorResolution, projection)],
+      false,
+    );
+  }
   const writes = [...(context.aliases.get(key) ?? [])].toSorted(
     (left, right) => left.position - right.position,
   );
@@ -223,6 +248,17 @@ function resolveKey(
   }
   resolving.delete(resolutionKey);
   return resolution;
+}
+
+function projectResolution(
+  resolution: CallableResolution,
+  projection: readonly string[],
+): CallableResolution {
+  let current = resolution;
+  for (const member of projection) {
+    current = current.members.get(member) ?? emptyResolution(current.localProvenance);
+  }
+  return current;
 }
 
 function resolveReferences(
@@ -249,47 +285,6 @@ export function mergeCallableResolutions(
 
 export function unknownLocalCallableResolution(): CallableResolution {
   return emptyResolution(true);
-}
-
-export function callableArrayResolution(
-  values: readonly CallableResolution[],
-  unknown: boolean,
-): CallableResolution {
-  const members = new Map(values.map((value, index) => [String(index), value]));
-  return {
-    localProvenance: values.some((value) => value.localProvenance),
-    members,
-    targets: new Map(),
-    unknown: unknown || values.some((value) => value.unknown),
-  };
-}
-
-export function collectCallableTargets(
-  resolution: CallableResolution,
-): CallableResolution['targets'] {
-  const targets = new Map(resolution.targets);
-  for (const member of resolution.members.values()) {
-    for (const [key, target] of collectCallableTargets(member)) {
-      targets.set(key, target);
-    }
-  }
-  return targets;
-}
-
-export function bindCallableResolution(
-  resolution: CallableResolution,
-  boundArguments: readonly CallableResolution[],
-  boundUnknown: boolean,
-): CallableResolution {
-  const targets = new Map<string, CallableTarget>();
-  for (const [key, target] of resolution.targets) {
-    targets.set(key, {
-      ...target,
-      boundArguments: [...target.boundArguments, ...boundArguments],
-      boundUnknown: target.boundUnknown || boundUnknown,
-    });
-  }
-  return { ...resolution, targets };
 }
 
 function mergeResolutions(

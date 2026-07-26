@@ -17,6 +17,7 @@ import type { CapabilityTypeShape } from './mutation-boundary-capability-types.t
 import { createCapabilityValueResolver } from './mutation-boundary-capability-values.ts';
 import { findFlowSensitiveCapabilityCalls } from './mutation-boundary-capability-flow.ts';
 import { createMutationBoundaryLexicalValues } from './mutation-boundary-lexical-values.ts';
+import { evaluateStaticTruth } from './mutation-static-semantics.ts';
 
 const READ_ONLY_CAPABILITY_METHODS = new Map<string, ReadonlySet<string>>([
   [
@@ -57,6 +58,7 @@ export function findCapabilityMutationCalls(
     resolver,
     values: createCapabilityValueResolver(lexical, resolver, (key) => shapes.get(key)),
     bindings: lexical.bindings,
+    lexical,
     receivers: new Map(),
     methods: new Map(),
     shapes,
@@ -96,6 +98,8 @@ export function findCapabilityMutationCalls(
       },
       ownerFunctionKey: (value) => analysis.bindings.identifierFunctionKey(value),
       propertyName: (value, computed) => readCapabilityPropertyName(value, computed, analysis),
+      lexical,
+      staticTruth: (value) => evaluateStaticTruth(value, lexical),
     })
   ) {
     if (!READ_ONLY_CAPABILITY_METHODS.get(call.capability)?.has(call.method)) {

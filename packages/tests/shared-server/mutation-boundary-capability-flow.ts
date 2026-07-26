@@ -11,6 +11,7 @@ import {
   readFlowPatternWrites,
 } from './mutation-boundary-capability-closures.ts';
 import { collectClosureExecutionWrites } from './mutation-boundary-capability-invocations.ts';
+import { walkReachableAst } from './mutation-boundary-execution-walk.ts';
 
 export type { FlowCapabilityMethod } from './mutation-boundary-capability-closures.ts';
 
@@ -25,11 +26,11 @@ export function findFlowSensitiveCapabilityCalls(
   program: AstNode,
   access: CapabilityFlowAccess,
 ): readonly FlowCapabilityMethod[] {
-  const conditionalNodes = findConditionalNodes(program);
+  const conditionalNodes = findConditionalNodes(program, access);
   const writes = new Map<string, MethodWrite[]>();
   let nextOrder = 0;
   let hasCapturedWrites = false;
-  walk(program, (node) => {
+  walkReachableAst(program, (node) => {
     const pattern = node.type === 'VariableDeclarator'
       ? asNode(node.id)
       : node.type === 'AssignmentExpression'
@@ -55,15 +56,14 @@ export function findFlowSensitiveCapabilityCalls(
         writes,
       );
     }
-  });
+  }, { lexical: access.lexical });
   if (hasCapturedWrites) {
-    for (
-      const write of collectClosureExecutionWrites(
-        program,
-        access,
-        (node) => conditionalNodes.has(node),
-      )
-    ) {
+    const closureWrites = collectClosureExecutionWrites(
+      program,
+      access,
+      (node) => conditionalNodes.has(node),
+    );
+    for (const write of closureWrites) {
       addWrite(
         write.targetKey,
         write.source,
@@ -76,13 +76,13 @@ export function findFlowSensitiveCapabilityCalls(
   }
 
   const calls = new Map<string, FlowCapabilityMethod>();
-  walk(program, (node) => {
+  walkReachableAst(program, (node) => {
     if (node.type !== 'CallExpression' && node.type !== 'OptionalCallExpression') return;
     const position = readPosition(node);
     for (const method of resolveCallee(asNode(node.callee), position, writes, access)) {
       calls.set(methodKey(method), method);
     }
-  });
+  }, { lexical: access.lexical });
   return [...calls.values()];
 }
 
@@ -152,49 +152,15 @@ function resolveSource(
   return source.key ? resolveKey(source.key, position, writes, access, resolving) : new Set();
 }
 
-function findConditionalNodes(program: AstNode): WeakSet<object> {
+function findConditionalNodes(
+  program: AstNode,
+  access: CapabilityFlowAccess,
+): WeakSet<object> {
   const conditional = new WeakSet<object>();
-  const scan = (value: unknown, isConditional: boolean): void => {
-    if (!value || typeof value !== 'object') return;
-    if (Array.isArray(value)) {
-      for (const child of value) scan(child, isConditional);
-      return;
-    }
-    const node = value as AstNode;
-    if (isConditional) conditional.add(node);
-    const branchKeys = conditionalChildKeys(node);
-    for (const [key, child] of Object.entries(node)) {
-      if (IGNORED_KEYS.has(key)) continue;
-      scan(child, isConditional || branchKeys.has(key));
-    }
-  };
-  scan(program, false);
+  walkReachableAst(program, (node, context) => {
+    if (context.conditional) conditional.add(node);
+  }, { lexical: access.lexical });
   return conditional;
-}
-
-function conditionalChildKeys(node: AstNode): ReadonlySet<string> {
-  if (node.type === 'IfStatement') return new Set(['consequent', 'alternate']);
-  if (node.type === 'ConditionalExpression') return new Set(['consequent', 'alternate']);
-  if (node.type === 'LogicalExpression') return new Set(['right']);
-  if (['ForStatement', 'ForInStatement', 'ForOfStatement', 'WhileStatement'].includes(node.type)) {
-    return new Set(['body']);
-  }
-  if (node.type === 'SwitchCase') return new Set(['consequent']);
-  if (node.type === 'TryStatement') return new Set(['block', 'handler']);
-  return new Set();
-}
-
-function walk(value: unknown, visit: (node: AstNode) => void): void {
-  if (!value || typeof value !== 'object') return;
-  if (Array.isArray(value)) {
-    for (const child of value) walk(child, visit);
-    return;
-  }
-  const node = value as AstNode;
-  if (typeof node.type === 'string') visit(node);
-  for (const [key, child] of Object.entries(node)) {
-    if (!IGNORED_KEYS.has(key)) walk(child, visit);
-  }
 }
 
 function readPosition(node: AstNode): number {
@@ -204,5 +170,3 @@ function readPosition(node: AstNode): number {
 function methodKey(method: FlowCapabilityMethod): string {
   return `${method.capability}.${method.method}`;
 }
-
-const IGNORED_KEYS = new Set(['loc', 'start', 'end', 'comments', 'tokens']);

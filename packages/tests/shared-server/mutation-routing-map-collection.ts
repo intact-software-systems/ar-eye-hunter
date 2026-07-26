@@ -6,6 +6,7 @@ import {
   type RegistrationTypeCollection,
   UNKNOWN_REGISTRATION_TYPES,
 } from './mutation-routing-registration-predicate.ts';
+import { readExactStaticString } from './mutation-static-semantics.ts';
 
 type RegistrationCollectionEvaluator = (
   value: AstNode | undefined,
@@ -270,20 +271,9 @@ function readCallbackBody(value: AstNode | undefined): AstNode | undefined {
 function resolveStaticString(
   value: AstNode | undefined,
   lexical: MutationBoundaryLexicalValues,
-  resolving: Set<string>,
+  _resolving: Set<string>,
 ): string {
-  const node = unwrap(value);
-  if (node?.type === 'StringLiteral') return readString(node);
-  if (node?.type !== 'Identifier') return '';
-  const key = lexical.bindings.identifierKey(node);
-  if (resolving.has(key)) return '';
-  const resolved = lexical.resolveIdentifier(node);
-  if (resolved.unknown || resolved.values.length !== 1) return '';
-  return resolveStaticString(
-    resolved.values[0],
-    lexical,
-    new Set(resolving).add(key),
-  );
+  return readExactStaticString(value, lexical);
 }
 
 function unwrap(value: AstNode | undefined): AstNode | undefined {
