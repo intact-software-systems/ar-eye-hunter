@@ -128,6 +128,9 @@ import {
 } from '@shared-server/rallar-system/services/RtcTopologyOutboxWork.ts';
 import { computeRtcTopologyPublicationOutbox } from '@shared-server/rallar-system/services/rtc-topology-ws-outbox-entry.ts';
 import { toResilienceDto } from '../../src/middleware-resilience.ts';
+import {
+  expectGroupPresenceSummaryAppToWsLifecycleEvidence,
+} from '../../../../packages/tests/shared-server/postgres-worker-outbox-evidence.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import * as graphTopologyRoutes from '../../src/routes/graph-topology-routes.ts';
 import { toPersistedAuthSessionFixture, withPGliteSql } from './pglite-auth-test-harness.ts';
@@ -418,26 +421,20 @@ Deno.test('PGlite AppGroup commits group mutation and summary fan-out through fe
       toResilienceDto(),
     );
     const afterSummary = await sql<{
+      ri_resource_id: string;
       ri_topic_id: string;
       ri_type_id: string;
       ri_status: string;
+      ri_resource: string;
     }[]>`
-      select ri_topic_id, ri_type_id, ri_status from resource_inbox order by ri_row_id
+      select ri_resource_id, ri_topic_id, ri_type_id, ri_status, ri_resource
+      from resource_inbox order by ri_row_id
     `;
-    assert.equal(
-      afterSummary.filter((row) =>
-        row.ri_type_id === 'APP_OUTBOX' &&
-        row.ri_topic_id === APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC &&
-        row.ri_status === 'COMPLETED'
-      ).length,
-      1,
-    );
-    assert.equal(
-      afterSummary.filter((row) =>
-        row.ri_type_id === 'WS_OUTBOX' &&
-        row.ri_status === 'NEW'
-      ).length,
-      3,
+    expectGroupPresenceSummaryAppToWsLifecycleEvidence(
+      afterSummary,
+      afterSummary
+        .filter((row) => row.ri_topic_id === APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC)
+        .map((row) => row.ri_resource_id),
     );
     assert.equal(
       afterSummary.filter((row) =>

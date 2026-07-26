@@ -29,6 +29,7 @@ export type ExpectedDirectResourceOutboxEvidence = Readonly<{
 export type ExpectedAppOutboxWsLink = Readonly<{
     appResourceId: string;
     wsResourceId: string;
+    linkIdentity?: string;
 }>;
 
 export type DirectResourceOutboxLifecycleExpectation = Readonly<{
@@ -105,6 +106,7 @@ export function expectDirectResourceOutboxEvidence(
 export function expectAppOutboxWsLink(
     appEntry: DirectResourceOutboxEvidence,
     wsEntry: DirectResourceOutboxEvidence,
+    linkIdentity = appEntry.resourceId,
 ): void {
     if (appEntry.typeId !== EnqueuedType.APP_OUTBOX) {
         throw new Error(`Expected APP_OUTBOX: ${appEntry.resourceId}`);
@@ -112,8 +114,8 @@ export function expectAppOutboxWsLink(
     if (wsEntry.typeId !== EnqueuedType.WS_OUTBOX) {
         throw new Error(`Expected WS_OUTBOX: ${wsEntry.resourceId}`);
     }
-    if (!wsEntry.resource.includes(appEntry.resourceId)) {
-        throw new Error(`WS_OUTBOX does not link APP_OUTBOX: ${appEntry.resourceId}`);
+    if (!wsEntry.resource.includes(linkIdentity)) {
+        throw new Error(`WS_OUTBOX does not link APP_OUTBOX identity: ${linkIdentity}`);
     }
 }
 
@@ -129,6 +131,6 @@ export function expectDirectResourceOutboxLifecycle(
         if (!appEntry || !wsEntry) {
             throw new Error(`Missing APP_OUTBOX/WS_OUTBOX link: ${link.appResourceId}`);
         }
-        expectAppOutboxWsLink(appEntry, wsEntry);
+        expectAppOutboxWsLink(appEntry, wsEntry, link.linkIdentity);
     }
 }
