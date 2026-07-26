@@ -7,6 +7,7 @@ export type MutationExecutionAstNode = {
 
 export type ExecutionCompletion =
   | Readonly<{ kind: 'normal' }>
+  | Readonly<{ kind: 'diverge' }>
   | Readonly<{ kind: 'break'; label: string | undefined }>
   | Readonly<{ kind: 'continue'; label: string | undefined }>
   | Readonly<{ kind: 'return' }>
@@ -47,6 +48,7 @@ export interface MutationExecutionAdapter<State> {
 }
 
 export const NORMAL_COMPLETION: ExecutionCompletion = { kind: 'normal' };
+export const DIVERGE_COMPLETION: ExecutionCompletion = { kind: 'diverge' };
 
 export function completeExecutionPaths<State>(
   paths: readonly MutationExecutionPath<State>[],

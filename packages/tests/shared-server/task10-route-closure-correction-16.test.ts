@@ -103,15 +103,15 @@ describe('Task 10 route-closure correction 16 contracts', () => {
         registerC16(undefined, 'values');`,
       'declare const c16Stop: boolean;',
     );
-    expectProjection(issues, 'GROUP_UPDATE', 'GROUP_CREATE');
+    expectNeitherProjection(issues);
   });
 
-  it('runs classic-for update and do-while test after continue', () => {
+  it('runs continue phases and preserves the unknown do-test exit', () => {
     const forIssues = validateInvocations(`for (; true; registerC16(undefined, 'keys')) {
             continue;
         }
         registerC16(undefined, 'values');`);
-    expectBothProjections(forIssues);
+    expectProjection(forIssues, 'GROUP_CREATE', 'GROUP_UPDATE');
 
     const doIssues = validateInvocations(`do {
             continue;

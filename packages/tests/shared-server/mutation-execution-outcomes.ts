@@ -14,6 +14,7 @@ import {
   coalesceExecutionPaths,
   completeExecutionPaths,
   consumeUnlabeledBreak,
+  DIVERGE_COMPLETION,
   type MutationExecutionAdapter,
   type MutationExecutionAstNode as AstNode,
   type MutationExecutionPath,
@@ -65,7 +66,9 @@ function executeNode<State>(
   const normal = paths.filter((path) => path.completion.kind === 'normal');
   if (normal.length === 0) return carried;
   if (node.type === 'CallExpression' || node.type === 'OptionalCallExpression') {
-    return [...carried, ...executeCall(node, normal, adapter, rootFunction)];
+    let evaluated = executeNode(node.callee, normal, adapter, rootFunction);
+    evaluated = executeSequence(rawValues(node.arguments), evaluated, adapter, rootFunction);
+    return [...carried, ...visitPaths(node, evaluated, adapter)];
   }
   const entered = visitPaths(node, normal, adapter);
   if (node.type === 'BlockStatement' || node.type === 'Program') {
@@ -284,6 +287,7 @@ function executeTry<State>(
   const finalizer = asNode(node.finalizer);
   if (!finalizer) return caught;
   return caught.flatMap((path) => {
+    if (path.completion.kind === 'diverge') return [path];
     const prior = path.completion;
     return executeNode(
       finalizer,
@@ -333,6 +337,14 @@ function executeLoop<State>(
     } else if (node.type === 'DoWhileStatement') {
       phase = executeNode(node.test, phase, adapter, rootFunction);
     }
+    phase = phase.map((candidate) =>
+      candidate.completion.kind === 'normal' &&
+        (node.type === 'DoWhileStatement'
+          ? evaluateStaticTruth(node.test, adapter.lexical(candidate.state)) === true
+          : truth === true)
+        ? { ...candidate, completion: DIVERGE_COMPLETION }
+        : candidate
+    );
     return restoreExecutionContext(
       [...(truth === undefined ? [path] : []), ...phase, ...body.exited, ...body.escaped],
       path,
@@ -384,15 +396,4 @@ function executeCollectionLoop<State>(
     }
     return restoreExecutionContext([...active, ...exited, ...escaped], path);
   });
-}
-
-function executeCall<State>(
-  node: AstNode,
-  paths: readonly MutationExecutionPath<State>[],
-  adapter: MutationExecutionAdapter<State>,
-  rootFunction: AstNode | undefined,
-): readonly MutationExecutionPath<State>[] {
-  let evaluated = executeNode(node.callee, paths, adapter, rootFunction);
-  evaluated = executeSequence(rawValues(node.arguments), evaluated, adapter, rootFunction);
-  return visitPaths(node, evaluated, adapter);
 }
