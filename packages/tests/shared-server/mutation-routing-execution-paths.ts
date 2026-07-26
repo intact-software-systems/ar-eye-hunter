@@ -2,6 +2,7 @@ import type { MutationRoutingAstNode as AstNode } from './mutation-routing-call-
 import {
   type LexicalValueResolution,
   type MutationBoundaryLexicalValues,
+  mutationBoundaryLexicalValuesEqual,
   withExecutedMutationBoundaryLexicalWrite,
   withMutationBoundaryLexicalOverrides,
 } from './mutation-boundary-lexical-values.ts';
@@ -17,10 +18,13 @@ type RoutingCallVisitor<Value> = (
   path: RoutingExecutionPath<Value>,
 ) => RoutingExecutionPath<Value>;
 
+type RoutingValueEquality<Value> = (left: Value, right: Value) => boolean;
+
 export function collectRoutingExecutionPaths<Value>(
   root: AstNode,
   lexical: MutationBoundaryLexicalValues,
   visitCall: RoutingCallVisitor<Value>,
+  valuesEqual: RoutingValueEquality<Value>,
 ): readonly RoutingExecutionPath<Value>[] {
   const paths = executeMutationPaths<RoutingExecutionPath<Value>>(
     root,
@@ -29,6 +33,7 @@ export function collectRoutingExecutionPaths<Value>(
       bindLoopValue: withLoopValue,
       lexical: (path) => path.lexical,
       nestedFunctions: 'skip',
+      statesEqual: (left, right) => routingExecutionPathsEqual(left, right, valuesEqual),
       visit: (node, path) =>
         node.type === 'CallExpression' || node.type === 'OptionalCallExpression'
           ? visitCall(node as AstNode, path)
@@ -40,6 +45,32 @@ export function collectRoutingExecutionPaths<Value>(
     },
   );
   return paths.map((path) => path.state);
+}
+
+function routingExecutionPathsEqual<Value>(
+  left: RoutingExecutionPath<Value>,
+  right: RoutingExecutionPath<Value>,
+  valuesEqual: RoutingValueEquality<Value>,
+): boolean {
+  return mutationBoundaryLexicalValuesEqual(left.lexical, right.lexical) &&
+    routingValuesEqual(left.values, right.values, valuesEqual);
+}
+
+function routingValuesEqual<Value>(
+  left: readonly Value[],
+  right: readonly Value[],
+  valuesEqual: RoutingValueEquality<Value>,
+): boolean {
+  // Registration evidence is unioned downstream, so order is irrelevant while
+  // one-to-one matching conservatively preserves duplicate multiplicity.
+  if (left.length !== right.length) return false;
+  const unmatched = [...right];
+  for (const value of left) {
+    const index = unmatched.findIndex((candidate) => valuesEqual(value, candidate));
+    if (index < 0) return false;
+    unmatched.splice(index, 1);
+  }
+  return true;
 }
 
 export function withRoutingLexicalOverrides(

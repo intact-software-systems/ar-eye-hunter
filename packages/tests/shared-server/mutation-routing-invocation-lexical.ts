@@ -2,9 +2,10 @@ import {
   findAstNode,
   type MutationRoutingAstNode as AstNode,
 } from './mutation-routing-call-graph.ts';
-import type {
-  LexicalValueResolution,
-  MutationBoundaryLexicalValues,
+import {
+  type LexicalValueResolution,
+  type MutationBoundaryLexicalValues,
+  mutationBoundaryLexicalValuesEqual,
 } from './mutation-boundary-lexical-values.ts';
 import {
   absentArgumentSlot,
@@ -44,10 +45,11 @@ export function readInvocationLexicalPaths(
   if (!callable) return [[lexical]];
   const expected = callable;
   const owner = findCallableOwner(program, expected);
-  const paths = collectRoutingExecutionPaths(
+  const paths = collectRoutingExecutionPaths<MutationBoundaryLexicalValues>(
     asNode(owner.body) ?? owner,
     lexical,
     (call, path) => appendInvocation(call, path, expected),
+    mutationBoundaryLexicalValuesEqual,
   );
   return paths.map((path) => path.values);
 }
