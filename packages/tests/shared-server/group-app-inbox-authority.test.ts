@@ -5,6 +5,7 @@ import {
     createAppInboxTestDatabase,
 } from './app-inbox-test-database.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import {
@@ -843,6 +844,12 @@ describe('AppGroupInboxService authenticated authority', () => {
         const compute = vi.spyOn(harness.groupStateService, 'compute');
         const validate = vi.spyOn(harness.groupStateService, 'validate');
         const write = vi.spyOn(harness.groupStateService, 'write');
+        const observeSnapshot = vi.spyOn(
+            harness.groupStateService as GroupStateService & Readonly<{
+                observeSnapshot(snapshot: GroupSnapshot): Promise<GroupSnapshot>;
+            }>,
+            'observeSnapshot',
+        );
         const authorityRead = vi.spyOn(harness.authSessions, 'findBySessionId');
         const groupId = 'operation-matrix-room';
         const ownerActor = {
@@ -1237,6 +1244,9 @@ describe('AppGroupInboxService authenticated authority', () => {
             )).toBe(true);
             await testCase.assertDomain();
         }
+        await vi.waitFor(() =>
+            expect(observeSnapshot).toHaveBeenCalledTimes(cases.length)
+        );
     }, 30_000);
 });
 

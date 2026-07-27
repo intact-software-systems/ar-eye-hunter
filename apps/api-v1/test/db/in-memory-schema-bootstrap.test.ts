@@ -571,6 +571,7 @@ async function smokeCrdtLog(db: PGlite): Promise<void> {
     value: {},
     metadata: {
       updateCount: 1,
+      reason: 'schema-smoke-test',
     },
   };
 
@@ -599,14 +600,22 @@ async function smokeCrdtLog(db: PGlite): Promise<void> {
                                    update_id,
                                    update_envelope,
                                    accepted_update_hash,
+                                   actor_id,
+                                   principal_id,
+                                   session_id,
+                                   server_id,
                                    authorization_scope)
-         values ($1, $2, $3, $4, $5, $6)`,
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
     [
       documentKey,
       1,
       update.updateId,
       JSON.stringify(update),
       'crdt-test-hash',
+      'actor-a',
+      'principal-a',
+      'session-a',
+      'server-a',
       'room',
     ],
   );
@@ -623,13 +632,15 @@ async function smokeCrdtLog(db: PGlite): Promise<void> {
     `insert into crdt_snapshots (document_key,
                                      snapshot_id,
                                      append_sequence,
-                                     snapshot_envelope)
-         values ($1, $2, $3, $4)`,
+                                     snapshot_envelope,
+                                     reason)
+         values ($1, $2, $3, $4, $5)`,
     [
       documentKey,
       snapshot.snapshotId,
       1,
       JSON.stringify(snapshot),
+      snapshot.metadata.reason,
     ],
   );
 

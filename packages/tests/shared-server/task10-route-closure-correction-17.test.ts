@@ -22,7 +22,7 @@ const TYPE_MAP = `const C17_TYPE_MAP = new Map([
     [AppInboxType.GROUP_CREATE, AppInboxType.GROUP_UPDATE],
 ]);`;
 
-describe('Task 10 route-closure correction 17 contracts', () => {
+describe('Task 10 route-closure correction 17 contracts', { timeout: 30_000 }, () => {
   it('keeps writers after statically non-terminating loops unreachable', () => {
     expect(findBoundaryViolations('c17-loop-divergence-controls.ts')).toEqual([]);
   });

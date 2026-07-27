@@ -32,7 +32,7 @@ describe('GroupStateSnapshotReadThroughCache', () => {
             groupsRepository: repository,
         });
         const first = createGroupSnapshot(1, ['session-a']);
-        const second = createGroupSnapshot(1, ['session-a', 'session-b']);
+        const second = createGroupSnapshot(2, ['session-a', 'session-b']);
 
         await putGroupSnapshot(repository, first);
         await expect(cache.findOrLoadByRef(first.group)).resolves.toEqual(first);
@@ -40,12 +40,7 @@ describe('GroupStateSnapshotReadThroughCache', () => {
         await putGroupSnapshot(repository, second);
         await expect(cache.findOrLoadByRef(second.group, {
             minCausalRevision: { groupRevision: 2, presenceRevision: 2 },
-        })).resolves.toEqual({
-            ...second,
-            stateRevision: 4,
-            causalRevision: { groupRevision: 2, presenceRevision: 2 },
-            group: { ...second.group, presenceVersion: 2 },
-        });
+        })).resolves.toEqual(second);
     });
 
     it('observes revisions monotonically and rejects equal-revision conflicts', () => {

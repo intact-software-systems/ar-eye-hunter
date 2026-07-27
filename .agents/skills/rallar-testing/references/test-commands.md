@@ -112,14 +112,30 @@ throughput, SQL/row/byte counts, and transaction duration. Record the exact
 artifact paths and command output; do not relabel an older diagnostic artifact
 as the governed candidate.
 
-## Broader Suites
+## Plan Completion Gate
+
+Focused checks and surface-specific suites are feedback; they never substitute
+for the plan completion gate. From the final uncommitted working tree, run:
 
 ```bash
 npm run test:unit
-npm run test:deno
-npm run test:rallar:full-stack:memory
-npm run test:playwright:relic:full-stack
+npm run test:ci
+npm run build
 ```
+
+Any change after a successful command invalidates its result. Before completion,
+the draft pull request must be current, **Branch Release Gate** must pass for
+the final feature-branch commit, and **Run Hetzner Supported Distributed
+Manifests** must pass for the resulting default-branch commit. Verify and record
+the exact commit SHA; a Release Gate run on different code is not evidence for
+the current plan. Do not approve completion: the plan is not complete while any
+required command or workflow is pending, skipped, failed, or attached to an
+older commit. An instruction not to commit or push postpones publication but
+does not waive any completion gate.
+
+`npm run test:ci` includes the repository Deno, E2E, and in-memory full-stack
+suites after unit tests. Run `npm run test:unit` separately as required so its
+result is explicit rather than inferred from a later composite failure.
 
 ## UI Workflow Testing
 

@@ -1,5 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
 import {
@@ -25,7 +25,13 @@ import { requeueRemoteWsOutboxDeliveryFailure } from
   '@shared-server/rallar-system/pubsub/RemoteWsOutboxDeliveryFailure.ts';
 
 describe('durable WS outbox owner misses', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('retries a non-owner miss so the process with the target socket can deliver', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(1_000);
     const outbox = new InMemoryQueueBox();
     const entry = QueueBoxUtilities.toResourceEntryFromMsg(
       createUnicastMessage(),
@@ -64,7 +70,7 @@ describe('durable WS outbox owner misses', () => {
       status: 'no-current-recipient', messageId: 'durable-reply-1',
     }))).toBe(true);
 
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    vi.advanceTimersByTime(1);
     await owner.dequeueOutbox(WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, createResilience());
 
     expect(readEntry(outbox).status).toBe(EntityStatus.COMPLETED);

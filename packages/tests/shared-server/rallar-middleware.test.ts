@@ -86,6 +86,7 @@ describe('createRallarMiddleware', () => {
       inboxQueueReader: runtime.inboxQueueReader,
       wsQBoxServerService: runtime.wsQBoxServerService,
       appInboxResilience,
+      wakeQueueEngine: expect.any(Function),
     });
     expect(runtime.clientsRepository).toBe(clientsRepository);
     expect(runtime.groupsRepository).toBe(groupsRepository);

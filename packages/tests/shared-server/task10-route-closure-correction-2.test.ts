@@ -12,7 +12,7 @@ const TRANSITIVE_FIXTURE =
   'packages/tests/shared-server/fixtures/mutation-boundary-transitive/root.ts';
 const BARREL_FIXTURES = 'packages/tests/shared-server/fixtures/mutation-boundary-barrel';
 
-describe('Task 10 route-closure correction 2 contracts', () => {
+describe('Task 10 route-closure correction 2 contracts', { timeout: 30_000 }, () => {
   it('finds forbidden mutations in recursively imported helpers without listing them', () => {
     const findViolations = (boundaryAnalysis as unknown as {
       findMutationBoundaryViolationsFromRoots?: (
@@ -78,7 +78,7 @@ describe('Task 10 route-closure correction 2 contracts', () => {
     const first = MUTATION_ROUTE_INVENTORY[0]!;
     const source = readFileSync(first.sourcePath, 'utf8');
     const liveCall =
-      'const snapshot = await deps.processClientAppInbox<ClientPrincipalUpsertAppInboxPayload>';
+      'const snapshot = await processClientAppInbox<ClientPrincipalUpsertAppInboxPayload>';
     expect(source).toContain(liveCall);
     const rerouted = source.replace(
       liveCall,

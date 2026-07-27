@@ -5123,8 +5123,8 @@ function topologyGroupSnapshotWithSessions(
     disconnectReason: null,
   });
   return {
-    stateRevision: 2,
-    causalRevision: { groupRevision: 1, presenceRevision: 1 },
+    stateRevision: 3,
+    causalRevision: { groupRevision: 2, presenceRevision: 1 },
     group: {
       ...base.group,
       activeMemberCount: 2,
@@ -5168,8 +5168,8 @@ function topologyGroupSnapshotWithSessionIds(
   }));
   return {
     ...base,
-    stateRevision: 2,
-    causalRevision: { groupRevision: 1, presenceRevision: 1 },
+    stateRevision: 3,
+    causalRevision: { groupRevision: 2, presenceRevision: 1 },
     group: {
       ...base.group,
       activeMemberCount: members.length,

@@ -41,6 +41,9 @@ describe('Deploy workflow release gate', () => {
         expect(releaseGateWorkflow).toContain('postgres:');
         expect(releaseGateWorkflow).toContain('npm ci');
         expect(releaseGateWorkflow).toContain('npx playwright install --with-deps chromium');
+        expect(releaseGateWorkflow).toMatch(
+            /RALLAR_AUTH_CREDENTIAL_SECRET:\s*["']?[^\n"']{32,}["']?/,
+        );
         expect(releaseGateWorkflow).toContain('npm run test:ci');
         expect(releaseGateWorkflow).toContain('npm run build:ar-eye-hunter-v1');
         expect(releaseGateWorkflow).toContain('npm run build:relic-hunters-v1');

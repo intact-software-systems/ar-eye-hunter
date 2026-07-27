@@ -504,6 +504,41 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         expect(socket.sent[0].data.id.msgId).toBe(msg.id.msgId);
     });
 
+    it('forwards inbound room broadcasts to resolved group recipients', async () => {
+        const socket = createFakeWsServer();
+        const service = new shared.WsQueueBoxServerService(
+            new shared.InMemoryQueueBox(new Map()),
+            new shared.InMemoryQueueBox(new Map()),
+            socket as never,
+            'server-1',
+            {
+                targetResolver: createTargetResolver(),
+            },
+        );
+        const msg = shared.newALBroadcastMessage(
+            'peer-1',
+            {
+                topicId: 'room.manual.message',
+                resourceId: 'room-broadcast-1',
+                contextId: 'group-1',
+            },
+            'room',
+            'room.manual.message',
+            { text: 'hello room' },
+            { groupRef: groupRef('group-1') },
+        );
+
+        await (service as any).handleIncomingServerMessage(msg, 'conn-1');
+
+        expect(socket.sent).toHaveLength(2);
+        expect(socket.sent.map((entry) => entry.connectionId).sort()).toEqual([
+            'conn-2',
+            'conn-3',
+        ]);
+        expect(socket.sent.every((entry) => entry.data.id.msgId === msg.id.msgId))
+            .toBe(true);
+    });
+
     it('suppresses duplicate inbound delivery on the server wrapper', async () => {
         const socket = createFakeWsServer();
         const service = new shared.WsQueueBoxServerService(

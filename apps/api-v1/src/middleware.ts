@@ -1,4 +1,6 @@
 import { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
+import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
+import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
 import {
@@ -92,6 +94,13 @@ import {
   RtcRttRepository,
 } from '@shared-server/rallar-system/repositories/RtcRttRepository.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/repositories/RtcTopologyExecutionRepository.ts';
+import {
+  initRtcTopologyScalarRecomputeWorker,
+} from '@shared-server/rallar-system/repositories/RtcTopologyScalarAuthorityMigration.ts';
+import {
+  deriveRtcTopologyEntryResourceId,
+  writeRtcTopologyOutbox,
+} from '@shared-server/rallar-system/services/rtc-topology-outbox-entry.ts';
 import {
   createRtcTopologyPublicationFanout,
 } from '@shared-server/rallar-system/pubsub/RtcTopologyClusterTransport.ts';
@@ -358,6 +367,40 @@ function initialise(
     rtcTopologyPublicationFanout,
     readiness: rtcTopologyPublicationFanout.readiness,
   });
+  const scalarRecomputeWorker = initRtcTopologyScalarRecomputeWorker({
+    runtime: runtimeStateRepository,
+    process: async (groupRef, requestId) => {
+      const groupSnapshot = await groupsRepository.readSnapshot(groupRef);
+      if (!groupSnapshot) return 'group-absent-terminal';
+      const createdAtEpochMs = now();
+      const identity = {
+        commandId: requestId,
+        effectKind: 'rtc-topology-recompute' as const,
+        payloadKind: 'group-revision' as const,
+        acceptedCausalRevision: groupSnapshot.causalRevision,
+      };
+      await postgresSql.begin(async (transaction) => {
+        await writeRtcTopologyOutbox(transaction, {
+          ...identity,
+          resourceId: deriveRtcTopologyEntryResourceId(identity),
+          aggregateRef: groupRef,
+          groupSnapshot,
+          createdAtEpochMs,
+          expireAtEpochMs: NEVER_EXPIRE_AT_TIMESTAMP,
+          senderId: myServerId,
+          requestOptions: toCanonicalGroupTopologyConfigPatch({}),
+          publish: true,
+        });
+      });
+      runtime.qboxEngine.wake();
+      return 'enqueued';
+    },
+    onError: (error) => {
+      console.error('Failed to drain RTC topology scalar recompute requests:', error);
+    },
+  });
+  registerMiddlewareBackgroundTask(scalarRecomputeWorker.stop);
+  void scalarRecomputeWorker.firstRun.catch(() => undefined);
   if (shouldInstallQueuePubSubBridge(pubSubConfig)) {
     installQueueBoxPubSubBridge({
       wsQBoxServerService: runtime.wsQBoxServerService,

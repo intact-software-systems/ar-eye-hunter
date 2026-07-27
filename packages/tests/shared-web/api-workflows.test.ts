@@ -1875,13 +1875,19 @@ function groupSnapshot(
         groupId,
         sessionIds: [],
     });
+    const groupRevision = 3;
     return {
         ...snapshot,
+        stateRevision: groupRevision + snapshot.causalRevision.presenceRevision,
+        causalRevision: {
+            ...snapshot.causalRevision,
+            groupRevision,
+        },
         group: {
             ...snapshot.group,
             slug: groupId,
             joinMode: 'invite-only',
-            snapshotVersion: 3,
+            snapshotVersion: groupRevision,
             metadataVersion: 1,
         },
     };

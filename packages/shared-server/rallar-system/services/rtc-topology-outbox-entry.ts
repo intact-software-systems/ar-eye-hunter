@@ -191,7 +191,7 @@ export async function writeRtcTopologyOutbox(
     return entry;
 }
 
-function deriveRtcTopologyEntryResourceId(
+export function deriveRtcTopologyEntryResourceId(
     computed: Pick<
         ComputedRtcTopologyOutbox,
         'commandId' | 'effectKind' | 'payloadKind' | 'acceptedCausalRevision'

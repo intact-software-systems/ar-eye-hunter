@@ -16,6 +16,7 @@ import type {
     ALOutboundRepairHint,
     ALPersistedOutboundEffect,
 } from './ALOutboundAdmissionStore.ts';
+import { ALAdmissionBackendConflictError } from './ALAdmissionBackendConflictError.ts';
 import {
     createALOutboundAdmissionStore,
     createInMemoryALOutboundAdmissionState,
@@ -338,7 +339,22 @@ export class ALOutboundMessageRuntime<TPrepared> {
             return false;
         }
 
-        const acceptance = await this.admissionStore.acceptControlMessage<TPrepared>(msg);
+        const acceptance = await tryWithPolicy(
+            async () => {
+                try {
+                    return await this.admissionStore.acceptControlMessage<TPrepared>(msg);
+                } catch (error) {
+                    if (error instanceof ALAdmissionBackendConflictError) {
+                        throw new RetryableConflictError(
+                            'Outbound control-message admission conflict',
+                            { cause: error },
+                        );
+                    }
+                    throw error;
+                }
+            },
+            ALOutboundMessageRuntime.COMMIT_RETRY_POLICY,
+        );
         if (!acceptance.handled) {
             return false;
         }

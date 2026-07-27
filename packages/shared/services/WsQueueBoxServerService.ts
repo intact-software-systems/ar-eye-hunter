@@ -190,12 +190,17 @@ export class WsQueueBoxServerService {
                 stores: options.inboundStores,
                 selfPeerId: this.name,
                 inbox: this.inbox,
-                planIncomingMessage: (msg, fromPeerId, runtime) =>
-                    planALMessageHandling(
+                planIncomingMessage: (msg, fromPeerId, runtime) => {
+                    const recipientPeerIds = this.resolveInboundRecipients(msg)
+                        .map((recipient) => recipient.peerId);
+                    return planALMessageHandling(
                         msg,
                         {
                             selfPeerId: this.name,
                             fromPeerId,
+                            connectedPeerIds: recipientPeerIds,
+                            groupMemberPeerIds: recipientPeerIds,
+                            overlayNeighborPeerIds: recipientPeerIds,
                             dedupStore: runtime.dedupStore,
                             orderingStore: runtime.orderingStore,
                             supersedenceStore: runtime.supersedenceStore,
@@ -203,13 +208,14 @@ export class WsQueueBoxServerService {
                         resolveALQosNormalizationInput(
                             msg,
                             {
-                                direction: 'inbound',
                                 selfPeerId: this.name,
                                 fromPeerId,
+                                direction: 'inbound',
                             },
                             this.qosProvider,
                         ),
-                    ),
+                    );
+                },
                 readStoredEntry: (entry) => JSON.parse(entry.resource) as ALMessage,
                 toInboxEntry: (msg) =>
                     QueueBoxUtilities.toResourceEntryFromMsg(
@@ -782,6 +788,41 @@ export class WsQueueBoxServerService {
                     ),
                 );
             }
+        }
+    }
+
+    private resolveInboundRecipients(
+        message: ALMessage,
+    ): readonly WsServerResolvedRecipient[] {
+        const targets = message.targets;
+        if (!targets) {
+            return [];
+        }
+
+        switch (targets.mode) {
+            case 'unicast':
+                return dedupRecipients(
+                    this.targetResolver.resolvePeerRecipients?.(
+                        targets.toPeerId,
+                        message,
+                    ) ?? [],
+                );
+            case 'multicast':
+                return dedupRecipients(
+                    this.targetResolver.resolveGroupRecipients?.(
+                        targets.groupRef.groupId,
+                        message,
+                    ) ?? [],
+                );
+            case 'broadcast':
+                return dedupRecipients(
+                    this.targetResolver.resolveBroadcastRecipients?.(
+                        targets.scope,
+                        message,
+                    ).filter((recipient) =>
+                        !targets.exceptPeerIds?.includes(recipient.peerId)
+                    ) ?? [],
+                );
         }
     }
 

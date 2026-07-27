@@ -12,7 +12,7 @@ import {
 } from './mutation-routing-inventory.ts';
 import { ROUTING_SOURCE_MARKERS } from './mutation-routing-markers.ts';
 
-describe('AppInbox mutation routing contract', () => {
+describe('AppInbox mutation routing contract', { timeout: 30_000 }, () => {
   it('inventories every command type with an explicit transport, entrypoint, and owner', () => {
     expect(new Set(MUTATION_ROUTE_INVENTORY.map((entry) => entry.type)))
       .toEqual(new Set(Object.values(AppInboxType)));

@@ -75,6 +75,28 @@ Read `references/test-commands.md` when choosing commands. Prefer targeted check
 
 When UI behavior changes, acceptance requires a Playwright test that operates visible controls a human would use and verifies resulting browser/app state. Query-string setup is allowed for deep-link or bootstrap contract tests, but it cannot be the only proof for a human-facing workflow. For popups, auth, storage, realtime, downloads, or navigation, verify the resulting state: URL cleanup, localStorage/sessionStorage, network requests, visible status, session IDs, connected agents, or artifacts.
 
+## Plan Completion Gate
+
+Focused tests are feedback, not a substitute for completion gates. Before a
+written implementation plan can be approved or marked complete, apply this
+rule: Run the commands from the final uncommitted working tree before
+publication:
+
+```bash
+npm run test:unit
+npm run test:ci
+npm run build
+```
+
+Any change after a successful gate invalidates that gate. Keep the draft pull
+request current, then require **Branch Release Gate** to pass for the final
+feature-branch commit and **Run Hetzner Supported Distributed Manifests** to
+pass for the resulting default-branch commit. Record the exact commit SHA for
+each result. Do not approve completion: the plan is not complete while any
+required command or workflow is pending, skipped, failed, or attached to an
+older commit. An instruction not to commit or push postpones publication but
+does not waive these completion gates.
+
 ## Reporting
 
 Always say exactly which commands passed, failed, or were skipped. If a build emits known large-chunk warnings but exits zero, report it as pass with warning.

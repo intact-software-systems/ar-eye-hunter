@@ -192,6 +192,7 @@ export function createFullStackMemoryEnvBlock(): string {
         'RALLAR_DB_PUBSUB=local',
         'RALLAR_ICE_MODE=local',
         'RALLAR_LOGIN_USER_RATE_LIMIT=100',
+        'RALLAR_AUTH_CREDENTIAL_SECRET=local-rallar-full-stack-auth-credential-secret-v1',
     ].join(' ');
 }
 

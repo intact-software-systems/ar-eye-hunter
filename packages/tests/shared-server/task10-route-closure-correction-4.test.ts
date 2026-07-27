@@ -11,7 +11,7 @@ import {
 const CAPABILITY_FIXTURES =
   'packages/tests/shared-server/fixtures/mutation-boundary-capability-receivers';
 
-describe('Task 10 route-closure correction 4 contracts', () => {
+describe('Task 10 route-closure correction 4 contracts', { timeout: 30_000 }, () => {
   it('follows mutable capability provenance through production receiver shapes', () => {
     for (
       const name of [

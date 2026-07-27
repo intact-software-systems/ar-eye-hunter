@@ -295,8 +295,8 @@ describe('createGroupRoomWsAuthorizer', () => {
         await putDurableSnapshot(groupRepository, group);
         await expect(readThroughCache.findOrLoadByRef(group.group)).resolves.toEqual({
             ...group,
-            stateRevision: 4,
-            causalRevision: { groupRevision: 1, presenceRevision: 3 },
+            stateRevision: 6,
+            causalRevision: { groupRevision: 3, presenceRevision: 3 },
         });
 
         vi.setSystemTime(1_001);

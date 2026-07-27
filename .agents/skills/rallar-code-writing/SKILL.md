@@ -88,4 +88,6 @@ Run the focused tests and type-check for the touched surface. Run
 output that reaches the display cap, rerun with `--root` set to the smallest
 directory containing changed production files. For public API or cross-runtime
 changes, check both browser and server consumers. Report passed, failed, and
-skipped commands in the completion handoff.
+skipped commands in the completion handoff. For written implementation work,
+also follow the `rallar-testing` plan-completion gate. Focused checks never
+substitute for that final gate.

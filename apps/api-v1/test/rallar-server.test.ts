@@ -152,7 +152,7 @@ Deno.test(
   },
 );
 
-Deno.test('CRDT admin routes expose repository health operations', async () => {
+Deno.test('CRDT admin routes expose read-only repository health operations', async () => {
   const audit = new InMemoryRallarCrdtAuditSink();
   const repository = new InMemoryRallarCrdtLogRepository({
     now: () => 10_000,
@@ -165,6 +165,8 @@ Deno.test('CRDT admin routes expose repository health operations', async () => {
       authorizationScope: 'room',
       actorId: 'actor-a',
       principalId: 'principal-a',
+      sessionId: 'session-a',
+      serverId: 'server-a',
       acceptedAtEpochMs: 10_000,
     },
   });
@@ -205,55 +207,6 @@ Deno.test('CRDT admin routes expose repository health operations', async () => {
   assert.equal(debug.result.format, 'rallar.crdt.debug-bundle.v1');
   assert.equal(debug.result.redaction.payloadsRedacted, true);
   assert.deepEqual(debug.result.records[0].update.payload.operations, []);
-
-  const rebuild = await postJson(
-    app,
-    '/api/crdt/admin/documents/rebuild-projection',
-    {
-      document: update.document,
-      projectionId: 'test-projection',
-    },
-  );
-  assert.equal(rebuild.ok, true);
-  assert.equal(rebuild.result.valid, true);
-
-  const compact = await postJson(app, '/api/crdt/admin/documents/compact', {
-    document: update.document,
-    reason: 'test-compaction',
-  });
-  assert.equal(compact.ok, true);
-  assert.equal(typeof compact.result.snapshot.snapshotId, 'string');
-  assert.equal(compact.result.snapshot.snapshotId.length > 0, true);
-  assert.equal(
-    (await repository.readSnapshot(update.document))?.metadata.updateCount,
-    1,
-  );
-
-  const lifecycle = await postJson(
-    app,
-    '/api/crdt/admin/documents/lifecycle',
-    {
-      document: update.document,
-      lifecycle: 'quarantined',
-      changedAtEpochMs: 11_000,
-    },
-  );
-  assert.equal(lifecycle.ok, true);
-  assert.equal(lifecycle.result.lifecycle, 'quarantined');
-
-  const erase = await postJson(app, '/api/crdt/admin/documents/erase', {
-    document: update.document,
-    mode: 'destroy-document',
-    requestedBy: 'principal-a',
-    reason: 'test-erasure',
-  });
-  assert.equal(erase.ok, true);
-  assert.equal(erase.result.auditEvent.kind, 'erase');
-  assert.equal(erase.result.metadata.lifecycle, 'destroyed');
-  assert.equal(audit.count('compact'), 1);
-  assert.equal(audit.count('quarantine'), 1);
-  assert.equal(audit.count('destroy'), 1);
-  assert.equal(audit.count('erase'), 1);
 });
 
 type FakeRuntime = Readonly<{
@@ -325,6 +278,17 @@ function createFakeMiddleware(): FakeRuntime {
       },
     },
     wsQBoxServerService,
+    appGroupInboxService: {
+      setTopologyManagementService(): void {
+      },
+      setRtcRttAppInboxDependencies(): void {
+      },
+    },
+    appAdminInboxService: {},
+    appCrdtInboxService: {
+      setAuditSink(): void {
+      },
+    },
     clientsRepository: {},
     groupsRepository: {},
   } as unknown as Middleware;

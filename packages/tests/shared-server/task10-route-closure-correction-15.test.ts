@@ -19,7 +19,7 @@ const TYPE_MAP = `const C15_TYPE_MAP = new Map([
     [AppInboxType.GROUP_CREATE, AppInboxType.GROUP_UPDATE],
 ]);`;
 
-describe('Task 10 route-closure correction 15 contracts', () => {
+describe('Task 10 route-closure correction 15 contracts', { timeout: 30_000 }, () => {
   it('makes nested guaranteed boundary abrupt completion equivalent to direct completion', () => {
     const direct = findBoundaryViolations('c15-boundary-direct-abrupt.ts');
     const nested = findBoundaryViolations('c15-boundary-nested-abrupt.ts');

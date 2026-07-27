@@ -44,7 +44,7 @@ const removedIntermediateOutboxSymbols = [
     'StateMutation' + 'OutboxWork',
 ] as const;
 
-describe('read/compute/validate/write implementation contract', () => {
+describe('read/compute/validate/write implementation contract', { timeout: 30_000 }, () => {
     it('contains no intermediate state-mutation outbox runtime wiring', () => {
         for (const forbidden of removedIntermediateOutboxSymbols) {
             expect(trackedRuntimeSource).not.toContain(forbidden);

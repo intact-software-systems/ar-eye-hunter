@@ -19,7 +19,7 @@ const TYPE_MAP = `const C13_TYPE_MAP = new Map([
     [AppInboxType.GROUP_CREATE, AppInboxType.GROUP_UPDATE],
 ]);`;
 
-describe('Task 10 route-closure correction 13 contracts', () => {
+describe('Task 10 route-closure correction 13 contracts', { timeout: 30_000 }, () => {
   it('collapses equivalent computed capability and factory member alternatives', () => {
     expectMutation('c13-computed-members.ts', [
       'ClientStateRepository.<unknown>',

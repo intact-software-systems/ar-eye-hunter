@@ -207,6 +207,7 @@ export type GroupStateService = GroupStateMutationService & Readonly<{
         ref: GroupRef,
         query: StateEventListQuery,
     ): Promise<StateEventPage<GroupEvent>>;
+    observeSnapshot(snapshot: GroupSnapshot): Promise<GroupSnapshot>;
 }>;
 
 export type GroupStateRuntime = Readonly<{
@@ -396,6 +397,7 @@ export function createGroupStateRuntime(
             await repositoryFor(runtime).listRecentEvents(ref, query),
         listEventPage: async (ref, query) =>
             await repositoryFor(runtime).listEventPage(ref, query),
+        observeSnapshot: (snapshot) => Promise.resolve(snapshot),
         read: async (prepared) => {
             if (prepared.facts.internalAuthority !== 'none') {
                 if (

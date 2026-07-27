@@ -726,9 +726,9 @@ describe('GroupStateRepository', () => {
         });
 
         expect(snapshot).toEqual({
-            stateRevision: 4,
+            stateRevision: 9,
             causalRevision: {
-                groupRevision: 1,
+                groupRevision: 6,
                 presenceRevision: 3,
             },
             group,
@@ -749,7 +749,7 @@ describe('GroupStateRepository', () => {
         expect(eventStore.listEventsCalls).toBe(1);
     });
 
-    it('exposes the durable group-row revision without changing snapshotVersion', async () => {
+    it('exposes the canonical group revision without changing snapshotVersion', async () => {
         const repository = new FakeRuntimeStateRepository();
         const groupRepository = new GroupStateRepository(repository, {
             events: new InMemoryGroupStateEventStore(),
@@ -766,10 +766,10 @@ describe('GroupStateRepository', () => {
         const listed = await groupRepository.listSnapshots(group);
         const page = await groupRepository.listSnapshotsPage(group, { limit: 10 });
 
-        expect(direct?.stateRevision).toBe(2);
+        expect(direct?.stateRevision).toBe(6);
         expect(direct?.group.snapshotVersion).toBe(group.snapshotVersion);
-        expect(listed[0]?.stateRevision).toBe(2);
-        expect(page.snapshots[0]?.stateRevision).toBe(2);
+        expect(listed[0]?.stateRevision).toBe(6);
+        expect(page.snapshots[0]?.stateRevision).toBe(6);
     });
 
     it('assigns distinct causal revisions to concurrent group writes with one domain version', async () => {
@@ -787,7 +787,7 @@ describe('GroupStateRepository', () => {
         ]);
 
         const snapshot = await groupRepository.readSnapshot(group);
-        expect(snapshot?.stateRevision).toBe(2);
+        expect(snapshot?.stateRevision).toBe(6);
         expect(snapshot?.group.snapshotVersion).toBe(group.snapshotVersion);
     });
 
@@ -818,7 +818,7 @@ describe('GroupStateRepository', () => {
         const snapshot = await groupRepository.readSnapshot(group);
 
         expect(snapshot).toMatchObject({
-            stateRevision: 2,
+            stateRevision: 6,
             group: { displayName: 'Current group' },
             members: expect.arrayContaining([
                 expect.objectContaining({ principalId: 'principal-b', status: 'banned' }),

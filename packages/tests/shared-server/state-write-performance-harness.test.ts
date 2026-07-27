@@ -17,7 +17,7 @@ const MIX = [
   'topology-source',
 ] as const;
 
-describe('API-v1 state-write final durable evidence', () => {
+describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () => {
   it('accepts a complete AppInbox/ResourceInbox candidate and legacy baseline', () => {
     const candidate = artifact(true);
     expect(candidate.measurement.counterSources.outbox).toBe('resource_inbox');

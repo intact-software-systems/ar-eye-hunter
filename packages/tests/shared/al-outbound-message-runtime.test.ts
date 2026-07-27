@@ -16,6 +16,7 @@ import {
     QueueBoxUtilities,
     type ResourceEntry,
 } from '@shared/mod.ts';
+import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
 
 describe('ALOutboundMessageRuntime', () => {
     afterEach(() => {
@@ -1421,6 +1422,41 @@ describe('ALOutboundMessageRuntime', () => {
         expect(claimReadyEffects).not.toHaveBeenCalled();
     });
 
+    it('retries the complete control-message admission after optimistic conflicts', async () => {
+        vi.useFakeTimers();
+        const admissionStore = createMemoryOutboundAdmissionStore();
+        let attempts = 0;
+        const runtime = createOutboundRuntime({
+            stores: {
+                admissionStore: createFlakyOutboundAdmissionStore(admissionStore, {
+                    acceptControlMessage: async (msg) => {
+                        attempts += 1;
+                        if (attempts < 4) {
+                            throw new ALAdmissionBackendConflictError(
+                                'simulated outbound control conflict',
+                            );
+                        }
+                        return await admissionStore.acceptControlMessage(msg);
+                    },
+                }),
+            },
+            sendPreparedMessage: async () => Promise.resolve(),
+            planOutgoingMessage: (msg) => ({
+                persist: false,
+                preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
+            }),
+        });
+
+        const accepted = runtime.acceptControlMessage(
+            newALNackControlMessage('peer-1', 'self', 'missing-msg', 'expired'),
+        );
+        await vi.runAllTimersAsync();
+
+        await expect(accepted).resolves.toBe(true);
+        expect(attempts).toBe(4);
+        runtime.dispose();
+    });
+
     it('does not reschedule a failed durable effect after dispose', async () => {
         const msg = createOutboundMessage('msg-dispose-during-effect');
         const effect = {
@@ -1568,7 +1604,11 @@ function createFlakyOutboundAdmissionStore(
     inner: ALOutboundAdmissionStore,
     hooks: Partial<Pick<
         ALOutboundAdmissionStore,
-        'claimReadyEffects' | 'commitBundle' | 'completeEffect' | 'rescheduleEffect'
+        | 'acceptControlMessage'
+        | 'claimReadyEffects'
+        | 'commitBundle'
+        | 'completeEffect'
+        | 'rescheduleEffect'
     >>,
 ): ALOutboundAdmissionStore {
     return {
@@ -1589,7 +1629,9 @@ function createFlakyOutboundAdmissionStore(
                 ? hooks.commitBundle<TPrepared>(bundle)
                 : inner.commitBundle<TPrepared>(bundle),
         acceptControlMessage: <TPrepared>(msg: ALMessage) =>
-            inner.acceptControlMessage<TPrepared>(msg),
+            hooks.acceptControlMessage
+                ? hooks.acceptControlMessage<TPrepared>(msg)
+                : inner.acceptControlMessage<TPrepared>(msg),
         claimReadyEffects: <TPrepared>(
             workerId: string,
             maxCount: number,

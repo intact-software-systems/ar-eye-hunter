@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
-import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
@@ -62,7 +61,7 @@ Deno.test('HTTP wait timeout leaves the durable AppInbox row eligible without fa
         },
         () => {
           directMutationFallbacks += 1;
-          return {} as ClientSnapshot;
+          throw new Error('Unexpected direct mutation fallback');
         },
       );
     },

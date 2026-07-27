@@ -18,7 +18,7 @@ describe('Postgres worker direct ResourceInbox evidence', () => {
 
         expect(() => expectWorkerOutboxLifecycleEvidence([
             entry('group-summary', GROUP_PRESENCE_SUMMARY_TOPIC, EnqueuedType.APP_OUTBOX,
-                '{"id":"group-summary","effectKind":"group-presence-summary"}'),
+                '{"id":"group-summary","payload":{"resource":"{\\"effectKind\\":\\"group-presence-summary\\"}"}}'),
         ], [{ domainStatus: 'applied', outboxIds: ['group-summary'] }], 'group', [
             'group-presence-summary',
         ])).not.toThrow();

@@ -15,17 +15,19 @@ the repo-local Codex plugin under `.agents/skills/**`.
 - For written implementation plans and clearly long-running repository implementation,
   including docs, scripts, and operations, use `publishing-plan-progress`.
 - No AI or agent may create or place a commit on `main`, `master`, or the local
-  default branch without stating the exact branch, staged file list, proposed
-  commit message, and operation type; asking for permission immediately before
-  the commit; and receiving explicit approval. This includes commit, amend,
-  merge, revert, cherry-pick, rebase, and squash operations. Editing files or
-  working directly on the default branch, standing preferences, deadlines, or
-  task-start approval do not count. Each default-branch commit requires a new
-  permission request and approval.
+  default branch without stating the exact branch, operation, staged file list,
+  staged diff summary and staged Git tree ID from `git write-tree`, proposed
+  commit message, and all affected full commit IDs; asking for permission
+  immediately before the commit; and receiving explicit approval. This includes
+  commit, amend, merge, revert, cherry-pick, rebase, and squash operations.
+  Editing files or working directly on the default branch, standing preferences,
+  deadlines, or task-start approval do not count. Each default-branch commit
+  requires a new permission request and approval; any content, message, input,
+  conflict-resolution, or target change invalidates prior approval.
 - No AI or agent may push `main`, `master`, or the remote default branch
-  without stating the exact remote, destination ref, commit range, and whether
-  the push is forced; asking for permission immediately before the push; and
-  receiving explicit approval.
+  without stating the exact remote, destination ref and refspec, resolved full
+  old and new commit IDs, and whether the push is forced; asking for permission
+  immediately before the push; and receiving explicit approval.
   Working or committing on the default branch, standing publication
   preferences, authentication, deadlines, or task-start approval do not count.
   Each default-branch push requires a new permission request and approval.
@@ -164,6 +166,22 @@ the repo-local Codex plugin under `.agents/skills/**`.
   bundle-boundary checks when exports or entry points change.
 - For game/realtime changes, include the relevant app tests/builds and shared
   package tests.
+- A written implementation plan may be approved or marked complete only after
+  the final uncommitted working tree passes `npm run test:unit`,
+  `npm run test:ci`, and `npm run build`. Focused tests are feedback, not a
+  substitute for these completion gates. Any change after a successful gate
+  invalidates that gate and requires it to run again.
+- Publication is also part of completion: keep the draft pull request current,
+  require **Branch Release Gate** to pass for the final feature-branch commit,
+  and require **Run Hetzner Supported Distributed Manifests** to pass for the
+  resulting default-branch commit. Record the exact commit SHA validated by
+  each workflow. Do not approve completion: the plan is not complete while any
+  required command or workflow is pending, skipped, failed, or attached to an
+  older commit.
+- An explicit instruction not to commit or push postpones publication; it does
+  not waive any completion gate. Continue safe uncommitted work and report the
+  plan as incomplete until publication and remote gates are permitted and
+  successful.
 - Report commands that passed, failed, or were skipped.
 
 ## AI Handoff Contract (applies to all agents)

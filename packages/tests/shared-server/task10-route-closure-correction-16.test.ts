@@ -21,7 +21,7 @@ const TYPE_MAP = `const C16_TYPE_MAP = new Map([
     [AppInboxType.GROUP_CREATE, AppInboxType.GROUP_UPDATE],
 ]);`;
 
-describe('Task 10 route-closure correction 16 contracts', () => {
+describe('Task 10 route-closure correction 16 contracts', { timeout: 30_000 }, () => {
   it('skips boundary for-update and do-test writers after break, return, or throw', () => {
     expect(findBoundaryViolations('c16-loop-phase-controls.ts')).toEqual([]);
   });

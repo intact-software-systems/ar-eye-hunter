@@ -990,6 +990,7 @@ export class AppGroupInboxService extends AppInboxService {
         computed: GroupMutationComputed,
         lifecycleGuard?: WsSessionGenerationLifecycleComputed,
     ): Promise<unknown> {
+        let committedSnapshot: GroupSnapshot | undefined;
         const result = await this.writeMutation(
             context,
             async (transaction) => {
@@ -1008,13 +1009,14 @@ export class AppGroupInboxService extends AppInboxService {
                 if (computed.outcome === 'write') {
                     await this.groupStateService.write(transaction, computed);
                 }
-                if (isPresenceOperation(command.command.operation)) {
-                    return receipt;
-                }
                 const repository = createTransactionBoundGroupStateRepository(transaction);
                 const snapshot = await repository.readSnapshot(
                     command.command.aggregateRef,
                 );
+                committedSnapshot = snapshot;
+                if (isPresenceOperation(command.command.operation)) {
+                    return receipt;
+                }
                 if (!snapshot) {
                     throw new TypeError(
                         `Group snapshot not found after ${command.command.operation}`,
@@ -1067,6 +1069,9 @@ export class AppGroupInboxService extends AppInboxService {
                 };
             },
         );
+        if (committedSnapshot) {
+            await this.groupStateService.observeSnapshot(committedSnapshot);
+        }
         this.wakeQueue?.();
         return result;
     }

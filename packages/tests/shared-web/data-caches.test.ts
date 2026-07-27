@@ -147,22 +147,20 @@ describe('browser data caches state scope filtering', () => {
             sessionId: 'session-a',
             isOnline: true,
         };
-        const current = {
-            ...createGroupSnapshot(
+        const current = withGroupCausalRevision(
+            createGroupSnapshot(
                 'room-a',
                 DEFAULT_STATE_APPLICATION_ID,
                 DEFAULT_STATE_WORKSPACE_ID,
                 ['session-a'],
                 2,
             ),
-            stateRevision: 3,
-            causalRevision: { groupRevision: 2, presenceRevision: 1 },
-        } satisfies GroupSnapshot;
-        const incomparable = {
-            ...current,
-            stateRevision: 3,
-            causalRevision: { groupRevision: 1, presenceRevision: 2 },
-        } satisfies GroupSnapshot;
+            { groupRevision: 2, presenceRevision: 1 },
+        );
+        const incomparable = withGroupCausalRevision(
+            current,
+            { groupRevision: 1, presenceRevision: 2 },
+        );
         const recovered = createGroupSnapshot(
             'room-a',
             DEFAULT_STATE_APPLICATION_ID,
@@ -459,21 +457,20 @@ describe('browser data caches state scope filtering', () => {
         };
         const listener = vi.fn();
         const unsubscribe = dataCaches.onStateCacheChange(listener);
-        const current = {
-            ...createGroupSnapshot(
+        const current = withGroupCausalRevision(
+            createGroupSnapshot(
                 'room-a',
                 DEFAULT_STATE_APPLICATION_ID,
                 DEFAULT_STATE_WORKSPACE_ID,
                 ['session-b'],
                 2,
             ),
-            stateRevision: 3,
-            causalRevision: { groupRevision: 2, presenceRevision: 1 },
-        } satisfies GroupSnapshot;
-        const incoming = {
-            ...current,
-            causalRevision: { groupRevision: 1, presenceRevision: 2 },
-        } satisfies GroupSnapshot;
+            { groupRevision: 2, presenceRevision: 1 },
+        );
+        const incoming = withGroupCausalRevision(
+            current,
+            { groupRevision: 1, presenceRevision: 2 },
+        );
         const recovered = createGroupSnapshot(
             'room-a',
             DEFAULT_STATE_APPLICATION_ID,
@@ -881,6 +878,23 @@ function createGroupSnapshot(
         })),
         memberCount: sessionIds.length,
         onlineMemberCount: sessionIds.length,
+    };
+}
+
+function withGroupCausalRevision(
+    snapshot: GroupSnapshot,
+    causalRevision: GroupSnapshot['causalRevision'],
+): GroupSnapshot {
+    return {
+        ...snapshot,
+        stateRevision:
+            causalRevision.groupRevision + causalRevision.presenceRevision,
+        causalRevision,
+        group: {
+            ...snapshot.group,
+            snapshotVersion: causalRevision.groupRevision,
+            presenceVersion: causalRevision.presenceRevision,
+        },
     };
 }
 

@@ -140,6 +140,8 @@ describe('Rallar repo skill and documentation integrity', () => {
   it('routes long-running written-plan execution to observable published progress', () => {
     const agents = readRepo('AGENTS.md');
     const progressSkill = readRepo('.agents/skills/publishing-plan-progress/SKILL.md');
+    const normalizedAgents = normalizeWhitespace(agents);
+    const normalizedProgressSkill = normalizeWhitespace(progressSkill);
     const plugin = readJson('.codex-plugin/plugin.json') as {
       keywords?: readonly string[];
       interface?: { defaultPrompt?: readonly string[]; longDescription?: string };
@@ -150,8 +152,8 @@ describe('Rallar repo skill and documentation integrity', () => {
       '- For written implementation plans and clearly long-running repository implementation,\n' +
         '  including docs, scripts, and operations, use `publishing-plan-progress`.',
     );
-    expectAll(agents, [
-      'No AI or agent may create or place a commit on `main`, `master`, or the local',
+    expectAll(normalizedAgents, [
+      'No AI or agent may create or place a commit on `main`, `master`, or the local default branch',
       'permission immediately before the commit',
       'Each default-branch commit requires a new permission request and approval',
       'No AI or agent may push `main`, `master`, or the remote default branch',
@@ -160,7 +162,7 @@ describe('Rallar repo skill and documentation integrity', () => {
       'Each default-branch push requires a new permission request and approval',
       'Commit and push permissions are independent',
     ]);
-    expectAll(progressSkill, [
+    expectAll(normalizedProgressSkill, [
       '`codex/<topic>`',
       'draft pull request',
       'On a non-default branch',
@@ -174,22 +176,27 @@ describe('Rallar repo skill and documentation integrity', () => {
       'Explicit user instructions may narrow or disable publication',
       'Default Branch Commit and Push Permission',
       'Before every default-branch commit',
-      'exact local branch, staged file',
+      'staged diff summary and staged Git tree ID',
+      '`git write-tree`',
+      'full commit IDs',
       'proposed commit message, and operation type',
       'commit, amend, merge, revert, cherry-pick, rebase, or squash',
       'Do not commit while the user is unavailable or treat silence as approval',
       'Any later default-branch commit requires a new request and approval',
+      'content, message, input commit, conflict resolution, or target changes',
       'Working directly on the default branch is not permission to commit',
       'Approval to commit is not approval to push',
       'approval to push is not approval to commit',
       'standing instruction to publish progress',
-      'exact remote, destination ref, commit',
+      'exact remote, destination ref and refspec',
+      'resolved full commit IDs, not moving symbolic ranges',
+      'commit range changes, the approval is invalid',
       'Wait for explicit approval',
       'treat silence as approval',
       'Any later default-branch push requires a new request and approval.',
       'force push was separately disclosed',
       'any source branch is pushed to the remote default ref',
-      'pauses only that publication, not safe local plan work',
+      'pauses only that Git operation, not safe uncommitted local plan work',
     ]);
     expect(plugin.keywords).toEqual(
       expect.arrayContaining([
@@ -203,6 +210,45 @@ describe('Rallar repo skill and documentation integrity', () => {
     expect(plugin.interface?.defaultPrompt).toContain(
       'Execute a long-running Rallar implementation plan with observable GitHub checkpoints.',
     );
+  });
+
+  it('keeps plan completion behind local and published release gates', () => {
+    const agents = readRepo('AGENTS.md');
+    const progressSkill = readRepo('.agents/skills/publishing-plan-progress/SKILL.md');
+    const testingSkill = readRepo('.agents/skills/rallar-testing/SKILL.md');
+    const testCommands = readRepo('.agents/skills/rallar-testing/references/test-commands.md');
+    const codeWritingSkill = readRepo('.agents/skills/rallar-code-writing/SKILL.md');
+
+    for (const source of [agents, progressSkill, testingSkill, testCommands]) {
+      expectAllNormalized(source, [
+        'npm run test:unit',
+        'npm run test:ci',
+        'npm run build',
+        'draft pull request',
+        'Branch Release Gate',
+        'Run Hetzner Supported Distributed Manifests',
+        'final feature-branch commit',
+        'resulting default-branch commit',
+        'pending, skipped, failed, or attached to an older commit',
+        'the plan is not complete',
+      ]);
+    }
+
+    expectAllNormalized(progressSkill, [
+      'An instruction not to commit or push postpones publication',
+      'does not waive any completion gate',
+      'Any change after a successful gate invalidates that gate',
+    ]);
+    expectAllNormalized(testingSkill, [
+      'Focused tests are feedback, not a substitute for completion gates',
+      'Run the commands from the final uncommitted working tree before publication',
+    ]);
+    expectAllNormalized(testCommands, ['Plan Completion Gate', 'Release Gate', 'exact commit SHA']);
+    expectAllNormalized(codeWritingSkill, [
+      'rallar-testing',
+      'plan-completion gate',
+      'Focused checks never substitute for that final gate',
+    ]);
   });
 
   it('provides the greenfield app workflow and audited evidence map', () => {
