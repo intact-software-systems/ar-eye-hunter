@@ -83,6 +83,7 @@ export type CreateRallarMiddlewareOptions = Readonly<{
       inboxQueueReader: InboxQueueReader;
       wsQBoxServerService: WsQueueBoxServerService;
       appInboxResilience: ResilienceDto;
+      wakeQueueEngine: () => void;
     }>,
   ) => AppClientInboxService;
   createAppAuthInboxService?: RallarAuthInboxServiceFactory;
@@ -148,10 +149,12 @@ export function createRallarMiddleware(
     inboxQueueReader,
     wsQBoxServerService,
     appInboxResilience,
+    wakeQueueEngine,
   });
   const appAuthInboxService = options.createAppAuthInboxService?.({
     inboxQueueReader,
     appInboxResilience,
+    wakeQueueEngine,
   });
   const appAdminInboxService = options.createAppAdminInboxService?.({
     inboxQueueReader,

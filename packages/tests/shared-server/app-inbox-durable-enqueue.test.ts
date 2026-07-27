@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
@@ -51,9 +51,21 @@ describe('AppInbox durable enqueue', () => {
 
     await expect(asDurable(service).enqueue(COMMAND)).rejects.toBe(failure);
   });
+
+  it('wakes the owning queue engine after durable enqueue, including idempotent reuse', async () => {
+    const queue = new InMemoryQueueBox(new Map());
+    const wakeQueue = vi.fn();
+    const service = createService(queue, wakeQueue);
+
+    const first = await asDurable(service).enqueue(COMMAND);
+    const duplicate = await asDurable(service).enqueue(COMMAND);
+
+    expect(duplicate).toBe(first);
+    expect(wakeQueue).toHaveBeenCalledTimes(2);
+  });
 });
 
-function createService(queue: InMemoryQueueBox): AppInboxService {
+function createService(queue: InMemoryQueueBox, wakeQueue?: () => void): AppInboxService {
   return new AppInboxService(
     new InboxQueueReader(queue),
     queue as never,
@@ -61,6 +73,9 @@ function createService(queue: InMemoryQueueBox): AppInboxService {
     {} as never,
     'server-12345678',
     SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
+    undefined,
+    undefined,
+    wakeQueue,
   );
 }
 

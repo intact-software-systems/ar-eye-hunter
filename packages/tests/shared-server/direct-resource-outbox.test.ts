@@ -599,6 +599,8 @@ describe('direct resource outbox writes', () => {
   });
 
   it('treats no current websocket recipient as a post-commit delivery outcome', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
     const [entry] = computeGroupStateSyncEntries(
       createComputedGroupStateSync(createGroupSnapshot()),
       'server-1',
@@ -618,12 +620,11 @@ describe('direct resource outbox writes', () => {
       },
     );
     await outbox.enqueue(entry);
-
     await service.dequeueOutbox(
       WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES,
       createResilience(),
     );
-
+    vi.useRealTimers();
     expect(resolveBroadcastRecipients).toHaveBeenCalledOnce();
     expect(socket.sent).toEqual([]);
     expect(deliveryOutcomes).toEqual([
@@ -633,7 +634,6 @@ describe('direct resource outbox writes', () => {
       },
     ]);
   });
-
   it('fences coalescing and inserts a deterministic successor instead of overwriting reserved work', async () => {
     const database = createResourceInboxDatabase();
     const stagingService = new CoalescedAppOutboxWorkService(

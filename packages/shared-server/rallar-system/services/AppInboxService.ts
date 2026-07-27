@@ -104,7 +104,6 @@ export class AppInboxService {
     private readonly options: NormalizedAppInboxServiceOptions;
     private readonly optionsInput: AppInboxServiceOptions;
     private readonly transactionWriter: AppInboxTransactionWriter;
-
     constructor(
         public readonly inbox: InboxQueueReader,
         public readonly resourceInbox: ResourceInboxRepository,
@@ -114,6 +113,7 @@ export class AppInboxService {
         private readonly defaultTopicId: string = SIMPLER_GROUP_STATE_APP_INBOX_TOPIC,
         private readonly timing?: RallarTimingSink,
         options: AppInboxServiceOptions = {},
+        private readonly wakeOwningQueue?: () => void,
     ) {
         this.optionsInput = options;
         this.transactionWriter = new AppInboxTransactionWriter({
@@ -143,7 +143,6 @@ export class AppInboxService {
             ),
         };
     }
-
     private async writeAppInboxResult(
         entry: ResourceEntry,
         status: EntityStatus.COMPLETED,
@@ -153,7 +152,6 @@ export class AppInboxService {
             toResourceEntryWithUpdatedResource(entry, status, value),
         );
     }
-
     protected async writeMutation<R>(
         context: AppInboxMessageContext,
         write: (transaction: PSqlTransactionSql) => Promise<R>,
@@ -203,6 +201,7 @@ export class AppInboxService {
             wireEnqueue.type.toString(),
             wireEnqueue,
         ));
+        this.wakeOwningQueue?.();
         await assertMatchingAppInboxCommand(entry, wireEnqueue, receivedIdentity);
         return entry;
     }
@@ -325,6 +324,7 @@ export class AppInboxService {
                     key,
                     async () => await enqueuer(key, wireEnqueue),
                 );
+                if (entry) this.wakeOwningQueue?.();
                 if (entry && enforceCommandIdentity) {
                     if (!receivedCommandIdentity) {
                         throw new Error('App inbox command identity was not captured');

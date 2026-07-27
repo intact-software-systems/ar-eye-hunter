@@ -80,5 +80,6 @@ export function createApiAdminInboxService(input: Readonly<{
     input.timing,
     input.options,
     readAuthority,
+    input.wakeQueueEngine,
   );
 }

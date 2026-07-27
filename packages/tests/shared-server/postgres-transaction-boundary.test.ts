@@ -346,11 +346,11 @@ function toInboxRowFromValues(values: readonly unknown[], rowId: bigint): InboxR
         fk_ext_bank_id: values[5] as string,
         system_date: values[6] as string,
         created_by: values[7] as string,
-        created_ts: values[8] as string,
-        expire_ts: values[9] as string,
-        start_ts: values[10] as string | null,
-        end_ts: values[11] as string | null,
-        next_ts: values[12] as string | null,
+        created_ts: (values[8] as string).replace(/Z$/u, ''),
+        expire_ts: (values[9] as string).replace(/Z$/u, ''),
+        start_ts: (values[10] as string | null)?.replace(/Z$/u, '') ?? null,
+        end_ts: (values[11] as string | null)?.replace(/Z$/u, '') ?? null,
+        next_ts: (values[12] as string | null)?.replace(/Z$/u, '') ?? null,
         ri_attempts: BigInt(values[13] as number),
     };
 }
@@ -366,8 +366,8 @@ function toResultRow(values: readonly unknown[], rowId: bigint): ResultRow {
         fk_ext_bank_id: values[5] as string,
         system_date: values[6] as string,
         created_by: values[7] as string,
-        created_ts: values[8] as string,
-        expire_ts: values[9] as string,
+        created_ts: (values[8] as string).replace(/Z$/u, ''),
+        expire_ts: (values[9] as string).replace(/Z$/u, ''),
     };
 }
 

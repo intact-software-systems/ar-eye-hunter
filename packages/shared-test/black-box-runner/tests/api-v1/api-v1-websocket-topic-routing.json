@@ -276,20 +276,20 @@
             "traceId": "api-v1-bb-ws-trace-{runId}"
           },
           "route": {
-            "topicId": "app.black-box.echo",
+            "topicId": "chat",
             "resourceId": "api-v1-bb-ws-resource-{runId}",
             "contextId": "{applicationId}:{workspaceId}"
           },
           "targets": {
-            "mode": "unicast",
-            "toPeerId": "{aliceSessionId}"
+            "mode": "broadcast",
+            "scope": "world"
           },
           "delivery": {
             "reliability": "best-effort",
             "ack": "none"
           },
           "payload": {
-            "typeId": "app.black-box.echo",
+            "typeId": "chat",
             "contentType": "application/json",
             "resource": "{\"text\":\"hello over api-v1 ws\",\"groupId\":\"{groupId}\",\"runId\":\"{runId}\"}"
           }
@@ -308,11 +308,11 @@
             "traceId": "api-v1-bb-ws-trace-{runId}"
           },
           "route": {
-            "topicId": "app.black-box.echo",
+              "topicId": "chat",
             "resourceId": "api-v1-bb-ws-resource-{runId}"
           },
           "payload": {
-            "typeId": "app.black-box.echo",
+            "typeId": "chat",
             "resource": "{\"text\":\"hello over api-v1 ws\",\"groupId\":\"{groupId}\",\"runId\":\"{runId}\"}"
           }
         }

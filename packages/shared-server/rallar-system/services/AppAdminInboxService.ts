@@ -85,6 +85,7 @@ export class AppAdminInboxService extends AppInboxService {
     options?: AppInboxServiceOptions,
     private readonly readAuthority: AdminPruneAuthorityReader = () =>
       Promise.resolve({ allowed: false, code: 'current-authority-reader-missing' }),
+    wakeQueue?: () => void,
   ) {
     super(
       inbox,
@@ -95,6 +96,7 @@ export class AppAdminInboxService extends AppInboxService {
       ADMIN_APP_INBOX_TOPIC,
       timing,
       options,
+      wakeQueue,
     );
     this.aggregateWaitPolicy = TryWithPolicy.defaults()
       .label('app-inbox:admin-prune-aggregate')

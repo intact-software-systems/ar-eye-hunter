@@ -17,6 +17,7 @@ export type RallarAuthInboxServiceFactory = (
   input: Readonly<{
     inboxQueueReader: InboxQueueReader;
     appInboxResilience: ResilienceDto;
+    wakeQueueEngine: () => void;
   }>,
 ) => AppAuthInboxService;
 

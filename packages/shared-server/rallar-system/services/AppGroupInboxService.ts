@@ -592,8 +592,8 @@ export class AppGroupInboxService extends AppInboxService {
             SIMPLER_GROUP_STATE_APP_INBOX_TOPIC,
             timing,
             options,
+            wakeQueue,
         );
-
         const processMutation = async (
             _payload: unknown,
             context: AppInboxMessageContext,

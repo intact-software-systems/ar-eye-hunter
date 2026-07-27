@@ -126,7 +126,6 @@ export type ClientAuthorisedWsSessionDisconnectAppInboxPayload = Readonly<{
 export type ClientExpiredSessionsAppInboxPayload = Readonly<{
     atEpochMs: number;
 }>;
-
 export class AppClientInboxService extends AppInboxService {
     constructor(
         public override readonly inbox: InboxQueueReader,
@@ -137,6 +136,7 @@ export class AppClientInboxService extends AppInboxService {
         public override readonly serviceId: string,
         timing?: RallarTimingSink,
         options?: AppInboxServiceOptions,
+        wakeQueue?: () => void,
     ) {
         super(
             inbox,
@@ -147,8 +147,8 @@ export class AppClientInboxService extends AppInboxService {
             SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
             timing,
             options,
+            wakeQueue,
         );
-
         this.onStateMessage<ClientPrincipalUpsertAppInboxPayload>(
             AppInboxType.CLIENT_PRINCIPAL_UPSERT,
             async (principal, context) =>

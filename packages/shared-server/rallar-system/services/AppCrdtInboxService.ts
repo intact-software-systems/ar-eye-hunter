@@ -79,6 +79,7 @@ export class AppCrdtInboxService extends AppInboxService {
       CRDT_APP_INBOX_TOPIC,
       timing,
       options,
+      effects.wakeQueueEngine,
     );
     this.audit = effects.audit;
     this.wakeQueueEngine = effects.wakeQueueEngine;

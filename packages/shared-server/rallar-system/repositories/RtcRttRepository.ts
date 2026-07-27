@@ -117,7 +117,7 @@ type RtcRttReceiptFamilyCleanupRead = Readonly<{
     siblingEntries: readonly RuntimeStateEntry[];
 }>;
 
-type RtcRttReceiptFamilyCleanupPlan =
+type RtcRttReceiptFamilyCleanupComputed =
     | Readonly<{ outcome: 'absent' }>
     | Readonly<{
         outcome: 'delete';
@@ -712,7 +712,7 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
 
     private computeExpiredReceiptFamilyCleanup(
         read: RtcRttReceiptFamilyCleanupRead,
-    ): RtcRttReceiptFamilyCleanupPlan {
+    ): RtcRttReceiptFamilyCleanupComputed {
         if (!read.receiptEntry && read.siblingEntries.length === 0) {
             return { outcome: 'absent' };
         }
@@ -732,26 +732,26 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
     }
 
     private validateExpiredReceiptFamilyCleanup(
-        plan: RtcRttReceiptFamilyCleanupPlan,
+        computed: RtcRttReceiptFamilyCleanupComputed,
         observedAtEpochMs: number,
     ): void {
-        if (plan.outcome === 'absent') return;
-        if (plan.receipt.entry.expireAtTimestamp > observedAtEpochMs) {
+        if (computed.outcome === 'absent') return;
+        if (computed.receipt.entry.expireAtTimestamp > observedAtEpochMs) {
             throw rttCorruption(
-                plan.receipt.entry.key,
+                computed.receipt.entry.key,
                 'RTC RTT recompute receipt remains live during intent cleanup',
             );
         }
         const seenGroupRefs = new Set<string>();
-        for (const sibling of plan.siblings) {
+        for (const sibling of computed.siblings) {
             validateIntentAgainstReceipt(
                 sibling.value,
-                plan.receipt.value,
+                computed.receipt.value,
                 sibling.entry.key,
             );
             if (
                 sibling.entry.expireAtTimestamp !==
-                    plan.receipt.entry.expireAtTimestamp ||
+                    computed.receipt.entry.expireAtTimestamp ||
                 sibling.entry.expireAtTimestamp > observedAtEpochMs
             ) {
                 throw rttCorruption(
@@ -770,36 +770,36 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
             }
             seenGroupRefs.add(groupIdentity);
         }
-        const expectedGroupRefs = plan.receipt.value.affectedGroupRefs
+        const expectedGroupRefs = computed.receipt.value.affectedGroupRefs
             .map(toCanonicalRtcTopologyGroupIdentity)
             .sort(compareRtcTopologyIdentifiers);
         const actualGroupRefs = [...seenGroupRefs]
             .sort(compareRtcTopologyIdentifiers);
         if (!rtcTopologySemanticEqual(actualGroupRefs, expectedGroupRefs)) {
             throw rttCorruption(
-                plan.receipt.entry.key,
+                computed.receipt.entry.key,
                 'RTC RTT receipt recompute intent set is incomplete',
             );
         }
     }
 
     private async writeExpiredReceiptFamilyCleanup(
-        plan: RtcRttReceiptFamilyCleanupPlan,
+        computed: RtcRttReceiptFamilyCleanupComputed,
     ): Promise<boolean> {
-        if (plan.outcome === 'absent') return false;
+        if (computed.outcome === 'absent') return false;
         const runtime = requireOptimisticRuntime(this.runtimeRepository);
         return await runtime.begin(async (transaction) => {
             const guardedReceipt = await transaction.upsertIfRevision(
                 RTC_RTT_RECEIPTS_NAMESPACE,
-                plan.receipt.entry.key,
-                plan.receipt.entry.value,
-                plan.receipt.entry.expireAtTimestamp,
-                plan.receipt.entry.revision,
+                computed.receipt.entry.key,
+                computed.receipt.entry.value,
+                computed.receipt.entry.expireAtTimestamp,
+                computed.receipt.entry.revision,
             );
             if (guardedReceipt.status === 'conflict') {
                 throw new RuntimeStateWriteConflictError();
             }
-            for (const sibling of plan.siblings) {
+            for (const sibling of computed.siblings) {
                 const deleted = await transaction.deleteIfRevision(
                     RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE,
                     sibling.entry.key,
@@ -811,7 +811,7 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
             }
             const deletedReceipt = await transaction.deleteIfRevision(
                 RTC_RTT_RECEIPTS_NAMESPACE,
-                plan.receipt.entry.key,
+                computed.receipt.entry.key,
                 guardedReceipt.revision,
             );
             if (deletedReceipt.status === 'conflict') {

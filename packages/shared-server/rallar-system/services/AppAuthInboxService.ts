@@ -67,6 +67,7 @@ export class AppAuthInboxService extends AppInboxService {
         public override readonly serviceId: string,
         timing?: RallarTimingSink,
         options?: AppInboxServiceOptions,
+        wakeQueue?: () => void,
     ) {
         super(
             inbox,
@@ -77,6 +78,7 @@ export class AppAuthInboxService extends AppInboxService {
             AUTH_STATE_APP_INBOX_TOPIC,
             timing,
             options,
+            wakeQueue,
         );
         for (const type of AUTH_TYPES) {
             this.onStateMessage<unknown>(

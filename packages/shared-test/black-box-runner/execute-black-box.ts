@@ -561,13 +561,13 @@ function transformResolverRoot(context: any, result?: any): any {
 }
 
 function resolveTemplateWithRoot(value: string, root: any): any {
-    const exactPlaceholderMatch = value.match(/^\{([^{}]+)}$/);
+    const exactPlaceholderMatch = value.match(/^\{([A-Za-z_$][\w$-]*(?:\.[\w$-]+)*)\}$/u);
 
     if (exactPlaceholderMatch) {
         return resolvePath(exactPlaceholderMatch[1], root);
     }
 
-    return value.replaceAll(/\{([^{}]+)}/g, (_match, path) => {
+    return value.replaceAll(/\{([A-Za-z_$][\w$-]*(?:\.[\w$-]+)*)\}/gu, (_match, path) => {
         return stringifyResolvedValue(resolvePath(path, root));
     });
 }
@@ -900,13 +900,13 @@ function stringifyResolvedValue(value: any): string {
 }
 
 function resolveStringPlaceholders(value: string, context: any): any {
-    const exactPlaceholderMatch = value.match(/^\{([^{}]+)}$/);
+    const exactPlaceholderMatch = value.match(/^\{([A-Za-z_$][\w$-]*(?:\.[\w$-]+)*)\}$/u);
 
     if (exactPlaceholderMatch) {
         return resolvePath(exactPlaceholderMatch[1], toResolverRoot(context));
     }
 
-    return value.replaceAll(/\{([^{}]+)}/g, (_match, path) => {
+    return value.replaceAll(/\{([A-Za-z_$][\w$-]*(?:\.[\w$-]+)*)\}/gu, (_match, path) => {
         return stringifyResolvedValue(resolvePath(path, toResolverRoot(context)));
     });
 }

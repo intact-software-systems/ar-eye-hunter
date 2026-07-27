@@ -301,7 +301,7 @@ function initialise(
         wakeQueueEngine,
       );
     },
-    createAppClientInboxService: ({ inboxQueueReader }) => {
+    createAppClientInboxService: ({ inboxQueueReader, wakeQueueEngine }) => {
       const clientStateService = createCachedClientStateService({
         durable: createClientStateService({
           runtimeRepository: runtimeStateRepository,
@@ -320,9 +320,10 @@ function initialise(
         myServerId,
         timing,
         appInboxOptions,
+        wakeQueueEngine,
       );
     },
-    createAppAuthInboxService: ({ inboxQueueReader }) =>
+    createAppAuthInboxService: ({ inboxQueueReader, wakeQueueEngine }) =>
       new AppAuthInboxService(
         inboxQueueReader,
         resourceInboxRepository,
@@ -336,6 +337,7 @@ function initialise(
         myServerId,
         timing,
         appInboxOptions,
+        wakeQueueEngine,
       ),
     ...createApiCrdtMutationInboxFactories({
       database: postgresSql,
