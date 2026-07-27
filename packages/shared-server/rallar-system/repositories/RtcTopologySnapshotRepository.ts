@@ -15,9 +15,7 @@ import {
     type RuntimeStateOptimisticTransactionalRepositoryLike,
 } from '../../runtime-state/RuntimeStateRepository.ts';
 import {
-    RuntimeStateRetryExhaustedError,
     RuntimeStateWriteConflictError,
-    waitForRuntimeStateWriteRetry,
 } from '../../runtime-state/optimistic-runtime-state-write.ts';
 import {
     decodeGroupStateGroupStorageKey,
@@ -228,7 +226,6 @@ export async function migrateLegacyRtcTopologySnapshotKeys(
     options: Readonly<{
         oldWritersStopped: true;
         observedAtEpochMs: number;
-        sleep?: (delayMs: number) => Promise<void>;
     }>,
 ): Promise<void> {
     if (options.oldWritersStopped !== true) {
@@ -258,72 +255,55 @@ export async function migrateLegacyRtcTopologySnapshotKeys(
                 'RTC topology legacy snapshot key differs from its stored scope',
             );
         }
-        let lastConflict: RuntimeStateWriteConflictError | undefined;
-        let migrated = false;
-        for (let attempt = 0; attempt < 3; attempt += 1) {
-            await waitForRuntimeStateWriteRetry(attempt as 0 | 1 | 2, {
-                sleep: options.sleep,
-            });
-            try {
-                await runtime.begin(async (transaction) => {
-                    const current = await transaction.findEntry(
-                        RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
-                        source.key,
-                    );
-                    if (!current) return;
-                    const currentValue = parseSnapshot(current);
-                    validateTopologySnapshot(currentValue, value.groupRef);
-                    if (current.expireAtTimestamp <= options.observedAtEpochMs) {
-                        throw topologyCorruption(
-                            current.key,
-                            'RTC topology legacy snapshot expired before migration observation',
-                        );
-                    }
-                    const destination = await transaction.findEntry(
-                        RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
-                        canonicalKey,
-                    );
-                    if (destination) {
-                        const destinationValue = decodeSnapshotEntry(
-                            destination,
-                            value.groupRef,
-                        ).value;
-                        if (!rtcTopologySemanticEqual(destinationValue, currentValue)) {
-                            throw topologyCorruption(
-                                canonicalKey,
-                                'RTC topology migration destination differs',
-                            );
-                        }
-                    } else {
-                        const inserted = await transaction.insertIfAbsent(
-                            RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
-                            canonicalKey,
-                            current.value,
-                            NEVER_EXPIRE_AT_TIMESTAMP,
-                        );
-                        if (inserted.status === 'conflict') {
-                            throw new RuntimeStateWriteConflictError();
-                        }
-                    }
-                    const deleted = await transaction.deleteIfRevision(
-                        RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
-                        current.key,
-                        current.revision,
-                    );
-                    if (deleted.status === 'conflict') {
-                        throw new RuntimeStateWriteConflictError();
-                    }
-                    migrated = true;
-                });
-                break;
-            } catch (error) {
-                if (!(error instanceof RuntimeStateWriteConflictError)) throw error;
-                lastConflict = error;
+        await runtime.begin(async (transaction) => {
+            const current = await transaction.findEntry(
+                RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
+                source.key,
+            );
+            if (!current) return;
+            const currentValue = parseSnapshot(current);
+            validateTopologySnapshot(currentValue, value.groupRef);
+            if (current.expireAtTimestamp <= options.observedAtEpochMs) {
+                throw topologyCorruption(
+                    current.key,
+                    'RTC topology legacy snapshot expired before migration observation',
+                );
             }
-        }
-        if (!migrated && lastConflict) {
-            throw new RuntimeStateRetryExhaustedError(lastConflict);
-        }
+            const destination = await transaction.findEntry(
+                RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
+                canonicalKey,
+            );
+            if (destination) {
+                const destinationValue = decodeSnapshotEntry(
+                    destination,
+                    value.groupRef,
+                ).value;
+                if (!rtcTopologySemanticEqual(destinationValue, currentValue)) {
+                    throw topologyCorruption(
+                        canonicalKey,
+                        'RTC topology migration destination differs',
+                    );
+                }
+            } else {
+                const inserted = await transaction.insertIfAbsent(
+                    RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
+                    canonicalKey,
+                    current.value,
+                    NEVER_EXPIRE_AT_TIMESTAMP,
+                );
+                if (inserted.status === 'conflict') {
+                    throw new RuntimeStateWriteConflictError();
+                }
+            }
+            const deleted = await transaction.deleteIfRevision(
+                RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
+                current.key,
+                current.revision,
+            );
+            if (deleted.status === 'conflict') {
+                throw new RuntimeStateWriteConflictError();
+            }
+        });
     }
 }
 

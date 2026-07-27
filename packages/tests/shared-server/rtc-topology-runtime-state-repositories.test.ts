@@ -726,26 +726,16 @@ describe('RTC topology runtime-state repositories', () => {
         const upgraded = toUpgradedLegacyPublication(legacyPublication);
         const expiry = Date.now() + 60_000;
         await seedLegacyPublicationRows(runtimeRepository, legacyPublication, expiry);
-        const sleeps: number[] = [];
 
         await expect(Promise.all([
             migrateLegacyRtcTopologyPublicationKeys(repository, {
                 oldWritersStopped: true,
-                sleep: (delayMs: number) => {
-                    sleeps.push(delayMs);
-                    return Promise.resolve();
-                },
             }),
             migrateLegacyRtcTopologyPublicationKeys(repository, {
                 oldWritersStopped: true,
-                sleep: (delayMs: number) => {
-                    sleeps.push(delayMs);
-                    return Promise.resolve();
-                },
             }),
         ])).resolves.toEqual([undefined, undefined]);
 
-        expect(sleeps).toEqual([]);
         await expect(repository.findPublicationForWork(
             upgraded.groupRef,
             upgraded.workId,
@@ -812,76 +802,62 @@ describe('RTC topology runtime-state repositories', () => {
 
         await expect(migrateLegacyRtcTopologyPublicationKeys(repository, {
             oldWritersStopped: true,
-            sleep: async () => {},
         })).rejects.toMatchObject({
             code: 'rtc-topology-repository-invariant-corruption',
         });
     });
 
-    it('exhausts publication migration after bounded full-attempt conflicts and backoff', async () => {
+    it('fails a publication migration conflict closed after one attempt without partial effects or backoff', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const repository = new RtcTopologyPublicationRepository(runtimeRepository);
         const publication = createPublication(
             createTopologySnapshot(createGroupRef(), 1),
-            'legacy-migration-exhaustion',
+            'legacy-migration-conflict',
         );
         const legacyPublication = toLegacyPublication(publication);
-        const upgraded = toUpgradedLegacyPublication(legacyPublication);
         const expiry = Date.now() + 60_000;
         await seedLegacyPublicationRows(runtimeRepository, legacyPublication, expiry);
-        const destinationClaimKey = repository.workIndexKey(
-            upgraded.groupRef,
-            upgraded.workId,
+        const publicationsBefore = await runtimeRepository.findAllEntries(
+            RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
         );
-        const expectedClaim = {
-            groupRef: upgraded.groupRef,
-            workId: upgraded.workId,
-            publicationId: upgraded.publicationId,
-        };
-        let conflicts = 0;
+        const claimsBefore = await runtimeRepository.findAllEntries(
+            RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE,
+        );
         runtimeRepository.beforeConditionalWrite = async (
             operation,
             namespace,
             key,
         ) => {
             if (
-                operation === 'insertIfAbsent' &&
-                namespace === RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE &&
-                key === destinationClaimKey
+                operation === 'deleteIfRevision' &&
+                namespace === RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE &&
+                key === legacyPublication.publicationId
             ) {
-                conflicts += 1;
                 await runtimeRepository.upsert(
                     namespace,
                     key,
-                    JSON.stringify(expectedClaim),
+                    JSON.stringify(legacyPublication),
                     expiry,
                 );
             }
         };
-        const sleeps: number[] = [];
+        const begin = vi.spyOn(runtimeRepository, 'begin');
+        const sleep = vi.fn(async () => {});
 
         await expect(migrateLegacyRtcTopologyPublicationKeys(repository, {
             oldWritersStopped: true,
-            sleep: (delayMs: number) => {
-                sleeps.push(delayMs);
-                return Promise.resolve();
-            },
-        }))
-            .rejects.toMatchObject({
-                code: 'runtime-state-write-conflict',
-                attempts: 3,
-            });
+            sleep,
+        } as Parameters<typeof migrateLegacyRtcTopologyPublicationKeys>[1]))
+            .rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
 
-        expect(conflicts).toBe(3);
-        expect(sleeps).toEqual([2, 8]);
-        await expect(runtimeRepository.findEntry(
+        expect(begin).toHaveBeenCalledTimes(1);
+        expect(sleep).not.toHaveBeenCalled();
+        await expect(runtimeRepository.findAllEntries(
             RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
-            legacyPublication.publicationId,
-        )).resolves.toBeDefined();
-        await expect(runtimeRepository.findEntry(
+        )).resolves.toEqual(publicationsBefore);
+        await expect(runtimeRepository.findAllEntries(
             RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE,
-            destinationClaimKey,
-        )).resolves.toBeUndefined();
+        )).resolves.toEqual(claimsBefore);
     });
 
     it.each(['canonical-claim', 'legacy-claim'] as const)(
@@ -1052,7 +1028,6 @@ describe('RTC topology runtime-state repositories', () => {
 
             await expect(migrateLegacyRtcTopologyPublicationKeys(repository, {
                 oldWritersStopped: true,
-                sleep: async () => {},
             })).rejects.toMatchObject({
                 code: 'rtc-topology-repository-invariant-corruption',
             });
@@ -1118,15 +1093,12 @@ describe('RTC topology runtime-state repositories', () => {
             expiry,
         );
 
-        const sleep = vi.fn(async () => {});
         await expect(migrateLegacyRtcTopologyPublicationKeys(repository, {
             oldWritersStopped: true,
-            sleep,
-        } as Parameters<typeof migrateLegacyRtcTopologyPublicationKeys>[1]))
+        }))
             .rejects.toMatchObject({
             code: 'rtc-topology-repository-invariant-corruption',
         });
-        expect(sleep).not.toHaveBeenCalled();
         expect(await runtimeRepository.findEntry(
             RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
             legacyPublication.publicationId,
@@ -1481,7 +1453,7 @@ describe('RTC topology runtime-state repositories', () => {
         )).resolves.toMatchObject({ expireAtTimestamp });
     });
 
-    it('revalidates a changed legacy snapshot lifetime against one stable migration observation', async () => {
+    it('fails a snapshot migration conflict closed after one attempt without partial effects or backoff', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const repository = new RtcTopologySnapshotRepository(runtimeRepository);
         const ref = { ...createGroupRef(), workspaceId: '_' };
@@ -1493,33 +1465,42 @@ describe('RTC topology runtime-state repositories', () => {
             JSON.stringify(snapshot),
             20_000,
         );
-        const originalBegin = runtimeRepository.begin.bind(runtimeRepository);
-        let attempts = 0;
-        vi.spyOn(runtimeRepository, 'begin').mockImplementation(async (fn) => {
-            attempts += 1;
-            if (attempts === 1) throw new RuntimeStateWriteConflictError();
-            await runtimeRepository.upsert(
-                RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
-                legacyKey,
-                JSON.stringify(snapshot),
-                10_000,
-            );
-            return await originalBegin(fn);
-        });
+        const entriesBefore = await runtimeRepository.findAllEntries(
+            RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
+        );
+        runtimeRepository.beforeConditionalWrite = async (
+            operation,
+            namespace,
+            key,
+        ) => {
+            if (
+                operation === 'deleteIfRevision' &&
+                namespace === RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE &&
+                key === legacyKey
+            ) {
+                await runtimeRepository.upsert(
+                    namespace,
+                    key,
+                    JSON.stringify(snapshot),
+                    20_000,
+                );
+            }
+        };
+        const begin = vi.spyOn(runtimeRepository, 'begin');
+        const sleep = vi.fn(async () => {});
 
         await expect(migrateLegacyRtcTopologySnapshotKeys(repository, {
             oldWritersStopped: true,
             observedAtEpochMs: 10_000,
-            sleep: async () => {},
-        })).rejects.toMatchObject({
-            code: 'rtc-topology-repository-invariant-corruption',
-        });
+            sleep,
+        } as Parameters<typeof migrateLegacyRtcTopologySnapshotKeys>[1]))
+            .rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
 
-        expect(attempts).toBe(2);
-        await expect(runtimeRepository.findEntry(
+        expect(begin).toHaveBeenCalledTimes(1);
+        expect(sleep).not.toHaveBeenCalled();
+        await expect(runtimeRepository.findAllEntries(
             RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
-            repository.snapshotKey(ref),
-        )).resolves.toBeUndefined();
+        )).resolves.toEqual(entriesBefore);
     });
 
     it('keeps latest RTT measurements by sorted pair and expires stale entries', async () => {
