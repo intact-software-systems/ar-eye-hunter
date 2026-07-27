@@ -264,34 +264,27 @@ describe('convergent client state', () => {
 
     it('keeps a reconnect when stale expiry races the reused session id', async () => {
         const runtime = new AggregateBarrierRepository();
-        await connect(
-            runtime,
+        await connect(runtime, 'session-a', 'generation-1', BASE_EPOCH_MS, BASE_EPOCH_MS + 500);
+        const firstRead = runtime.armPrincipalReadBarrier(2, true);
+        const expiry = createService(runtime, BASE_EPOCH_MS + 1_000)
+            .expireExpiredSessions(BASE_EPOCH_MS + 1_000);
+        await firstRead;
+        const reconnect = await createService(runtime, BASE_EPOCH_MS + 1_001).connectSession(
+            SCOPE,
+            'alice',
+            'browser',
             'session-a',
-            'generation-1',
-            BASE_EPOCH_MS, BASE_EPOCH_MS + 500);
-        runtime.armPrincipalReadBarrier(2);
-
-        const [, reconnect] = await Promise.all([
-            createService(runtime, BASE_EPOCH_MS + 1_000)
-                .expireExpiredSessions(
-                BASE_EPOCH_MS + 1_000,
-            ),
-            createService(runtime, BASE_EPOCH_MS + 1_001).connectSession(
-                SCOPE,
-                'alice',
-                'browser',
-                'session-a',
-                {
-                    generationId: 'generation-2',
-                    connectionId: 'connection-2',
-                    connectedAtEpochMs: BASE_EPOCH_MS + 1_001,
-                    lastHeartbeatAtEpochMs: BASE_EPOCH_MS + 1_001,
-                    expiresAtEpochMs: BASE_EPOCH_MS + 20_000,
-                    requestId: 'reconnect-generation-2',
-                },
-            ),
-        ]);
-
+            {
+                generationId: 'generation-2',
+                connectionId: 'connection-2',
+                connectedAtEpochMs: BASE_EPOCH_MS + 1_001,
+                lastHeartbeatAtEpochMs: BASE_EPOCH_MS + 1_001,
+                expiresAtEpochMs: BASE_EPOCH_MS + 20_000,
+                requestId: 'reconnect-generation-2',
+            },
+        );
+        runtime.releasePrincipalReadBarrier();
+        await expiry;
         expect(reconnect.result.right?.event?.eventType).toBe('session-connected');
         const stored = await new ClientStateRepository(runtime).findSession({
             ...principalRef('alice'),
@@ -1141,12 +1134,17 @@ class AggregateBarrierRepository extends FakeRuntimeStateRepository {
     private principalReadsRemaining = 0;
     private principalReadsArrived = 0;
     private releasePrincipalReads: (() => void) | undefined;
+    private releaseFirstPrincipalRead: (() => void) | undefined; private holdFirstPrincipalRead = false;
     private aggregateTransactionTail: Promise<void> = Promise.resolve();
-    armPrincipalReadBarrier(readers: number): void {
-        this.principalReadsRemaining = readers;
-        this.principalReadsArrived = 0;
+    armPrincipalReadBarrier(readers: number, holdFirst = false): Promise<void> {
+        this.principalReadsRemaining = readers; this.principalReadsArrived = 0;
+        this.holdFirstPrincipalRead = holdFirst; return new Promise((resolve) => {
+            this.releaseFirstPrincipalRead = resolve;
+        });
     }
-
+    releasePrincipalReadBarrier(): void {
+        this.releasePrincipalReads?.();
+    }
     override async findEntry(
         namespace: string,
         key: string,
@@ -1156,9 +1154,11 @@ class AggregateBarrierRepository extends FakeRuntimeStateRepository {
             return value;
         }
         this.principalReadsArrived += 1;
+        this.releaseFirstPrincipalRead?.(); this.releaseFirstPrincipalRead = undefined;
         if (this.principalReadsArrived === this.principalReadsRemaining) {
-            const release = this.releasePrincipalReads; this.principalReadsRemaining = 0;
-            setTimeout(() => release?.(), 0);
+            this.principalReadsRemaining = 0; if (!this.holdFirstPrincipalRead) {
+                this.releasePrincipalReads?.();
+            }
             return value;
         }
         await new Promise<void>((resolve) => {
@@ -1182,7 +1182,6 @@ class AggregateBarrierRepository extends FakeRuntimeStateRepository {
             release();
         }
     }
-
 }
 
 class AlwaysConflictingPrincipalRepository extends AggregateBarrierRepository {
