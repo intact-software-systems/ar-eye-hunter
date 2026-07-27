@@ -185,7 +185,7 @@ function expectedOutboxEntry(
             topicId: GROUP_PRESENCE_SUMMARY_TOPIC,
             typeId: EnqueuedType.APP_OUTBOX,
             status: EntityStatus.NEW,
-            payloadIncludes: [resourceId, '"effectKind":"group-presence-summary"'],
+            payloadIncludes: [resourceId, '\\"effectKind\\":\\"group-presence-summary\\"'],
         };
     }
     throw new Error(`Unsupported ${kind} worker outbox effect: ${effect}`);

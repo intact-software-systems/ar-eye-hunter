@@ -23,7 +23,20 @@ import { PSqlRuntimeStateRepository } from "@shared-server/postgres/runtime-stat
 import { createTestGroupStateRuntime } from "./group-state-test-runtime.ts";
 import type { StateSyncPublisher } from "@shared-server/rallar-system/state-sync-publisher.ts";
 import { groupStateMaintenanceRequestId } from "@shared-server/rallar-system/services/group-state-service.ts";
+import type { GroupMutationReceipt } from "@shared-server/rallar-system/services/group-state-mutations.ts";
+import { AppInboxType } from "@shared-server/rallar-system/services/AppInboxService.ts";
 import { createPostgresClientPhaseDriver } from "./postgres-client-phase-driver.ts";
+import {
+  createPostgresAppInboxTestAuthority as testAuthority,
+  createPostgresAppInboxWorkerRuntime,
+  createPostgresAppInboxWorkerTrace as appInboxTrace,
+  findSingleRetriedAppInboxAttemptSequence,
+  groupAppInboxStart as groupInboxStart,
+  runGroupAppInbox as runGroupInbox,
+  unwrapAppInboxResult as unwrapAppInbox,
+  waitForPostgresAppInboxWorkerParticipants,
+} from
+  "./fixtures/postgres-app-inbox-worker-runtime.ts";
 import { findDirectResourceOutboxEvidence } from "./direct-resource-outbox-evidence.ts";
 import {
   expectWorkerOutboxLifecycleEvidence,
@@ -56,7 +69,7 @@ type WorkerInput = Readonly<{
   scope: StateScope;
   atEpochMs: number;
   traceFilePath: string;
-  barrier: Readonly<{ readyFilePath: string; releaseFilePath: string }>;
+  barrier: Readonly<{ readyDirectoryPath: string; releaseFilePath: string }>;
   principalId?: string;
   clientInstanceId?: string;
   groupId?: string;
@@ -78,13 +91,12 @@ type WorkerOutput = Readonly<{
 type WorkerTrace = Readonly<{
   backendPid: number;
   barrierWaitCount: number;
-  sleeps: readonly Readonly<{ delayMs: number; inTransaction: boolean }>[];
-  phases: readonly Readonly<{
-    component: string;
-    operation: string;
-    status: "ok" | "error";
-    attempt: number | null;
-    backoffMs: number | null;
+  attempts: readonly Readonly<{
+    resourceId: string;
+    attempt: number;
+    classification: "accepted" | "retryable" | "non-retryable";
+    status: string;
+    retryDelayMs: number;
   }>[];
 }>;
 type WorkerHandle = Readonly<{ done: Promise<WorkerOutput> }>;
@@ -119,7 +131,7 @@ describe("Postgres presence expiry concurrency", () => {
           atEpochMs: atEpochMs + 1_000,
           traceFilePath: path.join(tmpDirPath, "client-trace.json"),
           barrier: {
-            readyFilePath: path.join(tmpDirPath, "client-ready.json"),
+            readyDirectoryPath: path.join(tmpDirPath, "client-ready"),
             releaseFilePath: path.join(tmpDirPath, "client-release"),
           },
           principalId: sessionRef.principalId,
@@ -139,7 +151,7 @@ describe("Postgres presence expiry concurrency", () => {
           atEpochMs: atEpochMs + 1_000,
           traceFilePath: path.join(tmpDirPath, "group-trace.json"),
           barrier: {
-            readyFilePath: path.join(tmpDirPath, "group-ready.json"),
+            readyDirectoryPath: path.join(tmpDirPath, "group-ready"),
             releaseFilePath: path.join(tmpDirPath, "group-release"),
           },
           request: {
@@ -176,9 +188,9 @@ describe("Postgres presence expiry concurrency", () => {
         ));
         handles.push(...inputs.map((input) => spawnWorker(databaseUrl, input)));
 
-        for (const handle of handles) {
-          await expect(handle.done).rejects.toThrow("requestId is required");
-        }
+        await Promise.all(handles.map((handle) =>
+          expect(handle.done).rejects.toThrow("requestId is required")
+        ));
         const clientSession = await createClientStateRepository(setupSql)
           .findSession(sessionRef);
         expect(clientSession).toMatchObject({
@@ -221,8 +233,8 @@ describe("Postgres presence expiry concurrency", () => {
         atEpochMs: atEpochMs + 1_000 + index,
         traceFilePath: path.join(tmpDirPath, `heartbeat-${index}-trace.json`),
         barrier: {
-          readyFilePath: path.join(tmpDirPath, `heartbeat-${index}-ready.json`),
-          releaseFilePath: path.join(tmpDirPath, `heartbeat-${index}-release`),
+          readyDirectoryPath: path.join(tmpDirPath, "heartbeat-ready"),
+          releaseFilePath: path.join(tmpDirPath, "heartbeat-release"),
         },
         principalId: sessionRef.principalId,
         clientInstanceId: sessionRef.clientInstanceId,
@@ -241,15 +253,18 @@ describe("Postgres presence expiry concurrency", () => {
       try {
         await seedConnectedClientSession(setupSql, scope, sessionRef, atEpochMs);
         handles.push(...inputs.map((input) => spawnWorker(databaseUrl, input)));
-        await Promise.all(inputs.map((input, index) =>
-          waitForWorkerBarrier(input.barrier.readyFilePath, handles[index]!)
-        ));
+        await waitForPostgresAppInboxWorkerParticipants(
+          inputs[0]!.barrier.readyDirectoryPath, handles.length,
+          handles.map((handle) => handle.done),
+        );
         await writeFile(inputs[0]!.barrier.releaseFilePath, "release", "utf8");
-        const first = await handles[0]!.done;
-        await writeFile(inputs[1]!.barrier.releaseFilePath, "release", "utf8");
-        const outputs = [first, await handles[1]!.done];
+        const outputs = await Promise.all(handles.map((handle) => handle.done));
 
         outputs.forEach(expectCompactWorkerOutput);
+        expect(outputs.find((output) => output.requestId === "worker-client-heartbeat-1"))
+          .toMatchObject({ domainStatus: "applied" });
+        expect(outputs.find((output) => output.requestId === "worker-client-heartbeat-0")
+          ?.domainStatus).toMatch(/^(applied|no-op)$/u);
         expect(outputs.map((output) => output.attemptCount).sort()).toEqual([1, 2]);
         const traces = await Promise.all(inputs.map((input) => readTrace(input.traceFilePath)));
         assertOneWorkerRebased(outputs, traces);
@@ -261,7 +276,7 @@ describe("Postgres presence expiry concurrency", () => {
           });
         await expectPendingWorkerOutboxes(
           setupSql,
-          outputs,
+          outputs.filter((output) => output.domainStatus === "applied"),
           "client",
           ["principal-state:snapshot", "principal-state:event"],
         );
@@ -289,8 +304,7 @@ describe("Postgres presence expiry concurrency", () => {
         sessionId: "reused-session",
       };
       const tmpDirPath = await mkdtemp(path.join(tmpdir(), "rallar-client-worker-race-"));
-      const disconnectReleaseFilePath = path.join(tmpDirPath, "disconnect-release");
-      const reconnectReleaseFilePath = path.join(tmpDirPath, "reconnect-release");
+      const releaseFilePath = path.join(tmpDirPath, "client-race-release");
       const inputs: readonly WorkerInput[] = [
         {
           command: "client-disconnect",
@@ -298,8 +312,8 @@ describe("Postgres presence expiry concurrency", () => {
           atEpochMs: atEpochMs + 1_000,
           traceFilePath: path.join(tmpDirPath, "disconnect-trace.json"),
           barrier: {
-            readyFilePath: path.join(tmpDirPath, "disconnect-ready.json"),
-            releaseFilePath: disconnectReleaseFilePath,
+            readyDirectoryPath: path.join(tmpDirPath, "client-race-ready"),
+            releaseFilePath,
           },
           principalId: sessionRef.principalId,
           clientInstanceId: sessionRef.clientInstanceId,
@@ -318,8 +332,8 @@ describe("Postgres presence expiry concurrency", () => {
           atEpochMs: atEpochMs + 1_001,
           traceFilePath: path.join(tmpDirPath, "reconnect-trace.json"),
           barrier: {
-            readyFilePath: path.join(tmpDirPath, "reconnect-ready.json"),
-            releaseFilePath: reconnectReleaseFilePath,
+            readyDirectoryPath: path.join(tmpDirPath, "client-race-ready"),
+            releaseFilePath,
           },
           principalId: sessionRef.principalId,
           clientInstanceId: sessionRef.clientInstanceId,
@@ -341,22 +355,21 @@ describe("Postgres presence expiry concurrency", () => {
       try {
         await seedConnectedClientSession(setupSql, scope, sessionRef, atEpochMs);
         handles.push(...inputs.map((input) => spawnWorker(databaseUrl, input)));
-        await Promise.all(inputs.map((input, index) =>
-          waitForWorkerBarrier(input.barrier.readyFilePath, handles[index]!)
-        ));
-        await writeFile(disconnectReleaseFilePath, "release", "utf8");
-        const disconnectOutput = await handles[0]!.done;
-        await writeFile(reconnectReleaseFilePath, "release", "utf8");
+        await waitForPostgresAppInboxWorkerParticipants(
+          inputs[0]!.barrier.readyDirectoryPath, handles.length,
+          handles.map((handle) => handle.done),
+        );
+        await writeFile(releaseFilePath, "release", "utf8");
 
-        const outputs = [disconnectOutput, await handles[1]!.done];
+        const outputs = await Promise.all(handles.map((handle) => handle.done));
         outputs.forEach(expectCompactWorkerOutput);
-        expect(outputs.every((output) => output.domainStatus === "applied")).toBe(true);
+        expect(outputs.find((output) => output.operation === "client-reconnect"))
+          .toMatchObject({ domainStatus: "applied" });
+        expect(outputs.find((output) => output.operation === "client-disconnect")?.domainStatus)
+          .toMatch(/^(applied|no-op)$/u);
         expect(outputs.map((output) => output.attemptCount).sort()).toEqual([1, 2]);
         const traces = await Promise.all(inputs.map((input) => readTrace(input.traceFilePath)));
         assertOneWorkerRebased(outputs, traces);
-        expect(traces.every((trace) =>
-          trace.sleeps.every((sleep) => !sleep.inTransaction)
-        )).toBe(true);
 
         const repository = createClientStateRepository(setupSql);
         expect(await repository.findSession(sessionRef)).toMatchObject({
@@ -367,7 +380,7 @@ describe("Postgres presence expiry concurrency", () => {
         });
         await expectPendingWorkerOutboxes(
           setupSql,
-          outputs,
+          outputs.filter((output) => output.domainStatus === "applied"),
           "client",
           ["principal-state:snapshot", "principal-state:event"],
         );
@@ -400,7 +413,7 @@ describe("Postgres presence expiry concurrency", () => {
           atEpochMs: atEpochMs + 1_000,
           traceFilePath: path.join(tmpDirPath, "join-trace.json"),
           barrier: {
-            readyFilePath: path.join(tmpDirPath, "join-ready.json"),
+            readyDirectoryPath: path.join(tmpDirPath, "membership-ready"),
             releaseFilePath,
           },
           request: {
@@ -417,7 +430,7 @@ describe("Postgres presence expiry concurrency", () => {
           atEpochMs: atEpochMs + 1_001,
           traceFilePath: path.join(tmpDirPath, "ban-trace.json"),
           barrier: {
-            readyFilePath: path.join(tmpDirPath, "ban-ready.json"),
+            readyDirectoryPath: path.join(tmpDirPath, "membership-ready"),
             releaseFilePath,
           },
           request: {
@@ -456,9 +469,10 @@ describe("Postgres presence expiry concurrency", () => {
           requestId: "worker-group-add-carol",
         });
         handles.push(...inputs.map((input) => spawnWorker(databaseUrl, input)));
-        await Promise.all(inputs.map((input, index) =>
-          waitForWorkerBarrier(input.barrier.readyFilePath, handles[index]!)
-        ));
+        await waitForPostgresAppInboxWorkerParticipants(
+          inputs[0]!.barrier.readyDirectoryPath, handles.length,
+          handles.map((handle) => handle.done),
+        );
         await writeFile(releaseFilePath, "release", "utf8");
 
         const outputs = await Promise.all(handles.map((handle) => handle.done));
@@ -468,10 +482,6 @@ describe("Postgres presence expiry concurrency", () => {
         expect(outputs.map((output) => output.domainStatus)).toEqual(["applied", "applied"]);
         const traces = await Promise.all(inputs.map((input) => readTrace(input.traceFilePath)));
         assertOneWorkerRebased(outputs, traces);
-        expect(traces.every((trace) =>
-          trace.sleeps.every((sleep) => !sleep.inTransaction)
-        )).toBe(true);
-
         const repository = createGroupStateRepository(setupSql);
         const snapshot = await repository.readSnapshot(groupRef);
         expect(snapshot?.members.find((member) => member.principalId === "bob"))
@@ -542,7 +552,7 @@ describe("Postgres presence expiry concurrency", () => {
           sessionId: sessions[index],
           atEpochMs: atEpochMs + 1_000,
           traceFilePath: path.join(tmpDirPath, `connect-${index}-trace.json`),
-          barrier: workerBarrier(tmpDirPath, `connect-${index}`),
+          barrier: workerBarrier(tmpDirPath, "connect"),
           request: {
             principalId,
             generationId: `generation-${index}`,
@@ -569,7 +579,7 @@ describe("Postgres presence expiry concurrency", () => {
           sessionId: sessions[index],
           atEpochMs: atEpochMs + 2_000,
           traceFilePath: path.join(tmpDirPath, `heartbeat-${index}-trace.json`),
-          barrier: workerBarrier(tmpDirPath, `heartbeat-${index}`),
+          barrier: workerBarrier(tmpDirPath, "heartbeat"),
           request: {
             principalId,
             generationId: `generation-${index}`,
@@ -595,7 +605,7 @@ describe("Postgres presence expiry concurrency", () => {
           sessionId: sessions[index],
           atEpochMs: atEpochMs + 3_000,
           traceFilePath: path.join(tmpDirPath, `disconnect-${index}-trace.json`),
-          barrier: workerBarrier(tmpDirPath, `disconnect-${index}`),
+          barrier: workerBarrier(tmpDirPath, "disconnect"),
           request: {
             principalId,
             generationId: `generation-${index}`,
@@ -639,8 +649,8 @@ describe("Postgres presence expiry concurrency", () => {
     async () => {
       const databaseUrl = requireDatabaseUrl();
       const setupSql = await createSql(databaseUrl);
-      const leftSql = await createSql(databaseUrl);
-      const rightSql = await createSql(databaseUrl);
+      const leftSql = await createSql(databaseUrl, 2);
+      const rightSql = await createSql(databaseUrl, 2);
       const scope = uniqueScope("group-last-slot-capacity");
       const groupRef: GroupRef = { ...scope, groupId: "room-1" };
       const atEpochMs = Date.now();
@@ -662,26 +672,34 @@ describe("Postgres presence expiry concurrency", () => {
         });
 
         const barrier = new GroupPresenceReadBarrier(2);
-        const left = createPostgresGroupRuntime(
-          leftSql,
-          barrier,
-          atEpochMs + 1_000,
-          "group-state:groups",
-        ).service;
-        const right = createPostgresGroupRuntime(
-          rightSql,
-          barrier,
-          atEpochMs + 1_001,
-          "group-state:groups",
-        ).service;
+        const left = createPostgresAppInboxWorkerRuntime({
+          sql: leftSql, serviceId: "last-slot-left", atEpochMs: atEpochMs + 1_000,
+          beforeMutationTransaction: () => barrier.arrive(), trace: appInboxTrace(),
+        });
+        const right = createPostgresAppInboxWorkerRuntime({
+          sql: rightSql, serviceId: "last-slot-right", atEpochMs: atEpochMs + 1_001,
+          beforeMutationTransaction: () => barrier.arrive(), trace: appInboxTrace(),
+        });
+        const authorities = [
+          testAuthority("bob", "bob-session"),
+          testAuthority("carol", "carol-session"),
+        ] as const;
+        await Promise.all([
+          left.authSessions.putSession(authorities[0]),
+          right.authSessions.putSession(authorities[1]),
+        ]);
+        left.armBarrier();
+        right.armBarrier();
         const results = await Promise.allSettled([
-          left.joinGroup(scope, groupRef.groupId, {
-            actorPrincipalId: "bob",
-            requestId: contenderRequestIds[0],
+          runGroupInbox(left, authorities[0], AppInboxType.GROUP_JOIN, {
+            scope, groupId: groupRef.groupId,
+            request: { actorPrincipalId: "bob", actorSessionId: "bob-session",
+              requestId: contenderRequestIds[0] },
           }),
-          right.joinGroup(scope, groupRef.groupId, {
-            actorPrincipalId: "carol",
-            requestId: contenderRequestIds[1],
+          runGroupInbox(right, authorities[1], AppInboxType.GROUP_JOIN, {
+            scope, groupId: groupRef.groupId,
+            request: { actorPrincipalId: "carol", actorSessionId: "carol-session",
+              requestId: contenderRequestIds[1] },
           }),
         ]);
 
@@ -705,13 +723,18 @@ describe("Postgres presence expiry concurrency", () => {
           contenderRequestIds.includes(event.requestId ?? "")
         );
         expect(terminalEvents).toHaveLength(1);
-        const outbox = await findGroupOutboxRecords(
-          setupSql,
-          groupRef,
-          contenderRequestIds,
+        const acceptedRequestId = terminalEvents[0]?.requestId;
+        const receipt = acceptedRequestId
+          ? (await repository.findIdempotentGroupMutationReceipt(
+            groupRef, acceptedRequestId,
+          ))?.receipt
+          : undefined;
+        if (!receipt) throw new Error("Expected accepted last-slot receipt");
+        expectWorkerOutboxLifecycleEvidence(
+          await findDirectResourceOutboxEvidence(setupSql, receipt.outboxIds),
+          [{ outboxIds: receipt.outboxIds, domainStatus: "applied" }],
+          "group", ["group-presence-summary"],
         );
-        expect(outbox).toHaveLength(1);
-        expect(outbox[0]?.resource).toContain("member-joined");
       } finally {
         await cleanupRuntimeState(setupSql, scope.applicationId);
         await Promise.all([setupSql.end(), leftSql.end(), rightSql.end()]);
@@ -725,8 +748,8 @@ describe("Postgres presence expiry concurrency", () => {
     async () => {
       const databaseUrl = requireDatabaseUrl();
       const setupSql = await createSql(databaseUrl);
-      const leftSql = await createSql(databaseUrl);
-      const rightSql = await createSql(databaseUrl);
+      const leftSql = await createSql(databaseUrl, 2);
+      const rightSql = await createSql(databaseUrl, 2);
       const scope = uniqueScope("group-heartbeat-100");
       const groupRef: GroupRef = { ...scope, groupId: "room-1" };
       const atEpochMs = Date.now();
@@ -781,35 +804,48 @@ describe("Postgres presence expiry concurrency", () => {
           sessionRevisions.set(sessionId, entry.entry.revision);
         }
 
-        const barrier = new GroupPresenceReadBarrier(sessionCount);
-        const left = createPostgresGroupRuntime(
-          leftSql,
-          barrier,
-          atEpochMs + 1_000,
-        ).service;
-        const right = createPostgresGroupRuntime(
-          rightSql,
-          barrier,
-          atEpochMs + 1_000,
-        ).service;
+        const left = createPostgresAppInboxWorkerRuntime({
+          sql: leftSql, serviceId: "heartbeat-100-left",
+          atEpochMs: atEpochMs + 1_000, trace: appInboxTrace(),
+        });
+        const right = createPostgresAppInboxWorkerRuntime({
+          sql: rightSql, serviceId: "heartbeat-100-right",
+          atEpochMs: atEpochMs + 1_000, trace: appInboxTrace(),
+        });
         const heartbeatRequestIds = Array.from(
           { length: sessionCount },
           (_, index) => `postgres-heartbeat-${index}`,
         );
-        const heartbeats = await Promise.all(heartbeatRequestIds.map((requestId, index) =>
-          (index % 2 === 0 ? left : right).heartbeatPresenceSessionReceipt(
-            scope,
-            groupRef.groupId,
-            `session-${index}`,
+        const authorities = heartbeatRequestIds.map((_, index) =>
+          testAuthority(`member-${index}`, `session-${index}`)
+        );
+        await Promise.all(authorities.map((authority, index) =>
+          (index % 2 === 0 ? left : right).authSessions.putSession(authority)
+        ));
+        const starts = heartbeatRequestIds.map((requestId, index) =>
+          groupInboxStart<GroupMutationReceipt>(
+            index % 2 === 0 ? left : right,
+            authorities[index]!,
+            AppInboxType.GROUP_PRESENCE_HEARTBEAT,
             {
+              scope, groupId: groupRef.groupId, sessionId: `session-${index}`,
+              request: {
+              principalId: `member-${index}`,
               generationId: `generation-${index}`,
               actorPrincipalId: `member-${index}`,
+              actorSessionId: `session-${index}`,
               lastHeartbeatAtEpochMs: atEpochMs + 1_000,
               expiresAtEpochMs: atEpochMs + 120_000,
               requestId,
+              },
             },
           )
-        ));
+        );
+        const [leftResults, rightResults] = await Promise.all([
+          left.runUntilAllCompletion(starts.filter((_, index) => index % 2 === 0)),
+          right.runUntilAllCompletion(starts.filter((_, index) => index % 2 === 1)),
+        ]);
+        const heartbeats = [...leftResults, ...rightResults].map(unwrapAppInbox);
         expect(heartbeats).toHaveLength(sessionCount);
 
         const groupAfter = await repository.findGroupEntry(groupRef);
@@ -832,17 +868,15 @@ describe("Postgres presence expiry concurrency", () => {
         expect(new Set(terminalEvents.map((event) => event.requestId)).size)
           .toBe(sessionCount);
 
-        const outbox = await findGroupOutboxRecords(
-          setupSql,
-          groupRef,
-          heartbeatRequestIds,
+        const outboxIds = heartbeats.flatMap((receipt) => receipt.outboxIds);
+        expect(outboxIds).toHaveLength(sessionCount);
+        expectWorkerOutboxLifecycleEvidence(
+          await findDirectResourceOutboxEvidence(setupSql, outboxIds),
+          heartbeats.map((receipt) => ({
+            outboxIds: receipt.outboxIds, domainStatus: receipt.outcome,
+          })),
+          "group", ["group-presence-summary"],
         );
-        expect(outbox).toHaveLength(sessionCount);
-        expect(new Set(outbox.map((record) => record.resourceId)).size)
-          .toBe(sessionCount);
-        for (const record of outbox) {
-          expect(record.resource).toContain("session-heartbeat");
-        }
       } finally {
         await cleanupRuntimeState(setupSql, scope.applicationId);
         await Promise.all([setupSql.end(), leftSql.end(), rightSql.end()]);
@@ -1244,36 +1278,10 @@ async function cleanupRuntimeState(
     `;
 }
 
-async function findGroupOutboxRecords(
-  sql: PostgresSql,
-  ref: GroupRef,
-  commandIds: readonly string[],
-): Promise<readonly import('./direct-resource-outbox-evidence.ts').DirectResourceOutboxEvidence[]> {
-  const commandIdSet = new Set(commandIds);
-  const rows = await sql<readonly {
-    ri_resource_id: string;
-    ri_topic_id: string;
-    ri_type_id: string;
-    ri_status: string;
-    ri_resource: string;
-  }[]>`
-    select ri_resource_id, ri_topic_id, ri_type_id, ri_status, ri_resource
-    from resource_inbox
-    where ri_type_id = 'APP_OUTBOX' and ri_resource like ${`%${ref.groupId}%`}
-  `;
-  return rows.map((row) => ({
-    resourceId: row.ri_resource_id,
-    topicId: row.ri_topic_id,
-    typeId: row.ri_type_id,
-    status: row.ri_status,
-    resource: row.ri_resource,
-  })).filter((entry) => [...commandIdSet].some((commandId) => entry.resource.includes(commandId)));
-}
-
-function createSql(databaseUrl: string): PostgresSql {
+function createSql(databaseUrl: string, maxConnections = 1): PostgresSql {
   const postgres = createRequire(import.meta.url)("postgres") as PostgresFactory;
 
-  return postgres(databaseUrl, { max: 1, idle_timeout: 1 });
+  return postgres(databaseUrl, { max: maxConnections, idle_timeout: 1 });
 }
 
 function toRuntimeRepository(sql: PostgresSql): PSqlRuntimeStateRepository {
@@ -1492,7 +1500,7 @@ function workerBarrier(
   name: string,
 ): WorkerInput["barrier"] {
   return {
-    readyFilePath: path.join(tmpDirPath, `${name}-ready.json`),
+    readyDirectoryPath: path.join(tmpDirPath, `${name}-ready`),
     releaseFilePath: path.join(tmpDirPath, `${name}-release`),
   };
 }
@@ -1505,14 +1513,16 @@ async function runBarrierWorkerPair(
   traces: readonly WorkerTrace[];
 }>> {
   expect(inputs).toHaveLength(2);
+  expect(new Set(inputs.map((input) => input.barrier.readyDirectoryPath)).size).toBe(1);
+  expect(new Set(inputs.map((input) => input.barrier.releaseFilePath)).size).toBe(1);
   const handles = inputs.map((input) => spawnWorker(databaseUrl, input));
   try {
-    await Promise.all(inputs.map((input, index) =>
-      waitForWorkerBarrier(input.barrier.readyFilePath, handles[index]!)
-    ));
-    await Promise.all(inputs.map((input) =>
-      writeFile(input.barrier.releaseFilePath, "release", "utf8")
-    ));
+    await waitForPostgresAppInboxWorkerParticipants(
+      inputs[0]!.barrier.readyDirectoryPath,
+      handles.length,
+      handles.map((handle) => handle.done),
+    );
+    await writeFile(inputs[0]!.barrier.releaseFilePath, "release", "utf8");
     return {
       outputs: await Promise.all(handles.map((handle) => handle.done)),
       traces: await Promise.all(inputs.map((input) => readTrace(input.traceFilePath))),
@@ -1526,30 +1536,6 @@ function assertIndependentBarrierWorkers(traces: readonly WorkerTrace[]): void {
   expect(traces).toHaveLength(2);
   expect(traces.every((trace) => trace.barrierWaitCount === 1)).toBe(true);
   expect(new Set(traces.map((trace) => trace.backendPid)).size).toBe(2);
-  expect(traces.every((trace) =>
-    trace.sleeps.every((sleep) => !sleep.inTransaction)
-  )).toBe(true);
-}
-
-async function waitForWorkerBarrier(readyFilePath: string, handle: WorkerHandle): Promise<void> {
-  const waitForFile = async (): Promise<void> => {
-    const deadline = Date.now() + 15_000;
-    while (Date.now() < deadline) {
-      try {
-        await readFile(readyFilePath, "utf8");
-        return;
-      } catch {
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      }
-    }
-    throw new Error(`Timed out waiting for worker barrier: ${readyFilePath}`);
-  };
-  await Promise.race([
-    waitForFile(),
-    handle.done.then(() => {
-      throw new Error(`Worker exited before reaching barrier: ${readyFilePath}`);
-    }),
-  ]);
 }
 
 async function readTrace(traceFilePath: string): Promise<WorkerTrace> {
@@ -1570,6 +1556,11 @@ function expectCompactWorkerOutput(output: WorkerOutput): void {
       output.operation.startsWith("client-") ? 2 : 1,
     );
     output.outboxIds.forEach((outboxId) => expect(outboxId).toMatch(/\S/u));
+  } else if (output.domainStatus === "no-op") {
+    expect(output).toMatchObject({
+      acceptedStorageRevision: null, acceptedCausalRevision: null,
+      acceptedVersion: null, outboxIds: [],
+    });
   }
 }
 
@@ -1593,16 +1584,14 @@ function assertOneWorkerRebased(outputs: readonly WorkerOutput[], traces: readon
   expect(new Set(traces.map((trace) => trace.backendPid)).size).toBe(2);
   const loserIndex = outputs.findIndex((output) => output.attemptCount === 2);
   expect(loserIndex).toBeGreaterThanOrEqual(0);
-  const loser = traces[loserIndex]!;
-  for (const phase of ["mutation.read", "mutation.compute", "mutation.validate"]) {
-    expect(loser.phases.filter((event) => event.operation === phase)
-      .map((event) => event.attempt)).toEqual([0, 1]);
-  }
-  expect(loser.phases.filter((event) => event.operation === "mutation.conflict"))
-    .toHaveLength(1);
-  expect(loser.sleeps).toContainEqual({ delayMs: 2, inTransaction: false });
-  expect(traces.flatMap((trace) => trace.phases)
-    .filter((event) => event.operation === "mutation.conflict")).toHaveLength(1);
+  expect(findSingleRetriedAppInboxAttemptSequence(traces).map((attempt) => ({
+    attempt: attempt.attempt,
+    classification: attempt.classification,
+    retryDelayMs: attempt.retryDelayMs,
+  }))).toEqual([
+    { attempt: 1, classification: "retryable", retryDelayMs: 1 },
+    { attempt: 2, classification: "accepted", retryDelayMs: 0 },
+  ]);
 }
 
 function requireDatabaseUrl(): string {

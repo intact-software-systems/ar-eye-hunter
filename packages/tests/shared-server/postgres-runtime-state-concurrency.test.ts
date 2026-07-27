@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
+import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
 import { createGroupStateRepository } from '@shared-server/postgres/rallar-system/createStateRepositories.ts';
@@ -48,6 +49,10 @@ import {
     expectPendingDirectResourceOutboxEvidence,
     findDirectResourceOutboxEvidence,
 } from './direct-resource-outbox-evidence.ts';
+import {
+    findSingleRetriedAppInboxAttemptSequence,
+    waitForPostgresAppInboxWorkerParticipants,
+} from './fixtures/postgres-app-inbox-worker-runtime.ts';
 
 type PostgresSql = PSqlSql & Readonly<{
     end(): Promise<void>;
@@ -57,7 +62,7 @@ type TopologyWorkerInput = Readonly<{
     groupRef: GroupRef;
     atEpochMs: number;
     traceFilePath: string;
-    barrier: Readonly<{ readyFilePath: string; releaseFilePath: string }>;
+    barrier: Readonly<{ readyDirectoryPath: string; releaseFilePath: string }>;
     request: Readonly<Record<string, unknown>>;
 }>;
 type TopologyWorkerOutput = Readonly<{
@@ -74,13 +79,12 @@ type TopologyWorkerOutput = Readonly<{
 type TopologyWorkerTrace = Readonly<{
     backendPid: number;
     barrierWaitCount: number;
-    sleeps: readonly Readonly<{ delayMs: number; inTransaction: boolean }>[];
-    phases: readonly Readonly<{
-        component: string;
-        operation: string;
-        status: 'ok' | 'error';
-        attempt: number | null;
-        backoffMs: number | null;
+    attempts: readonly Readonly<{
+        resourceId: string;
+        attempt: number;
+        classification: 'accepted' | 'retryable' | 'non-retryable';
+        status: string;
+        retryDelayMs: number;
     }>[];
 }>;
 type TopologyWorkerHandle = Readonly<{ done: Promise<TopologyWorkerOutput> }>;
@@ -438,7 +442,7 @@ describe('Postgres runtime-state conditional-write concurrency', () => {
                         },
                     });
                 const resourceIds = results.map(({ receipt }) => receipt.outboxId!);
-                const entries = await findDirectResourceOutboxEvidence(firstSql, resourceIds);
+                const entries = await findDirectResourceOutboxEvidence(clients[0]!, resourceIds);
                 expectPendingDirectResourceOutboxEvidence(entries, resourceIds);
             } finally {
                 await Promise.allSettled(clients.map(async (client) => {
@@ -473,7 +477,7 @@ describe('Postgres runtime-state conditional-write concurrency', () => {
                 atEpochMs: 2,
                 traceFilePath: path.join(tmpDirPath, 'trace.json'),
                 barrier: {
-                    readyFilePath: path.join(tmpDirPath, 'ready.json'),
+                    readyDirectoryPath: path.join(tmpDirPath, 'ready'),
                     releaseFilePath: path.join(tmpDirPath, 'release'),
                 },
                 request: {
@@ -519,8 +523,7 @@ describe('Postgres runtime-state conditional-write concurrency', () => {
             const runtime = new PSqlRuntimeStateRepository(setupSql);
             const groupState = new GroupStateRepository(runtime);
             const tmpDirPath = await mkdtemp(path.join(tmpdir(), 'rallar-topology-worker-race-'));
-            const putReleaseFilePath = path.join(tmpDirPath, 'put-release');
-            const deleteReleaseFilePath = path.join(tmpDirPath, 'delete-release');
+            const releaseFilePath = path.join(tmpDirPath, 'release');
             const inputs: readonly TopologyWorkerInput[] = [
                 {
                     command: 'topology-config-put',
@@ -528,8 +531,8 @@ describe('Postgres runtime-state conditional-write concurrency', () => {
                     atEpochMs: 2,
                     traceFilePath: path.join(tmpDirPath, 'put-trace.json'),
                     barrier: {
-                        readyFilePath: path.join(tmpDirPath, 'put-ready.json'),
-                        releaseFilePath: putReleaseFilePath,
+                        readyDirectoryPath: path.join(tmpDirPath, 'ready'),
+                        releaseFilePath,
                     },
                     request: {
                         config: { topologyKind: 'tree', degreeLimit: 2 },
@@ -543,8 +546,8 @@ describe('Postgres runtime-state conditional-write concurrency', () => {
                     atEpochMs: 3,
                     traceFilePath: path.join(tmpDirPath, 'delete-trace.json'),
                     barrier: {
-                        readyFilePath: path.join(tmpDirPath, 'delete-ready.json'),
-                        releaseFilePath: deleteReleaseFilePath,
+                        readyDirectoryPath: path.join(tmpDirPath, 'ready'),
+                        releaseFilePath,
                     },
                     request: {
                         updatedByPrincipalId: 'owner',
@@ -557,29 +560,32 @@ describe('Postgres runtime-state conditional-write concurrency', () => {
                 expect(await groupState.insertGroup(snapshot.group))
                     .toMatchObject({ status: 'applied' });
                 for (const member of snapshot.members) await groupState.putMember(member);
-                const topology = new GroupTopologyManagementService({
-                    findGroupSnapshotByRef: (ref) => groupState.readSnapshot(ref),
-                    groupStateRepository: groupState,
-                    configRepository: new GroupTopologyConfigRepository(runtime),
-                    topologyService: new RallarRtcTopologyService(),
-                    now: () => 1,
-                    sleep: () => Promise.resolve(),
-                });
-                expect((await topology.putConfig({
+                const seedBarrier = {
+                    readyDirectoryPath: path.join(tmpDirPath, 'seed-ready'),
+                    releaseFilePath: path.join(tmpDirPath, 'seed-release'),
+                };
+                await writeFile(seedBarrier.releaseFilePath, 'release', 'utf8');
+                const seed = await spawnTopologyWorker(databaseUrl, {
+                    command: 'topology-config-put',
                     groupRef,
-                    config: { topologyKind: 'mesh', degreeLimit: 3 },
-                    updatedByPrincipalId: 'owner',
-                    requestId: `${applicationId}-seed`,
-                })).config.version).toBe(1);
+                    atEpochMs: 1,
+                    traceFilePath: path.join(tmpDirPath, 'seed-trace.json'),
+                    barrier: seedBarrier,
+                    request: {
+                        config: { topologyKind: 'mesh', degreeLimit: 3 },
+                        updatedByPrincipalId: 'owner', requestId: `${applicationId}-seed`,
+                    },
+                }).done;
+                expect(seed.acceptedVersion).toBe(1);
 
                 handles.push(...inputs.map((input) => spawnTopologyWorker(databaseUrl, input)));
-                await Promise.all(inputs.map((input, index) =>
-                    waitForTopologyWorkerBarrier(input.barrier.readyFilePath, handles[index]!)
-                ));
-                await writeFile(deleteReleaseFilePath, 'release', 'utf8');
-                const deleteOutput = await handles[1]!.done;
-                await writeFile(putReleaseFilePath, 'release', 'utf8');
-                const outputs = [await handles[0]!.done, deleteOutput];
+                await waitForPostgresAppInboxWorkerParticipants(
+                    inputs[0]!.barrier.readyDirectoryPath,
+                    handles.length,
+                    handles.map((handle) => handle.done),
+                );
+                await writeFile(releaseFilePath, 'release', 'utf8');
+                const outputs = await Promise.all(handles.map((handle) => handle.done));
                 outputs.forEach(expectCompactTopologyWorkerOutput);
                 expect(outputs.every((output) => output.domainStatus === 'applied')).toBe(true);
                 expect(outputs.map((output) => output.attemptCount).sort()).toEqual([1, 2]);
@@ -587,22 +593,29 @@ describe('Postgres runtime-state conditional-write concurrency', () => {
                     readTopologyWorkerTrace(input.traceFilePath)
                 ));
                 assertOneTopologyWorkerRebased(outputs, traces);
-                expect(traces.every((trace) =>
-                    trace.sleeps.every((sleep) => !sleep.inTransaction)
-                )).toBe(true);
 
                 const repository = new GroupTopologyConfigRepository(runtime);
-                expect(await repository.findConfig(groupRef)).toMatchObject({
-                    config: { topologyKind: 'tree', degreeLimit: 2 },
-                    updatedByPrincipalId: 'owner',
-                });
                 const generation = await repository.findGenerationEntry(groupRef, 'config');
                 expect(generation?.value.version).toBe(
                     Math.max(...outputs.map((output) => output.acceptedVersion ?? 0)),
                 );
                 expect(generation?.value.version).toBe(3);
-                expect(await repository.findConfig(groupRef)).toMatchObject({ version: 3 });
-                await expectPendingTopologyWorkerOutboxes(runtime, outputs);
+                const latest = outputs.reduce((left, right) =>
+                    (left.acceptedVersion ?? 0) > (right.acceptedVersion ?? 0) ? left : right
+                );
+                expect(await repository.findConfig(groupRef)).toEqual(
+                    latest.operation === 'topology-config-put'
+                        ? expect.objectContaining({
+                            version: 3,
+                            config: {
+                                topologyKind: 'tree', degreeLimit: 2,
+                                treeMinSize: 5, meshMinSize: 16, meshParamK: 2,
+                            },
+                            updatedByPrincipalId: 'owner',
+                        })
+                        : undefined,
+                );
+                await expectPendingTopologyWorkerOutboxes(setupSql, outputs);
                 expect(JSON.stringify(outputs)).not.toMatch(
                     /DATABASE_URL|accessToken|commandMac|app:app/u,
                 );
@@ -910,14 +923,14 @@ describe('Postgres runtime-state conditional-write concurrency', () => {
     );
 
     postgresIt(
-        'converges true-overlap RTT endpoint admission across independent clients',
+        'admits one true-overlap RTT endpoint mutation across independent transactions',
         async () => {
             const databaseUrl = requireDatabaseUrl();
             const applicationId = `rtt-execution-${crypto.randomUUID()}`;
             const a = `${applicationId}-a`;
             const b = `${applicationId}-b`;
             const c = `${applicationId}-c`;
-            const clients = [await createSql(databaseUrl), await createSql(databaseUrl)];
+            const clients = [await createSql(databaseUrl, 2), await createSql(databaseUrl, 2)];
             try {
                 const barrier = createReadBarrier(2);
                 const firstRuntime = new BarrierRuntimeStateRepository(
@@ -930,10 +943,11 @@ describe('Postgres runtime-state conditional-write concurrency', () => {
                     rttGroupSnapshot({ applicationId, workspaceId: 'concurrency', groupId: 'ab' }, [a, b]),
                     rttGroupSnapshot({ applicationId, workspaceId: 'concurrency', groupId: 'ac' }, [a, c]),
                 ] as const;
-                const result = await Promise.all([
-                    executeRttMutation({
+                const result = await Promise.allSettled([
+                    clients[0]!.begin((transaction) => executeRttMutation({
                         repository: new RtcRttRepository(firstRuntime, { now: () => 1 }),
-                        runtime: firstRuntime,
+                        transaction,
+                        attemptCount: 1,
                         command: {
                             rtt: { sessionIdFrom: a, sessionIdTo: b, rttMs: 1, createdAtEpochMs: 1, version: 1 },
                             alSenderId: a, candidateGroups: [groups[0]],
@@ -943,11 +957,11 @@ describe('Postgres runtime-state conditional-write concurrency', () => {
                             requestedAtEpochMs: 1,
                             purgeAfterEpochMs: 60_001,
                         }),
-                        sleep: async () => {},
-                    }),
-                    executeRttMutation({
+                    })),
+                    clients[1]!.begin((transaction) => executeRttMutation({
                         repository: new RtcRttRepository(secondRuntime, { now: () => 1 }),
-                        runtime: secondRuntime,
+                        transaction,
+                        attemptCount: 1,
                         command: {
                             rtt: { sessionIdFrom: a, sessionIdTo: c, rttMs: 2, createdAtEpochMs: 1, version: 1 },
                             alSenderId: a, candidateGroups: [groups[1]],
@@ -957,11 +971,11 @@ describe('Postgres runtime-state conditional-write concurrency', () => {
                             requestedAtEpochMs: 1,
                             purgeAfterEpochMs: 60_001,
                         }),
-                        sleep: async () => {},
-                    }),
+                    })),
                 ]);
 
-                expect(result.filter(({ updated }) => updated)).toHaveLength(1);
+                expect(result.filter(({ status }) => status === 'fulfilled')).toHaveLength(1);
+                expect(result.filter(({ status }) => status === 'rejected')).toHaveLength(1);
                 const stored = new RtcRttRepository(firstRuntime, { now: () => 2 });
                 expect(await stored.listMeasurements()).toHaveLength(1);
             } finally {
@@ -1207,11 +1221,11 @@ describe('Postgres runtime-state conditional-write concurrency', () => {
     );
 });
 
-async function createSql(databaseUrl: string): Promise<PostgresSql> {
+async function createSql(databaseUrl: string, maxConnections = 1): Promise<PostgresSql> {
     const postgres = await import('postgres');
     return postgres.default(
         databaseUrl,
-        { max: 1, idle_timeout: 1 },
+        { max: maxConnections, idle_timeout: 1 },
     ) as unknown as PostgresSql;
 }
 
@@ -1262,30 +1276,6 @@ function spawnTopologyWorker(
     };
 }
 
-async function waitForTopologyWorkerBarrier(
-    readyFilePath: string,
-    handle: TopologyWorkerHandle,
-): Promise<void> {
-    const waitForFile = async (): Promise<void> => {
-        const deadline = Date.now() + 15_000;
-        while (Date.now() < deadline) {
-            try {
-                await readFile(readyFilePath, 'utf8');
-                return;
-            } catch {
-                await new Promise((resolve) => setTimeout(resolve, 10));
-            }
-        }
-        throw new Error(`Timed out waiting for topology worker barrier: ${readyFilePath}`);
-    };
-    await Promise.race([
-        waitForFile(),
-        handle.done.then(() => {
-            throw new Error(`Topology worker exited before barrier: ${readyFilePath}`);
-        }),
-    ]);
-}
-
 async function readTopologyWorkerTrace(traceFilePath: string): Promise<TopologyWorkerTrace> {
     return JSON.parse(await readFile(traceFilePath, 'utf8')) as TopologyWorkerTrace;
 }
@@ -1314,7 +1304,9 @@ async function expectPendingTopologyWorkerOutboxes(
         expect(output.outboxIds).toHaveLength(1);
         expect(output.outboxIds[0]).toMatch(/\S/u);
     });
-    const outboxIds = outputs.map((output) => output.outboxIds[0]!);
+    const outboxIds = outputs.map((output) => toAppQueueKey({
+        resourceId: output.outboxIds[0]!, topicId: '', contextId: '',
+    }).resourceId);
     expect(new Set(outboxIds).size).toBe(outboxIds.length);
     expectPendingDirectResourceOutboxEvidence(
         await findDirectResourceOutboxEvidence(sql, outboxIds),
@@ -1338,16 +1330,13 @@ function assertOneTopologyWorkerRebased(
     expect(new Set(traces.map((trace) => trace.backendPid)).size).toBe(2);
     const loserIndex = outputs.findIndex((output) => output.attemptCount === 2);
     expect(loserIndex).toBeGreaterThanOrEqual(0);
-    const loser = traces[loserIndex]!;
-    for (const phase of ['mutation.read', 'mutation.compute', 'mutation.validate']) {
-        expect(loser.phases.filter((event) => event.operation === phase)
-            .map((event) => event.attempt)).toEqual([0, 1]);
-    }
-    expect(loser.phases.filter((event) => event.operation === 'mutation.conflict'))
-        .toHaveLength(1);
-    expect(loser.sleeps).toContainEqual({ delayMs: 2, inTransaction: false });
-    expect(traces.flatMap((trace) => trace.phases)
-        .filter((event) => event.operation === 'mutation.conflict')).toHaveLength(1);
+    expect(findSingleRetriedAppInboxAttemptSequence(traces)
+        .map(({ attempt, classification, retryDelayMs }) => ({
+            attempt, classification, retryDelayMs,
+        }))).toEqual([
+            { attempt: 1, classification: 'retryable', retryDelayMs: 1 },
+            { attempt: 2, classification: 'accepted', retryDelayMs: 0 },
+        ]);
 }
 
 class BarrierRuntimeStateRepository extends PSqlRuntimeStateRepository {

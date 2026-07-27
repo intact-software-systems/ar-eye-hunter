@@ -13,63 +13,39 @@ import type {
 } from '@shared/api/state-types.ts';
 import type {
   DeleteGroupTopologyConfigInput,
+  GroupTopologyConfigMutationExecution,
   PutGroupTopologyConfigInput,
 } from '@shared-server/rallar-system/services/group-topology-management-service.ts';
-import type {
-  PSqlSql,
-  PSqlTransactionSql,
-} from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import {
-  createClientStateEventRepository,
   createClientStateRepository,
-  createGroupStateEventRepository,
   createGroupStateRepository,
 } from '@shared-server/postgres/rallar-system/createStateRepositories.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
-import type {
-  RuntimeStateOptimisticTransactionalRepositoryLike,
-} from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import type { ClientMutationReceipt } from '@shared-server/rallar-system/services/client-state-mutations.ts';
 import {
-  createClientStateService,
-  requiresClientWrite,
+  type ClientStateWritten,
   toClientMutationCommand,
   toClientMutationIssuedSessionAuthority,
-  toClientMutationSystemAuthority,
   toConnectCommandInput,
   toDisconnectCommandInput,
-  toExpiryCommandInput,
   toHeartbeatCommandInput,
 } from '@shared-server/rallar-system/services/client-state-service.ts';
-import type {
-  ClientMutationCommandInput,
-  ClientMutationComputed,
-} from '@shared-server/rallar-system/services/client-state-mutations.ts';
-import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 import type { GroupMutationReceipt } from '@shared-server/rallar-system/services/group-state-mutations.ts';
-import { createGroupStateRuntime } from '@shared-server/rallar-system/services/group-state-service.ts';
-import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/repositories/GroupTopologyConfigRepository.ts';
-import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
-import { GroupTopologyManagementService } from '@shared-server/rallar-system/services/group-topology-management-service.ts';
-import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
 import type { GroupTopologyConfigMutationReceipt } from '@shared/api/graph-topology-management-types.ts';
-import type {
-  RallarTimingEvent,
-  RallarTimingSink,
-} from '@shared-server/rallar-system/services/timing.ts';
-import type { StateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
-import { createTestGroupStateRuntime } from '../group-state-test-runtime.ts';
-
-type ExpiryWorkerInput = Readonly<{
-  mode: 'client' | 'group';
-  scope: StateScope;
-  atEpochMs: number;
-  pidFilePath: string;
-}>;
+import { AppInboxType, SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC } from
+  '@shared-server/rallar-system/services/AppInboxService.ts';
+import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
+import { toTopologyAppInboxCommand } from
+  '@shared-server/rallar-system/services/AppGroupInboxService.ts';
+import {
+  createPostgresAppInboxWorkerRuntime,
+  type PersistedAppInboxAttempt,
+} from './postgres-app-inbox-worker-runtime.ts';
 
 type WorkerBarrier = Readonly<{
-  readyFilePath: string;
+  readyDirectoryPath: string;
   releaseFilePath: string;
 }>;
 
@@ -161,13 +137,6 @@ type StateMutationWorkerInput =
   | GroupWorkerInput
   | TopologyWorkerInput;
 
-type ExpiryWorkerOutput = Readonly<{
-  mode: ExpiryWorkerInput['mode'];
-  backendPid: number;
-  resultCount: number;
-  eventTypes: readonly string[];
-}>;
-
 type CompactStateMutationWorkerOutput = Readonly<{
   operation: StateMutationWorkerInput['command'];
   requestId: string;
@@ -180,19 +149,10 @@ type CompactStateMutationWorkerOutput = Readonly<{
   domainStatus: 'applied' | 'no-op' | 'rejected';
 }>;
 
-type WorkerPhase = Readonly<{
-  component: string;
-  operation: string;
-  status: 'ok' | 'error';
-  attempt: number | null;
-  backoffMs: number | null;
-}>;
-
 type WorkerTraceState = {
   backendPid: number;
   barrierWaitCount: number;
-  sleeps: Array<Readonly<{ delayMs: number; inTransaction: boolean }>>;
-  phases: WorkerPhase[];
+  attempts: PersistedAppInboxAttempt[];
 };
 
 async function main(): Promise<void> {
@@ -202,47 +162,27 @@ async function main(): Promise<void> {
   }
 
   const input = readInput();
-  const sql = postgres(databaseUrl, { max: 1, idle_timeout: 1 });
+  const sql = postgres(databaseUrl, { max: 2, idle_timeout: 1 });
 
   try {
     const [{ pid }] = await sql<{ pid: number }[]>`
         select pg_backend_pid()::int as pid
     `;
-    if (isExpiryWorkerInput(input)) {
-      await Deno.writeTextFile(
-        input.pidFilePath,
-        JSON.stringify({ backendPid: pid }),
-      );
+    const trace: WorkerTraceState = {
+      backendPid: pid,
+      barrierWaitCount: 0,
+      attempts: [],
+    };
+    try {
       console.log(JSON.stringify(
-        await runExpiryWorker(
+        await runStateMutationWorker(
           input,
-          new PSqlRuntimeStateRepository(sql as unknown as PSqlSql),
-          pid,
+          sql as unknown as PSqlSql,
+          trace,
         ),
       ));
-    } else {
-      const trace: WorkerTraceState = {
-        backendPid: pid,
-        barrierWaitCount: 0,
-        sleeps: [],
-        phases: [],
-      };
-      const runtimeRepository = new BarrierControlledRuntimeStateRepository(
-        sql as unknown as PSqlSql,
-        input.barrier,
-        trace,
-      );
-      try {
-        console.log(JSON.stringify(
-          await runStateMutationWorker(
-            input,
-            runtimeRepository,
-            trace,
-          ),
-        ));
-      } finally {
-        await Deno.writeTextFile(input.traceFilePath, JSON.stringify(trace));
-      }
+    } finally {
+      await Deno.writeTextFile(input.traceFilePath, JSON.stringify(trace));
     }
   } finally {
     await sql.end();
@@ -251,239 +191,304 @@ async function main(): Promise<void> {
 
 async function runStateMutationWorker(
   input: StateMutationWorkerInput,
-  runtimeRepository: BarrierControlledRuntimeStateRepository,
+  sql: PSqlSql,
   trace: WorkerTraceState,
 ): Promise<CompactStateMutationWorkerOutput> {
   requireRequestId(input.request.requestId);
   if (input.command.startsWith('client-')) {
-    return await runClientMutation(input as ClientWorkerInput, runtimeRepository, trace);
+    return await runClientMutation(input as ClientWorkerInput, sql, trace);
   }
   if (input.command.startsWith('group-')) {
-    return await runGroupMutation(input as GroupWorkerInput, runtimeRepository, trace);
+    return await runGroupMutation(input as GroupWorkerInput, sql, trace);
   }
-  return await runTopologyMutation(input as TopologyWorkerInput, runtimeRepository, trace);
+  return await runTopologyMutation(input as TopologyWorkerInput, sql, trace);
 }
 
 async function runClientMutation(
   input: ClientWorkerInput,
-  runtimeRepository: BarrierControlledRuntimeStateRepository,
+  sql: PSqlSql,
   trace: WorkerTraceState,
 ): Promise<CompactStateMutationWorkerOutput> {
   const requestId = requireRequestId(input.request.requestId);
-  const service = createClientStateService({
-    runtimeRepository,
-    createClientStateEventStore: createClientStateEventRepository,
-    timing: createTimingSink(trace),
+  const runtime = createPostgresAppInboxWorkerRuntime({
+    sql,
     serviceId: `postgres-state-worker-${Deno.pid}`,
+    atEpochMs: input.atEpochMs,
+    barrier: input.barrier,
+    trace,
   });
   const authoritySession: IssuedAuthSession = {
     clientId: input.principalId,
     accessToken: `${input.sessionId}-postgres-worker-token`,
     username: input.principalId,
     sessionId: input.sessionId,
-    issuedAtEpochMs: Math.max(0, input.atEpochMs - 1),
-    expiresAtEpochMs: input.atEpochMs + 24 * 60 * 60 * 1_000,
+    issuedAtEpochMs: 0,
+    expiresAtEpochMs: 4_102_444_800_000,
   };
-  await new AuthSessionRepository(runtimeRepository).putSession(authoritySession);
-  runtimeRepository.armBarrier();
-  const commandInput = toClientWorkerCommandInput(input);
-  await executeClientCommandWithOuterAttempts({
-    service,
-    runtimeRepository,
-    commandInput,
-    authoritySession,
-    atEpochMs: input.atEpochMs,
-    trace,
-  });
+  await runtime.authSessions.putSession(authoritySession);
+  runtime.armBarrier();
+  const contextId = inboxContextId(
+    input.scope.applicationId,
+    input.scope.workspaceId,
+    input.principalId,
+  );
+  const data = {
+    scope: input.scope,
+    principalId: input.principalId,
+    clientInstanceId: input.clientInstanceId,
+    sessionId: input.sessionId,
+    request: input.request,
+  };
+  const result = await runtime.runUntilCompletion(() =>
+    runtime.client.processAuthenticatedEntryUntilCompletion<typeof data, ClientStateWritten>({
+      type: toClientAppInboxType(input.command),
+      resourceId: requestId,
+      contextId,
+      senderId: input.principalId,
+      data,
+    }, authoritySession)
+  );
+  const written = result.fold(
+    (error) => { throw new Error(error); },
+    (value) => value,
+  );
 
-  const stored = await createClientStateRepository(runtimeRepository)
+  const stored = await createClientStateRepository(
+    new PSqlRuntimeStateRepository(sql),
+  )
     .findIdempotentClientMutationReceipt(
       { ...input.scope, principalId: input.principalId },
       requestId,
     );
-  if (!stored) {
-    throw new Error(`Client mutation receipt not found: ${requestId}`);
+  if (stored) return compactClientReceipt(input.command, requestId, stored.receipt);
+  const mutation = written.result.right;
+  if (!mutation || mutation.event !== null) {
+    throw new Error(`Applied client mutation receipt not found: ${requestId}`);
   }
-  return compactClientReceipt(input.command, requestId, stored.receipt);
+  const entry = await runtime.resourceInbox.findAnyByKey(toAppQueueKey({
+    topicId: SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
+    resourceId: requestId,
+    contextId,
+  }));
+  if (!entry || entry.status !== 'COMPLETED') {
+    throw new Error(`Completed client AppInbox entry not found: ${requestId}`);
+  }
+  const commandInput = toClientWorkerCommandInput(input);
+  const command = await toClientMutationCommand(
+    commandInput,
+    {
+      nowEpochMs: input.atEpochMs,
+      serviceId: `postgres-state-worker-${Deno.pid}`,
+      eventId: `postgres-client-event:${requestId}`,
+      attemptCount: entry.dequeueAudit.attempts,
+      expireAtEpochMs: Number(entry.audit.expiryTs.epochMilliseconds),
+    },
+    toClientMutationIssuedSessionAuthority(
+      authoritySession,
+      commandInput.aggregateRef,
+      commandInput.operation as Exclude<typeof commandInput.operation, 'expireSession'>,
+    ),
+  );
+  return {
+    operation: input.command,
+    requestId,
+    commandHash: command.facts.commandHash,
+    attemptCount: entry.dequeueAudit.attempts,
+    acceptedStorageRevision: null,
+    acceptedCausalRevision: null,
+    acceptedVersion: null,
+    outboxIds: [],
+    domainStatus: 'no-op',
+  };
 }
 
 function toClientWorkerCommandInput(
   input: ClientWorkerInput,
-): ClientMutationCommandInput {
+) {
   if (input.command === 'client-heartbeat') {
     return toHeartbeatCommandInput(
-      input.scope,
-      input.principalId,
-      input.clientInstanceId,
-      input.sessionId,
-      input.request,
-      input.request.requestId,
+      input.scope, input.principalId, input.clientInstanceId, input.sessionId,
+      input.request, input.request.requestId,
     );
   }
   if (input.command === 'client-disconnect') {
     return toDisconnectCommandInput(
-      'disconnectSession',
-      input.scope,
-      input.principalId,
-      input.clientInstanceId,
-      input.sessionId,
-      input.request,
-      input.request.requestId,
+      'disconnectSession', input.scope, input.principalId, input.clientInstanceId,
+      input.sessionId, input.request, input.request.requestId,
     );
   }
   return toConnectCommandInput(
-    'connectSession',
-    input.scope,
-    input.principalId,
-    input.clientInstanceId,
-    input.sessionId,
-    input.request,
-    input.request.requestId,
-    {},
+    'connectSession', input.scope, input.principalId, input.clientInstanceId,
+    input.sessionId, input.request, input.request.requestId, {},
   );
 }
 
-async function executeClientCommandWithOuterAttempts(input: Readonly<{
-  service: ReturnType<typeof createClientStateService>;
-  runtimeRepository: BarrierControlledRuntimeStateRepository;
-  commandInput: ClientMutationCommandInput;
-  authoritySession: IssuedAuthSession;
-  atEpochMs: number;
-  trace: WorkerTraceState;
-}>): Promise<ClientMutationComputed> {
-  const sleep = createRecordedSleep(input.runtimeRepository, input.trace);
-  if (input.commandInput.operation === 'expireSession') {
-    throw new Error('Client worker command requires issued-session authority');
-  }
-  for (let attempt = 1; attempt <= 8; attempt += 1) {
-    const command = await toClientMutationCommand(
-      input.commandInput,
-      {
-        nowEpochMs: input.atEpochMs,
-        serviceId: `postgres-state-worker-${Deno.pid}`,
-        eventId: `postgres-client-event:${input.commandInput.commandId}`,
-        attemptCount: attempt,
-        expireAtEpochMs: input.atEpochMs + 24 * 60 * 60 * 1_000,
-      },
-      toClientMutationIssuedSessionAuthority(
-        input.authoritySession,
-        input.commandInput.aggregateRef,
-        input.commandInput.operation,
-      ),
-    );
-    const read = await input.service.read(command);
-    const computed = input.service.compute(command, read);
-    input.service.validate(command, read, computed);
-    try {
-      if (requiresClientWrite(computed)) {
-        await input.runtimeRepository.beginSqlTransaction(
-          async (transaction) => await input.service.write(transaction, computed),
-        );
-      }
-      return computed;
-    } catch (error) {
-      if (!(error instanceof RuntimeStateWriteConflictError) || attempt === 8) throw error;
-      await sleep(Math.min(16, 2 ** (attempt - 1)));
-    }
-  }
-  throw new Error('Client AppInbox-equivalent outer attempts exhausted');
+function toClientAppInboxType(command: ClientWorkerInput['command']): AppInboxType {
+  if (command === 'client-heartbeat') return AppInboxType.CLIENT_SESSION_HEARTBEAT;
+  if (command === 'client-disconnect') return AppInboxType.CLIENT_SESSION_DISCONNECT;
+  return AppInboxType.CLIENT_SESSION_CONNECT;
+}
+
+function inboxContextId(...parts: string[]): string {
+  return parts.map(encodeURIComponent).join(':');
 }
 
 async function runGroupMutation(
   input: GroupWorkerInput,
-  runtimeRepository: BarrierControlledRuntimeStateRepository,
+  sql: PSqlSql,
   trace: WorkerTraceState,
 ): Promise<CompactStateMutationWorkerOutput> {
   const requestId = requireRequestId(input.request.requestId);
-  const service = createTestGroupStateRuntime({
-    runtimeRepository,
-    createGroupStateEventStore: createGroupStateEventRepository,
-    syncPublisher: createPublisher(),
-    now: () => input.atEpochMs,
-    sleep: createRecordedSleep(runtimeRepository, trace),
-    timing: createTimingSink(trace),
+  const runtime = createPostgresAppInboxWorkerRuntime({
+    sql,
     serviceId: `postgres-state-worker-${Deno.pid}`,
-  }).service;
-  runtimeRepository.armBarrier();
-  let receipt: GroupMutationReceipt | undefined;
-  if (input.command === 'group-join') {
-    await service.joinGroup(
-      input.scope,
-      input.groupId,
-      input.request as JoinGroupRequest,
-    );
-  } else if (input.command === 'group-ban') {
-    await service.banGroupMember(
-      input.scope,
-      input.groupId,
-      requireString(input.targetPrincipalId, 'targetPrincipalId'),
-      input.request as BanGroupMemberRequest,
-    );
-  } else if (input.command === 'group-presence-connect') {
-    receipt = await service.connectPresenceSessionReceipt(
-      input.scope,
-      input.groupId,
-      requireString(input.sessionId, 'sessionId'),
-      input.request as ConnectGroupPresenceSessionRequest,
-    );
-  } else if (input.command === 'group-presence-heartbeat') {
-    receipt = await service.heartbeatPresenceSessionReceipt(
-      input.scope,
-      input.groupId,
-      requireString(input.sessionId, 'sessionId'),
-      input.request as HeartbeatGroupPresenceSessionRequest,
-    );
-  } else {
-    receipt = await service.disconnectPresenceSessionReceipt(
-      input.scope,
-      input.groupId,
-      requireString(input.sessionId, 'sessionId'),
-      input.request as DisconnectGroupPresenceSessionRequest,
-    );
-  }
+    atEpochMs: input.atEpochMs,
+    barrier: input.barrier,
+    trace,
+  });
+  const actorPrincipalId = requireString(
+    input.request.actorPrincipalId,
+    'actorPrincipalId',
+  );
+  const actorSessionId = requireString(
+    input.request.actorSessionId,
+    'actorSessionId',
+  );
+  const authority: IssuedAuthSession = {
+    clientId: actorPrincipalId,
+    accessToken: `${actorSessionId}-postgres-worker-token`,
+    username: actorPrincipalId,
+    sessionId: actorSessionId,
+    issuedAtEpochMs: 0,
+    expiresAtEpochMs: 4_102_444_800_000,
+  };
+  await runtime.authSessions.putSession(authority);
+  const data = toGroupAppInboxData(input);
+  runtime.armBarrier();
+  const result = await runtime.runUntilCompletion(() =>
+    runtime.group.processAuthenticatedEntryUntilCompletion<typeof data, unknown>({
+      type: toGroupAppInboxType(input.command),
+      resourceId: requestId,
+      contextId: inboxContextId(
+        input.scope.applicationId,
+        input.scope.workspaceId,
+        input.groupId,
+      ),
+      senderId: actorPrincipalId,
+      data,
+    }, authority)
+  );
+  const durableResult = result.fold(
+    (error) => { throw new Error(error); },
+    (value) => value,
+  );
 
-  if (!receipt) {
-    receipt = (await createGroupStateRepository(runtimeRepository)
+  const receipt = isGroupPresenceCommand(input.command)
+    ? durableResult as GroupMutationReceipt
+    : (await createGroupStateRepository(new PSqlRuntimeStateRepository(sql))
       .findIdempotentGroupMutationReceipt(
         { ...input.scope, groupId: input.groupId },
         requestId,
       ))?.receipt;
-    if (!receipt) {
-      throw new Error(`Group mutation receipt not found: ${requestId}`);
-    }
-  }
+  if (!receipt) throw new Error(`Group mutation receipt not found: ${requestId}`);
   return compactGroupReceipt(input.command, requestId, receipt);
+}
+
+function toGroupAppInboxType(command: GroupWorkerInput['command']): AppInboxType {
+  switch (command) {
+    case 'group-join': return AppInboxType.GROUP_JOIN;
+    case 'group-ban': return AppInboxType.GROUP_MEMBER_BAN;
+    case 'group-presence-connect': return AppInboxType.GROUP_PRESENCE_CONNECT;
+    case 'group-presence-heartbeat': return AppInboxType.GROUP_PRESENCE_HEARTBEAT;
+    case 'group-presence-disconnect': return AppInboxType.GROUP_PRESENCE_DISCONNECT;
+  }
+}
+
+function toGroupAppInboxData(input: GroupWorkerInput): Readonly<Record<string, unknown>> {
+  if (input.command === 'group-ban') {
+    return {
+      scope: input.scope,
+      groupId: input.groupId,
+      principalId: requireString(input.targetPrincipalId, 'targetPrincipalId'),
+      request: input.request,
+    };
+  }
+  if (input.command === 'group-join') {
+    return { scope: input.scope, groupId: input.groupId, request: input.request };
+  }
+  return {
+    scope: input.scope,
+    groupId: input.groupId,
+    sessionId: requireString(input.sessionId, 'sessionId'),
+    request: input.request,
+  };
+}
+
+function isGroupPresenceCommand(
+  command: GroupWorkerInput['command'],
+): boolean {
+  return command.startsWith('group-presence-');
 }
 
 async function runTopologyMutation(
   input: TopologyWorkerInput,
-  runtimeRepository: BarrierControlledRuntimeStateRepository,
+  sql: PSqlSql,
   trace: WorkerTraceState,
 ): Promise<CompactStateMutationWorkerOutput> {
   const requestId = requireRequestId(input.request.requestId);
-  const groupStateRepository = createGroupStateRepository(runtimeRepository);
-  const service = new GroupTopologyManagementService({
-    findGroupSnapshotByRef: (ref) => groupStateRepository.readSnapshot(ref),
-    groupStateRepository,
-    configRepository: new GroupTopologyConfigRepository(runtimeRepository),
-    topologyService: new RallarRtcTopologyService(),
-    now: () => input.atEpochMs,
-    sleep: createRecordedSleep(runtimeRepository, trace),
-    timing: createTimingSink(trace),
+  const runtime = createPostgresAppInboxWorkerRuntime({
+    sql,
     serviceId: `postgres-state-worker-${Deno.pid}`,
+    atEpochMs: input.atEpochMs,
+    barrier: input.barrier,
+    trace,
   });
-  await service.readConfig(input.groupRef);
-  runtimeRepository.armBarrier();
-  const receipt = input.command === 'topology-config-put'
-    ? (await service.putConfig({
-      ...input.request,
-      groupRef: input.groupRef,
-    })).receipt
-    : (await service.deleteConfig({
-      ...input.request,
-      groupRef: input.groupRef,
-    })).receipt;
-  return compactTopologyReceipt(input.command, requestId, receipt);
+  const principalId = requireString(
+    input.request.updatedByPrincipalId,
+    'updatedByPrincipalId',
+  );
+  const authority: IssuedAuthSession = {
+    clientId: principalId,
+    accessToken: `${principalId}-topology-worker-token`,
+    username: principalId,
+    sessionId: `${principalId}-session`,
+    issuedAtEpochMs: 0,
+    expiresAtEpochMs: 4_102_444_800_000,
+  };
+  await runtime.authSessions.putSession(authority);
+  const data = await toTopologyAppInboxCommand({
+    actor: { principalId, sessionId: authority.sessionId },
+    groupRef: input.groupRef,
+    requestId,
+    capturedAtEpochMs: input.atEpochMs,
+    payload: input.command === 'topology-config-put'
+      ? { operation: 'putConfig', config: input.request.config }
+      : { operation: 'deleteConfig', target: 'config' },
+  });
+  runtime.armBarrier();
+  const result = await runtime.runUntilCompletion(() =>
+    runtime.group.processAuthenticatedEntryUntilCompletion<
+      typeof data,
+      GroupTopologyConfigMutationExecution
+    >({
+      type: input.command === 'topology-config-put'
+        ? AppInboxType.TOPOLOGY_CONFIG_PUT
+        : AppInboxType.TOPOLOGY_CONFIG_DELETE,
+      resourceId: requestId,
+      contextId: inboxContextId(
+        input.groupRef.applicationId,
+        input.groupRef.workspaceId,
+        input.groupRef.groupId,
+      ),
+      senderId: principalId,
+      data,
+    }, authority)
+  );
+  const execution = result.fold(
+    (error) => { throw new Error(error); },
+    (value) => value,
+  );
+  return compactTopologyReceipt(input.command, requestId, execution.receipt);
 }
 
 function compactClientReceipt(
@@ -553,208 +558,13 @@ function compactTopologyReceipt(
   };
 }
 
-class BarrierControlledRuntimeStateRepository extends PSqlRuntimeStateRepository {
-  private barrierArmed = false;
-  private barrierConsumed = false;
-  private transactionDepth = 0;
-
-  constructor(
-    sql: PSqlSql,
-    private readonly barrier: WorkerBarrier,
-    private readonly trace: WorkerTraceState,
-  ) {
-    super(sql);
-  }
-
-  armBarrier(): void {
-    this.barrierArmed = true;
-  }
-
-  isInTransaction(): boolean {
-    return this.transactionDepth > 0;
-  }
-
-  async beginSqlTransaction<T>(
-    write: (transaction: PSqlTransactionSql) => Promise<T>,
-  ): Promise<T> {
-    if (this.barrierArmed && !this.barrierConsumed) {
-      this.barrierConsumed = true;
-      this.trace.barrierWaitCount += 1;
-      await waitAtBarrier(this.barrier);
-    }
-    this.transactionDepth += 1;
-    try {
-      return await this.sql.begin(write);
-    } finally {
-      this.transactionDepth -= 1;
-    }
-  }
-
-  override async begin<T>(
-    fn: (
-      repository: RuntimeStateOptimisticTransactionalRepositoryLike,
-    ) => Promise<T>,
-  ): Promise<T> {
-    if (this.barrierArmed && !this.barrierConsumed) {
-      this.barrierConsumed = true;
-      this.trace.barrierWaitCount += 1;
-      await waitAtBarrier(this.barrier);
-    }
-    this.transactionDepth += 1;
-    try {
-      return await super.begin(fn);
-    } finally {
-      this.transactionDepth -= 1;
-    }
-  }
-}
-
-function createRecordedSleep(
-  runtimeRepository: BarrierControlledRuntimeStateRepository,
-  trace: WorkerTraceState,
-): (delayMs: number) => Promise<void> {
-  return async (delayMs) => {
-    trace.sleeps.push({
-      delayMs,
-      inTransaction: runtimeRepository.isInTransaction(),
-    });
-    await delay(delayMs);
-  };
-}
-
-function createTimingSink(trace: WorkerTraceState): RallarTimingSink {
-  return (event: RallarTimingEvent) => {
-    trace.phases.push({
-      component: event.component,
-      operation: event.operation,
-      status: event.status,
-      attempt: typeof event.details?.attempt === 'number' ? event.details.attempt : null,
-      backoffMs: typeof event.details?.backoffMs === 'number' ? event.details.backoffMs : null,
-    });
-  };
-}
-
-async function waitAtBarrier(barrier: WorkerBarrier): Promise<void> {
-  await Deno.writeTextFile(
-    barrier.readyFilePath,
-    JSON.stringify({ workerPid: Deno.pid }),
-  );
-  const deadline = Date.now() + 15_000;
-  while (Date.now() < deadline) {
-    try {
-      await Deno.stat(barrier.releaseFilePath);
-      return;
-    } catch (error) {
-      if (!(error instanceof Deno.errors.NotFound)) throw error;
-      await delay(5);
-    }
-  }
-  throw new Error(`Timed out waiting for worker barrier release: ${barrier.releaseFilePath}`);
-}
-
-async function runExpiryWorker(
-  input: ExpiryWorkerInput,
-  runtimeRepository: PSqlRuntimeStateRepository,
-  backendPid: number,
-): Promise<ExpiryWorkerOutput> {
-  if (input.mode === 'client') {
-    const service = createClientStateService({
-      runtimeRepository,
-      createClientStateEventStore: createClientStateEventRepository,
-      serviceId: `postgres-expiry-worker-${Deno.pid}`,
-    });
-    const candidates = await service.listExpiredSessionCandidates(input.atEpochMs);
-    const results: ClientMutationComputed[] = [];
-    for (const candidate of candidates) {
-      results.push(await executeClientExpiryWithOuterAttempts(
-        service,
-        runtimeRepository,
-        toExpiryCommandInput(candidate),
-        input.atEpochMs,
-      ));
-    }
-
-    return {
-      mode: input.mode,
-      backendPid,
-      resultCount: results.length,
-      eventTypes: results
-        .map((result) => result.outcome === 'idempotency-conflict'
-          ? undefined
-          : result.event?.eventType)
-        .filter(isDefined),
-    };
-  }
-
-  const results = await createGroupStateRuntime({
-    runtimeRepository,
-    authSessionRepository: new AuthSessionRepository(runtimeRepository),
-    createGroupStateEventStore: createGroupStateEventRepository,
-    syncPublisher: createPublisher(),
-    now: () => input.atEpochMs,
-    serviceId: `postgres-expiry-worker-${Deno.pid}`,
-  }).maintenance.expireExpiredPresenceSessions(input.atEpochMs);
-
-  return {
-    mode: input.mode,
-    backendPid,
-    resultCount: results.length,
-    eventTypes: results
-      .map((result) => result.result.right?.event?.eventType)
-      .filter(isDefined),
-  };
-}
-
-async function executeClientExpiryWithOuterAttempts(
-  service: ReturnType<typeof createClientStateService>,
-  runtimeRepository: PSqlRuntimeStateRepository,
-  commandInput: Extract<ClientMutationCommandInput, { operation: 'expireSession' }>,
-  atEpochMs: number,
-): Promise<ClientMutationComputed> {
-  const serviceId = `postgres-expiry-worker-${Deno.pid}`;
-  for (let attempt = 1; attempt <= 8; attempt += 1) {
-    const command = await toClientMutationCommand(
-      commandInput,
-      {
-        nowEpochMs: atEpochMs,
-        serviceId,
-        eventId: `postgres-client-expiry-event:${commandInput.commandId}`,
-        attemptCount: attempt,
-        expireAtEpochMs: atEpochMs + 24 * 60 * 60 * 1_000,
-      },
-      toClientMutationSystemAuthority(serviceId),
-    );
-    const read = await service.read(command);
-    const computed = service.compute(command, read);
-    service.validate(command, read, computed);
-    try {
-      if (requiresClientWrite(computed)) {
-        await runtimeRepository.sql.begin(
-          async (transaction) => await service.write(transaction, computed),
-        );
-      }
-      return computed;
-    } catch (error) {
-      if (!(error instanceof RuntimeStateWriteConflictError) || attempt === 8) throw error;
-      await delay(Math.min(16, 2 ** (attempt - 1)));
-    }
-  }
-  throw new Error('Client expiry AppInbox-equivalent outer attempts exhausted');
-}
-
-function readInput(): ExpiryWorkerInput | StateMutationWorkerInput {
+function readInput(): StateMutationWorkerInput {
   const raw = Deno.env.get('RALLAR_EXPIRY_WORKER_INPUT');
   if (!raw) {
     throw new Error('RALLAR_EXPIRY_WORKER_INPUT is required');
   }
 
-  return JSON.parse(raw) as ExpiryWorkerInput | StateMutationWorkerInput;
-}
-
-function isExpiryWorkerInput(
-  input: ExpiryWorkerInput | StateMutationWorkerInput,
-): input is ExpiryWorkerInput {
-  return 'mode' in input;
+  return JSON.parse(raw) as StateMutationWorkerInput;
 }
 
 function requireRequestId(requestId: unknown): string {
@@ -776,23 +586,6 @@ function requireString(value: unknown, label: string): string {
     throw new Error(`${label} is required`);
   }
   return value;
-}
-
-function createPublisher(): StateSyncPublisher {
-  return {
-    publishClientSnapshot: async () => undefined,
-    publishClientEvent: async () => undefined,
-    publishGroupSnapshot: async () => undefined,
-    publishGroupEvent: async () => undefined,
-  };
-}
-
-function delay(delayMs: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, delayMs));
-}
-
-function isDefined<T>(value: T | undefined): value is T {
-  return value !== undefined;
 }
 
 await main();
