@@ -177,13 +177,12 @@ client, group, and topology writes use conditional insert/update/delete fencing.
 Advisory locks and CRDT document-row locks are not approved queue-claim
 exceptions or architecture precedent.
 
-The exhaustive current exception inventory is in
-`rallar-server-repositories.md`. It covers QueueBox claiming
-(`FOR UPDATE SKIP LOCKED`), WebSocket and agent-session ticket consumption,
-username registration, inbound/outbound AL admission, and CRDT document-row
-coordination, together with the shared Postgres advisory-lock primitive. These
-remain outside this convergent-write remediation boundary and are not precedent
-for authoritative state mutation design.
+The sole current database-lock exception is bounded ResourceInbox
+`FOR UPDATE SKIP LOCKED` queue coordination for reservation, timeout recovery,
+and fairness claims. Lock descriptions retained in
+`rallar-server-repositories.md` for ticket consumption, username registration,
+AL admission, CRDT document-row coordination, and advisory-lock primitives are
+historical migration context, not current or approved exceptions.
 
 ## Documentation And Validation
 

@@ -149,6 +149,18 @@ describe('Rallar server storage schema docs', () => {
         expect(repositories).toContain('not a database-lock substitute or precedent');
     });
 
+    it('documents bounded resource-inbox claims as the sole current database-lock exception', () => {
+        const architecture = readMarkdownSection(
+            readWorkspaceFile('packages/shared-server/architecture.md'),
+            'Queue Coordination Locks',
+        ).replace(/\s+/g, ' ');
+
+        expect(architecture).toContain('sole current database-lock exception');
+        expect(architecture).toContain('ResourceInbox `FOR UPDATE SKIP LOCKED`');
+        expect(architecture).toContain('historical migration context');
+        expect(architecture).not.toContain('exhaustive current exception inventory');
+    });
+
     it('inventories every intentional residual database lock with explicit governance', () => {
         const docs = readWorkspaceFile(
             'packages/shared-server/rallar-server-repositories.md',
