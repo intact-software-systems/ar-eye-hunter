@@ -1,5 +1,7 @@
 // deno-lint-ignore-file no-explicit-any
 
+import { resolveBlackBoxRunnerLivePreflightVariableByEnv as resolveVariableByEnv } from './live-preflight-variables.ts'
+
 type JsonRecord = Record<string, unknown>
 
 export type BlackBoxRunnerLivePreflightStatus = 'passed' | 'failed' | 'skipped'
@@ -773,26 +775,6 @@ function toPreflightGroup(
             resolveVariableByEnv(config, 'RALLAR_BB_GROUP_NAME', environment) ??
             groupId,
     }
-}
-
-function resolveVariableByEnv(
-    config: JsonRecord,
-    envName: string,
-    environment: Record<string, string | undefined>,
-): string | undefined {
-    const direct = envValue(environment, envName)
-    if (direct) {
-        return direct
-    }
-
-    for (const value of Object.values(asRecord(config.variables))) {
-        const record = asRecord(value)
-        if (record.env === envName || record.fromEnv === envName) {
-            return stringValue(record.default) ?? stringValue(record.fallback)
-        }
-    }
-
-    return undefined
 }
 
 async function recordAsyncCheck(
