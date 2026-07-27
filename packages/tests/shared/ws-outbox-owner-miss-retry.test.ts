@@ -197,6 +197,8 @@ describe('durable WS outbox owner misses', () => {
   });
 
   it('retries the durable row when cluster publication fails', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(1_000);
     const outbox = new InMemoryQueueBox();
     await outbox.enqueue(QueueBoxUtilities.toResourceEntryFromMsg(
       createUnicastMessage(), EnqueuedType.WS_OUTBOX,
