@@ -146,12 +146,21 @@ describe('Rallar repo skill and documentation integrity', () => {
     };
 
     expectAll(agents, ['publishing-plan-progress', 'long-running']);
+    expect(agents).toContain(
+      '- For written implementation plans and clearly long-running repository implementation,\n' +
+        '  including docs, scripts, and operations, use `publishing-plan-progress`.',
+    );
     expectAll(progressSkill, [
       '`codex/<topic>`',
       'draft pull request',
       'completed plan milestone',
       'without waiting for human review',
       'Explicit user instructions',
+      'installed GitHub publication workflow',
+      'upstream tracking',
+      'detached worktree',
+      'Create branch here',
+      'Explicit user instructions may narrow or disable publication',
     ]);
     expect(plugin.keywords).toEqual(
       expect.arrayContaining([
