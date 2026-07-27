@@ -30,7 +30,9 @@ import {
     type ControlQuerySnapshot,
 } from './control-query.ts';
 import type { RecipeConsoleControlCredentialPolicy } from './control-credential-policy.ts';
+import { recipeConsoleDetailRunIds } from './control-detail-run-ids.ts';
 import type { RecipeConsoleControlExecutionApi } from './control-execution-api.ts';
+import { parseRecipeConsoleUrl } from '../routing/url-state-codec.ts';
 import {
     controlSelectionIndexCacheLastLookup,
     createControlSelectionIndexCache,
@@ -39,7 +41,7 @@ import {
 } from './control-selection-index-cache.ts';
 
 export const CONTROL_QUERY_POLL_INTERVAL_MS = 5_000;
-export const CONTROL_QUERY_REQUEST_TIMEOUT_MS = 4_000;
+export const CONTROL_QUERY_DEFAULT_REQUEST_TIMEOUT_MS = 20_000;
 
 export type RecipeConsoleControlBootstrap = Readonly<{
     controlUrl?: string;
@@ -95,10 +97,12 @@ export function ControlConnectionProvider({
     authSession,
     bootstrap,
     children,
+    controlReadTimeoutMs,
 }: Readonly<{
     authSession?: AuthSession;
     bootstrap: RecipeConsoleControlBootstrap;
     children: ReactNode;
+    controlReadTimeoutMs?: number;
 }>) {
     const apiSetup = useMemo<ControlApiSetup>(() => {
         try {
@@ -109,6 +113,13 @@ export function ControlConnectionProvider({
                     apiBaseUrl: bootstrap.apiBaseUrl,
                     authSession,
                     credentialPolicy: bootstrap.credentialPolicy,
+                    detailRunIds: snapshot => recipeConsoleDetailRunIds({
+                        snapshot,
+                        bootstrapRunId: bootstrap.bootstrapRunId,
+                        urlState: parseRecipeConsoleUrl(
+                            globalThis.location?.search ?? '',
+                        ).state,
+                    }),
                 }),
             };
         } catch (error) {
@@ -117,6 +128,7 @@ export function ControlConnectionProvider({
     }, [
         authSession,
         bootstrap.apiBaseUrl,
+        bootstrap.bootstrapRunId,
         bootstrap.controlUrl,
         bootstrap.credentialPolicy,
         bootstrap.manualToken,
@@ -166,6 +178,7 @@ export function ControlConnectionProvider({
                 snapshot: result.snapshot,
                 provenance: {
                     distributedRunsSource: result.distributedRunsSource,
+                    runEvidence: result.runEvidence,
                 },
                 authorization: partialQueryAuthorization(result.partialError),
             };
@@ -173,8 +186,9 @@ export function ControlConnectionProvider({
         now: Date.now,
         scheduler: browserScheduler,
         pollIntervalMs: CONTROL_QUERY_POLL_INTERVAL_MS,
-        requestTimeoutMs: CONTROL_QUERY_REQUEST_TIMEOUT_MS,
-    }), [apiSetup]);
+        requestTimeoutMs: controlReadTimeoutMs ??
+            CONTROL_QUERY_DEFAULT_REQUEST_TIMEOUT_MS,
+    }), [apiSetup, controlReadTimeoutMs]);
     const query = useSyncExternalStore(
         service.subscribe,
         service.getSnapshot,

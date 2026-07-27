@@ -5,6 +5,8 @@ import {
 } from '../../../apps/rallar-black-box/src/control-run-manager.ts';
 import {
     createRecipeConsoleControlApi as createRecipeConsoleControlApiWithPolicy,
+    RECIPE_CONSOLE_CONTROL_DETAIL_BOUNDS,
+    RECIPE_CONSOLE_CONTROL_INDEX_BOUNDS,
     RECIPE_CONSOLE_CONTROL_SNAPSHOT_BOUNDS,
     type RecipeConsoleControlApiConfig,
 } from '../../../apps/rallar-black-box/src/recipe-console/control/control-api.ts';
@@ -236,7 +238,15 @@ describe('Recipe Console control API', () => {
     });
 
     it('owns the bounded Recipe Console snapshot defaults', () => {
-        expect(RECIPE_CONSOLE_CONTROL_SNAPSHOT_BOUNDS).toEqual({
+        expect(RECIPE_CONSOLE_CONTROL_INDEX_BOUNDS).toEqual({
+            commands: 0,
+            results: 0,
+            events: 0,
+            stats: 0,
+            reports: 0,
+            heartbeats: 0,
+        });
+        expect(RECIPE_CONSOLE_CONTROL_DETAIL_BOUNDS).toEqual({
             commands: 120,
             results: 120,
             events: 160,
@@ -244,6 +254,9 @@ describe('Recipe Console control API', () => {
             reports: 40,
             heartbeats: 80,
         });
+        expect(RECIPE_CONSOLE_CONTROL_SNAPSHOT_BOUNDS).toBe(
+            RECIPE_CONSOLE_CONTROL_DETAIL_BOUNDS,
+        );
     });
 
     it('exposes run-token minting through the same root-owned authorized transport', async () => {
@@ -290,8 +303,8 @@ describe('Recipe Console control API', () => {
 
         expect(requests).toHaveLength(1);
         expect(requests[0].url).toBe(
-            'https://control.test/runs?limitCommands=120&limitResults=120' +
-            '&limitEvents=160&limitStats=60&limitReports=40&limitHeartbeats=80',
+            'https://control.test/runs?limitCommands=0&limitResults=0' +
+            '&limitEvents=0&limitStats=0&limitReports=0&limitHeartbeats=0',
         );
         expect(authorization(requests[0].init)).toBeNull();
         expect(requests[0].init?.signal).toBe(controller.signal);
@@ -301,7 +314,146 @@ describe('Recipe Console control API', () => {
             completeness: 'complete',
             distributedRunsSource: 'root-snapshot',
             authorization: 'anonymous',
+            runEvidence: {
+                detailedRunIds: [],
+                indexOnlyRunIds: [],
+            },
         });
+    });
+
+    it('polls an index and replaces only requested runs with detailed evidence', async () => {
+        const requests: Array<{ url: string; signal?: AbortSignal | null }> = [];
+        const controller = new AbortController();
+        const indexRun = {
+            ...protocolControlRun('run-a'),
+            createdAtEpochMs: 1,
+            updatedAtEpochMs: 2,
+            results: [],
+            events: [],
+            stats: [],
+            reports: [],
+            heartbeats: [],
+        };
+        const otherRun = { ...indexRun, runId: 'run-b' };
+        const detailedRun = {
+            ...indexRun,
+            events: [{
+                kind: 'event',
+                protocolVersion: 1,
+                runId: 'run-a',
+                agentId: 'agent-a',
+                eventId: 'event-a',
+                atEpochMs: 2,
+                payload: {},
+            }],
+        };
+        const api = createRecipeConsoleControlApi({
+            controlUrl: 'https://control.test',
+            apiBaseUrl: 'https://api.test',
+            detailRunIds: () => ['run-a'],
+            fetchFn: async (input, init) => {
+                const url = String(input);
+                requests.push({ url, signal: init?.signal });
+                return Response.json(
+                    new URL(url).pathname === '/runs/run-a'
+                        ? detailedRun
+                        : { runs: [indexRun, otherRun], distributedRuns: [] },
+                );
+            },
+        });
+
+        const result = await api.readSnapshot({ signal: controller.signal });
+
+        expect(requests).toEqual([
+            {
+                url: 'https://control.test/runs?limitCommands=0&limitResults=0' +
+                    '&limitEvents=0&limitStats=0&limitReports=0&limitHeartbeats=0',
+                signal: controller.signal,
+            },
+            {
+                url: 'https://control.test/runs/run-a?limitCommands=120&limitResults=120' +
+                    '&limitEvents=160&limitStats=60&limitReports=40&limitHeartbeats=80',
+                signal: controller.signal,
+            },
+        ]);
+        expect(result.snapshot.runs.map(run => run.runId)).toEqual(['run-a', 'run-b']);
+        expect(result.snapshot.runs[0].events).toHaveLength(1);
+        expect(result.snapshot.runs[1]).toEqual(otherRun);
+        expect(result.runEvidence).toEqual({
+            detailedRunIds: ['run-a'],
+            indexOnlyRunIds: ['run-b'],
+        });
+    });
+
+    it('rejects malformed requested run detail as a protocol error', async () => {
+        const indexRun = {
+            ...protocolControlRun('run-a'),
+            createdAtEpochMs: 1,
+            updatedAtEpochMs: 2,
+            results: [],
+            events: [],
+            stats: [],
+            reports: [],
+            heartbeats: [],
+        };
+        const api = createRecipeConsoleControlApi({
+            controlUrl: 'https://control.test',
+            apiBaseUrl: 'https://api.test',
+            detailRunIds: () => ['run-a'],
+            fetchFn: async (input) => new URL(String(input)).pathname === '/runs/run-a'
+                ? Response.json({ runId: 'run-a', agents: [], commands: 'invalid' })
+                : Response.json({ runs: [indexRun], distributedRuns: [] }),
+        });
+
+        await expect(api.readSnapshot({})).rejects.toMatchObject({
+            name: 'RecipeConsoleControlProtocolError',
+            reachable: true,
+            message: expect.stringContaining('runs[0].commands must be an array'),
+        });
+    });
+
+    it('changes the opaque revision when only exact detailed evidence changes', async () => {
+        const indexText = JSON.stringify({
+            runs: [{
+                ...protocolControlRun('run-a'),
+                createdAtEpochMs: 1,
+                updatedAtEpochMs: 2,
+                results: [],
+                events: [],
+                stats: [],
+                reports: [],
+                heartbeats: [],
+            }],
+            distributedRuns: [],
+        });
+        let detailVersion = 1;
+        const api = createRecipeConsoleControlApi({
+            controlUrl: 'https://control.test',
+            apiBaseUrl: 'https://api.test',
+            detailRunIds: () => ['run-a'],
+            fetchFn: async (input) => {
+                if (new URL(String(input)).pathname === '/runs') {
+                    return new Response(indexText);
+                }
+                return new Response(JSON.stringify({
+                    ...protocolControlRun('run-a'),
+                    createdAtEpochMs: 1,
+                    updatedAtEpochMs: 2,
+                    results: [],
+                    events: [],
+                    stats: [{ version: detailVersion++ }],
+                    reports: [],
+                    heartbeats: [],
+                }));
+            },
+        });
+
+        const first = await api.readSnapshot({});
+        const second = await api.readSnapshot({});
+
+        expect(controlSnapshotRevisionOf(second.snapshot)).not.toBe(
+            controlSnapshotRevisionOf(first.snapshot),
+        );
     });
 
     it('associates an opaque root revision by exact raw document without changing public shapes', async () => {
@@ -349,12 +501,14 @@ describe('Recipe Console control API', () => {
             'completeness',
             'distributedRunsSource',
             'authorization',
+            'runEvidence',
         ]);
         expect(Object.keys(first)).toEqual([
             'snapshot',
             'completeness',
             'distributedRunsSource',
             'authorization',
+            'runEvidence',
         ]);
         expect(Reflect.ownKeys(first.snapshot)).toEqual([
             'runs',
@@ -404,8 +558,18 @@ describe('Recipe Console control API', () => {
         expect(controlSnapshotRevisionOf(ordinarySnapshot)).toBeUndefined();
     });
 
-    it('passes a caller snapshot-bound override exactly instead of merging defaults', async () => {
+    it('passes a caller detail-bound override exactly instead of merging defaults', async () => {
         const urls: string[] = [];
+        const indexRun = {
+            ...protocolControlRun('run-a'),
+            createdAtEpochMs: 1,
+            updatedAtEpochMs: 2,
+            results: [],
+            events: [],
+            stats: [],
+            reports: [],
+            heartbeats: [],
+        };
         const api = createRecipeConsoleControlApi({
             controlUrl: 'https://control.test',
             apiBaseUrl: 'https://api.test',
@@ -413,16 +577,23 @@ describe('Recipe Console control API', () => {
                 commands: 7,
                 heartbeats: 3,
             },
+            detailRunIds: () => ['run-a'],
             fetchFn: async (input) => {
                 urls.push(String(input));
-                return Response.json(COMPLETE_SNAPSHOT);
+                return Response.json(
+                    new URL(String(input)).pathname === '/runs'
+                        ? { runs: [indexRun], distributedRuns: [] }
+                        : indexRun,
+                );
             },
         });
 
         await api.readSnapshot({});
 
         expect(urls).toEqual([
-            'https://control.test/runs?limitCommands=7&limitHeartbeats=3',
+            'https://control.test/runs?limitCommands=0&limitResults=0' +
+                '&limitEvents=0&limitStats=0&limitReports=0&limitHeartbeats=0',
+            'https://control.test/runs/run-a?limitCommands=7&limitHeartbeats=3',
         ]);
     });
 
@@ -858,8 +1029,8 @@ describe('Recipe Console control API', () => {
         const result = await api.readSnapshot({ signal: controller.signal });
 
         expect(requests.map(request => request.url)).toEqual([
-            'https://control.test/runs?limitCommands=120&limitResults=120' +
-            '&limitEvents=160&limitStats=60&limitReports=40&limitHeartbeats=80',
+            'https://control.test/runs?limitCommands=0&limitResults=0' +
+            '&limitEvents=0&limitStats=0&limitReports=0&limitHeartbeats=0',
             'https://control.test/distributed-runs',
         ]);
         expect(requests.every(request => request.signal === controller.signal)).toBe(true);
@@ -868,6 +1039,10 @@ describe('Recipe Console control API', () => {
             completeness: 'complete',
             distributedRunsSource: 'canonical-fallback',
             authorization: 'anonymous',
+            runEvidence: {
+                detailedRunIds: [],
+                indexOnlyRunIds: [],
+            },
         });
     });
 

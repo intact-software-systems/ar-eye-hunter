@@ -69,7 +69,7 @@ Read `references/test-commands.md` when choosing commands. Prefer targeted check
 - Repo skills and active routing: after changes to `.agents/skills/**`,
   `.codex-plugin/plugin.json`, active Rallar docs/examples, or root skill/config
   routing, run
-  `npx vitest run packages/tests/repo/rallar-skill-integrity.test.ts`.
+  `npx vitest run packages/tests/repo/rallar-skill-integrity.test.ts packages/tests/repo/repo-code-style-integrity.test.ts packages/tests/repo/repo-style-check.test.ts`.
 
 ## UI Behavior Rule
 

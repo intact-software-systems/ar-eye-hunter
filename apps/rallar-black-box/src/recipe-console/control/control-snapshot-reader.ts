@@ -1,8 +1,10 @@
 import type {
+    ControlRunSnapshot,
     ControlServerSnapshot,
     ControlSnapshotBounds,
 } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import {
+    fetchControlRunSnapshot,
     fetchControlServerSnapshot,
     fetchDistributedRuns,
 } from '../../control-run-manager.ts';
@@ -11,28 +13,37 @@ import type {
     RecipeConsoleControlAuthorization,
 } from './control-authorized-transport.ts';
 import { isControlAbortError } from './control-authorized-fetch.ts';
+import { mergeControlRunDetails } from './control-detail-run-ids.ts';
+import { createControlSnapshotRevisionSession } from './control-snapshot-revision.ts';
 import {
     validateControlDistributedRuns,
+    validateControlRunSnapshot,
     validateControlServerCoreSnapshot,
     withoutDistributedRuns,
 } from './control-snapshot-validation.ts';
-import { createControlSnapshotRevisionSession } from './control-snapshot-revision.ts';
 
 export type RecipeConsoleControlDistributedRunsSource =
     | 'root-snapshot'
     | 'canonical-fallback'
     | 'unavailable';
 
+export type RecipeConsoleControlRunEvidenceProvenance = Readonly<{
+    detailedRunIds: readonly string[];
+    indexOnlyRunIds: readonly string[];
+}>;
+
 export type RecipeConsoleControlSnapshotResult = Readonly<{
     snapshot: ControlServerSnapshot;
     completeness: 'complete' | 'partial';
     distributedRunsSource: RecipeConsoleControlDistributedRunsSource;
     authorization: RecipeConsoleControlAuthorization;
+    runEvidence: RecipeConsoleControlRunEvidenceProvenance;
     partialError?: unknown;
 }>;
 
 export type RecipeConsoleControlQueryProvenance = Readonly<{
     distributedRunsSource: RecipeConsoleControlDistributedRunsSource;
+    runEvidence: RecipeConsoleControlRunEvidenceProvenance;
 }>;
 
 export type ControlSnapshotReader = (
@@ -41,7 +52,9 @@ export type ControlSnapshotReader = (
 
 export type ControlSnapshotReaderConfig = Readonly<{
     baseUrl: string;
-    bounds: ControlSnapshotBounds;
+    indexBounds: ControlSnapshotBounds;
+    detailBounds: ControlSnapshotBounds;
+    detailRunIds?(snapshot: ControlServerSnapshot): readonly string[];
     transport: ControlAuthorizedTransport;
     protocolError(error: unknown): Error;
     isProtocolCandidate(error: unknown): boolean;
@@ -61,7 +74,7 @@ export function createControlSnapshotReader(
                 fetchControlServerSnapshot({
                     baseUrl: config.baseUrl,
                     token,
-                    bounds: config.bounds,
+                    bounds: config.indexBounds,
                     fetchFn,
                 }),
             runsAuthorization,
@@ -73,87 +86,122 @@ export function createControlSnapshotReader(
             throw config.protocolError(error);
         }
 
+        let snapshot = server.value;
+        let completeness: RecipeConsoleControlSnapshotResult['completeness'] =
+            'complete';
+        let distributedRunsSource:
+            RecipeConsoleControlDistributedRunsSource = 'root-snapshot';
+        let authorization = server.authorization;
+        let partialError: unknown;
+        let fallbackDocument: unknown;
+
         if (server.value.distributedRuns !== undefined) {
             try {
                 validateControlDistributedRuns(server.value.distributedRuns);
             } catch (error) {
-                const snapshot = withoutDistributedRuns(server.value);
-                revisionSession.associate(snapshot, {
-                    source: 'unavailable',
-                    rootDocument: server.value,
-                });
-                return {
-                    snapshot,
-                    completeness: 'partial',
-                    distributedRunsSource: 'unavailable',
-                    authorization: server.authorization,
-                    partialError: config.protocolError(error),
-                };
+                snapshot = withoutDistributedRuns(server.value);
+                completeness = 'partial';
+                distributedRunsSource = 'unavailable';
+                partialError = config.protocolError(error);
             }
-            revisionSession.associate(server.value, {
-                source: 'root-snapshot',
-                rootDocument: server.value,
-            });
-            return {
-                snapshot: server.value,
-                completeness: 'complete',
-                distributedRunsSource: 'root-snapshot',
-                authorization: server.authorization,
-            };
-        }
-
-        try {
-            const distributed = await config.transport.response(
-                (token, fetchFn) =>
-                    fetchDistributedRuns({
-                        baseUrl: config.baseUrl,
-                        token,
-                        fetchFn,
-                    }),
-                distributedRunsAuthorization,
-                input.signal,
-            );
-            validateControlDistributedRuns(distributed.value);
-            const snapshot: ControlServerSnapshot = {
-                ...server.value,
-                distributedRuns: distributed.value,
-            };
-            validateControlServerCoreSnapshot(snapshot);
-            revisionSession.associate(snapshot, {
-                source: 'canonical-fallback',
-                rootDocument: server.value,
-                fallbackDocument: distributed.value,
-            });
-            return {
-                snapshot,
-                completeness: 'complete',
-                distributedRunsSource: 'canonical-fallback',
-                authorization: combinedAuthorization(
+        } else {
+            try {
+                const distributed = await config.transport.response(
+                    (token, fetchFn) =>
+                        fetchDistributedRuns({
+                            baseUrl: config.baseUrl,
+                            token,
+                            fetchFn,
+                        }),
+                    distributedRunsAuthorization,
+                    input.signal,
+                );
+                validateControlDistributedRuns(distributed.value);
+                snapshot = {
+                    ...server.value,
+                    distributedRuns: distributed.value,
+                };
+                validateControlServerCoreSnapshot(snapshot);
+                distributedRunsSource = 'canonical-fallback';
+                authorization = combinedAuthorization(
                     server.authorization,
                     distributed.authorization,
-                ),
-            };
-        } catch (partialError) {
-            if (input.signal?.aborted || isControlAbortError(partialError)) {
-                throw partialError;
+                );
+                fallbackDocument = distributed.value;
+            } catch (error) {
+                if (input.signal?.aborted || isControlAbortError(error)) {
+                    throw error;
+                }
+                completeness = 'partial';
+                distributedRunsSource = 'unavailable';
+                partialError = config.isProtocolCandidate(error)
+                    ? config.protocolError(error)
+                    : error;
             }
-            const normalizedPartialError =
-                config.isProtocolCandidate(partialError)
-                    ? config.protocolError(partialError)
-                    : partialError;
-            revisionSession.associate(server.value, {
-                source: 'unavailable',
-                rootDocument: server.value,
-            });
-            return {
-                snapshot: server.value,
-                completeness: 'partial',
-                distributedRunsSource: 'unavailable',
-                authorization: server.authorization,
-                partialError: normalizedPartialError,
-            };
         }
+
+        const requestedRunIds = requestedDetailRunIds(
+            snapshot,
+            config.detailRunIds?.(snapshot) ?? [],
+        );
+        const detailRuns: ControlRunSnapshot[] = [];
+        for (const runId of requestedRunIds) {
+            const detail = await config.transport.response(
+                async (token, fetchFn) => {
+                    const value = await fetchControlRunSnapshot({
+                        baseUrl: config.baseUrl,
+                        runId,
+                        token,
+                        bounds: config.detailBounds,
+                        fetchFn,
+                    });
+                    validateControlRunSnapshot(value);
+                    return value;
+                },
+                runsAuthorization,
+                input.signal,
+            );
+            authorization = combinedAuthorization(
+                authorization,
+                detail.authorization,
+            );
+            detailRuns.push(detail.value);
+        }
+
+        const mergedSnapshot = detailRuns.length > 0
+            ? mergeControlRunDetails(snapshot, detailRuns)
+            : snapshot;
+        const detailedRunIds = detailRuns.map(run => run.runId);
+        const detailed = new Set(detailedRunIds);
+        const runEvidence = {
+            detailedRunIds,
+            indexOnlyRunIds: mergedSnapshot.runs
+                .map(run => run.runId)
+                .filter(runId => !detailed.has(runId)),
+        };
+        revisionSession.associate(mergedSnapshot, {
+            source: distributedRunsSource,
+            rootDocument: server.value,
+            fallbackDocument,
+            detailDocuments: detailRuns,
+        });
+        return {
+            snapshot: mergedSnapshot,
+            completeness,
+            distributedRunsSource,
+            authorization,
+            runEvidence,
+            ...(partialError === undefined ? {} : { partialError }),
+        };
     };
+}
+
+function requestedDetailRunIds(
+    snapshot: ControlServerSnapshot,
+    requested: readonly string[],
+): readonly string[] {
+    const available = new Set(snapshot.runs.map(run => run.runId));
+    return [...new Set(requested)].filter(runId => available.has(runId));
 }
 
 function combinedAuthorization(

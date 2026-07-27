@@ -19,6 +19,7 @@ export type ControlSnapshotRevisionSession = Readonly<{
             source: ControlSnapshotRevisionSource;
             rootDocument: unknown;
             fallbackDocument?: unknown;
+            detailDocuments?: readonly unknown[];
         }>,
     ): ControlSnapshotRevision;
 }>;
@@ -27,6 +28,7 @@ type CacheableRevision = Readonly<{
     source: ControlSnapshotRevisionSource;
     rootRawText: string;
     fallbackRawText: string | undefined;
+    detailRawTexts: readonly string[];
     token: ControlSnapshotRevision;
 }>;
 
@@ -42,10 +44,15 @@ export function createControlSnapshotRevisionSession(): ControlSnapshotRevisionS
                 input.source === 'canonical-fallback'
                     ? controlResponseDocumentText(input.fallbackDocument)
                     : undefined;
+            const detailRawTexts = (input.detailDocuments ?? [])
+                .map(controlResponseDocumentText);
             const cacheable =
                 rootRawText !== undefined &&
                 (input.source !== 'canonical-fallback' ||
-                    fallbackRawText !== undefined);
+                    fallbackRawText !== undefined) &&
+                detailRawTexts.every(
+                    (text): text is string => text !== undefined,
+                );
             let token: ControlSnapshotRevision;
 
             if (!cacheable) {
@@ -54,7 +61,8 @@ export function createControlSnapshotRevisionSession(): ControlSnapshotRevisionS
             } else if (
                 previous?.source === input.source &&
                 previous.rootRawText === rootRawText &&
-                previous.fallbackRawText === fallbackRawText
+                previous.fallbackRawText === fallbackRawText &&
+                sameTexts(previous.detailRawTexts, detailRawTexts)
             ) {
                 token = previous.token;
             } else {
@@ -63,6 +71,7 @@ export function createControlSnapshotRevisionSession(): ControlSnapshotRevisionS
                     source: input.source,
                     rootRawText,
                     fallbackRawText,
+                    detailRawTexts,
                     token,
                 };
             }
@@ -71,6 +80,14 @@ export function createControlSnapshotRevisionSession(): ControlSnapshotRevisionS
             return token;
         },
     };
+}
+
+function sameTexts(
+    left: readonly string[],
+    right: readonly (string | undefined)[],
+): boolean {
+    return left.length === right.length &&
+        left.every((text, index) => text === right[index]);
 }
 
 export function controlSnapshotRevisionOf(

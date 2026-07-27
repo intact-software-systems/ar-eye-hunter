@@ -169,6 +169,19 @@ export async function installRecipeConsoleTuneFixture(
             await fulfillJson(route, { runs: visibleControlRuns() });
             return;
         }
+        const runDetailMatch = url.pathname.match(/^\/runs\/([^/]+)$/);
+        if (request.method() === 'GET' && runDetailMatch) {
+            const runId = decodeURIComponent(runDetailMatch[1]);
+            const run = visibleControlRuns().find(
+                candidate => candidate.runId === runId,
+            );
+            await fulfillJson(
+                route,
+                run ?? { error: 'Control run not found.' },
+                run ? 200 : 404,
+            );
+            return;
+        }
         if (request.method() === 'GET' && url.pathname === '/distributed-runs') {
             order.push('distributed-runs');
             distributedSnapshotReads += 1;

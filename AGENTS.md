@@ -7,6 +7,11 @@ the repo-local Codex plugin under `.agents/skills/**`.
 
 - Inspect the existing code and relevant `examples/**` before editing; Rallar
   package docs can lag behind active package work.
+- For any TypeScript change, use the `rallar-code-writing` skill and read the
+  authoritative repo standard at
+  `.agents/skills/rallar-code-writing/references/repo-code-style.md`.
+- For the human review workflow and warning-only check tooling, use
+  `docs/repo-human-style-guide.md` and run `npm run check:repo-style`.
 - For package/app changes, read the relevant repo skill in `.agents/skills/**`:
   - `building-rallar-apps` first for greenfield apps and React/3D architecture;
     then use the authority, realtime, and testing specialists for the selected

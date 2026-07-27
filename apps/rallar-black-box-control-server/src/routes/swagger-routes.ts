@@ -19,8 +19,8 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
   },
   servers: [
     {
-      url: 'http://localhost:5180',
-      description: 'Local control server',
+      url: '/',
+      description: 'Current control server',
     },
   ],
   tags: [
@@ -1968,17 +1968,12 @@ function cloneJsonSchema(
   );
 }
 
-function serverUrl(request: Request): string {
-  const url = new URL(request.url);
-  return `${url.protocol}//${url.host}`;
-}
-
-export function controlOpenApiSpec(request: Request): JsonRecord {
+export function controlOpenApiSpec(_request: Request): JsonRecord {
   return {
     ...CONTROL_OPENAPI_SPEC,
     servers: [
       {
-        url: serverUrl(request),
+        url: '/',
         description: 'Current control server',
       },
     ],

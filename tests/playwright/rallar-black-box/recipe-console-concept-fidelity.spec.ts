@@ -70,12 +70,20 @@ function liveExecuteSnapshot() {
 }
 
 async function routeLiveExecuteControl(page: Page): Promise<void> {
-    await page.route(CONTROL_ROUTE, route => route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        headers: { 'access-control-allow-origin': '*' },
-        body: JSON.stringify(liveExecuteSnapshot()),
-    }));
+    await page.route(CONTROL_ROUTE, async route => {
+        const snapshot = liveExecuteSnapshot();
+        const pathname = new URL(route.request().url()).pathname;
+        const runId = /^\/runs\/([^/]+)$/.exec(pathname)?.[1];
+        const run = runId
+            ? snapshot.runs.find(candidate => candidate.runId === decodeURIComponent(runId))
+            : undefined;
+        await route.fulfill({
+            status: runId && !run ? 404 : 200,
+            contentType: 'application/json',
+            headers: { 'access-control-allow-origin': '*' },
+            body: JSON.stringify(runId ? run ?? { error: 'Control run not found.' } : snapshot),
+        });
+    });
 }
 
 type ConceptCase = Readonly<{

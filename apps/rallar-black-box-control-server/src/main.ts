@@ -1411,7 +1411,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function jsonResponse(value: unknown, status = 200): Response {
-  return new Response(JSON.stringify(value, null, 2), {
+  return new Response(JSON.stringify(value), {
     status,
     headers: responseHeaders('application/json'),
   });

@@ -1,5 +1,5 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
-import type { ControlSnapshotBounds } from
+import type { ControlServerSnapshot, ControlSnapshotBounds } from
     '@shared-test/rallar-bb-test/control-snapshots.ts';
 import {
     controlHttpBaseUrlFromWsUrl,
@@ -27,7 +27,16 @@ import { createControlSnapshotReader } from './control-snapshot-reader.ts';
 import type { RecipeConsoleControlSnapshotResult } from
     './control-snapshot-reader.ts';
 
-export const RECIPE_CONSOLE_CONTROL_SNAPSHOT_BOUNDS = {
+export const RECIPE_CONSOLE_CONTROL_INDEX_BOUNDS = {
+    commands: 0,
+    results: 0,
+    events: 0,
+    stats: 0,
+    reports: 0,
+    heartbeats: 0,
+} as const satisfies ControlSnapshotBounds;
+
+export const RECIPE_CONSOLE_CONTROL_DETAIL_BOUNDS = {
     commands: 120,
     results: 120,
     events: 160,
@@ -35,6 +44,9 @@ export const RECIPE_CONSOLE_CONTROL_SNAPSHOT_BOUNDS = {
     reports: 40,
     heartbeats: 80,
 } as const satisfies ControlSnapshotBounds;
+
+export const RECIPE_CONSOLE_CONTROL_SNAPSHOT_BOUNDS =
+    RECIPE_CONSOLE_CONTROL_DETAIL_BOUNDS;
 
 const MISSING_CONTROL_CREDENTIAL_POLICY = {
     allowManualToken: false,
@@ -70,9 +82,11 @@ export type RecipeConsoleControlApiConfig = Readonly<{
     manualToken?: string;
     apiBaseUrl: string;
     authSession?: AuthSession;
+    indexBounds?: ControlSnapshotBounds;
     bounds?: ControlSnapshotBounds;
     fetchFn?: ControlRunManagerFetch;
     credentialPolicy: RecipeConsoleControlCredentialPolicy;
+    detailRunIds?(snapshot: ControlServerSnapshot): readonly string[];
 }>;
 
 export class RecipeConsoleControlProtocolError extends Error {
@@ -88,7 +102,10 @@ export function createRecipeConsoleControlApi(
     config: RecipeConsoleControlApiConfig,
 ): RecipeConsoleControlApi {
     const baseUrl = recipeConsoleControlBaseUrl(config.controlUrl);
-    const bounds = config.bounds ?? RECIPE_CONSOLE_CONTROL_SNAPSHOT_BOUNDS;
+    const indexBounds = config.indexBounds ??
+        RECIPE_CONSOLE_CONTROL_INDEX_BOUNDS;
+    const detailBounds = config.bounds ??
+        RECIPE_CONSOLE_CONTROL_DETAIL_BOUNDS;
     const credentialPolicy = config.credentialPolicy ??
         MISSING_CONTROL_CREDENTIAL_POLICY;
     const transport = createControlAuthorizedTransport({
@@ -133,7 +150,9 @@ export function createRecipeConsoleControlApi(
     });
     const readSnapshot = createControlSnapshotReader({
         baseUrl,
-        bounds,
+        indexBounds,
+        detailBounds,
+        detailRunIds: config.detailRunIds,
         transport,
         protocolError: controlProtocolError,
         isProtocolCandidate,

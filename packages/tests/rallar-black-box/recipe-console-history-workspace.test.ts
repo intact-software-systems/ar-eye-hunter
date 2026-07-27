@@ -359,7 +359,7 @@ describe('HistoryWorkspace', () => {
             ));
         });
 
-    it('preserves an exact response revision and resets a changed document revision',
+    it('preserves the current window across detail-only document revisions',
         async () => {
             const fixture = createRecipeConsoleControlScaleFixture({ pairCount: 161 });
             const same = structuredClone(fixture.snapshot);
@@ -404,6 +404,6 @@ describe('HistoryWorkspace', () => {
             await renderSnapshot(same);
             expect(range()).toBe('Showing 81–160 of 161 runs.');
             await renderSnapshot(changed);
-            expect(range()).toBe('Showing 1–80 of 161 runs.');
+            expect(range()).toBe('Showing 81–160 of 161 runs.');
         });
 });

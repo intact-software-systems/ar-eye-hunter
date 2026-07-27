@@ -12,7 +12,6 @@ export type HistoryWindowController = ReturnType<typeof useHistoryWindow>;
 export function useHistoryWindow(collection: RecipeConsoleHistoryCollection) {
     const controller = useExplicitWindow({
         fingerprint: collection.fingerprint,
-        revision: collection.revision,
         total: collection.counts.total,
         windowSize: RECIPE_CONSOLE_HISTORY_WINDOW_SIZE,
     });

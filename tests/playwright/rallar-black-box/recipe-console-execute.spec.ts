@@ -241,6 +241,7 @@ async function installLifecycleControl(
     options: LifecycleOptions = {},
 ): Promise<LifecycleControl> {
     let base = options.snapshot ?? liveSnapshot();
+    let latestResponseBase = base;
     const successfulWrites: LifecycleControl['successfulWrites'] = [];
     const brokerAuthorizations: string[] = [];
     const tokenRequests: LifecycleControl['tokenRequests'] = [];
@@ -352,6 +353,7 @@ async function installLifecycleControl(
             const responseBase = options.refreshAgentEvidence
                 ? refreshControlAgentEvidence(base)
                 : base;
+            latestResponseBase = responseBase;
             if (shouldDeferNextRunRead) {
                 shouldDeferNextRunRead = false;
                 markRunReadStarted();
@@ -371,6 +373,19 @@ async function installLifecycleControl(
                 ...responseBase,
                 distributedRuns: run ? [run] : [],
             });
+            return;
+        }
+        const runDetailMatch = url.pathname.match(/^\/runs\/([^/]+)$/);
+        if (request.method() === 'GET' && runDetailMatch) {
+            const runId = decodeURIComponent(runDetailMatch[1]);
+            const detail = latestResponseBase.runs.find(
+                candidate => candidate.runId === runId,
+            );
+            await fulfillJson(
+                route,
+                detail ?? { error: 'Control run not found.' },
+                detail ? 200 : 404,
+            );
             return;
         }
 
@@ -662,6 +677,17 @@ async function installLiveControl(
         const url = new URL(request.url());
         if (request.method() === 'GET' && url.pathname === '/runs') {
             await fulfillJson(route, snapshot);
+            return;
+        }
+        const runDetailMatch = url.pathname.match(/^\/runs\/([^/]+)$/);
+        if (request.method() === 'GET' && runDetailMatch) {
+            const runId = decodeURIComponent(runDetailMatch[1]);
+            const run = snapshot.runs.find(candidate => candidate.runId === runId);
+            await fulfillJson(
+                route,
+                run ?? { error: 'Control run not found.' },
+                run ? 200 : 404,
+            );
             return;
         }
         await route.fulfill({
@@ -1140,8 +1166,20 @@ test('renders credential-trust truth when a URL-selected control rejects Resolve
         }
         controlAuthorizations.push(request.headers().authorization ?? null);
         const pathname = new URL(request.url()).pathname;
+        const snapshot = liveSnapshot();
         if (request.method() === 'GET' && pathname === '/runs') {
-            await fulfillJson(route, liveSnapshot());
+            await fulfillJson(route, snapshot);
+            return;
+        }
+        const runDetailMatch = pathname.match(/^\/runs\/([^/]+)$/);
+        if (request.method() === 'GET' && runDetailMatch) {
+            const runId = decodeURIComponent(runDetailMatch[1]);
+            const run = snapshot.runs.find(candidate => candidate.runId === runId);
+            await fulfillJson(
+                route,
+                run ?? { error: 'Control run not found.' },
+                run ? 200 : 404,
+            );
             return;
         }
         if (

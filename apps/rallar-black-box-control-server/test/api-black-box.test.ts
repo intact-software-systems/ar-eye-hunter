@@ -101,7 +101,16 @@ Deno.test('control server REST API enforces tokens, queues commands, and exports
       'bulk-health-agent-b',
     ]);
 
-    const run = await getJson(server.baseUrl, '/runs/http-run?limitCommands=2') as {
+    const runResponse = await fetch(
+      `${server.baseUrl}/runs/http-run?limitCommands=2`,
+    );
+    assertEquals(runResponse.status, 200);
+    const runText = await runResponse.text();
+    assert(
+      !runText.includes('\n'),
+      'High-frequency control JSON responses should use compact serialization.',
+    );
+    const run = JSON.parse(runText) as {
       commands: readonly { envelope: { commandId: string } }[];
     };
     assertEquals(run.commands.map((command) => command.envelope.commandId), [

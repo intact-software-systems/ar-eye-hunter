@@ -218,6 +218,21 @@ async function fulfillControlRoute(
         await route.fulfill({ status: 200, contentType: 'application/json', headers, body: runs });
         return;
     }
+    const runDetailMatch = pathname.match(/^\/runs\/([^/]+)$/);
+    if (request.method() === 'GET' && runDetailMatch) {
+        const runId = decodeURIComponent(runDetailMatch[1]);
+        const snapshot = JSON.parse(runs) as {
+            runs: readonly { runId: string }[];
+        };
+        const run = snapshot.runs.find(candidate => candidate.runId === runId);
+        await route.fulfill({
+            status: run ? 200 : 404,
+            contentType: 'application/json',
+            headers,
+            body: JSON.stringify(run ?? { error: 'Control run not found.' }),
+        });
+        return;
+    }
     if (request.method() === 'GET' && pathname === '/distributed-runs') {
         await route.fulfill({
             status: 200,

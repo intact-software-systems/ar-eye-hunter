@@ -122,6 +122,24 @@ export async function installRecipeConsoleMonitorFixture(
             });
             return;
         }
+        if (
+            request.method() === 'GET' &&
+            url.pathname === `/runs/${MONITOR_CONTROL_RUN_ID}`
+        ) {
+            if (runReadsOffline) {
+                await route.abort('connectionfailed');
+                return;
+            }
+            await fulfillJson(route, createControlRun(
+                operationalState,
+                singleAgentFailure,
+                failureAgentConnected,
+                reconnectCount,
+                revision,
+                additionalEventCount,
+            ));
+            return;
+        }
         if (request.method() === 'GET' && url.pathname === '/distributed-runs') {
             distributedRunReads += 1;
             if (distributedRunReadsOffline) {

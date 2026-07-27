@@ -110,6 +110,16 @@ export async function installRecipeConsoleLargeMonitorFixture(
             });
             return;
         }
+        if (
+            request.method() === 'GET' &&
+            url.pathname === `/runs/${LARGE_MONITOR_CONTROL_RUN_ID}`
+        ) {
+            await fulfillJson(
+                route,
+                createLargeControlRun(agentCount, revision),
+            );
+            return;
+        }
         if (request.method() === 'GET' && url.pathname === '/distributed-runs') {
             distributedRunReads += 1;
             if (distributedRunReadsOffline) {

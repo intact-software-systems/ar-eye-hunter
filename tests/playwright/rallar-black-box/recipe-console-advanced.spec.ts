@@ -761,6 +761,13 @@ async function installCombinedFailureMonitorFixture(
       await fulfillJson(route, { runs: [controlRun] });
       return;
     }
+    if (
+      request.method() === "GET" &&
+      url.pathname === `/runs/${controlRun.runId}`
+    ) {
+      await fulfillJson(route, controlRun);
+      return;
+    }
     if (request.method() === "GET" && url.pathname === "/distributed-runs") {
       await fulfillJson(route, { distributedRuns: [distributedRun] });
       return;
