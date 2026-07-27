@@ -2,6 +2,10 @@
 
 import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
+import {
+  isValidPersistedResult,
+  validateReceiptResultBindings,
+} from './api-v1-state-write-result-binding.mjs';
 
 export const STATE_WRITE_ARTIFACT_SCHEMA_VERSION = 'rallar.api-v1.state-write.v4';
 export const STATE_WRITE_COMMANDS_PER_RUN = 700;
@@ -1170,15 +1174,16 @@ function deriveFinalDurableCorrectness(sample, commandsById, path, errors) {
   const appInbox = Array.isArray(evidence.appInbox) ? evidence.appInbox : [];
   const receipts = Array.isArray(evidence.receipts) ? evidence.receipts : [];
   const resourceOutbox = Array.isArray(evidence.resourceOutbox) ? evidence.resourceOutbox : [];
-  validateAppInboxEvidence(appInbox, commandsById, path, errors);
   const acceptedCommands = [...commandsById.values()].filter((command) => command.status === 'accepted');
   const receiptIds = receipts.map((receipt, index) => {
     if (!isObject(receipt) || typeof receipt.commandId !== 'string' ||
       !commandsById.has(receipt.commandId) || !isDenseStringArray(receipt.receiptIds) ||
       !isDenseStringArray(receipt.outboxIds) ||
+      !isDenseArray(receipt.resultBindings) ||
       !['logical-msg-id', 'physical-resource-id'].includes(receipt.identityKind)) {
       errors.push(`${path}.durableEvidence.receipts[${index}] is malformed or unlinked`);
     }
+    validateReceiptResultBindings(receipt, commandsById.get(receipt?.commandId), path, index, errors);
     if (isDenseStringArray(receipt?.receiptIds) &&
       new Set(receipt.receiptIds).size !== receipt.receiptIds.length) {
       errors.push(`${path}.durableEvidence.receipts[${index}] receipt IDs must be unique`);
@@ -1192,6 +1197,8 @@ function deriveFinalDurableCorrectness(sample, commandsById, path, errors) {
   if (!sameStringArray(receiptIds.toSorted(), acceptedCommands.map((entry) => entry.commandId).toSorted())) {
     errors.push(`${path}.durableEvidence receipts must match accepted command IDs exactly`);
   }
+  const receiptsByCommand = new Map(receipts.map((receipt) => [receipt?.commandId, receipt]));
+  validateAppInboxEvidence(appInbox, commandsById, receiptsByCommand, path, errors);
   const effectIds = new Set();
   const actualEffects = resourceOutbox.map((effect, index) => {
     if (!isObject(effect) || typeof effect.effectId !== 'string' || effect.effectId.length === 0 ||
@@ -1268,7 +1275,7 @@ function deriveFinalDurableCorrectness(sample, commandsById, path, errors) {
   };
 }
 
-function validateAppInboxEvidence(entries, commandsById, path, errors) {
+function validateAppInboxEvidence(entries, commandsById, receiptsByCommand, path, errors) {
   const identities = new Set();
   for (const [index, entry] of entries.entries()) {
     if (!isObject(entry) || typeof entry.commandId !== 'string' ||
@@ -1282,7 +1289,10 @@ function validateAppInboxEvidence(entries, commandsById, path, errors) {
       !isNonNegativeNumber(entry.transactionDurationMs)) {
       errors.push(`${path}.durableEvidence.appInbox[${index}] is malformed or incomplete`);
     }
-    if (!isValidPersistedResult(entry, commandsById.get(entry?.commandId))) {
+    const binding = receiptsByCommand.get(entry?.commandId)?.resultBindings?.find(
+      (candidate) => candidate?.operationId === entry?.operationId,
+    );
+    if (!isValidPersistedResult(entry, commandsById.get(entry?.commandId), binding)) {
       errors.push(
         `${path}.durableEvidence.appInbox[${index}] persisted durable result is malformed`,
       );
@@ -1293,36 +1303,6 @@ function validateAppInboxEvidence(entries, commandsById, path, errors) {
     }
     identities.add(identity);
   }
-}
-
-function isValidPersistedResult(entry, command) {
-  if (!isObject(entry) || !isObject(command) || typeof entry.commandType !== 'string' ||
-    !isObject(entry.durableResult)) return false;
-  const result = entry.durableResult;
-  if (command.kind === 'profile-instance') {
-    return entry.commandType.startsWith('CLIENT_') && hasExactKeys(result, ['status', 'result']) &&
-      hasExactKeys(result.result, ['right']) && result.status === 'ok' &&
-      isObject(result.result?.right) && isObject(result.result.right.snapshot) &&
-      hasExactKeys(result.result.right, ['snapshot', 'event']);
-  }
-  if (command.kind.startsWith('presence-')) {
-    return entry.commandType.startsWith('GROUP_PRESENCE_') &&
-      result.commandId === command.commandId && typeof result.outcome === 'string' &&
-      Number.isSafeInteger(result.attemptCount) && isDenseStringArray(result.outboxIds) &&
-      new Set(result.outboxIds).size === result.outboxIds.length;
-  }
-  if (command.kind === 'topology-source') {
-    const receipt = result.receipt;
-    return entry.commandType.startsWith('TOPOLOGY_') && isObject(receipt) &&
-      receipt.commandId === command.commandId && typeof receipt.outcome === 'string' &&
-      Number.isSafeInteger(receipt.attemptCount) && isDenseStringArray(receipt.outboxIds) &&
-      new Set(receipt.outboxIds).size === receipt.outboxIds.length;
-  }
-  return entry.commandType.startsWith('GROUP_') &&
-    hasExactKeys(result, ['status', 'result']) && hasExactKeys(result.result, ['right']) &&
-    ['ok', 'created'].includes(result.status) && isObject(result.result?.right) &&
-    hasExactKeys(result.result.right, ['snapshot', 'event']) &&
-    isObject(result.result.right.snapshot);
 }
 
 function embeddedResultReceipt(entry) {

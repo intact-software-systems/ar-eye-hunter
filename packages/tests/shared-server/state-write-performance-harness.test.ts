@@ -6,6 +6,7 @@ import {
   STATE_WRITE_ARTIFACT_SCHEMA_VERSION,
   validateStateWriteArtifact,
 } from '../../../scripts/perf/compare-api-v1-state-write-results.mjs';
+import { binding, durableResult, swapCompleteDurableResults } from './state-write-performance-result-fixture.ts';
 
 const MIX = [
   'profile-instance',
@@ -142,6 +143,11 @@ describe('API-v1 state-write final durable evidence', () => {
     expect(validateStateWriteArtifact(arbitraryKey)).toEqual(expect.arrayContaining([
       expect.stringContaining('persisted durable result is malformed'),
     ]));
+    for (const prefix of ['CLIENT_', 'GROUP_']) {
+      const swapped = artifact(true);
+      swapCompleteDurableResults(swapped, prefix);
+      expect(validateStateWriteArtifact(swapped)).not.toEqual([]);
+    }
   });
 
   it('is total over malformed nested candidate evidence', () => {
@@ -335,24 +341,17 @@ function finalEvidence(commands: any[]): any {
     commandType: command.kind === 'profile-instance' ? 'CLIENT_INSTANCE_UPSERT' :
       command.kind === 'topology-source' ? 'TOPOLOGY_CONFIG_PUT' :
       command.kind.startsWith('presence-') ? 'GROUP_PRESENCE_CONNECT' : 'GROUP_MEMBER_UPSERT',
-    durableResult: command.kind === 'profile-instance'
-      ? { status: 'ok', result: { right: { snapshot: {}, event: null } } }
-      : command.kind === 'topology-source'
-      ? { receipt: { commandId: command.commandId, outcome: 'applied', attemptCount: 1,
-        outboxIds: PRODUCTION_STATE_WRITE_MUTATION_CONTRACT[command.kind].map((_, index) => `${command.commandId}:effect:${index}`) } }
-      : command.kind.startsWith('presence-')
-      ? { commandId: command.commandId, outcome: 'applied', attemptCount: 1,
-        outboxIds: PRODUCTION_STATE_WRITE_MUTATION_CONTRACT[command.kind].map((_, index) => `${command.commandId}:effect:${index}`) }
-      : { status: 'ok', result: { right: { snapshot: {}, event: null } } },
+    durableResult: durableResult(command, operationId),
     retryDelayMs: 0, dueAgeMs: 0, selectedLane: 'fast', transactionDurationMs: 1,
   })));
   const receipts = commands.map((command) => ({
     commandId: command.commandId,
     receiptIds: command.kind === 'profile-instance'
-      ? operations(command).map((operationId) => `${command.commandId}:${operationId}`)
+      ? operations(command).map((operationId) => `${command.commandId}-${operationId}`)
       : [command.commandId],
     outboxIds: PRODUCTION_STATE_WRITE_MUTATION_CONTRACT[command.kind].map((_, index) => `${command.commandId}:effect:${index}`),
     identityKind: command.kind === 'topology-source' ? 'logical-msg-id' : 'physical-resource-id',
+    resultBindings: operations(command).map((operationId) => binding(command, operationId)),
   }));
   const resourceOutbox = commands.flatMap((command) =>
     PRODUCTION_STATE_WRITE_MUTATION_CONTRACT[command.kind].map((effectKind, index) => ({

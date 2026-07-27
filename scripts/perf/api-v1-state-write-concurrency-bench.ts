@@ -27,8 +27,9 @@ import {
   type IssuedAuthSession,
 } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 import { createClientStateService } from '@shared-server/rallar-system/services/client-state-service.ts';
-import { validateClientMutationIdempotencyRecord } from '@shared-server/rallar-system/services/client-state-mutations.ts';
-import { validateGroupTopologyConfigMutationRecord } from '@shared-server/rallar-system/services/group-topology-config-mutations.ts';
+import { type ClientMutationIdempotencyRecord, validateClientMutationIdempotencyRecord } from '@shared-server/rallar-system/services/client-state-mutations.ts';
+import { type GroupMutationIdempotencyRecord, validateGroupMutationIdempotencyRecord } from '@shared-server/rallar-system/services/group-state-mutations.ts';
+import { type GroupTopologyConfigMutationRecord, validateGroupTopologyConfigMutationRecord } from '@shared-server/rallar-system/services/group-topology-config-mutations.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
 import { GroupTopologyManagementService } from '@shared-server/rallar-system/services/group-topology-management-service.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
@@ -55,6 +56,12 @@ import {
   parsePersistedResult,
   readAppInboxCommandType,
 } from './api-v1-state-write-attempt-evidence.ts';
+import {
+  type ProductionReceiptEvidence,
+  projectClientReceiptEvidence,
+  projectGroupReceiptEvidence,
+  projectTopologyReceiptEvidence,
+} from './api-v1-state-write-receipt-evidence.ts';
 export { deriveAppInboxAttemptObservations } from './api-v1-state-write-attempt-evidence.ts';
 
 const DEFAULT_DATABASE_URL = 'postgres://app:app@localhost:5432/appdb';
@@ -156,11 +163,6 @@ type DurableEvidence = {
   resourceOutbox: ResourceOutboxEvidence[];
   intermediateMutationIntents: [];
   atomicCompletionFailures: number;
-};
-type ProductionReceiptEvidence = {
-  commandId: string;
-  receiptIds: readonly string[];
-  outboxIds: readonly string[]; identityKind: 'logical-msg-id' | 'physical-resource-id';
 };
 type AppInboxAttemptEvidence = Readonly<{
   commandId: string;
@@ -1105,11 +1107,7 @@ async function queryDurableEvidence(
           isValidProductionReceipt(receipt, productionCommandIds[index]!))) {
           return undefined;
         }
-        return {
-          commandId: command.commandId,
-          receiptIds: productionCommandIds,
-          outboxIds: receipts.flatMap((receipt) => receipt?.receipt.outboxIds ?? []), identityKind: 'physical-resource-id',
-        };
+        return projectClientReceiptEvidence(command.commandId, receipts);
       }
       if (command.kind === 'topology-source') {
         const receipt = await topology.findMutationRecord(
@@ -1123,22 +1121,18 @@ async function queryDurableEvidence(
         )) {
           return undefined;
         }
-        return {
-          commandId: command.commandId,
-          receiptIds: [command.commandId],
-          outboxIds: receipt?.receipt.outboxIds ?? [], identityKind: 'logical-msg-id',
-        };
+        return projectTopologyReceiptEvidence(command.commandId, receipt);
       }
       const receipt = await groups.findIdempotentGroupMutationReceipt(
         { ...scope, groupId: `group-${clientIndex % groupCount}` },
         command.commandId,
       );
-      if (!isValidatedReceiptIdentity(receipt, command.commandId)) return undefined;
-      return {
-        commandId: command.commandId,
-        receiptIds: [command.commandId],
-        outboxIds: receipt?.receipt.outboxIds ?? [], identityKind: 'physical-resource-id',
-      };
+      if (!isValidatedReceiptIdentity(
+        receipt,
+        { ...scope, groupId: `group-${clientIndex % groupCount}` },
+        command.commandId,
+      )) return undefined;
+      return projectGroupReceiptEvidence(command.commandId, receipt);
     },
   );
   const receipts = receiptResults.filter(
@@ -1376,7 +1370,10 @@ export function readResourceEffectKind(row: Readonly<{
   throw new Error(`Unrecognized final ResourceInbox effect ${row.ri_type_id}:${row.ri_topic_id}`);
 }
 
-export function isValidProductionReceipt(value: unknown, requestId: string): boolean {
+export function isValidProductionReceipt(
+  value: unknown,
+  requestId: string,
+): value is ClientMutationIdempotencyRecord {
   try {
     validateClientMutationIdempotencyRecord(value);
   } catch {
@@ -1385,21 +1382,24 @@ export function isValidProductionReceipt(value: unknown, requestId: string): boo
   return value.requestId === requestId && value.receipt.commandId === requestId;
 }
 
-function isValidatedReceiptIdentity(value: unknown, requestId: string): boolean {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  const record = value as Record<string, unknown>;
-  if (record.requestId !== requestId ||
-    !record.receipt || typeof record.receipt !== 'object' || Array.isArray(record.receipt)) {
+function isValidatedReceiptIdentity(
+  value: unknown,
+  ref: Readonly<{ applicationId: string; workspaceId: string; groupId: string }>,
+  requestId: string,
+): value is GroupMutationIdempotencyRecord {
+  try {
+    validateGroupMutationIdempotencyRecord(value, ref);
+  } catch {
     return false;
   }
-  return (record.receipt as Record<string, unknown>).commandId === requestId;
+  return value.requestId === requestId && value.receipt.commandId === requestId;
 }
 
 function isValidatedTopologyReceipt(
   value: unknown,
   groupRef: Readonly<{ applicationId: string; workspaceId: string; groupId: string }>,
   requestId: string,
-): boolean {
+): value is GroupTopologyConfigMutationRecord {
   try {
     validateGroupTopologyConfigMutationRecord(value, { groupRef, requestId });
   } catch {

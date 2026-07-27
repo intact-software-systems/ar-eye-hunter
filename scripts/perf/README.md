@@ -156,7 +156,10 @@ receipts, and final `APP_OUTBOX`/`WS_OUTBOX` rows from `resource_inbox` through
 an uninstrumented admin SQL stack.
 Profile-instance counts as received only when both profile and instance
 subcommand receipts are present and complete; a group command uses its exact
-request-ID receipt. Production effect IDs and kinds are projected without
+request-ID receipt. Each operation projects its validated receipt's command and
+request identity, command hash, aggregate reference, revision, snapshot version,
+and event identity so the persisted public result cannot be substituted from a
+different command. Production effect IDs and kinds are projected without
 inventing evidence: principal snapshot/event effects for profile-instance,
 `group-presence-summary` for group mutations, and `rtc-topology-recompute` for
 topology-source. Receipt linkage records the command-specific immutable identity:
