@@ -141,7 +141,8 @@ describe('Rallar repo skill and documentation integrity', () => {
     const agents = readRepo('AGENTS.md');
     const progressSkill = readRepo('.agents/skills/publishing-plan-progress/SKILL.md');
     const plugin = readJson('.codex-plugin/plugin.json') as {
-      interface?: { longDescription?: string };
+      keywords?: readonly string[];
+      interface?: { defaultPrompt?: readonly string[]; longDescription?: string };
     };
 
     expectAll(agents, ['publishing-plan-progress', 'long-running']);
@@ -152,7 +153,18 @@ describe('Rallar repo skill and documentation integrity', () => {
       'without waiting for human review',
       'Explicit user instructions',
     ]);
+    expect(plugin.keywords).toEqual(
+      expect.arrayContaining([
+        'implementation-plans',
+        'observable-plan-progress',
+        'draft-pull-requests',
+      ]),
+    );
     expect(plugin.interface?.longDescription).toContain('observable plan progress');
+    expect(plugin.interface?.defaultPrompt).toHaveLength(3);
+    expect(plugin.interface?.defaultPrompt).toContain(
+      'Execute a long-running Rallar implementation plan with observable GitHub checkpoints.',
+    );
   });
 
   it('provides the greenfield app workflow and audited evidence map', () => {
