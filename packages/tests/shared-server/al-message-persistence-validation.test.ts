@@ -64,4 +64,35 @@ describe('persisted AL message validation', () => {
             },
         })).toThrow(/room.*group ref|group ref.*room/i);
     });
+
+    it('accepts a canonical fixed recipient audience for a room broadcast', () => {
+        expect(() => validatePersistedALMessage({
+            id: {
+                v: 2,
+                msgId: 'message-1',
+                ts: 1,
+                senderId: 'server-1',
+            },
+            route: {
+                topicId: 'overlay.topology',
+                resourceId: 'resource-1',
+                contextId: 'room-1',
+            },
+            targets: {
+                mode: 'broadcast',
+                scope: 'room',
+                groupRef: {
+                    applicationId: 'app-1',
+                    workspaceId: 'workspace-1',
+                    groupId: 'room-1',
+                },
+                minSnapshotVersion: 3,
+                recipientPeerIds: ['session-a', 'session-b'],
+            },
+            payload: {
+                typeId: 'overlay.topology',
+                resource: '{}',
+            },
+        })).not.toThrow();
+    });
 });

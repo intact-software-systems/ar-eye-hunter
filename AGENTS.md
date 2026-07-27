@@ -78,8 +78,11 @@ the repo-local Codex plugin under `.agents/skills/**`.
 - The received transaction commits state, event, receipt, durable result, and
   final `APP_OUTBOX`/`WS_OUTBOX` rows directly through
   `ResourceInboxRepository` in the same transaction. There is no intermediate
-  mutation outbox. Resolve logical WebSocket audiences and wake workers after
-  commit.
+  mutation outbox. Resolve dynamic logical WebSocket audiences and wake workers
+  after commit. When authoritative computed work already captures an immutable
+  audience, persist that mandatory audience in the final outbox message and
+  intersect it only with locally open connections; never replace it with a
+  lagging cache lookup.
 - Resource inbox allows 20 total processing attempts. Attempts one through five
   wait 1, 2, 4, 8, and 16 ms; later waits rise through seconds, cap at 30
   seconds, and use jitter. A separate best-effort fairness lane claims retries

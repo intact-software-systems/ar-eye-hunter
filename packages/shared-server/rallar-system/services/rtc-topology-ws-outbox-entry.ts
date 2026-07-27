@@ -7,6 +7,7 @@ import type { PSqlTransactionSql } from '../../postgres/PostgresSqlClient.ts';
 import { ResourceInboxRepository } from '../../postgres/resource-inbox/ResourceInboxRepository.ts';
 import type { RtcTopologyPublication } from '../rtc-topology-publication-contract.ts';
 import { validateRtcTopologyPublication } from '../rtc-topology-publication-validation.ts';
+import { validatePersistedALMessage } from './al-message-persistence-validation.ts';
 import {
     toAppQueueCreatedBy,
     toAppQueueKey,
@@ -16,7 +17,21 @@ export function computeRtcTopologyPublicationOutbox(
     publication: RtcTopologyPublication,
 ): ResourceEntry {
     validateRtcTopologyPublication(publication, publication.groupRef);
-    const message = publication.message;
+    const publicationMessage = publication.message;
+    if (
+        publicationMessage.targets?.mode !== 'broadcast' ||
+        publicationMessage.targets.scope !== 'room'
+    ) {
+        throw new TypeError('RTC topology publication outbox target is invalid');
+    }
+    const message = {
+        ...publicationMessage,
+        targets: {
+            ...publicationMessage.targets,
+            recipientPeerIds: [...publication.recipientSessionIds],
+        },
+    };
+    validatePersistedALMessage(message);
     const createdBy = message.audit?.createdBy;
     const expiresAtMs = message.constraints?.expiresAtMs;
     if (

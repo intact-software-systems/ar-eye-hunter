@@ -104,8 +104,11 @@ transition on the revision that the decision observed. Compact
 Final `APP_OUTBOX` and `WS_OUTBOX` rows are inserted directly through
 `ResourceInboxRepository` inside that transaction; a collision fails and rolls
 back without loading a winner. There is no intermediate mutation outbox.
-Logical WebSocket audience resolution happens only after commit; queue workers
-are then woken or poll.
+Dynamic logical WebSocket audience resolution happens only after commit; queue
+workers are then woken or poll. If computed authoritative work already contains
+an immutable audience, the final queue entry carries that mandatory audience.
+Workers intersect it only with locally open connections and never replace it
+with a process cache that may lag the message's causal revision.
 
 Queue locks are coordination-only for bounded resource-inbox claims. Domain
 authentication/session/ticket, AL admission, CRDT, client, group, and topology
@@ -349,9 +352,9 @@ work execution id and the accepted `(sourceGroupStateRevision, overlayVersion)`
 tuple. `createdAtEpochMs` comes from the work's immutable request time.
 
 The work index makes retry behavior explicit. Once a work item has persisted a
-publication, a retry loads and republishes that record before resolving group
-state or recalculating topology. A retry can therefore never publish a
-different result for the same work identity.
+publication, a retry loads that record and writes the same final `WS_OUTBOX`
+entry before resolving group state or recalculating topology. A retry can
+therefore never publish a different result for the same work identity.
 
 ## Multi-Server Fanout
 
@@ -361,49 +364,54 @@ All API servers share the runtime-state and queue database. PostgreSQL
 ```mermaid
 sequenceDiagram
     participant W as APP_OUTBOX worker on server A
-    participant DB as Runtime-state database
-    participant PG as Cluster notification transport
+    participant DB as Runtime-state and ResourceInbox database
+    participant Q as WS_OUTBOX worker
+    participant PG as Queue-key notification transport
     participant A as WebSocket server A
     participant B as WebSocket server B
     participant C as WebSocket server C
 
-    W->>DB: Atomically persist topology, publication, and work index
-    W->>A: Deliver to locally connected recipients
-    W->>PG: Publish publicationId and source revision
+    W->>DB: Atomically persist topology, publication, work index, and WS_OUTBOX
+    W->>Q: Wake queue processing after commit
+    Q->>DB: Claim exact WS_OUTBOX entry
+    Q->>PG: Publish durable queue key
+    Q->>A: Intersect fixed audience with local connections
     PG-->>B: Notification
     PG-->>C: Notification
-    B->>DB: Load exact publication
-    C->>DB: Load exact publication
-    B->>B: Intersect recipients with local connections
-    C->>C: Intersect recipients with local connections
+    B->>DB: Load exact WS_OUTBOX entry by key
+    C->>DB: Load exact WS_OUTBOX entry by key
+    B->>B: Intersect fixed audience with local connections
+    C->>C: Intersect fixed audience with local connections
 ```
 
-The cluster notification contains only:
+The final topology `WS_OUTBOX` message copies the publication's mandatory
+`recipientSessionIds` into its fixed logical audience. The cluster notification
+contains only the canonical durable queue key:
 
 ```ts
-type RtcTopologyPublicationNotification = {
-  v: 1;
+type QueueBoxPubSubMessage = {
+  delivery: 'key';
   publisherId: string;
-  publicationId: string;
-  sourceGroupStateRevision: number;
+  channel: string;
+  typeId: 'WS_OUTBOX';
+  key: { topicId: string; resourceId: string; contextId: string };
 };
 ```
 
-The publishing server performs local delivery directly and ignores its own
-remote notification. Other servers load the durable publication and verify its
-source revision. Each process encodes the AL message once, deduplicates the
-recipient ids, and performs one indexed send per recipient. Closed connections
-are skipped without stopping later sends. Fanout never scans unrelated
-connections or reads group/client caches.
+The claiming server publishes the key and performs local delivery. Other
+servers load and validate the exact durable row before local delivery. Each
+process performs indexed lookup only for the fixed recipient ids. Closed
+connections are skipped without stopping later sends. Fanout never scans
+unrelated connections or reads group/client caches. This prevents a valid
+publication from disappearing merely because one process observes its
+group-state cache a few milliseconds behind the publication revision.
 
 Duplicate and reordered notifications are harmless because the publication is
 immutable and browser caches apply the causal tuple comparison.
 
-API-v1 supports local, disabled, and PostgreSQL cluster transports. PostgreSQL
-subscription readiness is awaited before the queue engine and HTTP server
-start. A PostgreSQL deployment fails closed if it cannot establish the
-subscription. Local and disabled modes resolve readiness immediately; disabled
-mode is suitable only for a single server.
+PostgreSQL subscription readiness is awaited before the queue engine and HTTP
+server start. A PostgreSQL deployment fails closed if it cannot establish the
+subscription. The local queue-key transport supports single-process execution.
 
 ### Example: authorization after a remote ban
 

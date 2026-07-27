@@ -53,7 +53,11 @@ rg -n "GroupRef|groupRef|groupId|roomId|createAndSwitch|createAndJoin|joinRoom|w
 - Service writes authoritative state, event, receipt, result, and final
   `APP_OUTBOX`/`WS_OUTBOX` entries directly through `ResourceInboxRepository`
   in the same transaction. There is no intermediate mutation outbox. Resolve
-  logical WebSocket audiences and wake workers after commit.
+  dynamic logical WebSocket audiences and wake workers after commit. If
+  authoritative computed work already contains an immutable recipient
+  audience, copy that mandatory audience into the final outbox message and
+  intersect it only with locally open connections. Do not re-resolve it from a
+  process cache that may lag the causal revision carried by the message.
 - Resource inbox uses 20 total processing attempts: 1, 2, 4, 8, and 16 ms for
   attempts one through five, then increasing seconds capped at 30 seconds with
   jitter. A separate best-effort fairness lane claims entries more than 30

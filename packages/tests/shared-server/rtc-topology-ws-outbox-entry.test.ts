@@ -19,6 +19,7 @@ describe('RTC topology publication WS outbox entry', () => {
         const entry = computeRtcTopologyPublicationOutbox(publication);
         const persistedMessage = JSON.parse(entry.resource) as {
             route: typeof publication.message.route;
+            targets: { recipientPeerIds?: readonly string[] };
         };
 
         expect(entry.key).toEqual(toAppQueueKey({
@@ -28,6 +29,7 @@ describe('RTC topology publication WS outbox entry', () => {
         }));
         expect(entry.key.resourceId.length).toBeLessThanOrEqual(36);
         expect(persistedMessage.route).toEqual(publication.message.route);
+        expect(persistedMessage.targets.recipientPeerIds).toEqual(publication.recipientSessionIds);
     });
 
     it('assigns distinct physical keys to publications sharing one logical route', () => {
