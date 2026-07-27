@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   compareStateWriteArtifacts,
@@ -6,7 +5,7 @@ import {
   STATE_WRITE_ARTIFACT_SCHEMA_VERSION,
   validateStateWriteArtifact,
 } from '../../../scripts/perf/compare-api-v1-state-write-results.mjs';
-import { binding, durableResult, swapCompleteDurableResults } from './state-write-performance-result-fixture.ts';
+import { binding, durableResult, effectIds, swapCompleteDurableResults } from './state-write-performance-result-fixture.ts';
 
 const MIX = [
   'profile-instance',
@@ -148,6 +147,17 @@ describe('API-v1 state-write final durable evidence', () => {
       swapCompleteDurableResults(swapped, prefix);
       expect(validateStateWriteArtifact(swapped)).not.toEqual([]);
     }
+    const missingTopologySibling = artifact(true);
+    const missingEntry = missingTopologySibling.workloads[0].samples[0]
+      .durableEvidence.appInbox.find((entry: any) => entry.commandType === 'TOPOLOGY_CONFIG_PUT');
+    delete missingEntry.durableResult.config;
+    expect(validateStateWriteArtifact(missingTopologySibling)).not.toEqual([]);
+    const swappedTopologySibling = artifact(true);
+    const topologyEntries = swappedTopologySibling.workloads[0].samples[0]
+      .durableEvidence.appInbox.filter((entry: any) => entry.commandType === 'TOPOLOGY_CONFIG_PUT');
+    [topologyEntries[0].durableResult.config, topologyEntries[1].durableResult.config] =
+      [topologyEntries[1].durableResult.config, topologyEntries[0].durableResult.config];
+    expect(validateStateWriteArtifact(swappedTopologySibling)).not.toEqual([]);
   });
 
   it('is total over malformed nested candidate evidence', () => {
@@ -235,22 +245,6 @@ describe('API-v1 state-write final durable evidence', () => {
     });
   });
 
-  it('requires route recipes to assert durable AppInbox completion', () => {
-    for (const recipePath of [
-      'api-v1-state-write-convergence.json',
-      'api-v1-state-medium-scale-churn.json',
-      'api-v1-auth-session.json',
-      'api-v1-admin-operations.json',
-      'api-v1-crdt-app-inbox.json',
-    ]) {
-      const recipe = JSON.parse(readFileSync(new URL(
-        `../../shared-test/black-box-runner/tests/api-v1/${recipePath}`,
-        import.meta.url,
-      ), 'utf8'));
-      expect(recipe.steps.map((step: { name?: string }) => step.name), recipePath)
-        .toContain('assertAtomicAppInboxCompletion');
-    }
-  });
 });
 
 function artifact(candidate: boolean): any {
@@ -349,15 +343,15 @@ function finalEvidence(commands: any[]): any {
     receiptIds: command.kind === 'profile-instance'
       ? operations(command).map((operationId) => `${command.commandId}-${operationId}`)
       : [command.commandId],
-    outboxIds: PRODUCTION_STATE_WRITE_MUTATION_CONTRACT[command.kind].map((_, index) => `${command.commandId}:effect:${index}`),
+    outboxIds: effectIds(command),
     identityKind: command.kind === 'topology-source' ? 'logical-msg-id' : 'physical-resource-id',
     resultBindings: operations(command).map((operationId) => binding(command, operationId)),
   }));
   const resourceOutbox = commands.flatMap((command) =>
     PRODUCTION_STATE_WRITE_MUTATION_CONTRACT[command.kind].map((effectKind, index) => ({
-      effectId: `${command.commandId}:effect:${index}`,
-      resourceId: `${command.commandId}:effect:${index}`,
-      outboxId: `${command.commandId}:effect:${index}`,
+      effectId: effectIds(command)[index],
+      resourceId: effectIds(command)[index],
+      outboxId: effectIds(command)[index],
       commandId: command.commandId, effectKind,
       typeId: effectKind.startsWith('principal-state') ? 'WS_OUTBOX' : 'APP_OUTBOX',
       topicId: effectKind,

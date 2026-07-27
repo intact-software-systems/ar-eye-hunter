@@ -92,13 +92,15 @@ describe('AppAuthInboxService architecture', () => {
     it('strictly decodes every durable auth result variant', () => {
         const valid = [
             {
+                requestId: 'register-request',
                 clientId: 'client-1',
                 username: 'alice',
                 displayName: null,
                 registeredAtEpochMs: 1_000,
             },
-            { loggedOut: true },
+            { requestId: 'logout-request', loggedOut: true },
             {
+                requestId: 'session-request',
                 kind: 'session-issued',
                 clientId: 'client-1',
                 username: 'alice',
@@ -108,6 +110,7 @@ describe('AppAuthInboxService architecture', () => {
                 expiresAtEpochMs: 2_000,
             },
             {
+                requestId: 'ws-issue-request',
                 kind: 'ws-ticket-issued',
                 ticketDigest: 'ticket-digest',
                 sessionId: 'session-1',
@@ -115,6 +118,7 @@ describe('AppAuthInboxService architecture', () => {
                 expiresAtEpochMs: 2_000,
             },
             {
+                requestId: 'ws-consume-request',
                 kind: 'ws-ticket-consumed',
                 clientId: 'client-1',
                 username: 'alice',
@@ -124,6 +128,7 @@ describe('AppAuthInboxService architecture', () => {
                 expiresAtEpochMs: 2_000,
             },
             {
+                requestId: 'agent-consume-request',
                 kind: 'agent-ticket-consumed',
                 clientId: 'client-1',
                 username: 'alice',
@@ -133,6 +138,7 @@ describe('AppAuthInboxService architecture', () => {
                 expiresAtEpochMs: 2_000,
             },
             {
+                requestId: 'agent-issue-request',
                 kind: 'agent-tickets-issued',
                 tickets: [{
                     agentId: 'agent-1',
@@ -148,6 +154,10 @@ describe('AppAuthInboxService architecture', () => {
         }
         for (
             const invalid of [
+                Object.fromEntries(
+                    Object.entries(valid[0]).filter(([key]) => key !== 'requestId'),
+                ),
+                { loggedOut: true },
                 { ...valid[2], accessToken: 'plaintext-token' },
                 { ...valid[2], unexpected: true },
                 {

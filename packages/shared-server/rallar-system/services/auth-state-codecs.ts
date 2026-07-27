@@ -100,8 +100,10 @@ export function decodeAuthMutationCommand(input: unknown): AuthMutationCommand {
 
 export function decodeAuthMutationResult(input: unknown): AuthMutationResult {
     const result = requireRecord(input, 'Auth mutation result');
+    requireString(result.requestId, 'Auth mutation result requestId');
     if ('registeredAtEpochMs' in result) {
         requireExactKeys(result, [
+            'requestId',
             'clientId',
             'username',
             'displayName',
@@ -114,7 +116,7 @@ export function decodeAuthMutationResult(input: unknown): AuthMutationResult {
         }
         requireTimestamp(result.registeredAtEpochMs, 'Auth result registeredAtEpochMs');
     } else if ('loggedOut' in result) {
-        requireExactKeys(result, ['loggedOut']);
+        requireExactKeys(result, ['requestId', 'loggedOut']);
         if (result.loggedOut !== true) throw new TypeError('Auth logout result is invalid');
     } else {
         validateDiscriminatedResult(result);
@@ -132,6 +134,7 @@ function validateDiscriminatedResult(result: Readonly<Record<string, unknown>>):
             return;
         case 'ws-ticket-issued':
             requireExactKeys(result, [
+                'requestId',
                 'kind',
                 'ticketDigest',
                 'sessionId',
@@ -143,7 +146,7 @@ function validateDiscriminatedResult(result: Readonly<Record<string, unknown>>):
             validateResultLifecycle(result);
             return;
         case 'agent-tickets-issued':
-            requireExactKeys(result, ['kind', 'tickets']);
+            requireExactKeys(result, ['requestId', 'kind', 'tickets']);
             if (!Array.isArray(result.tickets) || result.tickets.length === 0) {
                 throw new TypeError('Auth result tickets must be a non-empty array');
             }
@@ -241,6 +244,7 @@ function validateAgentTicketResult(input: unknown): void {
 
 function validateSessionResult(result: Readonly<Record<string, unknown>>): void {
     requireExactKeys(result, [
+        'requestId',
         'kind',
         'clientId',
         'username',

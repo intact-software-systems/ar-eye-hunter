@@ -46,6 +46,7 @@ export function computeAuthMutation(
             return {
                 ...common,
                 result: {
+                    requestId: command.requestId,
                     clientId: command.user.clientId,
                     username: command.user.username,
                     displayName: command.user.displayName,
@@ -59,7 +60,7 @@ export function computeAuthMutation(
             return {
                 ...common,
                 sessions: [{ session }],
-                result: toSessionReceipt(session),
+                result: toSessionReceipt(session, command.requestId),
                 outcome: isMatchingSessionRead(read, session) ? 'replay' : 'write',
             };
         }
@@ -67,7 +68,7 @@ export function computeAuthMutation(
             const logoutRead = read as Extract<AuthMutationRead, { kind: 'logout-session' }>;
             return {
                 ...common,
-                result: { loggedOut: true },
+                result: { requestId: command.requestId, loggedOut: true },
                 outcome: logoutRead.bySession === null && logoutRead.byToken === null
                     ? 'no-op'
                     : 'write',
@@ -79,6 +80,7 @@ export function computeAuthMutation(
             return {
                 ...common,
                 result: {
+                    requestId: command.requestId,
                     kind: 'ws-ticket-issued',
                     ticketDigest: command.ticketRecord.ticketDigest,
                     sessionId: command.ticketRecord.sessionId,
@@ -101,6 +103,7 @@ export function computeAuthMutation(
                 ...common,
                 result: toConsumedSessionReceipt(
                     'ws-ticket-consumed',
+                    command.requestId,
                     requireSession(
                         consumeRead.session,
                         'Websocket ticket session is unavailable',
@@ -150,7 +153,11 @@ export function computeAuthMutation(
                 ...common,
                 sessions: issuedSessions,
                 agentTickets: persistedTickets,
-                result: { kind: 'agent-tickets-issued', tickets: responseTickets },
+                result: {
+                    requestId: command.requestId,
+                    kind: 'agent-tickets-issued',
+                    tickets: responseTickets,
+                },
                 outcome: isMatchingAgentIssueRead(
                         agentRead,
                         issuedSessions,
@@ -170,6 +177,7 @@ export function computeAuthMutation(
                 ...common,
                 result: toConsumedSessionReceipt(
                     'agent-ticket-consumed',
+                    command.requestId,
                     requireSession(
                         consumeRead.session,
                         'Agent ticket session is unavailable',
@@ -234,8 +242,10 @@ function requireSession(
 
 function toSessionReceipt(
     session: PersistedAuthSession,
+    requestId: string,
 ): Extract<AuthMutationResult, { kind: 'session-issued' }> {
     return {
+        requestId,
         kind: 'session-issued',
         clientId: session.clientId,
         username: session.username,
@@ -248,10 +258,12 @@ function toSessionReceipt(
 
 function toConsumedSessionReceipt(
     kind: 'ws-ticket-consumed' | 'agent-ticket-consumed',
+    requestId: string,
     session: PersistedAuthSession,
     accessTokenDigest: string,
 ): Extract<AuthMutationResult, { kind: typeof kind }> {
     return {
+        requestId,
         kind,
         clientId: session.clientId,
         username: session.username,

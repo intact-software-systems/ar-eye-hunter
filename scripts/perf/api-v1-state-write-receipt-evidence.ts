@@ -20,10 +20,22 @@ export type AuthoritativeResultBinding = Readonly<{
   receiptId: string;
   requestId: string | null;
   commandHash: string;
+  outcome: string;
+  attemptCount: number;
+  outboxId: string | null;
+  outboxIds: readonly string[];
   aggregateRef: AggregateRef;
   stateRevision: number | null;
   snapshotVersion: number | null;
   acceptedVersion: number | null;
+  operation: string | null;
+  target: 'config' | 'override' | null;
+  acceptedStorageRevision: number | null;
+  acceptedCreatedAtEpochMs: number | null;
+  acceptedUpdatedAtEpochMs: number | null;
+  acceptedExpiresAtEpochMs: number | null;
+  acceptedConfig: unknown;
+  acceptedCausalRevision: unknown;
   eventId: string | null;
 }>;
 
@@ -44,10 +56,22 @@ export function projectClientReceiptEvidence(
     receiptId: record.receipt.commandId,
     requestId: record.receipt.requestId,
     commandHash: record.receipt.commandHash,
+    outcome: record.receipt.outcome,
+    attemptCount: record.receipt.attemptCount,
+    outboxId: null,
+    outboxIds: record.receipt.outboxIds,
     aggregateRef: record.receipt.aggregateRef,
     stateRevision: record.receipt.stateRevision,
     snapshotVersion: record.receipt.snapshotVersion,
     acceptedVersion: null,
+    operation: null,
+    target: null,
+    acceptedStorageRevision: null,
+    acceptedCreatedAtEpochMs: null,
+    acceptedUpdatedAtEpochMs: null,
+    acceptedExpiresAtEpochMs: null,
+    acceptedConfig: null,
+    acceptedCausalRevision: null,
     eventId: record.receipt.eventId,
   }));
   return {
@@ -74,10 +98,22 @@ export function projectGroupReceiptEvidence(
       receiptId: receipt.commandId,
       requestId: receipt.requestId,
       commandHash: receipt.commandHash,
+      outcome: receipt.outcome,
+      attemptCount: receipt.attemptCount,
+      outboxId: null,
+      outboxIds: receipt.outboxIds,
       aggregateRef: receipt.aggregateRef,
       stateRevision: receipt.stateRevision,
       snapshotVersion: receipt.snapshotVersion,
       acceptedVersion: null,
+      operation: null,
+      target: null,
+      acceptedStorageRevision: null,
+      acceptedCreatedAtEpochMs: null,
+      acceptedUpdatedAtEpochMs: null,
+      acceptedExpiresAtEpochMs: null,
+      acceptedConfig: null,
+      acceptedCausalRevision: null,
       eventId: receipt.eventId,
     }],
   };
@@ -98,10 +134,22 @@ export function projectTopologyReceiptEvidence(
       receiptId: receipt.commandId,
       requestId: receipt.requestId,
       commandHash: receipt.commandHash,
+      outcome: receipt.outcome,
+      attemptCount: receipt.attemptCount,
+      outboxId: receipt.outboxId,
+      outboxIds: receipt.outboxIds,
       aggregateRef: receipt.groupRef,
       stateRevision: receipt.acceptedCausalRevision?.stateRevision ?? null,
       snapshotVersion: receipt.acceptedCausalRevision?.snapshotVersion ?? null,
       acceptedVersion: receipt.acceptedVersion,
+      operation: receipt.operation,
+      target: receipt.target,
+      acceptedStorageRevision: receipt.acceptedStorageRevision,
+      acceptedCreatedAtEpochMs: receipt.acceptedCreatedAtEpochMs,
+      acceptedUpdatedAtEpochMs: receipt.acceptedUpdatedAtEpochMs,
+      acceptedExpiresAtEpochMs: receipt.acceptedExpiresAtEpochMs,
+      acceptedConfig: receipt.acceptedConfig,
+      acceptedCausalRevision: receipt.acceptedCausalRevision,
       eventId: receipt.eventId,
     }],
   };

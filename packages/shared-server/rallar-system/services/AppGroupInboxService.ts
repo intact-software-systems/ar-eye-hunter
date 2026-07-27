@@ -73,11 +73,14 @@ import { RtcRttRepository } from '../repositories/RtcRttRepository.ts';
 import { readRttMutation, writeRttMutation } from './rtc-rtt-mutation-service.ts';
 import {
     computeRttMutation,
-    type RtcRttMutationComputed,
     validateRttMutation,
 } from './rtc-topology-mutations.ts';
 import { toRtcRttMutationReceiptId } from '../rtc-topology-identifiers.ts';
-import type { RtcRttAcceptanceReason } from './rtc-rtt-measurement-policy.ts';
+import {
+    type RtcRttAppInboxResult,
+    toRtcRttAppInboxResult,
+} from './rtc-rtt-app-inbox-result.ts';
+export type { RtcRttAppInboxResult } from './rtc-rtt-app-inbox-result.ts';
 import { validateRtcRttMeasurement } from '../rtc-rtt-persistence-validation.ts';
 import {
     processGroupPresenceConnect,
@@ -337,13 +340,6 @@ export type RtcRttAppInboxDependencies = Readonly<{
         }>
     >;
     observeCommitted?(rtt: RttMeasurementInfo): void;
-}>;
-
-export type RtcRttAppInboxResult = Readonly<{
-    accepted: boolean;
-    reason: RtcRttAcceptanceReason;
-    affectedGroups: readonly GroupSnapshot[];
-    updated: boolean;
 }>;
 
 export async function toTopologyAppInboxCommand(
@@ -820,7 +816,7 @@ export class AppGroupInboxService extends AppInboxService {
                     computed,
                 );
             }
-            return toRtcRttAppInboxResult(computed);
+            return toRtcRttAppInboxResult(computed, authority.command.requestId);
         });
         if (computed.outcome === 'write') {
             dependencies.observeCommitted?.(computed.measurementGuard.value);
@@ -1564,40 +1560,6 @@ function readDurableTopologyAppInboxCommand(
         throw new TypeError('topology command identity fields are invalid');
     }
     return value as TopologyAppInboxCommand;
-}
-
-function toRtcRttAppInboxResult(
-    computed: RtcRttMutationComputed,
-): RtcRttAppInboxResult {
-    if (computed.outcome === 'replay') {
-        return {
-            accepted: true,
-            reason: 'accepted',
-            affectedGroups: [],
-            updated: false,
-        };
-    }
-    if (computed.outcome === 'rejected') {
-        return computed.reason === 'stale'
-            ? {
-                accepted: true,
-                reason: 'accepted',
-                affectedGroups: [],
-                updated: false,
-            }
-            : {
-                accepted: false,
-                reason: computed.reason,
-                affectedGroups: computed.affectedGroups,
-                updated: false,
-            };
-    }
-    return {
-        accepted: true,
-        reason: computed.reason,
-        affectedGroups: computed.affectedGroups,
-        updated: true,
-    };
 }
 
 function constantTimeEqual(left: string, right: string): boolean {

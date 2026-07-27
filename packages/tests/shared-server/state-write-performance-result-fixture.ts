@@ -3,6 +3,7 @@ import {
 } from '../../../scripts/perf/compare-api-v1-state-write-results.mjs';
 
 export function binding(command: any, operationId: string): any {
+  const topology = command.kind === 'topology-source';
   const receiptId = command.kind === 'profile-instance'
     ? `${command.commandId}-${operationId}`
     : command.commandId;
@@ -14,19 +15,36 @@ export function binding(command: any, operationId: string): any {
     receiptId,
     requestId: receiptId,
     commandHash: `sha256:${'a'.repeat(64)}`,
+    outcome: 'applied',
+    attemptCount: 1,
+    outboxId: topology ? effectIds(command)[0] : null,
+    outboxIds: effectIds(command),
     aggregateRef,
     stateRevision: 1,
     snapshotVersion: 1,
-    acceptedVersion: command.kind === 'topology-source' ? 1 : null,
-    eventId: command.kind === 'topology-source' ? null : `${receiptId}:event`,
+    acceptedVersion: topology ? 1 : null,
+    operation: topology ? 'putConfig' : null,
+    target: topology ? 'config' : null,
+    acceptedStorageRevision: topology ? 1 : null,
+    acceptedCreatedAtEpochMs: topology ? 1 : null,
+    acceptedUpdatedAtEpochMs: topology ? 1 : null,
+    acceptedExpiresAtEpochMs: null,
+    acceptedConfig: topology ? topologyConfig() : null,
+    acceptedCausalRevision: topology
+      ? {
+        stateRevision: 1, causalRevision: { groupRevision: 1, presenceRevision: 0 },
+        snapshotVersion: 1, metadataVersion: 1, rosterVersion: 0, presenceVersion: 0,
+      }
+      : null,
+    eventId: topology ? null : `${receiptId}:event`,
   };
 }
 
 export function durableResult(command: any, operationId: string): any {
   const authoritative = binding(command, operationId);
-  const outboxIds = PRODUCTION_STATE_WRITE_MUTATION_CONTRACT[command.kind]
-    .map((_, index) => `${command.commandId}:effect:${index}`);
+  const outboxIds = effectIds(command);
   if (command.kind === 'topology-source') {
+    const config = authoritative.acceptedConfig;
     return {
       receipt: {
         commandId: authoritative.receiptId,
@@ -34,14 +52,25 @@ export function durableResult(command: any, operationId: string): any {
         commandHash: authoritative.commandHash,
         groupRef: authoritative.aggregateRef,
         acceptedVersion: authoritative.acceptedVersion,
-        acceptedCausalRevision: {
-          stateRevision: authoritative.stateRevision,
-          snapshotVersion: authoritative.snapshotVersion,
-        },
+        acceptedStorageRevision: authoritative.acceptedStorageRevision,
+        acceptedCreatedAtEpochMs: authoritative.acceptedCreatedAtEpochMs,
+        acceptedUpdatedAtEpochMs: authoritative.acceptedUpdatedAtEpochMs,
+        acceptedExpiresAtEpochMs: authoritative.acceptedExpiresAtEpochMs,
+        acceptedConfig: config,
+        acceptedCausalRevision: authoritative.acceptedCausalRevision,
         eventId: authoritative.eventId,
-        outcome: 'applied',
-        attemptCount: 1,
-        outboxIds,
+        operation: authoritative.operation,
+        target: authoritative.target,
+        outboxId: authoritative.outboxId,
+        outcome: authoritative.outcome,
+        attemptCount: authoritative.attemptCount,
+        outboxIds: authoritative.outboxIds,
+      },
+      config: {
+        groupRef: authoritative.aggregateRef, config,
+        version: authoritative.acceptedVersion,
+        createdAtEpochMs: 1, updatedAtEpochMs: 1,
+        updatedByPrincipalId: 'principal', requestId: authoritative.requestId,
       },
     };
   }
@@ -80,6 +109,21 @@ export function durableResult(command: any, operationId: string): any {
       },
     },
   };
+}
+
+function topologyConfig(): any {
+  return {
+    topologyKind: 'mesh', degreeLimit: 4, treeMinSize: 2,
+    meshMinSize: 2, meshParamK: 2,
+  };
+}
+
+export function effectIds(command: any): string[] {
+  if (command.kind === 'topology-source') {
+    return [`${command.commandId}:rtc-topology-recompute:group-revision:group=1;presence=0`];
+  }
+  return PRODUCTION_STATE_WRITE_MUTATION_CONTRACT[command.kind]
+    .map((_, index) => `${command.commandId}:effect:${index}`);
 }
 
 export function swapCompleteDurableResults(candidate: any, prefix: string): void {

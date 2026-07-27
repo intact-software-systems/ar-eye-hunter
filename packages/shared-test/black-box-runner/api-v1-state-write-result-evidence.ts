@@ -177,8 +177,10 @@ export function validatePersistedAppInboxResult(input: Readonly<{
     }
     if (input.commandType.startsWith('AUTH_')) {
         try {
-            decodeAuthMutationResult(result)
-            return { valid: true, result }
+            const decoded = decodeAuthMutationResult(result)
+            return readMatchingId(decoded.requestId, input.commandIds)
+                ? { valid: true, result }
+                : invalid(result, 'mismatched-auth-result')
         } catch {
             return invalid(result, 'malformed-auth-result')
         }
@@ -200,7 +202,7 @@ export function validatePersistedAppInboxResult(input: Readonly<{
             : invalid(result, 'malformed-admin-prune-result')
     }
     if (input.commandType === 'RTC_RTT_SUBMIT') {
-        return validateRtcRttResult(result)
+        return validateRtcRttResult(result, input.commandIds)
             ? { valid: true, result }
             : invalid(result, 'malformed-rtc-rtt-result')
     }
@@ -292,8 +294,9 @@ function validateAdminPruneResult(
     })
 }
 
-function validateRtcRttResult(result: RecordValue): boolean {
-    return exactKeys(result, ['accepted', 'reason', 'affectedGroups', 'updated']) &&
+function validateRtcRttResult(result: RecordValue, commandIds: readonly string[]): boolean {
+    return exactKeys(result, ['requestId', 'accepted', 'reason', 'affectedGroups', 'updated']) &&
+        readMatchingId(result.requestId, commandIds) !== undefined &&
         typeof result.accepted === 'boolean' && nonEmptyString(result.reason) !== undefined &&
         Array.isArray(result.affectedGroups) && result.affectedGroups.every((group) =>
             record(group) !== undefined) && typeof result.updated === 'boolean'
@@ -390,11 +393,7 @@ function sameIds(left: readonly string[], right: readonly string[]): boolean {
 function invalid(result: unknown, failure: string): ResultEvidence {
     return { valid: false, result, failure }
 }
-import { decodeAuthMutationResult } from
-    '@shared-server/rallar-system/services/auth-state-codecs.ts'
-import { decodeCrdtMutationResult } from
-    '@shared-server/rallar-system/services/crdt-mutation-result-codec.ts'
-import { readPersistedAppInboxFailure } from
-    '@shared-server/rallar-system/services/app-inbox-failure.ts'
-import { validateTopologyMutationResultPayload } from
-    './api-v1-state-write-topology-result-evidence.ts'
+import { decodeAuthMutationResult } from '@shared-server/rallar-system/services/auth-state-codecs.ts'
+import { decodeCrdtMutationResult } from '@shared-server/rallar-system/services/crdt-mutation-result-codec.ts'
+import { readPersistedAppInboxFailure } from '@shared-server/rallar-system/services/app-inbox-failure.ts'
+import { validateTopologyMutationResultPayload } from './api-v1-state-write-topology-result-evidence.ts'

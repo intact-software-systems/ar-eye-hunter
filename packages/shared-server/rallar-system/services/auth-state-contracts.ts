@@ -114,7 +114,9 @@ export type AuthMutationPublicResult =
     | AgentSessionTicketResponse
     | ConsumeAgentSessionTicketResponse;
 
-export type AuthMutationResult =
+type AuthMutationResultIdentity = Readonly<{ requestId: string }>;
+
+export type AuthMutationResult = AuthMutationResultIdentity & (
     | RegisterResponse
     | LogoutResponse
     | Readonly<{
@@ -151,7 +153,8 @@ export type AuthMutationResult =
             issuedAtEpochMs: number;
             expiresAtEpochMs: number;
         }>[];
-    }>;
+    }>
+);
 
 export type AuthSessionEntries = Readonly<{
     byToken: RuntimeStateEntryValue<PersistedAuthSession> | null;

@@ -16,12 +16,17 @@ export async function toAuthMutationPublicResult(
             if (!('registeredAtEpochMs' in result)) {
                 throw new Error('Auth registration result kind differs');
             }
-            return result;
+            return {
+                clientId: result.clientId,
+                username: result.username,
+                displayName: result.displayName,
+                registeredAtEpochMs: result.registeredAtEpochMs,
+            };
         case 'logout-session':
             if (!('loggedOut' in result)) {
                 throw new Error('Auth logout result kind differs');
             }
-            return result;
+            return { loggedOut: result.loggedOut };
         case 'issue-session': {
             const receipt = requireResultKind(result, 'session-issued');
             const accessToken = await resolveAccessToken(

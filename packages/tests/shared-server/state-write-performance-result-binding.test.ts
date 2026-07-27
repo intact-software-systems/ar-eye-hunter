@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   isValidPersistedResult,
+  validateReceiptResultBindings,
 } from '../../../scripts/perf/api-v1-state-write-result-binding.mjs';
 import { binding, durableResult } from './state-write-performance-result-fixture.ts';
 
@@ -21,5 +22,23 @@ describe('API-v1 state-write persisted result binding', () => {
       first,
       binding(first, shape.operationId),
     )).toBe(false);
+  });
+
+  it.each([
+    (value: any) => value.acceptedConfig.topologyKind = 'invented',
+    (value: any) => value.acceptedCausalRevision.unexpected = 1,
+    (value: any) => value.outcome = 'no-op',
+    (value: any) => value.outboxId = 'invented-effect',
+  ])('rejects malformed topology receipt truth', (mutate) => {
+    const command = { kind: 'topology-source', commandId: 'topology-command' };
+    const authoritative = binding(command, 'command');
+    mutate(authoritative);
+    const errors: string[] = [];
+    validateReceiptResultBindings({
+      commandId: command.commandId,
+      receiptIds: [command.commandId],
+      resultBindings: [authoritative],
+    }, command, 'sample', 0, errors);
+    expect(errors).not.toEqual([]);
   });
 });
