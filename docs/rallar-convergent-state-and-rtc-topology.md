@@ -82,8 +82,8 @@ use the conditional runtime-state operations `insertIfAbsent`,
 phases are pure; computed persistence data is not called a plan. The service
 `write(transaction, computed)` applies it: service write receives the
 transaction and never opens, commits, replaces, or retries one. Its conditional
-guard is first. A conflict rolls back and returns to AppInbox, whose next
-attempt restarts at `read` and reruns every check.
+guard is first. An incoming HTTP/WS mutation conflict rolls back and returns to
+AppInbox, whose next attempt restarts at `read` and reruns every check.
 
 The storage rule is:
 
@@ -104,6 +104,8 @@ transition on the revision that the decision observed. Compact
 Final `APP_OUTBOX` and `WS_OUTBOX` rows are inserted directly through
 `ResourceInboxRepository` inside that transaction; a collision fails and rolls
 back without loading a winner. There is no intermediate mutation outbox.
+Logical WebSocket audience resolution happens only after commit; queue workers
+are then woken or poll.
 
 Queue locks are coordination-only for bounded resource-inbox claims. Domain
 authentication/session/ticket, AL admission, CRDT, client, group, and topology
@@ -284,9 +286,12 @@ revision N with the current cache value N+1. Graph planning occurs outside the
 runtime-state transaction. `readTopologyMutation`, `computeTopologyMutation`,
 `validateTopologyMutation`, and `writeTopologyMutation` implement the current
 commit path. The write transaction CAS-guards the snapshot first, then inserts
-the compact work claim and immutable publication. A conflict persists nothing,
-returns to the AppInbox retry boundary, and restarts at the full authority read
-and recomputation.
+the compact work claim and immutable publication. A conflict persists nothing
+and returns to its ResourceInbox/QueueBox attempt boundary. AppInbox owns
+incoming HTTP/WS mutation retries. Downstream `APP_OUTBOX` work such as
+`RtcTopologyOutboxWork` repeats the full read/compute/validate/write sequence on
+its own attempt boundary. In both cases, neither service owns the transaction or
+retry boundary.
 
 The durable latest-topology repository compares:
 

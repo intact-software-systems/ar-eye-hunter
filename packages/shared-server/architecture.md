@@ -41,6 +41,9 @@ HTTP/WS mutation
   -> wake/poll workers
 ```
 
+Logical WebSocket audience resolution happens only after commit; queue workers
+are then woken or poll.
+
 Authoritative runtime-state creation, update, and deletion use
 `insertIfAbsent`, `upsertIfRevision`, and `deleteIfRevision`. Client, group,
 topology-config, RTC topology/publication, and RTT mutations use one visible
@@ -48,9 +51,14 @@ topology-config, RTC topology/publication, and RTT mutations use one visible
 phases are pure; computed persistence data is not called a plan. The service
 `write(transaction, computed)` is transaction-bound: service write receives the
 transaction and never opens, commits, replaces, or retries one. Its conditional
-guard is first. A conflict rolls back and returns to AppInbox, which starts a
-new processing attempt with fresh authorization, policy, capacity, lifecycle,
-and invariant checks.
+guard is first. An incoming HTTP/WS mutation conflict rolls back and returns to
+AppInbox, which starts a new processing attempt with fresh authorization,
+policy, capacity, lifecycle, and invariant checks.
+
+AppInbox owns incoming HTTP/WS mutation retries. Downstream `APP_OUTBOX` work
+such as `RtcTopologyOutboxWork` uses its own ResourceInbox/QueueBox attempt
+boundary and repeats the full read/compute/validate/write sequence. In both
+cases, neither service owns the transaction or retry boundary.
 
 Resource inbox allows 20 total processing attempts. Attempts one through five
 wait 1, 2, 4, 8, and 16 ms; later waits rise through seconds, cap at 30 seconds,

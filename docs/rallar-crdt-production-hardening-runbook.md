@@ -8,10 +8,11 @@ This runbook documents the production controls that sit around the implemented
 **AppInbox is mandatory for incoming database mutations**, including CRDT
 WebSocket append/admin plus all HTTP/WS client/group/topology,
 authentication/session/ticket, and mutating admin paths. AppInbox owns the
-transaction and retry boundary. The pure read/compute/validate stages produce
-computed persistence data, not a plan; service `write(transaction, computed)`
-applies it: service write receives the transaction and never opens or retries
-one.
+transaction and retry boundary. The `read` stage loads the repository decision
+surface outside the write transaction. Only `compute` and `validate` are pure,
+and they produce computed persistence data, not a plan. Service
+`write(transaction, computed)` applies it: service write receives the
+transaction and never opens or retries one.
 
 CRDT state, receipt, result, and final `APP_OUTBOX`/`WS_OUTBOX` rows commit in
 the same transaction. Final queue rows go directly through

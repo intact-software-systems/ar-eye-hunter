@@ -25,12 +25,14 @@ HTTP/WS mutation
   -> wake/poll workers
 ```
 
-The read, compute, and validate phases are pure. Computed persistence data is
-not called a plan. The service `write(transaction, computed)` applies it:
+The `read` phase loads the repository decision surface outside the write
+transaction. Only `compute` and `validate` are pure. Computed persistence data
+is not called a plan. The service `write(transaction, computed)` applies it:
 service write receives the transaction and never opens, commits, replaces, or
 retries one. It writes final `APP_OUTBOX` and `WS_OUTBOX` rows directly through
 `ResourceInboxRepository` in the same transaction as state, event, receipt, and
-result. There is no intermediate mutation outbox.
+result. There is no intermediate mutation outbox. Logical WebSocket audience
+resolution happens only after commit; queue workers are then woken or poll.
 
 Resource inbox allows 20 total processing attempts: 1, 2, 4, 8, and 16 ms for
 attempts one through five, increasing seconds capped at 30 seconds with jitter,

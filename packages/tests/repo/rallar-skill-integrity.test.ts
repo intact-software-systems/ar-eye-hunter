@@ -53,6 +53,29 @@ const coreConvergentWriteGuidancePaths = [
     '.agents/skills/rallar-code-writing/references/package-code-style.md',
 ] as const;
 
+const postCommitAudienceGuidancePaths = [
+    'apps/api-v1/README.md',
+    'packages/shared-server/architecture.md',
+    'packages/shared-server/rallar-server-repositories.md',
+    'docs/rallar-api-reference.md',
+    'docs/rallar-convergent-state-and-rtc-topology.md',
+] as const;
+
+const repositoryReadGuidancePaths = [
+    'apps/api-v1/README.md',
+    'docs/README.md',
+    'docs/rallar-api-reference.md',
+    'docs/rallar-crdt-guide.md',
+    'docs/rallar-crdt-production-hardening-runbook.md',
+] as const;
+
+const downstreamQueueGuidancePaths = [
+    'packages/shared-server/architecture.md',
+    'packages/shared-server/rallar-server-repositories.md',
+    'packages/shared-server/rallar-server-repositories-improvements.md',
+    'docs/rallar-convergent-state-and-rtc-topology.md',
+] as const;
+
 const mediumScaleRequirements = [
     'npm run test:api-v1:black-box:postgres:medium-scale',
     '100 independently authenticated clients',
@@ -376,6 +399,40 @@ describe('Rallar repo skill and documentation integrity', () => {
             ]) {
                 expect(guidance, `${filePath}: ${rejected}`).not.toContain(rejected);
             }
+            expect(guidance, filePath).not.toMatch(
+                /(?:the )?(?:`read`|read),\s*(?:`compute`|compute),\s*and\s*(?:`validate`|validate)\s+phases are pure|pure\s+(?:`read`|read)[,/]\s*(?:`compute`|compute)[,/]\s*(?:and\s*)?(?:`validate`|validate)\s+(?:phases|stages)/i,
+            );
+        },
+    );
+
+    it.each(postCommitAudienceGuidancePaths)(
+        '%s keeps logical WebSocket audience resolution after commit',
+        (filePath) => {
+            expect(normalizeWhitespace(readRepo(filePath))).toMatch(
+                /logical WebSocket audience resolution .{0,30}(?:only )?after commit/i,
+            );
+        },
+    );
+
+    it.each(repositoryReadGuidancePaths)(
+        '%s keeps repository reads outside the write transaction',
+        (filePath) => {
+            expectAllNormalized(readRepo(filePath), [
+                'read',
+                'loads the repository decision surface outside the write transaction',
+                'Only `compute` and `validate` are pure',
+            ]);
+        },
+    );
+
+    it.each(downstreamQueueGuidancePaths)(
+        '%s distinguishes downstream QueueBox retries from AppInbox ingress retries',
+        (filePath) => {
+            expectAllNormalized(readRepo(filePath), [
+                'RtcTopologyOutboxWork',
+                'ResourceInbox/QueueBox attempt boundary',
+                'neither service owns the transaction or retry boundary',
+            ]);
         },
     );
 

@@ -8,9 +8,11 @@ Rallar facade, Rallar browser data stores, and Rallar server middleware.
 **AppInbox is mandatory for incoming database mutations**, including all HTTP
 and WebSocket client/group/topology, authentication/session/ticket, CRDT
 append/admin, and mutating admin paths. AppInbox owns the transaction and retry
-boundary. Pure read/compute/validate stages produce computed persistence data,
-not a plan. Service `write(transaction, computed)` applies it: service write
-receives the transaction and never opens or retries one.
+boundary. The `read` stage loads the repository decision surface outside the
+write transaction. Only `compute` and `validate` are pure, and they produce
+computed persistence data, not a plan. Service `write(transaction, computed)`
+applies it: service write receives the transaction and never opens or retries
+one.
 
 State/event/receipt/result and final `APP_OUTBOX`/`WS_OUTBOX` rows commit in the
 same transaction; write final queue rows directly through

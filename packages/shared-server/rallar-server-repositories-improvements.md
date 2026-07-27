@@ -1157,15 +1157,22 @@ snapshot/publication/execution, and RTT paths.
 
 The July 2026 api-v1 database-writing review superseded earlier advisory-lock
 hardening. Current paths use `insertIfAbsent`, `upsertIfRevision`, and
-`deleteIfRevision`; each conflict returns to AppInbox so the next processing
-attempt restarts at `read` and reruns the full decision surface.
+`deleteIfRevision`; each incoming HTTP/WS mutation conflict returns to AppInbox
+so the next processing attempt restarts at `read` and reruns the full decision
+surface.
+
+AppInbox owns incoming HTTP/WS mutation retries. Downstream `APP_OUTBOX` work
+such as `RtcTopologyOutboxWork` uses its own ResourceInbox/QueueBox attempt
+boundary and repeats the full read/compute/validate/write sequence. In both
+cases, neither service owns the transaction or retry boundary.
 
 Client, group, topology-config, RTC topology, and RTT orchestration now exposes
 direct `read`, `compute`, `validate`, and `write` phases. The `compute` and
-`validate` phases are pure; AppInbox owns the transaction and the conditional
-guard is first. Direct final resource-inbox writes make externally effectful
-outbox rows atomic with guarded state and the compact `MutationReceipt` family.
-Group and presence authority uses
+`validate` phases are pure; the applicable AppInbox ingress or
+ResourceInbox/QueueBox downstream boundary owns the transaction, and the
+conditional guard is first. Direct final resource-inbox writes make externally
+effectful outbox rows atomic with guarded state and the compact
+`MutationReceipt` family. Group and presence authority uses
 `GroupStateCausalRevision`; presence uses a per-session guard and does not
 contend on the group row.
 

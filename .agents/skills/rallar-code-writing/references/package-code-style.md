@@ -39,10 +39,10 @@
   HTTP and WebSocket database changes through it, including client/group/
   topology, authentication/session/ticket, CRDT append/admin, and mutating
   admin. Synchronous result waiting has no direct-mutation fallback.
-- AppInbox owns the transaction and retry boundary. Use visible, pure `read`,
-  `compute`, and `validate` phases, then an AppInbox transaction. The `compute`
-  and `validate` phases are pure. Computed persistence data is not called a
-  plan. The service
+- AppInbox owns the transaction and retry boundary. The visible `read` phase
+  loads the repository decision surface outside the write transaction. The
+  `compute` and `validate` phases are pure and precede the AppInbox transaction.
+  Computed persistence data is not called a plan. The service
   `write(transaction, computed)` applies it: service write receives the
   transaction and never opens, commits, replaces, or retries one. Conflicts
   return to AppInbox for a fresh read and complete revalidation.

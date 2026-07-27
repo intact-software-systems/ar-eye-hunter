@@ -47,9 +47,27 @@ import type {
 } from '@shared-server/rallar-system/services/rtc-rtt-app-inbox-result.ts';
 
 type EmptyObject = Record<never, never>;
-type OptionalKeys<T> = {
+type OptionalKeysOfObject<T> = {
     [K in keyof T]-?: EmptyObject extends Pick<T, K> ? K : never;
 }[keyof T];
+type OptionalKeys<T> = T extends unknown ? OptionalKeysOfObject<T> : never;
+type Equal<A, B> =
+    (<T>() => T extends A ? 1 : 2) extends
+        (<T>() => T extends B ? 1 : 2) ? true : false;
+type Assert<T extends true> = T;
+
+type VariantOptionalFixture =
+    | Readonly<{ kind: 'complete'; required: string }>
+    | Readonly<{ kind: 'broken'; required: string; variantOnly?: string }>;
+type _FixtureOptionalKeysAreDistributive = Assert<
+    Equal<OptionalKeys<VariantOptionalFixture>, 'variantOnly'>
+>;
+type _AuthResultHasNoOptionalVariantFields = Assert<
+    Equal<OptionalKeys<AuthMutationResult>, never>
+>;
+type _RtcResultHasNoOptionalFields = Assert<
+    Equal<OptionalKeys<RtcRttAppInboxResult>, never>
+>;
 
 /** Every entry names a reviewed semantic absence, never construction convenience. */
 type AuthoritativeOptionalKeyAllowlist = Readonly<{
@@ -58,6 +76,8 @@ type AuthoritativeOptionalKeyAllowlist = Readonly<{
 
 describe('authoritative state contracts', () => {
     it('requires complete authoritative scopes, values, events, results, and receipts', () => {
+        expectTypeOf<OptionalKeys<VariantOptionalFixture>>()
+            .toEqualTypeOf<'variantOnly'>();
         expectTypeOf<OptionalKeys<ClientScope>>().toEqualTypeOf<never>();
         expectTypeOf<OptionalKeys<GroupScope>>().toEqualTypeOf<never>();
         expectTypeOf<OptionalKeys<ClientAuditStamp>>().toEqualTypeOf<never>();

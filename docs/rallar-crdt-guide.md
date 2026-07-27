@@ -15,11 +15,12 @@ client/group/topology, authentication/session/ticket, and mutating admin paths.
 AppInbox owns the transaction and retry boundary; waiting for a result never
 falls back to a direct CRDT repository mutation.
 
-The pure `read`, `compute`, and `validate` phases produce computed persistence
-data, not a plan. The service `write(transaction, computed)` applies it: service
-write receives the transaction and never opens or retries one. It writes CRDT
-state, receipt, result, and final `APP_OUTBOX`/`WS_OUTBOX` entries directly
-through `ResourceInboxRepository` in the same transaction. There is no
+The `read` phase loads the repository decision surface outside the write
+transaction. Only `compute` and `validate` are pure, and they produce computed
+persistence data, not a plan. The service `write(transaction, computed)` applies
+it: service write receives the transaction and never opens or retries one. It
+writes CRDT state, receipt, result, and final `APP_OUTBOX`/`WS_OUTBOX` entries
+directly through `ResourceInboxRepository` in the same transaction. There is no
 intermediate mutation outbox.
 
 Resource inbox allows 20 total processing attempts, staged from 1, 2, 4, 8,

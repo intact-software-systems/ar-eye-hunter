@@ -116,6 +116,9 @@ HTTP/WS mutation
   -> wake/poll workers
 ```
 
+Logical WebSocket audience resolution happens only after commit; queue workers
+are then woken or poll.
+
 The five guarded operation families keep one visible `read`, `compute`,
 `validate`, `write` sequence:
 
@@ -134,8 +137,9 @@ The five guarded operation families keep one visible `read`, `compute`,
 The `compute` and `validate` phases are pure; computed persistence data is not
 called a plan. The service `write(transaction, computed)` is transaction-bound:
 service write receives the transaction and never opens, commits, replaces, or
-retries one. Its conditional guard is first. A conflict returns to AppInbox,
-which rereads and revalidates the complete decision surface.
+retries one. Its conditional guard is first. An incoming HTTP/WS mutation
+conflict returns to AppInbox, which rereads and revalidates the complete
+decision surface.
 
 Client/group/topology-config effects use direct transaction-bound `APP_OUTBOX`/
 `WS_OUTBOX` entries through `ResourceInboxRepository`. Guarded state, compact
@@ -148,6 +152,11 @@ Resource inbox allows 20 total processing attempts. Attempts one through five
 wait 1, 2, 4, 8, and 16 ms; later waits rise through seconds, cap at 30 seconds,
 and use jitter. A distinct best-effort fairness lane claims retries more than 30
 seconds overdue independently from timeout recovery.
+
+AppInbox owns incoming HTTP/WS mutation retries. Downstream `APP_OUTBOX` work
+such as `RtcTopologyOutboxWork` uses its own ResourceInbox/QueueBox attempt
+boundary and repeats the full read/compute/validate/write sequence. In both
+cases, neither service owns the transaction or retry boundary.
 
 Concurrency domains are explicit. Client state guards the principal; group
 metadata and roster guard the group; presence guards one session and does not
