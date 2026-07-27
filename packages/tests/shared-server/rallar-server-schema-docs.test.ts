@@ -149,16 +149,30 @@ describe('Rallar server storage schema docs', () => {
         expect(repositories).toContain('not a database-lock substitute or precedent');
     });
 
-    it('documents bounded resource-inbox claims as the sole current database-lock exception', () => {
-        const architecture = readMarkdownSection(
-            readWorkspaceFile('packages/shared-server/architecture.md'),
-            'Queue Coordination Locks',
-        ).replace(/\s+/g, ' ');
+    it('limits the current database-lock inventory to bounded resource-inbox claims', () => {
+        const docs = readWorkspaceFile('packages/shared-server/architecture.md');
+        const currentInventory = readMarkdownBlock(
+            docs,
+            '### Current Database-Lock Exception Inventory',
+            '\n### ',
+        );
+        const historicalContext = readMarkdownBlock(
+            docs,
+            '### Historical Lock Migration Context',
+            '\n## ',
+        );
+        const currentIdentifiers = Array.from(
+            currentInventory.matchAll(/`([^`]+)`/g),
+            (match) => match[1],
+        );
 
-        expect(architecture).toContain('sole current database-lock exception');
-        expect(architecture).toContain('ResourceInbox `FOR UPDATE SKIP LOCKED`');
-        expect(architecture).toContain('historical migration context');
-        expect(architecture).not.toContain('exhaustive current exception inventory');
+        expect(currentInventory).not.toBe('');
+        expect(currentIdentifiers).toEqual([
+            'ResourceInbox',
+            'FOR UPDATE SKIP LOCKED',
+        ]);
+        expect(currentInventory.toLowerCase()).toContain('bounded');
+        expect(historicalContext).not.toBe('');
     });
 
     it('inventories every intentional residual database lock with explicit governance', () => {
