@@ -1,4 +1,5 @@
 import { type ALMessage, readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
+import { AppTopics } from '@shared/api/api-config.ts';
 import { isSameGroupScope } from '@shared/api/api-type-utils.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type {
@@ -55,6 +56,24 @@ export function createWsServerTargetResolver(
       .filter((context) => context.isOpen)
       .map((context) => ({ peerId: context.id, connectionId: context.id }));
   };
+  const resolveFixedBroadcastRecipients = (
+    message: ALMessage,
+  ): readonly WsServerResolvedRecipient[] | undefined => {
+    const targets = message.targets;
+    if (
+      targets?.mode !== 'broadcast' ||
+      targets.recipientPeerIds === undefined ||
+      message.id.senderId !== 'rallar-server' ||
+      message.route.topicId !== AppTopics.overlayTopology ||
+      message.payload.typeId !== AppTopics.overlayTopology
+    ) {
+      return undefined;
+    }
+    return targets.recipientPeerIds.flatMap((peerId) => {
+      const context = webSocketServer.connections.get(peerId);
+      return context?.isOpen ? [{ peerId, connectionId: peerId }] : [];
+    });
+  };
   return {
     resolvePeerRecipients: (peerId, message) => {
       const principalRef = readCrdtPrincipalRef(message, peerId);
@@ -73,13 +92,16 @@ export function createWsServerTargetResolver(
       return context?.isOpen ? [{ peerId, connectionId: peerId }] : [];
     },
     resolveGroupRecipients,
-    resolveBroadcastRecipients: (scope, message) =>
-      scope === 'room'
+    resolveBroadcastRecipients: (scope, message) => {
+      const fixedRecipients = resolveFixedBroadcastRecipients(message);
+      if (fixedRecipients !== undefined) return fixedRecipients;
+      return scope === 'room'
         ? resolveGroupRecipients(
           readALTargetGroupRef(message)?.groupId ?? message.route.contextId,
           message,
         )
-        : resolveAllOpenConnections(message),
+        : resolveAllOpenConnections(message);
+    },
     resolvePeerIdForConnection: (connectionId) => connectionId,
   };
 }

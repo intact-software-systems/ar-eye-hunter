@@ -45,6 +45,8 @@ export type ALTargets =
     groupRef?: GroupRef;
     exceptPeerIds?: readonly string[];
     minSnapshotVersion?: number;
+    /** Immutable logical audience captured by authoritative server work. */
+    recipientPeerIds?: readonly string[];
 }>;
 
 // -------------------------------------------------------

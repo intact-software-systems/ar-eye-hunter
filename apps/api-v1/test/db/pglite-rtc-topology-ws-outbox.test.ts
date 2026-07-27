@@ -40,6 +40,7 @@ Deno.test('PGlite persists distinct topology publications with one logical route
     const messages = rows.map((row) => JSON.parse(row.ri_resource) as {
       id: { msgId: string };
       route: RtcTopologyPublication['message']['route'];
+      targets: { recipientPeerIds?: readonly string[] };
     });
 
     assert.equal(rows.length, 2);
@@ -47,6 +48,8 @@ Deno.test('PGlite persists distinct topology publications with one logical route
     assert.ok(rows.every((row) => row.ri_resource_id.length <= 128));
     assert.deepEqual(messages[0].route, messages[1].route);
     assert.notEqual(messages[0].id.msgId, messages[1].id.msgId);
+    assert.deepEqual(messages[0].targets.recipientPeerIds, ['session-1']);
+    assert.deepEqual(messages[1].targets.recipientPeerIds, ['session-1']);
   } finally {
     await sql.close();
   }

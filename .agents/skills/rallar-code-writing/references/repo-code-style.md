@@ -470,7 +470,9 @@ pure function called directly by the use case or route.
   authorization, policy, capacity, lifecycle, and invariant decision. Retrying only a stale final write is incorrect.
 - Commit authoritative state, event, receipt, durable result, and final `APP_OUTBOX` or `WS_OUTBOX` entries in the same
   transaction. Write final queue entries directly through `ResourceInboxRepository`; do not add an intermediate
-  mutation outbox. Resolve WebSocket audiences and wake workers only after commit.
+  mutation outbox. Resolve dynamic WebSocket audiences and wake workers only after commit. If computed authoritative
+  work captures an immutable audience, persist that mandatory audience in the final queue entry and intersect it only
+  with locally open connections; never replace it with a process-cache lookup that can lag the message revision.
 - ResourceInbox allows 20 total processing attempts. Retry delays start at 1, 2, 4, 8, and 16 milliseconds, then rise
   through seconds, cap at 30 seconds, and use jitter. A separate best-effort fairness lane claims retries more than 30
   seconds overdue independently of timeout recovery.

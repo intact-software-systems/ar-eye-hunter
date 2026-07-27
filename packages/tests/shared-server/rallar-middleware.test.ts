@@ -624,6 +624,87 @@ describe('createWsServerTargetResolver state sync routing', () => {
     ).toEqual(['session-b']);
   });
 
+  it('routes a fixed room audience without consulting a lagging group snapshot', () => {
+    configureTestCacheRepositories();
+
+    const webSocketServer = new JsonWebSocketServer();
+    addOpenConnection(webSocketServer, 'session-a');
+    addOpenConnection(webSocketServer, 'session-b');
+    const laggingSnapshot = createGroupSnapshot(
+      'shared-room',
+      'app-1',
+      'workspace-a',
+      [{ principalId: 'alice', sessionId: 'session-a', status: 'active' }],
+      2,
+    );
+    const message = {
+      ...newALBroadcastMessage(
+        'rallar-server',
+        newALEventRoute('overlay.topology', 'shared-room', 'topology-3'),
+        'room',
+        'overlay.topology',
+        { version: 3 },
+        { groupRef: laggingSnapshot.group },
+      ),
+      targets: {
+        mode: 'broadcast' as const,
+        scope: 'room' as const,
+        groupRef: laggingSnapshot.group,
+        minSnapshotVersion: 3,
+        recipientPeerIds: ['session-b'],
+      },
+    };
+    const resolver = createWsServerTargetResolver(webSocketServer, {
+      findGroupSnapshotByRef: () => laggingSnapshot,
+    });
+
+    expect(
+      resolver
+        .resolveBroadcastRecipients?.('room', message)
+        .map((recipient) => recipient.connectionId),
+    ).toEqual(['session-b']);
+  });
+
+  it('does not let a peer-sent room message bypass membership with a fixed audience', () => {
+    configureTestCacheRepositories();
+
+    const webSocketServer = new JsonWebSocketServer();
+    addOpenConnection(webSocketServer, 'session-a');
+    addOpenConnection(webSocketServer, 'session-b');
+    const snapshot = createGroupSnapshot(
+      'shared-room',
+      'app-1',
+      'workspace-a',
+      [{ principalId: 'alice', sessionId: 'session-a', status: 'active' }],
+      3,
+    );
+    const message = {
+      ...newALBroadcastMessage(
+        'session-a',
+        newALEventRoute('room.chat', 'shared-room', 'message-1'),
+        'room',
+        'chat.message.v1',
+        { text: 'hello' },
+        { groupRef: snapshot.group },
+      ),
+      targets: {
+        mode: 'broadcast' as const,
+        scope: 'room' as const,
+        groupRef: snapshot.group,
+        recipientPeerIds: ['session-b'],
+      },
+    };
+    const resolver = createWsServerTargetResolver(webSocketServer, {
+      findGroupSnapshotByRef: () => snapshot,
+    });
+
+    expect(
+      resolver
+        .resolveBroadcastRecipients?.('room', message)
+        .map((recipient) => recipient.connectionId),
+    ).toEqual(['session-a']);
+  });
+
   it('routes multicast targets using target groupRef before the group id fallback', () => {
     configureTestCacheRepositories();
 

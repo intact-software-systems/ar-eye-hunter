@@ -120,7 +120,10 @@ function validateTargets(value: unknown): void {
     }
     exactAllowedRequired(
         targets,
-        ['mode', 'scope', 'groupRef', 'exceptPeerIds', 'minSnapshotVersion'],
+        [
+            'mode', 'scope', 'groupRef', 'exceptPeerIds',
+            'minSnapshotVersion', 'recipientPeerIds',
+        ],
         ['mode', 'scope'],
     );
     if (
@@ -132,8 +135,12 @@ function validateTargets(value: unknown): void {
     if (targets.scope === 'room' && targets.groupRef === undefined) {
         throw new TypeError('Persisted AL room broadcast group ref is missing');
     }
+    if (targets.recipientPeerIds !== undefined && targets.scope !== 'room') {
+        throw new TypeError('Persisted AL fixed recipient audience requires room scope');
+    }
     if (targets.groupRef !== undefined) validateCanonicalGroupRef(targets.groupRef);
     optionalStringArray(targets.exceptPeerIds, 'broadcast exclusions');
+    optionalUniqueStringArray(targets.recipientPeerIds, 'broadcast fixed recipients');
     optionalSafeInteger(targets.minSnapshotVersion, 1, 'minimum snapshot version');
 }
 
@@ -282,4 +289,11 @@ function optionalStringArray(value: unknown, label: string): void {
     if (!Array.isArray(value) || value.some((item) =>
         typeof item !== 'string' || item.length === 0
     )) throw new TypeError(`Persisted AL ${label} is invalid`);
+}
+
+function optionalUniqueStringArray(value: unknown, label: string): void {
+    optionalStringArray(value, label);
+    if (Array.isArray(value) && new Set(value).size !== value.length) {
+        throw new TypeError(`Persisted AL ${label} contains duplicates`);
+    }
 }
