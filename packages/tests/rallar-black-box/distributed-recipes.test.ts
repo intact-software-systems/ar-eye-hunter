@@ -459,11 +459,13 @@ describe('distributed recipes helpers', () => {
                     requestId: 'rtc-realtime:ensure-group:game-app:live:arena-1',
                     groupId: 'arena-1',
                     displayName: 'arena-1',
+                    kind: 'room',
                     joinMode: 'open',
                 },
             },
             response: {
                 body: 'json',
+                acceptedStatusCodes: [200, 201, 409],
             },
         });
         expect(upsertMemberCommand).toMatchObject({
@@ -479,6 +481,7 @@ describe('distributed recipes helpers', () => {
             },
             response: {
                 body: 'json',
+                acceptedStatusCodes: [200, 201],
             },
         });
         expect((connectCommand as { readiness?: unknown } | undefined)?.readiness).toBeUndefined();

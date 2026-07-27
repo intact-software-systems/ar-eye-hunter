@@ -260,6 +260,19 @@ describe('api-v1 black-box run helper', () => {
         );
         expect(env.AUTH_STATIC_CLIENTS_MODE).toBe('demo');
         expect(env.AUTH_REGISTRATION_MODE).toBe('public');
+        expect(env.RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON).toBe(
+            '[{"documentType":"black-box-map","rollout":"production"}]',
+        );
+    });
+
+    it('preserves an explicit managed API CRDT document policy', () => {
+        const options = parseApiV1BlackBoxArgs(['--backend=pglite-memory']);
+        const policy = '[{"documentType":"custom-map","rollout":"development"}]';
+        const env = toApiV1BlackBoxEnvironment(options, {
+            RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON: policy,
+        });
+
+        expect(env.RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON).toBe(policy);
     });
 
     it('exposes secondary HTTP and WebSocket URLs only for a two-server run', () => {

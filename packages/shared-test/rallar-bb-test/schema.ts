@@ -447,6 +447,11 @@ const httpResponseSchema: JsonSchema = {
     properties: {
         body: { type: 'string', enum: ['none', 'text', 'json'] },
         maxBodyChars: integerSchema,
+        acceptedStatusCodes: {
+            type: 'array',
+            minItems: 1,
+            items: { type: 'integer', minimum: 100, maximum: 599 },
+        },
     },
     additionalProperties: false,
 };

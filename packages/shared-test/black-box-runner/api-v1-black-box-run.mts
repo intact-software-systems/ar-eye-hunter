@@ -174,6 +174,9 @@ export function toApiV1BlackBoxEnvironment(
     env.RALLAR_STATE_STRICT_READ_AUTH = env.RALLAR_STATE_STRICT_READ_AUTH ?? '1'
     env.AUTH_STATIC_CLIENTS_MODE = env.AUTH_STATIC_CLIENTS_MODE ?? 'demo'
     env.AUTH_REGISTRATION_MODE = env.AUTH_REGISTRATION_MODE ?? 'public'
+    env.RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON =
+        env.RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON ??
+        '[{"documentType":"black-box-map","rollout":"production"}]'
 
     if (options.backend === 'postgres') {
         env.RALLAR_SQL_BACKEND = 'postgres'

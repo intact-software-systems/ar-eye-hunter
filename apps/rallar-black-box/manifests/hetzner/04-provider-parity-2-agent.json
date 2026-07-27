@@ -104,11 +104,17 @@
                 "requestId": "provider-parity:ensure-group:rallar-server:default:hetzner-headless-room",
                 "groupId": "hetzner-headless-room",
                 "displayName": "hetzner-headless-room",
+                "kind": "room",
                 "joinMode": "open"
               }
             },
             "response": {
-              "body": "json"
+              "body": "json",
+              "acceptedStatusCodes": [
+                200,
+                201,
+                409
+              ]
             }
           },
           {
@@ -133,7 +139,11 @@
               }
             },
             "response": {
-              "body": "json"
+              "body": "json",
+              "acceptedStatusCodes": [
+                200,
+                201
+              ]
             }
           },
           {

@@ -5,7 +5,13 @@ import {
     ClientStateRepository,
     ClientStateRepositoryInvariantCorruptionError,
 } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
-import { ClientMutationIdempotencyConflictError } from '@shared-server/rallar-system/services/client-state-service.ts';
+import {
+    ClientMutationIdempotencyConflictError,
+    createClientStateService as createClientMutationService,
+    toClientMutationCommand,
+    toClientMutationSystemAuthority,
+    toExpiryCommandInput,
+} from '@shared-server/rallar-system/services/client-state-service.ts';
 import {
     computeClientMutation,
     type ClientMutationAuthority,
@@ -25,6 +31,7 @@ import type {
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
+import { toClientSessionExpiryCandidate } from '@shared-server/rallar-system/repositories/session-expiry.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 import {
     createLegacyClientStateTestDriver as createClientStateService,
@@ -39,6 +46,42 @@ const SCOPE: StateScope = {
 const BASE_EPOCH_MS = Date.now();
 
 describe('convergent client state', () => {
+    it('reads the principal guard and snapshot from one stable aggregate observation', async () => {
+        const runtime = new PrincipalChangeAfterFirstReadRepository();
+        await connect(runtime, 'session-a', 'generation-a', BASE_EPOCH_MS);
+        const repository = new ClientStateRepository(runtime);
+        const session = await repository.findSession({
+            ...principalRef('alice'),
+            clientInstanceId: 'browser',
+            sessionId: 'session-a',
+        });
+        if (!session) throw new Error('Expected a stored client session');
+        const command = await toClientMutationCommand(
+            toExpiryCommandInput(toClientSessionExpiryCandidate(session)),
+            {
+                nowEpochMs: session.expiresAtEpochMs,
+                serviceId: 'client-service',
+                eventId: 'stable-client-read-event',
+                attemptCount: 1,
+                expireAtEpochMs: session.expiresAtEpochMs + 60_000,
+            },
+            toClientMutationSystemAuthority('client-service'),
+        );
+
+        runtime.armPrincipalChangeAfterRead();
+        const read = await createClientMutationService({
+            runtimeRepository: runtime,
+            serviceId: 'client-service',
+        }).read(command);
+
+        expect(read.principal).not.toBeNull();
+        expect(read.snapshot).not.toBeNull();
+        expect(read.snapshot?.stateRevision).toBe(
+            (read.principal?.entry.revision ?? -1) + 1,
+        );
+        expect(read.snapshot?.principal).toEqual(read.principal?.value);
+    });
+
     it('fails closed when an active persisted session has no matching instance', async () => {
         const runtime = new AggregateBarrierRepository();
         await connect(runtime, 'orphan-session', 'orphan-generation', BASE_EPOCH_MS);
@@ -1181,6 +1224,30 @@ class AggregateBarrierRepository extends FakeRuntimeStateRepository {
         } finally {
             release();
         }
+    }
+}
+
+class PrincipalChangeAfterFirstReadRepository extends AggregateBarrierRepository {
+    private changeAfterPrincipalRead = false;
+
+    armPrincipalChangeAfterRead(): void {
+        this.changeAfterPrincipalRead = true;
+    }
+
+    override async findEntry(
+        namespace: string,
+        key: string,
+    ): Promise<RuntimeStateEntry | undefined> {
+        const entry = await super.findEntry(namespace, key);
+        if (
+            namespace === 'client-state:principals' &&
+            entry &&
+            this.changeAfterPrincipalRead
+        ) {
+            this.changeAfterPrincipalRead = false;
+            await super.upsert(namespace, key, entry.value, entry.expireAtTimestamp);
+        }
+        return entry;
     }
 }
 

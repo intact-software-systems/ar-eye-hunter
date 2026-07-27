@@ -25,6 +25,7 @@ import {
     ClientStateRepository,
     createTransactionBoundClientStateRepository,
 } from '../repositories/ClientStateRepository.ts';
+import { StateSnapshotReadConflictError } from '../repositories/state-snapshot-read.ts';
 import {
     type ClientSessionExpiryCandidate,
     toClientSessionExpiryCandidate,
@@ -190,7 +191,7 @@ async function readClientMutation(
         instanceRef && 'sessionId' in command
             ? { ...instanceRef, sessionId: command.sessionId }
             : null;
-    const [authoritySession, idempotency, principal, instance, sessionRead, snapshot] =
+    const [authoritySession, idempotency, principalSnapshot, instance, sessionRead] =
         await Promise.all([
             command.authority.kind === 'issued-session'
                 ? authSessionRepository.findBySessionId(command.authority.sessionId)
@@ -201,11 +202,17 @@ async function readClientMutation(
                       command.aggregateRef,
                       command.requestId,
                   ),
-            repository.findPrincipalEntry(command.aggregateRef),
+            repository.readPrincipalSnapshot(command.aggregateRef),
             instanceRef ? repository.findInstanceEntry(instanceRef) : Promise.resolve(undefined),
             sessionRef ? repository.readSessionEntry(sessionRef) : Promise.resolve({ value: undefined, expiredEntry: undefined }),
-            repository.readSnapshot(command.aggregateRef),
         ]);
+    if (
+        principalSnapshot &&
+        principalSnapshot.snapshot.stateRevision !==
+            principalSnapshot.principal.entry.revision + 1
+    ) {
+        throw new StateSnapshotReadConflictError(principalSnapshot.principal.entry.key);
+    }
     const receiptEvent =
         !idempotency || idempotency.value.receipt.eventId === null
             ? null
@@ -220,11 +227,11 @@ async function readClientMutation(
     return {
         authoritySession: authoritySession ?? null,
         idempotency: idempotency ?? null,
-        principal: principal ?? null,
+        principal: principalSnapshot?.principal ?? null,
         instance: instance ?? null,
         session: sessionRead.value ?? null,
         expiredSessionEntry: sessionRead.expiredEntry ?? null,
-        snapshot: snapshot ?? null,
+        snapshot: principalSnapshot?.snapshot ?? null,
         receiptEvent,
     };
 }

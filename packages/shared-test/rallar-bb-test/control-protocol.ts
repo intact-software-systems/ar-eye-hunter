@@ -608,7 +608,11 @@ function validateHttpCommand(command: Record<string, unknown>): ControlCommandVa
         if (!isRecord(command.response)) {
             return fail('http.request.response must be an object.');
         }
-        result = validateKeys(command.response, ['body', 'maxBodyChars'], 'http.request.response');
+        result = validateKeys(
+            command.response,
+            ['body', 'maxBodyChars', 'acceptedStatusCodes'],
+            'http.request.response',
+        );
         if (!result.ok) {
             return result;
         }
@@ -623,6 +627,19 @@ function validateHttpCommand(command: Record<string, unknown>): ControlCommandVa
         result = validateNumberField(command.response, 'maxBodyChars', 'http.request.response');
         if (!result.ok) {
             return result;
+        }
+        const acceptedStatusCodes = command.response.acceptedStatusCodes;
+        if (acceptedStatusCodes !== undefined) {
+            if (!Array.isArray(acceptedStatusCodes) || acceptedStatusCodes.length === 0) {
+                return fail('http.request.response.acceptedStatusCodes must be a non-empty array.');
+            }
+            if (acceptedStatusCodes.some(
+                status => !Number.isInteger(status) || status < 100 || status > 599,
+            )) {
+                return fail(
+                    'http.request.response.acceptedStatusCodes must contain HTTP status integers from 100 through 599.',
+                );
+            }
         }
     }
     return { ok: true };

@@ -323,6 +323,7 @@ export type RallarBlackBoxTestHttpRequestCommand =
     response?: Readonly<{
         body?: 'none' | 'text' | 'json';
         maxBodyChars?: number;
+        acceptedStatusCodes?: readonly number[];
     }>;
 }>;
 

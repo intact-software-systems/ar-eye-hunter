@@ -145,6 +145,7 @@ type HttpBodyMode = 'none' | 'text' | 'json';
 type HttpResponseOptions = Readonly<{
     body?: HttpBodyMode;
     maxBodyChars?: number;
+    acceptedStatusCodes?: readonly number[];
 }>;
 
 type WebSocketTicketResolution = Readonly<{
@@ -2390,6 +2391,7 @@ class BrowserCommandAdapter {
             ? withRallarAuthHeaders(resolvedRequest.headers, session)
             : resolvedRequest.headers;
         const abort = this.commandAbortSignal(command, context);
+        const responseOptions = asRecord(command.response) as HttpResponseOptions;
         let response!: Response;
         let body: unknown;
         try {
@@ -2405,7 +2407,6 @@ class BrowserCommandAdapter {
                 mode: resolvedRequest.mode,
                 signal: abort.signal,
             });
-            const responseOptions = asRecord(command.response) as HttpResponseOptions;
             body = await readHttpBody(
                 response,
                 responseOptions,
@@ -2431,6 +2432,23 @@ class BrowserCommandAdapter {
             severity: response.ok ? 'info' : 'warning',
             payload: value,
         });
+
+        if (
+            responseOptions.acceptedStatusCodes &&
+            !responseOptions.acceptedStatusCodes.includes(response.status)
+        ) {
+            const accepted = responseOptions.acceptedStatusCodes.join(', ');
+            return {
+                status: 'failed',
+                value,
+                error: {
+                    code: 'RALLAR_BLACK_BOX_HTTP_STATUS_NOT_ACCEPTED',
+                    message: `http.request received status ${response.status}; accepted status codes: ${accepted}.`,
+                    details: value,
+                },
+                nextStatus: 'failed',
+            };
+        }
 
         return {
             status: 'ok',

@@ -276,6 +276,25 @@ describe('rallar-bb-test capability and schema contract', () => {
         });
     });
 
+    it('validates opt-in accepted HTTP status codes', () => {
+        expectValid(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, {
+            kind: 'http.request',
+            commandId: 'accepted-http-statuses',
+            request: { url: 'https://api.example.test' },
+            response: { acceptedStatusCodes: [200, 201, 409] },
+        });
+
+        for (const acceptedStatusCodes of [[], [99], [600], [200.5]]) {
+            const result = validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, {
+                kind: 'http.request',
+                commandId: 'invalid-http-statuses',
+                request: { url: 'https://api.example.test' },
+                response: { acceptedStatusCodes },
+            });
+            expect(result.ok).toBe(false);
+        }
+    });
+
     it('keeps the v1 golden compatibility corpus stable', () => {
         const corpus = readGoldenCompatibilityCorpus();
         const inlineRecipes = corpus.validDistributedManifests.flatMap(inlineRecipesInManifest);

@@ -89,6 +89,47 @@ describe('rallar-bb browser adapter auth', () => {
         expect(headers.get('content-type')).toBeNull();
     });
 
+    it('fails an HTTP command when its status is outside the accepted set', async () => {
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            fetch: (async () => new Response('{"error":"invalid"}', {
+                status: 400,
+                headers: { 'content-type': 'application/json' },
+            })) as typeof fetch,
+        });
+
+        const result = await runtime.execute({
+            kind: 'http.request',
+            commandId: 'http-require-accepted-status',
+            request: { url: 'https://api.example.test/groups', method: 'POST' },
+            response: { body: 'json', acceptedStatusCodes: [200, 201, 409] },
+        });
+
+        expect(result.ok).toBe(false);
+        expect(result.error).toMatchObject({
+            code: 'RALLAR_BLACK_BOX_HTTP_STATUS_NOT_ACCEPTED',
+            message: 'http.request received status 400; accepted status codes: 200, 201, 409.',
+        });
+    });
+
+    it('keeps HTTP error responses observable when no accepted set is configured', async () => {
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            fetch: (async () => new Response('{"error":"diagnostic"}', {
+                status: 400,
+                headers: { 'content-type': 'application/json' },
+            })) as typeof fetch,
+        });
+
+        const result = await runtime.execute({
+            kind: 'http.request',
+            commandId: 'http-diagnostic-error',
+            request: { url: 'https://api.example.test/diagnostic' },
+            response: { body: 'json' },
+        });
+
+        expect(result.ok).toBe(true);
+        expect(result.value).toMatchObject({ status: 400, ok: false });
+    });
+
     it('authenticates API path requests without starting a full Rallar connection', async () => {
         const fetchCalls: Array<{
             input: RequestInfo | URL;

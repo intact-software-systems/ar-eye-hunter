@@ -385,7 +385,7 @@ export async function runBlackBoxRunnerLivePreflight(
                     rallarApiBaseUrl,
                     now,
                     async () => {
-                        const group = toPreflightGroup(config, environment, spec)
+                        const group = toPreflightGroup(input, environment, spec)
                         const createPath = `/api/state/apps/${encodeURIComponent(group.applicationId)}/workspaces/${
                             encodeURIComponent(group.workspaceId)
                         }/groups`
@@ -754,15 +754,14 @@ function toCredentialPairs(config: JsonRecord, environment: Record<string, strin
 }
 
 function toPreflightGroup(
-    config: JsonRecord,
+    input: BlackBoxRunnerLivePreflightInput,
     environment: Record<string, string | undefined>,
     spec: JsonRecord,
 ): Readonly<{ applicationId: string; workspaceId: string; groupId: string; groupName: string }> {
+    const config = input.config ?? {}
     const groupId = stringValue(spec.groupId) ??
         envValue(environment, 'RALLAR_BB_PREFLIGHT_GROUP_ID') ??
-        resolveVariableByEnv(config, 'RALLAR_BB_GROUP_ID', environment) ??
-        resolveVariableByEnv(config, 'RALLAR_BB_SOAK_GROUP_ID', environment) ??
-        'bb-live-preflight'
+        toPreflightGroupId(input.entryId, envValue(environment, 'RALLAR_BB_RUN_ID'))
     return {
         applicationId: stringValue(spec.applicationId) ??
             resolveVariableByEnv(config, 'RALLAR_BB_APPLICATION_ID', environment) ??
@@ -775,6 +774,12 @@ function toPreflightGroup(
             resolveVariableByEnv(config, 'RALLAR_BB_GROUP_NAME', environment) ??
             groupId,
     }
+}
+
+function toPreflightGroupId(entryId: string | undefined, runId: string | undefined): string {
+    return ['bb-live-preflight', entryId, runId]
+        .filter((value): value is string => Boolean(value))
+        .join('-')
 }
 
 async function recordAsyncCheck(

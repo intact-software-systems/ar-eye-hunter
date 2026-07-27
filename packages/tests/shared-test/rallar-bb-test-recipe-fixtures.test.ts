@@ -22,6 +22,25 @@ const EXPECTED_MESSAGES_RTC_MULTICAST_SELECTOR = {
 } as const;
 
 describe('rallar-bb-test recipe fixtures', () => {
+    it('makes RTC group setup explicit and fails unexpected HTTP statuses', () => {
+        const recipe = createRallarBlackBoxRtcSmokeRecipe();
+        const setup = recipe.commands.filter(command => command.kind === 'http.request');
+
+        expect(setup[0]).toMatchObject({
+            request: {
+                body: { kind: 'room' },
+            },
+            response: {
+                acceptedStatusCodes: [200, 201, 409],
+            },
+        });
+        expect(setup[1]).toMatchObject({
+            response: {
+                acceptedStatusCodes: [200, 201],
+            },
+        });
+    });
+
     it('builds principal messages.rtc multicast sender and receiver recipes for 50-agent runs', () => {
         const [sender, receiver] = createRallarBlackBoxRtcMessagesPrincipalMulticastRecipes({
             participantCount: 50,

@@ -124,6 +124,8 @@ function standardConfig(): BlackBoxRunnerLivePreflightInput {
             RALLAR_ALICE_USERNAME: 'alice',
             RALLAR_ALICE_PASSWORD: 'secret',
             RALLAR_PREFLIGHT_CORS_ORIGIN: 'https://spa.test',
+            RALLAR_BB_GROUP_ID: 'recipe-group',
+            RALLAR_BB_RUN_ID: 'run-123',
         },
         checkPlaywright: async () => true,
         webSocketImplementation: OpeningWebSocket,
@@ -345,6 +347,14 @@ describe('black-box runner live preflight', () => {
         ]));
         expect(report.checks.every(check => check.status === 'passed')).toBe(true);
         expect(calls.some(call => call.url.endsWith('/api/webrtc/ice'))).toBe(true);
+        const createGroup = calls.find(call =>
+            call.method === 'POST' && call.url.endsWith('/groups')
+        );
+        expect(createGroup?.body).toMatchObject({
+            groupId: 'bb-live-preflight-live-entry-run-123',
+            kind: 'room',
+        });
+        expect(createGroup?.url).not.toContain('recipe-group');
         expect(JSON.stringify(report)).not.toContain('secret');
         expect(JSON.stringify(report)).not.toContain('alice-token');
         expect(JSON.stringify(report)).not.toContain('super-secret-ticket');

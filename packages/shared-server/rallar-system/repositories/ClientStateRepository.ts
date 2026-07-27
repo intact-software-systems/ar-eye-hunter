@@ -67,6 +67,11 @@ export type ClientStateRepositoryOptions = Readonly<{
     events?: ClientStateEventStore;
 }>;
 
+export type ClientPrincipalSnapshotRead = Readonly<{
+    principal: RuntimeStateEntryValue<ClientPrincipal>;
+    snapshot: ClientSnapshot;
+}>;
+
 export function createTransactionBoundClientStateRepository(
     transaction: PSqlTransactionSql,
 ): ClientStateRepository {
@@ -486,6 +491,12 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
     async readSnapshot(
         ref: ClientPrincipalRef,
     ): Promise<ClientSnapshot | undefined> {
+        return (await this.readPrincipalSnapshot(ref))?.snapshot;
+    }
+
+    async readPrincipalSnapshot(
+        ref: ClientPrincipalRef,
+    ): Promise<ClientPrincipalSnapshotRead | undefined> {
         const principalKey = this.principalKey(ref);
         return await readStableStateSnapshot({
             snapshotKey: principalKey,
@@ -498,13 +509,15 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
                 ]);
                 return [instances, this.toActiveSessions(sessions)] as const;
             },
-            assemble: (stored, instances, activeSessions) =>
-                this.toSnapshot(
+            assemble: (stored, instances, activeSessions) => ({
+                principal: stored,
+                snapshot: this.toSnapshot(
                     stored.value,
                     instances,
                     activeSessions,
                     stored.entry.revision + 1,
                 ),
+            }),
         });
     }
 

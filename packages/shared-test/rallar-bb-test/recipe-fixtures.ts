@@ -447,11 +447,13 @@ function createRallarBlackBoxEnsureGroupCommands(input: Readonly<{
                     requestId: groupRequestKey,
                     groupId: input.group.groupId,
                     displayName: input.group.groupId,
+                    kind: 'room',
                     joinMode: 'open',
                 },
             },
             response: {
                 body: 'json',
+                acceptedStatusCodes: [200, 201, 409],
             },
         },
         {
@@ -473,6 +475,7 @@ function createRallarBlackBoxEnsureGroupCommands(input: Readonly<{
             },
             response: {
                 body: 'json',
+                acceptedStatusCodes: [200, 201],
             },
         },
     ];
