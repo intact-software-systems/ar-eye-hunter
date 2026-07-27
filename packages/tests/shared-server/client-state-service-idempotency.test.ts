@@ -526,6 +526,53 @@ describe('ClientStateService command idempotency', () => {
         expect(runtimeRepository.data.size).toBe(entriesAfterRestCurrent);
     });
 
+    it('returns canonical durable ordering for same-principal websocket sessions', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const service = createClientStateService({
+            runtimeRepository,
+            syncPublisher: createPublisher(),
+            now: () => 10_000,
+            serviceId: 'client-service',
+        });
+        const expiresAtEpochMs = Date.now() + 60_000;
+        const sessionZ: AuthSession = {
+            clientId: 'alice',
+            username: 'alice',
+            accessToken: 'token-z',
+            sessionId: 'ws-session-z',
+            expiresAtEpochMs,
+        };
+        const sessionA: AuthSession = {
+            ...sessionZ,
+            accessToken: 'token-a',
+            sessionId: 'ws-session-a',
+        };
+
+        await service.registerAuthorisedWsClientSession(sessionZ, 'generation-z', {
+            applicationId: SCOPE.applicationId,
+            workspaceId: SCOPE.workspaceId,
+            connectedAtEpochMs: 100,
+            expiresAtEpochMs,
+        });
+        const second = await service.registerAuthorisedWsClientSession(
+            sessionA,
+            'generation-a',
+            {
+                applicationId: SCOPE.applicationId,
+                workspaceId: SCOPE.workspaceId,
+                connectedAtEpochMs: 200,
+                expiresAtEpochMs,
+            },
+        );
+        const durable = await service.readSnapshot(toClientPrincipalRef('alice'));
+
+        expect(second.result.right?.snapshot).toEqual(durable);
+        expect(durable?.activeSessions.map((session) => session.sessionId)).toEqual([
+            'ws-session-a',
+            'ws-session-z',
+        ]);
+    });
+
     it('expires stale sessions once and leaves publication to the app inbox', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const expiresAtEpochMs = Date.now() - 1_000;

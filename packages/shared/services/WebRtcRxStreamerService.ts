@@ -61,6 +61,7 @@ export class WebRtcRxStreamerService {
     };
 
     private readonly heartbeatByPeerId = new Map<PeerId, WebRtcHeartbeatService>();
+    private readonly rttVersionByPeerId = new Map<PeerId, number>();
     private readonly peerDtoByPeerId = new Map<PeerId, QRtcPeerDto>();
     private readonly inboundRuntime: ALInboundMessageRuntime;
     private rttReportingPeerIds: ReadonlySet<PeerId> | undefined;
@@ -280,16 +281,18 @@ export class WebRtcRxStreamerService {
                 return Promise.resolve();
             },
             onHeartbeat: (result: PingResult) => {
+                const previousVersion = this.rttVersionByPeerId.get(peerId) ?? 0;
+                const version = Math.max(previousVersion + 1, result.version);
+                this.rttVersionByPeerId.set(peerId, version);
+                const rtt: RttMeasurementInfo = {
+                    sessionIdFrom: this.input.sessionId,
+                    sessionIdTo: peerId,
+                    rttMs: result.rttMsecs,
+                    createdAtEpochMs: Date.now(),
+                    version,
+                };
                 for (const [_, cb] of this.onRttMeasurementCallbacks.entries()) {
-                    cb.onHeartbeat(
-                            {
-                                sessionIdFrom: this.input.sessionId,
-                                sessionIdTo: peerId,
-                                rttMs: result.rttMsecs,
-                                createdAtEpochMs: Date.now(),
-                                version: result.version
-                            }
-                        )
+                    cb.onHeartbeat(rtt)
                         .catch(
                             e => console.error('Error calling onRttMeasurementCallback', e)
                         );

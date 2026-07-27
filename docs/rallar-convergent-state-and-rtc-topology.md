@@ -183,6 +183,12 @@ An equal causal revision with different content throws
 `StateSnapshotRevisionConflictError`. Silently choosing one would make a data
 integrity defect look like normal eventual consistency.
 
+Authoritative snapshot collections that represent unordered sets use canonical
+storage-key order in both the computed mutation result and durable repository
+assembly. Never depend on arrival, insertion, or database/provider iteration
+order. Preserve equal-revision content checks; ordering drift is a producer bug,
+not eventual consistency.
+
 ## Process-Owned Cached State Services
 
 API-v1 creates one group read-through cache and one client read-through cache,

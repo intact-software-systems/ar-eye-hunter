@@ -54,6 +54,11 @@ const coreConvergentWriteGuidancePaths = [
   '.agents/skills/rallar-code-writing/references/repo-code-style.md',
 ] as const;
 
+const canonicalSnapshotOrderingGuidancePaths = [
+  'AGENTS.md',
+  'docs/rallar-convergent-state-and-rtc-topology.md',
+] as const;
+
 const postCommitAudienceGuidancePaths = [
   'apps/api-v1/README.md',
   'packages/shared-server/architecture.md',
@@ -557,6 +562,20 @@ describe('Rallar repo skill and documentation integrity', () => {
       );
       expect(guidance).toMatch(/queue locks.{0,80}coordination-only/i);
       expect(guidance).toMatch(/computed persistence data.{0,40}not.{0,20}(?:called )?a plan/i);
+    },
+  );
+
+  it.each(canonicalSnapshotOrderingGuidancePaths)(
+    '%s requires canonical ordering for authoritative snapshot collections',
+    (filePath) => {
+      expectAllNormalized(readRepo(filePath), [
+        'Authoritative snapshot collections that represent unordered sets',
+        'canonical storage-key order',
+        'computed mutation result',
+        'durable repository assembly',
+        'arrival, insertion, or database/provider iteration order',
+        'equal-revision content checks',
+      ]);
     },
   );
 

@@ -37,6 +37,10 @@ import {
     computeClientStateSyncEntries,
     type ComputedClientStateSync,
 } from '../state-sync-publisher.ts';
+import {
+    compareClientStateInstanceStorageKeys,
+    compareClientStateSessionStorageKeys,
+} from '../client-state-storage-keys.ts';
 import type { PersistedAuthSession } from '../repositories/AuthSessionRepository.ts';
 
 type NullableActorInput = Readonly<{
@@ -1534,6 +1538,8 @@ function toComputedSnapshot(
         else if (isActive) activeSessions[index] = session.value;
         else if (index >= 0) activeSessions.splice(index, 1);
     }
+    instances.sort(compareClientStateInstanceStorageKeys);
+    activeSessions.sort(compareClientStateSessionStorageKeys);
     const lastSeenAtEpochMs = activeSessions.reduce<number | null>(
         (latest, candidate) => latest === null
             ? candidate.lastHeartbeatAtEpochMs
