@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a repo-local workflow that publishes observable GitHub checkpoints during long-running implementation-plan execution without waiting for human review.
+**Goal:** Add a repo-local workflow that publishes observable GitHub checkpoints during long-running implementation-plan execution without waiting for human review, while requiring explicit just-in-time approval for every default-branch push.
 
-**Architecture:** Keep `AGENTS.md` as the automatic router and put the complete publication contract in one new repo-local skill. Extend the existing skill-integrity test so discovery, routing, branch policy, checkpoint cadence, and the non-blocking review rule remain executable repository contracts.
+**Architecture:** Keep `AGENTS.md` as the automatic router and repository-wide default-branch safety rule, and put the complete publication contract in one new repo-local skill. Extend the existing skill-integrity test so discovery, routing, branch policy, checkpoint cadence, the default-branch push gate, and the non-blocking review rule remain executable repository contracts.
 
 **Tech Stack:** Markdown agent skills, Codex plugin JSON, Vitest, TypeScript.
 
@@ -13,6 +13,10 @@
 - Apply this change directly on `main` as explicitly requested by the user.
 - Preserve the user's durable requirement that future long-running plan execution publishes progress unless an explicit instruction narrows or disables publication.
 - Use `codex/<topic>` for future agent-created feature branches.
+- Work and commits on the default branch remain local until the agent presents
+  the exact remote, destination ref, commit range, and force status and receives
+  explicit just-in-time permission. Each later push requires a new request and
+  approval.
 - Never stage unrelated changes, secrets, generated junk, or artificial empty commits.
 - Human review observes progress but does not pause plan execution by default.
 
@@ -21,12 +25,14 @@
 ### Task 1: Enforce and document observable plan progress
 
 **Files:**
+
 - Create: `.agents/skills/publishing-plan-progress/SKILL.md`
 - Modify: `AGENTS.md`
 - Modify: `.codex-plugin/plugin.json`
 - Modify: `packages/tests/repo/rallar-skill-integrity.test.ts`
 
 **Interfaces:**
+
 - Consumes: written implementation plans, repository Git state, the GitHub publish workflow, and explicit user instructions.
 - Produces: a discoverable `publishing-plan-progress` skill plus executable routing and workflow assertions.
 
@@ -104,3 +110,46 @@ respecting an explicit default-branch override.
 git add .agents/skills/publishing-plan-progress/SKILL.md AGENTS.md .codex-plugin/plugin.json packages/tests/repo/rallar-skill-integrity.test.ts docs/superpowers/plans/2026-07-27-publishing-plan-progress.md
 git commit -m "docs: publish long-running plan progress"
 ```
+
+---
+
+### Task 2: Require explicit permission before every default-branch push
+
+**Files:**
+
+- Modify: `AGENTS.md`
+- Modify: `.agents/skills/publishing-plan-progress/SKILL.md`
+- Modify: `packages/tests/repo/rallar-skill-integrity.test.ts`
+- Modify: `docs/superpowers/specs/2026-07-27-publishing-plan-progress-design.md`
+- Modify: `docs/superpowers/plans/2026-07-27-publishing-plan-progress.md`
+
+- [x] **Step 1: Establish the behavioral baseline**
+
+Confirm that the previous guidance would push the default branch without a
+just-in-time permission request when the user requested work directly on it.
+
+- [x] **Step 2: Write and run the failing integrity contract**
+
+Require a repository-wide prohibition plus skill guidance that keeps default-
+branch commits local, describes the exact remote, destination ref, commit range,
+and force status, asks immediately before every push, waits for explicit
+approval, and never treats silence or standing preferences as consent.
+
+- [x] **Step 3: Add the default-branch push gate**
+
+Add the concise durable rule to `AGENTS.md`, the operational steps to the
+publication skill, and the rationale and compatibility boundary to the design.
+Keep automatic checkpoint pushes unchanged when their destination refs are
+non-default published branches. Require separate disclosure and approval for a
+force push, and continue safe local work while default-branch publication waits.
+
+- [x] **Step 4: Verify and pressure-test the rule**
+
+Run the focused repository skill tests, validate the skill structure, and test
+direct-default-branch, standing-publication, early-approval, and ordinary
+feature-branch scenarios with an isolated agent.
+
+- [x] **Step 5: Commit locally without pushing `main`**
+
+Commit only the five in-scope files on `main`. Do not push the commit; a future
+push requires a new, exact permission request immediately before the operation.

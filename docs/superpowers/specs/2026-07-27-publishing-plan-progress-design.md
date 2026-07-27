@@ -24,14 +24,20 @@ policy. It does not make every small coding task publish a pull request.
   explicitly partial plan progress.
 - **Long-running work:** execution of a written plan, or implementation the
   agent reasonably expects to require multiple substantial work intervals.
+- **Default-branch push approval:** explicit, just-in-time user consent for one
+  described push to `main`, `master`, or the remote default branch.
 
 ## Workflow Contract
 
 1. Before implementation, inspect the Git state and preserve unrelated user
-   changes. Work on a `codex/<topic>` branch, never `main` or `master`.
-2. Push the branch with upstream tracking as soon as the branch exists.
-3. Open a draft pull request after the first meaningful commit. If the branch
-   already contains a committed plan or design, that commit is sufficient.
+   changes. Unless the user explicitly overrides branch placement for the
+   current task, work on a `codex/<topic>` branch, never `main` or `master`.
+2. Push a non-default branch with upstream tracking as soon as the branch
+   exists. A default-branch override permits local work and commits only; it
+   does not authorize pushing that branch.
+3. On a non-default branch, open a draft pull request after the first meaningful
+   commit. If it already contains a committed plan or design, that commit is
+   sufficient.
 4. Continue implementing without waiting for human review.
 5. After each completed plan milestone or cohesive vertical slice:
    - run the focused verification appropriate to that checkpoint;
@@ -59,6 +65,25 @@ If the Codex app starts the task in a detached worktree, use its **Create branch
 here** control before publication. If the environment cannot create or push a
 branch, preserve the work and report the exact native action or authorization
 needed; do not claim that progress is published.
+
+### Default-Branch Push Gate
+
+No AI or agent may push `main`, `master`, or the remote default branch on an
+implicit instruction. Before each such push, the agent keeps the commits local,
+states the exact remote, destination ref, commit range, and whether the push is
+forced; asks permission immediately before the operation; and waits for explicit
+approval. It then pushes only the described range and refspec. Approval covers
+only a normal fast-forward push unless force was separately disclosed and
+approved; any later default-branch push requires a new request.
+
+Permission to work or commit on the default branch is not permission to push.
+Neither a standing progress-publication preference, available authentication,
+deadline pressure, silence, nor approval given before the exact push was
+presented satisfies the gate. This gate does not delay automatic checkpoint
+pushes whose destination refs are non-default published branches. It still
+applies when a feature source branch is pushed to the remote default ref. While
+approval is pending, safe local plan execution continues; only publication to
+the default branch pauses.
 
 The draft PR description should contain:
 
@@ -89,8 +114,10 @@ and durable statement that observable progress is required.
 
 ## Compatibility and Risk
 
-The rule is limited to plan execution and long-running work, avoiding PR noise
-for small tasks. Publishing remains conditional on an accessible remote and
-authentication. Explicit user instructions can narrow or disable publication
-for sensitive work. Existing branch protection, required reviews, and merge
-controls remain authoritative.
+The observable-progress rule is limited to plan execution and long-running
+work, avoiding PR noise for small tasks. The default-branch push gate applies to
+all agent work in this repository. Publishing remains conditional on an
+accessible remote and authentication. Explicit user instructions can narrow or
+disable publication for sensitive work, but a branch-placement instruction does
+not bypass the just-in-time default-branch gate. Existing branch protection,
+required reviews, and merge controls remain authoritative.

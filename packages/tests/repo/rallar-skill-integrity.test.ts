@@ -150,9 +150,16 @@ describe('Rallar repo skill and documentation integrity', () => {
       '- For written implementation plans and clearly long-running repository implementation,\n' +
         '  including docs, scripts, and operations, use `publishing-plan-progress`.',
     );
+    expectAll(agents, [
+      'No AI or agent may push `main`, `master`, or the remote default branch',
+      'the push is forced',
+      'permission immediately before the push',
+      'Each default-branch push requires a new permission request and approval',
+    ]);
     expectAll(progressSkill, [
       '`codex/<topic>`',
       'draft pull request',
+      'On a non-default branch',
       'completed plan milestone',
       'without waiting for human review',
       'Explicit user instructions',
@@ -161,6 +168,17 @@ describe('Rallar repo skill and documentation integrity', () => {
       'detached worktree',
       'Create branch here',
       'Explicit user instructions may narrow or disable publication',
+      'Default Branch Push Permission',
+      'Working or committing on the default branch is not permission to',
+      'push it. A standing instruction to publish progress',
+      'standing instruction to publish progress',
+      'exact remote, destination ref, commit',
+      'Wait for explicit approval',
+      'treat silence as approval',
+      'Any later default-branch push requires a new request and approval.',
+      'force push was separately disclosed',
+      'any source branch is pushed to the remote default ref',
+      'pauses only that publication, not safe local plan work',
     ]);
     expect(plugin.keywords).toEqual(
       expect.arrayContaining([
