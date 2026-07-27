@@ -97,6 +97,25 @@ The reusable facade is `packages/shared-server/rallar-facade/RallarServer.ts`.
 
 ## Current Authoritative Mutation Model
 
+**AppInbox is mandatory for incoming database mutations.** All incoming HTTP
+and WebSocket database writes use it, including client/group/topology,
+authentication/session/ticket, CRDT append/admin, and mutating admin operations.
+AppInbox owns the transaction and retry boundary; result waiting never falls
+back to a direct mutation.
+
+```text
+HTTP/WS mutation
+  -> APP_INBOX
+  -> read -> compute -> validate
+  -> AppInbox transaction
+       -> service.write(transaction, computed)
+       -> authoritative state/event/receipt
+       -> APP_OUTBOX/WS_OUTBOX
+       -> result + reservation-fenced completion
+  -> commit
+  -> wake/poll workers
+```
+
 The five guarded operation families keep one visible `read`, `compute`,
 `validate`, `write` sequence:
 
@@ -112,18 +131,23 @@ The five guarded operation families keep one visible `read`, `compute`,
 - RTT: `readRttMutation`, `computeRttMutation`, `validateRttMutation`,
   `writeRttMutation`.
 
-The `compute` and `validate` phases are pure. Only `write` opens the
-transaction, its conditional guard is first, and a conflict restarts at
-`read`. Retries use `DEFAULT_RUNTIME_STATE_WRITE_BACKOFF_MS` (`[0, 2, 8]` ms),
-`waitForRuntimeStateWriteRetry`, and `RuntimeStateRetryExhaustedError`.
+The `compute` and `validate` phases are pure; computed persistence data is not
+called a plan. The service `write(transaction, computed)` is transaction-bound:
+service write receives the transaction and never opens, commits, replaces, or
+retries one. Its conditional guard is first. A conflict returns to AppInbox,
+which rereads and revalidates the complete decision surface.
 
-Client/group/topology-config effects use direct transaction-bound `ResourceInbox`
-APP_OUTBOX/WS_OUTBOX entries. Guarded state, compact `MutationReceipt` authority,
-the outbox rows, and any
-event commit atomically. RTC topology similarly commits its snapshot guard,
-work claim, and immutable publication atomically; RTT commits endpoint guards,
-measurement, receipt, and recompute intents atomically. The async drainers own
-state-sync publication and topology recomputation after commit.
+Client/group/topology-config effects use direct transaction-bound `APP_OUTBOX`/
+`WS_OUTBOX` entries through `ResourceInboxRepository`. Guarded state, compact
+`MutationReceipt` authority, result, outbox rows, and any event commit
+atomically. There is no intermediate mutation outbox. RTC topology similarly
+commits its snapshot guard, work claim, and immutable publication atomically;
+RTT commits endpoint guards, measurement, receipt, and recompute intents.
+
+Resource inbox allows 20 total processing attempts. Attempts one through five
+wait 1, 2, 4, 8, and 16 ms; later waits rise through seconds, cap at 30 seconds,
+and use jitter. A distinct best-effort fairness lane claims retries more than 30
+seconds overdue independently from timeout recovery.
 
 Concurrency domains are explicit. Client state guards the principal; group
 metadata and roster guard the group; presence guards one session and does not
@@ -140,17 +164,22 @@ revalidation, and conditional database write. It is not a database-lock
 substitute or precedent, and it must never be used to justify removing the CAS
 guard or adding a row, table, or advisory lock.
 
-Authoritative shared fields are mandatory except documented input or migration
-exceptions. Sparse request/query/patch/build types do not weaken persisted,
-replicated, queued, event, snapshot, receipt, or response values.
+Authoritative persisted and shared contracts use mandatory fields by default.
+Optional fields require meaningful domain absence and consumer tests. Sparse
+request/query/patch/build/migration types remain separate.
 
 ## Intentional Residual Database Lock Inventory
 
-This is the exhaustive inventory of production database-lock mechanisms that
-remain in `packages/shared-server` after the convergent-write remediation. It
-is descriptive migration debt, not precedent or blanket approval for another
-caller. Retaining an entry requires explicit human approval supported by a
-measured need; each review must consider the removal condition recorded here.
+Queue locks are coordination-only. The only current production lock mechanism
+is bounded `FOR UPDATE SKIP LOCKED` selection for resource-inbox reservation,
+timeout recovery, and the fairness lane. Authentication/session/ticket, AL
+admission, CRDT, client, group, and topology writes use conditional
+insert/update/delete fencing. Advisory locks and CRDT document-row locks are not
+approved queue-claim exceptions.
+
+The non-queue subsections below preserve historical evidence of mechanisms
+removed by the AppInbox design. Their present-tense descriptions refer to the
+superseded implementation and must not be used as current architecture.
 
 ### `PSqlRuntimeStateRepository.lockKey`
 

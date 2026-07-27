@@ -13,7 +13,7 @@ deployment settings around these shared services.
 - `rallar-system/services/` owns client/group state, topology, state sync,
   app-inbox processing, authorization, timing, and routing.
 - `rallar-system/repositories/` owns durable state, compact mutation receipts,
-  the mutation outbox, topology publications, and QueueBox contracts.
+  direct resource-inbox effects, topology publications, and QueueBox contracts.
 - `runtime-state/` exposes conditional and transactional capabilities;
   `postgres/` supplies the concrete Postgres adapters.
 
@@ -22,22 +22,40 @@ and state-event logs in `client_state_events` and `group_state_events`.
 
 ## Implemented Convergent Database Writes
 
+**AppInbox is mandatory for incoming database mutations.** All HTTP and
+WebSocket database mutations use AppInbox, including client/group/topology,
+authentication/session/ticket, CRDT append/admin, and mutating admin paths.
+AppInbox owns the transaction and retry boundary; synchronous result waiting
+never falls back to direct mutation.
+
+```text
+HTTP/WS mutation
+  -> APP_INBOX
+  -> read -> compute -> validate
+  -> AppInbox transaction
+       -> service.write(transaction, computed)
+       -> authoritative state/event/receipt
+       -> APP_OUTBOX/WS_OUTBOX
+       -> result + reservation-fenced completion
+  -> commit
+  -> wake/poll workers
+```
+
 Authoritative runtime-state creation, update, and deletion use
 `insertIfAbsent`, `upsertIfRevision`, and `deleteIfRevision`. Client, group,
 topology-config, RTC topology/publication, and RTT mutations use one visible
 `read`, `compute`, `validate`, `write` sequence. The `compute` and `validate`
-phases are pure. Only `write` opens the transaction, and the operation-specific
-conditional guard is its first database statement. A conflict rolls the
-transaction back and restarts at `read`, including fresh authorization,
-policy, capacity, lifecycle, and invariant checks.
+phases are pure; computed persistence data is not called a plan. The service
+`write(transaction, computed)` is transaction-bound: service write receives the
+transaction and never opens, commits, replaces, or retries one. Its conditional
+guard is first. A conflict rolls back and returns to AppInbox, which starts a
+new processing attempt with fresh authorization, policy, capacity, lifecycle,
+and invariant checks.
 
-The shared retry schedule is
-`DEFAULT_RUNTIME_STATE_WRITE_BACKOFF_MS = [0, 2, 8]`. Each attempt calls
-`waitForRuntimeStateWriteRetry` before reading, so every nonzero wait is outside
-the transaction. An exhausted budget raises `RuntimeStateRetryExhaustedError`;
-domain adapters preserve their documented typed error codes, including
-`client-state-write-conflict`, `group-state-write-conflict`, and
-`group-topology-commit-conflict` where applicable.
+Resource inbox allows 20 total processing attempts. Attempts one through five
+wait 1, 2, 4, 8, and 16 ms; later waits rise through seconds, cap at 30 seconds,
+and use jitter. A separate best-effort fairness lane claims retries more than 30
+seconds overdue independently from timeout recovery.
 
 The implementation guard covers these exact operation families:
 
@@ -68,10 +86,11 @@ The implemented `MutationReceipt` family consists of
 snapshots. Group state and downstream effects carry the two-component
 `GroupStateCausalRevision` (`groupRevision`, `presenceRevision`).
 
-Client/group/topology-config writes insert immutable `ResourceInbox` APP_OUTBOX
-or WS_OUTBOX entries in the same transaction as guarded state, receipt, and any
-event. A collision is a typed failure that rolls back the transaction; AppInbox
-owns command ingress but does not publish committed mutation effects inline.
+Client/group/topology-config writes insert immutable `APP_OUTBOX` or `WS_OUTBOX`
+entries directly through `ResourceInboxRepository` in the same transaction as
+guarded state, receipt, result, and any event. There is no intermediate mutation
+outbox. A collision is a typed failure that rolls back the transaction; AppInbox
+does not publish committed mutation effects inline.
 
 RTC topology execution atomically guards the snapshot and inserts its compact
 work claim plus immutable publication. RTT acceptance guards endpoint
@@ -113,6 +132,7 @@ exceptions. Persisted, replicated, queued, event, snapshot, receipt, and
 successful response contracts are complete. Sparse request, query, patch,
 builder, and migration types remain separate. Meaningful absence is represented
 explicitly, commonly as required `null`.
+Authoritative persisted and shared contracts use mandatory fields by default.
 
 ## Measured Boundary
 
@@ -138,14 +158,14 @@ but no newer governed performance candidate. A current mutation-path or
 concurrency-domain change must produce a fresh artifact and pass the comparative
 gate; historical numbers cannot be relabeled as current results.
 
-## Locks: Current And Historical
+## Queue Coordination Locks
 
-No targeted client, group, topology-config, topology snapshot/publication/
-execution, or RTT repository calls `lockKey`. Earlier lock-based implementations
-and pre-outbox publication ordering are historical evidence only and must not be
-copied. Database row, table, and advisory lock exceptions require explicit
-human approval, a measured need, a documented invariant, a bounded critical
-section, and a review/removal condition.
+Queue locks are coordination-only. `FOR UPDATE SKIP LOCKED` is bounded to
+resource-inbox reservation, timeout-recovery, and fairness claims; it is not
+domain mutation authority. Authentication/session/ticket, AL admission, CRDT,
+client, group, and topology writes use conditional insert/update/delete fencing.
+Advisory locks and CRDT document-row locks are not approved queue-claim
+exceptions or architecture precedent.
 
 The exhaustive current exception inventory is in
 `rallar-server-repositories.md`. It covers QueueBox claiming

@@ -7,6 +7,28 @@ the application can accept deterministic merge semantics.
 Use `rallar.crdt`, not `rallar.data`, for mergeable collaboration. `rallar.data`
 remains a local latest-value store.
 
+## Durable Mutation Ownership
+
+**AppInbox is mandatory for incoming database mutations.** This includes CRDT
+WebSocket append and CRDT admin mutations as well as all other HTTP/WS
+client/group/topology, authentication/session/ticket, and mutating admin paths.
+AppInbox owns the transaction and retry boundary; waiting for a result never
+falls back to a direct CRDT repository mutation.
+
+The pure `read`, `compute`, and `validate` phases produce computed persistence
+data, not a plan. The service `write(transaction, computed)` applies it: service
+write receives the transaction and never opens or retries one. It writes CRDT
+state, receipt, result, and final `APP_OUTBOX`/`WS_OUTBOX` entries directly
+through `ResourceInboxRepository` in the same transaction. There is no
+intermediate mutation outbox.
+
+Resource inbox allows 20 total processing attempts, staged from 1, 2, 4, 8,
+and 16 ms through seconds capped at 30 seconds with jitter. A separate
+best-effort fairness lane claims retries more than 30 seconds overdue. Queue
+locks are coordination-only; CRDT document-row and advisory locks are not
+queue-claim exceptions. Authoritative persisted/shared CRDT contracts use
+mandatory fields by default.
+
 ## When To Use It
 
 Use CRDT documents for:

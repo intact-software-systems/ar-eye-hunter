@@ -4,6 +4,41 @@
 WS topics, RTC signaling/topology, CRDT, app data, and route mounting. It should not become a
 concrete game server.
 
+## Database Mutation Ownership
+
+**AppInbox is mandatory for incoming database mutations.** Every HTTP and
+WebSocket database mutation uses it, including client/group/topology,
+authentication/session/ticket, CRDT append/admin, and mutating admin operations.
+AppInbox owns the transaction and retry boundary; waiting for a synchronous
+result never falls back to direct mutation.
+
+```text
+HTTP/WS mutation
+  -> APP_INBOX
+  -> read -> compute -> validate
+  -> AppInbox transaction
+       -> service.write(transaction, computed)
+       -> authoritative state/event/receipt
+       -> APP_OUTBOX/WS_OUTBOX
+       -> result + reservation-fenced completion
+  -> commit
+  -> wake/poll workers
+```
+
+The read, compute, and validate phases are pure. Computed persistence data is
+not called a plan. The service `write(transaction, computed)` applies it:
+service write receives the transaction and never opens, commits, replaces, or
+retries one. It writes final `APP_OUTBOX` and `WS_OUTBOX` rows directly through
+`ResourceInboxRepository` in the same transaction as state, event, receipt, and
+result. There is no intermediate mutation outbox.
+
+Resource inbox allows 20 total processing attempts: 1, 2, 4, 8, and 16 ms for
+attempts one through five, increasing seconds capped at 30 seconds with jitter,
+and a separate best-effort fairness lane for retries more than 30 seconds
+overdue. Queue locks are coordination-only. Domain row, table, advisory, and
+CRDT document locks are not queue-claim exceptions. Authoritative persisted and
+shared contracts use mandatory fields by default.
+
 ## Production Hardening
 
 Set `RALLAR_PRODUCTION_HARDENING=1` or `ENVIRONMENT=prod` to make startup fail closed when

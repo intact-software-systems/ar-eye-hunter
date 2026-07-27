@@ -8,6 +8,28 @@ This document describes the public facade APIs in:
 
 It also references the server facade wrappers where they are the normal way to consume the middleware runtime.
 
+## API-v1 Mutation Ownership
+
+**AppInbox is mandatory for incoming database mutations.** Every HTTP and
+WebSocket database mutation uses it, including client/group/topology,
+authentication/session/ticket, CRDT append/admin, and mutating admin operations.
+AppInbox owns the transaction and retry boundary; synchronous result waiting
+never falls back to a direct mutation.
+
+The pure `read`, `compute`, and `validate` phases produce computed persistence
+data, not a plan. The service `write(transaction, computed)` applies it: service
+write receives the transaction and never opens or retries one. State, event,
+receipt, result, and final `APP_OUTBOX`/`WS_OUTBOX` rows commit together; the
+final queue rows are written directly through `ResourceInboxRepository` in the
+same transaction. There is no intermediate mutation outbox.
+
+Resource inbox permits 20 total processing attempts: 1, 2, 4, 8, and 16 ms for
+attempts one through five, then increasing seconds capped at 30 seconds with
+jitter. A separate best-effort fairness lane claims retries more than 30 seconds
+overdue. Queue locks are coordination-only, not domain row/advisory/CRDT lock
+precedent. Authoritative persisted and shared contracts use mandatory fields by
+default.
+
 ## Browser Rallar
 
 Import one shared facade instance, or create an isolated facade:

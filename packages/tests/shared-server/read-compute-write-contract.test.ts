@@ -6,7 +6,10 @@ const serviceRoot = 'packages/shared-server/rallar-system/services';
 const repositoryRoot = 'packages/shared-server/rallar-system/repositories';
 
 const sources = {
+    appAdmin: read(`${serviceRoot}/AppAdminInboxService.ts`),
+    appAuth: read(`${serviceRoot}/AppAuthInboxService.ts`),
     appClient: read(`${serviceRoot}/AppClientInboxService.ts`),
+    appCrdt: read(`${serviceRoot}/AppCrdtInboxService.ts`),
     appGroup: read(`${serviceRoot}/AppGroupInboxService.ts`),
     client: read(`${serviceRoot}/client-state-service.ts`),
     group: read(`${serviceRoot}/group-state-guarded-batch.ts`),
@@ -49,6 +52,39 @@ describe('read/compute/validate/write implementation contract', () => {
     });
 
     it.each([
+        {
+            name: 'auth AppInbox',
+            source: sources.appAuth,
+            owner: 'processCommand',
+            calls: [
+                'this.authMutationService.read(command)',
+                'this.authMutationService.compute(command, read, facts)',
+                'this.authMutationService.validate(command, read, computed)',
+                'this.authMutationService.write(transaction, computed)',
+            ],
+        },
+        {
+            name: 'CRDT AppInbox',
+            source: sources.appCrdt,
+            owner: 'processCommand',
+            calls: [
+                'this.mutationService.read(command)',
+                'this.mutationService.compute(command, read)',
+                'this.mutationService.validate(command, read, computed)',
+                'this.mutationService.write(transaction, computed)',
+            ],
+        },
+        {
+            name: 'admin AppInbox',
+            source: sources.appAdmin,
+            owner: 'processCommand',
+            calls: [
+                'this.read(command)',
+                'this.compute(command, read)',
+                'this.validate(command, read, computed)',
+                'this.writeMutation(context',
+            ],
+        },
         {
             name: 'client AppInbox',
             source: sources.appClient,

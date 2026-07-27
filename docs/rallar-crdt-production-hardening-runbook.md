@@ -3,6 +3,27 @@
 This runbook documents the production controls that sit around the implemented
 `rallar.crdt` surface.
 
+## Durable Mutation Ownership
+
+**AppInbox is mandatory for incoming database mutations**, including CRDT
+WebSocket append/admin plus all HTTP/WS client/group/topology,
+authentication/session/ticket, and mutating admin paths. AppInbox owns the
+transaction and retry boundary. The pure read/compute/validate stages produce
+computed persistence data, not a plan; service `write(transaction, computed)`
+applies it: service write receives the transaction and never opens or retries
+one.
+
+CRDT state, receipt, result, and final `APP_OUTBOX`/`WS_OUTBOX` rows commit in
+the same transaction. Final queue rows go directly through
+`ResourceInboxRepository`; there is no intermediate mutation outbox. Resource
+inbox permits 20 total processing attempts, beginning at 1, 2, 4, 8, and 16 ms,
+then rising through seconds capped at 30 seconds with jitter. A distinct
+best-effort fairness lane claims retries more than 30 seconds overdue.
+
+Queue locks are coordination-only. CRDT document-row and advisory locks are not
+approved queue-claim exceptions; use conditional insert/update/delete fencing.
+Authoritative persisted and shared contracts use mandatory fields by default.
+
 ## Rollout Controls
 
 Use `RallarCrdtDocumentTypePolicy` for document-type rollout:

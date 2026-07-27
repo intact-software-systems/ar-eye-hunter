@@ -4,10 +4,23 @@ Status: historical hardening log. This document records implementation evidence,
 past risks, and deferred ideas. Use `architecture.md` and
 `rallar-server-repositories.md` for the active server architecture. In
 particular, current client/group/topology-config mutations commit an insert-only
-direct `ResourceInbox` effects with guarded state and compact receipt. AppInbox
-remains command ingress, while restart-safe QueueBox work owns state-sync
-publication and topology recomputation. Earlier AppInbox-plus-post-commit
-publication descriptions below are retained only as historical context.
+direct `ResourceInbox` effects with guarded state and compact receipt.
+
+**AppInbox is mandatory for incoming database mutations**, including all HTTP
+and WebSocket client/group/topology, authentication/session/ticket, CRDT
+append/admin, and mutating admin paths. AppInbox owns the transaction and retry
+boundary. Computed persistence data is not called a plan; service
+`write(transaction, computed)` is pure-data application: service write receives
+the transaction and never opens or retries one. It writes final `APP_OUTBOX` and
+`WS_OUTBOX` entries directly through `ResourceInboxRepository` in the same
+transaction as state/event/receipt/result. There is no intermediate mutation
+outbox. Authoritative contracts use mandatory fields by default.
+
+Resource inbox has 20 total processing attempts, staged from 1, 2, 4, 8, and 16
+ms through seconds capped at 30 seconds with jitter. A separate best-effort
+fairness lane claims retries more than 30 seconds overdue. Queue locks are
+coordination-only; domain row/advisory/CRDT document locks are not queue-claim
+exceptions. Earlier mutation ownership descriptions below are historical only.
 
 This document lists problem areas found while analysing Rallar Server repositories, persistence, caches, and REST/WS
 data flow. It is intentionally separate from the architecture document so the descriptive model and hardening work stay
@@ -1143,18 +1156,16 @@ Status: implemented for the reviewed client, group, topology-config, topology
 snapshot/publication/execution, and RTT paths.
 
 The July 2026 api-v1 database-writing review superseded earlier advisory-lock
-hardening. The current paths use `insertIfAbsent`, `upsertIfRevision`, and
-`deleteIfRevision`, with `DEFAULT_RUNTIME_STATE_WRITE_BACKOFF_MS` (`[0, 2, 8]`
-ms), `waitForRuntimeStateWriteRetry`, and
-`RuntimeStateRetryExhaustedError`. Each conflict restarts at `read` and reruns
-the full decision surface.
+hardening. Current paths use `insertIfAbsent`, `upsertIfRevision`, and
+`deleteIfRevision`; each conflict returns to AppInbox so the next processing
+attempt restarts at `read` and reruns the full decision surface.
 
 Client, group, topology-config, RTC topology, and RTT orchestration now exposes
 direct `read`, `compute`, `validate`, and `write` phases. The `compute` and
-`validate` phases are pure; only `write` opens the transaction, and its
-conditional guard is first. Direct `ResourceInbox` writes make externally
-effectful outbox rows atomic with guarded state and the compact
-`MutationReceipt` family. Group and presence authority uses
+`validate` phases are pure; AppInbox owns the transaction and the conditional
+guard is first. Direct final resource-inbox writes make externally effectful
+outbox rows atomic with guarded state and the compact `MutationReceipt` family.
+Group and presence authority uses
 `GroupStateCausalRevision`; presence uses a per-session guard and does not
 contend on the group row.
 
@@ -1164,11 +1175,11 @@ convergence across independent Postgres clients. Historical lock-waiting tests
 and pre-outbox publication ordering are not acceptance evidence and must not be
 copied.
 
-Database row, table, and advisory locks are exceptions requiring explicit human
-approval, a documented invariant and measured need, a bounded critical section,
-and a review or removal condition. A transaction provides atomicity; it is not
-the concurrency guard unless the authoritative transition also checks the
-expected revision.
+Authentication/session/ticket, AL admission, and CRDT domain changes now use
+conditional insert/update/delete fencing. Advisory and CRDT document-row locks
+are not approved exceptions. A transaction provides atomicity; it is not the
+concurrency guard unless the authoritative transition checks the expected
+revision.
 
 ## 12. Idempotent Defaults And Maintenance Identity Audit
 

@@ -37,6 +37,27 @@ the repo-local Codex plugin under `.agents/skills/**`.
   match authority.
 - Use Rallar Motion for presentation smoothing, not simulation authority.
 - RallarAI output is proposal data until validated and accepted by domain code.
+- **AppInbox is mandatory for incoming database mutations.** Every incoming
+  HTTP and WebSocket database mutation goes through it, including client/group/
+  topology, authentication/session/ticket, CRDT append/admin, and mutating
+  admin operations. A synchronous result wait never falls back to a direct
+  mutation.
+- AppInbox owns the transaction and retry boundary. Keep direct `read`,
+  `compute`, and `validate` phases, then open the AppInbox transaction. The
+  `compute` and `validate` phases are pure. Computed persistence data is not
+  called a plan. The service
+  `write(transaction, computed)` applies it: service write receives the
+  transaction and never opens, commits, replaces, or retries one. A conflict
+  returns to AppInbox for a fresh read and complete revalidation.
+- The received transaction commits state, event, receipt, durable result, and
+  final `APP_OUTBOX`/`WS_OUTBOX` rows directly through
+  `ResourceInboxRepository` in the same transaction. There is no intermediate
+  mutation outbox. Resolve logical WebSocket audiences and wake workers after
+  commit.
+- Resource inbox allows 20 total processing attempts. Attempts one through five
+  wait 1, 2, 4, 8, and 16 ms; later waits rise through seconds, cap at 30
+  seconds, and use jitter. A separate best-effort fairness lane claims retries
+  more than 30 seconds overdue independently from timeout recovery.
 - Optimistic compare-and-set writes with bounded retries are the default for
   authoritative shared database state. Conditional insert owns creation;
   expected-revision compare-and-set owns updates; expected-revision conditional
@@ -45,20 +66,11 @@ the repo-local Codex plugin under `.agents/skills/**`.
 - Every optimistic retry must re-read and rerun authorization, policy, capacity,
   lifecycle, and invariant checks. Never retry only a stale final write.
 - Keep authoritative mutation control flow as direct, named `read`, `compute`,
-  `validate`, and `write` statements. The `compute` and `validate` phases are
-  pure; only the `write` phase opens the transaction, and its conditional guard
-  is first. A conflict restarts at `read`. The shared retry implementation is
-  `DEFAULT_RUNTIME_STATE_WRITE_BACKOFF_MS` (`[0, 2, 8]` ms),
-  `waitForRuntimeStateWriteRetry`, and `RuntimeStateRetryExhaustedError`.
-  Measure the direct statements before and after; do not hide phase work inside
-  timing callback wrappers. Report transaction timing separately.
-- Insert the authoritative outbox intent inside the same transaction as state,
-  idempotency receipt, and event. `StateMutationOutboxRepository` makes these
-  outbox rows atomic with the guarded state write. This path is insert-only: a
-  key collision is a typed failure that rolls back the transaction and never
-  reads a winner. Winner loading is reserved for an explicitly
-  non-authoritative/read path. The implemented `MutationReceipt` family is
-  compact authority, and group effects carry `GroupStateCausalRevision`.
+  `validate`, and `write` statements. The conditional guard is the first write.
+  Measure direct phases and the AppInbox transaction separately. Final outbox
+  insertion is insert-only: a collision rolls back and never loads a winner.
+  The `MutationReceipt` family remains compact authority, and group effects
+  carry `GroupStateCausalRevision`.
 - Preserve caller omission as explicit `null` in the semantic command and hash
   that intent before applying server clock or random defaults. Capture any
   volatile candidate once in mandatory immutable facts only after a validated
@@ -77,10 +89,11 @@ the repo-local Codex plugin under `.agents/skills/**`.
 - Keep internal cleanup/expiry behind a separately wired narrow maintenance
   capability. Never expose it through public group service or app-inbox types,
   and never accept caller-provided actor, reason, or bypass fields.
-- Database row, table, and advisory locks are exceptional. Do not copy an
-  existing lock as architecture precedent. Any exception needs explicit human
-  approval, a documented invariant and measured need, a bounded critical
-  section, and a review or removal condition.
+- Queue locks are coordination-only for bounded reservation claims. They do not
+  approve domain row, table, advisory, or CRDT document locks. Existing direct
+  handlers, service-owned transactions/retries, intermediate outboxes, and
+  domain locks are migration debt, not precedent. Deadline, sunk-cost, or
+  authority pressure does not waive these rules or required verification.
 - Authoritative persisted, replicated, queued, event, snapshot, and response
   contracts use mandatory fields by default. Optional fields require meaningful
   domain absence and consumer tests; sparse request, query, patch, builder, and

@@ -32,31 +32,43 @@ rg -n "GroupRef|groupRef|groupId|roomId|createAndSwitch|createAndJoin|joinRoom|w
 
 - Authoritative shared fields are mandatory except documented input or
   migration exceptions.
+- Authoritative persisted and shared contracts use mandatory fields by default.
 - Prefer `GroupRef` over bare `groupId` when application/workspace scope matters.
 - Do not trust warm in-memory presence blindly; check expiry and durable read-through paths.
 - Prefer optimistic reconciliation for replicated state. Accept monotonic newer
   observations. Ignore stale observations without failing the consumer, and
   treat equal-revision/different-content data as invariant corruption.
-- Plan and recompute outside transactions, then use compare-and-set writes with bounded retries
-  at the durable boundary. Runtime-state creation, update, and deletion use
+- **AppInbox is mandatory for incoming database mutations.** Route every
+  incoming HTTP and WebSocket database mutation through it, including
+  client/group/topology, authentication/session/ticket, CRDT append and admin,
+  and mutating admin operations. Waiting for a result never permits a direct
+  mutation fallback.
+- AppInbox owns the transaction and retry boundary. Keep direct `read`,
+  `compute`, and `validate` phases, then enter the AppInbox transaction. The
+  `compute` and `validate` phases are pure. Computed persistence data is not
+  called a plan. The service
+  `write(transaction, computed)` only applies it: service write receives the
+  transaction and never opens, commits, replaces, or retries one. A conflict
+  returns to AppInbox to reread and revalidate the complete decision surface.
+- Service writes authoritative state, event, receipt, result, and final
+  `APP_OUTBOX`/`WS_OUTBOX` entries directly through `ResourceInboxRepository`
+  in the same transaction. There is no intermediate mutation outbox. Resolve
+  logical WebSocket audiences and wake workers after commit.
+- Resource inbox uses 20 total processing attempts: 1, 2, 4, 8, and 16 ms for
+  attempts one through five, then increasing seconds capped at 30 seconds with
+  jitter. A separate best-effort fairness lane claims entries more than 30
+  seconds overdue; it is independent from timeout recovery.
+- Use optimistic compare-and-set writes with bounded retries at the durable
+  boundary. Runtime-state creation, update, and deletion use
   `insertIfAbsent`, `upsertIfRevision`, and `deleteIfRevision`.
 - Re-read and re-run authorization, policy, capacity, lifecycle, and invariants
   on every retry. Never reuse a decision derived from a predecessor that lost
   its compare-and-set race.
 - Keep group and summary convergence human-readable as direct named read,
   compute, validate, and write statements: `read`, `compute`, `validate`, then
-  `write`. The `compute` and `validate` phases are pure; only `write` opens the
-  transaction, its conditional guard is first, and a conflict restarts at
-  `read`. The implemented retry boundary is
-  `DEFAULT_RUNTIME_STATE_WRITE_BACKOFF_MS` (`[0, 2, 8]` ms),
-  `waitForRuntimeStateWriteRetry`, and `RuntimeStateRetryExhaustedError`.
-  Record phase timing around each direct statement with transaction timing
-  separate.
-- State, idempotency receipt, insert-only outbox intent, and event commit in one
-  authoritative transaction. `StateMutationOutboxRepository` makes the outbox
-  rows atomic with the guarded write. An outbox collision is a typed rollback
-  failure and must not load a winner. Winner loading is only for an explicitly
-  non-authoritative/read path. The compact `MutationReceipt` family and
+  `write`. Record phase timing around each direct statement with AppInbox
+  transaction timing separate. An outbox collision is a typed rollback failure
+  and must not load a winner. The compact `MutationReceipt` family and
   `GroupStateCausalRevision` carry replay and group/presence authority.
 - Preserve omitted public random/time inputs as mandatory `null` command fields
   when hashing idempotent intent. After hashing, validate the ledger before any
@@ -116,11 +128,11 @@ rg -n "GroupRef|groupRef|groupId|roomId|createAndSwitch|createAndJoin|joinRoom|w
 - Shape-valid effects can still describe the wrong operation. Canonically
   recompute and exactly compare operation-specific guards, dependent rows,
   events, receipts, and outbox intents before the first authoritative write.
-- Database row, table, and advisory locks are not the default. The implemented
-  client, group, topology-config, topology publication/execution, and RTT paths
-  no longer use `lockKey`. Historical lock-based versions remain a warning,
-  not precedent. A lock exception requires explicit human approval and
-  documented evidence, scope, and removal conditions.
+- Queue locks are coordination-only for bounded reservation claims; they are not
+  approval for domain row, table, advisory, or CRDT document locks. Existing
+  direct handlers, service transactions/retries, intermediate outboxes, and
+  domain locks are migration debt, not precedent. Deadline, sunk-cost, or
+  authority pressure never waives these rules or required verification gates.
 - Optimistic and permissive does not mean weak contracts. Require causal fields
   on snapshots and durable work; reserve hard rejection for malformed or
   wrongly scoped data, authorization failures, invariant corruption, resource

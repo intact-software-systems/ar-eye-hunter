@@ -3,6 +3,23 @@
 This directory contains user-facing and AI-facing documentation for the browser
 Rallar facade, Rallar browser data stores, and Rallar server middleware.
 
+## API-v1 Database Mutation Doctrine
+
+**AppInbox is mandatory for incoming database mutations**, including all HTTP
+and WebSocket client/group/topology, authentication/session/ticket, CRDT
+append/admin, and mutating admin paths. AppInbox owns the transaction and retry
+boundary. Pure read/compute/validate stages produce computed persistence data,
+not a plan. Service `write(transaction, computed)` applies it: service write
+receives the transaction and never opens or retries one.
+
+State/event/receipt/result and final `APP_OUTBOX`/`WS_OUTBOX` rows commit in the
+same transaction; write final queue rows directly through
+`ResourceInboxRepository`. There is no intermediate mutation outbox. Resource
+inbox uses 20 total processing attempts, staged from 1, 2, 4, 8, and 16 ms to
+seconds capped at 30 seconds with jitter, plus a separate best-effort fairness
+lane for retries more than 30 seconds overdue. Queue locks are coordination-only
+and authoritative persisted/shared contracts use mandatory fields by default.
+
 ## Documents
 
 - [Rallar API Reference](./rallar-api-reference.md) Complete public API

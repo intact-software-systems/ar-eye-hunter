@@ -1,5 +1,11 @@
 # Guarded runtime-state batch design
 
+> **SUPERSEDED FOR API-V1 MUTATION OWNERSHIP.** This document preserves
+> historical evidence only. Its service-owned transaction and three-attempt
+> retry text is not current architecture precedent. The replacement is
+> [the approved 2026-07-22 AppInbox transactional mutation design](./2026-07-22-api-v1-app-inbox-transactional-mutations-design.md),
+> where AppInbox owns transaction and retry and services receive the transaction.
+
 ## Status and objective
 
 This design follows the rejected fixed-handoff experiments recorded in

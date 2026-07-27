@@ -30,6 +30,7 @@ rg --files packages/tests packages/shared packages/shared-web packages/shared-se
 
 - Authoritative shared fields are mandatory except documented input or
   migration exceptions.
+- Authoritative persisted and shared contracts use mandatory fields by default.
 - Prefer required public and persisted fields. Authoritative persisted,
   replicated, queued, event, snapshot, and response values should be fully
   populated. Optional fields are appropriate only when omission has domain
@@ -47,6 +48,26 @@ rg --files packages/tests packages/shared packages/shared-web packages/shared-se
 
 ## Database Write Defaults
 
+- **AppInbox is mandatory for incoming database mutations.** This covers every
+  incoming HTTP and WebSocket path that changes the database: client, group,
+  topology, authentication/session/ticket, CRDT append/admin, and mutating
+  admin. A synchronous wait never falls back to a direct service mutation.
+- AppInbox owns the transaction and retry boundary. Keep `read`, `compute`, and
+  `validate` explicit. The `compute` and `validate` phases are pure. Computed
+  persistence data is not called a plan. The service
+  `write(transaction, computed)` applies only that data: service
+  write receives the transaction and never opens, commits, replaces, or retries
+  one. Return a conditional-write conflict to AppInbox so the next processing
+  attempt rereads and revalidates everything.
+- Through the received transaction, write state, event, receipt, durable result,
+  and final `APP_OUTBOX`/`WS_OUTBOX` rows directly with
+  `ResourceInboxRepository` in the same transaction. There is no intermediate
+  mutation outbox. Resolve WebSocket audiences and wake queue workers only
+  after commit.
+- Resource inbox uses 20 total processing attempts. Its delays begin at 1, 2,
+  4, 8, and 16 ms, rise through seconds, cap at 30 seconds, and apply jitter. A
+  distinct best-effort fairness lane claims retries more than 30 seconds overdue
+  independently from timeout recovery.
 - Do not implement authoritative state as read, derive, then unconditional
   upsert. Runtime-state creation, update, and deletion use `insertIfAbsent`,
   `upsertIfRevision`, and `deleteIfRevision`: conditional insert,
@@ -55,27 +76,19 @@ rg --files packages/tests packages/shared packages/shared-web packages/shared-se
   expected-revision conditional delete of the exact observed row. Do not use a
   disconnected/tombstone update as an expiry shortcut; reserve such updates
   for non-expiry lifecycle transitions that explicitly retain the row.
-- On a compare-and-set conflict, bound the retry count, re-read the whole
-  decision surface, and rerun authorization, policy, capacity, lifecycle, and invariant checks.
-  A retry of only the stale write is incorrect.
+- On a compare-and-set conflict, re-read the whole decision surface and rerun
+  authorization, policy, capacity, lifecycle, and invariant checks. A retry of
+  only the stale write is incorrect.
 - Express authoritative control flow with direct named read, compute, validate,
-  and write statements: `read`, `compute`, `validate`, then `write`. The
-  `compute` and `validate` phases are pure; only `write` opens the transaction,
-  its conditional guard is first, and a conflict restarts at `read`. Use
-  `DEFAULT_RUNTIME_STATE_WRITE_BACKOFF_MS`,
-  `waitForRuntimeStateWriteRetry`, and `RuntimeStateRetryExhaustedError`.
-  Surround each direct statement with timing records and report the transaction
+  and write statements: `read`, `compute`, `validate`, then `write`. Surround
+  each direct statement with timing records and report the AppInbox transaction
   separately.
 - Make idempotency claims with insert-if-absent semantics. The losing writer
   loads the winner; it must not overwrite the ledger. This winner-load rule is
   for the idempotency ledger, not an authoritative outbox write.
-- Insert the outbox intent inside the authoritative state/receipt/event
-  transaction. `StateMutationOutboxRepository` makes outbox rows atomic with
-  state, compact `MutationReceipt` authority, and events. Use an insert-only
-  operation: a collision throws a typed error, rolls everything back, and
-  performs no winner read. Keep any winner-loading convenience on a separately
-  named non-authoritative/read path. Group effects carry
-  `GroupStateCausalRevision`.
+- Insert final outbox rows with insert-only semantics. A collision throws a typed
+  error, rolls everything back, and performs no winner read. Compact
+  `MutationReceipt` authority and `GroupStateCausalRevision` remain mandatory.
 - Fail-closed event, outbox, and immutable-identity collisions are terminal at
   queue boundaries. Give their typed errors an explicit 4xx status and never
   retry, reschedule, or regenerate a command after such a collision.
@@ -90,9 +103,11 @@ rg --files packages/tests packages/shared packages/shared-web packages/shared-se
   operation, full scope, principal/session/generation fences, observed
   cleanup/expiry values, and timestamps. Do not rely on the hash or raw
   delimiter joins to repair an aliased idempotency key.
-- Database row, table, and advisory locks are exceptions, not reusable
-  architecture. Require explicit human approval and document the protected
-  invariant, evidence, bounded critical section, and removal condition.
+- Queue locks are coordination-only for bounded reservation claims. They do not
+  approve domain row, table, advisory, or CRDT document locks. Existing direct
+  handlers, service-owned transactions/retries, intermediate outboxes, and
+  domain locks are migration debt, not precedent. Deadline, sunk-cost, or
+  authority pressure never waives the architecture or its verification gates.
 - Before an authoritative compare-and-set, validate each persisted entry's
   canonical storage key, decoded value identity, and command-derived read slot.
   Derive expected principals, sessions, targets, and request IDs from the

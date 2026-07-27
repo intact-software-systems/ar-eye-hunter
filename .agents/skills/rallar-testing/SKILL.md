@@ -9,6 +9,27 @@ description: Use when deciding which Vitest, Deno, Vite, Playwright, package bui
 
 Read `references/test-commands.md` when choosing commands. Prefer targeted checks first, then broader builds or suites based on blast radius.
 
+## AppInbox Mutation Gate
+
+- **AppInbox is mandatory for incoming database mutations.** This includes all
+  HTTP and WebSocket client/group/topology, authentication/session/ticket, CRDT
+  append/admin, and mutating admin paths.
+- AppInbox owns the transaction and retry boundary. The service
+  `write(transaction, computed)` only applies pure computed persistence data:
+  service write receives the transaction and never opens or retries one.
+- The received transaction writes state, event, receipt, result, and final
+  `APP_OUTBOX`/`WS_OUTBOX` rows directly through `ResourceInboxRepository`.
+  There is no intermediate mutation outbox. Authoritative contracts use
+  mandatory fields by default.
+- Resource-inbox verification preserves 20 total processing attempts: 1, 2, 4,
+  8, and 16 ms for attempts one through five, increasing seconds capped at 30
+  seconds with jitter, plus a distinct best-effort fairness lane for retries
+  more than 30 seconds overdue.
+- Queue locks are coordination-only. Tests must reject domain row, table,
+  advisory, and CRDT document locks as substitutes for conditional writes.
+  Deadline, sunk-cost, or authority pressure never justifies weakening or
+  skipping a required verification gate.
+
 ## Selection Rules
 
 - Shared contracts: run the relevant `packages/tests/shared*` Vitest files and the package `tsc`.

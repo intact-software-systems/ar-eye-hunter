@@ -16,58 +16,33 @@ const expectedSkills = [
     'rallar-testing',
 ] as const;
 
-const convergentWriteVocabulary = [
-    '`read`',
-    '`compute`',
-    '`validate`',
-    '`write`',
-    'insertIfAbsent',
-    'upsertIfRevision',
-    'deleteIfRevision',
-    'DEFAULT_RUNTIME_STATE_WRITE_BACKOFF_MS',
-    'waitForRuntimeStateWriteRetry',
-    'RuntimeStateRetryExhaustedError',
+const appInboxGuidanceVocabulary = [
+    'AppInbox is mandatory for incoming database mutations',
+    'service write receives the transaction',
     'ResourceInboxRepository',
-    'MutationReceipt',
-    'GroupStateCausalRevision',
+    'APP_OUTBOX',
+    'WS_OUTBOX',
+    '20 total processing attempts',
+    'mandatory fields by default',
 ] as const;
 
-const convergentWriteGuidanceRequirements = [
-    { filePath: 'AGENTS.md', required: convergentWriteVocabulary },
-    {
-        filePath: '.agents/skills/rallar-platform/SKILL.md',
-        required: convergentWriteVocabulary,
-    },
-    {
-        filePath: '.agents/skills/rallar-realtime/SKILL.md',
-        required: convergentWriteVocabulary,
-    },
-    {
-        filePath: '.agents/skills/rallar-code-writing/SKILL.md',
-        required: convergentWriteVocabulary,
-    },
-    {
-        filePath:
-            '.agents/skills/rallar-code-writing/references/package-code-style.md',
-        required: convergentWriteVocabulary,
-    },
-    {
-        filePath: 'docs/rallar-convergent-state-and-rtc-topology.md',
-        required: convergentWriteVocabulary,
-    },
-    {
-        filePath: 'packages/shared-server/architecture.md',
-        required: convergentWriteVocabulary,
-    },
-    {
-        filePath: 'packages/shared-server/rallar-server-repositories.md',
-        required: convergentWriteVocabulary,
-    },
-    {
-        filePath:
-            'packages/shared-server/rallar-server-repositories-improvements.md',
-        required: convergentWriteVocabulary,
-    },
+const currentAppInboxGuidancePaths = [
+    'AGENTS.md',
+    '.agents/skills/rallar-platform/SKILL.md',
+    '.agents/skills/rallar-realtime/SKILL.md',
+    '.agents/skills/rallar-code-writing/SKILL.md',
+    '.agents/skills/rallar-code-writing/references/package-code-style.md',
+    '.agents/skills/rallar-testing/SKILL.md',
+    '.agents/skills/rallar-testing/references/test-commands.md',
+    'packages/shared-server/architecture.md',
+    'packages/shared-server/rallar-server-repositories.md',
+    'packages/shared-server/rallar-server-repositories-improvements.md',
+    'apps/api-v1/README.md',
+    'docs/rallar-api-reference.md',
+    'docs/rallar-convergent-state-and-rtc-topology.md',
+    'docs/rallar-crdt-guide.md',
+    'docs/rallar-crdt-production-hardening-runbook.md',
+    'docs/README.md',
 ] as const;
 
 const coreConvergentWriteGuidancePaths = [
@@ -340,11 +315,11 @@ describe('Rallar repo skill and documentation integrity', () => {
         expectAll(platform, [
             'optimistic compare-and-set writes with bounded retries',
             'authoritative persisted, replicated, queued, event, snapshot, and response',
-            'Database row, table, and advisory locks are not the default',
+            'Queue locks are coordination-only',
         ]);
         expect(codeWriting).toMatch(/required public and persisted fields/);
         expect(codeWriting).toMatch(/backwards-compatibility fallback/);
-        expectAll(codeWriting, [
+        expectAllNormalized(codeWriting, [
             'expected-revision compare-and-set',
             'rerun authorization, policy, capacity, lifecycle, and invariant checks',
             'complete persisted contract and trusted scope and slot',
@@ -368,12 +343,12 @@ describe('Rallar repo skill and documentation integrity', () => {
             'optimistic reconciliation',
             'Ignore stale observations',
             'compare-and-set writes with bounded retries',
-            'Database row, table, and advisory locks are not the default',
+            'Queue locks are coordination-only',
             'Re-read and re-run authorization, policy, capacity, lifecycle, and invariants',
         ]);
         expectAll(agents, [
             'Optimistic compare-and-set writes with bounded retries are the default',
-            'Database row, table, and advisory locks are exceptional',
+            'Queue locks are coordination-only',
             'Authoritative persisted, replicated, queued, event, snapshot, and response',
         ]);
         expectAll(convergenceArchitecture, [
@@ -388,10 +363,19 @@ describe('Rallar repo skill and documentation integrity', () => {
         );
     });
 
-    it.each(convergentWriteGuidanceRequirements)(
-        '$filePath names its implemented convergent-write vocabulary',
-        ({ filePath, required }) => {
-            expectAllNormalized(readRepo(filePath), required);
+    it.each(currentAppInboxGuidancePaths)(
+        '%s states the current AppInbox transaction doctrine without stale precedent',
+        (filePath) => {
+            const guidance = normalizeWhitespace(readRepo(filePath));
+            expectAllNormalized(guidance, appInboxGuidanceVocabulary);
+            for (const rejected of [
+                'write opens the transaction',
+                '[0, 2, 8]',
+                'StateMutationOutboxWork',
+                'StateMutationOutboxRepository',
+            ]) {
+                expect(guidance, `${filePath}: ${rejected}`).not.toContain(rejected);
+            }
         },
     );
 
@@ -403,23 +387,37 @@ describe('Rallar repo skill and documentation integrity', () => {
                 /`compute` and `validate` .{0,30}(?:phases|functions) are .{0,10}pure/i,
             );
             expect(guidance).toMatch(
-                /only .{0,20}`write` .{0,30}opens .{0,20}transaction/i,
+                /AppInbox .{0,50}owns .{0,40}transaction .{0,40}retry boundary/i,
             );
             expect(guidance).toMatch(
-                /guard .{0,20}(?:is|runs|writes|must be) (?:the )?first/i,
+                /service write receives the transaction .{0,40}never opens/i,
             );
-            expect(guidance).toMatch(/conflict .*restart(?:s)? at `read`/i);
+            expect(guidance).toContain('write(transaction, computed)');
             expect(guidance).toMatch(
-                /(?:outbox (?:row|intent)s?.{0,120}(?:same transaction|atomic)|same transaction.{0,120}outbox)/i,
-            );
-            expect(guidance).toMatch(
-                /presence.{0,200}do(?:es)? not contend on the group row/i,
+                /(?:ResourceInboxRepository.{0,160}same transaction|same transaction.{0,160}ResourceInboxRepository)/i,
             );
             expect(guidance).toMatch(
-                /authoritative.{0,80}(?:shared )?fields.{0,120}mandatory.{0,160}(?:input|migration)/i,
+                /queue locks.{0,80}coordination-only/i,
+            );
+            expect(guidance).toMatch(
+                /computed persistence data.{0,40}not.{0,20}(?:called )?a plan/i,
             );
         },
     );
+
+    it('marks superseded retry designs as historical evidence, not current precedent', () => {
+        for (const filePath of [
+            'docs/superpowers/specs/2026-07-21-guarded-runtime-state-batch-design.md',
+            'docs/superpowers/specs/2026-07-21-in-process-cas-contention-suppression-design.md',
+        ]) {
+            const design = readRepo(filePath);
+            expectAll(design, [
+                'SUPERSEDED FOR API-V1 MUTATION OWNERSHIP',
+                '2026-07-22-api-v1-app-inbox-transactional-mutations-design.md',
+                'historical evidence',
+            ]);
+        }
+    });
 
     it.each([
         '.agents/skills/rallar-testing/SKILL.md',

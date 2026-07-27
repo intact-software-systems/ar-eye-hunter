@@ -42,6 +42,7 @@ rg --files packages/shared packages/shared-web packages/shared-server packages/s
 
 - Authoritative shared fields are mandatory except documented input or
   migration exceptions.
+- Authoritative persisted and shared contracts use mandatory fields by default.
 - Required fields are the default for every authoritative persisted, replicated, queued, event, snapshot, and response contract.
   Use an optional field only when absence is a meaningful domain state that
   consumers are expected to handle and test. Sparse request, query, patch,
@@ -65,24 +66,37 @@ rg --files packages/shared packages/shared-web packages/shared-server packages/s
 
 ## Convergent Persistence Defaults
 
+- **AppInbox is mandatory for incoming database mutations.** Every incoming
+  HTTP or WebSocket path that mutates the database goes through AppInbox,
+  including client/group/topology, authentication/session/ticket, CRDT append
+  and administration, and mutating admin operations. A synchronous result wait
+  never falls back to a direct mutation.
+- AppInbox owns the transaction and retry boundary. Keep one visible `read`,
+  `compute`, `validate`, then AppInbox transaction sequence. The `compute` and
+  `validate` phases are pure; computed persistence data is not called a plan.
+  The service `write(transaction, computed)` applies only that data: service
+  write receives the transaction and never opens, commits, replaces, or retries
+  one. A conflict returns to AppInbox for a fresh read and complete revalidation.
+- In that transaction, service writes state, event, receipt, durable result, and
+  final `APP_OUTBOX`/`WS_OUTBOX` rows directly through
+  `ResourceInboxRepository` in the same transaction. There is no intermediate
+  mutation outbox. Logical WebSocket audience resolution and worker wake-up
+  happen only after commit.
+- Resource-inbox processing uses 20 total processing attempts. Attempts one
+  through five use 1, 2, 4, 8, and 16 ms; later delays rise through seconds and
+  cap at 30 seconds with jitter. A distinct best-effort fairness lane claims
+  retries more than 30 seconds overdue, independently of timeout recovery.
+- Queue locks are coordination-only for bounded reservation claims. They do not
+  authorize domain row, table, advisory, or CRDT document locks. Domain locks
+  remain unapproved unless the human explicitly approves a measured exception.
 - Use optimistic compare-and-set writes with bounded retries for authoritative
   shared state. Runtime-state creation, update, and deletion use
   `insertIfAbsent`, `upsertIfRevision`, and `deleteIfRevision`.
 - Every retry must re-read current state and rerun authorization, policy,
   capacity, lifecycle, and invariant checks before deriving a new candidate.
   Never retry only the final write of a stale decision.
-- Write the authoritative path as direct named `read`, `compute`, `validate`,
-  and `write` statements. The `compute` and `validate` phases are pure; only
-  `write` opens the transaction, and the conditional guard is first. A
-  conflict restarts at `read`. Use `DEFAULT_RUNTIME_STATE_WRITE_BACKOFF_MS`,
-  `waitForRuntimeStateWriteRetry`, and `RuntimeStateRetryExhaustedError` rather
-  than inventing another retry schedule. Timing records surround the direct
-  statements and report transaction duration separately.
-- Insert authoritative outbox intents inside the state/receipt/event
-  transaction with insert-only semantics. `StateMutationOutboxRepository`
-  makes the outbox rows atomic with the guarded state. Treat any collision as a
-  typed rollback failure without loading a winner. Winner loading belongs only
-  to a separately named non-authoritative/read path. The compact
+- Insert final outbox intents with insert-only semantics. Treat any collision as
+  a typed rollback failure without loading a winner. The compact
   `MutationReceipt` family carries accepted authority, and group effects use
   `GroupStateCausalRevision`.
 - Hash semantic caller intent before volatile server defaults. Represent
@@ -111,10 +125,10 @@ rg --files packages/shared packages/shared-web packages/shared-server packages/s
   filter, or data to rewrite or guess.
 - Treat stale observations as rebase-or-ignore outcomes, duplicates as no-ops,
   and equal causal revisions with different content as invariant corruption.
-- Database row, table, and advisory locks are not the default. Do not extend an
-  existing lock-based implementation as precedent. A lock exception requires
-  explicit human approval plus a documented invariant, measured need, bounded
-  critical section, and migration or review condition.
+- Existing direct handlers, service-owned transactions/retries, intermediate
+  outboxes, and domain locks are migration debt, not compatibility precedent.
+  Deadline, sunk-cost, or authority pressure does not waive these rules or the
+  required verification gates.
 - Test overlapping writers, retry exhaustion, idempotency races, stale expiry,
   and final convergence against the real Postgres conditional-write boundary.
 - Authentication dependencies for authoritative user writes are mandatory and

@@ -56,13 +56,34 @@ row into multiple scopes, or keep a permanent dual-read fallback.
 
 ## Implemented Convergent Database Writes
 
+**AppInbox is mandatory for incoming database mutations.** Every HTTP and
+WebSocket database mutation uses it, including client/group/topology,
+authentication/session/ticket, CRDT append/admin, and mutating admin operations.
+AppInbox owns the transaction and retry boundary; waiting for a result never
+falls back to direct mutation.
+
+```text
+HTTP/WS mutation
+  -> APP_INBOX
+  -> read -> compute -> validate
+  -> AppInbox transaction
+       -> service.write(transaction, computed)
+       -> authoritative state/event/receipt
+       -> APP_OUTBOX/WS_OUTBOX
+       -> result + reservation-fenced completion
+  -> commit
+  -> wake/poll workers
+```
+
 Client, group, topology-config, topology publication/execution, and RTT writes
 use the conditional runtime-state operations `insertIfAbsent`,
 `upsertIfRevision`, and `deleteIfRevision`. Each service keeps direct named
 `read`, `compute`, `validate`, and `write` phases. The `compute` and `validate`
-phases are pure; only `write` opens the transaction, and its conditional guard
-is first. A conflict rolls back and restarts at `read`, rerunning authorization,
-policy, capacity, lifecycle, and invariant checks.
+phases are pure; computed persistence data is not called a plan. The service
+`write(transaction, computed)` applies it: service write receives the
+transaction and never opens, commits, replaces, or retries one. Its conditional
+guard is first. A conflict rolls back and returns to AppInbox, whose next
+attempt restarts at `read` and reruns every check.
 
 The storage rule is:
 
@@ -70,25 +91,27 @@ The storage rule is:
 - update with expected-revision compare-and-set;
 - delete or expire with expected-revision conditional delete.
 
-The bounded schedule is
-`DEFAULT_RUNTIME_STATE_WRITE_BACKOFF_MS = [0, 2, 8]`. Every attempt uses
-`waitForRuntimeStateWriteRetry`, with nonzero delays outside the transaction;
-exhaustion raises `RuntimeStateRetryExhaustedError`. There is no unconditional
+Resource inbox allows 20 total processing attempts. Attempts one through five
+wait 1, 2, 4, 8, and 16 ms; later waits rise through seconds, cap at 30 seconds,
+and use jitter. A separate best-effort fairness lane claims retries more than 30
+seconds overdue independently from timeout recovery. There is no unconditional
 or unbounded fallback.
 
 A transaction supplies atomicity for a multi-row commit, but it does not by
 itself prevent lost updates. The transaction conditions the authoritative
 transition on the revision that the decision observed. Compact
 `MutationReceipt` records implement immutable first-writer-wins ledger replay.
-Authoritative outbox insertion is different: `StateMutationOutboxRepository`
-inserts inside the guarded transaction, and a collision fails and rolls back
-without loading a winner.
+Final `APP_OUTBOX` and `WS_OUTBOX` rows are inserted directly through
+`ResourceInboxRepository` inside that transaction; a collision fails and rolls
+back without loading a winner. There is no intermediate mutation outbox.
 
-No targeted client, group, topology-config, topology snapshot/publication/
-execution, or RTT path calls `lockKey`. Historical lock-based implementations
-are evidence of the superseded architecture and must not be copied. A lock
-exception requires explicit human approval, a documented invariant and
-measured need, a bounded critical section, and a review or removal condition.
+Queue locks are coordination-only for bounded resource-inbox claims. Domain
+authentication/session/ticket, AL admission, CRDT, client, group, and topology
+writes use conditional insert/update/delete fencing. Advisory and CRDT
+document-row locks are not approved queue-claim exceptions.
+
+Authoritative persisted and shared contracts use mandatory fields by default.
+Sparse input and migration types remain separate.
 
 Expiry is a causal delete, not cleanup after a trustworthy read. A reader that
 saw an expired revision may delete only that revision, so it cannot remove a
@@ -209,20 +232,14 @@ assembling children. If the group is deleted, the validation read returns
 absent and the result is absent. Three consecutive movements produce a
 retryable 503 rather than a torn snapshot.
 
-## Mutation Outbox At The Commit Boundary
+## Direct Resource Inbox Effects At The Commit Boundary
 
 Client and group mutation transactions write the conditional guard first, then
-dependent state, compact receipt, one insert-only
-`StateMutationOutboxRepository` record, and the event. The outbox row is atomic
-with the accepted authority. `AppClientInboxService` and
-`AppGroupInboxService` own command ingress and durable completion, not inline
-state-sync or topology publication.
-
-`StateMutationOutboxWork` drains committed records asynchronously. Client
-records carry `client-state-sync`. Group records carry `group-state-sync` and
-`group-presence-summary`; summary convergence can then enqueue
-`rtc-topology-recompute`. Retry after process death reuses the same compact
-receipt and outbox identity rather than applying the state mutation again.
+dependent state, compact receipt, final resource-inbox effects, result, and the
+event through the received AppInbox transaction. `APP_OUTBOX`/`WS_OUTBOX` rows
+are atomic with accepted authority. Their QueueBox workers drain them after
+commit. Retry after process death reuses the same receipt and direct outbox
+identity rather than applying the state mutation again.
 
 The old post-commit order—mutate state, publish directly, then try to enqueue
 topology work—is historical only. It could expose committed state without a
@@ -268,8 +285,8 @@ runtime-state transaction. `readTopologyMutation`, `computeTopologyMutation`,
 `validateTopologyMutation`, and `writeTopologyMutation` implement the current
 commit path. The write transaction CAS-guards the snapshot first, then inserts
 the compact work claim and immutable publication. A conflict persists nothing,
-waits according to `[0, 2, 8]` outside the transaction, and restarts at the full
-authority read and replan.
+returns to the AppInbox retry boundary, and restarts at the full authority read
+and recomputation.
 
 The durable latest-topology repository compares:
 

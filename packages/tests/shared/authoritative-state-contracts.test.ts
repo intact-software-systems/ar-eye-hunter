@@ -34,11 +34,17 @@ import type {
     ClientMutationReceipt,
 } from '@shared-server/rallar-system/services/client-state-mutations.ts';
 import type {
+    AuthMutationResult,
+} from '@shared-server/rallar-system/services/auth-state-mutations.ts';
+import type {
     GroupMutationReceipt,
 } from '@shared-server/rallar-system/services/group-state-mutations.ts';
 import type {
     RtcTopologyPublicationWorkClaim,
 } from '@shared-server/rallar-system/repositories/RtcTopologyPublicationRepository.ts';
+import type {
+    RtcRttAppInboxResult,
+} from '@shared-server/rallar-system/services/rtc-rtt-app-inbox-result.ts';
 
 type EmptyObject = Record<never, never>;
 type OptionalKeys<T> = {
@@ -66,6 +72,8 @@ describe('authoritative state contracts', () => {
         expectTypeOf<OptionalKeys<GroupEvent>>().toEqualTypeOf<never>();
         expectTypeOf<OptionalKeys<ClientMutationReceipt>>().toEqualTypeOf<never>();
         expectTypeOf<OptionalKeys<GroupMutationReceipt>>().toEqualTypeOf<never>();
+        expectTypeOf<OptionalKeys<AuthMutationResult>>().toEqualTypeOf<never>();
+        expectTypeOf<OptionalKeys<RtcRttAppInboxResult>>().toEqualTypeOf<never>();
         expectTypeOf<OptionalKeys<RtcTopologyPublicationWorkClaim>>()
             .toEqualTypeOf<never>();
         expectTypeOf<OptionalKeys<GroupStateCausalRevision>>().toEqualTypeOf<never>();

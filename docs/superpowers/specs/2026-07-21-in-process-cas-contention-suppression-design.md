@@ -1,5 +1,11 @@
 # In-process CAS contention suppression design
 
+> **SUPERSEDED FOR API-V1 MUTATION OWNERSHIP.** This document preserves
+> historical evidence only. Its service-local retry ownership is not current
+> architecture precedent. The replacement is
+> [the approved 2026-07-22 AppInbox transactional mutation design](./2026-07-22-api-v1-app-inbox-transactional-mutations-design.md),
+> where AppInbox owns transaction and retry and services receive the transaction.
+
 ## Context and objective
 
 The governed API-v1 state-write candidate preserves durable correctness but
