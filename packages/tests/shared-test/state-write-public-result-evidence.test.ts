@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { deriveApiV1StateWriteEvidence } from
     '@shared-test/black-box-runner/api-v1-state-write-evidence.ts';
+import type { PersistedCommandEvidence } from
+    '@shared-test/black-box-runner/api-v1-state-write-receipt-evidence.ts';
 
 const command = {
     ri_row_id: 1, ri_resource_id: 'command-1', ri_topic_id: 'app-inbox',
@@ -53,7 +55,7 @@ describe('durable AppInbox public result evidence', () => {
                 event: { eventId: 'event-1', requestId: mismatch.requestId, snapshotVersion: 4 },
             } } }),
         };
-        const authoritative = [{
+        const authoritative: readonly PersistedCommandEvidence[] = [{
             appInboxResourceId: clientResourceId, valid: true,
             commandType: 'CLIENT_INSTANCE_UPSERT', commandIds: [clientCommandId],
             receipt: {
@@ -102,6 +104,107 @@ describe('durable AppInbox public result evidence', () => {
                 },
             }],
         )).toMatchObject({ atomicCompletionFailures: 1, statusResultFailures: 1 });
+    });
+
+    it('accepts a group result whose independently convergent presence is newer', () => {
+        const resourceId = 'physical-group-row-newer-presence';
+        const logicalId = 'group-command-newer-presence';
+        const group = {
+            applicationId: 'app-1', workspaceId: 'workspace-1',
+            groupId: 'group-1', snapshotVersion: 8,
+        };
+        const event = {
+            eventId: 'group-event-1', requestId: logicalId, snapshotVersion: 8,
+        };
+        const snapshot = {
+            stateRevision: 10,
+            causalRevision: { groupRevision: 8, presenceRevision: 2 },
+            group,
+        };
+        const result = {
+            ...command, ri_resource_id: resourceId,
+            ri_resource: JSON.stringify({ payload: {
+                typeId: 'GROUP_MEMBER_UPSERT', resource: JSON.stringify({ commandId: logicalId }),
+            } }),
+            result_resource: JSON.stringify({ status: 'ok', result: { right: {
+                snapshot,
+                event,
+            } } }),
+        };
+        const authoritative = [{
+            appInboxResourceId: resourceId, valid: true,
+            commandType: 'GROUP_MEMBER_UPSERT', commandIds: [logicalId],
+            receipt: {
+                appInboxResourceId: resourceId, commandId: logicalId,
+                commandHash: `sha256:${'e'.repeat(64)}`, outcome: 'applied', outboxIds: [],
+                identityKind: 'physical-resource-id' as const, requestId: logicalId,
+                aggregateRef: {
+                    applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'group-1',
+                },
+                stateRevision: 9,
+                causalRevision: { groupRevision: 8, presenceRevision: 1 },
+                snapshotVersion: 8, eventId: 'group-event-1',
+            },
+        }];
+        const evidence = (
+            candidate = result,
+            authority: readonly PersistedCommandEvidence[] = authoritative,
+        ) => deriveApiV1StateWriteEvidence(
+            { match: 'scope', commandTypes: ['GROUP_MEMBER_UPSERT'] },
+            [candidate], [], [], undefined, authority,
+        );
+
+        expect(evidence()).toMatchObject({
+            atomicCompletionFailures: 0, statusResultFailures: 0,
+        });
+
+        for (const invalidSnapshot of [
+            { ...snapshot, stateRevision: 11 },
+            { ...snapshot, causalRevision: { groupRevision: 9, presenceRevision: 2 } },
+            {
+                ...snapshot, stateRevision: 8,
+                causalRevision: { groupRevision: 8, presenceRevision: 0 },
+            },
+            { stateRevision: 10, group },
+        ]) {
+            const invalid = {
+                ...result,
+                result_resource: JSON.stringify({ status: 'ok', result: { right: {
+                    snapshot: invalidSnapshot,
+                    event,
+                } } }),
+            };
+            expect(evidence(invalid)).toMatchObject({
+                atomicCompletionFailures: 1, statusResultFailures: 1,
+            });
+        }
+
+        const { causalRevision: _causalRevision, ...receiptWithoutCausalRevision } =
+            authoritative[0]!.receipt!;
+        for (const receipt of [
+            receiptWithoutCausalRevision,
+            { ...authoritative[0]!.receipt!, stateRevision: 10 },
+        ]) {
+            expect(evidence(result, [{ ...authoritative[0]!, receipt }])).toMatchObject({
+                atomicCompletionFailures: 1, statusResultFailures: 1,
+            });
+        }
+
+        for (const invalidEvent of [
+            { ...event, eventId: 'swapped-event' },
+            { ...event, requestId: 'swapped-command' },
+        ]) {
+            const invalid = {
+                ...result,
+                result_resource: JSON.stringify({ status: 'ok', result: { right: {
+                    snapshot,
+                    event: invalidEvent,
+                } } }),
+            };
+            expect(evidence(invalid)).toMatchObject({
+                atomicCompletionFailures: 1, statusResultFailures: 1,
+            });
+        }
     });
 
     it('accepts a canonical terminal group denial without inventing a receipt', () => {

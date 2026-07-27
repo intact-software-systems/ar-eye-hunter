@@ -22,6 +22,8 @@ import type {
     AuthoritativeTopologyReceipt,
     ReceiptEffectIdentityKind,
 } from './api-v1-state-write-result-evidence.ts';
+import type { PublicResultReceiptIdentity } from
+    './api-v1-state-write-group-causal-evidence.ts';
 import {
     clientPayloadKeys,
     isGeneralClientCommand,
@@ -35,7 +37,7 @@ import {
     readTopologyReconfigureCommand,
 } from './api-v1-state-write-command-codecs.ts';
 
-export interface AuthoritativeReceiptEvidence {
+export interface AuthoritativeReceiptEvidence extends PublicResultReceiptIdentity {
     readonly appInboxResourceId: string;
     readonly commandId: string;
     readonly commandHash: string;
@@ -345,6 +347,7 @@ function toReceipt(
             applicationId: string; workspaceId: string; principalId?: string; groupId?: string
         }>;
         stateRevision?: number; snapshotVersion?: number; eventId?: string | null
+        causalRevision?: PublicResultReceiptIdentity['causalRevision']
         operation?: string; target?: 'config' | 'override'; groupRef?: Readonly<{
             applicationId: string; workspaceId: string; groupId: string
         }>;
@@ -364,6 +367,7 @@ function toReceipt(
         ...(receipt.requestId !== undefined ? { requestId: receipt.requestId } : {}),
         ...(receipt.aggregateRef ? { aggregateRef: { ...receipt.aggregateRef } } : {}),
         ...(receipt.stateRevision !== undefined ? { stateRevision: receipt.stateRevision } : {}),
+        ...(receipt.causalRevision ? { causalRevision: { ...receipt.causalRevision } } : {}),
         ...(receipt.snapshotVersion !== undefined
             ? { snapshotVersion: receipt.snapshotVersion }
             : {}),

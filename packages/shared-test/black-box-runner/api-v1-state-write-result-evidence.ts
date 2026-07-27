@@ -1,3 +1,8 @@
+import {
+    type PublicResultReceiptIdentity,
+    publicResultIdentityMatches,
+} from './api-v1-state-write-group-causal-evidence.ts'
+
 type ResultEvidence = Readonly<{
     valid: boolean
     result: unknown
@@ -11,22 +16,12 @@ type ResultEvidence = Readonly<{
     failure?: string
 }>
 
-export interface AuthoritativeResultReceipt {
+export interface AuthoritativeResultReceipt extends PublicResultReceiptIdentity {
     readonly commandId: string
     readonly commandHash: string
     readonly outcome: string
     readonly outboxIds: readonly string[]
     readonly identityKind: ReceiptEffectIdentityKind
-    readonly requestId?: string | null
-    readonly aggregateRef?: Readonly<{
-        applicationId: string
-        workspaceId: string
-        principalId?: string
-        groupId?: string
-    }>
-    readonly stateRevision?: number
-    readonly snapshotVersion?: number
-    readonly eventId?: string | null
     readonly topology?: AuthoritativeTopologyReceipt
 }
 
@@ -214,18 +209,7 @@ function validatePublicResultIdentity(
     receipt: AuthoritativeResultReceipt,
     kind: 'client' | 'group',
 ): ResultEvidence {
-    const right = record(record(result.result)?.right)
-    const snapshot = record(right?.snapshot)
-    const aggregate = record(snapshot?.[kind === 'client' ? 'principal' : 'group'])
-    const event = right?.event === null ? null : record(right?.event)
-    const aggregateMatches = receipt.aggregateRef !== undefined && aggregate !== undefined &&
-        Object.entries(receipt.aggregateRef).every(([key, value]) => aggregate[key] === value)
-    const eventMatches = receipt.eventId === null
-        ? event === null
-        : event !== undefined && event?.eventId === receipt.eventId &&
-            event?.requestId === receipt.requestId &&
-            event?.snapshotVersion === receipt.snapshotVersion
-    if (!aggregateMatches || snapshot?.stateRevision !== receipt.stateRevision || !eventMatches) {
+    if (!publicResultIdentityMatches(result, receipt, kind)) {
         return invalid(result, `mismatched-${kind}-result-receipt-identity`)
     }
     return { valid: true, result, receipt: toResultReceipt(receipt) }
