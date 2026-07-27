@@ -147,6 +147,11 @@ the repo-local Codex plugin under `.agents/skills/**`.
 - Validate the complete operation-specific candidate by canonical deterministic
   recomputation and exact comparison, including guards, dependent rows, events,
   receipts, and outbox intents. Shared shape checks alone are insufficient.
+- Authoritative snapshot collections that represent unordered sets use
+  canonical storage-key order in both the computed mutation result and durable
+  repository assembly. Never depend on arrival, insertion, or database/provider
+  iteration order. Preserve equal-revision content checks; ordering drift is a
+  producer bug, not eventual consistency.
 - Snapshot assemblers must treat optimistic presence summaries as hints. At one
   captured observation time, intersect summary sessions with the latest group
   being active and unexpired, current active membership, and connected,

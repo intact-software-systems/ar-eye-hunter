@@ -184,6 +184,38 @@ describe('WebRtcRxStreamerService', () => {
         );
     });
 
+    it('keeps RTT versions monotonic when a peer heartbeat restarts', async () => {
+        const service = new WebRtcRxStreamerService(
+            new InMemoryQueueBox(new Map()),
+            createFakeMulticastManager() as never,
+            { sessionId: 'self' },
+        );
+        const onHeartbeat = vi.fn(async () => {
+        });
+        service.onRttMeasurementDo('rtt', { onHeartbeat });
+
+        const peer = createPeerDto('peer-1');
+        service.addPeer(peer as never);
+        const lifecycle = peer.channel.lifecycleCallbacks.get(
+            'self-peer-1-rtc-datachannel-lifecycle',
+        );
+
+        await lifecycle?.onOpen?.();
+        await mockState.heartbeats[0].callbacks?.onHeartbeat({
+            peerSessionId: 'peer-1',
+            rttMsecs: 10,
+            version: 2,
+        });
+        await lifecycle?.onOpen?.();
+        await mockState.heartbeats[1].callbacks?.onHeartbeat({
+            peerSessionId: 'peer-1',
+            rttMsecs: 11,
+            version: 2,
+        });
+
+        expect(onHeartbeat.mock.calls.map(([rtt]) => rtt.version)).toEqual([2, 3]);
+    });
+
     it('does not start RTT heartbeats for peers outside the reporting set', async () => {
         const service = new WebRtcRxStreamerService(
             new InMemoryQueueBox(new Map()),

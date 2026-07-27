@@ -51,6 +51,8 @@ import type { PSqlTransactionSql } from '../../postgres/PostgresSqlClient.ts';
 import { PSqlRuntimeStateRepository } from '../../postgres/runtime-state/PSqlRuntimeStateRepository.ts';
 import { PSqlClientStateEventRepository } from '../../postgres/rallar-system/PSqlStateEventRepository.ts';
 import {
+    compareClientStateInstanceStorageKeys,
+    compareClientStateSessionStorageKeys,
     clientStateIdempotencyStorageKey,
     clientStateInstanceStorageKey,
     clientStatePrincipalStorageKey,
@@ -530,8 +532,8 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
         const snapshot: ClientSnapshot = {
             stateRevision,
             principal,
-            instances,
-            activeSessions,
+            instances: [...instances].sort(compareClientStateInstanceStorageKeys),
+            activeSessions: [...activeSessions].sort(compareClientStateSessionStorageKeys),
             isOnline: activeSessions.length > 0,
             activeSessionCount: activeSessions.length,
             lastSeenAtEpochMs: toClientSnapshotLastSeenAtEpochMs(

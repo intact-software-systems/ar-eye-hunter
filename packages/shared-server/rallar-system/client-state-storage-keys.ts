@@ -28,3 +28,29 @@ export function clientStateInstanceStorageKey(ref: ClientInstanceRef): string {
 export function clientStateSessionStorageKey(ref: ClientSessionRef): string {
     return `${clientStateInstanceStorageKey(ref)}:session=${encodeURIComponent(ref.sessionId)}`;
 }
+
+export function compareClientStateInstanceStorageKeys(
+    left: ClientInstanceRef,
+    right: ClientInstanceRef,
+): number {
+    return compareCanonicalStorageKeys(
+        clientStateInstanceStorageKey(left),
+        clientStateInstanceStorageKey(right),
+    );
+}
+
+export function compareClientStateSessionStorageKeys(
+    left: ClientSessionRef,
+    right: ClientSessionRef,
+): number {
+    return compareCanonicalStorageKeys(
+        clientStateSessionStorageKey(left),
+        clientStateSessionStorageKey(right),
+    );
+}
+
+function compareCanonicalStorageKeys(left: string, right: string): number {
+    if (left < right) return -1;
+    if (left > right) return 1;
+    return 0;
+}
