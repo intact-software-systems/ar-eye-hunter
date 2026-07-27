@@ -62,7 +62,9 @@ import {
   projectGroupReceiptEvidence,
   projectTopologyReceiptEvidence,
 } from './api-v1-state-write-receipt-evidence.ts';
+import { STATE_WRITE_BENCHMARK_APP_INBOX_OPTIONS } from './state-write-wait-options.ts';
 export { deriveAppInboxAttemptObservations } from './api-v1-state-write-attempt-evidence.ts';
+export { STATE_WRITE_BENCHMARK_APP_INBOX_OPTIONS } from './state-write-wait-options.ts';
 
 const DEFAULT_DATABASE_URL = 'postgres://app:app@localhost:5432/appdb';
 const CLIENT_COUNT = 100;
@@ -593,7 +595,7 @@ function createServiceRuntime(
     }),
     serviceId,
     timing,
-    { waitRetryIntervalMsecs: 1, waitMaxRetryIntervalMsecs: 5, waitJitterRatio: 0 },
+    STATE_WRITE_BENCHMARK_APP_INBOX_OPTIONS.client,
   );
   const group = new AppGroupInboxService(
     inbox,
@@ -603,7 +605,7 @@ function createServiceRuntime(
     groupState,
     serviceId,
     timing,
-    { waitRetryIntervalMsecs: 1, waitMaxRetryIntervalMsecs: 5, waitJitterRatio: 0 },
+    STATE_WRITE_BENCHMARK_APP_INBOX_OPTIONS.group,
   );
   group.setTopologyManagementService(new GroupTopologyManagementService({
     findGroupSnapshotByRef: (ref) => groupState.readSnapshot(ref),
@@ -614,9 +616,7 @@ function createServiceRuntime(
     serviceId,
   }));
   return {
-    client,
-    group,
-    inbox,
+    client, group, inbox,
     resilience: createBenchmarkResilience(),
     serviceId,
   };
