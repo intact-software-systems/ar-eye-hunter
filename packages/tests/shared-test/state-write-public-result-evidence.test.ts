@@ -31,7 +31,7 @@ function createCanonicalNewerPresenceEvidence() {
     };
     const event = {
         ...groupRef,
-        eventId: 'group-event-contract', eventType: 'session-heartbeat',
+        eventId: 'group-event-contract', eventType: 'member-joined',
         snapshotVersion: 8,
         causalRevision: { groupRevision: 8, presenceRevision: 1 },
         occurredAtEpochMs: 1,
@@ -180,7 +180,7 @@ describe('durable AppInbox public result evidence', () => {
         });
         const event = {
             ...groupRef,
-            eventId: 'group-event-1', eventType: 'session-heartbeat',
+            eventId: 'group-event-1', eventType: 'member-joined',
             snapshotVersion: 8,
             causalRevision: { groupRevision: 8, presenceRevision: 1 },
             occurredAtEpochMs: 1,

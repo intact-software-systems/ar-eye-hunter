@@ -3,6 +3,44 @@ import {
     validateAuthoritativeGroupEvent,
     validateAuthoritativeGroupSnapshot,
 } from '@shared/api/authoritative-state-validation.ts';
+import type { GroupEventType } from '@shared/api/group-types.ts';
+
+type GroupPublicResultEventPolicy = Readonly<{
+    eventTypes: readonly GroupEventType[];
+    allowsNoOp: boolean;
+}>;
+
+const GROUP_PUBLIC_RESULT_EVENT_POLICY: Readonly<
+    Record<string, GroupPublicResultEventPolicy>
+> = {
+    GROUP_CREATE: { eventTypes: ['group-created'], allowsNoOp: false },
+    GROUP_UPDATE: {
+        eventTypes: ['group-updated', 'group-archived', 'group-deleted'],
+        allowsNoOp: true,
+    },
+    GROUP_DIRECTOR_APPOINT: { eventTypes: ['group-updated'], allowsNoOp: false },
+    GROUP_JOIN: { eventTypes: ['member-joined'], allowsNoOp: true },
+    GROUP_INVITE_CREATE: { eventTypes: ['member-invited'], allowsNoOp: true },
+    GROUP_INVITE_REVOKE: { eventTypes: ['member-left'], allowsNoOp: true },
+    GROUP_INVITE_ACCEPT: { eventTypes: ['member-joined'], allowsNoOp: true },
+    GROUP_JOIN_CODE_ROTATE: { eventTypes: ['group-updated'], allowsNoOp: false },
+    GROUP_MEMBER_REMOVE: { eventTypes: ['member-removed'], allowsNoOp: true },
+    GROUP_MEMBER_BAN: { eventTypes: ['member-banned'], allowsNoOp: true },
+    GROUP_MEMBER_UNBAN: { eventTypes: ['member-unbanned'], allowsNoOp: true },
+    GROUP_MEMBER_ROLE_SET: {
+        eventTypes: ['member-role-changed'], allowsNoOp: true,
+    },
+    GROUP_OWNERSHIP_TRANSFER: {
+        eventTypes: ['ownership-transferred'], allowsNoOp: true,
+    },
+    GROUP_MEMBER_UPSERT: {
+        eventTypes: [
+            'member-invited', 'member-joined', 'member-left', 'member-removed',
+            'member-banned',
+        ],
+        allowsNoOp: true,
+    },
+};
 
 export type GroupCausalRevision = Readonly<{
     groupRevision: number;
@@ -10,6 +48,7 @@ export type GroupCausalRevision = Readonly<{
 }>;
 
 export interface PublicResultReceiptIdentity {
+    readonly outcome?: string;
     readonly requestId?: string | null;
     readonly aggregateRef?: Readonly<{
         applicationId: string;
@@ -27,6 +66,7 @@ export function publicResultIdentityMatches(
     resultValue: unknown,
     receipt: PublicResultReceiptIdentity,
     kind: 'client' | 'group',
+    commandType?: string,
 ): boolean {
     const result = record(resultValue);
     const right = record(record(result?.result)?.right);
@@ -40,7 +80,9 @@ export function publicResultIdentityMatches(
     )) return false;
     const aggregateMatches = receipt.aggregateRef !== undefined && aggregate !== undefined &&
         Object.entries(receipt.aggregateRef).every(([key, value]) => aggregate[key] === value);
-    const eventMatches = receipt.eventId === null
+    const eventMatches = kind === 'group'
+        ? groupPublicResultEventMatches(event, receipt, commandType)
+        : receipt.eventId === null
         ? event === null
         : event !== undefined && event?.eventId === receipt.eventId &&
             event?.requestId === receipt.requestId &&
@@ -49,6 +91,31 @@ export function publicResultIdentityMatches(
         ? groupPublicResultRevisionMatches(snapshot, receipt)
         : snapshot?.stateRevision === receipt.stateRevision;
     return aggregateMatches && eventMatches && revisionMatches;
+}
+
+function groupPublicResultEventMatches(
+    event: Record<string, unknown> | null | undefined,
+    receipt: PublicResultReceiptIdentity,
+    commandType: string | undefined,
+): boolean {
+    const policy = commandType === undefined
+        ? undefined
+        : GROUP_PUBLIC_RESULT_EVENT_POLICY[commandType];
+    if (!policy) return false;
+    if (event === null || receipt.eventId === null) {
+        return event === null && receipt.eventId === null &&
+            receipt.outcome === 'no-op' && policy.allowsNoOp;
+    }
+    const accepted = causalRevision(receipt.causalRevision);
+    const emitted = causalRevision(event?.causalRevision);
+    return event !== undefined && accepted !== undefined && emitted !== undefined &&
+        receipt.outcome === 'applied' &&
+        policy.eventTypes.includes(event.eventType as GroupEventType) &&
+        event.eventId === receipt.eventId &&
+        event.requestId === receipt.requestId &&
+        event.snapshotVersion === receipt.snapshotVersion &&
+        emitted.groupRevision === accepted.groupRevision &&
+        emitted.presenceRevision === accepted.presenceRevision;
 }
 
 function authoritativeGroupResultContractsAreValid(

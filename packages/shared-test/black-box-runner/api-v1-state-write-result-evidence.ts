@@ -92,7 +92,7 @@ export function validatePersistedAppInboxResult(input: Readonly<{
             return invalid(result, 'malformed-client-result')
         }
         return input.authoritativeReceipt
-            ? validatePublicResultIdentity(result, input.authoritativeReceipt, 'client')
+            ? validatePublicResultIdentity(result, input.authoritativeReceipt, 'client', input.commandType)
             : !input.requireAuthoritativeReceipt
             ? { valid: true, result }
             : invalid(result, 'missing-authoritative-client-receipt')
@@ -164,7 +164,7 @@ export function validatePersistedAppInboxResult(input: Readonly<{
             : typeof left === 'string'
         if (!validStatus || !validEither) return invalid(result, 'malformed-group-result')
         if (input.authoritativeReceipt) {
-            return validatePublicResultIdentity(result, input.authoritativeReceipt, 'group')
+            return validatePublicResultIdentity(result, input.authoritativeReceipt, 'group', input.commandType)
         }
         return input.requireAuthoritativeReceipt
             ? invalid(result, 'missing-authoritative-group-receipt')
@@ -207,9 +207,9 @@ export function validatePersistedAppInboxResult(input: Readonly<{
 function validatePublicResultIdentity(
     result: RecordValue,
     receipt: AuthoritativeResultReceipt,
-    kind: 'client' | 'group',
+    kind: 'client' | 'group', commandType: string,
 ): ResultEvidence {
-    if (!publicResultIdentityMatches(result, receipt, kind)) {
+    if (!publicResultIdentityMatches(result, receipt, kind, commandType)) {
         return invalid(result, `mismatched-${kind}-result-receipt-identity`)
     }
     return { valid: true, result, receipt: toResultReceipt(receipt) }
