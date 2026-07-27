@@ -14,6 +14,14 @@ the repo-local Codex plugin under `.agents/skills/**`.
   `docs/repo-human-style-guide.md` and run `npm run check:repo-style`.
 - For written implementation plans and clearly long-running repository implementation,
   including docs, scripts, and operations, use `publishing-plan-progress`.
+- No AI or agent may create or place a commit on `main`, `master`, or the local
+  default branch without stating the exact branch, staged file list, proposed
+  commit message, and operation type; asking for permission immediately before
+  the commit; and receiving explicit approval. This includes commit, amend,
+  merge, revert, cherry-pick, rebase, and squash operations. Editing files or
+  working directly on the default branch, standing preferences, deadlines, or
+  task-start approval do not count. Each default-branch commit requires a new
+  permission request and approval.
 - No AI or agent may push `main`, `master`, or the remote default branch
   without stating the exact remote, destination ref, commit range, and whether
   the push is forced; asking for permission immediately before the push; and
@@ -21,6 +29,8 @@ the repo-local Codex plugin under `.agents/skills/**`.
   Working or committing on the default branch, standing publication
   preferences, authentication, deadlines, or task-start approval do not count.
   Each default-branch push requires a new permission request and approval.
+  Commit and push permissions are independent; approval for one never grants
+  approval for the other.
 - For package/app changes, read the relevant repo skill in `.agents/skills/**`:
   - `building-rallar-apps` first for greenfield apps and React/3D architecture;
     then use the authority, realtime, and testing specialists for the selected
