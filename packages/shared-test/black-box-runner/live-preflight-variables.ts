@@ -47,9 +47,16 @@ function resolveVariable(
     }
 
     const nextResolving = new Set(resolving).add(variableName)
-    return value.replace(/\{([^{}]+)\}/g, (placeholder, nestedVariableName: string) => {
-        return resolveVariable(config, nestedVariableName, environment, nextResolving) ?? placeholder
+    let failed = false
+    const resolved = value.replace(/\{([^{}]+)\}/g, (_placeholder, nestedVariableName: string) => {
+        const nested = resolveVariable(config, nestedVariableName, environment, nextResolving)
+        if (nested === undefined) {
+            failed = true
+            return ''
+        }
+        return nested
     })
+    return failed ? undefined : resolved
 }
 
 function asRecord(value: unknown): JsonRecord {

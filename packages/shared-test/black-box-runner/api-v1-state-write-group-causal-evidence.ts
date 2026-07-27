@@ -1,4 +1,8 @@
 import { toGroupSnapshotStateRevision } from '@shared/api/group-client-views.ts';
+import {
+    validateAuthoritativeGroupEvent,
+    validateAuthoritativeGroupSnapshot,
+} from '@shared/api/authoritative-state-validation.ts';
 
 export type GroupCausalRevision = Readonly<{
     groupRevision: number;
@@ -29,6 +33,11 @@ export function publicResultIdentityMatches(
     const snapshot = record(right?.snapshot);
     const aggregate = record(snapshot?.[kind === 'client' ? 'principal' : 'group']);
     const event = right?.event === null ? null : record(right?.event);
+    if (kind === 'group' && !authoritativeGroupResultContractsAreValid(
+        snapshot,
+        event,
+        receipt.aggregateRef,
+    )) return false;
     const aggregateMatches = receipt.aggregateRef !== undefined && aggregate !== undefined &&
         Object.entries(receipt.aggregateRef).every(([key, value]) => aggregate[key] === value);
     const eventMatches = receipt.eventId === null
@@ -40,6 +49,20 @@ export function publicResultIdentityMatches(
         ? groupPublicResultRevisionMatches(snapshot, receipt)
         : snapshot?.stateRevision === receipt.stateRevision;
     return aggregateMatches && eventMatches && revisionMatches;
+}
+
+function authoritativeGroupResultContractsAreValid(
+    snapshot: unknown,
+    event: unknown,
+    aggregateRef: PublicResultReceiptIdentity['aggregateRef'],
+): boolean {
+    try {
+        validateAuthoritativeGroupSnapshot(snapshot, aggregateRef);
+        if (event !== null) validateAuthoritativeGroupEvent(event, aggregateRef);
+        return true;
+    } catch {
+        return false;
+    }
 }
 
 function groupPublicResultRevisionMatches(

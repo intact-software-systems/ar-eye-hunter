@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { runBlackBoxRunnerLivePreflight } from '../../shared-test/black-box-runner/live-preflight.ts'
+import { resolveBlackBoxRunnerLivePreflightVariableByEnv } from
+    '../../shared-test/black-box-runner/live-preflight-variables.ts'
 
 function jsonResponse(value: unknown, status = 200): Response {
     return new Response(JSON.stringify(value), {
@@ -11,6 +13,38 @@ function jsonResponse(value: unknown, status = 200): Response {
 }
 
 describe('black-box runner live preflight variables', () => {
+    it('fails closed when fallback variables contain a cycle', () => {
+        const value = resolveBlackBoxRunnerLivePreflightVariableByEnv({
+            variables: {
+                runId: {
+                    env: 'RALLAR_BB_RUN_ID',
+                    default: '{applicationId}',
+                },
+                applicationId: {
+                    env: 'RALLAR_BB_APPLICATION_ID',
+                    default: 'api-v1-{runId}',
+                },
+            },
+        }, 'RALLAR_BB_APPLICATION_ID', {})
+
+        expect(value).toBeUndefined()
+    })
+
+    it('returns direct environment values verbatim', () => {
+        const value = resolveBlackBoxRunnerLivePreflightVariableByEnv({
+            variables: {
+                applicationId: {
+                    env: 'RALLAR_BB_APPLICATION_ID',
+                    default: 'fallback',
+                },
+            },
+        }, 'RALLAR_BB_APPLICATION_ID', {
+            RALLAR_BB_APPLICATION_ID: 'direct-{runId}',
+        })
+
+        expect(value).toBe('direct-{runId}')
+    })
+
     it('resolves nested defaults from an explicit run-id environment value', async () => {
         const requestPaths: string[] = []
         const report = await runBlackBoxRunnerLivePreflight({
@@ -85,6 +119,83 @@ describe('black-box runner live preflight variables', () => {
         expect(report.ok).toBe(true)
         expect(requestPaths).toContain(
             '/api/state/apps/api-v1-medium-scale-explicit-run/workspaces/workspace/groups',
+        )
+        expect(requestPaths.some(path => path.includes('%7BrunId%7D'))).toBe(false)
+    })
+
+    it('uses a safe preflight scope when nested fallback variables cycle', async () => {
+        const requestPaths: string[] = []
+        const report = await runBlackBoxRunnerLivePreflight({
+            config: {
+                variables: {
+                    runId: {
+                        env: 'RALLAR_BB_RUN_ID',
+                        default: '{runId}',
+                    },
+                    applicationId: {
+                        env: 'RALLAR_BB_APPLICATION_ID',
+                        default: 'api-v1-{runId}',
+                    },
+                    workspaceId: {
+                        env: 'RALLAR_BB_WORKSPACE_ID',
+                        default: 'workspace',
+                    },
+                    groupId: {
+                        env: 'RALLAR_BB_GROUP_ID',
+                        default: 'group',
+                    },
+                    aliceUsername: {
+                        env: 'RALLAR_ALICE_USERNAME',
+                    },
+                    alicePassword: {
+                        env: 'RALLAR_ALICE_PASSWORD',
+                        secret: true,
+                    },
+                },
+                steps: [{
+                    type: 'http',
+                    request: {
+                        path: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups',
+                    },
+                }],
+            },
+            requires: {
+                httpServices: [{
+                    name: 'Rallar API',
+                    env: 'RALLAR_API_BASE_URL',
+                }],
+            },
+            environment: {
+                RALLAR_API_BASE_URL: 'http://rallar.test',
+                RALLAR_ALICE_USERNAME: 'alice',
+                RALLAR_ALICE_PASSWORD: 'secret',
+            },
+            fetchImplementation: (url, init) => {
+                const path = new URL(String(url)).pathname
+                requestPaths.push(path)
+                if (path === '/api/config') {
+                    return Promise.resolve(jsonResponse({ ok: true }))
+                }
+                if (path === '/api/auth/login') {
+                    return Promise.resolve(jsonResponse({
+                        accessToken: 'access-token',
+                        clientId: 'alice-client',
+                        sessionId: 'alice-session',
+                    }))
+                }
+                if (init?.method === 'POST' && path.endsWith('/groups')) {
+                    return Promise.resolve(jsonResponse({ group: { groupId: 'group' } }, 201))
+                }
+                if (init?.method === 'PUT' && path.endsWith('/members/alice-client')) {
+                    return Promise.resolve(jsonResponse({ members: [] }))
+                }
+                throw new Error(`Unexpected preflight request: ${init?.method ?? 'GET'} ${path}`)
+            },
+        })
+
+        expect(report.ok).toBe(true)
+        expect(requestPaths).toContain(
+            '/api/state/apps/black-box-app/workspaces/workspace/groups',
         )
         expect(requestPaths.some(path => path.includes('%7BrunId%7D'))).toBe(false)
     })
