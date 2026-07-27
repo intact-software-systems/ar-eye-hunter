@@ -119,6 +119,63 @@ describe('GroupStateService guarded runtime-state batch', () => {
     expect(runtime.transactionOrder).toEqual(['batch', 'event', 'commit']);
     expect(eventStore.events).toEqual([event]);
   });
+
+  it('materializes expired group recreation with exact group and summary revisions', async () => {
+    const runtime = new ApplyingGuardedBatchRepository();
+    const eventStore = new OrderedGroupEventStore(runtime);
+    let generatedId = 0;
+    const service = createTestGroupStateService({
+      runtimeRepository: runtime,
+      createGroupStateEventStore: () => eventStore,
+      now: () => 1_000,
+      randomId: () => `group-recreate-id-${++generatedId}`,
+      serviceId: 'group-batch-service',
+    });
+    const request = {
+      groupId: 'group-recreate',
+      displayName: 'Old group',
+      kind: 'room' as const,
+      joinMode: 'open' as const,
+      createdByPrincipalId: 'alice',
+      requestId: 'group-recreate-old',
+    };
+    await service.createGroup(SCOPE, request);
+    const [groupBefore] = await runtime.findAllEntries('group-state:groups');
+    const [summaryBefore] = await runtime.findAllEntries('group-state:presence-summaries');
+    if (!groupBefore || !summaryBefore) throw new Error('Expected group predecessors');
+    await runtime.upsert(
+      'group-state:groups',
+      groupBefore.key,
+      groupBefore.value,
+      0,
+    );
+    const expiredGroup = await runtime.findEntry('group-state:groups', groupBefore.key);
+    if (!expiredGroup) throw new Error('Expected expired group predecessor');
+    runtime.resetObservations();
+
+    await service.createGroup(SCOPE, {
+      ...request,
+      displayName: 'New group',
+      requestId: 'group-recreate-new',
+    });
+
+    expect(runtime.batches).toHaveLength(1);
+    expect(runtime.batches[0]?.guard).toMatchObject({
+      operation: 'update',
+      expectedRevision: expiredGroup.revision,
+    });
+    expect(runtime.batches[0]?.effects).toContainEqual(expect.objectContaining({
+      effectId: 'initial-presence-summary',
+      operation: 'update',
+      expectedRevision: summaryBefore.revision,
+    }));
+    expect((await runtime.findEntry('group-state:groups', groupBefore.key))?.revision)
+      .toBe(expiredGroup.revision + 1);
+    expect((await runtime.findEntry(
+      'group-state:presence-summaries',
+      summaryBefore.key,
+    ))?.revision).toBe(summaryBefore.revision + 1);
+  });
 });
 
 export function groupRef(groupId: string): GroupRef {

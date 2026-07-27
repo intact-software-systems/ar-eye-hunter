@@ -23,6 +23,7 @@ import {
   groupStateUpdateGroupDescriptor,
   groupStateUpdatePresenceAdmissionDescriptor,
   groupStateUpdatePresenceDescriptor,
+  groupStateUpdatePresenceSummaryDescriptor,
 } from '../repositories/group-state-write-descriptors.ts';
 import {
   createTransactionBoundGroupStateRepository,
@@ -62,9 +63,12 @@ export function materializeGroupStateGuardedBatch(
   }
 
   if (computed.initialPresenceSummary) {
+    const summary = computed.initialPresenceSummary;
     effects.push({
       effectId: 'initial-presence-summary',
-      ...groupStateInsertPresenceSummaryDescriptor(computed.initialPresenceSummary),
+      ...(summary.operation === 'insert'
+        ? groupStateInsertPresenceSummaryDescriptor(summary.value)
+        : groupStateUpdatePresenceSummaryDescriptor(summary.value, summary.expectedRevision)),
     });
   }
 
@@ -146,8 +150,14 @@ export async function writeGroupMutation(
         await repository.putMember(member);
       }
       if (computed.initialPresenceSummary) {
+        const summary = computed.initialPresenceSummary;
         requireConditionalWrite(
-          await repository.insertPresenceSummary(computed.initialPresenceSummary),
+          summary.operation === 'insert'
+            ? await repository.insertPresenceSummary(summary.value)
+            : await repository.updatePresenceSummary(
+                summary.value,
+                summary.expectedRevision,
+              ),
         );
       }
       if (computed.idempotency) {

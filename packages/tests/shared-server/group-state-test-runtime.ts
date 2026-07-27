@@ -353,14 +353,13 @@ async function writeComputedForTest(
         );
     }
     if (!isRuntimeStateGuardedBatchRepositoryLike(transaction)) {
-        for (const member of computed.members) {
-            await repository.putMember(member);
-        }
+        for (const member of computed.members) await repository.putMember(member);
     }
     if (!isRuntimeStateGuardedBatchRepositoryLike(transaction) && computed.initialPresenceSummary) {
-        requireConditionalWrite(
-            await repository.insertPresenceSummary(computed.initialPresenceSummary),
-        );
+        const summary = computed.initialPresenceSummary;
+        requireConditionalWrite(summary.operation === 'insert'
+            ? await repository.insertPresenceSummary(summary.value)
+            : await repository.updatePresenceSummary(summary.value, summary.expectedRevision));
     }
     if (!isRuntimeStateGuardedBatchRepositoryLike(transaction) && computed.idempotency) {
         requireConditionalWrite(

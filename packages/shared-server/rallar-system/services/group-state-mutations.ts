@@ -63,6 +63,8 @@ import {
     toExpiredAwareInsertCandidate,
     validateGroupExpiredStateAuthority,
 } from './group-expired-state-authority.ts';
+import { type InitialGroupPresenceSummaryCandidate, nextInitialGroupSnapshotVersion,
+    toInitialGroupPresenceSummaryCandidate, validateInitialGroupPresenceSummaryCandidate } from './group-initial-presence-summary.ts';
 import {
     assertExactKeys,
     assertRequiredKeys,
@@ -365,7 +367,7 @@ export type GroupMutationComputed =
         outcome: 'write';
         guard: GroupGuardCandidate | PresenceGuardCandidate;
         members: readonly GroupMember[];
-        initialPresenceSummary: GroupPresenceSummary | null;
+        initialPresenceSummary: InitialGroupPresenceSummaryCandidate | null;
         presenceAdmission: PresenceAdmissionCandidate | null;
         event: GroupEvent;
         receipt: GroupMutationReceipt;
@@ -1660,7 +1662,10 @@ function validateComputedWrite(
         );
     }
     if (computed.initialPresenceSummary !== null) {
-        validatePresenceSummaryValue(computed.initialPresenceSummary, ref);
+        if (command.operation !== 'createGroup') throw new TypeError('Initial group presence summary operation requires group creation');
+        validateInitialGroupPresenceSummaryCandidate(computed.initialPresenceSummary,
+            read.presenceSummary);
+        validatePresenceSummaryValue(computed.initialPresenceSummary.value, ref);
     }
     if (computed.presenceAdmission !== null) {
         const admission = computed.presenceAdmission as unknown as Record<string, unknown>;
@@ -2116,25 +2121,19 @@ function computeCreate(
         return rejected(command, read, facts, `Group already exists: ${command.aggregateRef.groupId}`);
     }
     const audit = auditStamp(command, facts, command.input.createdByPrincipalId);
+    const snapshotVersion = nextInitialGroupSnapshotVersion(read.expiredGroupEntry, read.presenceSummary);
     const group: Group = {
         ...command.aggregateRef,
-        slug: command.input.slug,
-        displayName: command.input.displayName,
-        description: command.input.description,
-        kind: command.input.kind,
-        status: 'active',
-        joinMode: command.input.joinMode,
-        maxMembers: command.input.maxMembers,
-        maxSessionsPerMember: command.input.maxSessionsPerMember,
+        slug: command.input.slug, displayName: command.input.displayName,
+        description: command.input.description, kind: command.input.kind,
+        status: 'active', joinMode: command.input.joinMode,
+        maxMembers: command.input.maxMembers, maxSessionsPerMember: command.input.maxSessionsPerMember,
         metadata: cloneRecord(command.input.metadata),
         activeMemberCount: 1,
         ownerPrincipalId: command.input.createdByPrincipalId,
-        snapshotVersion: 1,
-        metadataVersion: 1,
-        rosterVersion: 1,
-        presenceVersion: 0,
-        created: audit,
-        updated: audit,
+        snapshotVersion, metadataVersion: 1,
+        rosterVersion: 1, presenceVersion: 0,
+        created: audit, updated: audit,
         archived: null,
         deleted: null,
         expiresAtEpochMs: command.input.expiresAtEpochMs,
@@ -2156,7 +2155,8 @@ function computeCreate(
     };
     const summary: GroupPresenceSummary = {
         ...command.aggregateRef,
-        causalRevision: { groupRevision: 1, presenceRevision: 0 },
+        causalRevision: { groupRevision: snapshotVersion,
+            presenceRevision: read.presenceSummary?.value.causalRevision.presenceRevision ?? 0 },
         activePrincipalIds: [],
         activeSessionIds: [],
         activeSessions: [],
@@ -2170,7 +2170,7 @@ function computeCreate(
             ...toExpiredAwareInsertCandidate(read.expiredGroupEntry, group),
         },
         members: [owner],
-        initialPresenceSummary: summary,
+        initialPresenceSummary: toInitialGroupPresenceSummaryCandidate(summary, read.presenceSummary),
         presenceAdmission: null,
         eventType: 'group-created',
     });
@@ -2889,7 +2889,7 @@ function writeResult(
     input: Readonly<{
         guard: GroupGuardCandidate | PresenceGuardCandidate;
         members: readonly GroupMember[];
-        initialPresenceSummary: GroupPresenceSummary | null;
+        initialPresenceSummary: InitialGroupPresenceSummaryCandidate | null;
         presenceAdmission?: PresenceAdmissionCandidate | null;
         eventType: GroupEventType;
         eventGroup?: Group;

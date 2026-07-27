@@ -153,6 +153,14 @@ export function groupStateInsertPresenceSummaryDescriptor(
   };
 }
 
+export function groupStateUpdatePresenceSummaryDescriptor(
+  summary: GroupPresenceSummary,
+  expectedRevision: number,
+): RuntimeStateGuardedBatchUpdate {
+  const inserted = groupStateInsertPresenceSummaryDescriptor(summary);
+  return { ...inserted, operation: 'update', expectedRevision };
+}
+
 export function groupStateInsertIdempotencyDescriptor(
   input: GroupStateIdempotencyDescriptorInput,
 ): RuntimeStateGuardedBatchInsert {
