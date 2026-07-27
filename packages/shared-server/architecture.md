@@ -75,15 +75,17 @@ The implementation guard covers these exact operation families:
 | RTC topology mutation | `readTopologyMutation`, `computeTopologyMutation`, `validateTopologyMutation`, `writeTopologyMutation` | topology snapshot CAS | work claim and immutable publication when the computed variant carries a publication |
 | RTC RTT mutation | `readRttMutation`, `computeRttMutation`, `validateRttMutation`, `writeRttMutation` | lexically ordered endpoint-admission guards | measurement, compact receipt, every computed recompute intent |
 
-RTC topology's publication-null `write` variant is deliberately an internal
-snapshot update and has no external outbox. `commitTopologyWithRetry` owns that
-internal path. The `createRtcTopologyWorkHandler` `onMessage` callback owns the
-externally effectful publication-bearing path and fans out only after
-`writeTopologyMutation` commits. Client no-op idempotency claiming
-and topology-config claim outcomes may persist compact authority receipts. They
-have no external effect: no external fanout or outbox is required. This does not
-mean that they perform no database write. Every externally effectful computed
-variant is matched to its transaction-local outbox or publication insert.
+`RtcTopologyOutboxWork` handles both publication-null and publication-bearing
+RTC topology variants. ResourceInbox/QueueBox owns the downstream attempt and
+transaction boundary; the topology service owns neither. Publication-null work
+may update the guarded snapshot but produces no external outbox or fanout.
+Publication-bearing work inserts its immutable publication with the guarded
+write, and publication delivery and fanout start only after
+`writeTopologyMutation` commits. Client no-op idempotency claiming and
+topology-config claim outcomes may persist compact authority receipts. They have
+no external effect: no external fanout or outbox is required. This does not mean
+that they perform no database write. Every externally effectful computed variant
+is matched to its transaction-local outbox or publication insert.
 
 ## Mutation Receipt And Outbox Boundary
 

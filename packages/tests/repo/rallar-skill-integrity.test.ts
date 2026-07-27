@@ -396,6 +396,7 @@ describe('Rallar repo skill and documentation integrity', () => {
                 '[0, 2, 8]',
                 'StateMutationOutboxWork',
                 'StateMutationOutboxRepository',
+                'commitTopologyWithRetry',
             ]) {
                 expect(guidance, `${filePath}: ${rejected}`).not.toContain(rejected);
             }
