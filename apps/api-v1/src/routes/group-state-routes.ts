@@ -65,13 +65,7 @@ import {
   canReadGroupSnapshot as canReadFullGroupSnapshot,
   canUpdateGroupSnapshot,
   GroupPolicyDeniedError,
-  isGroupPolicyDeniedError,
 } from '@shared-server/rallar-system/group-policy.ts';
-import {
-  GROUP_POLICY_REASON_CODES,
-  type GroupPolicyDenied,
-  type GroupPolicyReasonCode,
-} from '@shared/api/group-policy-types.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 import type { GroupEvent, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import {
@@ -80,7 +74,12 @@ import {
   validateGroupPresenceMutationRequest,
 } from '@shared-server/rallar-system/services/group-state-mutations.ts';
 
-const GROUP_POLICY_REASON_CODE_SET = new Set<string>(GROUP_POLICY_REASON_CODES);
+import {
+  toGroupAppInboxError,
+  toGroupStateErrorResponse as toErrorResponse,
+} from './group-state-route-errors.ts';
+
+export { toGroupAppInboxError };
 
 export type GroupStateRouteService =
   & Pick<
@@ -1034,43 +1033,6 @@ async function defaultProcessGroupAppInbox<V, R>(
   );
 }
 
-export function toGroupAppInboxError(failure: string): Error {
-  const denial = readAppInboxPolicyDenial(failure);
-  return denial ? new GroupPolicyDeniedError(denial) : new Error(failure);
-}
-
-function readAppInboxPolicyDenial(value: string): GroupPolicyDenied | undefined {
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    if (!isRecord(parsed)) {
-      return undefined;
-    }
-
-    const code = parsed.code;
-    const message = parsed.message;
-    if (
-      typeof code !== 'string' ||
-      !GROUP_POLICY_REASON_CODE_SET.has(code) ||
-      typeof message !== 'string'
-    ) {
-      return undefined;
-    }
-
-    return {
-      allowed: false,
-      code: code as GroupPolicyReasonCode,
-      message,
-      details: isRecord(parsed.details) ? parsed.details : undefined,
-    };
-  } catch {
-    return undefined;
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
-}
-
 async function readRequestWithRequestId<T extends { requestId?: string }>(c: {
   req: {
     json(): Promise<unknown>;
@@ -1145,38 +1107,6 @@ function toScope(c: {
     applicationId: c.req.param('applicationId'),
     workspaceId: c.req.param('workspaceId'),
   };
-}
-
-function toErrorResponse(
-  c: {
-    json(value: unknown, status?: number): Response;
-  },
-  error: unknown,
-): Response {
-  if (isGroupPolicyDeniedError(error)) {
-    return c.json(
-      {
-        error: error.message,
-        code: error.denial.code,
-        message: error.denial.message,
-        details: error.denial.details,
-      },
-      error.status,
-    );
-  }
-
-  const message = error instanceof Error ? error.message : String(error);
-  const status = message.includes('not found')
-    ? 404
-    : message.startsWith('Unauthorized:')
-    ? 401
-    : message.startsWith('Forbidden:')
-    ? 403
-    : message.includes('already exists')
-    ? 409
-    : 400;
-
-  return c.json({ error: message }, status);
 }
 
 function withActor<

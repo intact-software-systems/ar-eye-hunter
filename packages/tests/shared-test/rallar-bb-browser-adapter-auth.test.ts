@@ -610,12 +610,13 @@ describe('rallar-bb browser adapter auth', () => {
             '/api/state/apps/rallar-server/workspaces/default/groups/hetzner-headless-room/members/alice',
         ]);
         expect(JSON.parse(String(fetchCalls[0].init?.body))).toMatchObject({
-            requestId: 'rtc-realtime:ensure-group:rallar-server:default:hetzner-headless-room',
+            requestId: 'rtc-realtime:ensure-group:rallar-server:default:hetzner-headless-room:session-1',
             groupId: 'hetzner-headless-room',
             joinMode: 'open',
         });
         expect(JSON.parse(String(fetchCalls[1].init?.body))).toMatchObject({
-            requestId: 'rtc-realtime:ensure-member:rallar-server:default:hetzner-headless-room:alice',
+            requestId:
+                'rtc-realtime:ensure-member:rallar-server:default:hetzner-headless-room:alice:session-1',
             status: 'active',
         });
     });
