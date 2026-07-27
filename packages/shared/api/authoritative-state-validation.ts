@@ -266,10 +266,8 @@ export function validateAuthoritativeGroupSnapshot(
     const group = record(snapshot.group, 'GroupSnapshot.group');
     exact(group, GROUP_KEYS, 'GroupSnapshot.group');
     const ref = groupRef(group, 'GroupSnapshot.group', scope);
-    enumValue(group.status, ['active', 'archived', 'deleted'],
-        'GroupSnapshot.group.status');
-    enumValue(group.kind, ['party', 'room', 'team', 'custom'],
-        'GroupSnapshot.group.kind');
+    enumValue(group.status, ['active', 'archived', 'deleted'], 'GroupSnapshot.group.status');
+    enumValue(group.kind, ['party', 'room', 'team', 'custom'], 'GroupSnapshot.group.kind');
     enumValue(group.joinMode, ['invite-only', 'code', 'open'],
         'GroupSnapshot.group.joinMode');
     nullableString(group.slug, 'GroupSnapshot.group.slug');
@@ -286,6 +284,8 @@ export function validateAuthoritativeGroupSnapshot(
     for (const key of [
         'snapshotVersion', 'metadataVersion', 'rosterVersion',
     ] as const) positiveInteger(group[key], `GroupSnapshot.group.${key}`);
+    if (group.snapshotVersion !== causal.groupRevision)
+        fail('GroupSnapshot group snapshotVersion differs from causalRevision');
     nonNegativeInteger(group.presenceVersion, 'GroupSnapshot.group.presenceVersion');
     if (group.presenceVersion !== causal.presenceRevision) {
         fail('GroupSnapshot group presenceVersion differs from causalRevision');

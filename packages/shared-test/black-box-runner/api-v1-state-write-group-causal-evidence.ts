@@ -141,15 +141,23 @@ function groupPublicResultRevisionMatches(
     const observed = causalRevision(snapshot?.causalRevision);
     if (!snapshot || !accepted || !observed) return false;
     if (!Number.isSafeInteger(receipt.stateRevision) ||
-        !Number.isSafeInteger(snapshot.stateRevision)) return false;
+        !Number.isSafeInteger(receipt.snapshotVersion) ||
+        !Number.isSafeInteger(snapshot.stateRevision) ||
+        receipt.snapshotVersion !== accepted.groupRevision) return false;
+    const causalOrderMatches = receipt.outcome === 'applied'
+        ? observed.groupRevision === accepted.groupRevision &&
+            observed.presenceRevision >= accepted.presenceRevision
+        : receipt.outcome === 'no-op'
+        ? observed.groupRevision >= accepted.groupRevision &&
+            observed.presenceRevision >= accepted.presenceRevision
+        : false;
     return receipt.stateRevision === toGroupSnapshotStateRevision(
             accepted.groupRevision,
             accepted.presenceRevision,
         ) && snapshot.stateRevision === toGroupSnapshotStateRevision(
             observed.groupRevision,
             observed.presenceRevision,
-        ) && observed.groupRevision === accepted.groupRevision &&
-        observed.presenceRevision >= accepted.presenceRevision;
+        ) && causalOrderMatches;
 }
 
 function causalRevision(value: unknown): GroupCausalRevision | undefined {

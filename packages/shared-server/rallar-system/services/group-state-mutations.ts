@@ -3852,8 +3852,7 @@ function validateCausalRevision(
     label: string,
 ): asserts value is GroupStateCausalRevision {
     const revision = requireRecord(value, `${label} causalRevision`);
-    assertExactKeys(revision, ['groupRevision', 'presenceRevision'],
-        `${label} causalRevision`);
+    assertExactKeys(revision, ['groupRevision', 'presenceRevision'], `${label} causalRevision`);
     assertRequiredKeys(revision, ['groupRevision', 'presenceRevision'],
         `${label} causalRevision`);
     requireNonNegativeSafeInteger(revision.groupRevision,
@@ -3886,8 +3885,7 @@ function validateMutationReceipt(
     const aggregateRef = receipt.aggregateRef;
     validateGroupRef(aggregateRef);
     validateScopedValue(aggregateRef, ref, `${label} aggregateRef`);
-    requireOneOf(receipt.outcome, ['applied', 'no-op', 'rejected'],
-        `${label} outcome`);
+    requireOneOf(receipt.outcome, ['applied', 'no-op', 'rejected'], `${label} outcome`);
     requirePositiveSafeInteger(receipt.attemptCount, `${label} attemptCount`);
     if (receipt.acceptedStorageRevision !== null) {
         requireNonNegativeSafeInteger(
@@ -3899,6 +3897,8 @@ function validateMutationReceipt(
     requireNonNegativeSafeInteger(receipt.snapshotVersion, `${label} snapshotVersion`);
     const causalRevision = receipt.causalRevision;
     validateCausalRevision(causalRevision, label);
+    if (receipt.snapshotVersion !== causalRevision.groupRevision)
+        throw new TypeError(`${label} snapshotVersion differs from causalRevision`);
     if (receipt.stateRevision !== toGroupSnapshotStateRevision(
         causalRevision.groupRevision,
         causalRevision.presenceRevision,

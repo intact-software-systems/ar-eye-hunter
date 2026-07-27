@@ -39,6 +39,7 @@ const commandPolicies = [
 type ReceiptOverrides = Readonly<{
     outcome?: string;
     eventId?: string | null;
+    snapshotVersion?: number;
 }>;
 
 function groupEvidenceCase(commandType: string, eventType: GroupEventType) {
@@ -70,6 +71,7 @@ function groupEvidenceCase(commandType: string, eventType: GroupEventType) {
     const evidence = (
         candidateEvent: unknown = event,
         receiptOverrides: ReceiptOverrides = {},
+        candidateSnapshot: unknown = snapshot,
     ) => {
         const receipt = {
             appInboxResourceId: resourceId, commandId: logicalId,
@@ -94,7 +96,7 @@ function groupEvidenceCase(commandType: string, eventType: GroupEventType) {
                 resource: JSON.stringify({ commandId: logicalId }),
             } }),
             result_resource: JSON.stringify({ status: 'ok', result: { right: {
-                snapshot, event: candidateEvent,
+                snapshot: candidateSnapshot, event: candidateEvent,
             } } }),
         };
         return deriveApiV1StateWriteEvidence(
@@ -129,6 +131,84 @@ describe('durable group event semantics evidence', () => {
             ...event,
             causalRevision: { groupRevision: 999, presenceRevision: 999 },
         }));
+    });
+
+    it('requires receipt snapshotVersion to equal its causal groupRevision', () => {
+        const { event, evidence } = groupEvidenceCase(
+            'GROUP_MEMBER_UPSERT',
+            'member-joined',
+        );
+
+        expectInvalid(evidence(
+            { ...event, snapshotVersion: 9 },
+            { snapshotVersion: 9 },
+        ));
+    });
+
+    it('keeps applied groupRevision exact when the returned snapshot is canonical', () => {
+        const { event, evidence } = groupEvidenceCase(
+            'GROUP_MEMBER_UPSERT',
+            'member-joined',
+        );
+        const fixture = createGroupSnapshotFixture({
+            applicationId: 'app-1', workspaceId: 'workspace-1',
+            groupId: 'group-1', sessionIds: ['owner-session', 'member-session'],
+        });
+        const groupAhead = {
+            ...fixture,
+            stateRevision: 11,
+            causalRevision: { groupRevision: 9, presenceRevision: 2 },
+            group: { ...fixture.group, snapshotVersion: 9, presenceVersion: 2 },
+        };
+
+        expectInvalid(evidence(event, {}, groupAhead));
+    });
+
+    it('accepts a canonical no-op snapshot advanced on both causal axes', () => {
+        const { evidence } = groupEvidenceCase('GROUP_MEMBER_UPSERT', 'member-joined');
+        const fixture = createGroupSnapshotFixture({
+            applicationId: 'app-1', workspaceId: 'workspace-1',
+            groupId: 'group-1', sessionIds: ['owner-session', 'member-session'],
+        });
+        const snapshotAhead = {
+            ...fixture,
+            stateRevision: 12,
+            causalRevision: { groupRevision: 9, presenceRevision: 3 },
+            group: { ...fixture.group, snapshotVersion: 9, presenceVersion: 3 },
+        };
+
+        expectValid(evidence(
+            null,
+            { outcome: 'no-op', eventId: null },
+            snapshotAhead,
+        ));
+    });
+
+    it.each([
+        ['group', { groupRevision: 7, presenceRevision: 2 }],
+        ['presence', { groupRevision: 9, presenceRevision: 0 }],
+    ])('rejects a no-op snapshot that regresses the %s causal axis', (_axis, causal) => {
+        const { evidence } = groupEvidenceCase('GROUP_MEMBER_UPSERT', 'member-joined');
+        const fixture = createGroupSnapshotFixture({
+            applicationId: 'app-1', workspaceId: 'workspace-1',
+            groupId: 'group-1', sessionIds: ['owner-session', 'member-session'],
+        });
+        const regressed = {
+            ...fixture,
+            stateRevision: causal.groupRevision + causal.presenceRevision,
+            causalRevision: causal,
+            group: {
+                ...fixture.group,
+                snapshotVersion: causal.groupRevision,
+                presenceVersion: causal.presenceRevision,
+            },
+        };
+
+        expectInvalid(evidence(
+            null,
+            { outcome: 'no-op', eventId: null },
+            regressed,
+        ));
     });
 
     it.each(commandPolicies)(

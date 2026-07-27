@@ -911,7 +911,7 @@ function createGroupSnapshot(): GroupSnapshot {
       metadata: {},
       activeMemberCount: 1,
       ownerPrincipalId: 'alice',
-      snapshotVersion: 7,
+      snapshotVersion: 4,
       metadataVersion: 4,
       rosterVersion: 4,
       presenceVersion: 3,
