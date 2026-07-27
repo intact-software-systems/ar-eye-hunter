@@ -16,6 +16,9 @@ type MatrixEntry = {
         env?: string[];
         httpServices?: Array<{ name: string; env: string; default?: string }>;
         playwright?: boolean;
+        livePreflight?: {
+            timeoutMs?: number;
+        };
     };
 };
 
@@ -193,6 +196,18 @@ describe('black-box runner recipe matrix', () => {
         remoteLiveEntries.forEach(entry => {
             expect(entry.requires?.env).toContain('RALLAR_BLACK_BOX_CONTROL_BASE_URL');
             expect(entry.requires?.env).toContain('RALLAR_BLACK_BOX_AGENT_ID');
+        });
+    });
+
+    it('gives AppInbox-backed API cluster preflight checks a realistic deadline', () => {
+        const { entries } = readMatrix();
+        const clusterEntries = entries.filter(entry =>
+            entry.profiles.includes('api-v1-black-box-cluster')
+        );
+
+        expect(clusterEntries.length).toBeGreaterThan(0);
+        clusterEntries.forEach(entry => {
+            expect(entry.requires?.livePreflight?.timeoutMs).toBe(10_000);
         });
     });
 

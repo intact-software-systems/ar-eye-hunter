@@ -915,6 +915,9 @@
       "expectedExitCode": 0,
       "artifactName": "api-v1-rtc-topology-convergence",
       "requires": {
+        "livePreflight": {
+          "timeoutMs": 10000
+        },
         "httpServices": [
           {
             "name": "Rallar API primary",
@@ -939,6 +942,9 @@
       "expectedExitCode": 0,
       "artifactName": "api-v1-state-topology-churn",
       "requires": {
+        "livePreflight": {
+          "timeoutMs": 10000
+        },
         "httpServices": [
           {
             "name": "Rallar API primary",
@@ -963,6 +969,9 @@
       "expectedExitCode": 0,
       "artifactName": "api-v1-state-write-convergence",
       "requires": {
+        "livePreflight": {
+          "timeoutMs": 10000
+        },
         "httpServices": [
           {
             "name": "Rallar API primary",
@@ -987,6 +996,9 @@
       "expectedExitCode": 0,
       "artifactName": "api-v1-crdt-app-inbox",
       "requires": {
+        "livePreflight": {
+          "timeoutMs": 10000
+        },
         "httpServices": [
           {
             "name": "Rallar API primary",
