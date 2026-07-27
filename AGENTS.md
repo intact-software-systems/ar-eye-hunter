@@ -22,6 +22,8 @@ the repo-local Codex plugin under `.agents/skills/**`.
   - `rallar-ai` for RallarAI providers, schemas, and deterministic helpers.
   - `rallar-code-writing` for package code style and testability.
   - `rallar-testing` for validation commands.
+  - `publishing-plan-progress` for written plans or long-running implementation
+    requiring observable GitHub checkpoints.
 - Keep `.codex-plugin/plugin.json` as the source that exposes these skills to
   Codex. Do not add a separate `SKILLS.md` unless the plugin format changes.
 

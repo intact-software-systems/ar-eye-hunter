@@ -12,6 +12,7 @@ const expectedSkills = [
   'rallar-games',
   'rallar-hetzner-ops',
   'rallar-platform',
+  'publishing-plan-progress',
   'rallar-realtime',
   'rallar-testing',
 ] as const;
@@ -134,6 +135,24 @@ describe('Rallar repo skill and documentation integrity', () => {
         ).toBe(true);
       }
     }
+  });
+
+  it('routes long-running written-plan execution to observable published progress', () => {
+    const agents = readRepo('AGENTS.md');
+    const progressSkill = readRepo('.agents/skills/publishing-plan-progress/SKILL.md');
+    const plugin = readJson('.codex-plugin/plugin.json') as {
+      interface?: { longDescription?: string };
+    };
+
+    expectAll(agents, ['publishing-plan-progress', 'long-running']);
+    expectAll(progressSkill, [
+      '`codex/<topic>`',
+      'draft pull request',
+      'completed plan milestone',
+      'without waiting for human review',
+      'Explicit user instructions',
+    ]);
+    expect(plugin.interface?.longDescription).toContain('observable plan progress');
   });
 
   it('provides the greenfield app workflow and audited evidence map', () => {

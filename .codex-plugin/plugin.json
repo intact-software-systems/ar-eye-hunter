@@ -17,20 +17,23 @@
     "code-style",
     "repo-code-style",
     "human-traceability",
-    "testability"
+    "testability",
+    "implementation-plans",
+    "observable-plan-progress",
+    "draft-pull-requests"
   ],
   "skills": "./.agents/skills/",
   "interface": {
     "displayName": "Rallar Repo",
     "shortDescription": "Build and change Rallar packages and apps.",
-    "longDescription": "Repo-local skills for Rallar package boundaries, repo-wide TypeScript traceability, greenfield browser apps, React/3D architecture, realtime infrastructure, games, AI, operations, performance, and validation.",
+    "longDescription": "Repo-local skills for Rallar package boundaries, repo-wide TypeScript traceability, greenfield browser apps, React/3D architecture, realtime infrastructure, games, AI, operations, performance, validation, and observable plan progress.",
     "developerName": "Rallar Project",
     "category": "Developer Tools",
     "capabilities": ["Code", "Review", "Testing"],
     "defaultPrompt": [
       "Scaffold a Rallar-first browser app.",
       "Plan a Rallar React and 3D architecture.",
-      "Review Rallar TypeScript for human traceability and repo style."
+      "Execute a long-running Rallar implementation plan with observable GitHub checkpoints."
     ],
     "brandColor": "#2F80ED"
   }
