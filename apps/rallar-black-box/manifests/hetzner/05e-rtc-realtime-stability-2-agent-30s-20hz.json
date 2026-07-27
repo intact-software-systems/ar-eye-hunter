@@ -47,7 +47,7 @@
               "method": "POST",
               "path": "/api/state/apps/rallar-server/workspaces/default/groups",
               "body": {
-                "requestId": "rtc-realtime:ensure-group:rallar-server:default:hetzner-headless-room",
+                "requestId": "rtc-realtime:ensure-group:rallar-server:default:hetzner-headless-room:{auth.sessionId}",
                 "groupId": "hetzner-headless-room",
                 "displayName": "hetzner-headless-room",
                 "kind": "room",
@@ -80,7 +80,7 @@
               "method": "PUT",
               "path": "/api/state/apps/rallar-server/workspaces/default/groups/hetzner-headless-room/members/{auth.clientId}",
               "body": {
-                "requestId": "rtc-realtime:ensure-member:rallar-server:default:hetzner-headless-room:{auth.clientId}",
+                "requestId": "rtc-realtime:ensure-member:rallar-server:default:hetzner-headless-room:{auth.clientId}:{auth.sessionId}",
                 "status": "active"
               }
             },
@@ -242,7 +242,7 @@
               "method": "POST",
               "path": "/api/state/apps/rallar-server/workspaces/default/groups",
               "body": {
-                "requestId": "rtc-realtime:ensure-group:rallar-server:default:hetzner-headless-room",
+                "requestId": "rtc-realtime:ensure-group:rallar-server:default:hetzner-headless-room:{auth.sessionId}",
                 "groupId": "hetzner-headless-room",
                 "displayName": "hetzner-headless-room",
                 "kind": "room",
@@ -275,7 +275,7 @@
               "method": "PUT",
               "path": "/api/state/apps/rallar-server/workspaces/default/groups/hetzner-headless-room/members/{auth.clientId}",
               "body": {
-                "requestId": "rtc-realtime:ensure-member:rallar-server:default:hetzner-headless-room:{auth.clientId}",
+                "requestId": "rtc-realtime:ensure-member:rallar-server:default:hetzner-headless-room:{auth.clientId}:{auth.sessionId}",
                 "status": "active"
               }
             },

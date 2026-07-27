@@ -50,7 +50,7 @@
               "method": "POST",
               "path": "/api/state/apps/rallar-server/workspaces/default/groups",
               "body": {
-                "requestId": "rtc-messages-all-peer:ensure-group:rallar-server:default:hetzner-headless-room",
+                "requestId": "rtc-messages-all-peer:ensure-group:rallar-server:default:hetzner-headless-room:{auth.sessionId}",
                 "groupId": "hetzner-headless-room",
                 "displayName": "hetzner-headless-room",
                 "kind": "room",
@@ -83,7 +83,7 @@
               "method": "PUT",
               "path": "/api/state/apps/rallar-server/workspaces/default/groups/hetzner-headless-room/members/{auth.clientId}",
               "body": {
-                "requestId": "rtc-messages-all-peer:ensure-member:rallar-server:default:hetzner-headless-room:{auth.clientId}",
+                "requestId": "rtc-messages-all-peer:ensure-member:rallar-server:default:hetzner-headless-room:{auth.clientId}:{auth.sessionId}",
                 "status": "active"
               }
             },

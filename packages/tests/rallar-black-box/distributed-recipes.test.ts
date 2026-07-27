@@ -456,7 +456,7 @@ describe('distributed recipes helpers', () => {
                 method: 'POST',
                 path: '/api/state/apps/game-app/workspaces/live/groups',
                 body: {
-                    requestId: 'rtc-realtime:ensure-group:game-app:live:arena-1',
+                    requestId: 'rtc-realtime:ensure-group:game-app:live:arena-1:{auth.sessionId}',
                     groupId: 'arena-1',
                     displayName: 'arena-1',
                     kind: 'room',
@@ -475,7 +475,8 @@ describe('distributed recipes helpers', () => {
                 method: 'PUT',
                 path: '/api/state/apps/game-app/workspaces/live/groups/arena-1/members/{auth.clientId}',
                 body: {
-                    requestId: 'rtc-realtime:ensure-member:game-app:live:arena-1:{auth.clientId}',
+                    requestId:
+                        'rtc-realtime:ensure-member:game-app:live:arena-1:{auth.clientId}:{auth.sessionId}',
                     status: 'active',
                 },
             },
@@ -714,7 +715,7 @@ describe('distributed recipes helpers', () => {
         ]));
     });
 
-    it('builds the RTC smoke fixture with idempotent group and member setup before connect', () => {
+    it('session-fences RTC smoke group and member setup before connect', () => {
         const recipe = createRallarBlackBoxRtcSmokeRecipe({
             group: {
                 applicationId: 'game-app',
@@ -733,7 +734,7 @@ describe('distributed recipes helpers', () => {
                 method: 'POST',
                 path: '/api/state/apps/game-app/workspaces/live/groups',
                 body: {
-                    requestId: 'rtc-smoke:ensure-group:game-app:live:arena-1',
+                    requestId: 'rtc-smoke:ensure-group:game-app:live:arena-1:{auth.sessionId}',
                     groupId: 'arena-1',
                     joinMode: 'open',
                 },
@@ -746,7 +747,8 @@ describe('distributed recipes helpers', () => {
                 method: 'PUT',
                 path: '/api/state/apps/game-app/workspaces/live/groups/arena-1/members/{auth.clientId}',
                 body: {
-                    requestId: 'rtc-smoke:ensure-member:game-app:live:arena-1:{auth.clientId}',
+                    requestId:
+                        'rtc-smoke:ensure-member:game-app:live:arena-1:{auth.clientId}:{auth.sessionId}',
                     status: 'active',
                 },
             },

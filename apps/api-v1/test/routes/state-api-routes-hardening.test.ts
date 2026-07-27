@@ -411,6 +411,48 @@ Deno.test('client route adapter preserves a base-era AppInbox status code and me
   });
 });
 
+Deno.test('group route adapter preserves canonical AppInbox status code and message', async () => {
+  const failure = JSON.stringify({
+    type: 'app-inbox-failure',
+    version: 'canonical.v2',
+    code: 'group-mutation-idempotency-conflict',
+    status: 409,
+    message: 'Group mutation command differs for request same-request',
+    issues: null,
+    denial: null,
+    retry: null,
+  });
+  const deps = createGroupRouteDeps({
+    session: createAuthSession('alice'),
+    groupService: {},
+    processGroupAppInbox: () => Promise.reject(groupStateRoutes.toGroupAppInboxError(failure)),
+  });
+
+  const response = await createGroupRouteApp(deps).request(
+    '/api/state/apps/app-1/workspaces/workspace-1/groups',
+    {
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer token',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        requestId: 'same-request',
+        groupId: 'room-1',
+        displayName: 'Room 1',
+        kind: 'room',
+        joinMode: 'open',
+      }),
+    },
+  );
+
+  assert.equal(response.status, 409);
+  assert.deepEqual(await response.json(), {
+    error: 'Group mutation command differs for request same-request',
+    code: 'group-mutation-idempotency-conflict',
+  });
+});
+
 Deno.test('strict state read routes reject non-self client snapshot and event reads', async () => {
   await withStrictReadAuth(true, async () => {
     const deps = createClientRouteDeps({

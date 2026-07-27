@@ -402,6 +402,7 @@ export function createRallarBlackBoxEnsureGroupRequestId(input: Readonly<{
         input.group.applicationId,
         input.group.workspaceId,
         input.group.groupId,
+        '{auth.sessionId}',
     ].join(':');
 }
 
@@ -428,6 +429,7 @@ function createRallarBlackBoxEnsureGroupCommands(input: Readonly<{
         input.group.workspaceId,
         input.group.groupId,
         actor,
+        '{auth.sessionId}',
     ].join(':');
 
     return [
