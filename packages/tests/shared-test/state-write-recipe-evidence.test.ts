@@ -6,6 +6,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { executeBlackBox } from '@shared-test/black-box-runner/execute-black-box.ts';
 import { explainBlackBoxRunnerPlan } from '@shared-test/black-box-runner/plan-preflight.ts';
 import { deriveApiV1StateWriteEvidence } from '@shared-test/black-box-runner/api-v1-state-write-evidence.ts';
+import { toExactPersistedEvidenceMatches } from
+    '@shared-test/black-box-runner/api-v1-state-write-match.ts';
+import { toRallarCrdtDocumentKey } from '@shared/crdt/mod.ts';
 
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url));
 const recipeRoot = path.join(
@@ -21,6 +24,20 @@ const taskRecipes = [
 ];
 
 describe('API-v1 state-write recipe evidence', () => {
+    it('selects auth ticket races by the redacted secret and exact durable digest', async () => {
+        const recipe = JSON.parse(readFileSync(path.join(
+            recipeRoot,
+            'api-v1-auth-session.json',
+        ), 'utf8')) as { steps: Array<Record<string, any>> };
+        const evidence = recipe.steps.find(step => step.name === 'exposeStateWriteEvidence');
+        expect(evidence?.request.stateWriteEvidence.match).toBe('{singleUseAgentTicket}');
+        const matches = await toExactPersistedEvidenceMatches('race-ticket-secret');
+        expect(matches).toEqual({
+            raw: 'race-ticket-secret',
+            digest: '6dy-jINE4zGcAta17d3GOaDkncYQn5DMJ_GF-DwGQS8',
+        });
+    });
+
     it('executes the topology exact-revision assertions before every cleanup step', async () => {
         const recipe = JSON.parse(readFileSync(path.join(
             recipeRoot,
@@ -254,7 +271,31 @@ describe('API-v1 state-write recipe evidence', () => {
             ri_row_id: 2, ri_resource_id: 'delivery-1', ri_topic_id: 'app-inbox.crdt-state',
             fk_ext_bank_id: 'document-1', ri_status: 'COMPLETED', ri_attempts: 1,
             start_ts: new Date(1), end_ts: new Date(2), next_ts: null,
-            result_status: 'COMPLETED', result_resource: '{}',
+            result_status: 'COMPLETED', result_resource: JSON.stringify({
+                version: 1, operation: 'append', status: 'rejected',
+                commandId: 'update-1', documentKey: toRallarCrdtDocumentKey({
+                    applicationId: 'app-1', scope: 'app',
+                    documentType: 'test', documentId: 'document-1',
+                }), documentRevision: null,
+                appendSequence: null, code: 'quota-exceeded',
+                appendResult: {
+                    status: 'rejected', code: 'quota-exceeded',
+                    reason: 'The CRDT document quota would be exceeded.', retryable: false,
+                    update: {
+                        protocolVersion: 1,
+                        document: {
+                            applicationId: 'app-1', scope: 'app',
+                            documentType: 'test', documentId: 'document-1',
+                        },
+                        updateId: 'update-1', replicaId: 'replica-1', lamport: 1,
+                        parents: [], schemaVersion: 1, operationVersion: 1,
+                        createdAtEpochMs: 1,
+                        payload: { kind: 'batch', operations: [{
+                            kind: 'register.set', path: ['title'], policy: 'lww', value: 'value',
+                        }] },
+                    },
+                },
+            }),
             ri_resource: JSON.stringify({ payload: {
                 typeId: 'CRDT_UPDATE_APPEND', resource: JSON.stringify({
                     commandId: 'update-1', deliveryId: 'delivery-1',
@@ -290,7 +331,14 @@ describe('API-v1 state-write recipe evidence', () => {
             ri_row_id: 3, ri_resource_id: 'admin-inbox-1', ri_topic_id: 'app-inbox.admin',
             fk_ext_bank_id: 'admin-job-1', ri_status: 'COMPLETED', ri_attempts: 1,
             start_ts: new Date(1), end_ts: new Date(2), next_ts: null,
-            result_status: 'COMPLETED', result_resource: '{}',
+            result_status: 'COMPLETED', result_resource: JSON.stringify({
+                generatedAtEpochMs: 1, serverId: 'server-1', warnings: [],
+                operation: 'maintenance.prune-expired', status: 'queued', changed: false,
+                jobId: 'admin-job-1', results: [
+                    { category: 'sessions', expiredRows: 1, deletedRows: 0, dryRun: false },
+                    { category: 'groups', expiredRows: 1, deletedRows: 0, dryRun: false },
+                ],
+            }),
             ri_resource: JSON.stringify({ payload: {
                 typeId: 'ADMIN_PRUNE_EXPIRED', resource: JSON.stringify({ jobId: 'admin-job-1' }),
             } }),

@@ -88,7 +88,29 @@ describe('API-v1 state-write final durable evidence', () => {
     });
     sample.durableEvidence.appInbox[0].attempts = 2;
     expect(validateStateWriteArtifact(zeroDelay)).toEqual(expect.arrayContaining([
-      expect.stringContaining('nonterminal conflict retryDelayMs must be positive'),
+      expect.stringContaining('nonterminal retryDelayMs must be positive'),
+    ]));
+  });
+
+  it('distinguishes typed transient retries from optimistic conflicts', () => {
+    const candidate = artifact(true);
+    const sample = candidate.workloads[0].samples[0];
+    const first = sample.attemptObservations[0];
+    first.outcome = 'transient-retry';
+    first.terminal = false;
+    first.retryDelayMs = 2;
+    first.failure = { kind: 'retryable', code: 'ECONNRESET', name: 'Error' };
+    sample.attemptObservations.splice(1, 0, {
+      ...first, attempt: 2, outcome: 'accepted', terminal: true,
+      failure: { kind: 'none' },
+    });
+    sample.durableEvidence.appInbox[0].attempts = 2;
+    refresh(candidate.workloads[0]);
+    expect(validateStateWriteArtifact(candidate)).toEqual([]);
+
+    first.outcome = 'conflicted';
+    expect(validateStateWriteArtifact(candidate)).toEqual(expect.arrayContaining([
+      expect.stringContaining('only recognized optimistic conflicts'),
     ]));
   });
 
@@ -103,6 +125,22 @@ describe('API-v1 state-write final durable evidence', () => {
     mismatched.workloads[0].samples[0].durableEvidence.receipts[0].outboxIds = ['invented-effect'];
     expect(validateStateWriteArtifact(mismatched)).toEqual(expect.arrayContaining([
       expect.stringContaining('receipt outbox IDs must match exact ResourceInbox effects'),
+    ]));
+
+    const embeddedTamper = artifact(true);
+    const embedded = embeddedTamper.workloads[0].samples[0].durableEvidence.appInbox
+      .find((entry: any) => entry.commandType.startsWith('GROUP_PRESENCE_'));
+    embedded.durableResult.outboxIds = ['invented-embedded-effect'];
+    expect(validateStateWriteArtifact(embeddedTamper)).toEqual(expect.arrayContaining([
+      expect.stringContaining('embedded result receipt must match authoritative receipt and effects'),
+    ]));
+
+    const arbitraryKey = artifact(true);
+    const client = arbitraryKey.workloads[0].samples[0].durableEvidence.appInbox
+      .find((entry: any) => entry.commandType.startsWith('CLIENT_'));
+    client.durableResult.unreceipted = true;
+    expect(validateStateWriteArtifact(arbitraryKey)).toEqual(expect.arrayContaining([
+      expect.stringContaining('persisted durable result is malformed'),
     ]));
   });
 
@@ -261,6 +299,9 @@ function sample(runIndex: number, candidate: boolean): any {
       outcome: index + 1 === entry.attempts ? 'accepted' : 'conflicted',
       terminal: index + 1 === entry.attempts,
       source: 'resource_inbox.release.telemetry', retryDelayMs: 0, dueAgeMs: 0, selectedLane: 'fast',
+      failure: index + 1 === entry.attempts
+        ? { kind: 'none' }
+        : { kind: 'retryable', code: 'runtime-state-write-conflict', name: 'Error' },
     })))
     : commands.flatMap((command) => operations(command).map((operationId) => ({
       commandId: command.commandId, operationId, attempt: 1, outcome: 'accepted',
@@ -272,7 +313,8 @@ function sample(runIndex: number, candidate: boolean): any {
     latencySamplesMs, latencyMs: percentiles(latencySamplesMs), commands, attemptObservations,
     stackCommandCounts: [350, 350],
     ...(candidate ? { durableEvidence: evidence } : { durable: evidence }),
-    outcomes: { accepted: 700, conflicted: 0, exhausted: 0, attempts: 800, attemptsPerAcceptedMutation: 800 / 700 },
+    outcomes: { accepted: 700, conflicted: 0, transientRetries: 0, exhausted: 0,
+      attempts: 800, attemptsPerAcceptedMutation: 800 / 700 },
     sql: { statements: 20, rowsRead: 10, serializedResultBytes: 1000 },
     postgres: { transactionDurationMs: 80, lockWaitMs: 0, cpuTimeMs: 30, sharedBufferHits: 100, sharedBufferReads: 2, walBytes: 4096 },
     timingsMs: { read: 20, compute: 0, validate: 0, write: 40, transaction: 80, outbox: 10 },
@@ -306,7 +348,9 @@ function finalEvidence(commands: any[]): any {
   })));
   const receipts = commands.map((command) => ({
     commandId: command.commandId,
-    receiptIds: operations(command).map((operationId) => `${command.commandId}:${operationId}`),
+    receiptIds: command.kind === 'profile-instance'
+      ? operations(command).map((operationId) => `${command.commandId}:${operationId}`)
+      : [command.commandId],
     outboxIds: PRODUCTION_STATE_WRITE_MUTATION_CONTRACT[command.kind].map((_, index) => `${command.commandId}:effect:${index}`),
     identityKind: command.kind === 'topology-source' ? 'logical-msg-id' : 'physical-resource-id',
   }));
@@ -348,10 +392,36 @@ function operations(command: any): string[] {
 function refresh(workloadValue: any): void {
   const samples = workloadValue.samples;
   const accepted = 700 * samples.length;
+  for (const sampleValue of samples) {
+    const attempts = sampleValue.attemptObservations.length;
+    sampleValue.outcomes = {
+      accepted: 700,
+      conflicted: sampleValue.attemptObservations.filter(
+        (entry: any) => entry.outcome === 'conflicted',
+      ).length,
+      transientRetries: sampleValue.attemptObservations.filter(
+        (entry: any) => entry.outcome === 'transient-retry',
+      ).length,
+      exhausted: 0,
+      attempts,
+      attemptsPerAcceptedMutation: attempts / 700,
+    };
+  }
+  const attemptCount = samples.reduce(
+    (sum: number, entry: any) => sum + entry.attemptObservations.length,
+    0,
+  );
+  const conflictCount = samples.reduce((sum: number, entry: any) => sum +
+    entry.attemptObservations.filter((attempt: any) => attempt.outcome === 'conflicted').length, 0);
+  const transientRetryCount = samples.reduce((sum: number, entry: any) => sum +
+    entry.attemptObservations.filter(
+      (attempt: any) => attempt.outcome === 'transient-retry',
+    ).length, 0);
   workloadValue.summary = {
     latencyMs: percentiles(samples.flatMap((entry: any) => entry.latencySamplesMs)),
     throughputPerSecond: accepted / (samples.reduce((sum: number, entry: any) => sum + entry.durationMs, 0) / 1000),
-    outcomes: { accepted, conflicted: 0, exhausted: 0, attempts: 800 * samples.length, attemptsPerAcceptedMutation: 800 / 700 },
+    outcomes: { accepted, conflicted: conflictCount, transientRetries: transientRetryCount,
+      exhausted: 0, attempts: attemptCount, attemptsPerAcceptedMutation: attemptCount / accepted },
     sql: { ...samples[0].sql }, postgres: { ...samples[0].postgres }, timingsMs: { ...samples[0].timingsMs },
     correctness: {
       acceptedCommandCount: accepted,

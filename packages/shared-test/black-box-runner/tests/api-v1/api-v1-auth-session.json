@@ -182,7 +182,7 @@
       "output": "stateWriteEvidence",
       "request": {
         "stateWriteEvidence": {
-          "match": "ticket-race-{runId}",
+          "match": "{singleUseAgentTicket}",
           "commandTypes": ["AUTH_AGENT_SESSION_TICKET_CONSUME"],
           "minimumMatchedRows": 2,
           "expectedEffectsByCommandType": {

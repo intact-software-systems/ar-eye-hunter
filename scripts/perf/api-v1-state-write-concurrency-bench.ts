@@ -50,6 +50,7 @@ import {
   PRODUCTION_STATE_WRITE_MUTATION_CONTRACT,
 } from './compare-api-v1-state-write-results.mjs';
 import {
+  type AppInboxAttemptObservation,
   deriveAppInboxAttemptObservations,
   parsePersistedResult,
   readAppInboxCommandType,
@@ -114,6 +115,7 @@ type CorrectnessMetrics = {
 type OutcomeMetrics = {
   accepted: number;
   conflicted: number;
+  transientRetries: number;
   exhausted: number;
   attempts: number;
 };
@@ -147,17 +149,7 @@ type RawCommand = {
   stackIndex: number;
   status: 'accepted' | 'exhausted';
 };
-type AttemptObservation = {
-  commandId: string;
-  operationId: string;
-  attempt: number;
-  outcome: 'accepted' | 'conflicted' | 'exhausted';
-  terminal: boolean;
-  source: string;
-  retryDelayMs?: number;
-  dueAgeMs?: number;
-  selectedLane?: 'fast' | 'fairness' | 'timeout';
-};
+type AttemptObservation = AppInboxAttemptObservation;
 type DurableEvidence = {
   appInbox: AppInboxAttemptEvidence[];
   receipts: MutationReceiptEvidence[];
@@ -496,6 +488,9 @@ async function runWorkloadPhase(input: {
   const outcomes: OutcomeMetrics = {
     accepted,
     conflicted: attemptObservations.filter((entry) => entry.outcome === 'conflicted').length,
+    transientRetries: attemptObservations.filter((entry) =>
+      entry.outcome === 'transient-retry'
+    ).length,
     exhausted: rawCommands.filter((command) => command.status === 'exhausted').length,
     attempts,
   };
@@ -1604,6 +1599,7 @@ function summarizeSamples(samples: readonly RunSample[]): WorkloadSummary {
     outcomes: {
       accepted,
       conflicted: sum(samples.map((sample) => sample.outcomes.conflicted)),
+      transientRetries: sum(samples.map((sample) => sample.outcomes.transientRetries)),
       exhausted: sum(samples.map((sample) => sample.outcomes.exhausted)),
       attempts,
       attemptsPerAcceptedMutation: accepted === 0 ? attempts : attempts / accepted,

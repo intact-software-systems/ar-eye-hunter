@@ -3,7 +3,7 @@
 import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
-export const STATE_WRITE_ARTIFACT_SCHEMA_VERSION = 'rallar.api-v1.state-write.v3';
+export const STATE_WRITE_ARTIFACT_SCHEMA_VERSION = 'rallar.api-v1.state-write.v4';
 export const STATE_WRITE_COMMANDS_PER_RUN = 700;
 
 export const LEGACY_STATE_WRITE_MUTATION_CONTRACT = Object.freeze({
@@ -61,6 +61,7 @@ const POSTGRES_METRICS = [
 const OUTCOME_METRICS = [
   'accepted',
   'conflicted',
+  'transientRetries',
   'exhausted',
   'attempts',
   'attemptsPerAcceptedMutation',
@@ -616,6 +617,13 @@ function validateSample(
     'attempt observations',
   );
   compareNumber(
+    sample.outcomes?.transientRetries,
+    attempts.transientRetries,
+    `${path}.outcomes.transientRetries`,
+    errors,
+    'attempt observations',
+  );
+  compareNumber(
     sample.outcomes?.exhausted,
     attempts.exhausted,
     `${path}.outcomes.exhausted`,
@@ -710,10 +718,11 @@ function deriveAttempts(
 ) {
   if (!isDenseArray(observations)) {
     errors.push(`${path}.attemptObservations must be a dense array`);
-    return { attempts: 0, conflicted: 0, exhausted: 0, accepted: 0 };
+    return { attempts: 0, conflicted: 0, transientRetries: 0, exhausted: 0, accepted: 0 };
   }
   const histories = new Map();
   let conflicted = 0;
+  let transientRetries = 0;
   for (const [index, observation] of observations.entries()) {
     const observationPath = `${path}.attemptObservations[${index}]`;
     if (!isObject(observation) || !commandsById.has(observation.commandId)) {
@@ -727,11 +736,14 @@ function deriveAttempts(
     if (!Number.isInteger(observation.attempt) || observation.attempt < 0) {
       errors.push(`${observationPath}.attempt must be a non-negative integer`);
     }
-    if (!['accepted', 'conflicted', 'exhausted'].includes(observation.outcome)) {
+    if (!['accepted', 'conflicted', 'transient-retry', 'exhausted'].includes(observation.outcome)) {
       errors.push(`${observationPath}.outcome is invalid`);
     }
     if (typeof observation.source !== 'string' || observation.source.trim().length === 0) {
       errors.push(`${observationPath}.source must disclose a timing-sink source`);
+    }
+    if (durableContract.name === 'production') {
+      validateAttemptFailure(observation, observationPath, errors);
     }
     const terminalOutcome = observation.outcome === 'accepted' ||
       observation.outcome === 'exhausted';
@@ -745,6 +757,7 @@ function deriveAttempts(
     history.push({ ...observation, index });
     histories.set(historyKey, history);
     conflicted += observation.outcome === 'conflicted' ? 1 : 0;
+    transientRetries += observation.outcome === 'transient-retry' ? 1 : 0;
   }
 
   const historiesByCommand = new Map(
@@ -871,14 +884,16 @@ function deriveAttempts(
     } else if (history.at(-1) !== terminals[0]) {
       errors.push(`${path}: ${commandId}/${operationId} terminal outcome must be last`);
     }
-    if (history.slice(0, -1).some((observation) => observation.outcome !== 'conflicted')) {
-      errors.push(`${path}: ${commandId}/${operationId} only conflicts may precede a terminal`);
+    if (history.slice(0, -1).some((observation) =>
+      !['conflicted', 'transient-retry'].includes(observation.outcome)
+    )) {
+      errors.push(`${path}: ${commandId}/${operationId} only retries may precede a terminal`);
     }
     if (history.slice(0, -1).some((observation) =>
       !isNonNegativeNumber(observation.retryDelayMs) || observation.retryDelayMs <= 0
     )) {
       errors.push(
-        `${path}: ${commandId}/${operationId} nonterminal conflict retryDelayMs must be positive`,
+        `${path}: ${commandId}/${operationId} nonterminal retryDelayMs must be positive`,
       );
     }
     const terminal = terminals[0];
@@ -942,7 +957,50 @@ function deriveAttempts(
     accepted += derivedStatus === 'accepted' ? 1 : 0;
     exhausted += derivedStatus === 'exhausted' ? 1 : 0;
   }
-  return { attempts: observations.length, conflicted, exhausted, accepted };
+  return { attempts: observations.length, conflicted, transientRetries, exhausted, accepted };
+}
+
+const OPTIMISTIC_CONFLICT_CODES = new Set([
+  'app-inbox-reservation-conflict',
+  'resource-inbox-lost-reservation',
+  'runtime-state-write-conflict',
+  'state-snapshot-read-conflict',
+  'group-topology-commit-conflict',
+]);
+const OPTIMISTIC_CONFLICT_NAMES = new Set([
+  'RuntimeStateWriteConflictError',
+  'CrdtMutationConflictError',
+  'StateSnapshotRevisionConflictError',
+  'GroupTopologyCommitConflictError',
+  'AppInboxReservationConflictError',
+]);
+
+function validateAttemptFailure(observation, path, errors) {
+  const failure = observation.failure;
+  if (!isObject(failure) || !['none', 'retryable', 'non-retryable'].includes(failure.kind)) {
+    errors.push(`${path}.failure must carry a typed release failure`);
+    return;
+  }
+  if (failure.kind === 'none') {
+    if (Object.keys(failure).length !== 1 || observation.outcome !== 'accepted') {
+      errors.push(`${path}.failure none is valid only for an accepted release`);
+    }
+    return;
+  }
+  if (Object.keys(failure).length !== 3 || typeof failure.code !== 'string' ||
+    failure.code.length === 0 || typeof failure.name !== 'string' || failure.name.length === 0) {
+    errors.push(`${path}.failure typed identity is malformed`);
+    return;
+  }
+  const conflict = failure.kind === 'retryable' &&
+    (OPTIMISTIC_CONFLICT_CODES.has(failure.code) || OPTIMISTIC_CONFLICT_NAMES.has(failure.name));
+  if ((observation.outcome === 'conflicted') !== conflict) {
+    errors.push(`${path}.outcome must classify only recognized optimistic conflicts`);
+  }
+  if (observation.outcome === 'transient-retry' &&
+    (failure.kind !== 'retryable' || conflict)) {
+    errors.push(`${path}.transient-retry must preserve a non-conflict retryable failure`);
+  }
 }
 
 function parseRawCommandClientIdentity(command) {
@@ -1169,6 +1227,17 @@ function deriveFinalDurableCorrectness(sample, commandsById, path, errors) {
       );
     }
   }
+  for (const entry of appInbox) {
+    const embedded = embeddedResultReceipt(entry);
+    if (embedded === undefined) continue;
+    const authoritative = receipts.find((receipt) => receipt?.commandId === entry?.commandId);
+    if (!authoritative || !authoritative.receiptIds.includes(embedded.commandId) ||
+      !sameStringArray(authoritative.outboxIds.toSorted(), embedded.outboxIds.toSorted())) {
+      errors.push(
+        `${path}.durableEvidence embedded result receipt must match authoritative receipt and effects`,
+      );
+    }
+  }
   const atomicFailures = deriveAtomicCompletionFailures(
     acceptedCommands,
     appInbox,
@@ -1231,9 +1300,10 @@ function isValidPersistedResult(entry, command) {
     !isObject(entry.durableResult)) return false;
   const result = entry.durableResult;
   if (command.kind === 'profile-instance') {
-    return entry.commandType.startsWith('CLIENT_') && result.status === 'ok' &&
+    return entry.commandType.startsWith('CLIENT_') && hasExactKeys(result, ['status', 'result']) &&
+      hasExactKeys(result.result, ['right']) && result.status === 'ok' &&
       isObject(result.result?.right) && isObject(result.result.right.snapshot) &&
-      Object.hasOwn(result.result.right, 'event');
+      hasExactKeys(result.result.right, ['snapshot', 'event']);
   }
   if (command.kind.startsWith('presence-')) {
     return entry.commandType.startsWith('GROUP_PRESENCE_') &&
@@ -1249,8 +1319,26 @@ function isValidPersistedResult(entry, command) {
       new Set(receipt.outboxIds).size === receipt.outboxIds.length;
   }
   return entry.commandType.startsWith('GROUP_') &&
+    hasExactKeys(result, ['status', 'result']) && hasExactKeys(result.result, ['right']) &&
     ['ok', 'created'].includes(result.status) && isObject(result.result?.right) &&
-    isObject(result.result.right.snapshot) && Object.hasOwn(result.result.right, 'event');
+    hasExactKeys(result.result.right, ['snapshot', 'event']) &&
+    isObject(result.result.right.snapshot);
+}
+
+function embeddedResultReceipt(entry) {
+  if (!isObject(entry?.durableResult)) return undefined;
+  const result = entry.durableResult;
+  const receipt = entry.commandType?.startsWith('GROUP_PRESENCE_')
+    ? result
+    : entry.commandType?.startsWith('TOPOLOGY_') ? result.receipt : undefined;
+  return isObject(receipt) && typeof receipt.commandId === 'string' &&
+      isDenseStringArray(receipt.outboxIds)
+    ? { commandId: receipt.commandId, outboxIds: receipt.outboxIds }
+    : undefined;
+}
+
+function hasExactKeys(value, keys) {
+  return isObject(value) && sameStringArray(Object.keys(value).toSorted(), [...keys].toSorted());
 }
 
 function deriveAtomicCompletionFailures(commands, appInbox, receipts, resourceOutbox) {
@@ -1344,7 +1432,7 @@ function canDeriveWorkloadSample(sample) {
       isObject(observation) && typeof observation.commandId === 'string' &&
       typeof observation.operationId === 'string' &&
       Number.isInteger(observation.attempt) &&
-      ['accepted', 'conflicted', 'exhausted'].includes(observation.outcome) &&
+      ['accepted', 'conflicted', 'transient-retry', 'exhausted'].includes(observation.outcome) &&
       typeof observation.terminal === 'boolean' &&
       typeof observation.source === 'string'
     ) &&
@@ -1376,6 +1464,9 @@ function deriveWorkloadSummary(samples, mutationContract) {
   const attemptMetrics = samples.map((sample) => ({
     attempts: sample.attemptObservations.length,
     conflicted: sample.attemptObservations.filter((entry) => entry.outcome === 'conflicted').length,
+    transientRetries: sample.attemptObservations.filter((entry) =>
+      entry.outcome === 'transient-retry'
+    ).length,
     exhausted: sample.commands.filter((command) => command.status === 'exhausted').length,
   }));
   const attempts = sum(attemptMetrics.map((entry) => entry.attempts));
@@ -1386,6 +1477,7 @@ function deriveWorkloadSummary(samples, mutationContract) {
     outcomes: {
       accepted,
       conflicted: sum(attemptMetrics.map((entry) => entry.conflicted)),
+      transientRetries: sum(attemptMetrics.map((entry) => entry.transientRetries)),
       exhausted: sum(attemptMetrics.map((entry) => entry.exhausted)),
       attempts,
       attemptsPerAcceptedMutation: attempts / accepted,

@@ -20,6 +20,13 @@ export type ResourceInboxAttemptReleaseTelemetry = Readonly<{
     classification: 'accepted' | 'retryable' | 'non-retryable';
     status: EntityStatus;
     retryDelayMs: number;
+    failure:
+        | Readonly<{ kind: 'none' }>
+        | Readonly<{
+            kind: 'retryable' | 'non-retryable';
+            code: string;
+            name: string;
+        }>;
 }>;
 
 const attempts = new WeakMap<ResourceEntry, ResourceInboxAttemptTelemetry>();
@@ -56,6 +63,7 @@ export function recordResourceInboxAttemptRelease(
     reserved: ResourceEntry,
     released: ResourceEntry,
     classification: ResourceInboxAttemptReleaseTelemetry['classification'],
+    exception?: unknown,
 ): void {
     if (!sink) return;
     const selection = readResourceInboxAttemptTelemetry(reserved);
@@ -70,6 +78,9 @@ export function recordResourceInboxAttemptRelease(
     if (!Number.isSafeInteger(retryDelayMs) || retryDelayMs < 0) {
         throw new Error('Persisted resource inbox retry delay is invalid');
     }
+    if (classification !== 'accepted' && exception === undefined) {
+        throw new Error('Resource inbox failed release telemetry is missing its exception');
+    }
     sink({
         key: reserved.key,
         type: reserved.typeId,
@@ -81,5 +92,26 @@ export function recordResourceInboxAttemptRelease(
         classification,
         status: released.status,
         retryDelayMs,
+        failure: classification === 'accepted'
+            ? { kind: 'none' }
+            : toReleaseFailure(classification, exception),
     });
+}
+
+function toReleaseFailure(
+    classification: Exclude<
+        ResourceInboxAttemptReleaseTelemetry['classification'],
+        'accepted'
+    >,
+    exception: unknown,
+): Extract<
+    ResourceInboxAttemptReleaseTelemetry['failure'],
+    { kind: 'retryable' | 'non-retryable' }
+> {
+    const error = exception instanceof Error ? exception : new Error(String(exception));
+    const code = typeof exception === 'object' && exception !== null && 'code' in exception &&
+            typeof exception.code === 'string'
+        ? exception.code
+        : error.name;
+    return { kind: classification, code, name: error.name };
 }

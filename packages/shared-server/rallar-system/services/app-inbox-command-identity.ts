@@ -86,11 +86,20 @@ export class AppInboxCommandIdentityError extends Error {
 export function validateAppInboxCommandIdentity(
   entry: ResourceEntry,
 ): AppInboxCommandIdentityValidation {
+  return validatePersistedAppInboxCommandIdentity({
+    topicId: entry.key.topicId,
+    resource: entry.resource,
+  });
+}
+
+export function validatePersistedAppInboxCommandIdentity(
+  input: Readonly<{ topicId: string; resource: string }>,
+): AppInboxCommandIdentityValidation {
   let outer: unknown;
   try {
-    outer = JSON.parse(entry.resource) as unknown;
+    outer = JSON.parse(input.resource) as unknown;
   } catch {
-    return toInvalidIdentity(entry.key.topicId, 'corrupt');
+    return toInvalidIdentity(input.topicId, 'corrupt');
   }
   if (
     !isRecord(outer) ||
@@ -98,7 +107,7 @@ export function validateAppInboxCommandIdentity(
     typeof outer.payload.typeId !== 'string' ||
     typeof outer.payload.resource !== 'string'
   ) {
-    return toInvalidIdentity(entry.key.topicId, 'corrupt');
+    return toInvalidIdentity(input.topicId, 'corrupt');
   }
   const dispatchedOperation = outer.payload.typeId;
 
@@ -106,22 +115,22 @@ export function validateAppInboxCommandIdentity(
   try {
     command = JSON.parse(outer.payload.resource) as unknown;
   } catch {
-    return toInvalidIdentity(entry.key.topicId, 'corrupt');
+    return toInvalidIdentity(input.topicId, 'corrupt');
   }
   if (!isAppInboxEnqueueShape(command)) {
-    return toInvalidIdentity(entry.key.topicId, 'corrupt');
+    return toInvalidIdentity(input.topicId, 'corrupt');
   }
   if (
     !APP_INBOX_OPERATIONS.has(dispatchedOperation) ||
     !APP_INBOX_OPERATIONS.has(command.type)
   ) {
-    return toInvalidIdentity(entry.key.topicId, 'unavailable');
+    return toInvalidIdentity(input.topicId, 'unavailable');
   }
   if (
     dispatchedOperation !== command.type ||
-    !isOperationForTopic(dispatchedOperation as AppInboxType, entry.key.topicId)
+    !isOperationForTopic(dispatchedOperation as AppInboxType, input.topicId)
   ) {
-    return toInvalidIdentity(entry.key.topicId, 'corrupt');
+    return toInvalidIdentity(input.topicId, 'corrupt');
   }
   return {
     valid: true,

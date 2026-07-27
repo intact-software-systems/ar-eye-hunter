@@ -18,13 +18,30 @@ export type AppInboxAttemptObservation = Readonly<{
   commandId: string;
   operationId: string;
   attempt: number;
-  outcome: 'accepted' | 'conflicted' | 'exhausted';
+  outcome: 'accepted' | 'conflicted' | 'transient-retry' | 'exhausted';
   terminal: boolean;
   source: 'resource_inbox.release.telemetry';
   retryDelayMs: number;
   dueAgeMs: number;
   selectedLane: 'fast' | 'fairness' | 'timeout';
+  failure: ResourceInboxAttemptReleaseTelemetry['failure'];
 }>;
+
+const OPTIMISTIC_CONFLICT_CODES = new Set([
+  'app-inbox-reservation-conflict',
+  'resource-inbox-lost-reservation',
+  'runtime-state-write-conflict',
+  'state-snapshot-read-conflict',
+  'group-topology-commit-conflict',
+]);
+
+const OPTIMISTIC_CONFLICT_NAMES = new Set([
+  'RuntimeStateWriteConflictError',
+  'CrdtMutationConflictError',
+  'StateSnapshotRevisionConflictError',
+  'GroupTopologyCommitConflictError',
+  'AppInboxReservationConflictError',
+]);
 
 export function deriveAppInboxAttemptObservations(
   releases: readonly ResourceInboxAttemptReleaseTelemetry[],
@@ -47,7 +64,9 @@ export function deriveAppInboxAttemptObservations(
       attempt: release.attempt,
       outcome: terminal
         ? accepted.has(entry.commandId) ? 'accepted' as const : 'exhausted' as const
-        : 'conflicted' as const,
+        : isOptimisticConflictFailure(release.failure)
+        ? 'conflicted' as const
+        : 'transient-retry' as const,
       terminal,
       source: 'resource_inbox.release.telemetry' as const,
       retryDelayMs: release.retryDelayMs,
@@ -55,11 +74,20 @@ export function deriveAppInboxAttemptObservations(
       selectedLane: release.selectedLane === Reservator.FAIRNESS
         ? 'fairness' as const
         : release.selectedLane === Reservator.TIMEOUT ? 'timeout' as const : 'fast' as const,
+      failure: release.failure,
     }];
   }).toSorted((left, right) =>
     left.commandId.localeCompare(right.commandId) ||
     left.operationId.localeCompare(right.operationId) || left.attempt - right.attempt
   );
+}
+
+export function isOptimisticConflictFailure(
+  failure: ResourceInboxAttemptReleaseTelemetry['failure'],
+): boolean {
+  return failure.kind === 'retryable' &&
+    (OPTIMISTIC_CONFLICT_CODES.has(failure.code) ||
+      OPTIMISTIC_CONFLICT_NAMES.has(failure.name));
 }
 
 export function parseJsonRecord(value: string): Record<string, unknown> | undefined {

@@ -125,7 +125,7 @@ membership, presence connect/heartbeat/disconnect, group config, and topology
 source config. Workload group counts are 100 (`uncontended`), five (`shared`),
 and one (`hot`).
 
-Artifacts use schema `rallar.api-v1.state-write.v3`. Each measured run retains
+Artifacts use schema `rallar.api-v1.state-write.v4`. Each measured run retains
 exactly 700 command records and latencies (100 of every mutation kind), balanced
 service-stack counts, and durable AppInbox attempt observations.
 It also includes latency percentiles, throughput, SQL/row/serialized-byte
@@ -141,8 +141,11 @@ delay and due age, selected `fast`, `fairness`, or `timeout` lane, and a final
 accepted or exhausted outcome. Profile and instance remain separate operations;
 the other mutation kinds use one command operation. Candidate artifacts reject
 service-local retry timing, invented attempt expansion, and synthetic
-prerequisite records.
-Command accepted/exhausted outcomes, conflict counts, attempt counts, and
+prerequisite records. Every release carries the actual typed exception
+code/name, or an explicit no-failure marker for acceptance. Only recognized
+optimistic concurrency failures count as conflicts; other retryable
+infrastructure failures count as transient retries.
+Command accepted/exhausted outcomes, conflict and transient retry counts, attempt counts, and
 attempts per accepted mutation are derived from these histories. Coherent hot
 baseline exhaustion is representable; comparison permits candidate hot
 exhaustion only up to that baseline while requiring zero in uncontended/shared.

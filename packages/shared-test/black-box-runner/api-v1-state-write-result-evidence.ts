@@ -5,89 +5,149 @@ type ResultEvidence = Readonly<{
         commandId: string
         outboxIds: readonly string[]
         identityKind: ReceiptEffectIdentityKind
+        commandHash?: string
+        outcome?: string
     }>
     failure?: string
 }>
 
+export interface AuthoritativeResultReceipt {
+    readonly commandId: string
+    readonly commandHash: string
+    readonly outcome: string
+    readonly outboxIds: readonly string[]
+    readonly identityKind: ReceiptEffectIdentityKind
+    readonly requestId?: string | null
+    readonly aggregateRef?: Readonly<{
+        applicationId: string
+        workspaceId: string
+        principalId?: string
+        groupId?: string
+    }>
+    readonly stateRevision?: number
+    readonly snapshotVersion?: number
+    readonly eventId?: string | null
+    readonly topology?: AuthoritativeTopologyReceipt
+}
+
+export interface AuthoritativeTopologyReceipt {
+    readonly operation: string
+    readonly target: 'config' | 'override'
+    readonly groupRef: Readonly<{
+        applicationId: string
+        workspaceId: string
+        groupId: string
+    }>
+    readonly acceptedVersion: number
+    readonly acceptedStorageRevision: number | null
+    readonly acceptedCreatedAtEpochMs: number | null
+    readonly acceptedUpdatedAtEpochMs: number | null
+    readonly acceptedExpiresAtEpochMs: number | null
+    readonly acceptedConfig: unknown
+}
+
 type RecordValue = Record<string, unknown>
 
 export type ReceiptEffectIdentityKind = 'logical-msg-id' | 'physical-resource-id'
-
-export function parseEvidenceJson(value: string | null): unknown {
-    if (!value) return undefined
-    try {
-        return JSON.parse(value)
-    } catch {
-        return undefined
-    }
-}
-
-export function nestedEvidenceJson(value: unknown): unknown {
-    if (typeof value !== 'string') return value
-    const parsed = parseEvidenceJson(value)
-    return parsed === undefined ? value : parsed
-}
-
-export function collectEvidenceNamedStrings(
-    value: unknown,
-    names: ReadonlySet<string>,
-    into: Set<string>,
-): void {
-    const candidate = nestedEvidenceJson(value)
-    if (!candidate || typeof candidate !== 'object') return
-    if (Array.isArray(candidate)) {
-        candidate.forEach((item) => collectEvidenceNamedStrings(item, names, into))
-        return
-    }
-    for (const [key, child] of Object.entries(candidate)) {
-        if (names.has(key) && typeof child === 'string') into.add(child)
-        if (names.has(key) && Array.isArray(child)) {
-            child.filter((item): item is string => typeof item === 'string')
-                .forEach((item) => into.add(item))
-        }
-        collectEvidenceNamedStrings(child, names, into)
-    }
-}
 
 export function validatePersistedAppInboxResult(input: Readonly<{
     commandType: string
     commandIds: readonly string[]
     resultStatus: string
     resultResource: string | null
+    authoritativeReceipt?: AuthoritativeResultReceipt
+    commandScope?: Readonly<{
+        applicationId: string
+        workspaceId: string
+        groupId?: string
+    }>
+    requireAuthoritativeReceipt?: boolean
 }>): ResultEvidence {
     if (!['COMPLETED', 'FAILED'].includes(input.resultStatus)) {
         return invalid(undefined, 'missing-result-status')
     }
-    const result = parseRecord(input.resultResource)
-    if (!result) return invalid(undefined, 'malformed-result-resource')
+    const parsedResult = parseResult(input.resultResource)
+    if (input.resultStatus === 'COMPLETED' &&
+        input.commandType === 'CLIENT_EXPIRED_SESSIONS') {
+        return Array.isArray(parsedResult) && parsedResult.every(validateClientWritten)
+            ? { valid: true, result: parsedResult }
+            : invalid(parsedResult, 'malformed-client-expiry-result')
+    }
+    const result = record(parsedResult)
+    if (!result) return invalid(parsedResult, 'malformed-result-resource')
     if (input.resultStatus === 'FAILED') {
-        return typeof result.code === 'string' || typeof result.message === 'string'
+        const failure = readPersistedAppInboxFailure(input.resultResource ?? '')
+        return failure.version !== 'malformed.v0'
             ? { valid: true, result }
             : invalid(result, 'malformed-failure-result')
     }
     if (input.commandType.startsWith('CLIENT_')) {
-        const either = record(result.result)
-        const right = record(either?.right)
-        if (result.status !== 'ok' || !right || !record(right.snapshot) ||
-            !Object.hasOwn(right, 'event')) {
+        if (input.commandType === 'CLIENT_AUTHORISED_WS_CONNECT' &&
+            exactKeys(result, ['status', 'sessionId', 'generationId']) &&
+            result.status === 'inactive' && nonEmptyString(result.sessionId) &&
+            nonEmptyString(result.generationId)) {
+            return { valid: true, result }
+        }
+        if (input.commandType === 'CLIENT_AUTHORISED_WS_DISCONNECT' &&
+            exactKeys(result, ['status', 'generationId']) &&
+            result.status === 'inactive' && nonEmptyString(result.generationId)) {
+            return { valid: true, result }
+        }
+        if (!validateClientWritten(result)) {
             return invalid(result, 'malformed-client-result')
         }
-        return { valid: true, result }
+        return input.authoritativeReceipt
+            ? validatePublicResultIdentity(result, input.authoritativeReceipt, 'client')
+            : !input.requireAuthoritativeReceipt
+            ? { valid: true, result }
+            : invalid(result, 'missing-authoritative-client-receipt')
+    }
+    if (input.commandType === 'GROUP_PRESENCE_SESSION_CLEANUP') {
+        return exactKeys(result, ['status', 'sessionId', 'generationId', 'affectedGroups']) &&
+                result.status === 'inactive' &&
+                nonEmptyString(result.sessionId) !== undefined &&
+                input.commandIds.includes(String(result.sessionId)) &&
+                nonEmptyString(result.generationId) !== undefined &&
+                input.commandIds.includes(String(result.generationId)) &&
+                Number.isSafeInteger(result.affectedGroups) && Number(result.affectedGroups) >= 0
+            ? { valid: true, result }
+            : invalid(result, 'malformed-group-session-cleanup-result')
     }
     if (input.commandType.startsWith('GROUP_PRESENCE_')) {
-        return validateReceiptResult(result, input.commandIds, 'physical-resource-id')
+        return validateEmbeddedAuthoritativeReceipt(
+            validateReceiptResult(result, input.commandIds, 'physical-resource-id'),
+            input.authoritativeReceipt,
+            input.requireAuthoritativeReceipt ?? false,
+        )
     }
     if (input.commandType.startsWith('TOPOLOGY_CONFIG_') ||
         input.commandType.startsWith('TOPOLOGY_OVERRIDE_')) {
         const receipt = record(result.receipt)
-        return receipt
-            ? validateReceiptResult(receipt, input.commandIds, 'logical-msg-id', result)
-            : invalid(result, 'missing-topology-receipt')
+        if (!receipt) return invalid(result, 'missing-topology-receipt')
+        const embedded = validateEmbeddedAuthoritativeReceipt(
+                validateReceiptResult(receipt, input.commandIds, 'logical-msg-id', result),
+                input.authoritativeReceipt,
+                input.requireAuthoritativeReceipt ?? false,
+            )
+        if (!embedded.valid) return embedded
+        const payloadFailure = validateTopologyMutationResultPayload(
+            input.commandType,
+            result,
+            input.authoritativeReceipt?.topology,
+        )
+        return payloadFailure ? invalid(result, payloadFailure) : embedded
     }
     if (input.commandType === 'TOPOLOGY_RECONFIGURE') {
         const requestId = readMatchingId(result.requestId, input.commandIds)
         const outboxId = nonEmptyString(result.outboxId)
-        return result.status === 'queued' && requestId && outboxId
+        const groupRef = record(result.groupRef)
+        const scopeMatches = groupRef && input.commandScope &&
+            exactKeys(groupRef, ['applicationId', 'workspaceId', 'groupId']) &&
+            groupRef.applicationId === input.commandScope.applicationId &&
+            groupRef.workspaceId === input.commandScope.workspaceId &&
+            groupRef.groupId === input.commandScope.groupId
+        return exactKeys(result, ['status', 'groupRef', 'requestId', 'outboxId']) &&
+                result.status === 'queued' && requestId && outboxId && scopeMatches
             ? {
                 valid: true,
                 result,
@@ -107,11 +167,136 @@ export function validatePersistedAppInboxResult(input: Readonly<{
         const validEither = right
             ? record(right.snapshot) !== undefined && Object.hasOwn(right, 'event')
             : typeof left === 'string'
-        return validStatus && validEither
-            ? { valid: true, result }
-            : invalid(result, 'malformed-group-result')
+        if (!validStatus || !validEither) return invalid(result, 'malformed-group-result')
+        if (input.authoritativeReceipt) {
+            return validatePublicResultIdentity(result, input.authoritativeReceipt, 'group')
+        }
+        return input.requireAuthoritativeReceipt
+            ? invalid(result, 'missing-authoritative-group-receipt')
+            : { valid: true, result }
     }
-    return { valid: true, result }
+    if (input.commandType.startsWith('AUTH_')) {
+        try {
+            decodeAuthMutationResult(result)
+            return { valid: true, result }
+        } catch {
+            return invalid(result, 'malformed-auth-result')
+        }
+    }
+    if (input.commandType.startsWith('CRDT_')) {
+        try {
+            const decoded = decodeCrdtMutationResult(result)
+            const commandId = readMatchingId(decoded.commandId, input.commandIds)
+            return commandId
+                ? { valid: true, result }
+                : invalid(result, 'mismatched-crdt-result')
+        } catch {
+            return invalid(result, 'malformed-crdt-result')
+        }
+    }
+    if (input.commandType === 'ADMIN_PRUNE_EXPIRED') {
+        return validateAdminPruneResult(result, input.commandIds)
+            ? { valid: true, result }
+            : invalid(result, 'malformed-admin-prune-result')
+    }
+    if (input.commandType === 'RTC_RTT_SUBMIT') {
+        return validateRtcRttResult(result)
+            ? { valid: true, result }
+            : invalid(result, 'malformed-rtc-rtt-result')
+    }
+    return invalid(result, 'unsupported-command-result')
+}
+
+function validatePublicResultIdentity(
+    result: RecordValue,
+    receipt: AuthoritativeResultReceipt,
+    kind: 'client' | 'group',
+): ResultEvidence {
+    const right = record(record(result.result)?.right)
+    const snapshot = record(right?.snapshot)
+    const aggregate = record(snapshot?.[kind === 'client' ? 'principal' : 'group'])
+    const event = right?.event === null ? null : record(right?.event)
+    const aggregateMatches = receipt.aggregateRef !== undefined && aggregate !== undefined &&
+        Object.entries(receipt.aggregateRef).every(([key, value]) => aggregate[key] === value)
+    const eventMatches = receipt.eventId === null
+        ? event === null
+        : event !== undefined && event?.eventId === receipt.eventId &&
+            event?.requestId === receipt.requestId &&
+            event?.snapshotVersion === receipt.snapshotVersion
+    if (!aggregateMatches || snapshot?.stateRevision !== receipt.stateRevision || !eventMatches) {
+        return invalid(result, `mismatched-${kind}-result-receipt-identity`)
+    }
+    return { valid: true, result, receipt: toResultReceipt(receipt) }
+}
+
+function validateEmbeddedAuthoritativeReceipt(
+    embedded: ResultEvidence,
+    authoritative: AuthoritativeResultReceipt | undefined,
+    required: boolean,
+): ResultEvidence {
+    if (!embedded.valid || !embedded.receipt) return embedded
+    if (!authoritative) {
+        return required ? invalid(embedded.result, 'missing-authoritative-receipt') : embedded
+    }
+    return embedded.receipt.commandId === authoritative.commandId &&
+            embedded.receipt.identityKind === authoritative.identityKind &&
+            embedded.receipt.commandHash === authoritative.commandHash &&
+            embedded.receipt.outcome === authoritative.outcome &&
+            sameIds(embedded.receipt.outboxIds, authoritative.outboxIds)
+        ? embedded
+        : invalid(embedded.result, 'embedded-authoritative-receipt-mismatch')
+}
+
+function toResultReceipt(
+    receipt: AuthoritativeResultReceipt,
+): NonNullable<ResultEvidence['receipt']> {
+    return {
+        commandId: receipt.commandId,
+        outboxIds: [...receipt.outboxIds],
+        identityKind: receipt.identityKind,
+        commandHash: receipt.commandHash,
+        outcome: receipt.outcome,
+    }
+}
+
+function validateClientWritten(value: unknown): boolean {
+    const result = record(value)
+    const either = record(result?.result)
+    const right = record(either?.right)
+    return Boolean(result && exactKeys(result, ['status', 'result']) &&
+        result.status === 'ok' && either && exactKeys(either, ['right']) && right &&
+        exactKeys(right, ['snapshot', 'event']) && record(right.snapshot) &&
+        (right.event === null || record(right.event)))
+}
+
+function validateAdminPruneResult(
+    result: RecordValue,
+    commandIds: readonly string[],
+): boolean {
+    if (!exactKeys(result, [
+        'generatedAtEpochMs', 'serverId', 'warnings', 'operation', 'status',
+        'changed', 'jobId', 'results',
+    ])) return false
+    if (!Number.isSafeInteger(result.generatedAtEpochMs) || !nonEmptyString(result.serverId) ||
+        !Array.isArray(result.warnings) || result.warnings.length !== 0 ||
+        result.operation !== 'maintenance.prune-expired' ||
+        !['dry-run', 'queued', 'completed'].includes(String(result.status)) ||
+        typeof result.changed !== 'boolean' || !readMatchingId(result.jobId, commandIds) ||
+        !Array.isArray(result.results)) return false
+    return result.results.every((entry) => {
+        const row = record(entry)
+        return Boolean(row && exactKeys(row, [
+            'category', 'expiredRows', 'deletedRows', 'dryRun',
+        ]) && nonEmptyString(row.category) && Number.isSafeInteger(row.expiredRows) &&
+            Number.isSafeInteger(row.deletedRows) && typeof row.dryRun === 'boolean')
+    })
+}
+
+function validateRtcRttResult(result: RecordValue): boolean {
+    return exactKeys(result, ['accepted', 'reason', 'affectedGroups', 'updated']) &&
+        typeof result.accepted === 'boolean' && nonEmptyString(result.reason) !== undefined &&
+        Array.isArray(result.affectedGroups) && result.affectedGroups.every((group) =>
+            record(group) !== undefined) && typeof result.updated === 'boolean'
 }
 
 function validateReceiptResult(
@@ -120,19 +305,49 @@ function validateReceiptResult(
     identityKind: ReceiptEffectIdentityKind,
     result: RecordValue = receipt,
 ): ResultEvidence {
+    const allowedKeys = identityKind === 'physical-resource-id'
+        ? [
+            'commandId', 'requestId', 'commandHash', 'aggregateRef', 'outcome',
+            'attemptCount', 'acceptedStorageRevision', 'stateRevision',
+            'snapshotVersion', 'causalRevision', 'eventId', 'outboxIds', 'joinCode',
+            'joinCodeExpiresAtEpochMs', 'rejection',
+        ]
+        : [
+            'commandId', 'requestId', 'commandHash', 'operation', 'outcome',
+            'attemptCount', 'groupRef', 'target', 'acceptedVersion',
+            'acceptedStorageRevision', 'acceptedCreatedAtEpochMs',
+            'acceptedUpdatedAtEpochMs', 'acceptedExpiresAtEpochMs', 'acceptedConfig',
+            'acceptedCausalRevision', 'eventId', 'outboxId', 'outboxIds',
+        ]
     const commandId = readMatchingId(receipt.commandId, commandIds)
     const outboxIds = readUniqueIds(receipt.outboxIds)
-    if (!commandId || !outboxIds || typeof receipt.outcome !== 'string' ||
+    const commandHash = nonEmptyString(receipt.commandHash)
+    const outcome = nonEmptyString(receipt.outcome)
+    if (!(identityKind === 'logical-msg-id'
+            ? exactKeys(receipt, allowedKeys)
+            : hasOnlyKeys(receipt, allowedKeys)) ||
+        !commandId || !outboxIds ||
+        typeof receipt.outcome !== 'string' ||
         !Number.isSafeInteger(receipt.attemptCount)) {
         return invalid(result, 'malformed-or-mismatched-receipt')
     }
-    return { valid: true, result, receipt: { commandId, outboxIds, identityKind } }
+    return {
+        valid: true,
+        result,
+        receipt: {
+            commandId,
+            outboxIds,
+            identityKind,
+            ...(commandHash ? { commandHash } : {}),
+            ...(outcome ? { outcome } : {}),
+        },
+    }
 }
 
-function parseRecord(value: string | null): RecordValue | undefined {
+function parseResult(value: string | null): unknown {
     if (typeof value !== 'string') return undefined
     try {
-        return record(JSON.parse(value))
+        return JSON.parse(value) as unknown
     } catch {
         return undefined
     }
@@ -159,6 +374,27 @@ function readUniqueIds(value: unknown): readonly string[] | undefined {
     return new Set(ids).size === ids.length ? ids : undefined
 }
 
+function exactKeys(value: RecordValue, keys: readonly string[]): boolean {
+    return JSON.stringify(Object.keys(value).toSorted()) === JSON.stringify([...keys].toSorted())
+}
+
+function hasOnlyKeys(value: RecordValue, keys: readonly string[]): boolean {
+    const allowed = new Set(keys)
+    return Object.keys(value).every((key) => allowed.has(key))
+}
+
+function sameIds(left: readonly string[], right: readonly string[]): boolean {
+    return JSON.stringify([...left].sort()) === JSON.stringify([...right].sort())
+}
+
 function invalid(result: unknown, failure: string): ResultEvidence {
     return { valid: false, result, failure }
 }
+import { decodeAuthMutationResult } from
+    '@shared-server/rallar-system/services/auth-state-codecs.ts'
+import { decodeCrdtMutationResult } from
+    '@shared-server/rallar-system/services/crdt-mutation-result-codec.ts'
+import { readPersistedAppInboxFailure } from
+    '@shared-server/rallar-system/services/app-inbox-failure.ts'
+import { validateTopologyMutationResultPayload } from
+    './api-v1-state-write-topology-result-evidence.ts'

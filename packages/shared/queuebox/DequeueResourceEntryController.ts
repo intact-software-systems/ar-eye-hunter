@@ -420,13 +420,10 @@ export class DequeueResourceEntryController {
                             v,
                             'accepted',
                         );
-
                         out.set(k, new SuccessDto(k, v, original.computedValue));
                     }
-
                     return out;
                 },
-
                 // failureReleaser
                 async (failureByKey) => {
                     const out = new Map<Resource.Key, FailureDto<Resource.Key, ResourceEntry>>();
@@ -439,6 +436,7 @@ export class DequeueResourceEntryController {
                                 failure.exception.entry.status === EntityStatus.COMPLETED
                                     ? 'accepted'
                                     : 'non-retryable',
+                                failure.exception.handlerError,
                             );
                             out.set(
                                 failure.key,
@@ -483,6 +481,10 @@ export class DequeueResourceEntryController {
                             );
                             const finalized = await options.onRetryExhausted(exhaustion);
                             options.onRetryExhaustionTelemetry?.(exhaustion);
+                            recordResourceInboxAttemptRelease(
+                                options.onAttemptReleaseTelemetry,
+                                failure.value, finalized, 'retryable', failure.exception,
+                            );
                             out.set(
                                 failure.key,
                                 new FailureDto(
@@ -502,12 +504,10 @@ export class DequeueResourceEntryController {
                             [failure.value],
                             disposition,
                         );
-
                         for (const [k, v] of released.entries()) {
                             const original =
                                 Array.from(failureByKey.values())
                                     .find((dto) => isKeysEqual(dto.key, k));
-
                             if (!original) {
                                 throw new Error(`Missing failure dto for key: ${String(k)}`);
                             }
@@ -517,8 +517,8 @@ export class DequeueResourceEntryController {
                                 original.value,
                                 v,
                                 nonRetryable ? 'non-retryable' : 'retryable',
+                                original.exception,
                             );
-
                             out.set(k, new FailureDto(k, v, original.exception));
                         }
                     }

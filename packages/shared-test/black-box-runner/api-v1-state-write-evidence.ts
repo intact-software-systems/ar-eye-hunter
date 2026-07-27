@@ -1,12 +1,17 @@
 import process from 'node:process';
 import postgres, { type Sql } from 'postgres';
+import { collectEvidenceNamedStrings, nestedEvidenceJson, parseEvidenceJson } from
+    './api-v1-state-write-json-evidence.ts';
 import {
-    collectEvidenceNamedStrings,
-    nestedEvidenceJson,
-    parseEvidenceJson,
     type ReceiptEffectIdentityKind,
     validatePersistedAppInboxResult,
 } from './api-v1-state-write-result-evidence.ts';
+import {
+    readPersistedCommandEvidence,
+    type PersistedCommandEvidence,
+} from './api-v1-state-write-receipt-evidence.ts';
+import { readIntermediateMutationIntents } from './api-v1-state-write-intermediate-evidence.ts';
+import { toExactPersistedEvidenceMatches } from './api-v1-state-write-match.ts';
 type EvidenceSpec = Readonly<{
     match: string
     commandTypes?: readonly string[]
@@ -22,17 +27,11 @@ type EvidenceSpec = Readonly<{
     }>
 }>
 type OutboxRow = Readonly<{
-    ri_resource_id: string
-    ri_topic_id: string
-    ri_type_id: string
-    ri_status: string
-    ri_resource: string
+    ri_resource_id: string; ri_topic_id: string; ri_type_id: string
+    ri_status: string; ri_resource: string
 }>
-
 type InboxRow = Readonly<{
-    ri_row_id: number | string
-    ri_resource_id: string
-    ri_topic_id: string
+    ri_row_id: number | string; ri_resource_id: string; ri_topic_id: string
     fk_ext_bank_id: string
     ri_resource: string
     ri_status: string
@@ -43,7 +42,6 @@ type InboxRow = Readonly<{
     result_status: string | null
     result_resource: string | null
 }>
-
 type ParsedInboxRow = Readonly<{
     rowId: number
     resourceId: string
@@ -64,7 +62,6 @@ type ParsedInboxRow = Readonly<{
     receipt?: Readonly<{ commandId: string; outboxIds: readonly string[];
         identityKind: ReceiptEffectIdentityKind }>
 }>
-
 type OverdueRecoveryEvidence = Readonly<{
     fixtureKind: 'isolated-overdue-reschedule'
     mutatesCompletionHistory: true
@@ -86,16 +83,21 @@ type OverdueRecoveryEvidence = Readonly<{
 
 const DEFAULT_DATABASE_URL = 'postgres://app:app@localhost:5432/appdb';
 
-function parseRow(row: InboxRow): ParsedInboxRow {
+function parseRow(row: InboxRow, commandEvidence?: PersistedCommandEvidence): ParsedInboxRow {
     const envelope = parseEvidenceJson(row.ri_resource) as { payload?: { typeId?: unknown } } | undefined;
-    const commandType = typeof envelope?.payload?.typeId === 'string' ? envelope.payload.typeId : 'UNKNOWN';
-    const commandIds = new Set<string>();
-    collectEvidenceNamedStrings(envelope, new Set(['commandId', 'deliveryId', 'jobId', 'requestId', 'updateId']), commandIds);
+    const commandType = commandEvidence?.commandType ?? (typeof envelope?.payload?.typeId === 'string'
+        ? envelope.payload.typeId : 'UNKNOWN');
+    const commandIds = new Set(commandEvidence?.commandIds ?? []);
+    if (!commandEvidence) collectEvidenceNamedStrings(envelope,
+        new Set(['commandId', 'deliveryId', 'jobId', 'requestId', 'updateId']), commandIds);
     const resultEvidence = validatePersistedAppInboxResult({
         commandType,
         commandIds: [...commandIds],
         resultStatus: row.result_status ?? 'MISSING',
         resultResource: row.result_resource,
+        authoritativeReceipt: commandEvidence?.receipt,
+        commandScope: commandEvidence?.commandScope,
+        requireAuthoritativeReceipt: commandEvidence !== undefined,
     });
     const iso = (value: Date | string | null): string | null => value ? new Date(value).toISOString() : null;
     return {
@@ -106,8 +108,10 @@ function parseRow(row: InboxRow): ParsedInboxRow {
         startAt: iso(row.start_ts), endAt: iso(row.end_ts), nextAt: iso(row.next_ts),
         outboxIds: [...(resultEvidence.receipt?.outboxIds ?? [])].sort(),
         durableResult: resultEvidence.result,
-        durableResultValid: resultEvidence.valid,
-        ...(resultEvidence.failure ? { durableResultFailure: resultEvidence.failure } : {}),
+        durableResultValid: resultEvidence.valid && (commandEvidence?.valid ?? true),
+        ...((commandEvidence?.failure ?? resultEvidence.failure) ? {
+            durableResultFailure: commandEvidence?.failure ?? resultEvidence.failure,
+        } : {}),
         ...(resultEvidence.receipt ? { receipt: resultEvidence.receipt } : {}),
     };
 }
@@ -170,10 +174,16 @@ export function deriveApiV1StateWriteEvidence(
     rawOutboxRows: readonly OutboxRow[] = [],
     intermediateMutationIntents: readonly Record<string, unknown>[] = [],
     overdueRecoveryFixture?: OverdueRecoveryEvidence,
+    commandEvidence: readonly PersistedCommandEvidence[] = [],
 ): Record<string, unknown> {
     const selectedTypes = new Set(spec.commandTypes ?? []);
     const selectedPrefixes = spec.commandIdPrefixes ?? [];
-    const appInbox = rawRows.map(parseRow).filter((row) =>
+    const commandEvidenceByResourceId = new Map(commandEvidence.map((entry) => [
+        entry.appInboxResourceId, entry,
+    ] as const));
+    const appInbox = rawRows.map((row) => parseRow(
+        row, commandEvidenceByResourceId.get(row.ri_resource_id),
+    )).filter((row) =>
         (selectedTypes.size === 0 || selectedTypes.has(row.commandType)) &&
         (selectedPrefixes.length === 0 || row.commandIds.some((id) =>
             selectedPrefixes.some((prefix) => id.startsWith(prefix))))
@@ -265,6 +275,7 @@ async function readOutboxRows(sql: Sql, match: string): Promise<readonly OutboxR
 }
 
 async function readRows(sql: Sql, match: string): Promise<readonly InboxRow[]> {
+    const exactMatch = await toExactPersistedEvidenceMatches(match);
     return await sql<InboxRow[]>`
         select i.ri_row_id, i.ri_resource_id, i.ri_topic_id, i.fk_ext_bank_id,
                i.ri_resource, i.ri_status, i.ri_attempts, i.start_ts, i.end_ts, i.next_ts,
@@ -275,23 +286,9 @@ async function readRows(sql: Sql, match: string): Promise<readonly InboxRow[]> {
          and r.ris_resource_id = i.ri_resource_id
          and r.ris_topic_id = i.ri_topic_id
         where i.ri_type_id = 'APP_INBOX'
-          and position(${match} in i.ri_resource) > 0
+          and (position(${exactMatch.raw} in i.ri_resource) > 0
+            or position(${exactMatch.digest} in i.ri_resource) > 0)
         order by i.ri_row_id
-    `;
-}
-
-async function readIntermediateIntents(
-    sql: Sql,
-    match: string,
-): Promise<readonly Record<string, unknown>[]> {
-    return await sql<Record<string, unknown>[]>`
-        select ri_resource_id as "resourceId", ri_topic_id as "topicId",
-               ri_type_id as "typeId", ri_status as status
-        from resource_inbox
-        where position(${match} in ri_resource) > 0
-          and (ri_type_id ilike '%INTENT%' or ri_topic_id ilike '%intent%'
-               or ri_resource ilike '%mutationIntent%')
-        order by ri_row_id
     `;
 }
 
@@ -324,7 +321,7 @@ async function runOverdueRecoveryFixture(
     rows: readonly InboxRow[],
     fixture: NonNullable<EvidenceSpec['overdueRecoveryFixture']>,
 ): Promise<OverdueRecoveryEvidence> {
-    const parsed = rows.map(parseRow);
+    const parsed = rows.map((row) => parseRow(row));
     const commandIdPrefix = fixture.commandIdPrefix;
     const selected = parsed.find((row) =>
         row.status === 'COMPLETED' && row.resultStatus === 'COMPLETED' &&
@@ -378,7 +375,7 @@ export async function collectApiV1StateWriteEvidence(
     try {
         const rows = await readRows(sql, spec.match);
         const minimum = spec.minimumMatchedRows ?? 1;
-        const matching = rows.map(parseRow).filter((row) =>
+        const matching = rows.map((row) => parseRow(row)).filter((row) =>
             (!spec.commandTypes?.length || spec.commandTypes.includes(row.commandType)) &&
             (!spec.commandIdPrefixes?.length || row.commandIds.some((id) =>
                 spec.commandIdPrefixes?.some((prefix) => id.startsWith(prefix))))
@@ -386,13 +383,16 @@ export async function collectApiV1StateWriteEvidence(
         if (matching.length < minimum) {
             throw new Error(`Expected at least ${minimum} matching AppInbox rows; found ${matching.length}.`);
         }
-        const intermediate = await readIntermediateIntents(sql, spec.match);
+        const intermediate = await readIntermediateMutationIntents(sql, spec.match);
         const overdueRecovery = spec.overdueRecoveryFixture
             ? await runOverdueRecoveryFixture(sql, rows, spec.overdueRecoveryFixture)
             : undefined;
         const finalRows = overdueRecovery ? await readRows(sql, spec.match) : rows;
         const outboxRows = await readOutboxRows(sql, spec.match);
-        return deriveApiV1StateWriteEvidence(spec, finalRows, outboxRows, intermediate, overdueRecovery);
+        const commandEvidence = await Promise.all(finalRows.map((row) =>
+            readPersistedCommandEvidence(sql, row)));
+        return deriveApiV1StateWriteEvidence(spec, finalRows, outboxRows, intermediate,
+            overdueRecovery, commandEvidence);
     } finally {
         await sql.end({ timeout: 5 });
     }
