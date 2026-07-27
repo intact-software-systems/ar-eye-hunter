@@ -255,6 +255,8 @@ describe('api-v1 black-box run helper', () => {
         expect(env.RALLAR_SQL_BACKEND).toBe('postgres');
         expect(env.DATABASE_URL).toBe('postgres://app:app@localhost:5432/appdb');
         expect(env.RALLAR_STATE_STRICT_READ_AUTH).toBe('1');
+        expect(env.RALLAR_LOGIN_IP_RATE_LIMIT).toBe('100');
+        expect(env.RALLAR_LOGIN_USER_RATE_LIMIT).toBe('100');
         expect(env.RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET).toBe(
             'local-api-v1-black-box-operator-secret',
         );
@@ -273,6 +275,17 @@ describe('api-v1 black-box run helper', () => {
         });
 
         expect(env.RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON).toBe(policy);
+    });
+
+    it('preserves explicit managed API login rate limits', () => {
+        const options = parseApiV1BlackBoxArgs(['--backend=postgres']);
+        const env = toApiV1BlackBoxEnvironment(options, {
+            RALLAR_LOGIN_IP_RATE_LIMIT: '41',
+            RALLAR_LOGIN_USER_RATE_LIMIT: '17',
+        });
+
+        expect(env.RALLAR_LOGIN_IP_RATE_LIMIT).toBe('41');
+        expect(env.RALLAR_LOGIN_USER_RATE_LIMIT).toBe('17');
     });
 
     it('exposes secondary HTTP and WebSocket URLs only for a two-server run', () => {
