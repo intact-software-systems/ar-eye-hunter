@@ -3942,7 +3942,7 @@ function createMutationRead(): GroupMutationRead {
     };
     return {
         idempotency: null,
-        group: storedEntry(groupStorageKey(), group),
+        group: storedEntry(groupStorageKey(), group), expiredGroupEntry: null,
         actorMember,
         targetMember: null,
         authorityMember: null,
@@ -3951,7 +3951,7 @@ function createMutationRead(): GroupMutationRead {
         targetMemberEntry: null,
         authorityMemberEntry: null,
         directorMemberEntry: null,
-        targetPresence: null,
+        targetPresence: null, expiredTargetPresenceEntry: null,
         targetAdmission: null,
         authorityAdmission: null,
         directorAdmission: null,

@@ -4,6 +4,7 @@ import type {
     RuntimeStateRepositoryLike,
 } from '../../runtime-state/RuntimeStateRepository.ts';
 import {
+    type RuntimeStateEntryRead,
     type RuntimeStateEntryValue,
     RuntimeStateJsonStore,
 } from '../../runtime-state/RuntimeStateJsonStore.ts';
@@ -116,29 +117,52 @@ export class AuthTicketPersistence extends RuntimeStateJsonStore {
 
     async insertWebSocketTicket(
         ticket: PersistedWebSocketTicket,
+        expectedRevision: number | null = null,
     ): Promise<RuntimeStateConditionalWriteResult> {
         const persisted = decodePersistedWebSocketTicket(ticket);
-        return await this.putValueIfAbsent(
+        return expectedRevision === null
+            ? await this.putValueIfAbsent(
             WS_AUTH_TICKETS_NAMESPACE,
             authTicketDigestKey(persisted.ticketDigest),
             persisted,
             persisted.expiresAtEpochMs,
-        );
+            )
+            : await this.putValueIfRevision(
+                WS_AUTH_TICKETS_NAMESPACE,
+                authTicketDigestKey(persisted.ticketDigest),
+                persisted,
+                persisted.expiresAtEpochMs,
+                expectedRevision,
+            );
     }
 
     async findWebSocketTicketByDigestEntry(
         ticketDigest: string,
     ): Promise<RuntimeStateEntryValue<PersistedWebSocketTicket> | undefined> {
-        const entry = await this.getEntryValue<unknown>(
+        return (await this.readWebSocketTicketByDigestEntry(ticketDigest)).value;
+    }
+
+    async readWebSocketTicketByDigestEntry(
+        ticketDigest: string,
+    ): Promise<RuntimeStateEntryRead<PersistedWebSocketTicket>> {
+        const read = await this.getEntryRead<unknown>(
             WS_AUTH_TICKETS_NAMESPACE,
             authTicketDigestKey(ticketDigest),
         );
-        if (!entry) return await this.findLegacyWebSocketTicketByDigestEntry(ticketDigest);
-        const value = decodePersistedWebSocketTicket(entry.value);
+        if (!read.value) {
+            if (read.expiredEntry) {
+                return { value: undefined, expiredEntry: read.expiredEntry };
+            }
+            return {
+                value: await this.findLegacyWebSocketTicketByDigestEntry(ticketDigest),
+                expiredEntry: undefined,
+            };
+        }
+        const value = decodePersistedWebSocketTicket(read.value.value);
         if (value.ticketDigest !== ticketDigest) {
             throw new TypeError('Persisted websocket ticket digest identity differs');
         }
-        return { entry: entry.entry, value };
+        return { value: { entry: read.value.entry, value }, expiredEntry: undefined };
     }
 
     async deleteWebSocketTicketIfRevision(
@@ -165,29 +189,52 @@ export class AuthTicketPersistence extends RuntimeStateJsonStore {
 
     async insertAgentSessionTicket(
         ticket: PersistedAgentSessionTicket,
+        expectedRevision: number | null = null,
     ): Promise<RuntimeStateConditionalWriteResult> {
         const persisted = decodePersistedAgentSessionTicket(ticket);
-        return await this.putValueIfAbsent(
+        return expectedRevision === null
+            ? await this.putValueIfAbsent(
             AGENT_SESSION_TICKETS_NAMESPACE,
             authTicketDigestKey(persisted.ticketDigest),
             persisted,
             persisted.expiresAtEpochMs,
-        );
+            )
+            : await this.putValueIfRevision(
+                AGENT_SESSION_TICKETS_NAMESPACE,
+                authTicketDigestKey(persisted.ticketDigest),
+                persisted,
+                persisted.expiresAtEpochMs,
+                expectedRevision,
+            );
     }
 
     async findAgentSessionTicketByDigestEntry(
         ticketDigest: string,
     ): Promise<RuntimeStateEntryValue<PersistedAgentSessionTicket> | undefined> {
-        const entry = await this.getEntryValue<unknown>(
+        return (await this.readAgentSessionTicketByDigestEntry(ticketDigest)).value;
+    }
+
+    async readAgentSessionTicketByDigestEntry(
+        ticketDigest: string,
+    ): Promise<RuntimeStateEntryRead<PersistedAgentSessionTicket>> {
+        const read = await this.getEntryRead<unknown>(
             AGENT_SESSION_TICKETS_NAMESPACE,
             authTicketDigestKey(ticketDigest),
         );
-        if (!entry) return await this.findLegacyAgentTicketByDigestEntry(ticketDigest);
-        const value = decodePersistedAgentSessionTicket(entry.value);
+        if (!read.value) {
+            if (read.expiredEntry) {
+                return { value: undefined, expiredEntry: read.expiredEntry };
+            }
+            return {
+                value: await this.findLegacyAgentTicketByDigestEntry(ticketDigest),
+                expiredEntry: undefined,
+            };
+        }
+        const value = decodePersistedAgentSessionTicket(read.value.value);
         if (value.ticketDigest !== ticketDigest) {
             throw new TypeError('Persisted agent ticket digest identity differs');
         }
-        return { entry: entry.entry, value };
+        return { value: { entry: read.value.entry, value }, expiredEntry: undefined };
     }
 
     async deleteAgentSessionTicketIfRevision(

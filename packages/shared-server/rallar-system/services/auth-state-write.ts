@@ -35,7 +35,11 @@ export async function writeAuthMutation(
                 computed.command.capturedAtEpochMs,
                 computed.sessions[0].session,
             );
-            await writeSession(sessions, computed.sessions[0]);
+            await writeSession(
+                sessions,
+                computed.sessions[0],
+                computed.read as Extract<AuthMutationRead, { kind: 'issue-session' }>,
+            );
             break;
         case 'logout-session': {
             const read = computed.read as Extract<
@@ -63,12 +67,19 @@ export async function writeAuthMutation(
             break;
         }
         case 'issue-ws-ticket':
+            {
+            const read = computed.read as Extract<
+                AuthMutationRead,
+                { kind: 'issue-ws-ticket' }
+            >;
             requireConditionalWrite(
                 await sessions.insertWebSocketTicket(
                     computed.command.ticketRecord,
+                    read.expiredTicketEntry?.revision ?? null,
                 ),
             );
             break;
+            }
         case 'consume-ws-ticket': {
             const read = computed.read as Extract<
                 AuthMutationRead,
@@ -84,15 +95,22 @@ export async function writeAuthMutation(
             break;
         }
         case 'issue-agent-tickets':
+            {
+            const read = computed.read as Extract<
+                AuthMutationRead,
+                { kind: 'issue-agent-tickets' }
+            >;
             for (let index = 0; index < computed.sessions.length; index += 1) {
-                await writeSession(sessions, computed.sessions[index]);
+                await writeSession(sessions, computed.sessions[index], read.sessions[index]);
                 requireConditionalWrite(
                     await sessions.insertAgentSessionTicket(
                         computed.agentTickets[index],
+                        read.expiredTicketEntries[index]?.revision ?? null,
                     ),
                 );
             }
             break;
+            }
         case 'consume-agent-ticket': {
             const read = computed.read as Extract<
                 AuthMutationRead,
@@ -114,7 +132,14 @@ export async function writeAuthMutation(
 async function writeSession(
     repository: AuthSessionRepository,
     computed: AuthComputedSession,
+    read: import('./auth-state-contracts.ts').AuthSessionEntries,
 ): Promise<void> {
-    requireConditionalWrite(await repository.insertSessionByTokenDigest(computed.session));
-    requireConditionalWrite(await repository.insertSessionBySessionId(computed.session));
+    requireConditionalWrite(await repository.insertSessionByTokenDigest(
+        computed.session,
+        read.expiredByTokenEntry?.revision ?? null,
+    ));
+    requireConditionalWrite(await repository.insertSessionBySessionId(
+        computed.session,
+        read.expiredBySessionEntry?.revision ?? null,
+    ));
 }

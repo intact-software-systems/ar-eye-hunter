@@ -2650,7 +2650,7 @@ describe('RTC topology runtime-state repositories', () => {
         }
     });
 
-    it('bounds expiry replacement conflicts with the shared retry schedule', async () => {
+    it('keeps expired RTT reads observational without retries or cleanup writes', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const sleep = vi.fn(async () => {});
         const repository = new RtcRttRepository(runtimeRepository, {
@@ -2668,24 +2668,15 @@ describe('RTC topology runtime-state repositories', () => {
             JSON.stringify(measurement),
             90,
         );
-        runtimeRepository.beforeConditionalWrite = async (operation, namespace) => {
-            if (operation === 'deleteIfRevision' && namespace === RTC_RTT_LATEST_NAMESPACE) {
-                await runtimeRepository.upsert(
-                    RTC_RTT_LATEST_NAMESPACE,
-                    key,
-                    JSON.stringify(measurement),
-                    90,
-                );
-            }
-        };
+        const before = await runtimeRepository.findEntry(RTC_RTT_LATEST_NAMESPACE, key);
+        const deletes = vi.spyOn(runtimeRepository, 'deleteIfRevision');
 
         await expect(repository.findMeasurement('session-a', 'session-b'))
-            .rejects.toMatchObject({
-                name: 'RuntimeStateRetryExhaustedError',
-                code: 'runtime-state-write-conflict',
-                attempts: 3,
-            });
-        expect(sleep.mock.calls.map(([delay]) => delay)).toEqual([2, 8]);
+            .resolves.toBeUndefined();
+        await expect(runtimeRepository.findEntry(RTC_RTT_LATEST_NAMESPACE, key))
+            .resolves.toEqual(before);
+        expect(deletes).not.toHaveBeenCalled();
+        expect(sleep).not.toHaveBeenCalled();
     });
 });
 
@@ -2838,7 +2829,9 @@ function createValidRttWriteCandidate(): Extract<
         read: {
             receipt: null,
             measurement: null,
+            expiredMeasurementEntry: null,
             endpointAdmissions: [],
+            expiredEndpointAdmissionEntries: [],
             measurements: [],
         },
         facts: {

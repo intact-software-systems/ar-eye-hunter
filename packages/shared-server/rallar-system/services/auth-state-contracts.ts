@@ -9,6 +9,7 @@ import type {
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { PSqlTransactionSql } from '../../postgres/PostgresSqlClient.ts';
 import type { RuntimeStateEntryValue } from '../../runtime-state/RuntimeStateJsonStore.ts';
+import type { RuntimeStateEntry } from '../../runtime-state/RuntimeStateRepository.ts';
 import type {
     IssuedAuthSession,
     PersistedAgentSessionTicket,
@@ -159,6 +160,8 @@ export type AuthMutationResult = AuthMutationResultIdentity & (
 export type AuthSessionEntries = Readonly<{
     byToken: RuntimeStateEntryValue<PersistedAuthSession> | null;
     bySession: RuntimeStateEntryValue<PersistedAuthSession> | null;
+    expiredByTokenEntry: RuntimeStateEntry | null;
+    expiredBySessionEntry: RuntimeStateEntry | null;
 }>;
 
 export type AuthMutationRead =
@@ -179,6 +182,7 @@ export type AuthMutationRead =
     | Readonly<{
         kind: 'issue-ws-ticket';
         ticket: RuntimeStateEntryValue<PersistedWebSocketTicket> | null;
+        expiredTicketEntry: RuntimeStateEntry | null;
         session: RuntimeStateEntryValue<PersistedAuthSession> | null;
     }>
     | Readonly<{
@@ -191,6 +195,7 @@ export type AuthMutationRead =
         authority: AuthSessionEntries;
         sessions: readonly AuthSessionEntries[];
         tickets: readonly (RuntimeStateEntryValue<PersistedAgentSessionTicket> | null)[];
+        expiredTicketEntries: readonly (RuntimeStateEntry | null)[];
     }>
     | Readonly<{
         kind: 'consume-agent-ticket';

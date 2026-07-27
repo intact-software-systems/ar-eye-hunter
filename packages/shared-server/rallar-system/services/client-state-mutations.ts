@@ -17,6 +17,15 @@ import type { MutationActor } from '@shared/api/mutation-actor.ts';
 import { validateAuthoritativeClientSnapshot } from '@shared/api/authoritative-state-validation.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { RuntimeStateEntryValue } from '../../runtime-state/RuntimeStateJsonStore.ts';
+import type { RuntimeStateEntry } from '../../runtime-state/RuntimeStateRepository.ts';
+import { validateClientExpiredSessionAuthority } from './client-expired-state-authority.ts';
+import {
+    isClientJsonObject as isJsonObject,
+    sameClientInstanceState as sameInstanceState,
+    sameClientPrincipalRef as samePrincipalRef,
+    sameClientPrincipalState as samePrincipalState,
+    sameClientSessionState as sameSessionState,
+} from './client-state-semantic-equality.ts';
 import type {
     ConnectClientSessionRequest,
     DisconnectClientSessionRequest,
@@ -187,6 +196,7 @@ export type ClientMutationRead = Readonly<{
     principal: RuntimeStateEntryValue<ClientPrincipal> | null;
     instance: RuntimeStateEntryValue<ClientInstance> | null;
     session: RuntimeStateEntryValue<ClientSession> | null;
+    expiredSessionEntry: RuntimeStateEntry | null;
     snapshot: ClientSnapshot | null;
     receiptEvent: ClientEvent | null;
 }>;
@@ -936,10 +946,14 @@ export function validateClientMutation(input: Readonly<{
             session.generationVersion < 1) {
             throw new ClientMutationRejectedError('Invalid client session generation');
         }
-        if (computed.session.operation === 'insert' && read.session ||
-            computed.session.operation === 'update' &&
-                (!read.session || computed.session.expectedRevision !==
-                    read.session.entry.revision)) {
+        const expectedSessionRevision = read.session?.entry.revision ??
+            read.expiredSessionEntry?.revision;
+        if (
+            (computed.session.operation === 'insert' &&
+                expectedSessionRevision !== undefined) ||
+            (computed.session.operation === 'update' &&
+                computed.session.expectedRevision !== expectedSessionRevision)
+        ) {
             throw new ClientMutationRejectedError('Client session guard differs');
         }
         const expectedGenerationVersion = read.session
@@ -968,13 +982,20 @@ function validateClientMutationRead(
         root,
         [
             'authoritySession', 'idempotency', 'principal', 'instance', 'session',
-            'snapshot', 'receiptEvent',
+            'expiredSessionEntry', 'snapshot', 'receiptEvent',
         ],
         'Client mutation read',
     );
     validateNullableEntryValue(read.principal, 'Client principal read', validatePrincipal);
     validateNullableEntryValue(read.instance, 'Client instance read', validateInstance);
     validateNullableEntryValue(read.session, 'Client session read', validateSession);
+    validateClientExpiredSessionAuthority({
+        aggregateRef: command.aggregateRef,
+        clientInstanceId: 'clientInstanceId' in command ? command.clientInstanceId : null,
+        sessionId: 'sessionId' in command ? command.sessionId : null,
+        liveSession: read.session,
+        expiredSessionEntry: read.expiredSessionEntry,
+    });
     validateNullableEntryValue(
         read.idempotency,
         'Client idempotency read',
@@ -1179,7 +1200,7 @@ function computeConnect(
         facts,
         nextPrincipal,
         read.instance ? { operation: 'none' } : { operation: 'insert', value: instance },
-        toChildCandidate(read.session, session),
+        toChildCandidate(read.session, session, read.expiredSessionEntry),
         'session-connected',
         command.clientInstanceId,
         command.sessionId,
@@ -1790,48 +1811,13 @@ function requireSession(read: ClientMutationRead, command: ClientMutationCommand
 function toChildCandidate<T>(
     current: RuntimeStateEntryValue<T> | null,
     value: T,
+    expiredEntry: RuntimeStateEntry | null = null,
 ): ConditionalCandidate<T> {
     return current
         ? { operation: 'update', value, expectedRevision: current.entry.revision }
+        : expiredEntry
+        ? { operation: 'update', value, expectedRevision: expiredEntry.revision }
         : { operation: 'insert', value };
-}
-
-function samePrincipalState(left: ClientPrincipal, right: ClientPrincipal): boolean {
-    return left.username === right.username && left.displayName === right.displayName &&
-        left.avatarUrl === right.avatarUrl && left.status === right.status &&
-        left.authProvider === right.authProvider &&
-        left.externalSubjectId === right.externalSubjectId &&
-        arrayEquals(left.roles, right.roles) && jsonEquals(left.metadata, right.metadata) &&
-        left.lastSeenAtEpochMs === right.lastSeenAtEpochMs;
-}
-
-function samePrincipalRef(
-    left: ClientPrincipalRef,
-    right: ClientPrincipalRef,
-): boolean {
-    return left.applicationId === right.applicationId &&
-        left.workspaceId === right.workspaceId &&
-        left.principalId === right.principalId;
-}
-
-function sameInstanceState(left: ClientInstance, right: ClientInstance): boolean {
-    return left.status === right.status && left.platform === right.platform &&
-        left.deviceLabel === right.deviceLabel && left.appVersion === right.appVersion &&
-        left.userAgent === right.userAgent &&
-        arrayEquals(left.capabilities, right.capabilities);
-}
-
-function sameSessionState(left: ClientSession, right: ClientSession): boolean {
-    return left.generationId === right.generationId &&
-        left.generationVersion === right.generationVersion &&
-        left.status === right.status && left.presenceState === right.presenceState &&
-        left.transport === right.transport && left.connectionId === right.connectionId &&
-        left.authenticatedAtEpochMs === right.authenticatedAtEpochMs &&
-        left.connectedAtEpochMs === right.connectedAtEpochMs &&
-        left.lastHeartbeatAtEpochMs === right.lastHeartbeatAtEpochMs &&
-        left.expiresAtEpochMs === right.expiresAtEpochMs &&
-        left.disconnectedAtEpochMs === right.disconnectedAtEpochMs &&
-        left.disconnectReason === right.disconnectReason;
 }
 
 function toOptional<K extends string, V>(
@@ -1841,29 +1827,6 @@ function toOptional<K extends string, V>(
 ): Partial<Record<K, V>> {
     const value = requested ?? existing;
     return value === undefined ? {} : { [key]: value } as Record<K, V>;
-}
-
-function arrayEquals<T>(left: readonly T[], right: readonly T[]): boolean {
-    return left.length === right.length &&
-        left.every((value, index) => value === right[index]);
-}
-
-function jsonEquals(left: unknown, right: unknown): boolean {
-    if (Object.is(left, right)) return true;
-    if (Array.isArray(left) || Array.isArray(right)) {
-        return Array.isArray(left) && Array.isArray(right) &&
-            left.length === right.length &&
-            left.every((value, index) => jsonEquals(value, right[index]));
-    }
-    if (!isJsonObject(left) || !isJsonObject(right)) return false;
-    const leftKeys = Object.keys(left).sort();
-    const rightKeys = Object.keys(right).sort();
-    return arrayEquals(leftKeys, rightKeys) &&
-        leftKeys.every((key) => jsonEquals(left[key], right[key]));
-}
-
-function isJsonObject(value: unknown): value is Readonly<Record<string, unknown>> {
-    return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 const CLIENT_MUTATION_OPERATIONS = new Set([

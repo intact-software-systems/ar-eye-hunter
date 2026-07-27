@@ -3,7 +3,6 @@ import type {
     ClientInstance,
     ClientInstanceRef,
     ClientPresenceSnapshot,
-    ClientPresenceState,
     ClientPrincipal,
     ClientPrincipalRef,
     ClientScope,
@@ -26,6 +25,7 @@ import type {
 } from '../../runtime-state/RuntimeStateRepository.ts';
 import {
     RuntimeStateJsonStore,
+    type RuntimeStateEntryRead,
     type RuntimeStateEntryValue,
 } from '../../runtime-state/RuntimeStateJsonStore.ts';
 import type {
@@ -50,6 +50,13 @@ import { readStableStateSnapshot } from './state-snapshot-read.ts';
 import type { PSqlTransactionSql } from '../../postgres/PostgresSqlClient.ts';
 import { PSqlRuntimeStateRepository } from '../../postgres/runtime-state/PSqlRuntimeStateRepository.ts';
 import { PSqlClientStateEventRepository } from '../../postgres/rallar-system/PSqlStateEventRepository.ts';
+import {
+    clientStateIdempotencyStorageKey,
+    clientStateInstanceStorageKey,
+    clientStatePrincipalStorageKey,
+    clientStateSessionStorageKey,
+} from '../client-state-storage-keys.ts';
+import { toClientPresenceState } from '../client-presence-state.ts';
 
 const PRINCIPALS_NAMESPACE = 'client-state:principals';
 const INSTANCES_NAMESPACE = 'client-state:instances';
@@ -341,11 +348,27 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
     async findSessionEntry(
         ref: ClientSessionRef,
     ): Promise<RuntimeStateEntryValue<ClientSession> | undefined> {
-        const stored = await this.getEntryValue<unknown>(
+        return (await this.readSessionEntry(ref)).value;
+    }
+
+    async readSessionEntry(
+        ref: ClientSessionRef,
+    ): Promise<RuntimeStateEntryRead<ClientSession>> {
+        const stored = await this.getEntryRead<unknown>(
             SESSIONS_NAMESPACE,
             this.sessionKey(ref),
         );
-        return stored ? this.toSessionEntry(stored, ref) : undefined;
+        if (stored.expiredEntry?.key !== undefined &&
+            stored.expiredEntry.key !== this.sessionKey(ref)) {
+            throw new ClientStateRepositoryInvariantCorruptionError(
+                stored.expiredEntry.key,
+                'Expired client session key differs from its canonical slot',
+            );
+        }
+        return {
+            value: stored.value ? this.toSessionEntry(stored.value, ref) : undefined,
+            expiredEntry: stored.expiredEntry,
+        };
     }
 
     async updateSession(
@@ -451,7 +474,7 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
             principalId: principal.principalId,
             presenceVersion: principal.presenceVersion,
             isOnline: activeSessions.length > 0,
-            presenceState: this.toPresenceState(activeSessions),
+            presenceState: toClientPresenceState(activeSessions),
             activeSessions,
             lastSeenAtEpochMs: toClientSnapshotLastSeenAtEpochMs(
                 principal.lastSeenAtEpochMs,
@@ -660,35 +683,15 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
         );
     }
 
-    private toPresenceState(
-        sessions: readonly ClientSession[],
-    ): ClientPresenceState {
-        if (sessions.some((session) => session.presenceState === 'busy')) {
-            return 'busy';
-        }
-
-        if (sessions.some((session) => session.presenceState === 'away')) {
-            return 'away';
-        }
-
-        if (sessions.some((session) => session.presenceState === 'online')) {
-            return 'online';
-        }
-
-        return 'offline';
-    }
-
     private principalKey(ref: ClientPrincipalRef): string {
-        return [this.scopeKey(ref), this.idKey('principal', ref.principalId)].join(
-            ':',
-        );
+        return clientStatePrincipalStorageKey(ref);
     }
 
     private idempotentClientKey(
         ref: ClientPrincipalRef,
         requestId: string,
     ): string {
-        return [this.principalKey(ref), this.idKey('request', requestId)].join(':');
+        return clientStateIdempotencyStorageKey(ref, requestId);
     }
 
     private principalChildPrefix(ref: ClientPrincipalRef): string {
@@ -696,10 +699,7 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
     }
 
     private instanceKey(ref: ClientInstanceRef): string {
-        return [
-            this.principalKey(ref),
-            this.idKey('instance', ref.clientInstanceId),
-        ].join(':');
+        return clientStateInstanceStorageKey(ref);
     }
 
     private instanceChildPrefix(ref: ClientInstanceRef): string {
@@ -707,9 +707,7 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
     }
 
     private sessionKey(ref: ClientSessionRef): string {
-        return [this.instanceKey(ref), this.idKey('session', ref.sessionId)].join(
-            ':',
-        );
+        return clientStateSessionStorageKey(ref);
     }
 }
 

@@ -22,6 +22,7 @@ import {
 import type { MutationActor } from '@shared/api/mutation-actor.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { RuntimeStateEntryValue } from '../../runtime-state/RuntimeStateJsonStore.ts';
+import type { RuntimeStateEntry } from '../../runtime-state/RuntimeStateRepository.ts';
 import {
     canActivateGroupMember,
     canConnectGroupPresenceSession,
@@ -58,6 +59,22 @@ import {
     groupStatePresenceSessionStorageKey,
     groupStatePresenceSummaryStorageKey,
 } from '../group-state-storage-keys.ts';
+import {
+    toExpiredAwareInsertCandidate,
+    validateGroupExpiredStateAuthority,
+} from './group-expired-state-authority.ts';
+import {
+    assertExactKeys,
+    assertRequiredKeys,
+    nullableNonEmptyString,
+    nullablePositiveSafeInteger,
+    requireJsonSafe,
+    requireNonEmptyString,
+    requireNonNegativeSafeInteger,
+    requireOneOf,
+    requirePositiveSafeInteger,
+    requireRecord,
+} from './group-state-validation-primitives.ts';
 import { validateGroupEvent } from '../persisted-group-event.ts';
 export {
     normalizePersistedGroupEvent,
@@ -237,6 +254,7 @@ export type GroupMutationIdempotencyRecord = Readonly<{
 export type GroupMutationRead = Readonly<{
     idempotency: RuntimeStateEntryValue<GroupMutationIdempotencyRecord> | null;
     group: RuntimeStateEntryValue<Group> | null;
+    expiredGroupEntry: RuntimeStateEntry | null;
     actorMember: GroupMember | null;
     targetMember: GroupMember | null;
     authorityMember: GroupMember | null;
@@ -246,6 +264,7 @@ export type GroupMutationRead = Readonly<{
     authorityMemberEntry: RuntimeStateEntryValue<GroupMember> | null;
     directorMemberEntry: RuntimeStateEntryValue<GroupMember> | null;
     targetPresence: RuntimeStateEntryValue<GroupPresenceSession> | null;
+    expiredTargetPresenceEntry: RuntimeStateEntry | null;
     targetAdmission: RuntimeStateEntryValue<GroupPresenceAdmission> | null;
     authorityAdmission: RuntimeStateEntryValue<GroupPresenceAdmission> | null;
     directorAdmission: RuntimeStateEntryValue<GroupPresenceAdmission> | null;
@@ -758,6 +777,7 @@ function validateGroupMutationRead(
     requireJsonSafe(read, 'Group mutation read');
     assertExactKeys(read as unknown as Record<string, unknown>, [
         'idempotency', 'group', 'actorMember', 'targetMember', 'authorityMember',
+        'expiredGroupEntry', 'expiredTargetPresenceEntry',
         'directorMember', 'actorMemberEntry', 'targetMemberEntry',
         'authorityMemberEntry', 'directorMemberEntry', 'targetPresence', 'targetAdmission',
         'authorityAdmission', 'directorAdmission', 'authorityPresenceSessions',
@@ -765,6 +785,7 @@ function validateGroupMutationRead(
     ], 'Group mutation read');
     assertRequiredKeys(read as unknown as Record<string, unknown>, [
         'idempotency', 'group', 'actorMember', 'targetMember', 'authorityMember',
+        'expiredGroupEntry', 'expiredTargetPresenceEntry',
         'directorMember', 'actorMemberEntry', 'targetMemberEntry',
         'authorityMemberEntry', 'directorMemberEntry', 'targetPresence',
         'targetAdmission', 'authorityAdmission', 'directorAdmission',
@@ -815,6 +836,14 @@ function validateGroupMutationRead(
         validatePresenceSession(read.targetPresence.value, ref,
             'Stored target presence');
     }
+    validateGroupExpiredStateAuthority({
+        ref,
+        targetSessionId,
+        group: read.group,
+        expiredGroupEntry: read.expiredGroupEntry,
+        targetPresence: read.targetPresence,
+        expiredTargetPresenceEntry: read.expiredTargetPresenceEntry,
+    });
     const authorityAdmissionPrincipalId = command.operation === 'appointDirector'
         ? ownerPrincipalId
         : null;
@@ -1578,9 +1607,10 @@ function validateComputedWrite(
             throw new TypeError('Group mutation cannot use a group delete guard');
         }
         validateStoredGroup(computed.guard.value, ref);
-        const expectedRevision = read.group?.entry.revision;
+        const expectedRevision = read.group?.entry.revision ??
+            read.expiredGroupEntry?.revision;
         if (computed.guard.operation === 'insert') {
-            if (read.group !== null) {
+            if (expectedRevision !== undefined) {
                 throw new TypeError('Group insert guard has an existing predecessor');
             }
         } else if (computed.guard.expectedRevision !== expectedRevision) {
@@ -1598,9 +1628,10 @@ function validateComputedWrite(
                 'Group mutation presence guard differs from command target identity',
             );
         }
-        const expectedRevision = read.targetPresence?.entry.revision;
+        const expectedRevision = read.targetPresence?.entry.revision ??
+            read.expiredTargetPresenceEntry?.revision;
         if (computed.guard.operation === 'insert') {
-            if (read.targetPresence !== null) {
+            if (expectedRevision !== undefined) {
                 throw new TypeError('Presence insert guard has an existing predecessor');
             }
         } else if (computed.guard.expectedRevision !== expectedRevision) {
@@ -1769,7 +1800,9 @@ function validateComputedRosterFacts(
         throw new TypeError('Group activeMemberCount must be a positive safe integer');
     }
     requireNonEmptyString(candidate.ownerPrincipalId, 'Group ownerPrincipalId');
-    if (computed.guard.operation === 'insert') {
+    if (computed.guard.operation === 'insert' ||
+        (read.group === null && computed.guard.operation === 'update' &&
+            computed.guard.expectedRevision === read.expiredGroupEntry?.revision)) {
         const active = computed.members.filter((member) => member.status === 'active');
         const owners = active.filter((member) => member.role === 'owner');
         if (
@@ -2132,7 +2165,10 @@ function computeCreate(
         computedAtEpochMs: facts.nowEpochMs,
     };
     return writeResult(command, read, facts, {
-        guard: { kind: 'group', operation: 'insert', value: group },
+        guard: {
+            kind: 'group',
+            ...toExpiredAwareInsertCandidate(read.expiredGroupEntry, group),
+        },
         members: [owner],
         initialPresenceSummary: summary,
         presenceAdmission: null,
@@ -2819,7 +2855,10 @@ function presenceWrite(
 ): GroupMutationComputed {
     const stored = requireGroup(read, command.aggregateRef);
     const guard = operation === 'insert'
-        ? { kind: 'presence', operation: 'insert', value: session } as const
+        ? {
+            kind: 'presence',
+            ...toExpiredAwareInsertCandidate(read.expiredTargetPresenceEntry, session),
+        } as const
         : operation === 'update'
         ? {
             kind: 'presence',
@@ -3363,12 +3402,6 @@ function compareGenerationOrder(
     right: readonly [number, string],
 ): number {
     return Math.sign(left[0] - right[0]) || left[1].localeCompare(right[1]);
-}
-
-function requirePositiveSafeInteger(value: unknown, label: string): asserts value is number {
-    if (!Number.isSafeInteger(value) || (value as number) <= 0) {
-        throw new TypeError(`${label} must be a positive safe integer`);
-    }
 }
 
 function findTargetMember(
@@ -4001,25 +4034,6 @@ function validateGroupRef(value: unknown): asserts value is GroupRef {
     requireNonEmptyString(ref.groupId, 'Group groupId');
 }
 
-function assertExactKeys(
-    value: Readonly<Record<string, unknown>>,
-    allowed: readonly string[],
-    label: string,
-): void {
-    const allowedSet = new Set(allowed);
-    const unexpected = Object.keys(value).find((key) => !allowedSet.has(key));
-    if (unexpected) throw new TypeError(`${label} has unexpected key: ${unexpected}`);
-}
-
-function assertRequiredKeys(
-    value: Readonly<Record<string, unknown>>,
-    required: readonly string[],
-    label: string,
-): void {
-    const missing = required.find((key) => !Object.hasOwn(value, key));
-    if (missing) throw new TypeError(`${label} is missing mandatory key: ${missing}`);
-}
-
 function validateOperationInput(
     operation: GroupMutationCommand['operation'],
     input: Readonly<Record<string, unknown>>,
@@ -4118,77 +4132,6 @@ function validateOperationInput(
         case 'transferGroupOwnership':
             return;
     }
-}
-
-function requireOneOf(
-    value: unknown,
-    allowed: readonly string[],
-    label: string,
-): void {
-    if (typeof value !== 'string' || !allowed.includes(value)) {
-        throw new TypeError(`${label} is invalid`);
-    }
-}
-
-function requireRecord(value: unknown, label: string): Record<string, unknown> {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
-        throw new TypeError(`${label} must be an object`);
-    }
-    return value as Record<string, unknown>;
-}
-
-function requireNonEmptyString(value: unknown, label: string): asserts value is string {
-    if (typeof value !== 'string' || value.length === 0) {
-        throw new TypeError(`${label} must be a non-empty string`);
-    }
-}
-
-function nullableNonEmptyString(value: unknown, label: string): void {
-    if (value === null) return;
-    requireNonEmptyString(value, label);
-}
-
-function requireNonNegativeSafeInteger(value: unknown, label: string): asserts value is number {
-    if (!Number.isSafeInteger(value) || (value as number) < 0) {
-        throw new TypeError(`${label} must be a non-negative safe integer`);
-    }
-}
-
-function nullablePositiveSafeInteger(
-    value: unknown,
-    label: string,
-): asserts value is number | null {
-    if (value !== null) requirePositiveSafeInteger(value, label);
-}
-
-function requireJsonSafe(value: unknown, label: string): void {
-    const seen = new Set<object>();
-    const visit = (current: unknown): void => {
-        if (current === null || typeof current === 'string' || typeof current === 'boolean') return;
-        if (typeof current === 'number') {
-            if (!Number.isFinite(current) || Object.is(current, -0)) {
-                throw new TypeError(`${label} must contain only JSON-safe numbers`);
-            }
-            return;
-        }
-        if (typeof current !== 'object') throw new TypeError(`${label} must be JSON-safe`);
-        if (seen.has(current)) throw new TypeError(`${label} must not be cyclic`);
-        seen.add(current);
-        if (Array.isArray(current)) {
-            for (const entry of current) visit(entry);
-        } else {
-            const prototype = Object.getPrototypeOf(current);
-            if (prototype !== Object.prototype && prototype !== null) {
-                throw new TypeError(`${label} must use plain objects`);
-            }
-            for (const [key, entry] of Object.entries(current)) {
-                if (entry === undefined) throw new TypeError(`${label}.${key} must be present`);
-                visit(entry);
-            }
-        }
-        seen.delete(current);
-    };
-    visit(value);
 }
 
 const GROUP_MUTATION_OPERATIONS = new Set([

@@ -108,6 +108,7 @@ function mutationRead(storageRevision: number): GroupMutationRead {
     return {
         idempotency: null,
         group: stored(groupStateGroupStorageKey(ref), group, storageRevision),
+        expiredGroupEntry: null,
         actorMember: null,
         targetMember: null,
         authorityMember: owner,
@@ -121,6 +122,7 @@ function mutationRead(storageRevision: number): GroupMutationRead {
         ),
         directorMemberEntry: null,
         targetPresence: null,
+        expiredTargetPresenceEntry: null,
         targetAdmission: null,
         authorityAdmission: null,
         directorAdmission: null,

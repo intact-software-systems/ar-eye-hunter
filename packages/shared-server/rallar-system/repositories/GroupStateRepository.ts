@@ -20,6 +20,7 @@ import {
 } from '../../runtime-state/RuntimeStateRepository.ts';
 import {
     RuntimeStateJsonStore,
+    type RuntimeStateEntryRead,
     type RuntimeStateEntryValue,
 } from '../../runtime-state/RuntimeStateJsonStore.ts';
 import type {
@@ -217,11 +218,18 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
     async findGroupEntry(
         ref: GroupRef,
     ): Promise<RuntimeStateEntryValue<Group> | undefined> {
-        const stored = await this.getEntryValue<unknown>(
+        return (await this.readGroupEntry(ref)).value;
+    }
+
+    async readGroupEntry(ref: GroupRef): Promise<RuntimeStateEntryRead<Group>> {
+        const stored = await this.getEntryRead<unknown>(
             GROUPS_NAMESPACE,
             this.groupKey(ref),
         );
-        return stored ? canonicalStoredGroup(stored, ref) : undefined;
+        return {
+            value: stored.value ? canonicalStoredGroup(stored.value, ref) : undefined,
+            expiredEntry: stored.expiredEntry,
+        };
     }
 
     async insertGroup(group: Group): Promise<RuntimeStateConditionalWriteResult> {
@@ -593,11 +601,20 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
     async findPresenceEntry(
         ref: GroupRef & Readonly<{ sessionId: string }>,
     ): Promise<RuntimeStateEntryValue<GroupPresenceSession> | undefined> {
-        const stored = await this.getEntryValue<unknown>(
+        return (await this.readPresenceEntry(ref)).value;
+    }
+
+    async readPresenceEntry(
+        ref: GroupRef & Readonly<{ sessionId: string }>,
+    ): Promise<RuntimeStateEntryRead<GroupPresenceSession>> {
+        const stored = await this.getEntryRead<unknown>(
             SESSIONS_NAMESPACE,
             this.sessionKey(ref),
         );
-        return stored ? canonicalStoredSession(stored, ref) : undefined;
+        return {
+            value: stored.value ? canonicalStoredSession(stored.value, ref) : undefined,
+            expiredEntry: stored.expiredEntry,
+        };
     }
 
     async insertPresence(
@@ -862,64 +879,45 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
         groupRevision: number,
         observedAtEpochMs: number,
     ): GroupSnapshot {
-        return assembleGroupStateSnapshot(
-            {
-                group,
-                members,
-                summary,
-                authoritativeSessions,
-                groupRevision,
-                observedAtEpochMs,
-            },
-            (storageKey, message) =>
-                new GroupStateRepositoryInvariantCorruptionError(
-                    storageKey,
-                    message,
-                ),
+        return assembleGroupStateSnapshot({
+            group, members, summary, authoritativeSessions,
+            groupRevision, observedAtEpochMs,
+        }, (storageKey, message) =>
+            new GroupStateRepositoryInvariantCorruptionError(storageKey, message),
         );
     }
 
-    private groupKey(ref: GroupRef): string {
-        return groupStateGroupStorageKey(ref);
-    }
+    private groupKey(ref: GroupRef): string { return groupStateGroupStorageKey(ref); }
 
     private groupStateScopeChildPrefix(scope: GroupScope): string {
-        return this.childKeyPrefix(groupStateScopeStorageKey(scope));
-    }
+        return this.childKeyPrefix(groupStateScopeStorageKey(scope)); }
 
     private idempotentGroupKey(ref: GroupRef, requestId: string): string {
-        return groupStateIdempotencyStorageKey(ref, requestId);
-    }
+        return groupStateIdempotencyStorageKey(ref, requestId); }
 
     private memberPrefix(ref: GroupRef): string {
-        return this.childKeyPrefix(this.groupKey(ref));
-    }
+        return this.childKeyPrefix(this.groupKey(ref)); }
 
     private memberKey(
         ref: GroupRef & Readonly<{ principalId: string }>,
     ): string {
-        return groupStateMemberStorageKey(ref);
-    }
+        return groupStateMemberStorageKey(ref); }
 
     private sessionPrefix(ref: GroupRef): string {
-        return this.childKeyPrefix(this.groupKey(ref));
-    }
+        return this.childKeyPrefix(this.groupKey(ref)); }
 
     private sessionKey(
         ref: GroupRef & Readonly<{ sessionId: string }>,
     ): string {
-        return groupStatePresenceSessionStorageKey(ref);
-    }
+        return groupStatePresenceSessionStorageKey(ref); }
 
     private presenceAdmissionPrefix(ref: GroupRef): string {
-        return this.childKeyPrefix(this.groupKey(ref));
-    }
+        return this.childKeyPrefix(this.groupKey(ref)); }
 
     private presenceAdmissionKey(
         ref: GroupRef & Readonly<{ principalId: string }>,
     ): string {
-        return groupStatePresenceAdmissionStorageKey(ref);
-    }
+        return groupStatePresenceAdmissionStorageKey(ref); }
 }
 
 export function materializeGroupStateAuthorityGuard(

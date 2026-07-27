@@ -1467,7 +1467,7 @@ describe('group topology config repository', () => {
             });
     });
 
-    it('returns a refreshed override when stale expiry cleanup loses its revision guard', async () => {
+    it('keeps expired override reads observational before a guarded refresh', async () => {
         vi.useFakeTimers();
         vi.setSystemTime(2_000);
         try {
@@ -1516,6 +1516,12 @@ describe('group topology config repository', () => {
                 }
             };
 
+            expect(await repository.findOverrideEntry(groupRef)).toBeUndefined();
+            expect(replaced).toBe(false);
+            await expect(repository.commitOverride(refreshed, 0)).resolves.toMatchObject({
+                status: 'accepted',
+                storageRevision: 1,
+            });
             expect(await repository.findOverrideEntry(groupRef)).toMatchObject({
                 entry: { revision: 1 },
                 value: refreshed,
@@ -1589,7 +1595,7 @@ describe('group topology config repository', () => {
             )).toBe(false);
             expect(runtimeRepository.data.has(
                 `${GROUP_TOPOLOGY_OVERRIDE_NAMESPACE}::${repository.overrideKey(groupRef)}`,
-            )).toBe(false);
+            )).toBe(true);
         } finally {
             vi.useRealTimers();
         }

@@ -3,7 +3,10 @@ import type {
     RuntimeStateConditionalWriteResult,
     RuntimeStateRepositoryLike,
 } from '../../runtime-state/RuntimeStateRepository.ts';
-import type { RuntimeStateEntryValue } from '../../runtime-state/RuntimeStateJsonStore.ts';
+import type {
+    RuntimeStateEntryRead,
+    RuntimeStateEntryValue,
+} from '../../runtime-state/RuntimeStateJsonStore.ts';
 import type {
     PersistedAgentSessionTicket,
     PersistedAuthSession,
@@ -65,14 +68,21 @@ export class AuthSessionRepository extends AuthSessionPersistence {
 
     async insertWebSocketTicket(
         ticket: PersistedWebSocketTicket,
+        expectedRevision: number | null = null,
     ): Promise<RuntimeStateConditionalWriteResult> {
-        return await this.tickets.insertWebSocketTicket(ticket);
+        return await this.tickets.insertWebSocketTicket(ticket, expectedRevision);
     }
 
     async findWebSocketTicketByDigestEntry(
         ticketDigest: string,
     ): Promise<RuntimeStateEntryValue<PersistedWebSocketTicket> | undefined> {
         return await this.tickets.findWebSocketTicketByDigestEntry(ticketDigest);
+    }
+
+    async readWebSocketTicketByDigestEntry(
+        ticketDigest: string,
+    ): Promise<RuntimeStateEntryRead<PersistedWebSocketTicket>> {
+        return await this.tickets.readWebSocketTicketByDigestEntry(ticketDigest);
     }
 
     async deleteWebSocketTicketIfRevision(
@@ -97,14 +107,21 @@ export class AuthSessionRepository extends AuthSessionPersistence {
 
     async insertAgentSessionTicket(
         ticket: PersistedAgentSessionTicket,
+        expectedRevision: number | null = null,
     ): Promise<RuntimeStateConditionalWriteResult> {
-        return await this.tickets.insertAgentSessionTicket(ticket);
+        return await this.tickets.insertAgentSessionTicket(ticket, expectedRevision);
     }
 
     async findAgentSessionTicketByDigestEntry(
         ticketDigest: string,
     ): Promise<RuntimeStateEntryValue<PersistedAgentSessionTicket> | undefined> {
         return await this.tickets.findAgentSessionTicketByDigestEntry(ticketDigest);
+    }
+
+    async readAgentSessionTicketByDigestEntry(
+        ticketDigest: string,
+    ): Promise<RuntimeStateEntryRead<PersistedAgentSessionTicket>> {
+        return await this.tickets.readAgentSessionTicketByDigestEntry(ticketDigest);
     }
 
     async deleteAgentSessionTicketIfRevision(

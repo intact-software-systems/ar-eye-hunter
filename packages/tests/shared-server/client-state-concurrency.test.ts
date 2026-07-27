@@ -575,7 +575,7 @@ describe('convergent client state', () => {
             idempotency: null,
             principal: null,
             instance: null,
-            session: null,
+            session: null, expiredSessionEntry: null,
             snapshot: null,
             receiptEvent: null,
         });
@@ -947,7 +947,7 @@ describe('convergent client state', () => {
                 },
             },
             instance: null,
-            session: null,
+            session: null, expiredSessionEntry: null,
             snapshot: null,
             receiptEvent: null,
         } as unknown as ClientMutationRead;
@@ -960,7 +960,7 @@ describe('convergent client state', () => {
             idempotency: null,
             principal: null,
             instance: null,
-            session: null,
+            session: null, expiredSessionEntry: null,
             snapshot: null,
             receiptEvent: null,
         };
@@ -1075,7 +1075,7 @@ function emptyClientMutationRead(sessionId = 'session-1'): ClientMutationRead {
         idempotency: null,
         principal: null,
         instance: null,
-        session: null,
+        session: null, expiredSessionEntry: null,
         snapshot: null,
         receiptEvent: null,
     };
@@ -1157,8 +1157,8 @@ class AggregateBarrierRepository extends FakeRuntimeStateRepository {
         }
         this.principalReadsArrived += 1;
         if (this.principalReadsArrived === this.principalReadsRemaining) {
-            this.releasePrincipalReads?.();
-            this.principalReadsRemaining = 0;
+            const release = this.releasePrincipalReads; this.principalReadsRemaining = 0;
+            setTimeout(() => release?.(), 0);
             return value;
         }
         await new Promise<void>((resolve) => {

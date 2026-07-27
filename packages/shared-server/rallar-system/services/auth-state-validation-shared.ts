@@ -1,5 +1,10 @@
 import type { RuntimeStateEntryValue } from '../../runtime-state/RuntimeStateJsonStore.ts';
 import type { PersistedAuthSession } from '../repositories/AuthSessionRepository.ts';
+import { validateRuntimeStateExpiredAuthority } from '../../runtime-state/RuntimeStateExpiredEntry.ts';
+import {
+    authSessionKey,
+    authTokenDigestKey,
+} from '../repositories/auth-storage-keys.ts';
 import type {
     AuthMutationCommand,
     AuthMutationRead,
@@ -34,6 +39,18 @@ export function validateIssueSessionRead(
     read: Readonly<{ kind: 'issue-session' }> & AuthSessionEntries,
 ): void {
     if (!session) throw new AuthMutationRejectedError('Issued auth session is missing');
+    validateRuntimeStateExpiredAuthority(
+        read.byToken,
+        read.expiredByTokenEntry,
+        authTokenDigestKey(session.accessTokenDigest),
+        'Auth token index read',
+    );
+    validateRuntimeStateExpiredAuthority(
+        read.bySession,
+        read.expiredBySessionEntry,
+        authSessionKey(session.sessionId),
+        'Auth session index read',
+    );
     const tokenMatches = !read.byToken || equalAuthJson(read.byToken.value, session);
     const sessionMatches = !read.bySession || equalAuthJson(read.bySession.value, session);
     if (!tokenMatches || !sessionMatches) {

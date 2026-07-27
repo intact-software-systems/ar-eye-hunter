@@ -10,6 +10,8 @@ import type {
 } from './auth-state-contracts.ts';
 import { AuthMutationRejectedError } from './auth-state-errors.ts';
 import { requireIssueSessionLifecycle } from './auth-session-lifecycle.ts';
+import { validateRuntimeStateExpiredAuthority } from '../../runtime-state/RuntimeStateExpiredEntry.ts';
+import { authTicketDigestKey } from '../repositories/auth-storage-keys.ts';
 import {
     validateAgentIssueRead,
     validateConsumeAgentTicketRead,
@@ -173,6 +175,12 @@ function validateIssueWsTicketRead(
     command: IssueAuthWsTicketCommand,
     read: Extract<AuthMutationRead, { kind: 'issue-ws-ticket' }>,
 ): void {
+    validateRuntimeStateExpiredAuthority(
+        read.ticket,
+        read.expiredTicketEntry,
+        authTicketDigestKey(command.ticketRecord.ticketDigest),
+        'Websocket ticket read',
+    );
     if (
         !read.session ||
         read.session.value.clientId !== command.ticketRecord.clientId ||

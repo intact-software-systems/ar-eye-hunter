@@ -70,6 +70,7 @@ function assembleExactGroupMutationRead(
       ? null
       : exactEntry(read.idempotency, command.requestId),
     group,
+    expiredGroupEntry: read.expiredGroupEntry,
     actorMember: actorMemberEntry?.value ?? null,
     targetMember: targetMemberEntry?.value ?? null,
     authorityMember: authorityMemberEntry?.value ?? null,
@@ -79,6 +80,10 @@ function assembleExactGroupMutationRead(
     authorityMemberEntry,
     directorMemberEntry,
     targetPresence,
+    expiredTargetPresenceEntry: exactExpiredEntry(
+      read.presenceSessions,
+      presenceSessionId,
+    ),
     targetAdmission,
     authorityAdmission: null,
     directorAdmission: null,
@@ -93,22 +98,24 @@ async function readGroupMutationSequentially(
   command: GroupMutationCommand,
 ): Promise<GroupMutationRead> {
   const presenceSessionId = presenceSessionIdFor(command);
-  const [idempotency, group, targetPresence, presenceSummary] = await Promise.all([
+  const [idempotency, groupRead, targetPresenceRead, presenceSummary] = await Promise.all([
     command.requestId === null
       ? Promise.resolve(undefined)
       : repository.findIdempotentGroupMutationReceiptEntry(
         command.aggregateRef,
         command.requestId,
       ),
-    repository.findGroupEntry(command.aggregateRef),
+    repository.readGroupEntry(command.aggregateRef),
     presenceSessionId
-      ? repository.findPresenceEntry({
+      ? repository.readPresenceEntry({
         ...command.aggregateRef,
         sessionId: presenceSessionId,
       })
-      : Promise.resolve(undefined),
+      : Promise.resolve({ value: undefined, expiredEntry: undefined }),
     repository.findPresenceSummaryEntry(command.aggregateRef),
   ]);
+  const group = groupRead.value;
+  const targetPresence = targetPresenceRead.value;
   const actorPrincipalId = command.input.actorPrincipalId;
   const targetPrincipalId = targetPrincipalIdFor(command);
   const ownerPrincipalId = group?.value.ownerPrincipalId;
@@ -203,6 +210,7 @@ async function readGroupMutationSequentially(
   return {
     idempotency: idempotency ?? null,
     group: group ?? null,
+    expiredGroupEntry: groupRead.expiredEntry ?? null,
     actorMember: actorMemberEntry?.value ?? null,
     targetMember: resolvedTargetMemberEntry?.value ?? null,
     authorityMember: resolvedAuthorityMemberEntry?.value ?? null,
@@ -212,6 +220,7 @@ async function readGroupMutationSequentially(
     authorityMemberEntry: resolvedAuthorityMemberEntry ?? null,
     directorMemberEntry: resolvedDirectorMemberEntry ?? null,
     targetPresence: targetPresence ?? null,
+    expiredTargetPresenceEntry: targetPresenceRead.expiredEntry ?? null,
     targetAdmission: targetAdmission ?? null,
     authorityAdmission: authorityAdmission ?? null,
     directorAdmission: directorAdmission ?? null,
@@ -250,6 +259,17 @@ function exactEntry<Identity extends string, Value>(
 ): Value | null {
   if (!identity) return null;
   return entries.find((candidate) => candidate.identity === identity)?.entry ?? null;
+}
+
+function exactExpiredEntry<Identity extends string>(
+  entries: readonly Readonly<{
+    identity: Identity;
+    expiredEntry: import('../../runtime-state/RuntimeStateRepository.ts').RuntimeStateEntry | null;
+  }>[],
+  identity: Identity | null | undefined,
+) {
+  if (!identity) return null;
+  return entries.find((candidate) => candidate.identity === identity)?.expiredEntry ?? null;
 }
 
 function uniqueDefined(

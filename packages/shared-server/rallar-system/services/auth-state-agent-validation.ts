@@ -5,6 +5,8 @@ import type {
     IssueAuthAgentTicketsCommand,
 } from './auth-state-contracts.ts';
 import { AuthMutationRejectedError } from './auth-state-errors.ts';
+import { validateRuntimeStateExpiredAuthority } from '../../runtime-state/RuntimeStateExpiredEntry.ts';
+import { authTicketDigestKey } from '../repositories/auth-storage-keys.ts';
 import {
     equalAuthJson,
     requireAuthTicket,
@@ -19,6 +21,12 @@ export function validateAgentIssueRead(
 ): void {
     if (command.tickets.length === 0 || command.tickets.length !== computed.sessions.length) {
         throw new AuthMutationRejectedError('Agent ticket batch is invalid');
+    }
+    if (
+        read.tickets.length !== command.tickets.length ||
+        read.expiredTicketEntries.length !== command.tickets.length
+    ) {
+        throw new AuthMutationRejectedError('Agent ticket read batch is invalid');
     }
     validateLiveSessionAuthority(
         command.authority,
@@ -63,6 +71,12 @@ export function validateAgentIssueRead(
             ...read.sessions[index],
         });
         const current = read.tickets[index];
+        validateRuntimeStateExpiredAuthority(
+            current,
+            read.expiredTicketEntries[index],
+            authTicketDigestKey(ticket.ticketDigest),
+            'Agent ticket read',
+        );
         if (current && !equalAuthJson(current.value, computed.agentTickets[index])) {
             throw new AuthMutationRejectedError('Agent ticket digest collision', 409);
         }

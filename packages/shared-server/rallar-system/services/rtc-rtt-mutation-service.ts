@@ -33,9 +33,9 @@ export async function readRttMutation(
     );
     if (receipt) return { receipt };
 
-    const [measurement, measurements, ...endpointAdmissions] =
+    const [measurement, measurements, ...endpointAdmissionReads] =
         await Promise.all([
-            repository.findMeasurementEntry(
+            repository.readMeasurementEntry(
                 request.rtt.sessionIdFrom,
                 request.rtt.sessionIdTo,
             ),
@@ -48,14 +48,18 @@ export async function readRttMutation(
             ]
                 .sort(compareRtcTopologyIdentifiers)
                 .map((endpointId) =>
-                    repository.findEndpointAdmissionEntry(endpointId),
+                    repository.readEndpointAdmissionEntry(endpointId),
                 ),
         ]);
     return {
         receipt: null,
-        measurement: measurement ?? null,
-        endpointAdmissions: endpointAdmissions.filter(
-            (entry): entry is NonNullable<typeof entry> => entry !== undefined,
+        measurement: measurement.value ?? null,
+        expiredMeasurementEntry: measurement.expiredEntry ?? null,
+        endpointAdmissions: endpointAdmissionReads.flatMap((read) =>
+            read.value ? [read.value] : []
+        ),
+        expiredEndpointAdmissionEntries: endpointAdmissionReads.flatMap((read) =>
+            read.expiredEntry ? [read.expiredEntry] : []
         ),
         measurements,
     };

@@ -10,8 +10,6 @@ import {
     type RuntimeStateEntryValue,
 } from '@shared-server/runtime-state/RuntimeStateJsonStore.ts';
 import {
-    RuntimeStateRetryExhaustedError,
-    RuntimeStateWriteConflictError,
     waitForRuntimeStateWriteRetry,
 } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import {
@@ -23,45 +21,8 @@ import {
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 
 describe('runtime-state conditional writes', () => {
-    it('preserves and returns a live replacement raced against lazy expiry', async () => {
-        const repository = new FakeRuntimeStateRepository();
-        const store = new ExposedRuntimeStateJsonStore(repository);
-        await repository.insertIfAbsent(
-            'state',
-            'key',
-            JSON.stringify({ version: 'expired' }),
-            Date.now() - 1,
-        );
-        let replaced = false;
-        repository.beforeConditionalWrite = async (operation, namespace, key) => {
-            if (operation !== 'deleteIfRevision' || replaced) {
-                return;
-            }
-
-            replaced = true;
-            repository.beforeConditionalWrite = undefined;
-            await repository.upsertIfRevision(
-                namespace,
-                key,
-                JSON.stringify({ version: 'live' }),
-                NEVER_EXPIRE_AT_TIMESTAMP,
-                0,
-            );
-        };
-
-        await expect(store.read<{ version: string }>('state', 'key')).resolves
-            .toEqual({ version: 'live' });
-        await expect(repository.findEntry('state', 'key')).resolves.toMatchObject({
-            value: JSON.stringify({ version: 'live' }),
-            expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP,
-            revision: 1,
-        });
-        expect(store.retryAttempts).toEqual([0]);
-        expect(store.retryDelays).toEqual([]);
-    });
-
     it.each(['get', 'list', 'byKeys'] as const)(
-        'returns live replacement metadata from entry-aware %s reads',
+        'treats expired entry-aware %s reads as observational absence',
         async (readKind) => {
             const repository = new FakeRuntimeStateRepository();
             const store = new ExposedRuntimeStateJsonStore(repository);
@@ -71,19 +32,10 @@ describe('runtime-state conditional writes', () => {
                 JSON.stringify({ version: 'expired' }),
                 Date.now() - 1,
             );
-            repository.beforeConditionalWrite = async (operation, namespace, key) => {
-                if (operation !== 'deleteIfRevision') {
-                    return;
-                }
-
-                repository.beforeConditionalWrite = undefined;
-                await repository.upsertIfRevision(
-                    namespace,
-                    key,
-                    JSON.stringify({ version: 'live' }),
-                    NEVER_EXPIRE_AT_TIMESTAMP,
-                    0,
-                );
+            const before = await repository.findEntry('state', 'key');
+            const writes: string[] = [];
+            repository.beforeConditionalWrite = (operation) => {
+                writes.push(operation);
             };
 
             const values = readKind === 'get'
@@ -98,25 +50,15 @@ describe('runtime-state conditional writes', () => {
                     ['key'],
                 );
 
-            expect(values).toHaveLength(1);
-            expect(values[0]).toMatchObject({
-                entry: {
-                    key: 'key',
-                    value: JSON.stringify({ version: 'live' }),
-                    expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP,
-                    revision: 1,
-                },
-                value: { version: 'live' },
-            });
-            await expect(repository.findEntry('state', 'key')).resolves.toEqual(
-                values[0]?.entry,
-            );
-            expect(store.retryAttempts).toEqual([0]);
+            expect(values).toEqual([]);
+            await expect(repository.findEntry('state', 'key')).resolves.toEqual(before);
+            expect(writes).toEqual([]);
+            expect(store.retryAttempts).toEqual([]);
             expect(store.retryDelays).toEqual([]);
         },
     );
 
-    it('conditionally cleans a second expired revision after an expiry conflict', async () => {
+    it('leaves an expired row untouched when later mutation validation fails', async () => {
         const repository = new FakeRuntimeStateRepository();
         const store = new ExposedRuntimeStateJsonStore(repository);
         const expiredAt = Date.now() - 1;
@@ -126,93 +68,15 @@ describe('runtime-state conditional writes', () => {
             JSON.stringify({ version: 0 }),
             expiredAt,
         );
-        let deleteAttempts = 0;
-        repository.beforeConditionalWrite = async (operation, namespace, key) => {
-            if (operation !== 'deleteIfRevision') {
-                return;
-            }
-
-            deleteAttempts += 1;
-            if (deleteAttempts === 1) {
-                await repository.upsertIfRevision(
-                    namespace,
-                    key,
-                    JSON.stringify({ version: 1 }),
-                    expiredAt,
-                    0,
-                );
-            }
-        };
+        const before = await repository.findEntry('state', 'key');
 
         await expect(store.read('state', 'key')).resolves.toBeUndefined();
-        expect(deleteAttempts).toBe(2);
-        expect(store.retryAttempts).toEqual([0, 1]);
-        expect(store.retryDelays).toEqual([2]);
-        await expect(repository.findEntry('state', 'key')).resolves.toBeUndefined();
-    });
-
-    it('returns absent when an expiry conflict winner disappears before reread', async () => {
-        const repository = new FakeRuntimeStateRepository();
-        const store = new ExposedRuntimeStateJsonStore(repository);
-        await repository.insertIfAbsent(
-            'state',
-            'key',
-            JSON.stringify({ version: 'expired' }),
-            Date.now() - 1,
-        );
-        repository.beforeConditionalWrite = (operation) => {
-            if (operation === 'deleteIfRevision') {
-                repository.deleteByKey('state', 'key');
-            }
-        };
-
-        await expect(store.read('state', 'key')).resolves.toBeUndefined();
-        expect(store.retryAttempts).toEqual([0]);
+        expect(() => {
+            throw new TypeError('later validation failed');
+        }).toThrow('later validation failed');
+        await expect(repository.findEntry('state', 'key')).resolves.toEqual(before);
+        expect(store.retryAttempts).toEqual([]);
         expect(store.retryDelays).toEqual([]);
-        await expect(repository.findEntry('state', 'key')).resolves.toBeUndefined();
-    });
-
-    it('exhausts exactly three conditional expiry attempts', async () => {
-        const repository = new FakeRuntimeStateRepository();
-        const store = new ExposedRuntimeStateJsonStore(repository);
-        const expiredAt = Date.now() - 1;
-        await repository.insertIfAbsent(
-            'state',
-            'key',
-            JSON.stringify({ version: 0 }),
-            expiredAt,
-        );
-        let deleteAttempts = 0;
-        repository.beforeConditionalWrite = async (operation, namespace, key) => {
-            if (operation !== 'deleteIfRevision') {
-                return;
-            }
-
-            const expectedRevision = deleteAttempts;
-            deleteAttempts += 1;
-            await repository.upsertIfRevision(
-                namespace,
-                key,
-                JSON.stringify({ version: deleteAttempts }),
-                expiredAt,
-                expectedRevision,
-            );
-        };
-
-        const read = store.read('state', 'key');
-        await expect(read).rejects.toBeInstanceOf(RuntimeStateRetryExhaustedError);
-        await expect(read).rejects.toMatchObject({
-            name: 'RuntimeStateRetryExhaustedError',
-            attempts: 3,
-            cause: expect.any(RuntimeStateWriteConflictError),
-        });
-        expect(deleteAttempts).toBe(3);
-        expect(store.retryAttempts).toEqual([0, 1, 2]);
-        expect(store.retryDelays).toEqual([2, 8]);
-        await expect(repository.findEntry('state', 'key')).resolves.toMatchObject({
-            revision: 3,
-        });
-        await expect(store.read('missing', 'key')).resolves.toBeUndefined();
     });
 
     it('serializes once and delegates protected JSON writes conditionally', async () => {

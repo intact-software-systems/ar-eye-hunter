@@ -87,6 +87,13 @@ export async function readAuthMutation(
                 byClientId: await users.findByClientIdEntry(command.user.clientId) ?? null,
             };
         case 'issue-session':
+            {
+            const byToken = await sessions.readSessionByAccessTokenDigestEntry(
+                command.session.accessTokenDigest,
+            );
+            const bySession = await sessions.readSessionBySessionIdEntry(
+                command.session.sessionId,
+            );
             return {
                 kind: command.kind,
                 userByUsername: await users.findByNormalizedUsernameEntry(
@@ -95,27 +102,28 @@ export async function readAuthMutation(
                 userByClientId: await users.findByClientIdEntry(
                     command.authority.clientId,
                 ) ?? null,
-                byToken: await sessions.findSessionByAccessTokenDigestEntry(
-                    command.session.accessTokenDigest,
-                ) ?? null,
-                bySession: await sessions.findSessionBySessionIdEntry(
-                    command.session.sessionId,
-                ) ?? null,
+                byToken: byToken.value ?? null,
+                bySession: bySession.value ?? null,
+                expiredByTokenEntry: byToken.expiredEntry ?? null,
+                expiredBySessionEntry: bySession.expiredEntry ?? null,
             };
+            }
         case 'logout-session':
             return {
                 kind: command.kind,
                 ...await readExpectedSessionEntries(sessions, command.expected),
             };
         case 'issue-ws-ticket': {
+            const ticket = await sessions.readWebSocketTicketByDigestEntry(
+                command.ticketRecord.ticketDigest,
+            );
             const session = await sessions.findSessionBySessionIdEntry(
                 command.ticketRecord.sessionId,
             ) ?? null;
             return {
                 kind: command.kind,
-                ticket: await sessions.findWebSocketTicketByDigestEntry(
-                    command.ticketRecord.ticketDigest,
-                ) ?? null,
+                ticket: ticket.value ?? null,
+                expiredTicketEntry: ticket.expiredEntry ?? null,
                 session,
             };
         }
@@ -136,20 +144,16 @@ export async function readAuthMutation(
             const ticketEntries: Array<
                 RuntimeStateEntryValue<PersistedAgentSessionTicket> | null
             > = [];
+            const expiredTicketEntries = [] as Array<
+                import('../../runtime-state/RuntimeStateRepository.ts').RuntimeStateEntry | null
+            >;
             for (const ticket of command.tickets) {
-                sessionEntries.push({
-                    byToken: await sessions.findSessionByAccessTokenDigestEntry(
-                        ticket.accessTokenDigest,
-                    ) ?? null,
-                    bySession: await sessions.findSessionBySessionIdEntry(
-                        ticket.sessionId,
-                    ) ?? null,
-                });
-                ticketEntries.push(
-                    await sessions.findAgentSessionTicketByDigestEntry(
-                        ticket.ticketDigest,
-                    ) ?? null,
+                sessionEntries.push(await readExpectedSessionEntries(sessions, ticket));
+                const ticketRead = await sessions.readAgentSessionTicketByDigestEntry(
+                    ticket.ticketDigest,
                 );
+                ticketEntries.push(ticketRead.value ?? null);
+                expiredTicketEntries.push(ticketRead.expiredEntry ?? null);
             }
             return {
                 kind: command.kind,
@@ -159,6 +163,7 @@ export async function readAuthMutation(
                 ),
                 sessions: sessionEntries,
                 tickets: ticketEntries,
+                expiredTicketEntries,
             };
         }
         case 'consume-agent-ticket': {
@@ -180,16 +185,22 @@ async function readExpectedSessionEntries(
     sessions: AuthSessionRepository,
     expected: Readonly<{ sessionId: string; accessTokenDigest: string }>,
 ): Promise<AuthSessionEntries> {
-    const bySession = await sessions.findSessionBySessionIdEntry(
+    const bySession = await sessions.readSessionBySessionIdEntry(
         expected.sessionId,
-    ) ?? null;
-    let byToken = await sessions.findSessionByAccessTokenDigestEntry(
+    );
+    let byToken = await sessions.readSessionByAccessTokenDigestEntry(
         expected.accessTokenDigest,
-    ) ?? null;
-    if (!byToken) {
-        byToken = await sessions.findLegacySessionByAccessTokenDigestEntry(
+    );
+    if (!byToken.value && !byToken.expiredEntry) {
+        const legacy = await sessions.findLegacySessionByAccessTokenDigestEntry(
             expected.accessTokenDigest,
-        ) ?? null;
+        );
+        byToken = { value: legacy, expiredEntry: undefined };
     }
-    return { byToken, bySession };
+    return {
+        byToken: byToken.value ?? null,
+        bySession: bySession.value ?? null,
+        expiredByTokenEntry: byToken.expiredEntry ?? null,
+        expiredBySessionEntry: bySession.expiredEntry ?? null,
+    };
 }

@@ -10,12 +10,6 @@ import {
     type RuntimeStateEntryPageOptions,
     type RuntimeStateRepositoryLike,
 } from './RuntimeStateRepository.ts';
-import {
-    DEFAULT_RUNTIME_STATE_WRITE_ATTEMPTS,
-    RuntimeStateRetryExhaustedError,
-    RuntimeStateWriteConflictError,
-    waitForRuntimeStateWriteRetry as waitForRuntimeStateWriteRetryWithDefaults,
-} from './optimistic-runtime-state-write.ts';
 
 type ScopedRef = Readonly<{
     applicationId: string;
@@ -25,6 +19,11 @@ type ScopedRef = Readonly<{
 export type RuntimeStateEntryValue<T> = Readonly<{
     entry: RuntimeStateEntry;
     value: T;
+}>;
+
+export type RuntimeStateEntryRead<T> = Readonly<{
+    value: RuntimeStateEntryValue<T> | undefined;
+    expiredEntry: RuntimeStateEntry | undefined;
 }>;
 
 export class RuntimeStateJsonStore {
@@ -92,6 +91,18 @@ export class RuntimeStateJsonStore {
         }
 
         return await this.toLiveEntryValue<T>(namespace, entry);
+    }
+
+    protected async getEntryRead<T>(
+        namespace: string,
+        key: string,
+    ): Promise<RuntimeStateEntryRead<T>> {
+        const entry = await this.repository.findEntry(namespace, key);
+        if (!entry) return { value: undefined, expiredEntry: undefined };
+        const value = await this.toLiveEntryValue<T>(namespace, entry);
+        return value
+            ? { value, expiredEntry: undefined }
+            : { value: undefined, expiredEntry: entry };
     }
 
     protected async listEntryValues<T>(
@@ -241,67 +252,12 @@ export class RuntimeStateJsonStore {
     }
 
     protected async toLiveEntryValue<T>(
-        namespace: string,
+        _namespace: string,
         entry: RuntimeStateEntry,
     ): Promise<RuntimeStateEntryValue<T> | undefined> {
-        let observedEntry = entry;
-        let lastConflict: RuntimeStateWriteConflictError | undefined;
-
-        for (
-            let attempt = 0;
-            attempt < DEFAULT_RUNTIME_STATE_WRITE_ATTEMPTS;
-            attempt += 1
-        ) {
-            if (observedEntry.expireAtTimestamp > Date.now()) {
-                return {
-                    entry: observedEntry,
-                    value: JSON.parse(observedEntry.value) as T,
-                };
-            }
-            if (!isRuntimeStateConditionalRepositoryLike(this.repository)) {
-                return undefined;
-            }
-            await this.waitForRuntimeStateWriteRetry(
-                attempt as Parameters<
-                    typeof waitForRuntimeStateWriteRetryWithDefaults
-                >[0],
-            );
-
-            const result = await this.deleteValueIfRevision(
-                namespace,
-                observedEntry.key,
-                observedEntry.revision,
-            );
-            if (result.status === 'applied') {
-                return undefined;
-            }
-
-            lastConflict = new RuntimeStateWriteConflictError();
-            const replacement = await this.repository.findEntry(
-                namespace,
-                observedEntry.key,
-            );
-            if (!replacement) {
-                return undefined;
-            }
-            if (replacement.expireAtTimestamp > Date.now()) {
-                return {
-                    entry: replacement,
-                    value: JSON.parse(replacement.value) as T,
-                };
-            }
-            observedEntry = replacement;
-        }
-
-        throw new RuntimeStateRetryExhaustedError(
-            lastConflict ?? new RuntimeStateWriteConflictError(),
-        );
-    }
-
-    protected async waitForRuntimeStateWriteRetry(
-        attempt: Parameters<typeof waitForRuntimeStateWriteRetryWithDefaults>[0],
-    ): Promise<number> {
-        return await waitForRuntimeStateWriteRetryWithDefaults(attempt);
+        return entry.expireAtTimestamp > Date.now()
+            ? { entry, value: JSON.parse(entry.value) as T }
+            : undefined;
     }
 
     private conditionalRepository(): RuntimeStateRepositoryLike &

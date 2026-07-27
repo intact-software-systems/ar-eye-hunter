@@ -1,5 +1,8 @@
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
-import type { RuntimeStateEntryValue } from '../../runtime-state/RuntimeStateJsonStore.ts';
+import type {
+    RuntimeStateEntryRead,
+    RuntimeStateEntryValue,
+} from '../../runtime-state/RuntimeStateJsonStore.ts';
 import { RuntimeStateJsonStore } from '../../runtime-state/RuntimeStateJsonStore.ts';
 import type {
     RuntimeStateEntry,
@@ -8,13 +11,10 @@ import type {
     RuntimeStateOptimisticTransactionalRepositoryLike,
 } from '../../runtime-state/RuntimeStateRepository.ts';
 import {
-    isRuntimeStateConditionalRepositoryLike,
     isRuntimeStateOptimisticTransactionalRepositoryLike,
 } from '../../runtime-state/RuntimeStateRepository.ts';
 import {
-    RuntimeStateRetryExhaustedError,
     RuntimeStateWriteConflictError,
-    waitForRuntimeStateWriteRetry,
 } from '../../runtime-state/optimistic-runtime-state-write.ts';
 import type {
     RtcRttEndpointAdmission,
@@ -28,6 +28,8 @@ import { RtcTopologyRepositoryInvariantCorruptionError } from '../rtc-topology-e
 import {
     compareRtcTopologyIdentifiers,
     toCanonicalRtcTopologyGroupIdentity,
+    toRtcRttEndpointAdmissionStorageKey,
+    toRtcRttMeasurementStorageKey,
     toRtcRttMutationReceiptId,
     toRtcRttRecomputeOutboxId,
 } from '../rtc-topology-identifiers.ts';
@@ -137,14 +139,23 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
         sessionIdA: string,
         sessionIdB: string,
     ): Promise<RuntimeStateEntryValue<RttMeasurementInfo> | undefined> {
+        return (await this.readMeasurementEntry(sessionIdA, sessionIdB)).value;
+    }
+
+    async readMeasurementEntry(
+        sessionIdA: string,
+        sessionIdB: string,
+    ): Promise<RuntimeStateEntryRead<RttMeasurementInfo>> {
         const key = this.measurementKey(sessionIdA, sessionIdB);
         const entry = await this.runtimeRepository.findEntry(
             RTC_RTT_LATEST_NAMESPACE,
             key,
         );
-        return entry
-            ? await this.toLiveMeasurementEntry(entry, sessionIdA, sessionIdB)
-            : undefined;
+        if (!entry) return { value: undefined, expiredEntry: undefined };
+        const value = await this.toLiveMeasurementEntry(entry, sessionIdA, sessionIdB);
+        return value
+            ? { value, expiredEntry: undefined }
+            : { value: undefined, expiredEntry: entry };
     }
 
     async findMeasurement(
@@ -195,13 +206,21 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
     async findEndpointAdmissionEntry(
         endpointId: string,
     ): Promise<RuntimeStateEntryValue<RtcRttEndpointAdmission> | undefined> {
+        return (await this.readEndpointAdmissionEntry(endpointId)).value;
+    }
+
+    async readEndpointAdmissionEntry(
+        endpointId: string,
+    ): Promise<RuntimeStateEntryRead<RtcRttEndpointAdmission>> {
         const entry = await this.runtimeRepository.findEntry(
             RTC_RTT_ENDPOINT_ADMISSION_NAMESPACE,
             this.endpointAdmissionKey(endpointId),
         );
-        return entry
-            ? await this.toLiveEndpointAdmissionEntry(entry, endpointId)
-            : undefined;
+        if (!entry) return { value: undefined, expiredEntry: undefined };
+        const value = await this.toLiveEndpointAdmissionEntry(entry, endpointId);
+        return value
+            ? { value, expiredEntry: undefined }
+            : { value: undefined, expiredEntry: entry };
     }
 
     async listEndpointAdmissionEntries(): Promise<
@@ -408,12 +427,11 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
     }
 
     measurementKey(sessionIdA: string, sessionIdB: string): string {
-        const [from, to] = sortedPair(sessionIdA, sessionIdB);
-        return `from=${encodeURIComponent(from)}:to=${encodeURIComponent(to)}`;
+        return toRtcRttMeasurementStorageKey(sessionIdA, sessionIdB);
     }
 
     endpointAdmissionKey(endpointId: string): string {
-        return `endpoint=${encodeURIComponent(endpointId)}`;
+        return toRtcRttEndpointAdmissionStorageKey(endpointId);
     }
 
     defaultPurgeAfterEpochMs(): number {
@@ -478,7 +496,6 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
                 if (await this.cleanupExpiredReceiptFamily(
                     candidate.familyId,
                     observedAtEpochMs,
-                    0,
                 )) {
                     removed += 1;
                 }
@@ -499,7 +516,6 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
         entry: RuntimeStateEntry,
         trustedSessionIdA?: string,
         trustedSessionIdB?: string,
-        expiryAttempt = 0,
     ): Promise<RuntimeStateEntryValue<RttMeasurementInfo> | undefined> {
         const decoded = decodeMeasurementKey(entry.key);
         if (trustedSessionIdA !== undefined && trustedSessionIdB !== undefined) {
@@ -521,24 +537,12 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
         if (storedPair[0] !== decoded[0] || storedPair[1] !== decoded[1]) {
             throw rttCorruption(entry.key, 'RTC RTT value differs from physical pair');
         }
-        return await this.toLiveVerifiedEntry(
-            RTC_RTT_LATEST_NAMESPACE,
-            entry,
-            value,
-            (replacement, nextAttempt) => this.toLiveMeasurementEntry(
-                replacement,
-                trustedSessionIdA,
-                trustedSessionIdB,
-                nextAttempt,
-            ),
-            expiryAttempt,
-        );
+        return this.toLiveVerifiedEntry(entry, value);
     }
 
     private async toLiveEndpointAdmissionEntry(
         entry: RuntimeStateEntry,
         trustedEndpointId?: string,
-        expiryAttempt = 0,
     ): Promise<RuntimeStateEntryValue<RtcRttEndpointAdmission> | undefined> {
         const endpointId = decodeEndpointKey(entry.key);
         if (trustedEndpointId !== undefined && endpointId !== trustedEndpointId) {
@@ -557,54 +561,16 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
                 error instanceof Error ? error.message : 'RTC RTT admission is invalid',
             );
         }
-        return await this.toLiveVerifiedEntry(
-            RTC_RTT_ENDPOINT_ADMISSION_NAMESPACE,
-            entry,
-            value,
-            (replacement, nextAttempt) => this.toLiveEndpointAdmissionEntry(
-                replacement,
-                trustedEndpointId,
-                nextAttempt,
-            ),
-            expiryAttempt,
-        );
+        return this.toLiveVerifiedEntry(entry, value);
     }
 
-    private async toLiveVerifiedEntry<T>(
-        namespace: string,
+    private toLiveVerifiedEntry<T>(
         entry: RuntimeStateEntry,
         value: T,
-        decodeReplacement: (
-            replacement: RuntimeStateEntry,
-            nextAttempt: number,
-        ) => Promise<RuntimeStateEntryValue<T> | undefined>,
-        expiryAttempt = 0,
-    ): Promise<RuntimeStateEntryValue<T> | undefined> {
-        if (entry.expireAtTimestamp > this.nowEpochMs()) return { entry, value };
-        if (isRuntimeStateConditionalRepositoryLike(this.runtimeRepository)) {
-            await waitForRuntimeStateWriteRetry(expiryAttempt as 0 | 1 | 2, {
-                sleep: this.options.sleep,
-            });
-            const deleted = await this.runtimeRepository.deleteIfRevision(
-                namespace,
-                entry.key,
-                entry.revision,
-            );
-            if (deleted.status === 'conflict') {
-                const conflict = new RuntimeStateWriteConflictError();
-                if (expiryAttempt >= 2) {
-                    throw new RuntimeStateRetryExhaustedError(conflict);
-                }
-                const replacement = await this.runtimeRepository.findEntry(
-                    namespace,
-                    entry.key,
-                );
-                return replacement
-                    ? await decodeReplacement(replacement, expiryAttempt + 1)
-                    : undefined;
-            }
-        }
-        return undefined;
+    ): RuntimeStateEntryValue<T> | undefined {
+        return entry.expireAtTimestamp > this.nowEpochMs()
+            ? { entry, value }
+            : undefined;
     }
 
     private toLiveReceiptEntry(
@@ -670,30 +636,11 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
     private async cleanupExpiredReceiptFamily(
         receiptId: string,
         observedAtEpochMs: number,
-        expiryAttempt: number,
     ): Promise<boolean> {
-        await waitForRuntimeStateWriteRetry(expiryAttempt as 0 | 1 | 2, {
-            sleep: this.options.sleep,
-        });
-        try {
-            const read = await this.readExpiredReceiptFamilyCleanup(receiptId);
-            const computed = this.computeExpiredReceiptFamilyCleanup(read);
-            this.validateExpiredReceiptFamilyCleanup(
-                computed,
-                observedAtEpochMs,
-            );
-            return await this.writeExpiredReceiptFamilyCleanup(computed);
-        } catch (error) {
-            if (!(error instanceof RuntimeStateWriteConflictError)) throw error;
-            if (expiryAttempt >= 2) {
-                throw new RuntimeStateRetryExhaustedError(error);
-            }
-            return await this.cleanupExpiredReceiptFamily(
-                receiptId,
-                observedAtEpochMs,
-                expiryAttempt + 1,
-            );
-        }
+        const read = await this.readExpiredReceiptFamilyCleanup(receiptId);
+        const computed = this.computeExpiredReceiptFamilyCleanup(read);
+        this.validateExpiredReceiptFamilyCleanup(computed, observedAtEpochMs);
+        return await this.writeExpiredReceiptFamilyCleanup(computed);
     }
 
     private async readExpiredReceiptFamilyCleanup(
@@ -869,10 +816,7 @@ export function initRtcRttReceiptFamilyCleanup(
 
 export async function migrateLegacyRtcRttRecomputeIntentDeliveryState(
     repository: RtcRttRepository,
-    options: Readonly<{
-        oldWritersStopped: true;
-        sleep?: (delayMs: number) => Promise<void>;
-    }>,
+    options: Readonly<{ oldWritersStopped: true }>,
 ): Promise<void> {
     if (options.oldWritersStopped !== true) {
         throw new Error(
@@ -884,13 +828,7 @@ export async function migrateLegacyRtcRttRecomputeIntentDeliveryState(
         RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE,
     );
     for (const source of sources) {
-        let migrated = false;
-        for (let attempt = 0; attempt < 3 && !migrated; attempt += 1) {
-            await waitForRuntimeStateWriteRetry(attempt as 0 | 1 | 2, {
-                sleep: options.sleep,
-            });
-            try {
-                await runtime.begin(async (transaction) => {
+        await runtime.begin(async (transaction) => {
                     const current = await transaction.findEntry(
                         RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE,
                         source.key,
@@ -965,15 +903,7 @@ export async function migrateLegacyRtcRttRecomputeIntentDeliveryState(
                     if (updated.status === 'conflict') {
                         throw new RuntimeStateWriteConflictError();
                     }
-                });
-                migrated = true;
-            } catch (error) {
-                if (!(error instanceof RuntimeStateWriteConflictError)) throw error;
-                if (attempt >= 2) {
-                    throw new RuntimeStateRetryExhaustedError(error);
-                }
-            }
-        }
+        });
     }
 }
 
@@ -1278,13 +1208,10 @@ function toCleanupFailureError(
             code: error.code,
         };
     }
-    if (
-        error instanceof RuntimeStateRetryExhaustedError ||
-        error instanceof RuntimeStateWriteConflictError
-    ) {
+    if (error instanceof RuntimeStateWriteConflictError) {
         return {
             name: error.name,
-            message: 'RTC RTT receipt family cleanup exhausted optimistic retries',
+            message: 'RTC RTT receipt family cleanup lost its optimistic guard',
         };
     }
     return {

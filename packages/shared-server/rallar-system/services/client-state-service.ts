@@ -190,7 +190,7 @@ async function readClientMutation(
         instanceRef && 'sessionId' in command
             ? { ...instanceRef, sessionId: command.sessionId }
             : null;
-    const [authoritySession, idempotency, principal, instance, session, snapshot] =
+    const [authoritySession, idempotency, principal, instance, sessionRead, snapshot] =
         await Promise.all([
             command.authority.kind === 'issued-session'
                 ? authSessionRepository.findBySessionId(command.authority.sessionId)
@@ -203,7 +203,7 @@ async function readClientMutation(
                   ),
             repository.findPrincipalEntry(command.aggregateRef),
             instanceRef ? repository.findInstanceEntry(instanceRef) : Promise.resolve(undefined),
-            sessionRef ? repository.findSessionEntry(sessionRef) : Promise.resolve(undefined),
+            sessionRef ? repository.readSessionEntry(sessionRef) : Promise.resolve({ value: undefined, expiredEntry: undefined }),
             repository.readSnapshot(command.aggregateRef),
         ]);
     const receiptEvent =
@@ -222,12 +222,12 @@ async function readClientMutation(
         idempotency: idempotency ?? null,
         principal: principal ?? null,
         instance: instance ?? null,
-        session: session ?? null,
+        session: sessionRead.value ?? null,
+        expiredSessionEntry: sessionRead.expiredEntry ?? null,
         snapshot: snapshot ?? null,
         receiptEvent,
     };
 }
-
 async function writeClientMutation(
     transaction: PSqlTransactionSql,
     repository: ClientStateRepository,

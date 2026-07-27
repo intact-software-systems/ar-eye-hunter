@@ -48,6 +48,7 @@ export type GroupStateMutationExactReadInput = Readonly<{
 type ExactEntry<Identity extends string, Value> = Readonly<{
   identity: Identity;
   entry: RuntimeStateEntryValue<Value> | null;
+  expiredEntry: RuntimeStateEntry | null;
 }>;
 
 export type GroupStateMutationExactReadResult =
@@ -55,6 +56,7 @@ export type GroupStateMutationExactReadResult =
   | Readonly<{
     status: 'stable';
     groups: readonly RuntimeStateEntryValue<Group>[];
+    expiredGroupEntry: RuntimeStateEntry | null;
     presenceSummaries: readonly RuntimeStateEntryValue<GroupPresenceSummary>[];
     idempotency: readonly ExactEntry<string, GroupMutationIdempotencyRecord>[];
     members: readonly ExactEntry<string, GroupMember>[];
@@ -132,6 +134,7 @@ export async function readGroupStateMutationExactEntries(
   if (resolved.status === 'changed') return { status: 'fallback' };
 
   const groups: RuntimeStateEntryValue<Group>[] = [];
+  let expiredGroupEntry: RuntimeStateEntry | null = null;
   const presenceSummaries: RuntimeStateEntryValue<GroupPresenceSummary>[] = [];
   const idempotency: ExactEntry<string, GroupMutationIdempotencyRecord>[] = [];
   const members: ExactEntry<string, GroupMember>[] = [];
@@ -142,6 +145,7 @@ export async function readGroupStateMutationExactEntries(
     switch (slot.kind) {
       case 'group':
         if (entry) groups.push(decoders.group(entry));
+        expiredGroupEntry = resolved.selections[index].expiredEntries[0] ?? null;
         break;
       case 'presence-summary':
         if (entry) presenceSummaries.push(decoders.presenceSummary(entry));
@@ -150,30 +154,35 @@ export async function readGroupStateMutationExactEntries(
         idempotency.push({
           identity: slot.identity,
           entry: entry ? decoders.idempotency(slot.identity, entry) : null,
+          expiredEntry: resolved.selections[index].expiredEntries[0] ?? null,
         });
         break;
       case 'member':
         members.push({
           identity: slot.identity,
           entry: entry ? decoders.member(slot.identity, entry) : null,
+          expiredEntry: resolved.selections[index].expiredEntries[0] ?? null,
         });
         break;
       case 'presence':
         presenceSessions.push({
           identity: slot.identity,
           entry: entry ? decoders.presenceSession(slot.identity, entry) : null,
+          expiredEntry: resolved.selections[index].expiredEntries[0] ?? null,
         });
         break;
       case 'admission':
         admissions.push({
           identity: slot.identity,
           entry: entry ? decoders.admission(slot.identity, entry) : null,
+          expiredEntry: resolved.selections[index].expiredEntries[0] ?? null,
         });
     }
   });
   return {
     status: 'stable',
     groups,
+    expiredGroupEntry,
     presenceSummaries,
     idempotency,
     members,

@@ -2,6 +2,7 @@ import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { RuntimeStateEntryValue } from '../../runtime-state/RuntimeStateJsonStore.ts';
+import type { RuntimeStateEntry } from '../../runtime-state/RuntimeStateRepository.ts';
 import { RtcTopologyRepositoryInvariantCorruptionError } from '../rtc-topology-errors.ts';
 import {
     compareRtcTopologyIdentifiers,
@@ -28,6 +29,11 @@ import {
     evaluateRtcRttMeasurement,
     type RtcRttAcceptanceReason,
 } from './rtc-rtt-measurement-policy.ts';
+import {
+    canonicalRtcRttAffectedGroups as canonicalAffectedGroups,
+    canonicalRtcRttGroupRef as canonicalGroupRef,
+    readRtcRttExpiredAuthority,
+} from './rtc-rtt-expired-authority.ts';
 
 export type RtcTopologyPublicationClaim = Readonly<{
     receipt: RtcTopologyPublicationWorkClaim;
@@ -288,7 +294,9 @@ export type RtcRttMutationRead =
     | Readonly<{
         receipt: null;
         measurement: RuntimeStateEntryValue<RttMeasurementInfo> | null;
+        expiredMeasurementEntry: RuntimeStateEntry | null;
         endpointAdmissions: readonly RuntimeStateEntryValue<RtcRttEndpointAdmission>[];
+        expiredEndpointAdmissionEntries: readonly RuntimeStateEntry[];
         measurements: readonly RuntimeStateEntryValue<RttMeasurementInfo>[];
     }>;
 
@@ -416,6 +424,12 @@ export function computeRttMutation(input: Readonly<{
         { receipt: null }
     >;
     const authority = requireRttAuthority(input.command, input.facts);
+    const { admissionByEndpoint, expiredAdmissionByEndpoint } =
+        readRtcRttExpiredAuthority({
+            ...authorityRead,
+            sessionIdFrom: authority.command.rtt.sessionIdFrom,
+            sessionIdTo: authority.command.rtt.sessionIdTo,
+        });
     if (
         authorityRead.measurement &&
         authorityRead.measurement.value.version > authority.command.rtt.version
@@ -457,9 +471,6 @@ export function computeRttMutation(input: Readonly<{
         };
     }
 
-    const admissionByEndpoint = new Map(
-        authorityRead.endpointAdmissions.map((stored) => [stored.value.endpointId, stored]),
-    );
     if (exceedsEndpointAdmissionDegree(
         authority.command.rtt,
         admissionByEndpoint,
@@ -479,6 +490,8 @@ export function computeRttMutation(input: Readonly<{
     ])].sort(compareRtcTopologyIdentifiers);
     const endpointGuards = endpoints.map((endpointId) => {
         const stored = admissionByEndpoint.get(endpointId);
+        const expired = expiredAdmissionByEndpoint.get(endpointId);
+        const expectedRevision = stored?.entry.revision ?? expired?.revision ?? null;
         const peerExpiry = new Map<string, number>();
         for (const peer of stored?.value.peers ?? []) {
             if (peer.expiresAtEpochMs > authority.facts.requestedAtEpochMs) {
@@ -509,12 +522,12 @@ export function computeRttMutation(input: Readonly<{
         );
         return {
             endpointId,
-            expectedRevision: stored?.entry.revision ?? null,
+            expectedRevision,
             expireAtTimestamp: Math.max(...peers.map((peer) => peer.expiresAtEpochMs)),
             value: {
                 endpointId,
                 peers,
-                version: (stored?.value.version ?? 0) + 1,
+                version: expectedRevision === null ? 1 : expectedRevision + 2,
                 updatedAtEpochMs: authority.facts.requestedAtEpochMs,
             },
         };
@@ -543,7 +556,8 @@ export function computeRttMutation(input: Readonly<{
         affectedGroups,
         endpointGuards,
         measurementGuard: {
-            expectedRevision: authorityRead.measurement?.entry.revision ?? null,
+            expectedRevision: authorityRead.measurement?.entry.revision ??
+                authorityRead.expiredMeasurementEntry?.revision ?? null,
             value: authority.command.rtt,
             purgeAfterEpochMs: authority.facts.purgeAfterEpochMs,
         },
@@ -563,7 +577,8 @@ export function computeRttMutation(input: Readonly<{
             outcome: 'accepted',
             attemptCount: input.facts.attemptCount,
             acceptedStorageRevision:
-                (authorityRead.measurement?.entry.revision ?? -1) + 1,
+                (authorityRead.measurement?.entry.revision ??
+                    authorityRead.expiredMeasurementEntry?.revision ?? -1) + 1,
             eventId: null,
             outboxIds: recomputeIntents.map((intent) => intent.outboxId),
             commandHash: input.facts.commandHash,
@@ -648,27 +663,6 @@ export function validateRttMutationFacts(facts: RtcRttMutationFacts): void {
     ) {
         throw new TypeError('RTC RTT purge-after lifecycle fact is invalid');
     }
-}
-
-function canonicalGroupRef(ref: GroupRef): GroupRef {
-    return {
-        applicationId: ref.applicationId,
-        workspaceId: ref.workspaceId,
-        groupId: ref.groupId,
-    };
-}
-
-function canonicalAffectedGroups(
-    groups: readonly GroupSnapshot[],
-): readonly GroupSnapshot[] {
-    const byKey = new Map<string, GroupSnapshot>();
-    for (const group of groups) {
-        const key = toCanonicalRtcTopologyGroupIdentity(group.group);
-        if (!byKey.has(key)) byKey.set(key, group);
-    }
-    return [...byKey]
-        .sort(([left], [right]) => compareRtcTopologyIdentifiers(left, right))
-        .map(([, group]) => group);
 }
 
 function assertReceiptOnlyRttInputs(

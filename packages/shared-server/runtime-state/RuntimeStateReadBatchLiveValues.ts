@@ -11,6 +11,7 @@ import {
 export type RuntimeStateReadBatchLiveSelection<T> = Readonly<{
   selectorId: string;
   entries: readonly RuntimeStateEntryValue<T>[];
+  expiredEntries: readonly RuntimeStateEntry[];
 }>;
 
 export type RuntimeStateReadBatchLiveResult<T> =
@@ -31,13 +32,17 @@ export async function resolveRuntimeStateReadBatchLiveValues<T>(
   const selections = validateRuntimeStateReadBatchResult(selectors, input);
   const resolved = await Promise.all(selections.map(async (selection, index) => {
     const entries: RuntimeStateEntryValue<T>[] = [];
+    const expiredEntries: RuntimeStateEntry[] = [];
     for (const entry of selection.entries) {
       const live = await toLiveEntryValue(selectors[index].namespace, entry);
-      if (live === undefined) continue;
+      if (live === undefined) {
+        expiredEntries.push(entry);
+        continue;
+      }
       if (!sameRuntimeStateEntry(live.entry, entry)) return undefined;
       entries.push(live);
     }
-    return { selectorId: selection.selectorId, entries };
+    return { selectorId: selection.selectorId, entries, expiredEntries };
   }));
   if (resolved.some((selection) => selection === undefined)) {
     return { status: 'changed' };

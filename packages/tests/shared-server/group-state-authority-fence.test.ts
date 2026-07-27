@@ -136,7 +136,7 @@ describe('GroupStateRepository authority fence', () => {
         expect(observation?.snapshot.members).toEqual([owner]);
         expect(
             [...runtime.data.values()].some((entry) => entry.key === expiredMemberKey),
-        ).toBe(false);
+        ).toBe(true);
     });
 });
 

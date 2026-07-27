@@ -212,7 +212,7 @@ describe('GroupStateService mutation exact reads', () => {
     expect(runtime.readBatchCalls).toBe(0);
   });
 
-  it('falls back wholesale when expiry cleanup observes a replacement', async () => {
+  it('keeps an expired batch authority read observational', async () => {
     const { runtime: seeded } = await createSeededService('expiry-replacement');
     const runtime = seeded as ExpiryReplacementReadBatchRuntime;
     const ref = { ...SCOPE, groupId: 'expiry-replacement' };
@@ -249,27 +249,9 @@ describe('GroupStateService mutation exact reads', () => {
     );
 
     expect(observed).toEqual(expected);
-    expect(runtime.replacementVisible).toBe(true);
+    expect(runtime.replacementVisible).toBe(false);
     expect(mutationReadCalls(runtime)).toHaveLength(1);
-    expect(runtime.postReplacementFinds).toEqual(expect.arrayContaining([
-      { namespace: 'group-state:groups', key: groupKey },
-      {
-        namespace: 'group-state:idempotent',
-        key: groupStateIdempotencyStorageKey(ref, requestId),
-      },
-      {
-        namespace: 'group-state:members',
-        key: groupStateMemberStorageKey({ ...ref, principalId: 'owner' }),
-      },
-      {
-        namespace: 'group-state:presence-admissions',
-        key: groupStatePresenceAdmissionStorageKey({
-          ...ref,
-          principalId: 'owner',
-        }),
-      },
-      { namespace: 'group-state:presence-summaries', key: groupKey },
-    ]));
+    expect(runtime.postReplacementFinds).toEqual([]);
   });
 });
 

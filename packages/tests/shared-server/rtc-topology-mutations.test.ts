@@ -246,7 +246,7 @@ describe('RTC topology mutation phases', () => {
                 degreeLimit: 1,
             },
             read: {
-                receipt: null,
+                receipt: null, expiredMeasurementEntry: null,
                 measurement: {
                     entry: {
                         key: 'pair=session-a%3A%3Asession-b',
@@ -257,7 +257,7 @@ describe('RTC topology mutation phases', () => {
                     },
                     value: { ...incoming, version: 3 },
                 },
-                endpointAdmissions: [],
+                endpointAdmissions: [], expiredEndpointAdmissionEntries: [],
                 measurements: [{
                     entry: {
                         key: 'from=session-a:to=session-b',
@@ -584,9 +584,9 @@ describe('RTC topology mutation phases', () => {
             },
         };
         const emptyRead = {
-            receipt: null,
+            receipt: null, expiredMeasurementEntry: null,
             measurement: null,
-            endpointAdmissions: [],
+            endpointAdmissions: [], expiredEndpointAdmissionEntries: [],
             measurements: [],
         };
         expect(computeAndValidateRttTwice(deepFreeze({
@@ -641,9 +641,9 @@ describe('RTC topology mutation phases', () => {
                 overlaySnapshotsByGroupKey: new Map(), degreeLimit: 1,
             },
             read: {
-                receipt: null,
+                receipt: null, expiredMeasurementEntry: null,
                 measurement: null,
-                endpointAdmissions: [],
+                endpointAdmissions: [], expiredEndpointAdmissionEntries: [],
                 measurements: [],
             },
             facts: {
@@ -700,9 +700,9 @@ describe('RTC topology mutation phases', () => {
                 overlaySnapshotsByGroupKey: new Map(), degreeLimit: 1,
             },
             read: {
-                receipt: null,
+                receipt: null, expiredMeasurementEntry: null,
                 measurement: null,
-                endpointAdmissions: [],
+                endpointAdmissions: [], expiredEndpointAdmissionEntries: [],
                 measurements: [],
             },
             facts: {
@@ -729,9 +729,9 @@ describe('RTC topology mutation phases', () => {
             rttMs: 5, createdAtEpochMs: 1, version: 1,
         };
         const emptyRead = {
-            receipt: null,
+            receipt: null, expiredMeasurementEntry: null,
             measurement: null,
-            endpointAdmissions: [],
+            endpointAdmissions: [], expiredEndpointAdmissionEntries: [],
             measurements: [],
         };
         const reportingOverlay = {
@@ -792,7 +792,7 @@ describe('RTC topology mutation phases', () => {
             rttMs: 5, createdAtEpochMs: 2, version: 2,
         };
         const readFor = (value: typeof incoming) => ({
-            receipt: null,
+            receipt: null, expiredMeasurementEntry: null,
             measurement: {
                 entry: {
                     key: 'from=session-a:to=session-b',
@@ -803,7 +803,7 @@ describe('RTC topology mutation phases', () => {
                 },
                 value,
             },
-            endpointAdmissions: [],
+            endpointAdmissions: [], expiredEndpointAdmissionEntries: [],
             measurements: [],
         });
         const command = {
@@ -984,9 +984,9 @@ describe('RTC topology mutation phases', () => {
                 degreeLimit: 2,
             },
             read: {
-                receipt: null,
+                receipt: null, expiredMeasurementEntry: null,
                 measurement: null,
-                endpointAdmissions: [],
+                endpointAdmissions: [], expiredEndpointAdmissionEntries: [],
                 measurements: [],
             },
             facts: {

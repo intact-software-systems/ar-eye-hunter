@@ -4,6 +4,7 @@ import type {
     RuntimeStateRepositoryLike,
 } from '../../runtime-state/RuntimeStateRepository.ts';
 import {
+    type RuntimeStateEntryRead,
     type RuntimeStateEntryValue,
     RuntimeStateJsonStore,
 } from '../../runtime-state/RuntimeStateJsonStore.ts';
@@ -54,26 +55,44 @@ export class AuthSessionPersistence extends RuntimeStateJsonStore {
 
     async insertSessionByTokenDigest(
         session: PersistedAuthSession,
+        expectedRevision: number | null = null,
     ): Promise<RuntimeStateConditionalWriteResult> {
         const persisted = decodePersistedAuthSession(session);
-        return await this.putValueIfAbsent(
+        return expectedRevision === null
+            ? await this.putValueIfAbsent(
             AUTH_SESSIONS_BY_TOKEN_NAMESPACE,
             authTokenDigestKey(persisted.accessTokenDigest),
             persisted,
             persisted.expiresAtEpochMs,
-        );
+            )
+            : await this.putValueIfRevision(
+                AUTH_SESSIONS_BY_TOKEN_NAMESPACE,
+                authTokenDigestKey(persisted.accessTokenDigest),
+                persisted,
+                persisted.expiresAtEpochMs,
+                expectedRevision,
+            );
     }
 
     async insertSessionBySessionId(
         session: PersistedAuthSession,
+        expectedRevision: number | null = null,
     ): Promise<RuntimeStateConditionalWriteResult> {
         const persisted = decodePersistedAuthSession(session);
-        return await this.putValueIfAbsent(
+        return expectedRevision === null
+            ? await this.putValueIfAbsent(
             AUTH_SESSIONS_BY_SESSION_NAMESPACE,
             authSessionKey(persisted.sessionId),
             persisted,
             persisted.expiresAtEpochMs,
-        );
+            )
+            : await this.putValueIfRevision(
+                AUTH_SESSIONS_BY_SESSION_NAMESPACE,
+                authSessionKey(persisted.sessionId),
+                persisted,
+                persisted.expiresAtEpochMs,
+                expectedRevision,
+            );
     }
 
     async findByAccessToken(accessToken: string): Promise<IssuedAuthSession | undefined> {
@@ -140,32 +159,48 @@ export class AuthSessionPersistence extends RuntimeStateJsonStore {
     async findSessionByAccessTokenDigestEntry(
         accessTokenDigest: string,
     ): Promise<RuntimeStateEntryValue<PersistedAuthSession> | undefined> {
-        const entry = await this.getEntryValue<unknown>(
+        return (await this.readSessionByAccessTokenDigestEntry(accessTokenDigest)).value;
+    }
+
+    async readSessionByAccessTokenDigestEntry(
+        accessTokenDigest: string,
+    ): Promise<RuntimeStateEntryRead<PersistedAuthSession>> {
+        const read = await this.getEntryRead<unknown>(
             AUTH_SESSIONS_BY_TOKEN_NAMESPACE,
             authTokenDigestKey(accessTokenDigest),
         );
-        if (!entry) return undefined;
-        const value = decodePersistedAuthSession(entry.value);
+        if (!read.value) {
+            return { value: undefined, expiredEntry: read.expiredEntry };
+        }
+        const value = decodePersistedAuthSession(read.value.value);
         if (value.accessTokenDigest !== accessTokenDigest) {
             throw new TypeError('Persisted auth session token digest identity differs');
         }
-        return { entry: entry.entry, value };
+        return { value: { entry: read.value.entry, value }, expiredEntry: undefined };
     }
 
     async findSessionBySessionIdEntry(
         sessionId: string,
     ): Promise<RuntimeStateEntryValue<PersistedAuthSession> | undefined> {
-        const entry = await this.getEntryValue<unknown>(
+        return (await this.readSessionBySessionIdEntry(sessionId)).value;
+    }
+
+    async readSessionBySessionIdEntry(
+        sessionId: string,
+    ): Promise<RuntimeStateEntryRead<PersistedAuthSession>> {
+        const read = await this.getEntryRead<unknown>(
             AUTH_SESSIONS_BY_SESSION_NAMESPACE,
             authSessionKey(sessionId),
         );
-        if (!entry) return undefined;
-        const value = await decodePersistedOrLegacyAuthSession(entry.value);
-        if (!value) return undefined;
+        if (!read.value) {
+            return { value: undefined, expiredEntry: read.expiredEntry };
+        }
+        const value = await decodePersistedOrLegacyAuthSession(read.value.value);
+        if (!value) return { value: undefined, expiredEntry: undefined };
         if (value.sessionId !== sessionId) {
             throw new TypeError('Persisted auth session id identity differs');
         }
-        return { entry: entry.entry, value };
+        return { value: { entry: read.value.entry, value }, expiredEntry: undefined };
     }
 
     async deleteSession(session: IssuedAuthSession): Promise<void> {
