@@ -11,9 +11,11 @@ describe('repo code style authority integrity', () => {
     const codeWriting = readRepo('.agents/skills/rallar-code-writing/SKILL.md');
     const humanGuide = readRepo('docs/repo-human-style-guide.md');
     const docsIndex = readRepo('docs/README.md');
+    const canonicalStyle = readRepo(canonicalStylePath);
     const packageJson = readJson('package.json') as {
       scripts?: Readonly<Record<string, string>>;
     };
+    const primaryCodeGoal = 'Code is written first for human developers.';
 
     expect(existsSync(path.join(repoRoot, canonicalStylePath))).toBe(true);
     expect(
@@ -22,12 +24,31 @@ describe('repo code style authority integrity', () => {
       ),
     ).toBe(false);
     expect(codeWriting).toContain('Always read `references/repo-code-style.md`');
-    expectAll(agents, ['any TypeScript change', canonicalStylePath]);
-    expectAll(humanGuide, [canonicalStylePath, 'authoritative coding standard']);
+    expectAll(agents, [
+      primaryCodeGoal,
+      'human understandability is the governing design criterion',
+      'any TypeScript change',
+      canonicalStylePath,
+    ]);
+    expectAll(codeWriting, [
+      primaryCodeGoal,
+      'A mechanically compliant change is not acceptable',
+      'references/repo-code-style.md',
+    ]);
+    expectAll(humanGuide, [
+      primaryCodeGoal,
+      'Mechanical compliance does not compensate',
+      canonicalStylePath,
+      'authoritative coding standard',
+    ]);
     expect(docsIndex).toContain('./repo-human-style-guide.md');
     expect(packageJson.scripts).not.toHaveProperty('check:repo-style:strict');
     expect(packageJson.scripts).toHaveProperty('check:repo-style:object-interfaces');
-    expectAll(readRepo(canonicalStylePath), [
+    expectAll(canonicalStyle, [
+      primaryCodeGoal,
+      '## First principle: code is for human developers',
+      'human understandability is the governing design criterion',
+      'The rules below are defaults derived from this principle',
       '`validateXxx` always returns all issues and never throws',
       'The caller or a central\n`classifyRuntimeFailure` policy decides the disposition',
       'Do not put a guessed\n`retryable` boolean on a low-level exception',

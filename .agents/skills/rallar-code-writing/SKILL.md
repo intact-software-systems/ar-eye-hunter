@@ -7,6 +7,16 @@ description: Use when writing, generating, refactoring, or reviewing TypeScript 
 
 ## Start Here
 
+Code is written first for human developers. Correctness, safety, security,
+compatibility, and required performance remain mandatory; within those
+constraints, choose the shape a human can locate, trace, understand, and
+modify most directly.
+
+A mechanically compliant change is not acceptable when it adds indirection,
+hides a decision, fragments one dataflow, weakens names, or makes ownership
+less obvious. When a detailed rule conflicts with human understandability,
+stop and explain the conflict instead of satisfying the rule mechanically.
+
 Always read `references/repo-code-style.md` completely before writing,
 refactoring, generating, or reviewing TypeScript. It is the authoritative
 repo-wide coding standard; local guidance may tighten it but may not relax it.

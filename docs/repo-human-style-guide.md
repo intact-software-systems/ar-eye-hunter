@@ -8,6 +8,15 @@ The authoritative coding standard is
 reviewing a change. This guide supplies the review sequence and checker usage; it
 does not define a second version of the rules.
 
+Code is written first for human developers. Correctness, safety, security,
+compatibility, and required performance remain mandatory; within those
+constraints, human understandability is the governing review criterion.
+
+The first review question is whether a human can locate the owner and follow
+the dataflow, decisions, side effects, failures, and result without unnecessary
+jumps. Mechanical compliance does not compensate for code that became harder
+to understand.
+
 ## Human review sequence
 
 ### 1. Read the change as dataflow
