@@ -63,8 +63,8 @@ Date: 2026-07-28
 
 Status: Reviewed and approved for child-plan drafting. The program documents are
 published on `main`; production implementation has not started. The governance
-and checker child has been revised for execution readiness and remains
-unapproved pending human review.
+and checker child is approved and in progress on its non-default implementation
+branch.
 
 Program drafting, approval, execution, publication, and human handoffs follow
 the [Repository Human Traceability Program Execution Plan](repo-human-traceability-program-execution-plan.md).
@@ -110,9 +110,12 @@ Publication and progress reconciliation on 2026-07-28:
   `deploy/intact-software-systems/relic-hunters`, and
   `deploy/intact-software-systems/rallar-server`. This documentation-only
   reconciliation records but does not diagnose those deployment failures.
-- No Wave 0 implementation checkbox below is complete. The published planning
-  counts remain planning evidence; the executable layout and detailed counts
-  remain pending.
+- Wave 0 governance wording and checker implementation are published through
+  remote branch head `1b8a3bf18fc67f7a893a6c7d9566497bedda99dc` and PR #47,
+  which remains externally open and non-draft with unavailable metadata. The
+  exact Task 4 focused command passed all 116 tests. Task 5 records the
+  executable baseline below, while its publication and all completion and
+  remote gates remain pending.
 
 ## 1. Why This Is A Program Instead Of One Refactor
 
@@ -630,14 +633,29 @@ Goal: make the target rules reviewable and the debt visible before moving code.
 PR #45 supplies the already-published primary-principle prerequisite. It does
 not satisfy any checkbox in this Wave 0 implementation list.
 
-- [ ] Add repository-organization and filename sections to the canonical code
+- [x] Add repository-organization and filename sections to the canonical code
       standard.
-- [ ] Extend the human review guide with feature ownership, matching filename,
+- [x] Extend the human review guide with feature ownership, matching filename,
       and co-location checks.
-- [ ] Add warning-only layout checks and fixture tests.
-- [ ] Record baseline counts for directory density, filename style, generic
+- [x] Add warning-only layout checks and fixture tests.
+- [x] Record baseline counts for directory density, filename style, generic
       filenames, and files over 400 lines.
-- [ ] Confirm the checker remains non-blocking and strict mode remains rejected.
+- [x] Confirm the checker remains non-blocking and strict mode remains rejected.
+
+The executable baseline at
+`1b8a3bf18fc67f7a893a6c7d9566497bedda99dc` records 16 dense directories,
+22 conservative prefix clusters across 8 directories, 422 filename-style files
+across 90 directories, 15 generic filenames, 11 generic route registrations,
+zero unapproved `mod.ts` files, and 215 files over 400 physical lines. The
+detailed opt-in inventory is 344 primary-export mismatches, 2 browser-room
+boundary findings, and zero server group-state vocabulary findings. The
+complete checker exited `0` with known warnings, while strict mode remained
+unavailable and exited `1`.
+
+An active feature records its focused layout counts before its structure pass.
+The pass may reduce them or leave explained legacy debt unchanged; it may not
+add an unexplained warning. Repository totals are context, not a reason to
+expand the active feature scope.
 
 ### Wave 1: Pilot the complete room/group-state flow
 
@@ -870,9 +888,9 @@ After this master plan is approved, use the
 to write, review, approve, execute, and hand off these child plans in order:
 
 - [ ] [Repository human traceability governance and checker](repo-human-traceability-governance-and-checker-plan.md)
-  - state: published and revised for execution readiness, not approved; the
-    2026-07-28 review findings now have exact plan contracts awaiting human
-    approval;
+  - state: approved and in progress; Tasks 1 through 4 are published on the
+    implementation branch, Task 5 baseline evidence is recorded locally, and
+    completion and remote gates remain pending;
   - exact code-style wording;
   - warning-only layout rule implementation and fixtures;
   - initial measured baseline.

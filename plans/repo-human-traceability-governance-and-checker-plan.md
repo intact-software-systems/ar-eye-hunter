@@ -140,37 +140,43 @@ review guide, and checker output:
 This plan does not decide how any production feature is moved. The browser,
 shared-server, and API-v1 group-state moves remain separate child plans.
 
-## 2. Planning Baseline
+## 2. Planning And Implemented Baseline
 
 The following read-only audit used the current checker's production exclusions
 and counted TypeScript extensions `.ts`, `.tsx`, `.mts`, and `.cts` under
 `apps/**` and `packages/**`. It is a planning baseline, not an enforcement
 threshold and not evidence that each warning requires a change.
 
-| Measure                                                      |       2026-07-28 baseline | Meaning                                                                                      |
-| ------------------------------------------------------------ | ------------------------: | -------------------------------------------------------------------------------------------- |
-| Production TypeScript files                                  |                     1,372 | Files eligible for layout analysis.                                                          |
-| Existing default style findings                              |                     4,462 | Current file-level checker findings; output is capped at 200.                                |
-| Files over 400 physical lines                                |                       215 | Existing checker debt.                                                                       |
-| Directories with more than 20 direct TypeScript files        |                        16 | Ownership review prompts.                                                                    |
-| Candidate feature-prefix clusters in those dense directories |   22 across 8 directories | Initial conservative prefix heuristic.                                                       |
-| Non-kebab TypeScript filenames                               | 422 across 90 directories | Excludes exact tool-discovered config names.                                                 |
-| Exact generic filenames                                      |                        15 | `utils`, `types`, `helpers`, `contracts`, `runtime`, or `middleware` without a feature noun. |
-| Route modules exporting generic `init`                       |                        11 | All currently under API-v1.                                                                  |
-| Existing approved `mod.ts` compatibility boundaries          |                        14 | Current package or published subpath entry points.                                           |
-| `mod.ts` outside that approved set                           |                         0 | A ratchet against new nested barrels.                                                        |
+| Measure                                                      | 2026-07-28 planning baseline |      Implemented baseline | Meaning                                                                                      |
+| ------------------------------------------------------------ | ---------------------------: | ------------------------: | -------------------------------------------------------------------------------------------- |
+| Production TypeScript files                                  |                        1,372 |                     1,372 | Files eligible for layout analysis.                                                          |
+| Existing default style findings                              |                        4,462 |                     4,462 | Current file-level checker findings; output is capped at 200.                                |
+| Files over 400 physical lines                                |                          215 |                       215 | Existing checker debt.                                                                       |
+| Directories with more than 20 direct TypeScript files        |                           16 |                        16 | Ownership review prompts.                                                                    |
+| Candidate feature-prefix clusters in those dense directories |      22 across 8 directories |   22 across 8 directories | Initial conservative prefix heuristic.                                                       |
+| Non-kebab TypeScript filenames                               |    422 across 90 directories | 422 across 90 directories | Excludes exact tool-discovered config names.                                                 |
+| Exact generic filenames                                      |                           15 |                        15 | `utils`, `types`, `helpers`, `contracts`, `runtime`, or `middleware` without a feature noun. |
+| Route modules exporting generic `init`                       |                           11 |                        11 | All currently under API-v1.                                                                  |
+| Existing approved `mod.ts` compatibility boundaries          |                           14 |                        14 | Current package or published subpath entry points.                                           |
+| `mod.ts` outside that approved set                           |                            0 |                         0 | A ratchet against new nested barrels.                                                        |
 
-The initial implementation must regenerate these measures. If the production
-tree changed after this draft, record both the new count and the reason for the
-difference; do not alter a checker threshold merely to reproduce this table.
+Task 5 regenerated the executable baseline from commit
+`1b8a3bf18fc67f7a893a6c7d9566497bedda99dc`. The default layout inventory
+exited `0` and exactly matched the dated planning values: 16 dense directories,
+22 conservative prefix clusters across 8 directories, 422 filename-style files
+across 90 directories, 15 generic filenames, 11 generic route registrations,
+and zero unapproved `mod.ts` files. The production tree was unchanged by Tasks
+1 through 4, so the eligible-file, existing-style, over-400-line, and approved
+`mod.ts` inventory values also remain unchanged. No threshold or allowlist was
+altered to reproduce the planning baseline.
 
-The two optional checks do not yet have authoritative baseline counts:
-
-- primary exported symbol versus filename;
-- room/group-state boundary vocabulary.
-
-Task 5 records those counts after the parser-backed rules exist. Their first
-inventory remains opt-in regardless of count.
+The detailed inventory exited `0` and recorded
+`layout.primary-export-name=344`, `layout.browser-room-boundary=2`, and
+`layout.server-group-state-vocabulary=0`. These are opt-in inventory counts,
+not approved exceptions or default rules. The complete checker exited `0` with
+4,613 non-blocking finding records: the existing 4,462 file-level findings plus
+151 default layout finding records. The strict invocation exited `1` with
+`strict mode is not available until warning debt is reviewed.`
 
 ## 3. Locked Checker Semantics
 
@@ -1207,7 +1213,7 @@ approved or implemented by this revision.
   Verified 2026-07-28: exit `0`, no checker-module warning, and all six default
   layout summary counts were zero.
 
-- [ ] **Step 9: Commit and publish the CLI milestone**
+- [x] **Step 9: Commit and publish the CLI milestone**
 
   Commit message:
 
@@ -1218,9 +1224,13 @@ approved or implemented by this revision.
   Stage only this task's files and the checked-off plan. Push and update the
   draft pull request.
 
-  Local implementation commit `7df51579fa28505da4739707115a1ccaebba1c8d`
-  exists. Controller push and PR update are pending; check this step only after
-  both publication actions are complete.
+  Implementation commit `7df51579fa28505da4739707115a1ccaebba1c8d` and
+  evidence-correction commit `1b8a3bf18fc67f7a893a6c7d9566497bedda99dc`
+  are pushed. The exact four-file focused command passed all 116 tests. Remote
+  head is `1b8a3bf18fc67f7a893a6c7d9566497bedda99dc`. PR #47 follows the
+  branch and remains externally open and non-draft; its metadata is unavailable
+  here. This later publication evidence completes Task 4 Step 9; neither Task 4
+  commit claims its own future publication.
 
 ### Task 5: Record The Executable Baseline And Ratchet Procedure
 
@@ -1235,7 +1245,7 @@ approved or implemented by this revision.
 - Produces: an exact, reproducible Wave 0 baseline and instructions used by
   later feature child plans.
 
-- [ ] **Step 1: Run the default layout inventory**
+- [x] **Step 1: Run the default layout inventory**
 
   Run:
 
@@ -1248,7 +1258,11 @@ approved or implemented by this revision.
   filename-style files, 15 generic filenames, 11 generic route registrations,
   and zero unapproved `mod.ts` files.
 
-- [ ] **Step 2: Run the detailed inventory**
+  Verified 2026-07-28 at
+  `1b8a3bf18fc67f7a893a6c7d9566497bedda99dc`: exit `0`; all six
+  default counts exactly matched the planning baseline.
+
+- [x] **Step 2: Run the detailed inventory**
 
   Run:
 
@@ -1259,7 +1273,11 @@ approved or implemented by this revision.
   Expected: exit `0`. Record all three detailed rule counts without approving
   exceptions or enabling those rules by default.
 
-- [ ] **Step 3: Confirm the complete checker remains non-blocking**
+  Verified 2026-07-28: exit `0` with primary-export `344`, browser-room
+  boundary `2`, and server group-state vocabulary `0`. These remain opt-in
+  inventory only.
+
+- [x] **Step 3: Confirm the complete checker remains non-blocking**
 
   Run:
 
@@ -1271,7 +1289,11 @@ approved or implemented by this revision.
   Expected: the first command exits `0` with known warnings. The second exits
   `1` with `strict mode is not available`.
 
-- [ ] **Step 4: Record actual counts and the ratchet rule**
+  Verified 2026-07-28: the complete checker exited `0` with 4,613
+  non-blocking finding records and the six expected default layout counts. The
+  strict command exited `1` with the expected unavailable message.
+
+- [x] **Step 4: Record actual counts and the ratchet rule**
 
   Replace the planning counts in Section 2 with an `Implemented baseline`
   column while retaining the dated planning values. Add this rule to the master
@@ -1511,11 +1533,11 @@ prevent.
 | Organization and naming wording   | complete    | Commit `e0e6e7fd1e2ac6c280ae2930f411af76557ccc48` is pushed; PR #47 is open/non-draft and its metadata remains unmodifiable here.                                                                                                      |
 | Conservative layout rules         | complete    | Task 2 commits `db5f596ef8aa835e012ecfce219b5105ef24c43c` and `21bf51790596d7b7b8df34d00d466beeb2877fc8` are pushed; remote head is `21bf51790596d7b7b8df34d00d466beeb2877fc8`.                                                        |
 | Opt-in detailed rules             | complete    | Task 3 commits `eaa61e261f995a4c8b2e566d11466c35f90c9c33`, `d434c3bfcc98e943d1a3da4c90a566676b21d518`, and `9f2c67a4a1e017ad0f0797d2db42bc83ede418bf` are pushed; 31 focused and 57 regression tests passed after review round 2.      |
-| CLI and npm commands              | in progress | Both commands and the warning-only CLI modes are implemented locally; 116 exact focused tests and the checker self-check pass, while controller publication remains pending independent review.                                        |
-| Executable baseline               | pending     | Planning counts only; the existing checker independently confirms 4,462 non-blocking findings.                                                                                                                                         |
+| CLI and npm commands              | complete    | Task 4 implementation `7df51579fa28505da4739707115a1ccaebba1c8d` plus evidence correction `1b8a3bf18fc67f7a893a6c7d9566497bedda99dc` are pushed; the remote head is `1b8a3bf18fc67f7a893a6c7d9566497bedda99dc`.                        |
+| Executable baseline               | recorded    | At `1b8a3bf18fc67f7a893a6c7d9566497bedda99dc`, default counts match planning exactly; detailed opt-in counts are `344`, `2`, and `0`; complete checker exit is `0`, while strict remains unavailable with exit `1`.                    |
 | Focused child-plan verification   | complete    | Task 3 passed 31 focused and 57 exact regression tests after review round 2; the Task 4 exact four-file suite passes all 116 tests.                                                                                                    |
 | Completion gates                  | pending     | `npm run test:unit`, `npm run test:ci`, and `npm run build` were not run for child implementation.                                                                                                                                     |
-| Child implementation PR and gates | in progress | PR #47 follows the implementation branch, remains open/non-draft, and has unavailable metadata; remote head is `9f2c67a4a1e017ad0f0797d2db42bc83ede418bf`; Task 4 publication and all required completion/remote gates remain pending. |
+| Child implementation PR and gates | in progress | PR #47 follows the implementation branch, remains open/non-draft, and has unavailable metadata; remote head is `1b8a3bf18fc67f7a893a6c7d9566497bedda99dc`; Task 5 publication and all required completion/remote gates remain pending. |
 
 ## 10. Decisions Fixed By This Draft
 
