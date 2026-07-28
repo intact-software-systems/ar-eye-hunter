@@ -23,6 +23,13 @@
     "lint": "deno lint",
     "test": "deno test --allow-env --allow-read"
   },
+  "deploy": {
+    "runtime": {
+      "type": "dynamic",
+      "entrypoint": "./src/main.ts",
+      "cwd": "."
+    }
+  },
   "compilerOptions": {
     "strict": true,
     "lib": [
