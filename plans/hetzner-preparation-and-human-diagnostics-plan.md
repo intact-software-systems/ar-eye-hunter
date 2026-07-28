@@ -23,7 +23,7 @@ publish deterministic diagnostics that a human can interpret without AI.
 - [x] Add mandatory JSON operation reports, human-readable summaries, sanitized
       evidence, GitHub annotations, and always-uploaded diagnostics artifacts.
 - [x] Update the controller runbook and Hetzner agent guidance.
-- [ ] Pass final `npm run test:unit`, `npm run test:ci`, and `npm run build` on
+- [x] Pass final `npm run test:unit`, `npm run test:ci`, and `npm run build` on
       the unchanged final working tree.
 - [ ] Publish the final feature commit and pass Branch Release Gate on its exact
       SHA.
@@ -39,3 +39,7 @@ publish deterministic diagnostics that a human can interpret without AI.
 - Additional red/green cases cover operation classification, complete readiness
   mismatches, replacement of a pre-existing invalid browser version, and
   rejection of topology-specific manifests from the shared preparation cohort.
+- Full local gates passed on the implementation tree: `npm run test:unit`,
+  `npm run test:ci`, and `npm run build`. The first sandboxed CI attempt was
+  discarded after local-listener and `tsx` IPC operations received `EPERM`; the
+  required rerun outside that sandbox passed.
