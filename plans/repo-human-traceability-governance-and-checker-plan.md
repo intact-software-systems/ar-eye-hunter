@@ -1044,8 +1044,8 @@ approved or implemented by this revision.
 
 - [x] **Step 8: Run the detailed suite and verify success**
 
-  Verified 2026-07-28: the command from Step 4 passed all 26 tests in default
-  and detailed modes.
+  Verified 2026-07-28 after review round 2: 31 focused tests and 57 exact
+  regression tests passed.
 
 - [x] **Step 9: Commit the detailed-rule milestone**
 
@@ -1057,6 +1057,12 @@ approved or implemented by this revision.
 
   Stage only this task's files and the checked-off plan. Do not push; the
   controller publishes after independent review.
+
+  Commits `eaa61e261f995a4c8b2e566d11466c35f90c9c33`,
+  `d434c3bfcc98e943d1a3da4c90a566676b21d518`, and
+  `9f2c67a4a1e017ad0f0797d2db42bc83ede418bf` are pushed; the remote branch head
+  is `9f2c67a4a1e017ad0f0797d2db42bc83ede418bf`. PR #47 follows the branch and
+  remains open and non-draft; its metadata is unavailable here.
 
 ### Task 4: Integrate Layout Modes Into The Warning-Only CLI
 
@@ -1075,7 +1081,7 @@ approved or implemented by this revision.
 - Produces: default, layout-only, and detailed layout CLI modes with unchanged
   warning exit behavior.
 
-- [ ] **Step 1: Write failing CLI mode tests**
+- [x] **Step 1: Write failing CLI mode tests**
 
   Extend the existing fixture runner and assert:
 
@@ -1106,14 +1112,14 @@ approved or implemented by this revision.
   items. This proves `.mjs` remains in file-level checking but never enters the
   TypeScript layout projection.
 
-- [ ] **Step 2: Write failing package and guide integrity assertions**
+- [x] **Step 2: Write failing package and guide integrity assertions**
 
   Require both new npm scripts, prohibit `check:repo-style:strict`, and require
   the human guide to document `check:repo-style:layout`,
   `check:repo-style:layout-details`, grouped counts, and the ownership-prompt
   wording.
 
-- [ ] **Step 3: Run focused tests and verify failure**
+- [x] **Step 3: Run focused tests and verify failure**
 
   Run:
 
@@ -1123,7 +1129,10 @@ approved or implemented by this revision.
 
   Expected: FAIL because the CLI flags and package scripts do not exist.
 
-- [ ] **Step 4: Load each production source once**
+  Verified 2026-07-28: FAIL with 6 expected missing-integration failures and 24
+  passing tests.
+
+- [x] **Step 4: Load each production source once**
 
   In `main`, preserve `checkedExtensions`, `collectSourceFiles`, and
   `isProductionCodeFile`; `.mjs` remains in `checkedExtensions`. Flatten,
@@ -1145,7 +1154,7 @@ approved or implemented by this revision.
   `.mjs`, when `--layout-only` is absent. `scanRepositoryLayout` receives only
   `layoutSources`. Do not perform a second traversal or read for layout checks.
 
-- [ ] **Step 5: Invoke and print layout results**
+- [x] **Step 5: Invoke and print layout results**
 
   Add:
 
@@ -1160,7 +1169,7 @@ approved or implemented by this revision.
   `Layout summary:` line that shows every active rule and its affected count.
   Keep the global 200-finding display cap and full summary count.
 
-- [ ] **Step 6: Add package scripts and human instructions**
+- [x] **Step 6: Add package scripts and human instructions**
 
   Add the exact scripts from Section 3.1. In the human guide:
 
@@ -1171,7 +1180,7 @@ approved or implemented by this revision.
   - explain grouped warnings and affected counts;
   - retain the exclusions and no-strict-mode sections.
 
-- [ ] **Step 7: Run focused tests and verify success**
+- [x] **Step 7: Run focused tests and verify success**
 
   Run:
 
@@ -1181,7 +1190,10 @@ approved or implemented by this revision.
 
   Expected: PASS.
 
-- [ ] **Step 8: Verify the checker checks itself**
+  Verified 2026-07-28: PASS with all 116 tests across the exact four-file
+  command.
+
+- [x] **Step 8: Verify the checker checks itself**
 
   Run:
 
@@ -1192,7 +1204,10 @@ approved or implemented by this revision.
   Expected: exit `0` and no new file-length or line-width warning in the checker
   modules.
 
-- [ ] **Step 9: Commit and publish the CLI milestone**
+  Verified 2026-07-28: exit `0`, no checker-module warning, and all six default
+  layout summary counts were zero.
+
+- [x] **Step 9: Commit and publish the CLI milestone**
 
   Commit message:
 
@@ -1440,25 +1455,25 @@ tree is frozen without invalidating that tree.
       filename-to-symbol matching, descriptive route registration, package barrels,
       and the room/group-state vocabulary boundary.
 - [ ] The human guide gives a reviewer a top-to-bottom navigation procedure.
-- [ ] Default checker output includes six conservative layout rule families.
-- [ ] `--layout-only` makes layout debt independently reviewable.
-- [ ] `--layout-details` contains primary-export and vocabulary heuristics only.
-- [ ] Every layout rule has a stable ID and affected-item count.
-- [ ] One load-once source inventory keeps `.mjs` file-level checking while the
+- [x] Default checker output includes six conservative layout rule families.
+- [x] `--layout-only` makes layout debt independently reviewable.
+- [x] `--layout-details` contains primary-export and vocabulary heuristics only.
+- [x] Every layout rule has a stable ID and affected-item count.
+- [x] One load-once source inventory keeps `.mjs` file-level checking while the
       layout projection accepts only `.ts`, `.tsx`, `.mts`, and `.cts`.
-- [ ] Each qualifying prefix cluster is one finding with `affectedCount: 1`,
+- [x] Each qualifying prefix cluster is one finding with `affectedCount: 1`,
       and the deterministic eight-directory fixture totals 22 clusters.
-- [ ] Browser room import classification uses the exact module/name tables,
+- [x] Browser room import classification uses the exact module/name tables,
       original imported names, alias evidence, opaque-import behavior, and
       `GroupRef`/`roomRef` exemptions in Section 3.4.
-- [ ] The checker is documented as a source of review signals, not as the
+- [x] The checker is documented as a source of review signals, not as the
       definition of understandable code.
-- [ ] High-volume filename findings are grouped by directory.
-- [ ] Tests, mocks, fixtures, stories, generated code, and test-runner configs
+- [x] High-volume filename findings are grouped by directory.
+- [x] Tests, mocks, fixtures, stories, generated code, and test-runner configs
       remain excluded from production counts.
-- [ ] Existing 14 `mod.ts` paths pass and a new nested `mod.ts` warns.
-- [ ] No strict script or CI gate exists.
-- [ ] No production file moved, renamed, reformatted, or semantically changed.
+- [x] Existing 14 `mod.ts` paths pass and a new nested `mod.ts` warns.
+- [x] No strict script or CI gate exists.
+- [x] No production file moved, renamed, reformatted, or semantically changed.
 - [ ] Initial default and detailed counts are recorded with the exact commit.
 - [ ] Focused, completion, publication, and remote-gate evidence is complete.
 - [ ] Feature and evidence-ledger trees use separate PR/handoff publication
@@ -1484,19 +1499,19 @@ prevent.
 
 ## 9. Progress Record
 
-| Milestone                         | Status      | Evidence                                                                                                                                                                                     |
-| --------------------------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Plan published                    | complete    | Direct `main` commit `4ec117db1e09e00f86ed8f66cbf8adab1cdeb4a9` adds this plan and the two reciprocal program plans.                                                                         |
-| Execution-readiness review        | approved    | Human approval on 2026-07-28 permits only the documented `@babel/parser` substitution for Tasks 2 and 3; approved blob `8ee56ac27189f9bed751fb6a95992830bda6be60` otherwise remains binding. |
-| Primary-principle prerequisite    | complete    | PR #45 merge `95065d769f585464b15059423057e151877fdb1a`; current focused verification passes 81 tests.                                                                                       |
-| Organization and naming wording   | complete    | Commit `e0e6e7fd1e2ac6c280ae2930f411af76557ccc48` is pushed; PR #47 is open/non-draft and its metadata remains unmodifiable here.                                                            |
-| Conservative layout rules         | complete    | Task 2 commits `db5f596ef8aa835e012ecfce219b5105ef24c43c` and `21bf51790596d7b7b8df34d00d466beeb2877fc8` are pushed; remote head is `21bf51790596d7b7b8df34d00d466beeb2877fc8`.              |
-| Opt-in detailed rules             | in progress | The three opt-in rule families and fixtures are implemented; all 26 focused tests pass, while controller publication remains pending independent review.                                     |
-| CLI and npm commands              | pending     | `check:repo-style:layout` and `check:repo-style:layout-details` do not exist.                                                                                                                |
-| Executable baseline               | pending     | Planning counts only; the existing checker independently confirms 4,462 non-blocking findings.                                                                                               |
-| Focused child-plan verification   | complete    | After Task 2 fix round 1, 41 focused tests and 96 skill-routing tests passed; the Task 3 focused suite now passes all 26 tests.                                                              |
-| Completion gates                  | pending     | `npm run test:unit`, `npm run test:ci`, and `npm run build` were not run for child implementation.                                                                                           |
-| Child implementation PR and gates | in progress | PR #47 follows the implementation branch but remains externally open/non-draft with metadata unavailable; Task 3 publication and required remote gates remain pending.                       |
+| Milestone                         | Status      | Evidence                                                                                                                                                                                                                               |
+| --------------------------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Plan published                    | complete    | Direct `main` commit `4ec117db1e09e00f86ed8f66cbf8adab1cdeb4a9` adds this plan and the two reciprocal program plans.                                                                                                                   |
+| Execution-readiness review        | approved    | Human approval on 2026-07-28 permits only the documented `@babel/parser` substitution for Tasks 2 and 3; approved blob `8ee56ac27189f9bed751fb6a95992830bda6be60` otherwise remains binding.                                           |
+| Primary-principle prerequisite    | complete    | PR #45 merge `95065d769f585464b15059423057e151877fdb1a`; current focused verification passes 81 tests.                                                                                                                                 |
+| Organization and naming wording   | complete    | Commit `e0e6e7fd1e2ac6c280ae2930f411af76557ccc48` is pushed; PR #47 is open/non-draft and its metadata remains unmodifiable here.                                                                                                      |
+| Conservative layout rules         | complete    | Task 2 commits `db5f596ef8aa835e012ecfce219b5105ef24c43c` and `21bf51790596d7b7b8df34d00d466beeb2877fc8` are pushed; remote head is `21bf51790596d7b7b8df34d00d466beeb2877fc8`.                                                        |
+| Opt-in detailed rules             | complete    | Task 3 commits `eaa61e261f995a4c8b2e566d11466c35f90c9c33`, `d434c3bfcc98e943d1a3da4c90a566676b21d518`, and `9f2c67a4a1e017ad0f0797d2db42bc83ede418bf` are pushed; 31 focused and 57 regression tests passed after review round 2.      |
+| CLI and npm commands              | in progress | Both commands and the warning-only CLI modes are implemented locally; 116 exact focused tests and the checker self-check pass, while controller publication remains pending independent review.                                        |
+| Executable baseline               | pending     | Planning counts only; the existing checker independently confirms 4,462 non-blocking findings.                                                                                                                                         |
+| Focused child-plan verification   | complete    | Task 3 passed 31 focused and 57 exact regression tests after review round 2; the Task 4 exact four-file suite passes all 116 tests.                                                                                                    |
+| Completion gates                  | pending     | `npm run test:unit`, `npm run test:ci`, and `npm run build` were not run for child implementation.                                                                                                                                     |
+| Child implementation PR and gates | in progress | PR #47 follows the implementation branch, remains open/non-draft, and has unavailable metadata; remote head is `9f2c67a4a1e017ad0f0797d2db42bc83ede418bf`; Task 4 publication and all required completion/remote gates remain pending. |
 
 ## 10. Decisions Fixed By This Draft
 

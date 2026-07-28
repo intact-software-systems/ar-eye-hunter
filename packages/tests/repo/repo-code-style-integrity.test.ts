@@ -44,6 +44,11 @@ describe('repo code style authority integrity', () => {
     expect(docsIndex).toContain('./repo-human-style-guide.md');
     expect(packageJson.scripts).not.toHaveProperty('check:repo-style:strict');
     expect(packageJson.scripts).toHaveProperty('check:repo-style:object-interfaces');
+    expect(packageJson.scripts).toMatchObject({
+      'check:repo-style:layout': 'node scripts/repo-style-check.mjs --layout-only',
+      'check:repo-style:layout-details':
+        'node scripts/repo-style-check.mjs --layout-only --layout-details',
+    });
     expectAll(canonicalStyle, [
       primaryCodeGoal,
       '## First principle: code is for human developers',
@@ -70,6 +75,17 @@ describe('repo code style authority integrity', () => {
       'primary exported symbol',
       'co-located with the feature that owns it',
       'room/group-state translation boundary',
+      'check:repo-style:layout',
+      'check:repo-style:layout-details',
+      'grouped warnings',
+      'affected counts',
+      'not an instruction to create folders or pass-through modules mechanically',
+      'layout.directory-density',
+      'layout.feature-prefix-cluster',
+      'layout.filename-style',
+      'layout.generic-filename',
+      'layout.generic-route-init',
+      'layout.unapproved-mod',
     ]);
   });
 

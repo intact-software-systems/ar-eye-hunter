@@ -77,6 +77,8 @@
     "test:api-v1:black-box:postgres:medium-scale": "npm --workspace @ar-eye-hunter/shared-test run bb:api-v1:postgres:medium-scale",
     "test:api-v1:black-box:memory": "npm --workspace @ar-eye-hunter/shared-test run bb:api-v1:memory",
     "check:repo-style": "node scripts/repo-style-check.mjs",
+    "check:repo-style:layout": "node scripts/repo-style-check.mjs --layout-only",
+    "check:repo-style:layout-details": "node scripts/repo-style-check.mjs --layout-only --layout-details",
     "check:repo-style:output-contracts": "node scripts/repo-style-check.mjs --output-contracts",
     "check:repo-style:object-interfaces": "node scripts/repo-style-check.mjs --object-interfaces",
     "check:repo-style:src": "node scripts/repo-style-check.mjs --root apps/api-v1/src",
