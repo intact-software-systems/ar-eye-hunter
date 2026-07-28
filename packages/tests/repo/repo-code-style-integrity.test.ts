@@ -44,6 +44,11 @@ describe('repo code style authority integrity', () => {
     expect(docsIndex).toContain('./repo-human-style-guide.md');
     expect(packageJson.scripts).not.toHaveProperty('check:repo-style:strict');
     expect(packageJson.scripts).toHaveProperty('check:repo-style:object-interfaces');
+    expect(packageJson.scripts).toMatchObject({
+      'check:repo-style:layout': 'node scripts/repo-style-check.mjs --layout-only',
+      'check:repo-style:layout-details':
+        'node scripts/repo-style-check.mjs --layout-only --layout-details',
+    });
     expectAll(canonicalStyle, [
       primaryCodeGoal,
       '## First principle: code is for human developers',
@@ -54,6 +59,33 @@ describe('repo code style authority integrity', () => {
       'Do not put a guessed\n`retryable` boolean on a low-level exception',
       'The plain-object `type` preference is a manual review rule',
       '`unknown` belongs only at an untrusted boundary',
+    ]);
+    expectAll(canonicalStyle, [
+      '## Feature ownership and repository organization',
+      '## File and primary symbol names',
+      'Organize by owned feature or capability before technical role',
+      'More than 20 direct production TypeScript files prompts an ownership review',
+      'Four or more sibling files with the same meaningful feature prefix',
+      '`room` is the product and browser term',
+      '`group-state` is the authoritative API and server term',
+      '`room-group-state-translation.ts`',
+    ]);
+    expectAll(humanGuide, [
+      'obvious feature entry file',
+      'primary exported symbol',
+      'co-located with the feature that owns it',
+      'room/group-state translation boundary',
+      'check:repo-style:layout',
+      'check:repo-style:layout-details',
+      'grouped warnings',
+      'affected counts',
+      'not an instruction to create folders or pass-through modules mechanically',
+      'layout.directory-density',
+      'layout.feature-prefix-cluster',
+      'layout.filename-style',
+      'layout.generic-filename',
+      'layout.generic-route-init',
+      'layout.unapproved-mod',
     ]);
   });
 

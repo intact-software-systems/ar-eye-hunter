@@ -20,11 +20,18 @@ import {
   extractCreateFactories,
   extractFunctionSignatures,
 } from './repo-style-check/function-analysis.mjs';
+import {
+  isLayoutTypeScriptFile,
+  layoutRuleIds,
+  scanRepositoryLayout,
+} from './repo-style-check/layout-rules.mjs';
 import { lineFromOffset, lineOffsets } from './repo-style-check/source-text.mjs';
 
 const args = new Set(process.argv.slice(2));
 const outputContractMode = args.has('--output-contracts');
 const objectInterfaceMode = args.has('--object-interfaces');
+const layoutOnlyMode = args.has('--layout-only');
+const layoutDetailsMode = args.has('--layout-details');
 const maxDisplayedFindingCount = 200;
 const explicitRoots = readExplicitRoots(process.argv);
 const defaultMode = explicitRoots.length === 0;
@@ -88,6 +95,19 @@ const limits = {
   factoryOptionalFieldMinimum: 3,
   functionArgumentCount: 3,
 };
+const defaultLayoutRuleIds = [
+  layoutRuleIds.directoryDensity,
+  layoutRuleIds.featurePrefixCluster,
+  layoutRuleIds.filenameStyle,
+  layoutRuleIds.genericFilename,
+  layoutRuleIds.genericRouteInit,
+  layoutRuleIds.unapprovedMod,
+];
+const detailedLayoutRuleIds = [
+  layoutRuleIds.primaryExportName,
+  layoutRuleIds.browserRoomBoundary,
+  layoutRuleIds.serverGroupStateVocabulary,
+];
 
 async function main() {
   if (args.has('--strict')) {
@@ -115,25 +135,44 @@ async function main() {
   }
 
   const nestedFiles = await Promise.all(scanRoots.map(collectSourceFiles));
+  const productionFiles = nestedFiles.flat().filter(isProductionCodeFile).sort();
+  const productionSources = await Promise.all(
+    productionFiles.map(async (file) => ({
+      file,
+      raw: await fs.readFile(file, 'utf8'),
+    })),
+  );
+  const layoutSources = productionSources.filter(({ file }) => isLayoutTypeScriptFile(file));
+  const layoutResult = scanRepositoryLayout({
+    repoRoot: path.resolve(process.cwd()),
+    sources: layoutSources,
+    includeDetails: layoutDetailsMode,
+  });
   const findings = [];
 
-  for (const file of nestedFiles.flat()) {
-    if (!isProductionCodeFile(file)) {
-      continue;
+  if (!layoutOnlyMode) {
+    for (const source of productionSources) {
+      const messages = scanFile(source.raw);
+      findings.push(
+        ...messages.map((message) => ({
+          file: source.file,
+          kind: 'warn',
+          message,
+        })),
+      );
     }
-
-    const raw = await fs.readFile(file, 'utf8');
-    const messages = scanFile(raw);
-    findings.push(
-      ...messages.map((message) => ({
-        file,
-        kind: 'warn',
-        message,
-      })),
-    );
   }
+  findings.push(...layoutResult.findings);
 
-  printFindings(findings, scanRoots);
+  printFindings({
+    findings,
+    scanRoots,
+    layoutCounts: layoutResult.counts,
+    activeLayoutRuleIds: [
+      ...defaultLayoutRuleIds,
+      ...(layoutDetailsMode ? detailedLayoutRuleIds : []),
+    ].toSorted(),
+  });
   process.exitCode = 0;
 }
 
@@ -312,25 +351,34 @@ function isProductionCodeFile(file) {
   );
 }
 
-function printFindings(findings, scanRoots) {
-  if (findings.length === 0) {
+function printFindings(input) {
+  if (input.findings.length === 0) {
     console.log('repo-style-check: PASS (no issues found in this run)');
-    return;
-  }
-
-  console.log('repo-style-check: WARN');
-  for (const finding of findings.slice(0, maxDisplayedFindingCount)) {
-    console.log(`${finding.kind.toUpperCase()}: ${finding.file}`);
-    console.log(`  - ${finding.message}`);
-  }
-  if (findings.length > maxDisplayedFindingCount) {
+  } else {
+    console.log('repo-style-check: WARN');
+    for (const finding of input.findings.slice(0, maxDisplayedFindingCount)) {
+      const rulePrefix = finding.ruleId === undefined ? '' : `[${finding.ruleId}] `;
+      console.log(`${finding.kind.toUpperCase()}: ${finding.file}`);
+      console.log(`  - ${rulePrefix}${finding.message}`);
+    }
+    if (input.findings.length > maxDisplayedFindingCount) {
+      console.log(
+        `\n${input.findings.length - maxDisplayedFindingCount} additional findings ` +
+          'not displayed. ' +
+          'Use --root with a narrower path for a reviewable result.',
+      );
+    }
     console.log(
-      `\n${findings.length - maxDisplayedFindingCount} additional findings not displayed. ` +
-        'Use --root with a narrower path for a reviewable result.',
+      `\nSummary: ${input.findings.length} non-blocking issues found in ` +
+        `${input.scanRoots.join(', ')}.`,
     );
   }
+
   console.log(
-    `\nSummary: ${findings.length} non-blocking issues found in ${scanRoots.join(', ')}.`,
+    'Layout summary: ' +
+      input.activeLayoutRuleIds
+        .map((ruleId) => `${ruleId}=${input.layoutCounts[ruleId]}`)
+        .join(', '),
   );
 }
 

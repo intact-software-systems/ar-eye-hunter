@@ -15,12 +15,34 @@ behavior or enabling a build gate.
 
 **Architecture:** Keep one authoritative prose standard and one human review
 guide. Extend the existing checker with a focused repository-layout scanner
-that consumes the same already-filtered source inventory as the file-level
-rules. Default layout checks use conservative, grouped warnings; syntax- and
-domain-sensitive checks are opt-in until their false-positive rate is known.
+that receives an exact TypeScript projection from the same load-once,
+already-filtered production inventory used by file-level rules. Default layout
+checks use conservative, grouped warnings; syntax- and domain-sensitive checks
+are opt-in until their false-positive rate is known.
 
-**Tech Stack:** Markdown, Node.js ESM, TypeScript compiler API, npm scripts,
-Vitest, Prettier, and the existing `scripts/repo-style-check.mjs` command.
+**Tech Stack:** Markdown, Node.js ESM, the directly declared `@babel/parser`
+for TypeScript/TSX syntax AST inspection, npm scripts, Vitest, Prettier, and
+the existing `scripts/repo-style-check.mjs` command.
+
+**2026-07-28 execution amendment:** The human approved using the repository's
+directly declared `@babel/parser` for the Tasks 2 and 3 TypeScript/TSX syntax
+AST inspection because TypeScript `7.0.2` no longer exports the classic
+in-process parser. TypeScript remains `7.0.2`; this changes neither
+`package.json` nor a lockfile. This narrow parser substitution leaves every
+other requirement in approved plan blob
+`8ee56ac27189f9bed751fb6a95992830bda6be60` unchanged.
+
+**2026-07-28 final-review amendment:** The human authorized one consolidated
+correction before the replacement feature-tree freeze. Tracked edits are
+limited to `scripts/repo-style-check/layout-rules.mjs`, its existing focused
+test, and the three linked traceability plans. The correction resolves local
+top-level callable `init` declarations exported through `export { init }`,
+retains every existing layout fixture and assertion while reducing that test
+file to at most 400 physical lines, and reconciles only the already-known
+approval and Tasks 1 through 5 publication state. The ignored Task 6 report may
+receive only its 16-to-15 Prettier file-count typo correction. This amendment
+does not authorize production, dependency, lockfile, workflow, strict-mode, or
+future-evidence changes. Repository completion gates wait for scoped re-review.
 
 ## Global Constraints
 
@@ -67,8 +89,46 @@ Vitest, Prettier, and the existing `scripts/repo-style-check.mjs` command.
 
 Date: 2026-07-28
 
-Status: Draft for human review. No production code or checker implementation has
-started.
+Status: implemented; final and publication gates pending
+
+Publication and prerequisite reconciliation:
+
+- The human approved exactly this governance and warning-only checker child-plan
+  revision on 2026-07-28. The approval does not extend to a later production
+  child plan.
+- The implementation branch was created from current `origin/main` and first
+  published at `09f4e8d7b1eb3e7a02560dc6060238bf739a03a1` before checker
+  implementation began. The focused governance baseline passed 81 of 81 tests,
+  and the unrestricted full unit baseline passed 5,534 tests with 18 skipped.
+- Tasks 1 through 5 are implemented, independently reviewed without remaining
+  findings, and published through
+  `55469829af67eabdc692ab4e9823c0e26fabb40b`. The remote branch head is the
+  same commit. PR #47 follows the branch and is open and non-draft; its metadata
+  remains unavailable here. This is not merge evidence or permission.
+
+- Live GitHub `main`, local `main`, and local `origin/main` resolve to
+  `4ec117db1e09e00f86ed8f66cbf8adab1cdeb4a9`. That commit adds only the three
+  human-traceability plan documents and has no associated pull request.
+- GitHub PR #45 merged as
+  `95065d769f585464b15059423057e151877fdb1a`. Its five-file diff added the
+  primary human-understandability principle and integrity coverage to
+  `AGENTS.md`, the code-writing skill, the canonical standard, the human guide,
+  and `repo-code-style-integrity.test.ts`.
+- Known focused verification includes the 81-test prerequisite baseline, 41
+  Task 2 focused tests plus 96 skill-routing tests, 31 Task 3 focused tests plus
+  57 exact regressions after review round 2, and all 116 tests in the exact
+  four-file Task 4 governance command. Production code remains unchanged.
+- Tasks 1 through 5 add the organization and naming sections, warning-only
+  layout rules and CLI modes, and the executable baseline. Repository
+  completion, feature-branch publication gates, merge/default-workflow
+  evidence, and the separate evidence ledger remain pending.
+- For the plan publication commit, **Run Hetzner Supported Distributed
+  Manifests** run `30328273358` failed. **Push on main** run `30328273160` and
+  **Deploy Web + API** run `30328273405` passed. Publication is verified, but
+  the mandatory default-branch completion workflow is not green for that SHA.
+- GitHub's combined commit status separately reports failed deployment contexts
+  for `rallar-bb-server`, `relic-hunters`, and `rallar-server`. This
+  documentation-only reconciliation records but does not diagnose them.
 
 ## 1. Scope And Success Boundary
 
@@ -90,41 +150,49 @@ review guide, and checker output:
 This plan does not decide how any production feature is moved. The browser,
 shared-server, and API-v1 group-state moves remain separate child plans.
 
-## 2. Planning Baseline
+## 2. Planning And Implemented Baseline
 
 The following read-only audit used the current checker's production exclusions
 and counted TypeScript extensions `.ts`, `.tsx`, `.mts`, and `.cts` under
 `apps/**` and `packages/**`. It is a planning baseline, not an enforcement
 threshold and not evidence that each warning requires a change.
 
-| Measure                                                      |       2026-07-28 baseline | Meaning                                                                                      |
-| ------------------------------------------------------------ | ------------------------: | -------------------------------------------------------------------------------------------- |
-| Production TypeScript files                                  |                     1,372 | Files eligible for layout analysis.                                                          |
-| Existing default style findings                              |                     4,462 | Current file-level checker findings; output is capped at 200.                                |
-| Files over 400 physical lines                                |                       215 | Existing checker debt.                                                                       |
-| Files over 500 physical lines                                |                       162 | Required separation-review inventory.                                                        |
-| Files over 800 physical lines                                |                        97 | Hard-tier legacy debt; not a retroactive exception-registration campaign.                    |
-| Directories with more than 20 direct TypeScript files        |                        16 | Ownership review prompts.                                                                    |
-| Candidate feature-prefix clusters in those dense directories |   22 across 8 directories | Initial conservative prefix heuristic.                                                       |
-| Non-kebab TypeScript filenames                               | 422 across 90 directories | Excludes exact tool-discovered config names.                                                 |
-| Exact generic filenames                                      |                        15 | `utils`, `types`, `helpers`, `contracts`, `runtime`, or `middleware` without a feature noun. |
-| Route modules exporting generic `init`                       |                        11 | All currently under API-v1.                                                                  |
-| Existing approved `mod.ts` compatibility boundaries          |                        14 | Current package or published subpath entry points.                                           |
-| `mod.ts` outside that approved set                           |                         0 | A ratchet against new nested barrels.                                                        |
+| Measure                                                      | 2026-07-28 planning baseline |      Implemented baseline | Meaning                                                                                      |
+| ------------------------------------------------------------ | ---------------------------: | ------------------------: | -------------------------------------------------------------------------------------------- |
+| Production TypeScript files                                  |                        1,372 |                     1,372 | Files eligible for layout analysis.                                                          |
+| Existing default style findings                              |                        4,462 |                     4,462 | Current file-level checker findings; output is capped at 200.                                |
+| Files over 400 physical lines                                |                          215 |                       215 | Existing checker debt.                                                                       |
+| Files over 500 physical lines                                |                          162 |                       162 | Required separation-review inventory.                                                        |
+| Files over 800 physical lines                                |                           97 |                        97 | Hard-tier legacy debt; not a retroactive exception-registration campaign.                    |
+| Directories with more than 20 direct TypeScript files        |                           16 |                        16 | Ownership review prompts.                                                                    |
+| Candidate feature-prefix clusters in those dense directories |      22 across 8 directories |   22 across 8 directories | Initial conservative prefix heuristic.                                                       |
+| Non-kebab TypeScript filenames                               |    422 across 90 directories | 422 across 90 directories | Excludes exact tool-discovered config names.                                                 |
+| Exact generic filenames                                      |                           15 |                        15 | `utils`, `types`, `helpers`, `contracts`, `runtime`, or `middleware` without a feature noun. |
+| Route modules exporting generic `init`                       |                           11 |                        11 | All currently under API-v1.                                                                  |
+| Existing approved `mod.ts` compatibility boundaries          |                           14 |                        14 | Current package or published subpath entry points.                                           |
+| `mod.ts` outside that approved set                           |                            0 |                         0 | A ratchet against new nested barrels.                                                        |
 
-The initial implementation must regenerate these measures. If the production
-tree changed after this draft, record both the new count and the reason for the
-difference; do not alter a checker threshold merely to reproduce this table.
-Regenerate the 400-, 500-, and 800-line counts immediately before committing a
-change that records them when the production tree has changed.
+Task 5 measured the executable baseline against checker commit
+`1b8a3bf18fc67f7a893a6c7d9566497bedda99dc` and published it in commit
+`55469829af67eabdc692ab4e9823c0e26fabb40b`. A pre-freeze rerun at the latter
+commit exited `0` and exactly matched the dated planning values: 16 dense
+directories, 22 conservative prefix clusters across 8 directories, 422
+filename-style files across 90 directories, 15 generic filenames, 11 generic
+route registrations, and zero unapproved `mod.ts` files. The production tree
+was unchanged by Tasks 1 through 5, so the eligible-file, existing-style,
+over-400-, over-500-, over-800-line, and approved `mod.ts` inventory values also
+remain unchanged. No threshold or allowlist was altered to reproduce the
+planning baseline.
 
-The two optional checks do not yet have authoritative baseline counts:
-
-- primary exported symbol versus filename;
-- room/group-state boundary vocabulary.
-
-Task 5 records those counts after the parser-backed rules exist. Their first
-inventory remains opt-in regardless of count.
+The pre-freeze detailed inventory exited `0` with 497 finding records and recorded
+`layout.primary-export-name=344`, `layout.browser-room-boundary=2`, and
+`layout.server-group-state-vocabulary=0`. These are opt-in inventory counts,
+not approved exceptions or default rules. The pre-freeze complete checker
+exited `0` with 4,613 non-blocking finding records: the existing 4,462
+file-level findings plus 151 default layout finding records. The repository-root
+checker also exited `0` with 4,744 finding records. The Task 5 strict invocation
+exited `1` with
+`strict mode is not available until warning debt is reviewed.`
 
 ### 2.1 Size-guidance pressure baseline
 
@@ -207,13 +275,23 @@ TypeScript source set:
   files. The message says to review ownership and explicitly says not to create
   folders mechanically.
 - In a directory already above 20 direct files, warn for each meaningful
-  filename prefix represented by at least four direct files. Remove canonical
-  action prefixes such as `read`, `compute`, `validate`, `write`, `to`,
-  `create`, and `register` before selecting the feature token. The complete
-  ignored-token set is `app`, `api`, `browser`, `cached`, `compute`, `create`,
-  `default`, `rallar`, `read`, `register`, `server`, `shared`, `to`, `use`,
-  `v1`, `v2`, `validate`, and `write`. Do not warn when the selected prefix is
-  already represented in the directory name.
+  filename prefix represented by at least four direct files. Emit one finding
+  per qualifying prefix cluster with `affectedCount: 1`; the message records
+  the cluster's direct-file count and at most five sorted sample filenames.
+  Counts therefore measure clusters, not the number of files in clusters.
+- Derive a file's candidate prefix by converting its suffix-free stem with
+  `toKebabCase`, splitting on `-`, and removing ignored tokens only while they
+  are leading tokens. The complete ignored-token set is `app`, `api`,
+  `browser`, `cached`, `compute`, `create`, `default`, `rallar`, `read`,
+  `register`, `server`, `shared`, `to`, `use`, `v1`, `v2`, `validate`, and
+  `write`. The first remaining token is the candidate; a file with no remaining
+  token has no candidate. Do not remove ignored tokens from the middle or end.
+- Compare the candidate with the exact tokens of the immediate directory
+  basename after the same `toKebabCase` conversion and `-` split. Suppress the
+  cluster only for an exact token match. Do not stem, singularize, pluralize,
+  or compare with ancestor-directory tokens. A file contributes at most once
+  to one cluster. Sort directories and prefixes lexicographically before
+  creating findings.
 - Require kebab-case TypeScript stems. Normalize `.d.ts` as one suffix. Group
   non-kebab files by directory and print at most five sample names per warning.
 - Accept only the exact ecosystem-discovered filenames `vite.config.ts` and
@@ -245,12 +323,31 @@ TypeScript source set:
   which of several exports is primary.
 - A browser room boundary warning applies to room-owned files under
   `packages/shared-web/browser/**`, identified by a `room` or `rooms` filename
-  token or by placement under `browser/rooms/**`. Outside
-  `room-group-state-translation.ts`, warn when the file directly imports
-  authoritative group-state request, response, snapshot, event, status, role,
-  or member contracts. Exact protocol identity imports `GroupRef` and `roomRef`
-  remain allowed. The rule reports direct coupling only; it does not claim to
-  prove all structural construction.
+  token after `toKebabCase` and `-` splitting of the suffix-free stem, or by an
+  exact repo-relative prefix of `packages/shared-web/browser/rooms/`. Outside
+  the exact repo-relative path
+  `packages/shared-web/browser/rooms/room-group-state-translation.ts`, inspect
+  only static `ImportDeclaration` nodes whose module specifier exactly equals
+  one of the following three strings. A named import is authoritative only
+  when its original exported name is in the corresponding set:
+
+  | Exact module specifier             | Authoritative original exported names                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+  | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | `@shared/api/group-types.ts`       | `Group`, `GroupEvent`, `GroupEventType`, `GroupJoinMode`, `GroupMember`, `GroupMemberStatus`, `GroupPresenceAdmission`, `GroupPresenceAdmissionSession`, `GroupPresenceSession`, `GroupPresenceSummary`, `GroupRole`, `GroupSnapshot`, `GroupStateCausalRevision`, `GroupStatus`                                                                                                                                                                                                                                                          |
+  | `@shared/api/state-types.ts`       | `AcceptGroupInviteRequest`, `AppointGroupDirectorRequest`, `BanGroupMemberRequest`, `ConnectGroupPresenceSessionRequest`, `CreateGroupInviteRequest`, `CreateGroupRequest`, `DisconnectGroupPresenceSessionRequest`, `GroupJoinCodeResponse`, `HeartbeatGroupPresenceSessionRequest`, `JoinGroupRequest`, `RemoveGroupMemberRequest`, `RevokeGroupInviteRequest`, `RotateGroupJoinCodeRequest`, `SetGroupMemberRoleRequest`, `TransferGroupOwnershipRequest`, `UnbanGroupMemberRequest`, `UpdateGroupRequest`, `UpsertGroupMemberRequest` |
+  | `@shared/api/state-event-types.ts` | `StateEventCursor`, `StateEventPage`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+
+- For `import { GroupSnapshot as RoomSnapshot }`, classify
+  `GroupSnapshot`, not the local alias `RoomSnapshot`, and show both names in
+  diagnostic evidence. Exact original imported names `GroupRef` and `roomRef`
+  are exempt before set lookup. A namespace import or default import from any
+  of the three exact modules warns because it exposes an opaque authoritative
+  surface that cannot be classified by named import; report it as
+  `namespace:* as <local>` or `default as <local>`. A side-effect-only import,
+  dynamic import, re-export, relative module path, or same-named import from any
+  other module does not warn. Emit at most one warning per room-owned file with
+  sorted, deduplicated import evidence. The rule reports direct coupling only;
+  it does not claim to prove all structural construction.
 - A server group-state vocabulary warning applies to files with a
   `group-state` filename token, a `GroupState` exported declaration, or
   placement under `packages/shared-server/rallar-system/group-state/**`. Warn
@@ -320,8 +417,8 @@ and covers every declaration form listed above.
 
 | File                                                               | Change                  | Single responsibility                                                                        |
 | ------------------------------------------------------------------ | ----------------------- | -------------------------------------------------------------------------------------------- |
-| `AGENTS.md`                                                        | Modify                  | Always-loaded statement of the repository's primary code goal and route to the standard.     |
-| `.agents/skills/rallar-code-writing/SKILL.md`                      | Modify                  | Translate the primary code goal into required agent behavior for TypeScript work.            |
+| `AGENTS.md`                                                        | Verify                  | PR #45 already published the always-loaded primary code goal and route to the standard.      |
+| `.agents/skills/rallar-code-writing/SKILL.md`                      | Verify                  | PR #45 already published the primary principle as required TypeScript agent behavior.        |
 | `.agents/skills/rallar-code-writing/references/repo-code-style.md` | Modify                  | Authoritative feature ownership, co-location, filename, symbol, and domain vocabulary rules. |
 | `docs/repo-human-style-guide.md`                                   | Modify                  | Human navigation review sequence and checker commands.                                       |
 | `docs/repo-code-style-exceptions.md`                               | Create                  | Stable human-approved rationale for hard-tier file and function exceptions.                  |
@@ -366,6 +463,8 @@ export const layoutRuleIds = Object.freeze({
   serverGroupStateVocabulary: 'layout.server-group-state-vocabulary',
 });
 
+export function isLayoutTypeScriptFile(file) {}
+
 /**
  * @param {{
  *   repoRoot: string,
@@ -390,8 +489,44 @@ export function toKebabCase(value) {}
 
 All incoming `file` paths are absolute. `repoRoot` is the absolute process
 working directory and is used only to compare approved repo-relative paths.
-The scanner sorts directories, samples, findings, and summaries
+`isLayoutTypeScriptFile` returns `true` only for `.ts`, `.tsx`, `.mts`, and
+`.cts`, treating `.d.ts` as a TypeScript suffix, using the exact pattern
+`/(?:\.d)?\.(?:ts|tsx|mts|cts)$/u`. The CLI supplies only this projection to
+`scanRepositoryLayout`; the scanner applies the same exported predicate again
+and ignores a non-TypeScript record if a direct caller supplies one. The
+scanner sorts directories, prefixes, samples, findings, and summaries
 lexicographically so identical input produces identical output.
+
+### 5.1 Execution-Readiness Review And Resolution
+
+The 2026-07-28 review found four material ambiguities. This revision resolves
+them as plan contracts; the child still requires explicit human approval before
+execution:
+
+1. **Source inventory resolved.** Task 4 defines one sorted, filtered,
+   load-once production inventory that preserves `.mjs` for current file-level
+   checks. `isLayoutTypeScriptFile` supplies and defensively enforces the exact
+   `.ts`/`.tsx`/`.mts`/`.cts` projection. The CLI fixture uses 21 direct `.mjs`
+   files to prove they cannot trigger density or prefix counts while one
+   overlong `.mjs` line still triggers an existing file-level warning.
+2. **Prefix cardinality resolved.** Section 3.3 and Task 2 choose one finding
+   per cluster with scalar `affectedCount: 1`, leading-only ignored-token
+   removal, exact immediate-directory token comparison, and stable grouping and
+   sorting. A generated eight-directory fixture produces exactly 22 qualifying
+   findings and an affected count of 22.
+3. **Browser classifier resolved.** Section 3.4 fixes three exact module
+   specifiers, module-specific original-name sets, alias treatment,
+   namespace/default behavior, and non-import exclusions. Task 3 covers all
+   three modules, aliased imports, and both `GroupRef` and `roomRef` exemptions.
+4. **Completion evidence resolved.** Task 6 and the execution protocol separate
+   the immutable feature-branch tree from its PR/handoff publication envelope.
+   Merge and default-workflow evidence are appended to that external envelope.
+   A later evidence-only ledger branch records the completed implementation and
+   has its own independently frozen tree and publication envelope; no commit is
+   required to contain its own future merge SHA or workflow result.
+
+Execution readiness is now a human review decision. No checker behavior is
+approved or implemented by this revision.
 
 ## 6. Implementation Tasks
 
@@ -405,7 +540,7 @@ lexicographically so identical input produces identical output.
 - Produces: the intended non-default Wave 0 branch with unrelated user changes
   preserved.
 
-- [ ] **Step 1: Inspect the current branch and working tree**
+- [x] **Step 1: Inspect the current branch and working tree**
 
   Run:
 
@@ -418,16 +553,16 @@ lexicographically so identical input produces identical output.
   draft, `plans/rallar-rest-snapshot-read-convergence-implementation-plan.md`
   is an unrelated modified file and must not be staged by this plan.
 
-- [ ] **Step 2: Confirm or create and publish the implementation branch**
+- [x] **Step 2: Confirm or create and publish the implementation branch**
 
   Use `codex/repo-human-traceability-governance-checker-wave-0`, created from
   current `origin/main`, through the Codex branch action or the installed GitHub
-  publication workflow. If Prompt 1 in the program execution plan already
-  created and published that branch, verify its base and upstream instead of
-  creating another branch. Do not reuse the deleted branch from merged PR #45.
+  publication workflow. Direct plan publication created no reusable feature
+  branch, and the PR #45 branch is absent from the remote, so execution creates
+  this branch exactly once rather than searching for either historical branch.
   Do not commit or push the default branch.
 
-- [ ] **Step 3: Recheck scope**
+- [x] **Step 3: Recheck scope**
 
   Run `git status --short` and confirm no file under `apps/**` or production
   package code under `packages/**` has been changed.
@@ -436,8 +571,8 @@ lexicographically so identical input produces identical output.
 
 **Files:**
 
-- Modify: `AGENTS.md`
-- Modify: `.agents/skills/rallar-code-writing/SKILL.md`
+- Verify: `AGENTS.md`
+- Verify: `.agents/skills/rallar-code-writing/SKILL.md`
 - Modify:
   `.agents/skills/rallar-code-writing/references/repo-code-style.md`
 - Modify: `docs/repo-human-style-guide.md`
@@ -446,33 +581,31 @@ lexicographically so identical input produces identical output.
 
 **Interfaces:**
 
-- Consumes: Sections 3.3 and 3.4 of this plan.
+- Consumes: the master program's organization and naming rules plus the
+  verified PR #45 prerequisite.
 - Produces: one always-loaded primary principle, one operational agent rule,
   one authoritative prose definition for all checker rule names, and one human
   review sequence that later tasks can reference.
 
-- [ ] **Step 1: Write failing integrity assertions**
+- [x] **Step 1: Verify the PR #45 prerequisite instead of repeating it**
 
-  Add assertions that `AGENTS.md`, the code-writing skill, the canonical
-  standard, and the human guide all contain the constitutional sentence. Keep
-  the detailed interpretation authoritative in the standard:
+  The 2026-07-28 reconciliation verified merge
+  `95065d769f585464b15059423057e151877fdb1a` and its exact five-file diff.
+  It also ran the current repository governance command and passed 81 tests
+  across `rallar-skill-integrity.test.ts`,
+  `repo-code-style-integrity.test.ts`, and `repo-style-check.test.ts`. This
+  evidence verifies the principle in `AGENTS.md`, the code-writing skill, the
+  canonical standard, the human guide, and the integrity test. Do not edit
+  `AGENTS.md` or `.agents/skills/rallar-code-writing/SKILL.md` in Task 1 and do
+  not recreate PR #45's completed wording.
+
+- [x] **Step 2: Write failing assertions for only the pending governance**
+
+  Extend `repo-code-style-integrity.test.ts` with these assertions while
+  retaining the existing PR #45 assertions unchanged:
 
   ```ts
-  const primaryCodeGoal = 'Code is written first for human developers.';
-
-  expectAll(agents, [
-    primaryCodeGoal,
-    'human understandability is the governing design criterion',
-    canonicalStylePath,
-  ]);
-  expectAll(codeWriting, [
-    primaryCodeGoal,
-    'A mechanically compliant change is not acceptable',
-    'references/repo-code-style.md',
-  ]);
   expectAll(canonicalStyle, [
-    primaryCodeGoal,
-    '## First principle: code is for human developers',
     '## Feature ownership and repository organization',
     '## File and primary symbol names',
     'Organize by owned feature or capability before technical role',
@@ -483,7 +616,6 @@ lexicographically so identical input produces identical output.
     '`room-group-state-translation.ts`',
   ]);
   expectAll(humanGuide, [
-    primaryCodeGoal,
     'obvious feature entry file',
     'primary exported symbol',
     'co-located with the feature that owns it',
@@ -491,7 +623,7 @@ lexicographically so identical input produces identical output.
   ]);
   ```
 
-- [ ] **Step 2: Run the integrity test and verify failure**
+- [x] **Step 3: Run the integrity test and verify the pending assertions fail**
 
   Run:
 
@@ -499,74 +631,11 @@ lexicographically so identical input produces identical output.
   npx vitest run packages/tests/repo/repo-code-style-integrity.test.ts
   ```
 
-  Expected: FAIL because the new headings and phrases are absent.
+  Expected: FAIL only because the organization/naming headings and human
+  ownership-trace phrases are absent; the pre-existing PR #45 assertions remain
+  green.
 
-- [ ] **Step 3: Add the always-loaded principle to `AGENTS.md`**
-
-  Insert this immediately after the opening orientation and before
-  `## Start Here` so every future agent sees it before domain details:
-
-  ```markdown
-  ## Primary Code Goal
-
-  Code is written first for human developers. Correctness, safety, security,
-  compatibility, and required performance are non-negotiable. Within those
-  constraints, human understandability is the governing design criterion:
-  prefer the design whose ownership, dataflow, decisions, side effects,
-  failures, and call paths a human can locate and follow most directly.
-
-  Every coding and architecture rule is interpreted through this principle. A
-  mechanically compliant change is not successful when it makes the code
-  harder for a human to understand, review, debug, or modify. For TypeScript,
-  use the `rallar-code-writing` skill and its authoritative repo standard.
-  ```
-
-- [ ] **Step 4: Turn the principle into code-writing agent behavior**
-
-  Add this directly below `## Start Here` in
-  `.agents/skills/rallar-code-writing/SKILL.md`:
-
-  ```markdown
-  Code is written first for human developers. Correctness, safety, security,
-  compatibility, and required performance remain mandatory; within those
-  constraints, choose the shape a human can locate, trace, understand, and
-  modify most directly.
-
-  A mechanically compliant change is not acceptable when it adds indirection,
-  hides a decision, fragments one dataflow, weakens names, or makes ownership
-  less obvious. When a detailed rule conflicts with human understandability,
-  stop and explain the conflict instead of satisfying the rule mechanically.
-  ```
-
-  Keep the existing instruction to read `references/repo-code-style.md`
-  completely. Do not repeat the detailed standard in this skill.
-
-- [ ] **Step 5: Add the authoritative first-principle interpretation**
-
-  Add the heading to the canonical contents and insert this section before
-  `## Scope and adoption`:
-
-  ```markdown
-  ## First principle: code is for human developers
-
-  Code is written first for human developers. Correctness, safety, security,
-  compatibility, and required performance are non-negotiable constraints.
-  Within those constraints, human understandability is the governing design
-  criterion for this standard.
-
-  Prefer code whose owner, inputs, defaults, decisions, side effects, failures,
-  and result can be located and followed directly from descriptive filenames,
-  symbols, and call paths. Do not apply a rule mechanically when doing so adds
-  pass-through abstractions, hides a decision, fragments one coherent dataflow,
-  or otherwise makes the code harder to review, debug, or change.
-
-  The rules below are defaults derived from this principle together with the
-  repository's correctness and operational requirements. When two rules pull
-  in different directions, state the concrete tradeoff and ask the human rather
-  than inventing another abstraction.
-  ```
-
-- [ ] **Step 6: Add the canonical organization and naming sections**
+- [x] **Step 4: Add the canonical organization and naming sections**
 
   Add both headings to the contents list. Insert the sections after
   `## Predictable file layout`. The normative content must state all of the
@@ -648,30 +717,22 @@ lexicographically so identical input produces identical output.
   consumers use the intentional package entry point.
   ```
 
-- [ ] **Step 7: Make the principle the human review criterion**
+- [x] **Step 5: Add the pending human ownership trace**
 
-  Add the constitutional sentence near the top of
-  `docs/repo-human-style-guide.md`, followed by this review rule:
-
-  ```markdown
-  The first review question is whether a human can locate the owner and follow
-  the dataflow, decisions, side effects, failures, and result without
-  unnecessary jumps. Mechanical compliance does not compensate for code that
-  became harder to understand.
-  ```
-
-  Then expand `### 7. Inspect layout` with an ownership trace that asks the
+  PR #45 already added the constitutional sentence and first-review-question
+  paragraph. Leave both unchanged. Expand `### 7. Inspect layout` with an
+  ownership trace that asks the
   reviewer to start at the feature entry, follow one input-to-result path,
   compare each filename with its primary symbol, verify co-location, and inspect
   the room/group-state translation boundary. Keep the checker command
   documentation for Task 4 rather than documenting commands that do not exist
   yet.
 
-- [ ] **Step 8: Run the integrity test and verify success**
+- [x] **Step 6: Run the integrity test and verify success**
 
-  Run the command from Step 2. Expected: PASS.
+  Run the command from Step 3. Expected: PASS.
 
-- [ ] **Step 9: Format and inspect the governance diff**
+- [x] **Step 7: Format and inspect the governance diff**
 
   Run:
 
@@ -684,17 +745,21 @@ lexicographically so identical input produces identical output.
   Expected: formatter and diff checks pass; the diff defines one standard and
   one review workflow rather than duplicating competing rules.
 
-- [ ] **Step 10: Commit and publish the governance milestone**
+- [x] **Step 8: Commit and publish the governance milestone**
 
-  Stage only the five changed governance/test files and this checked-off plan.
+  Stage only the three changed governance/test files and this checked-off plan.
+  Do not manufacture changes to the already-verified `AGENTS.md` or
+  `rallar-code-writing/SKILL.md` prerequisites.
   Commit message:
 
   ```text
   docs: define repository traceability rules
   ```
 
-  Push the non-default branch and open or update the draft pull request with the
-  focused test result.
+  Commit `e0e6e7fd1e2ac6c280ae2930f411af76557ccc48` was pushed and PR #47
+  exists at `https://github.com/intact-software-systems/ar-eye-hunter/pull/47`.
+  It is open and non-draft. This environment cannot update its metadata, so no
+  draft-PR metadata update is claimed.
 
 ### Task 2: Implement Conservative Repository Layout Rules
 
@@ -709,12 +774,12 @@ lexicographically so identical input produces identical output.
 
 **Interfaces:**
 
-- Consumes: the `scanRepositoryLayout`, `layoutLimits`, and `layoutRuleIds`
-  contract in Section 5.
+- Consumes: the `scanRepositoryLayout`, `isLayoutTypeScriptFile`,
+  `layoutLimits`, and `layoutRuleIds` contract in Section 5.
 - Produces: deterministic default layout findings and counts without filesystem
   reads or console output.
 
-- [ ] **Step 1: Create failing default-rule unit tests**
+- [x] **Step 1: Create failing default-rule unit tests**
 
   Import the not-yet-existing module and add focused tests using absolute
   in-memory source records. The tests must cover these boundaries:
@@ -756,11 +821,33 @@ lexicographically so identical input produces identical output.
   ```
 
   Add equivalent assertions for exactly three prefix files, a prefix already
-  represented in the directory name, `helpers.ts`, a descriptive helper
+  represented by an exact token in the immediate directory basename, a prefix
+  represented only in an ancestor directory, and singular/plural tokens that
+  do not compare equal. Prove ignored tokens are removed only while leading,
+  each file enters at most one cluster, every cluster finding has
+  `affectedCount: 1`, and cluster messages contain the direct-file count plus at
+  most five sorted samples. Also cover `helpers.ts`, a descriptive helper
   filename, generic route `init`, descriptive route registration, approved and
-  unapproved `mod.ts`, deterministic finding order, and five-name sample caps.
+  unapproved `mod.ts`, and deterministic finding order.
 
-- [ ] **Step 2: Run the new suite and verify failure**
+  Add one generated planning-count fixture with eight dense directories and
+  qualifying-cluster counts `[3, 3, 3, 3, 3, 3, 2, 2]`. Give every cluster
+  four direct files and fill each directory past 20 files with stems whose
+  first tokens are all distinct and do not equal a directory token. Assert:
+
+  ```ts
+  const planningResult = scanRepositoryLayout(planningCountFixture());
+  const prefixFindings = planningResult.findings.filter(
+    (finding) => finding.ruleId === 'layout.feature-prefix-cluster',
+  );
+
+  expect(prefixFindings).toHaveLength(22);
+  expect(prefixFindings.every((finding) => finding.affectedCount === 1)).toBe(true);
+  expect(new Set(prefixFindings.map((finding) => finding.file))).toHaveLength(8);
+  expect(planningResult.counts['layout.feature-prefix-cluster']).toBe(22);
+  ```
+
+- [x] **Step 2: Run the new suite and verify failure**
 
   Run:
 
@@ -768,9 +855,10 @@ lexicographically so identical input produces identical output.
   npx vitest run packages/tests/repo/repo-style-layout-rules.test.ts
   ```
 
-  Expected: FAIL because `layout-rules.mjs` does not exist.
+  The pre-implementation run failed because `layout-rules.mjs` did not exist;
+  the preserved SDD checkpoint records that test-first evidence.
 
-- [ ] **Step 3: Implement source normalization and stable result metadata**
+- [x] **Step 3: Implement the TypeScript predicate, normalization, and metadata**
 
   Create the exports from Section 5. Use these exact normalization rules:
 
@@ -788,6 +876,12 @@ lexicographically so identical input produces identical output.
   const conventionalToolFileNames = new Set(['prisma.config.ts', 'vite.config.ts']);
   ```
 
+  Export `isLayoutTypeScriptFile(file)` as the only suffix predicate used by
+  the CLI and scanner. At the start of `scanRepositoryLayout`, ignore any
+  supplied source for which the predicate returns `false`. This defensive
+  behavior is tested directly with a `.mjs` record and must produce no layout
+  finding or affected count.
+
   `toKebabCase` must split acronym-to-word and lower/digit-to-upper boundaries,
   replace underscores and whitespace with one hyphen, collapse repeated
   hyphens, and lowercase the result. Add these direct assertions:
@@ -799,14 +893,16 @@ lexicographically so identical input produces identical output.
   expect(toKebabCase('PSqlRepository')).toBe('p-sql-repository');
   ```
 
-- [ ] **Step 4: Implement directory density and meaningful-prefix grouping**
+- [x] **Step 4: Implement directory density and meaningful-prefix grouping**
 
   Group only direct TypeScript children. A directory with 21 files produces
   one density finding with `affectedCount: 1`. Prefix analysis runs only in
-  those dense directories. Tokenize both legacy Pascal/camel names and
-  kebab-case names, remove the action and qualifier tokens from Section 3.3,
-  and count the first remaining token. A directory warning contains all
-  qualifying clusters and uses one `affectedCount` per cluster.
+  those dense directories. Apply Section 3.3 exactly: normalize and split the
+  stem, remove ignored tokens only from the leading run, and use the first
+  remaining token. Compare it with exact normalized tokens from the immediate
+  directory basename only. Group direct files by candidate, then emit one
+  finding for each group of at least four files, with `affectedCount: 1`.
+  Sort the candidate keys and sample filenames lexicographically.
 
   Use this neutral warning form:
 
@@ -816,10 +912,11 @@ lexicographically so identical input produces identical output.
   or pass-through modules mechanically.
   ```
 
-- [ ] **Step 5: Implement filename, generic-name, route-init, and mod rules**
+- [x] **Step 5: Implement filename, generic-name, route-init, and mod rules**
 
-  Use the TypeScript compiler API to inspect exported route declarations rather
-  than matching comments or string literals. Keep the approved mod paths in:
+  Use the approved directly declared `@babel/parser` to inspect exported route
+  declarations syntactically rather than matching comments or string literals.
+  Keep the approved mod paths in:
 
   ```js
   const approvedModCompatibilityBoundaries = new Set([
@@ -843,13 +940,14 @@ lexicographically so identical input produces identical output.
   Compare normalized repo-relative paths with `/` separators so behavior is
   stable across operating systems.
 
-- [ ] **Step 6: Make counts independent of displayed grouping**
+- [x] **Step 6: Make counts independent of displayed grouping**
 
   Initialize all default rule IDs to zero. Derive each count by summing
-  `affectedCount`, not by counting warning records. Sort findings by file,
-  rule ID, then message.
+  `affectedCount`, not by parsing messages. Directory-density and prefix
+  findings each contribute `1`; grouped filename findings contribute their
+  affected file count. Sort findings by file, rule ID, then message.
 
-- [ ] **Step 7: Register the new test suite in testing guidance**
+- [x] **Step 7: Register the new test suite in testing guidance**
 
   Add `packages/tests/repo/repo-style-layout-rules.test.ts` beside the three
   existing repo-style suites in both testing skill files. Update the integrity
@@ -857,7 +955,7 @@ lexicographically so identical input produces identical output.
   `scripts/repo-style-check/layout-rules.mjs` so the 400-line and 100-character
   limits apply.
 
-- [ ] **Step 8: Run focused tests and verify success**
+- [x] **Step 8: Run focused tests and verify success**
 
   Run:
 
@@ -865,10 +963,12 @@ lexicographically so identical input produces identical output.
   npx vitest run packages/tests/repo/repo-style-layout-rules.test.ts packages/tests/repo/repo-style-check.test.ts packages/tests/repo/repo-code-style-integrity.test.ts
   ```
 
-  Expected: PASS. At this point the pure scanner exists but the CLI does not
+  Verified 2026-07-28 after fix round 1: 41 focused tests passed across the
+  layout-rule, checker, and code-style-integrity suites, and 96 skill-routing
+  tests passed. At this point the pure scanner exists but the CLI does not
   invoke it yet.
 
-- [ ] **Step 9: Commit and publish the default-rule milestone**
+- [x] **Step 9: Commit the default-rule milestone**
 
   Commit message:
 
@@ -876,8 +976,10 @@ lexicographically so identical input produces identical output.
   test: define repository layout warning rules
   ```
 
-  Stage only the files listed in this task and the checked-off plan. Push and
-  update the draft pull request with the focused test evidence.
+  Commits `db5f596ef8aa835e012ecfce219b5105ef24c43c` and
+  `21bf51790596d7b7b8df34d00d466beeb2877fc8` are pushed; the remote branch head
+  is `21bf51790596d7b7b8df34d00d466beeb2877fc8`. PR #47 follows the branch but
+  remains externally open and non-draft, and its metadata is unavailable here.
 
 ### Task 3: Add Opt-In Primary-Symbol And Vocabulary Rules
 
@@ -893,7 +995,7 @@ lexicographically so identical input produces identical output.
 - Produces: the same result shape, with three additional rule families when
   `includeDetails` is `true`.
 
-- [ ] **Step 1: Write failing primary-export tests**
+- [x] **Step 1: Write failing primary-export tests**
 
   Add exact matching, mismatch, and ambiguity cases:
 
@@ -933,10 +1035,10 @@ lexicographically so identical input produces identical output.
   re-export-only modules, anonymous defaults, `mod.ts`, `index.ts`, and exact
   tool config filenames.
 
-- [ ] **Step 2: Write failing browser boundary tests**
+- [x] **Step 2: Write failing browser boundary tests**
 
-  Cover direct authoritative imports, the named translation boundary, and
-  established protocol identities:
+  Cover every exact module, the named translation boundary, original-versus-
+  local aliases, opaque imports, and established protocol identities:
 
   ```ts
   expect(
@@ -972,14 +1074,28 @@ lexicographically so identical input produces identical output.
   ).toBe(0);
   ```
 
-- [ ] **Step 3: Write failing server vocabulary tests**
+  Add named-import positives for `GroupSnapshot` from `group-types.ts`,
+  `CreateGroupRequest` from `state-types.ts`, and `StateEventPage` from
+  `state-event-types.ts`. Add
+  `GroupSnapshot as RoomSnapshot` and assert its finding evidence contains both
+  names. Add named-import negatives for exact original names `GroupRef` and
+  `roomRef`, including `GroupRef as RoomRef`. Add namespace and default imports
+  for each exact module and expect one warning per file. Prove side-effect-only
+  imports, dynamic imports, re-exports, relative paths, and the same imported
+  names from a different module do not warn. Prove multiple authoritative
+  imports in one room file still create one finding with sorted, deduplicated
+  evidence. Prove a direct import in a non-room browser module does not warn,
+  and prove a same-named translation file outside the exact exempt path still
+  warns when its stem makes it room-owned.
+
+- [x] **Step 3: Write failing server vocabulary tests**
 
   Add a server group-state file with `RoomPolicy`, one with `GroupPolicy`, and
   one that only imports or uses `GroupRef` and `roomRef`. Expect only
   `RoomPolicy` to warn. Include strings and comments containing `room` and prove
   that neither warns.
 
-- [ ] **Step 4: Run the detailed tests and verify failure**
+- [x] **Step 4: Run the detailed tests and verify failure**
 
   Run:
 
@@ -987,25 +1103,31 @@ lexicographically so identical input produces identical output.
   npx vitest run packages/tests/repo/repo-style-layout-rules.test.ts
   ```
 
-  Expected: FAIL because detailed rules are not implemented.
+  Verified 2026-07-28: FAIL with 8 expected detailed-rule failures and 18
+  passing default-rule tests because the detailed rules were not implemented.
 
-- [ ] **Step 5: Implement conservative primary-export selection**
+- [x] **Step 5: Implement conservative primary-export selection**
 
-  Parse each source with `typescript.createSourceFile`. Select named,
+  Parse each source with the approved directly declared `@babel/parser`.
+  Select named,
   directly-exported, top-level function, class, interface, type alias, enum, and
   variable declarations. Deduplicate overloads by symbol name. Warn only when
   exactly one unique candidate exists and its converted name differs from the
   file stem.
 
-- [ ] **Step 6: Implement browser import analysis**
+- [x] **Step 6: Implement browser import analysis**
 
-  Inspect `ImportDeclaration` nodes only. A direct import is authoritative when
-  its module path is an authoritative group/state contract module and at least
-  one imported name is not `GroupRef` or `roomRef`. Report one warning per room
-  module with the sorted imported names in the message. Exclude exactly
-  `room-group-state-translation.ts`.
+  Inspect static `ImportDeclaration` nodes only. Use the three exact module
+  strings and three exact original-name sets in Section 3.4. For an
+  `ImportSpecifier`, classify `propertyName?.text ?? name.text`; the local alias
+  never changes classification. Exempt exact original names `GroupRef` and
+  `roomRef` before set lookup. Treat namespace and default imports from an exact
+  module as authoritative opaque imports, ignore a declaration with no import
+  clause, and ignore every other syntax or module string. Exempt only the exact
+  repo-relative translation path. Report one warning per room-owned module with
+  sorted, deduplicated evidence.
 
-- [ ] **Step 7: Implement server identifier analysis**
+- [x] **Step 7: Implement server identifier analysis**
 
   Identify server group-state modules using the path and declaration criteria
   in Section 3.4. Traverse declaration names, excluding import declarations.
@@ -1013,12 +1135,12 @@ lexicographically so identical input produces identical output.
   `room` or `rooms` appears outside exact `GroupRef` and `roomRef`. Include at
   most five sorted identifier samples.
 
-- [ ] **Step 8: Run the detailed suite and verify success**
+- [x] **Step 8: Run the detailed suite and verify success**
 
-  Run the command from Step 4. Expected: PASS in both default and detailed
-  modes.
+  Verified 2026-07-28 after review round 2: 31 focused tests and 57 exact
+  regression tests passed.
 
-- [ ] **Step 9: Commit and publish the detailed-rule milestone**
+- [x] **Step 9: Commit the detailed-rule milestone**
 
   Commit message:
 
@@ -1026,8 +1148,14 @@ lexicographically so identical input produces identical output.
   feat: add opt-in traceability heuristics
   ```
 
-  Stage only this task's files and the checked-off plan. Push and update the
-  draft pull request.
+  Stage only this task's files and the checked-off plan. Do not push; the
+  controller publishes after independent review.
+
+  Commits `eaa61e261f995a4c8b2e566d11466c35f90c9c33`,
+  `d434c3bfcc98e943d1a3da4c90a566676b21d518`, and
+  `9f2c67a4a1e017ad0f0797d2db42bc83ede418bf` are pushed; the remote branch head
+  is `9f2c67a4a1e017ad0f0797d2db42bc83ede418bf`. PR #47 follows the branch and
+  remains open and non-draft; its metadata is unavailable here.
 
 ### Task 4: Integrate Layout Modes Into The Warning-Only CLI
 
@@ -1046,7 +1174,7 @@ lexicographically so identical input produces identical output.
 - Produces: default, layout-only, and detailed layout CLI modes with unchanged
   warning exit behavior.
 
-- [ ] **Step 1: Write failing CLI mode tests**
+- [x] **Step 1: Write failing CLI mode tests**
 
   Extend the existing fixture runner and assert:
 
@@ -1070,14 +1198,21 @@ lexicographically so identical input produces identical output.
   directory counts, grouped `affectedCount` values appear in the layout
   summary, warnings still exit `0`, and `--strict` still exits `1`.
 
-- [ ] **Step 2: Write failing package and guide integrity assertions**
+  Add one fixture containing 21 direct `.mjs` files, with exactly one file
+  containing a line over 100 characters. Assert the default run contains the
+  existing `Line 1 exceeds` warning, while `--layout-only` reports zero
+  `layout.directory-density` and zero `layout.feature-prefix-cluster` affected
+  items. This proves `.mjs` remains in file-level checking but never enters the
+  TypeScript layout projection.
+
+- [x] **Step 2: Write failing package and guide integrity assertions**
 
   Require both new npm scripts, prohibit `check:repo-style:strict`, and require
   the human guide to document `check:repo-style:layout`,
   `check:repo-style:layout-details`, grouped counts, and the ownership-prompt
   wording.
 
-- [ ] **Step 3: Run focused tests and verify failure**
+- [x] **Step 3: Run focused tests and verify failure**
 
   Run:
 
@@ -1087,25 +1222,32 @@ lexicographically so identical input produces identical output.
 
   Expected: FAIL because the CLI flags and package scripts do not exist.
 
-- [ ] **Step 4: Load each production source once**
+  Verified 2026-07-28: FAIL with 6 expected missing-integration failures and 24
+  passing tests.
 
-  In `main`, preserve `collectSourceFiles` and `isProductionCodeFile`. Replace
-  the per-file read loop with one filtered source list:
+- [x] **Step 4: Load each production source once**
+
+  In `main`, preserve `checkedExtensions`, `collectSourceFiles`, and
+  `isProductionCodeFile`; `.mjs` remains in `checkedExtensions`. Flatten,
+  filter, and sort the absolute file paths once, then read each surviving file
+  exactly once:
 
   ```js
-  const productionFiles = nestedFiles.flat().filter(isProductionCodeFile);
-  const sources = await Promise.all(
+  const productionFiles = nestedFiles.flat().filter(isProductionCodeFile).sort();
+  const productionSources = await Promise.all(
     productionFiles.map(async (file) => ({
       file,
       raw: await fs.readFile(file, 'utf8'),
     })),
   );
+  const layoutSources = productionSources.filter(({ file }) => isLayoutTypeScriptFile(file));
   ```
 
-  Existing `scanFile` receives those same `raw` values when `--layout-only` is
-  absent. Do not perform a second filesystem traversal for layout checks.
+  Existing `scanFile` receives every `productionSources` raw value, including
+  `.mjs`, when `--layout-only` is absent. `scanRepositoryLayout` receives only
+  `layoutSources`. Do not perform a second traversal or read for layout checks.
 
-- [ ] **Step 5: Invoke and print layout results**
+- [x] **Step 5: Invoke and print layout results**
 
   Add:
 
@@ -1120,7 +1262,7 @@ lexicographically so identical input produces identical output.
   `Layout summary:` line that shows every active rule and its affected count.
   Keep the global 200-finding display cap and full summary count.
 
-- [ ] **Step 6: Add package scripts and human instructions**
+- [x] **Step 6: Add package scripts and human instructions**
 
   Add the exact scripts from Section 3.1. In the human guide:
 
@@ -1131,7 +1273,7 @@ lexicographically so identical input produces identical output.
   - explain grouped warnings and affected counts;
   - retain the exclusions and no-strict-mode sections.
 
-- [ ] **Step 7: Run focused tests and verify success**
+- [x] **Step 7: Run focused tests and verify success**
 
   Run:
 
@@ -1141,7 +1283,10 @@ lexicographically so identical input produces identical output.
 
   Expected: PASS.
 
-- [ ] **Step 8: Verify the checker checks itself**
+  Verified 2026-07-28: PASS with all 116 tests across the exact four-file
+  command.
+
+- [x] **Step 8: Verify the checker checks itself**
 
   Run:
 
@@ -1152,7 +1297,10 @@ lexicographically so identical input produces identical output.
   Expected: exit `0` and no new file-length or line-width warning in the checker
   modules.
 
-- [ ] **Step 9: Commit and publish the CLI milestone**
+  Verified 2026-07-28: exit `0`, no checker-module warning, and all six default
+  layout summary counts were zero.
+
+- [x] **Step 9: Commit and publish the CLI milestone**
 
   Commit message:
 
@@ -1162,6 +1310,14 @@ lexicographically so identical input produces identical output.
 
   Stage only this task's files and the checked-off plan. Push and update the
   draft pull request.
+
+  Implementation commit `7df51579fa28505da4739707115a1ccaebba1c8d` and
+  evidence-correction commit `1b8a3bf18fc67f7a893a6c7d9566497bedda99dc`
+  are pushed. The exact four-file focused command passed all 116 tests. Remote
+  head is `1b8a3bf18fc67f7a893a6c7d9566497bedda99dc`. PR #47 follows the
+  branch and remains externally open and non-draft; its metadata is unavailable
+  here. This later publication evidence completes Task 4 Step 9; neither Task 4
+  commit claims its own future publication.
 
 ### Task 5: Record The Executable Baseline And Ratchet Procedure
 
@@ -1176,7 +1332,7 @@ lexicographically so identical input produces identical output.
 - Produces: an exact, reproducible Wave 0 baseline and instructions used by
   later feature child plans.
 
-- [ ] **Step 1: Run the default layout inventory**
+- [x] **Step 1: Run the default layout inventory**
 
   Run:
 
@@ -1189,7 +1345,11 @@ lexicographically so identical input produces identical output.
   filename-style files, 15 generic filenames, 11 generic route registrations,
   and zero unapproved `mod.ts` files.
 
-- [ ] **Step 2: Run the detailed inventory**
+  Verified 2026-07-28 at
+  `1b8a3bf18fc67f7a893a6c7d9566497bedda99dc`: exit `0`; all six
+  default counts exactly matched the planning baseline.
+
+- [x] **Step 2: Run the detailed inventory**
 
   Run:
 
@@ -1200,7 +1360,11 @@ lexicographically so identical input produces identical output.
   Expected: exit `0`. Record all three detailed rule counts without approving
   exceptions or enabling those rules by default.
 
-- [ ] **Step 3: Confirm the complete checker remains non-blocking**
+  Verified 2026-07-28: exit `0` with primary-export `344`, browser-room
+  boundary `2`, and server group-state vocabulary `0`. These remain opt-in
+  inventory only.
+
+- [x] **Step 3: Confirm the complete checker remains non-blocking**
 
   Run:
 
@@ -1212,7 +1376,11 @@ lexicographically so identical input produces identical output.
   Expected: the first command exits `0` with known warnings. The second exits
   `1` with `strict mode is not available`.
 
-- [ ] **Step 4: Record actual counts and the ratchet rule**
+  Verified 2026-07-28: the complete checker exited `0` with 4,613
+  non-blocking finding records and the six expected default layout counts. The
+  strict command exited `1` with the expected unavailable message.
+
+- [x] **Step 4: Record actual counts and the ratchet rule**
 
   Replace the planning counts in Section 2 with an `Implemented baseline`
   column while retaining the dated planning values. Add this rule to the master
@@ -1228,7 +1396,7 @@ lexicographically so identical input produces identical output.
   Check off the four Wave 0 implementation items only after their evidence is
   present. Do not mark Wave 0 published or the child plan complete yet.
 
-- [ ] **Step 5: Commit and publish the baseline milestone**
+- [x] **Step 5: Commit and publish the baseline milestone**
 
   Commit message:
 
@@ -1239,15 +1407,40 @@ lexicographically so identical input produces identical output.
   Stage only the two plan files. Push and update the draft pull request with
   both checker summaries.
 
+  Commit `55469829af67eabdc692ab4e9823c0e26fabb40b` passed independent review
+  without findings and was pushed. The remote branch head is the same commit.
+  PR #47 follows the branch and remains open and non-draft; its metadata is
+  unavailable here. No merge was attempted.
+
 ### Task 6: Complete Verification And Publication Gates
 
-**Files:** No intended content changes. Any correction invalidates prior final
-gate results and requires rerunning them.
+**Files:**
+
+- Modify during the authorized correction before the replacement feature-tree
+  freeze:
+  `scripts/repo-style-check/layout-rules.mjs`,
+  `packages/tests/repo/repo-style-layout-rules.test.ts`, and the three linked
+  traceability plans. Plan edits in this phase record only pre-freeze-known
+  approval, implementation, review, and remote Task 1 through 5 publication
+  state.
+- Modify only on a later evidence-ledger branch for future evidence: the three
+  traceability plans. That later phase records the replacement frozen tree,
+  final feature SHA, Branch Release Gate, PR, resulting default SHA, successful
+  default workflow, and ledger state.
+
+The pull-request body and Mandatory Completion Handoff are the mutable
+publication envelope. They are not repository files and may be updated after a
+tree is frozen without invalidating that tree.
 
 **Interfaces:**
 
-- Consumes: final uncommitted working tree from Tasks 1-5.
-- Produces: exact local and remote evidence required to mark this plan complete.
+- Consumes: final implementation content from Tasks 1-5.
+- Produces: one immutable feature tree, its external publication envelope, and
+  one independently gated later ledger publication without self-referential
+  evidence edits.
+- The correction produces no tracked replacement-tree, final feature-SHA,
+  Branch Release Gate, merge, default-workflow, or ledger evidence. Those facts
+  remain external and later under Steps 4 through 8.
 
 - [ ] **Step 1: Run formatting and diff checks**
 
@@ -1283,7 +1476,32 @@ gate results and requires rerunning them.
 
   Expected: all commands exit `0`; warnings and counts are reported honestly.
 
-- [ ] **Step 4: Run the repository completion gates**
+- [ ] **Step 4: Finalize and freeze the feature-branch evidence tree**
+
+  Before running repository completion gates, update all Task 1-5 checkboxes,
+  executable baseline counts, and known focused results in this plan. Set its
+  implementation state to `implemented; final and publication gates pending`.
+  Do not add fields for a future commit SHA, merge SHA, or workflow result.
+
+  Confirm scope, stage the exact implementation files, and compute the tree:
+
+  ```bash
+  git status --short
+  git diff --check
+  git add .agents/skills/rallar-code-writing/references/repo-code-style.md docs/repo-human-style-guide.md scripts/repo-style-check/layout-rules.mjs scripts/repo-style-check.mjs package.json packages/tests/repo/repo-style-layout-rules.test.ts packages/tests/repo/repo-style-check.test.ts packages/tests/repo/repo-code-style-integrity.test.ts .agents/skills/rallar-testing/SKILL.md .agents/skills/rallar-testing/references/test-commands.md plans/repo-human-traceability-refactoring-program-plan.md plans/repo-human-traceability-program-execution-plan.md plans/repo-human-traceability-governance-and-checker-plan.md
+  git diff --cached --name-only
+  git diff --cached --check
+  git write-tree
+  git diff --name-only -- .agents/skills/rallar-code-writing/references/repo-code-style.md docs/repo-human-style-guide.md scripts/repo-style-check/layout-rules.mjs scripts/repo-style-check.mjs package.json packages/tests/repo/repo-style-layout-rules.test.ts packages/tests/repo/repo-style-check.test.ts packages/tests/repo/repo-code-style-integrity.test.ts .agents/skills/rallar-testing/SKILL.md .agents/skills/rallar-testing/references/test-commands.md plans/repo-human-traceability-refactoring-program-plan.md plans/repo-human-traceability-program-execution-plan.md plans/repo-human-traceability-governance-and-checker-plan.md
+  ```
+
+  Expected: the staged list contains only the authorized child-plan files; the
+  final command prints nothing because no in-scope unstaged edit exists. Record
+  the full tree ID from `git write-tree` in the draft PR and handoff, not by
+  editing the now-frozen plan. Unrelated unstaged user files may remain visible
+  in `git status` and remain excluded from the tree.
+
+- [ ] **Step 5: Run the repository completion gates on the frozen tree**
 
   Run from the unchanged final working tree:
 
@@ -1294,67 +1512,96 @@ gate results and requires rerunning them.
   ```
 
   Expected: all three commands PASS. Record exact outputs. Any content change
-  after a pass invalidates all affected evidence and requires a rerun.
+  to an in-scope file after a pass invalidates the tree and all local evidence;
+  return to Step 4 and rerun every invalidated command.
 
-- [ ] **Step 5: Review scope before final publication**
+- [ ] **Step 6: Commit and publish exactly the frozen feature tree**
 
   Run:
 
   ```bash
-  git status --short
-  git diff --stat
-  git diff --name-only
+  git commit -m "feat: add repository traceability governance"
+  git rev-parse HEAD
+  git rev-parse 'HEAD^{tree}'
   ```
 
-  Expected: no changed production file under `apps/**` or production package
-  code under `packages/**`; unrelated user changes remain unstaged.
+  Expected: `HEAD^{tree}` exactly equals the Step 4 tree ID. Push the
+  non-default branch. In the draft PR and handoff, record the tree ID, final
+  branch commit SHA, exact local command results, and unrelated excluded paths.
+  Require **Branch Release Gate** to pass for that exact branch commit and add
+  its run identifier and conclusion to the same external envelope. Do not edit
+  an in-scope file to copy this evidence into the frozen tree.
 
-- [ ] **Step 6: Publish the final feature-branch state**
+- [ ] **Step 7: Record merge and default-workflow evidence externally**
 
-  Commit any final in-scope plan evidence on the non-default branch, push it,
-  and update the draft pull request with exact passed, failed, unavailable, and
-  skipped results. Do not squash structural evidence into unrelated work.
+  After human merge, resolve the exact resulting default-branch commit SHA; do
+  not assume it equals the feature SHA. Append that SHA and the exact
+  **Run Hetzner Supported Distributed Manifests** run identifier, tested SHA,
+  and conclusion to the PR and Mandatory Completion Handoff. The child reaches
+  execution-protocol state `complete` only when that workflow is green for the
+  resulting default SHA. A pending, skipped, failed, or older-SHA run leaves it
+  incomplete. No post-merge plan edit is part of this decision.
 
-- [ ] **Step 7: Verify required remote gates**
+- [ ] **Step 8: Publish the completed-child ledger as a separate evidence task**
 
-  Require **Branch Release Gate** to pass for the exact final feature-branch
-  commit. After the change reaches the default branch through the human-approved
-  repository process, require **Run Hetzner Supported Distributed Manifests**
-  to pass for that exact default-branch commit. Record both full commit SHAs.
+  After Step 7 is green, create a new non-default evidence-ledger branch from
+  that exact default SHA. Change only the three program plan files to record the
+  frozen implementation tree, final feature SHA, Branch Release Gate, PR,
+  resulting default SHA, and successful default-workflow run. Mark the child
+  implementation `complete` and the ledger publication `pending`.
 
-- [ ] **Step 8: Mark completion only after publication evidence exists**
+  Run Prettier and `git diff --check`, the four focused repository governance
+  tests, then `npm run test:unit`, `npm run test:ci`, and `npm run build` on the
+  final ledger tree. Stage only the three plans, record its `git write-tree`
+  ID, commit, push, and use a separate draft PR. Require Branch Release Gate for
+  the exact ledger commit, human merge, and the distributed-manifest workflow
+  for the exact ledger default SHA. Store the ledger tree, commit, merge, and
+  workflow evidence in that ledger PR and its handoff.
 
-  Update this plan and the master plan to `complete` only when focused checks,
-  all three local completion gates, the current draft pull request, and both
-  required remote workflows are complete for the exact published commits.
+  When the ledger workflow is green, the execution protocol state becomes
+  `ledger-published`. Do not create another commit solely to put the ledger
+  merge SHA or its future workflow result inside the ledger that produced it;
+  the ledger PR/handoff is the canonical publication envelope for those facts.
+  If a ledger gate fails, keep `ledger-published` pending and do not start the
+  next child plan, but do not relabel the already verified implementation tree
+  as the ledger tree.
 
 ## 7. Acceptance Checklist
 
-- [ ] `AGENTS.md`, the code-writing skill, the canonical standard, and the human
+- [x] `AGENTS.md`, the code-writing skill, the canonical standard, and the human
       guide all state that code is written first for human developers.
-- [ ] The canonical standard explains that its detailed rules derive from human
+- [x] The canonical standard explains that its detailed rules derive from human
       understandability together with non-negotiable correctness and operational
       constraints.
-- [ ] Integrity tests prevent removal of the primary principle or the routing to
+- [x] Integrity tests prevent removal of the primary principle or the routing to
       the authoritative standard.
-- [ ] The canonical standard defines feature-first organization, co-location,
+- [x] The canonical standard defines feature-first organization, co-location,
       filename-to-symbol matching, descriptive route registration, package barrels,
       and the room/group-state vocabulary boundary.
-- [ ] The human guide gives a reviewer a top-to-bottom navigation procedure.
-- [ ] Default checker output includes six conservative layout rule families.
-- [ ] `--layout-only` makes layout debt independently reviewable.
-- [ ] `--layout-details` contains primary-export and vocabulary heuristics only.
-- [ ] Every layout rule has a stable ID and affected-item count.
-- [ ] The checker is documented as a source of review signals, not as the
+- [x] The human guide gives a reviewer a top-to-bottom navigation procedure.
+- [x] Default checker output includes six conservative layout rule families.
+- [x] `--layout-only` makes layout debt independently reviewable.
+- [x] `--layout-details` contains primary-export and vocabulary heuristics only.
+- [x] Every layout rule has a stable ID and affected-item count.
+- [x] One load-once source inventory keeps `.mjs` file-level checking while the
+      layout projection accepts only `.ts`, `.tsx`, `.mts`, and `.cts`.
+- [x] Each qualifying prefix cluster is one finding with `affectedCount: 1`,
+      and the deterministic eight-directory fixture totals 22 clusters.
+- [x] Browser room import classification uses the exact module/name tables,
+      original imported names, alias evidence, opaque-import behavior, and
+      `GroupRef`/`roomRef` exemptions in Section 3.4.
+- [x] The checker is documented as a source of review signals, not as the
       definition of understandable code.
-- [ ] High-volume filename findings are grouped by directory.
-- [ ] Tests, mocks, fixtures, stories, generated code, and test-runner configs
+- [x] High-volume filename findings are grouped by directory.
+- [x] Tests, mocks, fixtures, stories, generated code, and test-runner configs
       remain excluded from production counts.
-- [ ] Existing 14 `mod.ts` paths pass and a new nested `mod.ts` warns.
-- [ ] No strict script or CI gate exists.
-- [ ] No production file moved, renamed, reformatted, or semantically changed.
-- [ ] Initial default and detailed counts are recorded with the exact commit.
+- [x] Existing 14 `mod.ts` paths pass and a new nested `mod.ts` warns.
+- [x] No strict script or CI gate exists.
+- [x] No production file moved, renamed, reformatted, or semantically changed.
+- [x] Initial default and detailed counts are recorded with the exact commit.
 - [ ] Focused, completion, publication, and remote-gate evidence is complete.
+- [ ] Feature and evidence-ledger trees use separate PR/handoff publication
+      envelopes, with no commit required to contain its own future evidence.
 
 ## 8. Deliberately Manual Review Areas
 
@@ -1376,17 +1623,19 @@ prevent.
 
 ## 9. Progress Record
 
-| Milestone                  | Status  | Evidence              |
-| -------------------------- | ------- | --------------------- |
-| Plan reviewed and approved | pending | No approval recorded. |
-| Governance wording         | pending | Not started.          |
-| Conservative layout rules  | pending | Not started.          |
-| Opt-in detailed rules      | pending | Not started.          |
-| CLI and npm commands       | pending | Not started.          |
-| Executable baseline        | pending | Planning counts only. |
-| Focused verification       | pending | Not run.              |
-| Completion gates           | pending | Not run.              |
-| Draft PR and remote gates  | pending | Not published.        |
+| Milestone                         | Status      | Evidence                                                                                                                                                                                                                                                                                    |
+| --------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Plan published                    | complete    | Direct `main` commit `4ec117db1e09e00f86ed8f66cbf8adab1cdeb4a9` adds this plan and the two reciprocal program plans.                                                                                                                                                                        |
+| Execution-readiness review        | approved    | Human approval on 2026-07-28 permits only the documented `@babel/parser` substitution for Tasks 2 and 3; approved blob `8ee56ac27189f9bed751fb6a95992830bda6be60` otherwise remains binding.                                                                                                |
+| Primary-principle prerequisite    | complete    | PR #45 merge `95065d769f585464b15059423057e151877fdb1a`; current focused verification passes 81 tests.                                                                                                                                                                                      |
+| Organization and naming wording   | complete    | Commit `e0e6e7fd1e2ac6c280ae2930f411af76557ccc48` is pushed; PR #47 is open/non-draft and its metadata remains unmodifiable here.                                                                                                                                                           |
+| Conservative layout rules         | complete    | Task 2 commits `db5f596ef8aa835e012ecfce219b5105ef24c43c` and `21bf51790596d7b7b8df34d00d466beeb2877fc8` are pushed; remote head is `21bf51790596d7b7b8df34d00d466beeb2877fc8`.                                                                                                             |
+| Opt-in detailed rules             | complete    | Task 3 commits `eaa61e261f995a4c8b2e566d11466c35f90c9c33`, `d434c3bfcc98e943d1a3da4c90a566676b21d518`, and `9f2c67a4a1e017ad0f0797d2db42bc83ede418bf` are pushed; 31 focused and 57 regression tests passed after review round 2.                                                           |
+| CLI and npm commands              | complete    | Task 4 implementation `7df51579fa28505da4739707115a1ccaebba1c8d` plus evidence correction `1b8a3bf18fc67f7a893a6c7d9566497bedda99dc` are pushed; Task 5 later advanced the remote branch through `55469829af67eabdc692ab4e9823c0e26fabb40b`.                                                |
+| Executable baseline               | recorded    | Measured against `1b8a3bf18fc67f7a893a6c7d9566497bedda99dc` and published in `55469829af67eabdc692ab4e9823c0e26fabb40b`: default counts match planning exactly; detailed opt-in counts are `344`, `2`, and `0`; complete checker exits `0`, while strict remains unavailable with exit `1`. |
+| Focused child-plan verification   | complete    | Known evidence includes the 81-test prerequisite baseline, Task 2's 41 focused and 96 skill-routing tests, Task 3's 31 focused and 57 exact regression tests after review round 2, and the Task 4 exact four-file suite's 116 tests.                                                        |
+| Completion gates                  | pending     | `npm run test:unit`, `npm run test:ci`, and `npm run build` were not run for child implementation.                                                                                                                                                                                          |
+| Child implementation PR and gates | implemented | Task 5 commit `55469829af67eabdc692ab4e9823c0e26fabb40b` passed clean independent review and is the pushed remote head. PR #47 follows the branch and remains open/non-draft with unavailable metadata; final local and remote gates remain pending.                                        |
 
 ## 10. Decisions Fixed By This Draft
 
@@ -1403,3 +1652,13 @@ prevent.
 7. Exact tool-discovered `vite.config.ts` and `prisma.config.ts` filenames are
    retained for ecosystem discoverability.
 8. No production movement begins under this child plan.
+9. The CLI reads one filtered production inventory once; `.mjs` stays eligible
+   for file-level warnings and is excluded from the exported TypeScript layout
+   projection.
+10. Feature-prefix output uses one deterministically sorted finding per cluster
+    with scalar `affectedCount: 1` and leading-only ignored-token removal.
+11. Browser room imports are classified by three exact module specifiers and
+    module-specific original-name sets; aliases do not hide coupling, while
+    `GroupRef` and `roomRef` remain exempt.
+12. Immutable feature and ledger trees use external PR/handoff envelopes for
+    evidence that can exist only after those trees are committed or merged.

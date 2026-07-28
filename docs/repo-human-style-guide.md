@@ -104,6 +104,13 @@ Apply the formatting, spacing, file-order, file-size, handler-size, and
 complexity sections of the standard. Blank lines should expose phases in long
 factories and composition roots.
 
+Start at the obvious feature entry file and follow one representative input to
+its result. Compare each filename with its primary exported symbol, verify that
+contracts, translations, factories, persistence adapters, and direct tests are
+co-located with the feature that owns it.
+Inspect the room/group-state translation boundary when browser room code reaches
+authoritative group-state contracts.
+
 Use this size and cohesion review sequence:
 
 1. Summarize the file responsibility in one sentence.
@@ -162,7 +169,31 @@ Current default warnings cover:
 - discouraged compound service names;
 - factories that hide several defaults behind optional inputs;
 - long unsegmented blocks in supported factory forms;
-- potential `unknown` propagation.
+- potential `unknown` propagation;
+- directories with more than 20 direct production TypeScript files
+  (`layout.directory-density`);
+- meaningful filename-prefix clusters in those dense directories
+  (`layout.feature-prefix-cluster`);
+- non-kebab TypeScript filenames (`layout.filename-style`);
+- generic filenames without an owning feature noun and role
+  (`layout.generic-filename`);
+- exported route registration functions named only `init`
+  (`layout.generic-route-init`);
+- `mod.ts` files outside the approved package compatibility boundaries
+  (`layout.unapproved-mod`).
+
+Run the layout-only command to isolate these structural review signals from
+existing file-level warning debt:
+
+```bash
+npm run check:repo-style:layout
+```
+
+Directory and prefix findings are ownership prompts.
+It is not an instruction to create folders or pass-through modules mechanically.
+High-volume filename findings are grouped warnings, while the layout summary
+reports affected counts for every active rule. Thus one displayed warning can
+account for several affected files without hiding the debt measure.
 
 Some rules remain manual because a text heuristic cannot reliably determine
 semantics: decision depth, purity, side effects, responsibility boundaries,
@@ -184,7 +215,22 @@ contract declarations:
 npm run check:repo-style:object-interfaces
 ```
 
-Both are off in the default run because current repository debt makes them noisy.
+Run detailed layout checks when primary-symbol naming and vocabulary boundaries
+are in scope:
+
+```bash
+npm run check:repo-style:layout-details
+```
+
+This adds only `layout.primary-export-name`, `layout.browser-room-boundary`, and
+`layout.server-group-state-vocabulary`. Browser product code uses room language,
+while authoritative API and server code uses group-state language. The explicit
+`room-group-state-translation.ts` boundary owns that translation; established
+protocol identities `GroupRef` and `roomRef` remain unchanged. These detailed
+checks are opt-in because existing compatibility debt can make them noisy.
+
+All optional checks in this section are off in the default run because current
+repository debt makes them noisy.
 
 ### Focused and expanded scans
 

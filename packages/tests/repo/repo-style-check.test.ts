@@ -147,6 +147,43 @@ describe('repo style checker', () => {
     expect(runChecker(fixtureRoot)).toContain('PASS (no issues found in this run)');
   });
 
+  it('does not include excluded sources in layout directory counts', () => {
+    const fixtureRoot = createFixture({
+      ...Object.fromEntries(
+        Array.from({ length: 20 }, (_, index) => [
+          `auth-command-${index}.ts`,
+          `export const authCommand${index} = ${index};`,
+        ]),
+      ),
+      'schema.generated.ts': 'export const generatedSchema = true;',
+      ...Object.fromEntries(
+        Array.from({ length: 21 }, (_, index) => [
+          `tests/test-command-${index}.ts`,
+          `export const testCommand${index} = ${index};`,
+        ]),
+      ),
+      ...Object.fromEntries(
+        Array.from({ length: 21 }, (_, index) => [
+          `mocks/mock-command-${index}.ts`,
+          `export const mockCommand${index} = ${index};`,
+        ]),
+      ),
+      ...Object.fromEntries(
+        Array.from({ length: 21 }, (_, index) => [
+          `generated/generated-command-${index}.ts`,
+          `export const generatedCommand${index} = ${index};`,
+        ]),
+      ),
+    });
+
+    const result = runChecker(fixtureRoot, '--layout-only');
+
+    expect(result).not.toContain('[layout.directory-density]');
+    expect(result).not.toContain('[layout.feature-prefix-cluster]');
+    expect(result).toContain('layout.directory-density=0');
+    expect(result).toContain('layout.feature-prefix-cluster=0');
+  });
+
   it('excludes test-runner configuration files from production warnings', () => {
     const longLine = `const value = '${'x'.repeat(110)}';`;
     const fixtureRoot = createFixture({
@@ -212,6 +249,7 @@ describe('repo style checker', () => {
       'scripts/repo-style-check/contract-rules.mjs',
       'scripts/repo-style-check/factory-route-rules.mjs',
       'scripts/repo-style-check/function-analysis.mjs',
+      'scripts/repo-style-check/layout-rules.mjs',
       'scripts/repo-style-check/source-text.mjs',
     ];
 
@@ -230,17 +268,79 @@ describe('repo style checker', () => {
     );
   });
 
-  it('caps displayed warnings while preserving the full summary count', () => {
-    const files = Object.fromEntries(
-      Array.from({ length: 205 }, (_, index) => [
-        `long-line-${index}.ts`,
-        `const value${index} = '${'x'.repeat(110)}';`,
-      ]),
+  it('reports conservative layout warnings by default and isolates them on request', () => {
+    const fixtureRoot = createFixture({
+      ...Object.fromEntries(
+        Array.from({ length: 21 }, (_, index) => [
+          `auth-command-${index}.ts`,
+          index === 0
+            ? `export const authCommand${index} = '${'x'.repeat(110)}';`
+            : `export const authCommand${index} = ${index};`,
+        ]),
+      ),
+    });
+
+    const layoutOnly = executeChecker(fixtureRoot, '--layout-only');
+    expect(layoutOnly.status).toBe(0);
+    expect(layoutOnly.stdout).toContain('[layout.directory-density]');
+    expect(layoutOnly.stdout).not.toContain('Line 1 exceeds');
+
+    const defaultRun = executeChecker(fixtureRoot);
+    expect(defaultRun.status).toBe(0);
+    expect(defaultRun.stdout).toContain('[layout.directory-density]');
+    expect(defaultRun.stdout).toContain('Line 1 exceeds');
+  });
+
+  it('adds detailed layout warnings only when requested', () => {
+    const fixtureRoot = createFixture({
+      'primary-name.ts': 'export function mismatchedName() {}',
+    });
+
+    const detailsOff = runChecker(fixtureRoot, '--layout-only');
+    expect(detailsOff).not.toContain('layout.primary-export-name');
+
+    const detailsOn = runChecker(fixtureRoot, '--layout-only', '--layout-details');
+    expect(detailsOn).toContain('[layout.primary-export-name]');
+    expect(detailsOn).toContain('layout.primary-export-name=1');
+  });
+
+  it('keeps mjs in file checks without projecting it into layout checks', () => {
+    const fixtureRoot = createFixture(
+      Object.fromEntries(
+        Array.from({ length: 21 }, (_, index) => [
+          `auth-command-${index}.mjs`,
+          index === 0 ? `export const value = '${'x'.repeat(110)}';` : 'export const value = 1;',
+        ]),
+      ),
     );
+
+    expect(runChecker(fixtureRoot)).toContain('Line 1 exceeds');
+
+    const layoutOnly = runChecker(fixtureRoot, '--layout-only');
+    expect(layoutOnly).not.toContain('[layout.directory-density]');
+    expect(layoutOnly).not.toContain('[layout.feature-prefix-cluster]');
+    expect(layoutOnly).toContain('layout.directory-density=0');
+    expect(layoutOnly).toContain('layout.feature-prefix-cluster=0');
+  });
+
+  it('caps displayed warnings while preserving full finding and affected-item counts', () => {
+    const files = {
+      ...Object.fromEntries(
+        Array.from({ length: 205 }, (_, index) => [
+          `feature-${index}/long-line.ts`,
+          `const value${index} = '${'x'.repeat(110)}';`,
+        ]),
+      ),
+      'BadOne.ts': 'export const badOne = true;',
+      'BadTwo.ts': 'export const badTwo = true;',
+      'BadThree.ts': 'export const badThree = true;',
+    };
     const result = runChecker(createFixture(files));
 
-    expect(result).toContain('5 additional findings not displayed');
-    expect(result).toContain('Summary: 205 non-blocking issues found');
+    expect(result.split('\n').filter((line) => line.startsWith('WARN: '))).toHaveLength(200);
+    expect(result).toContain('6 additional findings not displayed');
+    expect(result).toContain('Summary: 206 non-blocking issues found');
+    expect(result).toContain('layout.filename-style=3');
   });
 
   it('keeps warnings non-blocking and rejects unavailable strict mode', () => {
