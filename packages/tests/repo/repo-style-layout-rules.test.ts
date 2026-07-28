@@ -157,10 +157,25 @@ describe('repository layout rules', () => {
         ].join('\n'),
         'feature/other-routes.ts': 'export function registerOtherRoutes() {}',
         'feature/private-route.ts': 'function init() {}',
+        'feature/arrow-routes.ts': 'export const init = () => {};',
+        'feature/function-expression-routes.ts': 'export const init = function () {};',
       }),
     );
 
-    expect(result.counts[layoutRuleIds.genericRouteInit]).toBe(1);
+    expect(result.counts[layoutRuleIds.genericRouteInit]).toBe(3);
+  });
+
+  it('parses TypeScript type assertions in .ts route modules without JSX', () => {
+    const result = scan(
+      sources({
+        'feature/type-assertion-routes.ts': [
+          'const routeConfig = <RouteConfig>input;',
+          'export function registerTypeAssertionRoutes() {}',
+        ].join('\n'),
+      }),
+    );
+
+    expect(result.counts[layoutRuleIds.genericRouteInit]).toBe(0);
   });
 
   it('allows only the approved mod compatibility boundaries', () => {
@@ -189,6 +204,25 @@ describe('repository layout rules', () => {
     expect(forward.counts[layoutRuleIds.filenameStyle]).toBe(1);
     expect(forward.counts[layoutRuleIds.genericFilename]).toBe(2);
     expect(forward.counts[layoutRuleIds.primaryExportName]).toBe(0);
+  });
+
+  it('sorts findings by code units across punctuation and non-ASCII paths', () => {
+    const result = scan(
+      sources({
+        'order/é/types.ts': 'export interface Accented {}',
+        'order/z/types.ts': 'export interface Zeta {}',
+        'order/-/types.ts': 'export interface Punctuation {}',
+        'order/a/types.ts': 'export interface Alpha {}',
+      }),
+    );
+
+    expect(
+      findingsFor(result, layoutRuleIds.genericFilename).map((finding) => finding.file),
+    ).toEqual(
+      ['order/-', 'order/a', 'order/z', 'order/é'].map((directory) =>
+        path.resolve(repoRoot, directory),
+      ),
+    );
   });
 
   it('reproduces the 22-cluster planning count deterministically', () => {

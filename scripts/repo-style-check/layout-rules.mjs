@@ -261,10 +261,15 @@ function getFeaturePrefix(file, directoryTokens) {
 }
 
 function hasExportedInitFunction(source) {
+  const plugins = ['typescript'];
+  if (source.file.endsWith('.tsx')) {
+    plugins.push('jsx');
+  }
+
   const program = parse(source.raw, {
     sourceFilename: source.file,
     sourceType: 'module',
-    plugins: ['typescript', 'jsx'],
+    plugins,
   }).program;
 
   return program.body.some((statement) => {
@@ -282,9 +287,9 @@ function hasExportedInitFunction(source) {
       (declaration) =>
         declaration.id.type === 'Identifier' &&
         declaration.id.name === 'init' &&
-        declaration.initializer !== undefined &&
-        (declaration.initializer.type === 'ArrowFunctionExpression' ||
-          declaration.initializer.type === 'FunctionExpression'),
+        declaration.init !== null &&
+        (declaration.init.type === 'ArrowFunctionExpression' ||
+          declaration.init.type === 'FunctionExpression'),
     );
   });
 }
@@ -314,8 +319,16 @@ function finding(input) {
 
 function compareFindings(left, right) {
   return (
-    left.file.localeCompare(right.file) ||
-    left.ruleId.localeCompare(right.ruleId) ||
-    left.message.localeCompare(right.message)
+    compareCodeUnits(left.file, right.file) ||
+    compareCodeUnits(left.ruleId, right.ruleId) ||
+    compareCodeUnits(left.message, right.message)
   );
+}
+
+function compareCodeUnits(left, right) {
+  if (left === right) {
+    return 0;
+  }
+
+  return left < right ? -1 : 1;
 }
