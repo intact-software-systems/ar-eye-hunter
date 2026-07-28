@@ -461,6 +461,19 @@ describe('repository layout rules', () => {
     expect(findings[0]?.message).toContain(sample);
   });
 
+  it('warns for room vocabulary in a declared class method', () => {
+    const findings = detailFindings(
+      {
+        'packages/shared-server/example/group-state-declared.ts':
+          'declare class GroupPolicy { roomPolicy(): void; }',
+      },
+      layoutRuleIds.serverGroupStateVocabulary,
+    );
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.message).toContain('roomPolicy');
+  });
+
   it('continues to ignore imported, referenced, commented, and string room names', () => {
     expect(
       detailCount(

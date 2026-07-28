@@ -55,7 +55,7 @@ const primaryDeclarationTypes = toWordSet(
 const declarationIdTypes = new Set([...primaryDeclarationTypes, 'TSModuleDeclaration']);
 const declarationKeyTypes = toWordSet(
   'ClassMethod ClassPrivateMethod ClassPrivateProperty ClassProperty ObjectMethod ' +
-    'TSMethodSignature TSPropertySignature',
+    'TSDeclareMethod TSMethodSignature TSPropertySignature',
 );
 const functionExpressionTypes = toWordSet('ArrowFunctionExpression FunctionExpression');
 export const layoutLimits = Object.freeze({
