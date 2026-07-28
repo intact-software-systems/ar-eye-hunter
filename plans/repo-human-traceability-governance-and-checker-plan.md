@@ -20,8 +20,17 @@ already-filtered production inventory used by file-level rules. Default layout
 checks use conservative, grouped warnings; syntax- and domain-sensitive checks
 are opt-in until their false-positive rate is known.
 
-**Tech Stack:** Markdown, Node.js ESM, TypeScript compiler API, npm scripts,
-Vitest, Prettier, and the existing `scripts/repo-style-check.mjs` command.
+**Tech Stack:** Markdown, Node.js ESM, the directly declared `@babel/parser`
+for TypeScript/TSX syntax AST inspection, npm scripts, Vitest, Prettier, and
+the existing `scripts/repo-style-check.mjs` command.
+
+**2026-07-28 execution amendment:** The human approved using the repository's
+directly declared `@babel/parser` for the Tasks 2 and 3 TypeScript/TSX syntax
+AST inspection because TypeScript `7.0.2` no longer exports the classic
+in-process parser. TypeScript remains `7.0.2`; this changes neither
+`package.json` nor a lockfile. This narrow parser substitution leaves every
+other requirement in approved plan blob
+`8ee56ac27189f9bed751fb6a95992830bda6be60` unchanged.
 
 ## Global Constraints
 
@@ -643,7 +652,7 @@ approved or implemented by this revision.
   Expected: formatter and diff checks pass; the diff defines one standard and
   one review workflow rather than duplicating competing rules.
 
-- [ ] **Step 8: Commit and publish the governance milestone**
+- [x] **Step 8: Commit and publish the governance milestone**
 
   Stage only the three changed governance/test files and this checked-off plan.
   Do not manufacture changes to the already-verified `AGENTS.md` or
@@ -654,8 +663,10 @@ approved or implemented by this revision.
   docs: define repository traceability rules
   ```
 
-  Push the non-default branch and open or update the draft pull request with the
-  focused test result.
+  Commit `e0e6e7fd1e2ac6c280ae2930f411af76557ccc48` was pushed and PR #47
+  exists at `https://github.com/intact-software-systems/ar-eye-hunter/pull/47`.
+  It is open and non-draft. This environment cannot update its metadata, so no
+  draft-PR metadata update is claimed.
 
 ### Task 2: Implement Conservative Repository Layout Rules
 
@@ -675,7 +686,7 @@ approved or implemented by this revision.
 - Produces: deterministic default layout findings and counts without filesystem
   reads or console output.
 
-- [ ] **Step 1: Create failing default-rule unit tests**
+- [x] **Step 1: Create failing default-rule unit tests**
 
   Import the not-yet-existing module and add focused tests using absolute
   in-memory source records. The tests must cover these boundaries:
@@ -743,7 +754,7 @@ approved or implemented by this revision.
   expect(planningResult.counts['layout.feature-prefix-cluster']).toBe(22);
   ```
 
-- [ ] **Step 2: Run the new suite and verify failure**
+- [x] **Step 2: Run the new suite and verify failure**
 
   Run:
 
@@ -751,9 +762,10 @@ approved or implemented by this revision.
   npx vitest run packages/tests/repo/repo-style-layout-rules.test.ts
   ```
 
-  Expected: FAIL because `layout-rules.mjs` does not exist.
+  The pre-implementation run failed because `layout-rules.mjs` did not exist;
+  the preserved SDD checkpoint records that test-first evidence.
 
-- [ ] **Step 3: Implement the TypeScript predicate, normalization, and metadata**
+- [x] **Step 3: Implement the TypeScript predicate, normalization, and metadata**
 
   Create the exports from Section 5. Use these exact normalization rules:
 
@@ -788,7 +800,7 @@ approved or implemented by this revision.
   expect(toKebabCase('PSqlRepository')).toBe('p-sql-repository');
   ```
 
-- [ ] **Step 4: Implement directory density and meaningful-prefix grouping**
+- [x] **Step 4: Implement directory density and meaningful-prefix grouping**
 
   Group only direct TypeScript children. A directory with 21 files produces
   one density finding with `affectedCount: 1`. Prefix analysis runs only in
@@ -807,10 +819,11 @@ approved or implemented by this revision.
   or pass-through modules mechanically.
   ```
 
-- [ ] **Step 5: Implement filename, generic-name, route-init, and mod rules**
+- [x] **Step 5: Implement filename, generic-name, route-init, and mod rules**
 
-  Use the TypeScript compiler API to inspect exported route declarations rather
-  than matching comments or string literals. Keep the approved mod paths in:
+  Use the approved directly declared `@babel/parser` to inspect exported route
+  declarations syntactically rather than matching comments or string literals.
+  Keep the approved mod paths in:
 
   ```js
   const approvedModCompatibilityBoundaries = new Set([
@@ -834,14 +847,14 @@ approved or implemented by this revision.
   Compare normalized repo-relative paths with `/` separators so behavior is
   stable across operating systems.
 
-- [ ] **Step 6: Make counts independent of displayed grouping**
+- [x] **Step 6: Make counts independent of displayed grouping**
 
   Initialize all default rule IDs to zero. Derive each count by summing
   `affectedCount`, not by parsing messages. Directory-density and prefix
   findings each contribute `1`; grouped filename findings contribute their
   affected file count. Sort findings by file, rule ID, then message.
 
-- [ ] **Step 7: Register the new test suite in testing guidance**
+- [x] **Step 7: Register the new test suite in testing guidance**
 
   Add `packages/tests/repo/repo-style-layout-rules.test.ts` beside the three
   existing repo-style suites in both testing skill files. Update the integrity
@@ -849,7 +862,7 @@ approved or implemented by this revision.
   `scripts/repo-style-check/layout-rules.mjs` so the 400-line and 100-character
   limits apply.
 
-- [ ] **Step 8: Run focused tests and verify success**
+- [x] **Step 8: Run focused tests and verify success**
 
   Run:
 
@@ -857,10 +870,11 @@ approved or implemented by this revision.
   npx vitest run packages/tests/repo/repo-style-layout-rules.test.ts packages/tests/repo/repo-style-check.test.ts packages/tests/repo/repo-code-style-integrity.test.ts
   ```
 
-  Expected: PASS. At this point the pure scanner exists but the CLI does not
-  invoke it yet.
+  Verified 2026-07-28: 39 tests passed across the layout-rule, checker, and
+  code-style-integrity suites. At this point the pure scanner exists but the
+  CLI does not invoke it yet.
 
-- [ ] **Step 9: Commit and publish the default-rule milestone**
+- [ ] **Step 9: Commit the default-rule milestone**
 
   Commit message:
 
@@ -868,8 +882,8 @@ approved or implemented by this revision.
   test: define repository layout warning rules
   ```
 
-  Stage only the files listed in this task and the checked-off plan. Push and
-  update the draft pull request with the focused test evidence.
+  Stage only the files listed in this task and the checked-off plan. Do not
+  push; the controller publishes after independent review.
 
 ### Task 3: Add Opt-In Primary-Symbol And Vocabulary Rules
 
@@ -997,7 +1011,8 @@ approved or implemented by this revision.
 
 - [ ] **Step 5: Implement conservative primary-export selection**
 
-  Parse each source with `typescript.createSourceFile`. Select named,
+  Parse each source with the approved directly declared `@babel/parser`.
+  Select named,
   directly-exported, top-level function, class, interface, type alias, enum, and
   variable declarations. Deduplicate overloads by symbol name. Warn only when
   exactly one unique candidate exists and its converted name differs from the
@@ -1465,19 +1480,19 @@ prevent.
 
 ## 9. Progress Record
 
-| Milestone                         | Status   | Evidence                                                                                                                                            |
-| --------------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Plan published                    | complete | Direct `main` commit `4ec117db1e09e00f86ed8f66cbf8adab1cdeb4a9` adds this plan and the two reciprocal program plans.                                |
-| Execution-readiness review        | revised  | Section 5.1 resolves all four findings with exact contracts; explicit human approval is still absent.                                               |
-| Primary-principle prerequisite    | complete | PR #45 merge `95065d769f585464b15059423057e151877fdb1a`; current focused verification passes 81 tests.                                              |
-| Organization and naming wording   | pending  | Canonical organization/naming sections and the human ownership trace are absent.                                                                    |
-| Conservative layout rules         | pending  | No `layout-rules.mjs` or layout-rule fixture suite exists.                                                                                          |
-| Opt-in detailed rules             | pending  | No detailed-rule implementation exists.                                                                                                             |
-| CLI and npm commands              | pending  | `check:repo-style:layout` and `check:repo-style:layout-details` do not exist.                                                                       |
-| Executable baseline               | pending  | Planning counts only; the existing checker independently confirms 4,462 non-blocking findings.                                                      |
-| Focused child-plan verification   | pending  | Pre-existing governance suites pass, but no child implementation exists to verify.                                                                  |
-| Completion gates                  | pending  | `npm run test:unit`, `npm run test:ci`, and `npm run build` were not run for child implementation.                                                  |
-| Child implementation PR and gates | pending  | No implementation branch or draft PR exists. The plan-document commit's required Hetzner workflow failed and is not child-plan completion evidence. |
+| Milestone                         | Status      | Evidence                                                                                                                                                                                     |
+| --------------------------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Plan published                    | complete    | Direct `main` commit `4ec117db1e09e00f86ed8f66cbf8adab1cdeb4a9` adds this plan and the two reciprocal program plans.                                                                         |
+| Execution-readiness review        | approved    | Human approval on 2026-07-28 permits only the documented `@babel/parser` substitution for Tasks 2 and 3; approved blob `8ee56ac27189f9bed751fb6a95992830bda6be60` otherwise remains binding. |
+| Primary-principle prerequisite    | complete    | PR #45 merge `95065d769f585464b15059423057e151877fdb1a`; current focused verification passes 81 tests.                                                                                       |
+| Organization and naming wording   | complete    | Commit `e0e6e7fd1e2ac6c280ae2930f411af76557ccc48` is pushed; PR #47 is open/non-draft and its metadata remains unmodifiable here.                                                            |
+| Conservative layout rules         | in progress | Default scanner and tests are implemented; focused Task 2 verification and the local commit remain pending.                                                                                  |
+| Opt-in detailed rules             | pending     | No detailed-rule implementation exists.                                                                                                                                                      |
+| CLI and npm commands              | pending     | `check:repo-style:layout` and `check:repo-style:layout-details` do not exist.                                                                                                                |
+| Executable baseline               | pending     | Planning counts only; the existing checker independently confirms 4,462 non-blocking findings.                                                                                               |
+| Focused child-plan verification   | pending     | Pre-existing governance suites pass, but no child implementation exists to verify.                                                                                                           |
+| Completion gates                  | pending     | `npm run test:unit`, `npm run test:ci`, and `npm run build` were not run for child implementation.                                                                                           |
+| Child implementation PR and gates | pending     | No implementation branch or draft PR exists. The plan-document commit's required Hetzner workflow failed and is not child-plan completion evidence.                                          |
 
 ## 10. Decisions Fixed By This Draft
 

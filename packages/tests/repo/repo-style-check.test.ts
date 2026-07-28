@@ -212,6 +212,7 @@ describe('repo style checker', () => {
       'scripts/repo-style-check/contract-rules.mjs',
       'scripts/repo-style-check/factory-route-rules.mjs',
       'scripts/repo-style-check/function-analysis.mjs',
+      'scripts/repo-style-check/layout-rules.mjs',
       'scripts/repo-style-check/source-text.mjs',
     ];
 
