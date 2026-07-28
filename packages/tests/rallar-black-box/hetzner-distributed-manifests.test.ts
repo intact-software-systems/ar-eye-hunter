@@ -506,6 +506,12 @@ describe('Hetzner distributed manifest catalog', () => {
         expect(JSON.stringify(parity?.manifest)).toContain('{rtc.readyPeerIds}');
         expect(JSON.stringify(parity?.manifest)).not.toContain('bob-session');
         expect(JSON.stringify(parity?.manifest)).not.toContain('charlie-session');
+        expect(parity?.manifest.recipes[0]?.recipe.commands.find(command =>
+            command.kind === 'rtc.connect'
+        )).toMatchObject({
+            timeoutMs: 15_000,
+            readiness: { timeoutMs: 10_000 },
+        });
     });
 
     it('feeds Hetzner CI artifacts into SPA monitor and RTC performance views', () => {

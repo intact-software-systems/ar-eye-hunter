@@ -8,6 +8,9 @@ RALLAR_DISTRIBUTED_TERMINAL_TIMEOUT_SECONDS="${RALLAR_DISTRIBUTED_TERMINAL_TIMEO
 RALLAR_DISTRIBUTED_READY_TIMEOUT_SECONDS="${RALLAR_DISTRIBUTED_READY_TIMEOUT_SECONDS:-120}"
 RALLAR_DISTRIBUTED_RUN_ID="${RALLAR_DISTRIBUTED_RUN_ID:-}"
 RALLAR_DISTRIBUTED_CONTROL_RUN_ID="${RALLAR_DISTRIBUTED_CONTROL_RUN_ID:-}"
+RALLAR_BLACK_BOX_APPLICATION_ID="${RALLAR_BLACK_BOX_APPLICATION_ID:-}"
+RALLAR_BLACK_BOX_WORKSPACE_ID="${RALLAR_BLACK_BOX_WORKSPACE_ID:-}"
+RALLAR_BLACK_BOX_ROOM_ID="${RALLAR_BLACK_BOX_ROOM_ID:-}"
 RALLAR_CONTROL_ENV_FILE="${RALLAR_CONTROL_ENV_FILE:-/etc/rallar/control-server.env}"
 
 require_command() {
@@ -418,10 +421,44 @@ build_create_body() {
   jq -n -c --slurpfile manifest "${source_manifest_file}" '{manifest: $manifest[0]}'
 }
 
+validate_manifest_scope() {
+  local manifest_path="$1"
+  local actual_scope
+  actual_scope="$(jq -c '{
+    distributedRunId,
+    controlRunId,
+    applicationId: .group.applicationId,
+    workspaceId: .group.workspaceId,
+    groupId: .group.groupId
+  }' "${manifest_path}")"
+
+  if ! jq -e \
+    --arg distributedRunId "${RALLAR_DISTRIBUTED_RUN_ID}" \
+    --arg controlRunId "${RALLAR_DISTRIBUTED_CONTROL_RUN_ID}" \
+    --arg applicationId "${RALLAR_BLACK_BOX_APPLICATION_ID}" \
+    --arg workspaceId "${RALLAR_BLACK_BOX_WORKSPACE_ID}" \
+    --arg groupId "${RALLAR_BLACK_BOX_ROOM_ID}" \
+    '.distributedRunId == $distributedRunId and
+      .controlRunId == $controlRunId and
+      .group.applicationId == $applicationId and
+      .group.workspaceId == $workspaceId and
+      .group.groupId == $groupId' \
+    "${manifest_path}" >/dev/null; then
+    echo "Manifest group does not match worker scope or run identity. Actual: ${actual_scope}" >&2
+    echo "Expected run=${RALLAR_DISTRIBUTED_RUN_ID}, control=${RALLAR_DISTRIBUTED_CONTROL_RUN_ID}, application=${RALLAR_BLACK_BOX_APPLICATION_ID}, workspace=${RALLAR_BLACK_BOX_WORKSPACE_ID}, group=${RALLAR_BLACK_BOX_ROOM_ID}." >&2
+    return 1
+  fi
+}
+
 run_self_test() {
   require_command jq
 
   case "${RALLAR_DISTRIBUTED_SCRIPT_SELF_TEST}" in
+    validate-manifest-scope)
+      validate_manifest_scope "${RALLAR_DISTRIBUTED_MANIFEST_PATH}"
+      printf 'manifestScope=valid\n'
+      return 0
+      ;;
     create-body)
       if [[ -z "${RALLAR_DISTRIBUTED_MANIFEST_PATH}" ]]; then
         echo "Missing RALLAR_DISTRIBUTED_MANIFEST_PATH for create-body self-test." >&2
@@ -514,20 +551,10 @@ fi
 validate_positive_integer RALLAR_DISTRIBUTED_READY_TIMEOUT_SECONDS "${RALLAR_DISTRIBUTED_READY_TIMEOUT_SECONDS}"
 validate_positive_integer RALLAR_DISTRIBUTED_TERMINAL_TIMEOUT_SECONDS "${RALLAR_DISTRIBUTED_TERMINAL_TIMEOUT_SECONDS}"
 
-manifest_file="$(mktemp /tmp/rallar-distributed-manifest.XXXXXX.json)"
-trap 'rm -f "${manifest_file}"' EXIT
-if [[ -n "${RALLAR_DISTRIBUTED_RUN_ID}" ]]; then
-  jq \
-    --arg runId "${RALLAR_DISTRIBUTED_RUN_ID}" \
-    --arg controlRunId "${RALLAR_DISTRIBUTED_CONTROL_RUN_ID}" \
-    '.distributedRunId = $runId | .controlRunId = (if $controlRunId == "" then (.controlRunId // $runId) else $controlRunId end)' \
-    "${RALLAR_DISTRIBUTED_MANIFEST_PATH}" >"${manifest_file}"
-else
-  jq \
-    --arg controlRunId "${RALLAR_DISTRIBUTED_CONTROL_RUN_ID}" \
-    '.controlRunId = (if $controlRunId == "" then (.controlRunId // .distributedRunId) else $controlRunId end)' \
-    "${RALLAR_DISTRIBUTED_MANIFEST_PATH}" >"${manifest_file}"
-fi
+manifest_file="${RALLAR_DISTRIBUTED_MANIFEST_PATH}"
+echo "RALLAR_OPERATION_STAGE=manifest-scope-validation"
+validate_manifest_scope "${manifest_file}"
+echo "RALLAR_OPERATION_STAGE=recipe-execution"
 
 distributed_run_id="$(jq -r '.distributedRunId // empty' "${manifest_file}")"
 control_run_id="$(jq -r '.controlRunId // .distributedRunId // empty' "${manifest_file}")"

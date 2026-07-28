@@ -8,9 +8,13 @@ Use this order:
 3. If `recipeStarted` is false, use its `stage`, `failureCategory`, `component`,
    `evidenceExcerpt`, and `nextAction`. Do not request distributed analysis;
    no recipe artifact should exist.
-4. If `recipeStarted` is true, read `analysis/analysis.json`, then
+4. For `manifest-scope`, compare `sourceGroupRef`, `effectiveGroupRef`,
+   `groupIsolationMode`, both manifest hashes, and
+   `materialized-manifest.json`. A mismatch is a preparation failure; do not
+   reset the database or retry the recipe in the source group.
+5. If `recipeStarted` is true, read `analysis/analysis.json`, then
    `analysis/fix-proposal.md`, then the cited evidence file.
-5. Map the minimal fix area:
+6. Map the minimal fix area:
    - `dependency-repository`, `browser-dependencies`, `browser-installation`,
      `browser-verification`: controller preparation before any recipe.
    - `deployment-readiness`, `service-health`, `ssh`: deployment or controller
@@ -22,7 +26,7 @@ Use this order:
    - `API/CORS/auth`: login, API config, WebSocket ticketing, allowed origins.
    - `recipe assertion`: expected vs observed payload or wait/assert command.
    - `control-server/runtime`: orchestration or artifact export behavior.
-6. Propose one minimal fix and one focused verification command.
+7. Propose one minimal fix and one focused verification command.
 
 Do not propose broad refactors from one run. If the operation report itself is
 missing, use the named failing GitHub step and request a same-ref rerun. Do not

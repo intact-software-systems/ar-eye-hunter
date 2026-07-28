@@ -65,6 +65,21 @@ RALLAR_DISTRIBUTED_CONTROL_RUN_ID="${RALLAR_BLACK_BOX_RUN_ID}" \
 ./14-run-distributed-recipe.sh
 ```
 
+The manifest supplied to `14-run-distributed-recipe.sh` must already be the
+workflow's materialized run manifest. Its distributed/control run identifiers
+and top-level group must exactly match the worker environment. The runner
+rejects a mismatch before creating a distributed run.
+
+The supported workflow does not reset the database between recipes. Spawned
+Hetzner runs with no explicit `room_id` receive a deterministic group unique to
+the GitHub workflow run attempt; all worker and executable manifest identities
+are rebound to it before upload. An explicit room remains stable, while
+external, mixed, and no-spawn runs preserve the checked-in manifest group.
+Completed groups are retained for normal server expiry and diagnostics.
+Preservation includes the application and workspace. Split topology
+prepare/run operations compare the stable source-manifest hash rather than the
+run-specific materialized-manifest hash.
+
 Stop the Rallar API/control services:
 
 ```sh

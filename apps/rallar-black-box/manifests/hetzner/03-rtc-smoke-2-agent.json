@@ -100,7 +100,7 @@
               "groupId": "hetzner-headless-room"
             },
             "transport": "realtime",
-            "timeoutMs": 5000,
+            "timeoutMs": 15000,
             "readiness": {
               "minReadyPeers": 1,
               "timeoutMs": 10000,
