@@ -870,11 +870,12 @@ approved or implemented by this revision.
   npx vitest run packages/tests/repo/repo-style-layout-rules.test.ts packages/tests/repo/repo-style-check.test.ts packages/tests/repo/repo-code-style-integrity.test.ts
   ```
 
-  Verified 2026-07-28: 39 tests passed across the layout-rule, checker, and
-  code-style-integrity suites. At this point the pure scanner exists but the
-  CLI does not invoke it yet.
+  Verified 2026-07-28 after fix round 1: 41 focused tests passed across the
+  layout-rule, checker, and code-style-integrity suites, and 96 skill-routing
+  tests passed. At this point the pure scanner exists but the CLI does not
+  invoke it yet.
 
-- [ ] **Step 9: Commit the default-rule milestone**
+- [x] **Step 9: Commit the default-rule milestone**
 
   Commit message:
 
@@ -882,8 +883,10 @@ approved or implemented by this revision.
   test: define repository layout warning rules
   ```
 
-  Stage only the files listed in this task and the checked-off plan. Do not
-  push; the controller publishes after independent review.
+  Commits `db5f596ef8aa835e012ecfce219b5105ef24c43c` and
+  `21bf51790596d7b7b8df34d00d466beeb2877fc8` are pushed; the remote branch head
+  is `21bf51790596d7b7b8df34d00d466beeb2877fc8`. PR #47 follows the branch but
+  remains externally open and non-draft, and its metadata is unavailable here.
 
 ### Task 3: Add Opt-In Primary-Symbol And Vocabulary Rules
 
@@ -899,7 +902,7 @@ approved or implemented by this revision.
 - Produces: the same result shape, with three additional rule families when
   `includeDetails` is `true`.
 
-- [ ] **Step 1: Write failing primary-export tests**
+- [x] **Step 1: Write failing primary-export tests**
 
   Add exact matching, mismatch, and ambiguity cases:
 
@@ -939,7 +942,7 @@ approved or implemented by this revision.
   re-export-only modules, anonymous defaults, `mod.ts`, `index.ts`, and exact
   tool config filenames.
 
-- [ ] **Step 2: Write failing browser boundary tests**
+- [x] **Step 2: Write failing browser boundary tests**
 
   Cover every exact module, the named translation boundary, original-versus-
   local aliases, opaque imports, and established protocol identities:
@@ -992,14 +995,14 @@ approved or implemented by this revision.
   and prove a same-named translation file outside the exact exempt path still
   warns when its stem makes it room-owned.
 
-- [ ] **Step 3: Write failing server vocabulary tests**
+- [x] **Step 3: Write failing server vocabulary tests**
 
   Add a server group-state file with `RoomPolicy`, one with `GroupPolicy`, and
   one that only imports or uses `GroupRef` and `roomRef`. Expect only
   `RoomPolicy` to warn. Include strings and comments containing `room` and prove
   that neither warns.
 
-- [ ] **Step 4: Run the detailed tests and verify failure**
+- [x] **Step 4: Run the detailed tests and verify failure**
 
   Run:
 
@@ -1007,9 +1010,10 @@ approved or implemented by this revision.
   npx vitest run packages/tests/repo/repo-style-layout-rules.test.ts
   ```
 
-  Expected: FAIL because detailed rules are not implemented.
+  Verified 2026-07-28: FAIL with 8 expected detailed-rule failures and 18
+  passing default-rule tests because the detailed rules were not implemented.
 
-- [ ] **Step 5: Implement conservative primary-export selection**
+- [x] **Step 5: Implement conservative primary-export selection**
 
   Parse each source with the approved directly declared `@babel/parser`.
   Select named,
@@ -1018,7 +1022,7 @@ approved or implemented by this revision.
   exactly one unique candidate exists and its converted name differs from the
   file stem.
 
-- [ ] **Step 6: Implement browser import analysis**
+- [x] **Step 6: Implement browser import analysis**
 
   Inspect static `ImportDeclaration` nodes only. Use the three exact module
   strings and three exact original-name sets in Section 3.4. For an
@@ -1030,7 +1034,7 @@ approved or implemented by this revision.
   repo-relative translation path. Report one warning per room-owned module with
   sorted, deduplicated evidence.
 
-- [ ] **Step 7: Implement server identifier analysis**
+- [x] **Step 7: Implement server identifier analysis**
 
   Identify server group-state modules using the path and declaration criteria
   in Section 3.4. Traverse declaration names, excluding import declarations.
@@ -1038,12 +1042,12 @@ approved or implemented by this revision.
   `room` or `rooms` appears outside exact `GroupRef` and `roomRef`. Include at
   most five sorted identifier samples.
 
-- [ ] **Step 8: Run the detailed suite and verify success**
+- [x] **Step 8: Run the detailed suite and verify success**
 
-  Run the command from Step 4. Expected: PASS in both default and detailed
-  modes.
+  Verified 2026-07-28: the command from Step 4 passed all 26 tests in default
+  and detailed modes.
 
-- [ ] **Step 9: Commit and publish the detailed-rule milestone**
+- [x] **Step 9: Commit the detailed-rule milestone**
 
   Commit message:
 
@@ -1051,8 +1055,8 @@ approved or implemented by this revision.
   feat: add opt-in traceability heuristics
   ```
 
-  Stage only this task's files and the checked-off plan. Push and update the
-  draft pull request.
+  Stage only this task's files and the checked-off plan. Do not push; the
+  controller publishes after independent review.
 
 ### Task 4: Integrate Layout Modes Into The Warning-Only CLI
 
@@ -1486,13 +1490,13 @@ prevent.
 | Execution-readiness review        | approved    | Human approval on 2026-07-28 permits only the documented `@babel/parser` substitution for Tasks 2 and 3; approved blob `8ee56ac27189f9bed751fb6a95992830bda6be60` otherwise remains binding. |
 | Primary-principle prerequisite    | complete    | PR #45 merge `95065d769f585464b15059423057e151877fdb1a`; current focused verification passes 81 tests.                                                                                       |
 | Organization and naming wording   | complete    | Commit `e0e6e7fd1e2ac6c280ae2930f411af76557ccc48` is pushed; PR #47 is open/non-draft and its metadata remains unmodifiable here.                                                            |
-| Conservative layout rules         | in progress | Default scanner and tests are implemented; focused Task 2 verification and the local commit remain pending.                                                                                  |
-| Opt-in detailed rules             | pending     | No detailed-rule implementation exists.                                                                                                                                                      |
+| Conservative layout rules         | complete    | Task 2 commits `db5f596ef8aa835e012ecfce219b5105ef24c43c` and `21bf51790596d7b7b8df34d00d466beeb2877fc8` are pushed; remote head is `21bf51790596d7b7b8df34d00d466beeb2877fc8`.              |
+| Opt-in detailed rules             | in progress | The three opt-in rule families and fixtures are implemented; all 26 focused tests pass, while controller publication remains pending independent review.                                     |
 | CLI and npm commands              | pending     | `check:repo-style:layout` and `check:repo-style:layout-details` do not exist.                                                                                                                |
 | Executable baseline               | pending     | Planning counts only; the existing checker independently confirms 4,462 non-blocking findings.                                                                                               |
-| Focused child-plan verification   | pending     | Pre-existing governance suites pass, but no child implementation exists to verify.                                                                                                           |
+| Focused child-plan verification   | complete    | After Task 2 fix round 1, 41 focused tests and 96 skill-routing tests passed; the Task 3 focused suite now passes all 26 tests.                                                              |
 | Completion gates                  | pending     | `npm run test:unit`, `npm run test:ci`, and `npm run build` were not run for child implementation.                                                                                           |
-| Child implementation PR and gates | pending     | No implementation branch or draft PR exists. The plan-document commit's required Hetzner workflow failed and is not child-plan completion evidence.                                          |
+| Child implementation PR and gates | in progress | PR #47 follows the implementation branch but remains externally open/non-draft with metadata unavailable; Task 3 publication and required remote gates remain pending.                       |
 
 ## 10. Decisions Fixed By This Draft
 
