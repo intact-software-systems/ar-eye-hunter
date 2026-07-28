@@ -28,9 +28,9 @@ on:
         required: false
         default: ''
       room_id:
-        description: Rallar room id for headless agents
-        required: true
-        default: hetzner-headless-room
+        description: Optional stable room id; blank isolates spawned Hetzner agents per run
+        required: false
+        default: ''
       agent_prefix:
         description: Agent id prefix for headless agents
         required: true

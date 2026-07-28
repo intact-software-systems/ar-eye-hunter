@@ -154,7 +154,7 @@
             "actor": "{auth.clientId}",
             "roomId": "hetzner-headless-room",
             "transport": "realtime",
-            "timeoutMs": 5000,
+            "timeoutMs": 15000,
             "rallar": {
               "sessionId": "alice-session",
               "apiBaseUrl": "https://api.rallar.intactss.com",

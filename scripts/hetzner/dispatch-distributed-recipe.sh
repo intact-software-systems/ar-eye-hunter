@@ -17,6 +17,7 @@ BROWSER_ENGINE="chromium"
 FAST_MODE="0"
 ALLOW_DIAGNOSTIC="0"
 RUN_ID=""
+ROOM_ID=""
 MANIFEST_INPUT=""
 SECRET_ENVIRONMENT="production"
 REQUIRED_GITHUB_SECRETS=(
@@ -42,6 +43,7 @@ Usage: scripts/hetzner/dispatch-distributed-recipe.sh <manifest.json> [options]
 Options:
   --ref <ref>                    Git ref to dispatch. Default: main.
   --run-id <id>                  Control run id. Default: manifest slug + UTC timestamp.
+  --room-id <id>                 Explicit stable room id. Default: isolate each spawned Hetzner run.
   --workflow <name>              Workflow file name. Default: hetzner-distributed-recipe.yml.
   --rollout-before-run <bool>    Pass rollout_before_run. Default: true.
   --install-playwright <bool>    Pass install_playwright. Default: true.
@@ -183,6 +185,11 @@ while [[ $# -gt 0 ]]; do
       RUN_ID="$2"
       shift 2
       ;;
+    --room-id)
+      [[ $# -ge 2 ]] || fail "--room-id requires a value."
+      ROOM_ID="$2"
+      shift 2
+      ;;
     --workflow)
       [[ $# -ge 2 ]] || fail "--workflow requires a value."
       WORKFLOW_NAME="$2"
@@ -314,10 +321,10 @@ if ! [[ "${agent_count}" =~ ^[1-9][0-9]*$ ]]; then
   fail "Manifest targetPolicy.expectedParticipantCount must be a positive integer: ${manifest_path}"
 fi
 
-room_id="$(jq -r '.group.groupId // empty' "${manifest_absolute}")"
+source_room_id="$(jq -r '.group.groupId // empty' "${manifest_absolute}")"
 application_id="$(jq -r '.group.applicationId // empty' "${manifest_absolute}")"
 workspace_id="$(jq -r '.group.workspaceId // empty' "${manifest_absolute}")"
-[[ -n "${room_id}" ]] || fail "Manifest group.groupId is required: ${manifest_path}"
+[[ -n "${source_room_id}" ]] || fail "Manifest group.groupId is required: ${manifest_path}"
 [[ -n "${application_id}" ]] || fail "Manifest group.applicationId is required: ${manifest_path}"
 [[ -n "${workspace_id}" ]] || fail "Manifest group.workspaceId is required: ${manifest_path}"
 
@@ -387,7 +394,11 @@ echo "Ref      : ${REF}"
 echo "Mode     : ${mode}"
 echo "Run ID   : ${safe_run_id}"
 echo "Agents   : ${agent_count}"
-echo "Room     : ${room_id}"
+if [[ -n "${ROOM_ID}" ]]; then
+  echo "Room     : ${ROOM_ID} (explicit)"
+else
+  echo "Room     : isolated per run"
+fi
 echo "Entry    : ${HEADLESS_ENTRY}"
 echo "Browser  : ${BROWSER_ENGINE}"
 echo "Register : ${REGISTER_BEFORE_LOGIN}"
@@ -400,11 +411,16 @@ if [[ "${#rtc_topology_env_lines[@]}" -gt 0 ]]; then
   echo "Topology : ${rtc_topology_env_lines[*]}"
 fi
 
-gh workflow run "${WORKFLOW_NAME}" \
-  --ref "${REF}" \
-  -f "manifest_path=${manifest_path}" \
-  -f "agent_count=${agent_count}" \
-  -f "room_id=${room_id}" \
+workflow_args=(
+  workflow run "${WORKFLOW_NAME}"
+  --ref "${REF}"
+  -f "manifest_path=${manifest_path}"
+  -f "agent_count=${agent_count}"
+)
+if [[ -n "${ROOM_ID}" ]]; then
+  workflow_args+=(-f "room_id=${ROOM_ID}")
+fi
+workflow_args+=(
   -f "application_id=${application_id}" \
   -f "workspace_id=${workspace_id}" \
   -f "register_before_login=${REGISTER_BEFORE_LOGIN}" \
@@ -419,5 +435,8 @@ gh workflow run "${WORKFLOW_NAME}" \
   -f "stop_after_run=${STOP_AFTER_RUN}" \
   -f "ref=${REF}" \
   -f "run_id=${safe_run_id}"
+)
+
+gh "${workflow_args[@]}"
 
 echo "Dispatched ${WORKFLOW_NAME}"

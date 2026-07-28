@@ -75,6 +75,10 @@ describe('rallar-bb-test recipe fixtures', () => {
             durationSeconds: 30,
             frameCount: 600,
         });
+        expect(senderConnect).toMatchObject({
+            timeoutMs: 50_000,
+            readiness: { timeoutMs: 45_000 },
+        });
         expect((sender.metadata as Record<string, unknown>).expectedInboundMessages).toBeUndefined();
         expect((sender.metadata as Record<string, unknown>).minExpectedInboundMessages).toBeUndefined();
         expect(receiver.metadata).toMatchObject({
@@ -285,6 +289,7 @@ describe('rallar-bb-test recipe fixtures', () => {
 
         expect(connect).toMatchObject({
             kind: 'rtc.connect',
+            timeoutMs: 15_000,
             readiness: {
                 minReadyPeers: 1,
                 timeoutMs: 10_000,
@@ -340,6 +345,7 @@ describe('rallar-bb-test recipe fixtures', () => {
         });
         expect(connect).toMatchObject({
             kind: 'rtc.connect',
+            timeoutMs: 15_000,
             readiness: {
                 minReadyPeers: 1,
                 timeoutMs: 10_000,
