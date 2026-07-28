@@ -54,7 +54,8 @@ const primaryDeclarationTypes = toWordSet(
 );
 const declarationIdTypes = new Set([...primaryDeclarationTypes, 'TSModuleDeclaration']);
 const declarationKeyTypes = toWordSet(
-  'ClassMethod ClassProperty ObjectMethod TSMethodSignature TSPropertySignature',
+  'ClassMethod ClassPrivateMethod ClassPrivateProperty ClassProperty ObjectMethod ' +
+    'TSMethodSignature TSPropertySignature',
 );
 const functionExpressionTypes = toWordSet('ArrowFunctionExpression FunctionExpression');
 export const layoutLimits = Object.freeze({
@@ -161,7 +162,6 @@ function addFileGroupFinding(input) {
   const finding = warningFinding(input.directory, input.ruleId, detail);
   input.findings.push({ ...finding, affectedCount: input.fileNames.length });
 }
-
 function scanSourceDeclarations(input, sources, findings) {
   for (const source of sources) {
     const stem = toTypeScriptStem(path.basename(source.file));
@@ -218,7 +218,7 @@ function scanBrowserBoundary(repoRoot, source, program) {
       } else if (specifier.type === 'ImportNamespaceSpecifier') {
         evidence.add(`namespace:* as ${specifier.local.name}`);
       } else {
-        const originalName = toImportName(specifier.imported);
+        const originalName = specifier.imported.name ?? specifier.imported.value;
         if (protocolIdentityNames.has(originalName) || !authoritativeNames.has(originalName)) {
           continue;
         }
@@ -261,8 +261,7 @@ function scanServerVocabulary(repoRoot, source, program) {
   if (samples.length === 0) {
     return [];
   }
-  const message =
-    `Server group-state declarations use room vocabulary. ` + `Samples: ${samples.join(', ')}.`;
+  const message = `Server group-state declarations use room vocabulary: ${samples.join(', ')}.`;
   return [warningFinding(source.file, layoutRuleIds.serverGroupStateVocabulary, message)];
 }
 function scanModBoundaries(repoRoot, sources, findings) {
@@ -308,6 +307,8 @@ function getDeclaredIdentifierNames(program) {
       addBindingNames(node.id, names);
     } else if (declarationKeyTypes.has(node.type) && !node.computed) {
       addBindingNames(node.key, names);
+    } else if (node.type === 'TSTypeParameter' || node.type === 'CatchClause') {
+      addBindingNames(node.type === 'CatchClause' ? node.param : node.name, names);
     }
     node.params?.forEach((parameter) => addBindingNames(parameter, names));
     return true;
@@ -315,7 +316,9 @@ function getDeclaredIdentifierNames(program) {
   return names;
 }
 function addBindingNames(pattern, names) {
-  if (pattern?.type === 'Identifier') {
+  if (pattern?.type === 'PrivateName') {
+    addBindingNames(pattern.id, names);
+  } else if (pattern?.type === 'Identifier') {
     names.add(pattern.name);
   } else if (pattern?.type === 'RestElement') {
     addBindingNames(pattern.argument, names);
@@ -364,13 +367,10 @@ function parseProgram(source) {
 }
 function getFeaturePrefix(file, directoryTokens) {
   const tokens = toKebabCase(toTypeScriptStem(path.basename(file))).split('-');
-  while (ignoredLeadingFeatureTokens.has(tokens[0])) {
-    tokens.shift();
-  }
-  return tokens[0] === undefined || directoryTokens.has(tokens[0]) ? undefined : tokens[0];
+  const prefix = tokens.find((token) => !ignoredLeadingFeatureTokens.has(token));
+  return prefix === undefined || directoryTokens.has(prefix) ? undefined : prefix;
 }
 const hasRoomToken = (name) => /(?:^|-)(?:room|rooms)(?:-|$)/u.test(toKebabCase(name));
-const toImportName = (imported) => imported.name ?? imported.value;
 const toRelativeFile = (repoRoot, file) => path.relative(repoRoot, file).split(path.sep).join('/');
 const toTypeScriptStem = (fileName) => fileName.replace(typeScriptSuffixPattern, '');
 function sampleFileNames(fileNames) {

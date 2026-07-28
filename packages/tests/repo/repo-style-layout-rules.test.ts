@@ -435,6 +435,48 @@ describe('repository layout rules', () => {
     ).toBe(1);
   });
 
+  it.each([
+    [
+      'private member',
+      'packages/shared-server/example/group-state-private.ts',
+      'class GroupPolicy { #roomPolicy = true; }',
+      'roomPolicy',
+    ],
+    [
+      'type parameter',
+      'packages/shared-server/example/group-state-generic.ts',
+      'interface GroupPolicy<RoomValue> {}',
+      'RoomValue',
+    ],
+    [
+      'catch binding',
+      'packages/shared-server/example/group-state-catch.ts',
+      'try {} catch (roomError) {}',
+      'roomError',
+    ],
+  ])('warns for room vocabulary in a %s declaration', (_kind, file, raw, sample) => {
+    const findings = detailFindings({ [file]: raw }, layoutRuleIds.serverGroupStateVocabulary);
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.message).toContain(sample);
+  });
+
+  it('continues to ignore imported, referenced, commented, and string room names', () => {
+    expect(
+      detailCount(
+        {
+          'packages/shared-server/example/group-state-use-sites.ts': [
+            "import type { RoomImport } from './room-import.ts';",
+            '// room comment',
+            "const description = 'room string';",
+            'export function readPolicy(value: RoomUse) { return roomUse; }',
+          ].join('\n'),
+        },
+        layoutRuleIds.serverGroupStateVocabulary,
+      ),
+    ).toBe(0);
+  });
+
   it('recognizes all server group-state module criteria and whole identifier tokens', () => {
     const findings = detailFindings(
       {
