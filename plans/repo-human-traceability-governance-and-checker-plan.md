@@ -77,25 +77,22 @@ other requirement in approved plan blob
 
 Date: 2026-07-28
 
-Status: Explicitly approved for execution at Git blob
-`8ee56ac27189f9bed751fb6a95992830bda6be60` and in progress on
-`codex/repo-human-traceability-governance-checker-wave-0`. Governance work has
-started; production code remains unchanged and checker behavior has not yet
-changed.
+Status: implemented; final and publication gates pending
 
 Publication and prerequisite reconciliation:
 
 - The human approved exactly this governance and warning-only checker child-plan
   revision on 2026-07-28. The approval does not extend to a later production
   child plan.
-- The implementation branch was created from current `origin/main` and
+- The implementation branch was created from current `origin/main` and first
   published at `09f4e8d7b1eb3e7a02560dc6060238bf739a03a1` before checker
-  implementation began. The focused governance baseline passed 81 of 81 tests.
-  The unrestricted full unit baseline passed 5,534 tests with 18 skipped.
-- Draft pull-request creation remains unavailable: the GitHub connector returned
-  HTTP 403 and local `gh` authentication is invalid. The branch is published,
-  and the draft PR remains a required publication-envelope prerequisite rather
-  than evidence of implementation completion.
+  implementation began. The focused governance baseline passed 81 of 81 tests,
+  and the unrestricted full unit baseline passed 5,534 tests with 18 skipped.
+- Tasks 1 through 5 are implemented, independently reviewed without remaining
+  findings, and published through
+  `55469829af67eabdc692ab4e9823c0e26fabb40b`. The remote branch head is the
+  same commit. PR #47 follows the branch and is open and non-draft; its metadata
+  remains unavailable here. This is not merge evidence or permission.
 
 - Live GitHub `main`, local `main`, and local `origin/main` resolve to
   `4ec117db1e09e00f86ed8f66cbf8adab1cdeb4a9`. That commit adds only the three
@@ -105,13 +102,14 @@ Publication and prerequisite reconciliation:
   primary human-understandability principle and integrity coverage to
   `AGENTS.md`, the code-writing skill, the canonical standard, the human guide,
   and `repo-code-style-integrity.test.ts`.
-- Current-tree verification passes with 81 tests across
-  `rallar-skill-integrity.test.ts`, `repo-code-style-integrity.test.ts`, and
-  `repo-style-check.test.ts`; the focused code-writing checker and Prettier
-  checks also pass. The complete current checker still reports exactly 4,462
-  non-blocking findings and exits `0`.
-- PR #45 did not add the organization/naming sections, layout rules, CLI modes,
-  executable baseline, or child-plan completion evidence. Those remain pending.
+- Known focused verification includes the 81-test prerequisite baseline, 41
+  Task 2 focused tests plus 96 skill-routing tests, 31 Task 3 focused tests plus
+  57 exact regressions after review round 2, and all 116 tests in the exact
+  four-file Task 4 governance command. Production code remains unchanged.
+- Tasks 1 through 5 add the organization and naming sections, warning-only
+  layout rules and CLI modes, and the executable baseline. Repository
+  completion, feature-branch publication gates, merge/default-workflow
+  evidence, and the separate evidence ledger remain pending.
 - For the plan publication commit, **Run Hetzner Supported Distributed
   Manifests** run `30328273358` failed. **Push on main** run `30328273160` and
   **Deploy Web + API** run `30328273405` passed. Publication is verified, but
@@ -160,22 +158,25 @@ threshold and not evidence that each warning requires a change.
 | Existing approved `mod.ts` compatibility boundaries          |                           14 |                        14 | Current package or published subpath entry points.                                           |
 | `mod.ts` outside that approved set                           |                            0 |                         0 | A ratchet against new nested barrels.                                                        |
 
-Task 5 regenerated the executable baseline from commit
-`1b8a3bf18fc67f7a893a6c7d9566497bedda99dc`. The default layout inventory
-exited `0` and exactly matched the dated planning values: 16 dense directories,
-22 conservative prefix clusters across 8 directories, 422 filename-style files
-across 90 directories, 15 generic filenames, 11 generic route registrations,
-and zero unapproved `mod.ts` files. The production tree was unchanged by Tasks
-1 through 4, so the eligible-file, existing-style, over-400-line, and approved
-`mod.ts` inventory values also remain unchanged. No threshold or allowlist was
-altered to reproduce the planning baseline.
+Task 5 measured the executable baseline against checker commit
+`1b8a3bf18fc67f7a893a6c7d9566497bedda99dc` and published it in commit
+`55469829af67eabdc692ab4e9823c0e26fabb40b`. A pre-freeze rerun at the latter
+commit exited `0` and exactly matched the dated planning values: 16 dense
+directories, 22 conservative prefix clusters across 8 directories, 422
+filename-style files across 90 directories, 15 generic filenames, 11 generic
+route registrations, and zero unapproved `mod.ts` files. The production tree
+was unchanged by Tasks 1 through 5, so the eligible-file, existing-style,
+over-400-line, and approved `mod.ts` inventory values also remain unchanged. No
+threshold or allowlist was altered to reproduce the planning baseline.
 
-The detailed inventory exited `0` and recorded
+The pre-freeze detailed inventory exited `0` with 497 finding records and recorded
 `layout.primary-export-name=344`, `layout.browser-room-boundary=2`, and
 `layout.server-group-state-vocabulary=0`. These are opt-in inventory counts,
-not approved exceptions or default rules. The complete checker exited `0` with
-4,613 non-blocking finding records: the existing 4,462 file-level findings plus
-151 default layout finding records. The strict invocation exited `1` with
+not approved exceptions or default rules. The pre-freeze complete checker
+exited `0` with 4,613 non-blocking finding records: the existing 4,462
+file-level findings plus 151 default layout finding records. The repository-root
+checker also exited `0` with 4,744 finding records. The Task 5 strict invocation
+exited `1` with
 `strict mode is not available until warning debt is reviewed.`
 
 ## 3. Locked Checker Semantics
@@ -1309,7 +1310,7 @@ approved or implemented by this revision.
   Check off the four Wave 0 implementation items only after their evidence is
   present. Do not mark Wave 0 published or the child plan complete yet.
 
-- [ ] **Step 5: Commit and publish the baseline milestone**
+- [x] **Step 5: Commit and publish the baseline milestone**
 
   Commit message:
 
@@ -1319,6 +1320,11 @@ approved or implemented by this revision.
 
   Stage only the two plan files. Push and update the draft pull request with
   both checker summaries.
+
+  Commit `55469829af67eabdc692ab4e9823c0e26fabb40b` passed independent review
+  without findings and was pushed. The remote branch head is the same commit.
+  PR #47 follows the branch and remains open and non-draft; its metadata is
+  unavailable here. No merge was attempted.
 
 ### Task 6: Complete Verification And Publication Gates
 
@@ -1477,10 +1483,10 @@ tree is frozen without invalidating that tree.
       constraints.
 - [x] Integrity tests prevent removal of the primary principle or the routing to
       the authoritative standard.
-- [ ] The canonical standard defines feature-first organization, co-location,
+- [x] The canonical standard defines feature-first organization, co-location,
       filename-to-symbol matching, descriptive route registration, package barrels,
       and the room/group-state vocabulary boundary.
-- [ ] The human guide gives a reviewer a top-to-bottom navigation procedure.
+- [x] The human guide gives a reviewer a top-to-bottom navigation procedure.
 - [x] Default checker output includes six conservative layout rule families.
 - [x] `--layout-only` makes layout debt independently reviewable.
 - [x] `--layout-details` contains primary-export and vocabulary heuristics only.
@@ -1500,7 +1506,7 @@ tree is frozen without invalidating that tree.
 - [x] Existing 14 `mod.ts` paths pass and a new nested `mod.ts` warns.
 - [x] No strict script or CI gate exists.
 - [x] No production file moved, renamed, reformatted, or semantically changed.
-- [ ] Initial default and detailed counts are recorded with the exact commit.
+- [x] Initial default and detailed counts are recorded with the exact commit.
 - [ ] Focused, completion, publication, and remote-gate evidence is complete.
 - [ ] Feature and evidence-ledger trees use separate PR/handoff publication
       envelopes, with no commit required to contain its own future evidence.
@@ -1525,19 +1531,19 @@ prevent.
 
 ## 9. Progress Record
 
-| Milestone                         | Status      | Evidence                                                                                                                                                                                                                               |
-| --------------------------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Plan published                    | complete    | Direct `main` commit `4ec117db1e09e00f86ed8f66cbf8adab1cdeb4a9` adds this plan and the two reciprocal program plans.                                                                                                                   |
-| Execution-readiness review        | approved    | Human approval on 2026-07-28 permits only the documented `@babel/parser` substitution for Tasks 2 and 3; approved blob `8ee56ac27189f9bed751fb6a95992830bda6be60` otherwise remains binding.                                           |
-| Primary-principle prerequisite    | complete    | PR #45 merge `95065d769f585464b15059423057e151877fdb1a`; current focused verification passes 81 tests.                                                                                                                                 |
-| Organization and naming wording   | complete    | Commit `e0e6e7fd1e2ac6c280ae2930f411af76557ccc48` is pushed; PR #47 is open/non-draft and its metadata remains unmodifiable here.                                                                                                      |
-| Conservative layout rules         | complete    | Task 2 commits `db5f596ef8aa835e012ecfce219b5105ef24c43c` and `21bf51790596d7b7b8df34d00d466beeb2877fc8` are pushed; remote head is `21bf51790596d7b7b8df34d00d466beeb2877fc8`.                                                        |
-| Opt-in detailed rules             | complete    | Task 3 commits `eaa61e261f995a4c8b2e566d11466c35f90c9c33`, `d434c3bfcc98e943d1a3da4c90a566676b21d518`, and `9f2c67a4a1e017ad0f0797d2db42bc83ede418bf` are pushed; 31 focused and 57 regression tests passed after review round 2.      |
-| CLI and npm commands              | complete    | Task 4 implementation `7df51579fa28505da4739707115a1ccaebba1c8d` plus evidence correction `1b8a3bf18fc67f7a893a6c7d9566497bedda99dc` are pushed; the remote head is `1b8a3bf18fc67f7a893a6c7d9566497bedda99dc`.                        |
-| Executable baseline               | recorded    | At `1b8a3bf18fc67f7a893a6c7d9566497bedda99dc`, default counts match planning exactly; detailed opt-in counts are `344`, `2`, and `0`; complete checker exit is `0`, while strict remains unavailable with exit `1`.                    |
-| Focused child-plan verification   | complete    | Task 3 passed 31 focused and 57 exact regression tests after review round 2; the Task 4 exact four-file suite passes all 116 tests.                                                                                                    |
-| Completion gates                  | pending     | `npm run test:unit`, `npm run test:ci`, and `npm run build` were not run for child implementation.                                                                                                                                     |
-| Child implementation PR and gates | in progress | PR #47 follows the implementation branch, remains open/non-draft, and has unavailable metadata; remote head is `1b8a3bf18fc67f7a893a6c7d9566497bedda99dc`; Task 5 publication and all required completion/remote gates remain pending. |
+| Milestone                         | Status      | Evidence                                                                                                                                                                                                                                                                                    |
+| --------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Plan published                    | complete    | Direct `main` commit `4ec117db1e09e00f86ed8f66cbf8adab1cdeb4a9` adds this plan and the two reciprocal program plans.                                                                                                                                                                        |
+| Execution-readiness review        | approved    | Human approval on 2026-07-28 permits only the documented `@babel/parser` substitution for Tasks 2 and 3; approved blob `8ee56ac27189f9bed751fb6a95992830bda6be60` otherwise remains binding.                                                                                                |
+| Primary-principle prerequisite    | complete    | PR #45 merge `95065d769f585464b15059423057e151877fdb1a`; current focused verification passes 81 tests.                                                                                                                                                                                      |
+| Organization and naming wording   | complete    | Commit `e0e6e7fd1e2ac6c280ae2930f411af76557ccc48` is pushed; PR #47 is open/non-draft and its metadata remains unmodifiable here.                                                                                                                                                           |
+| Conservative layout rules         | complete    | Task 2 commits `db5f596ef8aa835e012ecfce219b5105ef24c43c` and `21bf51790596d7b7b8df34d00d466beeb2877fc8` are pushed; remote head is `21bf51790596d7b7b8df34d00d466beeb2877fc8`.                                                                                                             |
+| Opt-in detailed rules             | complete    | Task 3 commits `eaa61e261f995a4c8b2e566d11466c35f90c9c33`, `d434c3bfcc98e943d1a3da4c90a566676b21d518`, and `9f2c67a4a1e017ad0f0797d2db42bc83ede418bf` are pushed; 31 focused and 57 regression tests passed after review round 2.                                                           |
+| CLI and npm commands              | complete    | Task 4 implementation `7df51579fa28505da4739707115a1ccaebba1c8d` plus evidence correction `1b8a3bf18fc67f7a893a6c7d9566497bedda99dc` are pushed; the remote head is `1b8a3bf18fc67f7a893a6c7d9566497bedda99dc`.                                                                             |
+| Executable baseline               | recorded    | Measured against `1b8a3bf18fc67f7a893a6c7d9566497bedda99dc` and published in `55469829af67eabdc692ab4e9823c0e26fabb40b`: default counts match planning exactly; detailed opt-in counts are `344`, `2`, and `0`; complete checker exits `0`, while strict remains unavailable with exit `1`. |
+| Focused child-plan verification   | complete    | Known evidence includes the 81-test prerequisite baseline, Task 2's 41 focused and 96 skill-routing tests, Task 3's 31 focused and 57 exact regression tests after review round 2, and the Task 4 exact four-file suite's 116 tests.                                                        |
+| Completion gates                  | pending     | `npm run test:unit`, `npm run test:ci`, and `npm run build` were not run for child implementation.                                                                                                                                                                                          |
+| Child implementation PR and gates | in progress | Task 5 commit `55469829af67eabdc692ab4e9823c0e26fabb40b` passed clean independent review and is the pushed remote head. PR #47 follows the branch and remains open/non-draft with unavailable metadata; final local and remote gates remain pending.                                        |
 
 ## 10. Decisions Fixed By This Draft
 
