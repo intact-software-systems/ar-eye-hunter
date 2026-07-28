@@ -120,21 +120,68 @@ public. Do not create a type-only file for a single private shape when colocatin
 
 ## File size and complexity
 
-- 400 physical lines is the TypeScript-file review threshold, including blank lines and comments. A new TypeScript file
-  should stay at or below it.
-- An existing TypeScript file above 400 lines must not grow without explicit human approval. When a change materially
-  touches more than one responsibility, split it along those responsibilities as part of the change.
-- Split route modules by business action, normally `*-read.ts`, `*-write.ts`, and
-  `*-admin.ts`. Shared HTTP error translation may use `*-errors.ts`.
-- A route handler should normally stay at or below 30 physical lines.
-- A route handler should normally have estimated cyclomatic complexity at or below 8.
+A file owns one coherent responsibility that a developer can summarize in one
+sentence. Count all physical lines, including blank lines and comments, when
+applying these tiers:
+
+- `<=400` physical lines: normal target;
+- `401-500` physical lines: cohesion warning;
+- `501-800` physical lines: required separation review;
+- `>800` physical lines: refactor or record an approved persistent exception in
+  [the repo code-style exception registry](../../../../docs/repo-code-style-exceptions.md).
+
+An existing TypeScript file above 400 lines must not grow without explicit human
+approval. When a change materially touches more than one responsibility, split
+it along those responsibilities as part of the change.
+
+For a general function, count from its declaration through its closing brace,
+including blank lines and comments:
+
+- `<=40` physical lines: normal target;
+- `41-49` physical lines: warning;
+- `50-60` physical lines: required separation review;
+- `>60` physical lines: refactor or record an approved symbol-level exception in
+  [the repo code-style exception registry](../../../../docs/repo-code-style-exceptions.md).
+
+Route handlers retain the stricter `<=30`-line target. Split route modules by
+business action, normally `*-read.ts`, `*-write.ts`, and `*-admin.ts`. Shared
+HTTP error translation may use `*-errors.ts`. A route handler should normally
+have estimated cyclomatic complexity at or below 8.
 
 Cyclomatic complexity starts at 1 and adds one for each decision path: `if`
 (including each `else if` once), non-default `case`, loop, and `catch`. `else`
 alone does not add a path. The checker is a warning heuristic, not a substitute for reading the control flow.
 
-File length is a signal, not a reason to create pass-through modules. A split is successful only when each resulting
-module owns a coherent responsibility.
+Treat a file or function as too large when one or more of these qualitative
+signals apply, even when it remains below a numeric threshold:
+
+1. A developer cannot summarize its responsibility in one sentence.
+2. It has several independent reasons to change.
+3. Its imports naturally form unrelated groups.
+4. A reader must jump repeatedly between distant sections.
+5. Private helpers fall into distinct conceptual clusters.
+6. Its tests require several unrelated setup modes.
+7. It owns multiple lifecycles or state machines.
+8. Changes commonly produce merge conflicts in unrelated areas.
+
+Accepted exception categories are declarative schemas or protocol definitions,
+static lookup data, carefully structured test scenarios, parser or
+state-transition tables, approved export-only package barrels, and cohesive
+algorithms whose steps are easier to follow together. Generated code remains
+outside human-authored size enforcement.
+
+Materially touched means behavior, contracts, control flow, state, lifecycle,
+structure, or responsibility changed. Import-only, formatting-only, typo, and
+path-only changes do not trigger exception registration. When a materially
+touched `>800`-line file or `>60`-line function remains above its threshold,
+record the approved exception in
+[the registry](../../../../docs/repo-code-style-exceptions.md). Do not put size
+justifications in source comments.
+
+Size is a review signal, never an instruction to create pass-through files or
+helper chains. A split is successful only when each resulting module or function
+owns a coherent responsibility and makes the public API, state, dataflow, and
+change ownership easier to locate.
 
 ## Canonical function vocabulary
 

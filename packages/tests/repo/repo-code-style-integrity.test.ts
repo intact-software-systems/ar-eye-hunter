@@ -70,8 +70,90 @@ describe('repo code style authority integrity', () => {
   it('applies the human file-size threshold to every TypeScript surface', () => {
     const canonicalStyle = readRepo(canonicalStylePath);
 
-    expect(canonicalStyle).toContain('400 physical lines is the TypeScript-file review threshold');
+    expectAll(canonicalStyle, [
+      'A file owns one coherent responsibility',
+      '`<=400` physical lines: normal target',
+      '`401-500` physical lines: cohesion warning',
+      '`501-800` physical lines: required separation review',
+      '`>800` physical lines: refactor or record an approved persistent exception',
+      '`<=40` physical lines: normal target',
+      '`41-49` physical lines: warning',
+      '`50-60` physical lines: required separation review',
+      '`>60` physical lines: refactor or record an approved symbol-level exception',
+      'Route handlers retain the stricter `<=30`-line target',
+    ]);
     expect(canonicalStyle).not.toContain('production-file review threshold');
+  });
+
+  it('defines qualitative cohesion review before any size-driven extraction', () => {
+    const canonicalStyle = readRepo(canonicalStylePath).replace(/\s+/g, ' ');
+    const humanGuide = readRepo('docs/repo-human-style-guide.md').replace(/\s+/g, ' ');
+
+    expectAll(canonicalStyle, [
+      'summarize its responsibility in one sentence',
+      'independent reasons to change',
+      'imports naturally form unrelated groups',
+      'jump repeatedly between distant sections',
+      'Private helpers fall into distinct conceptual clusters',
+      'several unrelated setup modes',
+      'multiple lifecycles or state machines',
+      'merge conflicts in unrelated areas',
+      'Size is a review signal',
+      'pass-through files or helper chains',
+    ]);
+    expectAll(humanGuide, [
+      'Summarize the file responsibility in one sentence',
+      'Apply the numeric tier',
+      'Inspect the eight qualitative cohesion signals',
+      'Identify real responsibility boundaries before proposing extraction',
+      'Check whether an exception applies and is approved',
+      'public API, state, dataflow, and change ownership',
+    ]);
+  });
+
+  it('routes persistent size exceptions without duplicating thresholds in AGENTS.md', () => {
+    const agents = readRepo('AGENTS.md');
+    const codeWriting = readRepo('.agents/skills/rallar-code-writing/SKILL.md');
+    const canonicalStyle = readRepo(canonicalStylePath);
+    const humanGuide = readRepo('docs/repo-human-style-guide.md');
+    const docsIndex = readRepo('docs/README.md');
+    const exceptionPath = 'docs/repo-code-style-exceptions.md';
+
+    expect(existsSync(path.join(repoRoot, exceptionPath))).toBe(true);
+    const exceptionRegistry = readRepo(exceptionPath);
+
+    expectAll(canonicalStyle, [exceptionPath, 'Materially touched']);
+    expect(humanGuide).toContain('./repo-code-style-exceptions.md');
+    expect(docsIndex).toContain('./repo-code-style-exceptions.md');
+    expectAll(exceptionRegistry, [
+      'Repository-relative path',
+      'Symbol',
+      'Exception category',
+      'Why cohesion is clearer',
+      'Approval date and reviewer',
+      'Review or removal condition',
+    ]);
+    expect(codeWriting).toContain('Always read `references/repo-code-style.md`');
+    expect(agents).not.toContain('`501-800`');
+    expect(agents).not.toContain('`>800`');
+    expect(agents).not.toContain('`50-60`');
+    expect(agents).not.toContain('`>60`');
+  });
+
+  it('requires size-tier review at child-plan entry and exit', () => {
+    const refactoringPlan = readRepo('plans/repo-human-traceability-refactoring-program-plan.md');
+    const entryContract =
+      refactoringPlan.match(
+        /Every feature child plan begins with:([\s\S]*?)Every child plan ends with:/u,
+      )?.[1] ?? '';
+    const exitContract =
+      refactoringPlan.match(
+        /Every child plan ends with:([\s\S]*?)Feature status values are:/u,
+      )?.[1] ?? '';
+
+    expect(entryContract).toContain('file-size tier and 40/50/60 function review');
+    expect(exitContract).toContain('final file-size tier and 40/50/60 function review');
+    expect(exitContract).toContain('over-800-line file and over-60-line function');
   });
 
   it('connects runtime failures to the established Either flow', () => {

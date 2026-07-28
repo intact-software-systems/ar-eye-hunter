@@ -31,6 +31,9 @@ and authoritative persisted/shared contracts use mandatory fields by default.
   sequence and warning-only checker usage for the authoritative repo TypeScript
   standard in
   [repo-code-style.md](../.agents/skills/rallar-code-writing/references/repo-code-style.md).
+- [Repo Code-Style Exception Registry](./repo-code-style-exceptions.md)
+  Human-approved persistent exceptions for materially touched files and
+  functions that remain above the hard size tiers.
 - [Rallar API Reference](./rallar-api-reference.md) Complete public API
   description for `rallar.ts`, `rallar-data.ts`, and `RallarMiddleware.ts`, with
   usage examples.
