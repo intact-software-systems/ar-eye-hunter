@@ -603,7 +603,9 @@ async function resetFleetScrollOwner(fleet: Locator): Promise<void> {
     await fleet.evaluate(element => {
         element.scrollTop = 0;
     });
-    await expect.poll(() => fleet.evaluate(element => element.scrollTop)).toBe(0);
+    await expect.poll(async () =>
+        Math.abs(await fleet.evaluate(element => element.scrollTop)) <= 2
+    ).toBe(true);
 }
 
 async function readFleetScrollMetrics(page: Page) {

@@ -152,6 +152,112 @@ const workflowDispatchInputNames = (workflow: string): string[] => {
 };
 
 describe('Hetzner distributed recipe workflow', () => {
+  it('materializes every supported manifest without treating parallel labels as room scope', async () => {
+    const temporaryDirectory = await mkdtemp(path.join(tmpdir(), 'rallar-supported-manifests-'));
+    const scriptPath = path.join(
+      repoRoot,
+      'scripts/github-actions/materialize-hetzner-run-manifest.mjs',
+    );
+
+    for (const [index, manifestPath] of supportedMainlineManifestPaths.entries()) {
+      const outputPath = path.join(temporaryDirectory, `${index}-manifest.json`);
+      const recordPath = path.join(temporaryDirectory, `${index}-materialization.json`);
+      await execFileAsync('node', [
+        scriptPath,
+        '--source',
+        path.join(repoRoot, manifestPath),
+        '--output',
+        outputPath,
+        '--record-output',
+        recordPath,
+        '--agent-source',
+        'hetzner',
+        '--operator-phase',
+        'run',
+        '--control-run-id',
+        `control-supported-${index}`,
+        '--distributed-run-id',
+        `dist-supported-${index}`,
+        '--repository',
+        'intact-software-systems/ar-eye-hunter',
+        '--workflow-run-id',
+        '30341252322',
+        '--workflow-run-attempt',
+        '1',
+        '--application-id',
+        '',
+        '--workspace-id',
+        '',
+        '--room-id',
+        '',
+      ]);
+
+      const manifest = JSON.parse(await readFile(outputPath, 'utf8'));
+      expect(manifest.group.groupId).toMatch(/^hetzner-run-[a-f0-9]{64}$/);
+      if (manifestPath.endsWith('/02-composite-evidence-2-agent.json')) {
+        expect(manifest.recipes[0].recipe.commands[1].groups).toMatchObject([
+          { groupId: 'left-health' },
+          { groupId: 'right-stats' },
+        ]);
+      }
+    }
+  });
+
+  it('preserves a parallel label that happens to equal the source room', async () => {
+    const temporaryDirectory = await mkdtemp(path.join(tmpdir(), 'rallar-parallel-label-'));
+    const sourcePath = path.join(temporaryDirectory, 'source.json');
+    const outputPath = path.join(temporaryDirectory, 'manifest.json');
+    const recordPath = path.join(temporaryDirectory, 'materialization.json');
+    const source = JSON.parse(
+      await readFile(
+        path.join(
+          repoRoot,
+          'apps/rallar-black-box/manifests/hetzner/02-composite-evidence-2-agent.json',
+        ),
+        'utf8',
+      ),
+    );
+    source.recipes[0].recipe.commands[1].groups[0].groupId = 'hetzner-headless-room';
+    await writeFile(sourcePath, `${JSON.stringify(source, null, 2)}\n`);
+
+    await execFileAsync('node', [
+      path.join(repoRoot, 'scripts/github-actions/materialize-hetzner-run-manifest.mjs'),
+      '--source',
+      sourcePath,
+      '--output',
+      outputPath,
+      '--record-output',
+      recordPath,
+      '--agent-source',
+      'hetzner',
+      '--operator-phase',
+      'run',
+      '--control-run-id',
+      'control-parallel-label',
+      '--distributed-run-id',
+      'dist-parallel-label',
+      '--repository',
+      'intact-software-systems/ar-eye-hunter',
+      '--workflow-run-id',
+      '30341252322',
+      '--workflow-run-attempt',
+      '1',
+      '--application-id',
+      '',
+      '--workspace-id',
+      '',
+      '--room-id',
+      '',
+    ]);
+
+    const manifest = JSON.parse(await readFile(outputPath, 'utf8'));
+    expect(manifest.group.groupId).toMatch(/^hetzner-run-[a-f0-9]{64}$/);
+    expect(manifest.recipes[0].recipe.commands[1].groups).toMatchObject([
+      { groupId: 'hetzner-headless-room' },
+      { groupId: 'right-stats' },
+    ]);
+  });
+
   it('materializes a deterministic isolated group throughout executable manifest data', async () => {
     const temporaryDirectory = await mkdtemp(path.join(tmpdir(), 'rallar-manifest-isolation-'));
     const sourcePath = path.join(
