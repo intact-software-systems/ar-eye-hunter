@@ -314,26 +314,226 @@ rallar_playwright_normalize_browser() {
   esac
 }
 
+rallar_playwright_operation_stage() {
+  printf 'RALLAR_OPERATION_STAGE=%s\n' "$1"
+}
+
+rallar_playwright_version() {
+  local checkout_dir="$1"
+  local version_output version
+
+  version_output="$(npm --prefix "${checkout_dir}" exec -- playwright --version)"
+  version="${version_output#Version }"
+  if [[ -z "${version}" || "${version}" == "${version_output}" ]]; then
+    rallar_playwright_fail "Could not read the Playwright version from ${checkout_dir}."
+    return 1
+  fi
+
+  printf '%s' "${version}"
+}
+
+rallar_playwright_package_lock_sha256() {
+  local checkout_dir="$1"
+  sha256sum "${checkout_dir}/package-lock.json" | awk '{print $1}'
+}
+
+rallar_playwright_root() {
+  printf '%s' "${RALLAR_PLAYWRIGHT_ROOT:-/var/lib/rallar-playwright}"
+}
+
+rallar_playwright_active_path() {
+  printf '%s/active' "$(rallar_playwright_root)"
+}
+
+rallar_playwright_write_ubuntu_apt_config() {
+  local config_path="$1"
+  local ubuntu_sources_file="${RALLAR_APT_UBUNTU_SOURCES_FILE:-/etc/apt/sources.list.d/ubuntu.sources}"
+
+  if [[ ! -r "${ubuntu_sources_file}" ]]; then
+    rallar_playwright_fail \
+      "Official Ubuntu apt source file is missing: ${ubuntu_sources_file}"
+    return 1
+  fi
+
+  cat >"${config_path}" <<EOF_APT
+Dir::Etc::sourcelist "${ubuntu_sources_file}";
+Dir::Etc::sourceparts "-";
+Acquire::Retries "3";
+Acquire::http::Timeout "30";
+Acquire::https::Timeout "30";
+EOF_APT
+}
+
+ensure_rallar_playwright_system_dependencies() {
+  local checkout_dir="$1"
+  local browser_name="$2"
+  local apt_config
+
+  rallar_playwright_operation_stage "playwright-system-dependencies"
+  if npm --prefix "${checkout_dir}" exec -- \
+    playwright install-deps --dry-run "${browser_name}"; then
+    echo "==> Playwright ${browser_name} system dependencies already satisfy the pinned version"
+    return 0
+  fi
+
+  apt_config="$(mktemp "${TMPDIR:-/tmp}/rallar-playwright-apt.XXXXXX")"
+  if ! rallar_playwright_write_ubuntu_apt_config "${apt_config}"; then
+    rm -f -- "${apt_config}"
+    return 1
+  fi
+
+  echo "==> Installing Playwright ${browser_name} dependencies from official Ubuntu sources"
+  if rallar_playwright_run_with_heartbeat \
+    "Playwright ${browser_name} dependency install" \
+    env APT_CONFIG="${apt_config}" \
+    npm --prefix "${checkout_dir}" exec -- playwright install-deps "${browser_name}"; then
+    :
+  else
+    local status="$?"
+    rm -f -- "${apt_config}"
+    return "${status}"
+  fi
+  rm -f -- "${apt_config}"
+
+  npm --prefix "${checkout_dir}" exec -- \
+    playwright install-deps --dry-run "${browser_name}"
+}
+
+rallar_playwright_prepare_directory() {
+  local path="$1"
+  local user="$2"
+
+  mkdir -p -- "${path}"
+  if [[ "$(id -u)" == "0" ]]; then
+    chown -R "${user}:${user}" "${path}"
+  fi
+}
+
+verify_rallar_playwright_browser() {
+  local checkout_dir="$1"
+  local browser_name
+  local browser_path="${3:-$(rallar_playwright_active_path)}"
+  local user="${RALLAR_PLAYWRIGHT_USER:-rallar}"
+  browser_name="$(rallar_playwright_normalize_browser "${2:-chromium}")"
+
+  if [[ ! -d "${browser_path}" ]]; then
+    rallar_playwright_fail "Playwright browser path is missing: ${browser_path}"
+    return 1
+  fi
+
+  rallar_playwright_operation_stage "playwright-browser-smoke"
+  rallar_playwright_run_user_command_in_checkout \
+    "${user}" \
+    "${checkout_dir}" \
+    env PLAYWRIGHT_BROWSERS_PATH="${browser_path}" \
+    node -e \
+    "const { ${browser_name} } = require('playwright'); ${browser_name}.launch({ headless: true }).then(async browser => { await browser.close(); }).catch(error => { console.error(error); process.exit(1); });"
+}
+
+rallar_playwright_activate_browser() {
+  local browser_root="$1"
+  local version_path="$2"
+  local relative_target="versions/$(basename "${version_path}")"
+  local temporary_link="${browser_root}/.active.$$.tmp"
+
+  ln -s "${relative_target}" "${temporary_link}"
+  if mv -Tf "${temporary_link}" "${browser_root}/active" 2>/dev/null; then
+    return 0
+  fi
+  rm -f -- "${browser_root}/active"
+  mv "${temporary_link}" "${browser_root}/active"
+}
+
+rallar_playwright_prune_inactive_versions() {
+  local versions_dir="$1"
+  local active_version_path="$2"
+  local version_path
+
+  while IFS= read -r version_path; do
+    [[ -z "${version_path}" || "${version_path}" == "${active_version_path}" ]] && continue
+    rm -rf -- "${version_path}"
+  done < <(find "${versions_dir}" -mindepth 1 -maxdepth 1 -type d -print)
+}
+
+rallar_playwright_publish_candidate() {
+  local staging_path="$1"
+  local version_path="$2"
+  local invalid_backup="${version_path}.invalid.$$"
+  local status
+
+  if [[ ! -e "${version_path}" ]]; then
+    mv "${staging_path}" "${version_path}"
+    return 0
+  fi
+
+  mv "${version_path}" "${invalid_backup}"
+  if mv "${staging_path}" "${version_path}"; then
+    rm -rf -- "${invalid_backup}"
+    return 0
+  fi
+
+  status="$?"
+  mv "${invalid_backup}" "${version_path}" || true
+  return "${status}"
+}
+
 install_rallar_playwright_browser() {
   local checkout_dir="$1"
   local user="${RALLAR_PLAYWRIGHT_USER:-rallar}"
-  local browser_name
+  local browser_name browser_root versions_dir playwright_version package_lock_sha version_key
+  local version_path staging_path status
   browser_name="$(rallar_playwright_normalize_browser "${2:-chromium}")"
 
-  echo "==> Installing Playwright ${browser_name} system dependencies"
-  rallar_playwright_run_with_heartbeat \
-    "Playwright ${browser_name} dependency install" \
-    npm --prefix "${checkout_dir}" exec -- playwright install-deps "${browser_name}"
+  ensure_rallar_playwright_system_dependencies "${checkout_dir}" "${browser_name}"
 
-  rallar_playwright_remove_stale_lock_if_safe
+  browser_root="$(rallar_playwright_root)"
+  versions_dir="${browser_root}/versions"
+  playwright_version="$(rallar_playwright_version "${checkout_dir}")"
+  package_lock_sha="$(rallar_playwright_package_lock_sha256 "${checkout_dir}")"
+  version_key="${playwright_version}-${browser_name}-${package_lock_sha:0:12}"
+  version_path="${versions_dir}/${version_key}"
+  rallar_playwright_prepare_directory "${versions_dir}" "${user}"
+
+  if [[ -d "${version_path}" ]] && \
+    verify_rallar_playwright_browser "${checkout_dir}" "${browser_name}" "${version_path}"; then
+    rallar_playwright_activate_browser "${browser_root}" "${version_path}"
+    rallar_playwright_prune_inactive_versions "${versions_dir}" "${version_path}"
+    return 0
+  fi
+
+  staging_path="$(mktemp -d "${versions_dir}/.candidate-${version_key}.XXXXXX")"
+  rallar_playwright_prepare_directory "${staging_path}" "${user}"
+  RALLAR_PLAYWRIGHT_CACHE_DIR="${staging_path}" \
+    rallar_playwright_remove_stale_lock_if_safe
 
   echo "==> Installing Playwright ${browser_name} for the ${user} user"
-  rallar_playwright_run_with_heartbeat \
+  rallar_playwright_operation_stage "playwright-browser-install"
+  if rallar_playwright_run_with_heartbeat \
     "Playwright ${browser_name} install for ${user}" \
     rallar_playwright_run_user_command_in_checkout \
       "${user}" \
       "${checkout_dir}" \
-      npm --prefix "${checkout_dir}" exec -- playwright install "${browser_name}"
+      env PLAYWRIGHT_BROWSERS_PATH="${staging_path}" \
+      npm --prefix "${checkout_dir}" exec -- playwright install "${browser_name}"; then
+    :
+  else
+    status="$?"
+    rm -rf -- "${staging_path}"
+    return "${status}"
+  fi
+
+  if verify_rallar_playwright_browser \
+    "${checkout_dir}" "${browser_name}" "${staging_path}"; then
+    :
+  else
+    status="$?"
+    rm -rf -- "${staging_path}"
+    return "${status}"
+  fi
+
+  rallar_playwright_publish_candidate "${staging_path}" "${version_path}"
+  rallar_playwright_activate_browser "${browser_root}" "${version_path}"
+  rallar_playwright_prune_inactive_versions "${versions_dir}" "${version_path}"
 }
 
 install_rallar_playwright_chromium() {

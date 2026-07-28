@@ -126,10 +126,12 @@ gh workflow run hetzner-distributed-recipe.yml \
   -f stop_after_run=true
 ```
 
-Longer term, optimize rollout with VM stamp files for deployed git SHA,
-`package-lock.json` hash, Playwright browser version, SPA build hash, and
-service config hash so rollout can verify and repair stale pieces instead of
-always running the full deploy.
+The supported main-branch workflow prepares the controller once, writes a
+deployment-readiness stamp containing the exact commit, `package-lock.json`
+hash, Playwright version, browser engine/path, Ubuntu version, and service
+health, then runs each supported manifest with rollout and installation
+disabled. Run-only Hetzner and mixed-agent phases reject a missing or stale
+stamp before starting workers.
 
 ## Required Secrets
 
@@ -151,8 +153,12 @@ runs `08-rollout-controller.sh`, starts browsers with
 `09-start-headless-workers.sh`, runs `14-run-distributed-recipe.sh`, copies
 artifacts back, analyzes them when available, appends the analyzer markdown to
 the GitHub step summary, uploads artifacts, and fails only after evidence is
-uploaded when the distributed run did not pass.
+uploaded when the distributed run did not pass. Independently of recipe
+artifacts, it always publishes a **Hetzner operation diagnostics** summary and
+an artifact containing `operation-report.json`, `summary.md`, and sanitized
+`evidence.log`.
 
-For passed runs, start with `analysis/performance.md`. For failed runs, start
-with `analysis/analysis.json`, then `analysis/fix-proposal.md`, then the cited
-raw evidence file.
+For every run, start with `operation-report.json`. If `recipeStarted` is false,
+stop there and follow `nextAction`. If it is true, use
+`analysis/performance.md` for success or `analysis/analysis.json`,
+`analysis/fix-proposal.md`, and the cited raw evidence for failure.

@@ -453,15 +453,17 @@ jobs:
 
       - name: Run distributed recipe
         id: run_recipe
-        continue-on-error: true
         shell: bash
         env:
           HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
           HETZNER_USER: ${{ secrets.HETZNER_USER }}
         run: |
           set -euo pipefail
+          operation_log="${RUNNER_TEMP}/hetzner-operation.log"
+          operation_started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          set +e
           ssh -i ~/.ssh/hetzner "${HETZNER_USER}@${HETZNER_HOST}" \
-            bash -s <<'REMOTE'
+            bash -s 2>&1 <<'REMOTE' | tee "${operation_log}"
           set -euo pipefail
           cd "${HOME}/rallar-controller"
           chmod +x *.sh
@@ -471,6 +473,7 @@ jobs:
           # shellcheck disable=SC1091
           source /tmp/rallar-distributed-recipe.env
           set +a
+          source ./rallar-deployment-readiness.sh
 
           bool_enabled() {
             local value="${1:-0}"
@@ -556,6 +559,7 @@ jobs:
           if [[ "${RALLAR_HETZNER_OPERATOR_PHASE}" == "run" ]]; then
             echo "Run phase skips API/control rollout; prepare phase must already be complete when required."
           elif bool_enabled "${RALLAR_ROLLOUT_BEFORE_RUN:-0}"; then
+            echo "RALLAR_OPERATION_STAGE=rollout-controller"
             ./10-stop-headless-workers.sh || true
             ./08-rollout-controller.sh
             echo "Rollout completed; skipping duplicate Playwright install during headless worker start."
@@ -565,8 +569,17 @@ jobs:
 
           if [[ "${RALLAR_HETZNER_OPERATOR_PHASE}" == "prepare" ]]; then
             write_prepare_marker
+            echo "RALLAR_OPERATION_STAGE=prepare-complete"
             echo "Hetzner prepare phase complete; skipping agent wait and distributed run."
             exit 0
+          fi
+
+          if [[ "${RALLAR_HETZNER_OPERATOR_PHASE}" == "run" &&
+            "${RALLAR_BLACK_BOX_AGENT_SOURCE}" != "external" ]]; then
+            echo "RALLAR_OPERATION_STAGE=deployment-readiness"
+            validate_rallar_deployment_readiness \
+              "${RALLAR_CHECKOUT_DIR:-/opt/rallar/ar-eye-hunter}" \
+              "${RALLAR_REPO_REF}"
           fi
 
           if remote_topology_env_requires_rollout && [[ "${RALLAR_HETZNER_OPERATOR_PHASE}" == "run" ]]; then
@@ -575,19 +588,29 @@ jobs:
 
           case "${RALLAR_BLACK_BOX_AGENT_SOURCE}" in
             hetzner)
+              echo "RALLAR_OPERATION_STAGE=agent-readiness"
               ./10-stop-headless-workers.sh || true
               RALLAR_WRITE_HEADLESS_ENV=1 ./09-start-headless-workers.sh
               ;;
             external)
+              echo "RALLAR_OPERATION_STAGE=agent-readiness"
               wait_for_external_agents_if_requested
               ;;
             mixed)
+              echo "RALLAR_OPERATION_STAGE=agent-readiness"
               RALLAR_WRITE_HEADLESS_ENV=1 ./09-start-headless-workers.sh
               wait_for_external_agents_if_requested
               ;;
           esac
+          echo "RALLAR_OPERATION_STAGE=recipe-execution"
           ./14-run-distributed-recipe.sh
           REMOTE
+          operation_exit_code="${PIPESTATUS[0]}"
+          set -e
+          operation_finished_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          printf 'exit_code=%s\n' "${operation_exit_code}" >> "${GITHUB_OUTPUT}"
+          printf 'started_at=%s\n' "${operation_started_at}" >> "${GITHUB_OUTPUT}"
+          printf 'finished_at=%s\n' "${operation_finished_at}" >> "${GITHUB_OUTPUT}"
 
       - name: Copy distributed artifacts
         if: always() && inputs.operator_phase != 'prepare'
@@ -596,12 +619,23 @@ jobs:
           HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
           HETZNER_USER: ${{ secrets.HETZNER_USER }}
           DISTRIBUTED_RUN_ID: ${{ steps.ids.outputs.distributed_run_id }}
+          OPERATION_EXIT_CODE: ${{ steps.run_recipe.outputs.exit_code || '1' }}
         run: |
           set -euo pipefail
           mkdir -p ".artifacts/hetzner-distributed"
+          operation_log="${RUNNER_TEMP}/hetzner-operation.log"
+          if [[ "${OPERATION_EXIT_CODE}" == "0" ]]; then
+            echo "RALLAR_OPERATION_STAGE=artifact-collection" | tee -a "${operation_log}"
+          fi
+          set +e
           scp -i ~/.ssh/hetzner -r \
             "${HETZNER_USER}@${HETZNER_HOST}:/tmp/rallar-distributed-runs/${DISTRIBUTED_RUN_ID}" \
-            ".artifacts/hetzner-distributed/" || true
+            ".artifacts/hetzner-distributed/" 2>&1 | tee -a "${operation_log}"
+          copy_exit_code="${PIPESTATUS[0]}"
+          set -e
+          if [[ "${copy_exit_code}" != "0" ]]; then
+            echo "Distributed artifact copy exited with code ${copy_exit_code}." | tee -a "${operation_log}"
+          fi
 
       - name: Upload distributed artifacts
         if: always() && inputs.operator_phase != 'prepare'
@@ -685,6 +719,64 @@ jobs:
           path: .artifacts/hetzner-distributed/${{ steps.ids.outputs.distributed_run_id }}/analysis
           if-no-files-found: warn
 
+      - name: Generate Hetzner operation diagnostics
+        id: operation_diagnostics
+        if: always()
+        shell: bash
+        env:
+          OPERATION_EXIT_CODE: ${{ steps.run_recipe.outputs.exit_code || '1' }}
+          OPERATION_STARTED_AT: ${{ steps.run_recipe.outputs.started_at || 'unknown' }}
+          OPERATION_FINISHED_AT: ${{ steps.run_recipe.outputs.finished_at || 'unknown' }}
+          OPERATOR_PHASE: ${{ inputs.operator_phase }}
+          REPO_REF: ${{ inputs.ref }}
+          MANIFEST_PATH: ${{ inputs.manifest_path }}
+          CONTROL_RUN_ID: ${{ steps.ids.outputs.run_id }}
+          DISTRIBUTED_RUN_ID: ${{ steps.ids.outputs.distributed_run_id }}
+          ARTIFACT_AVAILABLE: ${{ steps.artifact_status.outputs.available || 'false' }}
+        run: |
+          set -euo pipefail
+          diagnostics_dir=".artifacts/hetzner-operation/${DISTRIBUTED_RUN_ID}"
+          operation_status="failed"
+          operation_started_at="${OPERATION_STARTED_AT}"
+          operation_finished_at="${OPERATION_FINISHED_AT}"
+          if [[ "${OPERATION_EXIT_CODE}" == "0" ]]; then
+            operation_status="succeeded"
+          fi
+          if [[ "${operation_started_at}" == "unknown" ]]; then
+            operation_started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          fi
+          if [[ "${operation_finished_at}" == "unknown" ]]; then
+            operation_finished_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          fi
+          node scripts/github-actions/write-hetzner-operation-report.mjs \
+            --log "${RUNNER_TEMP}/hetzner-operation.log" \
+            --output-dir "${diagnostics_dir}" \
+            --status "${operation_status}" \
+            --phase "${OPERATOR_PHASE}" \
+            --exit-code "${OPERATION_EXIT_CODE}" \
+            --commit "${REPO_REF}" \
+            --manifest "${MANIFEST_PATH}" \
+            --control-run-id "${CONTROL_RUN_ID}" \
+            --distributed-run-id "${DISTRIBUTED_RUN_ID}" \
+            --artifact-available "${ARTIFACT_AVAILABLE}" \
+            --started-at "${operation_started_at}" \
+            --finished-at "${operation_finished_at}"
+          cat "${diagnostics_dir}/summary.md" >> "${GITHUB_STEP_SUMMARY}"
+          report_path="${diagnostics_dir}/operation-report.json"
+          printf 'failure_category=%s\n' "$(jq -r '.failureCategory' "${report_path}")" >> "${GITHUB_OUTPUT}"
+          printf 'failure_stage=%s\n' "$(jq -r '.stage' "${report_path}")" >> "${GITHUB_OUTPUT}"
+          printf 'component=%s\n' "$(jq -r '.component' "${report_path}")" >> "${GITHUB_OUTPUT}"
+          printf 'operation_status=%s\n' "$(jq -r '.status' "${report_path}")" >> "${GITHUB_OUTPUT}"
+          printf 'diagnostics_dir=%s\n' "${diagnostics_dir}" >> "${GITHUB_OUTPUT}"
+
+      - name: Upload Hetzner operation diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hetzner-operation-${{ steps.ids.outputs.distributed_run_id }}
+          path: .artifacts/hetzner-operation/${{ steps.ids.outputs.distributed_run_id }}
+          if-no-files-found: error
+
       - name: Stop headless browsers
         if: always() && inputs.stop_after_run && inputs.agent_source != 'external'
         shell: bash
@@ -697,7 +789,22 @@ jobs:
             'cd "${HOME}/rallar-controller" && ./10-stop-headless-workers.sh'
 
       - name: Fail if distributed recipe operation failed
-        if: always() && steps.run_recipe.outcome != 'success'
+        if: always() && steps.operation_diagnostics.outputs.operation_status != 'succeeded'
+        env:
+          FAILURE_CATEGORY: ${{ steps.operation_diagnostics.outputs.failure_category || 'unknown' }}
+          FAILURE_STAGE: ${{ steps.operation_diagnostics.outputs.failure_stage || 'unknown' }}
+          FAILURE_COMPONENT: ${{ steps.operation_diagnostics.outputs.component || 'unknown' }}
+          DIAGNOSTICS_DIR: ${{ steps.operation_diagnostics.outputs.diagnostics_dir }}
         run: |
-          echo "Distributed recipe operation failed. Artifacts and analysis were uploaded when applicable." >&2
+          report_path="${DIAGNOSTICS_DIR}/operation-report.json"
+          evidence="$(jq -r '.evidenceExcerpt | split("\n") | map(select(length > 0)) | last // "(no evidence captured)"' "${report_path}")"
+          next_action="$(jq -r '.nextAction' "${report_path}")"
+          message="${FAILURE_COMPONENT} failed during ${FAILURE_STAGE}. Evidence: ${evidence} Next action: ${next_action}"
+          message="${message//'%'/'%25'}"
+          message="${message//$'\r'/'%0D'}"
+          message="${message//$'\n'/'%0A'}"
+          echo "::error title=Hetzner ${FAILURE_CATEGORY}::${message}"
+          if [[ -n "${DIAGNOSTICS_DIR}" && -s "${DIAGNOSTICS_DIR}/summary.md" ]]; then
+            cat "${DIAGNOSTICS_DIR}/summary.md" >&2
+          fi
           exit 1

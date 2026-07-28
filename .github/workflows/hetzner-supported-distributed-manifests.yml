@@ -14,8 +14,48 @@ concurrency:
   queue: max
 
 jobs:
+  preflight:
+    name: Validate shared preparation cohort
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out the exact commit
+        uses: actions/checkout@v4
+
+      - name: Reject topology-specific supported manifests
+        run: |
+          node scripts/github-actions/validate-hetzner-shared-preparation.mjs \
+            apps/rallar-black-box/manifests/hetzner/01-health-2-agent.json \
+            apps/rallar-black-box/manifests/hetzner/02-composite-evidence-2-agent.json \
+            apps/rallar-black-box/manifests/hetzner/03-rtc-smoke-2-agent.json \
+            apps/rallar-black-box/manifests/hetzner/04-provider-parity-2-agent.json \
+            apps/rallar-black-box/manifests/hetzner/05a-rtc-realtime-stability-2-agent-5s.json
+
+  prepare:
+    name: Prepare Hetzner controller
+    needs: preflight
+    uses: ./.github/workflows/hetzner-distributed-recipe-runner.yml
+    with:
+      ref: ${{ github.sha }}
+      operator_phase: prepare
+      rollout_before_run: true
+      run_id: main-${{ github.run_id }}-${{ github.run_attempt }}-prepare
+      agent_prefix: controller
+      manifest_path: apps/rallar-black-box/manifests/hetzner/01-health-2-agent.json
+      register_before_login: true
+      browser_log_level: warning
+      headless_entry: headless
+      browser_engine: chromium
+      install_playwright: true
+      npm_ci: false
+      wait_for_agents: false
+      ready_timeout_seconds: '120'
+      terminal_timeout_seconds: '300'
+      stop_after_run: false
+    secrets: inherit
+
   run:
     name: ${{ matrix.manifest_id }}
+    needs: prepare
     strategy:
       fail-fast: false
       max-parallel: 1
@@ -34,7 +74,8 @@ jobs:
     uses: ./.github/workflows/hetzner-distributed-recipe-runner.yml
     with:
       ref: ${{ github.sha }}
-      rollout_before_run: true
+      operator_phase: run
+      rollout_before_run: false
       run_id: main-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.manifest_id }}
       agent_prefix: controller
       manifest_path: ${{ matrix.manifest_path }}
@@ -42,7 +83,7 @@ jobs:
       browser_log_level: warning
       headless_entry: headless
       browser_engine: chromium
-      install_playwright: true
+      install_playwright: false
       npm_ci: false
       wait_for_agents: true
       ready_timeout_seconds: '120'
