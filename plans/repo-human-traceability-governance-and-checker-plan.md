@@ -1207,7 +1207,7 @@ approved or implemented by this revision.
   Verified 2026-07-28: exit `0`, no checker-module warning, and all six default
   layout summary counts were zero.
 
-- [x] **Step 9: Commit and publish the CLI milestone**
+- [ ] **Step 9: Commit and publish the CLI milestone**
 
   Commit message:
 
@@ -1217,6 +1217,10 @@ approved or implemented by this revision.
 
   Stage only this task's files and the checked-off plan. Push and update the
   draft pull request.
+
+  Local implementation commit `7df51579fa28505da4739707115a1ccaebba1c8d`
+  exists. Controller push and PR update are pending; check this step only after
+  both publication actions are complete.
 
 ### Task 5: Record The Executable Baseline And Ratchet Procedure
 
