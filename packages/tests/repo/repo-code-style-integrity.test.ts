@@ -55,6 +55,22 @@ describe('repo code style authority integrity', () => {
       'The plain-object `type` preference is a manual review rule',
       '`unknown` belongs only at an untrusted boundary',
     ]);
+    expectAll(canonicalStyle, [
+      '## Feature ownership and repository organization',
+      '## File and primary symbol names',
+      'Organize by owned feature or capability before technical role',
+      'More than 20 direct production TypeScript files prompts an ownership review',
+      'Four or more sibling files with the same meaningful feature prefix',
+      '`room` is the product and browser term',
+      '`group-state` is the authoritative API and server term',
+      '`room-group-state-translation.ts`',
+    ]);
+    expectAll(humanGuide, [
+      'obvious feature entry file',
+      'primary exported symbol',
+      'co-located with the feature that owns it',
+      'room/group-state translation boundary',
+    ]);
   });
 
   it('keeps canonical examples inside the vocabulary they teach', () => {

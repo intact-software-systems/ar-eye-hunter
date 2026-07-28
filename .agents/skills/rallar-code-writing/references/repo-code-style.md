@@ -10,6 +10,8 @@ version of these rules.
 - [Scope and adoption](#scope-and-adoption)
 - [Formatting and spacing](#formatting-and-spacing)
 - [Predictable file layout](#predictable-file-layout)
+- [Feature ownership and repository organization](#feature-ownership-and-repository-organization)
+- [File and primary symbol names](#file-and-primary-symbol-names)
 - [File size and complexity](#file-size-and-complexity)
 - [Canonical function vocabulary](#canonical-function-vocabulary)
 - [Variables and local flow](#variables-and-local-flow)
@@ -117,6 +119,78 @@ Use this order for non-trivial files:
 
 Keep a contract close to the behavior that owns it. Export through a barrel only when the contract is intentionally
 public. Do not create a type-only file for a single private shape when colocating it makes navigation easier.
+
+## Feature ownership and repository organization
+
+Organize by owned feature or capability before technical role. A feature folder
+owns its entry service, facade, or route registration; its private contracts;
+pure translations; factories; persistence adapters; and direct tests. Put a
+responsibility in a nested folder only when that folder names a real subfeature
+or boundary.
+
+Place cross-runtime HTTP DTOs under the owning `packages/shared/api/<feature>`
+path, browser product inputs and views under the owning
+`packages/shared-web/browser/<feature>` path, and persistence records, storage
+keys, exact reads, and snapshot assembly under the owning feature's
+`persistence/` path. Keep command, read, computed, validation, and written
+contracts beside the use case or service that owns their phase sequence. Keep
+explicit-dependency factories beside their service and production-default
+factories in application composition. Keep route request and response
+translations beside the routes that own them.
+
+Do not create repository-wide or package-wide `interfaces`, `types`,
+`translators`, `factories`, `helpers`, or `utils` folders. Those words name
+implementation roles, not owners. A private one-use contract stays beside its
+behavior. An intentionally shared contract uses a descriptive feature contract
+filename and is exported only through the intentional package boundary.
+
+More than 20 direct production TypeScript files prompts an ownership review.
+Four or more sibling files with the same meaningful feature prefix prompts a
+feature-folder review. These thresholds do not require a folder or permit a
+pass-through module. A new one-file folder requires a real public, runtime, or
+ownership boundary.
+
+Every feature folder has one obvious feature entry file named for its public
+service, facade, or route-registration function. Prefer
+`feature/subfeature/file.ts`; add another directory level only when it removes
+a genuine mixed responsibility. Tests mirror the production feature path.
+
+`room` is the product and browser term.
+`group-state` is the authoritative API and server term. Translate between them
+in the explicitly named browser boundary `room-group-state-translation.ts`.
+Established protocol identities `GroupRef` and `roomRef` remain unchanged
+unless an approved public-contract migration changes them.
+
+## File and primary symbol names
+
+TypeScript filenames use kebab-case, including files whose primary export is a
+class or React component. Exact ecosystem-discovered configuration names such
+as `vite.config.ts` and `prisma.config.ts` retain the names expected by their
+tools.
+
+A file basename matches its primary exported class, function, interface, type,
+or capability after mechanical Pascal/camel-to-kebab conversion. An action
+module is verb-first and uses the canonical vocabulary. Route registration uses
+a descriptive name such as `registerGroupStateRoutes`, not an export named only
+`init`. Lifecycle names include their capability, for example
+`initRoomPresence`.
+
+Generic filenames such as `utils.ts`, `types.ts`, `helpers.ts`, `contracts.ts`,
+`runtime.ts`, and `middleware.ts` require a feature noun and role. Prefer
+`group-state-service-contracts.ts` or `api-v1-http-middleware.ts`.
+
+Established abbreviations API, CRDT, HTTP, RTC, SQL, URL, WebSocket, and WS are
+allowed. Do not introduce local abbreviations such as `svc`, `mgr`, `cfg`,
+`ctx`, `req`, `res`, `grp`, or `proc` in public or domain names.
+
+Do not introduce historical implementation names such as `task10-*` or
+`*-correction-17`. When the owning feature is migrated, rename existing test
+files for the behavior or invariant they prove. This remains a human review
+rule because tests are excluded from the default production checker.
+
+`mod.ts` is a package compatibility boundary. Do not add nested barrels to
+shorten imports. Internal code imports the owning file directly; public
+consumers use the intentional package entry point.
 
 ## File size and complexity
 

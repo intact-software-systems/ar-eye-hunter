@@ -68,11 +68,25 @@ Vitest, Prettier, and the existing `scripts/repo-style-check.mjs` command.
 
 Date: 2026-07-28
 
-Status: Published on `main`, revised for execution readiness, and awaiting
-human review. No production code or checker implementation has started. The
-child plan remains unapproved.
+Status: Explicitly approved for execution at Git blob
+`8ee56ac27189f9bed751fb6a95992830bda6be60` and in progress on
+`codex/repo-human-traceability-governance-checker-wave-0`. Governance work has
+started; production code remains unchanged and checker behavior has not yet
+changed.
 
 Publication and prerequisite reconciliation:
+
+- The human approved exactly this governance and warning-only checker child-plan
+  revision on 2026-07-28. The approval does not extend to a later production
+  child plan.
+- The implementation branch was created from current `origin/main` and
+  published at `09f4e8d7b1eb3e7a02560dc6060238bf739a03a1` before checker
+  implementation began. The focused governance baseline passed 81 of 81 tests.
+  The unrestricted full unit baseline passed 5,534 tests with 18 skipped.
+- Draft pull-request creation remains unavailable: the GitHub connector returned
+  HTTP 403 and local `gh` authentication is invalid. The branch is published,
+  and the draft PR remains a required publication-envelope prerequisite rather
+  than evidence of implementation completion.
 
 - Live GitHub `main`, local `main`, and local `origin/main` resolve to
   `4ec117db1e09e00f86ed8f66cbf8adab1cdeb4a9`. That commit adds only the three
@@ -424,7 +438,7 @@ approved or implemented by this revision.
 - Produces: the intended non-default Wave 0 branch with unrelated user changes
   preserved.
 
-- [ ] **Step 1: Inspect the current branch and working tree**
+- [x] **Step 1: Inspect the current branch and working tree**
 
   Run:
 
@@ -437,7 +451,7 @@ approved or implemented by this revision.
   draft, `plans/rallar-rest-snapshot-read-convergence-implementation-plan.md`
   is an unrelated modified file and must not be staged by this plan.
 
-- [ ] **Step 2: Confirm or create and publish the implementation branch**
+- [x] **Step 2: Confirm or create and publish the implementation branch**
 
   Use `codex/repo-human-traceability-governance-checker-wave-0`, created from
   current `origin/main`, through the Codex branch action or the installed GitHub
@@ -446,7 +460,7 @@ approved or implemented by this revision.
   this branch exactly once rather than searching for either historical branch.
   Do not commit or push the default branch.
 
-- [ ] **Step 3: Recheck scope**
+- [x] **Step 3: Recheck scope**
 
   Run `git status --short` and confirm no file under `apps/**` or production
   package code under `packages/**` has been changed.
@@ -483,7 +497,7 @@ approved or implemented by this revision.
   `AGENTS.md` or `.agents/skills/rallar-code-writing/SKILL.md` in Task 1 and do
   not recreate PR #45's completed wording.
 
-- [ ] **Step 2: Write failing assertions for only the pending governance**
+- [x] **Step 2: Write failing assertions for only the pending governance**
 
   Extend `repo-code-style-integrity.test.ts` with these assertions while
   retaining the existing PR #45 assertions unchanged:
@@ -507,7 +521,7 @@ approved or implemented by this revision.
   ]);
   ```
 
-- [ ] **Step 3: Run the integrity test and verify the pending assertions fail**
+- [x] **Step 3: Run the integrity test and verify the pending assertions fail**
 
   Run:
 
@@ -519,7 +533,7 @@ approved or implemented by this revision.
   ownership-trace phrases are absent; the pre-existing PR #45 assertions remain
   green.
 
-- [ ] **Step 4: Add the canonical organization and naming sections**
+- [x] **Step 4: Add the canonical organization and naming sections**
 
   Add both headings to the contents list. Insert the sections after
   `## Predictable file layout`. The normative content must state all of the
@@ -601,7 +615,7 @@ approved or implemented by this revision.
   consumers use the intentional package entry point.
   ```
 
-- [ ] **Step 5: Add the pending human ownership trace**
+- [x] **Step 5: Add the pending human ownership trace**
 
   PR #45 already added the constitutional sentence and first-review-question
   paragraph. Leave both unchanged. Expand `### 7. Inspect layout` with an
@@ -612,11 +626,11 @@ approved or implemented by this revision.
   documentation for Task 4 rather than documenting commands that do not exist
   yet.
 
-- [ ] **Step 6: Run the integrity test and verify success**
+- [x] **Step 6: Run the integrity test and verify success**
 
   Run the command from Step 3. Expected: PASS.
 
-- [ ] **Step 7: Format and inspect the governance diff**
+- [x] **Step 7: Format and inspect the governance diff**
 
   Run:
 

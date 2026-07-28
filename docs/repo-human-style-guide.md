@@ -104,6 +104,13 @@ Apply the formatting, spacing, file-order, file-size, handler-size, and
 complexity sections of the standard. Blank lines should expose phases in long
 factories and composition roots.
 
+Start at the obvious feature entry file and follow one representative input to
+its result. Compare each filename with its primary exported symbol, verify that
+contracts, translations, factories, persistence adapters, and direct tests are
+co-located with the feature that owns it.
+Inspect the room/group-state translation boundary when browser room code reaches
+authoritative group-state contracts.
+
 Prefer self-explanatory names and structure. Ask for a comment only when it
 records a non-obvious invariant, external constraint, safety reason, or tradeoff.
 
