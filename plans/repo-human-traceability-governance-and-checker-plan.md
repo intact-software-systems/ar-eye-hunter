@@ -102,6 +102,8 @@ threshold and not evidence that each warning requires a change.
 | Production TypeScript files                                  |                     1,372 | Files eligible for layout analysis.                                                          |
 | Existing default style findings                              |                     4,462 | Current file-level checker findings; output is capped at 200.                                |
 | Files over 400 physical lines                                |                       215 | Existing checker debt.                                                                       |
+| Files over 500 physical lines                                |                       162 | Required separation-review inventory.                                                        |
+| Files over 800 physical lines                                |                        97 | Hard-tier legacy debt; not a retroactive exception-registration campaign.                    |
 | Directories with more than 20 direct TypeScript files        |                        16 | Ownership review prompts.                                                                    |
 | Candidate feature-prefix clusters in those dense directories |   22 across 8 directories | Initial conservative prefix heuristic.                                                       |
 | Non-kebab TypeScript filenames                               | 422 across 90 directories | Excludes exact tool-discovered config names.                                                 |
@@ -113,6 +115,8 @@ threshold and not evidence that each warning requires a change.
 The initial implementation must regenerate these measures. If the production
 tree changed after this draft, record both the new count and the reason for the
 difference; do not alter a checker threshold merely to reproduce this table.
+Regenerate the 400-, 500-, and 800-line counts immediately before committing a
+change that records them when the production tree has changed.
 
 The two optional checks do not yet have authoritative baseline counts:
 
@@ -121,6 +125,32 @@ The two optional checks do not yet have authoritative baseline counts:
 
 Task 5 records those counts after the parser-backed rules exist. Their first
 inventory remains opt-in regardless of count.
+
+### 2.1 Size-guidance pressure baseline
+
+On 2026-07-28, five fresh-context agent samples reviewed each of three pressure
+scenarios using the pre-change `rallar-code-writing` skill and canonical
+standard:
+
+| Scenario                                           | Choices | Baseline rationale                                                                                                                |
+| -------------------------------------------------- | ------: | --------------------------------------------------------------------------------------------------------------------------------- |
+| 850-line mixed service under deadline pressure     |   5 x C | All rejected generic helper or pass-through extraction and required coherent responsibility boundaries or human approval.         |
+| 64-line orchestration mixing validation and writes |   5 x C | All favored real phase boundaries, but correctly found no general-function threshold or persistent symbol-level exception record. |
+| 1,200-line cohesive static transition table        |   5 x C | All preserved cohesion with human approval, but found no named declarative-data category or persistent exception record.          |
+
+The baseline already protected against mechanical extraction, so the skill does
+not need another size-specific instruction. The canonical standard and human
+guide must supply the missing numeric tiers, accepted categories, and stable
+exception registry. Post-change samples must preserve the same coherent choices
+while also identifying the hard-tier registration requirement.
+
+The post-change run repeated all 15 fresh-context samples. Every sample again
+chose C. The 850-line service samples identified the over-800 file tier and
+persistent registry; the 64-line orchestration samples identified the over-60
+symbol tier and persistent registry; and the 1,200-line table samples preserved
+the accepted state-transition-table exception while requiring human approval
+and registration. No sample proposed a mechanical split, ignored a hard tier,
+or split cohesive declarative data.
 
 ## 3. Locked Checker Semantics
 
@@ -242,6 +272,50 @@ repository must have no unexplained warning growth across three completed
 feature migrations. The human then decides whether that one rule should block;
 semantic ownership and traceability judgments remain manual.
 
+### 3.6 Future size-warning contract
+
+This subsection is a decision-complete contract for later checker work. It is
+not implemented by the documentation-only size-guidance change.
+
+The existing default file-length rule remains enabled, scans only the existing
+filtered production source set, and eventually reports exactly one
+highest-applicable-tier message per file:
+
+- 401-500 physical lines: cohesion warning;
+- 501-800 physical lines: required separation review;
+- over 800 physical lines: refactor or review the approved persistent
+  exception.
+
+Messages do not accumulate as a file crosses tiers. An exception-registry entry
+does not suppress a warning; it gives the human a stable rationale to review.
+Every finding remains a warning and every non-strict size scan exits with status
+`0`.
+
+General-function size scanning is opt-in through:
+
+```bash
+npm run check:repo-style:function-size
+```
+
+which expands to:
+
+```json
+{
+  "check:repo-style:function-size": "node scripts/repo-style-check.mjs --function-size"
+}
+```
+
+The future scanner uses the TypeScript compiler API for function declarations,
+methods, constructors, accessors, and callbacks. It applies the canonical
+40/50/60 tiers, groups findings by file, identifies the largest function, and
+prints at most five samples. It scans only the same filtered production source
+set used by the default checker. `--function-size` remains warning-only, exits
+with status `0`, and does not add strict mode or a CI gate.
+
+Do not record a general-function baseline from the current partial extractor.
+Record baseline counts only after the complete compiler-backed scanner exists
+and covers every declaration form listed above.
+
 ## 4. File Responsibility Map
 
 | File                                                               | Change                  | Single responsibility                                                                        |
@@ -250,6 +324,7 @@ semantic ownership and traceability judgments remain manual.
 | `.agents/skills/rallar-code-writing/SKILL.md`                      | Modify                  | Translate the primary code goal into required agent behavior for TypeScript work.            |
 | `.agents/skills/rallar-code-writing/references/repo-code-style.md` | Modify                  | Authoritative feature ownership, co-location, filename, symbol, and domain vocabulary rules. |
 | `docs/repo-human-style-guide.md`                                   | Modify                  | Human navigation review sequence and checker commands.                                       |
+| `docs/repo-code-style-exceptions.md`                               | Create                  | Stable human-approved rationale for hard-tier file and function exceptions.                  |
 | `scripts/repo-style-check/layout-rules.mjs`                        | Create                  | Pure repository-layout aggregation and TypeScript syntax heuristics over supplied sources.   |
 | `scripts/repo-style-check.mjs`                                     | Modify                  | CLI flags, shared source loading, rule orchestration, and output summaries.                  |
 | `package.json`                                                     | Modify                  | Warning-only layout scripts.                                                                 |

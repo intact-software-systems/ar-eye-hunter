@@ -104,6 +104,28 @@ Apply the formatting, spacing, file-order, file-size, handler-size, and
 complexity sections of the standard. Blank lines should expose phases in long
 factories and composition roots.
 
+Use this size and cohesion review sequence:
+
+1. Summarize the file responsibility in one sentence.
+2. Apply the numeric tier from the authoritative standard.
+3. Inspect the eight qualitative cohesion signals.
+4. Identify real responsibility boundaries before proposing extraction.
+5. Check whether an exception applies and is approved.
+6. Prefer the organization that makes the public API, state, dataflow, and
+   change ownership fastest to locate.
+
+The eight signals are an unclear one-sentence responsibility, independent
+reasons to change, unrelated import groups, repeated jumps between distant
+sections, distinct private-helper clusters, unrelated test setup modes,
+multiple lifecycles or state machines, and merge-conflict hotspots in unrelated
+areas. These signals can justify review below a numeric threshold; line count
+alone never justifies a pass-through split.
+
+When a materially touched file or function remains above the hard tier, verify
+that the human-approved rationale is recorded in the
+[repo code-style exception registry](./repo-code-style-exceptions.md). Do not
+register untouched legacy debt or place the justification in a source comment.
+
 Prefer self-explanatory names and structure. Ask for a comment only when it
 records a non-obvious invariant, external constraint, safety reason, or tradeoff.
 
@@ -113,7 +135,8 @@ records a non-obvious invariant, external constraint, safety reason, or tradeoff
 - Unrelated legacy code is not reformatted or refactored without authorization.
 - An existing over-threshold file does not grow silently.
 - Any deliberate exception has explicit human approval and appears in the
-  completion handoff.
+  completion handoff and, when required by the hard size tier, the
+  [repo code-style exception registry](./repo-code-style-exceptions.md).
 
 ## Warning-only checker
 
