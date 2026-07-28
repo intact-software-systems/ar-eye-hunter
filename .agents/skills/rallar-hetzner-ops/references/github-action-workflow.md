@@ -70,8 +70,10 @@ active installer process is running and the lock is older than
 `RALLAR_PLAYWRIGHT_LOCK_STALE_SECONDS` seconds, default `600`. After the repair
 succeeds, return to `--fast`.
 
-The helper derives `agent_count`, `room_id`, `application_id`, and
-`workspace_id` from the manifest. It checks the required repository or
+The helper derives `agent_count`, `application_id`, and `workspace_id` from the
+manifest. By default it leaves `room_id` blank so spawned Hetzner agents use a
+deterministic group unique to the workflow run attempt. Pass `--room-id` only
+when intentionally reusing a stable group. It checks the required repository or
 `production` environment secret names before dispatch and refuses diagnostic
 manifests unless `--allow-diagnostic` is supplied. `--fast` sets
 `rollout_before_run=false`, `install_playwright=false`, `npm_ci=false`,
@@ -90,8 +92,10 @@ TLS requirement.
 
 - `agent_count`: number of headless browser agents.
 - `run_id`: optional control run id. Leave blank for `gh-<run>-<attempt>`.
-- `room_id`, `agent_prefix`, `application_id`, `workspace_id`: headless agent
-  scope.
+- `room_id`: optional explicit stable group. Blank isolates spawned Hetzner
+  recipes per workflow run attempt and preserves the manifest group for
+  external, mixed, and no-spawn agents.
+- `agent_prefix`, `application_id`, `workspace_id`: headless agent scope.
 - `rollout_before_run`: roll out the selected ref before the run.
 - `install_playwright`: install/update Chromium and Linux dependencies before
   starting browsers.
@@ -112,7 +116,6 @@ gh workflow run hetzner-distributed-recipe.yml \
   --ref main \
   -f manifest_path=apps/rallar-black-box/manifests/hetzner/03-rtc-smoke-2-agent.json \
   -f agent_count=2 \
-  -f room_id=hetzner-headless-room \
   -f application_id=rallar-server \
   -f workspace_id=default \
   -f register_before_login=true \
@@ -132,6 +135,25 @@ hash, Playwright version, browser engine/path, Ubuntu version, and service
 health, then runs each supported manifest with rollout and installation
 disabled. Run-only Hetzner and mixed-agent phases reject a missing or stale
 stamp before starting workers.
+
+## Run Group Isolation
+
+The workflow never resets the database between recipes. Before copying a
+manifest to the controller, it writes an immutable materialized copy and a
+materialization record. For a spawned Hetzner run with blank `room_id`, the
+effective group id is derived from the repository, workflow run id and attempt,
+control run id, source manifest hash, and source `GroupRef`. Workers and all
+executable group, room, path, and request identities use that one effective
+scope.
+
+The same derivation inputs reproduce the same group, while a new workflow
+attempt produces a new group. Explicit room overrides remain stable. External,
+mixed, and no-spawn runs preserve the complete checked-in manifest `GroupRef`
+when the override is blank; workflow application/workspace defaults do not
+rewrite it. A split topology prepare/run pair fences preparation with the
+stable source-manifest hash, because materialized manifests contain distinct
+run identifiers. Completed groups are retained and follow ordinary server
+expiry; recipe cleanup must never delete or reset unrelated data.
 
 ## Required Secrets
 
@@ -156,7 +178,10 @@ the GitHub step summary, uploads artifacts, and fails only after evidence is
 uploaded when the distributed run did not pass. Independently of recipe
 artifacts, it always publishes a **Hetzner operation diagnostics** summary and
 an artifact containing `operation-report.json`, `summary.md`, and sanitized
-`evidence.log`.
+`evidence.log`. Schema-v2 diagnostics also include
+`manifest-materialization.json` and, when available,
+`materialized-manifest.json`. The report records the source and effective
+`GroupRef`, isolation mode, and SHA-256 hashes for both manifests.
 
 For every run, start with `operation-report.json`. If `recipeStarted` is false,
 stop there and follow `nextAction`. If it is true, use

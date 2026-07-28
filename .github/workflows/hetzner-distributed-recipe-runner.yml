@@ -33,7 +33,7 @@ on:
         type: string
         default: ''
       room_id:
-        description: Rallar room id for headless agents; blank derives from manifest group.groupId
+        description: Optional stable room id; blank isolates spawned Hetzner agents per run
         required: false
         type: string
         default: ''
@@ -253,7 +253,7 @@ jobs:
           esac
 
           resolve_value agent_count "${INPUT_AGENT_COUNT}" "${manifest_agent_count}"
-          resolve_value room_id "${INPUT_ROOM_ID}" "${manifest_room_id}"
+          printf 'source_room_id=%s\n' "${manifest_room_id}" >> "${GITHUB_OUTPUT}"
           resolve_value application_id "${INPUT_APPLICATION_ID}" "${manifest_application_id}"
           resolve_value workspace_id "${INPUT_WORKSPACE_ID}" "${manifest_workspace_id}"
           resolve_optional_value terminal_timeout_seconds "${INPUT_TERMINAL_TIMEOUT_SECONDS}" "${manifest_terminal_timeout_seconds}" "300"
@@ -278,6 +278,53 @@ jobs:
             echo "::error::Manifest ${MANIFEST_PATH} requires rollout_before_run=true unless operator_phase=run validates a prepare marker." >&2
             exit 1
           fi
+
+      - name: Materialize run manifest
+        id: manifest_materialization
+        shell: bash
+        env:
+          SOURCE_MANIFEST_PATH: ${{ inputs.manifest_path }}
+          INPUT_AGENT_SOURCE: ${{ inputs.agent_source }}
+          INPUT_OPERATOR_PHASE: ${{ inputs.operator_phase }}
+          INPUT_ROOM_ID: ${{ inputs.room_id }}
+          EFFECTIVE_APPLICATION_ID: ${{ steps.manifest_defaults.outputs.application_id }}
+          EFFECTIVE_WORKSPACE_ID: ${{ steps.manifest_defaults.outputs.workspace_id }}
+          CONTROL_RUN_ID: ${{ steps.ids.outputs.run_id }}
+          DISTRIBUTED_RUN_ID: ${{ steps.ids.outputs.distributed_run_id }}
+        run: |
+          set -euo pipefail
+          operation_log="${RUNNER_TEMP}/hetzner-operation.log"
+          manifest_path="${RUNNER_TEMP}/rallar-distributed-manifest.json"
+          record_path="${RUNNER_TEMP}/rallar-manifest-materialization.json"
+          echo "RALLAR_OPERATION_STAGE=manifest-materialization" | tee "${operation_log}"
+          node scripts/github-actions/materialize-hetzner-run-manifest.mjs \
+            --source "${SOURCE_MANIFEST_PATH}" \
+            --output "${manifest_path}" \
+            --record-output "${record_path}" \
+            --agent-source "${INPUT_AGENT_SOURCE}" \
+            --operator-phase "${INPUT_OPERATOR_PHASE}" \
+            --control-run-id "${CONTROL_RUN_ID}" \
+            --distributed-run-id "${DISTRIBUTED_RUN_ID}" \
+            --repository "${GITHUB_REPOSITORY}" \
+            --workflow-run-id "${GITHUB_RUN_ID}" \
+            --workflow-run-attempt "${GITHUB_RUN_ATTEMPT}" \
+            --application-id "${EFFECTIVE_APPLICATION_ID}" \
+            --workspace-id "${EFFECTIVE_WORKSPACE_ID}" \
+            --room-id "${INPUT_ROOM_ID}" 2>&1 | tee -a "${operation_log}"
+          printf 'manifest_path=%s\n' "${manifest_path}" >> "${GITHUB_OUTPUT}"
+          printf 'record_path=%s\n' "${record_path}" >> "${GITHUB_OUTPUT}"
+          printf 'application_id=%s\n' \
+            "$(jq -r '.effectiveGroupRef.applicationId' "${record_path}")" >> "${GITHUB_OUTPUT}"
+          printf 'workspace_id=%s\n' \
+            "$(jq -r '.effectiveGroupRef.workspaceId' "${record_path}")" >> "${GITHUB_OUTPUT}"
+          printf 'group_id=%s\n' \
+            "$(jq -r '.effectiveGroupRef.groupId' "${record_path}")" >> "${GITHUB_OUTPUT}"
+          printf 'isolation_mode=%s\n' \
+            "$(jq -r '.isolationMode' "${record_path}")" >> "${GITHUB_OUTPUT}"
+          printf 'source_manifest_sha256=%s\n' \
+            "$(jq -r '.sourceManifestSha256' "${record_path}")" >> "${GITHUB_OUTPUT}"
+          printf 'materialized_manifest_sha256=%s\n' \
+            "$(jq -r '.materializedManifestSha256' "${record_path}")" >> "${GITHUB_OUTPUT}"
 
       - name: Resolve headless credentials
         shell: bash
@@ -329,7 +376,7 @@ jobs:
         env:
           HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
           HETZNER_USER: ${{ secrets.HETZNER_USER }}
-          MANIFEST_PATH: ${{ inputs.manifest_path }}
+          MANIFEST_PATH: ${{ steps.manifest_materialization.outputs.manifest_path }}
         run: |
           set -euo pipefail
           ssh -i ~/.ssh/hetzner "${HETZNER_USER}@${HETZNER_HOST}" \
@@ -359,12 +406,12 @@ jobs:
           RALLAR_BLACK_BOX_AGENT_SOURCE: ${{ inputs.agent_source }}
           RALLAR_HETZNER_OPERATOR_PHASE: ${{ inputs.operator_phase }}
           RALLAR_BLACK_BOX_RUN_ID: ${{ steps.ids.outputs.run_id }}
-          RALLAR_BLACK_BOX_ROOM_ID: ${{ steps.manifest_defaults.outputs.room_id }}
+          RALLAR_BLACK_BOX_ROOM_ID: ${{ steps.manifest_materialization.outputs.group_id }}
           RALLAR_BLACK_BOX_AGENT_PREFIX: ${{ inputs.agent_prefix }}
           RALLAR_BLACK_BOX_AGENT_COUNT: ${{ steps.manifest_defaults.outputs.agent_count }}
           RALLAR_BLACK_BOX_AGENT_START_INDEX: '1'
-          RALLAR_BLACK_BOX_APPLICATION_ID: ${{ steps.manifest_defaults.outputs.application_id }}
-          RALLAR_BLACK_BOX_WORKSPACE_ID: ${{ steps.manifest_defaults.outputs.workspace_id }}
+          RALLAR_BLACK_BOX_APPLICATION_ID: ${{ steps.manifest_materialization.outputs.application_id }}
+          RALLAR_BLACK_BOX_WORKSPACE_ID: ${{ steps.manifest_materialization.outputs.workspace_id }}
           RALLAR_BLACK_BOX_REGISTER: ${{ inputs.register_before_login }}
           RALLAR_BLACK_BOX_BROWSER_LOG_LEVEL: ${{ inputs.browser_log_level }}
           RALLAR_BLACK_BOX_HEADLESS_ENTRY: ${{ inputs.headless_entry }}
@@ -381,6 +428,7 @@ jobs:
           RALLAR_DISTRIBUTED_TERMINAL_TIMEOUT_SECONDS: ${{ steps.manifest_defaults.outputs.terminal_timeout_seconds }}
           RALLAR_DISTRIBUTED_RUN_ID: ${{ steps.ids.outputs.distributed_run_id }}
           RALLAR_DISTRIBUTED_CONTROL_RUN_ID: ${{ steps.ids.outputs.run_id }}
+          RALLAR_SOURCE_MANIFEST_SHA256: ${{ steps.manifest_materialization.outputs.source_manifest_sha256 }}
           RALLAR_DISTRIBUTED_MANIFEST_PATH: /tmp/rallar-distributed-manifest.json
           RALLAR_DISTRIBUTED_ARTIFACT_DIR: /tmp/rallar-distributed-runs
           RALLAR_DISTRIBUTED_PREPARE_MARKER: /tmp/rallar-distributed-prepare-${{ steps.ids.outputs.distributed_run_id }}.json
@@ -430,6 +478,7 @@ jobs:
             printf 'RALLAR_DISTRIBUTED_TERMINAL_TIMEOUT_SECONDS=%s\n' "$(quote "${RALLAR_DISTRIBUTED_TERMINAL_TIMEOUT_SECONDS}")"
             printf 'RALLAR_DISTRIBUTED_RUN_ID=%s\n' "$(quote "${RALLAR_DISTRIBUTED_RUN_ID}")"
             printf 'RALLAR_DISTRIBUTED_CONTROL_RUN_ID=%s\n' "$(quote "${RALLAR_DISTRIBUTED_CONTROL_RUN_ID}")"
+            printf 'RALLAR_SOURCE_MANIFEST_SHA256=%s\n' "$(quote "${RALLAR_SOURCE_MANIFEST_SHA256}")"
             printf 'RALLAR_DISTRIBUTED_MANIFEST_PATH=%s\n' "$(quote "${RALLAR_DISTRIBUTED_MANIFEST_PATH}")"
             printf 'RALLAR_DISTRIBUTED_ARTIFACT_DIR=%s\n' "$(quote "${RALLAR_DISTRIBUTED_ARTIFACT_DIR}")"
             printf 'RALLAR_DISTRIBUTED_PREPARE_MARKER=%s\n' "$(quote "${RALLAR_DISTRIBUTED_PREPARE_MARKER}")"
@@ -463,7 +512,7 @@ jobs:
           operation_started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           set +e
           ssh -i ~/.ssh/hetzner "${HETZNER_USER}@${HETZNER_HOST}" \
-            bash -s 2>&1 <<'REMOTE' | tee "${operation_log}"
+            bash -s 2>&1 <<'REMOTE' | tee -a "${operation_log}"
           set -euo pipefail
           cd "${HOME}/rallar-controller"
           chmod +x *.sh
@@ -498,12 +547,12 @@ jobs:
           }
 
           write_prepare_marker() {
-            local manifest_sha
-            manifest_sha="$(sha256sum "${RALLAR_DISTRIBUTED_MANIFEST_PATH}" | awk '{print $1}')"
+            local manifestSha
+            manifestSha="${RALLAR_SOURCE_MANIFEST_SHA256}"
             jq -n \
               --arg runId "${RALLAR_DISTRIBUTED_RUN_ID}" \
               --arg ref "${RALLAR_REPO_REF}" \
-              --arg manifestSha "${manifest_sha}" \
+              --arg manifestSha "${manifestSha}" \
               --arg degreeLimit "${RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT:-}" \
               --arg treeMinSize "${RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE:-}" \
               --arg meshMinSize "${RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE:-}" \
@@ -529,7 +578,7 @@ jobs:
               exit 1
             fi
             local expected_manifest_sha
-            expected_manifest_sha="$(sha256sum "${RALLAR_DISTRIBUTED_MANIFEST_PATH}" | awk '{print $1}')"
+            expected_manifest_sha="${RALLAR_SOURCE_MANIFEST_SHA256}"
             jq -e \
               --arg ref "${RALLAR_REPO_REF}" \
               --arg manifestSha "${expected_manifest_sha}" \
@@ -602,7 +651,6 @@ jobs:
               wait_for_external_agents_if_requested
               ;;
           esac
-          echo "RALLAR_OPERATION_STAGE=recipe-execution"
           ./14-run-distributed-recipe.sh
           REMOTE
           operation_exit_code="${PIPESTATUS[0]}"
@@ -613,7 +661,7 @@ jobs:
           printf 'finished_at=%s\n' "${operation_finished_at}" >> "${GITHUB_OUTPUT}"
 
       - name: Copy distributed artifacts
-        if: always() && inputs.operator_phase != 'prepare'
+        if: always() && inputs.operator_phase != 'prepare' && steps.manifest_materialization.outcome == 'success'
         shell: bash
         env:
           HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
@@ -638,7 +686,7 @@ jobs:
           fi
 
       - name: Upload distributed artifacts
-        if: always() && inputs.operator_phase != 'prepare'
+        if: always() && inputs.operator_phase != 'prepare' && steps.manifest_materialization.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: hetzner-distributed-${{ steps.ids.outputs.distributed_run_id }}
@@ -647,7 +695,7 @@ jobs:
 
       - name: Check distributed artifact availability
         id: artifact_status
-        if: always() && inputs.operator_phase != 'prepare'
+        if: always() && inputs.operator_phase != 'prepare' && steps.manifest_materialization.outcome == 'success'
         shell: bash
         env:
           DISTRIBUTED_RUN_ID: ${{ steps.ids.outputs.distributed_run_id }}
@@ -760,7 +808,9 @@ jobs:
             --distributed-run-id "${DISTRIBUTED_RUN_ID}" \
             --artifact-available "${ARTIFACT_AVAILABLE}" \
             --started-at "${operation_started_at}" \
-            --finished-at "${operation_finished_at}"
+            --finished-at "${operation_finished_at}" \
+            --materialization-record "${RUNNER_TEMP}/rallar-manifest-materialization.json" \
+            --materialized-manifest "${RUNNER_TEMP}/rallar-distributed-manifest.json"
           cat "${diagnostics_dir}/summary.md" >> "${GITHUB_STEP_SUMMARY}"
           report_path="${diagnostics_dir}/operation-report.json"
           printf 'failure_category=%s\n' "$(jq -r '.failureCategory' "${report_path}")" >> "${GITHUB_OUTPUT}"
@@ -778,7 +828,7 @@ jobs:
           if-no-files-found: error
 
       - name: Stop headless browsers
-        if: always() && inputs.stop_after_run && inputs.agent_source != 'external'
+        if: always() && inputs.stop_after_run && inputs.agent_source != 'external' && steps.manifest_materialization.outcome == 'success'
         shell: bash
         env:
           HETZNER_HOST: ${{ secrets.HETZNER_HOST }}

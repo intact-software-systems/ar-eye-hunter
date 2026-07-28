@@ -31,6 +31,14 @@ start, stop, install, or restart headless agents for that flow.
   shared control server/control run.
 - Use checked-in distributed manifest JSON files. Do not paste secrets or admin
   tokens into prompts, manifests, workflow inputs, or URLs.
+- Do not reset the database to isolate recipes. Spawned Hetzner runs with a
+  blank `room_id` must materialize a deterministic group unique to the workflow
+  run attempt and use it consistently for workers and every manifest command.
+  Leave completed groups to normal lifecycle expiry.
+- Treat a non-empty `room_id` as an explicit stable-group request. For external,
+  mixed, or no-spawn agents, a blank override preserves the checked-in manifest
+  `GroupRef`, including its application and workspace; workflow defaults must
+  not rewrite that preserved scope.
 - Treat `scripts/hetzner/controller/*.sh` as the source of truth for VM service
   management.
 - Read the GitHub **Hetzner operation diagnostics** summary and uploaded
@@ -38,6 +46,9 @@ start, stop, install, or restart headless agents for that flow.
   false, treat its stage, component, sanitized evidence, and next action as the
   authoritative pre-recipe diagnosis; absent distributed artifacts are
   expected.
+- Compare `sourceGroupRef`, `effectiveGroupRef`, isolation mode, and both
+  manifest hashes in schema-v2 operation diagnostics before investigating a
+  manifest-scope or cross-run contamination concern.
 - If `recipeStarted` is true, inspect uploaded distributed artifacts before
   proposing fixes and cite the failure evidence file, command id, affected
   agents, and minimal fix area.

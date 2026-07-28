@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 const argumentNames = [
@@ -16,7 +17,15 @@ const argumentNames = [
   'artifact-available',
   'started-at',
   'finished-at',
+  'materialization-record',
+  'materialized-manifest',
 ];
+
+const unavailableGroupRef = Object.freeze({
+  applicationId: 'unavailable',
+  workspaceId: 'unavailable',
+  groupId: 'unavailable',
+});
 
 function readArguments(values) {
   const argumentsByName = new Map();
@@ -61,6 +70,74 @@ function readOperationStage(log) {
   return stages.at(-1)?.[1] ?? 'unknown';
 }
 
+function sha256(value) {
+  return createHash('sha256').update(value).digest('hex');
+}
+
+function readGroupRef(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  const result = {
+    applicationId: value.applicationId,
+    workspaceId: value.workspaceId,
+    groupId: value.groupId,
+  };
+  return Object.values(result).every((entry) => typeof entry === 'string' && entry.length > 0)
+    ? result
+    : null;
+}
+
+async function readMaterialization(recordPath, manifestPath) {
+  const recordText = await readFile(recordPath, 'utf8').catch(() => null);
+  const manifestText = await readFile(manifestPath, 'utf8').catch(() => null);
+  const unavailable = {
+    materializationStatus: 'failed',
+    groupIsolationMode: 'unresolved',
+    sourceGroupRef: unavailableGroupRef,
+    effectiveGroupRef: unavailableGroupRef,
+    sourceManifestSha256: 'unavailable',
+    materializedManifestSha256: 'unavailable',
+    materializedManifestAvailable: manifestText !== null,
+    record: null,
+  };
+  if (recordText === null || manifestText === null) {
+    return unavailable;
+  }
+
+  try {
+    const record = JSON.parse(recordText);
+    const manifest = JSON.parse(manifestText);
+    const sourceGroupRef = readGroupRef(record.sourceGroupRef);
+    const effectiveGroupRef = readGroupRef(record.effectiveGroupRef);
+    const manifestGroupRef = readGroupRef(manifest.group);
+    const validMode = ['isolated', 'explicit', 'preserved'].includes(record.isolationMode);
+    const validHashes =
+      /^[a-f0-9]{64}$/.test(record.sourceManifestSha256) &&
+      /^[a-f0-9]{64}$/.test(record.materializedManifestSha256);
+    const manifestMatches =
+      manifestGroupRef !== null &&
+      effectiveGroupRef !== null &&
+      JSON.stringify(manifestGroupRef) === JSON.stringify(effectiveGroupRef) &&
+      sha256(manifestText) === record.materializedManifestSha256;
+    if (!sourceGroupRef || !effectiveGroupRef || !validMode || !validHashes || !manifestMatches) {
+      return unavailable;
+    }
+    return {
+      materializationStatus: 'succeeded',
+      groupIsolationMode: record.isolationMode,
+      sourceGroupRef,
+      effectiveGroupRef,
+      sourceManifestSha256: record.sourceManifestSha256,
+      materializedManifestSha256: record.materializedManifestSha256,
+      materializedManifestAvailable: true,
+      record,
+    };
+  } catch {
+    return unavailable;
+  }
+}
+
 function classifyFailure({ status, stage, log, missingArtifacts }) {
   if (missingArtifacts) {
     return {
@@ -89,6 +166,17 @@ function classifyFailure({ status, stage, log, missingArtifacts }) {
   }
 
   const classifications = {
+    'manifest-materialization': {
+      failureCategory: 'manifest-scope',
+      component: 'Hetzner run manifest materialization',
+      nextAction: 'Inspect the source and effective group scope in the operation artifacts.',
+    },
+    'manifest-scope-validation': {
+      failureCategory: 'manifest-scope',
+      component: 'Hetzner run manifest scope',
+      nextAction:
+        'Compare the materialized manifest group with the worker scope and run identifiers.',
+    },
     'playwright-system-dependencies': {
       failureCategory: 'browser-dependencies',
       component: 'Playwright system dependencies',
@@ -166,6 +254,11 @@ function toSummary(report) {
     `| Commit | \`${report.commitSha}\` |`,
     `| Control run | \`${report.controlRunId}\` |`,
     `| Distributed run | \`${report.distributedRunId}\` |`,
+    `| Manifest materialization | ${report.materializationStatus} (${report.groupIsolationMode}) |`,
+    `| Source group | \`${report.sourceGroupRef.applicationId}/${report.sourceGroupRef.workspaceId}/${report.sourceGroupRef.groupId}\` |`,
+    `| Effective group | \`${report.effectiveGroupRef.applicationId}/${report.effectiveGroupRef.workspaceId}/${report.effectiveGroupRef.groupId}\` |`,
+    `| Source manifest SHA-256 | \`${report.sourceManifestSha256}\` |`,
+    `| Materialized manifest SHA-256 | \`${report.materializedManifestSha256}\` |`,
     '',
     `${recipeSentence} ${artifactSentence}`,
     '',
@@ -199,6 +292,10 @@ const distributedArtifactAvailable = readBoolean(
 const missingArtifacts =
   requestedStatus === 'succeeded' && phase !== 'prepare' && !distributedArtifactAvailable;
 const status = missingArtifacts ? 'failed' : requestedStatus;
+const materialization = await readMaterialization(
+  argumentsByName.get('materialization-record'),
+  argumentsByName.get('materialized-manifest'),
+);
 const classification = classifyFailure({
   status,
   stage,
@@ -206,7 +303,7 @@ const classification = classifyFailure({
   missingArtifacts,
 });
 const report = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   status,
   phase,
   stage,
@@ -218,6 +315,13 @@ const report = {
   controlRunId: argumentsByName.get('control-run-id'),
   distributedRunId: argumentsByName.get('distributed-run-id'),
   distributedArtifactAvailable,
+  materializationStatus: materialization.materializationStatus,
+  groupIsolationMode: materialization.groupIsolationMode,
+  sourceGroupRef: materialization.sourceGroupRef,
+  effectiveGroupRef: materialization.effectiveGroupRef,
+  sourceManifestSha256: materialization.sourceManifestSha256,
+  materializedManifestSha256: materialization.materializedManifestSha256,
+  materializedManifestAvailable: materialization.materializedManifestAvailable,
   recipeStarted: /^RALLAR_OPERATION_STAGE=recipe-execution$/m.test(sanitizedLog),
   startedAt: argumentsByName.get('started-at'),
   finishedAt: argumentsByName.get('finished-at'),
@@ -237,3 +341,25 @@ await writeFile(
 );
 await writeFile(path.join(outputDirectory, 'summary.md'), toSummary(report));
 await writeFile(path.join(outputDirectory, 'evidence.log'), `${report.evidenceExcerpt}\n`);
+if (materialization.materializedManifestAvailable) {
+  await copyFile(
+    argumentsByName.get('materialized-manifest'),
+    path.join(outputDirectory, 'materialized-manifest.json'),
+  );
+}
+await writeFile(
+  path.join(outputDirectory, 'manifest-materialization.json'),
+  `${JSON.stringify(
+    materialization.record ?? {
+      schemaVersion: 1,
+      status: 'failed',
+      isolationMode: 'unresolved',
+      sourceGroupRef: unavailableGroupRef,
+      effectiveGroupRef: unavailableGroupRef,
+      sourceManifestSha256: 'unavailable',
+      materializedManifestSha256: 'unavailable',
+    },
+    null,
+    2,
+  )}\n`,
+);

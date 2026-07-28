@@ -28,6 +28,7 @@ const RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_SENDER_WARMUP_INTERVAL_MS = 1_000;
 const RALLAR_BLACK_BOX_RTC_MESSAGES_ALL_PEER_SETTLE_DURATION_MS = 5_000;
 const RALLAR_BLACK_BOX_RTC_MESSAGES_ALL_PEER_SETTLE_INTERVAL_MS = 1_000;
 const RALLAR_BLACK_BOX_LIVE_API_BASE_URL = 'https://api.rallar.intactss.com';
+const RALLAR_BLACK_BOX_RTC_CONNECT_COMPLETION_MARGIN_MS = 5_000;
 
 export type RallarBlackBoxRtcRealtimeRecipeOptions = Readonly<{
     durationSeconds?: number;
@@ -179,6 +180,19 @@ function rtcConnectReadiness(
     };
 }
 
+function computeRtcConnectCommandTimeoutMs(
+    options: Readonly<{
+        readyPeerCount?: number;
+        readyTimeoutMs?: number;
+    }>,
+    fallbackTimeoutMs: number,
+): number {
+    const readiness = rtcConnectReadiness(options);
+    return readiness === undefined
+        ? fallbackTimeoutMs
+        : readiness.timeoutMs + RALLAR_BLACK_BOX_RTC_CONNECT_COMPLETION_MARGIN_MS;
+}
+
 function multicastDeliveryPlan(options: Readonly<{
     participantCount?: number;
     senderCount: number;
@@ -243,6 +257,7 @@ function messagesRtcConnectCommand(options: Readonly<{
     metadata: Readonly<Record<string, unknown>>;
 }>): RallarBlackBoxTestCommand {
     const roomRef = groupRoomRef(options.group);
+    const readinessTimeoutMs = options.readyTimeoutMs ?? 45_000;
     return {
         kind: 'rtc.connect',
         commandId: options.commandId,
@@ -254,10 +269,10 @@ function messagesRtcConnectCommand(options: Readonly<{
         roomRef,
         transport: 'messages.rtc',
         rallar: { ...RALLAR_BLACK_BOX_GROUP_MULTICAST_POSITION_SELECTOR },
-        timeoutMs: options.readyTimeoutMs ?? 45_000,
+        timeoutMs: readinessTimeoutMs + RALLAR_BLACK_BOX_RTC_CONNECT_COMPLETION_MARGIN_MS,
         readiness: {
             minReadyPeers: options.minReadyPeers,
-            timeoutMs: options.readyTimeoutMs ?? 45_000,
+            timeoutMs: readinessTimeoutMs,
             intervalMs: 100,
         },
         metadata: options.metadata,
@@ -516,7 +531,7 @@ export function createRallarBlackBoxRtcSmokeRecipe(
                 workspaceId: group.workspaceId,
                 roomRef,
                 transport: 'realtime',
-                timeoutMs: 5_000,
+                timeoutMs: computeRtcConnectCommandTimeoutMs(options, 5_000),
                 readiness: rtcConnectReadiness(options),
             },
             {
@@ -588,6 +603,7 @@ export function createRallarBlackBoxProviderParityLiveRecipe(
                 applicationId: group.applicationId,
                 workspaceId: group.workspaceId,
                 roomRef,
+                timeoutMs: computeRtcConnectCommandTimeoutMs(options, command.timeoutMs ?? 5_000),
                 rallar: {
                     ...command.rallar,
                     apiBaseUrl,
@@ -1071,7 +1087,7 @@ export function createRallarBlackBoxRtcRealtimeRecipe(
                 workspaceId: group.workspaceId,
                 roomRef,
                 transport: 'realtime',
-                timeoutMs: 10_000,
+                timeoutMs: computeRtcConnectCommandTimeoutMs(options, 10_000),
                 readiness: rtcConnectReadiness(options),
                 metadata: {
                     realtime: {

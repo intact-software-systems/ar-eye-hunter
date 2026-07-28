@@ -40,8 +40,20 @@ const supportedMainlineManifestPaths = [
   'apps/rallar-black-box/manifests/hetzner/04-provider-parity-2-agent.json',
   'apps/rallar-black-box/manifests/hetzner/05a-rtc-realtime-stability-2-agent-5s.json',
 ];
+const operationSourceGroupRef = {
+  applicationId: 'rallar-server',
+  workspaceId: 'default',
+  groupId: 'hetzner-headless-room',
+};
+const operationEffectiveGroupRef = {
+  applicationId: 'rallar-server',
+  workspaceId: 'default',
+  groupId: `hetzner-run-${'a'.repeat(64)}`,
+};
 
 interface WorkflowStep {
+  readonly env?: Readonly<Record<string, string>>;
+  readonly id?: string;
   readonly name?: string;
   readonly if?: string;
   readonly run?: string;
@@ -62,6 +74,35 @@ interface WorkflowDocument {
 
 const readWorkflow = async (workflowPath: string): Promise<WorkflowDocument> =>
   loadYaml(await readFile(path.join(repoRoot, workflowPath), 'utf8')) as WorkflowDocument;
+
+const writeOperationMaterializationFixture = async (
+  directory: string,
+): Promise<readonly string[]> => {
+  const sourcePath = path.join(repoRoot, supportedMainlineManifestPaths[0]);
+  const sourceText = await readFile(sourcePath, 'utf8');
+  const materializedManifest = JSON.parse(sourceText);
+  materializedManifest.group = operationEffectiveGroupRef;
+  const materializedText = `${JSON.stringify(materializedManifest, null, 2)}\n`;
+  const materializedPath = path.join(directory, 'materialized-manifest.json');
+  const recordPath = path.join(directory, 'manifest-materialization.json');
+  await writeFile(materializedPath, materializedText);
+  await writeFile(
+    recordPath,
+    `${JSON.stringify(
+      {
+        schemaVersion: 1,
+        isolationMode: 'isolated',
+        sourceGroupRef: operationSourceGroupRef,
+        effectiveGroupRef: operationEffectiveGroupRef,
+        sourceManifestSha256: createHash('sha256').update(sourceText).digest('hex'),
+        materializedManifestSha256: createHash('sha256').update(materializedText).digest('hex'),
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  return ['--materialization-record', recordPath, '--materialized-manifest', materializedPath];
+};
 
 const parseMajorMinorPatch = (version: string): [number, number, number] => {
   const match = version.match(/^(\d+)\.(\d+)\.(\d+)/);
@@ -111,6 +152,395 @@ const workflowDispatchInputNames = (workflow: string): string[] => {
 };
 
 describe('Hetzner distributed recipe workflow', () => {
+  it('materializes every supported manifest without treating parallel labels as room scope', async () => {
+    const temporaryDirectory = await mkdtemp(path.join(tmpdir(), 'rallar-supported-manifests-'));
+    const scriptPath = path.join(
+      repoRoot,
+      'scripts/github-actions/materialize-hetzner-run-manifest.mjs',
+    );
+
+    for (const [index, manifestPath] of supportedMainlineManifestPaths.entries()) {
+      const outputPath = path.join(temporaryDirectory, `${index}-manifest.json`);
+      const recordPath = path.join(temporaryDirectory, `${index}-materialization.json`);
+      await execFileAsync('node', [
+        scriptPath,
+        '--source',
+        path.join(repoRoot, manifestPath),
+        '--output',
+        outputPath,
+        '--record-output',
+        recordPath,
+        '--agent-source',
+        'hetzner',
+        '--operator-phase',
+        'run',
+        '--control-run-id',
+        `control-supported-${index}`,
+        '--distributed-run-id',
+        `dist-supported-${index}`,
+        '--repository',
+        'intact-software-systems/ar-eye-hunter',
+        '--workflow-run-id',
+        '30341252322',
+        '--workflow-run-attempt',
+        '1',
+        '--application-id',
+        '',
+        '--workspace-id',
+        '',
+        '--room-id',
+        '',
+      ]);
+
+      const manifest = JSON.parse(await readFile(outputPath, 'utf8'));
+      expect(manifest.group.groupId).toMatch(/^hetzner-run-[a-f0-9]{64}$/);
+      if (manifestPath.endsWith('/02-composite-evidence-2-agent.json')) {
+        expect(manifest.recipes[0].recipe.commands[1].groups).toMatchObject([
+          { groupId: 'left-health' },
+          { groupId: 'right-stats' },
+        ]);
+      }
+    }
+  });
+
+  it('preserves a parallel label that happens to equal the source room', async () => {
+    const temporaryDirectory = await mkdtemp(path.join(tmpdir(), 'rallar-parallel-label-'));
+    const sourcePath = path.join(temporaryDirectory, 'source.json');
+    const outputPath = path.join(temporaryDirectory, 'manifest.json');
+    const recordPath = path.join(temporaryDirectory, 'materialization.json');
+    const source = JSON.parse(
+      await readFile(
+        path.join(
+          repoRoot,
+          'apps/rallar-black-box/manifests/hetzner/02-composite-evidence-2-agent.json',
+        ),
+        'utf8',
+      ),
+    );
+    source.recipes[0].recipe.commands[1].groups[0].groupId = 'hetzner-headless-room';
+    await writeFile(sourcePath, `${JSON.stringify(source, null, 2)}\n`);
+
+    await execFileAsync('node', [
+      path.join(repoRoot, 'scripts/github-actions/materialize-hetzner-run-manifest.mjs'),
+      '--source',
+      sourcePath,
+      '--output',
+      outputPath,
+      '--record-output',
+      recordPath,
+      '--agent-source',
+      'hetzner',
+      '--operator-phase',
+      'run',
+      '--control-run-id',
+      'control-parallel-label',
+      '--distributed-run-id',
+      'dist-parallel-label',
+      '--repository',
+      'intact-software-systems/ar-eye-hunter',
+      '--workflow-run-id',
+      '30341252322',
+      '--workflow-run-attempt',
+      '1',
+      '--application-id',
+      '',
+      '--workspace-id',
+      '',
+      '--room-id',
+      '',
+    ]);
+
+    const manifest = JSON.parse(await readFile(outputPath, 'utf8'));
+    expect(manifest.group.groupId).toMatch(/^hetzner-run-[a-f0-9]{64}$/);
+    expect(manifest.recipes[0].recipe.commands[1].groups).toMatchObject([
+      { groupId: 'hetzner-headless-room' },
+      { groupId: 'right-stats' },
+    ]);
+  });
+
+  it('materializes a deterministic isolated group throughout executable manifest data', async () => {
+    const temporaryDirectory = await mkdtemp(path.join(tmpdir(), 'rallar-manifest-isolation-'));
+    const sourcePath = path.join(
+      repoRoot,
+      'apps/rallar-black-box/manifests/hetzner/05a-rtc-realtime-stability-2-agent-5s.json',
+    );
+    const outputPath = path.join(temporaryDirectory, 'manifest.json');
+    const recordPath = path.join(temporaryDirectory, 'materialization.json');
+    const sourceBefore = await readFile(sourcePath, 'utf8');
+    const scriptPath = path.join(
+      repoRoot,
+      'scripts/github-actions/materialize-hetzner-run-manifest.mjs',
+    );
+
+    await execFileAsync('node', [
+      scriptPath,
+      '--source',
+      sourcePath,
+      '--output',
+      outputPath,
+      '--record-output',
+      recordPath,
+      '--agent-source',
+      'hetzner',
+      '--operator-phase',
+      'run',
+      '--control-run-id',
+      'main-30327139535-2-05a-rtc-realtime-stability-2-agent-5s',
+      '--distributed-run-id',
+      'dist-main-30327139535-2-05a-rtc-realtime-stability-2-agent-5s',
+      '--repository',
+      'intact-software-systems/ar-eye-hunter',
+      '--workflow-run-id',
+      '30327139535',
+      '--workflow-run-attempt',
+      '2',
+      '--application-id',
+      '',
+      '--workspace-id',
+      '',
+      '--room-id',
+      '',
+    ]);
+
+    const manifest = JSON.parse(await readFile(outputPath, 'utf8'));
+    const record = JSON.parse(await readFile(recordPath, 'utf8'));
+    const effectiveGroupId = manifest.group.groupId as string;
+    const repeatedOutputPath = path.join(temporaryDirectory, 'repeated-manifest.json');
+    const repeatedRecordPath = path.join(temporaryDirectory, 'repeated-materialization.json');
+    await execFileAsync('node', [
+      scriptPath,
+      '--source',
+      sourcePath,
+      '--output',
+      repeatedOutputPath,
+      '--record-output',
+      repeatedRecordPath,
+      '--agent-source',
+      'hetzner',
+      '--operator-phase',
+      'run',
+      '--control-run-id',
+      'main-30327139535-2-05a-rtc-realtime-stability-2-agent-5s',
+      '--distributed-run-id',
+      'dist-main-30327139535-2-05a-rtc-realtime-stability-2-agent-5s',
+      '--repository',
+      'intact-software-systems/ar-eye-hunter',
+      '--workflow-run-id',
+      '30327139535',
+      '--workflow-run-attempt',
+      '2',
+      '--application-id',
+      '',
+      '--workspace-id',
+      '',
+      '--room-id',
+      '',
+    ]);
+
+    expect(effectiveGroupId).toMatch(/^hetzner-run-[a-f0-9]{64}$/);
+    expect(record).toMatchObject({
+      schemaVersion: 1,
+      isolationMode: 'isolated',
+      sourceGroupRef: {
+        applicationId: 'rallar-server',
+        workspaceId: 'default',
+        groupId: 'hetzner-headless-room',
+      },
+      effectiveGroupRef: {
+        applicationId: 'rallar-server',
+        workspaceId: 'default',
+        groupId: effectiveGroupId,
+      },
+      sourceManifestSha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+      materializedManifestSha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+    });
+    expect(manifest.distributedRunId).toBe(
+      'dist-main-30327139535-2-05a-rtc-realtime-stability-2-agent-5s',
+    );
+    expect(manifest.controlRunId).toBe('main-30327139535-2-05a-rtc-realtime-stability-2-agent-5s');
+    expect(JSON.stringify(manifest)).not.toContain('hetzner-headless-room');
+    expect(JSON.stringify(manifest)).toContain(`/groups/${effectiveGroupId}/members/`);
+    expect(await readFile(repeatedOutputPath, 'utf8')).toBe(await readFile(outputPath, 'utf8'));
+    expect(await readFile(repeatedRecordPath, 'utf8')).toBe(await readFile(recordPath, 'utf8'));
+    expect(await readFile(sourcePath, 'utf8')).toBe(sourceBefore);
+  });
+
+  it('changes isolated groups across attempts and preserves explicit or external groups', async () => {
+    const temporaryDirectory = await mkdtemp(path.join(tmpdir(), 'rallar-manifest-modes-'));
+    const sourcePath = path.join(
+      repoRoot,
+      'apps/rallar-black-box/manifests/hetzner/03-rtc-smoke-2-agent.json',
+    );
+    const scriptPath = path.join(
+      repoRoot,
+      'scripts/github-actions/materialize-hetzner-run-manifest.mjs',
+    );
+
+    const materialize = async (
+      label: string,
+      agentSource: string,
+      runAttempt: string,
+      roomId: string,
+      applicationId = '',
+      workspaceId = '',
+    ): Promise<Record<string, any>> => {
+      const outputPath = path.join(temporaryDirectory, `${label}.json`);
+      const recordPath = path.join(temporaryDirectory, `${label}-record.json`);
+      await execFileAsync('node', [
+        scriptPath,
+        '--source',
+        sourcePath,
+        '--output',
+        outputPath,
+        '--record-output',
+        recordPath,
+        '--agent-source',
+        agentSource,
+        '--operator-phase',
+        'run',
+        '--control-run-id',
+        `control-${label}`,
+        '--distributed-run-id',
+        `dist-${label}`,
+        '--repository',
+        'intact-software-systems/ar-eye-hunter',
+        '--workflow-run-id',
+        '30327139535',
+        '--workflow-run-attempt',
+        runAttempt,
+        '--application-id',
+        applicationId,
+        '--workspace-id',
+        workspaceId,
+        '--room-id',
+        roomId,
+      ]);
+      return JSON.parse(await readFile(recordPath, 'utf8'));
+    };
+
+    const first = await materialize('first', 'hetzner', '1', '');
+    const second = await materialize('second', 'hetzner', '2', '');
+    const explicit = await materialize('explicit', 'hetzner', '2', 'operator-room');
+    const external = await materialize(
+      'external',
+      'external',
+      '2',
+      '',
+      'workflow-default-application',
+      'workflow-default-workspace',
+    );
+
+    expect(first.effectiveGroupRef.groupId).not.toBe(second.effectiveGroupRef.groupId);
+    expect(explicit).toMatchObject({
+      isolationMode: 'explicit',
+      effectiveGroupRef: { groupId: 'operator-room' },
+    });
+    expect(external).toMatchObject({
+      isolationMode: 'preserved',
+      effectiveGroupRef: {
+        applicationId: 'rallar-server',
+        workspaceId: 'default',
+        groupId: 'hetzner-headless-room',
+      },
+    });
+  });
+
+  it('rejects an executable command scoped outside the source manifest group', async () => {
+    const temporaryDirectory = await mkdtemp(path.join(tmpdir(), 'rallar-manifest-mismatch-'));
+    const sourcePath = path.join(temporaryDirectory, 'source.json');
+    const outputPath = path.join(temporaryDirectory, 'manifest.json');
+    const recordPath = path.join(temporaryDirectory, 'materialization.json');
+    const source = JSON.parse(
+      await readFile(
+        path.join(repoRoot, 'apps/rallar-black-box/manifests/hetzner/03-rtc-smoke-2-agent.json'),
+        'utf8',
+      ),
+    );
+    const connect = source.recipes[0].recipe.commands.find(
+      (command: { kind: string }) => command.kind === 'rtc.connect',
+    );
+    connect.roomId = 'wrong-room';
+    source.recipes[0].recipe.commands[0].request.body.requestId =
+      'rtc-smoke:ensure-group:rallar-server:default:wrong-request-room:{auth.sessionId}';
+    source.recipes[0].recipe.commands[1].request.path =
+      '/api/state/apps/rallar-server/workspaces/default/groups/wrong-path-room/members/{auth.clientId}';
+    await writeFile(sourcePath, `${JSON.stringify(source, null, 2)}\n`);
+
+    await expect(
+      execFileAsync('node', [
+        path.join(repoRoot, 'scripts/github-actions/materialize-hetzner-run-manifest.mjs'),
+        '--source',
+        sourcePath,
+        '--output',
+        outputPath,
+        '--record-output',
+        recordPath,
+        '--agent-source',
+        'hetzner',
+        '--operator-phase',
+        'run',
+        '--control-run-id',
+        'control-mismatch',
+        '--distributed-run-id',
+        'dist-mismatch',
+        '--repository',
+        'intact-software-systems/ar-eye-hunter',
+        '--workflow-run-id',
+        '30327139535',
+        '--workflow-run-attempt',
+        '1',
+        '--application-id',
+        '',
+        '--workspace-id',
+        '',
+        '--room-id',
+        '',
+      ]),
+    ).rejects.toMatchObject({
+      stderr: expect.stringContaining('wrong-room'),
+    });
+    await expect(
+      execFileAsync('node', [
+        path.join(repoRoot, 'scripts/github-actions/materialize-hetzner-run-manifest.mjs'),
+        '--source', sourcePath,
+        '--output', outputPath,
+        '--record-output', recordPath,
+        '--agent-source', 'hetzner',
+        '--operator-phase', 'run',
+        '--control-run-id', 'control-mismatch',
+        '--distributed-run-id', 'dist-mismatch',
+        '--repository', 'intact-software-systems/ar-eye-hunter',
+        '--workflow-run-id', '30327139535',
+        '--workflow-run-attempt', '1',
+        '--application-id', '',
+        '--workspace-id', '',
+        '--room-id', '',
+      ]),
+    ).rejects.toMatchObject({
+      stderr: expect.stringContaining('wrong-request-room'),
+    });
+    await expect(
+      execFileAsync('node', [
+        path.join(repoRoot, 'scripts/github-actions/materialize-hetzner-run-manifest.mjs'),
+        '--source', sourcePath,
+        '--output', outputPath,
+        '--record-output', recordPath,
+        '--agent-source', 'hetzner',
+        '--operator-phase', 'run',
+        '--control-run-id', 'control-mismatch',
+        '--distributed-run-id', 'dist-mismatch',
+        '--repository', 'intact-software-systems/ar-eye-hunter',
+        '--workflow-run-id', '30327139535',
+        '--workflow-run-attempt', '1',
+        '--application-id', '',
+        '--workspace-id', '',
+        '--room-id', '',
+      ]),
+    ).rejects.toMatchObject({
+      stderr: expect.stringContaining('wrong-path-room'),
+    });
+  });
+
   it('keeps workflow_dispatch inputs within the GitHub Actions limit', async () => {
     const workflowPaths = [
       distributedWorkflowPath,
@@ -137,6 +567,28 @@ describe('Hetzner distributed recipe workflow', () => {
     expect(workflow).toContain('manifest_path: ${{ inputs.manifest_path }}');
     expect(workflow).toContain('ref: ${{ inputs.ref }}');
     expect(workflow).toContain('run_id: ${{ inputs.run_id }}');
+    expect(workflow).toMatch(/room_id:[\s\S]*?required: false[\s\S]*?default: ''/);
+  });
+
+  it('uses one materialized manifest as the worker and distributed-run scope authority', async () => {
+    const workflow = await readWorkflow(distributedRunnerWorkflowPath);
+    const steps = workflow.jobs?.run?.steps ?? [];
+    const materialization = steps.find((step) => step.name === 'Materialize run manifest');
+    const copy = steps.find((step) => step.name === 'Copy controller scripts and manifest');
+    const render = steps.find((step) => step.name === 'Render remote run env');
+
+    expect(materialization).toMatchObject({
+      id: 'manifest_materialization',
+      name: 'Materialize run manifest',
+    });
+    expect(materialization?.run).toContain('materialize-hetzner-run-manifest.mjs');
+    expect(materialization?.run).toContain('RALLAR_OPERATION_STAGE=manifest-materialization');
+    expect(copy?.env?.MANIFEST_PATH).toBe(
+      '${{ steps.manifest_materialization.outputs.manifest_path }}',
+    );
+    expect(render?.env?.RALLAR_BLACK_BOX_ROOM_ID).toBe(
+      '${{ steps.manifest_materialization.outputs.group_id }}',
+    );
   });
 
   it('locks complete Hetzner production runs in their callers', async () => {
@@ -310,6 +762,19 @@ describe('Hetzner distributed recipe workflow', () => {
     expect(runnerWorkflow).toContain('RALLAR_WRITE_HEADLESS_ENV=1 ./09-start-headless-workers.sh');
   });
 
+  it('fences topology preparation with the stable source manifest hash', async () => {
+    const workflow = await readFile(path.join(repoRoot, distributedRunnerWorkflowPath), 'utf8');
+
+    expect(workflow).toContain(
+      'RALLAR_SOURCE_MANIFEST_SHA256: ${{ steps.manifest_materialization.outputs.source_manifest_sha256 }}',
+    );
+    expect(workflow).toContain('manifestSha="${RALLAR_SOURCE_MANIFEST_SHA256}"');
+    expect(workflow).toContain('expected_manifest_sha="${RALLAR_SOURCE_MANIFEST_SHA256}"');
+    expect(workflow).not.toContain(
+      'sha256sum "${RALLAR_DISTRIBUTED_MANIFEST_PATH}" | awk',
+    );
+  });
+
   it('rejects topology-specific manifests in the reusable workflow when rollout is disabled', async () => {
     const runnerWorkflow = await readFile(
       path.join(repoRoot, distributedRunnerWorkflowPath),
@@ -447,6 +912,7 @@ describe('Hetzner distributed recipe workflow', () => {
       repoRoot,
       'scripts/github-actions/write-hetzner-operation-report.mjs',
     );
+    const materializationArguments = await writeOperationMaterializationFixture(tmp);
     await execFileAsync('node', [
       scriptPath,
       '--log',
@@ -463,6 +929,7 @@ describe('Hetzner distributed recipe workflow', () => {
       'f6224149a7f613555f935c12efcdcdd0f1a67e53',
       '--manifest',
       supportedMainlineManifestPaths[0],
+      ...materializationArguments,
       '--control-run-id',
       'main-30314398600-1-prepare',
       '--distributed-run-id',
@@ -479,7 +946,7 @@ describe('Hetzner distributed recipe workflow', () => {
       await readFile(path.join(outputDir, 'operation-report.json'), 'utf8'),
     );
     expect(report).toEqual({
-      schemaVersion: 1,
+      schemaVersion: 2,
       status: 'failed',
       phase: 'prepare',
       stage: 'playwright-system-dependencies',
@@ -488,6 +955,13 @@ describe('Hetzner distributed recipe workflow', () => {
       exitCode: 100,
       commitSha: 'f6224149a7f613555f935c12efcdcdd0f1a67e53',
       manifestPath: supportedMainlineManifestPaths[0],
+      materializationStatus: 'succeeded',
+      groupIsolationMode: 'isolated',
+      sourceGroupRef: operationSourceGroupRef,
+      effectiveGroupRef: operationEffectiveGroupRef,
+      sourceManifestSha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+      materializedManifestSha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+      materializedManifestAvailable: true,
       controlRunId: 'main-30314398600-1-prepare',
       distributedRunId: 'dist-main-30314398600-1-prepare',
       distributedArtifactAvailable: false,
@@ -502,6 +976,13 @@ describe('Hetzner distributed recipe workflow', () => {
     const evidence = await readFile(path.join(outputDir, 'evidence.log'), 'utf8');
     expect(summary).toContain('The distributed recipe did not start.');
     expect(summary).toContain('NodeSource apt repository');
+    expect(summary).toContain(operationEffectiveGroupRef.groupId);
+    await expect(
+      readFile(path.join(outputDir, 'materialized-manifest.json'), 'utf8'),
+    ).resolves.toContain(operationEffectiveGroupRef.groupId);
+    await expect(
+      readFile(path.join(outputDir, 'manifest-materialization.json'), 'utf8'),
+    ).resolves.toContain('materializedManifestSha256');
     expect(evidence).toContain('403  Forbidden');
     expect(evidence).not.toContain('secret-token');
     expect(evidence).not.toContain('secret-password');
@@ -510,6 +991,8 @@ describe('Hetzner distributed recipe workflow', () => {
 
   it('classifies browser, deployment, service, agent, and recipe operation stages', async () => {
     const cases = [
+      ['manifest-materialization', 'manifest-scope', false],
+      ['manifest-scope-validation', 'manifest-scope', false],
       ['playwright-system-dependencies', 'browser-dependencies', false],
       ['playwright-browser-install', 'browser-installation', false],
       ['playwright-browser-smoke', 'browser-verification', false],
@@ -533,6 +1016,7 @@ describe('Hetzner distributed recipe workflow', () => {
           '\n',
         ),
       );
+      const materializationArguments = await writeOperationMaterializationFixture(tmp);
 
       await execFileAsync('node', [
         scriptPath,
@@ -550,6 +1034,7 @@ describe('Hetzner distributed recipe workflow', () => {
         'f6224149a7f613555f935c12efcdcdd0f1a67e53',
         '--manifest',
         supportedMainlineManifestPaths[0],
+        ...materializationArguments,
         '--control-run-id',
         'controlled-run',
         '--distributed-run-id',
@@ -570,6 +1055,75 @@ describe('Hetzner distributed recipe workflow', () => {
     }
   });
 
+  it('keeps diagnostics complete when manifest materialization fails before output exists', async () => {
+    const tmp = await mkdtemp(path.join(tmpdir(), 'rallar-operation-materialization-failure-'));
+    const logPath = path.join(tmp, 'operation.log');
+    const outputDir = path.join(tmp, 'diagnostics');
+    await writeFile(
+      logPath,
+      'RALLAR_OPERATION_STAGE=manifest-materialization\nManifest scope is inconsistent.\n',
+    );
+
+    await execFileAsync('node', [
+      path.join(repoRoot, 'scripts/github-actions/write-hetzner-operation-report.mjs'),
+      '--log',
+      logPath,
+      '--output-dir',
+      outputDir,
+      '--status',
+      'failed',
+      '--phase',
+      'run',
+      '--exit-code',
+      '1',
+      '--commit',
+      'f6224149a7f613555f935c12efcdcdd0f1a67e53',
+      '--manifest',
+      supportedMainlineManifestPaths[0],
+      '--materialization-record',
+      path.join(tmp, 'missing-record.json'),
+      '--materialized-manifest',
+      path.join(tmp, 'missing-manifest.json'),
+      '--control-run-id',
+      'controlled-run',
+      '--distributed-run-id',
+      'dist-controlled-run',
+      '--artifact-available',
+      'false',
+      '--started-at',
+      '2026-07-28T00:00:00.000Z',
+      '--finished-at',
+      '2026-07-28T00:01:00.000Z',
+    ]);
+
+    const report = JSON.parse(
+      await readFile(path.join(outputDir, 'operation-report.json'), 'utf8'),
+    );
+    expect(report).toMatchObject({
+      schemaVersion: 2,
+      failureCategory: 'manifest-scope',
+      materializationStatus: 'failed',
+      groupIsolationMode: 'unresolved',
+      sourceGroupRef: {
+        applicationId: 'unavailable',
+        workspaceId: 'unavailable',
+        groupId: 'unavailable',
+      },
+      effectiveGroupRef: {
+        applicationId: 'unavailable',
+        workspaceId: 'unavailable',
+        groupId: 'unavailable',
+      },
+      sourceManifestSha256: 'unavailable',
+      materializedManifestSha256: 'unavailable',
+      materializedManifestAvailable: false,
+      recipeStarted: false,
+    });
+    await expect(
+      readFile(path.join(outputDir, 'manifest-materialization.json'), 'utf8'),
+    ).resolves.toContain('"status": "failed"');
+  });
+
   it('classifies absent run artifacts without replacing the successful remote exit code', async () => {
     const tmp = await mkdtemp(path.join(tmpdir(), 'rallar-operation-missing-artifacts-'));
     const logPath = path.join(tmp, 'operation.log');
@@ -588,6 +1142,7 @@ describe('Hetzner distributed recipe workflow', () => {
       repoRoot,
       'scripts/github-actions/write-hetzner-operation-report.mjs',
     );
+    const materializationArguments = await writeOperationMaterializationFixture(tmp);
 
     await execFileAsync('node', [
       scriptPath,
@@ -605,6 +1160,7 @@ describe('Hetzner distributed recipe workflow', () => {
       'f6224149a7f613555f935c12efcdcdd0f1a67e53',
       '--manifest',
       supportedMainlineManifestPaths[0],
+      ...materializationArguments,
       '--control-run-id',
       'controlled-run',
       '--distributed-run-id',
@@ -2005,6 +2561,38 @@ describe('Hetzner distributed recipe workflow', () => {
     expect(body.manifest.recipes[0].recipe.commands).toHaveLength(2);
   });
 
+  it('validates the remote manifest against the worker and run environment', async () => {
+    const scriptPath = path.join(
+      repoRoot,
+      'scripts/hetzner/controller/14-run-distributed-recipe.sh',
+    );
+    const manifestPath = path.join(
+      repoRoot,
+      'apps/rallar-black-box/manifests/hetzner/03-rtc-smoke-2-agent.json',
+    );
+    const environment = {
+      ...process.env,
+      RALLAR_DISTRIBUTED_SCRIPT_SELF_TEST: 'validate-manifest-scope',
+      RALLAR_DISTRIBUTED_MANIFEST_PATH: manifestPath,
+      RALLAR_DISTRIBUTED_RUN_ID: 'hetzner-rtc-smoke-2-agent',
+      RALLAR_DISTRIBUTED_CONTROL_RUN_ID: 'hetzner-manifest-template-control-run',
+      RALLAR_BLACK_BOX_APPLICATION_ID: 'rallar-server',
+      RALLAR_BLACK_BOX_WORKSPACE_ID: 'default',
+      RALLAR_BLACK_BOX_ROOM_ID: 'hetzner-headless-room',
+    };
+
+    await expect(execFileAsync('bash', [scriptPath], { env: environment })).resolves.toMatchObject({
+      stdout: expect.stringContaining('manifestScope=valid'),
+    });
+    await expect(
+      execFileAsync('bash', [scriptPath], {
+        env: { ...environment, RALLAR_BLACK_BOX_ROOM_ID: 'wrong-room' },
+      }),
+    ).rejects.toMatchObject({
+      stderr: expect.stringContaining('Manifest group does not match worker scope'),
+    });
+  });
+
   it('preserves failed control POST response bodies for artifact evidence', async () => {
     const tmp = await mkdtemp(path.join(tmpdir(), 'rallar-control-post-failure-'));
     const fakeCurl = path.join(tmp, 'curl');
@@ -2230,8 +2818,6 @@ describe('Hetzner distributed recipe workflow', () => {
       '-f',
       'agent_count=2',
       '-f',
-      'room_id=hetzner-headless-room',
-      '-f',
       'application_id=rallar-server',
       '-f',
       'workspace_id=default',
@@ -2263,6 +2849,7 @@ describe('Hetzner distributed recipe workflow', () => {
     expect(stdout).toContain('Dispatched hetzner-distributed-recipe.yml');
     expect(stdout).toContain('03-rtc-smoke-2-agent.json');
     expect(stdout).toContain('Mode     : rollout');
+    expect(stdout).toContain('Room     : isolated per run');
     expect(stdout).toContain('Entry    : headless');
     expect(stdout).toContain('Browser  : chromium');
     expect(stdout).toContain('Register : true');
@@ -2357,6 +2944,8 @@ describe('Hetzner distributed recipe workflow', () => {
         '0',
         '--register-before-login',
         'false',
+        '--room-id',
+        'operator-room',
         '--ready-timeout-seconds',
         '45',
         '--terminal-timeout-seconds',
@@ -2382,11 +2971,13 @@ describe('Hetzner distributed recipe workflow', () => {
     expect(args).toContain('npm_ci=true');
     expect(args).toContain('wait_for_agents=false');
     expect(args).toContain('register_before_login=false');
+    expect(args).toContain('room_id=operator-room');
     expect(args).toContain('ready_timeout_seconds=45');
     expect(args).toContain('terminal_timeout_seconds=90');
     expect(args).toContain('stop_after_run=false');
     expect(stdout).toContain('Mode     : custom');
     expect(stdout).toContain('Register : false');
+    expect(stdout).toContain('Room     : operator-room (explicit)');
     expect(stdout).toContain('Stop headless: false');
   });
 

@@ -16,6 +16,13 @@
     "controlRunId",
     "distributedRunId",
     "distributedArtifactAvailable",
+    "materializationStatus",
+    "groupIsolationMode",
+    "sourceGroupRef",
+    "effectiveGroupRef",
+    "sourceManifestSha256",
+    "materializedManifestSha256",
+    "materializedManifestAvailable",
     "recipeStarted",
     "startedAt",
     "finishedAt",
@@ -23,7 +30,7 @@
     "nextAction"
   ],
   "properties": {
-    "schemaVersion": { "const": 1 },
+    "schemaVersion": { "const": 2 },
     "status": { "enum": ["succeeded", "failed"] },
     "phase": { "enum": ["full", "prepare", "run"] },
     "stage": { "type": "string", "minLength": 1 },
@@ -35,10 +42,29 @@
     "controlRunId": { "type": "string", "minLength": 1 },
     "distributedRunId": { "type": "string", "minLength": 1 },
     "distributedArtifactAvailable": { "type": "boolean" },
+    "materializationStatus": { "enum": ["succeeded", "failed"] },
+    "groupIsolationMode": { "enum": ["isolated", "explicit", "preserved", "unresolved"] },
+    "sourceGroupRef": { "$ref": "#/$defs/groupRef" },
+    "effectiveGroupRef": { "$ref": "#/$defs/groupRef" },
+    "sourceManifestSha256": { "type": "string", "minLength": 1 },
+    "materializedManifestSha256": { "type": "string", "minLength": 1 },
+    "materializedManifestAvailable": { "type": "boolean" },
     "recipeStarted": { "type": "boolean" },
     "startedAt": { "type": "string", "format": "date-time" },
     "finishedAt": { "type": "string", "format": "date-time" },
     "evidenceExcerpt": { "type": "string" },
     "nextAction": { "type": "string", "minLength": 1 }
+  },
+  "$defs": {
+    "groupRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["applicationId", "workspaceId", "groupId"],
+      "properties": {
+        "applicationId": { "type": "string", "minLength": 1 },
+        "workspaceId": { "type": "string", "minLength": 1 },
+        "groupId": { "type": "string", "minLength": 1 }
+      }
+    }
   }
 }

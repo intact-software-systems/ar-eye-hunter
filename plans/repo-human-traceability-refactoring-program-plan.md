@@ -159,6 +159,11 @@ The planning audit found these high-signal examples:
 | `packages/tests/shared-server`                      | 196 direct TypeScript files | Production features and their tests do not have matching navigable paths.                                |
 | `packages/shared-test/rallar-bb-test`               |  67 direct TypeScript files | Distributed run, fleet, artifact, browser, and control concerns are mixed.                               |
 
+Using the warning checker's filtered production source set, 215 TypeScript files
+are over 400 physical lines, 162 are over 500, and 97 are over 800 in the
+2026-07-28 planning baseline. These counts are review inventories, not commands
+to split files mechanically or to register every legacy hard-tier file.
+
 Important current hotspots include:
 
 - `packages/shared-server/rallar-system/services/group-state-mutations.ts` at
@@ -543,7 +548,10 @@ one feature branch and pull request:
    - replace expected exceptions with `Either` or validation issues;
    - normalize runtime exceptions at side-effect boundaries;
    - remove pass-through helpers and wrapper-only modules;
-   - reduce files and handlers over their review thresholds;
+   - apply the canonical 40/50/60 general-function review and the file-size
+     tiers before extracting code;
+   - reduce files, functions, and handlers over their review thresholds only at
+     coherent responsibility boundaries;
    - rerun behavior, contract, and integration tests.
 
 Do not hide semantic rewrites inside a rename-only change. Do not postpone all
@@ -556,6 +564,8 @@ While legacy migration proceeds:
 
 - all new files follow the target feature tree and naming rules;
 - a touched over-400-line file may not grow without explicit human approval;
+- a materially touched over-800-line file or over-60-line function is refactored
+  at a coherent boundary or recorded in the repo code-style exception registry;
 - a change that materially touches two responsibilities splits them;
 - new public optional fields require documented domain absence;
 - new production defaults are placed in OpenAPI or typed application
@@ -752,6 +762,8 @@ Every feature child plan begins with:
 - one representative top-to-bottom call trace;
 - existing behavior and characterization tests;
 - exact current-to-target file map;
+- file-size tier and 40/50/60 function review for the touched surface, including
+  any existing hard-tier exceptions that the change must remove or renew;
 - classification of mechanical, structural, semantic, contractual, and
   operational changes;
 - explicit compatibility decisions and retirement conditions;
@@ -764,6 +776,10 @@ Every child plan ends with:
 - matching primary symbols and filenames;
 - tests mirrored to the feature path;
 - no unexplained new checker warnings;
+- final file-size tier and 40/50/60 function review for the touched surface;
+- every materially touched over-800-line file and over-60-line function either
+  refactored at a coherent boundary or recorded with human approval in the repo
+  code-style exception registry;
 - documented remaining debt for the feature;
 - exact passed, failed, unavailable, and skipped validation results;
 - updated program progress in this plan or its approved successor ledger.
@@ -790,6 +806,8 @@ volume:
 - number of feature folders with an obvious entry file;
 - maximum direct TypeScript files in active production folders;
 - count of production files over 400 lines;
+- count of production files over 500 lines;
+- count of production files over 800 lines;
 - count of generic production filenames;
 - count of mixed-case filename violations;
 - count of wrapper-only call-stack hops found and removed through manual review;
