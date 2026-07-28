@@ -31,18 +31,35 @@ Deno job refuses to proceed when its checked-out commit is no longer the remote
 
 ## Cloudflare branch controls
 
-Apply these settings to the `rallar-kit` and `relic-hunters-v1` Workers
-projects:
+The main-only `cloudflare-branch-controls` job applies and verifies these
+settings on every **Deploy Web + API** workflow run. It uses the repository's
+`CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` secrets without printing
+their values. The token must be user-scoped and have **Workers Builds
+Configuration: Edit**, **Workers Scripts: Read**, and the Pages project edit
+permission.
+
+The job reads every expected project before its first mutation. It then removes
+the non-production trigger from the `rallar-kit` and `relic-hunters-v1`
+Workers, preserves one production trigger restricted to `main`, and configures
+the `ar-eye-hunter` Pages project with preview deployments disabled. A missing,
+renamed, ambiguous, or unverifiable project fails the job instead of partially
+applying a guessed configuration.
+
+The resulting settings for both Workers projects are:
 
 - Production branch: `main`
 - Builds for non-production branches: disabled
 
-For the `ar-eye-hunter` Pages project, keep `main` as the production branch and
-set Preview branch to `None` when all Cloudflare checks must be main-only.
+For the `ar-eye-hunter` Pages project, the production branch is `main` and the
+Preview branch setting is `None`.
 
 Verify the next feature-branch push has no `Workers Builds:*` or `Cloudflare
 Pages` check. Do not use commit-message skip directives as a permanent branch
 policy.
+
+If the enforcement job reports an authorization failure, replace
+`CLOUDFLARE_API_TOKEN` with a user-scoped token carrying the permissions above;
+do not broaden the workflow or expose the token in diagnostic output.
 
 ## Deno Deploy cutover
 

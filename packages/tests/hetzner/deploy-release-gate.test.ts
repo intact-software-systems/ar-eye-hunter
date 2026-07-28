@@ -194,6 +194,16 @@ describe('Deploy workflow release gate', () => {
     }
   });
 
+  it('enforces Cloudflare branch controls only from main with repository-held credentials', async () => {
+    const workflow = await readFile(path.join(repoRoot, '.github/workflows/deploy.yml'), 'utf8');
+    const job = getJobBlock(workflow, 'cloudflare-branch-controls');
+
+    expect(job).toContain("if: ${{ github.ref == 'refs/heads/main' }}");
+    expect(job).toContain('CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}');
+    expect(job).toContain('CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}');
+    expect(job).toContain('node scripts/deploy/configure-cloudflare-main-only.mjs --apply');
+  });
+
   it('keeps the Postgres presence expiry test from rewriting node_modules', async () => {
     const packageJson = JSON.parse(await readFile(path.join(repoRoot, 'package.json'), 'utf8')) as {
       scripts: Record<string, string>;
