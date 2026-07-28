@@ -8,6 +8,7 @@ RALLAR_CONTROL_HOST="${RALLAR_CONTROL_HOST:-control.rallar.intactss.com}"
 RALLAR_BLACKBOX_HOST="${RALLAR_BLACKBOX_HOST:-blackbox.rallar.intactss.com}"
 RALLAR_INCLUDE_CADDY="${RALLAR_INCLUDE_CADDY:-0}"
 RALLAR_INSTALL_PLAYWRIGHT="${RALLAR_INSTALL_PLAYWRIGHT:-0}"
+RALLAR_BLACK_BOX_BROWSER_ENGINE="${RALLAR_BLACK_BOX_BROWSER_ENGINE:-chromium}"
 RALLAR_ACME_EMAIL="${RALLAR_ACME_EMAIL:-}"
 RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS="${RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS:-86400000}"
 RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS="${RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS:-}"
@@ -115,10 +116,6 @@ cleanup_rollout_npm_transients() {
 }
 
 cleanup_rollout_disk_pressure() {
-  local playwright_cache_dir
-
-  playwright_cache_dir="$(rollout_playwright_cache_dir || true)"
-
   print_rollout_disk_summary "before rollout cleanup"
   echo "==> Cleaning rollout transient disk pressure"
   remove_rollout_path "${RALLAR_CHECKOUT_DIR}/node_modules"
@@ -130,11 +127,6 @@ cleanup_rollout_disk_pressure() {
   cleanup_rollout_npm_transients
   remove_matching_rollout_paths "${RALLAR_ROLLOUT_CONTROL_STATE_DIR}" "control-snapshot.json.tmp-*"
   remove_matching_rollout_paths "${RALLAR_ROLLOUT_TMP_DIR}" "playwright_*"
-  if [[ "${RALLAR_INSTALL_PLAYWRIGHT}" == "1" || "${RALLAR_INSTALL_PLAYWRIGHT}" == "true" ]]; then
-    if [[ -n "${playwright_cache_dir}" ]]; then
-      remove_rollout_path "${playwright_cache_dir}"
-    fi
-  fi
   print_rollout_disk_summary "after rollout cleanup"
 }
 
@@ -232,6 +224,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/rallar-deno-runtime.sh"
 source "${SCRIPT_DIR}/rallar-public-spa-env.sh"
 source "${SCRIPT_DIR}/rallar-playwright-install.sh"
+source "${SCRIPT_DIR}/rallar-deployment-readiness.sh"
 apply_rallar_public_spa_defaults
 apply_rallar_public_cors_defaults
 
@@ -459,6 +452,7 @@ echo "Note: stopping rallar-api-v1 resets its pglite-memory data."
 trap restart_stopped_services_on_error ERR
 
 echo "==> Updating git checkout"
+rallar_playwright_operation_stage "rollout-checkout"
 update_rollout_checkout "${RALLAR_CHECKOUT_DIR}" "${RALLAR_REPO_REF}"
 chown -R rallar:rallar "${RALLAR_CHECKOUT_DIR}"
 
@@ -468,11 +462,13 @@ echo "Updated ${previous_revision} -> ${current_revision}"
 cleanup_rollout_disk_pressure
 
 echo "==> Installing npm dependencies"
+rallar_playwright_operation_stage "rollout-npm-dependencies"
 runuser -u rallar -- npm --prefix "${RALLAR_CHECKOUT_DIR}" ci
 cleanup_rollout_npm_transients
 print_rollout_disk_summary "after npm dependency cleanup"
 
 echo "==> Warming Deno caches"
+rallar_playwright_operation_stage "rollout-deno-cache"
 runuser -u rallar -- env DENO_DIR=/var/lib/rallar-deno \
   deno cache --frozen --config "${RALLAR_CHECKOUT_DIR}/apps/api-v1/deno.json" \
   "${RALLAR_CHECKOUT_DIR}/apps/api-v1/src/main.ts"
@@ -481,10 +477,11 @@ runuser -u rallar -- env DENO_DIR=/var/lib/rallar-deno \
   "${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box-control-server/src/main.ts"
 
 if [[ "${RALLAR_INSTALL_PLAYWRIGHT}" == "1" || "${RALLAR_INSTALL_PLAYWRIGHT}" == "true" ]]; then
-  install_rallar_playwright_browser "${RALLAR_CHECKOUT_DIR}" "${RALLAR_BLACK_BOX_BROWSER_ENGINE:-chromium}"
+  install_rallar_playwright_browser "${RALLAR_CHECKOUT_DIR}" "${RALLAR_BLACK_BOX_BROWSER_ENGINE}"
 fi
 
 echo "==> Building rallar-black-box SPA"
+rallar_playwright_operation_stage "rollout-spa-build"
 build_rallar_black_box_spa "${RALLAR_CHECKOUT_DIR}"
 
 echo "==> Stopping services for publish/start"
@@ -529,6 +526,7 @@ echo "==> Writing Caddyfile"
 write_rallar_controller_caddyfile
 
 echo "==> Starting services"
+rallar_playwright_operation_stage "rollout-service-start"
 systemctl daemon-reload
 systemctl start rallar-api-v1.service
 systemctl start rallar-black-box-control.service
@@ -541,10 +539,29 @@ fi
 stopped_services=0
 trap - ERR
 
+rallar_playwright_operation_stage "rollout-service-health"
 wait_for_url "API-v1 config" "http://127.0.0.1:8080/api/config"
 wait_for_url "API-v1 docs" "http://127.0.0.1:8080/api/docs"
 wait_for_url "control health" "http://127.0.0.1:5180/health" -H "x-forwarded-proto: https"
 verify_rallar_control_public_cors
+
+deployment_browser_status="not-verified"
+if verify_rallar_playwright_browser \
+  "${RALLAR_CHECKOUT_DIR}" "${RALLAR_BLACK_BOX_BROWSER_ENGINE}"; then
+  deployment_browser_status="passed"
+elif [[ "${RALLAR_INSTALL_PLAYWRIGHT}" == "1" || "${RALLAR_INSTALL_PLAYWRIGHT}" == "true" ]]; then
+  echo "Playwright browser verification failed after an explicit install." >&2
+  exit 1
+else
+  echo "Playwright browser is not verified for this deployment; run-only Hetzner recipes will be rejected." >&2
+fi
+
+rallar_playwright_operation_stage "deployment-readiness"
+RALLAR_DEPLOYMENT_BROWSER_STATUS="${deployment_browser_status}" \
+  RALLAR_DEPLOYMENT_API_HEALTH_STATUS=passed \
+  RALLAR_DEPLOYMENT_CONTROL_HEALTH_STATUS=passed \
+  RALLAR_DEPLOYMENT_PUBLIC_HEALTH_STATUS=passed \
+  write_rallar_deployment_readiness "${RALLAR_CHECKOUT_DIR}"
 
 echo
 "${SCRIPT_DIR}/07-status-controller.sh"

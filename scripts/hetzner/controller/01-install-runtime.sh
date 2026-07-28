@@ -4,6 +4,13 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 RALLAR_MIN_DENO_VERSION="${RALLAR_MIN_DENO_VERSION:-2.9.0}"
 source "${SCRIPT_DIR}/rallar-deno-runtime.sh"
+source "${SCRIPT_DIR}/rallar-apt-sources.sh"
+
+RALLAR_APT_PROFILE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/rallar-apt-profiles.XXXXXX")"
+trap 'rm -rf -- "${RALLAR_APT_PROFILE_DIR}"' EXIT
+ubuntu_apt_config="${RALLAR_APT_PROFILE_DIR}/ubuntu.conf"
+nodesource_apt_config="${RALLAR_APT_PROFILE_DIR}/nodesource.conf"
+caddy_apt_config="${RALLAR_APT_PROFILE_DIR}/caddy.conf"
 
 if [[ "$(id -u)" != "0" ]]; then
   echo "Run this script as root." >&2
@@ -21,9 +28,10 @@ if [[ -r /etc/os-release ]]; then
 fi
 
 echo "==> Updating base system"
-apt update
-apt upgrade -y
-apt install -y \
+write_rallar_apt_profile ubuntu "${ubuntu_apt_config}"
+env APT_CONFIG="${ubuntu_apt_config}" apt update
+env APT_CONFIG="${ubuntu_apt_config}" apt upgrade -y
+env APT_CONFIG="${ubuntu_apt_config}" apt install -y \
   apt-transport-https \
   build-essential \
   ca-certificates \
@@ -39,8 +47,14 @@ apt install -y \
   unzip
 
 echo "==> Installing Node.js 24.x from NodeSource"
-curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
-apt install -y nodejs
+curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
+  | gpg --dearmor --yes -o /usr/share/keyrings/nodesource.gpg
+printf 'deb [arch=%s signed-by=/usr/share/keyrings/nodesource.gpg] https://deb.nodesource.com/node_24.x nodistro main\n' \
+  "$(dpkg --print-architecture)" \
+  >/etc/apt/sources.list.d/nodesource.list
+write_rallar_apt_profile nodesource "${nodesource_apt_config}"
+env APT_CONFIG="${nodesource_apt_config}" apt update
+env APT_CONFIG="${nodesource_apt_config}" apt install -y nodejs
 
 echo "==> Installing Deno >= ${RALLAR_MIN_DENO_VERSION} into /usr/local/bin"
 export DENO_INSTALL=/usr/local
@@ -55,8 +69,9 @@ curl -1sLf "https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt" \
   | tee /etc/apt/sources.list.d/caddy-stable.list >/dev/null
 chmod o+r /usr/share/keyrings/caddy-stable-archive-keyring.gpg
 chmod o+r /etc/apt/sources.list.d/caddy-stable.list
-apt update
-apt install -y caddy
+write_rallar_apt_profile caddy "${caddy_apt_config}"
+env APT_CONFIG="${caddy_apt_config}" apt update
+env APT_CONFIG="${caddy_apt_config}" apt install -y caddy
 
 echo "==> Creating Rallar service user and directories"
 if ! id rallar >/dev/null 2>&1; then

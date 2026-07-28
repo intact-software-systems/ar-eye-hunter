@@ -243,10 +243,15 @@ Install Playwright Chromium/dependencies during rollout if needed:
 RALLAR_INSTALL_PLAYWRIGHT=1 ./08-rollout-controller.sh
 ```
 
-Playwright installs are lock-aware. The shared installer writes browser binaries
-into the `rallar` user cache, refuses to remove active installer locks, and
-removes stale `__dirlock` files only after
-`RALLAR_PLAYWRIGHT_LOCK_STALE_SECONDS` seconds (`600` by default). For a
+Playwright installs are lock-aware. The shared installer checks required Linux
+packages without refreshing apt when they are already present. A missing
+package is installed through an Ubuntu-only apt profile, so NodeSource and
+Caddy cannot break browser preparation. Browser binaries are installed into a
+versioned candidate under `/var/lib/rallar-playwright/versions`, launched once
+as `rallar`, and only then switched through
+`/var/lib/rallar-playwright/active`. A failed dependency, download, or launch
+leaves the active browser unchanged. Stale `__dirlock` files are removed only
+after `RALLAR_PLAYWRIGHT_LOCK_STALE_SECONDS` seconds (`600` by default). For a
 distributed-recipe repair without app redeploy, dispatch with
 `rollout_before_run=false`, `install_playwright=true`, and `npm_ci=false`.
 
@@ -774,8 +779,12 @@ Hetzner work to the reusable
 
 The workflow `.github/workflows/hetzner-supported-distributed-manifests.yml`
 runs on every push to `main` and can also be triggered manually. It queues every
-commit, runs manifests serially against the shared Hetzner room, and covers the
-supported green set:
+commit, prepares and verifies the exact commit once, then runs the manifest
+matrix serially without repeating rollout, npm installation, or Playwright
+installation. The preparation job writes
+`/var/lib/rallar-black-box-control/deployment-readiness.json`; every run-only
+Hetzner phase rejects a stale commit, lockfile, Playwright version, browser,
+operating system, or service-health value. The supported green set is:
 
 - `01-health-2-agent.json`
 - `02-composite-evidence-2-agent.json`
@@ -806,9 +815,20 @@ forwards them to the remote `RALLAR_BLACK_BOX_CONTROL_URL` and
 `RALLAR_CONTROL_HTTP_URL` values used by the headless workers and
 distributed-run admin calls.
 
-The recipe step may fail, but the workflow still uploads artifacts before the
-final job failure. Read `analysis/fix-proposal.md` for failed runs and
-`analysis/performance.md` for passed runs.
+Every remote operation writes a **Hetzner operation diagnostics** table to the
+GitHub job summary and uploads
+`hetzner-operation-<distributed-run-id>`. Start there; it contains
+`operation-report.json`, `summary.md`, and a bounded sanitized `evidence.log`.
+The report states whether the recipe started, the failing stage and component,
+the exit code, artifact availability, and the next human action. It is always
+created, including preparation, SSH, browser, or service failures that happen
+before distributed artifacts exist. No AI analysis is required to distinguish
+those failures.
+
+If `recipeStarted` is `true`, continue with `analysis/fix-proposal.md` for a
+failed recipe or `analysis/performance.md` for a passed run. If it is `false`,
+the missing distributed artifact is expected; use the operation report rather
+than requesting an analyzer rerun.
 
 Already-running global-fleet agents use a separate no-spawn flow. Do not use
 the Hetzner lifecycle workflow when the browsers are already running around the
