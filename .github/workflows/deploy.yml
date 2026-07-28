@@ -21,6 +21,26 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  cloudflare-branch-controls:
+    name: Enforce Cloudflare main-only branch controls
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Disable feature-branch Workers and Pages builds
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node scripts/deploy/configure-cloudflare-main-only.mjs --apply
+
   release-gate:
     name: Release Gate
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.skip_release_gate != true }}
