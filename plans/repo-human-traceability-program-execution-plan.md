@@ -47,6 +47,9 @@ Codex skills, npm validation commands, and GitHub Actions completion gates.
 - A child plan is not complete until its focused checks, repository completion
   gates, pull-request gate, merge, and resulting default-branch workflow have
   passed for the exact applicable commits.
+- Do not begin the next child until any required evidence-only ledger update
+  has independently reached `ledger-published`; the ledger's own future merge
+  and workflow evidence belongs in its PR/handoff, not inside itself.
 - Every agent response that completes a planning or implementation step must
   use the completion handoff in this document.
 
@@ -54,8 +57,9 @@ Codex skills, npm validation commands, and GitHub Actions completion gates.
 
 Date: 2026-07-28
 
-Status: Draft for human review. This document authorizes no child-plan
-implementation.
+Status: Published on `main` for human review. This document authorizes no
+child-plan implementation. The governance/checker child has been revised for
+execution readiness and remains unapproved pending human review.
 
 ## 1. Document Roles And Plan Graph
 
@@ -63,9 +67,9 @@ The documents deliberately have different responsibilities:
 
 | Document                                                                                    | Responsibility                                                                                                                 | Current state                                             |
 | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------- |
-| [Master refactoring program](repo-human-traceability-refactoring-program-plan.md)           | Defines why the work exists, target organization, migration waves, shared entry and exit criteria, and program-level progress. | Created; approved for child-plan drafting.                |
-| This execution plan                                                                         | Defines approval boundaries, reusable prompts, publication cadence, and completion handoffs.                                   | Draft for human review.                                   |
-| [Governance and checker child plan](repo-human-traceability-governance-and-checker-plan.md) | Implements Wave 0 governance, warning-only checks, fixtures, and measured baselines without production movement.               | Created; not yet recorded as approved for execution.      |
+| [Master refactoring program](repo-human-traceability-refactoring-program-plan.md)           | Defines why the work exists, target organization, migration waves, shared entry and exit criteria, and program-level progress. | Published; approved for child-plan drafting.              |
+| This execution plan                                                                         | Defines approval boundaries, reusable prompts, publication cadence, and completion handoffs.                                   | Published; human review remains pending.                  |
+| [Governance and checker child plan](repo-human-traceability-governance-and-checker-plan.md) | Implements Wave 0 governance, warning-only checks, fixtures, and measured baselines without production movement.               | Published; revised and awaiting approval.                 |
 | `plans/rallar-room-group-state-translation-boundary-plan.md`                                | Will define the browser `room` to authoritative `group-state` translation boundary and consumer compatibility.                 | Planned; must be drafted after Wave 0.                    |
 | `plans/rallar-group-state-server-structure-plan.md`                                         | Will define authoritative server group-state ownership, moves, AppInbox flow, persistence, presence, and mirrored tests.       | Planned; must be drafted after the browser boundary plan. |
 | `plans/api-v1-group-state-route-structure-plan.md`                                          | Will define API-v1 group-state routes, defaults, translation, composition, OpenAPI, and black-box compatibility.               | Planned; must be drafted after the server structure plan. |
@@ -91,23 +95,25 @@ solely to make a link resolve.
 
 Every child plan moves through these states in order:
 
-| State          | Meaning                                                                                                                               | Production changes allowed?                            |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
-| `needed`       | The master program identifies a bounded child plan that does not yet exist.                                                           | No.                                                    |
-| `drafting`     | An agent is inspecting code, tests, exports, consumers, and call paths and writing the child plan.                                    | No.                                                    |
-| `human-review` | The complete child plan has passed agent self-review and awaits a human decision.                                                     | No.                                                    |
-| `approved`     | The human explicitly approved the exact plan revision for execution.                                                                  | Not until execution starts on the intended branch.     |
-| `in-progress`  | Tasks are executing with focused validation and published progress.                                                                   | Only changes authorized by the child plan.             |
-| `implemented`  | Local plan tasks are finished, but one or more completion or publication gates remain.                                                | Only completion corrections within scope.              |
-| `verified`     | Local focused and repository-wide gates pass for the final feature-branch content.                                                    | No additional edits without invalidating verification. |
-| `published`    | The final branch commit and required Branch Release Gate are recorded in the draft PR.                                                | Await human merge decision.                            |
-| `merged`       | The approved pull request reached the default branch.                                                                                 | No.                                                    |
-| `complete`     | The resulting exact default-branch commit also passed the required distributed-manifest workflow and the ledgers record all evidence. | No; select the next child plan.                        |
+| State              | Meaning                                                                                                                                                                                                  | Production changes allowed?                            |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `needed`           | The master program identifies a bounded child plan that does not yet exist.                                                                                                                              | No.                                                    |
+| `drafting`         | An agent is inspecting code, tests, exports, consumers, and call paths and writing the child plan.                                                                                                       | No.                                                    |
+| `human-review`     | The complete child plan has passed agent self-review and awaits a human decision.                                                                                                                        | No.                                                    |
+| `approved`         | The human explicitly approved the exact plan revision for execution.                                                                                                                                     | Not until execution starts on the intended branch.     |
+| `in-progress`      | Tasks are executing with focused validation and published progress.                                                                                                                                      | Only changes authorized by the child plan.             |
+| `implemented`      | Local plan tasks are finished, but one or more completion or publication gates remain.                                                                                                                   | Only completion corrections within scope.              |
+| `verified`         | Local focused and repository-wide gates pass for the final feature-branch content.                                                                                                                       | No additional edits without invalidating verification. |
+| `published`        | The final branch commit and required Branch Release Gate are recorded in the draft PR.                                                                                                                   | Await human merge decision.                            |
+| `merged`           | The approved pull request reached the default branch.                                                                                                                                                    | No.                                                    |
+| `complete`         | The exact implementation default-branch commit passed the required distributed-manifest workflow, and its PR/handoff publication envelope records the frozen tree, branch, merge, and workflow evidence. | No.                                                    |
+| `ledger-published` | A later evidence-only ledger update records the completed implementation, and that ledger's own tree, PR, branch gate, merge, and default workflow are verified in its external publication envelope.    | No; the next child may now be selected.                |
 
-An agent may move a plan into `human-review`, `in-progress`, `implemented`, or
-`verified` from evidence. Only a human may move it from `human-review` to
-`approved`, authorize a default-branch operation, or approve a compatibility
-exception reserved for human judgment.
+An agent may move a plan into `human-review`, `in-progress`, `implemented`,
+`verified`, `complete`, or `ledger-published` from the exact evidence defined
+below. Only a human may move it from `human-review` to `approved`, authorize a
+default-branch operation, or approve a compatibility exception reserved for
+human judgment.
 
 ## 3. Mandatory Completion Handoff
 
@@ -205,19 +211,77 @@ For each child plan, apply this loop:
       a human decision gate.
 
 - [ ] **Step 7: Complete all final gates.**
-      Run `npm run test:unit`, `npm run test:ci`, and `npm run build` on the final
-      uncommitted tree. Record the Branch Release Gate for the exact final branch
-      commit. After human merge, record the required distributed-manifest workflow
-      for the exact resulting default-branch commit.
+      Finalize task checkboxes and baseline data before freezing the feature
+      tree. Run `npm run test:unit`, `npm run test:ci`, and `npm run build` on
+      that unchanged tree. Store its tree ID, final branch SHA, local results,
+      and Branch Release Gate in the PR/handoff. After human merge, append the
+      exact merge SHA and distributed-manifest workflow to that external record;
+      do not edit the frozen plan to add future evidence.
 
 - [ ] **Step 8: Hand control back to the human.**
-      Use the mandatory completion handoff. Do not start the next child plan. Give
-      the human the exact next prompt.
+      Use the mandatory completion handoff. If the child requires an in-repo
+      completion ledger, publish it later as a separately frozen and gated
+      evidence-only change. Do not start the next child until that ledger reaches
+      `ledger-published`. Give the human the exact next prompt.
 
-## 5. Prompt 1: Reconcile And Publish The Program Documents
+### 4.1 Non-Circular Completion Evidence Contract
 
-This is the first prompt to execute after this plan is reviewed. It does not
-authorize checker implementation or production changes.
+Completion evidence has two immutable trees and two mutable external
+publication envelopes:
+
+1. **Feature tree.** Before final local gates, the child plan records completed
+   implementation tasks and measured baselines but no future commit or workflow
+   values. Stage the exact in-scope content, record `git write-tree`, and run all
+   local gates without another in-scope edit. The final branch commit must have
+   that exact tree.
+2. **Feature publication envelope.** The draft PR and Mandatory Completion
+   Handoff record the feature tree ID, final branch SHA, local results, Branch
+   Release Gate, human merge decision, resulting default SHA, and required
+   default-workflow run. Updating this external envelope does not change or
+   invalidate the feature tree. This envelope is authoritative for post-freeze
+   and post-merge evidence.
+3. **Evidence-ledger tree.** When the program requires durable in-repo progress,
+   create a later non-default branch from the successful implementation default
+   SHA. Change only the named plan ledgers to cite the completed implementation
+   evidence. Run that documentation change's focused and repository completion
+   gates, record its own `git write-tree`, and publish it through a separate PR.
+4. **Ledger publication envelope.** The ledger PR/handoff records the ledger
+   tree, branch SHA and gate, merge SHA, and default-workflow result. The plan
+   files do not need and cannot contain their own future merge SHA or workflow
+   result. Once this envelope is green, the state is `ledger-published`; no
+   follow-up commit is created solely to restate that envelope.
+
+A content correction to either frozen tree invalidates only that tree's local
+and branch evidence and requires a new freeze. A later ledger-only change does
+not relabel or invalidate the completed implementation tree. A failed ledger
+publication blocks `ledger-published` and the next child, while a failed
+implementation workflow blocks `complete` itself.
+
+## 5. Prompt 1 Record: Reconcile And Publish The Program Documents
+
+Do not execute the historical prompt below. Its publication outcome was
+satisfied by direct publication to `main`, followed by evidence reconciliation:
+
+- live GitHub `main` resolves to
+  `4ec117db1e09e00f86ed8f66cbf8adab1cdeb4a9`;
+- the commit adds only the three linked plan documents and has no associated
+  pull request;
+- the previous PR #45 branch and the proposed Wave 0 branch are both absent
+  from the remote;
+- GitHub CLI authentication was invalid during reconciliation, so GitHub
+  connector data and the public GitHub API supplied remote evidence;
+- **Run Hetzner Supported Distributed Manifests** run `30328273358` failed for
+  the exact published commit, while **Push on main** run `30328273160` and
+  **Deploy Web + API** run `30328273405` passed.
+- GitHub's combined commit status separately reports three failed Deno
+  deployment contexts: `rallar-bb-server`, `relic-hunters`, and
+  `rallar-server`. They were recorded but not diagnosed in this
+  documentation-only step.
+
+The prompt is retained as the historical requested path and must not be used to
+republish documents that are already on `main`. Direct publication did not
+approve the governance child and did not satisfy a draft-PR or Branch Release
+Gate path for the plan-document commit.
 
 ```text
 Prepare the Repository Human Traceability Refactoring Program for execution.
@@ -320,17 +384,20 @@ stop only for a real blocker, a material undecided design choice, or required
 human/default-branch authorization.
 
 Do not mark the plan complete until all local and published completion gates in
-AGENTS.md and the plan pass for the exact commits. After each substantial work
-interval and at completion, respond using every section in “Mandatory
-Completion Handoff” from the execution plan. The final Next Steps section must
-contain the exact human prompt for reviewing the governance result and, only
-after it is complete, drafting
+AGENTS.md and the plan pass for the exact commits. Apply Section 4.1 exactly:
+freeze the feature tree before final gates, place later branch/merge/workflow
+facts in the PR and handoff, and publish any later in-repo completion ledger as
+a separately frozen evidence task. After each substantial work interval and at
+completion, respond using every section in “Mandatory Completion Handoff” from
+the execution plan. The final Next Steps section must contain the exact human
+prompt for reviewing the governance result and, only after it is
+`ledger-published`, drafting
 plans/rallar-room-group-state-translation-boundary-plan.md.
 ```
 
 ## 7. Prompt 3: Draft The Browser Translation-Boundary Child Plan
 
-This prompt is used only after the governance child is complete.
+This prompt is used only after the governance child is `ledger-published`.
 
 ```text
 Draft plans/rallar-room-group-state-translation-boundary-plan.md as the next
@@ -550,14 +617,18 @@ not start another child plan.
 
 ## 15. Progress Record
 
-| Milestone                              | Status   | Evidence                                                                             |
-| -------------------------------------- | -------- | ------------------------------------------------------------------------------------ |
-| Execution protocol drafted             | complete | This document contains the state model, safe loop, handoff, and exact pilot prompts. |
-| Reciprocal master-plan link            | complete | The master program links this execution protocol and the governance child.           |
-| Reciprocal governance-child link       | complete | The governance child links the master program and this execution protocol.           |
-| Human review of execution protocol     | pending  | No approval recorded.                                                                |
-| Program documents published            | pending  | Prompt 1 has not run.                                                                |
-| Governance child approved              | pending  | Requires explicit human review of the exact revision.                                |
-| Governance child complete              | pending  | No checker implementation is authorized by this draft.                               |
-| Pilot child plans drafted and executed | pending  | They intentionally do not exist yet.                                                 |
-| Pilot evaluated                        | pending  | Requires all three pilot children to be complete.                                    |
+| Milestone                              | Status         | Evidence                                                                                                                                                      |
+| -------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Execution protocol drafted             | complete       | This document contains the state model, safe loop, handoff, and exact pilot prompts.                                                                          |
+| Reciprocal master-plan link            | complete       | The master program links this execution protocol and the governance child.                                                                                    |
+| Reciprocal governance-child link       | complete       | The governance child links the master program and this execution protocol.                                                                                    |
+| Human review of execution protocol     | pending        | No approval recorded.                                                                                                                                         |
+| Program documents published            | complete       | Direct `main` commit `4ec117db1e09e00f86ed8f66cbf8adab1cdeb4a9` added exactly the three plan documents; GitHub `main` resolves to that SHA.                   |
+| Program-document Branch Release Gate   | not applicable | Direct publication had no feature branch or pull request, so no Branch Release Gate exists for the plan-document commit.                                      |
+| Program-document default workflow      | failed         | **Run Hetzner Supported Distributed Manifests** run `30328273358` failed for exact SHA `4ec117db1e09e00f86ed8f66cbf8adab1cdeb4a9`.                            |
+| Program-document deployment statuses   | failed         | GitHub reports failed `rallar-bb-server`, `relic-hunters`, and `rallar-server` deployment contexts; this review did not diagnose them.                        |
+| Governance execution-readiness review  | revised        | Section 5.1 now fixes the load-once TypeScript projection, one-finding-per-prefix model, exact browser import classifier, and non-circular evidence contract. |
+| Governance child approved              | pending        | The revised plan remains unapproved and requires explicit human approval of this exact revision.                                                              |
+| Governance child complete              | pending        | No checker implementation is authorized; all implementation and completion gates remain pending.                                                              |
+| Pilot child plans drafted and executed | pending        | They intentionally do not exist yet.                                                                                                                          |
+| Pilot evaluated                        | pending        | Requires all three pilot children to be complete.                                                                                                             |

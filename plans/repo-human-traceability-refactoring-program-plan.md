@@ -61,8 +61,10 @@ checker, and Git rename detection.
 
 Date: 2026-07-28
 
-Status: Reviewed and approved for child-plan drafting. Production implementation
-has not started.
+Status: Reviewed and approved for child-plan drafting. The program documents are
+published on `main`; production implementation has not started. The governance
+and checker child has been revised for execution readiness and remains
+unapproved pending human review.
 
 Program drafting, approval, execution, publication, and human handoffs follow
 the [Repository Human Traceability Program Execution Plan](repo-human-traceability-program-execution-plan.md).
@@ -81,6 +83,36 @@ Approved execution decision on 2026-07-28:
   structure first, then code-standard alignment. A smaller private migration
   may use one pull request with clearly separated commit series for those two
   passes.
+
+Publication and progress reconciliation on 2026-07-28:
+
+- GitHub `main`, local `main`, and local `origin/main` all resolve to
+  `4ec117db1e09e00f86ed8f66cbf8adab1cdeb4a9`
+  (`docs: add human traceability execution plans`).
+- That commit has tree `ea05be8881303557ec9ec8f7951bbef76a4922fc`,
+  parent `95065d769f585464b15059423057e151877fdb1a`, and adds only this
+  master plan, the execution plan, and the governance/checker child plan:
+  2,787 inserted lines across three new Markdown files. It has no associated
+  pull request.
+- Parent `95065d769f585464b15059423057e151877fdb1a` is the merge commit
+  for GitHub PR #45. It published the primary human-understandability principle
+  in `AGENTS.md`, the code-writing skill, the canonical code standard, the
+  human review guide, and their integrity test. It did not add the Wave 0
+  organization/naming sections or checker behavior.
+- For `4ec117db1e09e00f86ed8f66cbf8adab1cdeb4a9`, GitHub Actions run
+  `30328273160` (**Push on main**) and run `30328273405`
+  (**Deploy Web + API**) passed. Run `30328273358`
+  (**Run Hetzner Supported Distributed Manifests**) failed. Direct publication
+  is therefore verified, but the required default-branch completion workflow
+  is not green for that commit.
+- GitHub's combined commit status also reports failures for
+  `deploy/intact-software-systems/rallar-bb-server`,
+  `deploy/intact-software-systems/relic-hunters`, and
+  `deploy/intact-software-systems/rallar-server`. This documentation-only
+  reconciliation records but does not diagnose those deployment failures.
+- No Wave 0 implementation checkbox below is complete. The published planning
+  counts remain planning evidence; the executable layout and detailed counts
+  remain pending.
 
 ## 1. Why This Is A Program Instead Of One Refactor
 
@@ -595,6 +627,9 @@ work without evidence.
 
 Goal: make the target rules reviewable and the debt visible before moving code.
 
+PR #45 supplies the already-published primary-principle prerequisite. It does
+not satisfy any checkbox in this Wave 0 implementation list.
+
 - [ ] Add repository-organization and filename sections to the canonical code
       standard.
 - [ ] Extend the human review guide with feature ownership, matching filename,
@@ -835,6 +870,9 @@ After this master plan is approved, use the
 to write, review, approve, execute, and hand off these child plans in order:
 
 - [ ] [Repository human traceability governance and checker](repo-human-traceability-governance-and-checker-plan.md)
+  - state: published and revised for execution readiness, not approved; the
+    2026-07-28 review findings now have exact plan contracts awaiting human
+    approval;
   - exact code-style wording;
   - warning-only layout rule implementation and fixtures;
   - initial measured baseline.
@@ -858,6 +896,11 @@ to write, review, approve, execute, and hand off these child plans in order:
 Only after the pilot is `verified` should the program copy its migration method
 to client-state, auth, topology, RTC, and CRDT. Adjust the method when the pilot
 shows that a rule creates extra indirection or harms traceability.
+
+The governance child does not unlock the browser boundary child until its
+implementation is `complete` and its separate evidence-ledger publication is
+`ledger-published` under the execution protocol's non-circular evidence
+contract.
 
 ## 15. Explicit Non-Goals
 
