@@ -59,9 +59,13 @@ Date: 2026-07-28
 
 Status: Published on `main`. This document itself authorizes no child-plan
 implementation. The governance/checker child was approved at blob
-`8ee56ac27189f9bed751fb6a95992830bda6be60`; Tasks 1 through 5 are implemented,
-reviewed, and published through `55469829af67eabdc692ab4e9823c0e26fabb40b`.
-The child is implemented with final and publication gates pending.
+`8ee56ac27189f9bed751fb6a95992830bda6be60`. Its immutable implementation tree
+is `47a885540b60765a1a0c95089902a0371e0a7f2b`; final feature SHA
+`a986931c250c2f1fa12daa3e8d44a74669b178ed` passed Branch Release Gate run
+`30362667041` attempt 2. PR #47 merged as
+`4f98f241aefe62c89288e29403ba7f1f23897625`, and default workflow run
+`30367222275` attempt 1 passed for that exact SHA. The child implementation is
+`complete`; its separate evidence-ledger publication is pending.
 
 ## 1. Document Roles And Plan Graph
 
@@ -71,7 +75,7 @@ The documents deliberately have different responsibilities:
 | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------- |
 | [Master refactoring program](repo-human-traceability-refactoring-program-plan.md)           | Defines why the work exists, target organization, migration waves, shared entry and exit criteria, and program-level progress. | Published; approved for child-plan drafting.              |
 | This execution plan                                                                         | Defines approval boundaries, reusable prompts, publication cadence, and completion handoffs.                                   | Published; human review remains pending.                  |
-| [Governance and checker child plan](repo-human-traceability-governance-and-checker-plan.md) | Implements Wave 0 governance, warning-only checks, fixtures, and measured baselines without production movement.               | Implemented; final and publication gates remain pending.  |
+| [Governance and checker child plan](repo-human-traceability-governance-and-checker-plan.md) | Implements Wave 0 governance, warning-only checks, fixtures, and measured baselines without production movement.               | Implementation complete; evidence ledger pending.         |
 | `plans/rallar-room-group-state-translation-boundary-plan.md`                                | Will define the browser `room` to authoritative `group-state` translation boundary and consumer compatibility.                 | Planned; must be drafted after Wave 0.                    |
 | `plans/rallar-group-state-server-structure-plan.md`                                         | Will define authoritative server group-state ownership, moves, AppInbox flow, persistence, presence, and mirrored tests.       | Planned; must be drafted after the browser boundary plan. |
 | `plans/api-v1-group-state-route-structure-plan.md`                                          | Will define API-v1 group-state routes, defaults, translation, composition, OpenAPI, and black-box compatibility.               | Planned; must be drafted after the server structure plan. |
@@ -264,7 +268,7 @@ implementation workflow blocks `complete` itself.
 Do not execute the historical prompt below. Its publication outcome was
 satisfied by direct publication to `main`, followed by evidence reconciliation:
 
-- live GitHub `main` resolves to
+- at initial direct publication, live GitHub `main` resolved to
   `4ec117db1e09e00f86ed8f66cbf8adab1cdeb4a9`;
 - the commit adds only the three linked plan documents and has no associated
   pull request;
@@ -619,18 +623,19 @@ not start another child plan.
 
 ## 15. Progress Record
 
-| Milestone                              | Status         | Evidence                                                                                                                                                      |
-| -------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Execution protocol drafted             | complete       | This document contains the state model, safe loop, handoff, and exact pilot prompts.                                                                          |
-| Reciprocal master-plan link            | complete       | The master program links this execution protocol and the governance child.                                                                                    |
-| Reciprocal governance-child link       | complete       | The governance child links the master program and this execution protocol.                                                                                    |
-| Human review of execution protocol     | pending        | No approval recorded.                                                                                                                                         |
-| Program documents published            | complete       | Direct `main` commit `4ec117db1e09e00f86ed8f66cbf8adab1cdeb4a9` added exactly the three plan documents; GitHub `main` resolves to that SHA.                   |
-| Program-document Branch Release Gate   | not applicable | Direct publication had no feature branch or pull request, so no Branch Release Gate exists for the plan-document commit.                                      |
-| Program-document default workflow      | failed         | **Run Hetzner Supported Distributed Manifests** run `30328273358` failed for exact SHA `4ec117db1e09e00f86ed8f66cbf8adab1cdeb4a9`.                            |
-| Program-document deployment statuses   | failed         | GitHub reports failed `rallar-bb-server`, `relic-hunters`, and `rallar-server` deployment contexts; this review did not diagnose them.                        |
-| Governance execution-readiness review  | revised        | Section 5.1 now fixes the load-once TypeScript projection, one-finding-per-prefix model, exact browser import classifier, and non-circular evidence contract. |
-| Governance child approved              | complete       | Human approval binds plan blob `8ee56ac27189f9bed751fb6a95992830bda6be60`, subject only to its recorded narrow amendments.                                    |
-| Governance child implementation        | implemented    | Tasks 1 through 5 are implemented, reviewed, and published through `55469829af67eabdc692ab4e9823c0e26fabb40b`; final and publication gates remain pending.    |
-| Pilot child plans drafted and executed | pending        | They intentionally do not exist yet.                                                                                                                          |
-| Pilot evaluated                        | pending        | Requires all three pilot children to be complete.                                                                                                             |
+| Milestone                              | Status         | Evidence                                                                                                                                                                                                                                                                                             |
+| -------------------------------------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Execution protocol drafted             | complete       | This document contains the state model, safe loop, handoff, and exact pilot prompts.                                                                                                                                                                                                                 |
+| Reciprocal master-plan link            | complete       | The master program links this execution protocol and the governance child.                                                                                                                                                                                                                           |
+| Reciprocal governance-child link       | complete       | The governance child links the master program and this execution protocol.                                                                                                                                                                                                                           |
+| Human review of execution protocol     | pending        | No approval recorded.                                                                                                                                                                                                                                                                                |
+| Program documents published            | complete       | Direct `main` commit `4ec117db1e09e00f86ed8f66cbf8adab1cdeb4a9` added exactly the three plan documents; GitHub `main` resolved to that SHA at initial publication.                                                                                                                                   |
+| Program-document Branch Release Gate   | not applicable | Direct publication had no feature branch or pull request, so no Branch Release Gate exists for the plan-document commit.                                                                                                                                                                             |
+| Program-document default workflow      | failed         | **Run Hetzner Supported Distributed Manifests** run `30328273358` failed for exact SHA `4ec117db1e09e00f86ed8f66cbf8adab1cdeb4a9`.                                                                                                                                                                   |
+| Program-document deployment statuses   | failed         | GitHub reports failed `rallar-bb-server`, `relic-hunters`, and `rallar-server` deployment contexts; this review did not diagnose them.                                                                                                                                                               |
+| Governance execution-readiness review  | revised        | Section 5.1 now fixes the load-once TypeScript projection, one-finding-per-prefix model, exact browser import classifier, and non-circular evidence contract.                                                                                                                                        |
+| Governance child approved              | complete       | Human approval binds plan blob `8ee56ac27189f9bed751fb6a95992830bda6be60`, subject only to its recorded narrow amendments.                                                                                                                                                                           |
+| Governance child implementation        | complete       | Frozen tree `47a885540b60765a1a0c95089902a0371e0a7f2b`; feature SHA `a986931c250c2f1fa12daa3e8d44a74669b178ed`; Branch Release Gate `30362667041` attempt 2 passed; PR #47 merged as `4f98f241aefe62c89288e29403ba7f1f23897625`; default workflow `30367222275` attempt 1 passed for that exact SHA. |
+| Governance evidence ledger             | pending        | This separate three-plan ledger records the completed implementation. Its own future tree, commit, PR, merge, and default-workflow evidence belongs in its PR and handoff, not inside the ledger tree.                                                                                               |
+| Pilot child plans drafted and executed | pending        | They intentionally do not exist yet.                                                                                                                                                                                                                                                                 |
+| Pilot evaluated                        | pending        | Requires all three pilot children to be complete.                                                                                                                                                                                                                                                    |

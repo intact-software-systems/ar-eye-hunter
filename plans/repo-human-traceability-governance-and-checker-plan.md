@@ -89,7 +89,7 @@ future-evidence changes. Repository completion gates wait for scoped re-review.
 
 Date: 2026-07-28
 
-Status: implemented; final and publication gates pending
+Status: implementation complete; separate evidence-ledger publication pending
 
 Publication and prerequisite reconciliation:
 
@@ -102,13 +102,23 @@ Publication and prerequisite reconciliation:
   and the unrestricted full unit baseline passed 5,534 tests with 18 skipped.
 - Tasks 1 through 5 are implemented, independently reviewed without remaining
   findings, and published through
-  `55469829af67eabdc692ab4e9823c0e26fabb40b`. The remote branch head is the
-  same commit. PR #47 follows the branch and is open and non-draft; its metadata
-  remains unavailable here. This is not merge evidence or permission.
+  `55469829af67eabdc692ab4e9823c0e26fabb40b`.
+- The final feature tree is
+  `47a885540b60765a1a0c95089902a0371e0a7f2b`. Its exact feature SHA is
+  `a986931c250c2f1fa12daa3e8d44a74669b178ed`, and Branch Release Gate run
+  `30362667041` attempt 2 passed for that SHA. The warning-only checker and
+  TypeScript `7.0.2` remained unchanged.
+- Human-approved PR #47 merged on 2026-07-28 as
+  `4f98f241aefe62c89288e29403ba7f1f23897625`. **Run Hetzner Supported
+  Distributed Manifests** run `30367222275` attempt 1 passed for that exact
+  resulting `main` SHA. The implementation therefore reached execution-
+  protocol state `complete`.
 
-- Live GitHub `main`, local `main`, and local `origin/main` resolve to
-  `4ec117db1e09e00f86ed8f66cbf8adab1cdeb4a9`. That commit adds only the three
-  human-traceability plan documents and has no associated pull request.
+- Initial direct plan publication commit
+  `4ec117db1e09e00f86ed8f66cbf8adab1cdeb4a9` adds only the three human-
+  traceability plan documents and has no associated pull request. At creation
+  of the evidence-ledger branch, live GitHub `main` resolved to the PR #47
+  merge SHA recorded above.
 - GitHub PR #45 merged as
   `95065d769f585464b15059423057e151877fdb1a`. Its five-file diff added the
   primary human-understandability principle and integrity coverage to
@@ -117,11 +127,14 @@ Publication and prerequisite reconciliation:
 - Known focused verification includes the 81-test prerequisite baseline, 41
   Task 2 focused tests plus 96 skill-routing tests, 31 Task 3 focused tests plus
   57 exact regressions after review round 2, and all 116 tests in the exact
-  four-file Task 4 governance command. Production code remains unchanged.
+  four-file Task 4 governance command. Final integration verification passed
+  the expanded exact four-file command with 125 tests. Production code remains
+  unchanged by this child.
 - Tasks 1 through 5 add the organization and naming sections, warning-only
   layout rules and CLI modes, and the executable baseline. Repository
-  completion, feature-branch publication gates, merge/default-workflow
-  evidence, and the separate evidence ledger remain pending.
+  completion gates, feature-branch publication gate, merge, and exact default-
+  workflow gate passed. Only the separate evidence-ledger publication remains
+  pending.
 - For the plan publication commit, **Run Hetzner Supported Distributed
   Manifests** run `30328273358` failed. **Push on main** run `30328273160` and
   **Deploy Web + API** run `30328273405` passed. Publication is verified, but
@@ -758,8 +771,8 @@ approved or implemented by this revision.
 
   Commit `e0e6e7fd1e2ac6c280ae2930f411af76557ccc48` was pushed and PR #47
   exists at `https://github.com/intact-software-systems/ar-eye-hunter/pull/47`.
-  It is open and non-draft. This environment cannot update its metadata, so no
-  draft-PR metadata update is claimed.
+  At this milestone it was open and non-draft. This environment could not
+  update its metadata, so no draft-PR metadata update was claimed then.
 
 ### Task 2: Implement Conservative Repository Layout Rules
 
@@ -977,9 +990,9 @@ approved or implemented by this revision.
   ```
 
   Commits `db5f596ef8aa835e012ecfce219b5105ef24c43c` and
-  `21bf51790596d7b7b8df34d00d466beeb2877fc8` are pushed; the remote branch head
-  is `21bf51790596d7b7b8df34d00d466beeb2877fc8`. PR #47 follows the branch but
-  remains externally open and non-draft, and its metadata is unavailable here.
+  `21bf51790596d7b7b8df34d00d466beeb2877fc8` were pushed. At this milestone,
+  the latter was the remote branch head and PR #47 remained externally open
+  and non-draft; its metadata was unavailable here.
 
 ### Task 3: Add Opt-In Primary-Symbol And Vocabulary Rules
 
@@ -1153,9 +1166,9 @@ approved or implemented by this revision.
 
   Commits `eaa61e261f995a4c8b2e566d11466c35f90c9c33`,
   `d434c3bfcc98e943d1a3da4c90a566676b21d518`, and
-  `9f2c67a4a1e017ad0f0797d2db42bc83ede418bf` are pushed; the remote branch head
-  is `9f2c67a4a1e017ad0f0797d2db42bc83ede418bf`. PR #47 follows the branch and
-  remains open and non-draft; its metadata is unavailable here.
+  `9f2c67a4a1e017ad0f0797d2db42bc83ede418bf` were pushed. At this milestone,
+  the latter was the remote branch head and PR #47 remained open and non-draft;
+  its metadata was unavailable here.
 
 ### Task 4: Integrate Layout Modes Into The Warning-Only CLI
 
@@ -1313,10 +1326,10 @@ approved or implemented by this revision.
 
   Implementation commit `7df51579fa28505da4739707115a1ccaebba1c8d` and
   evidence-correction commit `1b8a3bf18fc67f7a893a6c7d9566497bedda99dc`
-  are pushed. The exact four-file focused command passed all 116 tests. Remote
-  head is `1b8a3bf18fc67f7a893a6c7d9566497bedda99dc`. PR #47 follows the
-  branch and remains externally open and non-draft; its metadata is unavailable
-  here. This later publication evidence completes Task 4 Step 9; neither Task 4
+  were pushed. The exact four-file focused command passed all 116 tests. At
+  this milestone, the evidence-correction commit was the remote head and PR #47
+  remained externally open and non-draft; its metadata was unavailable here.
+  This later publication evidence completes Task 4 Step 9; neither Task 4
   commit claims its own future publication.
 
 ### Task 5: Record The Executable Baseline And Ratchet Procedure
@@ -1408,9 +1421,9 @@ approved or implemented by this revision.
   both checker summaries.
 
   Commit `55469829af67eabdc692ab4e9823c0e26fabb40b` passed independent review
-  without findings and was pushed. The remote branch head is the same commit.
-  PR #47 follows the branch and remains open and non-draft; its metadata is
-  unavailable here. No merge was attempted.
+  without findings and was pushed. At this milestone it was the remote branch
+  head, PR #47 remained open and non-draft, and no merge was attempted; its
+  metadata was unavailable here.
 
 ### Task 6: Complete Verification And Publication Gates
 
@@ -1442,7 +1455,7 @@ tree is frozen without invalidating that tree.
   Branch Release Gate, merge, default-workflow, or ledger evidence. Those facts
   remain external and later under Steps 4 through 8.
 
-- [ ] **Step 1: Run formatting and diff checks**
+- [x] **Step 1: Run formatting and diff checks**
 
   Run:
 
@@ -1453,7 +1466,10 @@ tree is frozen without invalidating that tree.
 
   Expected: PASS.
 
-- [ ] **Step 2: Run the focused governance and checker suites**
+  Final feature-tree verification passed Prettier and both staged and
+  unstaged diff checks.
+
+- [x] **Step 2: Run the focused governance and checker suites**
 
   Run:
 
@@ -1463,7 +1479,10 @@ tree is frozen without invalidating that tree.
 
   Expected: PASS.
 
-- [ ] **Step 3: Run all checker modes**
+  Final integration verification passed all 125 tests across the exact four
+  files.
+
+- [x] **Step 3: Run all checker modes**
 
   Run:
 
@@ -1476,7 +1495,12 @@ tree is frozen without invalidating that tree.
 
   Expected: all commands exit `0`; warnings and counts are reported honestly.
 
-- [ ] **Step 4: Finalize and freeze the feature-branch evidence tree**
+  All four commands exited `0`. Final integration output reported 151 layout-
+  only findings, 497 layout-detail findings, 4,613 default findings, and 4,748
+  findings for the explicit repository-root scan. Every mode remained warning-
+  only.
+
+- [x] **Step 4: Finalize and freeze the feature-branch evidence tree**
 
   Before running repository completion gates, update all Task 1-5 checkboxes,
   executable baseline counts, and known focused results in this plan. Set its
@@ -1501,7 +1525,12 @@ tree is frozen without invalidating that tree.
   editing the now-frozen plan. Unrelated unstaged user files may remain visible
   in `git status` and remain excluded from the tree.
 
-- [ ] **Step 5: Run the repository completion gates on the frozen tree**
+  The immutable feature tree is
+  `47a885540b60765a1a0c95089902a0371e0a7f2b`. It contains the approved
+  governance/checker implementation and the reconciled main integration; this
+  later ledger does not relabel it as the ledger tree.
+
+- [x] **Step 5: Run the repository completion gates on the frozen tree**
 
   Run from the unchanged final working tree:
 
@@ -1515,7 +1544,12 @@ tree is frozen without invalidating that tree.
   to an in-scope file after a pass invalidates the tree and all local evidence;
   return to Step 4 and rerun every invalidated command.
 
-- [ ] **Step 6: Commit and publish exactly the frozen feature tree**
+  On the unchanged frozen integration tree, `npm run test:unit` passed 554 test
+  files with 4 skipped and 5,590 tests with 18 skipped; `npm run test:ci`
+  passed; and `npm run build` passed with only the known non-failing chunk-size
+  warnings.
+
+- [x] **Step 6: Commit and publish exactly the frozen feature tree**
 
   Run:
 
@@ -1532,7 +1566,13 @@ tree is frozen without invalidating that tree.
   its run identifier and conclusion to the same external envelope. Do not edit
   an in-scope file to copy this evidence into the frozen tree.
 
-- [ ] **Step 7: Record merge and default-workflow evidence externally**
+  The final non-default feature commit is
+  `a986931c250c2f1fa12daa3e8d44a74669b178ed`, whose tree is exactly
+  `47a885540b60765a1a0c95089902a0371e0a7f2b`. It was pushed non-forced.
+  Branch Release Gate run `30362667041` attempt 2 completed successfully for
+  that exact feature SHA.
+
+- [x] **Step 7: Record merge and default-workflow evidence externally**
 
   After human merge, resolve the exact resulting default-branch commit SHA; do
   not assume it equals the feature SHA. Append that SHA and the exact
@@ -1541,6 +1581,13 @@ tree is frozen without invalidating that tree.
   execution-protocol state `complete` only when that workflow is green for the
   resulting default SHA. A pending, skipped, failed, or older-SHA run leaves it
   incomplete. No post-merge plan edit is part of this decision.
+
+  Human-approved PR #47 merged as
+  `4f98f241aefe62c89288e29403ba7f1f23897625`. **Run Hetzner Supported
+  Distributed Manifests** run `30367222275` attempt 1 completed successfully
+  for that exact resulting default-branch SHA, so the implementation reached
+  state `complete`. PR #47 and its Mandatory Completion Handoff remain the
+  external publication envelope for the feature tree.
 
 - [ ] **Step 8: Publish the completed-child ledger as a separate evidence task**
 
@@ -1565,6 +1612,14 @@ tree is frozen without invalidating that tree.
   If a ledger gate fails, keep `ledger-published` pending and do not start the
   next child plan, but do not relabel the already verified implementation tree
   as the ledger tree.
+
+  The separately authorized ledger task started from exact `origin/main` SHA
+  `4f98f241aefe62c89288e29403ba7f1f23897625` on branch
+  `codex/repo-human-traceability-governance-checker-ledger`. This ledger changes
+  only the three traceability plans and records only evidence already known
+  before its freeze. Ledger publication remains `pending`; its future tree,
+  commit, PR, merge, and default-workflow evidence are intentionally absent
+  from this ledger tree.
 
 ## 7. Acceptance Checklist
 
@@ -1599,7 +1654,7 @@ tree is frozen without invalidating that tree.
 - [x] No strict script or CI gate exists.
 - [x] No production file moved, renamed, reformatted, or semantically changed.
 - [x] Initial default and detailed counts are recorded with the exact commit.
-- [ ] Focused, completion, publication, and remote-gate evidence is complete.
+- [x] Focused, completion, publication, and remote-gate evidence is complete.
 - [ ] Feature and evidence-ledger trees use separate PR/handoff publication
       envelopes, with no commit required to contain its own future evidence.
 
@@ -1623,19 +1678,20 @@ prevent.
 
 ## 9. Progress Record
 
-| Milestone                         | Status      | Evidence                                                                                                                                                                                                                                                                                    |
-| --------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Plan published                    | complete    | Direct `main` commit `4ec117db1e09e00f86ed8f66cbf8adab1cdeb4a9` adds this plan and the two reciprocal program plans.                                                                                                                                                                        |
-| Execution-readiness review        | approved    | Human approval on 2026-07-28 permits only the documented `@babel/parser` substitution for Tasks 2 and 3; approved blob `8ee56ac27189f9bed751fb6a95992830bda6be60` otherwise remains binding.                                                                                                |
-| Primary-principle prerequisite    | complete    | PR #45 merge `95065d769f585464b15059423057e151877fdb1a`; current focused verification passes 81 tests.                                                                                                                                                                                      |
-| Organization and naming wording   | complete    | Commit `e0e6e7fd1e2ac6c280ae2930f411af76557ccc48` is pushed; PR #47 is open/non-draft and its metadata remains unmodifiable here.                                                                                                                                                           |
-| Conservative layout rules         | complete    | Task 2 commits `db5f596ef8aa835e012ecfce219b5105ef24c43c` and `21bf51790596d7b7b8df34d00d466beeb2877fc8` are pushed; remote head is `21bf51790596d7b7b8df34d00d466beeb2877fc8`.                                                                                                             |
-| Opt-in detailed rules             | complete    | Task 3 commits `eaa61e261f995a4c8b2e566d11466c35f90c9c33`, `d434c3bfcc98e943d1a3da4c90a566676b21d518`, and `9f2c67a4a1e017ad0f0797d2db42bc83ede418bf` are pushed; 31 focused and 57 regression tests passed after review round 2.                                                           |
-| CLI and npm commands              | complete    | Task 4 implementation `7df51579fa28505da4739707115a1ccaebba1c8d` plus evidence correction `1b8a3bf18fc67f7a893a6c7d9566497bedda99dc` are pushed; Task 5 later advanced the remote branch through `55469829af67eabdc692ab4e9823c0e26fabb40b`.                                                |
-| Executable baseline               | recorded    | Measured against `1b8a3bf18fc67f7a893a6c7d9566497bedda99dc` and published in `55469829af67eabdc692ab4e9823c0e26fabb40b`: default counts match planning exactly; detailed opt-in counts are `344`, `2`, and `0`; complete checker exits `0`, while strict remains unavailable with exit `1`. |
-| Focused child-plan verification   | complete    | Known evidence includes the 81-test prerequisite baseline, Task 2's 41 focused and 96 skill-routing tests, Task 3's 31 focused and 57 exact regression tests after review round 2, and the Task 4 exact four-file suite's 116 tests.                                                        |
-| Completion gates                  | pending     | `npm run test:unit`, `npm run test:ci`, and `npm run build` were not run for child implementation.                                                                                                                                                                                          |
-| Child implementation PR and gates | implemented | Task 5 commit `55469829af67eabdc692ab4e9823c0e26fabb40b` passed clean independent review and is the pushed remote head. PR #47 follows the branch and remains open/non-draft with unavailable metadata; final local and remote gates remain pending.                                        |
+| Milestone                         | Status   | Evidence                                                                                                                                                                                                                                                                                    |
+| --------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Plan published                    | complete | Direct `main` commit `4ec117db1e09e00f86ed8f66cbf8adab1cdeb4a9` adds this plan and the two reciprocal program plans.                                                                                                                                                                        |
+| Execution-readiness review        | approved | Human approval on 2026-07-28 permits only the documented `@babel/parser` substitution for Tasks 2 and 3; approved blob `8ee56ac27189f9bed751fb6a95992830bda6be60` otherwise remains binding.                                                                                                |
+| Primary-principle prerequisite    | complete | PR #45 merge `95065d769f585464b15059423057e151877fdb1a`; current focused verification passes 81 tests.                                                                                                                                                                                      |
+| Organization and naming wording   | complete | Commit `e0e6e7fd1e2ac6c280ae2930f411af76557ccc48` was published on the feature branch and is included in final feature tree `47a885540b60765a1a0c95089902a0371e0a7f2b` and merged PR #47.                                                                                                   |
+| Conservative layout rules         | complete | Task 2 commits `db5f596ef8aa835e012ecfce219b5105ef24c43c` and `21bf51790596d7b7b8df34d00d466beeb2877fc8` were pushed; the latter was the milestone remote head.                                                                                                                             |
+| Opt-in detailed rules             | complete | Task 3 commits `eaa61e261f995a4c8b2e566d11466c35f90c9c33`, `d434c3bfcc98e943d1a3da4c90a566676b21d518`, and `9f2c67a4a1e017ad0f0797d2db42bc83ede418bf` are pushed; 31 focused and 57 regression tests passed after review round 2.                                                           |
+| CLI and npm commands              | complete | Task 4 implementation `7df51579fa28505da4739707115a1ccaebba1c8d` plus evidence correction `1b8a3bf18fc67f7a893a6c7d9566497bedda99dc` are pushed; Task 5 later advanced the remote branch through `55469829af67eabdc692ab4e9823c0e26fabb40b`.                                                |
+| Executable baseline               | recorded | Measured against `1b8a3bf18fc67f7a893a6c7d9566497bedda99dc` and published in `55469829af67eabdc692ab4e9823c0e26fabb40b`: default counts match planning exactly; detailed opt-in counts are `344`, `2`, and `0`; complete checker exits `0`, while strict remains unavailable with exit `1`. |
+| Focused child-plan verification   | complete | Known evidence includes the 81-test prerequisite baseline, Task 2's 41 focused and 96 skill-routing tests, Task 3's 31 focused and 57 exact regression tests after review round 2, the Task 4 exact suite's 116 tests, and final integration's exact four-file suite with 125 tests.        |
+| Completion gates                  | complete | On immutable feature tree `47a885540b60765a1a0c95089902a0371e0a7f2b`, `npm run test:unit` passed 554 files with 4 skipped and 5,590 tests with 18 skipped; `npm run test:ci` and `npm run build` passed.                                                                                    |
+| Child implementation PR and gates | complete | Final feature SHA `a986931c250c2f1fa12daa3e8d44a74669b178ed` passed Branch Release Gate `30362667041` attempt 2. Human-approved PR #47 merged as `4f98f241aefe62c89288e29403ba7f1f23897625`; default workflow `30367222275` attempt 1 passed for that exact SHA.                            |
+| Evidence-ledger publication       | pending  | This separate three-plan ledger starts from exact completed-implementation `main` SHA `4f98f241aefe62c89288e29403ba7f1f23897625`. Its future tree, commit, PR, merge, and workflow evidence remains external and pending.                                                                   |
 
 ## 10. Decisions Fixed By This Draft
 

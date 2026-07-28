@@ -64,8 +64,8 @@ Date: 2026-07-28
 Status: Reviewed and approved for child-plan drafting. The program documents are
 published on `main`; production implementation has not started. The governance
 and checker child was approved at blob
-`8ee56ac27189f9bed751fb6a95992830bda6be60` and is implemented with final and
-publication gates pending.
+`8ee56ac27189f9bed751fb6a95992830bda6be60`. Its implementation is complete;
+the separate evidence-ledger publication remains pending.
 
 Program drafting, approval, execution, publication, and human handoffs follow
 the [Repository Human Traceability Program Execution Plan](repo-human-traceability-program-execution-plan.md).
@@ -87,7 +87,7 @@ Approved execution decision on 2026-07-28:
 
 Publication and progress reconciliation on 2026-07-28:
 
-- GitHub `main`, local `main`, and local `origin/main` all resolve to
+- The initial direct program-document publication resolved to
   `4ec117db1e09e00f86ed8f66cbf8adab1cdeb4a9`
   (`docs: add human traceability execution plans`).
 - That commit has tree `ea05be8881303557ec9ec8f7951bbef76a4922fc`,
@@ -111,12 +111,16 @@ Publication and progress reconciliation on 2026-07-28:
   `deploy/intact-software-systems/relic-hunters`, and
   `deploy/intact-software-systems/rallar-server`. This documentation-only
   reconciliation records but does not diagnose those deployment failures.
-- Wave 0 Tasks 1 through 5 are implemented, independently reviewed, and
-  published through remote branch head
-  `55469829af67eabdc692ab4e9823c0e26fabb40b` and PR #47, which remains open
-  and unmerged. The exact Task 4 focused command passed all 116 tests. Task 5
-  records the executable baseline below; final local and publication gates
-  remain pending.
+- Wave 0 Tasks 1 through 5 were implemented and published through
+  `55469829af67eabdc692ab4e9823c0e26fabb40b`. Final integration produced
+  immutable feature tree `47a885540b60765a1a0c95089902a0371e0a7f2b` and
+  feature SHA `a986931c250c2f1fa12daa3e8d44a74669b178ed`. Branch Release
+  Gate run `30362667041` attempt 2 passed for that exact feature SHA. Human-
+  approved PR #47 merged as
+  `4f98f241aefe62c89288e29403ba7f1f23897625`, and **Run Hetzner
+  Supported Distributed Manifests** run `30367222275` attempt 1 passed for
+  that exact resulting `main` SHA. The governance/checker implementation is
+  therefore `complete`; its separate evidence-ledger publication is pending.
 
 ## 1. Why This Is A Program Instead Of One Refactor
 
@@ -909,10 +913,10 @@ to write, review, approve, execute, and hand off these child plans in order:
 
 - [ ] [Repository human traceability governance and checker](repo-human-traceability-governance-and-checker-plan.md)
   - state: approved at blob
-    `8ee56ac27189f9bed751fb6a95992830bda6be60` and implemented; Tasks 1 through
-    5 are reviewed and published through
-    `55469829af67eabdc692ab4e9823c0e26fabb40b`, while final and publication
-    gates remain pending;
+    `8ee56ac27189f9bed751fb6a95992830bda6be60`; implementation `complete` at
+    feature SHA `a986931c250c2f1fa12daa3e8d44a74669b178ed`, merged `main`
+    SHA `4f98f241aefe62c89288e29403ba7f1f23897625`, with separate evidence-
+    ledger publication pending;
   - exact code-style wording;
   - warning-only layout rule implementation and fixtures;
   - initial measured baseline.
@@ -971,7 +975,7 @@ Human review has approved all master-plan execution choices:
    two pull requests by default. Smaller private migrations may use one pull
    request with clearly separated structure and code-standard commit series.
 
-The next planning artifact is
-`plans/repo-human-traceability-governance-and-checker-plan.md`; production code
-does not move until that child plan and its exact warning-only rules are
-reviewed and approved.
+The next authorized program step is the separate evidence-ledger publication
+for `plans/repo-human-traceability-governance-and-checker-plan.md`. Production
+code does not move, and the browser boundary child does not begin, until that
+ledger independently reaches `ledger-published`.
