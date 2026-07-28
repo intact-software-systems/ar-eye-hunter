@@ -1,5 +1,4 @@
 import path from 'node:path';
-
 import { parse } from '@babel/parser';
 
 const typeScriptSuffixPattern = /(?:\.d)?\.(?:ts|tsx|mts|cts)$/u;
@@ -341,22 +340,27 @@ function walkAst(node, visit) {
     if (visit(node) !== false) Object.values(node).forEach((value) => walkAst(value, visit));
   }
 }
+const isInitExport = (item) => item.local?.name === 'init' && item.exported?.name === 'init';
 function hasExportedInitFunction(program) {
-  return program.body.some((statement) => {
-    const declaration = statement.type === 'ExportNamedDeclaration' ? statement.declaration : null;
-    if (declaration?.type === 'FunctionDeclaration') {
-      return declaration.id?.name === 'init';
-    }
-    return (
-      declaration?.type === 'VariableDeclaration' &&
+  const hasLocalCallableInit = program.body.some(isCallableInitDeclaration);
+  return program.body.some(
+    (statement) =>
+      statement.type === 'ExportNamedDeclaration' &&
+      (isCallableInitDeclaration(statement.declaration) ||
+        (hasLocalCallableInit &&
+          statement.source === null &&
+          statement.specifiers.some(isInitExport))),
+  );
+}
+function isCallableInitDeclaration(declaration) {
+  return (
+    (declaration?.type === 'FunctionDeclaration' && declaration.id?.name === 'init') ||
+    (declaration?.type === 'VariableDeclaration' &&
       declaration.declarations.some(
-        (item) =>
-          item.id.type === 'Identifier' &&
-          item.id.name === 'init' &&
-          functionExpressionTypes.has(item.init?.type),
-      )
-    );
-  });
+        ({ id, init }) =>
+          id.type === 'Identifier' && id.name === 'init' && functionExpressionTypes.has(init?.type),
+      ))
+  );
 }
 function parseProgram(source) {
   return parse(source.raw, {
@@ -373,9 +377,8 @@ function getFeaturePrefix(file, directoryTokens) {
 const hasRoomToken = (name) => /(?:^|-)(?:room|rooms)(?:-|$)/u.test(toKebabCase(name));
 const toRelativeFile = (repoRoot, file) => path.relative(repoRoot, file).split(path.sep).join('/');
 const toTypeScriptStem = (fileName) => fileName.replace(typeScriptSuffixPattern, '');
-function sampleFileNames(fileNames) {
-  return [...fileNames].sort().slice(0, layoutLimits.displayedFileSampleCount).join(', ');
-}
+const sampleFileNames = (fileNames) =>
+  [...fileNames].sort().slice(0, layoutLimits.displayedFileSampleCount).join(', ');
 function groupBy(values, toKey) {
   const valuesByKey = new Map();
   for (const value of values) {
@@ -389,11 +392,8 @@ function groupBy(values, toKey) {
 function warningFinding(file, ruleId, message) {
   return { file, ruleId, affectedCount: 1, message, kind: 'warn' };
 }
-function compareFindings(left, right) {
-  return (
-    compareCodeUnits(left.file, right.file) ||
-    compareCodeUnits(left.ruleId, right.ruleId) ||
-    compareCodeUnits(left.message, right.message)
-  );
-}
+const compareFindings = (left, right) =>
+  compareCodeUnits(left.file, right.file) ||
+  compareCodeUnits(left.ruleId, right.ruleId) ||
+  compareCodeUnits(left.message, right.message);
 const compareCodeUnits = (left, right) => (left === right ? 0 : left < right ? -1 : 1);

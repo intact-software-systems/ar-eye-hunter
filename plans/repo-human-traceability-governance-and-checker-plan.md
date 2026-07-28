@@ -32,6 +32,18 @@ in-process parser. TypeScript remains `7.0.2`; this changes neither
 other requirement in approved plan blob
 `8ee56ac27189f9bed751fb6a95992830bda6be60` unchanged.
 
+**2026-07-28 final-review amendment:** The human authorized one consolidated
+correction before the replacement feature-tree freeze. Tracked edits are
+limited to `scripts/repo-style-check/layout-rules.mjs`, its existing focused
+test, and the three linked traceability plans. The correction resolves local
+top-level callable `init` declarations exported through `export { init }`,
+retains every existing layout fixture and assertion while reducing that test
+file to at most 400 physical lines, and reconciles only the already-known
+approval and Tasks 1 through 5 publication state. The ignored Task 6 report may
+receive only its 16-to-15 Prettier file-count typo correction. This amendment
+does not authorize production, dependency, lockfile, workflow, strict-mode, or
+future-evidence changes. Repository completion gates wait for scoped re-review.
+
 ## Global Constraints
 
 - This plan implements Wave 0 of the
@@ -1330,14 +1342,17 @@ approved or implemented by this revision.
 
 **Files:**
 
-- Modify before the feature-tree freeze:
-  `plans/repo-human-traceability-governance-and-checker-plan.md`
-- Modify only on a later evidence-ledger branch:
-  `plans/repo-human-traceability-refactoring-program-plan.md`
-- Modify only on a later evidence-ledger branch:
-  `plans/repo-human-traceability-program-execution-plan.md`
-- Modify only on a later evidence-ledger branch:
-  `plans/repo-human-traceability-governance-and-checker-plan.md`
+- Modify during the authorized correction before the replacement feature-tree
+  freeze:
+  `scripts/repo-style-check/layout-rules.mjs`,
+  `packages/tests/repo/repo-style-layout-rules.test.ts`, and the three linked
+  traceability plans. Plan edits in this phase record only pre-freeze-known
+  approval, implementation, review, and remote Task 1 through 5 publication
+  state.
+- Modify only on a later evidence-ledger branch for future evidence: the three
+  traceability plans. That later phase records the replacement frozen tree,
+  final feature SHA, Branch Release Gate, PR, resulting default SHA, successful
+  default workflow, and ledger state.
 
 The pull-request body and Mandatory Completion Handoff are the mutable
 publication envelope. They are not repository files and may be updated after a
@@ -1349,6 +1364,9 @@ tree is frozen without invalidating that tree.
 - Produces: one immutable feature tree, its external publication envelope, and
   one independently gated later ledger publication without self-referential
   evidence edits.
+- The correction produces no tracked replacement-tree, final feature-SHA,
+  Branch Release Gate, merge, default-workflow, or ledger evidence. Those facts
+  remain external and later under Steps 4 through 8.
 
 - [ ] **Step 1: Run formatting and diff checks**
 
@@ -1539,11 +1557,11 @@ prevent.
 | Organization and naming wording   | complete    | Commit `e0e6e7fd1e2ac6c280ae2930f411af76557ccc48` is pushed; PR #47 is open/non-draft and its metadata remains unmodifiable here.                                                                                                                                                           |
 | Conservative layout rules         | complete    | Task 2 commits `db5f596ef8aa835e012ecfce219b5105ef24c43c` and `21bf51790596d7b7b8df34d00d466beeb2877fc8` are pushed; remote head is `21bf51790596d7b7b8df34d00d466beeb2877fc8`.                                                                                                             |
 | Opt-in detailed rules             | complete    | Task 3 commits `eaa61e261f995a4c8b2e566d11466c35f90c9c33`, `d434c3bfcc98e943d1a3da4c90a566676b21d518`, and `9f2c67a4a1e017ad0f0797d2db42bc83ede418bf` are pushed; 31 focused and 57 regression tests passed after review round 2.                                                           |
-| CLI and npm commands              | complete    | Task 4 implementation `7df51579fa28505da4739707115a1ccaebba1c8d` plus evidence correction `1b8a3bf18fc67f7a893a6c7d9566497bedda99dc` are pushed; the remote head is `1b8a3bf18fc67f7a893a6c7d9566497bedda99dc`.                                                                             |
+| CLI and npm commands              | complete    | Task 4 implementation `7df51579fa28505da4739707115a1ccaebba1c8d` plus evidence correction `1b8a3bf18fc67f7a893a6c7d9566497bedda99dc` are pushed; Task 5 later advanced the remote branch through `55469829af67eabdc692ab4e9823c0e26fabb40b`.                                                |
 | Executable baseline               | recorded    | Measured against `1b8a3bf18fc67f7a893a6c7d9566497bedda99dc` and published in `55469829af67eabdc692ab4e9823c0e26fabb40b`: default counts match planning exactly; detailed opt-in counts are `344`, `2`, and `0`; complete checker exits `0`, while strict remains unavailable with exit `1`. |
 | Focused child-plan verification   | complete    | Known evidence includes the 81-test prerequisite baseline, Task 2's 41 focused and 96 skill-routing tests, Task 3's 31 focused and 57 exact regression tests after review round 2, and the Task 4 exact four-file suite's 116 tests.                                                        |
 | Completion gates                  | pending     | `npm run test:unit`, `npm run test:ci`, and `npm run build` were not run for child implementation.                                                                                                                                                                                          |
-| Child implementation PR and gates | in progress | Task 5 commit `55469829af67eabdc692ab4e9823c0e26fabb40b` passed clean independent review and is the pushed remote head. PR #47 follows the branch and remains open/non-draft with unavailable metadata; final local and remote gates remain pending.                                        |
+| Child implementation PR and gates | implemented | Task 5 commit `55469829af67eabdc692ab4e9823c0e26fabb40b` passed clean independent review and is the pushed remote head. PR #47 follows the branch and remains open/non-draft with unavailable metadata; final local and remote gates remain pending.                                        |
 
 ## 10. Decisions Fixed By This Draft
 

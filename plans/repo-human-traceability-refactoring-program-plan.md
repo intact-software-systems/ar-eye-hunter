@@ -63,8 +63,9 @@ Date: 2026-07-28
 
 Status: Reviewed and approved for child-plan drafting. The program documents are
 published on `main`; production implementation has not started. The governance
-and checker child is approved and in progress on its non-default implementation
-branch.
+and checker child was approved at blob
+`8ee56ac27189f9bed751fb6a95992830bda6be60` and is implemented with final and
+publication gates pending.
 
 Program drafting, approval, execution, publication, and human handoffs follow
 the [Repository Human Traceability Program Execution Plan](repo-human-traceability-program-execution-plan.md).
@@ -110,12 +111,12 @@ Publication and progress reconciliation on 2026-07-28:
   `deploy/intact-software-systems/relic-hunters`, and
   `deploy/intact-software-systems/rallar-server`. This documentation-only
   reconciliation records but does not diagnose those deployment failures.
-- Wave 0 governance wording and checker implementation are published through
-  remote branch head `1b8a3bf18fc67f7a893a6c7d9566497bedda99dc` and PR #47,
-  which remains externally open and non-draft with unavailable metadata. The
-  exact Task 4 focused command passed all 116 tests. Task 5 records the
-  executable baseline below, while its publication and all completion and
-  remote gates remain pending.
+- Wave 0 Tasks 1 through 5 are implemented, independently reviewed, and
+  published through remote branch head
+  `55469829af67eabdc692ab4e9823c0e26fabb40b` and PR #47, which remains open
+  and unmerged. The exact Task 4 focused command passed all 116 tests. Task 5
+  records the executable baseline below; final local and publication gates
+  remain pending.
 
 ## 1. Why This Is A Program Instead Of One Refactor
 
@@ -642,8 +643,9 @@ not satisfy any checkbox in this Wave 0 implementation list.
       filenames, and files over 400 lines.
 - [x] Confirm the checker remains non-blocking and strict mode remains rejected.
 
-The executable baseline at
-`1b8a3bf18fc67f7a893a6c7d9566497bedda99dc` records 16 dense directories,
+The executable baseline measured at
+`1b8a3bf18fc67f7a893a6c7d9566497bedda99dc` and published through
+`55469829af67eabdc692ab4e9823c0e26fabb40b` records 16 dense directories,
 22 conservative prefix clusters across 8 directories, 422 filename-style files
 across 90 directories, 15 generic filenames, 11 generic route registrations,
 zero unapproved `mod.ts` files, and 215 files over 400 physical lines. The
@@ -888,9 +890,11 @@ After this master plan is approved, use the
 to write, review, approve, execute, and hand off these child plans in order:
 
 - [ ] [Repository human traceability governance and checker](repo-human-traceability-governance-and-checker-plan.md)
-  - state: approved and in progress; Tasks 1 through 4 are published on the
-    implementation branch, Task 5 baseline evidence is recorded locally, and
-    completion and remote gates remain pending;
+  - state: approved at blob
+    `8ee56ac27189f9bed751fb6a95992830bda6be60` and implemented; Tasks 1 through
+    5 are reviewed and published through
+    `55469829af67eabdc692ab4e9823c0e26fabb40b`, while final and publication
+    gates remain pending;
   - exact code-style wording;
   - warning-only layout rule implementation and fixtures;
   - initial measured baseline.

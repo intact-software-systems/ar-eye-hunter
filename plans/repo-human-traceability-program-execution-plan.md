@@ -57,9 +57,11 @@ Codex skills, npm validation commands, and GitHub Actions completion gates.
 
 Date: 2026-07-28
 
-Status: Published on `main` for human review. This document authorizes no
-child-plan implementation. The governance/checker child has been revised for
-execution readiness and remains unapproved pending human review.
+Status: Published on `main`. This document itself authorizes no child-plan
+implementation. The governance/checker child was approved at blob
+`8ee56ac27189f9bed751fb6a95992830bda6be60`; Tasks 1 through 5 are implemented,
+reviewed, and published through `55469829af67eabdc692ab4e9823c0e26fabb40b`.
+The child is implemented with final and publication gates pending.
 
 ## 1. Document Roles And Plan Graph
 
@@ -69,7 +71,7 @@ The documents deliberately have different responsibilities:
 | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------- |
 | [Master refactoring program](repo-human-traceability-refactoring-program-plan.md)           | Defines why the work exists, target organization, migration waves, shared entry and exit criteria, and program-level progress. | Published; approved for child-plan drafting.              |
 | This execution plan                                                                         | Defines approval boundaries, reusable prompts, publication cadence, and completion handoffs.                                   | Published; human review remains pending.                  |
-| [Governance and checker child plan](repo-human-traceability-governance-and-checker-plan.md) | Implements Wave 0 governance, warning-only checks, fixtures, and measured baselines without production movement.               | Published; revised and awaiting approval.                 |
+| [Governance and checker child plan](repo-human-traceability-governance-and-checker-plan.md) | Implements Wave 0 governance, warning-only checks, fixtures, and measured baselines without production movement.               | Implemented; final and publication gates remain pending.  |
 | `plans/rallar-room-group-state-translation-boundary-plan.md`                                | Will define the browser `room` to authoritative `group-state` translation boundary and consumer compatibility.                 | Planned; must be drafted after Wave 0.                    |
 | `plans/rallar-group-state-server-structure-plan.md`                                         | Will define authoritative server group-state ownership, moves, AppInbox flow, persistence, presence, and mirrored tests.       | Planned; must be drafted after the browser boundary plan. |
 | `plans/api-v1-group-state-route-structure-plan.md`                                          | Will define API-v1 group-state routes, defaults, translation, composition, OpenAPI, and black-box compatibility.               | Planned; must be drafted after the server structure plan. |
@@ -628,7 +630,7 @@ not start another child plan.
 | Program-document default workflow      | failed         | **Run Hetzner Supported Distributed Manifests** run `30328273358` failed for exact SHA `4ec117db1e09e00f86ed8f66cbf8adab1cdeb4a9`.                            |
 | Program-document deployment statuses   | failed         | GitHub reports failed `rallar-bb-server`, `relic-hunters`, and `rallar-server` deployment contexts; this review did not diagnose them.                        |
 | Governance execution-readiness review  | revised        | Section 5.1 now fixes the load-once TypeScript projection, one-finding-per-prefix model, exact browser import classifier, and non-circular evidence contract. |
-| Governance child approved              | pending        | The revised plan remains unapproved and requires explicit human approval of this exact revision.                                                              |
-| Governance child complete              | pending        | No checker implementation is authorized; all implementation and completion gates remain pending.                                                              |
+| Governance child approved              | complete       | Human approval binds plan blob `8ee56ac27189f9bed751fb6a95992830bda6be60`, subject only to its recorded narrow amendments.                                    |
+| Governance child implementation        | implemented    | Tasks 1 through 5 are implemented, reviewed, and published through `55469829af67eabdc692ab4e9823c0e26fabb40b`; final and publication gates remain pending.    |
 | Pilot child plans drafted and executed | pending        | They intentionally do not exist yet.                                                                                                                          |
 | Pilot evaluated                        | pending        | Requires all three pilot children to be complete.                                                                                                             |
