@@ -1,855 +1,734 @@
 # Rallar REST Snapshot Read Convergence Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Also use the repo-local `rallar-platform`, `rallar-realtime`, `rallar-code-writing`, and `rallar-testing` skills for every task that touches their surfaces. Do not begin implementation until the human review gate in Task 0 is approved.
-
-**Goal:** Give client and group point-snapshot reads an explicit, testable convergence contract: a request without `minStateRevision` reads durable database state, a request with `minStateRevision` may use an eligible process cache only when it is at least that revision, and the Rallar browser periodically omits the token so normal use converges through authoritative reads even if distributed cache observation is delayed or missed.
-
-**Architecture:** Keep `runtime_state_store` as the current durable source while separating four concerns that are presently easy to conflate: snapshot assembly, monotonic observation, freshness, and authorization. Add one shared REST snapshot-read service used symmetrically by client and group cached services. Point reads without a token go directly to the durable repository and then observe the result into the process cache. Point reads with a token may return a presence-eligible cache entry whose entity-local `stateRevision` is greater than or equal to the requested minimum; otherwise they read durable state, observe it, and either return a qualifying snapshot or a typed retryable error. Collection and presence routes remain durable because one scalar token cannot describe several independently revisioned entities. Strict group authorization always evaluates current durable group policy, even when a caller supplies a minimum revision. In the browser, scoped point-read counters use the latest locally observed revision on ordinary reads and force a successful tokenless read every fifth through tenth point read; top-level collection refreshes are already tokenless durable reads.
-
-**Tech Stack:** TypeScript, Deno, Node/npm workspaces, Hono, Vitest, PostgreSQL, PGlite, OpenAPI YAML, Rallar browser facades, runtime-state repositories, Rallar black-box recipes, GitHub Actions.
-
-## Global Constraints
-
-- This plan is a reviewed implementation proposal. Only this plan file is created before approval; application, package, documentation, skill, test, and CI changes start after Task 0 is approved.
-- Preserve the current public meaning of `stateRevision`: it is a monotonic storage observation for one scoped client or group snapshot, not a workspace-global sequence and not interchangeable with `snapshotVersion`, `presenceVersion`, or topology `version`.
-- Apply `minStateRevision` only to the two point snapshot endpoints:
-  - `GET /api/state/apps/:applicationId/workspaces/:workspaceId/clients/:principalId`
-  - `GET /api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId`
-- Do not put one `minStateRevision` on collection routes. A list contains independently revisioned entities, so one scalar cannot express a minimum for the whole result without inventing a new workspace revision domain.
-- `minStateRevision` means “do not return a snapshot older than this entity-local revision.” It does not mean “return the newest snapshot,” “wait forever,” or “the cache is globally current.”
-- Accept only a decimal, non-negative JavaScript safe integer. Reject empty, repeated, signed, fractional, exponential, `NaN`, infinite, negative, or greater-than-`Number.MAX_SAFE_INTEGER` values with HTTP `400` and code `invalid-min-state-revision`.
-- A tokenless point read always invokes the durable snapshot repository. It may not be satisfied by a TTL cache or a durable-revision head probe followed by cache lookup.
-- A tokened point read may return a cache snapshot only when the existing client/group presence-freshness predicate accepts it and its `stateRevision >= minStateRevision`.
-- If no eligible cache entry exists, read durable state. Return `404` when the entity does not exist. If durable state exists but is still below the requested minimum, return HTTP `503`, code `state-snapshot-minimum-revision-unavailable`, and `Retry-After: 1`; never return a snapshot below the requested minimum.
-- If a tokenless durable read is below a newer locally observed cache revision, fail closed with HTTP `503`, code `state-snapshot-authoritative-regression`; do not regress the caller or overwrite the process cache. This should be impossible when the repository reads the authoritative primary and is therefore an operational signal for replica lag, scope confusion, or a persistence defect.
-- Equal `stateRevision` with different content remains an invariant conflict. Preserve `StateSnapshotRevisionConflictError`; do not hide or merge it.
-- Server cache observation and browser cache observation stay monotonic: insert or advance newer data, ignore older data, accept exact duplicates, and reject equal-revision/different-content conflicts.
-- Presence freshness is not completeness. A snapshot with no active sessions can pass the time-based predicate while a new session exists elsewhere. The revision token and periodic durable read provide convergence; do not describe the predicate as proof that no session is missing.
-- Strict authorization, capacity, lifecycle, ownership, and governance decisions never use a caller's stale-tolerant read preference. In particular, group policy is evaluated from a durable current snapshot. A `minStateRevision` cache hit is a presentation/read optimization, not authority.
-- When strict group authorization already required a durable group snapshot, return that durable snapshot instead of doing a second cache lookup. This intentionally favors security and avoids wasting the database read.
-- Mutation result hydration introduced by the current API-v1 fix remains as a latency optimization. Correctness must no longer depend on the receiving node, another node, or every future Node C observing that result.
-- Browser authoritative probes are request-count based, not timer based: after a successful authoritative point read, choose an inclusive interval from 5 through 10; perform ordinary tokened reads until the chosen interval's next probe slot, then omit the query parameter. Transport failures, `5xx`, authorization failures, and invalid requests do not advance or reset the successful-read counter. An authoritative tokenless `404` is the one exception: it is a successful observation of absence, so it evicts the scoped entry and resets the cadence before the browser rethrows the HTTP error.
-- Keep browser probe state per fully scoped entity key: entity kind, `applicationId`, `workspaceId`, and `principalId` or `groupId`. Never share a counter between workspaces or entities.
-- Top-level `rallar.rooms.refresh()` and `rallar.people.refresh()` continue to use collection routes and therefore always read durable state. The new 5–10 call cadence applies initially to `rallar.rooms.room(ref).refresh()`. Low-level point snapshot functions expose `minStateRevision` but remain stateless; callers that want automatic cadence must own or reuse a `StateSnapshotReadProbePolicy` instead of relying on hidden module-global state.
-- An authoritative caller can always omit `minStateRevision` explicitly. Do not add a second query flag such as `force`, `fresh`, `bypassCache`, or `authoritative` to the REST API.
-- Add `Cache-Control: private, no-store`, `Rallar-State-Source: durable|cache`, and `Rallar-State-Revision: <integer>` to successful point snapshot responses. The source header is diagnostic and testable; it must describe the actual selected response.
-- Expose `Rallar-State-Source`, `Rallar-State-Revision`, `Retry-After`, and `Server-Timing` through API-v1 CORS. Do not expose authorization credentials or cache keys.
-- Record read-source, requested minimum, returned revision, fallback reason, entity kind, scope, and duration through `RallarTimingSink`. Timing failures must never affect the read.
-- Coordinate with `plans/api-v1-convergent-database-writing-remediation-plan.md`. This plan does not introduce dedicated `client_latest_snapshot` or `group_latest_snapshot` tables, split group/presence causal revisions, or a durable mutation outbox ahead of that plan.
-- Preserve existing public exports and import paths. Public browser additions are additive.
-- Follow TDD for each behavior: add one focused failing test, run it and confirm the expected failure, implement the smallest passing behavior, then run the focused regression set.
-- Preserve unrelated working-tree changes. Stage only files named by the active task.
-- Keep generated black-box artifacts under `.artifacts/` and disposable performance or diagnostic output under `tmp/`; do not commit them.
-
----
-
-## Current-State Findings And Bug Classification
-
-| ID | Current evidence | Finding | Plan outcome |
-| --- | --- | --- | --- |
-| READ-01 | `ClientStateSnapshotReadThroughCache.findOrLoadByRef(...)` and `GroupStateSnapshotReadThroughCache.findOrLoadByRef(...)` already accept `minStateRevision`. | The internal cache primitive can enforce an at-least revision, but REST does not expose the contract and an omitted minimum currently permits a warm cache. | Add a REST-specific read path instead of changing all internal read-through semantics. |
-| READ-02 | `CachedGroupStateService.readCurrentSnapshot(...)` reads the durable group revision and then asks the cache for at least that revision. | It prevents a known stale group cache but still performs a database read on every call, and it does not satisfy the requested tokenless “read the full durable snapshot” rule. | Keep it for internal authorization compatibility, but make tokenless REST reads call `durable.readSnapshot(...)` directly. |
-| READ-03 | `CachedClientStateService.readSnapshot(...)` uses cache read-through and has no `readCurrentSnapshot` parity method. | Client and group REST behavior is asymmetric. | Add the same REST snapshot-read method to both cached services. |
-| READ-04 | Group cache presence freshness validates only sessions already present in the snapshot. | Empty or incomplete session lists can appear fresh because the cache cannot know that a new remote session is missing. | State this limit explicitly; use revision floors plus periodic durable probes for anti-entropy. |
-| READ-05 | The failing API-v1 cluster run returned a successful remote mutation revision, then the receiving node's immediate cached GET returned an older revision. | This was a real contract bug if the system promises monotonic/read-your-write behavior. Calling it eventual consistency does not make returning below an acknowledged revision safe. | Keep mutation-result hydration, add an explicit at-least token, and make tokenless reads durable so correctness does not depend on hydration. |
-| READ-06 | The merged route hardening test proves receiving-node hydration. | Hydration fixes Node A after a mutation processed elsewhere, but does not prove an unrelated Node C observed the mutation. | Reclassify this as an optimization test and add three-logical-node plus multi-process convergence tests. |
-| READ-07 | `runtime_state_store` stores group aggregate, members, and presence sessions under separate namespaces and assembles a snapshot with an aggregate-before/children/aggregate-after stable-read loop. | A group snapshot is a self-consistent observation of several rows, not a single physical snapshot row and not guaranteed to remain latest after it is assembled. | Document the snapshot mental model and keep stable assembly as the durable read primitive. |
-| READ-08 | Browser repositories already decide `inserted`, `advanced`, `duplicate`, or `stale` by `stateRevision`. | The browser has the monotonic observation half of convergence but no explicit periodic REST anti-entropy policy. | Add a reusable scoped probe-cadence controller and wire point room refresh through it. |
-| READ-09 | State-sync WS and PostgreSQL wakeups improve delivery but are not a lossless, cursor-replayed invalidation stream for every snapshot cache. | Cache warmth is opportunistic. Missed publication or a newly started process can remain behind until TTL/read-through activity. | Treat durable reads as the correctness backstop; retain durable invalidation/replay as a follow-up proposal. |
-| READ-10 | `apps/api-v1/resources/api-v1-openapi.yaml` omits required `stateRevision` properties from `ClientSnapshot` and `GroupSnapshot`. | Swagger cannot explain or exercise the new causal read contract correctly until the schemas are aligned. | Add the query parameter, response/error/header contracts, and required snapshot fields in the same API change. |
-| READ-11 | Group point reads authorize against the snapshot selected for the response. | If the selected snapshot is intentionally stale, a later ban/removal could be missed. | Read strict auth context first and force a durable group snapshot whenever group policy is evaluated. |
-| READ-12 | `rallar.rooms.room(ref).refresh()` currently delegates to the full collection refresh. | A scoped session refresh cannot benefit from a point-read token and needlessly reads every group/client snapshot. | Change only the room-session refresh to the point group route; keep top-level collection refresh authoritative. |
-
-### Current runtime-state key and update map
-
-All rows use `(store_namespace, store_key)` as the physical primary key. `RuntimeStateJsonStore` builds keys as encoded segments such as `app=<applicationId>:ws=<workspaceId>`. A missing workspace is currently encoded from `_`, which is why the target key proposal requires a mandatory typed workspace instead of preserving that sentinel.
-
-There is no physical `group_snapshot` table in the current design. `GroupSnapshot` is assembled on read from mutable latest-value rows in the three `group-state:*` namespaces. `group_state_events` is the separate append-oriented history; it is not the source returned by the normal snapshot GET.
-
-| Namespace | Key suffix after scope | Updated today when |
-| --- | --- | --- |
-| `client-state:principals` | `principal=<principalId>` | Principal/profile changes and client instance/session lifecycle changes touch the principal snapshot/presence versions and last-seen state. Its storage revision is the current client snapshot `stateRevision`. |
-| `client-state:instances` | `principal=<principalId>:instance=<clientInstanceId>` | An instance is registered, updated, revoked, or retired. |
-| `client-state:sessions` | `principal=<principalId>:instance=<clientInstanceId>:session=<sessionId>` | A client session connects, heartbeats, disconnects, or expires. |
-| `client-state:idempotent` | principal key plus `request=<requestId>` | A client mutation result is recorded for idempotency. |
-| `group-state:groups` | `group=<groupId>` | Group metadata/lifecycle, membership/governance, and currently presence connect/heartbeat/disconnect paths touch the group aggregate. Its storage revision is the current group snapshot `stateRevision`. |
-| `group-state:members` | group key plus `member=<principalId>` | A member is invited, joins, leaves, is removed/banned/unbanned, or changes role/ownership state. |
-| `group-state:sessions` | group key plus `session=<sessionId>` | A group presence session connects, heartbeats, disconnects, or expires. |
-| `group-state:idempotent` | group key plus `request=<requestId>` | A group mutation result is recorded for idempotency. |
-| `group-state:join-code-idempotent` | group key plus `request=<requestId>` | A join-code mutation result is recorded separately. |
-
-The catch in “always update `group_latest_snapshot`” is visible here: today every group presence heartbeat advances the shared group aggregate revision. Replacing the assembled read with one projection row would make reads cheaper, but synchronously rewriting one large row on every heartbeat would concentrate contention and JSON write amplification. The companion plan's independent presence generation plus coalesced summary/outbox is the prerequisite that makes a latest projection safe to evaluate.
-
-### Is the API-v1 failure a bug or eventual consistency?
-
-It is both a distributed-consistency symptom and a real API bug under the behavior the client needed. The mutation response acknowledged a committed revision. An immediate later GET returned a lower revision because the node answered from a stale local cache. Eventual consistency explains how that state arose; it does not define whether the API is allowed to expose it.
-
-After this plan:
-
-- A GET without `minStateRevision` must read durable state, so the old failure is a correctness failure.
-- A GET with the committed mutation revision must never return below it, so the old failure is also a correctness failure.
-- A GET with an older minimum may legally return a stale cache snapshot at or above that minimum. That outcome is intentional eventual consistency.
-- Mutation receiver hydration still reduces the chance of a database fallback, but a third Node C can be cold or stale without violating correctness: it must use the database when its cache cannot satisfy the caller's minimum, and tokenless probes eventually bypass it.
-
----
-
-## Snapshot Mental Model
-
-Use four separate questions when reasoning about a snapshot:
-
-1. **Internal consistency:** Were the aggregate and child rows assembled without a detected concurrent aggregate change? `readStableStateSnapshot(...)` answers this for the current storage model.
-2. **Causal monotonicity:** Is this observation at least as new as the entity revision already known by the caller? `minStateRevision` and monotonic cache observation answer this.
-3. **Freshness:** Could a newer committed mutation exist even though this snapshot is internally consistent and monotonic for the caller? Yes, unless this request performed a durable authoritative read at the relevant commit boundary.
-4. **Authority:** Is this data safe for authorization, capacity, ownership, lifecycle, or governance decisions? Only current durable policy state is authoritative.
-
-### Client snapshot
-
-- Identity is `(applicationId, workspaceId, principalId)`.
-- `ClientSnapshot.stateRevision` is local to that client aggregate.
-- `principal.snapshotVersion` is a domain snapshot version; `presenceVersion` is a domain presence counter. Neither replaces `stateRevision` for cache monotonicity.
-- Sessions are leased. A snapshot can become presentation-stale as `expiresAtEpochMs` passes even without another stored revision.
-
-### Group snapshot
-
-- Identity is `(applicationId, workspaceId, groupId)`.
-- Today `GroupSnapshot.stateRevision` is derived from the `group-state:groups` aggregate row while members and sessions live under `group-state:members` and `group-state:sessions`.
-- The repository reads aggregate, children, aggregate and retries if the aggregate revision changed. The result is a stable observation, not a promise that no commit occurs immediately afterward.
-- Today routine presence updates touch the shared group row. The companion database-write plan proposes separating group and presence causal components; this read plan must not pre-empt that coordinated contract migration.
-
-### Topology snapshot/publication
-
-- Topology `version` belongs to the topology output stream.
-- `sourceGroupStateRevision` identifies the group observation used as topology input.
-- A topology payload can be newer in topology version while based on a different group causal input; consumers compare the documented causal fields, not timestamps or arrival order.
-- When the companion plan introduces `{ groupRevision, presenceRevision }`, this REST plan must be amended atomically rather than treating one scalar as sufficient.
-
-### “Latest” wording
-
-- **Latest observed:** highest revision currently in one process or browser cache.
-- **At least revision N:** snapshot revision is `>= N`; a newer commit may still exist.
-- **Authoritative read:** full durable snapshot read at the database boundary used by API-v1.
-- **Globally latest at response receipt:** not promised, because a new commit can occur after the database read and before the client receives the response.
-
----
-
-## Proposal Review Register
-
-### P1 — Tokenless durable reads plus tokened at-least cache reads
-
-**Status:** Selected for implementation.
-
-**Contract:** Omit `minStateRevision` to read durable state. Supply it to permit an eligible cache result at or above the caller's floor; fall back to durable state otherwise.
-
-**Why selected:** It is simple for clients, gives read-your-revision behavior without pretending that cache invalidation is perfect, and provides a deterministic escape hatch from all process-cache states. It reuses current monotonic repositories and existing `stateRevision` fields.
-
-**Cost:** Tokenless traffic reaches the database. Tokened reads can remain stale above the caller's floor. A strict group read remains durable because authorization overrides the cache optimization.
-
-### P2 — Durable revision-head probe on every read
-
-**Status:** Rejected as the default; retain only where an internal caller explicitly needs it.
-
-**Shape:** Read a narrow durable revision first, then return cache only if the cache is at least that revision.
-
-**Benefit:** Transfers fewer bytes than a full durable snapshot when the cache is current and prevents returning behind the durable head.
-
-**Catch:** It still performs a database round trip for every read, adds a second cache/database decision path, and requires the head to represent every snapshot component correctly. With future split group/presence revisions, one scalar head becomes insufficient. For strict group authorization, the server needs current policy data, not only a revision number.
-
-### P3 — Dedicated `client_latest_snapshot` and `group_latest_snapshot` projection tables
-
-**Status:** Deferred to the companion database-write architecture review.
-
-**Shape:** Maintain one latest projection row per scoped client/group, plus append-only event/snapshot history, and evict projections by last-seen/retention policy.
-
-**Benefit:** One indexed row read can be extremely fast and avoids multi-row assembly on the hot read path.
-
-**Catch:** The projection becomes another authoritative write target. It must be committed atomically with domain state or populated by an outbox with explicit lag semantics; otherwise it simply relocates the stale-cache problem into a table. Group presence heartbeats can create heavy contention and write amplification if every heartbeat rewrites a large JSON snapshot. Deletes, bans, expiry, tombstones, and split group/presence revisions require careful causal handling.
-
-**Review dependency:** `plans/api-v1-convergent-database-writing-remediation-plan.md` already proposes CAS writes, mutation outboxes, independent presence generations, and a future group/presence causal tuple. Decide the projection table only after measuring that target write path.
-
-**Key/update organization to carry into that review:**
-
-- Use mandatory typed scope tuples `(applicationId, workspaceId, entityId)` at repository boundaries. Do not keep `_` as an implicit missing-workspace sentinel and do not depend on delimiter-concatenated strings that can collide with user ids; encode tuples canonically at the storage adapter.
-- Keep aggregate metadata/policy, membership, presence leases, idempotency receipts, and publication intents in distinct causal/write domains. A convenient read projection must not make every heartbeat rewrite the policy/roster aggregate.
-- Give membership rows keys `(groupRef, principalId)` and presence rows keys `(groupRef, sessionId, generation)` with explicit expected revisions. Give client instances/sessions the equivalent principal-scoped keys.
-- Put `lastSeenAt`, `expiresAt`, deletion/tombstone state, and projection update time in indexed database columns when they drive eviction or scans. Do not parse JSON keys or values to find expiry candidates.
-- If a latest projection is adopted, identify it by the same canonical scoped ref, include its causal input revision(s), and update it atomically with the authoritative mutation or from an idempotent mutation-outbox cursor. Never update it as an untracked best-effort side effect.
-- Keep append-only event/history keys separate from latest projections. A replay/history id is not the cache key and a cache revision is not an event cursor.
-
-### P4 — Durable invalidation/replay stream for server caches
-
-**Status:** Recommended follow-up; not required for P1 correctness.
-
-**Shape:** Write snapshot-change intents atomically with mutations, assign a durable ordered cursor per scope or entity partition, let every API process replay from its stored cursor, and perform periodic anti-entropy scans for gaps.
-
-**Benefit:** Keeps Node A/B/C caches warm with bounded measurable lag, supports restart catch-up, and reduces durable fallback traffic.
-
-**Catch:** Requires cursor ownership, retention, compaction, tombstones, idempotent replay, poison-event handling, and observability. PostgreSQL notifications alone are wakeups, not the durable source.
-
-**Plan link:** Implement with the transaction-local mutation outbox from the companion database-write plan; do not create a second publication truth in this plan.
-
-### P5 — Browser periodic authoritative probes
-
-**Status:** Selected for implementation.
-
-**Shape:** Normal scoped point reads carry the browser's latest observed `stateRevision`. Every fifth through tenth successful point read omits it. The interval is sampled per entity after each successful authoritative read and is injectable in tests.
-
-**Benefit:** Provides bounded request-count anti-entropy even if the browser keeps presenting data that satisfies its old minimum and no invalidation reaches it.
-
-**Catch:** It converges only while the application performs reads. It is not a background liveness guarantee and should not create hidden timers or traffic.
-
-### P6 — Structured causal revision for groups
-
-**Status:** Future coordinated migration, not part of this implementation.
-
-**Shape:** Replace one group state floor with `{ groupRevision, presenceRevision }` and componentwise comparison. Incomparable tuples require reread/rebase, not numeric max.
-
-**Benefit:** Stops routine presence churn from serializing through the group aggregate and accurately expresses roster/policy versus presence causality.
-
-**Catch:** It is a breaking contract across persistence, REST, OpenAPI, WS publications, topology, browser caches, and tests. Implement atomically under the companion database-write plan.
-
-### P7 — Tombstones and negative-cache convergence
-
-**Status:** Required by the durable invalidation/projection follow-up; limited handling in this plan.
-
-**Shape:** A deleted entity has a causal tombstone revision so stale positive cache entries cannot resurrect it.
-
-**Current-plan handling:** Tokenless reads return durable `404` and evict the server's positive cache entry. A browser room-session probe that receives that authoritative `404` removes the corresponding scoped browser snapshot before returning the error to the caller. Tokened reads whose cache still holds an eligible positive entry may return it only where authorization permits; periodic tokenless probes remove it. Strict group policy never authorizes from that stale entry.
-
-### P8 — Convergence observability and service-level targets
-
-**Status:** Selected for implementation.
-
-**Signals:** Count/cache-source and durable-source reads, fallback reasons, requested/returned revisions, revision shortfall errors, authoritative regressions, browser forced probes, and time from acknowledged mutation revision to first observation on another process in black-box artifacts.
-
-**Initial acceptance target:** Any point read with an acknowledged revision floor returns that floor or newer, or a typed retryable error; normal browser point activity performs a durable probe within at most ten successful reads; no strict authorization decision is made from a stale-tolerant cache response.
-
----
-
-## REST Contract Matrix
-
-| Route | Query | Data source | Authorization | Result |
-| --- | --- | --- | --- | --- |
-| Client collection | unsupported | durable list/read | current self/list policy | Collection is authoritative as read; no shared scalar revision. |
-| Client point | omitted | durable full snapshot | self policy is request identity based | `200`, `404`, or authoritative-regression `503`. |
-| Client point | valid minimum | eligible cache if `revision >= minimum`, else durable | self policy is request identity based | Never below minimum; `503` if durable state is below it. |
-| Client presence | unsupported | durable presence read | self policy | Existing presence payload; no new query until it has an explicit causal contract. |
-| Group collection | unsupported | durable list | filter from durable snapshots under strict auth | Collection is authoritative as read. |
-| Group point, strict auth inactive | omitted | durable full snapshot | existing non-strict behavior | `200`, `404`, or authoritative-regression `503`. |
-| Group point, strict auth inactive | valid minimum | eligible cache, else durable | existing non-strict behavior | Stale-at-or-above-minimum is allowed. |
-| Group point, strict auth active | any | durable full snapshot | evaluate current durable group policy | The supplied minimum is validated but cannot downgrade authorization freshness. |
-| Group events/topology/admin reads | unsupported by this plan | current route-specific durable/causal contract | always durable policy decision | Do not infer this point-snapshot cache contract for other resources. |
-
-Successful point response headers:
-
-```http
-Cache-Control: private, no-store
-Rallar-State-Source: cache
-Rallar-State-Revision: 42
-```
-
-Minimum not yet available response:
-
-```json
-{
-  "error": "Client snapshot has not reached requested state revision 42; durable revision is 41",
-  "code": "state-snapshot-minimum-revision-unavailable",
-  "message": "The requested state revision is not yet available from durable state.",
-  "details": {
-    "entity": "client",
-    "requestedMinStateRevision": 42,
-    "observedStateRevision": 41
-  }
-}
-```
-
----
-
-## Target Interfaces
-
-Create `packages/shared/api/state-snapshot-read.ts` with the transport-neutral request contract:
+> **Status:** Revalidated against current `main`; review-ready, not approved and not
+> implementation-complete.
+>
+> **Implementation workflow:** Use `superpowers:executing-plans` or
+> `superpowers:subagent-driven-development` only after the human architecture
+> decisions in Task 0 are recorded. Use the repo-local `rallar-code-writing`,
+> `rallar-platform`, `rallar-realtime`, `rallar-testing`, and
+> `publishing-plan-progress` skills throughout implementation.
+
+**Goal:** Give REST point-snapshot reads an explicit convergence contract that
+matches the current revision domains:
+
+- client point reads use the scalar, entity-local `stateRevision`;
+- group point reads use the authoritative
+  `GroupStateCausalRevision { groupRevision, presenceRevision }`;
+- an omitted minimum reads a durable snapshot;
+- a supplied minimum may use a presence-fresh process cache only when it equals
+  or dominates the caller's floor;
+- strict authorization always uses current durable authority;
+- browser refresh and collection reconciliation converge without claiming that
+  a physical delete is a causal tombstone.
+
+## Revalidation Against Main
+
+### Reviewed baseline
+
+| Item | Exact value |
+|---|---|
+| Review date | 2026-07-27 |
+| Current branch | `main` |
+| Reviewed `HEAD` | `6d87fcbe9b7812b366d0c91f45b27a1179c878e4` |
+| Local `origin/main` after `git fetch origin main` | `6d87fcbe9b7812b366d0c91f45b27a1179c878e4` |
+| `FETCH_HEAD` after fetch | `6d87fcbe9b7812b366d0c91f45b27a1179c878e4` |
+| Status | `## main...origin/main`; clean index and working tree; no untracked files |
+| User changes present before review | No |
+| Original plan commit | `f38cf81627f3e91a5f5c09460fa69ce4718d4bec`, 2026-07-20 |
+
+The fetched remote-tracking ref, `FETCH_HEAD`, and checked-out `HEAD` agree.
+This checkout therefore represented current remote `main` at the review
+boundary. Any implementation session must repeat this baseline check because
+the conclusion is SHA-specific.
+
+### Important architectural changes and corrections
+
+| Change or corrected assumption | Classification | Current evidence and plan consequence |
+|---|---|---|
+| Group authority is a two-component causal revision; scalar `stateRevision` is only a compatibility projection. | Contradicted by the old plan; already implemented before the old plan | `packages/shared/api/group-types.ts:166-169,203-213`; `packages/shared/api/group-client-views.ts:68-109`; `packages/shared/repository/group-state-snapshots-repository.ts:224-269`. Replace every group scalar floor with a complete causal floor and define incomparable behavior. |
+| Group presence uses per-session guards and no longer advances the group row for every presence write. | Old runtime map obsolete; already implemented | `packages/shared-server/rallar-system/services/group-state-guarded-batch.ts:118-136`; `packages/shared-server/rallar-system/repositories/GroupStateRepository.ts:620-660`. Remove the old contention premise. |
+| Presence summaries are hints; durable assembly revalidates group lifecycle, active membership, session identity/generation, connectivity, expiry, and one captured observation time. | Already implemented | `packages/shared-server/rallar-system/repositories/group-state-snapshot-assembly.ts:13-100`; `packages/shared-server/rallar-system/repositories/GroupStateRepository.ts:331-421,810-871`. Keep this as a non-regression invariant, not new work. |
+| AppInbox owns incoming mutation transactions and retry attempts. Services perform named `read`, `compute`, `validate`, and `write(transaction, computed)` phases. | Old companion-plan dependency obsolete; already implemented | `packages/shared-server/rallar-system/services/app-inbox-transaction-writer.ts:47-82,126-152`; `packages/shared-server/rallar-system/services/AppClientInboxService.ts:424-446`; `packages/shared-server/rallar-system/services/AppGroupInboxService.ts:957-1076`. This read plan must not create a mutation bypass or a second transaction/retry boundary. |
+| The intermediate mutation outbox was removed. Final resource outbox rows are written in the received transaction. | Old follow-up obsolete; already implemented | Commit `f5e10b2bbf23092c2c98c501fb20ee17fb8583d8`; `packages/shared-server/rallar-system/services/client-state-service.ts:238-282`; `packages/shared-server/rallar-system/services/group-state-guarded-batch.ts:118-179`; `packages/shared-server/rallar-system/services/GroupPresenceSummaryWork.ts:178-222`. Remove every proposed intermediate-outbox dependency. |
+| Group point REST reads already call a full durable snapshot read. | Old READ-02 obsolete; already implemented | `apps/api-v1/src/routes/group-state-routes.ts:151-169`; `packages/shared-server/rallar-system/services/cached-group-state-service.ts:56-59`. Do not reimplement this behavior. |
+| Client point REST reads and strict self-collection reads still call cached `readSnapshot`. | Missing required work | `apps/api-v1/src/routes/client-state-routes.ts:72-110`; production injection in `apps/api-v1/src/create-rallar-server.ts:337-349` and cached-service requirement in `apps/api-v1/src/middleware-contract.ts:20-33`. Add an explicit durable current-client method and use it for tokenless reads. |
+| Group point and event authorization are durable, but graph/topology policy can use cached `readSnapshot`. | Partially implemented; missing security work | `apps/api-v1/src/routes/group-state-routes.ts:151-169,941-985`; `apps/api-v1/src/routes/graph-topology-routes.ts:350-377`; cached production injection at `apps/api-v1/src/create-rallar-server.ts:350-363`. Require a durable current read in graph/topology policy paths. |
+| Group cache services and browser repositories already compare causal tuples and reject incomparable observations. | Already implemented | `packages/shared-server/rallar-system/services/group-state-snapshot-read-through-cache.ts:33-39,150-170`; `packages/shared/repository/group-state-snapshots-repository.ts:251-269`; `packages/shared-web/browser/data-caches.ts:258-297`. Reuse these semantics. |
+| OpenAPI already requires client `stateRevision` and group `stateRevision` plus `causalRevision`. | Old READ-10 obsolete in part; already implemented | `apps/api-v1/resources/api-v1-openapi.yaml:3898-3930,4322-4367`; `apps/api-v1/test/swagger-routes.test.ts:107-132`. Add transport parameters, headers, and errors only; preserve required arrays. |
+| The browser already has a 20-second state heartbeat with a 5-second retry, authoritative collection refresh, group-404 removal during heartbeat, and an incomparable-group forced reread. | Old anti-entropy inventory incomplete | `packages/shared-web/browser/heartbeat.ts:15-16,60-90,98-137`; `packages/shared-web/browser/api-workflows.ts:128-155`; `packages/shared-web/browser/data-caches.ts:258-297`. Do not add a second random 5–10 request cadence. |
+| Room-session refresh still delegates to the full collection refresh; people refresh also reads both collections. | Partially correct; room work remains | `packages/shared-web/browser/rallar-runtime/rooms.ts:194-217,416-435`; `packages/shared-web/browser/rallar-runtime/people.ts:41-67`. Make room-session refresh a targeted durable point read; retain top-level durable collection refresh. |
+| Browser collection hydration is merge-only, so an entity omitted after deletion or authorization filtering may remain locally visible. | Missing required work | `packages/shared-web/browser/data-caches.ts:240-256`; `packages/shared-web/browser/rallar-runtime/state-store.ts:290-299`. Add scoped, race-fenced reconciliation after a complete successful collection response. |
+| Current storage/cache key projections are not uniformly injective over presence and value. | Missing required work | `packages/shared-server/rallar-system/client-state-storage-keys.ts:7-30` aliases absent workspace with explicit `_`; `packages/shared/repository/client-state-snapshots-repository.ts:203-210` and `packages/shared/repository/group-state-snapshots-repository.ts:402-407` alias absent workspace with explicit empty string. Key hardening and bounded migration are prerequisites for exact scoped eviction. |
+| Mutation-result cache hydration exists but is not a correctness boundary. | Still correct with updated context | `packages/shared-server/rallar-system/state-sync-cache-hydration.ts:22-57`; `apps/api-v1/src/routes/client-state-routes.ts:461-506`; `packages/shared-server/rallar-system/services/AppClientInboxService.ts:424-446`; `packages/shared-server/rallar-system/services/AppGroupInboxService.ts:987-1076`. Retain it as a latency optimization; convergence must rely on revision checks and durable fallback. |
+| The API-v1 black-box runner supports a primary and optional secondary server, not a tertiary server. | Old Task 7 unsupported and unnecessary | `packages/shared-test/black-box-runner/api-v1-black-box-run.mts:7-16,93-126,195-216`; `packages/shared-test/package.json` scripts `bb:api-v1:postgres` and `bb:api-v1:postgres:medium-scale`. Use deterministic three-logical-cache unit tests plus the existing two-process Postgres gate. |
+| The black-box execution report does not currently retain response headers needed for source/revision assertions. | Missing required work | `packages/shared-test/black-box-runner/execute-black-box.ts:1142`. Extend the report contract before recipes assert convergence headers. |
+| The old plan names a publish-failure characterization test. | Obsolete | That test was deleted with commit `f5e10b2bbf23092c2c98c501fb20ee17fb8583d8`. Use current cache, route, and `state-sync-event-replay-characterization` tests instead. |
+| The authoritative TypeScript standard is `repo-code-style.md`. | Old style reference obsolete | `.agents/skills/rallar-code-writing/references/repo-code-style.md`; `docs/repo-human-style-guide.md`. New plain object contracts use `interface`; modules should remain under the 400-line target or receive an explicit human exception. |
+
+### Current-main inconsistency outside this read implementation
+
+The replacement `AGENTS.md` requires final `APP_OUTBOX`/`WS_OUTBOX` insertion to
+be insert-only and says a collision rolls back without loading a winner.
+Current writers call `ResourceInboxRepository.writeIfAbsentOrMatch`
+(`packages/shared-server/rallar-system/services/client-state-service.ts:277-281`,
+`packages/shared-server/rallar-system/services/group-state-guarded-batch.ts:174-179`,
+and
+`packages/shared-server/rallar-system/services/GroupPresenceSummaryWork.ts:193-196`).
+The implementation of that helper can accept an exact existing row
+(`packages/shared-server/postgres/resource-inbox/ResourceInboxRepository.ts:105-218`).
+
+This plan must not copy, expand, or bless that behavior. Resolving the
+source-versus-`AGENTS.md` collision policy is a separate mutation remediation
+decision because this plan adds no database mutation. It remains an explicit
+repository issue and prevents describing the mutation architecture as wholly
+closed.
+
+## Audit Of The Original Plan
+
+### Original findings
+
+| Original item | Classification | Revised disposition |
+|---|---|---|
+| READ-01: internal caches accept `minStateRevision` | Partially correct | Client scalar semantics remain. Group scalar semantics are compatibility-only; use `minCausalRevision`. REST still exposes neither floor. |
+| READ-02: group current read probes a durable head then cache | Obsolete | It already performs one full durable `readSnapshot`; remove the proposed rewrite. |
+| READ-03: client lacks current-read parity | Still correct | Add `readCurrentSnapshot`/REST read parity to the process-owned cached client service. |
+| READ-04: cache presence freshness cannot prove completeness | Still correct for caches; durable side already implemented | Retain the limitation and do not call a presence-fresh cache globally current. |
+| READ-05: acknowledged revision followed by stale GET | Historical claim unverifiable from source alone | Preserve only as incident motivation. The new contract makes returning below a supplied floor an explicit failure. |
+| READ-06: receiving-node hydration does not prove Node C | Still correct | Test three logical caches deterministically; do not require a third API process. |
+| READ-07: aggregate/children stable assembly | Partially correct | Update for batched authority reads, one captured time, presence summary validation, and group causal tuples. |
+| READ-08: browser monotonic cache but no anti-entropy | Partially obsolete | Browser group caches are causal and heartbeat/collection repair already exists. Replace random request cadence with targeted room refresh and scoped collection reconciliation. |
+| READ-09: wakeups are not durable replay | Still correct | Keep durable invalidation/replay as a deferred alternative. |
+| READ-10: OpenAPI omits required revision fields | Already implemented | Preserve current required arrays; add query/header/error contracts and client minimum validation. |
+| READ-11: group point response snapshot might authorize stale data | Already implemented for group point/events; missing for graph/topology | Keep the durable authority rule and harden the graph/topology dependency. |
+| READ-12: room-session refresh reads the full collection | Still correct | Replace only the room-session path with targeted durable point refresh. |
+
+### Original tasks, files, commands, and criteria
+
+| Original area | Classification | Action in this revision |
+|---|---|---|
+| Task 0 human review | Still required | Expanded to include the group query shape, conditional absence handling, key migration, and feature-branch publication boundary. |
+| Task 1 shared scalar selector | Partially correct for clients; contradicted for groups | Replace with separate client-scalar and group-causal interfaces and explicit incomparable handling. |
+| Task 2 symmetric cached services | Partially implemented | Group current and causal-at-least methods already exist. Add client current parity, REST selection, production composition, and race-fenced eviction. |
+| Task 3 routes | Partially implemented | Preserve group durable point behavior, add separate query parsers, fix strict client collection and graph/topology authority, and expose headers. |
+| Task 4 random browser cadence | Replaced | Use targeted tokenless room-session refresh plus existing heartbeat; add scoped collection reconciliation and conditional absence removal. |
+| Task 5 required OpenAPI fields | Already implemented in part | Do not rewrite required fields; add transport details and parity tests. |
+| Task 6 deleted publish-failure test | Obsolete | Replace with current cache/service/route characterization tests. |
+| Task 7 three-process runner/workflow expansion | Rejected | Current runner is two-process. A third process does not deterministically prove a missed wakeup without fault suppression and is unnecessary for the selected contract. |
+| Task 8 old runtime/outbox docs | Partially obsolete | Document current AppInbox, causal tuple, liveness, and selected REST contract. |
+| Task 9 skill changes | Partially redundant | Skills already contain AppInbox/causal rules; add only the new read contract and real commands, then run skill integrity tests. |
+| Task 10 validation | Incomplete in old plan | Add repo style, unit, CI, build, medium-scale, draft PR, Branch Release Gate, and Hetzner default-branch evidence. |
+| `state-sync-publish-failure-characterization.test.ts` | Obsolete path | Removed from all tasks and commands. |
+| Three-process Postgres command/workflow | Unverifiable/nonexistent | Removed. Existing two-process scripts remain authoritative. |
+| Per-task `git commit` commands | Unsafe on the reviewed `main` checkout | Replace with feature-branch-only checkpoints. Plan review never authorizes any commit. |
+| Scalar group acceptance criteria | Contradicted | Replace with causal equality/dominance and incomparable handling. |
+| Fifth-through-tenth browser probe criterion | Obsolete design | Replace with explicit targeted refresh plus the existing 20-second heartbeat. |
+| “Caches never regress” plus unconditional 404 delete | Internally contradicted | Require compare-and-remove fences; state that physical deletion is not resurrection-safe without tombstones. |
+
+All previously proposed `Create` artifacts were absent as expected. Every
+existing path retained below was checked at the reviewed SHA. Every new path is
+explicitly labelled **Create**.
+
+## Current Contract And Invariants
+
+### Revision domains
+
+1. `ClientSnapshot.stateRevision` is a non-negative, entity-local scalar.
+   It is not a workspace revision. A client cache is eligible when its scalar
+   revision is greater than or equal to the caller's scalar floor.
+2. `GroupSnapshot.causalRevision` is authoritative. A group cache is eligible
+   only when both components equal or exceed the requested components.
+   `incomparable` is not an eligible result.
+3. `GroupSnapshot.stateRevision` remains a compatibility/diagnostic projection
+   and must not be accepted as an external group freshness floor.
+4. Client and group collection reads contain independently revisioned entities.
+   There is no collection-wide revision domain, so collection routes accept no
+   minimum token.
+
+### Proposed REST surface
+
+| Route | No minimum | Minimum | Cache eligibility | Strict authorization |
+|---|---|---|---|---|
+| `GET /api/state/apps/:applicationId/workspaces/:workspaceId/clients/:principalId` | Full durable client snapshot read | `minStateRevision=<safe non-negative integer>` | Presence-fresh client snapshot with scalar revision at least the floor | Existing durable auth-session identity; response selection may use cache after authorization |
+| `GET /api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId` | Full durable group snapshot read | Both `minGroupRevision=<safe non-negative integer>` and `minPresenceRevision=<safe non-negative integer>` | Presence-fresh group snapshot whose causal tuple equals or dominates the floor | When strict read auth is enabled, perform one durable current group read, authorize and respond from it, and validate the floor against it; never authorize from the response cache |
+
+Supplying only one group component is `400 invalid-group-causal-revision`.
+Repeated, blank, signed, decimal, exponential, non-finite, negative, or unsafe
+integer values are `400`. A durable observation dominated by the requested
+floor, or incomparable with it, is retryable `503` with `Retry-After: 1`.
+
+Successful point responses set:
+
+- `Rallar-State-Source: cache|durable`;
+- client: `Rallar-State-Revision`;
+- group: `Rallar-Group-Revision` and `Rallar-Presence-Revision`;
+- `Cache-Control: no-store`.
+
+The group response may retain `Rallar-State-Revision` only as a labelled
+compatibility projection. It must not be used to satisfy the causal floor.
+All new headers must be exposed by CORS.
+
+### Selection results
+
+**Create** `packages/shared/api/state-snapshot-read.ts` with interfaces for
+plain object contracts:
 
 ```ts
-export type StateSnapshotReadOptions = Readonly<{
-    minStateRevision?: number;
-}>;
+export interface ClientStateSnapshotReadOptions {
+    readonly minStateRevision?: number;
+}
+
+export interface GroupStateSnapshotReadOptions {
+    readonly minCausalRevision?: GroupStateCausalRevision;
+}
 
 export type StateSnapshotReadSource = 'cache' | 'durable';
 
-export type StateSnapshotEntityKind = 'client' | 'group';
+export interface StateSnapshotReadFound<T> {
+    readonly status: 'found';
+    readonly source: StateSnapshotReadSource;
+    readonly snapshot: T;
+}
 
-export type StateSnapshotReadResult<T> = Readonly<{
-    snapshot: T | undefined;
-    source: StateSnapshotReadSource;
-    requestedMinStateRevision?: number;
-}>;
+export interface StateSnapshotReadNotFound {
+    readonly status: 'not-found';
+    readonly source: 'durable';
+}
+
+export type StateSnapshotReadResult<T> =
+    | StateSnapshotReadFound<T>
+    | StateSnapshotReadNotFound;
 ```
 
-Create `packages/shared-server/rallar-system/services/rest-state-snapshot-reader.ts` with the shared selection algorithm and typed errors:
-
-```ts
-export class StateSnapshotMinimumRevisionUnavailableError extends Error {
-    readonly status = 503;
-    readonly code = 'state-snapshot-minimum-revision-unavailable';
-
-    constructor(
-        readonly entity: StateSnapshotEntityKind,
-        readonly requestedMinStateRevision: number,
-        readonly observedStateRevision: number,
-    ) {
-        super(
-            `${entity} snapshot has not reached requested state revision ` +
-                `${requestedMinStateRevision}; durable revision is ` +
-                `${observedStateRevision}`,
-        );
-        this.name = 'StateSnapshotMinimumRevisionUnavailableError';
-    }
-}
-
-export class StateSnapshotAuthoritativeRegressionError extends Error {
-    readonly status = 503;
-    readonly code = 'state-snapshot-authoritative-regression';
-
-    constructor(
-        readonly entity: StateSnapshotEntityKind,
-        readonly durableStateRevision: number,
-        readonly cachedStateRevision: number,
-    ) {
-        super(
-            `${entity} durable snapshot revision ${durableStateRevision} ` +
-                `is behind observed cache revision ${cachedStateRevision}`,
-        );
-        this.name = 'StateSnapshotAuthoritativeRegressionError';
-    }
-}
-
-export async function readRestStateSnapshot<Ref, Snapshot>(
-    input: Readonly<{
-        entity: StateSnapshotEntityKind;
-        ref: Ref;
-        options: StateSnapshotReadOptions;
-        peekCache(ref: Ref): Snapshot | undefined;
-        readDurable(ref: Ref): Promise<Snapshot | undefined>;
-        evictCache(ref: Ref): void;
-        observe(snapshot: Snapshot): StateSnapshotObservation;
-        readStateRevision(snapshot: Snapshot): number;
-        timing?: RallarTimingSink;
-        timingContext?: Readonly<{
-            serviceId?: string;
-            applicationId: string;
-            workspaceId: string;
-            groupId?: string;
-            principalId?: string;
-        }>;
-    }>,
-): Promise<StateSnapshotReadResult<Snapshot>>;
-```
-
-The algorithm is fixed:
-
-```ts
-const cached = input.peekCache(input.ref);
-const cachedRevision = cached && input.readStateRevision(cached);
-const minimum = input.options.minStateRevision;
-
-if (minimum !== undefined && cached && cachedRevision! >= minimum) {
-    return { snapshot: cached, source: 'cache', requestedMinStateRevision: minimum };
-}
-
-const durable = await input.readDurable(input.ref);
-if (!durable) {
-    input.evictCache(input.ref);
-    return {
-        snapshot: undefined,
-        source: 'durable',
-        ...(minimum === undefined ? {} : { requestedMinStateRevision: minimum }),
-    };
-}
-
-const durableRevision = input.readStateRevision(durable);
-if (minimum !== undefined && durableRevision < minimum) {
-    throw new StateSnapshotMinimumRevisionUnavailableError(
-        input.entity,
-        minimum,
-        durableRevision,
-    );
-}
-if (cachedRevision !== undefined && durableRevision < cachedRevision) {
-    throw new StateSnapshotAuthoritativeRegressionError(
-        input.entity,
-        durableRevision,
-        cachedRevision,
-    );
-}
-
-input.observe(durable);
-return {
-    snapshot: durable,
-    source: 'durable',
-    ...(minimum === undefined ? {} : { requestedMinStateRevision: minimum }),
-};
-```
-
-Extend both cached services additively:
-
-```ts
-readRestSnapshot(
-    ref: ClientPrincipalRef,
-    options?: StateSnapshotReadOptions,
-): Promise<StateSnapshotReadResult<ClientSnapshot>>;
-
-readRestSnapshot(
-    ref: GroupRef,
-    options?: StateSnapshotReadOptions,
-): Promise<StateSnapshotReadResult<GroupSnapshot>>;
-```
-
-Keep `readSnapshot`, `readCurrentSnapshot`, and `readSnapshotAtLeast` for existing internal consumers. Do not silently change their semantics in this plan.
-
-Create `packages/shared-web/browser/state-snapshot-read-convergence.ts`:
-
-```ts
-export type StateSnapshotReadProbeKey = Readonly<{
-    entity: 'client' | 'group';
-    applicationId: string;
-    workspaceId: string;
-    entityId: string;
-}>;
-
-export type StateSnapshotReadProbeDecision = Readonly<{
-    minStateRevision?: number;
-    authoritativeProbe: boolean;
-}>;
-
-export type StateSnapshotReadProbePolicy = Readonly<{
-    decide(key: StateSnapshotReadProbeKey, localStateRevision?: number):
-        StateSnapshotReadProbeDecision;
-    recordSuccess(key: StateSnapshotReadProbeKey, decision: StateSnapshotReadProbeDecision):
-        void;
-}>;
-```
-
-Default policy:
-
-- Initial or locally unknown revision: omit the minimum.
-- After a successful authoritative read, sample an interval `N` inclusively from 5 through 10.
-- For `N = 5`, four subsequent successful reads carry the local minimum and the fifth omits it.
-- For `N = 10`, nine subsequent successful reads carry the local minimum and the tenth omits it.
-- A transport, `5xx`, authorization, or invalid-request failure does not call `recordSuccess`. A planned authoritative read that returns `404` records authoritative absence after scoped eviction, then rethrows the API error.
-- A successful decision with `authoritativeProbe: false` advances the per-key successful read count, even if the server happened to fall back from cache to durable state.
-- A successful decision with `authoritativeProbe: true` resets the count and samples the next interval. This keeps the browser policy independent from response-envelope changes while remaining conservative: an unplanned durable fallback can only cause the next forced probe to happen sooner.
-- Inject `sampleProbeInterval(min, max)` in tests; production uses `crypto.getRandomValues`, not `Math.random`, so the facade does not depend on mutable global random state.
-
----
-
-### Task 0: Human architecture review gate
-
-**Files:**
-
-- Review: `plans/rallar-rest-snapshot-read-convergence-implementation-plan.md`
-- Review companion: `plans/api-v1-convergent-database-writing-remediation-plan.md`
-
-- [ ] Confirm P1: tokenless point reads always read the full durable snapshot.
-- [ ] Confirm tokened reads may return a cache value at or above the minimum even when a newer value exists.
-- [ ] Confirm collection and client-presence routes do not accept one scalar `minStateRevision`.
-- [ ] Confirm strict group authorization forces a durable snapshot and may ignore the caller's cache optimization.
-- [ ] Confirm invalid minimum is `400`; durable revision below the requested minimum is retryable `503` with `Retry-After: 1`.
-- [ ] Confirm browser forced probes occur every 5–10 successful scoped point reads, with no timer/background traffic.
-- [ ] Confirm `rallar.rooms.room(ref).refresh()` changes from collection refresh to point group refresh while top-level refresh behavior stays unchanged.
-- [ ] Confirm dedicated latest tables, durable invalidation replay, and structured group/presence causal revisions remain separately reviewed follow-ups.
-- [ ] Record approval in the implementation task before Task 1 begins.
-
-**Review checkpoint:** Stop here until all nine decisions are approved or the plan is amended.
-
----
-
-### Task 1: Add the shared REST snapshot selection contract
-
-**Files:**
-
-- Create: `packages/shared/api/state-snapshot-read.ts`
-- Create: `packages/shared-server/rallar-system/services/rest-state-snapshot-reader.ts`
-- Create: `packages/tests/shared-server/rest-state-snapshot-reader.test.ts`
-- Modify: `packages/shared-server/mod.ts`
-
-- [ ] Add a failing test: omitted minimum does not call `peekCache` as a return path, calls `readDurable` once, observes the returned snapshot once, and reports source `durable`.
-- [ ] Run `npx vitest run packages/tests/shared-server/rest-state-snapshot-reader.test.ts`; expect failure because the module does not exist.
-- [ ] Add `StateSnapshotReadOptions`, `StateSnapshotReadSource`, `StateSnapshotEntityKind`, and `StateSnapshotReadResult<T>` exactly as defined in Target Interfaces.
-- [ ] Implement the smallest tokenless durable path and export the server helper from `packages/shared-server/mod.ts`.
-- [ ] Run the focused test; expect the tokenless test to pass.
-- [ ] Add a failing test: a presence-eligible cached revision `7` with minimum `6` returns source `cache`, does not call durable storage, and does not observe again.
-- [ ] Implement the cache-hit branch and run the focused test.
-- [ ] Add failing tests for cache below minimum, cache absent, and durable fallback. Each must read durable exactly once and observe the qualifying durable result.
-- [ ] Implement fallback and run the focused test.
-- [ ] Add a failing test for durable revision below the requested minimum. Assert class, status `503`, code, entity, requested revision, and observed revision.
-- [ ] Implement `StateSnapshotMinimumRevisionUnavailableError` and run the focused test.
-- [ ] Add a failing test for durable revision below an already observed cache revision on both tokenless and tokened fallback paths.
-- [ ] Implement `StateSnapshotAuthoritativeRegressionError`; assert the lower durable value is not observed or returned.
-- [ ] Add tests for not-found durable state, equal duplicate observation, newer durable observation, and propagation of equal-revision/different-content conflicts from `observe`. Not-found must call `evictCache(ref)` exactly once; every found result and every cache hit must call it zero times.
-- [ ] Add timing tests with a spy `RallarTimingSink`: assert `entity`, `source`, requested minimum, cached revision, returned revision, fallback reason, status, and duration fields; assert a throwing sink cannot fail the read.
-- [ ] Run `npx vitest run packages/tests/shared-server/rest-state-snapshot-reader.test.ts`; expect all tests to pass.
-- [ ] Run `npx tsc -p packages/shared-server/tsconfig.json --noEmit`; expect exit code `0`.
-- [ ] Commit: `git add packages/shared/api/state-snapshot-read.ts packages/shared-server/rallar-system/services/rest-state-snapshot-reader.ts packages/shared-server/mod.ts packages/tests/shared-server/rest-state-snapshot-reader.test.ts && git commit -m "feat: define convergent REST snapshot reads"`.
-
----
-
-### Task 2: Give cached client and group services symmetric REST reads
-
-**Files:**
-
-- Modify: `packages/shared-server/rallar-system/services/cached-client-state-service.ts`
-- Modify: `packages/shared-server/rallar-system/services/cached-group-state-service.ts`
-- Modify: `packages/shared-server/rallar-system/services/client-state-snapshot-read-through-cache.ts`
-- Modify: `packages/shared-server/rallar-system/services/group-state-snapshot-read-through-cache.ts`
-- Modify: `packages/shared/repository/client-state-snapshots-repository.ts`
-- Modify: `apps/api-v1/src/middleware.ts`
-- Modify: `packages/tests/shared-server/cached-state-services.test.ts`
-- Verify: `packages/tests/shared-server/client-state-snapshot-read-through-cache.test.ts`
-- Verify: `packages/tests/shared-server/group-state-snapshot-read-through-cache.test.ts`
-
-- [ ] Extend the test cache fakes with `peek(ref)` and keep existing `findOrLoadByRef(...)` behavior unchanged.
-- [ ] Add failing client tests for `readRestSnapshot(ref)` and `readRestSnapshot(ref, { minStateRevision: 2 })`: tokenless calls durable; qualifying token calls cache; stale cache falls back to durable.
-- [ ] Add the same failing group tests. Use one table-driven expectation so client/group behavior cannot drift.
-- [ ] Run `npx vitest run packages/tests/shared-server/cached-state-services.test.ts`; expect missing-method failures.
-- [ ] Add `peek` to `CachedClientStateServiceCache` and `CachedGroupStateServiceCache` dependency types. Do not expose the underlying repository manager.
-- [ ] Add `evict(ref)` to both read-through caches. It must delete the loaned entry and the shared latest-observed repository entry; add scoped `removeClientStateSnapshotByRef(...)` parity with the existing group removal helper.
-- [ ] Add failing read-through-cache tests showing eviction affects only the exact application/workspace/entity key and preserves same-id entries in other workspaces.
-- [ ] Add `readRestSnapshot` to `CachedClientStateService` and `CachedGroupStateService` and delegate to `readRestStateSnapshot(...)` with `readClientStateRevision` or `readGroupStateRevision`.
-- [ ] Add an optional `timing?: RallarTimingSink` factory option to both cached services and pass the sink plus scoped identifiers into the helper.
-- [ ] Pass API-v1's existing `timing` sink into both cached-service factories in `apps/api-v1/src/middleware.ts`; leave test and library callers source compatible when it is omitted.
-- [ ] Keep `readSnapshot`, `readCurrentSnapshot`, and `readSnapshotAtLeast` byte-for-byte semantically compatible.
-- [ ] Run `npx vitest run packages/tests/shared-server/cached-state-services.test.ts`; expect all new and existing tests to pass.
-- [ ] Add a three-logical-node test: Node A, Node B, and Node C have independent cache fakes over one durable fake; warm all at revision `2`; return a committed revision `3` mutation through B; hydrate A and B only; assert C with minimum `3` reads durable and reaches `3`, C with minimum `2` may return cached revision `2`, and C tokenless always reads durable revision `3`.
-- [ ] Add a negative test: C durable fallback at revision `2` for minimum `3` throws the typed `503` instead of returning revision `2`.
-- [ ] Add a service test that a tokenless durable not-found result evicts a stale positive cache entry before returning source `durable` with `snapshot: undefined`.
-- [ ] Run `npx vitest run packages/tests/shared-server/cached-state-services.test.ts packages/tests/shared-server/client-state-snapshot-read-through-cache.test.ts packages/tests/shared-server/group-state-snapshot-read-through-cache.test.ts`; expect all tests to pass.
-- [ ] Run `npx tsc -p packages/shared-server/tsconfig.json --noEmit`; expect exit code `0`.
-- [ ] Commit: `git add packages/shared-server/rallar-system/services/cached-client-state-service.ts packages/shared-server/rallar-system/services/cached-group-state-service.ts packages/shared-server/rallar-system/services/client-state-snapshot-read-through-cache.ts packages/shared-server/rallar-system/services/group-state-snapshot-read-through-cache.ts packages/shared/repository/client-state-snapshots-repository.ts apps/api-v1/src/middleware.ts packages/tests/shared-server/cached-state-services.test.ts packages/tests/shared-server/client-state-snapshot-read-through-cache.test.ts packages/tests/shared-server/group-state-snapshot-read-through-cache.test.ts && git commit -m "feat: add symmetric REST snapshot readers"`.
-
----
-
-### Task 3: Expose `minStateRevision` safely in API-v1 routes
-
-**Files:**
-
-- Create: `apps/api-v1/src/routes/state-snapshot-read.ts`
-- Create: `apps/api-v1/test/routes/state-snapshot-read.test.ts`
-- Modify: `apps/api-v1/src/routes/client-state-routes.ts`
-- Modify: `apps/api-v1/src/routes/group-state-routes.ts`
-- Modify: `apps/api-v1/src/routes/graph-topology-routes.ts`
-- Modify: `apps/api-v1/src/main.ts`
-- Modify: `apps/api-v1/test/routes/state-api-routes-hardening.test.ts`
-- Modify: `apps/api-v1/test/routes/graph-topology-routes.test.ts`
-
-- [ ] Add table-driven failing parser tests for absence and valid values `0`, `1`, and `Number.MAX_SAFE_INTEGER`.
-- [ ] Add table-driven failing parser tests for `?minStateRevision=`, whitespace, `-1`, `+1`, `1.0`, `1e3`, `NaN`, `Infinity`, unsafe integers, and repeated parameters. Assert HTTP-facing code `invalid-min-state-revision` and the rejected raw values.
-- [ ] Run `cd apps/api-v1 && deno test --allow-env --allow-read test/routes/state-snapshot-read.test.ts`; expect module-not-found failure.
-- [ ] Implement `readMinStateRevision(searchParams)` using an exact decimal regex plus `Number.isSafeInteger`; do not silently coerce malformed input.
-- [ ] Implement helpers that set successful point-read headers and map the two typed `503` errors plus the invalid-query error into the existing `StateErrorResponse` shape.
-- [ ] Run the parser/helper test; expect it to pass.
-- [ ] Change `ClientStateRouteService` and `GroupStateRouteService` to require `readRestSnapshot` from their cached service types.
-- [ ] Add a failing client point route test: no query forwards `{}` and receives a durable result; `?minStateRevision=7` forwards `{ minStateRevision: 7 }`; headers match the returned source and revision.
-- [ ] Add a failing strict client collection test: the authenticated self-only collection uses `readRestSnapshot(ref, {})`, not cached `readSnapshot`.
-- [ ] Implement client collection and point routing. Keep client presence durable and reject no new parameters there.
-- [ ] Add `Cache-Control: private, no-store` to client snapshot collection, point, and presence responses.
-- [ ] Run the client route tests; expect them to pass.
-- [ ] Add failing non-strict group tests: tokenless uses REST durable selection; tokened forwards the parsed minimum and can report source `cache`.
-- [ ] Add a failing strict group test with cached revision `4`, durable revision `5`, and actor banned only in revision `5`: a request with `minStateRevision=4` must return `403` after exactly one durable read and zero response-cache reads.
-- [ ] Refactor the group route to read strict-auth context before selecting a response. Under strict auth, call `readRestSnapshot(ref, {})`, authorize that durable snapshot, and return it. Under non-strict behavior, forward the caller's options.
-- [ ] Keep event-route authorization on `readCurrentSnapshot`; do not route policy checks through stale-tolerant reads.
-- [ ] Update graph/topology group-policy lookup to use `readCurrentSnapshot` or the tokenless REST durable method instead of cached `readSnapshot`.
-- [ ] Add `Cache-Control: private, no-store` to group collection and point responses.
-- [ ] Add route tests for invalid query `400`, unavailable minimum `503` plus `Retry-After: 1`, authoritative regression `503`, not found `404`, and successful source/revision headers.
-- [ ] Update the existing mutation hydration test name and assertions to say it optimizes the receiving node cache; add a separate assertion that a later tokenless client GET invokes durable REST selection even when hydration succeeded.
-- [ ] Extend CORS `exposeHeaders` in `apps/api-v1/src/main.ts` with `Rallar-State-Source`, `Rallar-State-Revision`, and `Retry-After` while preserving current headers.
-- [ ] Run `cd apps/api-v1 && deno test --allow-env --allow-read test/routes/state-snapshot-read.test.ts test/routes/state-api-routes-hardening.test.ts test/routes/graph-topology-routes.test.ts`; expect all tests to pass.
-- [ ] Run `cd apps/api-v1 && deno task check`; expect exit code `0`.
-- [ ] Commit: `git add apps/api-v1/src/routes/state-snapshot-read.ts apps/api-v1/src/routes/client-state-routes.ts apps/api-v1/src/routes/group-state-routes.ts apps/api-v1/src/routes/graph-topology-routes.ts apps/api-v1/src/main.ts apps/api-v1/test/routes/state-snapshot-read.test.ts apps/api-v1/test/routes/state-api-routes-hardening.test.ts apps/api-v1/test/routes/graph-topology-routes.test.ts && git commit -m "feat: expose causal snapshot reads in API v1"`.
-
----
-
-### Task 4: Add browser point-read tokens and bounded anti-entropy probes
-
-**Files:**
-
-- Create: `packages/shared-web/browser/state-snapshot-read-convergence.ts`
-- Create: `packages/tests/shared-web/api-integration-state-snapshot-read.test.ts`
-- Create: `packages/tests/shared-web/state-snapshot-read-convergence.test.ts`
-- Modify: `packages/shared-web/browser/api-integration.ts`
-- Modify: `packages/shared-web/browser/api-workflows.ts`
-- Modify: `packages/shared-web/browser/rallar-runtime/contracts.ts`
-- Modify: `packages/shared-web/browser/rallar-runtime/state-store.ts`
-- Modify: `packages/shared-web/browser/rallar-runtime/rooms.ts`
-- Modify: `packages/shared-web/browser/rallar-runtime/composition.ts`
-- Modify: `packages/shared-web/mod.ts`
-- Modify: `packages/tests/shared-web/api-workflows.test.ts`
-- Modify: `packages/tests/shared-web/rallar-rooms-facade.test.ts`
-- Modify: `packages/tests/shared-web/rallar-rooms-people-state.test.ts`
-- Modify: `packages/tests/shared-web/shared-web-public-api-snapshots.test.ts`
-- Modify: `packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts`
-
-- [ ] Create `packages/tests/shared-web/api-integration-state-snapshot-read.test.ts` with failing tests that `findStateGroup(..., { minStateRevision: 7 })` and new `findStateClient(..., { minStateRevision: 7 })` append the encoded query, while omission produces no query string.
-- [ ] Add `StateSnapshotReadRequestOptions = ApiRequestOptions & StateSnapshotReadOptions`, add `findStateClient`, and update `findStateGroup` to call a shared `withStateSnapshotReadQuery(...)` helper.
-- [ ] Validate browser-supplied minimums before building URLs using the shared non-negative safe-integer rule; fail locally rather than sending malformed values.
-- [ ] Run the focused API integration/workflow tests; expect them to pass.
-- [ ] Add failing cadence tests for a deterministic interval of `5`: initial unknown revision is tokenless; after success, four reads carry the current local revision; the fifth is tokenless; a failed fifth request does not reset the schedule.
-- [ ] Add the same boundary test for interval `10`, plus separate-key tests for two groups with the same id in different workspaces and a client/group with the same entity id.
-- [ ] Add tests showing a newer locally observed revision is used on the next tokened read and an older local observation is never selected.
-- [ ] Implement `createStateSnapshotReadProbePolicy(...)` with injected interval sampling and per-key successful-read state. Do not add timers, storage persistence, or module-global mutable counters.
-- [ ] Export the factory and types from `packages/shared-web/mod.ts` and run `npx vitest run packages/tests/shared-web/state-snapshot-read-convergence.test.ts`; expect all cadence tests to pass.
-- [ ] Update the shared-web public API snapshot for the additive point-read options, client point function, probe-policy factory, and types. Extend the browser bundle-boundary test to prove the new convergence module imports no server, Deno, PostgreSQL, or Node runtime code.
-- [ ] Add `findClientSnapshotByRef(ref)` and `readGroupStateRevision(ref)`/`readClientStateRevision(ref)` accessors to `RallarStatePort`; keep the existing convenience lookups compatible.
-- [ ] Add `removeGroupSnapshot(ref)` to `RallarStatePort` using `removeGroupStateSnapshotByRef(...)`, including its session-index cleanup.
-- [ ] Add `refreshStateGroupSnapshot(...)` to `api-workflows.ts`. It performs exactly one point group GET under existing command/retry policies and returns one snapshot.
-- [ ] Keep `refreshStateSnapshots(...)` unchanged: it continues parallel durable collection reads.
-- [ ] Inject one probe-policy instance from `rallar-runtime/composition.ts` into the rooms controller.
-- [ ] Change only `RallarRoomSession.refresh(...)`: resolve the cached local group revision, ask the policy for a decision, call `refreshStateGroupSnapshot(...)`, call `recordSuccess(...)` only after the HTTP request succeeds, accept the returned group snapshot, and return a new session wrapper.
-- [ ] For an authoritative room-session decision that receives `ApiHttpError` status `404`, remove the exact scoped group snapshot, record the successful authoritative observation of absence, emit the state change, and rethrow the `404`. For tokened/non-authoritative `404`, rethrow without eviction because it does not carry the forced durable-read guarantee.
-- [ ] Ensure top-level `RallarRoomsFacade.refresh(...)` and `RallarPeopleFacade.refresh(...)` still use collection refresh and never attach a scalar minimum.
-- [ ] Ensure update-before-write workflows such as `updateStateGroupMetadata(...)` omit the minimum and read durable state; mutation correctness must not merge a deliberately stale cached snapshot.
-- [ ] Add room facade tests for local revision propagation, fifth/tenth forced omission, request failure not advancing cadence, per-room isolation, and monotonic acceptance of returned snapshots.
-- [ ] Add a room facade deletion test: the forced tokenless probe receives `404`, evicts only the exact scoped room, resets the probe cadence as an authoritative observation, and still rejects the refresh promise with the original `ApiHttpError`.
-- [ ] Add a regression test that top-level rooms/people refresh still calls list endpoints and that room-session refresh no longer fetches all clients/groups.
-- [ ] Run `npx vitest run packages/tests/shared-web/api-integration-state-snapshot-read.test.ts packages/tests/shared-web/state-snapshot-read-convergence.test.ts packages/tests/shared-web/api-workflows.test.ts packages/tests/shared-web/rallar-rooms-facade.test.ts packages/tests/shared-web/rallar-rooms-people-state.test.ts packages/tests/shared-web/shared-web-public-api-snapshots.test.ts packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts`; expect all tests to pass.
-- [ ] Run `npx tsc -p packages/shared-web/tsconfig.json --noEmit`; expect exit code `0`.
-- [ ] Run `npm --workspace @ar-eye-hunter/shared-web run check:browser-bundles`; expect the browser boundary check to pass and no server-only module in the bundle.
-- [ ] Commit: `git add packages/shared-web/browser/state-snapshot-read-convergence.ts packages/shared-web/browser/api-integration.ts packages/shared-web/browser/api-workflows.ts packages/shared-web/browser/rallar-runtime/contracts.ts packages/shared-web/browser/rallar-runtime/state-store.ts packages/shared-web/browser/rallar-runtime/rooms.ts packages/shared-web/browser/rallar-runtime/composition.ts packages/shared-web/mod.ts packages/tests/shared-web/api-integration-state-snapshot-read.test.ts packages/tests/shared-web/state-snapshot-read-convergence.test.ts packages/tests/shared-web/api-workflows.test.ts packages/tests/shared-web/rallar-rooms-facade.test.ts packages/tests/shared-web/rallar-rooms-people-state.test.ts packages/tests/shared-web/shared-web-public-api-snapshots.test.ts packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts && git commit -m "feat: add browser snapshot anti-entropy probes"`.
-
----
-
-### Task 5: Align OpenAPI and Swagger with the read contract
-
-**Files:**
-
-- Modify: `apps/api-v1/resources/api-v1-openapi.yaml`
-- Modify: `apps/api-v1/test/swagger-routes.test.ts`
-- Modify: `packages/shared-test/black-box-runner/tests/api-v1/api-v1-openapi-topology-auth.json`
-
-- [ ] Add a failing Swagger test that the client and group point GET operations reference a shared `MinStateRevision` query parameter with `type: integer`, `format: int64`, and `minimum: 0`.
-- [ ] Add failing assertions that both point operations document `400`, `404`, and `503`, the two state response headers, and the `Retry-After` header on `503`.
-- [ ] Add failing assertions that `ClientSnapshot.required` and `GroupSnapshot.required` include `stateRevision`, and both schemas expose it as a non-negative integer.
-- [ ] Run `cd apps/api-v1 && deno test --allow-env --allow-read test/swagger-routes.test.ts`; expect the new assertions to fail.
-- [ ] Add the shared parameter with a description that explicitly distinguishes “at least” from “latest” and says omission forces a durable read.
-- [ ] Add a reusable `StateSnapshotMinimumRevisionUnavailable` response and document the error codes/details without changing the generic error schema for unrelated routes.
-- [ ] Add `stateRevision` to both snapshot schemas' required lists and properties.
-- [ ] Add point-response header schemas and `Cache-Control` documentation.
-- [ ] State in collection route descriptions that collections read durable state and do not accept one entity revision floor.
-- [ ] Update the OpenAPI black-box recipe to assert the parameter, response codes, headers, and required snapshot fields from `/api/openapi.json`.
-- [ ] Run `cd apps/api-v1 && deno test --allow-env --allow-read test/swagger-routes.test.ts`; expect all tests to pass.
-- [ ] Run `npm run test:api-v1:black-box:recipes`; expect OpenAPI and recipe preflight to pass against the configured service, or record it as skipped when no API service is available.
-- [ ] Run `cd apps/api-v1 && deno task check`; expect exit code `0`.
-- [ ] Commit: `git add apps/api-v1/resources/api-v1-openapi.yaml apps/api-v1/test/swagger-routes.test.ts packages/shared-test/black-box-runner/tests/api-v1/api-v1-openapi-topology-auth.json && git commit -m "docs: specify causal snapshot reads in OpenAPI"`.
-
----
-
-### Task 6: Prove the old API-v1 failure under the new explicit semantics
-
-**Files:**
-
-- Modify: `apps/api-v1/test/routes/state-api-routes-hardening.test.ts`
-- Modify: `packages/tests/shared-server/state-sync-cache-hydration.test.ts`
-- Modify: `packages/tests/shared-server/cached-state-services.test.ts`
-- Modify: `packages/tests/shared-server/state-sync-publish-failure-characterization.test.ts`
-
-- [ ] Preserve the existing test that a successful remotely processed mutation hydrates the HTTP-receiving node. Rename its description to identify cache hydration as latency optimization.
-- [ ] Add a failing scenario with logical nodes A, B, and C over one durable repository: A receives the HTTP mutation response, B commits it, and C receives neither local hydration nor a state-sync observation.
-- [ ] Assert the mutation response exposes committed revision `N` and that all logical caches remain monotonic when they later observe it.
-- [ ] Assert `GET` semantics through A and C separately:
-  - no minimum reads durable revision `N`;
-  - minimum `N` returns revision `>= N` and falls back if needed;
-  - minimum `N - 1` may return cached `N - 1`;
-  - impossible minimum `N + 1` returns the typed retryable error.
-- [ ] Add a publication-failure test showing that loss/failure of state-sync observation does not break tokenless or at-least REST reads because they fall back to durable state.
-- [ ] Add a strict group authorization scenario: cache says member active at `N - 1`, durable state says banned at `N`, and a request with minimum `N - 1` is denied from durable policy state.
-- [ ] Run `npx vitest run packages/tests/shared-server/cached-state-services.test.ts packages/tests/shared-server/state-sync-cache-hydration.test.ts packages/tests/shared-server/state-sync-publish-failure-characterization.test.ts`; expect all tests to pass.
-- [ ] Run `cd apps/api-v1 && deno test --allow-env --allow-read test/routes/state-api-routes-hardening.test.ts`; expect all tests to pass.
-- [ ] Commit: `git add apps/api-v1/test/routes/state-api-routes-hardening.test.ts packages/tests/shared-server/state-sync-cache-hydration.test.ts packages/tests/shared-server/cached-state-services.test.ts packages/tests/shared-server/state-sync-publish-failure-characterization.test.ts && git commit -m "test: prove multi-node snapshot convergence semantics"`.
-
----
-
-### Task 7: Add a three-process API-v1 convergence black-box gate
-
-**Files:**
-
-- Create: `packages/shared-test/black-box-runner/tests/api-v1/api-v1-state-read-convergence.json`
-- Modify: `packages/shared-test/black-box-runner/recipe-matrix.json`
-- Modify: `packages/shared-test/black-box-runner/api-v1-black-box-run.mts`
-- Modify: `packages/shared-test/package.json`
-- Modify: `package.json`
-- Modify: `packages/tests/shared-test/api-v1-black-box-run.test.ts`
-- Modify: `packages/tests/shared-test/recipe-matrix.test.ts`
-- Modify: `.github/actions/api-v1-black-box-test/action.yml`
-- Modify: `.github/workflows/api-v1-black-box.yml`
-- Modify: `.github/workflows/release-gate.yml`
-- Modify: `packages/tests/repo/api-v1-black-box-workflow.test.ts`
-
-- [ ] Add failing runner tests for optional `--tertiary-port`: Postgres only, requires a secondary port, all three ports must be distinct, and environment exports `RALLAR_API_BASE_URL_TERTIARY`/`RALLAR_WS_BASE_URL_TERTIARY`.
-- [ ] Add a failing server-plan test expecting three managed server plans and a separate bounded log path for each process.
-- [ ] Run `npx vitest run packages/tests/shared-test/api-v1-black-box-run.test.ts`; expect the tertiary assertions to fail.
-- [ ] Extend the runner options, argument parser, environment builder, server-plan builder, readiness/start/stop handling, secret redaction coverage, and diagnostics to support a third managed API process.
-- [ ] Keep memory mode single-process and preserve the existing two-process invocation when no tertiary port is supplied.
-- [ ] Add `tertiary-api-port` to the composite action and pass it only when non-empty.
-- [ ] Configure the Postgres workflow and release gate with ports `18080`, `18081`, and `18082`; leave the memory workflow without secondary/tertiary ports.
-- [ ] Update repository workflow tests to assert three Postgres APIs and one memory API.
-- [ ] Run `npx vitest run packages/tests/shared-test/api-v1-black-box-run.test.ts packages/tests/repo/api-v1-black-box-workflow.test.ts`; expect all tests to pass.
-- [ ] Add the cluster-only recipe `api-v1-state-read-convergence` requiring primary, secondary, and tertiary HTTP services.
-- [ ] In the recipe, create/login an owner and member, establish client sessions and group presence, and capture every mutation response's `stateRevision`.
-- [ ] Warm point client/group reads on all three servers before a later mutation. Record response source/revision headers in artifacts but permit cache or durable source for tokened reads.
-- [ ] Mutate through the secondary server, capture committed revision `N`, and immediately read through the unrelated tertiary server:
-  - tokenless client GET must report source `durable` and revision `>= N`;
-  - client GET with minimum `N` must return revision `>= N` from cache or durable;
-  - no response may return below the supplied minimum.
-- [ ] Exercise invalid minimum and impossible minimum, asserting `400 invalid-min-state-revision` and `503 state-snapshot-minimum-revision-unavailable` with `Retry-After: 1`.
-- [ ] Warm a group snapshot on tertiary, ban the member through secondary, then have the banned member GET the group through tertiary with the old minimum. Assert `403`, proving strict policy did not trust the stale-tolerant cache.
-- [ ] Add bounded fixed-count reads instead of fixed sleeps: alternate mutations across primary/secondary, read each acknowledged minimum through tertiary, and assert every successful response is monotonic and at least the supplied floor. Record revision gaps and first-observation call count.
-- [ ] Add tokenless reads at positions 5 and 10 to mirror the browser policy and assert source `durable`; the browser unit test remains the proof that those positions are selected automatically.
-- [ ] Capture final group revision, then wait for topology publications whose `sourceGroupStateRevision` reaches the expected input using the existing bounded WS wait pattern. Accept publication arrival reordering, but never a regression after a newer causal revision has been observed.
-- [ ] Register the recipe in the `api-v1-black-box-cluster` profile and add recipe-matrix contract tests for all three required services.
-- [ ] Add `bb:api-v1:postgres` tertiary port `18082`; keep recipe-only and memory scripts unchanged.
-- [ ] Run `npx vitest run packages/tests/shared-test/api-v1-black-box-run.test.ts packages/tests/shared-test/recipe-matrix.test.ts packages/tests/repo/api-v1-black-box-workflow.test.ts`; expect all tests to pass.
-- [ ] Run `npm run test:api-v1:black-box:postgres`; expect the three-process convergence recipe and existing Postgres recipes to pass. If PostgreSQL is unavailable locally, record the command as skipped and require CI evidence before merge.
-- [ ] Commit: `git add packages/shared-test/black-box-runner/tests/api-v1/api-v1-state-read-convergence.json packages/shared-test/black-box-runner/recipe-matrix.json packages/shared-test/black-box-runner/api-v1-black-box-run.mts packages/shared-test/package.json package.json packages/tests/shared-test/api-v1-black-box-run.test.ts packages/tests/shared-test/recipe-matrix.test.ts .github/actions/api-v1-black-box-test/action.yml .github/workflows/api-v1-black-box.yml .github/workflows/release-gate.yml packages/tests/repo/api-v1-black-box-workflow.test.ts && git commit -m "test: add three-node state read convergence gate"`.
-
----
-
-### Task 8: Publish the client/group/topology snapshot mental model
-
-**Files:**
-
-- Create: `docs/rallar-state-snapshot-consistency.md`
-- Modify: `docs/README.md`
-- Modify: `docs/rallar-convergent-state-and-rtc-topology.md`
-- Modify: `docs/rallar-api-reference.md`
-- Modify: `docs/rallar-groups-report.md`
-- Modify: `docs/rallar-troubleshooting-checklist.md`
-- Modify: `packages/shared-server/rallar-server-repositories.md`
-- Modify: `packages/shared-server/rallar-server-repositories-improvements.md`
-
-- [ ] Write `docs/rallar-state-snapshot-consistency.md` from the Snapshot Mental Model and REST Contract Matrix in this plan. Include client, group, presence lease, topology, server-cache, browser-cache, and authorization sections.
-- [ ] Include concrete Node A/B/C sequences for:
-  - tokenless durable convergence;
-  - tokened cache hit above an older floor;
-  - cache miss and durable fallback at the acknowledged floor;
-  - strict group authorization after a remote ban;
-  - periodic browser forced probe.
-- [ ] State explicitly that “latest observed,” “at least N,” “authoritative read,” and “globally latest at receipt” are different claims.
-- [ ] Document `minStateRevision` only for point routes, its validation/error behavior, response headers, and the security exception.
-- [ ] Document browser cadence and clarify that top-level collection refresh is already durable.
-- [ ] Document the current `runtime_state_store` namespaces and key identities without presenting `_` workspace fallback or shared group-row heartbeat contention as the target design.
-- [ ] Cross-link the dedicated latest-table/outbox/causal-tuple discussion to `plans/api-v1-convergent-database-writing-remediation-plan.md`.
-- [ ] Update `docs/rallar-convergent-state-and-rtc-topology.md` causal revisions, process cache, browser convergence, guarantees/limits, and source-map sections to reference the new contract.
-- [ ] Update `docs/rallar-api-reference.md` rooms refresh, point snapshot REST, people/collection behavior, response headers, and middleware cache descriptions.
-- [ ] Update `docs/rallar-groups-report.md` read visibility and server authorization sections so stale-tolerant snapshots are never described as policy authority.
-- [ ] Update `docs/rallar-troubleshooting-checklist.md` with checks for query omission, response source/revision, requested/observed gaps, strict-auth behavior, browser probe count, and Node C fallback.
-- [ ] Update `packages/shared-server/rallar-server-repositories.md` REST data flow, caching summary, and operational semantics to distinguish the current physical store from response selection.
-- [ ] Reframe the mutation hydration entry in `rallar-server-repositories-improvements.md` as latency optimization and link to the durable/at-least correctness contract.
-- [ ] Add the new document to `docs/README.md` under the architecture/state documents.
-- [ ] Run `rg -n "minStateRevision|Rallar-State-Source|authoritative|latest observed|Node C" docs packages/shared-server/*.md`; manually verify every documented term uses the same semantics.
-- [ ] Run `rg -n "always current|globally latest|cache is authoritative" docs packages/shared-server/*.md`; inspect every match and remove contradictory claims.
-- [ ] Commit: `git add docs/rallar-state-snapshot-consistency.md docs/README.md docs/rallar-convergent-state-and-rtc-topology.md docs/rallar-api-reference.md docs/rallar-groups-report.md docs/rallar-troubleshooting-checklist.md packages/shared-server/rallar-server-repositories.md packages/shared-server/rallar-server-repositories-improvements.md && git commit -m "docs: explain Rallar snapshot consistency"`.
-
----
-
-### Task 9: Teach repo skills the convergence contract
-
-**Files:**
-
-- Modify: `.agents/skills/rallar-realtime/SKILL.md`
-- Modify: `.agents/skills/rallar-platform/SKILL.md`
-- Modify: `.agents/skills/rallar-code-writing/SKILL.md`
-- Modify: `.agents/skills/rallar-testing/SKILL.md`
-- Create: `.agents/skills/rallar-realtime/references/state-snapshot-consistency-checklist.md`
-- Modify: `.agents/skills/rallar-testing/references/test-commands.md`
-- Modify: `.agents/skills/rallar-code-writing/references/repo-code-style.md`
-- Verify: `packages/tests/repo/rallar-skill-integrity.test.ts`
-
-- [ ] Update `rallar-realtime` rules of thumb: cache is latest observed, point REST without minimum is durable, point REST with minimum is at-least, presence freshness is not completeness, and policy authority is durable.
-- [ ] Add `.agents/skills/rallar-realtime/references/state-snapshot-consistency-checklist.md` with the client/group/topology revision domains, REST matrix, authorization rule, and browser probe boundaries; link both it and `docs/rallar-state-snapshot-consistency.md` from the skill.
-- [ ] Update `rallar-platform` public-surface rules: one scalar minimum is entity-local and must not be added to collection contracts; structured causal tuples require coordinated cross-package migration.
-- [ ] Update `rallar-code-writing` contract defaults: centralize query parsing and read selection, preserve monotonic observation, fail closed on authoritative regression, and never reuse stale-tolerant response data for authorization or mutation validation.
-- [ ] Update `rallar-testing` selection rules: every state point-read change requires both tokenless and tokened behavior, invalid/unavailable minimums, multi-node cache isolation, strict-auth stale-cache denial, and browser probe-boundary tests.
-- [ ] Add exact commands from Tasks 1–7 to `rallar-testing/references/test-commands.md`, including when the three-process PostgreSQL gate may be skipped locally but is mandatory in CI.
-- [ ] Add scoped entity-key and mandatory-output guidance to `repo-code-style.md`; query/request omission remains optional by meaningful absence.
-- [ ] Run `npx vitest run packages/tests/repo/rallar-skill-integrity.test.ts`; expect all skill links, frontmatter, and references to pass.
-- [ ] Read every modified `SKILL.md` completely after editing and verify it does not contradict the new documentation or the companion database-write plan.
-- [ ] Commit: `git add .agents/skills/rallar-realtime .agents/skills/rallar-platform/SKILL.md .agents/skills/rallar-code-writing .agents/skills/rallar-testing && git commit -m "docs: teach snapshot convergence in Rallar skills"`.
-
----
-
-### Task 10: Final verification and review handoff
-
-**Files:**
-
-- Verify all files from Tasks 1–9
-- Update only if evidence requires correction: `plans/rallar-rest-snapshot-read-convergence-implementation-plan.md`
-
-- [ ] Run focused server selection tests:
-  - `npx vitest run packages/tests/shared-server/rest-state-snapshot-reader.test.ts packages/tests/shared-server/cached-state-services.test.ts packages/tests/shared-server/client-state-snapshot-read-through-cache.test.ts packages/tests/shared-server/group-state-snapshot-read-through-cache.test.ts packages/tests/shared-server/state-sync-cache-hydration.test.ts packages/tests/shared-server/state-sync-publish-failure-characterization.test.ts`
-- [ ] Run focused browser tests:
-  - `npx vitest run packages/tests/shared-web/api-integration-state-snapshot-read.test.ts packages/tests/shared-web/state-snapshot-read-convergence.test.ts packages/tests/shared-web/api-workflows.test.ts packages/tests/shared-web/rallar-rooms-facade.test.ts packages/tests/shared-web/rallar-rooms-people-state.test.ts packages/tests/shared-web/shared-web-public-api-snapshots.test.ts packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts`
-- [ ] Run focused API-v1 route/Swagger tests:
-  - `cd apps/api-v1 && deno test --allow-env --allow-read test/routes/state-snapshot-read.test.ts test/routes/state-api-routes-hardening.test.ts test/routes/graph-topology-routes.test.ts test/swagger-routes.test.ts`
-- [ ] Run runner/workflow/skill tests:
-  - `npx vitest run packages/tests/shared-test/api-v1-black-box-run.test.ts packages/tests/shared-test/recipe-matrix.test.ts packages/tests/repo/api-v1-black-box-workflow.test.ts packages/tests/repo/rallar-skill-integrity.test.ts`
-- [ ] Run type and package gates:
-  - `cd apps/api-v1 && deno task check`
-  - `npx tsc -p packages/shared-server/tsconfig.json --noEmit`
-  - `npx tsc -p packages/shared-web/tsconfig.json --noEmit`
-  - `npm --workspace @ar-eye-hunter/shared-web run check:browser-bundles`
-- [ ] Run `npm run test:api-v1:black-box:memory`; expect all single-process memory recipes to pass and no cluster recipe to run.
-- [ ] Run `npm run test:api-v1:black-box:postgres`; expect all three API processes to become ready and every default/cluster recipe, including `api-v1-state-read-convergence`, to pass.
-- [ ] Inspect black-box artifacts and record:
-  - mutation revision acknowledged by each server;
-  - tertiary first-observation revision and source;
-  - all requested minimum/returned revision pairs;
-  - impossible-minimum error;
-  - strict ban authorization result;
-  - final topology source revision;
-  - server logs for authoritative regression or equal-revision conflict.
-- [ ] Run `git diff --check`; expect no whitespace errors.
-- [ ] Run `git status --short`; verify only intentional changes remain.
-- [ ] Request code review with special attention to off-by-one probe cadence, strict group authorization, invalid query coercion, Node C isolation, CORS headers, and OpenAPI parity.
-- [ ] Do not claim completion if the three-process Postgres gate is skipped or failing; obtain CI evidence first.
-- [ ] Prepare the AI handoff required by `AGENTS.md`: files and behavior changed, rationale and compatibility, exact pass/fail/skip evidence, black-box artifact location, and follow-up proposals P3/P4/P6/P7.
-
----
+Use separate client and group selectors. Do not build a generic numeric
+`revisionOf` abstraction that erases the group partial order.
+
+### Absence, eviction, and tombstones
+
+An authoritative tokenless `404` proves absence at that durable observation.
+It does not supply a causal deletion revision. Unconditional deletion is
+race-unsafe:
+
+1. a durable not-found read begins;
+2. a newer positive snapshot is observed;
+3. the older not-found result deletes the newer entry.
+
+The selected near-term behavior is compare-and-remove:
+
+- capture the exact scoped cache observation before the durable read;
+- after durable not-found, remove only if the current entry is still identical
+  to the captured revision and content;
+- if the entry advanced, changed, or appeared after the read began, keep it;
+- return the authoritative `404` to the caller regardless of whether cleanup
+  won the race.
+
+This improves presentation convergence but does **not** prevent a delayed stale
+publication from recreating a positive entry. A causal tombstone is required
+for resurrection safety and for durable/distributed negative-cache convergence.
+The plan therefore rejects claims that simple deletion is equivalent to a
+tombstone.
+
+### AppInbox, CAS, and liveness boundaries
+
+- This plan adds no database mutation and no new transaction, retry loop,
+  mutation outbox, or final-outbox writer.
+- Incoming mutations continue through AppInbox. Every conflict returns to a
+  fresh `read`, `compute`, `validate`, and AppInbox-owned transaction.
+- Snapshot reads keep existing key/value/scope validation and stable assembly.
+- Group presence summaries remain hints. Durable snapshots keep one captured
+  observation time and revalidate current group, membership, and session
+  authority before reporting live presence.
+- Strict authorization, policy, capacity, lifecycle, and governance never use
+  a caller's stale-tolerant preference.
+- Mutation-result hydration remains a best-effort latency optimization. It is
+  not required for tokenless or at-least correctness.
+
+## Architecture Proposal Review
+
+| Proposal | Problem solved | Guarantee provided | Guarantee not provided | Current-architecture interaction | Security, performance, and compatibility | Recommendation |
+|---|---|---|---|---|---|---|
+| Tokenless durable point reads | Warm process cache can lag durable state | Reads a stable durable snapshot/absence at one observation boundary | No promise that another commit cannot occur after the read | Read-only; uses current repository assembly and does not enter AppInbox/CAS | More database work; strongest simple policy/auth basis; backward-compatible for existing group point behavior and a client behavior change | **Selected** |
+| Tokened at-least cache reads | Caller knows a committed revision but wants a cheap eligible read | Never returns below a client scalar floor or outside group causal equality/dominance | Does not promise newest durable state or presence completeness | Reuses process caches and current group tuple comparison; durable fallback remains read-only | Strict group auth bypasses cache; query additions are compatible; cache hits reduce read load | **Selected**, client scalar and group causal pair |
+| Periodic browser authoritative probes | Normal use can otherwise keep reusing eligible old cache data | Would bound convergence by calls if every scoped entity keeps being read | Does not cover idle entities and duplicates existing timer repair | Existing browser heartbeat already runs every 20 seconds and top-level refresh is durable | Random cadence adds hidden state, off-by-one risk, and inconsistent facade semantics | **Replaced** by explicit targeted room refresh, existing heartbeat, and scoped collection reconciliation |
+| Durable revision-head reads | Avoids assembling a full snapshot when checking a cache | Can reject a cache known below a canonical head | A head and later snapshot are not one atomic observation; still needs full read on miss | Group has two heads and liveness-filtered projections; adds another read before common paths | Extra database round trip; can encourage stale auth if misused | **Rejected** as default |
+| Latest-snapshot projection tables | Reduce multi-row assembly cost | Can provide one-row reads if projection is transactionally authoritative | Does not solve lag when populated asynchronously; does not remove tombstone needs | Would be an additional AppInbox/CAS write target and must use current causal tuple | Migration, write amplification, hot-presence contention, and compatibility cost require measurement | **Deferred** |
+| Durable invalidation/replay | Repair missed wakeups across API processes | Cursor replay plus anti-entropy can converge process caches after missed notifications | Does not by itself make browser caches current or authorize stale data | Must use final resource outbox truth or a separately approved durable source; no intermediate mutation outbox | Requires cursor ownership, retention, compaction, poison handling, and metrics | **Deferred** |
+| Tombstones | Prevent stale positives from resurrecting after deletion | Causal negative state can dominate earlier positives | Does not make authorization optional or remove retention policy | Requires authoritative deletion revision and transactionally consistent publication | Contract/storage migration and retention cost; necessary before claiming negative-cache convergence | **Deferred**, while compare-and-remove is selected as bounded cleanup |
+| Structured causal group revisions | Correctly represents independent group and presence progress | Equality/dominance/incomparability without scalar aliasing | Does not provide a workspace-wide collection revision | Already the authoritative model in source and caches | Two query/header fields add transport surface but preserve response compatibility | **Selected and already implemented internally** |
+| Convergence metrics and service-level targets | Make cache effectiveness and fallback behavior observable | Counters/histograms show source, fallback, shortfall, incomparable, and cleanup races | Metrics alone provide no consistency guarantee; percentile targets need a measured baseline | Add read-path instrumentation only; no mutation changes | Low compatibility risk; avoid high-cardinality IDs | **Selected metrics; latency SLOs deferred until baseline measurement** |
+
+Required metrics:
+
+- point reads by entity kind, source, strict-auth mode, and result;
+- cache floor hit, cache floor miss, durable fallback, durable shortfall, and
+  group incomparable counts;
+- durable snapshot latency by client/group and list-versus-point;
+- conditional absence cleanup applied/skipped because the cache advanced;
+- browser targeted refresh result and scoped collection reconciliation counts.
+
+Do not label a value `latest` unless it means latest observed at a named
+boundary. Do not define p95/p99 service-level targets until representative
+baseline results are recorded.
+
+## Implementation Tasks
+
+Every task below is future implementation work. This plan review authorizes
+none of it.
+
+### Task 0: Record architecture and feature-branch gates
+
+**Evidence:** This plan and `AGENTS.md`.
+
+- [ ] Recheck branch, full `HEAD`, full `origin/main`, `git status`, and user
+  changes.
+- [ ] Record the human choice of client scalar plus group causal pair:
+  `minStateRevision` for clients and the all-or-none
+  `minGroupRevision`/`minPresenceRevision` pair for groups.
+- [ ] Record acceptance of compare-and-remove as bounded cleanup without
+  resurrection safety, or split tombstone design into an approved prerequisite.
+- [ ] Record the bounded migration approach for non-injective client and shared
+  snapshot keys.
+- [ ] Confirm no scalar collection floor, no policy decision from stale cache,
+  and no new mutation path.
+- [ ] Before implementation edits, create or switch to
+  `codex/rallar-rest-snapshot-read-convergence`. Never implement task commits
+  on `main`, `master`, or another default branch.
+- [ ] Plan review or Task 0 approval is not commit, push, merge, rebase, or PR
+  permission. The future publication workflow applies only on the feature
+  branch; default-branch operations require the separate just-in-time
+  disclosures and permissions in `AGENTS.md`.
+
+No feature-branch checkpoint is created for the review gate alone.
+
+### Task 1: Make scoped keys and absence cleanup race-safe
+
+**Modify:**
+
+- `packages/shared-server/rallar-system/client-state-storage-keys.ts`
+- `packages/shared-server/rallar-system/repositories/ClientStateRepository.ts`
+- `packages/shared/repository/client-state-snapshots-repository.ts`
+- `packages/shared/repository/group-state-snapshots-repository.ts`
+- `packages/shared/cache/ObservableLatestRepository.ts`
+- `packages/shared/cache/ObservableLoanedRepository.ts`
+- `packages/shared-server/rallar-system/services/client-state-snapshot-read-through-cache.ts`
+- `packages/shared-server/rallar-system/services/group-state-snapshot-read-through-cache.ts`
+- `packages/tests/shared/observable-latest-repository.test.ts`
+- `packages/tests/shared/observable-loaned-repository.test.ts`
+
+**Create:**
+
+- `packages/tests/shared-server/client-state-storage-keys.test.ts`
+
+**Verify:**
+
+- `packages/tests/shared-server/client-state-snapshot-read-through-cache.test.ts`
+- `packages/tests/shared-server/group-state-snapshot-read-through-cache.test.ts`
+- `packages/tests/shared-web/data-caches.test.ts`
+
+Steps:
+
+- [ ] Add failing key tests covering field name, string value, type/presence,
+  absent workspace, explicit `_`, explicit empty string, delimiters, percent
+  sequences, child keys, prefix/list boundaries, and repository round trips.
+- [ ] Replace sentinel/empty-string aliases with a canonical typed projection.
+  Do not treat URI escaping alone as absence encoding.
+- [ ] For persisted client state, migrate a legacy row only after validating its
+  stored identity proves the intended scope and conditionally claiming the new
+  key. Do not fan one row into two scopes or add an unbounded dual-read.
+- [ ] Add conditional repository deletion that succeeds only when the current
+  value is the expected exact observation. Preserve observer and session-index
+  behavior.
+- [ ] Add `evictIfUnchanged` to both snapshot read-through caches and cover the
+  not-found/newer-positive race.
+- [ ] Keep new modules/interfaces within repo style limits; split implementation
+  helpers instead of growing an already oversized module without approval.
+- [ ] Run:
+  `npx vitest run packages/tests/shared/observable-latest-repository.test.ts packages/tests/shared/observable-loaned-repository.test.ts packages/tests/shared-server/client-state-storage-keys.test.ts packages/tests/shared-server/client-state-snapshot-read-through-cache.test.ts packages/tests/shared-server/group-state-snapshot-read-through-cache.test.ts packages/tests/shared-web/data-caches.test.ts`.
+
+**Feature-branch checkpoint only:** `fix: make snapshot cache identity and absence cleanup causal-safe`.
+
+### Task 2: Add separate client and group REST read selectors
+
+**Create:**
+
+- `packages/shared/api/state-snapshot-read.ts`
+- `packages/shared-server/rallar-system/services/rest-state-snapshot-reader.ts`
+- `packages/tests/shared-server/rest-state-snapshot-reader.test.ts`
+
+**Modify:**
+
+- `packages/shared-server/rallar-system/services/cached-client-state-service.ts`
+- `packages/shared-server/rallar-system/services/cached-group-state-service.ts`
+- `packages/shared-server/rallar-system/services/client-state-snapshot-read-through-cache.ts`
+- `packages/shared-server/rallar-system/services/group-state-snapshot-read-through-cache.ts`
+- `packages/shared-server/mod.ts`
+- `apps/api-v1/src/middleware-contract.ts`
+- `apps/api-v1/src/middleware.ts`
+
+**Verify:**
+
+- `packages/tests/shared-server/cached-state-services.test.ts`
+- `packages/tests/shared-server/client-state-snapshot-read-through-cache.test.ts`
+- `packages/tests/shared-server/group-state-snapshot-read-through-cache.test.ts`
+- `packages/tests/shared-server/state-sync-cache-hydration.test.ts`
+
+Steps:
+
+- [ ] Write failing client tests: tokenless performs one full durable read;
+  an eligible scalar cache answers tokened reads; an ineligible cache falls back
+  to durable; durable below the floor yields a typed retryable shortfall.
+- [ ] Write failing group tests with equality, dominance, domination, and
+  incomparability. Never project the tuple to a scalar for eligibility.
+- [ ] Add a typed found/not-found result with explicit `cache|durable` source.
+- [ ] Add client `readCurrentSnapshot` parity and separate REST selector
+  methods to the process-owned services wired through middleware.
+- [ ] Preserve current group `readCurrentSnapshot` as a direct durable read.
+  Do not add a revision-head probe.
+- [ ] On durable not-found, invoke `evictIfUnchanged` with the observation
+  captured before the read. Return not-found even when cleanup loses a race.
+- [ ] Do not turn a liveness-filtered group projection into stronger canonical
+  authority than its preserved causal tuple. Continue to reject incomparable
+  cache observation.
+- [ ] Add a deterministic three-logical-cache test over one durable fake:
+  warm A/B/C, commit through B, hydrate A/B only, prove C's client scalar and
+  group causal floor miss falls back to durable, and prove C tokenless always
+  reads durable.
+- [ ] Keep current mutation-result hydration tests as optimization tests.
+- [ ] Run:
+  `npx vitest run packages/tests/shared-server/rest-state-snapshot-reader.test.ts packages/tests/shared-server/cached-state-services.test.ts packages/tests/shared-server/client-state-snapshot-read-through-cache.test.ts packages/tests/shared-server/group-state-snapshot-read-through-cache.test.ts packages/tests/shared-server/state-sync-cache-hydration.test.ts`.
+
+**Feature-branch checkpoint only:** `feat: add scalar client and causal group REST snapshot readers`.
+
+### Task 3: Expose the contract without weakening authorization
+
+**Create:**
+
+- `apps/api-v1/src/routes/state-snapshot-read.ts`
+- `apps/api-v1/test/routes/state-snapshot-read.test.ts`
+
+**Modify:**
+
+- `apps/api-v1/src/routes/client-state-routes.ts`
+- `apps/api-v1/src/routes/group-state-routes.ts`
+- `apps/api-v1/src/routes/graph-topology-routes.ts`
+- `apps/api-v1/src/create-rallar-server.ts`
+- `apps/api-v1/src/main.ts`
+- `apps/api-v1/test/routes/state-api-routes-hardening.test.ts`
+- `apps/api-v1/test/routes/graph-topology-routes.test.ts`
+
+Steps:
+
+- [ ] Add table-driven parser tests for blank, whitespace, signed, negative,
+  decimal, exponential, `NaN`, `Infinity`, unsafe, and repeated values.
+- [ ] Require both group causal query components or neither.
+- [ ] Route client tokenless point and strict self-collection reads through the
+  durable current-client method.
+- [ ] Route non-policy-sensitive client tokened reads through the scalar
+  selector.
+- [ ] Preserve group tokenless direct durable behavior.
+- [ ] In non-strict mode, allow a group causal cache hit. In strict mode,
+  perform one durable current group read, check the requested causal floor,
+  authorize, and return that same snapshot.
+- [ ] Replace graph/topology's cache-permitting `readSnapshot` authority
+  dependency with `readCurrentSnapshot`; avoid duplicate durable reads within
+  one request by passing the obtained snapshot through existence and policy
+  checks.
+- [ ] Keep mutation route prechecks advisory only; AppInbox must still rerun
+  complete durable authorization and validation on every attempt.
+- [ ] Emit source/revision/no-store headers on `200`; emit `Retry-After: 1` on
+  shortfall/incomparable `503`; expose all headers in CORS.
+- [ ] Add assertions that serializers return all required authoritative fields.
+- [ ] Run:
+  `cd apps/api-v1 && deno test --allow-env --allow-read test/routes/state-snapshot-read.test.ts test/routes/state-api-routes-hardening.test.ts test/routes/graph-topology-routes.test.ts`.
+- [ ] Run: `cd apps/api-v1 && deno task check`.
+
+**Feature-branch checkpoint only:** `feat: expose causal snapshot floors in API v1`.
+
+### Task 4: Make browser refresh authoritative and scope-reconciling
+
+**Create:**
+
+- `packages/tests/shared-web/api-integration-state-snapshot-read.test.ts`
+- `packages/tests/shared-web/state-snapshot-read-reconciliation.test.ts`
+
+**Modify:**
+
+- `packages/shared-web/browser/api-integration.ts`
+- `packages/shared-web/browser/api-workflows.ts`
+- `packages/shared-web/browser/data-caches.ts`
+- `packages/shared-web/browser/rallar-runtime/contracts.ts`
+- `packages/shared-web/browser/rallar-runtime/state-store.ts`
+- `packages/shared-web/browser/rallar-runtime/rooms.ts`
+- `packages/shared-web/browser/rallar-runtime/people.ts`
+- `packages/shared-web/browser/rallar-runtime/composition.ts`
+- `packages/shared-web/mod.ts`
+- `packages/tests/shared-web/rallar-rooms-facade.test.ts`
+- `packages/tests/shared-web/rallar-people-facade.test.ts`
+- `packages/tests/shared-web/rallar-rooms-people-state.test.ts`
+- `packages/tests/shared-web/shared-web-public-api-snapshots.test.ts`
+- `packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts`
+
+Steps:
+
+- [ ] Add a client point function with scalar options and group point options
+  using the causal pair. Successful HTTP metadata must expose the response
+  source/revisions without weakening authoritative body validation.
+- [ ] Change `rallar.rooms.room(ref).refresh()` to one targeted tokenless group
+  point read. Keep `rallar.rooms.refresh()` and `rallar.people.refresh()` on
+  complete durable collection reads.
+- [ ] Do not add random 5–10-call state. The existing heartbeat remains the
+  background repair mechanism for the current client and joined groups.
+- [ ] On targeted `404`, compare-and-remove only the exact unchanged scoped
+  browser observation and rethrow the original `ApiHttpError`.
+- [ ] After a successful complete collection read, reconcile that scope:
+  remove a previously visible entity omitted from the result only when the
+  cached observation has not advanced since the request began.
+- [ ] Preserve group causal monotonicity and the current incomparable recovery
+  path. Never accept the compatibility scalar as group authority.
+- [ ] State in tests and public docs that physical removal can be followed by
+  stale-publication reinsertion until a future tombstone design lands.
+- [ ] Keep low-level point functions stateless. Callers explicitly choose
+  tokenless or tokened reads.
+- [ ] Update public API snapshots and browser bundle-boundary checks for every
+  new export.
+- [ ] Run:
+  `npx vitest run packages/tests/shared-web/api-integration-state-snapshot-read.test.ts packages/tests/shared-web/state-snapshot-read-reconciliation.test.ts packages/tests/shared-web/rallar-rooms-facade.test.ts packages/tests/shared-web/rallar-people-facade.test.ts packages/tests/shared-web/rallar-rooms-people-state.test.ts packages/tests/shared-web/shared-web-public-api-snapshots.test.ts packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts`.
+- [ ] Run: `npm --workspace @ar-eye-hunter/shared-web run check:browser-bundles`.
+
+**Feature-branch checkpoint only:** `feat: converge browser snapshot refresh and scoped absence`.
+
+### Task 5: Align OpenAPI, Swagger, and successful contracts
+
+**Modify:**
+
+- `apps/api-v1/resources/api-v1-openapi.yaml`
+- `apps/api-v1/test/swagger-routes.test.ts`
+- `packages/shared-test/black-box-runner/tests/api-v1/api-v1-openapi-topology-auth.json`
+
+Steps:
+
+- [ ] Add client `minStateRevision` and the all-or-none group causal query pair
+  to point operations only.
+- [ ] Add `400`, `404`, and retryable `503` response schemas and the source,
+  revision, `Retry-After`, and no-store header contracts.
+- [ ] Preserve required `ClientSnapshot.stateRevision`,
+  `GroupSnapshot.stateRevision`, and `GroupSnapshot.causalRevision`.
+- [ ] Add `minimum: 0` consistently to client revision fields and confirm all
+  successful required arrays, serializers, TypeScript contracts, and tests
+  agree.
+- [ ] Add Swagger and recipe assertions that collection/event/presence routes
+  do not advertise one entity floor.
+- [ ] Run:
+  `cd apps/api-v1 && deno test --allow-env --allow-read test/swagger-routes.test.ts`.
+- [ ] Run:
+  `npm run test:api-v1:black-box:memory`.
+
+**Feature-branch checkpoint only:** `docs: specify scalar client and causal group snapshot reads`.
+
+### Task 6: Prove logical and real multi-process convergence
+
+**Create:**
+
+- `packages/shared-test/black-box-runner/tests/api-v1/api-v1-state-read-convergence.json`
+
+**Modify:**
+
+- `packages/shared-test/black-box-runner/execute-black-box.ts`
+- `packages/shared-test/black-box-runner/recipe-matrix.json`
+- `packages/tests/shared-test/rallar-bb-test.test.ts`
+- `packages/tests/shared-test/api-v1-black-box-run.test.ts`
+- `packages/tests/shared-server/state-sync-event-replay-characterization.test.ts`
+- `apps/api-v1/test/routes/state-api-routes-hardening.test.ts`
+
+Steps:
+
+- [ ] Extend black-box HTTP result/report data to retain a normalized,
+  allow-listed response-header map; cover redaction and serialization before
+  recipes assert headers.
+- [ ] Add a two-process Postgres recipe that warms one process, mutates through
+  the other, captures the committed client scalar/group causal revision, and
+  proves:
+  - tokenless reads are durable;
+  - eligible floors may use cache;
+  - stale floors fall back to durable;
+  - no response is below a client scalar floor;
+  - group equality/dominance succeeds and incomparable/dominated durable
+    observations fail with the typed `503`;
+  - source and revision headers match the response body;
+  - strict group and graph/topology policy use durable current authority.
+- [ ] Keep the deterministic three-logical-cache unit test from Task 2 as the
+  proof that a cache missing all hydration/wakeup observations converges.
+- [ ] Do not add a tertiary API process. Current two-process integration plus
+  deterministic logical isolation proves the selected contract without
+  nondeterministic queue claimant or PostgreSQL wakeup behavior.
+- [ ] Run:
+  `npx vitest run packages/tests/shared-test/rallar-bb-test.test.ts packages/tests/shared-test/api-v1-black-box-run.test.ts packages/tests/shared-server/state-sync-event-replay-characterization.test.ts`.
+- [ ] Run:
+  `npm run test:api-v1:black-box:postgres`.
+- [ ] Run the mandatory unweakened gate:
+  `npm run test:api-v1:black-box:postgres:medium-scale`.
+- [ ] If local PostgreSQL is unavailable, report each command as skipped and
+  require exact CI evidence on the same feature commit; a skip does not satisfy
+  completion.
+
+**Feature-branch checkpoint only:** `test: prove two-process causal snapshot convergence`.
+
+### Task 7: Publish the current mental model in docs and skills
+
+**Create:**
+
+- `docs/rallar-state-snapshot-consistency.md`
+
+**Modify:**
+
+- `docs/README.md`
+- `docs/rallar-api-reference.md`
+- `docs/rallar-convergent-state-and-rtc-topology.md`
+- `docs/rallar-groups-report.md`
+- `docs/rallar-troubleshooting-checklist.md`
+- `packages/shared-server/rallar-server-repositories.md`
+- `.agents/skills/rallar-realtime/SKILL.md`
+- `.agents/skills/rallar-platform/SKILL.md`
+- `.agents/skills/rallar-testing/SKILL.md`
+- `.agents/skills/rallar-testing/references/test-commands.md`
+
+Steps:
+
+- [ ] Define internal consistency, client scalar monotonicity, group causal
+  partial order, presence completeness limits, durable authority, and
+  post-read commit races.
+- [ ] Describe current AppInbox transaction/retry ownership, direct final
+  resource outbox rows, per-session presence guards, summary revalidation, and
+  captured observation time. Do not describe them as future work.
+- [ ] Document the two point-route query shapes, headers, validation, typed
+  errors, and strict-auth exception.
+- [ ] Document targeted room refresh, existing 20-second heartbeat, scoped
+  collection reconciliation, compare-and-remove races, and why a physical
+  delete is not a tombstone.
+- [ ] Remove stale durable-head-probe, shared group-row presence contention,
+  future causal-split, intermediate mutation-outbox, package-code-style, random
+  cadence, and three-process claims.
+- [ ] Add only real focused commands to the testing skill.
+- [ ] Run:
+  `npx vitest run packages/tests/repo/rallar-skill-integrity.test.ts packages/tests/repo/repo-code-style-integrity.test.ts packages/tests/repo/repo-style-check.test.ts`.
+- [ ] Run: `npm run check:repo-style`.
+
+**Feature-branch checkpoint only:** `docs: publish causal REST snapshot consistency`.
+
+### Task 8: Final verification, publication, and review handoff
+
+**Verify the exact final feature-branch tree after all edits:**
+
+- [ ] Run focused commands from Tasks 1–7 and record exact results.
+- [ ] Run `npm run check:repo-style`.
+- [ ] Run `npm run test:unit`.
+- [ ] Run `npm run test:ci`.
+- [ ] Run `npm run build`.
+- [ ] Run `npm run test:api-v1:black-box:postgres:medium-scale`.
+- [ ] Run `git diff --check`.
+- [ ] Confirm every authoritative TypeScript/OpenAPI/serializer/test contract
+  remains aligned.
+- [ ] Confirm no incoming mutation bypasses AppInbox, no service owns a new
+  transaction/retry loop, and no intermediate mutation outbox was introduced.
+- [ ] Confirm no generated artifacts under `.artifacts/` or `tmp/` are staged.
+- [ ] Confirm the current branch is the feature branch before every checkpoint.
+
+Any change after a successful final `test:unit`, `test:ci`, or `build` result
+invalidates that result and requires rerunning the command.
+
+**Publication requirements:**
+
+- [ ] On the non-default feature branch, commit only reviewed in-scope files,
+  push the branch, and keep a draft PR current with the plan link, milestones,
+  exact passed/failed/skipped validation, and incomplete decisions.
+- [ ] Record the final feature-branch commit SHA.
+- [ ] Require **Branch Release Gate** to pass for that exact final
+  feature-branch SHA. The workflow is defined in
+  `.github/workflows/branch-release-gate.yml:1-14`.
+- [ ] After a separately authorized integration to the default branch, record
+  the resulting default-branch SHA.
+- [ ] Require **Run Hetzner Supported Distributed Manifests** to pass for that
+  exact default-branch SHA. The workflow is defined in
+  `.github/workflows/hetzner-supported-distributed-manifests.yml:1-50`.
+- [ ] Do not infer either result from a workflow attached to older code.
+- [ ] Do not mark the plan approved or implementation-complete while a command,
+  draft PR update, workflow, or exact-SHA evidence is pending, skipped, failed,
+  or prohibited.
+
+**Final feature-branch checkpoint only:** `feat: complete REST snapshot read convergence`.
 
 ## Acceptance Criteria
 
-- Tokenless client/group point GETs always invoke durable full-snapshot reads and report `Rallar-State-Source: durable`.
-- Tokened point GETs never return below the requested `minStateRevision`.
-- An eligible cache at or above the minimum can answer without a database read in non-policy-sensitive paths.
-- A stale or absent cache falls back to durable state and observes the result monotonically.
-- Invalid minimums are `400`; durable state below the floor is retryable `503`; authoritative regression is fail-closed `503`.
-- Client/group collection and client-presence behavior remains durable and does not pretend one scalar covers multiple entities.
-- Strict group reads and graph/topology policy checks use current durable group policy even when the caller supplies an older minimum.
-- A logical or real Node C that missed mutation hydration still satisfies tokenless and at-least reads.
-- Browser room-session point reads force a successful tokenless durable read every fifth through tenth read per scoped entity; transport, `5xx`, authorization, and invalid-request failures do not advance the schedule, while an authoritative `404` evicts absence and resets it.
-- Top-level rooms/people collection refresh remains authoritative and backward compatible.
-- Browser and server caches never regress and still reject equal-revision/different-content conflicts.
-- OpenAPI/Swagger exposes the query, headers, errors, and required snapshot revision fields.
-- The dedicated consistency document and repo skills distinguish internal consistency, monotonicity, freshness, and authority.
-- Focused tests, type checks, bundle checks, memory black-box, and three-process PostgreSQL black-box all pass with recorded evidence.
+- Client point GET without a minimum performs a full durable read.
+- Group point GET without a minimum preserves the already-durable current read.
+- Client tokened reads never return below `minStateRevision`.
+- Group tokened reads return cache only when the causal tuple equals or
+  dominates the complete requested pair; incomparable is never accepted.
+- A cache miss/ineligible value falls back to durable. A durable value below or
+  incomparable with the requested floor returns typed retryable `503`.
+- Collections accept no entity minimum. Strict self-client collection is
+  durable; group collections remain durable and policy-filter current
+  snapshots.
+- Strict group point/event/graph/topology authorization uses durable current
+  authority and never a stale-tolerant response candidate.
+- Presence summaries remain hints; durable assembly revalidates lifecycle,
+  membership, session identity/generation, connectivity, and expiry at one
+  captured time while preserving `GroupStateCausalRevision`.
+- Mutation-result hydration remains operational but is not required for
+  correctness.
+- A logical Node C that missed hydration and wakeups still converges through
+  tokenless or at-least durable fallback.
+- Room-session refresh is a targeted tokenless durable point read. Top-level
+  rooms/people refresh remains a durable collection read.
+- Successful collection refresh reconciles unchanged omitted entries in the
+  requested scope; it never deletes an entry that advanced during the request.
+- Authoritative not-found cleanup is compare-and-remove. Documentation and
+  tests do not claim resurrection safety without a causal tombstone.
+- Client and group storage/cache keys are injective over field, value,
+  type/presence, delimiters, percent sequences, and child/prefix boundaries.
+- TypeScript authoritative fields, serializers, OpenAPI `required` arrays,
+  Swagger, browser validation, and tests remain aligned.
+- Response source/revision headers, CORS exposure, no-store policy, and
+  retryable errors match the selected contract.
+- Focused tests, repo style, `test:unit`, `test:ci`, `build`, ordinary Postgres
+  black-box, and the unweakened two-process medium-scale gate have exact
+  recorded results.
+- The draft PR is current; Branch Release Gate is green on the final feature
+  SHA; Hetzner supported manifests are green on the resulting default-branch
+  SHA.
 
 ## Explicit Non-Goals
 
-- Replacing `runtime_state_store` with dedicated latest snapshot tables.
-- Implementing the CAS/outbox database-write remediation plan.
-- Splitting group and presence into a structured causal revision in this change.
-- Claiming globally latest state at response receipt time.
-- Making WebSocket notifications a lossless durable invalidation stream.
-- Background browser polling or timers.
-- Applying one scalar minimum to collection, event, topology, stats, admin, or presence payloads without a separately designed causal contract.
-- Weakening strict read authorization, group policy, capacity, lifecycle, or governance checks to improve cache hit rate.
+- Claiming globally latest state at response receipt.
+- Inventing a scalar group causal floor or a workspace collection revision.
+- Replacing runtime-state snapshot assembly with projection tables in this
+  implementation.
+- Adding durable cache-invalidation replay in this implementation.
+- Claiming physical cache deletion is a tombstone.
+- Adding a third API-v1 process to the black-box runner.
+- Adding a second random browser probe cadence beside the existing heartbeat.
+- Changing AppInbox mutation ownership, CAS retry boundaries, or final resource
+  outbox behavior.
+- Resolving the current final-outbox collision-policy mismatch noted in the
+  revalidation ledger.
+- Weakening authorization, policy, lifecycle, capacity, or governance for cache
+  hit rate.
 
-## Follow-Up Decision Points
+## Human Decisions Still Required
 
-After this implementation has production measurements, review:
+1. Approve or revise the external group query shape:
+   `minGroupRevision` plus `minPresenceRevision`, both required together.
+2. Accept compare-and-remove as bounded near-term absence cleanup, with causal
+   tombstones deferred and resurrection safety explicitly unclaimed.
+3. Approve the bounded migration for the current non-injective client and shared
+   snapshot key projections, or split it into a prerequisite plan before exact
+   scoped eviction ships.
+4. Decide whether to retain a group `Rallar-State-Revision` header as a clearly
+   labelled compatibility projection; it cannot satisfy the causal contract.
+5. Assign separate ownership for the current source-versus-`AGENTS.md`
+   final-outbox collision-policy mismatch.
+6. Approve implementation only on a feature branch. This plan review never
+   grants permission for a default-branch commit or push.
 
-1. Cache-hit rate and durable fallback rate for tokened point reads.
-2. p50/p95/p99 durable snapshot assembly latency and row/JSON size by group size.
-3. Frequency of browser forced probes finding a newer revision.
-4. Cross-node time/call-count to first observation after an acknowledged mutation.
-5. Whether the transaction-local mutation outbox from the companion plan is sufficient for durable cache invalidation/replay.
-6. Whether measured read cost justifies dedicated latest projection tables, and whether their write amplification is acceptable under hot presence churn.
-7. Whether group/presence causal decomposition must land before any latest group projection.
-8. Tombstone retention and negative-cache semantics after durable invalidation exists.
+After production measurement, separately review projection tables, durable
+replay, causal tombstone retention, and numeric latency service-level targets.
