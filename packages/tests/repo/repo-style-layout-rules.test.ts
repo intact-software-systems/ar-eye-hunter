@@ -1,5 +1,4 @@
 import path from 'node:path';
-
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -63,7 +62,9 @@ describe('repository layout rules', () => {
     const message = findingsFor(scan(denseFixture(files)), rules.featurePrefixCluster)[0]?.message;
     const sortedFiles = [...files].sort();
     expect(message).toContain('6 direct files');
-    for (const file of sortedFiles.slice(0, 5)) expect(message).toContain(file);
+    for (const file of sortedFiles.slice(0, 5)) {
+      expect(message).toContain(file);
+    }
     expect(message).not.toContain(sortedFiles[5]);
   });
   it('groups exact filename, generic-name, tool-name, and mod-boundary cases', () => {
@@ -104,11 +105,7 @@ describe('repository layout rules', () => {
     ['renamed export', 'function init() {}\nexport { init as registerRoutes };', 0],
     ['unrelated export', 'function registerRoutes() {}\nexport { registerRoutes };', 0],
     ['imported binding', "import { init } from './other-routes.ts';\nexport { init };", 0],
-    [
-      'nested callable shadow',
-      'const init = 1;\nfunction f() { const init = () => {}; return init; }\nexport { init };',
-      0,
-    ],
+    ['nested callable shadow', 'const init=1; function f(){const init=()=>{}} export{init}', 0],
   ])('resolves an export-list %s to a top-level callable init', (_kind, raw, count) => {
     const result = scanFiles({ 'feature/export-list-routes.ts': raw });
     expect(result.counts[rules.genericRouteInit]).toBe(count);
@@ -335,7 +332,10 @@ describe('repository layout rules', () => {
   });
 });
 
-type SourceRecord = { readonly file: string; readonly raw: string };
+interface SourceRecord {
+  readonly file: string;
+  readonly raw: string;
+}
 type ScanResult = ReturnType<typeof scanRepositoryLayout>;
 type Files = Readonly<Record<string, string>>;
 type DetailRule = keyof typeof detailRuleIds;
