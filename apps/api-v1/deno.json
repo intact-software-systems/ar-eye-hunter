@@ -35,6 +35,13 @@
     "db:status": "deno task prisma migrate status",
     "rtc:migrate-persisted-state": "deno run --allow-env --allow-net --allow-read --allow-write scripts/migrate-rtc-persisted-state.ts"
   },
+  "deploy": {
+    "runtime": {
+      "type": "dynamic",
+      "entrypoint": "./src/main.ts",
+      "cwd": "."
+    }
+  },
   "compilerOptions": {
     "strict": true,
     "lib": [

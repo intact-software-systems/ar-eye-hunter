@@ -119,6 +119,18 @@ An instruction not to commit or push postpones publication; it does not waive
 any completion gate. Continue safe uncommitted work and report the plan as
 incomplete until the publication and remote gates are permitted and successful.
 
+## Feature-Branch Check Scope
+
+Cloudflare Workers, Cloudflare Pages, and Deno Deploy production or preview
+contexts are default-branch deployment concerns. They must run only for `main`;
+they are not additional feature-branch release gates. If one appears on a
+feature branch, report provider branch-control configuration drift and use
+`docs/production-deployment.md` for remediation. Do not reinterpret a provider
+preview failure as an application failure required by **Branch Release Gate**.
+
+On `main`, provider deployment failures remain real release evidence and must
+be investigated when those deployments are enabled.
+
 ## Publication Failure
 
 If the environment cannot create or push the branch, preserve the work and

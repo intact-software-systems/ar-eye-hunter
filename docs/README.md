@@ -24,6 +24,9 @@ and authoritative persisted/shared contracts use mandatory fields by default.
 
 ## Documents
 
+- [Production Deployment And Branch Controls](./production-deployment.md)
+  Main-only Cloudflare and Deno deployment policy, staged Deno Actions cutover,
+  and human verification steps for provider configuration drift.
 - [Repo Human Style Review Guide](./repo-human-style-guide.md) Human review
   sequence and warning-only checker usage for the authoritative repo TypeScript
   standard in

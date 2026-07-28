@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       skip_release_gate:
-        description: "Skip release gate validation for this manual deploy"
+        description: 'Skip release gate validation for this manual deploy'
         required: false
         default: false
         type: boolean
@@ -16,19 +16,48 @@ permissions:
   contents: read
   deployments: write
 
+concurrency:
+  group: production-deploy-${{ github.repository }}
+  cancel-in-progress: false
+
 jobs:
   release-gate:
     name: Release Gate
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.skip_release_gate != true }}
     uses: ./.github/workflows/release-gate.yml
 
+  deno-deploy-preflight:
+    name: Verify Deno Deploy access
+    needs: release-gate
+    if: ${{ always() && !cancelled() && github.ref == 'refs/heads/main' && vars.DENO_DEPLOY_ACTIONS_ENABLED == 'true' && (needs.release-gate.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.skip_release_gate == true)) }}
+    runs-on: ubuntu-latest
+    env:
+      DENO_DEPLOY_TOKEN: ${{ secrets.DENO_DEPLOY_TOKEN }}
+
+    steps:
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Verify token and application access
+        run: |
+          if [ -z "$DENO_DEPLOY_TOKEN" ]; then
+            echo "::error::DENO_DEPLOY_TOKEN is not configured"
+            exit 1
+          fi
+          deno deploy whoami --json --non-interactive
+          deno deploy apps get --org intact-software-systems --app rallar-server --json --non-interactive
+          deno deploy apps get --org intact-software-systems --app rallar-bb-server --json --non-interactive
+          deno deploy apps get --org intact-software-systems --app relic-hunters --json --non-interactive
+
   # ----------------------------
-  # Web SPA → Cloudflare Pages
+  # Web SPA build for Cloudflare Pages
   # ----------------------------
   deploy-eye-hunter:
-    name: Deploy Eye Hunter Web (Cloudflare Pages)
+    name: Build Eye Hunter Web for Cloudflare Pages
     needs: release-gate
-    if: ${{ always() && !cancelled() && (needs.release-gate.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.skip_release_gate == true)) }}
+    if: ${{ always() && !cancelled() && github.ref == 'refs/heads/main' && (needs.release-gate.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.skip_release_gate == true)) }}
     runs-on: ubuntu-latest
 
     steps:
@@ -46,19 +75,19 @@ jobs:
           API_BASE_URL: https://api.rallar.intactss.com
           VITE_RALLAR_AUTH_STORAGE: session
           VITE_RALLAR_BROWSER_AI: webllm
-          VITE_RALLAR_BROWSER_AI_ENABLED: "true"
+          VITE_RALLAR_BROWSER_AI_ENABLED: 'true'
           VITE_RALLAR_WEBLLM_MODEL: Llama-3.2-1B-Instruct-q4f16_1-MLC
         run: |
           npm install
           npm run build
 
   # ----------------------------
-  # Web SPA → Cloudflare Pages
+  # Web SPA build for Cloudflare Workers
   # ----------------------------
   deploy-relic-web:
-    name: Deploy Relic Hunter Web (Cloudflare Pages)
+    name: Build Relic Hunter Web for Cloudflare Workers
     needs: release-gate
-    if: ${{ always() && !cancelled() && (needs.release-gate.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.skip_release_gate == true)) }}
+    if: ${{ always() && !cancelled() && github.ref == 'refs/heads/main' && (needs.release-gate.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.skip_release_gate == true)) }}
     runs-on: ubuntu-latest
 
     steps:
@@ -77,12 +106,12 @@ jobs:
           npm run build
 
   # ----------------------------
-  # Web SPA → Cloudflare Pages
+  # Web SPA build for Cloudflare Workers
   # ----------------------------
   deploy-rallar-kit:
-    name: Deploy Rallar Kit black-box Web (Cloudflare Pages)
+    name: Build Rallar Kit black-box Web for Cloudflare Workers
     needs: release-gate
-    if: ${{ always() && !cancelled() && (needs.release-gate.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.skip_release_gate == true)) }}
+    if: ${{ always() && !cancelled() && github.ref == 'refs/heads/main' && (needs.release-gate.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.skip_release_gate == true)) }}
     runs-on: ubuntu-latest
 
     steps:
@@ -105,8 +134,10 @@ jobs:
   # ----------------------------
   deploy-api:
     name: Deploy API (Deno Deploy)
-    needs: release-gate
-    if: ${{ always() && !cancelled() && (needs.release-gate.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.skip_release_gate == true)) }}
+    needs:
+      - release-gate
+      - deno-deploy-preflight
+    if: ${{ always() && !cancelled() && github.ref == 'refs/heads/main' && vars.DENO_DEPLOY_ACTIONS_ENABLED == 'true' && needs.deno-deploy-preflight.result == 'success' && (needs.release-gate.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.skip_release_gate == true)) }}
     runs-on: ubuntu-latest
 
     steps:
@@ -127,6 +158,15 @@ jobs:
           key: ${{ runner.os }}-deno-${{ hashFiles('apps/api-v1/deno.lock') }}
           restore-keys: |
             ${{ runner.os }}-deno-
+
+      - name: Verify checked out commit is current main
+        run: |
+          git fetch --no-tags origin main
+          remote_main_sha="$(git rev-parse origin/main)"
+          if [ "$GITHUB_SHA" != "$remote_main_sha" ]; then
+            echo "::error::Refusing stale production deploy: workflow commit is no longer main tip"
+            exit 1
+          fi
 
       - name: Prisma validate
         working-directory: apps/api-v1
@@ -146,14 +186,17 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: deno task prisma migrate deploy
 
-      - name: Trigger Deno Deploy
-        run: |
-          echo "Deno Deploy auto-deploys from GitHub main branch"
+      - name: Deploy rallar-server to Deno Deploy
+        env:
+          DENO_DEPLOY_TOKEN: ${{ secrets.DENO_DEPLOY_TOKEN }}
+        run: deno deploy . --config apps/api-v1/deno.json --org intact-software-systems --app rallar-server --prod --json --non-interactive
 
-  deploy-in-memory-api:
-    name: Deploy In-Memory API (Deno Deploy)
-    needs: release-gate
-    if: ${{ always() && !cancelled() && (needs.release-gate.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.skip_release_gate == true)) }}
+  deploy-control-server:
+    name: Deploy Black Box Control Server (Deno Deploy)
+    needs:
+      - release-gate
+      - deno-deploy-preflight
+    if: ${{ always() && !cancelled() && github.ref == 'refs/heads/main' && vars.DENO_DEPLOY_ACTIONS_ENABLED == 'true' && needs.deno-deploy-preflight.result == 'success' && (needs.release-gate.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.skip_release_gate == true)) }}
     runs-on: ubuntu-latest
 
     steps:
@@ -171,18 +214,30 @@ jobs:
           path: |
             ~/.cache/deno
             ~/.npm
-          key: ${{ runner.os }}-deno-${{ hashFiles('apps/api-v1/deno.lock') }}
+          key: ${{ runner.os }}-deno-${{ hashFiles('apps/rallar-black-box-control-server/deno.lock') }}
           restore-keys: |
             ${{ runner.os }}-deno-
 
-      - name: Trigger Deno Deploy
+      - name: Verify checked out commit is current main
         run: |
-          echo "Deno Deploy auto-deploys from GitHub main branch"
+          git fetch --no-tags origin main
+          remote_main_sha="$(git rev-parse origin/main)"
+          if [ "$GITHUB_SHA" != "$remote_main_sha" ]; then
+            echo "::error::Refusing stale production deploy: workflow commit is no longer main tip"
+            exit 1
+          fi
+
+      - name: Deploy rallar-bb-server to Deno Deploy
+        env:
+          DENO_DEPLOY_TOKEN: ${{ secrets.DENO_DEPLOY_TOKEN }}
+        run: deno deploy . --config apps/rallar-black-box-control-server/deno.json --org intact-software-systems --app rallar-bb-server --prod --json --non-interactive
 
   deploy-relic-api:
     name: Deploy Relic API (Deno Deploy)
-    needs: release-gate
-    if: ${{ always() && !cancelled() && (needs.release-gate.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.skip_release_gate == true)) }}
+    needs:
+      - release-gate
+      - deno-deploy-preflight
+    if: ${{ always() && !cancelled() && github.ref == 'refs/heads/main' && vars.DENO_DEPLOY_ACTIONS_ENABLED == 'true' && needs.deno-deploy-preflight.result == 'success' && (needs.release-gate.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.skip_release_gate == true)) }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
@@ -203,6 +258,15 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-deno-
 
+      - name: Verify checked out commit is current main
+        run: |
+          git fetch --no-tags origin main
+          remote_main_sha="$(git rev-parse origin/main)"
+          if [ "$GITHUB_SHA" != "$remote_main_sha" ]; then
+            echo "::error::Refusing stale production deploy: workflow commit is no longer main tip"
+            exit 1
+          fi
+
       - name: Prisma validate
         working-directory: apps/api-v1
         env:
@@ -221,6 +285,7 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL_RELIC }}
         run: deno task prisma migrate deploy
 
-      - name: Trigger Deno Deploy
-        run: |
-          echo "Deno Deploy auto-deploys from GitHub main branch"
+      - name: Deploy relic-hunters to Deno Deploy
+        env:
+          DENO_DEPLOY_TOKEN: ${{ secrets.DENO_DEPLOY_TOKEN }}
+        run: deno deploy . --config apps/relic-hunter-server-v1/deno.json --org intact-software-systems --app relic-hunters --prod --json --non-interactive

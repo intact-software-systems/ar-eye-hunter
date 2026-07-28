@@ -201,6 +201,17 @@ the repo-local Codex plugin under `.agents/skills/**`.
   - Any follow-up needed.
 - Keep the handoff structured, not just an action list. If tradeoffs were made,
   call them out explicitly.
+- Every final handoff ends with a collapsed `<details>` block using exactly
+  `<summary>Commands executed and what they taught us</summary>`. If no
+  commands or tool actions ran, say so inside the collapsed block.
+- Group repeated or equivalent commands. For each command or consequential
+  tool action, explain why the command or action was chosen, the important
+  result or exit status, what its result means, and one useful lesson or
+  reusable troubleshooting insight. Keep routine output summarized instead of
+  pasting raw logs.
+- Never expose secrets, tokens, credentials, authorization headers,
+  environment-file contents, or other sensitive values in the learning
+  summary. Describe only the safe shape and outcome of sensitive operations.
 
 ## Performance analysis repo guidance
 

@@ -256,6 +256,21 @@ describe('Rallar repo skill and documentation integrity', () => {
     ]);
   });
 
+  it('requires a collapsed learning-oriented command summary in every final handoff', () => {
+    const agents = readRepo('AGENTS.md');
+
+    expectAllNormalized(agents, [
+      'Every final handoff ends with a collapsed `<details>` block',
+      '<summary>Commands executed and what they taught us</summary>',
+      'If no commands or tool actions ran, say so inside the collapsed block',
+      'Group repeated or equivalent commands',
+      'why the command or action was chosen',
+      'what its result means',
+      'useful lesson or reusable troubleshooting insight',
+      'Never expose secrets, tokens, credentials, authorization headers',
+    ]);
+  });
+
   it('provides the greenfield app workflow and audited evidence map', () => {
     const skill = readRepo('.agents/skills/building-rallar-apps/SKILL.md');
     const scaffolding = readRepo(
