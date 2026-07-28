@@ -6,6 +6,7 @@ version of these rules.
 
 ## Contents
 
+- [First principle: code is for human developers](#first-principle-code-is-for-human-developers)
 - [Scope and adoption](#scope-and-adoption)
 - [Formatting and spacing](#formatting-and-spacing)
 - [Predictable file layout](#predictable-file-layout)
@@ -27,6 +28,24 @@ version of these rules.
 - [Comments and self-explanatory code](#comments-and-self-explanatory-code)
 - [Review and automation](#review-and-automation)
 
+## First principle: code is for human developers
+
+Code is written first for human developers. Correctness, safety, security,
+compatibility, and required performance are non-negotiable constraints.
+Within those constraints, human understandability is the governing design criterion
+for this standard.
+
+Prefer code whose owner, inputs, defaults, decisions, side effects, failures,
+and result can be located and followed directly from descriptive filenames,
+symbols, and call paths. Do not apply a rule mechanically when doing so adds
+pass-through abstractions, hides a decision, fragments one coherent dataflow,
+or otherwise makes the code harder to review, debug, or change.
+
+The rules below are defaults derived from this principle together with the
+repository's correctness and operational requirements. When two rules pull in
+different directions, state the concrete tradeoff and ask the human rather than
+inventing another abstraction.
+
 ## Scope and adoption
 
 - The standard applies to TypeScript under `apps/**`, `packages/**`, `scripts/**`, examples, tests, and support tooling.
@@ -40,8 +59,9 @@ version of these rules.
 - A deliberate exception requires explicit human approval and a short rationale in the task handoff. Existing violations
   are not precedent.
 
-The goal is human traceability: a reader should be able to follow inputs, decisions, side effects, and failures without
-repeatedly jumping through generic helpers or reconstructing partially optional types.
+Apply the first principle by keeping inputs, decisions, side effects, and
+failures traceable without repeated jumps through generic helpers or
+reconstruction of partially optional types.
 
 ## Formatting and spacing
 

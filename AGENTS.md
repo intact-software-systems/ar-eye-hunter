@@ -3,6 +3,19 @@
 Use this file as the lightweight repo orientation. Detailed workflows live in
 the repo-local Codex plugin under `.agents/skills/**`.
 
+## Primary Code Goal
+
+Code is written first for human developers. Correctness, safety, security,
+compatibility, and required performance are non-negotiable. Within those
+constraints, human understandability is the governing design criterion:
+prefer the design whose ownership, dataflow, decisions, side effects,
+failures, and call paths a human can locate and follow most directly.
+
+Every coding and architecture rule is interpreted through this principle. A
+mechanically compliant change is not successful when it makes the code harder
+for a human to understand, review, debug, or modify. For TypeScript, use the
+`rallar-code-writing` skill and its authoritative repo standard.
+
 ## Start Here
 
 - Inspect the existing code and relevant `examples/**` before editing; Rallar
