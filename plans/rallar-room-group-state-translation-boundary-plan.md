@@ -647,6 +647,12 @@ The boundary uses named, data-only inputs. Operation policies, scope, API
 functions, commands, clocks, random sources, caches, and listeners are not
 members of these inputs. The exact shared input vocabulary is:
 
+The following request-carrying input amendment was authorized during Task 3
+review. It preserves the original plan approval while making the higher-level
+legacy compatibility rule explicit: the exact caller request is data at the
+boundary, and its serialized field set and insertion order must survive the
+move unchanged.
+
 ```ts
 interface RoomGroupStateMutationActorInput {
   readonly actorPrincipalId: string;
@@ -654,8 +660,8 @@ interface RoomGroupStateMutationActorInput {
   readonly requestId: string;
 }
 
-interface RoomGroupStateReasonedMutationInput extends RoomGroupStateMutationActorInput {
-  readonly reason?: string;
+interface RoomGroupStateRequestInput<TRequest> extends RoomGroupStateMutationActorInput {
+  readonly request: TRequest;
 }
 
 type RoomCreateGroupStateFields = Pick<
@@ -711,7 +717,9 @@ interface ToJoinGroupStateRequestInput extends RoomGroupStateMutationActorInput 
 
 function toJoinGroupStateRequest(input: ToJoinGroupStateRequestInput): JoinGroupRequest;
 
-interface ToRoomLifecycleGroupStateRequestInput extends RoomGroupStateReasonedMutationInput {
+interface ToRoomLifecycleGroupStateRequestInput extends RoomGroupStateRequestInput<
+  Omit<UpdateGroupRequest, 'status'>
+> {
   readonly status: 'archived' | 'deleted';
 }
 
@@ -728,9 +736,8 @@ function toRoomMetadataGroupStateRequest(
   input: ToRoomMetadataGroupStateRequestInput,
 ): UpdateGroupRequest;
 
-interface ToCreateRoomInviteGroupStateRequestInput extends RoomGroupStateReasonedMutationInput {
-  readonly invitationExpiresAtEpochMs?: number;
-}
+type ToCreateRoomInviteGroupStateRequestInput =
+  RoomGroupStateRequestInput<CreateGroupInviteRequest>;
 
 function toCreateRoomInviteGroupStateRequest(
   input: ToCreateRoomInviteGroupStateRequestInput,
@@ -740,29 +747,34 @@ function toAcceptRoomInviteGroupStateRequest(
   input: RoomGroupStateMutationActorInput,
 ): AcceptGroupInviteRequest;
 
+type ToRemoveRoomMemberGroupStateRequestInput =
+  RoomGroupStateRequestInput<RemoveGroupMemberRequest>;
+
 function toRemoveRoomMemberGroupStateRequest(
-  input: RoomGroupStateReasonedMutationInput,
+  input: ToRemoveRoomMemberGroupStateRequestInput,
 ): RemoveGroupMemberRequest;
 
+type ToBanRoomMemberGroupStateRequestInput = RoomGroupStateRequestInput<BanGroupMemberRequest>;
+
 function toBanRoomMemberGroupStateRequest(
-  input: RoomGroupStateReasonedMutationInput,
+  input: ToBanRoomMemberGroupStateRequestInput,
 ): BanGroupMemberRequest;
 
+type ToUnbanRoomMemberGroupStateRequestInput = RoomGroupStateRequestInput<UnbanGroupMemberRequest>;
+
 function toUnbanRoomMemberGroupStateRequest(
-  input: RoomGroupStateReasonedMutationInput,
+  input: ToUnbanRoomMemberGroupStateRequestInput,
 ): UnbanGroupMemberRequest;
 
-interface ToSetRoomMemberRoleGroupStateRequestInput extends RoomGroupStateReasonedMutationInput {
-  readonly role: GroupRole;
-}
+type ToSetRoomMemberRoleGroupStateRequestInput =
+  RoomGroupStateRequestInput<SetGroupMemberRoleRequest>;
 
 function toSetRoomMemberRoleGroupStateRequest(
   input: ToSetRoomMemberRoleGroupStateRequestInput,
 ): SetGroupMemberRoleRequest;
 
-interface ToTransferRoomOwnershipGroupStateRequestInput extends RoomGroupStateReasonedMutationInput {
-  readonly newOwnerPrincipalId: string;
-}
+type ToTransferRoomOwnershipGroupStateRequestInput =
+  RoomGroupStateRequestInput<TransferGroupOwnershipRequest>;
 
 function toTransferRoomOwnershipGroupStateRequest(
   input: ToTransferRoomOwnershipGroupStateRequestInput,
@@ -872,19 +884,24 @@ duplicate structural view type, or a third contract module is not approved.
   by the current contract.
 - `toJoinGroupStateRequest` emits `inviteToken` and `joinCode` only when
   currently supplied, plus both actor fields and the captured join request ID.
-- `toRoomLifecycleGroupStateRequest` emits the selected exact status,
-  conditionally supplied reason, both actor fields, and request ID.
+- `toRoomLifecycleGroupStateRequest` spreads the exact existing caller request
+  (`Omit<UpdateGroupRequest, 'status'>`) first, adds the selected exact status
+  at the same point as the legacy archive/delete wrapper, then applies the
+  actor, session, and captured request-ID overrides. It preserves every valid
+  update field, `traceId`, omission behavior, and legacy property-insertion
+  order.
   `toRoomMetadataGroupStateRequest` shallow-merges `currentMetadata` then
   `patch`, and emits the merged metadata plus both actor fields and request ID.
-- Invite and member-governance translators emit their operation-specific
-  `invitationExpiresAtEpochMs`, `role`, or `newOwnerPrincipalId`, preserve
-  current reason omission, and add the same actor fields and captured request
-  ID. Accept-invite emits only the actor fields and request ID.
+- Create-invite and member-governance translators spread their exact existing
+  operation-specific caller request first, preserving `traceId`, reason,
+  operation fields, omission behavior, and caller insertion order, then apply
+  the same actor, session, and captured request-ID overrides. Accept-invite
+  emits only the actor fields and request ID.
 - Presence connect emits `principalId`, `generationId`, actor fields, and the
-  captured presence request ID. Leave disconnect emits those fields plus the
-  fixed current `reason: 'left-group'`; leave-member emits `status: 'left'`,
-  the same fixed reason, actor fields, and its separately captured member
-  request ID.
+  captured presence request ID. Leave disconnect and leave-member reproduce
+  the exact legacy `JSON.stringify` property order, including fixed
+  `reason: 'left-group'` before each request ID; leave-member also emits
+  `status: 'left'` first.
 - State scope and route target IDs remain workflow/API arguments. They are not
   inserted into a request body or hidden inside the translation boundary.
 - Room view projection preserves active-group filtering, display-name ordering,
@@ -902,17 +919,21 @@ Before moving implementation, tests capture:
 1. minimal create output, including exact slug, `kind`, invite-only default,
    empty metadata, actor fields, and caller-supplied IDs;
 2. fully populated create output with every optional property;
-3. update omission behavior with falsy values retained;
+3. update omission behavior with valid nested `false` and `null` values plus
+   other falsy values retained, without widening an authoritative type;
 4. join with invite token, join code, actor, session, and request ID, plus a
    workflow assertion that scope is forwarded unchanged outside translation;
-5. archive/delete and every member-governance literal request;
-6. presence connect/disconnect literals and stable request IDs;
-7. room summary/state ordering, current selection, members, sessions, and
-   preservation of original snapshot object identity;
+5. archive/delete with optional update fields and `traceId`, plus create-invite
+   and every member-governance caller request with applicable `traceId`;
+6. presence connect/disconnect and leave-member literals, stable request IDs,
+   and exact raw property order;
+7. room summary/state ordering, complete joined/current flags, multiple online
+   sessions, members, and original snapshot identity for every projected room;
 8. compile-time assertions that every `RallarRoomsFacade` return and public
    property remains assignable to its current authoritative type;
 9. old positional workflow imports and new owning-path workflow imports produce
-   byte-for-byte equivalent API calls and return values;
+   byte-for-byte equivalent raw `JSON.stringify` request bodies, API calls, and
+   return values for every moved workflow;
 10. zero `layout.browser-room-boundary` findings outside the exact boundary.
 
 ## 7. Public Compatibility Decisions
@@ -1220,8 +1241,9 @@ task.
   `room-workflow-compat.test.ts` against the current `api-workflows.ts` path.
   Capture the exact function/type exports in Section 7.2, positional call
   signatures, generated request-ID prefixes, API call order, partial-failure
-  behavior, and literal request bodies. Prove these additions pass against the
-  old module before moving code. Run the existing `api-workflows.test.ts` and
+  behavior, parsed request bodies, and raw serialized request bodies. Prove
+  every moved legacy and owning-path call against hand-written predecessor
+  literals. Run the existing `api-workflows.test.ts` and
   `rallar-workflow-options-compat.test.ts` unchanged.
 
 - [ ] **Step 2: Add the boundary fixtures red**
@@ -1246,8 +1268,11 @@ task.
   Implement the exact operation-specific functions in Section 6. Generate
   UUIDs and request IDs at the same workflow point and pass the captured values
   into the pure boundary. Route every authoritative type used by a room-owned
-  workflow through this module. Do not move I/O, command orchestration,
-  retries, cache mutation, or listener state into the boundary.
+  workflow through this module. Lifecycle, create-invite, and governance inputs
+  carry the exact existing caller request as data so every field and raw
+  property order survive before actor/session/request-ID overrides. Do not move
+  I/O, command orchestration, retries, cache mutation, or listener state into
+  the boundary.
 
 - [ ] **Step 5: Prove compatibility and the intermediate ratchet**
 

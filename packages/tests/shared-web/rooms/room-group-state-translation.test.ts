@@ -28,11 +28,10 @@ import type {
   RallarUpdateRoomInput,
 } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
-import type { GroupMember, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type {
   CreateGroupRequest,
   JoinGroupRequest,
-  StateScope,
   UpdateGroupRequest,
 } from '@shared/api/state-types.ts';
 
@@ -65,9 +64,7 @@ describe('room to authoritative group-state translation', () => {
       kind: 'room',
       joinMode: 'invite-only',
       createdByPrincipalId: 'owner-1',
-      actorPrincipalId: 'owner-1',
-      actorSessionId: 'owner-session',
-      requestId: 'request-1',
+      ...actor,
       metadata: {},
     });
 
@@ -97,9 +94,7 @@ describe('room to authoritative group-state translation', () => {
       maxMembers: 0,
       maxSessionsPerMember: 2,
       createdByPrincipalId: 'owner-1',
-      actorPrincipalId: 'owner-1',
-      actorSessionId: 'owner-session',
-      requestId: 'request-1',
+      ...actor,
       metadata: { map: 'fjord' },
       expiresAtEpochMs: 0,
       purgeAfterEpochMs: 3_000,
@@ -107,7 +102,6 @@ describe('room to authoritative group-state translation', () => {
   });
 
   it('retains update falsy values, omits undefined, and keeps scope outside requests', () => {
-    const scope: StateScope = { applicationId: 'app-1', workspaceId: 'workspace-1' };
     const request = toUpdateGroupStateRequest({
       patch: {
         slug: '',
@@ -117,7 +111,7 @@ describe('room to authoritative group-state translation', () => {
         joinMode: 'open',
         maxMembers: 0,
         maxSessionsPerMember: undefined,
-        metadata: {},
+        metadata: { enabled: false, note: null },
         expiresAtEpochMs: 0,
         purgeAfterEpochMs: undefined,
       },
@@ -131,14 +125,11 @@ describe('room to authoritative group-state translation', () => {
       kind: 'room',
       joinMode: 'open',
       maxMembers: 0,
-      metadata: {},
+      metadata: { enabled: false, note: null },
       expiresAtEpochMs: 0,
-      actorPrincipalId: 'owner-1',
-      actorSessionId: 'owner-session',
-      requestId: 'request-1',
+      ...actor,
     });
     expect(request).not.toHaveProperty('scope');
-    expect(scope).toEqual({ applicationId: 'app-1', workspaceId: 'workspace-1' });
     expect(
       toJoinGroupStateRequest({
         fields: { inviteToken: 'invite-1', joinCode: 'code-1' },
@@ -147,17 +138,33 @@ describe('room to authoritative group-state translation', () => {
     ).toEqual({
       inviteToken: 'invite-1',
       joinCode: 'code-1',
-      actorPrincipalId: 'owner-1',
-      actorSessionId: 'owner-session',
-      requestId: 'request-1',
+      ...actor,
     });
   });
 
   it('translates lifecycle and metadata operations literally', () => {
     expect(
-      toRoomLifecycleGroupStateRequest({ status: 'archived', reason: 'quiet', ...actor }),
-    ).toEqual({ status: 'archived', reason: 'quiet', ...actor });
-    expect(toRoomLifecycleGroupStateRequest({ status: 'deleted', ...actor })).toEqual({
+      toRoomLifecycleGroupStateRequest({
+        request: { displayName: 'Archived Room', reason: 'quiet', traceId: 'archive-trace' },
+        status: 'archived',
+        ...actor,
+      }),
+    ).toEqual({
+      displayName: 'Archived Room',
+      reason: 'quiet',
+      traceId: 'archive-trace',
+      status: 'archived',
+      ...actor,
+    });
+    expect(
+      toRoomLifecycleGroupStateRequest({
+        request: { purgeAfterEpochMs: 3_000, traceId: 'delete-trace' },
+        status: 'deleted',
+        ...actor,
+      }),
+    ).toEqual({
+      purgeAfterEpochMs: 3_000,
+      traceId: 'delete-trace',
       status: 'deleted',
       ...actor,
     });
@@ -174,36 +181,47 @@ describe('room to authoritative group-state translation', () => {
   });
 
   it('translates every invite and member-governance request', () => {
+    const requests = {
+      remove: { reason: 'remove', traceId: 'remove-trace' },
+      ban: { reason: 'ban', traceId: 'ban-trace' },
+      unban: { reason: 'unban', traceId: 'unban-trace' },
+      role: { role: 'admin', reason: 'promote', traceId: 'role-trace' },
+      owner: { newOwnerPrincipalId: 'member-1', reason: 'handoff', traceId: 'owner-trace' },
+    } as const;
     expect(
       toCreateRoomInviteGroupStateRequest({
-        invitationExpiresAtEpochMs: 2_000,
-        reason: 'join us',
+        request: {
+          invitationExpiresAtEpochMs: 2_000,
+          reason: 'join us',
+          traceId: 'invite-trace',
+        },
         ...actor,
       }),
-    ).toEqual({ invitationExpiresAtEpochMs: 2_000, reason: 'join us', ...actor });
+    ).toEqual({
+      invitationExpiresAtEpochMs: 2_000,
+      reason: 'join us',
+      traceId: 'invite-trace',
+      ...actor,
+    });
     expect(toAcceptRoomInviteGroupStateRequest(actor)).toEqual(actor);
-    expect(toRemoveRoomMemberGroupStateRequest({ reason: 'remove', ...actor })).toEqual({
-      reason: 'remove',
-      ...actor,
-    });
-    expect(toBanRoomMemberGroupStateRequest({ reason: 'ban', ...actor })).toEqual({
-      reason: 'ban',
-      ...actor,
-    });
-    expect(toUnbanRoomMemberGroupStateRequest({ reason: 'unban', ...actor })).toEqual({
-      reason: 'unban',
-      ...actor,
-    });
-    expect(
-      toSetRoomMemberRoleGroupStateRequest({ role: 'admin', reason: 'promote', ...actor }),
-    ).toEqual({ role: 'admin', reason: 'promote', ...actor });
-    expect(
-      toTransferRoomOwnershipGroupStateRequest({
+    expect([
+      toRemoveRoomMemberGroupStateRequest({ request: requests.remove, ...actor }),
+      toBanRoomMemberGroupStateRequest({ request: requests.ban, ...actor }),
+      toUnbanRoomMemberGroupStateRequest({ request: requests.unban, ...actor }),
+      toSetRoomMemberRoleGroupStateRequest({ request: requests.role, ...actor }),
+      toTransferRoomOwnershipGroupStateRequest({ request: requests.owner, ...actor }),
+    ]).toEqual([
+      { reason: 'remove', traceId: 'remove-trace', ...actor },
+      { reason: 'ban', traceId: 'ban-trace', ...actor },
+      { reason: 'unban', traceId: 'unban-trace', ...actor },
+      { role: 'admin', reason: 'promote', traceId: 'role-trace', ...actor },
+      {
         newOwnerPrincipalId: 'member-1',
         reason: 'handoff',
+        traceId: 'owner-trace',
         ...actor,
-      }),
-    ).toEqual({ newOwnerPrincipalId: 'member-1', reason: 'handoff', ...actor });
+      },
+    ]);
   });
 
   it('translates presence and leave requests with stable captured IDs', () => {
@@ -246,7 +264,7 @@ describe('room to authoritative group-state translation', () => {
       sessionId: 'session-1',
       currentRoomRef: selected.group,
     });
-    expect(summary).toEqual({
+    const selectedSummary = {
       roomId: 'selected',
       roomRef: selected.group,
       name: 'Beta Room',
@@ -258,7 +276,8 @@ describe('room to authoritative group-state translation', () => {
       isJoined: true,
       isCurrent: true,
       snapshot: selected,
-    });
+    } as const;
+    expect(summary).toEqual(selectedSummary);
     expect(summary.snapshot).toBe(selected);
 
     const state = toRallarRoomState({
@@ -267,7 +286,24 @@ describe('room to authoritative group-state translation', () => {
       sessionId: 'session-1',
       currentRoomRef: selected.group,
     });
-    expect(state.rooms.map((room) => room.roomId)).toEqual(['alpha', 'selected']);
+    expect(state.rooms).toEqual([
+      {
+        roomId: 'alpha',
+        roomRef: alpha.group,
+        name: 'Alpha Room',
+        status: 'active',
+        kind: 'room',
+        joinMode: 'open',
+        memberCount: 1,
+        onlineMemberCount: 0,
+        isJoined: false,
+        isCurrent: false,
+        snapshot: alpha,
+      },
+      selectedSummary,
+    ]);
+    expect(state.rooms[0]?.snapshot).toBe(alpha);
+    expect(state.rooms[1]?.snapshot).toBe(selected);
     expect(state.currentRoomId).toBe('selected');
     expect(state.currentRoomRef).toBe(selected.group);
     expect(state.currentRoom).toBe(selected);
@@ -291,7 +327,7 @@ describe('room to authoritative group-state translation', () => {
         status: 'active',
         isOwner: true,
         isOnline: true,
-        sessionIds: ['session-1'],
+        sessionIds: ['session-1', 'session-2'],
         client: alice,
       },
     ]);
@@ -325,31 +361,15 @@ function createRoomSnapshot(
 function createSelectedRoomSnapshot(): GroupSnapshot {
   const snapshot = createRoomSnapshot('selected', 'Beta Room', []);
   const scope = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'selected' };
-  const members: readonly GroupMember[] = [
-    createActiveGroupMemberFixture({
-      ...scope,
-      principalId: 'alice',
-      role: 'owner',
-      actorPrincipalId: 'alice',
-    }),
-    createActiveGroupMemberFixture({
-      ...scope,
-      principalId: 'bob',
-      role: 'member',
-      actorPrincipalId: 'alice',
-    }),
-  ];
+  const member = (principalId: string, role: 'owner' | 'member') =>
+    createActiveGroupMemberFixture({ ...scope, principalId, role, actorPrincipalId: 'alice' });
+  const presence = (sessionId: string) =>
+    createActiveGroupPresenceSessionFixture({ ...scope, principalId: 'alice', sessionId });
   return {
     ...snapshot,
     group: { ...snapshot.group, ownerPrincipalId: 'alice', activeMemberCount: 2 },
-    members,
-    activeSessions: [
-      createActiveGroupPresenceSessionFixture({
-        ...scope,
-        principalId: 'alice',
-        sessionId: 'session-1',
-      }),
-    ],
+    members: [member('alice', 'owner'), member('bob', 'member')],
+    activeSessions: [presence('session-1'), presence('session-2')],
     memberCount: 2,
     onlineMemberCount: 1,
   };

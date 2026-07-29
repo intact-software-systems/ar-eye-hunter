@@ -125,8 +125,8 @@ async function updateStateGroupLifecycle(
     toStateWorkflowRequestId('group-update', input.groupId, input.sessionId);
   const commandOptions = (input.policies.command ?? {}) as CommandOptions<GroupSnapshot>;
   const lifecycleRequest = toRoomLifecycleGroupStateRequest({
+    request: input.request,
     status: input.status,
-    reason: input.request.reason,
     actorPrincipalId: input.principalId,
     actorSessionId: input.sessionId,
     requestId,

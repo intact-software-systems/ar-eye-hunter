@@ -53,8 +53,7 @@ export async function createStateGroupInvite(
     toStateWorkflowRequestId('group-invite-create', groupId, targetPrincipalId);
   const commandOptions = (policies.command ?? {}) as CommandOptions<GroupSnapshot>;
   const inviteRequest = toCreateRoomInviteGroupStateRequest({
-    invitationExpiresAtEpochMs: request.invitationExpiresAtEpochMs,
-    reason: request.reason,
+    request,
     actorPrincipalId: principalId,
     actorSessionId: sessionId,
     requestId,
@@ -125,7 +124,7 @@ export async function removeStateGroupMember(
     toStateWorkflowRequestId('group-member-remove', groupId, targetPrincipalId);
   const commandOptions = (policies.command ?? {}) as CommandOptions<GroupSnapshot>;
   const removeRequest = toRemoveRoomMemberGroupStateRequest({
-    reason: request.reason,
+    request,
     actorPrincipalId,
     actorSessionId: sessionId,
     requestId,
@@ -151,7 +150,7 @@ export async function banStateGroupMember(
     request.requestId ?? toStateWorkflowRequestId('group-member-ban', groupId, targetPrincipalId);
   const commandOptions = (policies.command ?? {}) as CommandOptions<GroupSnapshot>;
   const banRequest = toBanRoomMemberGroupStateRequest({
-    reason: request.reason,
+    request,
     actorPrincipalId,
     actorSessionId: sessionId,
     requestId,
@@ -176,7 +175,7 @@ export async function unbanStateGroupMember(
     request.requestId ?? toStateWorkflowRequestId('group-member-unban', groupId, targetPrincipalId);
   const commandOptions = (policies.command ?? {}) as CommandOptions<GroupSnapshot>;
   const unbanRequest = toUnbanRoomMemberGroupStateRequest({
-    reason: request.reason,
+    request,
     actorPrincipalId,
     actorSessionId: sessionId,
     requestId,
@@ -202,8 +201,7 @@ export async function setStateGroupMemberRole(
     request.requestId ?? toStateWorkflowRequestId('group-member-role', groupId, targetPrincipalId);
   const commandOptions = (policies.command ?? {}) as CommandOptions<GroupSnapshot>;
   const roleRequest = toSetRoomMemberRoleGroupStateRequest({
-    role: request.role,
-    reason: request.reason,
+    request,
     actorPrincipalId,
     actorSessionId: sessionId,
     requestId,
@@ -229,8 +227,7 @@ export async function transferStateGroupOwnership(
     toStateWorkflowRequestId('group-ownership-transfer', groupId, request.newOwnerPrincipalId);
   const commandOptions = (policies.command ?? {}) as CommandOptions<GroupSnapshot>;
   const transferRequest = toTransferRoomOwnershipGroupStateRequest({
-    newOwnerPrincipalId: request.newOwnerPrincipalId,
-    reason: request.reason,
+    request,
     actorPrincipalId,
     actorSessionId: sessionId,
     requestId,

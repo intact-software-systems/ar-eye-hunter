@@ -95,8 +95,8 @@ interface RoomGroupStateActorInput {
   readonly requestId: string;
 }
 
-interface ReasonedRoomActorInput extends RoomGroupStateActorInput {
-  readonly reason?: string;
+interface RoomGroupStateRequestInput<TRequest> extends RoomGroupStateActorInput {
+  readonly request: TRequest;
 }
 
 export interface ToCreateGroupStateRequestInput extends RoomGroupStateActorInput {
@@ -113,7 +113,9 @@ export interface ToJoinGroupStateRequestInput extends RoomGroupStateActorInput {
   readonly fields: RoomJoinGroupStateFields;
 }
 
-export interface ToRoomLifecycleGroupStateRequestInput extends ReasonedRoomActorInput {
+export interface ToRoomLifecycleGroupStateRequestInput extends RoomGroupStateRequestInput<
+  Omit<UpdateGroupRequest, 'status'>
+> {
   readonly status: 'archived' | 'deleted';
 }
 
@@ -122,22 +124,20 @@ export interface ToRoomMetadataGroupStateRequestInput extends RoomGroupStateActo
   readonly patch: Readonly<Record<string, unknown>>;
 }
 
-export interface ToCreateRoomInviteGroupStateRequestInput extends ReasonedRoomActorInput {
-  readonly invitationExpiresAtEpochMs?: number;
-}
+export type ToCreateRoomInviteGroupStateRequestInput =
+  RoomGroupStateRequestInput<CreateGroupInviteRequest>;
 
 export type ToAcceptRoomInviteGroupStateRequestInput = RoomGroupStateActorInput;
-export type ToRemoveRoomMemberGroupStateRequestInput = ReasonedRoomActorInput;
-export type ToBanRoomMemberGroupStateRequestInput = ReasonedRoomActorInput;
-export type ToUnbanRoomMemberGroupStateRequestInput = ReasonedRoomActorInput;
-
-export interface ToSetRoomMemberRoleGroupStateRequestInput extends ReasonedRoomActorInput {
-  readonly role: SetGroupMemberRoleRequest['role'];
-}
-
-export interface ToTransferRoomOwnershipGroupStateRequestInput extends ReasonedRoomActorInput {
-  readonly newOwnerPrincipalId: string;
-}
+export type ToRemoveRoomMemberGroupStateRequestInput =
+  RoomGroupStateRequestInput<RemoveGroupMemberRequest>;
+export type ToBanRoomMemberGroupStateRequestInput =
+  RoomGroupStateRequestInput<BanGroupMemberRequest>;
+export type ToUnbanRoomMemberGroupStateRequestInput =
+  RoomGroupStateRequestInput<UnbanGroupMemberRequest>;
+export type ToSetRoomMemberRoleGroupStateRequestInput =
+  RoomGroupStateRequestInput<SetGroupMemberRoleRequest>;
+export type ToTransferRoomOwnershipGroupStateRequestInput =
+  RoomGroupStateRequestInput<TransferGroupOwnershipRequest>;
 
 export interface ToRoomPresenceGroupStateRequestInput extends RoomGroupStateActorInput {
   readonly principalId: string;
@@ -201,7 +201,11 @@ export function toJoinGroupStateRequest(input: ToJoinGroupStateRequestInput): Jo
 export function toRoomLifecycleGroupStateRequest(
   input: ToRoomLifecycleGroupStateRequestInput,
 ): UpdateGroupRequest {
-  return toDefinedRecord({ status: input.status, reason: input.reason, ...toActorRequest(input) });
+  return toDefinedRecord({
+    ...input.request,
+    status: input.status,
+    ...toActorRequest(input),
+  });
 }
 
 export function toRoomMetadataGroupStateRequest(
@@ -216,11 +220,7 @@ export function toRoomMetadataGroupStateRequest(
 export function toCreateRoomInviteGroupStateRequest(
   input: ToCreateRoomInviteGroupStateRequestInput,
 ): CreateGroupInviteRequest {
-  return toDefinedRecord({
-    invitationExpiresAtEpochMs: input.invitationExpiresAtEpochMs,
-    reason: input.reason,
-    ...toActorRequest(input),
-  });
+  return toDefinedRecord({ ...input.request, ...toActorRequest(input) });
 }
 
 export function toAcceptRoomInviteGroupStateRequest(
@@ -232,35 +232,31 @@ export function toAcceptRoomInviteGroupStateRequest(
 export function toRemoveRoomMemberGroupStateRequest(
   input: ToRemoveRoomMemberGroupStateRequestInput,
 ): RemoveGroupMemberRequest {
-  return toReasonedActorRequest(input);
+  return toDefinedRecord({ ...input.request, ...toActorRequest(input) });
 }
 
 export function toBanRoomMemberGroupStateRequest(
   input: ToBanRoomMemberGroupStateRequestInput,
 ): BanGroupMemberRequest {
-  return toReasonedActorRequest(input);
+  return toDefinedRecord({ ...input.request, ...toActorRequest(input) });
 }
 
 export function toUnbanRoomMemberGroupStateRequest(
   input: ToUnbanRoomMemberGroupStateRequestInput,
 ): UnbanGroupMemberRequest {
-  return toReasonedActorRequest(input);
+  return toDefinedRecord({ ...input.request, ...toActorRequest(input) });
 }
 
 export function toSetRoomMemberRoleGroupStateRequest(
   input: ToSetRoomMemberRoleGroupStateRequestInput,
 ): SetGroupMemberRoleRequest {
-  return toDefinedRecord({ role: input.role, reason: input.reason, ...toActorRequest(input) });
+  return toDefinedRecord({ ...input.request, ...toActorRequest(input) });
 }
 
 export function toTransferRoomOwnershipGroupStateRequest(
   input: ToTransferRoomOwnershipGroupStateRequestInput,
 ): TransferGroupOwnershipRequest {
-  return toDefinedRecord({
-    newOwnerPrincipalId: input.newOwnerPrincipalId,
-    reason: input.reason,
-    ...toActorRequest(input),
-  });
+  return toDefinedRecord({ ...input.request, ...toActorRequest(input) });
 }
 
 export function toConnectRoomPresenceGroupStateRequest(
@@ -279,15 +275,23 @@ export function toDisconnectRoomPresenceGroupStateRequest(
   return {
     generationId: input.generationId,
     principalId: input.principalId,
-    ...toActorRequest(input),
+    actorPrincipalId: input.actorPrincipalId,
+    actorSessionId: input.actorSessionId,
     reason: 'left-group',
+    requestId: input.requestId,
   };
 }
 
 export function toLeaveRoomMemberGroupStateRequest(
   input: ToLeaveRoomMemberGroupStateRequestInput,
 ): UpsertGroupMemberRequest {
-  return { status: 'left', ...toActorRequest(input), reason: 'left-group' };
+  return {
+    status: 'left',
+    actorPrincipalId: input.actorPrincipalId,
+    actorSessionId: input.actorSessionId,
+    reason: 'left-group',
+    requestId: input.requestId,
+  };
 }
 
 export function toRallarRoomSummary(input: ToRallarRoomSummaryInput): RallarRoomSummary {
@@ -380,10 +384,6 @@ function toActorRequest({
     actorSessionId,
     requestId,
   };
-}
-
-function toReasonedActorRequest(input: ReasonedRoomActorInput): ReasonedRoomActorInput {
-  return toDefinedRecord({ reason: input.reason, ...toActorRequest(input) });
 }
 
 function toDefinedRecord<T extends object>(input: T): T {
