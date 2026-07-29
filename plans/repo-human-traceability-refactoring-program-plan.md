@@ -62,10 +62,12 @@ checker, and Git rename detection.
 Date: 2026-07-28
 
 Status: Reviewed and approved for child-plan drafting. The program documents are
-published on `main`; production implementation has not started. The governance
-and checker child was approved at blob
-`8ee56ac27189f9bed751fb6a95992830bda6be60`. Its implementation is complete;
-the separate evidence-ledger publication remains pending.
+published on `main`. The governance and checker child was approved at blob
+`8ee56ac27189f9bed751fb6a95992830bda6be60` and is `ledger-published`. The
+[browser room/group-state translation-boundary child](rallar-room-group-state-translation-boundary-plan.md)
+is drafted for human review at Git blob
+`37861202ce25c3cd5832663a5a3f6d7e2e4a0e4e` and remains unapproved; browser
+production implementation has not started.
 
 Program drafting, approval, execution, publication, and human handoffs follow
 the [Repository Human Traceability Program Execution Plan](repo-human-traceability-program-execution-plan.md).
@@ -119,8 +121,16 @@ Publication and progress reconciliation on 2026-07-28:
   approved PR #47 merged as
   `4f98f241aefe62c89288e29403ba7f1f23897625`, and **Run Hetzner
   Supported Distributed Manifests** run `30367222275` attempt 1 passed for
-  that exact resulting `main` SHA. The governance/checker implementation is
-  therefore `complete`; its separate evidence-ledger publication is pending.
+  that exact resulting `main` SHA. The governance/checker implementation
+  therefore reached `complete`.
+- The separate governance evidence ledger has tree
+  `94270ad17f7f68eaa9b95529764c23a844514ae9`, feature SHA
+  `c4743acd9fc685292f9fa6a7508d0a08afe05fd6`, successful Branch Release
+  Gate run `30371906927` attempt 1, and PR #51. It merged as exact `main` SHA
+  `7a6c8e0c2cfb3413b4c0fbaaf0af31af2571c015`; **Run Hetzner Supported
+  Distributed Manifests** run `30407710853` attempt 1 passed for that exact
+  SHA. The governance/checker child is therefore `ledger-published`, and the
+  browser child may be reviewed for separate approval.
 
 ## 1. Why This Is A Program Instead Of One Refactor
 
@@ -911,16 +921,20 @@ After this master plan is approved, use the
 [program execution protocol](repo-human-traceability-program-execution-plan.md)
 to write, review, approve, execute, and hand off these child plans in order:
 
-- [ ] [Repository human traceability governance and checker](repo-human-traceability-governance-and-checker-plan.md)
+- [x] [Repository human traceability governance and checker](repo-human-traceability-governance-and-checker-plan.md)
   - state: approved at blob
     `8ee56ac27189f9bed751fb6a95992830bda6be60`; implementation `complete` at
     feature SHA `a986931c250c2f1fa12daa3e8d44a74669b178ed`, merged `main`
-    SHA `4f98f241aefe62c89288e29403ba7f1f23897625`, with separate evidence-
-    ledger publication pending;
+    SHA `4f98f241aefe62c89288e29403ba7f1f23897625`; separate ledger PR #51
+    merged as `7a6c8e0c2cfb3413b4c0fbaaf0af31af2571c015` and reached
+    `ledger-published` after workflow run `30407710853` passed;
   - exact code-style wording;
   - warning-only layout rule implementation and fixtures;
   - initial measured baseline.
-- [ ] `plans/rallar-room-group-state-translation-boundary-plan.md`
+- [ ] [Rallar room/group-state translation boundary](rallar-room-group-state-translation-boundary-plan.md)
+  - state: drafted for `human-review` at exact Git blob
+    `37861202ce25c3cd5832663a5a3f6d7e2e4a0e4e`; unapproved; implementation not
+    started;
   - browser room target tree;
   - explicit translation functions;
   - facade compatibility decision;
@@ -975,7 +989,8 @@ Human review has approved all master-plan execution choices:
    two pull requests by default. Smaller private migrations may use one pull
    request with clearly separated structure and code-standard commit series.
 
-The next authorized program step is the separate evidence-ledger publication
-for `plans/repo-human-traceability-governance-and-checker-plan.md`. Production
-code does not move, and the browser boundary child does not begin, until that
-ledger independently reaches `ledger-published`.
+The next authorized program step is human review of
+`plans/rallar-room-group-state-translation-boundary-plan.md` at exact Git blob
+`37861202ce25c3cd5832663a5a3f6d7e2e4a0e4e`. Production code does not move
+until the human explicitly approves that exact child-plan Git blob. The
+shared-server and API-v1 children remain unstarted.
