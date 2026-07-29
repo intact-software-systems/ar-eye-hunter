@@ -67,7 +67,7 @@ export async function updateStateGroupDetails(
     request.requestId ?? toStateWorkflowRequestId('group-update', groupId, sessionId);
   const commandOptions = (policies.command ?? {}) as CommandOptions<GroupSnapshot>;
   const updateRequest = toUpdateGroupStateRequest({
-    patch: request,
+    request,
     actorPrincipalId: principalId,
     actorSessionId: sessionId,
     requestId,

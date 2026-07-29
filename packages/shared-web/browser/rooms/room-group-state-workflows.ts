@@ -47,8 +47,7 @@ export async function createAndJoinStateGroup(
   const presenceRequestId = toStateWorkflowRequestId('group-presence-connect', groupId, sessionId);
   const createRequest = toCreateGroupStateRequest({
     groupId,
-    fields: { displayName, ...options },
-    createdByPrincipalId: principalId,
+    room: { displayName, ...options },
     actorPrincipalId: principalId,
     actorSessionId: sessionId,
     requestId: createRequestId,
@@ -88,7 +87,7 @@ export async function joinStateGroup(
   const joinRequestId = toStateWorkflowRequestId('group-join', groupId, principalId);
   const presenceRequestId = toStateWorkflowRequestId('group-presence-connect', groupId, sessionId);
   const joinRequest = toJoinGroupStateRequest({
-    fields: intent,
+    room: intent,
     actorPrincipalId: principalId,
     actorSessionId: sessionId,
     requestId: joinRequestId,

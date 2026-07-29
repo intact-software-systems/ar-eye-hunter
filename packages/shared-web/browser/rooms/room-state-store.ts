@@ -61,7 +61,7 @@ export interface CreateRoomStateStoreInput {
   readonly readCachedGroupSnapshots: () => readonly GroupSnapshot[];
   readonly findCachedGroupSnapshotByRef: (roomRef: GroupRef) => GroupSnapshot | undefined;
   readonly findFirstCachedGroupRefForSession: (sessionId: string) => GroupRef | undefined;
-  readonly readCachedClientSnapshots: () => readonly ClientSnapshot[];
+  readonly findCachedClientSnapshot: (principalId: string) => ClientSnapshot | undefined;
   readonly onCacheChange: (listener: () => void | Promise<void>) => RallarUnsubscribe;
 }
 
@@ -80,13 +80,13 @@ class RoomStateStore implements RallarRoomStateStorePort {
   state(): RallarRoomState {
     const sessionId = this.#input.readSession()?.sessionId;
     const currentRoomRef = this.resolveCurrentRoomRef();
-    const currentRoomSnapshot = this.findGroupSnapshot(currentRoomRef);
+    const currentRoom = this.findGroupSnapshot(currentRoomRef);
     return toRallarRoomState({
-      snapshots: this.readGroupSnapshots(),
-      clients: this.readClientSnapshots(),
+      groupSnapshots: this.readGroupSnapshots(),
+      clientSnapshots: this.readCurrentRoomClientSnapshots(currentRoom),
       sessionId,
       currentRoomRef,
-      currentRoomSnapshot,
+      currentRoom,
     });
   }
 
@@ -216,10 +216,14 @@ class RoomStateStore implements RallarRoomStateStorePort {
     return toGroupRefFromScope(roomId, this.#input.runtime.resolveOperationScope(scope));
   }
 
-  private readClientSnapshots(): ClientSnapshot[] {
-    return [...this.#input.readCachedClientSnapshots()].filter((snapshot) =>
-      this.isInDefaultScope(snapshot.principal),
-    );
+  private readCurrentRoomClientSnapshots(currentRoom: GroupSnapshot | undefined): ClientSnapshot[] {
+    if (!currentRoom) {
+      return [];
+    }
+    return currentRoom.members.flatMap((member) => {
+      const snapshot = this.#input.findCachedClientSnapshot(member.principalId);
+      return snapshot && this.isInDefaultScope(snapshot.principal) ? [snapshot] : [];
+    });
   }
 
   private findFirstGroupSnapshotRefForSession(sessionId: string): GroupRef | undefined {

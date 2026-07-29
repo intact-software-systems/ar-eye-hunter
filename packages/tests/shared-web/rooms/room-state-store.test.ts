@@ -2,15 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import { createRallarBrowserFacadeRuntimeContext } from '@shared-web/browser/rallar-runtime-context.ts';
 import { createRoomStateStore } from '@shared-web/browser/rooms/room-state-store.ts';
 
-import {
-  createActiveGroupMemberFixture,
-  createActiveGroupPresenceSessionFixture,
-  createClientSnapshotFixture,
-  createGroupSnapshotFixture,
-} from '../authoritative-group-fixtures.ts';
+import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 
 const stateMocks = vi.hoisted(() => ({
   session: {
@@ -65,7 +59,7 @@ vi.mock('@shared/repository/group-state-snapshots-repository.ts', () => ({
   },
 }));
 
-describe('room state store compatibility', () => {
+describe('room state store summaries', () => {
   void createRoomStateStore;
 
   beforeEach(() => {
@@ -226,91 +220,6 @@ describe('room state store compatibility', () => {
       ],
     });
   });
-
-  it('projects active members and orders display names before username fallbacks', async () => {
-    const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
-    const facade = createRallarFacade();
-    const current = createMemberRoomSnapshot();
-    const aliceClient = createClient('alice', 'Zulu Display');
-    const bobClient = createClient('bob', null);
-    stateMocks.repositoriesConfigured = true;
-    stateMocks.groups.push(current);
-    stateMocks.clients.push(bobClient, aliceClient);
-
-    facade.setDefaults({ applicationId: 'app-1', workspaceId: 'workspace-1' });
-
-    expect(facade.rooms.state().members).toEqual([
-      {
-        principalId: 'bob',
-        username: 'Alpha Username',
-        displayName: undefined,
-        role: 'member',
-        status: 'active',
-        isOwner: false,
-        isOnline: false,
-        sessionIds: [],
-        client: bobClient,
-      },
-      {
-        principalId: 'charlie',
-        username: 'charlie',
-        displayName: undefined,
-        role: 'member',
-        status: 'left',
-        isOwner: false,
-        isOnline: false,
-        sessionIds: [],
-        client: undefined,
-      },
-      {
-        principalId: 'alice',
-        username: 'alice',
-        displayName: 'Zulu Display',
-        role: 'owner',
-        status: 'active',
-        isOwner: true,
-        isOnline: true,
-        sessionIds: ['session-1'],
-        client: aliceClient,
-      },
-    ]);
-  });
-
-  it('preserves the selected current room when defaults move to another scope', () => {
-    const runtime = createRallarBrowserFacadeRuntimeContext();
-    const current = createRoomSnapshot('scope-a-room', 'Scope A Room');
-    const visible = createRoomSnapshot(
-      'scope-b-room',
-      'Scope B Room',
-      { applicationId: 'app-2', workspaceId: 'workspace-2' },
-      [],
-    );
-    const groups = [current, visible];
-    const store = createRoomStateStore({
-      runtime,
-      readSession: () => stateMocks.session,
-      readCachedGroupSnapshots: () => groups,
-      findCachedGroupSnapshotByRef: (roomRef) =>
-        groups.find((snapshot) => snapshot.group === roomRef),
-      findFirstCachedGroupRefForSession: () => current.group,
-      readCachedClientSnapshots: () => [],
-      onCacheChange: () => () => undefined,
-    });
-    runtime.setDefaults({ applicationId: 'app-1', workspaceId: 'workspace-1' });
-    runtime.setCurrentRoom(current);
-    const before = store.state();
-
-    runtime.setDefaults({ applicationId: 'app-2', workspaceId: 'workspace-2' });
-    const after = store.state();
-
-    expect(before.rooms.map((room) => room.roomId)).toEqual(['scope-a-room']);
-    expect(before.currentRoom).toBe(current);
-    expect(after.rooms.map((room) => room.roomId)).toEqual(['scope-b-room']);
-    expect(after.currentRoomRef).toBe(before.currentRoomRef);
-    expect(after.currentRoomId).toBe(before.currentRoomId);
-    expect(after.currentRoom).toBe(before.currentRoom);
-    expect(after.members).toEqual(before.members);
-  });
 });
 
 function requireConfiguredRepositories(): void {
@@ -332,62 +241,4 @@ function createRoomSnapshot(
     sessionIds,
   });
   return { ...snapshot, group: { ...snapshot.group, displayName } };
-}
-
-function createMemberRoomSnapshot(): GroupSnapshot {
-  const snapshot = createRoomSnapshot('room-1', 'Room One', {}, []);
-  const scope = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
-  const alice = createActiveGroupMemberFixture({
-    ...scope,
-    principalId: 'alice',
-    role: 'owner',
-    actorPrincipalId: 'alice',
-  });
-  const bob = createActiveGroupMemberFixture({
-    ...scope,
-    principalId: 'bob',
-    role: 'member',
-    actorPrincipalId: 'alice',
-  });
-  const inactive = {
-    ...createActiveGroupMemberFixture({
-      ...scope,
-      principalId: 'charlie',
-      role: 'member',
-      actorPrincipalId: 'alice',
-    }),
-    status: 'left' as const,
-    left: snapshot.group.updated,
-    joined: snapshot.group.created,
-  };
-  return {
-    ...snapshot,
-    group: { ...snapshot.group, ownerPrincipalId: 'alice', activeMemberCount: 2 },
-    members: [alice, inactive, bob],
-    activeSessions: [
-      createActiveGroupPresenceSessionFixture({
-        ...scope,
-        principalId: 'alice',
-        sessionId: 'session-1',
-      }),
-    ],
-    memberCount: 2,
-    onlineMemberCount: 1,
-  };
-}
-
-function createClient(principalId: string, displayName: string | null): ClientSnapshot {
-  const snapshot = createClientSnapshotFixture({
-    applicationId: 'app-1',
-    workspaceId: 'workspace-1',
-    principalId,
-  });
-  return {
-    ...snapshot,
-    principal: {
-      ...snapshot.principal,
-      username: principalId === 'bob' ? 'Alpha Username' : principalId,
-      displayName,
-    },
-  };
 }

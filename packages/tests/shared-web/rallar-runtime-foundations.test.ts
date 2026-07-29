@@ -156,7 +156,7 @@ function createFoundationStateStore() {
     readCachedGroupSnapshots: () => [],
     findCachedGroupSnapshotByRef: () => undefined,
     findFirstCachedGroupRefForSession: () => undefined,
-    readCachedClientSnapshots: () => [],
+    findCachedClientSnapshot: () => undefined,
     onCacheChange: () => () => undefined,
   });
   return createRallarStateStore({

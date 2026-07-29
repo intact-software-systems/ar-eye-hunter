@@ -544,12 +544,14 @@ packages/tests/shared-web/
     room-events-replay.test.ts
     room-events-subscription.test.ts
     room-group-state-mutation-workflows.test.ts
+    room-group-state-request-translation.test.ts
     room-group-state-translation.test.ts
     room-group-state-workflows.test.ts
     room-membership.test.ts
     room-membership-group-state-workflows.test.ts
     room-presence.test.ts
     room-session.test.ts
+    room-state-store-current-room.test.ts
     room-state-store.test.ts
     room-target.test.ts
     room-workflow-compat.test.ts
@@ -560,8 +562,21 @@ packages/tests/shared-web/
 The split test files preserve every existing assertion from the mixed room/
 people suites. The two exact feature-named test-runtime files own only repeated
 setup; `room-workflow-test-runtime.ts` similarly owns deterministic workflow
-API/command setup. Assertion sequences remain in the behavior-named test files. Each
-resulting test and test-runtime module remains at most 400 lines.
+API/command setup. `room-group-state-request-translation.test.ts` owns create,
+update, join, raw JSON omission/order, lifecycle, metadata, invite/governance,
+presence/leave, and their request-return compatibility; the retained
+`room-group-state-translation.test.ts` owns summary/state projection, ordering,
+current selection, members, snapshot identity, and facade/view compatibility.
+`room-state-store-current-room.test.ts` owns current-room/member projection,
+duplicate-principal revision selection, default-scope acceptance/rejection, and
+cross-scope retained current-room behavior; the retained
+`room-state-store.test.ts` owns initialization, scope filtering, active-room
+ordering, and summaries. Assertion sequences remain in the behavior-named test
+files. Each resulting test and test-runtime module remains at most 400 lines.
+
+This human-authorized, test-only four-way split resolves the final review's sole
+Important test-size finding without changing behavior, production ownership, or
+foundation files.
 
 ### 5.3 Exact current-to-target map
 
@@ -676,37 +691,20 @@ type RoomCreateGroupStateFields = Pick<
   | 'purgeAfterEpochMs'
 >;
 
-type RoomUpdateGroupStateFields = Pick<
-  RallarUpdateRoomInput,
-  | 'slug'
-  | 'displayName'
-  | 'description'
-  | 'kind'
-  | 'joinMode'
-  | 'maxMembers'
-  | 'maxSessionsPerMember'
-  | 'metadata'
-  | 'expiresAtEpochMs'
-  | 'purgeAfterEpochMs'
->;
-
 interface RoomJoinGroupStateFields {
   readonly inviteToken?: string;
   readonly joinCode?: string;
 }
 
-interface ToCreateGroupStateRequestInput {
+interface ToCreateGroupStateRequestInput extends RoomGroupStateMutationActorInput {
   readonly room: RoomCreateGroupStateFields;
   readonly groupId: string;
-  readonly actorPrincipalId: string;
-  readonly actorSessionId: string;
-  readonly requestId: string;
 }
 
 function toCreateGroupStateRequest(input: ToCreateGroupStateRequestInput): CreateGroupRequest;
 
 interface ToUpdateGroupStateRequestInput extends RoomGroupStateMutationActorInput {
-  readonly room: RoomUpdateGroupStateFields;
+  readonly request: UpdateGroupRequest;
 }
 
 function toUpdateGroupStateRequest(input: ToUpdateGroupStateRequestInput): UpdateGroupRequest;
@@ -1043,6 +1041,15 @@ retained non-room exports; their regression tests prove narrowing the file did
 not change the module object. Unknown external deep imports are the reason the
 one-hop exports cannot be removed in this child.
 
+**Protected compatibility review evidence:** the already-present exact
+five-line room workflow mocks in `rallar-auth-session-compat.test.ts` and
+`rallar-director-relay-compat.test.ts`, plus the exact 23-line three-owning-
+workflow-module mocks in `rallar-workflow-options-compat.test.ts`, are
+necessary module-path wiring after approved internal import moves. They do not
+authorize any other protected-suite edit, cleanup, formatting, assertion
+change, restructuring, or mock growth; their old `api-workflows.ts` mocks and
+all existing assertion bodies/sites remain preserved.
+
 ## 8. Structural Movement Versus Behavior Changes
 
 ### 8.1 Structure-and-boundary pass: permitted
@@ -1133,6 +1140,15 @@ contains no approved production behavior change.
   `shared-web-public-api-snapshots.test.ts`, and the 14 module-path consumers
   in Section 7.2 as unchanged regression evidence; do not grow these active
   over-400-line files.
+- The already-present owning-path mocks are authorized only as necessary
+  module-path wiring after internal imports moved to approved owners:
+  `rallar-auth-session-compat.test.ts` and
+  `rallar-director-relay-compat.test.ts` retain their exact five-line room
+  workflow mocks, while `rallar-workflow-options-compat.test.ts` retains its
+  exact 23-line mocks for the three owning workflow modules. This authorizes
+  no further growth, assertion change, test restructuring, formatting, or
+  hard-tier cleanup; preserve the old `api-workflows.ts` mocks and every
+  assertion body and site.
 - Put every new event/state literal directly in its already-planned bounded
   replacement test, initially through the current public facade; do not edit a
   mixed suite that Task 5 removes.
@@ -1246,11 +1262,16 @@ task.
   literals. Run the existing `api-workflows.test.ts` and
   `rallar-workflow-options-compat.test.ts` unchanged.
 
+  Preserve the Task 1-authorized owning-path mock wiring in the three protected
+  compatibility suites exactly as recorded there; it is required only because
+  the internal imports now resolve through approved owners.
+
 - [ ] **Step 2: Add the boundary fixtures red**
 
   Create
-  `packages/tests/shared-web/rooms/room-group-state-translation.test.ts` with
-  every literal fixture in Section 6.3, then add the new owning-path import to
+  `packages/tests/shared-web/rooms/room-group-state-request-translation.test.ts`
+  and retain `room-group-state-translation.test.ts` for projection fixtures in
+  Section 6.3, then add the new owning-path import to
   `room-workflow-compat.test.ts`. Record failures caused only by the absent
   boundary/workflow modules; do not alter an expected literal to match new
   code.
@@ -1281,6 +1302,7 @@ task.
     packages/tests/shared-web/rooms/room-group-state-workflows.test.ts \
     packages/tests/shared-web/rooms/room-group-state-mutation-workflows.test.ts \
     packages/tests/shared-web/rooms/room-membership-group-state-workflows.test.ts \
+    packages/tests/shared-web/rooms/room-group-state-request-translation.test.ts \
     packages/tests/shared-web/rooms/room-group-state-translation.test.ts \
     packages/tests/shared-web/rooms/room-workflow-compat.test.ts \
     packages/tests/shared-web/api-workflows.test.ts \
@@ -1424,9 +1446,9 @@ late-bound callback point, construction order, or lifecycle position.
   responsibility. Keep cache acceptance and people state in the retained
   runtime store. Preserve one cache-change emission sequence. Resolve the
   current snapshot independently from the default-scope room list and pass it
-  as required `currentRoomSnapshot: GroupSnapshot | undefined` data through
-  `room-group-state-translation.ts`; the boundary remains the sole current-room
-  and member projection owner.
+  as the locked optional `currentRoom: GroupSnapshot | undefined` data carrier
+  through `room-group-state-translation.ts`; the boundary remains the sole
+  current-room and member projection owner.
 
 - [ ] **Step 3: Extract room event ownership**
 
@@ -1439,6 +1461,7 @@ late-bound callback point, construction order, or lifecycle position.
   ```bash
   npx vitest run \
     packages/tests/shared-web/rooms/room-state-store.test.ts \
+    packages/tests/shared-web/rooms/room-state-store-current-room.test.ts \
     packages/tests/shared-web/rooms/room-events-list-and-page.test.ts \
     packages/tests/shared-web/rooms/room-events-replay.test.ts \
     packages/tests/shared-web/rooms/room-events-subscription.test.ts \
@@ -1501,7 +1524,8 @@ late-bound callback point, construction order, or lifecycle position.
 
 - [ ] **Step 3: Human Review Point A — structure/boundary merge**
 
-  The human reviews the exact tree, literal boundary fixtures,
+  The human reviews the exact tree, literal boundary fixtures, the four-way
+  request/projection and store/current-room test ownership split,
   `layout.browser-room-boundary=0`, public snapshots, both compatibility
   structures, app builds, rename evidence, size/function review, and absence
   of behavior changes. Only the human authorizes merge. Branch Release Gate

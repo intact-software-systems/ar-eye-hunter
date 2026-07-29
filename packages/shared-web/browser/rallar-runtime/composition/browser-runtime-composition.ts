@@ -120,7 +120,7 @@ export function createBrowserStateComposition(
     findCachedGroupSnapshotByRef: (roomRef) => stateStore.findCachedGroupSnapshotByRef(roomRef),
     findFirstCachedGroupRefForSession: (sessionId) =>
       stateStore.findFirstCachedGroupRefForSession(sessionId),
-    readCachedClientSnapshots: () => stateStore.readCachedClientSnapshots(),
+    findCachedClientSnapshot: (principalId) => stateStore.findCachedClientSnapshot(principalId),
     onCacheChange: (listener) => stateStore.onCacheChange(listener),
   });
   stateStore = createRallarStateStore({
