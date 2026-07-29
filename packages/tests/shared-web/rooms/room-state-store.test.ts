@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import { createRallarBrowserFacadeRuntimeContext } from '@shared-web/browser/rallar-runtime-context.ts';
+import { createRoomStateStore } from '@shared-web/browser/rooms/room-state-store.ts';
 
 import {
   createActiveGroupMemberFixture,
@@ -64,6 +66,8 @@ vi.mock('@shared/repository/group-state-snapshots-repository.ts', () => ({
 }));
 
 describe('room state store compatibility', () => {
+  void createRoomStateStore;
+
   beforeEach(() => {
     stateMocks.groups.length = 0;
     stateMocks.clients.length = 0;
@@ -75,6 +79,8 @@ describe('room state store compatibility', () => {
     const facade = createRallarFacade();
     const listener = vi.fn();
 
+    expect(facade.rooms.state().rooms).toEqual([]);
+    expect(facade.rooms.state().members).toEqual([]);
     expect(facade.rooms.state()).toEqual({
       rooms: [],
       currentRoomId: undefined,
@@ -85,6 +91,7 @@ describe('room state store compatibility', () => {
 
     facade.rooms.onChange(listener);
 
+    expect(listener).toHaveBeenCalledWith(expect.objectContaining({ rooms: [], members: [] }));
     expect(listener).toHaveBeenCalledOnce();
     expect(listener).toHaveBeenCalledWith({
       rooms: [],
@@ -267,6 +274,42 @@ describe('room state store compatibility', () => {
         client: aliceClient,
       },
     ]);
+  });
+
+  it('preserves the selected current room when defaults move to another scope', () => {
+    const runtime = createRallarBrowserFacadeRuntimeContext();
+    const current = createRoomSnapshot('scope-a-room', 'Scope A Room');
+    const visible = createRoomSnapshot(
+      'scope-b-room',
+      'Scope B Room',
+      { applicationId: 'app-2', workspaceId: 'workspace-2' },
+      [],
+    );
+    const groups = [current, visible];
+    const store = createRoomStateStore({
+      runtime,
+      readSession: () => stateMocks.session,
+      readCachedGroupSnapshots: () => groups,
+      findCachedGroupSnapshotByRef: (roomRef) =>
+        groups.find((snapshot) => snapshot.group === roomRef),
+      findFirstCachedGroupRefForSession: () => current.group,
+      readCachedClientSnapshots: () => [],
+      onCacheChange: () => () => undefined,
+    });
+    runtime.setDefaults({ applicationId: 'app-1', workspaceId: 'workspace-1' });
+    runtime.setCurrentRoom(current);
+    const before = store.state();
+
+    runtime.setDefaults({ applicationId: 'app-2', workspaceId: 'workspace-2' });
+    const after = store.state();
+
+    expect(before.rooms.map((room) => room.roomId)).toEqual(['scope-a-room']);
+    expect(before.currentRoom).toBe(current);
+    expect(after.rooms.map((room) => room.roomId)).toEqual(['scope-b-room']);
+    expect(after.currentRoomRef).toBe(before.currentRoomRef);
+    expect(after.currentRoomId).toBe(before.currentRoomId);
+    expect(after.currentRoom).toBe(before.currentRoom);
+    expect(after.members).toEqual(before.members);
   });
 });
 

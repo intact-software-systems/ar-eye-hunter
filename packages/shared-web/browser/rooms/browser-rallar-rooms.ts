@@ -7,10 +7,6 @@ import {
   type RallarOperationOptions,
 } from '@shared-web/browser/rallar-operation-options.ts';
 import type { RallarRealtimeFacade } from '@shared-web/browser/rallar-realtime-facade.ts';
-import type {
-  RallarRoomEventsPort,
-  RallarRoomStateStorePort,
-} from '@shared-web/browser/rallar-runtime/contracts.ts';
 import { throwRallarValidationIssue } from '@shared-web/browser/rallar-runtime/validation.ts';
 import type {
   RallarOnChangeOptions,
@@ -24,6 +20,7 @@ import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import { createAndJoinRoom, createAndSwitchRoom } from './create-and-join-room.ts';
 import { enterRoom, joinRoom } from './join-room.ts';
 import { leaveRoom } from './leave-room.ts';
+import type { RallarRoomEventsPort } from './room-events.ts';
 import {
   acceptRoomInvite,
   banRoomMember,
@@ -35,6 +32,7 @@ import {
 } from './room-membership.ts';
 import { waitForRoomPresence } from './room-presence.ts';
 import { createRoomSession } from './room-session.ts';
+import type { RallarRoomStateStorePort } from './room-state-store.ts';
 import type { GroupRef, GroupSnapshot, StateScope } from './room-group-state-translation.ts';
 import type { RallarRoomSession, RallarRoomState } from './rallar-room-contracts.ts';
 import type { CreateRallarRoomsFacadeOptions } from './rallar-rooms-facade.ts';

@@ -285,6 +285,7 @@ describe('room to authoritative group-state translation', () => {
       clients: [bob, alice],
       sessionId: 'session-1',
       currentRoomRef: selected.group,
+      currentRoomSnapshot: selected,
     });
     expect(state.rooms).toEqual([
       {
@@ -331,6 +332,13 @@ describe('room to authoritative group-state translation', () => {
         client: alice,
       },
     ]);
+    const crossScope = toRallarRoomState({
+      snapshots: [alpha],
+      clients: [bob, alice],
+      currentRoomRef: selected.group,
+      currentRoomSnapshot: selected,
+    });
+    expect([crossScope.currentRoom, crossScope.members]).toEqual([selected, state.members]);
   });
 
   it('retains facade inputs and authoritative request result types', () => {

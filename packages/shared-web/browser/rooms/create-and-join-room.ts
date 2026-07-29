@@ -4,7 +4,6 @@ import {
   toRallarWorkflowPolicies,
   type RallarOperationOptions,
 } from '@shared-web/browser/rallar-operation-options.ts';
-import type { RallarRoomStateStorePort } from '@shared-web/browser/rallar-runtime/contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { isSameGroupRef, toStateScope } from '@shared/api/api-type-utils.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
@@ -14,6 +13,7 @@ import type {
   RallarRoomSwitchPartialFailureError,
 } from './rallar-room-contracts.ts';
 import { leaveRoom } from './leave-room.ts';
+import type { RallarRoomStateStorePort } from './room-state-store.ts';
 import type { GroupRef, GroupSnapshot, StateScope } from './room-group-state-translation.ts';
 import {
   createAndJoinStateGroup,

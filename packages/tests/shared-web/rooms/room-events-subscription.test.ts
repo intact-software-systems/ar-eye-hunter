@@ -47,6 +47,17 @@ describe('room event subscription compatibility', () => {
 
     expect(roomListener).not.toHaveBeenCalled();
     expect(eventListener).toHaveBeenCalledOnce();
+    expect(eventListener.mock.calls[0]?.[0]).toMatchObject({
+      groupId: 'room-1',
+      eventId: 'event-1',
+      eventType: 'member-joined',
+      snapshotVersion: 1,
+    });
+    expect(eventListener.mock.calls[0]?.[1]).toMatchObject({
+      transport: 'ws',
+      typeId: AppTopics.groupStateEvent,
+      topicId: AppTopics.groupStateEvent,
+    });
     expect(eventListener).toHaveBeenCalledWith(
       matching,
       expect.objectContaining({
@@ -96,18 +107,21 @@ describe('room event subscription compatibility', () => {
     await findRoomWsCallback(true)?.onMessage?.(
       toRoomEventMessage(createRoomEvent('room-1', 'event-1', 'member-joined')),
     );
+    expect(listener).toHaveBeenCalledTimes(1);
+
     await facade.disconnect();
+    expect(
+      mocks.ctx.middleware.webSocketQueueBox.removeAnyInboxMessageCallback,
+    ).toHaveBeenCalledWith('rallar:ws:any-message');
     await facade.connect();
 
     expect(listener).toHaveBeenCalledTimes(1);
     expect(mocks.listStateGroupEventPage).not.toHaveBeenCalled();
-    expect(
-      mocks.ctx.middleware.webSocketQueueBox.removeAnyInboxMessageCallback,
-    ).toHaveBeenCalledWith('rallar:ws:any-message');
 
     await findRoomWsCallback(true)?.onMessage?.(
       toRoomEventMessage(createRoomEvent('room-1', 'event-3', 'member-left')),
     );
+    expect(listener).toHaveBeenCalledTimes(2);
     expect(listener.mock.calls.map((call) => call[0].eventId)).toEqual(['event-1', 'event-3']);
   });
 });

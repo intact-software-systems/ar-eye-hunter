@@ -1,5 +1,4 @@
 import type { RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
-import type { RallarRoomStateStorePort } from '@shared-web/browser/rallar-runtime/contracts.ts';
 import { normalizeWaitTimeoutMs } from '@shared-web/browser/rallar-runtime/wait.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import {
@@ -15,6 +14,7 @@ import type {
   RallarRoomPresenceWaitOptions,
   RallarRoomPresenceWaitResult,
 } from './rallar-room-contracts.ts';
+import type { RallarRoomStateStorePort } from './room-state-store.ts';
 
 export interface WaitForRoomPresenceInput {
   readonly room: string | GroupRef;

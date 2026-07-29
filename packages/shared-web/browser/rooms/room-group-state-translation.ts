@@ -159,6 +159,7 @@ export interface ToRallarRoomStateInput {
   readonly clients: readonly ClientSnapshot[];
   readonly sessionId?: string;
   readonly currentRoomRef?: GroupRef;
+  readonly currentRoomSnapshot: GroupSnapshot | undefined;
 }
 
 export function toCreateGroupStateRequest(
@@ -316,9 +317,6 @@ export function toRallarRoomState(input: ToRallarRoomStateInput): RallarRoomStat
   const snapshots = input.snapshots
     .filter(isGroupActive)
     .sort((left, right) => readGroupDisplayName(left).localeCompare(readGroupDisplayName(right)));
-  const currentRoom = input.currentRoomRef
-    ? snapshots.find((snapshot) => isSameGroupRef(snapshot.group, input.currentRoomRef!))
-    : undefined;
 
   return {
     rooms: snapshots.map((snapshot) =>
@@ -330,8 +328,8 @@ export function toRallarRoomState(input: ToRallarRoomStateInput): RallarRoomStat
     ),
     currentRoomId: input.currentRoomRef?.groupId,
     currentRoomRef: input.currentRoomRef,
-    currentRoom,
-    members: toRallarRoomMembers(currentRoom, input.clients),
+    currentRoom: input.currentRoomSnapshot,
+    members: toRallarRoomMembers(input.currentRoomSnapshot, input.clients),
   };
 }
 

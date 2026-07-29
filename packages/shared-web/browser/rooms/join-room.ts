@@ -3,13 +3,13 @@ import {
   toRallarWorkflowPolicies,
   type RallarOperationOptions,
 } from '@shared-web/browser/rallar-operation-options.ts';
-import type { RallarRoomStateStorePort } from '@shared-web/browser/rallar-runtime/contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { isSameGroupRef, toGroupRefFromScope, toStateScope } from '@shared/api/api-type-utils.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 
 import { createRoomSwitchPartialFailureError } from './create-and-join-room.ts';
 import { leaveRoom, type LeaveRoomInput } from './leave-room.ts';
+import type { RallarRoomStateStorePort } from './room-state-store.ts';
 import type {
   RallarJoinRoomInput,
   RallarJoinRoomOptions,

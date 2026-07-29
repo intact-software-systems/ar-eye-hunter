@@ -41,8 +41,15 @@ describe('room event replay compatibility', () => {
     );
     await findRoomWsCallback(true)?.onMessage?.(toRoomEventMessage(replayed));
 
+    expect(liveListener).toHaveBeenCalledOnce();
     expect(liveListener.mock.calls.map((call) => call[0].eventId)).toEqual(['event-1']);
     expect(replayListener).toHaveBeenCalledOnce();
+    expect(replayListener.mock.calls[0]?.[0]).toEqual(replayed);
+    expect(replayListener.mock.calls[0]?.[1]).toMatchObject({
+      transport: 'replay',
+      typeId: AppTopics.groupStateEvent,
+      topicId: AppTopics.groupStateEvent,
+    });
     expect(replayListener).toHaveBeenCalledWith(
       replayed,
       expect.objectContaining({
@@ -51,6 +58,13 @@ describe('room event replay compatibility', () => {
         topicId: AppTopics.groupStateEvent,
       }),
     );
+    expect(result).toMatchObject({
+      events: [replayed],
+      duplicateCount: 1,
+      replayedCount: 1,
+      pageCount: 1,
+      hasMore: false,
+    });
     expect(result).toEqual({
       events: [replayed],
       nextCursor: { snapshotVersion: 2, occurredAtEpochMs: 2, eventId: 'event-2' },
@@ -92,7 +106,17 @@ describe('room event replay compatibility', () => {
       maxPages: 2,
     });
 
+    expect(listener).toHaveBeenCalledTimes(2);
+    expect(listener.mock.calls.map((call) => call[0])).toEqual([first, second]);
     expect(listener.mock.calls.map((call) => call[0].eventId)).toEqual(['event-1', 'event-2']);
+    expect(result).toMatchObject({
+      events: [first, second],
+      nextCursor: { snapshotVersion: 2, occurredAtEpochMs: 2, eventId: 'event-2' },
+      hasMore: false,
+      pageCount: 2,
+      replayedCount: 2,
+      duplicateCount: 0,
+    });
     expect(result).toEqual({
       events: [first, second],
       nextCursor: { snapshotVersion: 2, occurredAtEpochMs: 2, eventId: 'event-2' },

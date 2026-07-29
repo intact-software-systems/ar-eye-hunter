@@ -1,6 +1,7 @@
 import { vi } from 'vitest';
 
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
+import { createRoomEvents } from '@shared-web/browser/rooms/room-events.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { GroupEvent } from '@shared/api/group-types.ts';
 import { newALBroadcastMessage, newALEventRoute } from '@shared/al-contracts/al-contract.ts';
@@ -90,6 +91,8 @@ function createRoomEventMocks() {
 }
 
 const roomEventMocks = vi.hoisted(createRoomEventMocks);
+
+void createRoomEvents;
 
 vi.mock('@shared-web/browser/app-context.ts', () => ({
   clearMiddleware: vi.fn(),

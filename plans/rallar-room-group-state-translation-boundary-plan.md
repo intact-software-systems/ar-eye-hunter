@@ -1362,6 +1362,51 @@ event implementations in this task.
   and `composition.ts`
 - Split mixed tests into the exact room/people test tree in Section 5.2.
 
+The independent Task 5 fix review requires this exact private composition tree:
+
+```text
+rallar-runtime/
+  composition.ts
+  composition/
+    browser-runtime-composition.ts
+    browser-communication-composition.ts
+    browser-product-composition.ts
+    browser-lifecycle-composition.ts
+    browser-session-composition.ts
+    browser-facade-assembly.ts
+```
+
+`composition.ts` keeps `createBrowserRallarFacade` as the directly readable
+root. `browser-runtime-composition.ts` owns, in order,
+`createBrowserRuntimeFoundation`, `createBrowserStateComposition`, and
+`createBrowserStateEventComposition`: the runtime ports and lifecycle object,
+the room plus retained cache state owners, then the room plus retained state
+event owners and single WebSocket inbox. `browser-communication-composition.ts`
+owns `createBrowserMessagingComposition` followed by
+`createBrowserRealtimeComposition`, preserving messages, WebSocket status,
+RTC, realtime, and media construction order.
+
+`browser-product-composition.ts` owns
+`createBrowserRoomPeopleStatsComposition` followed by
+`createBrowserCallsDirectorComposition`, including the existing after-state-
+emit director callback. `browser-lifecycle-composition.ts` owns
+`registerBrowserStateLifecycle` for orders 10 through 20 followed by
+`registerBrowserTransportLifecycle` for orders 30 through 90.
+`browser-session-composition.ts` owns `createBrowserSessionComposition` and
+preserves data, session, connection/auth, startup, and CRDT construction order.
+`browser-facade-assembly.ts` owns `createBrowserFacadeAssembly`, including
+channels and the single public facade object.
+
+The root calls those phases in this exact order: runtime foundation; state;
+state events; messaging; realtime/media; rooms/people/stats; calls/director;
+state lifecycle; transport lifecycle; data/session/connection/auth/startup/
+CRDT; channels/public facade. Inputs and multi-value results use precise named
+interfaces. Every phase function remains at most 60 physical lines and every
+composition file remains at most 400. The split adds no public package export,
+barrel, generic dependency bag, hidden default, runtime cycle, duplicated
+state, callback, or lifecycle and does not change any injected object,
+late-bound callback point, construction order, or lifecycle position.
+
 - [ ] **Step 1: Preserve every mixed-suite assertion**
 
   Inventory test names and assertion counts before splitting. After the split,
@@ -1377,7 +1422,11 @@ event implementations in this task.
   Move active-group filtering, room summaries, current-room resolution,
   membership projection, room listeners, and room lookup behavior as one
   responsibility. Keep cache acceptance and people state in the retained
-  runtime store. Preserve one cache-change emission sequence.
+  runtime store. Preserve one cache-change emission sequence. Resolve the
+  current snapshot independently from the default-scope room list and pass it
+  as required `currentRoomSnapshot: GroupSnapshot | undefined` data through
+  `room-group-state-translation.ts`; the boundary remains the sole current-room
+  and member projection owner.
 
 - [ ] **Step 3: Extract room event ownership**
 
@@ -1395,6 +1444,20 @@ event implementations in this task.
     packages/tests/shared-web/rooms/room-events-subscription.test.ts \
     packages/tests/shared-web/people/people-state-compat.test.ts \
     packages/tests/shared-web/people/people-events-compat.test.ts
+  ```
+
+- [ ] **Step 5: Record and enforce the fixed Task 5 headless bundle budget**
+
+  The exact Task 5 base rebuild measured `190.406250 KiB`; the initial Task 5
+  implementation measured `191.036133 KiB`; and the retained behavior-neutral
+  `#private` optimization measured `190.901367 KiB`. For Task 5 only, require
+  the headless entry to remain strictly below `192 KiB`. The accepted Task 5
+  measurement therefore leaves approximately `1.099 KiB` of headroom. This is
+  a fixed Task 5 budget exception: it permits no later increase and does not
+  approve any broader toolchain or performance exception.
+
+  ```bash
+  npx vitest run packages/tests/rallar-black-box-headless/headless-bundle-boundary.test.ts
   ```
 
 ### Task 6: Freeze, Review, And Publish The Structure/Boundary PR
