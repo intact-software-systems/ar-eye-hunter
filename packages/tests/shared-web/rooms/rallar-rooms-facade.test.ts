@@ -1,20 +1,60 @@
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { parse } from '@babel/parser';
 import { expect, expectTypeOf, it } from 'vitest';
 import type { GroupEvent, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { StateEventPage } from '@shared/api/state-event-types.ts';
 import { createRallarRoomsFacade as createCompatibilityRallarRoomsFacade } from '@shared-web/browser/rallar-rooms-facade.ts';
 import type * as CompatibilityRoomSurface from '@shared-web/browser/rallar-rooms-facade.ts';
 import type {
-  RallarReplayEventsResult,
   RallarRoomPresenceWaitResult,
   RallarRoomSession,
   RallarRoomState,
   RallarRoomSummary,
   RallarRoomsFacade,
-  RallarUnsubscribe,
 } from '@shared-web/browser/rallar-rooms-facade.ts';
+import type {
+  RallarReplayEventsResult,
+  RallarUnsubscribe,
+} from '@shared-web/browser/rallar-shared-contracts.ts';
 import type * as OwningRoomContracts from '@shared-web/browser/rooms/rallar-room-contracts.ts';
 import { createRallarRoomsFacade as createOwningRallarRoomsFacade } from '@shared-web/browser/rooms/rallar-rooms-facade.ts';
 import type * as OwningRoomFacade from '@shared-web/browser/rooms/rallar-rooms-facade.ts';
+
+const ROOM_CONTRACT_EXPORT_NAMES = [
+  'RallarRoomSummary',
+  'RallarRoomMember',
+  'RallarRoomState',
+  'RallarRoomPresenceWaitOptions',
+  'RallarRoomPresenceWaitResult',
+  'RallarCreateRoomInput',
+  'RallarRoomTargetInput',
+  'RallarUpdateRoomInput',
+  'RallarRoomLifecycleOptions',
+  'RallarRoomInviteOptions',
+  'RallarRoomGovernanceOptions',
+  'RallarJoinRoomOptions',
+  'RallarJoinRoomInput',
+  'RallarRoomSwitchOperation',
+  'RallarRoomSwitchPartialFailureError',
+  'RallarLeaveRoomOptions',
+  'RallarRoomEventOptions',
+  'RallarListRoomEventsOptions',
+  'RallarListRoomEventsInput',
+  'RallarReplayRoomEventsOptions',
+  'RallarReplayRoomEventsInput',
+  'RallarRoomEventListener',
+  'RallarRoomSessionRealtimeInput',
+  'RallarRoomSessionMessageDefinition',
+  'RallarRoomSession',
+] as const;
+
+const ROOM_FACADE_TYPE_EXPORT_NAMES = [
+  'CreateRallarRoomsFacadeOptions',
+  'RallarRoomsFacade',
+] as const;
 
 type CompatibilityRoomContracts = Readonly<{
   summary: CompatibilityRoomSurface.RallarRoomSummary;
@@ -72,6 +112,96 @@ type OwningContracts = Readonly<{
   session: OwningRoomContracts.RallarRoomSession;
 }>;
 
+type FocusedTypeCheckResult = Readonly<{
+  status: number | null;
+  version: string;
+  diagnostics: string;
+}>;
+
+type CompatibilityExport = Readonly<{
+  exportedName: string;
+  typeOnly: boolean;
+  specifier?: string;
+}>;
+
+function runFocusedTypeCheck(): FocusedTypeCheckResult {
+  const temporaryDirectory = mkdtempSync(path.join(tmpdir(), 'rallar-room-facade-types-'));
+  const configPath = path.join(temporaryDirectory, 'tsconfig.json');
+  const testPath = path.resolve('packages/tests/shared-web/rooms/rallar-rooms-facade.test.ts');
+  const compilerPath = path.resolve('node_modules/typescript/bin/tsc');
+
+  writeFileSync(
+    configPath,
+    JSON.stringify({
+      extends: path.resolve('packages/tests/tsconfig.json'),
+      compilerOptions: {
+        lib: ['ES2023', 'DOM'],
+        noEmit: true,
+        target: 'ES2023',
+        typeRoots: [path.resolve('node_modules/@types'), path.resolve('node_modules')],
+      },
+      files: [testPath],
+      include: [],
+    }),
+    'utf8',
+  );
+
+  try {
+    const version = spawnSync(process.execPath, [compilerPath, '--version'], {
+      encoding: 'utf8',
+    });
+    const check = spawnSync(
+      process.execPath,
+      [compilerPath, '--project', configPath, '--pretty', 'false'],
+      { encoding: 'utf8' },
+    );
+    return {
+      status: check.status,
+      version: version.stdout.trim(),
+      diagnostics: `${check.stdout}${check.stderr}`,
+    };
+  } finally {
+    rmSync(temporaryDirectory, { recursive: true, force: true });
+  }
+}
+
+function readCompatibilityExports(): readonly CompatibilityExport[] {
+  const source = readFileSync('packages/shared-web/browser/rallar-rooms-facade.ts', 'utf8');
+  const statements = parse(source, {
+    sourceType: 'module',
+    plugins: ['typescript'],
+  }).program.body;
+
+  return statements.flatMap((statement) => {
+    if (statement.type !== 'ExportNamedDeclaration') {
+      return [];
+    }
+    return statement.specifiers.flatMap((specifier) => {
+      if (specifier.type !== 'ExportSpecifier') {
+        return [];
+      }
+      return [
+        {
+          exportedName:
+            specifier.exported.type === 'Identifier'
+              ? specifier.exported.name
+              : specifier.exported.value,
+          typeOnly: statement.exportKind === 'type' || specifier.exportKind === 'type',
+          specifier: statement.source?.value,
+        },
+      ];
+    });
+  });
+}
+
+it('type-checks the owning and compatibility room surfaces with TypeScript 7.0.2', () => {
+  const result = runFocusedTypeCheck();
+
+  expect(result.version).toBe('Version 7.0.2');
+  expect(result.status, result.diagnostics).toBe(0);
+  expect(result.diagnostics).toBe('');
+});
+
 it('retains the current public facade return types through the existing path', () => {
   expectTypeOf<RallarRoomsFacade['state']>().returns.toEqualTypeOf<RallarRoomState>();
   expectTypeOf<RallarRoomsFacade['list']>().returns.toEqualTypeOf<readonly RallarRoomSummary[]>();
@@ -108,4 +238,24 @@ it('exposes the existing room facade surface through the owning paths', () => {
   expectTypeOf<OwningRoomFacade.RallarRoomsFacade>().toEqualTypeOf<CompatibilityRoomSurface.RallarRoomsFacade>();
   expectTypeOf<OwningRoomFacade.CreateRallarRoomsFacadeOptions>().toEqualTypeOf<CompatibilityRoomSurface.CreateRallarRoomsFacadeOptions>();
   expectTypeOf<OwningContracts>().toEqualTypeOf<CompatibilityRoomContracts>();
+});
+
+it('keeps the compatibility module at exactly 28 explicit exports', () => {
+  const exports = readCompatibilityExports();
+  const contractExports = exports.filter(
+    (entry) => entry.specifier === '@shared-web/browser/rooms/rallar-room-contracts.ts',
+  );
+  const facadeExports = exports.filter(
+    (entry) => entry.specifier === '@shared-web/browser/rooms/rallar-rooms-facade.ts',
+  );
+
+  expect(exports).toHaveLength(28);
+  expect(contractExports.map((entry) => entry.exportedName)).toEqual(ROOM_CONTRACT_EXPORT_NAMES);
+  expect(contractExports.every((entry) => entry.typeOnly)).toBe(true);
+  expect(
+    facadeExports.filter((entry) => entry.typeOnly).map((entry) => entry.exportedName),
+  ).toEqual(ROOM_FACADE_TYPE_EXPORT_NAMES);
+  expect(
+    facadeExports.filter((entry) => !entry.typeOnly).map((entry) => entry.exportedName),
+  ).toEqual(['createRallarRoomsFacade']);
 });
