@@ -111,6 +111,28 @@ describe('shared-web browser bundle boundaries', () => {
             ).toBeLessThan(entry.brotliBudgetKiB);
         }
     });
+
+    it('erases both type-only edges between room contracts and group-state translation', () => {
+        const translation = bundleForBoundary({
+            label: 'room group-state translation',
+            entry: 'packages/shared-web/browser/rooms/room-group-state-translation.ts',
+            output: 'room-group-state-translation.boundary.min.js',
+            brotliBudgetKiB: 1,
+        });
+        const contracts = bundleForBoundary({
+            label: 'room contracts',
+            entry: 'packages/shared-web/browser/rooms/rallar-room-contracts.ts',
+            output: 'rallar-room-contracts.boundary.min.js',
+            brotliBudgetKiB: 1,
+        });
+
+        expect(Object.keys(translation.metafile.inputs)).not.toContain(
+            'packages/shared-web/browser/rooms/rallar-room-contracts.ts',
+        );
+        expect(Object.keys(contracts.metafile.inputs)).not.toContain(
+            'packages/shared-web/browser/rooms/room-group-state-translation.ts',
+        );
+    });
 });
 
 function bundleForBoundary(entry: BundleBoundary): Readonly<{

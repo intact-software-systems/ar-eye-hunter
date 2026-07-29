@@ -222,6 +222,11 @@ vi.mock('@shared-web/browser/api-workflows.ts', () => ({
     updateStateGroupMetadata: mocks.updateStateGroupMetadata,
 }));
 
+vi.mock('@shared-web/browser/rooms/room-group-state-workflows.ts', () => ({
+    joinStateGroup: mocks.joinStateGroup,
+    leaveStateGroup: mocks.leaveStateGroup,
+}));
+
 vi.mock('@shared-web/browser/browser-al-runtime-stores.ts', () => ({
     deleteBrowserALRuntimeEntriesForSession:
         mocks.deleteBrowserALRuntimeEntriesForSession,

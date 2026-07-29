@@ -28,9 +28,14 @@ import type {
   RallarRoomTargetInput,
   RallarUpdateRoomInput,
 } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
-import type { GroupEvent, GroupRef, GroupRole, GroupSnapshot } from '@shared/api/group-types.ts';
-import type { StateEventPage } from '@shared/api/state-event-types.ts';
-import type { StateScope } from '@shared/api/state-types.ts';
+import type {
+  GroupEvent,
+  GroupRef,
+  GroupRole,
+  GroupSnapshot,
+  StateEventPage,
+  StateScope,
+} from '@shared-web/browser/rooms/room-group-state-translation.ts';
 
 export type RallarRoomsFacade = Readonly<{
   state(): RallarRoomState;

@@ -337,6 +337,29 @@ vi.mock('@shared-web/browser/api-workflows.ts', () => ({
     updateStateGroupMetadata: mocks.updateStateGroupMetadata,
 }));
 
+vi.mock('@shared-web/browser/rooms/room-group-state-workflows.ts', () => ({
+    createAndJoinStateGroup: mocks.createAndJoinStateGroup,
+    joinStateGroup: mocks.joinStateGroup,
+    leaveStateGroup: mocks.leaveStateGroup,
+}));
+
+vi.mock('@shared-web/browser/rooms/room-group-state-mutation-workflows.ts', () => ({
+    archiveStateGroup: mocks.archiveStateGroup,
+    deleteStateGroup: mocks.deleteStateGroup,
+    updateStateGroupDetails: mocks.updateStateGroupDetails,
+    updateStateGroupMetadata: mocks.updateStateGroupMetadata,
+}));
+
+vi.mock('@shared-web/browser/rooms/room-membership-group-state-workflows.ts', () => ({
+    acceptStateGroupInvite: mocks.acceptStateGroupInvite,
+    banStateGroupMember: mocks.banStateGroupMember,
+    createStateGroupInvite: mocks.createStateGroupInvite,
+    removeStateGroupMember: mocks.removeStateGroupMember,
+    setStateGroupMemberRole: mocks.setStateGroupMemberRole,
+    transferStateGroupOwnership: mocks.transferStateGroupOwnership,
+    unbanStateGroupMember: mocks.unbanStateGroupMember,
+}));
+
 vi.mock('@shared-web/browser/data-caches.ts', () => ({
     hydrateStateCaches: mocks.hydrateStateCaches,
     onStateCacheChange: mocks.onStateCacheChange,

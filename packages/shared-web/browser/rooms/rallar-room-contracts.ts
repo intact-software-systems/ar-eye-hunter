@@ -17,6 +17,7 @@ import type {
 } from '@shared-web/browser/readiness.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type {
+  CreateGroupRequest,
   GroupEvent,
   GroupEventType,
   GroupJoinMode,
@@ -25,13 +26,10 @@ import type {
   GroupRole,
   GroupSnapshot,
   GroupStatus,
-} from '@shared/api/group-types.ts';
-import type { StateEventCursor } from '@shared/api/state-event-types.ts';
-import type {
-  CreateGroupRequest,
+  StateEventCursor,
   StateScope,
   UpdateGroupRequest,
-} from '@shared/api/state-types.ts';
+} from '@shared-web/browser/rooms/room-group-state-translation.ts';
 
 export type RallarRoomSummary = Readonly<{
   roomId: string;

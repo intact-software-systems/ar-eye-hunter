@@ -138,6 +138,12 @@ vi.mock('@shared-web/browser/api-workflows.ts', () => ({
   leaveStateGroup: roomWorkflowMocks.leaveStateGroup,
 }));
 
+vi.mock('@shared-web/browser/rooms/room-group-state-workflows.ts', () => ({
+  createAndJoinStateGroup: roomWorkflowMocks.createAndJoinStateGroup,
+  joinStateGroup: roomWorkflowMocks.joinStateGroup,
+  leaveStateGroup: roomWorkflowMocks.leaveStateGroup,
+}));
+
 vi.mock('@shared-web/browser/data-caches.ts', () => ({
   hydrateStateCaches: roomWorkflowMocks.hydrateStateCaches,
   onStateCacheChange: roomWorkflowMocks.onStateCacheChange,

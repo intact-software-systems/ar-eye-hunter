@@ -1,5 +1,4 @@
 import * as api from '@shared-web/browser/api-integration.ts';
-import type { StateGroupWorkflowValue } from '@shared-web/browser/api-workflows.ts';
 import * as apiWorkflows from '@shared-web/browser/api-workflows.ts';
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
 import type {
@@ -17,6 +16,10 @@ import {
 } from '@shared-web/browser/rallar-operation-options.ts';
 import type { RallarRealtimeFacade } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { CreateRallarRoomsFacadeOptions } from '@shared-web/browser/rooms/rallar-rooms-facade.ts';
+import * as roomMutationWorkflows from '@shared-web/browser/rooms/room-group-state-mutation-workflows.ts';
+import * as roomWorkflows from '@shared-web/browser/rooms/room-group-state-workflows.ts';
+import type { StateGroupWorkflowValue } from '@shared-web/browser/rooms/room-group-state-workflows.ts';
+import * as roomMembershipWorkflows from '@shared-web/browser/rooms/room-membership-group-state-workflows.ts';
 import type {
     RallarCreateRoomInput,
     RallarJoinRoomInput,
@@ -245,7 +248,7 @@ class BrowserRallarRoomsController implements RallarRoomsController {
                 operationOptions,
             );
             const snapshot = Object.keys(createOptions).length === 0
-                ? await apiWorkflows.createAndJoinStateGroup(
+                ? await roomWorkflows.createAndJoinStateGroup(
                     createInput.displayName,
                     session.clientId,
                     session.sessionId,
@@ -254,7 +257,7 @@ class BrowserRallarRoomsController implements RallarRoomsController {
                     policies,
                     createInput.groupId,
                 )
-                : await apiWorkflows.createAndJoinStateGroup(
+                : await roomWorkflows.createAndJoinStateGroup(
                     createInput.displayName,
                     session.clientId,
                     session.sessionId,
@@ -342,7 +345,7 @@ class BrowserRallarRoomsController implements RallarRoomsController {
                 );
             }
 
-            const snapshot = await apiWorkflows.joinStateGroup(
+            const snapshot = await roomWorkflows.joinStateGroup(
                 roomId,
                 session.clientId,
                 session.sessionId,
@@ -589,7 +592,7 @@ class BrowserRallarRoomsController implements RallarRoomsController {
             if (!roomId) {
                 return undefined;
             }
-            const snapshot = await apiWorkflows.leaveStateGroup(
+            const snapshot = await roomWorkflows.leaveStateGroup(
                 roomId,
                 session.clientId,
                 session.sessionId,
@@ -624,7 +627,7 @@ class BrowserRallarRoomsController implements RallarRoomsController {
             session,
             scope,
             policies,
-        ) => await apiWorkflows.updateStateGroupDetails(
+        ) => await roomMutationWorkflows.updateStateGroupDetails(
             roomId,
             request,
             session.clientId,
@@ -647,7 +650,7 @@ class BrowserRallarRoomsController implements RallarRoomsController {
                     reason: lifecycleOptions.reason,
                 });
                 return status === 'archived'
-                    ? await apiWorkflows.archiveStateGroup(
+                    ? await roomMutationWorkflows.archiveStateGroup(
                         roomId,
                         request,
                         session.clientId,
@@ -655,7 +658,7 @@ class BrowserRallarRoomsController implements RallarRoomsController {
                         scope,
                         policies,
                     )
-                    : await apiWorkflows.deleteStateGroup(
+                    : await roomMutationWorkflows.deleteStateGroup(
                         roomId,
                         request,
                         session.clientId,
@@ -676,7 +679,7 @@ class BrowserRallarRoomsController implements RallarRoomsController {
             room,
             inviteOptions,
             async (roomId, session, scope, policies) =>
-                await apiWorkflows.createStateGroupInvite(
+                await roomMembershipWorkflows.createStateGroupInvite(
                     roomId,
                     principalId,
                     toDefinedRecord({
@@ -700,7 +703,7 @@ class BrowserRallarRoomsController implements RallarRoomsController {
             room,
             acceptOptions,
             async (roomId, session, scope, policies, generationId) =>
-                await apiWorkflows.acceptStateGroupInvite(
+                await roomMembershipWorkflows.acceptStateGroupInvite(
                     roomId,
                     session.clientId,
                     session.sessionId,
@@ -726,7 +729,7 @@ class BrowserRallarRoomsController implements RallarRoomsController {
                 });
                 switch (action) {
                     case 'remove':
-                        return await apiWorkflows.removeStateGroupMember(
+                        return await roomMembershipWorkflows.removeStateGroupMember(
                             roomId,
                             principalId,
                             request,
@@ -736,7 +739,7 @@ class BrowserRallarRoomsController implements RallarRoomsController {
                             policies,
                         );
                     case 'ban':
-                        return await apiWorkflows.banStateGroupMember(
+                        return await roomMembershipWorkflows.banStateGroupMember(
                             roomId,
                             principalId,
                             request,
@@ -746,7 +749,7 @@ class BrowserRallarRoomsController implements RallarRoomsController {
                             policies,
                         );
                     case 'unban':
-                        return await apiWorkflows.unbanStateGroupMember(
+                        return await roomMembershipWorkflows.unbanStateGroupMember(
                             roomId,
                             principalId,
                             request,
@@ -770,7 +773,7 @@ class BrowserRallarRoomsController implements RallarRoomsController {
             room,
             governanceOptions,
             async (roomId, session, scope, policies) =>
-                await apiWorkflows.setStateGroupMemberRole(
+                await roomMembershipWorkflows.setStateGroupMemberRole(
                     roomId,
                     principalId,
                     toDefinedRecord({ role, reason: governanceOptions.reason }),
@@ -791,7 +794,7 @@ class BrowserRallarRoomsController implements RallarRoomsController {
             room,
             governanceOptions,
             async (roomId, session, scope, policies) =>
-                await apiWorkflows.transferStateGroupOwnership(
+                await roomMembershipWorkflows.transferStateGroupOwnership(
                     roomId,
                     toDefinedRecord({
                         newOwnerPrincipalId: principalId,
@@ -864,7 +867,7 @@ class BrowserRallarRoomsController implements RallarRoomsController {
                     'Cannot update room metadata: room is required.',
                 );
             }
-            const snapshot = await apiWorkflows.updateStateGroupMetadata(
+            const snapshot = await roomMutationWorkflows.updateStateGroupMetadata(
                 roomId,
                 patch,
                 session.clientId,
