@@ -25,6 +25,16 @@ export interface JoinRoomInput extends Omit<LeaveRoomInput, 'input'> {
   readonly createRoomSession: (roomRef: GroupRef) => RallarRoomSession;
 }
 
+interface LeavePreviousRoomAfterJoinInput {
+  readonly input: JoinRoomInput;
+  readonly joinedRoom: GroupSnapshot;
+  readonly currentRoomRef: GroupRef | undefined;
+  readonly targetRoomRef: GroupRef | undefined;
+  readonly targetRoomId: string;
+  readonly leaveCurrent: boolean | undefined;
+  readonly operationOptions: RallarOperationOptions;
+}
+
 export async function joinRoom(input: JoinRoomInput): Promise<GroupSnapshot> {
   return await input.runAuthAwareOperation(async () => {
     const joinInput = toJoinRoomTarget(input.room, input.options ?? {});
@@ -59,33 +69,15 @@ export async function joinRoom(input: JoinRoomInput): Promise<GroupSnapshot> {
     );
     input.stateStore.setCurrentRoom(snapshot);
     await input.acceptSnapshots(context, [], [snapshot], scope);
-    const joinsCurrentRoom = currentRoomRef
-      ? roomRef
-        ? isSameGroupRef(currentRoomRef, roomRef)
-        : currentRoomRef.groupId === roomId
-      : false;
-    if ((joinInput.options.leaveCurrent ?? true) && currentRoomRef && !joinsCurrentRoom) {
-      try {
-        await leaveRoom({
-          ...input,
-          input: {
-            roomId: currentRoomRef.groupId,
-            roomRef: currentRoomRef,
-            clearCurrent: false,
-            scope: toStateScope(currentRoomRef),
-            signal: operationOptions.signal,
-            timeoutMs: operationOptions.timeoutMs,
-          },
-        });
-      } catch (error) {
-        throw createRoomSwitchPartialFailureError({
-          operation: 'join',
-          joinedRoom: snapshot,
-          previousRoomRef: currentRoomRef,
-          leaveError: error,
-        });
-      }
-    }
+    await leavePreviousRoomAfterJoin({
+      input,
+      joinedRoom: snapshot,
+      currentRoomRef,
+      targetRoomRef: roomRef,
+      targetRoomId: roomId,
+      leaveCurrent: joinInput.options.leaveCurrent,
+      operationOptions,
+    });
     return snapshot;
   });
 }
@@ -93,4 +85,36 @@ export async function joinRoom(input: JoinRoomInput): Promise<GroupSnapshot> {
 export async function enterRoom(input: JoinRoomInput): Promise<RallarRoomSession> {
   const snapshot = await joinRoom(input);
   return input.createRoomSession(snapshot.group);
+}
+
+async function leavePreviousRoomAfterJoin(input: LeavePreviousRoomAfterJoinInput): Promise<void> {
+  const { currentRoomRef } = input;
+  const joinsCurrentRoom = currentRoomRef
+    ? input.targetRoomRef
+      ? isSameGroupRef(currentRoomRef, input.targetRoomRef)
+      : currentRoomRef.groupId === input.targetRoomId
+    : false;
+  if (!(input.leaveCurrent ?? true) || !currentRoomRef || joinsCurrentRoom) {
+    return;
+  }
+  try {
+    await leaveRoom({
+      ...input.input,
+      input: {
+        roomId: currentRoomRef.groupId,
+        roomRef: currentRoomRef,
+        clearCurrent: false,
+        scope: toStateScope(currentRoomRef),
+        signal: input.operationOptions.signal,
+        timeoutMs: input.operationOptions.timeoutMs,
+      },
+    });
+  } catch (error) {
+    throw createRoomSwitchPartialFailureError({
+      operation: 'join',
+      joinedRoom: input.joinedRoom,
+      previousRoomRef: currentRoomRef,
+      leaveError: error,
+    });
+  }
 }

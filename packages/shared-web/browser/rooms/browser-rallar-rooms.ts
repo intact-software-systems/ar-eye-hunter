@@ -11,6 +11,7 @@ import type {
   RallarRoomEventsPort,
   RallarRoomStateStorePort,
 } from '@shared-web/browser/rallar-runtime/contracts.ts';
+import { throwRallarValidationIssue } from '@shared-web/browser/rallar-runtime/validation.ts';
 import type {
   RallarOnChangeOptions,
   RallarStateListener,
@@ -85,6 +86,29 @@ export function createBrowserRallarRooms(
     });
 
   return {
+    ...createRoomReadOperations(input, refresh),
+    ...createRoomEntryOperations(input, createSession, resolveRoomRef, onCacheChange),
+    ...createRoomMembershipOperations(input),
+    ...createRoomUpdateOperations(input),
+  };
+}
+
+function createRoomReadOperations(
+  input: CreateBrowserRallarRoomsInput,
+  refresh: (input?: StateScope | RallarRefreshOptions) => Promise<RallarRoomState>,
+): Pick<
+  CreateRallarRoomsFacadeOptions,
+  | 'state'
+  | 'list'
+  | 'refresh'
+  | 'listEvents'
+  | 'listEventPage'
+  | 'replayEvents'
+  | 'current'
+  | 'onChange'
+  | 'onEvent'
+> {
+  return {
     state: () => input.stateStore.state(),
     list: () => input.stateStore.state().rooms,
     refresh,
@@ -92,83 +116,33 @@ export function createBrowserRallarRooms(
     listEventPage: async (eventInput) => await input.roomEvents.listPage(eventInput),
     replayEvents: async (eventInput, listener) =>
       await input.roomEvents.replay(eventInput, listener),
+    current: () => input.stateStore.state().currentRoom,
+    onChange: (
+      listener: RallarStateListener<RallarRoomState>,
+      options: RallarOnChangeOptions = {},
+    ) => input.stateStore.onChange(listener, options),
+    onEvent: (listener, options = {}) => input.roomEvents.onEvent(listener, options),
+  };
+}
+
+function createRoomEntryOperations(
+  input: CreateBrowserRallarRoomsInput,
+  createSession: (roomRef: GroupRef) => RallarRoomSession,
+  resolveRoomRef: (room: string | GroupRef, scope?: StateScope) => GroupRef | undefined,
+  onCacheChange: (listener: () => void | Promise<void>) => RallarUnsubscribe,
+): Pick<
+  CreateRallarRoomsFacadeOptions,
+  'create' | 'createAndSwitch' | 'join' | 'enter' | 'session' | 'leave' | 'waitForPresence'
+> {
+  return {
     create: async (room) => await createAndJoinRoom({ ...input, room }),
-    createAndSwitch: async (room) =>
-      await createAndSwitchRoom({
-        ...input,
-        room,
-        leaveRoom,
-      }),
+    createAndSwitch: async (room) => await createAndSwitchRoom({ ...input, room, leaveRoom }),
     join: async (room, options = {}) =>
-      await joinRoom({
-        ...input,
-        room,
-        options,
-        createRoomSession: createSession,
-      }),
+      await joinRoom({ ...input, room, options, createRoomSession: createSession }),
     enter: async (room, options = {}) =>
-      await enterRoom({
-        ...input,
-        room,
-        options,
-        createRoomSession: createSession,
-      }),
+      await enterRoom({ ...input, room, options, createRoomSession: createSession }),
     session: (room) => createSession(resolveRoomSessionRef(input, room, resolveRoomRef)),
     leave: async (leaveInput) => await leaveRoom({ ...input, input: leaveInput }),
-    update: async (updateInput) => await updateRoom({ ...input, input: updateInput }),
-    archive: async (room, options = {}) => await archiveRoom({ ...input, room, options }),
-    delete: async (room, options = {}) => await deleteRoom({ ...input, room, options }),
-    invite: async (room, principalId, options = {}) =>
-      await createRoomInvite({
-        ...input,
-        room,
-        principalId,
-        options,
-      }),
-    acceptInvite: async (room, options = {}) => await acceptRoomInvite({ ...input, room, options }),
-    removeMember: async (room, principalId, options = {}) =>
-      await removeRoomMember({
-        ...input,
-        room,
-        principalId,
-        options,
-      }),
-    banMember: async (room, principalId, options = {}) =>
-      await banRoomMember({
-        ...input,
-        room,
-        principalId,
-        options,
-      }),
-    unbanMember: async (room, principalId, options = {}) =>
-      await unbanRoomMember({
-        ...input,
-        room,
-        principalId,
-        options,
-      }),
-    setMemberRole: async (room, principalId, role, options = {}) =>
-      await setRoomMemberRole({
-        ...input,
-        room,
-        principalId,
-        role,
-        options,
-      }),
-    transferOwnership: async (room, principalId, options = {}) =>
-      await transferRoomOwnership({
-        ...input,
-        room,
-        principalId,
-        options,
-      }),
-    updateMetadata: async (room, patch, options = {}) =>
-      await updateRoomMetadata({
-        ...input,
-        room,
-        patch,
-        options,
-      }),
     waitForPresence: async (room, options = {}) =>
       await waitForRoomPresence({
         room,
@@ -178,12 +152,47 @@ export function createBrowserRallarRooms(
         resolveRoomRef,
         onCacheChange,
       }),
-    current: () => input.stateStore.state().currentRoom,
-    onChange: (
-      listener: RallarStateListener<RallarRoomState>,
-      options: RallarOnChangeOptions = {},
-    ) => input.stateStore.onChange(listener, options),
-    onEvent: (listener, options = {}) => input.roomEvents.onEvent(listener, options),
+  };
+}
+
+function createRoomMembershipOperations(
+  input: CreateBrowserRallarRoomsInput,
+): Pick<
+  CreateRallarRoomsFacadeOptions,
+  | 'invite'
+  | 'acceptInvite'
+  | 'removeMember'
+  | 'banMember'
+  | 'unbanMember'
+  | 'setMemberRole'
+  | 'transferOwnership'
+> {
+  return {
+    invite: async (room, principalId, options = {}) =>
+      await createRoomInvite({ ...input, room, principalId, options }),
+    acceptInvite: async (room, options = {}) => await acceptRoomInvite({ ...input, room, options }),
+    removeMember: async (room, principalId, options = {}) =>
+      await removeRoomMember({ ...input, room, principalId, options }),
+    banMember: async (room, principalId, options = {}) =>
+      await banRoomMember({ ...input, room, principalId, options }),
+    unbanMember: async (room, principalId, options = {}) =>
+      await unbanRoomMember({ ...input, room, principalId, options }),
+    setMemberRole: async (room, principalId, role, options = {}) =>
+      await setRoomMemberRole({ ...input, room, principalId, role, options }),
+    transferOwnership: async (room, principalId, options = {}) =>
+      await transferRoomOwnership({ ...input, room, principalId, options }),
+  };
+}
+
+function createRoomUpdateOperations(
+  input: CreateBrowserRallarRoomsInput,
+): Pick<CreateRallarRoomsFacadeOptions, 'update' | 'archive' | 'delete' | 'updateMetadata'> {
+  return {
+    update: async (updateInput) => await updateRoom({ ...input, input: updateInput }),
+    archive: async (room, options = {}) => await archiveRoom({ ...input, room, options }),
+    delete: async (room, options = {}) => await deleteRoom({ ...input, room, options }),
+    updateMetadata: async (room, patch, options = {}) =>
+      await updateRoomMetadata({ ...input, room, patch, options }),
   };
 }
 
@@ -217,7 +226,11 @@ function resolveRoomSessionRef(
     input.resolveDefaultRoom();
   const roomRef = target === undefined ? undefined : resolveRoomRef(target);
   if (!roomRef) {
-    throw new Error('Cannot create room session: no scoped room reference.');
+    throwRallarValidationIssue(
+      '$.roomRef',
+      'missing-room-ref',
+      'Cannot create room session: no scoped room reference.',
+    );
   }
   return roomRef;
 }
