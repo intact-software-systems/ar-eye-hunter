@@ -65,20 +65,28 @@ is `47a885540b60765a1a0c95089902a0371e0a7f2b`; final feature SHA
 `30362667041` attempt 2. PR #47 merged as
 `4f98f241aefe62c89288e29403ba7f1f23897625`, and default workflow run
 `30367222275` attempt 1 passed for that exact SHA. The child implementation is
-`complete`; its separate evidence-ledger publication is pending.
+`complete`. Its separate ledger tree is
+`94270ad17f7f68eaa9b95529764c23a844514ae9`; ledger feature SHA
+`c4743acd9fc685292f9fa6a7508d0a08afe05fd6` passed Branch Release Gate run
+`30371906927` attempt 1. PR #51 merged as
+`7a6c8e0c2cfb3413b4c0fbaaf0af31af2571c015`, and default workflow run
+`30407710853` attempt 1 passed for that exact SHA. The governance child is
+therefore `ledger-published`. The browser child is drafted for human review and
+remains unapproved at exact Git blob
+`37861202ce25c3cd5832663a5a3f6d7e2e4a0e4e`.
 
 ## 1. Document Roles And Plan Graph
 
 The documents deliberately have different responsibilities:
 
-| Document                                                                                    | Responsibility                                                                                                                 | Current state                                             |
-| ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------- |
-| [Master refactoring program](repo-human-traceability-refactoring-program-plan.md)           | Defines why the work exists, target organization, migration waves, shared entry and exit criteria, and program-level progress. | Published; approved for child-plan drafting.              |
-| This execution plan                                                                         | Defines approval boundaries, reusable prompts, publication cadence, and completion handoffs.                                   | Published; human review remains pending.                  |
-| [Governance and checker child plan](repo-human-traceability-governance-and-checker-plan.md) | Implements Wave 0 governance, warning-only checks, fixtures, and measured baselines without production movement.               | Implementation complete; evidence ledger pending.         |
-| `plans/rallar-room-group-state-translation-boundary-plan.md`                                | Will define the browser `room` to authoritative `group-state` translation boundary and consumer compatibility.                 | Planned; must be drafted after Wave 0.                    |
-| `plans/rallar-group-state-server-structure-plan.md`                                         | Will define authoritative server group-state ownership, moves, AppInbox flow, persistence, presence, and mirrored tests.       | Planned; must be drafted after the browser boundary plan. |
-| `plans/api-v1-group-state-route-structure-plan.md`                                          | Will define API-v1 group-state routes, defaults, translation, composition, OpenAPI, and black-box compatibility.               | Planned; must be drafted after the server structure plan. |
+| Document                                                                                           | Responsibility                                                                                                                 | Current state                                                                  |
+| -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------ |
+| [Master refactoring program](repo-human-traceability-refactoring-program-plan.md)                  | Defines why the work exists, target organization, migration waves, shared entry and exit criteria, and program-level progress. | Published; approved for child-plan drafting.                                   |
+| This execution plan                                                                                | Defines approval boundaries, reusable prompts, publication cadence, and completion handoffs.                                   | Published; human review remains pending.                                       |
+| [Governance and checker child plan](repo-human-traceability-governance-and-checker-plan.md)        | Implements Wave 0 governance, warning-only checks, fixtures, and measured baselines without production movement.               | `ledger-published`; no further Wave 0 action pending.                          |
+| [Browser room/group-state translation child](rallar-room-group-state-translation-boundary-plan.md) | Defines the browser `room` to authoritative `group-state` translation boundary and consumer compatibility.                     | `human-review` at blob `37861202ce25c3cd5832663a5a3f6d7e2e4a0e4e`; unapproved. |
+| `plans/rallar-group-state-server-structure-plan.md`                                                | Will define authoritative server group-state ownership, moves, AppInbox flow, persistence, presence, and mirrored tests.       | Planned; must be drafted after the browser boundary plan.                      |
+| `plans/api-v1-group-state-route-structure-plan.md`                                                 | Will define API-v1 group-state routes, defaults, translation, composition, OpenAPI, and black-box compatibility.               | Planned; must be drafted after the server structure plan.                      |
 
 The dependency order is:
 
@@ -93,9 +101,9 @@ master program
                             -> later feature child plans
 ```
 
-The three future child-plan paths become Markdown links in this document and
-the master program when their files are created. Do not create empty plan stubs
-solely to make a link resolve.
+The two remaining future child-plan paths become Markdown links in this
+document and the master program when their files are created. Do not create
+empty plan stubs solely to make a link resolve.
 
 ## 2. Child-Plan State Model
 
@@ -428,7 +436,9 @@ including:
 - the RallarRoomsFacade compatibility decision already fixed by the master;
 - any proposed temporary re-export with consumers and removal condition;
 - characterization tests and exact focused validation commands;
-- a structure pass separated from semantic code-standard changes;
+- a structure-and-boundary pass followed by behavior-preserving code-standard
+  alignment, with behavior changes excluded unless separately revised and
+  approved;
 - publication and completion gates;
 - remaining risks and decisions reserved for human review.
 
@@ -445,9 +455,12 @@ not execute it.
 ## 8. Prompt 4: Execute The Approved Browser Translation Plan
 
 ```text
-I approve plans/rallar-room-group-state-translation-boundary-plan.md for
-execution at its current committed revision. This approval applies only to this
-browser translation-boundary child plan.
+I explicitly approve
+plans/rallar-room-group-state-translation-boundary-plan.md at exact Git blob
+37861202ce25c3cd5832663a5a3f6d7e2e4a0e4e for execution. This approval applies
+only to that exact browser room/group-state translation-boundary child-plan
+revision and does not approve a later server, API-v1, or other production child
+plan.
 
 Read AGENTS.md, the master program, the program execution plan, and the approved
 child plan. Create one goal for this child plan. Use
@@ -458,10 +471,15 @@ rallar-repo:rallar-testing, plus test-driven-development where behavior or
 contracts change.
 
 Review the plan against current Git and consumers before editing. Execute only
-the approved tasks, preserve unrelated work, publish cohesive milestones to a
-draft pull request, and update both progress ledgers from evidence. Stop for
-material plan drift, an unapproved compatibility change, a blocker, or required
-human/default-branch authorization.
+the approved tasks as the two locked implementation PRs: structure/boundary
+first, then code-standard alignment only after the first exact resulting main
+SHA passes its required default-branch workflow. Preserve TypeScript 7.0.2,
+warning-only checker behavior, public return compatibility, both explicit
+one-hop compatibility structures, and unrelated work. Publish cohesive
+milestones to draft pull requests and follow the non-circular implementation
+and later-ledger evidence contract. Stop for material plan drift, an unapproved
+compatibility or behavior change, a blocker, or required human/default-branch
+authorization. Do not start the shared-server or API-v1 children.
 
 Use the Mandatory Completion Handoff after substantial intervals and at the
 end. After genuine completion, the final Next Steps prompt must draft
@@ -636,6 +654,7 @@ not start another child plan.
 | Governance execution-readiness review  | revised        | Section 5.1 now fixes the load-once TypeScript projection, one-finding-per-prefix model, exact browser import classifier, and non-circular evidence contract.                                                                                                                                        |
 | Governance child approved              | complete       | Human approval binds plan blob `8ee56ac27189f9bed751fb6a95992830bda6be60`, subject only to its recorded narrow amendments.                                                                                                                                                                           |
 | Governance child implementation        | complete       | Frozen tree `47a885540b60765a1a0c95089902a0371e0a7f2b`; feature SHA `a986931c250c2f1fa12daa3e8d44a74669b178ed`; Branch Release Gate `30362667041` attempt 2 passed; PR #47 merged as `4f98f241aefe62c89288e29403ba7f1f23897625`; default workflow `30367222275` attempt 1 passed for that exact SHA. |
-| Governance evidence ledger             | pending        | This separate three-plan ledger records the completed implementation. Its own future tree, commit, PR, merge, and default-workflow evidence belongs in its PR and handoff, not inside the ledger tree.                                                                                               |
-| Pilot child plans drafted and executed | pending        | They intentionally do not exist yet.                                                                                                                                                                                                                                                                 |
+| Governance evidence ledger             | complete       | Ledger tree `94270ad17f7f68eaa9b95529764c23a844514ae9`; feature SHA `c4743acd9fc685292f9fa6a7508d0a08afe05fd6`; Branch Release Gate `30371906927` attempt 1 passed; PR #51 merged as `7a6c8e0c2cfb3413b4c0fbaaf0af31af2571c015`; default workflow `30407710853` attempt 1 passed for that exact SHA. |
+| Browser child plan                     | human-review   | Exact Git blob `37861202ce25c3cd5832663a5a3f6d7e2e4a0e4e` records the inspected source, tests, exports, consumers, API calls, exact current/target trees, compatibility decisions, two implementation PRs, and non-circular later ledger. It remains unapproved.                                     |
+| Pilot child plans drafted and executed | pending        | The browser plan is drafted but unapproved; the server and API-v1 plans intentionally do not exist yet.                                                                                                                                                                                              |
 | Pilot evaluated                        | pending        | Requires all three pilot children to be complete.                                                                                                                                                                                                                                                    |
