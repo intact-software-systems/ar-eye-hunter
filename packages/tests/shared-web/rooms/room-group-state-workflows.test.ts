@@ -95,27 +95,40 @@ describe('room group-state workflow compatibility', () => {
       },
     );
 
-    expect(fetchCalls[0]).toEqual({
-      url: '/api/state/apps/app-1/workspaces/workspace-1/groups',
-      method: 'POST',
-      body: {
-        groupId: 'rallar',
-        slug: 'rallar',
-        displayName: 'Rallar',
-        kind: 'room',
-        description: 'Mission room',
-        joinMode: 'open',
-        maxMembers: 8,
-        maxSessionsPerMember: 2,
-        createdByPrincipalId: 'principal-1',
-        actorPrincipalId: 'principal-1',
-        actorSessionId: 'session-1',
-        requestId: 'group-create:rallar:create-request',
-        metadata: { map: 'fjord' },
-        expiresAtEpochMs: 2_000,
-        purgeAfterEpochMs: 3_000,
+    expect(fetchCalls).toEqual([
+      {
+        url: '/api/state/apps/app-1/workspaces/workspace-1/groups',
+        method: 'POST',
+        body: {
+          groupId: 'rallar',
+          slug: 'rallar',
+          displayName: 'Rallar',
+          kind: 'room',
+          description: 'Mission room',
+          joinMode: 'open',
+          maxMembers: 8,
+          maxSessionsPerMember: 2,
+          createdByPrincipalId: 'principal-1',
+          actorPrincipalId: 'principal-1',
+          actorSessionId: 'session-1',
+          requestId: 'group-create:rallar:create-request',
+          metadata: { map: 'fjord' },
+          expiresAtEpochMs: 2_000,
+          purgeAfterEpochMs: 3_000,
+        },
       },
-    });
+      {
+        url: '/api/state/apps/app-1/workspaces/workspace-1/groups/rallar/sessions/session-1',
+        method: 'PUT',
+        body: {
+          principalId: 'principal-1',
+          generationId: 'generation-1',
+          actorPrincipalId: 'principal-1',
+          actorSessionId: 'session-1',
+          requestId: 'group-presence-connect:rallar:session-1:presence-request',
+        },
+      },
+    ]);
   });
 
   it('keeps create and presence request IDs stable across retries', async () => {

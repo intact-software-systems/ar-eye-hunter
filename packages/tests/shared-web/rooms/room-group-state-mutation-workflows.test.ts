@@ -98,29 +98,41 @@ describe('room group-state mutation workflow compatibility', () => {
     await deleteStateGroup('group-1', {}, 'owner-1', 'owner-session');
 
     expect(fetchCalls).toEqual([
-      mutationCall({
-        displayName: 'Renamed',
-        description: 'Mission room',
-        joinMode: 'open',
-        maxMembers: 8,
-        maxSessionsPerMember: 2,
-        metadata: { map: 'fjord' },
-        actorPrincipalId: 'owner-1',
-        actorSessionId: 'owner-session',
-        requestId: 'group-update:group-1:owner-session:details-request',
-      }),
-      mutationCall({
-        status: 'archived',
-        actorPrincipalId: 'owner-1',
-        actorSessionId: 'owner-session',
-        requestId: 'group-update:group-1:owner-session:archive-request',
-      }),
-      mutationCall({
-        status: 'deleted',
-        actorPrincipalId: 'owner-1',
-        actorSessionId: 'owner-session',
-        requestId: 'group-update:group-1:owner-session:delete-request',
-      }),
+      {
+        url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1',
+        method: 'PUT',
+        body: {
+          displayName: 'Renamed',
+          description: 'Mission room',
+          joinMode: 'open',
+          maxMembers: 8,
+          maxSessionsPerMember: 2,
+          metadata: { map: 'fjord' },
+          actorPrincipalId: 'owner-1',
+          actorSessionId: 'owner-session',
+          requestId: 'group-update:group-1:owner-session:details-request',
+        },
+      },
+      {
+        url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1',
+        method: 'PUT',
+        body: {
+          status: 'archived',
+          actorPrincipalId: 'owner-1',
+          actorSessionId: 'owner-session',
+          requestId: 'group-update:group-1:owner-session:archive-request',
+        },
+      },
+      {
+        url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1',
+        method: 'PUT',
+        body: {
+          status: 'deleted',
+          actorPrincipalId: 'owner-1',
+          actorSessionId: 'owner-session',
+          requestId: 'group-update:group-1:owner-session:delete-request',
+        },
+      },
     ]);
   });
 
@@ -158,14 +170,6 @@ describe('room group-state mutation workflow compatibility', () => {
     ]);
   });
 });
-
-function mutationCall(body: Record<string, unknown>): FetchCall {
-  return {
-    url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1',
-    method: 'PUT',
-    body,
-  };
-}
 
 function stubUuids(...values: string[]): void {
   const spy = vi.spyOn(crypto, 'randomUUID');

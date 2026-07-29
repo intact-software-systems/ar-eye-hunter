@@ -102,6 +102,15 @@ describe('room event replay compatibility', () => {
       duplicateCount: 0,
     });
     expect(mocks.listStateGroupEventPage).toHaveBeenNthCalledWith(
+      1,
+      'room-1',
+      { applicationId: 'app-1', workspaceId: 'workspace-1' },
+      {
+        limit: 1,
+        signal: expect.any(AbortSignal),
+      },
+    );
+    expect(mocks.listStateGroupEventPage).toHaveBeenNthCalledWith(
       2,
       'room-1',
       { applicationId: 'app-1', workspaceId: 'workspace-1' },

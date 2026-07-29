@@ -110,61 +110,77 @@ describe('room membership group-state workflow compatibility', () => {
     stubUuids('remove-request', 'ban-request', 'unban-request', 'role-request', 'owner-request');
     stubSuccessfulFetch(fetchCalls);
 
-    await removeStateGroupMember('group-1', 'member-1', {}, 'owner-1', 'owner-session');
-    await banStateGroupMember('group-1', 'member-1', {}, 'owner-1', 'owner-session');
-    await unbanStateGroupMember('group-1', 'member-1', {}, 'owner-1', 'owner-session');
-    await setStateGroupMemberRole(
-      'group-1',
-      'member-1',
-      { role: 'admin' },
-      'owner-1',
-      'owner-session',
-    );
-    await transferStateGroupOwnership(
-      'group-1',
-      { newOwnerPrincipalId: 'member-1' },
-      'owner-1',
-      'owner-session',
-    );
+    await runMembershipGovernanceWorkflows();
 
     expect(fetchCalls).toEqual([
-      governanceCall('members/member-1/remove', 'POST', {
-        actorPrincipalId: 'owner-1',
-        actorSessionId: 'owner-session',
-        requestId: 'group-member-remove:group-1:member-1:remove-request',
-      }),
-      governanceCall('members/member-1/ban', 'POST', {
-        actorPrincipalId: 'owner-1',
-        actorSessionId: 'owner-session',
-        requestId: 'group-member-ban:group-1:member-1:ban-request',
-      }),
-      governanceCall('members/member-1/unban', 'POST', {
-        actorPrincipalId: 'owner-1',
-        actorSessionId: 'owner-session',
-        requestId: 'group-member-unban:group-1:member-1:unban-request',
-      }),
-      governanceCall('members/member-1/role', 'PUT', {
-        role: 'admin',
-        actorPrincipalId: 'owner-1',
-        actorSessionId: 'owner-session',
-        requestId: 'group-member-role:group-1:member-1:role-request',
-      }),
-      governanceCall('owner/transfer', 'POST', {
-        newOwnerPrincipalId: 'member-1',
-        actorPrincipalId: 'owner-1',
-        actorSessionId: 'owner-session',
-        requestId: 'group-ownership-transfer:group-1:member-1:owner-request',
-      }),
+      {
+        url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1/members/member-1/remove',
+        method: 'POST',
+        body: {
+          actorPrincipalId: 'owner-1',
+          actorSessionId: 'owner-session',
+          requestId: 'group-member-remove:group-1:member-1:remove-request',
+        },
+      },
+      {
+        url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1/members/member-1/ban',
+        method: 'POST',
+        body: {
+          actorPrincipalId: 'owner-1',
+          actorSessionId: 'owner-session',
+          requestId: 'group-member-ban:group-1:member-1:ban-request',
+        },
+      },
+      {
+        url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1/members/member-1/unban',
+        method: 'POST',
+        body: {
+          actorPrincipalId: 'owner-1',
+          actorSessionId: 'owner-session',
+          requestId: 'group-member-unban:group-1:member-1:unban-request',
+        },
+      },
+      {
+        url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1/members/member-1/role',
+        method: 'PUT',
+        body: {
+          role: 'admin',
+          actorPrincipalId: 'owner-1',
+          actorSessionId: 'owner-session',
+          requestId: 'group-member-role:group-1:member-1:role-request',
+        },
+      },
+      {
+        url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1/owner/transfer',
+        method: 'POST',
+        body: {
+          newOwnerPrincipalId: 'member-1',
+          actorPrincipalId: 'owner-1',
+          actorSessionId: 'owner-session',
+          requestId: 'group-ownership-transfer:group-1:member-1:owner-request',
+        },
+      },
     ]);
   });
 });
 
-function governanceCall(suffix: string, method: string, body: Record<string, unknown>): FetchCall {
-  return {
-    url: `/api/state/apps/rallar-server/workspaces/default/groups/group-1/${suffix}`,
-    method,
-    body,
-  };
+async function runMembershipGovernanceWorkflows(): Promise<void> {
+  await removeStateGroupMember('group-1', 'member-1', {}, 'owner-1', 'owner-session');
+  await banStateGroupMember('group-1', 'member-1', {}, 'owner-1', 'owner-session');
+  await unbanStateGroupMember('group-1', 'member-1', {}, 'owner-1', 'owner-session');
+  await setStateGroupMemberRole(
+    'group-1',
+    'member-1',
+    { role: 'admin' },
+    'owner-1',
+    'owner-session',
+  );
+  await transferStateGroupOwnership(
+    'group-1',
+    { newOwnerPrincipalId: 'member-1' },
+    'owner-1',
+    'owner-session',
+  );
 }
 
 function stubUuids(...values: string[]): void {

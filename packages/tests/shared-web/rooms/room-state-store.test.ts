@@ -159,10 +159,22 @@ describe('room state store compatibility', () => {
 
     facade.setDefaults({ applicationId: 'app-1', workspaceId: 'workspace-1' });
 
-    expect(facade.rooms.list().map(({ roomId, name }) => ({ roomId, name }))).toEqual([
-      { roomId: 'a-room', name: 'Alpha Room' },
-      { roomId: 'z-room', name: 'Beta Room' },
+    const state = facade.rooms.state();
+
+    expect(
+      state.rooms.map(({ roomId, name, isJoined, isCurrent }) => ({
+        roomId,
+        name,
+        isJoined,
+        isCurrent,
+      })),
+    ).toEqual([
+      { roomId: 'a-room', name: 'Alpha Room', isJoined: false, isCurrent: false },
+      { roomId: 'z-room', name: 'Beta Room', isJoined: true, isCurrent: true },
     ]);
+    expect(state.currentRoomId).toBe('z-room');
+    expect(state.currentRoomRef).toEqual(current.group);
+    expect(state.currentRoom).toEqual(current);
   });
 
   it('preserves complete summary and current-room state fields', async () => {
