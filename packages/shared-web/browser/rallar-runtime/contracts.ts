@@ -18,7 +18,7 @@ import type {
     RallarRoomEventOptions,
     RallarRoomState,
     RallarReplayRoomEventsInput,
-} from '@shared-web/browser/rallar-rooms-facade.ts';
+} from '@shared-web/browser/rooms/rallar-room-contracts.ts';
 import type { RallarBrowserFacadeRuntimeContext } from '@shared-web/browser/rallar-runtime-context.ts';
 import type {
     RallarOnChangeOptions,

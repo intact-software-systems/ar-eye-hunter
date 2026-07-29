@@ -13,7 +13,7 @@ import type {
     RallarReplayRoomEventsOptions,
     RallarRoomEventListener,
     RallarRoomEventOptions,
-} from '@shared-web/browser/rallar-rooms-facade.ts';
+} from '@shared-web/browser/rooms/rallar-room-contracts.ts';
 import type {
     RallarReplayEventsResult,
     RallarUnsubscribe,

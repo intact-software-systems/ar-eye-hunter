@@ -6,7 +6,7 @@ import type {
 import type {
     RallarRoomMember,
     RallarRoomState,
-} from '@shared-web/browser/rallar-rooms-facade.ts';
+} from '@shared-web/browser/rooms/rallar-room-contracts.ts';
 import type {
     RallarStateListener,
     RallarUnsubscribe,

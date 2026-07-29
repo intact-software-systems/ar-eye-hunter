@@ -95,6 +95,8 @@ const PUBLIC_FACADE_MODULES = [
     'packages/shared-web/browser/rallar-people-facade.ts',
     'packages/shared-web/browser/rallar-realtime-facade.ts',
     'packages/shared-web/browser/rallar-rooms-facade.ts',
+    'packages/shared-web/browser/rooms/rallar-room-contracts.ts',
+    'packages/shared-web/browser/rooms/rallar-rooms-facade.ts',
     'packages/shared-web/browser/rallar-rtc-facade.ts',
     'packages/shared-web/browser/rallar-stats-facade.ts',
 ] as const;

@@ -17,7 +17,7 @@ import { createRallarMessagesFacade } from '@shared-web/browser/rallar-messages-
 import type { RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import { createRallarPeopleFacade } from '@shared-web/browser/rallar-people-facade.ts';
 import { createRallarRealtimeFacade } from '@shared-web/browser/rallar-realtime-facade.ts';
-import { createRallarRoomsFacade } from '@shared-web/browser/rallar-rooms-facade.ts';
+import { createRallarRoomsFacade } from '@shared-web/browser/rooms/rallar-rooms-facade.ts';
 import { createRallarRtcFacade } from '@shared-web/browser/rallar-rtc-facade.ts';
 import { createRallarBrowserFacadeRuntimeContext } from '@shared-web/browser/rallar-runtime-context.ts';
 import { createRallarCallsController } from '@shared-web/browser/rallar-runtime/calls.ts';

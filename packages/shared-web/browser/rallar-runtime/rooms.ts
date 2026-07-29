@@ -16,8 +16,8 @@ import {
     toRallarWorkflowPolicies,
 } from '@shared-web/browser/rallar-operation-options.ts';
 import type { RallarRealtimeFacade } from '@shared-web/browser/rallar-realtime-facade.ts';
+import type { CreateRallarRoomsFacadeOptions } from '@shared-web/browser/rooms/rallar-rooms-facade.ts';
 import type {
-    CreateRallarRoomsFacadeOptions,
     RallarCreateRoomInput,
     RallarJoinRoomInput,
     RallarJoinRoomOptions,
@@ -35,7 +35,7 @@ import type {
     RallarRoomSwitchPartialFailureError,
     RallarRoomTargetInput,
     RallarUpdateRoomInput,
-} from '@shared-web/browser/rallar-rooms-facade.ts';
+} from '@shared-web/browser/rooms/rallar-room-contracts.ts';
 import type {
     RallarStateEventsPort,
     RallarStatePort,
