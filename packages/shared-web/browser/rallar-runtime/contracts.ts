@@ -113,6 +113,20 @@ export type RallarStatePort = Readonly<{
     findClientSnapshot(principalId: string): ClientSnapshot | undefined;
 }>;
 
+export type RallarRoomStateStorePort = Readonly<{
+    state(): RallarRoomState;
+    onChange(
+        listener: RallarStateListener<RallarRoomState>,
+        options?: RallarOnChangeOptions,
+    ): RallarUnsubscribe;
+    onCacheChange(listener: () => void | Promise<void>): RallarUnsubscribe;
+    readGroupSnapshots(): readonly GroupSnapshot[];
+    findGroupSnapshot(room: string | GroupRef | undefined): GroupSnapshot | undefined;
+    resolveCurrentRoomRef(): GroupRef | undefined;
+    setCurrentRoom(snapshot: GroupSnapshot): void;
+    clearCurrentRoomIfMatches(room: string | GroupRef, clearCurrent: boolean): void;
+}>;
+
 export type RallarStateEventsPort = Readonly<{
     listRoomEvents(input: RallarListRoomEventsInput): Promise<readonly GroupEvent[]>;
     listRoomEventPage(input: RallarListRoomEventsInput): Promise<StateEventPage<GroupEvent>>;
@@ -141,6 +155,16 @@ export type RallarStateEventsPort = Readonly<{
         listener: RallarPeopleEventListener,
         options: RallarPeopleEventOptions,
     ): RallarUnsubscribe;
+}>;
+
+export type RallarRoomEventsPort = Readonly<{
+    list(input: RallarListRoomEventsInput): Promise<readonly GroupEvent[]>;
+    listPage(input: RallarListRoomEventsInput): Promise<StateEventPage<GroupEvent>>;
+    replay(
+        input: RallarReplayRoomEventsInput,
+        listener?: RallarRoomEventListener,
+    ): Promise<RallarReplayEventsResult<GroupEvent>>;
+    onEvent(listener: RallarRoomEventListener, options: RallarRoomEventOptions): RallarUnsubscribe;
 }>;
 
 export type RallarMediaPort = Readonly<{

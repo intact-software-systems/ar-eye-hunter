@@ -117,6 +117,17 @@ function createRoomWorkflowMocks() {
     createAndJoinStateGroup: vi.fn(),
     joinStateGroup: vi.fn(),
     leaveStateGroup: vi.fn(),
+    updateStateGroupDetails: vi.fn(),
+    updateStateGroupMetadata: vi.fn(),
+    archiveStateGroup: vi.fn(),
+    deleteStateGroup: vi.fn(),
+    createStateGroupInvite: vi.fn(),
+    acceptStateGroupInvite: vi.fn(),
+    removeStateGroupMember: vi.fn(),
+    banStateGroupMember: vi.fn(),
+    unbanStateGroupMember: vi.fn(),
+    setStateGroupMemberRole: vi.fn(),
+    transferStateGroupOwnership: vi.fn(),
     hydrateStateCaches: vi.fn(),
     onStateCacheChange: vi.fn(),
     readSession: vi.fn(() => session),
@@ -142,6 +153,23 @@ vi.mock('@shared-web/browser/rooms/room-group-state-workflows.ts', () => ({
   createAndJoinStateGroup: roomWorkflowMocks.createAndJoinStateGroup,
   joinStateGroup: roomWorkflowMocks.joinStateGroup,
   leaveStateGroup: roomWorkflowMocks.leaveStateGroup,
+}));
+
+vi.mock('@shared-web/browser/rooms/room-group-state-mutation-workflows.ts', () => ({
+  updateStateGroupDetails: roomWorkflowMocks.updateStateGroupDetails,
+  updateStateGroupMetadata: roomWorkflowMocks.updateStateGroupMetadata,
+  archiveStateGroup: roomWorkflowMocks.archiveStateGroup,
+  deleteStateGroup: roomWorkflowMocks.deleteStateGroup,
+}));
+
+vi.mock('@shared-web/browser/rooms/room-membership-group-state-workflows.ts', () => ({
+  createStateGroupInvite: roomWorkflowMocks.createStateGroupInvite,
+  acceptStateGroupInvite: roomWorkflowMocks.acceptStateGroupInvite,
+  removeStateGroupMember: roomWorkflowMocks.removeStateGroupMember,
+  banStateGroupMember: roomWorkflowMocks.banStateGroupMember,
+  unbanStateGroupMember: roomWorkflowMocks.unbanStateGroupMember,
+  setStateGroupMemberRole: roomWorkflowMocks.setStateGroupMemberRole,
+  transferStateGroupOwnership: roomWorkflowMocks.transferStateGroupOwnership,
 }));
 
 vi.mock('@shared-web/browser/data-caches.ts', () => ({
@@ -198,6 +226,39 @@ export function resetRoomWorkflowTestRuntime(): void {
   roomWorkflowMocks.leaveStateGroup.mockImplementation(async (roomId) => {
     roomWorkflowMocks.operationLog.push(`leave:${String(roomId)}`);
     throw new Error('leave not mocked');
+  });
+  roomWorkflowMocks.updateStateGroupDetails.mockImplementation(async () => {
+    throw new Error('update not mocked');
+  });
+  roomWorkflowMocks.updateStateGroupMetadata.mockImplementation(async () => {
+    throw new Error('metadata update not mocked');
+  });
+  roomWorkflowMocks.archiveStateGroup.mockImplementation(async () => {
+    throw new Error('archive not mocked');
+  });
+  roomWorkflowMocks.deleteStateGroup.mockImplementation(async () => {
+    throw new Error('delete not mocked');
+  });
+  roomWorkflowMocks.createStateGroupInvite.mockImplementation(async () => {
+    throw new Error('invite not mocked');
+  });
+  roomWorkflowMocks.acceptStateGroupInvite.mockImplementation(async () => {
+    throw new Error('accept invite not mocked');
+  });
+  roomWorkflowMocks.removeStateGroupMember.mockImplementation(async () => {
+    throw new Error('remove member not mocked');
+  });
+  roomWorkflowMocks.banStateGroupMember.mockImplementation(async () => {
+    throw new Error('ban member not mocked');
+  });
+  roomWorkflowMocks.unbanStateGroupMember.mockImplementation(async () => {
+    throw new Error('unban member not mocked');
+  });
+  roomWorkflowMocks.setStateGroupMemberRole.mockImplementation(async () => {
+    throw new Error('set role not mocked');
+  });
+  roomWorkflowMocks.transferStateGroupOwnership.mockImplementation(async () => {
+    throw new Error('transfer ownership not mocked');
   });
   roomWorkflowMocks.hydrateStateCaches.mockImplementation(
     async (_manager, _client, _clients, groups: readonly GroupSnapshot[]) => {

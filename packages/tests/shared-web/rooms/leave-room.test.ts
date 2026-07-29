@@ -14,6 +14,11 @@ const roomWorkflowMocks = readRoomWorkflowMocks();
 describe('room leave operations', () => {
   beforeEach(resetRoomWorkflowTestRuntime);
 
+  it('exposes the owning leave operation entry', async () => {
+    const { leaveRoom } = await import('@shared-web/browser/rooms/leave-room.ts');
+    expect(typeof leaveRoom).toBe('function');
+  });
+
   it('returns and hydrates the workflow snapshot while clearing current', async () => {
     const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
     const currentRoom = createRoomSnapshot('room-1', ['session-1']);

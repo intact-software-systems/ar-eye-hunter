@@ -17,6 +17,12 @@ const roomWorkflowMocks = readRoomWorkflowMocks();
 describe('room join operations', () => {
   beforeEach(resetRoomWorkflowTestRuntime);
 
+  it('exposes the owning join operation entries', async () => {
+    const { enterRoom, joinRoom } = await import('@shared-web/browser/rooms/join-room.ts');
+    expect(typeof joinRoom).toBe('function');
+    expect(typeof enterRoom).toBe('function');
+  });
+
   it('resolves roomId and roomRef object targets', async () => {
     const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
     const roomRef = {

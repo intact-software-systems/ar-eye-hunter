@@ -16,6 +16,13 @@ const roomWorkflowMocks = readRoomWorkflowMocks();
 describe('room create operations', () => {
   beforeEach(resetRoomWorkflowTestRuntime);
 
+  it('exposes the owning create operation entries', async () => {
+    const { createAndJoinRoom, createAndSwitchRoom } =
+      await import('@shared-web/browser/rooms/create-and-join-room.ts');
+    expect(typeof createAndJoinRoom).toBe('function');
+    expect(typeof createAndSwitchRoom).toBe('function');
+  });
+
   it('returns the authoritative snapshot and hydrates current room state', async () => {
     const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
     const snapshot = createRoomSnapshot('created-room', ['session-1']);

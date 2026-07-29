@@ -13,6 +13,11 @@ const roomWorkflowMocks = readRoomWorkflowMocks();
 describe('room presence waits', () => {
   beforeEach(resetRoomWorkflowTestRuntime);
 
+  it('exposes the owning presence wait entry', async () => {
+    const { waitForRoomPresence } = await import('@shared-web/browser/rooms/room-presence.ts');
+    expect(typeof waitForRoomPresence).toBe('function');
+  });
+
   it('is immediately ready from the current cache', async () => {
     const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
     const snapshot = createRoomSnapshot('room-1', ['session-1']);

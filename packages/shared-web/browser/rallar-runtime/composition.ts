@@ -17,6 +17,7 @@ import { createRallarMessagesFacade } from '@shared-web/browser/rallar-messages-
 import type { RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import { createRallarPeopleFacade } from '@shared-web/browser/rallar-people-facade.ts';
 import { createRallarRealtimeFacade } from '@shared-web/browser/rallar-realtime-facade.ts';
+import { createBrowserRallarRooms } from '@shared-web/browser/rooms/browser-rallar-rooms.ts';
 import { createRallarRoomsFacade } from '@shared-web/browser/rooms/rallar-rooms-facade.ts';
 import { createRallarRtcFacade } from '@shared-web/browser/rallar-rtc-facade.ts';
 import { createRallarBrowserFacadeRuntimeContext } from '@shared-web/browser/rallar-runtime-context.ts';
@@ -35,7 +36,6 @@ import {
     createRallarRealtimeController,
     resolveActiveRoomPeerIds,
 } from '@shared-web/browser/rallar-runtime/realtime.ts';
-import { createRallarRoomsController } from '@shared-web/browser/rallar-runtime/rooms.ts';
 import { createRallarRtcController } from '@shared-web/browser/rallar-runtime/rtc.ts';
 import {
     createRallarSessionController,
@@ -193,9 +193,25 @@ export function createBrowserRallarFacade(): RallarFacade {
     });
     const media = createRallarMediaFacade(mediaController.operations);
 
-    const roomsController = createRallarRoomsController({
-        stateStore,
-        stateEvents,
+    const roomStateStore = {
+        state: () => stateStore.roomState(),
+        onChange: stateStore.onRoomChange,
+        onCacheChange: stateStore.onCacheChange,
+        readGroupSnapshots: stateStore.readGroupSnapshots,
+        findGroupSnapshot: stateStore.findGroupSnapshot,
+        resolveCurrentRoomRef: stateStore.resolveCurrentRoomRef,
+        setCurrentRoom: stateStore.setCurrentRoom,
+        clearCurrentRoomIfMatches: stateStore.clearCurrentRoomIfMatches,
+    };
+    const roomEvents = {
+        list: stateEvents.listRoomEvents.bind(stateEvents),
+        listPage: stateEvents.listRoomEventPage.bind(stateEvents),
+        replay: stateEvents.replayRoomEventsInput.bind(stateEvents),
+        onEvent: stateEvents.onRoomEvent.bind(stateEvents),
+    };
+    const rooms = createRallarRoomsFacade(createBrowserRallarRooms({
+        stateStore: roomStateStore,
+        roomEvents,
         messages,
         realtime,
         connect: async (options) => await sessionController.connect(options),
@@ -210,8 +226,7 @@ export function createBrowserRallarFacade(): RallarFacade {
             await sessionController.runAuthAwareOperation(operation),
         acceptSnapshots: async (ctx, clients, groups, scope) =>
             await stateStore.acceptSnapshots(ctx, clients, groups, scope),
-    });
-    const rooms = createRallarRoomsFacade(roomsController.operations);
+    }));
     const peopleController = createRallarPeopleController({
         stateStore,
         stateEvents,

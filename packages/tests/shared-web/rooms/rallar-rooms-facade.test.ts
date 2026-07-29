@@ -20,6 +20,7 @@ import type {
   RallarUnsubscribe,
 } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type * as OwningRoomContracts from '@shared-web/browser/rooms/rallar-room-contracts.ts';
+import { createBrowserRallarRooms } from '@shared-web/browser/rooms/browser-rallar-rooms.ts';
 import { createRallarRoomsFacade as createOwningRallarRoomsFacade } from '@shared-web/browser/rooms/rallar-rooms-facade.ts';
 import type * as OwningRoomFacade from '@shared-web/browser/rooms/rallar-rooms-facade.ts';
 
@@ -200,6 +201,10 @@ it('type-checks the owning and compatibility room surfaces with TypeScript 7.0.2
   expect(result.version).toBe('Version 7.0.2');
   expect(result.status, result.diagnostics).toBe(0);
   expect(result.diagnostics).toBe('');
+});
+
+it('exposes the browser room feature entry', () => {
+  expect(typeof createBrowserRallarRooms).toBe('function');
 });
 
 it('retains the current public facade return types through the existing path', () => {
