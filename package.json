@@ -78,6 +78,8 @@
     "test:api-v1:black-box:memory": "npm --workspace @ar-eye-hunter/shared-test run bb:api-v1:memory",
     "test:repo-governance": "vitest run packages/tests/repo/rallar-skill-integrity.test.ts packages/tests/repo/repo-code-style-integrity.test.ts packages/tests/repo/repo-style-check.test.ts packages/tests/repo/repo-style-layout-rules.test.ts packages/tests/repo/repo-style-changed-check.test.ts packages/tests/rallar-black-box/rallar-testing-skill.test.ts",
     "check:repo-style": "node scripts/repo-style-check.mjs",
+    "check:repo-style:construction-details":
+      "node scripts/repo-style-check.mjs --construction-details",
     "check:repo-style:changed": "node scripts/check-changed-repo-style.mjs",
     "check:repo-style:layout": "node scripts/repo-style-check.mjs --layout-only",
     "check:repo-style:layout-details": "node scripts/repo-style-check.mjs --layout-only --layout-details",

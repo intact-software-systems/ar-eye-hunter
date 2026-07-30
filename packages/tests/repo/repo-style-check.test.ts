@@ -703,6 +703,42 @@ describe('repo style checker', () => {
     ]);
   });
 
+  it('reports forward captures through the default warning checker', () => {
+    const fixtureRoot = createFixture({
+      'runtime.ts': [
+        'export function createRuntime() {',
+        '  let service!: Service;',
+        '  const consumer = createConsumer(() => service);',
+        '  service = createService();',
+        '  return consumer;',
+        '}',
+      ].join('\n'),
+    });
+
+    expect(runChecker(fixtureRoot)).toContain('[construction.forward-capture]');
+  });
+
+  it('adds construction detail warnings only when requested', () => {
+    const fixtureRoot = createFixture({
+      'construction-details.ts': [
+        'let value!: Value;',
+        'value = createValue();',
+        '',
+        'function forward(input: Input): Output {',
+        '  return target(input);',
+        '}',
+      ].join('\n'),
+    });
+
+    const detailsOff = runChecker(fixtureRoot);
+    expect(detailsOff).not.toContain('[construction.definite-assignment]');
+    expect(detailsOff).not.toContain('[abstraction.pass-through]');
+
+    const detailsOn = runChecker(fixtureRoot, '--construction-details');
+    expect(detailsOn).toContain('[construction.definite-assignment]');
+    expect(detailsOn).toContain('[abstraction.pass-through]');
+  });
+
   it('warns for optional command fields even when a decoder supplies defaults', () => {
     const fixtureRoot = createFixture({
       'command.ts': [

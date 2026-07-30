@@ -47,6 +47,69 @@ describe('changed repository style checker', () => {
     expect(result.stdout).toContain('PASS: no new repository style findings');
   });
 
+  it('passes when a changed file retains a legacy forward capture', () => {
+    const fixture = createGitFixture({
+      'apps/example/runtime.ts': forwardCaptureSource(),
+    });
+    commitAll(fixture, 'base');
+    appendSource(fixture, 'apps/example/runtime.ts', '\nexport const added = true;\n');
+
+    const result = runChangedChecker(fixture);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('PASS: no new repository style findings');
+  });
+
+  it('fails when a changed file introduces a forward capture', () => {
+    const fixture = createGitFixture({
+      'apps/example/runtime.ts': constructedDependencySource(),
+    });
+    commitAll(fixture, 'base');
+    writeFixture(fixture, 'apps/example/runtime.ts', forwardCaptureSource());
+
+    const result = runChangedChecker(fixture);
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain('construction.forward-capture');
+  });
+
+  it('passes when a changed file removes a forward capture', () => {
+    const fixture = createGitFixture({
+      'apps/example/runtime.ts': forwardCaptureSource(),
+    });
+    commitAll(fixture, 'base');
+    writeFixture(fixture, 'apps/example/runtime.ts', constructedDependencySource());
+
+    const result = runChangedChecker(fixture);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('PASS: no new repository style findings');
+  });
+
+  it('does not enforce opt-in construction detail findings', () => {
+    const fixture = createGitFixture({
+      'apps/example/construction-details.ts': 'export const value = createValue();\n',
+    });
+    commitAll(fixture, 'base');
+    writeFixture(
+      fixture,
+      'apps/example/construction-details.ts',
+      [
+        'let value!: Value;',
+        'value = createValue();',
+        '',
+        'export function forward(input: Input): Output {',
+        '  return target(input);',
+        '}',
+      ].join('\n'),
+    );
+
+    const result = runChangedChecker(fixture);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('PASS: no new repository style findings');
+  });
+
   it('fails when a changed file introduces a finding', () => {
     const fixture = createGitFixture({
       'apps/example/feature.ts': 'export const value = true;\n',
@@ -281,4 +344,24 @@ function runGit(fixtureRoot: string, args: readonly string[]): void {
 
 function overlongSource(label: string): string {
   return `const value = '${label}${'x'.repeat(110)}';\n`;
+}
+
+function forwardCaptureSource(): string {
+  return [
+    'export function createRuntime() {',
+    '  let service!: Service;',
+    '  const consumer = createConsumer(() => service);',
+    '  service = createService();',
+    '  return consumer;',
+    '}',
+  ].join('\n');
+}
+
+function constructedDependencySource(): string {
+  return [
+    'export function createRuntime() {',
+    '  const service = createService();',
+    '  return createConsumer(() => service);',
+    '}',
+  ].join('\n');
 }
