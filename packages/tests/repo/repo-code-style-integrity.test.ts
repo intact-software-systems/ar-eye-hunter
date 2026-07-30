@@ -131,7 +131,9 @@ describe('repo code style authority integrity', () => {
     const releaseGate = readRepo('.github/workflows/release-gate.yml');
     const humanGuide = readRepo('docs/repo-human-style-guide.md');
     const canonicalStyle = readRepo(canonicalStylePath);
-    const refactoringProgram = readRepo('plans/repo-human-traceability-refactoring-program-plan.md');
+    const refactoringProgram = readRepo(
+      'plans/repo-human-traceability-refactoring-program-plan.md',
+    );
 
     expect(branchReleaseGate).toContain('changed_repo_style_base: origin/main');
     expect(releaseGate).toContain('changed_repo_style_base:');
@@ -281,6 +283,36 @@ describe('repo code style authority integrity', () => {
     expect(codeWriting).toMatch(/smallest\s+directory containing changed production files/);
   });
 
+  it('documents the calibrated construction checker boundary', () => {
+    const canonicalStyle = readRepo(canonicalStylePath);
+    const humanGuide = readRepo('docs/repo-human-style-guide.md');
+    const packageJson = readJson('package.json') as {
+      scripts?: Readonly<Record<string, string>>;
+    };
+    const semanticBoundary = [
+      'These findings identify syntax shapes for human review. They do not prove a',
+      'construction graph is cyclic, a callback is unjustified, or a facade lacks a',
+      'real boundary.',
+    ].join(' ');
+
+    expect(packageJson.scripts).toHaveProperty(
+      'check:repo-style:construction-details',
+      'node scripts/repo-style-check.mjs --construction-details',
+    );
+    expectAll(canonicalStyle, [
+      '`construction.forward-capture`',
+      'broader construction diagnostics remain opt-in',
+    ]);
+    expectAll(humanGuide, [
+      '`construction.forward-capture`',
+      'npm run check:repo-style:construction-details',
+      '`construction.definite-assignment`',
+      '`control.nested-callback-depth`',
+      '`abstraction.pass-through`',
+    ]);
+    expect(humanGuide.replace(/\s+/g, ' ')).toContain(semanticBoundary);
+  });
+
   it('keeps TypeScript formatter settings aligned with the canonical baseline', () => {
     expect(existsSync(path.join(repoRoot, '.prettierrc.json'))).toBe(true);
 
@@ -345,6 +377,7 @@ describe('repo code style authority integrity', () => {
       'packages/tests/repo/rallar-skill-integrity.test.ts',
       'packages/tests/repo/repo-code-style-integrity.test.ts',
       'packages/tests/repo/repo-style-check.test.ts',
+      'packages/tests/repo/repo-style-construction-check.test.ts',
       'packages/tests/repo/repo-style-layout-rules.test.ts',
       'packages/tests/repo/repo-style-changed-check.test.ts',
       'packages/tests/rallar-black-box/rallar-testing-skill.test.ts',

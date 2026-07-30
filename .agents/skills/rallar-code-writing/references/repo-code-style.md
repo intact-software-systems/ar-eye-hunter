@@ -705,3 +705,9 @@ does. Do not add narration comments to AI-generated code.
 Use `docs/repo-human-style-guide.md` for the human review sequence and checker commands. The checker is intentionally
 warning-only by default. A warning is a review prompt, not proof that code is wrong, and a clean checker result is not
 proof that code satisfies this standard.
+
+The TypeScript checker reports `construction.forward-capture` by default when a
+factory callback captures a local binding first assigned after construction.
+The broader construction diagnostics remain opt-in because they have mixed
+signal and require human interpretation. They identify reviewable syntax, not
+proof of a dependency cycle, an unjustified callback, or a boundary-free facade.

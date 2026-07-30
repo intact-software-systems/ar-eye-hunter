@@ -204,6 +204,8 @@ Current default warnings cover:
 - discouraged compound service names;
 - factories that hide several defaults behind optional inputs;
 - long unsegmented blocks in supported factory forms;
+- callbacks passed to `createXxx` factories that capture a local binding first
+  assigned after construction (`construction.forward-capture`);
 - potential `unknown` propagation;
 - directories with more than 20 direct production TypeScript files
   (`layout.directory-density`);
@@ -236,6 +238,22 @@ meaningful absence, useful inlining, and whether blank-line groups belong
 together.
 
 ### Optional noisy checks
+
+Run detailed construction-shape checks when reviewing late binding, callback
+depth, or boundary-free wrappers:
+
+```bash
+npm run check:repo-style:construction-details
+```
+
+This adds `construction.definite-assignment`,
+`control.nested-callback-depth`, and `abstraction.pass-through`. The default
+`construction.forward-capture` rule remains active with or without this option.
+The broader rules stay opt-in because repository calibration found mixed signal.
+
+These findings identify syntax shapes for human review. They do not prove a
+construction graph is cyclic, a callback is unjustified, or a facade lacks a
+real boundary.
 
 Run output-contract naming checks only when useful for the workstream:
 
