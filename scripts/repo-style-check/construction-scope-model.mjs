@@ -167,6 +167,7 @@ function isLexicalScope(node) {
     'ForStatement',
     'StaticBlock',
     'SwitchStatement',
+    'TSModuleBlock',
   ].includes(node.type);
 }
 

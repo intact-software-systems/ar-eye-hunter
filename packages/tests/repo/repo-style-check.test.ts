@@ -425,6 +425,51 @@ describe('repo style checker', () => {
     expect(findings).toEqual([]);
   });
 
+  it('keeps a nested namespace declaration out of the enclosing runtime scope', () => {
+    const findings = scanConstructionRules(
+      {
+        file: 'runtime.ts',
+        raw: [
+          'namespace Outer {',
+          '  export namespace service {}',
+          '}',
+          'const consumer = createConsumer(() => service);',
+          'let service: Service;',
+          'service = createService();',
+          'export { consumer };',
+        ].join('\n'),
+      },
+      { details: false },
+    );
+
+    expect(findings).toEqual([
+      expect.objectContaining({
+        ruleId: constructionRuleIds.forwardCapture,
+        message: expect.stringMatching(/service.*createConsumer.*5.*6/i),
+      }),
+    ]);
+  });
+
+  it('resolves an enum inside a namespace before an outer binding', () => {
+    const findings = scanConstructionRules(
+      {
+        file: 'runtime.ts',
+        raw: [
+          'let service: Service;',
+          'namespace Outer {',
+          '  export enum service { Ready }',
+          '  export const consumer = createConsumer(() => service);',
+          '}',
+          'service = createService();',
+          'export { Outer };',
+        ].join('\n'),
+      },
+      { details: false },
+    );
+
+    expect(findings).toEqual([]);
+  });
+
   it('does not attribute a nested call callback to an outer construction call', () => {
     const findings = scanConstructionRules(
       {
