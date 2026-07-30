@@ -293,6 +293,9 @@ async function collectSourceFiles(current) {
 export function isProductionCodeFile(file) {
   const normalized = file.replace(/\\/gu, '/').toLowerCase();
   const parts = normalized.split('/');
+  if (!checkedExtensions.has(path.extname(normalized))) {
+    return false;
+  }
   if (
     parts.some(
       (part) => part && (nonProductionPathParts.has(part) || generatedPathPartPattern.test(part)),

@@ -153,6 +153,24 @@ describe('changed repository style checker', () => {
     expect(result.status).toBe(1);
     expect(result.stdout).toContain('Line 1 exceeds 100 chars');
   });
+
+  it('ignores non-code files when scanning an explicit commit', () => {
+    const fixture = createGitFixture({
+      'apps/example/feature.ts': 'export const value = true;\n',
+    });
+    commitAll(fixture, 'base');
+    writeFixture(
+      fixture,
+      'plans/large-plan.md',
+      `${'unknown guidance\n'.repeat(500)}`,
+    );
+    commitAll(fixture, 'add documentation');
+
+    const result = executeChecker(fixture, 'HEAD^', 'HEAD');
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('PASS: no new repository style findings');
+  });
 });
 
 function createGitFixture(files: Readonly<Record<string, string>>): string {
