@@ -5,6 +5,9 @@ description: Use when changing Rallar rooms, GroupRef/scoped identity, group/cli
 
 # Rallar Realtime
 
+**REQUIRED SUB-SKILL:** Use `rallar-code-writing` when writing, generating,
+refactoring, or reviewing TypeScript.
+
 Use `building-rallar-apps` when deciding how realtime fits into a whole new
 app. `rallar-realtime` remains authoritative for rooms, scope, messages,
 WS/RTC, identity, routing, and readiness.
@@ -30,70 +33,17 @@ rg -n "GroupRef|groupRef|groupId|roomId|createAndSwitch|createAndJoin|joinRoom|w
 
 ## Rules Of Thumb
 
-- Authoritative shared fields are mandatory except documented input or
-  migration exceptions.
-- Authoritative persisted and shared contracts use mandatory fields by default.
 - Prefer `GroupRef` over bare `groupId` when application/workspace scope matters.
 - Do not trust warm in-memory presence blindly; check expiry and durable read-through paths.
-- Prefer optimistic reconciliation for replicated state. Accept monotonic newer
-  observations. Ignore stale observations without failing the consumer, and
-  treat equal-revision/different-content data as invariant corruption.
-- **AppInbox is mandatory for incoming database mutations.** Route every
-  incoming HTTP and WebSocket database mutation through it, including
-  client/group/topology, authentication/session/ticket, CRDT append and admin,
-  and mutating admin operations. Waiting for a result never permits a direct
-  mutation fallback.
-- AppInbox owns the transaction and retry boundary. Keep direct `read`,
-  `compute`, and `validate` phases, then enter the AppInbox transaction. The
-  `compute` and `validate` phases are pure. Computed persistence data is not
-  called a plan. The service
-  `write(transaction, computed)` only applies it: service write receives the
-  transaction and never opens, commits, replaces, or retries one. A conflict
-  returns to AppInbox to reread and revalidate the complete decision surface.
-- Service writes authoritative state, event, receipt, result, and final
-  `APP_OUTBOX`/`WS_OUTBOX` entries directly through `ResourceInboxRepository`
-  in the same transaction. There is no intermediate mutation outbox. Resolve
-  dynamic logical WebSocket audiences and wake workers after commit. If
-  authoritative computed work already contains an immutable recipient
-  audience, copy that mandatory audience into the final outbox message and
-  intersect it only with locally open connections. Do not re-resolve it from a
-  process cache that may lag the causal revision carried by the message.
-- Resource inbox uses 20 total processing attempts: 1, 2, 4, 8, and 16 ms for
-  attempts one through five, then increasing seconds capped at 30 seconds with
-  jitter. A separate best-effort fairness lane claims entries more than 30
-  seconds overdue; it is independent from timeout recovery.
-- Use optimistic compare-and-set writes with bounded retries at the durable
-  boundary. Runtime-state creation, update, and deletion use
-  `insertIfAbsent`, `upsertIfRevision`, and `deleteIfRevision`.
-- Re-read and re-run authorization, policy, capacity, lifecycle, and invariants
-  on every retry. Never reuse a decision derived from a predecessor that lost
-  its compare-and-set race.
-- Keep group and summary convergence human-readable as direct named read,
-  compute, validate, and write statements: `read`, `compute`, `validate`, then
-  `write`. Record phase timing around each direct statement with AppInbox
-  transaction timing separate. An outbox collision is a typed rollback failure
-  and must not load a winner. The compact `MutationReceipt` family and
-  `GroupStateCausalRevision` carry replay and group/presence authority.
-- Preserve omitted public random/time inputs as mandatory `null` command fields
-  when hashing idempotent intent. After hashing, validate the ledger before any
-  random, clock-default, verifier, or other volatile materialization. Only a
-  ledger miss may capture immutable facts; matching replay and conflicting key
-  reuse invoke no volatile callbacks. Keep the winning code, expiry, verifier,
-  receipt, and metadata unchanged across retry and replay.
-- Group user mutations fail closed: the durable service requires a real issued
-  auth session or exact command-bound proof. Never add an optional authority
-  repository, missing-authority fallback, legacy payload bypass, or test-shaped
-  production overload.
-- Keep server maintenance as a separately wired narrow capability. Do not add
-  expiry or socket-cleanup methods to `GroupStateService`, middleware runtime,
-  or `AppGroupInboxService`; do not accept caller-supplied maintenance actor,
-  reason, or bypass flags. Derive cleanup identity from the persisted session.
-  Derive a collision-safe request identity from the complete semantic command,
-  including operation, full scope, principal/session/generation identity,
-  observed predecessor values, and every timestamp; exclude only the
-  command/request identity being derived. Do not use raw delimiter
-  concatenation. Different scans then rebase/no-op instead of colliding under
-  one incomplete idempotency key.
+- For authoritative database or realtime service mutations, read
+  `.agents/skills/rallar-code-writing/references/convergent-service-writing.md`
+  completely and apply it unchanged. The remaining rules here are realtime
+  domain deltas.
+- Keep the compact `MutationReceipt` family and `GroupStateCausalRevision` as
+  replay and group/presence authority.
+- Group user mutations require a real issued auth session or exact
+  command-bound proof. Server maintenance remains a separately wired narrow
+  capability, never a public bypass field.
 - Presence summaries are optimistic materialized views, not authority. Compute
   them from entry-aware group/member/admission/session reads, validate their
   exact persisted shapes, CAS the exact summary predecessor, and exclude
@@ -110,37 +60,6 @@ rg -n "GroupRef|groupRef|groupId|roomId|createAndSwitch|createAndJoin|joinRoom|w
   optional cache observation conflicts.
 - Group presence uses its per-session guard and does not contend on the group
   row. Group metadata and roster operations use the aggregate group guard.
-- Treat storage-key/value/command relationships as part of those persisted
-  shapes. A shape-valid row in the wrong actor, target, owner, director,
-  principal-admission, session, summary, or idempotency slot is corruption and
-  must fail validation before the first authoritative write. Expected slot
-  identity comes only from the trusted command and aggregate metadata, never
-  from the candidate row itself.
-- Scoped realtime storage-key encodings must also be injective over absence and
-  every valid explicit identifier. Escaping a string does not encode its
-  presence type; URI encoders may leave sentinel-looking values unchanged.
-  Test group/member/session/admission/summary/idempotency keys plus delimiter,
-  percent, prefix/list, and real repository isolation. Preserve a legacy
-  namespace only when value identity proves its scope; use conditional
-  migration and fail closed on ambiguity or destination conflict.
-- Group-state direct, prefix-list, page, event, and compact-receipt reads must
-  decode canonical storage identity and validate the complete requested scope
-  and entity/request slot. The trusted request or decoded key supplies expected
-  identity, never the stored value. Any mismatch fails the entire read with a
-  typed invariant-corruption error; do not return a miss, filter the row,
-  rewrite it, or guess.
-- Shape-valid effects can still describe the wrong operation. Canonically
-  recompute and exactly compare operation-specific guards, dependent rows,
-  events, receipts, and outbox intents before the first authoritative write.
-- Queue locks are coordination-only for bounded reservation claims; they are not
-  approval for domain row, table, advisory, or CRDT document locks. Existing
-  direct handlers, service transactions/retries, intermediate outboxes, and
-  domain locks are migration debt, not precedent. Deadline, sunk-cost, or
-  authority pressure never waives these rules or required verification gates.
-- Optimistic and permissive does not mean weak contracts. Require causal fields
-  on snapshots and durable work; reserve hard rejection for malformed or
-  wrongly scoped data, authorization failures, invariant corruption, resource
-  caps, and exhausted retry or connection-attempt budgets.
 - Keep browser ergonomics, but diagnose ambiguity where string room IDs can cross scopes.
 - Use `rallar.rooms.createAndSwitch(...)` for browser flows where creating a new
   room should leave the previous current room. Plain `rooms.create(...)` keeps
@@ -165,4 +84,8 @@ rg -n "GroupRef|groupRef|groupId|roomId|createAndSwitch|createAndJoin|joinRoom|w
 
 ## Validation
 
-Run focused tests in `packages/tests/shared-web`, `packages/tests/shared-server`, `packages/tests/shared-graph`, and relevant game tests. For restart/cold-cache work, include server routing tests and at least one reconnect scenario. For shared database writes, prove overlapping conflicts, rebasing, retry exhaustion, idempotency, stale expiry safety, and deterministic final convergence; do not treat lock acquisition or waiting as the acceptance criterion.
+Use `rallar-testing` for command selection and the canonical service reference
+for mutation verification. Run focused tests in `packages/tests/shared-web`,
+`packages/tests/shared-server`, `packages/tests/shared-graph`, and relevant game
+tests. For restart or cold-cache work, include server routing tests and at least
+one reconnect scenario.

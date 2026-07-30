@@ -54,8 +54,9 @@ inventing another abstraction.
   A closer domain guide may add stricter rules, but may not relax this baseline.
 - Apply the standard to all new code and to code changed during a task. Do not expand an unrelated task into a
   repository-wide cleanup.
-- The manual review gate is active now. Automated checks report warnings while legacy debt remains. No strict checker
-  mode or CI gate is available yet.
+- The manual review gate is active now. The full-repository checker remains warning-only while legacy debt remains.
+  No global strict checker mode is available. Feature-branch CI blocks only new or worsened findings against the merge
+  base.
 - Tests, mocks, stories, fixtures, and generated artifacts are excluded from the default production-code checker, but
   not from the human-readable standard.
 - A deliberate exception requires explicit human approval and a short rationale in the task handoff. Existing violations
@@ -565,8 +566,9 @@ production defaults once at the composition root.
 
 ## Services and responsibility boundaries
 
-A service-like unit should be micro-service-sized in responsibility: one business capability, one ownership boundary,
-and one reason to change. This does not mean adding a deployable service, process, or network boundary.
+A service-like unit owns one coherent business capability, one ownership
+boundary, and one reason to change. This does not mean adding a deployable
+service, process, or network boundary.
 
 Use:
 
@@ -600,53 +602,16 @@ pure function called directly by the use case or route.
 
 ## Database write safety
 
-- AppInbox is mandatory for incoming database mutations. This includes every HTTP or WebSocket path that changes the
-  database: client, group, topology, authentication/session/ticket, CRDT append/admin, and mutating administration. A
-  synchronous result wait must never fall back to a direct service mutation.
-- AppInbox owns the transaction and retry boundary. Keep one visible `read`, `compute`, `validate`, `write` sequence.
-  The `compute` and `validate` phases are pure. Computed persistence data is not called a plan. The service write
-  receives the transaction as `write(transaction, computed)` and never opens, commits, replaces, or retries one.
-- Apply the operation-specific optimistic guard before dependent state, event, receipt, result, or outbox writes.
-  Return a conditional-write conflict to AppInbox so its next processing attempt restarts at `read` and re-runs every
-  authorization, policy, capacity, lifecycle, and invariant decision. Retrying only a stale final write is incorrect.
-- Commit authoritative state, event, receipt, durable result, and final `APP_OUTBOX` or `WS_OUTBOX` entries in the same
-  transaction. Write final queue entries directly through `ResourceInboxRepository`; do not add an intermediate
-  mutation outbox. Resolve dynamic WebSocket audiences and wake workers only after commit. If computed authoritative
-  work captures an immutable audience, persist that mandatory audience in the final queue entry and intersect it only
-  with locally open connections; never replace it with a process-cache lookup that can lag the message revision.
-- ResourceInbox allows 20 total processing attempts. Retry delays start at 1, 2, 4, 8, and 16 milliseconds, then rise
-  through seconds, cap at 30 seconds, and use jitter. A separate best-effort fairness lane claims retries more than 30
-  seconds overdue independently of timeout recovery.
-- Create with conditional insert, update with expected-revision compare-and-set, and delete or expire with
-  expected-revision conditional delete. Runtime-state code uses `insertIfAbsent`, `upsertIfRevision`, and
-  `deleteIfRevision`. Never use a read-derived unconditional upsert for shared authoritative state.
-- Expired reads are observational. The subsequent write conditionally replaces or deletes the exact observed revision;
-  a stale expiry observation must not delete or overwrite a refreshed value.
-- Make idempotency ledgers immutable per request key with insert-if-absent. The losing writer reads the winning ledger
-  entry instead of overwriting it. Final outbox inserts are different: a collision is terminal, rolls back the complete
-  transaction, and must not load or adopt the winner.
-- Hash caller semantics before materializing server random or time defaults. Preserve omission as a mandatory nullable
-  command field. Only a ledger miss captures immutable facts; reuse those facts across every retry and replay.
-- Queue locks are coordination-only for bounded ResourceInbox reservation, timeout-recovery, and fairness claims. They
-  are not domain mutation authority. Do not add row, table, advisory, or CRDT document locks, and do not copy a legacy
-  lock as precedent. Any proposed exception requires explicit human approval, a measured need, a documented invariant,
-  a bounded critical section, and a review or removal condition.
-- Validate every persisted row's canonical key, decoded identity, complete mandatory shape, and cross-field invariants
-  before using it. Derive expected scope, principal, session, target, and request identity from the trusted command or
-  read slot, never from the row itself. Corrupt authoritative reads fail closed; they are not misses to hide or values
-  to repair by guessing.
-- Use pure injective key encoders that preserve field name, type or presence, and value. Escaping alone cannot
-  distinguish an absent field from a valid sentinel-looking value. Ambiguous legacy data requires value-verified,
-  conditional migration rather than permanent dual reads.
-- Group presence mutations use a per-session guard and do not contend on the group row. Group metadata and roster
-  mutations use the aggregate group guard. Snapshot assembly captures one observation time and intersects optimistic
-  presence with current group policy, active membership, and connected unexpired session state.
-- Authoritative persisted and shared contracts use mandatory fields by default. Sparse request, query, patch, builder,
-  and migration inputs use separate types rather than weakening persisted, replicated, queued, event, snapshot,
-  receipt, or response contracts.
+For authoritative database or realtime service mutations, read
+`.agents/skills/rallar-code-writing/references/convergent-service-writing.md`
+completely. That reference owns AppInbox transaction/retry rules, optimistic
+compare-and-set semantics, permissive convergence, immutable facts, canonical
+identity, and concurrency verification.
 
-Tests must prove overlap, stale input, retry exhaustion, and deterministic final convergence, not merely that one writer
-waited.
+The local shape rule remains: expose a functional core through an explicitly
+owned stateful shell, keep `read`, `compute`, `validate`, and
+`write(transaction, computed)` visible, and represent expected decisions and
+conflicts as typed values rather than exceptions.
 
 ## Configuration sources
 

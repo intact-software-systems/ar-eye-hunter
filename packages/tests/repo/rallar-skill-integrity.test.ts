@@ -17,6 +17,18 @@ const expectedSkills = [
   'rallar-testing',
 ] as const;
 
+const canonicalServiceWritingPath =
+  '.agents/skills/rallar-code-writing/references/convergent-service-writing.md';
+const codeProducingSpecialistSkills = [
+  'building-rallar-apps',
+  'performance-analysis',
+  'rallar-ai',
+  'rallar-games',
+  'rallar-hetzner-ops',
+  'rallar-platform',
+  'rallar-realtime',
+] as const;
+
 const appInboxGuidanceVocabulary = [
   'AppInbox is mandatory for incoming database mutations',
   'service write receives the transaction',
@@ -28,13 +40,7 @@ const appInboxGuidanceVocabulary = [
 ] as const;
 
 const currentAppInboxGuidancePaths = [
-  'AGENTS.md',
-  '.agents/skills/rallar-platform/SKILL.md',
-  '.agents/skills/rallar-realtime/SKILL.md',
-  '.agents/skills/rallar-code-writing/SKILL.md',
-  '.agents/skills/rallar-code-writing/references/repo-code-style.md',
-  '.agents/skills/rallar-testing/SKILL.md',
-  '.agents/skills/rallar-testing/references/test-commands.md',
+  canonicalServiceWritingPath,
   'packages/shared-server/architecture.md',
   'packages/shared-server/rallar-server-repositories.md',
   'packages/shared-server/rallar-server-repositories-improvements.md',
@@ -46,16 +52,10 @@ const currentAppInboxGuidancePaths = [
   'docs/README.md',
 ] as const;
 
-const coreConvergentWriteGuidancePaths = [
-  'AGENTS.md',
-  '.agents/skills/rallar-platform/SKILL.md',
-  '.agents/skills/rallar-realtime/SKILL.md',
-  '.agents/skills/rallar-code-writing/SKILL.md',
-  '.agents/skills/rallar-code-writing/references/repo-code-style.md',
-] as const;
+const coreConvergentWriteGuidancePaths = [canonicalServiceWritingPath] as const;
 
 const canonicalSnapshotOrderingGuidancePaths = [
-  'AGENTS.md',
+  canonicalServiceWritingPath,
   'docs/rallar-convergent-state-and-rtc-topology.md',
 ] as const;
 
@@ -153,9 +153,9 @@ describe('Rallar repo skill and documentation integrity', () => {
     };
 
     expectAll(agents, ['publishing-plan-progress', 'long-running']);
-    expect(agents).toContain(
-      '- For written implementation plans and clearly long-running repository implementation,\n' +
-        '  including docs, scripts, and operations, use `publishing-plan-progress`.',
+    expect(normalizedAgents).toContain(
+      'For written implementation plans and clearly long-running repository implementation, ' +
+        'including docs, scripts, and operations, use `publishing-plan-progress`.',
     );
     expectAll(normalizedAgents, [
       'No AI or agent may create or place a commit on `main`, `master`, or the local default branch',
@@ -444,10 +444,14 @@ describe('Rallar repo skill and documentation integrity', () => {
     const repoCodeStyle = readRepo(
       '.agents/skills/rallar-code-writing/references/repo-code-style.md',
     );
+    const serviceWriting = readRepo(canonicalServiceWritingPath);
     const games = readRepo('.agents/skills/rallar-games/SKILL.md');
     const realtime = readRepo('.agents/skills/rallar-realtime/SKILL.md');
     const testing = readRepo('.agents/skills/rallar-testing/SKILL.md');
     const testCommands = readRepo('.agents/skills/rallar-testing/references/test-commands.md');
+    const packageJson = readJson('package.json') as {
+      scripts?: Readonly<Record<string, string>>;
+    };
 
     expect(platform).toContain('building-rallar-apps');
     expect(games).toContain('building-rallar-apps');
@@ -458,19 +462,23 @@ describe('Rallar repo skill and documentation integrity', () => {
     expect(platform).toContain('Required fields are the default');
     expect(platform).toMatch(/absence is a meaningful domain\s+state/);
     expect(platform).toMatch(/explicitly ask\s+the human/);
-    expectAll(platform, [
-      'optimistic compare-and-set writes with bounded retries',
+    expectAllNormalized(platform, [
+      canonicalServiceWritingPath,
+      'Platform-specific decisions remain here',
       'authoritative persisted, replicated, queued, event, snapshot, and response',
-      'Queue locks are coordination-only',
     ]);
+    expect(platform).not.toContain('optimistic compare-and-set writes with bounded retries');
+    expect(platform).not.toContain('Queue locks are coordination-only');
+    expect(platform).not.toContain('Strong contracts enable permissive convergence');
     expectAll(codeWriting, [
       'Always read `references/repo-code-style.md`',
+      'references/convergent-service-writing.md',
       'Prefer required contracts and explicit value flow',
       'compatibility fallback requires explicit human approval',
     ]);
-    expectAllNormalized(repoCodeStyle, [
+    expectAllNormalized(serviceWriting, [
       'expected-revision compare-and-set',
-      're-runs every authorization, policy, capacity, lifecycle, and invariant decision',
+      'authorization, policy, capacity, lifecycle, invariants',
       'canonical key, decoded identity, complete mandatory shape',
       'Corrupt authoritative reads fail closed',
     ]);
@@ -481,34 +489,106 @@ describe('Rallar repo skill and documentation integrity', () => {
       'Synthetic prerequisite or non-invocation evidence must link to an earlier same-subject predecessor with real production exhaustion',
       'must not weaken candidate validation',
     ]);
-    expectAll(repoCodeStyle, [
-      'discriminated union',
-      'Create with conditional insert, update with expected-revision compare-and-set',
+    expectAll(repoCodeStyle, ['discriminated union']);
+    expectAllNormalized(serviceWriting, [
+      'create with conditional insert or `insertIfAbsent`',
+      'update with expected-revision compare-and-set or `upsertIfRevision`',
+      'delete or expire with expected-revision conditional delete or `deleteIfRevision`',
       'a stale expiry observation must not delete or overwrite a refreshed value',
-      'next processing attempt restarts at `read`',
+      'A conflict starts a fresh `read`',
     ]);
-    expectAll(realtime, [
-      'optimistic reconciliation',
-      'Ignore stale observations',
-      'compare-and-set writes with bounded retries',
-      'Queue locks are coordination-only',
-      'Re-read and re-run authorization, policy, capacity, lifecycle, and invariants',
+    expectAllNormalized(realtime, [
+      canonicalServiceWritingPath,
+      'Presence summaries are optimistic materialized views, not authority',
     ]);
-    expectAll(agents, [
-      'Optimistic compare-and-set writes with bounded retries are the default',
-      'Queue locks are coordination-only',
-      'Authoritative persisted, replicated, queued, event, snapshot, and response',
-    ]);
+    expect(realtime).not.toContain('compare-and-set writes with bounded retries');
+    expect(realtime).not.toContain('Queue locks are coordination-only');
+    expect(realtime).not.toContain('Prefer optimistic reconciliation for replicated state');
+    expect(realtime).not.toContain('prove overlapping conflicts, rebasing, retry exhaustion');
+    expectAll(agents, [canonicalServiceWritingPath, 'functional core', 'stateful shell']);
     expectAll(convergenceArchitecture, [
       'Implemented Convergent Database Writes',
       'conditional insert',
       'expected-revision compare-and-set',
       'expected-revision conditional delete',
     ]);
-    expect(testing).toContain('rallar-skill-integrity.test.ts');
-    expect(testCommands).toContain(
-      'npx vitest run packages/tests/repo/rallar-skill-integrity.test.ts',
-    );
+    expect(testing).toContain('npm run test:repo-governance');
+    expect(testCommands).toContain('npm run test:repo-governance');
+    expectAll(packageJson.scripts?.['test:repo-governance'] ?? '', [
+      'packages/tests/repo/rallar-skill-integrity.test.ts',
+      'packages/tests/repo/repo-code-style-integrity.test.ts',
+      'packages/tests/repo/repo-style-check.test.ts',
+      'packages/tests/repo/repo-style-layout-rules.test.ts',
+      'packages/tests/repo/repo-style-changed-check.test.ts',
+      'packages/tests/rallar-black-box/rallar-testing-skill.test.ts',
+    ]);
+  });
+
+  it('routes TypeScript work through one code-writing skill and one service doctrine', () => {
+    const agents = readRepo('AGENTS.md');
+    const codeWriting = readRepo('.agents/skills/rallar-code-writing/SKILL.md');
+    const serviceWriting = readRepo(canonicalServiceWritingPath);
+    const testing = readRepo('.agents/skills/rallar-testing/SKILL.md');
+    const testCommands = readRepo('.agents/skills/rallar-testing/references/test-commands.md');
+
+    expect(existsSync(path.join(repoRoot, canonicalServiceWritingPath))).toBe(true);
+    expectAllNormalized(agents, [
+      canonicalServiceWritingPath,
+      'functional core',
+      'stateful shell',
+      'one coherent business capability',
+    ]);
+    expectAllNormalized(codeWriting, [
+      'Always read `references/repo-code-style.md`',
+      'For authoritative database or realtime service mutations, also read',
+      '`references/convergent-service-writing.md` completely',
+    ]);
+    for (const skillName of codeProducingSpecialistSkills) {
+      expect(
+        readRepo(`.agents/skills/${skillName}/SKILL.md`),
+        `${skillName} must route TypeScript work through rallar-code-writing`,
+      ).toContain('**REQUIRED SUB-SKILL:** Use `rallar-code-writing`');
+    }
+    for (const source of [testing, testCommands]) {
+      expect(source).toContain(canonicalServiceWritingPath);
+    }
+    expectAllNormalized(serviceWriting, [
+      'functional core',
+      'explicitly owned stateful shell',
+      'one coherent business capability, one ownership boundary, and one reason to change',
+      'records timing around each direct phase and around the AppInbox transaction separately',
+      'apply',
+      'no-op',
+      'reject',
+      'written',
+      'conflict',
+      'newer revisions',
+      'stale revisions',
+      'equal revisions with different canonical content',
+    ]);
+  });
+
+  it('keeps detailed ingress retry policy in the canonical service reference', () => {
+    const serviceWriting = readRepo(canonicalServiceWritingPath);
+    const routedSkillPaths = [
+      'AGENTS.md',
+      '.agents/skills/rallar-code-writing/SKILL.md',
+      '.agents/skills/rallar-code-writing/references/repo-code-style.md',
+      '.agents/skills/rallar-platform/SKILL.md',
+      '.agents/skills/rallar-realtime/SKILL.md',
+      '.agents/skills/rallar-testing/SKILL.md',
+      '.agents/skills/rallar-testing/references/test-commands.md',
+    ] as const;
+
+    expect(serviceWriting).toContain('1, 2, 4, 8, and 16 ms');
+    for (const filePath of routedSkillPaths) {
+      expect(readRepo(filePath), `${filePath} duplicates the retry schedule`).not.toContain(
+        '1, 2, 4, 8, and 16 ms',
+      );
+      expect(readRepo(filePath), `${filePath} must route to the canonical doctrine`).toContain(
+        canonicalServiceWritingPath,
+      );
+    }
   });
 
   it.each(currentAppInboxGuidancePaths)(

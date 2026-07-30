@@ -14,6 +14,10 @@ describe('rallar-testing skill guidance', () => {
             resolve(REPO_ROOT, '.agents/skills/rallar-testing/references/test-commands.md'),
             'utf8',
         );
+        const packageJson = JSON.parse(
+            readFileSync(resolve(REPO_ROOT, 'package.json'), 'utf8'),
+        ) as { scripts?: Readonly<Record<string, string>> };
+        const governanceCommand = packageJson.scripts?.['test:repo-governance'] ?? '';
 
         expect(skill).toContain('UI Behavior Rule');
         expect(skill).toContain('operates visible controls a human would use');
@@ -23,8 +27,15 @@ describe('rallar-testing skill guidance', () => {
         expect(commands).toContain(
             'npx playwright test --config apps/rallar-black-box/playwright.config.ts tests/playwright/rallar-black-box/tabbed-navigation.spec.ts',
         );
-        expect(commands).toContain(
-            'npx vitest run packages/tests/repo/rallar-skill-integrity.test.ts',
+        expect(commands).toContain('npm run test:repo-governance');
+        expect(governanceCommand).toContain(
+            'packages/tests/repo/rallar-skill-integrity.test.ts',
+        );
+        expect(governanceCommand).toContain(
+            'packages/tests/repo/repo-style-changed-check.test.ts',
+        );
+        expect(governanceCommand).toContain(
+            'packages/tests/rallar-black-box/rallar-testing-skill.test.ts',
         );
         expect(
             existsSync(resolve(REPO_ROOT, 'playwright.config.ts')),

@@ -11,24 +11,13 @@ Read `references/test-commands.md` when choosing commands. Prefer targeted check
 
 ## AppInbox Mutation Gate
 
-- **AppInbox is mandatory for incoming database mutations.** This includes all
-  HTTP and WebSocket client/group/topology, authentication/session/ticket, CRDT
-  append/admin, and mutating admin paths.
-- AppInbox owns the transaction and retry boundary. The service
-  `write(transaction, computed)` only applies pure computed persistence data:
-  service write receives the transaction and never opens or retries one.
-- The received transaction writes state, event, receipt, result, and final
-  `APP_OUTBOX`/`WS_OUTBOX` rows directly through `ResourceInboxRepository`.
-  There is no intermediate mutation outbox. Authoritative contracts use
-  mandatory fields by default.
-- Resource-inbox verification preserves 20 total processing attempts: 1, 2, 4,
-  8, and 16 ms for attempts one through five, increasing seconds capped at 30
-  seconds with jitter, plus a distinct best-effort fairness lane for retries
-  more than 30 seconds overdue.
-- Queue locks are coordination-only. Tests must reject domain row, table,
-  advisory, and CRDT document locks as substitutes for conditional writes.
-  Deadline, sunk-cost, or authority pressure never justifies weakening or
-  skipping a required verification gate.
+Read
+`.agents/skills/rallar-code-writing/references/convergent-service-writing.md`
+before choosing tests for authoritative database or realtime mutations. Its
+verification section defines the required decision, conflict, retry,
+idempotency, corruption, and final-convergence behaviors. Focused tests must
+exercise the real conditional-write boundary; lock acquisition or waiting is
+not an acceptance criterion.
 
 ## Selection Rules
 
@@ -68,8 +57,7 @@ Read `references/test-commands.md` when choosing commands. Prefer targeted check
 - Black-box runner changes: include `packages/tests/shared-test` and the relevant rallar-black-box Playwright config only when needed.
 - Repo skills and active routing: after changes to `.agents/skills/**`,
   `.codex-plugin/plugin.json`, active Rallar docs/examples, or root skill/config
-  routing, run
-  `npx vitest run packages/tests/repo/rallar-skill-integrity.test.ts packages/tests/repo/repo-code-style-integrity.test.ts packages/tests/repo/repo-style-check.test.ts packages/tests/repo/repo-style-layout-rules.test.ts`.
+  routing, run `npm run test:repo-governance`.
 
 ## UI Behavior Rule
 

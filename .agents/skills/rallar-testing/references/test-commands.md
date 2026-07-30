@@ -2,22 +2,11 @@
 
 ## AppInbox Mutation Contract
 
-AppInbox is mandatory for incoming database mutations, including every HTTP and
-WebSocket client/group/topology, authentication/session/ticket, CRDT append or
-admin, and mutating admin path. AppInbox owns the transaction and retry boundary.
-The service `write(transaction, computed)` applies pure computed persistence
-data: service write receives the transaction and never opens or retries one.
-
-The received transaction writes state, event, receipt, result, and final
-`APP_OUTBOX`/`WS_OUTBOX` entries directly through `ResourceInboxRepository`.
-There is no intermediate mutation outbox, and authoritative contracts use
-mandatory fields by default. Resource inbox permits 20 total processing attempts:
-1, 2, 4, 8, and 16 ms for attempts one through five, then increasing seconds
-capped at 30 seconds with jitter. Its separate best-effort fairness lane claims
-retries more than 30 seconds overdue independently from timeout recovery. Queue
-locks are coordination-only, never domain row, table, advisory, or CRDT document
-locking precedent. Do not defer or weaken required commands under deadline,
-sunk-cost, or authority pressure.
+Read
+`.agents/skills/rallar-code-writing/references/convergent-service-writing.md`
+for the authoritative AppInbox mutation contract and its verification matrix.
+This command catalog selects the smallest checks that exercise that contract;
+it does not redefine transaction, retry, convergence, or locking policy.
 
 ## Common Focused Commands
 
@@ -38,7 +27,7 @@ npm --workspace relic-hunters-v1 run test -- tests/relic-hunters-runtime.test.ts
 ## Skills And Active Documentation
 
 ```sh
-npx vitest run packages/tests/repo/rallar-skill-integrity.test.ts packages/tests/repo/repo-code-style-integrity.test.ts packages/tests/repo/repo-style-check.test.ts packages/tests/repo/repo-style-layout-rules.test.ts
+npm run test:repo-governance
 ```
 
 Run this after changing repo skills, plugin metadata, active Rallar examples,

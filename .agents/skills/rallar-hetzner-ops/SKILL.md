@@ -5,6 +5,9 @@ description: Use when running, debugging, or analyzing Hetzner-hosted Rallar bla
 
 # Rallar Hetzner Ops
 
+**REQUIRED SUB-SKILL:** Use `rallar-code-writing` when operations work writes,
+generates, refactors, or reviews TypeScript.
+
 Use this for remote Hetzner controller work involving `rallar-black-box`,
 headless browser agents, distributed run manifests, GitHub Actions, and
 artifact analysis.

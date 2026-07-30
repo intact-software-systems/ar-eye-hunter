@@ -28,8 +28,9 @@ Distributed Manifests** run `30520679271` attempt 1 success for that exact
 - Preserve TypeScript `7.0.2`, every public package export and deep import,
   every API-v1 route and request/response contract, persisted formats, storage
   keys, resource names, and wire order.
-- Preserve warning-only repository checkers. Do not enable strict mode or make
-  new warnings blocking.
+- Preserve all full-repository checker modes as warning-only and preserve the
+  existing merge-base feature-branch gate for new or worsened findings. Do not
+  enable global strict mode.
 - Preserve AppInbox as the mandatory entry for every incoming group-state,
   topology, and RTC RTT database mutation. No synchronous or failure fallback
   may mutate directly.
