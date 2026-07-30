@@ -42,7 +42,7 @@ function declareFunctionParentBinding(node, parentScope) {
   if (node.type === 'FunctionDeclaration' && node.id !== null) {
     declarePattern(node.id, parentScope, {
       definite: false,
-      initializerStart: parentScope.start,
+      valueSource: createValueSource(parentScope.start, parentScope.start),
     });
   }
 }
@@ -69,31 +69,46 @@ function declareNodeBindings(node, scope) {
     for (const parameter of node.params ?? []) {
       declarePattern(parameter, scope, {
         definite: false,
-        initializerStart: parameter.start,
+        valueSource: createValueSource(parameter.start, parameter.start),
       });
     }
     if (node.type === 'FunctionExpression' && node.id !== null) {
-      declarePattern(node.id, scope, { definite: false, initializerStart: node.start });
+      declarePattern(node.id, scope, {
+        definite: false,
+        valueSource: createValueSource(node.start, node.start),
+      });
     }
   } else if (node.type === 'VariableDeclaration') {
     const declarationScope = node.kind === 'var' ? nearestVarScope(scope) : scope;
     for (const declaration of node.declarations) {
       declarePattern(declaration.id, declarationScope, {
         definite: declaration.definite === true,
-        initializerStart: declaration.init?.start,
+        valueSource:
+          declaration.init === null
+            ? undefined
+            : createValueSource(declaration.init.start, declaration.init.end),
       });
     }
   } else if (node.type === 'CatchClause' && node.param !== null) {
     declarePattern(node.param, scope, {
       definite: false,
-      initializerStart: node.param.start,
+      valueSource: createValueSource(node.param.start, node.param.start),
     });
   } else if (node.type === 'ClassDeclaration' && node.id !== null) {
-    declarePattern(node.id, scope, { definite: false, initializerStart: node.start });
+    declarePattern(node.id, scope, {
+      definite: false,
+      valueSource: createValueSource(node.start, node.start),
+    });
   } else if (node.type === 'ClassExpression' && node.id !== null) {
-    declarePattern(node.id, scope, { definite: false, initializerStart: node.start });
+    declarePattern(node.id, scope, {
+      definite: false,
+      valueSource: createValueSource(node.start, node.start),
+    });
   } else if (isRuntimeTypeScriptDeclaration(node)) {
-    declarePattern(node.id, scope, { definite: false, initializerStart: node.start });
+    declarePattern(node.id, scope, {
+      definite: false,
+      valueSource: createValueSource(node.start, node.start),
+    });
   }
 }
 
@@ -107,14 +122,19 @@ function nearestVarScope(scope) {
 
 function declarePattern(pattern, scope, value) {
   for (const identifier of bindingIdentifiers(pattern)) {
-    if (!scope.bindings.has(identifier.name)) {
-      scope.bindings.set(identifier.name, {
+    const existing = scope.bindings.get(identifier.name);
+    if (existing === undefined) {
+      const binding = {
         name: identifier.name,
         declarationStart: identifier.start,
         definite: value.definite,
-        initializerStart: value.initializerStart,
-        assignmentStarts: [],
-      });
+        valueSources: [],
+      };
+      addValueSource(binding, value.valueSource);
+      scope.bindings.set(identifier.name, binding);
+    } else {
+      existing.definite ||= value.definite;
+      addValueSource(existing, value.valueSource);
     }
   }
 }
@@ -122,11 +142,35 @@ function declarePattern(pattern, scope, value) {
 function collectBindingAssignments(node, scope, scopeByNode) {
   const current = scopeByNode.get(node) ?? scope;
   if (node.type === 'AssignmentExpression') {
-    for (const identifier of bindingIdentifiers(node.left)) {
-      resolveConstructionBinding(current, identifier.name)?.assignmentStarts.push(node.start);
-    }
+    addAssignmentSources(
+      bindingIdentifiers(node.left),
+      current,
+      createValueSource(node.start, node.right.end),
+    );
+  } else if (node.type === 'ForInStatement' || node.type === 'ForOfStatement') {
+    const targets =
+      node.left.type === 'VariableDeclaration'
+        ? node.left.declarations.flatMap((declaration) => bindingIdentifiers(declaration.id))
+        : bindingIdentifiers(node.left);
+    addAssignmentSources(targets, current, createValueSource(node.left.start, node.right.end));
   }
   forEachChild(node, (child) => collectBindingAssignments(child, current, scopeByNode));
+}
+
+function addAssignmentSources(identifiers, scope, valueSource) {
+  for (const identifier of identifiers) {
+    addValueSource(resolveConstructionBinding(scope, identifier.name), valueSource);
+  }
+}
+
+function addValueSource(binding, valueSource) {
+  if (binding !== undefined && valueSource !== undefined) {
+    binding.valueSources.push(valueSource);
+  }
+}
+
+function createValueSource(sourceStart, availableAfter) {
+  return { sourceStart, availableAfter };
 }
 
 function bindingIdentifiers(pattern) {

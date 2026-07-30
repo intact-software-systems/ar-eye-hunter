@@ -273,6 +273,7 @@ describe('repo style checker', () => {
       'scripts/check-changed-repo-style.mjs',
       'scripts/repo-style-check.mjs',
       'scripts/repo-style-check/contract-rules.mjs',
+      'scripts/repo-style-check/construction-callback-references.mjs',
       'scripts/repo-style-check/construction-rules.mjs',
       'scripts/repo-style-check/construction-scope-model.mjs',
       'scripts/repo-style-check/factory-route-rules.mjs',

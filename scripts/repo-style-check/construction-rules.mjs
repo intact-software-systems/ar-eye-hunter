@@ -1,6 +1,10 @@
 import { parse } from '@babel/parser';
 
 import {
+  collectConstructionCallbackReferences,
+  findConstructionCallbacks,
+} from './construction-callback-references.mjs';
+import {
   createConstructionScopeModel,
   resolveConstructionBinding,
 } from './construction-scope-model.mjs';
@@ -58,8 +62,8 @@ function scanForwardCaptures(program, model, offsets) {
       return;
     }
     const reported = new Set();
-    for (const callback of node.arguments.flatMap(findCallbacks)) {
-      for (const reference of collectCallbackReferences(callback)) {
+    for (const callback of node.arguments.flatMap(findConstructionCallbacks)) {
+      for (const reference of collectConstructionCallbackReferences(callback)) {
         const binding = resolveConstructionBinding(
           model.scopeByNode.get(reference),
           reference.name,
@@ -67,10 +71,10 @@ function scanForwardCaptures(program, model, offsets) {
         if (binding === undefined || reported.has(binding)) {
           continue;
         }
-        const firstValueStart = [binding.initializerStart, ...binding.assignmentStarts]
-          .filter((start) => start !== undefined)
-          .toSorted((left, right) => left - right)[0];
-        if (firstValueStart === undefined || firstValueStart <= node.end) {
+        const firstValueSource = binding.valueSources.toSorted(
+          (left, right) => left.sourceStart - right.sourceStart,
+        )[0];
+        if (firstValueSource === undefined || firstValueSource.availableAfter < node.end) {
           continue;
         }
         reported.add(binding);
@@ -80,67 +84,13 @@ function scanForwardCaptures(program, model, offsets) {
           message:
             `Review captured '${binding.name}' in ${constructionName}: declaration line ` +
             `${lineFromOffset(offsets, binding.declarationStart)}, assignment line ` +
-            `${lineFromOffset(offsets, firstValueStart)} follows the construction call.`,
+            `${lineFromOffset(offsets, firstValueSource.sourceStart)} becomes available only ` +
+            'after the construction call completes.',
         });
       }
     }
   });
   return findings;
-}
-function findCallbacks(argument) {
-  const node = unwrapExpression(argument);
-  if (!isNode(node)) {
-    return [];
-  }
-  if (isFunctionLike(node)) {
-    return [node];
-  }
-  if (node.type === 'ObjectExpression') {
-    return node.properties.flatMap(findCallbacks);
-  }
-  if (node.type === 'ObjectProperty') {
-    const keyCallbacks = node.computed ? findCallbacks(node.key) : [];
-    return [...keyCallbacks, ...findCallbacks(node.value)];
-  }
-  if (node.type === 'SpreadElement') {
-    return findCallbacks(node.argument);
-  }
-  return [];
-}
-function collectCallbackReferences(callback) {
-  const references = [];
-  forEachChild(callback, (child, key) =>
-    collectReferences({
-      node: child,
-      parent: callback,
-      key,
-      references,
-    }),
-  );
-  return references;
-}
-function collectReferences(input) {
-  if (!isNode(input.node) || isFunctionLike(input.node)) {
-    return;
-  }
-  if (transparentExpressionTypes.has(input.node.type)) {
-    collectReferences({ ...input, node: input.node.expression });
-    return;
-  }
-  if (input.node.type.startsWith('TS') || input.node.type === 'TypeAnnotation') {
-    return;
-  }
-  if (input.node.type === 'Identifier' && isReferenceIdentifier(input.parent, input.key)) {
-    input.references.push(input.node);
-  }
-  forEachChild(input.node, (child, key) =>
-    collectReferences({
-      ...input,
-      node: child,
-      parent: input.node,
-      key,
-    }),
-  );
 }
 function scanDefiniteAssignments(model) {
   return model.scopes.flatMap((scope) =>
@@ -311,17 +261,6 @@ function propertyName(property, computed) {
     return property.name;
   }
   return property.type === 'StringLiteral' ? property.value : undefined;
-}
-function isReferenceIdentifier(parent, key) {
-  const member = parent.type === 'MemberExpression' || parent.type === 'OptionalMemberExpression';
-  const property = parent.type === 'ObjectProperty' || parent.type === 'ObjectMethod';
-  return !(
-    (parent.type === 'VariableDeclarator' && key === 'id') ||
-    (isFunctionLike(parent) && (key === 'id' || key === 'params')) ||
-    (member && key === 'property' && !parent.computed) ||
-    (property && key === 'key' && !parent.computed) ||
-    ['ImportSpecifier', 'ExportSpecifier', 'LabeledStatement'].includes(parent.type)
-  );
 }
 function isFunctionLike(node) {
   return [

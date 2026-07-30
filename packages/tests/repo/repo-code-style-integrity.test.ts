@@ -390,6 +390,7 @@ describe('repo code style authority integrity', () => {
       'packages/tests/repo/repo-code-style-integrity.test.ts',
       'packages/tests/repo/repo-style-check.test.ts',
       'packages/tests/repo/repo-style-construction-check.test.ts',
+      'packages/tests/repo/repo-style-construction-edge-cases.test.ts',
       'packages/tests/repo/repo-style-layout-rules.test.ts',
       'packages/tests/repo/repo-style-changed-check.test.ts',
       'packages/tests/rallar-black-box/rallar-testing-skill.test.ts',
