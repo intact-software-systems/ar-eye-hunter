@@ -104,6 +104,16 @@ retains the exact thirteen-method cohesive internal owner recorded below. This
 approves no behavior, public-contract, compatibility, lifecycle, state,
 dependency, workflow, checker, TypeScript, or bundle-budget change.
 
+**2026-07-30 Task 8 active test-path reconciliation:** Human review authorized
+the active browser-room command and companion-coverage registry updates made
+necessary by the approved test-tree moves. The registry now names the exact
+room facade, realtime, state-store, and event successor suites together with
+the retained people compatibility suites, and its focused test proves that
+every active `testFiles` path resolves from the repository root. This
+traceability correction approves no runtime behavior, public contract,
+dependency, lockfile, workflow, TypeScript, checker, bundle-budget, server,
+API-v1, or unrelated-plan change.
+
 Planning base and prerequisite evidence:
 
 - The human approved exact child-plan blob
@@ -1691,7 +1701,7 @@ receive a fresh scoped review before Task 6 resumes.
   `layout.browser-room-boundary=0`; no unexplained default or detailed layout
   count increases; every checker command remains warning-only and exits `0`.
 
-- [ ] **Step 5: Perform a scoped independent re-review**
+- [x] **Step 5: Perform a scoped independent re-review**
 
   Review for hidden behavior changes, extra hops, mismatched names, direct
   authoritative imports, lost tests, over-threshold files/functions, and public
@@ -1909,17 +1919,17 @@ material plan revision and new explicit human approval.
 
 ## 15. Progress Record
 
-| Milestone                       | Status                | Evidence                                                                                                                                                                                |
-| ------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Governance/checker prerequisite | `ledger-published`    | Implementation PR #47 and later ledger PR #51 evidence in the planning status above; exact ledger default workflow `30407710853` passed for `7a6c8e0c2cfb3413b4c0fbaaf0af31af2571c015`. |
-| Browser child inventory         | complete for drafting | Current source/tests/exports/consumers/examples/API calls and representative create-to-AppInbox trace recorded in Sections 2-4.                                                         |
-| Browser child plan              | `approved`            | Human approval binds exact plan blob `37861202ce25c3cd5832663a5a3f6d7e2e4a0e4e` plus only the explicitly recorded amendments.                                                           |
-| Internal state-store contract   | aligned               | The structure pass preserved fifteen predecessor capabilities; Task 7's consumer ratchet removes only two unused private pass-throughs and retains the exact thirteen-method owner.     |
-| Human approval                  | complete              | Approval covers the two locked implementation PRs and the explicitly recorded narrow amendments; it does not approve later child plans.                                                 |
-| Structure/boundary PR           | published             | PR #53 feature `ca6c907c50d12a5d52a2b54ebf81e81cff2c4a54` merged as `a0baa7ed77c9759e9a3c2c3c3c5da4c5ca845960`; default run `30506826362` attempt 1 succeeded.                          |
-| Alignment implementation PR     | in progress           | Task 7's source ratchet and focused behavior batch are green on `codex/rallar-room-group-state-boundary-alignment`; independent review and Task 8 gates remain pending.                 |
-| Later evidence ledger           | `needed`              | Separately authorized only after both implementation envelopes are green.                                                                                                               |
-| Server/API-v1 children          | blocked by sequence   | Must not begin under this plan.                                                                                                                                                         |
+| Milestone                       | Status                | Evidence                                                                                                                                                                                                  |
+| ------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Governance/checker prerequisite | `ledger-published`    | Implementation PR #47 and later ledger PR #51 evidence in the planning status above; exact ledger default workflow `30407710853` passed for `7a6c8e0c2cfb3413b4c0fbaaf0af31af2571c015`.                   |
+| Browser child inventory         | complete for drafting | Current source/tests/exports/consumers/examples/API calls and representative create-to-AppInbox trace recorded in Sections 2-4.                                                                           |
+| Browser child plan              | `approved`            | Human approval binds exact plan blob `37861202ce25c3cd5832663a5a3f6d7e2e4a0e4e` plus only the explicitly recorded amendments.                                                                             |
+| Internal state-store contract   | aligned               | The structure pass preserved fifteen predecessor capabilities; Task 7's consumer ratchet removes only two unused private pass-throughs and retains the exact thirteen-method owner.                       |
+| Human approval                  | complete              | Approval covers the two locked implementation PRs and the explicitly recorded narrow amendments; it does not approve later child plans.                                                                   |
+| Structure/boundary PR           | published             | PR #53 feature `ca6c907c50d12a5d52a2b54ebf81e81cff2c4a54` merged as `a0baa7ed77c9759e9a3c2c3c3c5da4c5ca845960`; default run `30506826362` attempt 1 succeeded.                                            |
+| Alignment implementation PR     | in progress           | Task 7's source ratchet, focused behavior batch, and active companion paths are green; independent alignment and traceability reviews report Critical 0 / Important 0; Task 8 final gates remain pending. |
+| Later evidence ledger           | `needed`              | Separately authorized only after both implementation envelopes are green.                                                                                                                                 |
+| Server/API-v1 children          | blocked by sequence   | Must not begin under this plan.                                                                                                                                                                           |
 
 ## 16. Draft Self-Review Record
 
