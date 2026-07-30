@@ -70,8 +70,11 @@ was approved at Git blob
 recorded narrow amendments. Structure/boundary Tasks 0 through 6 are
 implemented and published through PR #53; alignment Tasks 7 and 8 are
 implemented and published through PR #54. Both implementation envelopes are
-green, so the browser implementation is `complete`; its separately authorized
-three-plan evidence-ledger publication is pending.
+green. Its separate evidence ledger was published through PR #55 and reached
+`ledger-published` at resulting `main`
+`b4fe2a6ae5893f3adae86061bd38cf416bac8aaf`. The
+[authoritative group-state server structure child](rallar-group-state-server-structure-plan.md)
+is now drafted and unapproved; drafting it authorizes no implementation.
 
 Program drafting, approval, execution, publication, and human handoffs follow
 the [Repository Human Traceability Program Execution Plan](repo-human-traceability-program-execution-plan.md).
@@ -147,8 +150,14 @@ Publication and progress reconciliation on 2026-07-28:
   `d807b602ad0b400c5bfc10b8da955093df57f5ce`, and **Run Hetzner Supported
   Distributed Manifests** `30516918807` attempt 1 success for that exact SHA.
   Its final headless Brotli measurement was `191.817383 KiB`, strictly below
-  the fixed `<192 KiB` budget. The browser implementation is `complete`; its
-  separately authorized three-plan evidence-ledger publication is pending.
+  the fixed `<192 KiB` budget.
+- Browser evidence ledger PR #55 published frozen ledger tree
+  `96f0f763577a18983a9a9f08f87147a9ab154930` from feature SHA
+  `7db208ed977fdcad4a1afef8a5d08c3cfdbb862c`. Branch Release Gate run
+  `30519129484` attempt 1 passed for that feature SHA. It merged as exact
+  `main` SHA `b4fe2a6ae5893f3adae86061bd38cf416bac8aaf`; **Run Hetzner
+  Supported Distributed Manifests** run `30520679271` attempt 1 passed for
+  that exact SHA. The browser child is therefore `ledger-published`.
 
 ## 1. Why This Is A Program Instead Of One Refactor
 
@@ -381,10 +390,10 @@ packages/shared-server/rallar-system/group-state/
     group-state-inbox-contracts.ts
 
   mutation/
-    group-state-mutation-contracts.ts
-    read-group-state-mutation.ts
-    compute-group-state-mutation.ts
-    validate-group-state-mutation.ts
+    group-mutation-contracts.ts
+    read-group-mutation.ts
+    compute-group-mutation.ts
+    validate-group-mutation.ts
     write-group-state-mutation.ts
 
   persistence/
@@ -402,9 +411,16 @@ packages/shared-server/rallar-system/group-state/
     reconcile-expired-group-presence.ts
 
   snapshot/
-    group-state-snapshot-cache.ts
-    validate-group-state-snapshot.ts
+    group-state-snapshot-read-through-cache.ts
+    validate-persisted-group-snapshot.ts
 ```
+
+The drafted
+[server structure child](rallar-group-state-server-structure-plan.md) refines
+this responsibility skeleton into an exact current/target move map, mirrored
+test tree, public and internal compatibility inventory, AppInbox call trace,
+and topology/RTC inbox-owner split. That child remains unapproved until a human
+approves its exact Git blob.
 
 `AppGroupInboxService` must not remain the owner of topology configuration and
 RTC RTT mutation behavior merely because those messages currently arrive
@@ -501,8 +517,8 @@ begin:
 - A file's basename matches its primary exported class, function, interface, or
   capability after mechanical Pascal/camel-to-kebab conversion.
 - Action modules are verb-first and match the canonical function vocabulary:
-  `read-group-state-mutation.ts`, `compute-group-state-mutation.ts`,
-  `validate-group-state-mutation.ts`, and `write-group-state-mutation.ts`.
+  `read-group-mutation.ts`, `compute-group-mutation.ts`,
+  `validate-group-mutation.ts`, and `write-group-state-mutation.ts`.
 - Route registration functions are descriptive, such as
   `registerGroupStateRoutes`, rather than generic exports named `init`.
 - Lifecycle functions may use `init`, `start`, and `stop` only with the owned
@@ -949,7 +965,7 @@ to write, review, approve, execute, and hand off these child plans in order:
   - exact code-style wording;
   - warning-only layout rule implementation and fixtures;
   - initial measured baseline.
-- [ ] [Rallar room/group-state translation boundary](rallar-room-group-state-translation-boundary-plan.md)
+- [x] [Rallar room/group-state translation boundary](rallar-room-group-state-translation-boundary-plan.md)
   - state: exact Git blob
     `37861202ce25c3cd5832663a5a3f6d7e2e4a0e4e` approved with only recorded
     narrow amendments; structure/boundary frozen tree
@@ -962,13 +978,18 @@ to write, review, approve, execute, and hand off these child plans in order:
     `ec49e76b95160d2a2d0fb54b140963cd144f3dcd`, Branch Release Gate
     `30513466787` attempt 1 success, PR #54, resulting `main`
     `d807b602ad0b400c5bfc10b8da955093df57f5ce`, and default workflow
-    `30516918807` attempt 1 success; browser implementation `complete`,
-    separately authorized ledger publication pending;
+    `30516918807` attempt 1 success; evidence-ledger tree
+    `96f0f763577a18983a9a9f08f87147a9ab154930`, feature
+    `7db208ed977fdcad4a1afef8a5d08c3cfdbb862c`, Branch Release Gate
+    `30519129484` attempt 1 success, PR #55, resulting `main`
+    `b4fe2a6ae5893f3adae86061bd38cf416bac8aaf`, and default workflow
+    `30520679271` attempt 1 success; browser child `ledger-published`;
   - browser room target tree;
   - explicit translation functions;
   - facade compatibility decision;
   - shared-web and app consumer validation.
-- [ ] `plans/rallar-group-state-server-structure-plan.md`
+- [ ] [Rallar group-state server structure](rallar-group-state-server-structure-plan.md)
+  - state: drafted and unapproved; no implementation goal or branch exists;
   - exact move map for group-state service, mutation, persistence, presence,
     snapshot, and AppInbox files;
   - split of topology and RTC RTT ownership from `AppGroupInboxService`;
@@ -1018,8 +1039,8 @@ Human review has approved all master-plan execution choices:
    two pull requests by default. Smaller private migrations may use one pull
    request with clearly separated structure and code-standard commit series.
 
-The browser implementation is `complete`. The separately authorized three-plan
-evidence ledger is pending its independent freeze and publication envelope; its
-own future tree, commit, PR, Branch Release Gate, merge, and default-workflow
-evidence remain external. The shared-server and API-v1 children remain
-unstarted.
+The browser child is `ledger-published` through PR #55 and exact resulting
+`main` SHA `b4fe2a6ae5893f3adae86061bd38cf416bac8aaf`. The shared-server
+child is drafted and unapproved. The API-v1 child remains unstarted and may not
+be drafted until the server child's later evidence ledger is
+`ledger-published`.
