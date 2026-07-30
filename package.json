@@ -76,7 +76,7 @@
     "test:api-v1:black-box:postgres:crdt": "npm --workspace @ar-eye-hunter/shared-test run bb:api-v1:postgres:crdt",
     "test:api-v1:black-box:postgres:medium-scale": "npm --workspace @ar-eye-hunter/shared-test run bb:api-v1:postgres:medium-scale",
     "test:api-v1:black-box:memory": "npm --workspace @ar-eye-hunter/shared-test run bb:api-v1:memory",
-    "test:repo-governance": "vitest run packages/tests/repo/rallar-skill-integrity.test.ts packages/tests/repo/repo-code-style-integrity.test.ts packages/tests/repo/repo-style-check.test.ts packages/tests/repo/repo-style-layout-rules.test.ts packages/tests/repo/repo-style-changed-check.test.ts packages/tests/rallar-black-box/rallar-testing-skill.test.ts",
+    "test:repo-governance": "vitest run packages/tests/repo/rallar-skill-integrity.test.ts packages/tests/repo/repo-code-style-integrity.test.ts packages/tests/repo/repo-style-check.test.ts packages/tests/repo/repo-style-construction-check.test.ts packages/tests/repo/repo-style-layout-rules.test.ts packages/tests/repo/repo-style-changed-check.test.ts packages/tests/rallar-black-box/rallar-testing-skill.test.ts",
     "check:repo-style": "node scripts/repo-style-check.mjs",
     "check:repo-style:construction-details":
       "node scripts/repo-style-check.mjs --construction-details",
