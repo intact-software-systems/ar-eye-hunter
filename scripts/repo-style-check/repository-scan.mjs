@@ -25,6 +25,7 @@ import {
 import { lineFromOffset, lineOffsets } from './source-text.mjs';
 
 const checkedExtensions = new Set(['.ts', '.tsx', '.d.ts', '.mts', '.cts', '.mjs']);
+const outputContractExtensions = new Set(['.ts', '.tsx', '.mts', '.cts']);
 const skippedDirectoryNames = new Set([
   '.git',
   '.deno',
@@ -176,7 +177,7 @@ export function scanProductionSources(input) {
 function scanFile(source, options) {
   const { file, raw } = source;
   const findings = [];
-  const sourceText = { raw, lines: raw.split('\n') };
+  const sourceText = { file, raw, lines: raw.split('\n') };
   addFileMeasurementFindings(findings, sourceText.lines);
   addRouteFindings(findings, raw);
   addContractAndFactoryFindings(findings, sourceText, options);
@@ -245,7 +246,7 @@ function addRouteFindings(findings, raw) {
 }
 
 function addContractAndFactoryFindings(findings, sourceText, options) {
-  const { raw, lines } = sourceText;
+  const { file, raw, lines } = sourceText;
   for (const commandType of extractCommandTypesWithOptionalFields(lines)) {
     const fields = commandType.fields.map((field) => field.text).join('; ');
     findings.push(
@@ -264,7 +265,7 @@ function addContractAndFactoryFindings(findings, sourceText, options) {
     scanFunctionInputContracts(functions, limits.functionArgumentCount),
   );
   addMessages(findings, 'service.name', scanDiscouragedServiceNames(raw));
-  if (options.outputContracts) {
+  if (options.outputContracts && outputContractExtensions.has(path.extname(file).toLowerCase())) {
     addMessages(findings, 'function.output-contract', scanOutputContractNaming(raw, functions));
   }
   if (options.objectInterfaces) {

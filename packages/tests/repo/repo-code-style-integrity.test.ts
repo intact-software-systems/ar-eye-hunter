@@ -2,6 +2,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+import { constructionRuleIds } from '../../../scripts/repo-style-check/construction-rules.mjs';
+
 const repoRoot = process.cwd();
 const canonicalStylePath = '.agents/skills/rallar-code-writing/references/repo-code-style.md';
 const canonicalServiceWritingPath =
@@ -311,6 +313,16 @@ describe('repo code style authority integrity', () => {
       '`abstraction.pass-through`',
     ]);
     expect(humanGuide.replace(/\s+/g, ' ')).toContain(semanticBoundary);
+  });
+
+  it('keeps construction rule identifiers stable for checker integrations', () => {
+    expect(Object.isFrozen(constructionRuleIds)).toBe(true);
+    expect(constructionRuleIds).toEqual({
+      forwardCapture: 'construction.forward-capture',
+      definiteAssignment: 'construction.definite-assignment',
+      nestedCallbackDepth: 'control.nested-callback-depth',
+      passThrough: 'abstraction.pass-through',
+    });
   });
 
   it('keeps TypeScript formatter settings aligned with the canonical baseline', () => {

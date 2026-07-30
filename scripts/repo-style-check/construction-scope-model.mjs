@@ -1,10 +1,3 @@
-class ConstructionScopeModel {
-  constructor(scopeByNode, scopes) {
-    this.scopeByNode = scopeByNode;
-    this.scopes = scopes;
-  }
-}
-
 export function createConstructionScopeModel(program) {
   const root = {
     parent: undefined,
@@ -16,7 +9,7 @@ export function createConstructionScopeModel(program) {
   const scopes = [root];
   collectScopeDeclarations(program, { scope: root, runtime: true }, { scopeByNode, scopes });
   collectBindingAssignments(program, root, scopeByNode);
-  return new ConstructionScopeModel(scopeByNode, scopes);
+  return { scopeByNode, scopes };
 }
 
 export function resolveConstructionBinding(scope, name) {
