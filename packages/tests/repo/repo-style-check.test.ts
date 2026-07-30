@@ -425,6 +425,75 @@ describe('repo style checker', () => {
     expect(findings).toEqual([]);
   });
 
+  it('resolves a runtime namespace var before an outer binding', () => {
+    const findings = scanConstructionRules(
+      {
+        file: 'runtime.ts',
+        raw: [
+          'let service: Service;',
+          'namespace Runtime {',
+          '  var service = createNamespaceService();',
+          '  export const consumer = createConsumer(() => service);',
+          '}',
+          'service = createRootService();',
+          'export { Runtime };',
+        ].join('\n'),
+      },
+      { details: false },
+    );
+
+    expect(findings).toEqual([]);
+  });
+
+  it('keeps a runtime namespace var out of the enclosing scope', () => {
+    const findings = scanConstructionRules(
+      {
+        file: 'runtime.ts',
+        raw: [
+          'namespace Runtime {',
+          '  var service = createNamespaceService();',
+          '}',
+          'const consumer = createConsumer(() => service);',
+          'let service: Service;',
+          'service = createRootService();',
+          'export { consumer };',
+        ].join('\n'),
+      },
+      { details: false },
+    );
+
+    expect(findings).toEqual([
+      expect.objectContaining({
+        ruleId: constructionRuleIds.forwardCapture,
+        message: expect.stringMatching(/service.*createConsumer.*5.*6/i),
+      }),
+    ]);
+  });
+
+  it('ignores ambient namespace vars when resolving runtime bindings', () => {
+    const findings = scanConstructionRules(
+      {
+        file: 'runtime.ts',
+        raw: [
+          'declare namespace Contracts {',
+          '  var service: Service;',
+          '}',
+          'const consumer = createConsumer(() => service);',
+          'const service = createService();',
+          'export { consumer };',
+        ].join('\n'),
+      },
+      { details: false },
+    );
+
+    expect(findings).toEqual([
+      expect.objectContaining({
+        ruleId: constructionRuleIds.forwardCapture,
+        message: expect.stringMatching(/service.*createConsumer.*5.*5/i),
+      }),
+    ]);
+  });
+
   it('keeps a nested namespace declaration out of the enclosing runtime scope', () => {
     const findings = scanConstructionRules(
       {

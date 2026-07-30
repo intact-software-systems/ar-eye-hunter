@@ -2,12 +2,12 @@ export function createConstructionScopeModel(program) {
   const root = {
     parent: undefined,
     bindings: new Map(),
-    functionLike: true,
+    varScope: true,
     start: program.start,
   };
   const scopeByNode = new WeakMap([[program, root]]);
   const scopes = [root];
-  collectScopeDeclarations(program, root, { scopeByNode, scopes });
+  collectScopeDeclarations(program, { scope: root, runtime: true }, { scopeByNode, scopes });
   collectBindingAssignments(program, root, scopeByNode);
   return { scopeByNode, scopes };
 }
@@ -24,46 +24,59 @@ export function resolveConstructionBinding(scope, name) {
   return undefined;
 }
 
-function collectScopeDeclarations(node, scope, model) {
-  let current = scope;
+function collectScopeDeclarations(node, scopeTraversal, model) {
+  const runtime = scopeTraversal.runtime && node.declare !== true;
+  if (runtime) {
+    declareFunctionParentBinding(node, scopeTraversal.scope);
+  }
+  const currentScope = createScopeForNode(node, scopeTraversal.scope, model);
+  if (runtime) {
+    declareNodeBindings(node, currentScope);
+  }
+  forEachChild(node, (child) =>
+    collectScopeDeclarations(child, { scope: currentScope, runtime }, model),
+  );
+}
+
+function declareFunctionParentBinding(node, parentScope) {
+  if (node.type === 'FunctionDeclaration' && node.id !== null) {
+    declarePattern(node.id, parentScope, {
+      definite: false,
+      initializerStart: parentScope.start,
+    });
+  }
+}
+
+function createScopeForNode(node, parentScope, model) {
+  const ownsScope = isFunctionLike(node) || isLexicalScope(node) || node.type === 'ClassExpression';
+  if (!ownsScope) {
+    model.scopeByNode.set(node, parentScope);
+    return parentScope;
+  }
+  const scope = {
+    parent: parentScope,
+    bindings: new Map(),
+    varScope: isFunctionLike(node) || node.type === 'TSModuleBlock',
+    start: node.start,
+  };
+  model.scopes.push(scope);
+  model.scopeByNode.set(node, scope);
+  return scope;
+}
+
+function declareNodeBindings(node, scope) {
   if (isFunctionLike(node)) {
-    if (node.type === 'FunctionDeclaration' && node.id !== null) {
-      declarePattern(node.id, scope, {
-        definite: false,
-        initializerStart: scope.start,
-      });
-    }
-    current = {
-      parent: scope,
-      bindings: new Map(),
-      functionLike: true,
-      start: node.start,
-    };
-    model.scopes.push(current);
-    model.scopeByNode.set(node, current);
     for (const parameter of node.params ?? []) {
-      declarePattern(parameter, current, {
+      declarePattern(parameter, scope, {
         definite: false,
         initializerStart: parameter.start,
       });
     }
     if (node.type === 'FunctionExpression' && node.id !== null) {
-      declarePattern(node.id, current, { definite: false, initializerStart: node.start });
+      declarePattern(node.id, scope, { definite: false, initializerStart: node.start });
     }
-  } else if (isLexicalScope(node) || node.type === 'ClassExpression') {
-    current = {
-      parent: scope,
-      bindings: new Map(),
-      functionLike: false,
-      start: node.start,
-    };
-    model.scopes.push(current);
-    model.scopeByNode.set(node, current);
-  } else {
-    model.scopeByNode.set(node, current);
-  }
-  if (node.type === 'VariableDeclaration') {
-    const declarationScope = node.kind === 'var' ? nearestFunctionScope(current) : current;
+  } else if (node.type === 'VariableDeclaration') {
+    const declarationScope = node.kind === 'var' ? nearestVarScope(scope) : scope;
     for (const declaration of node.declarations) {
       declarePattern(declaration.id, declarationScope, {
         definite: declaration.definite === true,
@@ -71,23 +84,22 @@ function collectScopeDeclarations(node, scope, model) {
       });
     }
   } else if (node.type === 'CatchClause' && node.param !== null) {
-    declarePattern(node.param, current, {
+    declarePattern(node.param, scope, {
       definite: false,
       initializerStart: node.param.start,
     });
   } else if (node.type === 'ClassDeclaration' && node.id !== null) {
-    declarePattern(node.id, current, { definite: false, initializerStart: node.start });
+    declarePattern(node.id, scope, { definite: false, initializerStart: node.start });
   } else if (node.type === 'ClassExpression' && node.id !== null) {
-    declarePattern(node.id, current, { definite: false, initializerStart: node.start });
+    declarePattern(node.id, scope, { definite: false, initializerStart: node.start });
   } else if (isRuntimeTypeScriptDeclaration(node)) {
-    declarePattern(node.id, current, { definite: false, initializerStart: node.start });
+    declarePattern(node.id, scope, { definite: false, initializerStart: node.start });
   }
-  forEachChild(node, (child) => collectScopeDeclarations(child, current, model));
 }
 
-function nearestFunctionScope(scope) {
+function nearestVarScope(scope) {
   let current = scope;
-  while (!current.functionLike) {
+  while (!current.varScope) {
     current = current.parent;
   }
   return current;
