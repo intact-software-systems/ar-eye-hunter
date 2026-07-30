@@ -5,6 +5,9 @@ description: Use when changing AR Eye Hunter, Relic Hunters, Rallar Game authori
 
 # Rallar Games
 
+**REQUIRED SUB-SKILL:** Use `rallar-code-writing` when writing, generating,
+refactoring, or reviewing TypeScript.
+
 **REQUIRED SUB-SKILL:** Use `building-rallar-apps` when creating a new browser
 game. Keep `rallar-games` focused on existing games and Rallar Game or Rallar
 Motion behavior.

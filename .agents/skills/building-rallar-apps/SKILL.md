@@ -5,6 +5,9 @@ description: Use when creating, bootstrapping, scaffolding, or architecting a ne
 
 # Building Rallar Apps
 
+**REQUIRED SUB-SKILL:** Use `rallar-code-writing` when writing, generating,
+refactoring, or reviewing TypeScript.
+
 ## Start Here
 
 Read `references/app-scaffolding.md` before creating files. For a 3D app, also

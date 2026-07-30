@@ -5,6 +5,9 @@ description: Use when changing RallarAI shared contracts, browser/server AI prov
 
 # RallarAI
 
+**REQUIRED SUB-SKILL:** Use `rallar-code-writing` when writing, generating,
+refactoring, or reviewing TypeScript.
+
 ## First Pass
 
 Search both shared contracts and concrete consumers:
@@ -33,4 +36,3 @@ rg -n "RallarAi|createRallarAi|generateJson|schemaId|provider|lifecycle|AI_DIREC
 ## Validation
 
 Run RallarAI shared contract tests plus the concrete game/provider tests touched by the change. For server provider changes, include the server package type-check and any live-gated tests only when their env gates are enabled.
-

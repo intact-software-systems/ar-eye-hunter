@@ -1,0 +1,147 @@
+# Convergent Service Writing
+
+Read this reference for authoritative database or realtime service mutations.
+It is the canonical implementation doctrine for those services. Specialist
+skills add domain facts; they do not replace or restate this contract.
+
+## Human-readable service shape
+
+Use a functional core with an explicitly owned stateful shell:
+
+- parsing, authorization policy, computation, validation, reconciliation, and
+  candidate construction are data-in/data-out functions;
+- repositories, transactions, clocks, randomness, transports, caches, and
+  subscriptions stay in narrow side-effect adapters;
+- state belongs in an object only when that object clearly owns its lifecycle;
+- a service owns one coherent business capability, one explicit owner, and one reason to change.
+
+Keep the control flow visible as direct, named `read`, `compute`, `validate`,
+and `write(transaction, computed)` statements. `read` performs the required
+repository reads. The `compute` and `validate` phases are pure. Computed
+persistence data is not called a plan. Do not hide decisions behind manager, coordinator,
+or pass-through helper chains.
+
+Model the domain decision separately from the conditional write outcome:
+
+- a decision is `apply`, `no-op`, or `reject`;
+- an attempted write is `written` or `conflict`;
+- `reject` is a typed domain result, not an exception;
+- `conflict` returns to the retry owner for a complete new attempt.
+
+This vocabulary keeps permissive convergence precise. It does not mean errors
+are swallowed or invalid input is accepted.
+
+## Transaction and retry ownership
+
+AppInbox is mandatory for incoming database mutations, including every HTTP
+and WebSocket client, group, topology, authentication/session/ticket, CRDT
+append/admin, and mutating administration path. A synchronous result wait never
+falls back to a direct service mutation.
+
+AppInbox owns the transaction and retry boundary. The service write receives
+the transaction and never opens, commits, replaces, or retries one. A conflict
+starts a fresh `read`, then recomputes and revalidates authorization, policy,
+capacity, lifecycle, invariants, and the complete candidate. Retrying only a
+stale final write is incorrect.
+
+The operation-specific conditional guard is the first write. In the same
+transaction, write authoritative state, event, receipt, durable result, and
+final `APP_OUTBOX` or `WS_OUTBOX` rows directly through
+`ResourceInboxRepository`. There is no intermediate mutation outbox. Final
+outbox insertion is insert-only: a collision rolls back the transaction and
+never loads a winner. Resolve dynamic logical WebSocket audiences and wake
+workers only after commit. Persist an immutable computed audience in the final
+outbox message when one exists, then intersect it only with locally open
+connections.
+
+ResourceInbox permits 20 total processing attempts. Attempts one through five
+wait 1, 2, 4, 8, and 16 ms. Later waits rise through seconds, cap at 30 seconds,
+and use jitter. A separate best-effort fairness lane claims retries more than
+30 seconds overdue independently of timeout recovery.
+
+Queue locks are coordination-only for bounded ResourceInbox reservation,
+timeout-recovery, and fairness claims. They are not domain authority. Do not
+add row, table, advisory, or CRDT document locks. Any exception requires
+explicit human approval, measured evidence, a documented invariant, a bounded
+critical section, and a review or removal condition.
+
+## Optimistic persistence
+
+Use optimistic compare-and-set writes with bounded retries:
+
+- create with conditional insert or `insertIfAbsent`;
+- update with expected-revision compare-and-set or `upsertIfRevision`;
+- delete or expire with expected-revision conditional delete or
+  `deleteIfRevision`.
+
+In other words: Create with conditional insert, update with expected-revision
+compare-and-set, and delete or expire with expected-revision conditional
+delete.
+
+Expired reads are observational. The subsequent write matches the exact
+observed revision; a stale expiry observation must not delete or overwrite a
+refreshed value. An idempotency ledger is immutable per request
+key: the losing writer reads the winner. That rule never applies to final
+outbox collisions, which roll back.
+
+Hash caller semantics before materializing server time or randomness. Preserve
+omission as an explicit mandatory `null` command field. Only a validated ledger
+miss may capture volatile values in immutable facts; reuse those facts across
+every retry and replay. A matching replay returns the durable winner. Conflicting
+key reuse is a typed rejection and invokes no volatile callback.
+
+Build internal maintenance identity from a collision-safe canonical projection
+of every semantic field except the identity being derived. Keep maintenance
+behind a separately wired narrow capability, never caller-provided authority or
+bypass fields. Authoritative user-write authentication dependencies are
+mandatory and fail closed.
+
+## Permissive convergence
+
+An optimistic and permissive service is explicit about valid no-ops:
+
+- accept newer revisions only after complete validation;
+- ignore stale revisions as a typed `no-op`;
+- treat a duplicate with the same canonical content as a typed `no-op`;
+- treat equal revisions with different canonical content as invariant
+  corruption;
+- reject unknown authoritative variants, malformed input, unauthorized work,
+  impossible transitions, and conflicting idempotency-key reuse;
+- propagate classified repository failures rather than catch-and-log success.
+
+Validate every persisted row's canonical key, decoded identity, complete
+mandatory shape, and trusted command-slot relationships. Derive expected scope,
+principal, session, target, and request identity from the command or decoded
+canonical key, never from the stored candidate. Corrupt authoritative reads
+fail closed; they are not misses to hide, rows to filter, or values to repair by
+guessing.
+
+Scoped storage keys are injective over field name, value type or presence, and
+value. Escaping a string does not encode absence. Migrate ambiguous legacy data
+only after stored identity proves the scope and the new key is claimed
+conditionally; never fan out one row or add an unbounded dual-read fallback.
+
+Validate the complete operation-specific candidate through deterministic
+recomputation and exact comparison, including guards, dependent rows, events,
+receipts, and outbox intents. Shared shape checks alone are insufficient.
+Authoritative persisted, replicated, queued, event, snapshot, receipt, and
+response contracts use mandatory fields by default. Sparse inputs and
+migration shapes use separate types.
+
+Authoritative snapshot collections that represent unordered sets use canonical
+storage-key order in both the computed mutation result and durable repository
+assembly. Never depend on arrival, insertion, or database/provider iteration
+order. Preserve equal-revision content checks; ordering drift is a producer
+bug, not eventual consistency. Snapshot liveness is evaluated at one observation time
+against group status and expiry, active membership, and connected unexpired
+sessions. Preserve causal revisions while reporting zero live presence for an
+archived, deleted, or expired group. Group presence mutations use a per-session
+guard; aggregate metadata and roster mutations use the group guard.
+
+## Verification
+
+Tests prove decision and write outcomes independently. Cover apply/written,
+apply/conflict/rebase, permitted no-op, typed rejection, overlapping writers,
+retry exhaustion, idempotency races, stale expiry, equal-revision corruption,
+and deterministic final convergence at the real conditional-write boundary.
+Do not substitute a lock-ordering test for convergence behavior.

@@ -4,6 +4,8 @@ import { describe, expect, it } from 'vitest';
 
 const repoRoot = process.cwd();
 const canonicalStylePath = '.agents/skills/rallar-code-writing/references/repo-code-style.md';
+const canonicalServiceWritingPath =
+  '.agents/skills/rallar-code-writing/references/convergent-service-writing.md';
 
 describe('repo code style authority integrity', () => {
   it('routes every TypeScript change through one repo-wide style authority', () => {
@@ -12,12 +14,14 @@ describe('repo code style authority integrity', () => {
     const humanGuide = readRepo('docs/repo-human-style-guide.md');
     const docsIndex = readRepo('docs/README.md');
     const canonicalStyle = readRepo(canonicalStylePath);
+    const canonicalServiceWriting = readRepo(canonicalServiceWritingPath);
     const packageJson = readJson('package.json') as {
       scripts?: Readonly<Record<string, string>>;
     };
     const primaryCodeGoal = 'Code is written first for human developers.';
 
     expect(existsSync(path.join(repoRoot, canonicalStylePath))).toBe(true);
+    expect(existsSync(path.join(repoRoot, canonicalServiceWritingPath))).toBe(true);
     expect(
       existsSync(
         path.join(repoRoot, '.agents/skills/rallar-code-writing/references/package-code-style.md'),
@@ -34,6 +38,14 @@ describe('repo code style authority integrity', () => {
       primaryCodeGoal,
       'A mechanically compliant change is not acceptable',
       'references/repo-code-style.md',
+      'references/convergent-service-writing.md',
+    ]);
+    expectAll(canonicalServiceWriting, [
+      'functional core',
+      'explicitly owned stateful shell',
+      'one coherent business capability, one explicit owner, and one reason to change',
+      '`apply`, `no-op`, or `reject`',
+      '`written` or `conflict`',
     ]);
     expectAll(humanGuide, [
       primaryCodeGoal,

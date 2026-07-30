@@ -37,11 +37,10 @@ async function main() {
 
   const mergeBase = runGit(['merge-base', baseCommit, targetCommit]).trim();
   const changes = readChanges(mergeBase, targetReference, repoRoot);
-  const targetSources = await collectProductionSources([repoRoot]);
   const governedTargetSources =
     targetReference === worktreeTarget
-      ? targetSources
-      : targetSources.filter((source) => isTrackedAtHead(repoRoot, source.file));
+      ? await collectProductionSources([repoRoot])
+      : readRevisionProductionSources(repoRoot, targetCommit);
   const baseSources = toBaseSources({
     repoRoot,
     mergeBase,
@@ -148,20 +147,29 @@ function toBaseSources(input) {
 }
 
 function subtractExistingFindings(input) {
-  const baseCounts = countByKey(
-    input.baseFindings.map((finding) => findingKey(input.repoRoot, finding, new Map())),
+  const baseMagnitudesByKey = groupFindingMagnitudes(
+    input.repoRoot,
+    input.baseFindings,
+    new Map(),
+  );
+  const targetFindingsByKey = groupFindings(
+    input.repoRoot,
+    input.targetFindings,
+    input.renameByTargetPath,
   );
   const newFindings = [];
-  for (const finding of input.targetFindings) {
-    const renameMap = finding.ruleId.startsWith('layout.')
-      ? new Map()
-      : input.renameByTargetPath;
-    const key = findingKey(input.repoRoot, finding, renameMap);
-    const remaining = baseCounts.get(key) ?? 0;
-    if (remaining > 0) {
-      baseCounts.set(key, remaining - 1);
-    } else {
-      newFindings.push(finding);
+  for (const [key, findings] of targetFindingsByKey) {
+    const baseMagnitudes = baseMagnitudesByKey.get(key) ?? [];
+    for (const finding of findings.toSorted(compareFindingMagnitudeDescending)) {
+      const targetMagnitude = findingMagnitude(finding);
+      const matchIndex = baseMagnitudes.findIndex(
+        (baseMagnitude) => baseMagnitude >= targetMagnitude,
+      );
+      if (matchIndex < 0) {
+        newFindings.push(finding);
+        continue;
+      }
+      baseMagnitudes.splice(matchIndex, 1);
     }
   }
   return newFindings;
@@ -169,24 +177,54 @@ function subtractExistingFindings(input) {
 
 function findingKey(repoRoot, finding, renameByTargetPath) {
   const targetPath = toRelativePath(repoRoot, finding.file);
-  const logicalPath = renameByTargetPath.get(targetPath) ?? targetPath;
-  return [logicalPath, finding.ruleId, normalizeMessage(finding.message)].join('\0');
+  const logicalPath = finding.ruleId.startsWith('layout.')
+    ? targetPath
+    : (renameByTargetPath.get(targetPath) ?? targetPath);
+  return [logicalPath, finding.ruleId, findingVariant(finding.message)].join('\0');
 }
 
-function normalizeMessage(message) {
-  return message
-    .replace(/from line \d+ to \d+/giu, 'from line <n> to <n>')
-    .replace(/starting line \d+/giu, 'starting line <n>')
-    .replace(/at line \d+/giu, 'at line <n>')
-    .replace(/Line \d+ exceeds/gu, 'Line <n> exceeds');
-}
-
-function countByKey(keys) {
-  const counts = new Map();
-  for (const key of keys) {
-    counts.set(key, (counts.get(key) ?? 0) + 1);
+function groupFindingMagnitudes(repoRoot, findings, renameByTargetPath) {
+  const magnitudesByKey = new Map();
+  for (const finding of findings) {
+    const key = findingKey(repoRoot, finding, renameByTargetPath);
+    const magnitudes = magnitudesByKey.get(key) ?? [];
+    magnitudes.push(findingMagnitude(finding));
+    magnitudes.sort((left, right) => right - left);
+    magnitudesByKey.set(key, magnitudes);
   }
-  return counts;
+  return magnitudesByKey;
+}
+
+function groupFindings(repoRoot, findings, renameByTargetPath) {
+  const findingsByKey = new Map();
+  for (const finding of findings) {
+    const key = findingKey(repoRoot, finding, renameByTargetPath);
+    const grouped = findingsByKey.get(key) ?? [];
+    grouped.push(finding);
+    findingsByKey.set(key, grouped);
+  }
+  return findingsByKey;
+}
+
+function findingVariant(message) {
+  return message.startsWith('... and ') ? 'summary' : 'detail';
+}
+
+function findingMagnitude(finding) {
+  const patternsByRule = {
+    'file.length': /File length (\d+)/u,
+    'line.width': /(?:actual |\.\.\. and )(\d+)/u,
+    'route.handler-length': /has (\d+) lines/u,
+    'route.handler-complexity': /complexity (\d+)/u,
+    'factory.spacing': /has a (\d+)-line block/u,
+    'function.input-contract': /has (\d+) parameters/u,
+  };
+  const match = patternsByRule[finding.ruleId]?.exec(finding.message);
+  return match === undefined || match === null ? 0 : Number(match[1]);
+}
+
+function compareFindingMagnitudeDescending(left, right) {
+  return findingMagnitude(right) - findingMagnitude(left);
 }
 
 function toRenameMap(changes) {
@@ -197,9 +235,16 @@ function toRenameMap(changes) {
   );
 }
 
-function isTrackedAtHead(repoRoot, file) {
-  const relativePath = toRelativePath(repoRoot, file);
-  return runGitResult(['cat-file', '-e', `HEAD:${relativePath}`]).status === 0;
+function readRevisionProductionSources(repoRoot, revision) {
+  return runGit(['ls-tree', '-r', '--name-only', revision])
+    .split('\n')
+    .filter(Boolean)
+    .filter((file) => isProductionCodeFile(path.join(repoRoot, file)))
+    .map((file) => ({
+      file: path.join(repoRoot, file),
+      raw: readRevisionFile(revision, file),
+    }))
+    .filter((source) => source.raw !== undefined);
 }
 
 function readRevisionFile(revision, file) {

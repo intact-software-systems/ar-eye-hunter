@@ -34,6 +34,19 @@ describe('changed repository style checker', () => {
     expect(result.stdout).toContain('PASS: no new repository style findings');
   });
 
+  it('passes when an equivalent legacy finding changes descriptive text', () => {
+    const fixture = createGitFixture({
+      'apps/example/legacy-file.ts': 'const previousValue: unknown = true;\n',
+    });
+    commitAll(fixture, 'base');
+    writeFixture(fixture, 'apps/example/legacy-file.ts', 'const renamedValue: unknown = true;\n');
+
+    const result = runChangedChecker(fixture);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('PASS: no new repository style findings');
+  });
+
   it('fails when a changed file introduces a finding', () => {
     const fixture = createGitFixture({
       'apps/example/feature.ts': 'export const value = true;\n',
@@ -119,6 +132,21 @@ describe('changed repository style checker', () => {
     commitAll(fixture, 'base');
     writeFixture(fixture, 'apps/example/feature.ts', overlongSource('head'));
     commitAll(fixture, 'introduce finding');
+
+    const result = executeChecker(fixture, 'HEAD^', 'HEAD');
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain('Line 1 exceeds 100 chars');
+  });
+
+  it('reads explicit HEAD content instead of dirty working-tree content', () => {
+    const fixture = createGitFixture({
+      'apps/example/feature.ts': 'export const value = true;\n',
+    });
+    commitAll(fixture, 'base');
+    writeFixture(fixture, 'apps/example/feature.ts', overlongSource('head'));
+    commitAll(fixture, 'introduce finding');
+    writeFixture(fixture, 'apps/example/feature.ts', 'export const dirtyValue = true;\n');
 
     const result = executeChecker(fixture, 'HEAD^', 'HEAD');
 

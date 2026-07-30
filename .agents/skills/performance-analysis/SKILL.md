@@ -5,6 +5,9 @@ description: Use when reviewing performance, finding bottlenecks, analyzing algo
 
 # Performance Analysis Skill
 
+**REQUIRED SUB-SKILL:** Use `rallar-code-writing` when an analysis changes,
+generates, refactors, or reviews TypeScript.
+
 Use this skill when the user asks for performance analysis, optimization, bottleneck hunting, algorithmic complexity review, CPU or memory profiling, memory leak investigation, allocation reduction, query/API call reduction, or runtime validation.
 
 ## Core rule

@@ -21,6 +21,10 @@ Always read `references/repo-code-style.md` completely before writing,
 refactoring, generating, or reviewing TypeScript. It is the authoritative
 repo-wide coding standard; local guidance may tighten it but may not relax it.
 
+For authoritative database or realtime service mutations, also read
+`references/convergent-service-writing.md` completely. Its repository path is
+`.agents/skills/rallar-code-writing/references/convergent-service-writing.md`.
+
 Inspect nearby code, tests, and relevant `examples/**` before choosing a shape.
 Existing implementation is useful context but is not precedent when it violates
 the standard.
@@ -48,17 +52,14 @@ rg --files apps packages examples scripts
 
 ## Authoritative Database Mutations
 
-- AppInbox is mandatory for incoming database mutations. AppInbox owns the
-  transaction and retry boundary; `compute` and `validate` phases are pure.
-- Keep `read`, `compute`, `validate`, then `write(transaction, computed)`
-  explicit. Computed persistence data is not called a plan. The service write
-  receives the transaction and never opens, commits, replaces, or retries one.
-- Write authoritative state, event, receipt, durable result, and final
-  `APP_OUTBOX`/`WS_OUTBOX` entries through `ResourceInboxRepository` in the same
-  transaction. There is no intermediate mutation outbox.
-- ResourceInbox permits 20 total processing attempts with increasing jittered
-  backoff and a separately rate-limited overdue fairness lane. Queue locks are
-  coordination-only for bounded ResourceInbox claims, never domain authority.
+- Follow the complete doctrine in `references/convergent-service-writing.md`.
+- AppInbox is mandatory for incoming database mutations and owns the transaction
+  and retry boundary.
+- Keep a visible `read`, pure `compute`, pure `validate`, then
+  `write(transaction, computed)` dataflow. The service never owns transaction
+  lifecycle or retries.
+- Prefer a functional core with an explicitly owned stateful shell. Model domain
+  decisions and conditional-write outcomes as separate typed values.
 - Authoritative persisted and shared contracts use mandatory fields by default.
   Sparse input and migration shapes remain separate from complete outputs.
 - A compatibility fallback requires explicit human approval and a documented
@@ -72,7 +73,8 @@ rg --files apps packages examples scripts
   in-memory state exposed through clear `get` and `set` operations.
 - Use a class when the code explicitly owns lifecycle, cache state,
   subscriptions, persistence, connection state, or long-lived coordination.
-- Keep stateful objects narrow and injectable. Do not introduce hidden global
+- Keep a functional core and make every stateful shell narrow, explicitly owned,
+  and injectable. Do not introduce hidden global
   state because nearby legacy code has it.
 
 ## AI-Generated Code Safety Checklist
