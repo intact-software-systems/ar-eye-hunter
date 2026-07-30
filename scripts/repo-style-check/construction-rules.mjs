@@ -330,6 +330,7 @@ function isFunctionLike(node) {
     'ArrowFunctionExpression',
     'ObjectMethod',
     'ClassMethod',
+    'ClassPrivateMethod',
   ].includes(node.type);
 }
 function isDepthCallback(node) {

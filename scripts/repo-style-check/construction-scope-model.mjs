@@ -1,5 +1,10 @@
 export function createConstructionScopeModel(program) {
-  const root = { parent: undefined, bindings: new Map(), functionLike: true };
+  const root = {
+    parent: undefined,
+    bindings: new Map(),
+    functionLike: true,
+    start: program.start,
+  };
   const scopeByNode = new WeakMap([[program, root]]);
   const scopes = [root];
   collectScopeDeclarations(program, root, { scopeByNode, scopes });
@@ -23,9 +28,17 @@ function collectScopeDeclarations(node, scope, model) {
   let current = scope;
   if (isFunctionLike(node)) {
     if (node.type === 'FunctionDeclaration' && node.id !== null) {
-      declarePattern(node.id, scope, { definite: false, initializerStart: node.start });
+      declarePattern(node.id, scope, {
+        definite: false,
+        initializerStart: scope.start,
+      });
     }
-    current = { parent: scope, bindings: new Map(), functionLike: true };
+    current = {
+      parent: scope,
+      bindings: new Map(),
+      functionLike: true,
+      start: node.start,
+    };
     model.scopes.push(current);
     model.scopeByNode.set(node, current);
     for (const parameter of node.params ?? []) {
@@ -37,8 +50,13 @@ function collectScopeDeclarations(node, scope, model) {
     if (node.type === 'FunctionExpression' && node.id !== null) {
       declarePattern(node.id, current, { definite: false, initializerStart: node.start });
     }
-  } else if (isLexicalScope(node)) {
-    current = { parent: scope, bindings: new Map(), functionLike: false };
+  } else if (isLexicalScope(node) || node.type === 'ClassExpression') {
+    current = {
+      parent: scope,
+      bindings: new Map(),
+      functionLike: false,
+      start: node.start,
+    };
     model.scopes.push(current);
     model.scopeByNode.set(node, current);
   } else {
@@ -58,6 +76,10 @@ function collectScopeDeclarations(node, scope, model) {
       initializerStart: node.param.start,
     });
   } else if (node.type === 'ClassDeclaration' && node.id !== null) {
+    declarePattern(node.id, current, { definite: false, initializerStart: node.start });
+  } else if (node.type === 'ClassExpression' && node.id !== null) {
+    declarePattern(node.id, current, { definite: false, initializerStart: node.start });
+  } else if (isRuntimeTypeScriptDeclaration(node)) {
     declarePattern(node.id, current, { definite: false, initializerStart: node.start });
   }
   forEachChild(node, (child) => collectScopeDeclarations(child, current, model));
@@ -123,7 +145,17 @@ function isFunctionLike(node) {
     'ArrowFunctionExpression',
     'ObjectMethod',
     'ClassMethod',
+    'ClassPrivateMethod',
   ].includes(node.type);
+}
+
+function isRuntimeTypeScriptDeclaration(node) {
+  if (node.type === 'TSEnumDeclaration') {
+    return true;
+  }
+  return (
+    node.type === 'TSModuleDeclaration' && node.declare !== true && node.id.type === 'Identifier'
+  );
 }
 
 function isLexicalScope(node) {

@@ -334,6 +334,97 @@ describe('repo style checker', () => {
     expect(findings).toEqual([]);
   });
 
+  it('treats a named class expression identifier as class-local', () => {
+    const findings = scanConstructionRules(
+      {
+        file: 'runtime.ts',
+        raw: [
+          'export function createRuntime() {',
+          '  let service!: Service;',
+          '  const consumer = createConsumer(() => {',
+          '    const LocalService = class service {};',
+          '    return LocalService;',
+          '  });',
+          '  service = createService();',
+          '  return consumer;',
+          '}',
+        ].join('\n'),
+      },
+      { details: false },
+    );
+
+    expect(findings).toEqual([]);
+  });
+
+  it('gives a private class method its own function-like scope', () => {
+    const findings = scanConstructionRules(
+      {
+        file: 'runtime.ts',
+        raw: [
+          'export function createRuntime() {',
+          '  let service!: Service;',
+          '  const consumer = createConsumer(() => {',
+          '    class Consumer {',
+          '      #read(service: Service) {',
+          '        const reader = createReader(() => service);',
+          '        return reader;',
+          '      }',
+          '    }',
+          '    return Consumer;',
+          '  });',
+          '  service = createService();',
+          '  return consumer;',
+          '}',
+        ].join('\n'),
+      },
+      { details: false },
+    );
+
+    expect(findings).toEqual([]);
+  });
+
+  it('treats a later function declaration as initialized with its lexical scope', () => {
+    const findings = scanConstructionRules(
+      {
+        file: 'runtime.ts',
+        raw: [
+          'export function createRuntime() {',
+          '  const consumer = createConsumer(() => service());',
+          '  function service() {',
+          '    return createService();',
+          '  }',
+          '  return consumer;',
+          '}',
+        ].join('\n'),
+      },
+      { details: false },
+    );
+
+    expect(findings).toEqual([]);
+  });
+
+  it('treats a runtime TypeScript enum declaration as a lexical binding', () => {
+    const findings = scanConstructionRules(
+      {
+        file: 'runtime.ts',
+        raw: [
+          'export function createRuntime() {',
+          '  let service!: Service;',
+          '  const consumer = createConsumer(() => {',
+          '    enum service { Ready }',
+          '    return service.Ready;',
+          '  });',
+          '  service = createService();',
+          '  return consumer;',
+          '}',
+        ].join('\n'),
+      },
+      { details: false },
+    );
+
+    expect(findings).toEqual([]);
+  });
+
   it('does not attribute a nested call callback to an outer construction call', () => {
     const findings = scanConstructionRules(
       {
