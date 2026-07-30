@@ -73,31 +73,28 @@ describe('repo style checker', () => {
     ]);
   });
 
-  it(
-    'does not report already-constructed or Promise callback dependencies as forward captures',
-    () => {
-      const findings = scanConstructionRules(
-        {
-          file: 'runtime.ts',
-          raw: [
-            'const service = createService();',
-            'const consumer = createConsumer({ readService: () => service });',
-            '',
-            'const emitter = createEmitter();',
-            'const listener = createListener(() => emitter.emit());',
-            '',
-            'let resolveDone!: () => void;',
-            'const done = new Promise<void>((resolve) => {',
-            '  resolveDone = resolve;',
-            '});',
-          ].join('\n'),
-        },
-        { details: false },
-      );
+  it('does not report already-constructed or Promise callback dependencies as forward captures', () => {
+    const findings = scanConstructionRules(
+      {
+        file: 'runtime.ts',
+        raw: [
+          'const service = createService();',
+          'const consumer = createConsumer({ readService: () => service });',
+          '',
+          'const emitter = createEmitter();',
+          'const listener = createListener(() => emitter.emit());',
+          '',
+          'let resolveDone!: () => void;',
+          'const done = new Promise<void>((resolve) => {',
+          '  resolveDone = resolve;',
+          '});',
+        ].join('\n'),
+      },
+      { details: false },
+    );
 
-      expect(findings).toEqual([]);
-    },
-  );
+    expect(findings).toEqual([]);
+  });
 
   it('parses forward-capture fixtures across supported TypeScript and MJS extensions', () => {
     const sources = [
@@ -175,6 +172,14 @@ describe('repo style checker', () => {
         '  return await target(input);',
         '}',
         '',
+        'const forwardArrow = (input: Input) => target(input);',
+        '',
+        'const adapter = {',
+        '  forwardMethod(input: Input) {',
+        '    return target(input);',
+        '  },',
+        '};',
+        '',
         'function reorder(first: First, second: Second) {',
         '  return target(second, first);',
         '}',
@@ -218,8 +223,10 @@ describe('repo style checker', () => {
       }),
     ]);
     expect(passThroughFindings).toEqual([
-      expect.objectContaining({ message: /forward/ }),
-      expect.objectContaining({ message: /forwardAsync/ }),
+      expect.objectContaining({ message: expect.stringMatching(/forward/) }),
+      expect.objectContaining({ message: expect.stringMatching(/forwardAsync/) }),
+      expect.objectContaining({ message: expect.stringMatching(/forwardArrow/) }),
+      expect.objectContaining({ message: expect.stringMatching(/forwardMethod/) }),
     ]);
   });
 
