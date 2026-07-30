@@ -43,6 +43,10 @@ describe('repo code style authority integrity', () => {
     ]);
     expect(docsIndex).toContain('./repo-human-style-guide.md');
     expect(packageJson.scripts).not.toHaveProperty('check:repo-style:strict');
+    expect(packageJson.scripts).toHaveProperty(
+      'check:repo-style:changed',
+      'node scripts/check-changed-repo-style.mjs',
+    );
     expect(packageJson.scripts).toHaveProperty('check:repo-style:object-interfaces');
     expect(packageJson.scripts).toMatchObject({
       'check:repo-style:layout': 'node scripts/repo-style-check.mjs --layout-only',
@@ -87,6 +91,21 @@ describe('repo code style authority integrity', () => {
       'layout.generic-route-init',
       'layout.unapproved-mod',
     ]);
+  });
+
+  it('runs incremental style enforcement in the feature-branch release gate', () => {
+    const branchReleaseGate = readRepo('.github/workflows/branch-release-gate.yml');
+    const releaseGate = readRepo('.github/workflows/release-gate.yml');
+    const humanGuide = readRepo('docs/repo-human-style-guide.md');
+    const refactoringProgram = readRepo('plans/repo-human-traceability-refactoring-program-plan.md');
+
+    expect(branchReleaseGate).toContain('changed_repo_style_base: origin/main');
+    expect(releaseGate).toContain('changed_repo_style_base:');
+    expect(releaseGate).toContain('fetch-depth: 0');
+    expect(releaseGate).toContain('npm run check:repo-style:changed --');
+    expect(humanGuide).toContain('new or worsened findings');
+    expect(refactoringProgram).toMatch(/new or worsened branch\s+findings are blocking/iu);
+    expect(refactoringProgram).toMatch(/full-repository checker remains warning-only/iu);
   });
 
   it('keeps canonical examples inside the vocabulary they teach', () => {

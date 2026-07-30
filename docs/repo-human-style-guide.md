@@ -267,6 +267,20 @@ than silently turning warnings into a build gate. Adding a strict package
 command or CI gate requires a separate human decision after warning debt and
 false-positive rates are understood.
 
+### Changed-file enforcement
+
+The full-repository scan remains warning-only so legacy debt does not block
+unrelated work. Feature branches run a separate comparison against their merge
+base and fail only for new or worsened findings:
+
+```bash
+npm run check:repo-style:changed -- origin/main
+```
+
+The comparison enables the optional contract and detailed layout checks for
+changed production code. Existing findings may remain unchanged, improve, or
+disappear without blocking the branch.
+
 ## Review outcome
 
 End the review with:

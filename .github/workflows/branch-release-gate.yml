@@ -12,3 +12,5 @@ jobs:
   release-gate:
     name: Release Gate
     uses: ./.github/workflows/release-gate.yml
+    with:
+      changed_repo_style_base: origin/main

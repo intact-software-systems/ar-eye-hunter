@@ -245,11 +245,13 @@ describe('repo style checker', () => {
 
   it('keeps the checker implementation within its own file limits', () => {
     const checkerFiles = [
+      'scripts/check-changed-repo-style.mjs',
       'scripts/repo-style-check.mjs',
       'scripts/repo-style-check/contract-rules.mjs',
       'scripts/repo-style-check/factory-route-rules.mjs',
       'scripts/repo-style-check/function-analysis.mjs',
       'scripts/repo-style-check/layout-rules.mjs',
+      'scripts/repo-style-check/repository-scan.mjs',
       'scripts/repo-style-check/source-text.mjs',
     ];
 

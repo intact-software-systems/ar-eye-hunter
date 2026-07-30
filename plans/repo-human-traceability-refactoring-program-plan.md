@@ -47,8 +47,9 @@ checker, and Git rename detection.
   `validate`, and `write(transaction, computed)` phases.
 - Authoritative persisted, replicated, queued, event, snapshot, receipt,
   result, and response fields remain mandatory by default.
-- Checker additions remain warning-only. This program does not introduce
-  strict mode or a CI-blocking style gate.
+- The full-repository checker remains warning-only. New or worsened branch
+  findings are blocking through a merge-base comparison, without requiring
+  unrelated legacy debt to be repaired.
 - Do not run a repository-wide formatter, filename rewrite, optional-field
   rewrite, `type`-to-`interface` rewrite, or automated semantic codemod.
 - Preserve unrelated working-tree changes and stage only files belonging to the
@@ -762,13 +763,13 @@ RallarAI, Rallar Game, Rallar Match, Rallar Motion, and remaining apps.
 The work is prioritized by active change frequency, navigation pain, file size,
 and boundary risk rather than alphabetically.
 
-### Wave 7: Enforcement decision
+### Wave 7: Broader enforcement decision
 
-Review the final warning inventory, false-positive samples, and remaining
-approved exceptions. The human then decides whether selected mechanical checks
-may become blocking. Semantic checks such as responsibility, purity, meaningful
-absence, and decision depth remain human review concerns even if mechanical
-checks become strict.
+Incremental enforcement now blocks only new or worsened branch findings. Review
+the final warning inventory, false-positive samples, and remaining approved
+exceptions before deciding whether any full-repository mechanical checks may
+also become blocking. Semantic checks such as responsibility, purity,
+meaningful absence, and decision depth remain human review concerns.
 
 ## 11. Child Plan Entry And Exit Contract
 
@@ -977,8 +978,9 @@ contract.
 - Do not treat a 400-line threshold as a command to create pass-through files.
 - Do not require all legacy debt to be fixed before ordinary product work can
   continue.
-- Do not enable strict style enforcement as part of this program without a
-  later explicit human decision.
+- Do not enable global strict style enforcement without a later explicit human
+  decision. The approved merge-base gate remains limited to new or worsened
+  branch findings.
 
 ## 16. Approved Execution Decisions
 
