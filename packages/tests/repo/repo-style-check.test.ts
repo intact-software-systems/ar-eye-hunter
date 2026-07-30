@@ -151,6 +151,274 @@ describe('repo style checker', () => {
     }
   });
 
+  it('preserves runtime references and construction callees inside TypeScript wrappers', () => {
+    const findings = scanConstructionRules(
+      {
+        file: 'runtime.ts',
+        raw: [
+          'export function createRuntime() {',
+          '  let asserted!: Service;',
+          '  let nonNull!: Service;',
+          '  let satisfied!: Service;',
+          '  let calleeWrapped!: Service;',
+          '  const first = createConsumer(() => (asserted as Service).run());',
+          '  const second = createConsumer(() => nonNull!.run());',
+          '  const third = createConsumer(() => (satisfied satisfies Service).run());',
+          '  const fourth = (createConsumer as Factory)(() => calleeWrapped);',
+          '  asserted = createService();',
+          '  nonNull = createService();',
+          '  satisfied = createService();',
+          '  calleeWrapped = createService();',
+          '  return { first, second, third, fourth };',
+          '}',
+        ].join('\n'),
+      },
+      { details: false },
+    );
+
+    expect(findings).toEqual([
+      expect.objectContaining({ message: expect.stringMatching(/asserted/) }),
+      expect.objectContaining({ message: expect.stringMatching(/nonNull/) }),
+      expect.objectContaining({ message: expect.stringMatching(/satisfied/) }),
+      expect.objectContaining({ message: expect.stringMatching(/calleeWrapped/) }),
+    ]);
+  });
+
+  it('recognizes a pass-through call returned through a TypeScript wrapper', () => {
+    const findings = scanConstructionRules(
+      {
+        file: 'adapter.ts',
+        raw: [
+          'function forward(input: Input): Output {',
+          '  return target(input) as Output;',
+          '}',
+        ].join('\n'),
+      },
+      { details: true },
+    );
+
+    expect(findings).toContainEqual(
+      expect.objectContaining({
+        ruleId: constructionRuleIds.passThrough,
+        message: expect.stringMatching(/forward/),
+      }),
+    );
+  });
+
+  it('treats a callback catch parameter as a local shadow', () => {
+    const findings = scanConstructionRules(
+      {
+        file: 'runtime.ts',
+        raw: [
+          'export function createRuntime() {',
+          '  let service!: Service;',
+          '  const consumer = createConsumer(() => {',
+          '    try {',
+          '      return read();',
+          '    } catch (service) {',
+          '      return service;',
+          '    }',
+          '  });',
+          '  service = createService();',
+          '  return consumer;',
+          '}',
+        ].join('\n'),
+      },
+      { details: false },
+    );
+
+    expect(findings).toEqual([]);
+  });
+
+  it('keeps a catch parameter shadow limited to its lexical scope', () => {
+    const findings = scanConstructionRules(
+      {
+        file: 'runtime.ts',
+        raw: [
+          'export function createRuntime() {',
+          '  let service!: Service;',
+          '  const consumer = createConsumer(() => {',
+          '    try {',
+          '      read();',
+          '    } catch (service) {',
+          '      report(service);',
+          '    }',
+          '    return service;',
+          '  });',
+          '  service = createService();',
+          '  return consumer;',
+          '}',
+        ].join('\n'),
+      },
+      { details: false },
+    );
+
+    expect(findings).toEqual([
+      expect.objectContaining({
+        ruleId: constructionRuleIds.forwardCapture,
+        message: expect.stringMatching(/service.*11/),
+      }),
+    ]);
+  });
+
+  it('uses a destructuring assignment as a binding value source', () => {
+    const findings = scanConstructionRules(
+      {
+        file: 'runtime.ts',
+        raw: [
+          'export function createRuntime() {',
+          '  let service!: Service;',
+          '  const consumer = createConsumer(() => service);',
+          '  ({ service } = createServices());',
+          '  return consumer;',
+          '}',
+        ].join('\n'),
+      },
+      { details: false },
+    );
+
+    expect(findings).toEqual([
+      expect.objectContaining({
+        ruleId: constructionRuleIds.forwardCapture,
+        message: expect.stringMatching(/service.*4/),
+      }),
+    ]);
+  });
+
+  it('does not declare an object-pattern property key as a callback binding', () => {
+    const findings = scanConstructionRules(
+      {
+        file: 'runtime.ts',
+        raw: [
+          'export function createRuntime(config: Config) {',
+          '  let service!: Service;',
+          '  const consumer = createConsumer(() => {',
+          '    const { service: alias } = config;',
+          '    return service ?? alias;',
+          '  });',
+          '  service = createService();',
+          '  return consumer;',
+          '}',
+        ].join('\n'),
+      },
+      { details: false },
+    );
+
+    expect(findings).toEqual([
+      expect.objectContaining({
+        ruleId: constructionRuleIds.forwardCapture,
+        message: expect.stringMatching(/service.*7/),
+      }),
+    ]);
+  });
+
+  it('treats a callback-local class declaration as a local shadow', () => {
+    const findings = scanConstructionRules(
+      {
+        file: 'runtime.ts',
+        raw: [
+          'export function createRuntime() {',
+          '  let service!: Service;',
+          '  const consumer = createConsumer(() => {',
+          '    class service {}',
+          '    return service;',
+          '  });',
+          '  service = createService();',
+          '  return consumer;',
+          '}',
+        ].join('\n'),
+      },
+      { details: false },
+    );
+
+    expect(findings).toEqual([]);
+  });
+
+  it('does not attribute a nested call callback to an outer construction call', () => {
+    const findings = scanConstructionRules(
+      {
+        file: 'runtime.ts',
+        raw: [
+          'export function createRuntime(emitter: Emitter) {',
+          '  let service!: Service;',
+          "  const consumer = createConsumer(emitter.on('ready', () => service));",
+          '  service = createService();',
+          '  return consumer;',
+          '}',
+        ].join('\n'),
+      },
+      { details: false },
+    );
+
+    expect(findings).toEqual([]);
+  });
+
+  it('excludes object methods and array-only descendants from callback depth', () => {
+    const findings = scanConstructionRules(
+      {
+        file: 'callbacks.ts',
+        raw: [
+          'createOuter({',
+          '  register() {',
+          '    return createMiddle(() => createInner(() => value));',
+          '  },',
+          '});',
+          'createOuter([() => createMiddle([() => createInner([() => value])])]);',
+        ].join('\n'),
+      },
+      { details: true },
+    );
+
+    expect(findings).not.toContainEqual(
+      expect.objectContaining({ ruleId: constructionRuleIds.nestedCallbackDepth }),
+    );
+  });
+
+  it('recognizes pass-through callables with stable assignment names', () => {
+    const findings = scanConstructionRules(
+      {
+        file: 'adapter.ts',
+        raw: [
+          'let assignedArrow: (input: Input) => Output;',
+          'assignedArrow = (input: Input) => target(input);',
+          'const assignedFunction = function namedForward(input: Input) {',
+          '  return target(input);',
+          '};',
+        ].join('\n'),
+      },
+      { details: true },
+    );
+
+    expect(findings).toEqual([
+      expect.objectContaining({ message: expect.stringMatching(/assignedArrow/) }),
+      expect.objectContaining({ message: expect.stringMatching(/assignedFunction/) }),
+    ]);
+  });
+
+  it('classifies an optional construction call by its terminal callee name', () => {
+    const findings = scanConstructionRules(
+      {
+        file: 'runtime.ts',
+        raw: [
+          'export function createRuntime() {',
+          '  let service!: Service;',
+          '  const consumer = createConsumer?.(() => service);',
+          '  service = createService();',
+          '  return consumer;',
+          '}',
+        ].join('\n'),
+      },
+      { details: false },
+    );
+
+    expect(findings).toEqual([
+      expect.objectContaining({
+        ruleId: constructionRuleIds.forwardCapture,
+        message: expect.stringMatching(/service.*createConsumer/),
+      }),
+    ]);
+  });
+
   it('keeps construction detail findings opt-in and excludes detail-rule near misses', () => {
     const source = {
       file: 'construction-details.ts',
@@ -469,6 +737,8 @@ describe('repo style checker', () => {
       'scripts/check-changed-repo-style.mjs',
       'scripts/repo-style-check.mjs',
       'scripts/repo-style-check/contract-rules.mjs',
+      'scripts/repo-style-check/construction-rules.mjs',
+      'scripts/repo-style-check/construction-scope-model.mjs',
       'scripts/repo-style-check/factory-route-rules.mjs',
       'scripts/repo-style-check/function-analysis.mjs',
       'scripts/repo-style-check/layout-rules.mjs',

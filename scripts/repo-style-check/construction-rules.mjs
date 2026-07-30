@@ -1,5 +1,9 @@
 import { parse } from '@babel/parser';
 
+import {
+  createConstructionScopeModel,
+  resolveConstructionBinding,
+} from './construction-scope-model.mjs';
 import { lineFromOffset, lineOffsets } from './source-text.mjs';
 
 export const constructionRuleIds = Object.freeze({
@@ -8,9 +12,18 @@ export const constructionRuleIds = Object.freeze({
   nestedCallbackDepth: 'control.nested-callback-depth',
   passThrough: 'abstraction.pass-through',
 });
+const transparentExpressionTypes = new Set([
+  'ParenthesizedExpression',
+  'TSAsExpression',
+  'TSInstantiationExpression',
+  'TSNonNullExpression',
+  'TSSatisfiesExpression',
+  'TSTypeAssertion',
+  'TypeCastExpression',
+]);
 export function scanConstructionRules(source, options) {
   const program = parseProgram(source);
-  const model = createScopeModel(program);
+  const model = createConstructionScopeModel(program);
   const findings = scanForwardCaptures(program, model, lineOffsets(source.raw));
   if (options.details) {
     findings.push(...scanDefiniteAssignments(model));
@@ -34,93 +47,10 @@ function parseProgram(source) {
     plugins,
   }).program;
 }
-function createScopeModel(program) {
-  const root = { parent: undefined, bindings: new Map() };
-  const scopeByNode = new WeakMap([[program, root]]);
-  const scopes = [root];
-  function declare(input) {
-    if (!isNode(input.pattern)) {
-      return;
-    }
-    if (input.pattern.type === 'Identifier') {
-      if (!input.scope.bindings.has(input.pattern.name)) {
-        input.scope.bindings.set(input.pattern.name, {
-          name: input.pattern.name,
-          declarationStart: input.pattern.start,
-          definite: input.definite,
-          initializerStart: input.initializerStart,
-          assignmentStarts: [],
-        });
-      }
-      return;
-    }
-    if (input.pattern.type === 'AssignmentPattern') {
-      declare({
-        ...input,
-        pattern: input.pattern.left,
-        initializerStart: input.pattern.right.start,
-      });
-      return;
-    }
-    if (input.pattern.type === 'RestElement') {
-      declare({ ...input, pattern: input.pattern.argument });
-      return;
-    }
-    forEachChild(input.pattern, (child) => declare({ ...input, pattern: child }));
-  }
-  function collect(node, scope) {
-    let current = scope;
-    if (isFunctionLike(node)) {
-      if (node.type === 'FunctionDeclaration' && node.id !== null) {
-        declare({ pattern: node.id, scope, definite: false, initializerStart: node.start });
-      }
-      current = { parent: scope, bindings: new Map() };
-      scopes.push(current);
-      scopeByNode.set(node, current);
-      for (const parameter of node.params ?? []) {
-        declare({
-          pattern: parameter,
-          scope: current,
-          definite: false,
-          initializerStart: parameter.start,
-        });
-      }
-      if (node.type === 'FunctionExpression' && node.id !== null) {
-        declare({
-          pattern: node.id,
-          scope: current,
-          definite: false,
-          initializerStart: node.start,
-        });
-      }
-    } else {
-      scopeByNode.set(node, current);
-    }
-    if (node.type === 'VariableDeclarator') {
-      declare({
-        pattern: node.id,
-        scope: current,
-        definite: node.definite === true,
-        initializerStart: node.init?.start,
-      });
-    }
-    forEachChild(node, (child) => collect(child, current));
-  }
-  function collectAssignments(node, scope) {
-    const current = scopeByNode.get(node) ?? scope;
-    if (node.type === 'AssignmentExpression' && node.left.type === 'Identifier') {
-      resolveBinding(current, node.left.name)?.assignmentStarts.push(node.start);
-    }
-    forEachChild(node, (child) => collectAssignments(child, current));
-  }
-  collect(program, root);
-  collectAssignments(program, root);
-  return { scopeByNode, scopes };
-}
 function scanForwardCaptures(program, model, offsets) {
   const findings = [];
   walk(program, (node) => {
-    if (node.type !== 'CallExpression') {
+    if (!isCallExpression(node)) {
       return;
     }
     const constructionName = terminalCalleeName(node.callee);
@@ -130,7 +60,10 @@ function scanForwardCaptures(program, model, offsets) {
     const reported = new Set();
     for (const callback of node.arguments.flatMap(findCallbacks)) {
       for (const reference of collectCallbackReferences(callback)) {
-        const binding = resolveBinding(model.scopeByNode.get(callback), reference.name);
+        const binding = resolveConstructionBinding(
+          model.scopeByNode.get(reference),
+          reference.name,
+        );
         if (binding === undefined || reported.has(binding)) {
           continue;
         }
@@ -155,15 +88,24 @@ function scanForwardCaptures(program, model, offsets) {
   return findings;
 }
 function findCallbacks(argument) {
-  const callbacks = [];
-  walk(argument, (node) => {
-    if (isFunctionLike(node)) {
-      callbacks.push(node);
-      return false;
-    }
-    return true;
-  });
-  return callbacks;
+  const node = unwrapExpression(argument);
+  if (!isNode(node)) {
+    return [];
+  }
+  if (isFunctionLike(node)) {
+    return [node];
+  }
+  if (node.type === 'ObjectExpression') {
+    return node.properties.flatMap(findCallbacks);
+  }
+  if (node.type === 'ObjectProperty') {
+    const keyCallbacks = node.computed ? findCallbacks(node.key) : [];
+    return [...keyCallbacks, ...findCallbacks(node.value)];
+  }
+  if (node.type === 'SpreadElement') {
+    return findCallbacks(node.argument);
+  }
+  return [];
 }
 function collectCallbackReferences(callback) {
   const references = [];
@@ -178,8 +120,14 @@ function collectCallbackReferences(callback) {
   return references;
 }
 function collectReferences(input) {
-  const isType = input.node?.type?.startsWith('TS') || input.node?.type === 'TypeAnnotation';
-  if (!isNode(input.node) || isType || isFunctionLike(input.node)) {
+  if (!isNode(input.node) || isFunctionLike(input.node)) {
+    return;
+  }
+  if (transparentExpressionTypes.has(input.node.type)) {
+    collectReferences({ ...input, node: input.node.expression });
+    return;
+  }
+  if (input.node.type.startsWith('TS') || input.node.type === 'TypeAnnotation') {
     return;
   }
   if (input.node.type === 'Identifier' && isReferenceIdentifier(input.parent, input.key)) {
@@ -227,7 +175,7 @@ function collectCallArgumentCallbacks(program) {
     if (parent !== undefined) {
       parents.set(node, parent);
     }
-    if (node.type === 'CallExpression' || node.type === 'NewExpression') {
+    if (isCallExpression(node) || node.type === 'NewExpression') {
       node.arguments.forEach((argument) => collectArgumentCallbacks(argument, callbackSet));
     }
   });
@@ -235,16 +183,20 @@ function collectCallArgumentCallbacks(program) {
   return { callbacks, parents };
 }
 function collectArgumentCallbacks(node, callbacks) {
-  if (!isNode(node)) {
+  const expression = unwrapExpression(node);
+  if (!isNode(expression)) {
     return;
   }
-  if (isFunctionLike(node)) {
-    callbacks.add(node);
+  if (isDepthCallback(expression)) {
+    callbacks.add(expression);
     return;
   }
-  const containers = ['ObjectExpression', 'ObjectProperty', 'ArrayExpression', 'SpreadElement'];
-  if (containers.includes(node.type)) {
-    forEachChild(node, (child) => collectArgumentCallbacks(child, callbacks));
+  if (expression.type === 'ObjectExpression') {
+    expression.properties.forEach((property) => collectArgumentCallbacks(property, callbacks));
+  } else if (expression.type === 'ObjectProperty') {
+    collectArgumentCallbacks(expression.value, callbacks);
+  } else if (expression.type === 'SpreadElement') {
+    collectArgumentCallbacks(expression.argument, callbacks);
   }
 }
 function callbackDepth(callback, callbackSet) {
@@ -295,8 +247,14 @@ function callableName(node, parent) {
   if (node.type === 'FunctionDeclaration' && node.id !== null) {
     return node.id.name;
   }
-  if (node.type === 'ArrowFunctionExpression' && parent?.type === 'VariableDeclarator') {
-    return parent.id.type === 'Identifier' ? parent.id.name : undefined;
+  if (node.type === 'FunctionExpression' || node.type === 'ArrowFunctionExpression') {
+    if (parent?.type === 'VariableDeclarator' && parent.id.type === 'Identifier') {
+      return parent.id.name;
+    }
+    if (parent?.type === 'AssignmentExpression' && parent.left.type === 'Identifier') {
+      return parent.left.name;
+    }
+    return node.type === 'FunctionExpression' ? node.id?.name : undefined;
   }
   if (node.type === 'ObjectMethod') {
     return propertyName(node.key, node.computed);
@@ -318,7 +276,10 @@ function isPassThroughCallable(node) {
     : statement?.type === 'ReturnStatement'
       ? statement.argument
       : undefined;
-  const call = returned?.type === 'AwaitExpression' ? returned.argument : returned;
+  const expression = unwrapExpression(returned);
+  const call = unwrapExpression(
+    expression?.type === 'AwaitExpression' ? expression.argument : expression,
+  );
   return (
     call?.type === 'CallExpression' &&
     call.arguments.length === node.params.length &&
@@ -328,25 +289,22 @@ function isPassThroughCallable(node) {
     )
   );
 }
-function resolveBinding(scope, name) {
-  let current = scope;
-  while (current !== undefined) {
-    const binding = current.bindings.get(name);
-    if (binding !== undefined) {
-      return binding;
-    }
-    current = current.parent;
+function terminalCalleeName(callee) {
+  const expression = unwrapExpression(callee);
+  if (expression.type === 'Identifier') {
+    return expression.name;
+  }
+  if (expression.type === 'MemberExpression' || expression.type === 'OptionalMemberExpression') {
+    return propertyName(expression.property, expression.computed);
   }
   return undefined;
 }
-function terminalCalleeName(callee) {
-  if (callee.type === 'Identifier') {
-    return callee.name;
+function unwrapExpression(node) {
+  let current = node;
+  while (isNode(current) && transparentExpressionTypes.has(current.type)) {
+    current = current.expression;
   }
-  if (callee.type === 'MemberExpression' || callee.type === 'OptionalMemberExpression') {
-    return propertyName(callee.property, callee.computed);
-  }
-  return undefined;
+  return current;
 }
 function propertyName(property, computed) {
   if (!computed && property.type === 'Identifier') {
@@ -373,6 +331,12 @@ function isFunctionLike(node) {
     'ObjectMethod',
     'ClassMethod',
   ].includes(node.type);
+}
+function isDepthCallback(node) {
+  return node.type === 'FunctionExpression' || node.type === 'ArrowFunctionExpression';
+}
+function isCallExpression(node) {
+  return node.type === 'CallExpression' || node.type === 'OptionalCallExpression';
 }
 function walk(node, visit, parent = undefined) {
   if (!isNode(node) || visit(node, parent) === false) {
