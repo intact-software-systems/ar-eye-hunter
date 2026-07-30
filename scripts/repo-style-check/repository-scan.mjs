@@ -67,8 +67,21 @@ const generatedPathPartPattern = new RegExp(
     '^codegen$|^\\.codegen$|^generated-code$',
   'u',
 );
-const testRunnerConfigPattern =
-  /^(?:playwright|vitest|jest|cypress)(?:[.-][a-z0-9_-]+)*\.config\.[cm]?[jt]sx?$/u;
+const testRunnerNames = ['playwright', 'vitest', 'jest', 'cypress'];
+const testRunnerConfigExtensions = new Set([
+  'ts',
+  'tsx',
+  'js',
+  'jsx',
+  'mts',
+  'mtsx',
+  'cts',
+  'ctsx',
+  'mjs',
+  'mjsx',
+  'cjs',
+  'cjsx',
+]);
 const limits = {
   fileLineCount: 400,
   lineWidth: 100,
@@ -120,6 +133,22 @@ export async function collectProductionSources(scanRoots) {
   return Promise.all(
     productionFiles.map(async (file) => ({ file, raw: await fs.readFile(file, 'utf8') })),
   );
+}
+
+export function isTestRunnerConfigFile(base) {
+  const configMarker = '.config.';
+  const configMarkerIndex = base.lastIndexOf(configMarker);
+  if (configMarkerIndex <= 0) {
+    return false;
+  }
+
+  const extension = base.slice(configMarkerIndex + configMarker.length);
+  if (!testRunnerConfigExtensions.has(extension)) {
+    return false;
+  }
+
+  const stem = base.slice(0, configMarkerIndex);
+  return testRunnerNames.some((runnerName) => isTestRunnerConfigStem(stem, runnerName));
 }
 
 export function scanProductionSources(input) {
@@ -304,7 +333,7 @@ export function isProductionCodeFile(file) {
     return false;
   }
   const base = parts[parts.length - 1];
-  if (testRunnerConfigPattern.test(base)) {
+  if (isTestRunnerConfigFile(base)) {
     return false;
   }
   if (
@@ -316,6 +345,34 @@ export function isProductionCodeFile(file) {
   }
   return !/[\w-]+\.(?:test|spec|mock|fixture|stories)\.(?:d\.[cm]?ts|[cm]ts|tsx|jsx|js)$/u.test(
     base,
+  );
+}
+
+function isTestRunnerConfigStem(stem, runnerName) {
+  if (stem === runnerName) {
+    return true;
+  }
+  if (!stem.startsWith(runnerName)) {
+    return false;
+  }
+
+  const qualifier = stem.slice(runnerName.length);
+  if (qualifier[0] !== '.' && qualifier[0] !== '-') {
+    return false;
+  }
+  return qualifier.slice(1).split('.').every(isTestRunnerQualifierSegment);
+}
+
+function isTestRunnerQualifierSegment(segment) {
+  return segment.length > 0 && [...segment].every(isTestRunnerQualifierCharacter);
+}
+
+function isTestRunnerQualifierCharacter(character) {
+  return (
+    (character >= 'a' && character <= 'z') ||
+    (character >= '0' && character <= '9') ||
+    character === '_' ||
+    character === '-'
   );
 }
 

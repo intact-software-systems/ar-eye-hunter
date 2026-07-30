@@ -7,6 +7,7 @@ import {
   estimateCyclomaticComplexity,
   extractRouteHandlerRanges,
 } from '../../../scripts/repo-style-check/factory-route-rules.mjs';
+import { isTestRunnerConfigFile } from '../../../scripts/repo-style-check/repository-scan.mjs';
 
 const repoRoot = process.cwd();
 const checkerPath = path.join(repoRoot, 'scripts/repo-style-check.mjs');
@@ -197,6 +198,16 @@ describe('repo style checker', () => {
     expect(readFileSync(path.join(repoRoot, 'docs/repo-human-style-guide.md'), 'utf8')).toMatch(
       /test-runner\s+configuration files/,
     );
+  });
+
+  it('classifies test-runner configuration filenames without regex backtracking', () => {
+    expect(isTestRunnerConfigFile('playwright.full-stack.config.ts')).toBe(true);
+    expect(isTestRunnerConfigFile('vitest.config.mts')).toBe(true);
+    expect(isTestRunnerConfigFile('jest-unit.config.cts')).toBe(true);
+    expect(isTestRunnerConfigFile('cypress.config.js')).toBe(true);
+    expect(isTestRunnerConfigFile(`jest-${'--'.repeat(32)}!.config.ts`)).toBe(false);
+    expect(isTestRunnerConfigFile('jest-.unit.config.ts')).toBe(false);
+    expect(isTestRunnerConfigFile('not-jest.config.ts')).toBe(false);
   });
 
   it('warns when an optional factory hides several defaults', () => {
