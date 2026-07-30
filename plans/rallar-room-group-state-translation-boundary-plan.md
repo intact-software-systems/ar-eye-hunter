@@ -41,9 +41,10 @@ Git rename detection, and GitHub Actions publication gates.
 - Wave 0 governance/checker is `ledger-published`. Its frozen implementation
   evidence, TypeScript `7.0.2`, warning-only behavior, and strict-mode rejection
   remain unchanged.
-- This document is a draft in `human-review`. Creating, committing, or
-  publishing it does not approve production work. Only explicit human approval
-  of its exact Git blob permits execution.
+- Human approval binds execution to exact plan blob
+  `37861202ce25c3cd5832663a5a3f6d7e2e4a0e4e` plus only the explicitly recorded
+  amendments in this document. That approval does not extend to the alignment,
+  shared-server, API-v1, or later ledger work before their stated gates.
 - Do not start the authoritative shared-server or API-v1 child. Their files are
   inspected here only to prove the top-to-bottom call trace and browser
   compatibility boundary.
@@ -81,7 +82,8 @@ Git rename detection, and GitHub Actions publication gates.
 
 Date: 2026-07-29
 
-Status: drafted for human review; unapproved; implementation not started
+Status: approved; structure/boundary Tasks 0 through 5 implemented; Task 6
+review, verification, and publication pending
 
 **2026-07-30 pre-Task 6 internal-contract reconciliation:** Human review
 authorized this plan-only correction after a fresh whole-structure review found
@@ -95,6 +97,25 @@ budget, or Task 7 alignment work.
 
 Planning base and prerequisite evidence:
 
+- The human approved exact child-plan blob
+  `37861202ce25c3cd5832663a5a3f6d7e2e4a0e4e` for the two locked implementation
+  pull requests. During structure execution, the human authorized only the
+  request-object compatibility, fixed `<192 KiB` headless budget, scoped review
+  fixes, test-layout split, and fifteen-method internal state-store contract
+  amendments recorded in this document.
+- Structure branch `codex/rallar-room-group-state-boundary-structure` and draft
+  PR #53 contain the implemented Tasks 0 through 5 milestones. All previously
+  reported Critical and Important structure findings were resolved and
+  independently accepted before this pre-freeze progress reconciliation.
+- The pre-Task 6 structure evidence records TypeScript `7.0.2`,
+  `layout.browser-room-boundary=0`, the exact four-way test split at
+  `164/394/244/313` physical lines with 16 named cases and 65 `expect(...)`
+  sites, and a latest accepted headless measurement of `191.541016 KiB`,
+  strictly below the fixed `<192 KiB` child budget.
+- Task 6 final review, local completion gates, immutable replacement tree,
+  final feature SHA, Branch Release Gate, merge, resulting default SHA, and
+  default workflow are not recorded here before they exist. Alignment and the
+  later evidence ledger remain unstarted.
 - The planning branch starts from freshly fetched `origin/main` exact SHA
   `7a6c8e0c2cfb3413b4c0fbaaf0af31af2571c015`, tree
   `94270ad17f7f68eaa9b95529764c23a844514ae9`.
@@ -1145,20 +1166,20 @@ contains no approved production behavior change.
 
 **Files:** No content changes before approval reconstruction.
 
-- [ ] **Step 1: Verify exact approval and repository state**
+- [x] **Step 1: Verify exact approval and repository state**
 
   Read `AGENTS.md`, all three linked program plans, this child plan, the current
   PR/handoff evidence, and Git status. Verify that the human approved the exact
   child-plan Git blob recorded in the approval prompt. Do not infer approval
   from this draft or from the master program.
 
-- [ ] **Step 2: Create one child-specific goal**
+- [x] **Step 2: Create one child-specific goal**
 
   Create a goal for this browser child only. The goal covers both approved
   implementation PRs and the later completion handoff, not the server/API
   children.
 
-- [ ] **Step 3: Create and publish the structure branch**
+- [x] **Step 3: Create and publish the structure branch**
 
   Start from then-current successful `origin/main`, not from this planning
   branch. Use exact branch
@@ -1191,14 +1212,14 @@ contains no approved production behavior change.
 - Modify this plan and the two program progress ledgers only with evidence
   already known before the structure-tree freeze.
 
-- [ ] **Step 1: Record current layout and size evidence**
+- [x] **Step 1: Record current layout and size evidence**
 
   Run the detailed browser layout command from Section 2.4, `wc -l` on every
   current source/test file in Sections 2.1-2.2, and a 40/50/60 manual review of
   changed functions. Store the exact baseline in the draft PR and plan task
   evidence.
 
-- [ ] **Step 2: Add missing characterization assertions**
+- [x] **Step 2: Add missing characterization assertions**
 
   Add assertions for the exact facade return types, create/join/leave order,
   create-and-switch partial failure, state ordering/current selection, event
@@ -1210,7 +1231,7 @@ contains no approved production behavior change.
   snapshot tests remain byte-for-byte unchanged; only the mixed event suite is
   later replaced by the exact bounded target files.
 
-- [ ] **Step 3: Run the focused baseline**
+- [x] **Step 3: Run the focused baseline**
 
   ```bash
   npx vitest run packages/tests/shared-web/rooms
@@ -1228,7 +1249,7 @@ contains no approved production behavior change.
   Expected: all current behavior is green. A failing current-behavior assertion
   is a blocker, not a baseline to carry forward.
 
-- [ ] **Step 4: Commit the characterization milestone**
+- [x] **Step 4: Commit the characterization milestone**
 
   Suggested commit:
 
@@ -1245,27 +1266,27 @@ contains no approved production behavior change.
 - Modify into shim: `packages/shared-web/browser/rallar-rooms-facade.ts`
 - Modify owning imports and public boundary tests named in Sections 2.1-2.3.
 
-- [ ] **Step 1: Prove both paths before moving**
+- [x] **Step 1: Prove both paths before moving**
 
   Add a failing test that requires the new owning path to expose the same
   runtime factory and type surface while the old path remains callable. Put
   the assertion in the bounded facade/entrypoint tests; do not edit the
   780-line public snapshot.
 
-- [ ] **Step 2: Move without changing the public contract**
+- [x] **Step 2: Move without changing the public contract**
 
   Preserve every method, parameter, overload, default, and return type. Split
   contracts only to keep each file cohesive and at most 400 lines. Replace the
   old file with the exact one-hop compatibility re-export approved in Section
   7.2.
 
-- [ ] **Step 3: Update internal consumers to the owning path**
+- [x] **Step 3: Update internal consumers to the owning path**
 
   Repository-owned production imports use `rooms/rallar-rooms-facade.ts` or
   `rooms/rallar-room-contracts.ts`. Only compatibility tests deliberately
   import the old path.
 
-- [ ] **Step 4: Run facade and public-surface tests**
+- [x] **Step 4: Run facade and public-surface tests**
 
   ```bash
   npx vitest run \
@@ -1286,7 +1307,7 @@ boundary tests plus test runtime from Section 5.2; narrow `api-workflows.ts`.
 Do not move the room controller, state store, or event implementation in this
 task.
 
-- [ ] **Step 1: Characterize every moved workflow export first**
+- [x] **Step 1: Characterize every moved workflow export first**
 
   Create `room-workflow-test-runtime.ts` for deterministic API/command setup;
   create the three production-mirrored workflow tests and the bounded
@@ -1302,7 +1323,7 @@ task.
   compatibility suites exactly as recorded there; it is required only because
   the internal imports now resolve through approved owners.
 
-- [ ] **Step 2: Add the boundary fixtures red**
+- [x] **Step 2: Add the boundary fixtures red**
 
   Create
   `packages/tests/shared-web/rooms/room-group-state-request-translation.test.ts`
@@ -1312,7 +1333,7 @@ task.
   boundary/workflow modules; do not alter an expected literal to match new
   code.
 
-- [ ] **Step 3: Move shared support and workflow bodies without a cycle**
+- [x] **Step 3: Move shared support and workflow bodies without a cycle**
 
   Move the four shared private functions to `state-workflow-support.ts` exactly
   as mapped in Section 5.3. Move only the room-consumed public workflow bodies
@@ -1320,7 +1341,7 @@ task.
   positional signature as a one-hop `api-workflows.ts` re-export; retained and
   moved workflows import support directly, never through `api-workflows.ts`.
 
-- [ ] **Step 4: Make the named boundary the only request-construction owner**
+- [x] **Step 4: Make the named boundary the only request-construction owner**
 
   Implement the exact operation-specific functions in Section 6. Generate
   UUIDs and request IDs at the same workflow point and pass the captured values
@@ -1331,7 +1352,7 @@ task.
   I/O, command orchestration, retries, cache mutation, or listener state into
   the boundary.
 
-- [ ] **Step 5: Prove compatibility and the intermediate ratchet**
+- [x] **Step 5: Prove compatibility and the intermediate ratchet**
 
   ```bash
   npx vitest run \
@@ -1361,14 +1382,14 @@ Section 5.1; remove `rallar-runtime/rooms.ts`; update composition, contracts,
 and the exact operation tests in Section 5.2. Do not split the mixed state or
 event implementations in this task.
 
-- [ ] **Step 1: Mirror operation tests before moving bodies**
+- [x] **Step 1: Mirror operation tests before moving bodies**
 
   Move each existing facade/controller behavior case to its exact operation
   test path, preserving its literal expectations and assertion sites. Add red
   owning-path tests for `createBrowserRallarRooms` and each operation primary
   symbol; prove the red results are missing-module/name failures only.
 
-- [ ] **Step 2: Move one operation responsibility per target file**
+- [x] **Step 2: Move one operation responsibility per target file**
 
   Move the current create/switch, join/enter, leave, membership, session,
   target, presence, and update/lifecycle/metadata bodies to the exact files in
@@ -1376,7 +1397,7 @@ event implementations in this task.
   objects, current-room mutation, snapshot acceptance, and partial-failure
   behavior. Room operations call the room-owned workflows from Task 3.
 
-- [ ] **Step 3: Replace the controller forwarding chain**
+- [x] **Step 3: Replace the controller forwarding chain**
 
   `createBrowserRallarRooms` becomes the obvious feature entry and returns the
   same `CreateRallarRoomsFacadeOptions`. It assembles the same operation object
@@ -1384,7 +1405,7 @@ event implementations in this task.
   `createRallarRoomsFacade` remains the public package-boundary wrapper.
   Composition order and every injected dependency remain unchanged.
 
-- [ ] **Step 4: Prove operation behavior and the final boundary count**
+- [x] **Step 4: Prove operation behavior and the final boundary count**
 
   ```bash
   npx vitest run packages/tests/shared-web/rooms
@@ -1400,7 +1421,7 @@ event implementations in this task.
   Expected: behavior is unchanged; warning-only checker exit is `0`;
   `layout.browser-room-boundary=0`; no unexplained detailed count increases.
 
-- [ ] **Step 5: Inspect rename and scope evidence**
+- [x] **Step 5: Inspect rename and scope evidence**
 
   ```bash
   git diff --find-renames --summary
@@ -1465,7 +1486,7 @@ barrel, generic dependency bag, hidden default, runtime cycle, duplicated
 state, callback, or lifecycle and does not change any injected object,
 late-bound callback point, construction order, or lifecycle position.
 
-- [ ] **Step 1: Preserve every mixed-suite assertion**
+- [x] **Step 1: Preserve every mixed-suite assertion**
 
   Inventory test names and assertion counts before splitting. After the split,
   prove that each old room and people behavior case has one corresponding new
@@ -1475,7 +1496,7 @@ late-bound callback point, construction order, or lifecycle position.
   implementation. People compatibility cases remain green during that red
   step.
 
-- [ ] **Step 2: Extract room state ownership**
+- [x] **Step 2: Extract room state ownership**
 
   Move active-group filtering, room summaries, current-room resolution,
   membership projection, room listeners, and room lookup behavior as one
@@ -1495,13 +1516,13 @@ late-bound callback point, construction order, or lifecycle position.
   cache-emission consumers. This is ownership relocation, not a new behavior or
   public capability.
 
-- [ ] **Step 3: Extract room event ownership**
+- [x] **Step 3: Extract room event ownership**
 
   Move room list/page/replay/subscription matching and group-event dedupe as one
   responsibility. Preserve the existing single WS inbox registration lifecycle,
   subscription order, dedupe limit, replay page limits, and people behavior.
 
-- [ ] **Step 4: Run the split focused suites**
+- [x] **Step 4: Run the split focused suites**
 
   ```bash
   npx vitest run \
@@ -1514,7 +1535,7 @@ late-bound callback point, construction order, or lifecycle position.
     packages/tests/shared-web/people/people-events-compat.test.ts
   ```
 
-- [ ] **Step 5: Record and enforce the fixed Task 5 headless bundle budget**
+- [x] **Step 5: Record and enforce the fixed Task 5 headless bundle budget**
 
   The exact Task 5 base rebuild measured `190.406250 KiB`; the initial Task 5
   implementation measured `191.036133 KiB`; and the retained behavior-neutral
@@ -1807,29 +1828,29 @@ required to predict its own future SHA, merge, or workflow.
 
 ## 13. Acceptance Checklist
 
-- [ ] The exact target room and mirrored test trees exist with no empty stubs.
-- [ ] `browser-rallar-rooms.ts` is the obvious browser room entry.
-- [ ] Every new/moved primary symbol matches its descriptive filename or the
+- [x] The exact target room and mirrored test trees exist with no empty stubs.
+- [x] `browser-rallar-rooms.ts` is the obvious browser room entry.
+- [x] Every new/moved primary symbol matches its descriptive filename or the
       file clearly owns a cohesive multi-export capability.
-- [ ] The one translation boundary is exact and at most 400 lines.
-- [ ] Browser room modules have zero direct authoritative imports outside the
+- [x] The one translation boundary is exact and at most 400 lines.
+- [x] Browser room modules have zero direct authoritative imports outside the
       named boundary, except established `GroupRef`/`roomRef` identities.
-- [ ] Every current facade method and public export remains present.
-- [ ] `RallarRoomsFacade` returns and properties retain exact current
+- [x] Every current facade method and public export remains present.
+- [x] `RallarRoomsFacade` returns and properties retain exact current
       authoritative type compatibility.
-- [ ] Both approved one-hop compatibility structures are tested and no third
+- [x] Both approved one-hop compatibility structures are tested and no third
       shim exists.
-- [ ] Internal consumers use owning paths; apps/examples require no source edit.
-- [ ] Current API methods, URLs, requests, IDs, ordering, and server continuation
+- [x] Internal consumers use owning paths; apps/examples require no source edit.
+- [x] Current API methods, URLs, requests, IDs, ordering, and server continuation
       remain unchanged.
-- [ ] Room state ordering/current/member behavior remains unchanged.
-- [ ] The exact fifteen-method internal `RallarRoomStateStorePort` remains one
+- [x] Room state ordering/current/member behavior remains unchanged.
+- [x] The exact fifteen-method internal `RallarRoomStateStorePort` remains one
       cohesive non-public room-state owner and contains no unrelated dependency
       or behavior.
-- [ ] Room event list/replay/subscription/dedupe behavior remains unchanged.
-- [ ] Presence and create/join/leave partial-failure behavior remains unchanged.
-- [ ] Every existing mixed-suite room and people case/assertion remains covered.
-- [ ] New/moved source and test files are at most 400 lines; changed functions
+- [x] Room event list/replay/subscription/dedupe behavior remains unchanged.
+- [x] Presence and create/join/leave partial-failure behavior remains unchanged.
+- [x] Every existing mixed-suite room and people case/assertion remains covered.
+- [x] New/moved source and test files are at most 400 lines; changed functions
       pass 40/50/60 review; no hard-tier exception is introduced.
 - [ ] Focused, type, app, repository, branch, merge, and default-workflow gates
       are recorded for each exact implementation tree.
@@ -1860,10 +1881,10 @@ material plan revision and new explicit human approval.
 | ------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Governance/checker prerequisite | `ledger-published`    | Implementation PR #47 and later ledger PR #51 evidence in the planning status above; exact ledger default workflow `30407710853` passed for `7a6c8e0c2cfb3413b4c0fbaaf0af31af2571c015`. |
 | Browser child inventory         | complete for drafting | Current source/tests/exports/consumers/examples/API calls and representative create-to-AppInbox trace recorded in Sections 2-4.                                                         |
-| Browser child plan              | `human-review`        | This complete draft; exact Git blob belongs in the planning PR/handoff and human prompt.                                                                                                |
-| Internal state-store contract   | reconciliation review | Human-authorized plan-only correction records the exact fifteen-method predecessor-preserving owner; fresh scoped review and publication are required before Task 6 resumes.            |
-| Human approval                  | pending               | No production work is approved by this draft.                                                                                                                                           |
-| Structure/boundary PR           | `needed`              | Starts only after exact plan approval.                                                                                                                                                  |
+| Browser child plan              | `approved`            | Human approval binds exact plan blob `37861202ce25c3cd5832663a5a3f6d7e2e4a0e4e` plus only the explicitly recorded amendments.                                                           |
+| Internal state-store contract   | reconciled            | The exact fifteen-method predecessor-preserving owner is recorded and its plan-only review found Critical 0 and Important 0.                                                            |
+| Human approval                  | complete              | Approval covers the two locked implementation PRs and the explicitly recorded narrow amendments; it does not approve later child plans.                                                 |
+| Structure/boundary PR           | implemented           | Draft PR #53 contains Tasks 0 through 5; Task 6 final review, immutable-tree verification, publication gate, and human merge decision remain pending.                                   |
 | Alignment implementation PR     | `needed`              | Starts only after structure/boundary merge and exact successful default workflow.                                                                                                       |
 | Later evidence ledger           | `needed`              | Separately authorized only after both implementation envelopes are green.                                                                                                               |
 | Server/API-v1 children          | blocked by sequence   | Must not begin under this plan.                                                                                                                                                         |

@@ -65,9 +65,12 @@ Status: Reviewed and approved for child-plan drafting. The program documents are
 published on `main`. The governance and checker child was approved at blob
 `8ee56ac27189f9bed751fb6a95992830bda6be60` and is `ledger-published`. The
 [browser room/group-state translation-boundary child](rallar-room-group-state-translation-boundary-plan.md)
-is drafted for human review at Git blob
-`37861202ce25c3cd5832663a5a3f6d7e2e4a0e4e` and remains unapproved; browser
-production implementation has not started.
+was approved at Git blob
+`37861202ce25c3cd5832663a5a3f6d7e2e4a0e4e` subject only to its explicitly
+recorded narrow amendments. Structure/boundary Tasks 0 through 5 are
+implemented in draft PR #53; Task 6 final review, immutable-tree verification,
+publication gate, and human merge decision remain pending. The alignment pass
+has not started.
 
 Program drafting, approval, execution, publication, and human handoffs follow
 the [Repository Human Traceability Program Execution Plan](repo-human-traceability-program-execution-plan.md).
@@ -932,9 +935,11 @@ to write, review, approve, execute, and hand off these child plans in order:
   - warning-only layout rule implementation and fixtures;
   - initial measured baseline.
 - [ ] [Rallar room/group-state translation boundary](rallar-room-group-state-translation-boundary-plan.md)
-  - state: drafted for `human-review` at exact Git blob
-    `37861202ce25c3cd5832663a5a3f6d7e2e4a0e4e`; unapproved; implementation not
-    started;
+  - state: exact Git blob
+    `37861202ce25c3cd5832663a5a3f6d7e2e4a0e4e` approved with only recorded
+    narrow amendments; structure/boundary Tasks 0 through 5 implemented in
+    draft PR #53; Task 6 verification/publication and human merge pending;
+    alignment not started;
   - browser room target tree;
   - explicit translation functions;
   - facade compatibility decision;
@@ -989,8 +994,8 @@ Human review has approved all master-plan execution choices:
    two pull requests by default. Smaller private migrations may use one pull
    request with clearly separated structure and code-standard commit series.
 
-The next authorized program step is human review of
-`plans/rallar-room-group-state-translation-boundary-plan.md` at exact Git blob
-`37861202ce25c3cd5832663a5a3f6d7e2e4a0e4e`. Production code does not move
-until the human explicitly approves that exact child-plan Git blob. The
-shared-server and API-v1 children remain unstarted.
+The next authorized program step is Task 6 review, verification, and
+publication of the browser structure/boundary PR. Only after human merge and a
+successful default-branch workflow may the already-approved alignment pass
+start from the exact resulting `main` SHA. The shared-server and API-v1
+children remain unstarted.
