@@ -46,6 +46,7 @@ interface StateGroupActorWorkflowInput {
   readonly scope: StateScope;
   readonly policies: CommandsOrchestratorPolicies<StateGroupWorkflowValue>;
 }
+
 interface TargetStateGroupActorWorkflowInput extends StateGroupActorWorkflowInput {
   readonly targetPrincipalId: string;
 }
@@ -54,9 +55,11 @@ interface TargetStateGroupRequestWorkflowInput<
 > extends TargetStateGroupActorWorkflowInput {
   readonly request: TRequest;
 }
+
 interface AcceptStateGroupInviteInput extends StateGroupActorWorkflowInput {
   readonly generationId: string;
 }
+
 interface TransferStateGroupOwnershipInput extends StateGroupActorWorkflowInput {
   readonly request: TransferGroupOwnershipRequest;
 }

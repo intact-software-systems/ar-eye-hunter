@@ -1581,7 +1581,7 @@ receive a fresh scoped review before Task 6 resumes.
 
 ### Task 6: Freeze, Review, And Publish The Structure/Boundary PR
 
-- [ ] **Step 1: Run structure-focused validation**
+- [x] **Step 1: Run structure-focused validation**
 
   ```bash
   npx tsc -p packages/shared-web/tsconfig.json --noEmit
@@ -1606,7 +1606,7 @@ receive a fresh scoped review before Task 6 resumes.
   npm --workspace @ar-eye-hunter/shared-test run build
   ```
 
-- [ ] **Step 2: Run the repository completion gates on the frozen tree**
+- [x] **Step 2: Run the repository completion gates on the frozen tree**
 
   Format only in-scope files, run `git diff --check`, stage only the approved
   structure/boundary files, record `git write-tree`, and run without another
@@ -1618,7 +1618,7 @@ receive a fresh scoped review before Task 6 resumes.
   npm run build
   ```
 
-- [ ] **Step 3: Human Review Point A — structure/boundary merge**
+- [x] **Step 3: Human Review Point A — structure/boundary merge**
 
   The human reviews the exact tree, literal boundary fixtures, the four-way
   request/projection and store/current-room test ownership split,
@@ -1629,7 +1629,7 @@ receive a fresh scoped review before Task 6 resumes.
   Hetzner Supported Distributed Manifests** must pass for the exact resulting
   `main` SHA.
 
-- [ ] **Step 4: Stop if structure publication is not complete**
+- [x] **Step 4: Stop if structure publication is not complete**
 
   Do not create the alignment branch until the structure/boundary PR is merged
   and its exact default-branch workflow is green.
@@ -1651,7 +1651,9 @@ receive a fresh scoped review before Task 6 resumes.
   boundary, at most three positional parameters on newly owned functions, and
   at most 400 physical lines for each new/moved source and test module. Record
   the initial red assertions against remaining structure-pass code-standard
-  debt; do not weaken thresholds to obtain green.
+  debt. Ratchet every legacy positional compatibility exception by exact owning
+  file, function name, parameter count, and single occurrence; do not weaken
+  thresholds to obtain green.
 
 - [x] **Step 3: Align only the newly owned room code**
 
@@ -1664,6 +1666,11 @@ receive a fresh scoped review before Task 6 resumes.
   `isSameRoomRefOrId` pass-throughs. Remove them only when the source ratchet
   proves they are private and unused, without changing room identity behavior
   or the cohesive state-store ownership model.
+
+  Keep the exact direct `extends RoomGroupStateMutationActorInput` heritage for
+  both room-presence request inputs. Those two 103/106-character declarations
+  are an explicit 100-column guidance tradeoff: do not add an alias hop or
+  change the locked interface declarations solely to shorten them.
 
 - [x] **Step 4: Verify the source ratchet and unchanged behavior**
 

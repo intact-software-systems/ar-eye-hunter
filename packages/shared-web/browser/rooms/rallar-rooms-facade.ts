@@ -37,7 +37,7 @@ import type {
   StateScope,
 } from '@shared-web/browser/rooms/room-group-state-translation.ts';
 
-export interface RallarRoomsFacade {
+export type RallarRoomsFacade = Readonly<{
   state(): RallarRoomState;
   list(): readonly RallarRoomSummary[];
   refresh(input?: StateScope | RallarRefreshOptions): Promise<RallarRoomState>;
@@ -118,7 +118,7 @@ export interface RallarRoomsFacade {
     options?: RallarOnChangeOptions,
   ): RallarUnsubscribe;
   onEvent(listener: RallarRoomEventListener, options?: RallarRoomEventOptions): RallarUnsubscribe;
-}
+}>;
 
 interface OptionalCreateAndSwitchRoomOperation {
   readonly createAndSwitch?: RallarRoomsFacade['createAndSwitch'];

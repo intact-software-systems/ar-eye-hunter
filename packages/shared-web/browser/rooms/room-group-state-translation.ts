@@ -114,13 +114,15 @@ export type ToSetRoomMemberRoleGroupStateRequestInput =
 export type ToTransferRoomOwnershipGroupStateRequestInput =
   RoomGroupStateRequestInput<TransferGroupOwnershipRequest>;
 
-interface RoomPresenceGroupStateRequestInput extends RoomGroupStateMutationActorInput {
+export interface ToConnectRoomPresenceGroupStateRequestInput extends RoomGroupStateMutationActorInput {
   readonly principalId: string;
   readonly generationId: string;
 }
 
-export type ToConnectRoomPresenceGroupStateRequestInput = RoomPresenceGroupStateRequestInput;
-export type ToDisconnectRoomPresenceGroupStateRequestInput = RoomPresenceGroupStateRequestInput;
+export interface ToDisconnectRoomPresenceGroupStateRequestInput extends RoomGroupStateMutationActorInput {
+  readonly principalId: string;
+  readonly generationId: string;
+}
 
 export interface ToRallarRoomSummaryInput {
   readonly snapshot: GroupSnapshot;

@@ -122,26 +122,23 @@ const REQUIRED_OWNING_DECLARATIONS = new Map<string, readonly string[]>([
   ['update-room.ts', ['archiveRoom', 'deleteRoom', 'updateRoom', 'updateRoomMetadata']],
 ]);
 
-const LEGACY_POSITIONAL_WORKFLOW_FUNCTIONS = new Set([
-  'room-group-state-mutation-workflows.ts: archiveStateGroup',
-  'room-group-state-mutation-workflows.ts: deleteStateGroup',
-  'room-group-state-mutation-workflows.ts: updateStateGroupDetails',
-  'room-group-state-mutation-workflows.ts: updateStateGroupMetadata',
-  'room-group-state-workflows.ts: createAndJoinStateGroup',
-  'room-group-state-workflows.ts: joinStateGroup',
-  'room-group-state-workflows.ts: leaveStateGroup',
-  'room-membership-group-state-workflows.ts: acceptStateGroupInvite',
-  'room-membership-group-state-workflows.ts: banStateGroupMember',
-  'room-membership-group-state-workflows.ts: createStateGroupInvite',
-  'room-membership-group-state-workflows.ts: removeStateGroupMember',
-  'room-membership-group-state-workflows.ts: setStateGroupMemberRole',
-  'room-membership-group-state-workflows.ts: transferStateGroupOwnership',
-  'room-membership-group-state-workflows.ts: unbanStateGroupMember',
-]);
-
-const LEGACY_POSITIONAL_FACADE_FUNCTIONS = new Set([
-  'browser-rallar-rooms.ts: setMemberRole',
-  'rallar-rooms-facade.ts: setMemberRole',
+const LEGACY_POSITIONAL_SIGNATURES = new Map<string, number>([
+  ['room-group-state-mutation-workflows.ts: archiveStateGroup', 6],
+  ['room-group-state-mutation-workflows.ts: deleteStateGroup', 6],
+  ['room-group-state-mutation-workflows.ts: updateStateGroupDetails', 6],
+  ['room-group-state-mutation-workflows.ts: updateStateGroupMetadata', 6],
+  ['room-group-state-workflows.ts: createAndJoinStateGroup', 8],
+  ['room-group-state-workflows.ts: joinStateGroup', 7],
+  ['room-group-state-workflows.ts: leaveStateGroup', 6],
+  ['room-membership-group-state-workflows.ts: acceptStateGroupInvite', 6],
+  ['room-membership-group-state-workflows.ts: banStateGroupMember', 7],
+  ['room-membership-group-state-workflows.ts: createStateGroupInvite', 7],
+  ['room-membership-group-state-workflows.ts: removeStateGroupMember', 7],
+  ['room-membership-group-state-workflows.ts: setStateGroupMemberRole', 7],
+  ['room-membership-group-state-workflows.ts: transferStateGroupOwnership', 6],
+  ['room-membership-group-state-workflows.ts: unbanStateGroupMember', 7],
+  ['browser-rallar-rooms.ts: setMemberRole', 4],
+  ['rallar-rooms-facade.ts: setMemberRole', 4],
 ]);
 
 const AUTHORITATIVE_IMPORT_NAMES = new Map<string, ReadonlySet<string>>([
@@ -194,6 +191,12 @@ describe('browser room code standard', () => {
   it('keeps the exact room source and mirrored test ownership trees', () => {
     expect(readTypeScriptFileNames(ROOM_SOURCE_DIRECTORY)).toEqual(EXPECTED_ROOM_SOURCE_FILES);
     expect(readTypeScriptFileNames(ROOM_TEST_DIRECTORY)).toEqual(EXPECTED_ROOM_TEST_FILES);
+    expect(readTypeScriptFileNames('packages/tests/shared-web')).not.toContain(
+      'rallar-room-realtime-channel.test.ts',
+    );
+    expect(readTypeScriptFileNames('packages/tests/shared-web')).not.toContain(
+      'rallar-rooms-facade.test.ts',
+    );
   });
 
   it('keeps the approved primary declarations in their owning files', () => {
@@ -236,30 +239,32 @@ describe('browser room code standard', () => {
   });
 
   it('does not retain unused private state-store pass-throughs', () => {
-    const files = [
-      'packages/shared-web/browser/rallar-runtime/contracts.ts',
-      'packages/shared-web/browser/rallar-runtime/state-store.ts',
-      'packages/shared-web/browser/rooms/room-state-store.ts',
-    ];
-    const violations = files.flatMap((filePath) => {
-      const identifiers = new Set(analyzeSourceFile(filePath).identifierNames);
-      return REMOVED_PRIVATE_STATE_PASS_THROUGHS.flatMap((name) =>
-        identifiers.has(name) ? [`${filePath}: ${name}`] : [],
-      );
-    });
+    const violations = readTypeScriptFilePaths('packages/shared-web/browser').flatMap(
+      (filePath) => {
+        const identifiers = new Set(analyzeSourceFile(filePath).identifierNames);
+        return REMOVED_PRIVATE_STATE_PASS_THROUGHS.flatMap((name) =>
+          identifiers.has(name) ? [`${filePath}: ${name}`] : [],
+        );
+      },
+    );
 
     expect(violations).toEqual([]);
   });
 
   it('limits new room-owned functions to three positional parameters', () => {
-    const violations = readRoomCallableMetrics()
+    const metrics = readRoomCallableMetrics();
+    const actualLegacySignatures = metrics
+      .filter((metric) => LEGACY_POSITIONAL_SIGNATURES.has(toCallableKey(metric)))
+      .map((metric) => `${toCallableKey(metric)}(${metric.parameterCount})`)
+      .sort();
+    const expectedLegacySignatures = [...LEGACY_POSITIONAL_SIGNATURES]
+      .map(([key, count]) => `${key}(${count})`)
+      .sort();
+    expect(actualLegacySignatures).toEqual(expectedLegacySignatures);
+
+    const violations = metrics
       .filter((metric) => metric.parameterCount > 3)
-      .filter(
-        (metric) => !LEGACY_POSITIONAL_WORKFLOW_FUNCTIONS.has(`${metric.fileName}: ${metric.name}`),
-      )
-      .filter(
-        (metric) => !LEGACY_POSITIONAL_FACADE_FUNCTIONS.has(`${metric.fileName}: ${metric.name}`),
-      )
+      .filter((metric) => !LEGACY_POSITIONAL_SIGNATURES.has(toCallableKey(metric)))
       .map((metric) => `${metric.fileName}: ${metric.name}(${metric.parameterCount})`);
 
     expect(violations).toEqual([]);
@@ -293,6 +298,16 @@ function readTypeScriptFileNames(directory: string): readonly string[] {
     .sort();
 }
 
+function readTypeScriptFilePaths(directory: string): readonly string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const entryPath = path.join(directory, entry.name);
+    if (entry.isDirectory()) {
+      return readTypeScriptFilePaths(entryPath);
+    }
+    return entry.isFile() && entry.name.endsWith('.ts') ? [entryPath] : [];
+  });
+}
+
 function readRoomCallableMetrics(): readonly CallableMetric[] {
   return EXPECTED_ROOM_SOURCE_FILES.flatMap((fileName) => {
     const source = readFileSync(path.join(ROOM_SOURCE_DIRECTORY, fileName), 'utf8');
@@ -315,6 +330,10 @@ function readRoomCallableMetrics(): readonly CallableMetric[] {
     });
     return metrics;
   });
+}
+
+function toCallableKey(metric: CallableMetric): string {
+  return `${metric.fileName}: ${metric.name}`;
 }
 
 function walkAst(

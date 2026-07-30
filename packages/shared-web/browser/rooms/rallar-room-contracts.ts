@@ -200,9 +200,9 @@ export type RallarRoomSessionRealtimeInput = string | RallarRoomRealtimeJsonDefa
 
 export type RallarRoomSessionMessageDefinition = string | RallarRoomMessageChannelDefinition;
 
-export interface RallarRoomSession {
-  readonly roomId: string;
-  readonly roomRef: GroupRef;
+export type RallarRoomSession = Readonly<{
+  roomId: string;
+  roomRef: GroupRef;
   snapshot(): GroupSnapshot | undefined;
   summary(): RallarRoomSummary | undefined;
   leave(
@@ -211,4 +211,4 @@ export interface RallarRoomSession {
   refresh(options?: RallarRefreshOptions): Promise<RallarRoomSession>;
   realtime<T>(laneIdOrOptions?: RallarRoomSessionRealtimeInput): RallarRoomRealtimeJsonChannel<T>;
   message<T>(nameOrDefinition: RallarRoomSessionMessageDefinition): RallarRoomMessageChannel<T>;
-}
+}>;
