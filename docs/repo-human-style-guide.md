@@ -1,7 +1,7 @@
 # Repo Human Style Review Guide
 
-Use this guide when reviewing TypeScript written or refactored by a human or AI
-anywhere in the repository.
+Use this guide when reviewing all human-authored code written or refactored by
+a human or AI anywhere in the repository.
 
 The authoritative coding standard is
 `.agents/skills/rallar-code-writing/references/repo-code-style.md`. Read it before
@@ -178,6 +178,9 @@ records a non-obvious invariant, external constraint, safety reason, or tradeoff
   [repo code-style exception registry](./repo-code-style-exceptions.md).
 
 ## Warning-only checker
+
+The TypeScript checker automates only syntax it can parse. The preceding human
+review sequence remains language-neutral and applies to all human-authored code.
 
 Run from the repository root:
 

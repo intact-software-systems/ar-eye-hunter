@@ -1,8 +1,10 @@
 # Rallar Repo Code Style
 
-This is the authoritative coding standard for TypeScript in this repository.
-`AGENTS.md`, repo skills, human review guides, and automated checks must point here rather than restating a different
-version of these rules.
+Universal structural rules in this standard govern all human-authored code in
+the repository. TypeScript-specific rules additionally govern TypeScript and
+JavaScript-family source where their syntax and tooling apply. `AGENTS.md`, repo
+skills, human review guides, and automated checks must point here rather than
+restating a different version of these rules.
 
 ## Contents
 
@@ -51,8 +53,15 @@ inventing another abstraction.
 
 ## Scope and adoption
 
-- The standard applies to TypeScript under `apps/**`, `packages/**`, `scripts/**`, examples, tests, and support tooling.
-  A closer domain guide may add stricter rules, but may not relax this baseline.
+- Universal structural rules apply to all human-authored code, including source,
+  scripts, tests, fixtures, examples, configuration code, and support tooling,
+  regardless of language or directory. These universal sections are the first
+  principle; construction, dependencies, and callbacks; functional dataflow and
+  state; services and responsibility boundaries; decision depth; comments and
+  self-explanatory code; and review and automation.
+- TypeScript-specific rules apply additionally to TypeScript and
+  JavaScript-family source where their syntax and tooling apply. A closer domain
+  guide may add stricter rules, but may not relax this baseline.
 - Apply the standard to all new code and to code changed during a task. Do not expand an unrelated task into a
   repository-wide cleanup.
 - The manual review gate is active now. The full-repository checker remains warning-only while legacy debt remains.

@@ -1,6 +1,6 @@
 ---
 name: rallar-code-writing
-description: Use when writing, generating, refactoring, or reviewing TypeScript anywhere in the Rallar repository, including apps, packages, scripts, examples, and tests.
+description: Use when writing, generating, refactoring, or reviewing any human-authored code in the Rallar repository; TypeScript-specific rules also apply to TypeScript surfaces. It governs all human-authored code.
 ---
 
 # Rallar Code Writing
@@ -17,9 +17,14 @@ hides a decision, fragments one dataflow, weakens names, or makes ownership
 less obvious. When a detailed rule conflicts with human understandability,
 stop and explain the conflict instead of satisfying the rule mechanically.
 
+The first principle, construction and callback rules, responsibility boundaries,
+explicit dataflow, and testability doctrine apply to all human-authored code.
 Always read `references/repo-code-style.md` completely before writing,
-refactoring, generating, or reviewing TypeScript. It is the authoritative
-repo-wide coding standard; local guidance may tighten it but may not relax it.
+refactoring, generating, or reviewing code. It is the authoritative repo-wide
+coding standard; local guidance may tighten it but may not relax it.
+
+TypeScript changes must also follow every TypeScript-specific rule in
+`references/repo-code-style.md`.
 
 For authoritative database or realtime service mutations, also read
 `references/convergent-service-writing.md` completely. Its repository path is
