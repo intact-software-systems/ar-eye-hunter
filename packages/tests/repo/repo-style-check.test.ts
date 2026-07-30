@@ -7,6 +7,10 @@ import {
   estimateCyclomaticComplexity,
   extractRouteHandlerRanges,
 } from '../../../scripts/repo-style-check/factory-route-rules.mjs';
+import {
+  constructionRuleIds,
+  scanConstructionRules,
+} from '../../../scripts/repo-style-check/construction-rules.mjs';
 import { isTestRunnerConfigFile } from '../../../scripts/repo-style-check/repository-scan.mjs';
 
 const repoRoot = process.cwd();
@@ -20,6 +24,131 @@ afterEach(() => {
 });
 
 describe('repo style checker', () => {
+  it('reports a callback that captures a service assigned after consumer construction', () => {
+    const findings = scanConstructionRules(
+      {
+        file: 'runtime.ts',
+        raw: [
+          'export function createRuntime() {',
+          '  let service!: Service;',
+          '  const consumer = createConsumer({ readService: () => service });',
+          '  service = createService();',
+          '  return { consumer, service };',
+          '}',
+        ].join('\n'),
+      },
+      { details: false },
+    );
+
+    expect(findings).toEqual([
+      expect.objectContaining({
+        ruleId: constructionRuleIds.forwardCapture,
+        message: expect.stringMatching(/service.*createConsumer.*2.*4/i),
+      }),
+    ]);
+  });
+
+  it('reports a callback that captures a sender bound after inbound construction', () => {
+    const findings = scanConstructionRules(
+      {
+        file: 'runtime.ts',
+        raw: [
+          'export function createRuntime() {',
+          '  let send!: Send;',
+          '  const inbound = createInbound((message) => send(message));',
+          '  const outbound = createOutbound();',
+          '  send = outbound.send;',
+          '  return { inbound, outbound };',
+          '}',
+        ].join('\n'),
+      },
+      { details: false },
+    );
+
+    expect(findings).toEqual([
+      expect.objectContaining({
+        ruleId: constructionRuleIds.forwardCapture,
+        message: expect.stringMatching(/send.*createInbound.*2.*5/i),
+      }),
+    ]);
+  });
+
+  it(
+    'does not report already-constructed or Promise callback dependencies as forward captures',
+    () => {
+      const findings = scanConstructionRules(
+        {
+          file: 'runtime.ts',
+          raw: [
+            'const service = createService();',
+            'const consumer = createConsumer({ readService: () => service });',
+            '',
+            'const emitter = createEmitter();',
+            'const listener = createListener(() => emitter.emit());',
+            '',
+            'let resolveDone!: () => void;',
+            'const done = new Promise<void>((resolve) => {',
+            '  resolveDone = resolve;',
+            '});',
+          ].join('\n'),
+        },
+        { details: false },
+      );
+
+      expect(findings).not.toContainEqual(
+        expect.objectContaining({ ruleId: constructionRuleIds.forwardCapture }),
+      );
+    },
+  );
+
+  it('keeps construction detail findings opt-in', () => {
+    const source = {
+      file: 'construction-details.ts',
+      raw: [
+        'function createDetails() {',
+        '  let value!: Value;',
+        '  return createOuter(() => createMiddle(() => createInner(() => value)));',
+        '}',
+        '',
+        'function forward(input: Input) {',
+        '  return target(input);',
+        '}',
+        '',
+        'async function forwardAsync(input: Input) {',
+        '  return await target(input);',
+        '}',
+      ].join('\n'),
+    };
+
+    const defaultFindings = scanConstructionRules(source, { details: false });
+    const detailFindings = scanConstructionRules(source, { details: true });
+
+    expect(defaultFindings).not.toContainEqual(
+      expect.objectContaining({ ruleId: constructionRuleIds.definiteAssignment }),
+    );
+    expect(defaultFindings).not.toContainEqual(
+      expect.objectContaining({ ruleId: constructionRuleIds.nestedCallbackDepth }),
+    );
+    expect(defaultFindings).not.toContainEqual(
+      expect.objectContaining({ ruleId: constructionRuleIds.passThrough }),
+    );
+    expect(detailFindings).toContainEqual(
+      expect.objectContaining({ ruleId: constructionRuleIds.definiteAssignment }),
+    );
+    expect(detailFindings).toContainEqual(
+      expect.objectContaining({
+        ruleId: constructionRuleIds.nestedCallbackDepth,
+        message: expect.stringMatching(/3/),
+      }),
+    );
+    expect(detailFindings).toContainEqual(
+      expect.objectContaining({ ruleId: constructionRuleIds.passThrough, message: /forward/ }),
+    );
+    expect(detailFindings).toContainEqual(
+      expect.objectContaining({ ruleId: constructionRuleIds.passThrough, message: /forwardAsync/ }),
+    );
+  });
+
   it('warns for optional command fields even when a decoder supplies defaults', () => {
     const fixtureRoot = createFixture({
       'command.ts': [
