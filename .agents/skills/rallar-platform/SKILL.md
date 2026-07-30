@@ -43,9 +43,6 @@ rg --files packages/shared packages/shared-web packages/shared-server packages/s
 
 ## Contract Shape And Compatibility
 
-- Authoritative shared fields are mandatory except documented input or
-  migration exceptions.
-- Authoritative persisted and shared contracts use mandatory fields by default.
 - Required fields are the default for every authoritative persisted, replicated, queued, event, snapshot, and response contract.
   Use an optional field only when absence is a meaningful domain state that
   consumers are expected to handle and test. Sparse request, query, patch,
@@ -58,36 +55,20 @@ rg --files packages/shared packages/shared-web packages/shared-server packages/s
 - Do not weaken an authoritative output type merely because an intermediate
   builder or migration step is incomplete. Use a separate input type, a
   discriminated union, or an explicit migration adapter at the boundary.
-- Strong contracts enable permissive convergence: mandatory causal metadata
-  lets consumers accept newer observations, ignore stale ones, and detect
-  equal-revision corruption without guessing.
 - Backwards compatibility is a product decision, not an automatic default. If
   a design or implementation plan would retain a legacy field, work shape,
   import path, or fallback, explicitly ask the human to approve that scope
   before implementation. When approval already appears in the request, record
   the compatibility boundary and its retirement condition in the plan.
 
-## Convergent Persistence Defaults
+## Convergent Persistence Routing
 
 Read
 `.agents/skills/rallar-code-writing/references/convergent-service-writing.md`
-completely before changing authoritative persistence. It owns the AppInbox
-transaction and retry doctrine. Use optimistic compare-and-set writes with bounded retries.
-The reference also owns functional service shape, permissive convergence, immutable facts,
-canonical identity, Queue locks are coordination-only, and concurrency tests.
-
-Platform-specific decisions remain here:
-
-- keep reusable contracts and behavior in `packages/**`; apps consume them;
-- preserve package boundaries and public exports unless a breaking change is
-  explicitly requested;
-- keep authoritative persisted, replicated, queued, event, snapshot, and
-  response fields mandatory by default;
-- keep `MutationReceipt` compact and carry `GroupStateCausalRevision` for group
-  effects;
-- use the smallest correct concurrency domain: group presence uses a
-  per-session guard, while aggregate metadata and roster changes use the group
-  guard.
+completely before changing authoritative persistence and apply it unchanged.
+Platform-specific decisions remain here: this skill adds only the
+package-boundary and contract-shape rules above. Use the owning domain skill
+for narrower concurrency and lifecycle rules.
 
 ## Validation
 

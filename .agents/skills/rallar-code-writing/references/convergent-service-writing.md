@@ -13,13 +13,16 @@ Use a functional core with an explicitly owned stateful shell:
 - repositories, transactions, clocks, randomness, transports, caches, and
   subscriptions stay in narrow side-effect adapters;
 - state belongs in an object only when that object clearly owns its lifecycle;
-- a service owns one coherent business capability, one explicit owner, and one reason to change.
+- a service owns one coherent business capability, one ownership boundary, and
+  one reason to change.
 
 Keep the control flow visible as direct, named `read`, `compute`, `validate`,
 and `write(transaction, computed)` statements. `read` performs the required
 repository reads. The `compute` and `validate` phases are pure. Computed
-persistence data is not called a plan. Do not hide decisions behind manager, coordinator,
-or pass-through helper chains.
+persistence data is not called a plan. The stateful shell records timing around
+each direct phase and around the AppInbox transaction separately; clock access
+never moves into pure `compute` or `validate` functions. Do not hide decisions
+behind manager, coordinator, or pass-through helper chains.
 
 Model the domain decision separately from the conditional write outcome:
 
@@ -73,10 +76,6 @@ Use optimistic compare-and-set writes with bounded retries:
 - update with expected-revision compare-and-set or `upsertIfRevision`;
 - delete or expire with expected-revision conditional delete or
   `deleteIfRevision`.
-
-In other words: Create with conditional insert, update with expected-revision
-compare-and-set, and delete or expire with expected-revision conditional
-delete.
 
 Expired reads are observational. The subsequent write matches the exact
 observed revision; a stale expiry observation must not delete or overwrite a
@@ -132,11 +131,8 @@ Authoritative snapshot collections that represent unordered sets use canonical
 storage-key order in both the computed mutation result and durable repository
 assembly. Never depend on arrival, insertion, or database/provider iteration
 order. Preserve equal-revision content checks; ordering drift is a producer
-bug, not eventual consistency. Snapshot liveness is evaluated at one observation time
-against group status and expiry, active membership, and connected unexpired
-sessions. Preserve causal revisions while reporting zero live presence for an
-archived, deleted, or expired group. Group presence mutations use a per-session
-guard; aggregate metadata and roster mutations use the group guard.
+bug, not eventual consistency. Domain skills own any additional liveness and
+concurrency rules for their snapshots.
 
 ## Verification
 

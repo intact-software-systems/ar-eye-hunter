@@ -180,7 +180,7 @@ function findingKey(repoRoot, finding, renameByTargetPath) {
   const logicalPath = finding.ruleId.startsWith('layout.')
     ? targetPath
     : (renameByTargetPath.get(targetPath) ?? targetPath);
-  return [logicalPath, finding.ruleId, findingVariant(finding.message)].join('\0');
+  return [logicalPath, finding.ruleId, findingVariant(finding)].join('\0');
 }
 
 function groupFindingMagnitudes(repoRoot, findings, renameByTargetPath) {
@@ -206,8 +206,12 @@ function groupFindings(repoRoot, findings, renameByTargetPath) {
   return findingsByKey;
 }
 
-function findingVariant(message) {
-  return message.startsWith('... and ') ? 'summary' : 'detail';
+function findingVariant(finding) {
+  if (finding.ruleId === 'layout.feature-prefix-cluster') {
+    const prefixMatch = /prefix '([^']+)' appears/u.exec(finding.message);
+    return prefixMatch === null ? finding.message : `prefix:${prefixMatch[1]}`;
+  }
+  return finding.message.startsWith('... and ') ? 'summary' : 'detail';
 }
 
 function findingMagnitude(finding) {
@@ -218,9 +222,14 @@ function findingMagnitude(finding) {
     'route.handler-complexity': /complexity (\d+)/u,
     'factory.spacing': /has a (\d+)-line block/u,
     'function.input-contract': /has (\d+) parameters/u,
+    'layout.directory-density': /directory has (\d+) direct production TypeScript files/u,
+    'layout.feature-prefix-cluster': /appears in (\d+) direct files/u,
   };
   const match = patternsByRule[finding.ruleId]?.exec(finding.message);
-  return match === undefined || match === null ? 0 : Number(match[1]);
+  if (match !== undefined && match !== null) {
+    return Number(match[1]);
+  }
+  return finding.affectedCount ?? 0;
 }
 
 function compareFindingMagnitudeDescending(left, right) {

@@ -26,8 +26,8 @@ for a human to understand, review, debug, or modify. For TypeScript, use the
 - For authoritative database or realtime service mutations, also read
   `.agents/skills/rallar-code-writing/references/convergent-service-writing.md`.
   Keep a functional core behind an explicitly owned stateful shell; each
-  service owns one coherent business capability, one explicit owner, and one
-  reason to change.
+  service owns one coherent business capability, one ownership boundary, and
+  one reason to change.
 - For the human review workflow and warning-only check tooling, use
   `docs/repo-human-style-guide.md` and run `npm run check:repo-style`.
 - For written implementation plans and clearly long-running repository

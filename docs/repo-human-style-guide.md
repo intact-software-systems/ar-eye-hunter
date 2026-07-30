@@ -260,12 +260,13 @@ configuration files for Playwright, Vitest, Jest, and Cypress.
 These are checker exclusions only. Humans should still write readable tests and
 support artifacts.
 
-### No strict mode yet
+### No global strict mode yet
 
-Strict enforcement is not implemented. Passing `--strict` is rejected rather
-than silently turning warnings into a build gate. Adding a strict package
-command or CI gate requires a separate human decision after warning debt and
-false-positive rates are understood.
+Global full-repository strict enforcement is not implemented. Passing
+`--strict` is rejected rather than silently turning every warning into a build
+gate. Adding a global strict package command or full-repository CI gate requires
+a separate human decision after warning debt and false-positive rates are
+understood. The merge-base feature-branch gate below is active.
 
 ### Changed-file enforcement
 

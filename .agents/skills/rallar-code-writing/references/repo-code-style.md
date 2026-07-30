@@ -54,8 +54,9 @@ inventing another abstraction.
   A closer domain guide may add stricter rules, but may not relax this baseline.
 - Apply the standard to all new code and to code changed during a task. Do not expand an unrelated task into a
   repository-wide cleanup.
-- The manual review gate is active now. Automated checks report warnings while legacy debt remains. No strict checker
-  mode or CI gate is available yet.
+- The manual review gate is active now. The full-repository checker remains warning-only while legacy debt remains.
+  No global strict checker mode is available. Feature-branch CI blocks only new or worsened findings against the merge
+  base.
 - Tests, mocks, stories, fixtures, and generated artifacts are excluded from the default production-code checker, but
   not from the human-readable standard.
 - A deliberate exception requires explicit human approval and a short rationale in the task handoff. Existing violations
@@ -565,8 +566,9 @@ production defaults once at the composition root.
 
 ## Services and responsibility boundaries
 
-A service-like unit owns one coherent business capability, one explicit owner, and one reason to change. This does not
-mean adding a deployable service, process, or network boundary.
+A service-like unit owns one coherent business capability, one ownership
+boundary, and one reason to change. This does not mean adding a deployable
+service, process, or network boundary.
 
 Use:
 

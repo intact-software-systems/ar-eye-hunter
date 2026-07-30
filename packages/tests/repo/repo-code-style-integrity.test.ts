@@ -40,10 +40,10 @@ describe('repo code style authority integrity', () => {
       'references/repo-code-style.md',
       'references/convergent-service-writing.md',
     ]);
-    expectAll(canonicalServiceWriting, [
+    expectAllNormalized(canonicalServiceWriting, [
       'functional core',
       'explicitly owned stateful shell',
-      'one coherent business capability, one explicit owner, and one reason to change',
+      'one coherent business capability, one ownership boundary, and one reason to change',
       '`apply`, `no-op`, or `reject`',
       '`written` or `conflict`',
     ]);
@@ -109,6 +109,7 @@ describe('repo code style authority integrity', () => {
     const branchReleaseGate = readRepo('.github/workflows/branch-release-gate.yml');
     const releaseGate = readRepo('.github/workflows/release-gate.yml');
     const humanGuide = readRepo('docs/repo-human-style-guide.md');
+    const canonicalStyle = readRepo(canonicalStylePath);
     const refactoringProgram = readRepo('plans/repo-human-traceability-refactoring-program-plan.md');
 
     expect(branchReleaseGate).toContain('changed_repo_style_base: origin/main');
@@ -116,6 +117,9 @@ describe('repo code style authority integrity', () => {
     expect(releaseGate).toContain('fetch-depth: 0');
     expect(releaseGate).toContain('npm run check:repo-style:changed --');
     expect(humanGuide).toContain('new or worsened findings');
+    expect(humanGuide).toContain('No global strict mode yet');
+    expect(canonicalStyle).toMatch(/full-repository checker remains warning-only/iu);
+    expect(canonicalStyle).toMatch(/feature-branch CI blocks only new or worsened findings/iu);
     expect(refactoringProgram).toMatch(/new or worsened branch\s+findings are blocking/iu);
     expect(refactoringProgram).toMatch(/full-repository checker remains warning-only/iu);
   });
@@ -308,14 +312,23 @@ describe('repo code style authority integrity', () => {
   it('keeps every repo-style suite in the testing workflow', () => {
     const testing = readRepo('.agents/skills/rallar-testing/SKILL.md');
     const commands = readRepo('.agents/skills/rallar-testing/references/test-commands.md');
+    const packageJson = readJson('package.json') as {
+      scripts?: Readonly<Record<string, string>>;
+    };
+    const governanceCommand = packageJson.scripts?.['test:repo-governance'] ?? '';
+
+    expect(testing).toContain('npm run test:repo-governance');
+    expect(commands).toContain('npm run test:repo-governance');
 
     for (const testPath of [
       'packages/tests/repo/rallar-skill-integrity.test.ts',
       'packages/tests/repo/repo-code-style-integrity.test.ts',
       'packages/tests/repo/repo-style-check.test.ts',
+      'packages/tests/repo/repo-style-layout-rules.test.ts',
+      'packages/tests/repo/repo-style-changed-check.test.ts',
+      'packages/tests/rallar-black-box/rallar-testing-skill.test.ts',
     ]) {
-      expect(testing).toContain(testPath);
-      expect(commands).toContain(testPath);
+      expect(governanceCommand).toContain(testPath);
     }
   });
 });
@@ -331,5 +344,12 @@ function readJson(filePath: string): unknown {
 function expectAll(haystack: string, needles: readonly string[]): void {
   for (const needle of needles) {
     expect(haystack, needle).toContain(needle);
+  }
+}
+
+function expectAllNormalized(haystack: string, needles: readonly string[]): void {
+  const normalized = haystack.replace(/\s+/g, ' ').trim();
+  for (const needle of needles) {
+    expect(normalized, needle).toContain(needle.replace(/\s+/g, ' ').trim());
   }
 }

@@ -27,7 +27,7 @@ npm --workspace relic-hunters-v1 run test -- tests/relic-hunters-runtime.test.ts
 ## Skills And Active Documentation
 
 ```sh
-npx vitest run packages/tests/repo/rallar-skill-integrity.test.ts packages/tests/repo/repo-code-style-integrity.test.ts packages/tests/repo/repo-style-check.test.ts packages/tests/repo/repo-style-layout-rules.test.ts
+npm run test:repo-governance
 ```
 
 Run this after changing repo skills, plugin metadata, active Rallar examples,

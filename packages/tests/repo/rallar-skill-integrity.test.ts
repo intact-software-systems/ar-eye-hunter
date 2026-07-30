@@ -449,6 +449,9 @@ describe('Rallar repo skill and documentation integrity', () => {
     const realtime = readRepo('.agents/skills/rallar-realtime/SKILL.md');
     const testing = readRepo('.agents/skills/rallar-testing/SKILL.md');
     const testCommands = readRepo('.agents/skills/rallar-testing/references/test-commands.md');
+    const packageJson = readJson('package.json') as {
+      scripts?: Readonly<Record<string, string>>;
+    };
 
     expect(platform).toContain('building-rallar-apps');
     expect(games).toContain('building-rallar-apps');
@@ -460,10 +463,13 @@ describe('Rallar repo skill and documentation integrity', () => {
     expect(platform).toMatch(/absence is a meaningful domain\s+state/);
     expect(platform).toMatch(/explicitly ask\s+the human/);
     expectAllNormalized(platform, [
-      'optimistic compare-and-set writes with bounded retries',
+      canonicalServiceWritingPath,
+      'Platform-specific decisions remain here',
       'authoritative persisted, replicated, queued, event, snapshot, and response',
-      'Queue locks are coordination-only',
     ]);
+    expect(platform).not.toContain('optimistic compare-and-set writes with bounded retries');
+    expect(platform).not.toContain('Queue locks are coordination-only');
+    expect(platform).not.toContain('Strong contracts enable permissive convergence');
     expectAll(codeWriting, [
       'Always read `references/repo-code-style.md`',
       'references/convergent-service-writing.md',
@@ -485,17 +491,20 @@ describe('Rallar repo skill and documentation integrity', () => {
     ]);
     expectAll(repoCodeStyle, ['discriminated union']);
     expectAllNormalized(serviceWriting, [
-      'Create with conditional insert, update with expected-revision compare-and-set',
+      'create with conditional insert or `insertIfAbsent`',
+      'update with expected-revision compare-and-set or `upsertIfRevision`',
+      'delete or expire with expected-revision conditional delete or `deleteIfRevision`',
       'a stale expiry observation must not delete or overwrite a refreshed value',
       'A conflict starts a fresh `read`',
     ]);
     expectAllNormalized(realtime, [
-      'optimistic reconciliation',
-      'Ignore stale observations',
-      'compare-and-set writes with bounded retries',
-      'Queue locks are coordination-only',
       canonicalServiceWritingPath,
+      'Presence summaries are optimistic materialized views, not authority',
     ]);
+    expect(realtime).not.toContain('compare-and-set writes with bounded retries');
+    expect(realtime).not.toContain('Queue locks are coordination-only');
+    expect(realtime).not.toContain('Prefer optimistic reconciliation for replicated state');
+    expect(realtime).not.toContain('prove overlapping conflicts, rebasing, retry exhaustion');
     expectAll(agents, [canonicalServiceWritingPath, 'functional core', 'stateful shell']);
     expectAll(convergenceArchitecture, [
       'Implemented Convergent Database Writes',
@@ -503,10 +512,16 @@ describe('Rallar repo skill and documentation integrity', () => {
       'expected-revision compare-and-set',
       'expected-revision conditional delete',
     ]);
-    expect(testing).toContain('rallar-skill-integrity.test.ts');
-    expect(testCommands).toContain(
-      'npx vitest run packages/tests/repo/rallar-skill-integrity.test.ts',
-    );
+    expect(testing).toContain('npm run test:repo-governance');
+    expect(testCommands).toContain('npm run test:repo-governance');
+    expectAll(packageJson.scripts?.['test:repo-governance'] ?? '', [
+      'packages/tests/repo/rallar-skill-integrity.test.ts',
+      'packages/tests/repo/repo-code-style-integrity.test.ts',
+      'packages/tests/repo/repo-style-check.test.ts',
+      'packages/tests/repo/repo-style-layout-rules.test.ts',
+      'packages/tests/repo/repo-style-changed-check.test.ts',
+      'packages/tests/rallar-black-box/rallar-testing-skill.test.ts',
+    ]);
   });
 
   it('routes TypeScript work through one code-writing skill and one service doctrine', () => {
@@ -540,7 +555,8 @@ describe('Rallar repo skill and documentation integrity', () => {
     expectAllNormalized(serviceWriting, [
       'functional core',
       'explicitly owned stateful shell',
-      'one coherent business capability, one explicit owner, and one reason to change',
+      'one coherent business capability, one ownership boundary, and one reason to change',
+      'records timing around each direct phase and around the AppInbox transaction separately',
       'apply',
       'no-op',
       'reject',

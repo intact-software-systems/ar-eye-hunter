@@ -74,6 +74,67 @@ describe('changed repository style checker', () => {
     expect(result.stdout).toContain('new or worsened repository style finding');
   });
 
+  it('fails when a grouped layout finding affects another file', () => {
+    const fixture = createGitFixture({
+      'apps/example/BadOne.ts': '',
+    });
+    commitAll(fixture, 'base');
+    writeFixture(fixture, 'apps/example/BadTwo.ts', '');
+    commitAll(fixture, 'add another invalid filename');
+
+    const result = executeChecker(fixture, 'HEAD^', 'HEAD');
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain('layout.filename-style');
+    expect(result.stdout).toContain('2 TypeScript filenames are not kebab-case');
+  });
+
+  it('fails when an over-dense directory gains another production file', () => {
+    const files = Object.fromEntries(
+      Array.from({ length: 21 }, (_, index) => [
+        `apps/example/feature-${index}.ts`,
+        '',
+      ]),
+    );
+    const fixture = createGitFixture(files);
+    commitAll(fixture, 'base');
+    writeFixture(fixture, 'apps/example/feature-21.ts', '');
+    commitAll(fixture, 'increase directory density');
+
+    const result = executeChecker(fixture, 'HEAD^', 'HEAD');
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain('layout.directory-density');
+    expect(result.stdout).toContain('directory has 22 direct production TypeScript files');
+  });
+
+  it('compares feature-prefix cluster growth by prefix identity', () => {
+    const files = Object.fromEntries([
+      ...Array.from({ length: 5 }, (_, index) => [
+        `apps/example/alpha-${index}.ts`,
+        '',
+      ]),
+      ...Array.from({ length: 4 }, (_, index) => [
+        `apps/example/beta-${index}.ts`,
+        '',
+      ]),
+      ...Array.from({ length: 12 }, (_, index) => [
+        `apps/example/filler${index}-entry.ts`,
+        '',
+      ]),
+    ]);
+    const fixture = createGitFixture(files);
+    commitAll(fixture, 'base');
+    runGit(fixture, ['mv', 'apps/example/alpha-4.ts', 'apps/example/beta-4.ts']);
+    commitAll(fixture, 'move one file between feature prefixes');
+
+    const result = executeChecker(fixture, 'HEAD^', 'HEAD');
+
+    expect(result.status, result.stdout).toBe(1);
+    expect(result.stdout).toContain('layout.feature-prefix-cluster');
+    expect(result.stdout).toContain("prefix 'beta' appears in 5 direct files");
+  });
+
   it('passes when a finding is removed', () => {
     const fixture = createGitFixture({
       'apps/example/feature.ts': overlongSource('removed'),

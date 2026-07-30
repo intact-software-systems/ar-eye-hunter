@@ -33,20 +33,12 @@ rg -n "GroupRef|groupRef|groupId|roomId|createAndSwitch|createAndJoin|joinRoom|w
 
 ## Rules Of Thumb
 
-- Authoritative shared fields are mandatory except documented input or
-  migration exceptions.
-- Authoritative persisted and shared contracts use mandatory fields by default.
 - Prefer `GroupRef` over bare `groupId` when application/workspace scope matters.
 - Do not trust warm in-memory presence blindly; check expiry and durable read-through paths.
-- Prefer optimistic reconciliation for replicated state. Accept monotonic newer
-  observations. Ignore stale observations without failing the consumer, and
-  treat equal-revision/different-content data as invariant corruption.
 - For authoritative database or realtime service mutations, read
   `.agents/skills/rallar-code-writing/references/convergent-service-writing.md`
-  completely. It owns AppInbox transaction/retry rules, the functional
-  `read`/`compute`/`validate`/`write` shape, optimistic compare-and-set writes
-  with bounded retries, immutable facts, canonical identity, Queue locks are
-  coordination-only, and permissive decision semantics.
+  completely and apply it unchanged. The remaining rules here are realtime
+  domain deltas.
 - Keep the compact `MutationReceipt` family and `GroupStateCausalRevision` as
   replay and group/presence authority.
 - Group user mutations require a real issued auth session or exact
@@ -68,10 +60,6 @@ rg -n "GroupRef|groupRef|groupId|roomId|createAndSwitch|createAndJoin|joinRoom|w
   optional cache observation conflicts.
 - Group presence uses its per-session guard and does not contend on the group
   row. Group metadata and roster operations use the aggregate group guard.
-- Optimistic and permissive does not mean weak contracts. Require causal fields
-  on snapshots and durable work; reserve hard rejection for malformed or
-  wrongly scoped data, authorization failures, invariant corruption, resource
-  caps, and exhausted retry or connection-attempt budgets.
 - Keep browser ergonomics, but diagnose ambiguity where string room IDs can cross scopes.
 - Use `rallar.rooms.createAndSwitch(...)` for browser flows where creating a new
   room should leave the previous current room. Plain `rooms.create(...)` keeps
@@ -96,4 +84,8 @@ rg -n "GroupRef|groupRef|groupId|roomId|createAndSwitch|createAndJoin|joinRoom|w
 
 ## Validation
 
-Run focused tests in `packages/tests/shared-web`, `packages/tests/shared-server`, `packages/tests/shared-graph`, and relevant game tests. For restart/cold-cache work, include server routing tests and at least one reconnect scenario. For shared database writes, prove overlapping conflicts, rebasing, retry exhaustion, idempotency, stale expiry safety, and deterministic final convergence; do not treat lock acquisition or waiting as the acceptance criterion.
+Use `rallar-testing` for command selection and the canonical service reference
+for mutation verification. Run focused tests in `packages/tests/shared-web`,
+`packages/tests/shared-server`, `packages/tests/shared-graph`, and relevant game
+tests. For restart or cold-cache work, include server routing tests and at least
+one reconnect scenario.

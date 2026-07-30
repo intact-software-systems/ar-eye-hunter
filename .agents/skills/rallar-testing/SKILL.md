@@ -57,8 +57,7 @@ not an acceptance criterion.
 - Black-box runner changes: include `packages/tests/shared-test` and the relevant rallar-black-box Playwright config only when needed.
 - Repo skills and active routing: after changes to `.agents/skills/**`,
   `.codex-plugin/plugin.json`, active Rallar docs/examples, or root skill/config
-  routing, run
-  `npx vitest run packages/tests/repo/rallar-skill-integrity.test.ts packages/tests/repo/repo-code-style-integrity.test.ts packages/tests/repo/repo-style-check.test.ts packages/tests/repo/repo-style-layout-rules.test.ts`.
+  routing, run `npm run test:repo-governance`.
 
 ## UI Behavior Rule
 
