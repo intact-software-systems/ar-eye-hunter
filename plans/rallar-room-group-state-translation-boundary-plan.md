@@ -82,8 +82,9 @@ Git rename detection, and GitHub Actions publication gates.
 
 Date: 2026-07-29
 
-Status: approved; structure/boundary Tasks 0 through 6 published and merged;
-code-standard alignment Tasks 7 and 8 in progress
+Status: approved; structure/boundary Tasks 0 through 6 and code-standard
+alignment Tasks 7 and 8 are complete; browser implementation is `complete`;
+the separately authorized evidence-ledger publication is pending
 
 **2026-07-30 pre-Task 6 internal-contract reconciliation:** Human review
 authorized this plan-only correction after a fresh whole-structure review found
@@ -134,13 +135,19 @@ Planning base and prerequisite evidence:
   `164/394/244/313` physical lines with 16 named cases and 65 `expect(...)`
   sites, and a latest accepted headless measurement of `191.541016 KiB`,
   strictly below the fixed `<192 KiB` child budget.
-- The alignment branch starts from that exact successful structure merge SHA.
-  Its future frozen tree, feature SHA, Branch Release Gate, pull request merge,
-  resulting default SHA, and default workflow remain external until each fact
-  exists. The later evidence ledger remains unstarted.
-- The planning branch starts from freshly fetched `origin/main` exact SHA
-  `7a6c8e0c2cfb3413b4c0fbaaf0af31af2571c015`, tree
-  `94270ad17f7f68eaa9b95529764c23a844514ae9`.
+- The alignment branch started from that exact successful structure merge SHA.
+  Its frozen tree is `0061bce118c30759d9a71beb867692dc97c0bf84`; final feature
+  SHA `ec49e76b95160d2a2d0fb54b140963cd144f3dcd` passed Branch Release Gate
+  `30513466787` attempt 1. PR #54 merged as exact `origin/main` SHA
+  `d807b602ad0b400c5bfc10b8da955093df57f5ce`, and **Run Hetzner Supported
+  Distributed Manifests** run `30516918807` attempt 1 succeeded for that exact
+  main SHA. The final alignment headless Brotli measurement was `191.817383
+KiB`, strictly below the fixed `<192 KiB` child budget.
+- This separately authorized evidence-ledger branch starts from exact
+  `origin/main` SHA `d807b602ad0b400c5bfc10b8da955093df57f5ce`, tree
+  `0061bce118c30759d9a71beb867692dc97c0bf84`. Its own future tree, commit,
+  PR, Branch Release Gate, merge, and default-workflow evidence remain external
+  to this plan tree.
 - Governance/checker implementation remains frozen at tree
   `47a885540b60765a1a0c95089902a0371e0a7f2b`, feature SHA
   `a986931c250c2f1fa12daa3e8d44a74669b178ed`, Branch Release Gate run
@@ -1709,7 +1716,7 @@ receive a fresh scoped review before Task 6 resumes.
 
 ### Task 8: Freeze, Review, And Publish The Alignment PR
 
-- [ ] **Step 1: Run all focused and repository completion gates**
+- [x] **Step 1: Run all focused and repository completion gates**
 
   On the final unchanged alignment tree, run Prettier on in-scope files,
   `git diff --check`, then this exact final focused set:
@@ -1751,35 +1758,41 @@ receive a fresh scoped review before Task 6 resumes.
   npm run build
   ```
 
-- [ ] **Step 2: Freeze non-circular feature evidence**
+- [x] **Step 2: Freeze non-circular feature evidence**
 
   Stage only authorized files, record the exact `git write-tree`, commit the
   same tree, push non-forced, and require Branch Release Gate for that exact
   alignment SHA. Put future merge/default-workflow facts only in the PR and
   Mandatory Completion Handoff.
 
-- [ ] **Step 3: Human Review Point B — alignment merge**
+- [x] **Step 3: Human Review Point B — alignment merge**
 
   The human reviews the exact boundary module, every literal mapping test,
   public return compatibility, warning counts, target tree, call trace, size
   review, and all gates. Only the human authorizes merge.
 
-- [ ] **Step 4: Verify the resulting default branch**
+- [x] **Step 4: Verify the resulting default branch**
 
   After human merge, resolve the exact resulting `main` SHA and require **Run
   Hetzner Supported Distributed Manifests** success for that exact SHA. The
   implementation reaches `complete` only when both the structure/boundary and
   alignment publication envelopes are green.
 
+  Completion evidence: frozen tree `0061bce118c30759d9a71beb867692dc97c0bf84`;
+  feature SHA `ec49e76b95160d2a2d0fb54b140963cd144f3dcd`; Branch Release Gate
+  `30513466787` attempt 1 success; PR #54; resulting `main` SHA
+  `d807b602ad0b400c5bfc10b8da955093df57f5ce`; and **Run Hetzner Supported
+  Distributed Manifests** `30516918807` attempt 1 success for that exact SHA.
+
 ### Task 9: Publish The Later Evidence Ledger Separately
 
-- [ ] **Step 1: Start a separately authorized ledger task**
+- [x] **Step 1: Start a separately authorized ledger task**
 
   Do not edit the frozen alignment tree. After the implementation is
   `complete`, obtain separate human authorization for a ledger branch based on
   the exact successful alignment merge SHA.
 
-- [ ] **Step 2: Record only already-known implementation evidence**
+- [x] **Step 2: Record only already-known implementation evidence**
 
   Modify only this child plan, the master program, and the execution plan.
   Record both frozen implementation trees, final feature SHAs, Branch Release
@@ -1894,7 +1907,7 @@ required to predict its own future SHA, merge, or workflow.
 - [x] Every existing mixed-suite room and people case/assertion remains covered.
 - [x] New/moved source and test files are at most 400 lines; changed functions
       pass 40/50/60 review; no hard-tier exception is introduced.
-- [ ] Focused, type, app, repository, branch, merge, and default-workflow gates
+- [x] Focused, type, app, repository, branch, merge, and default-workflow gates
       are recorded for each exact implementation tree.
 - [ ] Later ledger evidence is independently frozen and externally published.
 
@@ -1919,17 +1932,17 @@ material plan revision and new explicit human approval.
 
 ## 15. Progress Record
 
-| Milestone                       | Status                | Evidence                                                                                                                                                                                                  |
-| ------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Governance/checker prerequisite | `ledger-published`    | Implementation PR #47 and later ledger PR #51 evidence in the planning status above; exact ledger default workflow `30407710853` passed for `7a6c8e0c2cfb3413b4c0fbaaf0af31af2571c015`.                   |
-| Browser child inventory         | complete for drafting | Current source/tests/exports/consumers/examples/API calls and representative create-to-AppInbox trace recorded in Sections 2-4.                                                                           |
-| Browser child plan              | `approved`            | Human approval binds exact plan blob `37861202ce25c3cd5832663a5a3f6d7e2e4a0e4e` plus only the explicitly recorded amendments.                                                                             |
-| Internal state-store contract   | aligned               | The structure pass preserved fifteen predecessor capabilities; Task 7's consumer ratchet removes only two unused private pass-throughs and retains the exact thirteen-method owner.                       |
-| Human approval                  | complete              | Approval covers the two locked implementation PRs and the explicitly recorded narrow amendments; it does not approve later child plans.                                                                   |
-| Structure/boundary PR           | published             | PR #53 feature `ca6c907c50d12a5d52a2b54ebf81e81cff2c4a54` merged as `a0baa7ed77c9759e9a3c2c3c3c5da4c5ca845960`; default run `30506826362` attempt 1 succeeded.                                            |
-| Alignment implementation PR     | in progress           | Task 7's source ratchet, focused behavior batch, and active companion paths are green; independent alignment and traceability reviews report Critical 0 / Important 0; Task 8 final gates remain pending. |
-| Later evidence ledger           | `needed`              | Separately authorized only after both implementation envelopes are green.                                                                                                                                 |
-| Server/API-v1 children          | blocked by sequence   | Must not begin under this plan.                                                                                                                                                                           |
+| Milestone                       | Status                | Evidence                                                                                                                                                                                                                                                                                                                        |
+| ------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Governance/checker prerequisite | `ledger-published`    | Implementation PR #47 and later ledger PR #51 evidence in the planning status above; exact ledger default workflow `30407710853` passed for `7a6c8e0c2cfb3413b4c0fbaaf0af31af2571c015`.                                                                                                                                         |
+| Browser child inventory         | complete for drafting | Current source/tests/exports/consumers/examples/API calls and representative create-to-AppInbox trace recorded in Sections 2-4.                                                                                                                                                                                                 |
+| Browser implementation          | complete              | Human approval binds exact plan blob `37861202ce25c3cd5832663a5a3f6d7e2e4a0e4e` plus only the explicitly recorded amendments; both implementation publication envelopes are complete.                                                                                                                                           |
+| Internal state-store contract   | aligned               | The structure pass preserved fifteen predecessor capabilities; Task 7's consumer ratchet removes only two unused private pass-throughs and retains the exact thirteen-method owner.                                                                                                                                             |
+| Human approval                  | complete              | Approval covers the two locked implementation PRs and the explicitly recorded narrow amendments; it does not approve later child plans.                                                                                                                                                                                         |
+| Structure/boundary PR           | complete              | Frozen tree `a43c05ee5046a2a5fec6c7bc7223dfaec5868365`; feature `ca6c907c50d12a5d52a2b54ebf81e81cff2c4a54`; Branch Release Gate `30505292166` attempt 1 success; PR #53 merged as `a0baa7ed77c9759e9a3c2c3c3c5da4c5ca845960`; default run `30506826362` attempt 1 succeeded.                                                    |
+| Alignment implementation PR     | complete              | Frozen tree `0061bce118c30759d9a71beb867692dc97c0bf84`; feature `ec49e76b95160d2a2d0fb54b140963cd144f3dcd`; Branch Release Gate `30513466787` attempt 1 success; PR #54 merged as `d807b602ad0b400c5bfc10b8da955093df57f5ce`; default run `30516918807` attempt 1 succeeded; final Brotli `191.817383 KiB` is below `<192 KiB`. |
+| Later evidence ledger           | pending               | This separately authorized three-plan ledger records only already-known implementation evidence; its own tree and publication envelope remain external until Step 3 completes.                                                                                                                                                  |
+| Server/API-v1 children          | blocked by sequence   | Must not begin under this plan.                                                                                                                                                                                                                                                                                                 |
 
 ## 16. Draft Self-Review Record
 

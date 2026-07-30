@@ -67,10 +67,11 @@ published on `main`. The governance and checker child was approved at blob
 [browser room/group-state translation-boundary child](rallar-room-group-state-translation-boundary-plan.md)
 was approved at Git blob
 `37861202ce25c3cd5832663a5a3f6d7e2e4a0e4e` subject only to its explicitly
-recorded narrow amendments. Structure/boundary Tasks 0 through 5 are
-implemented in draft PR #53; Task 6 final review, immutable-tree verification,
-publication gate, and human merge decision remain pending. The alignment pass
-has not started.
+recorded narrow amendments. Structure/boundary Tasks 0 through 6 are
+implemented and published through PR #53; alignment Tasks 7 and 8 are
+implemented and published through PR #54. Both implementation envelopes are
+green, so the browser implementation is `complete`; its separately authorized
+three-plan evidence-ledger publication is pending.
 
 Program drafting, approval, execution, publication, and human handoffs follow
 the [Repository Human Traceability Program Execution Plan](repo-human-traceability-program-execution-plan.md).
@@ -132,8 +133,22 @@ Publication and progress reconciliation on 2026-07-28:
   Gate run `30371906927` attempt 1, and PR #51. It merged as exact `main` SHA
   `7a6c8e0c2cfb3413b4c0fbaaf0af31af2571c015`; **Run Hetzner Supported
   Distributed Manifests** run `30407710853` attempt 1 passed for that exact
-  SHA. The governance/checker child is therefore `ledger-published`, and the
-  browser child may be reviewed for separate approval.
+  SHA. The governance/checker child is therefore `ledger-published`.
+- Browser structure/boundary Tasks 0 through 6 completed at frozen tree
+  `a43c05ee5046a2a5fec6c7bc7223dfaec5868365`, feature SHA
+  `ca6c907c50d12a5d52a2b54ebf81e81cff2c4a54`, Branch Release Gate
+  `30505292166` attempt 1 success, PR #53, resulting `main` SHA
+  `a0baa7ed77c9759e9a3c2c3c3c5da4c5ca845960`, and **Run Hetzner Supported
+  Distributed Manifests** `30506826362` attempt 1 success for that exact SHA.
+- Browser alignment Tasks 7 and 8 completed at frozen tree
+  `0061bce118c30759d9a71beb867692dc97c0bf84`, feature SHA
+  `ec49e76b95160d2a2d0fb54b140963cd144f3dcd`, Branch Release Gate
+  `30513466787` attempt 1 success, PR #54, resulting `main` SHA
+  `d807b602ad0b400c5bfc10b8da955093df57f5ce`, and **Run Hetzner Supported
+  Distributed Manifests** `30516918807` attempt 1 success for that exact SHA.
+  Its final headless Brotli measurement was `191.817383 KiB`, strictly below
+  the fixed `<192 KiB` budget. The browser implementation is `complete`; its
+  separately authorized three-plan evidence-ledger publication is pending.
 
 ## 1. Why This Is A Program Instead Of One Refactor
 
@@ -937,9 +952,18 @@ to write, review, approve, execute, and hand off these child plans in order:
 - [ ] [Rallar room/group-state translation boundary](rallar-room-group-state-translation-boundary-plan.md)
   - state: exact Git blob
     `37861202ce25c3cd5832663a5a3f6d7e2e4a0e4e` approved with only recorded
-    narrow amendments; structure/boundary Tasks 0 through 5 implemented in
-    draft PR #53; Task 6 verification/publication and human merge pending;
-    alignment not started;
+    narrow amendments; structure/boundary frozen tree
+    `a43c05ee5046a2a5fec6c7bc7223dfaec5868365`, feature
+    `ca6c907c50d12a5d52a2b54ebf81e81cff2c4a54`, Branch Release Gate
+    `30505292166` attempt 1 success, PR #53, resulting `main`
+    `a0baa7ed77c9759e9a3c2c3c3c5da4c5ca845960`, and default workflow
+    `30506826362` attempt 1 success; alignment frozen tree
+    `0061bce118c30759d9a71beb867692dc97c0bf84`, feature
+    `ec49e76b95160d2a2d0fb54b140963cd144f3dcd`, Branch Release Gate
+    `30513466787` attempt 1 success, PR #54, resulting `main`
+    `d807b602ad0b400c5bfc10b8da955093df57f5ce`, and default workflow
+    `30516918807` attempt 1 success; browser implementation `complete`,
+    separately authorized ledger publication pending;
   - browser room target tree;
   - explicit translation functions;
   - facade compatibility decision;
@@ -994,8 +1018,8 @@ Human review has approved all master-plan execution choices:
    two pull requests by default. Smaller private migrations may use one pull
    request with clearly separated structure and code-standard commit series.
 
-The next authorized program step is Task 6 review, verification, and
-publication of the browser structure/boundary PR. Only after human merge and a
-successful default-branch workflow may the already-approved alignment pass
-start from the exact resulting `main` SHA. The shared-server and API-v1
-children remain unstarted.
+The browser implementation is `complete`. The separately authorized three-plan
+evidence ledger is pending its independent freeze and publication envelope; its
+own future tree, commit, PR, Branch Release Gate, merge, and default-workflow
+evidence remain external. The shared-server and API-v1 children remain
+unstarted.
