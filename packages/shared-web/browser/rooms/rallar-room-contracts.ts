@@ -31,39 +31,39 @@ import type {
   UpdateGroupRequest,
 } from '@shared-web/browser/rooms/room-group-state-translation.ts';
 
-export type RallarRoomSummary = Readonly<{
-  roomId: string;
-  roomRef: GroupRef;
-  name: string;
-  status: GroupStatus;
-  kind: GroupSnapshot['group']['kind'];
-  joinMode: GroupJoinMode;
-  memberCount: number;
-  onlineMemberCount: number;
-  isJoined: boolean;
-  isCurrent: boolean;
-  snapshot: GroupSnapshot;
-}>;
+export interface RallarRoomSummary {
+  readonly roomId: string;
+  readonly roomRef: GroupRef;
+  readonly name: string;
+  readonly status: GroupStatus;
+  readonly kind: GroupSnapshot['group']['kind'];
+  readonly joinMode: GroupJoinMode;
+  readonly memberCount: number;
+  readonly onlineMemberCount: number;
+  readonly isJoined: boolean;
+  readonly isCurrent: boolean;
+  readonly snapshot: GroupSnapshot;
+}
 
-export type RallarRoomMember = Readonly<{
-  principalId: string;
-  username: string;
-  displayName?: string;
-  role: GroupRole;
-  status: GroupMemberStatus;
-  isOwner: boolean;
-  isOnline: boolean;
-  sessionIds: readonly string[];
-  client?: ClientSnapshot;
-}>;
+export interface RallarRoomMember {
+  readonly principalId: string;
+  readonly username: string;
+  readonly displayName?: string;
+  readonly role: GroupRole;
+  readonly status: GroupMemberStatus;
+  readonly isOwner: boolean;
+  readonly isOnline: boolean;
+  readonly sessionIds: readonly string[];
+  readonly client?: ClientSnapshot;
+}
 
-export type RallarRoomState = Readonly<{
-  rooms: readonly RallarRoomSummary[];
-  currentRoomId?: string;
-  currentRoomRef?: GroupRef;
-  currentRoom?: GroupSnapshot;
-  members: readonly RallarRoomMember[];
-}>;
+export interface RallarRoomState {
+  readonly rooms: readonly RallarRoomSummary[];
+  readonly currentRoomId?: string;
+  readonly currentRoomRef?: GroupRef;
+  readonly currentRoom?: GroupSnapshot;
+  readonly members: readonly RallarRoomMember[];
+}
 
 export type RallarRoomPresenceWaitOptions = RallarScopedOperationOptions &
   Readonly<{
@@ -168,12 +168,12 @@ export type RallarLeaveRoomOptions = RallarScopedOperationOptions &
     clearCurrent?: boolean;
   }>;
 
-export type RallarRoomEventOptions = Readonly<{
-  scope?: StateScope;
-  roomId?: string;
-  roomRef?: GroupRef;
-  eventTypes?: readonly GroupEventType[];
-}>;
+export interface RallarRoomEventOptions {
+  readonly scope?: StateScope;
+  readonly roomId?: string;
+  readonly roomRef?: GroupRef;
+  readonly eventTypes?: readonly GroupEventType[];
+}
 
 export type RallarListRoomEventsOptions = RallarScopedOperationOptions &
   Readonly<{

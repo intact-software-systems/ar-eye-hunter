@@ -27,6 +27,24 @@ interface UpdateStateGroupLifecycleInput {
   readonly policies: CommandsOrchestratorPolicies<StateGroupWorkflowValue>;
 }
 
+interface UpdateStateGroupMetadataInput {
+  readonly groupId: string;
+  readonly patch: Readonly<Record<string, unknown>>;
+  readonly principalId: string;
+  readonly sessionId: string;
+  readonly scope: StateScope;
+  readonly policies: CommandsOrchestratorPolicies<StateGroupWorkflowValue>;
+}
+
+interface UpdateStateGroupDetailsInput {
+  readonly groupId: string;
+  readonly request: UpdateGroupRequest;
+  readonly principalId: string;
+  readonly sessionId: string;
+  readonly scope: StateScope;
+  readonly policies: CommandsOrchestratorPolicies<StateGroupWorkflowValue>;
+}
+
 export async function updateStateGroupMetadata(
   groupId: string,
   patch: Readonly<Record<string, unknown>>,
@@ -35,22 +53,39 @@ export async function updateStateGroupMetadata(
   scope: StateScope = defaultStateScope(),
   policies: CommandsOrchestratorPolicies<StateGroupWorkflowValue> = {},
 ): Promise<GroupSnapshot> {
-  const requestId = toStateWorkflowRequestId('group-metadata-update', groupId, sessionId);
-  const commandOptions = (policies.command ?? {}) as CommandOptions<GroupSnapshot>;
+  return await updateStateGroupMetadataWithInput({
+    groupId,
+    patch,
+    principalId,
+    sessionId,
+    scope,
+    policies,
+  });
+}
+
+async function updateStateGroupMetadataWithInput(
+  input: UpdateStateGroupMetadataInput,
+): Promise<GroupSnapshot> {
+  const requestId = toStateWorkflowRequestId(
+    'group-metadata-update',
+    input.groupId,
+    input.sessionId,
+  );
+  const commandOptions = (input.policies.command ?? {}) as CommandOptions<GroupSnapshot>;
   const current = await new Command<GroupSnapshot>(
-    (signal) => findStateGroup(groupId, scope, { signal }),
+    (signal) => findStateGroup(input.groupId, input.scope, { signal }),
     commandOptions,
   ).run();
   const request = toRoomMetadataGroupStateRequest({
     currentMetadata: current.group.metadata,
-    patch,
-    actorPrincipalId: principalId,
-    actorSessionId: sessionId,
+    patch: input.patch,
+    actorPrincipalId: input.principalId,
+    actorSessionId: input.sessionId,
     requestId,
   });
 
   return await new Command<GroupSnapshot>(
-    (signal) => updateStateGroup(groupId, request, scope, { signal }),
+    (signal) => updateStateGroup(input.groupId, request, input.scope, { signal }),
     commandOptions,
   ).run();
 }
@@ -63,18 +98,32 @@ export async function updateStateGroupDetails(
   scope: StateScope = defaultStateScope(),
   policies: CommandsOrchestratorPolicies<StateGroupWorkflowValue> = {},
 ): Promise<GroupSnapshot> {
-  const requestId =
-    request.requestId ?? toStateWorkflowRequestId('group-update', groupId, sessionId);
-  const commandOptions = (policies.command ?? {}) as CommandOptions<GroupSnapshot>;
-  const updateRequest = toUpdateGroupStateRequest({
+  return await updateStateGroupDetailsWithInput({
+    groupId,
     request,
-    actorPrincipalId: principalId,
-    actorSessionId: sessionId,
+    principalId,
+    sessionId,
+    scope,
+    policies,
+  });
+}
+
+async function updateStateGroupDetailsWithInput(
+  input: UpdateStateGroupDetailsInput,
+): Promise<GroupSnapshot> {
+  const requestId =
+    input.request.requestId ??
+    toStateWorkflowRequestId('group-update', input.groupId, input.sessionId);
+  const commandOptions = (input.policies.command ?? {}) as CommandOptions<GroupSnapshot>;
+  const updateRequest = toUpdateGroupStateRequest({
+    request: input.request,
+    actorPrincipalId: input.principalId,
+    actorSessionId: input.sessionId,
     requestId,
   });
 
   return await new Command<GroupSnapshot>(
-    (signal) => updateStateGroup(groupId, updateRequest, scope, { signal }),
+    (signal) => updateStateGroup(input.groupId, updateRequest, input.scope, { signal }),
     commandOptions,
   ).run();
 }

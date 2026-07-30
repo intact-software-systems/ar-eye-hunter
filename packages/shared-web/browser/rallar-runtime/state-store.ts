@@ -122,9 +122,6 @@ class RallarStateStore implements RallarStatePort {
     return () => this.#peopleStateListeners.delete(listener);
   }
 
-  resolveCurrentRoomId = (): string | undefined =>
-    this.#input.roomStateStore.resolveCurrentRoomId();
-
   resolveCurrentRoomRef = (): GroupRef | undefined =>
     this.#input.roomStateStore.resolveCurrentRoomRef();
 
@@ -144,9 +141,6 @@ class RallarStateStore implements RallarStatePort {
 
   clearCurrentRoomIfMatches = (room: string | GroupRef, clearCurrent: boolean): void =>
     this.#input.roomStateStore.clearCurrentRoomIfMatches(room, clearCurrent);
-
-  isSameRoomRefOrId = (left: GroupRef, right: string | GroupRef): boolean =>
-    this.#input.roomStateStore.isSameRoomRefOrId(left, right);
 
   toRoomId = (room: string | GroupRef | undefined): string | undefined =>
     this.#input.roomStateStore.toRoomId(room);

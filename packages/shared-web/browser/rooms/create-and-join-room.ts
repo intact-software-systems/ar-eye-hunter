@@ -79,6 +79,13 @@ export interface CreateAndSwitchRoomInput extends CreateAndJoinRoomInput {
   readonly resolveDefaultRoomRef: () => GroupRef | undefined;
 }
 
+interface CreateRoomSwitchPartialFailureErrorInput {
+  readonly operation: 'create-and-switch' | 'join';
+  readonly joinedRoom: GroupSnapshot;
+  readonly previousRoomRef: GroupRef;
+  readonly leaveError: unknown;
+}
+
 export async function createAndSwitchRoom(input: CreateAndSwitchRoomInput): Promise<GroupSnapshot> {
   const createInput = typeof input.room === 'string' ? { displayName: input.room } : input.room;
   const previousRoomRef = input.stateStore.resolveCurrentRoomRef();
@@ -109,18 +116,15 @@ export async function createAndSwitchRoom(input: CreateAndSwitchRoomInput): Prom
 }
 
 export function createRoomSwitchPartialFailureError(
-  input: Readonly<{
-    operation: 'create-and-switch' | 'join';
-    joinedRoom: GroupSnapshot;
-    previousRoomRef: GroupRef;
-    leaveError: unknown;
-  }>,
+  input: CreateRoomSwitchPartialFailureErrorInput,
 ): RallarRoomSwitchPartialFailureError {
   const message =
     input.leaveError instanceof Error ? input.leaveError.message : String(input.leaveError);
+  const joinedRoomId = input.joinedRoom.group.groupId;
+  const previousRoomId = input.previousRoomRef.groupId;
   return Object.assign(
     new Error(
-      `Room switch joined ${input.joinedRoom.group.groupId}, but leaving ${input.previousRoomRef.groupId} failed: ${message}`,
+      `Room switch joined ${joinedRoomId}, but leaving ${previousRoomId} failed: ${message}`,
     ),
     {
       name: 'RallarRoomSwitchPartialFailureError' as const,

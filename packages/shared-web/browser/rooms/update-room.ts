@@ -48,13 +48,15 @@ export interface RunRoomTargetMutationInput {
     groups: readonly GroupSnapshot[],
     scope?: StateScope,
   ) => Promise<void>;
-  readonly execute: (
-    roomId: string,
-    session: AuthSession,
-    scope: StateScope,
-    policies: CommandsOrchestratorPolicies<StateGroupWorkflowValue>,
-    generationId: string,
-  ) => Promise<GroupSnapshot>;
+  readonly execute: (input: RunRoomTargetMutationExecutionInput) => Promise<GroupSnapshot>;
+}
+
+interface RunRoomTargetMutationExecutionInput {
+  readonly roomId: string;
+  readonly session: AuthSession;
+  readonly scope: StateScope;
+  readonly policies: CommandsOrchestratorPolicies<StateGroupWorkflowValue>;
+  readonly generationId: string;
 }
 
 export async function runRoomTargetMutation(
@@ -70,13 +72,13 @@ export async function runRoomTargetMutation(
       (target.roomRef
         ? toStateScope(target.roomRef)
         : (input.resolveOperationScope(target.options.scope) ?? api.defaultStateScope()));
-    const snapshot = await input.execute(
-      target.roomId,
+    const snapshot = await input.execute({
+      roomId: target.roomId,
       session,
       scope,
-      toRallarWorkflowPolicies<StateGroupWorkflowValue>(operationOptions),
-      context.middleware.heartbeat.generationId,
-    );
+      policies: toRallarWorkflowPolicies<StateGroupWorkflowValue>(operationOptions),
+      generationId: context.middleware.heartbeat.generationId,
+    });
     await input.acceptSnapshots(context, [], [snapshot], scope);
     return snapshot;
   });
@@ -92,7 +94,7 @@ export async function updateRoom(
     ...input,
     room: input.input,
     options: input.input,
-    execute: async (roomId, session, scope, policies) =>
+    execute: async ({ roomId, session, scope, policies }) =>
       await updateStateGroupDetails(
         roomId,
         request,
@@ -165,7 +167,7 @@ async function changeRoomLifecycle(
   return await runRoomTargetMutation({
     ...input,
     options,
-    execute: async (roomId, session, scope, policies) =>
+    execute: async ({ roomId, session, scope, policies }) =>
       input.status === 'archived'
         ? await archiveStateGroup(
             roomId,

@@ -862,8 +862,8 @@ npx vitest run packages/tests/shared-web/shared-web-public-api-snapshots.test.ts
 ### Browser room changes
 
 ```bash
-npx vitest run packages/tests/shared-web/rallar-rooms-facade.test.ts \
-  packages/tests/shared-web/rallar-room-realtime-channel.test.ts \
+npx vitest run packages/tests/shared-web/rooms/rallar-rooms-facade.test.ts \
+  packages/tests/shared-web/rooms/rallar-room-realtime-channel.test.ts \
   packages/tests/shared-web/rallar-message-channel-compat.test.ts \
   packages/tests/shared-web/rallar-readiness.test.ts
 npx tsc -p packages/shared-web/tsconfig.json --noEmit

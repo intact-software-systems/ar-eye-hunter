@@ -60,6 +60,13 @@ export interface CreateBrowserRallarRoomsInput {
   ) => Promise<void>;
 }
 
+interface CreateRoomEntryOperationsInput {
+  readonly rooms: CreateBrowserRallarRoomsInput;
+  readonly createSession: (roomRef: GroupRef) => RallarRoomSession;
+  readonly resolveRoomRef: (room: string | GroupRef, scope?: StateScope) => GroupRef | undefined;
+  readonly onCacheChange: (listener: () => void | Promise<void>) => RallarUnsubscribe;
+}
+
 export function createBrowserRallarRooms(
   input: CreateBrowserRallarRoomsInput,
 ): CreateRallarRoomsFacadeOptions {
@@ -85,7 +92,12 @@ export function createBrowserRallarRooms(
 
   return {
     ...createRoomReadOperations(input, refresh),
-    ...createRoomEntryOperations(input, createSession, resolveRoomRef, onCacheChange),
+    ...createRoomEntryOperations({
+      rooms: input,
+      createSession,
+      resolveRoomRef,
+      onCacheChange,
+    }),
     ...createRoomMembershipOperations(input),
     ...createRoomUpdateOperations(input),
   };
@@ -124,31 +136,29 @@ function createRoomReadOperations(
 }
 
 function createRoomEntryOperations(
-  input: CreateBrowserRallarRoomsInput,
-  createSession: (roomRef: GroupRef) => RallarRoomSession,
-  resolveRoomRef: (room: string | GroupRef, scope?: StateScope) => GroupRef | undefined,
-  onCacheChange: (listener: () => void | Promise<void>) => RallarUnsubscribe,
+  input: CreateRoomEntryOperationsInput,
 ): Pick<
   CreateRallarRoomsFacadeOptions,
   'create' | 'createAndSwitch' | 'join' | 'enter' | 'session' | 'leave' | 'waitForPresence'
 > {
   return {
-    create: async (room) => await createAndJoinRoom({ ...input, room }),
-    createAndSwitch: async (room) => await createAndSwitchRoom({ ...input, room, leaveRoom }),
+    create: async (room) => await createAndJoinRoom({ ...input.rooms, room }),
+    createAndSwitch: async (room) => await createAndSwitchRoom({ ...input.rooms, room, leaveRoom }),
     join: async (room, options = {}) =>
-      await joinRoom({ ...input, room, options, createRoomSession: createSession }),
+      await joinRoom({ ...input.rooms, room, options, createRoomSession: input.createSession }),
     enter: async (room, options = {}) =>
-      await enterRoom({ ...input, room, options, createRoomSession: createSession }),
-    session: (room) => createSession(resolveRoomSessionRef(input, room, resolveRoomRef)),
-    leave: async (leaveInput) => await leaveRoom({ ...input, input: leaveInput }),
+      await enterRoom({ ...input.rooms, room, options, createRoomSession: input.createSession }),
+    session: (room) =>
+      input.createSession(resolveRoomSessionRef(input.rooms, room, input.resolveRoomRef)),
+    leave: async (leaveInput) => await leaveRoom({ ...input.rooms, input: leaveInput }),
     waitForPresence: async (room, options = {}) =>
       await waitForRoomPresence({
         room,
         options,
-        stateStore: input.stateStore,
-        resolveOperationOptions: input.resolveOperationOptions,
-        resolveRoomRef,
-        onCacheChange,
+        stateStore: input.rooms.stateStore,
+        resolveOperationOptions: input.rooms.resolveOperationOptions,
+        resolveRoomRef: input.resolveRoomRef,
+        onCacheChange: input.onCacheChange,
       }),
   };
 }

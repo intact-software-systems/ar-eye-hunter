@@ -4,7 +4,7 @@ import {
   isSessionInGroup,
   readGroupVersion,
 } from '@shared/api/group-client-views.ts';
-import { isSameGroupRef, toGroupRefFromScope } from '@shared/api/api-type-utils.ts';
+import { toGroupRefFromScope } from '@shared/api/api-type-utils.ts';
 import { DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type {
@@ -30,7 +30,6 @@ export interface RallarRoomStateStorePort {
     options?: RallarOnChangeOptions,
   ): RallarUnsubscribe;
   onCacheChange(listener: () => void | Promise<void>): RallarUnsubscribe;
-  resolveCurrentRoomId(): string | undefined;
   resolveCurrentRoomRef(): GroupRef | undefined;
   readGroupSnapshots(): GroupSnapshot[];
   findGroupSnapshot(room: string | GroupRef | undefined): GroupSnapshot | undefined;
@@ -40,7 +39,6 @@ export interface RallarRoomStateStorePort {
   ): number | undefined;
   setCurrentRoom(snapshot: GroupSnapshot): void;
   clearCurrentRoomIfMatches(room: string | GroupRef, clearCurrent: boolean): void;
-  isSameRoomRefOrId(left: GroupRef, right: string | GroupRef): boolean;
   toRoomId(room: string | GroupRef | undefined): string | undefined;
   resolveRoomRef(room: string | GroupRef | undefined): GroupRef | undefined;
   resolveGroupRefFromRoomId(roomId: string, scope?: StateScope): GroupRef | undefined;
@@ -109,10 +107,6 @@ class RoomStateStore implements RallarRoomStateStorePort {
 
   onCacheChange(listener: () => void | Promise<void>): RallarUnsubscribe {
     return this.#input.onCacheChange(listener);
-  }
-
-  resolveCurrentRoomId(): string | undefined {
-    return this.resolveCurrentRoomRef()?.groupId;
   }
 
   resolveCurrentRoomRef(): GroupRef | undefined {
@@ -192,10 +186,6 @@ class RoomStateStore implements RallarRoomStateStorePort {
 
   clearCurrentRoomIfMatches(room: string | GroupRef, clearCurrent: boolean): void {
     this.#input.runtime.clearCurrentRoomIfMatches(room, clearCurrent);
-  }
-
-  isSameRoomRefOrId(left: GroupRef, right: string | GroupRef): boolean {
-    return typeof right === 'string' ? left.groupId === right : isSameGroupRef(left, right);
   }
 
   toRoomId(room: string | GroupRef | undefined): string | undefined {
