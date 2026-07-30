@@ -83,6 +83,16 @@ Date: 2026-07-29
 
 Status: drafted for human review; unapproved; implementation not started
 
+**2026-07-30 pre-Task 6 internal-contract reconciliation:** Human review
+authorized this plan-only correction after a fresh whole-structure review found
+that the seven-method `RallarRoomStateStorePort` inventory below omitted eight
+behavior-preserving capabilities already present on the predecessor state
+store. The exact implemented fifteen-method contract is the cohesive internal
+room-state-store ownership surface. It is not a public package export or a
+generic dependency bag. This correction approves no new method, runtime
+behavior, public surface, compatibility structure, lifecycle, state, bundle
+budget, or Task 7 alignment work.
+
 Planning base and prerequisite evidence:
 
 - The planning branch starts from freshly fetched `origin/main` exact SHA
@@ -446,7 +456,7 @@ Every target basename names its primary symbol or cohesive capability. Files
 with several related public room contracts or operations intentionally contain
 multiple candidates and do not claim one arbitrary primary export.
 
-The exact internal entry contracts are:
+The exact internal entry and ownership contracts are:
 
 ```ts
 interface CreateBrowserRallarRoomsInput {
@@ -477,15 +487,26 @@ function createBrowserRallarRooms(
 
 interface RallarRoomStateStorePort {
   state(): RallarRoomState;
+  emit(state: RallarRoomState): void;
   onChange(
     listener: RallarStateListener<RallarRoomState>,
     options?: RallarOnChangeOptions,
   ): RallarUnsubscribe;
-  readGroupSnapshots(): readonly GroupSnapshot[];
-  findGroupSnapshot(room: string | GroupRef | undefined): GroupSnapshot | undefined;
+  onCacheChange(listener: () => void | Promise<void>): RallarUnsubscribe;
+  resolveCurrentRoomId(): string | undefined;
   resolveCurrentRoomRef(): GroupRef | undefined;
+  readGroupSnapshots(): GroupSnapshot[];
+  findGroupSnapshot(room: string | GroupRef | undefined): GroupSnapshot | undefined;
+  resolveRoomMinSnapshotVersion(
+    room: string | GroupRef | undefined,
+    explicitMinSnapshotVersion?: number,
+  ): number | undefined;
   setCurrentRoom(snapshot: GroupSnapshot): void;
   clearCurrentRoomIfMatches(room: string | GroupRef, clearCurrent: boolean): void;
+  isSameRoomRefOrId(left: GroupRef, right: string | GroupRef): boolean;
+  toRoomId(room: string | GroupRef | undefined): string | undefined;
+  resolveRoomRef(room: string | GroupRef | undefined): GroupRef | undefined;
+  resolveGroupRefFromRoomId(roomId: string, scope?: StateScope): GroupRef | undefined;
 }
 
 interface RallarRoomEventsPort {
@@ -502,9 +523,24 @@ interface RallarRoomEventsPort {
 
 These are internal capability contracts, not new public package exports. The
 entry input names every existing dependency instead of accepting a generic
-service bag. `state-events.ts` retains the one WS inbox subscription and calls
+service bag. `RallarRoomStateStorePort` names one cohesive state owner: room
+views and listeners, cache-change observation, current-room selection, snapshot
+lookup/version resolution, current-room mutation, and room identity conversion.
+It contains no unrelated service, transport, workflow, or public-facade
+capability. `state-events.ts` retains the one WS inbox subscription and calls
 only `RallarRoomEventsPort.dispatch` for group events. The room facade receives
 the other four room-event operations directly.
+
+The eight methods missing from the original plan inventory are `emit`,
+`onCacheChange`, `resolveCurrentRoomId`, `resolveRoomMinSnapshotVersion`,
+`isSameRoomRefOrId`, `toRoomId`, `resolveRoomRef`, and
+`resolveGroupRefFromRoomId`. All eight existed on the predecessor
+`rallar-runtime/state-store.ts` owner. The retained state store and lifecycle
+use `emit` and `resolveCurrentRoomId`; room presence uses `onCacheChange`;
+messaging uses minimum-snapshot-version and room identity resolution; RTC,
+director, and calls use room ID/reference resolution; and composition uses the
+group-reference conversion for defaults and scoped identity. Their relocation
+changes neither their callers nor their behavior.
 
 ### 5.2 Target test tree
 
@@ -1450,6 +1486,15 @@ late-bound callback point, construction order, or lifecycle position.
   through `room-group-state-translation.ts`; the boundary remains the sole
   current-room and member projection owner.
 
+  Preserve all fifteen exact `RallarRoomStateStorePort` capabilities from
+  Section 5.1. In addition to the original seven-method plan inventory, retain
+  the predecessor's `emit`, `onCacheChange`, `resolveCurrentRoomId`,
+  `resolveRoomMinSnapshotVersion`, `isSameRoomRefOrId`, `toRoomId`,
+  `resolveRoomRef`, and `resolveGroupRefFromRoomId` methods for the current
+  retained runtime, composition, messaging, RTC, room-presence, identity, and
+  cache-emission consumers. This is ownership relocation, not a new behavior or
+  public capability.
+
 - [ ] **Step 3: Extract room event ownership**
 
   Move room list/page/replay/subscription matching and group-event dedupe as one
@@ -1482,6 +1527,16 @@ late-bound callback point, construction order, or lifecycle position.
   ```bash
   npx vitest run packages/tests/rallar-black-box-headless/headless-bundle-boundary.test.ts
   ```
+
+**Pre-Task 6 internal-contract review evidence:** A fresh review of exact base
+`9ab6f460239ca4bbe1d84019a99006549599e506` through feature head
+`53fbb55a1e686c1eb92959a8acbc0368ebd14647` found no public, runtime,
+compatibility, lifecycle, or state regression, but identified the stale
+seven-method plan inventory as one Important structural-plan mismatch. Direct
+predecessor and consumer inspection proved that the eight omitted methods are
+the behavior-preserving capabilities recorded above. The human authorized only
+this plan correction; the implementation and tests remain unchanged and must
+receive a fresh scoped review before Task 6 resumes.
 
 ### Task 6: Freeze, Review, And Publish The Structure/Boundary PR
 
@@ -1768,6 +1823,9 @@ required to predict its own future SHA, merge, or workflow.
 - [ ] Current API methods, URLs, requests, IDs, ordering, and server continuation
       remain unchanged.
 - [ ] Room state ordering/current/member behavior remains unchanged.
+- [ ] The exact fifteen-method internal `RallarRoomStateStorePort` remains one
+      cohesive non-public room-state owner and contains no unrelated dependency
+      or behavior.
 - [ ] Room event list/replay/subscription/dedupe behavior remains unchanged.
 - [ ] Presence and create/join/leave partial-failure behavior remains unchanged.
 - [ ] Every existing mixed-suite room and people case/assertion remains covered.
@@ -1779,16 +1837,17 @@ required to predict its own future SHA, merge, or workflow.
 
 ## 14. Risks And Reserved Decisions
 
-| Risk                                                               | Mitigation / human decision                                                                                                            |
-| ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
-| Deep-import consumers are not enumerable                           | Preserve both old public paths with the explicit one-hop structures; removal requires a separate breaking-release plan.                |
-| Splitting state/events could change subscription or emission order | Characterize order/dedupe first; retain one shared inbox/cache lifecycle; no merge without literal regression evidence.                |
-| Moving group workflows could regenerate IDs or reorder operations  | Generate all volatile values at the same existing point and pass them into pure translation; assert request literals and call order.   |
-| A product alias could look compatible while changing declarations  | Keep `GroupSnapshot`/`GroupEvent` names and add compile-time/public snapshot assertions; no new public room snapshot type.             |
-| The boundary/contracts type edge could become a runtime cycle      | Permit only the documented erased `import type` cycle and assert emitted bundle edges; no runtime import may cross in both directions. |
-| File-size pressure could create pass-through modules               | Use the exact ownership map and independent review; stop if the responsibilities do not fit cohesively.                                |
-| Structure/boundary and alignment diffs could obscure each other    | Require two PRs and successful default publication between them.                                                                       |
-| Existing consumers could rely on untested behavior                 | Build both apps, black-box UI, and shared-test; run Relic tests plus public/bundle and repository gates for each frozen tree.          |
+| Risk                                                                | Mitigation / human decision                                                                                                              |
+| ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Deep-import consumers are not enumerable                            | Preserve both old public paths with the explicit one-hop structures; removal requires a separate breaking-release plan.                  |
+| Splitting state/events could change subscription or emission order  | Characterize order/dedupe first; retain one shared inbox/cache lifecycle; no merge without literal regression evidence.                  |
+| Moving group workflows could regenerate IDs or reorder operations   | Generate all volatile values at the same existing point and pass them into pure translation; assert request literals and call order.     |
+| A product alias could look compatible while changing declarations   | Keep `GroupSnapshot`/`GroupEvent` names and add compile-time/public snapshot assertions; no new public room snapshot type.               |
+| The boundary/contracts type edge could become a runtime cycle       | Permit only the documented erased `import type` cycle and assert emitted bundle edges; no runtime import may cross in both directions.   |
+| A stale internal-port inventory could hide predecessor capabilities | Keep the exact fifteen-method room-state-store contract in Section 5.1 and map the eight reconciled methods to their retained consumers. |
+| File-size pressure could create pass-through modules                | Use the exact ownership map and independent review; stop if the responsibilities do not fit cohesively.                                  |
+| Structure/boundary and alignment diffs could obscure each other     | Require two PRs and successful default publication between them.                                                                         |
+| Existing consumers could rely on untested behavior                  | Build both apps, black-box UI, and shared-test; run Relic tests plus public/bundle and repository gates for each frozen tree.            |
 
 No behavior choice is reserved for silent implementation judgment. A discovered
 behavior change, additional compatibility path, target filename change,
@@ -1802,6 +1861,7 @@ material plan revision and new explicit human approval.
 | Governance/checker prerequisite | `ledger-published`    | Implementation PR #47 and later ledger PR #51 evidence in the planning status above; exact ledger default workflow `30407710853` passed for `7a6c8e0c2cfb3413b4c0fbaaf0af31af2571c015`. |
 | Browser child inventory         | complete for drafting | Current source/tests/exports/consumers/examples/API calls and representative create-to-AppInbox trace recorded in Sections 2-4.                                                         |
 | Browser child plan              | `human-review`        | This complete draft; exact Git blob belongs in the planning PR/handoff and human prompt.                                                                                                |
+| Internal state-store contract   | reconciliation review | Human-authorized plan-only correction records the exact fifteen-method predecessor-preserving owner; fresh scoped review and publication are required before Task 6 resumes.            |
 | Human approval                  | pending               | No production work is approved by this draft.                                                                                                                                           |
 | Structure/boundary PR           | `needed`              | Starts only after exact plan approval.                                                                                                                                                  |
 | Alignment implementation PR     | `needed`              | Starts only after structure/boundary merge and exact successful default workflow.                                                                                                       |
