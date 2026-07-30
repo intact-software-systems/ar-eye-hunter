@@ -8,6 +8,27 @@ const canonicalServiceWritingPath =
   '.agents/skills/rallar-code-writing/references/convergent-service-writing.md';
 
 describe('repo code style authority integrity', () => {
+  it('applies universal human-readability doctrine to every human-authored code surface', () => {
+    const agents = readRepo('AGENTS.md');
+    const codeWriting = readRepo('.agents/skills/rallar-code-writing/SKILL.md');
+    const canonicalStyle = readRepo(canonicalStylePath);
+    const humanGuide = readRepo('docs/repo-human-style-guide.md');
+    const skillDescription = codeWriting.match(/^description:\s*(.+)$/mu)?.[1] ?? '';
+
+    expectAll(agents, [
+      'all human-authored code',
+      'ownership, dataflow, decisions, side effects, failures, and call paths',
+    ]);
+    expectAll(codeWriting, ['all human-authored code', 'TypeScript-specific rules']);
+    expectAll(canonicalStyle, [
+      'Universal structural rules',
+      'all human-authored code',
+      'TypeScript-specific rules',
+    ]);
+    expectAll(humanGuide, ['all human-authored code', 'TypeScript checker']);
+    expect(skillDescription).toContain('all human-authored code');
+  });
+
   it('routes every TypeScript change through one repo-wide style authority', () => {
     const agents = readRepo('AGENTS.md');
     const codeWriting = readRepo('.agents/skills/rallar-code-writing/SKILL.md');
