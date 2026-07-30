@@ -95,13 +95,66 @@ describe('repo style checker', () => {
         { details: false },
       );
 
-      expect(findings).not.toContainEqual(
-        expect.objectContaining({ ruleId: constructionRuleIds.forwardCapture }),
-      );
+      expect(findings).toEqual([]);
     },
   );
 
-  it('keeps construction detail findings opt-in', () => {
+  it('parses forward-capture fixtures across supported TypeScript and MJS extensions', () => {
+    const sources = [
+      {
+        file: 'runtime.tsx',
+        raw: [
+          'export function createRuntime() {',
+          '  let service!: Service;',
+          '  const consumer = createConsumer({ readService: () => service });',
+          '  service = createService();',
+          '  return <Runtime consumer={consumer} />;',
+          '}',
+        ].join('\n'),
+      },
+      {
+        file: 'runtime.mts',
+        raw: [
+          'export function createRuntime() {',
+          '  let service!: Service;',
+          '  const consumer = createConsumer({ readService: () => service });',
+          '  service = createService();',
+          '  return { consumer, service };',
+          '}',
+        ].join('\n'),
+      },
+      {
+        file: 'runtime.cts',
+        raw: [
+          'export function createRuntime() {',
+          '  let service!: Service;',
+          '  const consumer = createConsumer({ readService: () => service });',
+          '  service = createService();',
+          '  return { consumer, service };',
+          '}',
+        ].join('\n'),
+      },
+      {
+        file: 'runtime.mjs',
+        raw: [
+          'export function createRuntime() {',
+          '  let service;',
+          '  const consumer = createConsumer({ readService: () => service });',
+          '  service = createService();',
+          '  return { consumer, service };',
+          '}',
+        ].join('\n'),
+      },
+    ];
+
+    for (const source of sources) {
+      expect(scanConstructionRules(source, { details: false })).toContainEqual(
+        expect.objectContaining({ ruleId: constructionRuleIds.forwardCapture }),
+      );
+    }
+  });
+
+  it('keeps construction detail findings opt-in and excludes detail-rule near misses', () => {
     const source = {
       file: 'construction-details.ts',
       raw: [
@@ -110,12 +163,29 @@ describe('repo style checker', () => {
         '  return createOuter(() => createMiddle(() => createInner(() => value)));',
         '}',
         '',
-        'function forward(input: Input) {',
-        '  return target(input);',
+        'function createTwoBoundaryNearMiss() {',
+        '  return createOuter(() => createMiddle(() => target()));',
+        '}',
+        '',
+        'function forward(first: First, second: Second) {',
+        '  return target(first, second);',
         '}',
         '',
         'async function forwardAsync(input: Input) {',
         '  return await target(input);',
+        '}',
+        '',
+        'function reorder(first: First, second: Second) {',
+        '  return target(second, first);',
+        '}',
+        '',
+        'function transform(input: Input) {',
+        '  return target(normalize(input));',
+        '}',
+        '',
+        'function logThenForward(input: Input) {',
+        '  log(input);',
+        '  return target(input);',
         '}',
       ].join('\n'),
     };
@@ -135,18 +205,22 @@ describe('repo style checker', () => {
     expect(detailFindings).toContainEqual(
       expect.objectContaining({ ruleId: constructionRuleIds.definiteAssignment }),
     );
-    expect(detailFindings).toContainEqual(
+    const nestedCallbackFindings = detailFindings.filter(
+      (finding) => finding.ruleId === constructionRuleIds.nestedCallbackDepth,
+    );
+    const passThroughFindings = detailFindings.filter(
+      (finding) => finding.ruleId === constructionRuleIds.passThrough,
+    );
+
+    expect(nestedCallbackFindings).toEqual([
       expect.objectContaining({
-        ruleId: constructionRuleIds.nestedCallbackDepth,
-        message: expect.stringMatching(/3/),
+        message: expect.stringMatching(/callback depth.*3.*review/i),
       }),
-    );
-    expect(detailFindings).toContainEqual(
-      expect.objectContaining({ ruleId: constructionRuleIds.passThrough, message: /forward/ }),
-    );
-    expect(detailFindings).toContainEqual(
-      expect.objectContaining({ ruleId: constructionRuleIds.passThrough, message: /forwardAsync/ }),
-    );
+    ]);
+    expect(passThroughFindings).toEqual([
+      expect.objectContaining({ message: /forward/ }),
+      expect.objectContaining({ message: /forwardAsync/ }),
+    ]);
   });
 
   it('warns for optional command fields even when a decoder supplies defaults', () => {
