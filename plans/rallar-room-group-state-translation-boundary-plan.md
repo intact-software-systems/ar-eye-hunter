@@ -41,9 +41,10 @@ Git rename detection, and GitHub Actions publication gates.
 - Wave 0 governance/checker is `ledger-published`. Its frozen implementation
   evidence, TypeScript `7.0.2`, warning-only behavior, and strict-mode rejection
   remain unchanged.
-- This document is a draft in `human-review`. Creating, committing, or
-  publishing it does not approve production work. Only explicit human approval
-  of its exact Git blob permits execution.
+- Human approval binds execution to exact plan blob
+  `37861202ce25c3cd5832663a5a3f6d7e2e4a0e4e` plus only the explicitly recorded
+  amendments in this document. That approval does not extend to the alignment,
+  shared-server, API-v1, or later ledger work before their stated gates.
 - Do not start the authoritative shared-server or API-v1 child. Their files are
   inspected here only to prove the top-to-bottom call trace and browser
   compatibility boundary.
@@ -81,10 +82,40 @@ Git rename detection, and GitHub Actions publication gates.
 
 Date: 2026-07-29
 
-Status: drafted for human review; unapproved; implementation not started
+Status: approved; structure/boundary Tasks 0 through 5 implemented; Task 6
+review, verification, and publication pending
+
+**2026-07-30 pre-Task 6 internal-contract reconciliation:** Human review
+authorized this plan-only correction after a fresh whole-structure review found
+that the seven-method `RallarRoomStateStorePort` inventory below omitted eight
+behavior-preserving capabilities already present on the predecessor state
+store. The exact implemented fifteen-method contract is the cohesive internal
+room-state-store ownership surface. It is not a public package export or a
+generic dependency bag. This correction approves no new method, runtime
+behavior, public surface, compatibility structure, lifecycle, state, bundle
+budget, or Task 7 alignment work.
 
 Planning base and prerequisite evidence:
 
+- The human approved exact child-plan blob
+  `37861202ce25c3cd5832663a5a3f6d7e2e4a0e4e` for the two locked implementation
+  pull requests. During structure execution, the human authorized only the
+  request-object compatibility, fixed `<192 KiB` headless budget, scoped review
+  fixes, test-layout split, and fifteen-method internal state-store contract
+  amendments recorded in this document.
+- Structure branch `codex/rallar-room-group-state-boundary-structure` and draft
+  PR #53 contain the implemented Tasks 0 through 5 milestones. All previously
+  reported Critical and Important structure findings were resolved and
+  independently accepted before this pre-freeze progress reconciliation.
+- The pre-Task 6 structure evidence records TypeScript `7.0.2`,
+  `layout.browser-room-boundary=0`, the exact four-way test split at
+  `164/394/244/313` physical lines with 16 named cases and 65 `expect(...)`
+  sites, and a latest accepted headless measurement of `191.541016 KiB`,
+  strictly below the fixed `<192 KiB` child budget.
+- Task 6 final review, local completion gates, immutable replacement tree,
+  final feature SHA, Branch Release Gate, merge, resulting default SHA, and
+  default workflow are not recorded here before they exist. Alignment and the
+  later evidence ledger remain unstarted.
 - The planning branch starts from freshly fetched `origin/main` exact SHA
   `7a6c8e0c2cfb3413b4c0fbaaf0af31af2571c015`, tree
   `94270ad17f7f68eaa9b95529764c23a844514ae9`.
@@ -446,7 +477,7 @@ Every target basename names its primary symbol or cohesive capability. Files
 with several related public room contracts or operations intentionally contain
 multiple candidates and do not claim one arbitrary primary export.
 
-The exact internal entry contracts are:
+The exact internal entry and ownership contracts are:
 
 ```ts
 interface CreateBrowserRallarRoomsInput {
@@ -477,15 +508,26 @@ function createBrowserRallarRooms(
 
 interface RallarRoomStateStorePort {
   state(): RallarRoomState;
+  emit(state: RallarRoomState): void;
   onChange(
     listener: RallarStateListener<RallarRoomState>,
     options?: RallarOnChangeOptions,
   ): RallarUnsubscribe;
-  readGroupSnapshots(): readonly GroupSnapshot[];
-  findGroupSnapshot(room: string | GroupRef | undefined): GroupSnapshot | undefined;
+  onCacheChange(listener: () => void | Promise<void>): RallarUnsubscribe;
+  resolveCurrentRoomId(): string | undefined;
   resolveCurrentRoomRef(): GroupRef | undefined;
+  readGroupSnapshots(): GroupSnapshot[];
+  findGroupSnapshot(room: string | GroupRef | undefined): GroupSnapshot | undefined;
+  resolveRoomMinSnapshotVersion(
+    room: string | GroupRef | undefined,
+    explicitMinSnapshotVersion?: number,
+  ): number | undefined;
   setCurrentRoom(snapshot: GroupSnapshot): void;
   clearCurrentRoomIfMatches(room: string | GroupRef, clearCurrent: boolean): void;
+  isSameRoomRefOrId(left: GroupRef, right: string | GroupRef): boolean;
+  toRoomId(room: string | GroupRef | undefined): string | undefined;
+  resolveRoomRef(room: string | GroupRef | undefined): GroupRef | undefined;
+  resolveGroupRefFromRoomId(roomId: string, scope?: StateScope): GroupRef | undefined;
 }
 
 interface RallarRoomEventsPort {
@@ -502,9 +544,24 @@ interface RallarRoomEventsPort {
 
 These are internal capability contracts, not new public package exports. The
 entry input names every existing dependency instead of accepting a generic
-service bag. `state-events.ts` retains the one WS inbox subscription and calls
+service bag. `RallarRoomStateStorePort` names one cohesive state owner: room
+views and listeners, cache-change observation, current-room selection, snapshot
+lookup/version resolution, current-room mutation, and room identity conversion.
+It contains no unrelated service, transport, workflow, or public-facade
+capability. `state-events.ts` retains the one WS inbox subscription and calls
 only `RallarRoomEventsPort.dispatch` for group events. The room facade receives
 the other four room-event operations directly.
+
+The eight methods missing from the original plan inventory are `emit`,
+`onCacheChange`, `resolveCurrentRoomId`, `resolveRoomMinSnapshotVersion`,
+`isSameRoomRefOrId`, `toRoomId`, `resolveRoomRef`, and
+`resolveGroupRefFromRoomId`. All eight existed on the predecessor
+`rallar-runtime/state-store.ts` owner. The retained state store and lifecycle
+use `emit` and `resolveCurrentRoomId`; room presence uses `onCacheChange`;
+messaging uses minimum-snapshot-version and room identity resolution; RTC,
+director, and calls use room ID/reference resolution; and composition uses the
+group-reference conversion for defaults and scoped identity. Their relocation
+changes neither their callers nor their behavior.
 
 ### 5.2 Target test tree
 
@@ -544,12 +601,14 @@ packages/tests/shared-web/
     room-events-replay.test.ts
     room-events-subscription.test.ts
     room-group-state-mutation-workflows.test.ts
+    room-group-state-request-translation.test.ts
     room-group-state-translation.test.ts
     room-group-state-workflows.test.ts
     room-membership.test.ts
     room-membership-group-state-workflows.test.ts
     room-presence.test.ts
     room-session.test.ts
+    room-state-store-current-room.test.ts
     room-state-store.test.ts
     room-target.test.ts
     room-workflow-compat.test.ts
@@ -560,8 +619,21 @@ packages/tests/shared-web/
 The split test files preserve every existing assertion from the mixed room/
 people suites. The two exact feature-named test-runtime files own only repeated
 setup; `room-workflow-test-runtime.ts` similarly owns deterministic workflow
-API/command setup. Assertion sequences remain in the behavior-named test files. Each
-resulting test and test-runtime module remains at most 400 lines.
+API/command setup. `room-group-state-request-translation.test.ts` owns create,
+update, join, raw JSON omission/order, lifecycle, metadata, invite/governance,
+presence/leave, and their request-return compatibility; the retained
+`room-group-state-translation.test.ts` owns summary/state projection, ordering,
+current selection, members, snapshot identity, and facade/view compatibility.
+`room-state-store-current-room.test.ts` owns current-room/member projection,
+duplicate-principal revision selection, default-scope acceptance/rejection, and
+cross-scope retained current-room behavior; the retained
+`room-state-store.test.ts` owns initialization, scope filtering, active-room
+ordering, and summaries. Assertion sequences remain in the behavior-named test
+files. Each resulting test and test-runtime module remains at most 400 lines.
+
+This human-authorized, test-only four-way split resolves the final review's sole
+Important test-size finding without changing behavior, production ownership, or
+foundation files.
 
 ### 5.3 Exact current-to-target map
 
@@ -647,6 +719,12 @@ The boundary uses named, data-only inputs. Operation policies, scope, API
 functions, commands, clocks, random sources, caches, and listeners are not
 members of these inputs. The exact shared input vocabulary is:
 
+The following request-carrying input amendment was authorized during Task 3
+review. It preserves the original plan approval while making the higher-level
+legacy compatibility rule explicit: the exact caller request is data at the
+boundary, and its serialized field set and insertion order must survive the
+move unchanged.
+
 ```ts
 interface RoomGroupStateMutationActorInput {
   readonly actorPrincipalId: string;
@@ -654,8 +732,8 @@ interface RoomGroupStateMutationActorInput {
   readonly requestId: string;
 }
 
-interface RoomGroupStateReasonedMutationInput extends RoomGroupStateMutationActorInput {
-  readonly reason?: string;
+interface RoomGroupStateRequestInput<TRequest> extends RoomGroupStateMutationActorInput {
+  readonly request: TRequest;
 }
 
 type RoomCreateGroupStateFields = Pick<
@@ -670,37 +748,20 @@ type RoomCreateGroupStateFields = Pick<
   | 'purgeAfterEpochMs'
 >;
 
-type RoomUpdateGroupStateFields = Pick<
-  RallarUpdateRoomInput,
-  | 'slug'
-  | 'displayName'
-  | 'description'
-  | 'kind'
-  | 'joinMode'
-  | 'maxMembers'
-  | 'maxSessionsPerMember'
-  | 'metadata'
-  | 'expiresAtEpochMs'
-  | 'purgeAfterEpochMs'
->;
-
 interface RoomJoinGroupStateFields {
   readonly inviteToken?: string;
   readonly joinCode?: string;
 }
 
-interface ToCreateGroupStateRequestInput {
+interface ToCreateGroupStateRequestInput extends RoomGroupStateMutationActorInput {
   readonly room: RoomCreateGroupStateFields;
   readonly groupId: string;
-  readonly actorPrincipalId: string;
-  readonly actorSessionId: string;
-  readonly requestId: string;
 }
 
 function toCreateGroupStateRequest(input: ToCreateGroupStateRequestInput): CreateGroupRequest;
 
 interface ToUpdateGroupStateRequestInput extends RoomGroupStateMutationActorInput {
-  readonly room: RoomUpdateGroupStateFields;
+  readonly request: UpdateGroupRequest;
 }
 
 function toUpdateGroupStateRequest(input: ToUpdateGroupStateRequestInput): UpdateGroupRequest;
@@ -711,7 +772,9 @@ interface ToJoinGroupStateRequestInput extends RoomGroupStateMutationActorInput 
 
 function toJoinGroupStateRequest(input: ToJoinGroupStateRequestInput): JoinGroupRequest;
 
-interface ToRoomLifecycleGroupStateRequestInput extends RoomGroupStateReasonedMutationInput {
+interface ToRoomLifecycleGroupStateRequestInput extends RoomGroupStateRequestInput<
+  Omit<UpdateGroupRequest, 'status'>
+> {
   readonly status: 'archived' | 'deleted';
 }
 
@@ -728,9 +791,8 @@ function toRoomMetadataGroupStateRequest(
   input: ToRoomMetadataGroupStateRequestInput,
 ): UpdateGroupRequest;
 
-interface ToCreateRoomInviteGroupStateRequestInput extends RoomGroupStateReasonedMutationInput {
-  readonly invitationExpiresAtEpochMs?: number;
-}
+type ToCreateRoomInviteGroupStateRequestInput =
+  RoomGroupStateRequestInput<CreateGroupInviteRequest>;
 
 function toCreateRoomInviteGroupStateRequest(
   input: ToCreateRoomInviteGroupStateRequestInput,
@@ -740,29 +802,34 @@ function toAcceptRoomInviteGroupStateRequest(
   input: RoomGroupStateMutationActorInput,
 ): AcceptGroupInviteRequest;
 
+type ToRemoveRoomMemberGroupStateRequestInput =
+  RoomGroupStateRequestInput<RemoveGroupMemberRequest>;
+
 function toRemoveRoomMemberGroupStateRequest(
-  input: RoomGroupStateReasonedMutationInput,
+  input: ToRemoveRoomMemberGroupStateRequestInput,
 ): RemoveGroupMemberRequest;
 
+type ToBanRoomMemberGroupStateRequestInput = RoomGroupStateRequestInput<BanGroupMemberRequest>;
+
 function toBanRoomMemberGroupStateRequest(
-  input: RoomGroupStateReasonedMutationInput,
+  input: ToBanRoomMemberGroupStateRequestInput,
 ): BanGroupMemberRequest;
 
+type ToUnbanRoomMemberGroupStateRequestInput = RoomGroupStateRequestInput<UnbanGroupMemberRequest>;
+
 function toUnbanRoomMemberGroupStateRequest(
-  input: RoomGroupStateReasonedMutationInput,
+  input: ToUnbanRoomMemberGroupStateRequestInput,
 ): UnbanGroupMemberRequest;
 
-interface ToSetRoomMemberRoleGroupStateRequestInput extends RoomGroupStateReasonedMutationInput {
-  readonly role: GroupRole;
-}
+type ToSetRoomMemberRoleGroupStateRequestInput =
+  RoomGroupStateRequestInput<SetGroupMemberRoleRequest>;
 
 function toSetRoomMemberRoleGroupStateRequest(
   input: ToSetRoomMemberRoleGroupStateRequestInput,
 ): SetGroupMemberRoleRequest;
 
-interface ToTransferRoomOwnershipGroupStateRequestInput extends RoomGroupStateReasonedMutationInput {
-  readonly newOwnerPrincipalId: string;
-}
+type ToTransferRoomOwnershipGroupStateRequestInput =
+  RoomGroupStateRequestInput<TransferGroupOwnershipRequest>;
 
 function toTransferRoomOwnershipGroupStateRequest(
   input: ToTransferRoomOwnershipGroupStateRequestInput,
@@ -872,19 +939,24 @@ duplicate structural view type, or a third contract module is not approved.
   by the current contract.
 - `toJoinGroupStateRequest` emits `inviteToken` and `joinCode` only when
   currently supplied, plus both actor fields and the captured join request ID.
-- `toRoomLifecycleGroupStateRequest` emits the selected exact status,
-  conditionally supplied reason, both actor fields, and request ID.
+- `toRoomLifecycleGroupStateRequest` spreads the exact existing caller request
+  (`Omit<UpdateGroupRequest, 'status'>`) first, adds the selected exact status
+  at the same point as the legacy archive/delete wrapper, then applies the
+  actor, session, and captured request-ID overrides. It preserves every valid
+  update field, `traceId`, omission behavior, and legacy property-insertion
+  order.
   `toRoomMetadataGroupStateRequest` shallow-merges `currentMetadata` then
   `patch`, and emits the merged metadata plus both actor fields and request ID.
-- Invite and member-governance translators emit their operation-specific
-  `invitationExpiresAtEpochMs`, `role`, or `newOwnerPrincipalId`, preserve
-  current reason omission, and add the same actor fields and captured request
-  ID. Accept-invite emits only the actor fields and request ID.
+- Create-invite and member-governance translators spread their exact existing
+  operation-specific caller request first, preserving `traceId`, reason,
+  operation fields, omission behavior, and caller insertion order, then apply
+  the same actor, session, and captured request-ID overrides. Accept-invite
+  emits only the actor fields and request ID.
 - Presence connect emits `principalId`, `generationId`, actor fields, and the
-  captured presence request ID. Leave disconnect emits those fields plus the
-  fixed current `reason: 'left-group'`; leave-member emits `status: 'left'`,
-  the same fixed reason, actor fields, and its separately captured member
-  request ID.
+  captured presence request ID. Leave disconnect and leave-member reproduce
+  the exact legacy `JSON.stringify` property order, including fixed
+  `reason: 'left-group'` before each request ID; leave-member also emits
+  `status: 'left'` first.
 - State scope and route target IDs remain workflow/API arguments. They are not
   inserted into a request body or hidden inside the translation boundary.
 - Room view projection preserves active-group filtering, display-name ordering,
@@ -902,17 +974,21 @@ Before moving implementation, tests capture:
 1. minimal create output, including exact slug, `kind`, invite-only default,
    empty metadata, actor fields, and caller-supplied IDs;
 2. fully populated create output with every optional property;
-3. update omission behavior with falsy values retained;
+3. update omission behavior with valid nested `false` and `null` values plus
+   other falsy values retained, without widening an authoritative type;
 4. join with invite token, join code, actor, session, and request ID, plus a
    workflow assertion that scope is forwarded unchanged outside translation;
-5. archive/delete and every member-governance literal request;
-6. presence connect/disconnect literals and stable request IDs;
-7. room summary/state ordering, current selection, members, sessions, and
-   preservation of original snapshot object identity;
+5. archive/delete with optional update fields and `traceId`, plus create-invite
+   and every member-governance caller request with applicable `traceId`;
+6. presence connect/disconnect and leave-member literals, stable request IDs,
+   and exact raw property order;
+7. room summary/state ordering, complete joined/current flags, multiple online
+   sessions, members, and original snapshot identity for every projected room;
 8. compile-time assertions that every `RallarRoomsFacade` return and public
    property remains assignable to its current authoritative type;
 9. old positional workflow imports and new owning-path workflow imports produce
-   byte-for-byte equivalent API calls and return values;
+   byte-for-byte equivalent raw `JSON.stringify` request bodies, API calls, and
+   return values for every moved workflow;
 10. zero `layout.browser-room-boundary` findings outside the exact boundary.
 
 ## 7. Public Compatibility Decisions
@@ -1022,6 +1098,15 @@ retained non-room exports; their regression tests prove narrowing the file did
 not change the module object. Unknown external deep imports are the reason the
 one-hop exports cannot be removed in this child.
 
+**Protected compatibility review evidence:** the already-present exact
+five-line room workflow mocks in `rallar-auth-session-compat.test.ts` and
+`rallar-director-relay-compat.test.ts`, plus the exact 23-line three-owning-
+workflow-module mocks in `rallar-workflow-options-compat.test.ts`, are
+necessary module-path wiring after approved internal import moves. They do not
+authorize any other protected-suite edit, cleanup, formatting, assertion
+change, restructuring, or mock growth; their old `api-workflows.ts` mocks and
+all existing assertion bodies/sites remain preserved.
+
 ## 8. Structural Movement Versus Behavior Changes
 
 ### 8.1 Structure-and-boundary pass: permitted
@@ -1081,20 +1166,20 @@ contains no approved production behavior change.
 
 **Files:** No content changes before approval reconstruction.
 
-- [ ] **Step 1: Verify exact approval and repository state**
+- [x] **Step 1: Verify exact approval and repository state**
 
   Read `AGENTS.md`, all three linked program plans, this child plan, the current
   PR/handoff evidence, and Git status. Verify that the human approved the exact
   child-plan Git blob recorded in the approval prompt. Do not infer approval
   from this draft or from the master program.
 
-- [ ] **Step 2: Create one child-specific goal**
+- [x] **Step 2: Create one child-specific goal**
 
   Create a goal for this browser child only. The goal covers both approved
   implementation PRs and the later completion handoff, not the server/API
   children.
 
-- [ ] **Step 3: Create and publish the structure branch**
+- [x] **Step 3: Create and publish the structure branch**
 
   Start from then-current successful `origin/main`, not from this planning
   branch. Use exact branch
@@ -1112,20 +1197,29 @@ contains no approved production behavior change.
   `shared-web-public-api-snapshots.test.ts`, and the 14 module-path consumers
   in Section 7.2 as unchanged regression evidence; do not grow these active
   over-400-line files.
+- The already-present owning-path mocks are authorized only as necessary
+  module-path wiring after internal imports moved to approved owners:
+  `rallar-auth-session-compat.test.ts` and
+  `rallar-director-relay-compat.test.ts` retain their exact five-line room
+  workflow mocks, while `rallar-workflow-options-compat.test.ts` retains its
+  exact 23-line mocks for the three owning workflow modules. This authorizes
+  no further growth, assertion change, test restructuring, formatting, or
+  hard-tier cleanup; preserve the old `api-workflows.ts` mocks and every
+  assertion body and site.
 - Put every new event/state literal directly in its already-planned bounded
   replacement test, initially through the current public facade; do not edit a
   mixed suite that Task 5 removes.
 - Modify this plan and the two program progress ledgers only with evidence
   already known before the structure-tree freeze.
 
-- [ ] **Step 1: Record current layout and size evidence**
+- [x] **Step 1: Record current layout and size evidence**
 
   Run the detailed browser layout command from Section 2.4, `wc -l` on every
   current source/test file in Sections 2.1-2.2, and a 40/50/60 manual review of
   changed functions. Store the exact baseline in the draft PR and plan task
   evidence.
 
-- [ ] **Step 2: Add missing characterization assertions**
+- [x] **Step 2: Add missing characterization assertions**
 
   Add assertions for the exact facade return types, create/join/leave order,
   create-and-switch partial failure, state ordering/current selection, event
@@ -1137,7 +1231,7 @@ contains no approved production behavior change.
   snapshot tests remain byte-for-byte unchanged; only the mixed event suite is
   later replaced by the exact bounded target files.
 
-- [ ] **Step 3: Run the focused baseline**
+- [x] **Step 3: Run the focused baseline**
 
   ```bash
   npx vitest run packages/tests/shared-web/rooms
@@ -1155,7 +1249,7 @@ contains no approved production behavior change.
   Expected: all current behavior is green. A failing current-behavior assertion
   is a blocker, not a baseline to carry forward.
 
-- [ ] **Step 4: Commit the characterization milestone**
+- [x] **Step 4: Commit the characterization milestone**
 
   Suggested commit:
 
@@ -1172,27 +1266,27 @@ contains no approved production behavior change.
 - Modify into shim: `packages/shared-web/browser/rallar-rooms-facade.ts`
 - Modify owning imports and public boundary tests named in Sections 2.1-2.3.
 
-- [ ] **Step 1: Prove both paths before moving**
+- [x] **Step 1: Prove both paths before moving**
 
   Add a failing test that requires the new owning path to expose the same
   runtime factory and type surface while the old path remains callable. Put
   the assertion in the bounded facade/entrypoint tests; do not edit the
   780-line public snapshot.
 
-- [ ] **Step 2: Move without changing the public contract**
+- [x] **Step 2: Move without changing the public contract**
 
   Preserve every method, parameter, overload, default, and return type. Split
   contracts only to keep each file cohesive and at most 400 lines. Replace the
   old file with the exact one-hop compatibility re-export approved in Section
   7.2.
 
-- [ ] **Step 3: Update internal consumers to the owning path**
+- [x] **Step 3: Update internal consumers to the owning path**
 
   Repository-owned production imports use `rooms/rallar-rooms-facade.ts` or
   `rooms/rallar-room-contracts.ts`. Only compatibility tests deliberately
   import the old path.
 
-- [ ] **Step 4: Run facade and public-surface tests**
+- [x] **Step 4: Run facade and public-surface tests**
 
   ```bash
   npx vitest run \
@@ -1213,27 +1307,33 @@ boundary tests plus test runtime from Section 5.2; narrow `api-workflows.ts`.
 Do not move the room controller, state store, or event implementation in this
 task.
 
-- [ ] **Step 1: Characterize every moved workflow export first**
+- [x] **Step 1: Characterize every moved workflow export first**
 
   Create `room-workflow-test-runtime.ts` for deterministic API/command setup;
   create the three production-mirrored workflow tests and the bounded
   `room-workflow-compat.test.ts` against the current `api-workflows.ts` path.
   Capture the exact function/type exports in Section 7.2, positional call
   signatures, generated request-ID prefixes, API call order, partial-failure
-  behavior, and literal request bodies. Prove these additions pass against the
-  old module before moving code. Run the existing `api-workflows.test.ts` and
+  behavior, parsed request bodies, and raw serialized request bodies. Prove
+  every moved legacy and owning-path call against hand-written predecessor
+  literals. Run the existing `api-workflows.test.ts` and
   `rallar-workflow-options-compat.test.ts` unchanged.
 
-- [ ] **Step 2: Add the boundary fixtures red**
+  Preserve the Task 1-authorized owning-path mock wiring in the three protected
+  compatibility suites exactly as recorded there; it is required only because
+  the internal imports now resolve through approved owners.
+
+- [x] **Step 2: Add the boundary fixtures red**
 
   Create
-  `packages/tests/shared-web/rooms/room-group-state-translation.test.ts` with
-  every literal fixture in Section 6.3, then add the new owning-path import to
+  `packages/tests/shared-web/rooms/room-group-state-request-translation.test.ts`
+  and retain `room-group-state-translation.test.ts` for projection fixtures in
+  Section 6.3, then add the new owning-path import to
   `room-workflow-compat.test.ts`. Record failures caused only by the absent
   boundary/workflow modules; do not alter an expected literal to match new
   code.
 
-- [ ] **Step 3: Move shared support and workflow bodies without a cycle**
+- [x] **Step 3: Move shared support and workflow bodies without a cycle**
 
   Move the four shared private functions to `state-workflow-support.ts` exactly
   as mapped in Section 5.3. Move only the room-consumed public workflow bodies
@@ -1241,21 +1341,25 @@ task.
   positional signature as a one-hop `api-workflows.ts` re-export; retained and
   moved workflows import support directly, never through `api-workflows.ts`.
 
-- [ ] **Step 4: Make the named boundary the only request-construction owner**
+- [x] **Step 4: Make the named boundary the only request-construction owner**
 
   Implement the exact operation-specific functions in Section 6. Generate
   UUIDs and request IDs at the same workflow point and pass the captured values
   into the pure boundary. Route every authoritative type used by a room-owned
-  workflow through this module. Do not move I/O, command orchestration,
-  retries, cache mutation, or listener state into the boundary.
+  workflow through this module. Lifecycle, create-invite, and governance inputs
+  carry the exact existing caller request as data so every field and raw
+  property order survive before actor/session/request-ID overrides. Do not move
+  I/O, command orchestration, retries, cache mutation, or listener state into
+  the boundary.
 
-- [ ] **Step 5: Prove compatibility and the intermediate ratchet**
+- [x] **Step 5: Prove compatibility and the intermediate ratchet**
 
   ```bash
   npx vitest run \
     packages/tests/shared-web/rooms/room-group-state-workflows.test.ts \
     packages/tests/shared-web/rooms/room-group-state-mutation-workflows.test.ts \
     packages/tests/shared-web/rooms/room-membership-group-state-workflows.test.ts \
+    packages/tests/shared-web/rooms/room-group-state-request-translation.test.ts \
     packages/tests/shared-web/rooms/room-group-state-translation.test.ts \
     packages/tests/shared-web/rooms/room-workflow-compat.test.ts \
     packages/tests/shared-web/api-workflows.test.ts \
@@ -1278,14 +1382,14 @@ Section 5.1; remove `rallar-runtime/rooms.ts`; update composition, contracts,
 and the exact operation tests in Section 5.2. Do not split the mixed state or
 event implementations in this task.
 
-- [ ] **Step 1: Mirror operation tests before moving bodies**
+- [x] **Step 1: Mirror operation tests before moving bodies**
 
   Move each existing facade/controller behavior case to its exact operation
   test path, preserving its literal expectations and assertion sites. Add red
   owning-path tests for `createBrowserRallarRooms` and each operation primary
   symbol; prove the red results are missing-module/name failures only.
 
-- [ ] **Step 2: Move one operation responsibility per target file**
+- [x] **Step 2: Move one operation responsibility per target file**
 
   Move the current create/switch, join/enter, leave, membership, session,
   target, presence, and update/lifecycle/metadata bodies to the exact files in
@@ -1293,7 +1397,7 @@ event implementations in this task.
   objects, current-room mutation, snapshot acceptance, and partial-failure
   behavior. Room operations call the room-owned workflows from Task 3.
 
-- [ ] **Step 3: Replace the controller forwarding chain**
+- [x] **Step 3: Replace the controller forwarding chain**
 
   `createBrowserRallarRooms` becomes the obvious feature entry and returns the
   same `CreateRallarRoomsFacadeOptions`. It assembles the same operation object
@@ -1301,7 +1405,7 @@ event implementations in this task.
   `createRallarRoomsFacade` remains the public package-boundary wrapper.
   Composition order and every injected dependency remain unchanged.
 
-- [ ] **Step 4: Prove operation behavior and the final boundary count**
+- [x] **Step 4: Prove operation behavior and the final boundary count**
 
   ```bash
   npx vitest run packages/tests/shared-web/rooms
@@ -1317,7 +1421,7 @@ event implementations in this task.
   Expected: behavior is unchanged; warning-only checker exit is `0`;
   `layout.browser-room-boundary=0`; no unexplained detailed count increases.
 
-- [ ] **Step 5: Inspect rename and scope evidence**
+- [x] **Step 5: Inspect rename and scope evidence**
 
   ```bash
   git diff --find-renames --summary
@@ -1337,7 +1441,52 @@ event implementations in this task.
   and `composition.ts`
 - Split mixed tests into the exact room/people test tree in Section 5.2.
 
-- [ ] **Step 1: Preserve every mixed-suite assertion**
+The independent Task 5 fix review requires this exact private composition tree:
+
+```text
+rallar-runtime/
+  composition.ts
+  composition/
+    browser-runtime-composition.ts
+    browser-communication-composition.ts
+    browser-product-composition.ts
+    browser-lifecycle-composition.ts
+    browser-session-composition.ts
+    browser-facade-assembly.ts
+```
+
+`composition.ts` keeps `createBrowserRallarFacade` as the directly readable
+root. `browser-runtime-composition.ts` owns, in order,
+`createBrowserRuntimeFoundation`, `createBrowserStateComposition`, and
+`createBrowserStateEventComposition`: the runtime ports and lifecycle object,
+the room plus retained cache state owners, then the room plus retained state
+event owners and single WebSocket inbox. `browser-communication-composition.ts`
+owns `createBrowserMessagingComposition` followed by
+`createBrowserRealtimeComposition`, preserving messages, WebSocket status,
+RTC, realtime, and media construction order.
+
+`browser-product-composition.ts` owns
+`createBrowserRoomPeopleStatsComposition` followed by
+`createBrowserCallsDirectorComposition`, including the existing after-state-
+emit director callback. `browser-lifecycle-composition.ts` owns
+`registerBrowserStateLifecycle` for orders 10 through 20 followed by
+`registerBrowserTransportLifecycle` for orders 30 through 90.
+`browser-session-composition.ts` owns `createBrowserSessionComposition` and
+preserves data, session, connection/auth, startup, and CRDT construction order.
+`browser-facade-assembly.ts` owns `createBrowserFacadeAssembly`, including
+channels and the single public facade object.
+
+The root calls those phases in this exact order: runtime foundation; state;
+state events; messaging; realtime/media; rooms/people/stats; calls/director;
+state lifecycle; transport lifecycle; data/session/connection/auth/startup/
+CRDT; channels/public facade. Inputs and multi-value results use precise named
+interfaces. Every phase function remains at most 60 physical lines and every
+composition file remains at most 400. The split adds no public package export,
+barrel, generic dependency bag, hidden default, runtime cycle, duplicated
+state, callback, or lifecycle and does not change any injected object,
+late-bound callback point, construction order, or lifecycle position.
+
+- [x] **Step 1: Preserve every mixed-suite assertion**
 
   Inventory test names and assertion counts before splitting. After the split,
   prove that each old room and people behavior case has one corresponding new
@@ -1347,30 +1496,68 @@ event implementations in this task.
   implementation. People compatibility cases remain green during that red
   step.
 
-- [ ] **Step 2: Extract room state ownership**
+- [x] **Step 2: Extract room state ownership**
 
   Move active-group filtering, room summaries, current-room resolution,
   membership projection, room listeners, and room lookup behavior as one
   responsibility. Keep cache acceptance and people state in the retained
-  runtime store. Preserve one cache-change emission sequence.
+  runtime store. Preserve one cache-change emission sequence. Resolve the
+  current snapshot independently from the default-scope room list and pass it
+  as the locked optional `currentRoom: GroupSnapshot | undefined` data carrier
+  through `room-group-state-translation.ts`; the boundary remains the sole
+  current-room and member projection owner.
 
-- [ ] **Step 3: Extract room event ownership**
+  Preserve all fifteen exact `RallarRoomStateStorePort` capabilities from
+  Section 5.1. In addition to the original seven-method plan inventory, retain
+  the predecessor's `emit`, `onCacheChange`, `resolveCurrentRoomId`,
+  `resolveRoomMinSnapshotVersion`, `isSameRoomRefOrId`, `toRoomId`,
+  `resolveRoomRef`, and `resolveGroupRefFromRoomId` methods for the current
+  retained runtime, composition, messaging, RTC, room-presence, identity, and
+  cache-emission consumers. This is ownership relocation, not a new behavior or
+  public capability.
+
+- [x] **Step 3: Extract room event ownership**
 
   Move room list/page/replay/subscription matching and group-event dedupe as one
   responsibility. Preserve the existing single WS inbox registration lifecycle,
   subscription order, dedupe limit, replay page limits, and people behavior.
 
-- [ ] **Step 4: Run the split focused suites**
+- [x] **Step 4: Run the split focused suites**
 
   ```bash
   npx vitest run \
     packages/tests/shared-web/rooms/room-state-store.test.ts \
+    packages/tests/shared-web/rooms/room-state-store-current-room.test.ts \
     packages/tests/shared-web/rooms/room-events-list-and-page.test.ts \
     packages/tests/shared-web/rooms/room-events-replay.test.ts \
     packages/tests/shared-web/rooms/room-events-subscription.test.ts \
     packages/tests/shared-web/people/people-state-compat.test.ts \
     packages/tests/shared-web/people/people-events-compat.test.ts
   ```
+
+- [x] **Step 5: Record and enforce the fixed Task 5 headless bundle budget**
+
+  The exact Task 5 base rebuild measured `190.406250 KiB`; the initial Task 5
+  implementation measured `191.036133 KiB`; and the retained behavior-neutral
+  `#private` optimization measured `190.901367 KiB`. For Task 5 only, require
+  the headless entry to remain strictly below `192 KiB`. The accepted Task 5
+  measurement therefore leaves approximately `1.099 KiB` of headroom. This is
+  a fixed Task 5 budget exception: it permits no later increase and does not
+  approve any broader toolchain or performance exception.
+
+  ```bash
+  npx vitest run packages/tests/rallar-black-box-headless/headless-bundle-boundary.test.ts
+  ```
+
+**Pre-Task 6 internal-contract review evidence:** A fresh review of exact base
+`9ab6f460239ca4bbe1d84019a99006549599e506` through feature head
+`53fbb55a1e686c1eb92959a8acbc0368ebd14647` found no public, runtime,
+compatibility, lifecycle, or state regression, but identified the stale
+seven-method plan inventory as one Important structural-plan mismatch. Direct
+predecessor and consumer inspection proved that the eight omitted methods are
+the behavior-preserving capabilities recorded above. The human authorized only
+this plan correction; the implementation and tests remain unchanged and must
+receive a fresh scoped review before Task 6 resumes.
 
 ### Task 6: Freeze, Review, And Publish The Structure/Boundary PR
 
@@ -1413,7 +1600,8 @@ event implementations in this task.
 
 - [ ] **Step 3: Human Review Point A — structure/boundary merge**
 
-  The human reviews the exact tree, literal boundary fixtures,
+  The human reviews the exact tree, literal boundary fixtures, the four-way
+  request/projection and store/current-room test ownership split,
   `layout.browser-room-boundary=0`, public snapshots, both compatibility
   structures, app builds, rename evidence, size/function review, and absence
   of behavior changes. Only the human authorizes merge. Branch Release Gate
@@ -1640,26 +1828,29 @@ required to predict its own future SHA, merge, or workflow.
 
 ## 13. Acceptance Checklist
 
-- [ ] The exact target room and mirrored test trees exist with no empty stubs.
-- [ ] `browser-rallar-rooms.ts` is the obvious browser room entry.
-- [ ] Every new/moved primary symbol matches its descriptive filename or the
+- [x] The exact target room and mirrored test trees exist with no empty stubs.
+- [x] `browser-rallar-rooms.ts` is the obvious browser room entry.
+- [x] Every new/moved primary symbol matches its descriptive filename or the
       file clearly owns a cohesive multi-export capability.
-- [ ] The one translation boundary is exact and at most 400 lines.
-- [ ] Browser room modules have zero direct authoritative imports outside the
+- [x] The one translation boundary is exact and at most 400 lines.
+- [x] Browser room modules have zero direct authoritative imports outside the
       named boundary, except established `GroupRef`/`roomRef` identities.
-- [ ] Every current facade method and public export remains present.
-- [ ] `RallarRoomsFacade` returns and properties retain exact current
+- [x] Every current facade method and public export remains present.
+- [x] `RallarRoomsFacade` returns and properties retain exact current
       authoritative type compatibility.
-- [ ] Both approved one-hop compatibility structures are tested and no third
+- [x] Both approved one-hop compatibility structures are tested and no third
       shim exists.
-- [ ] Internal consumers use owning paths; apps/examples require no source edit.
-- [ ] Current API methods, URLs, requests, IDs, ordering, and server continuation
+- [x] Internal consumers use owning paths; apps/examples require no source edit.
+- [x] Current API methods, URLs, requests, IDs, ordering, and server continuation
       remain unchanged.
-- [ ] Room state ordering/current/member behavior remains unchanged.
-- [ ] Room event list/replay/subscription/dedupe behavior remains unchanged.
-- [ ] Presence and create/join/leave partial-failure behavior remains unchanged.
-- [ ] Every existing mixed-suite room and people case/assertion remains covered.
-- [ ] New/moved source and test files are at most 400 lines; changed functions
+- [x] Room state ordering/current/member behavior remains unchanged.
+- [x] The exact fifteen-method internal `RallarRoomStateStorePort` remains one
+      cohesive non-public room-state owner and contains no unrelated dependency
+      or behavior.
+- [x] Room event list/replay/subscription/dedupe behavior remains unchanged.
+- [x] Presence and create/join/leave partial-failure behavior remains unchanged.
+- [x] Every existing mixed-suite room and people case/assertion remains covered.
+- [x] New/moved source and test files are at most 400 lines; changed functions
       pass 40/50/60 review; no hard-tier exception is introduced.
 - [ ] Focused, type, app, repository, branch, merge, and default-workflow gates
       are recorded for each exact implementation tree.
@@ -1667,16 +1858,17 @@ required to predict its own future SHA, merge, or workflow.
 
 ## 14. Risks And Reserved Decisions
 
-| Risk                                                               | Mitigation / human decision                                                                                                            |
-| ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
-| Deep-import consumers are not enumerable                           | Preserve both old public paths with the explicit one-hop structures; removal requires a separate breaking-release plan.                |
-| Splitting state/events could change subscription or emission order | Characterize order/dedupe first; retain one shared inbox/cache lifecycle; no merge without literal regression evidence.                |
-| Moving group workflows could regenerate IDs or reorder operations  | Generate all volatile values at the same existing point and pass them into pure translation; assert request literals and call order.   |
-| A product alias could look compatible while changing declarations  | Keep `GroupSnapshot`/`GroupEvent` names and add compile-time/public snapshot assertions; no new public room snapshot type.             |
-| The boundary/contracts type edge could become a runtime cycle      | Permit only the documented erased `import type` cycle and assert emitted bundle edges; no runtime import may cross in both directions. |
-| File-size pressure could create pass-through modules               | Use the exact ownership map and independent review; stop if the responsibilities do not fit cohesively.                                |
-| Structure/boundary and alignment diffs could obscure each other    | Require two PRs and successful default publication between them.                                                                       |
-| Existing consumers could rely on untested behavior                 | Build both apps, black-box UI, and shared-test; run Relic tests plus public/bundle and repository gates for each frozen tree.          |
+| Risk                                                                | Mitigation / human decision                                                                                                              |
+| ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Deep-import consumers are not enumerable                            | Preserve both old public paths with the explicit one-hop structures; removal requires a separate breaking-release plan.                  |
+| Splitting state/events could change subscription or emission order  | Characterize order/dedupe first; retain one shared inbox/cache lifecycle; no merge without literal regression evidence.                  |
+| Moving group workflows could regenerate IDs or reorder operations   | Generate all volatile values at the same existing point and pass them into pure translation; assert request literals and call order.     |
+| A product alias could look compatible while changing declarations   | Keep `GroupSnapshot`/`GroupEvent` names and add compile-time/public snapshot assertions; no new public room snapshot type.               |
+| The boundary/contracts type edge could become a runtime cycle       | Permit only the documented erased `import type` cycle and assert emitted bundle edges; no runtime import may cross in both directions.   |
+| A stale internal-port inventory could hide predecessor capabilities | Keep the exact fifteen-method room-state-store contract in Section 5.1 and map the eight reconciled methods to their retained consumers. |
+| File-size pressure could create pass-through modules                | Use the exact ownership map and independent review; stop if the responsibilities do not fit cohesively.                                  |
+| Structure/boundary and alignment diffs could obscure each other     | Require two PRs and successful default publication between them.                                                                         |
+| Existing consumers could rely on untested behavior                  | Build both apps, black-box UI, and shared-test; run Relic tests plus public/bundle and repository gates for each frozen tree.            |
 
 No behavior choice is reserved for silent implementation judgment. A discovered
 behavior change, additional compatibility path, target filename change,
@@ -1689,9 +1881,10 @@ material plan revision and new explicit human approval.
 | ------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Governance/checker prerequisite | `ledger-published`    | Implementation PR #47 and later ledger PR #51 evidence in the planning status above; exact ledger default workflow `30407710853` passed for `7a6c8e0c2cfb3413b4c0fbaaf0af31af2571c015`. |
 | Browser child inventory         | complete for drafting | Current source/tests/exports/consumers/examples/API calls and representative create-to-AppInbox trace recorded in Sections 2-4.                                                         |
-| Browser child plan              | `human-review`        | This complete draft; exact Git blob belongs in the planning PR/handoff and human prompt.                                                                                                |
-| Human approval                  | pending               | No production work is approved by this draft.                                                                                                                                           |
-| Structure/boundary PR           | `needed`              | Starts only after exact plan approval.                                                                                                                                                  |
+| Browser child plan              | `approved`            | Human approval binds exact plan blob `37861202ce25c3cd5832663a5a3f6d7e2e4a0e4e` plus only the explicitly recorded amendments.                                                           |
+| Internal state-store contract   | reconciled            | The exact fifteen-method predecessor-preserving owner is recorded and its plan-only review found Critical 0 and Important 0.                                                            |
+| Human approval                  | complete              | Approval covers the two locked implementation PRs and the explicitly recorded narrow amendments; it does not approve later child plans.                                                 |
+| Structure/boundary PR           | implemented           | Draft PR #53 contains Tasks 0 through 5; Task 6 final review, immutable-tree verification, publication gate, and human merge decision remain pending.                                   |
 | Alignment implementation PR     | `needed`              | Starts only after structure/boundary merge and exact successful default workflow.                                                                                                       |
 | Later evidence ledger           | `needed`              | Separately authorized only after both implementation envelopes are green.                                                                                                               |
 | Server/API-v1 children          | blocked by sequence   | Must not begin under this plan.                                                                                                                                                         |

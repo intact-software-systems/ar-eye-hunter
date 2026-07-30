@@ -12,9 +12,9 @@ import type {
     RallarPeopleState,
 } from '@shared-web/browser/rallar-people-facade.ts';
 import type {
-    RallarRoomsFacade,
     RallarRoomState,
-} from '@shared-web/browser/rallar-rooms-facade.ts';
+} from '@shared-web/browser/rooms/rallar-room-contracts.ts';
+import type { RallarRoomsFacade } from '@shared-web/browser/rooms/rallar-rooms-facade.ts';
 
 export type CreateRallarStartupControllerOptions = Readonly<{
     connection: RallarConnectionFacade;

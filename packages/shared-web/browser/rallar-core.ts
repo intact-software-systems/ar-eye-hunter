@@ -14,7 +14,7 @@ export {
 
 export {
     createRallarRoomsFacade,
-} from '@shared-web/browser/rallar-rooms-facade.ts';
+} from '@shared-web/browser/rooms/rallar-rooms-facade.ts';
 
 export {
     createRallarPeopleFacade,
@@ -48,7 +48,7 @@ export type {
 export type {
     CreateRallarRoomsFacadeOptions,
     RallarRoomsFacade,
-} from '@shared-web/browser/rallar-rooms-facade.ts';
+} from '@shared-web/browser/rooms/rallar-rooms-facade.ts';
 
 export type {
     CreateRallarPeopleFacadeOptions,

@@ -231,6 +231,11 @@ vi.mock('@shared-web/browser/api-workflows.ts', () => ({
     updateStateGroupMetadata: mocks.updateStateGroupMetadata,
 }));
 
+vi.mock('@shared-web/browser/rooms/room-group-state-workflows.ts', () => ({
+    createAndJoinStateGroup: mocks.createAndJoinStateGroup,
+    joinStateGroup: mocks.joinStateGroup,
+}));
+
 vi.mock('@shared-web/browser/data-caches.ts', () => ({
     hydrateStateCaches: mocks.hydrateStateCaches,
     onStateCacheChange: mocks.onStateCacheChange,

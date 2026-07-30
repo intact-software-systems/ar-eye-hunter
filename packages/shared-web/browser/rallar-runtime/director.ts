@@ -27,7 +27,7 @@ import {
     type RallarOperationOptions,
     toRallarWorkflowPolicies,
 } from '@shared-web/browser/rallar-operation-options.ts';
-import type { RallarRoomsFacade } from '@shared-web/browser/rallar-rooms-facade.ts';
+import type { RallarRoomsFacade } from '@shared-web/browser/rooms/rallar-rooms-facade.ts';
 import type { RallarStatePort } from '@shared-web/browser/rallar-runtime/contracts.ts';
 import {
     createRallarSubscriptionScope,

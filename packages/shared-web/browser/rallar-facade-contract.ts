@@ -22,7 +22,7 @@ import type {
     RallarWsStatusSubscriptionOptions,
     RallarWsWaitForOpenResult,
 } from '@shared-web/browser/rallar-realtime-facade.ts';
-import type { RallarRoomsFacade } from '@shared-web/browser/rallar-rooms-facade.ts';
+import type { RallarRoomsFacade } from '@shared-web/browser/rooms/rallar-rooms-facade.ts';
 import type {
     RallarRtcFacade,
     RallarWaitForOpenOptions,
@@ -39,7 +39,8 @@ export type * from '@shared-web/browser/rallar-messages-facade.ts';
 export type { RallarOperationOptions, RallarOperationRetryPredicate } from '@shared-web/browser/rallar-operation-options.ts';
 export type * from '@shared-web/browser/rallar-people-facade.ts';
 export type * from '@shared-web/browser/rallar-realtime-facade.ts';
-export type * from '@shared-web/browser/rallar-rooms-facade.ts';
+export type * from '@shared-web/browser/rooms/rallar-room-contracts.ts';
+export type * from '@shared-web/browser/rooms/rallar-rooms-facade.ts';
 export type * from '@shared-web/browser/rallar-rtc-facade.ts';
 export type * from '@shared-web/browser/rallar-shared-contracts.ts';
 

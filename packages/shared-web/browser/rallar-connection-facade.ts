@@ -2,7 +2,7 @@ import type { RallarApiClientConfig } from '@shared-web/browser/api-client-confi
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
 import type { RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import type { RallarPeopleState } from '@shared-web/browser/rallar-people-facade.ts';
-import type { RallarRoomState } from '@shared-web/browser/rallar-rooms-facade.ts';
+import type { RallarRoomState } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
 import type { RallarBrowserRuntimeDefaults } from '@shared-web/browser/rallar-runtime-context.ts';
 import type { RallarSubscriptionScope } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
