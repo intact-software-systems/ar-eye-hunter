@@ -92,21 +92,17 @@ export interface ToUpdateGroupStateRequestInput extends RoomGroupStateMutationAc
 export interface ToJoinGroupStateRequestInput extends RoomGroupStateMutationActorInput {
   readonly room: RoomJoinGroupStateFields;
 }
-
 export interface ToRoomLifecycleGroupStateRequestInput extends RoomGroupStateRequestInput<
   Omit<UpdateGroupRequest, 'status'>
 > {
   readonly status: 'archived' | 'deleted';
 }
-
 export interface ToRoomMetadataGroupStateRequestInput extends RoomGroupStateMutationActorInput {
   readonly currentMetadata: Readonly<Record<string, unknown>>;
   readonly patch: Readonly<Record<string, unknown>>;
 }
-
 export type ToCreateRoomInviteGroupStateRequestInput =
   RoomGroupStateRequestInput<CreateGroupInviteRequest>;
-
 export type ToRemoveRoomMemberGroupStateRequestInput =
   RoomGroupStateRequestInput<RemoveGroupMemberRequest>;
 export type ToBanRoomMemberGroupStateRequestInput =
@@ -118,15 +114,13 @@ export type ToSetRoomMemberRoleGroupStateRequestInput =
 export type ToTransferRoomOwnershipGroupStateRequestInput =
   RoomGroupStateRequestInput<TransferGroupOwnershipRequest>;
 
-export interface ToConnectRoomPresenceGroupStateRequestInput extends RoomGroupStateMutationActorInput {
+interface RoomPresenceGroupStateRequestInput extends RoomGroupStateMutationActorInput {
   readonly principalId: string;
   readonly generationId: string;
 }
 
-export interface ToDisconnectRoomPresenceGroupStateRequestInput extends RoomGroupStateMutationActorInput {
-  readonly principalId: string;
-  readonly generationId: string;
-}
+export type ToConnectRoomPresenceGroupStateRequestInput = RoomPresenceGroupStateRequestInput;
+export type ToDisconnectRoomPresenceGroupStateRequestInput = RoomPresenceGroupStateRequestInput;
 
 export interface ToRallarRoomSummaryInput {
   readonly snapshot: GroupSnapshot;

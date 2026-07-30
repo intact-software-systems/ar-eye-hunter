@@ -35,7 +35,7 @@ export async function createRoomInvite(
   return await runRoomTargetMutation({
     ...input,
     options,
-    execute: async (roomId, session, scope, policies) =>
+    execute: async ({ roomId, session, scope, policies }) =>
       await createStateGroupInvite(
         roomId,
         input.principalId,
@@ -56,7 +56,7 @@ export async function acceptRoomInvite(
   return await runRoomTargetMutation({
     ...input,
     options: input.options ?? {},
-    execute: async (roomId, session, scope, policies, generationId) =>
+    execute: async ({ roomId, session, scope, policies, generationId }) =>
       await acceptStateGroupInvite(
         roomId,
         session.clientId,
@@ -106,7 +106,7 @@ export async function setRoomMemberRole(
   return await runRoomTargetMutation({
     ...input,
     options,
-    execute: async (roomId, session, scope, policies) =>
+    execute: async ({ roomId, session, scope, policies }) =>
       await setStateGroupMemberRole(
         roomId,
         input.principalId,
@@ -132,7 +132,7 @@ export async function transferRoomOwnership(
   return await runRoomTargetMutation({
     ...input,
     options,
-    execute: async (roomId, session, scope, policies) =>
+    execute: async ({ roomId, session, scope, policies }) =>
       await transferStateGroupOwnership(
         roomId,
         {
@@ -159,7 +159,7 @@ async function governRoomMember(
   return await runRoomTargetMutation({
     ...input,
     options,
-    execute: async (roomId, session, scope, policies) => {
+    execute: async ({ roomId, session, scope, policies }) => {
       switch (input.action) {
         case 'remove':
           return await removeStateGroupMember(

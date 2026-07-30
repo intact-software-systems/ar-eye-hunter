@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { parse } from '@babel/parser';
 import { expect, expectTypeOf, it } from 'vitest';
+
 import type { GroupEvent, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { StateEventPage } from '@shared/api/state-event-types.ts';
 import { createRallarRoomsFacade as createCompatibilityRallarRoomsFacade } from '@shared-web/browser/rallar-rooms-facade.ts';
@@ -57,73 +58,73 @@ const ROOM_FACADE_TYPE_EXPORT_NAMES = [
   'RallarRoomsFacade',
 ] as const;
 
-type CompatibilityRoomContracts = Readonly<{
-  summary: CompatibilityRoomSurface.RallarRoomSummary;
-  member: CompatibilityRoomSurface.RallarRoomMember;
-  state: CompatibilityRoomSurface.RallarRoomState;
-  presenceWaitOptions: CompatibilityRoomSurface.RallarRoomPresenceWaitOptions;
-  presenceWaitResult: CompatibilityRoomSurface.RallarRoomPresenceWaitResult;
-  createInput: CompatibilityRoomSurface.RallarCreateRoomInput;
-  targetInput: CompatibilityRoomSurface.RallarRoomTargetInput;
-  updateInput: CompatibilityRoomSurface.RallarUpdateRoomInput;
-  lifecycleOptions: CompatibilityRoomSurface.RallarRoomLifecycleOptions;
-  inviteOptions: CompatibilityRoomSurface.RallarRoomInviteOptions;
-  governanceOptions: CompatibilityRoomSurface.RallarRoomGovernanceOptions;
-  joinOptions: CompatibilityRoomSurface.RallarJoinRoomOptions;
-  joinInput: CompatibilityRoomSurface.RallarJoinRoomInput;
-  switchOperation: CompatibilityRoomSurface.RallarRoomSwitchOperation;
-  switchError: CompatibilityRoomSurface.RallarRoomSwitchPartialFailureError;
-  leaveOptions: CompatibilityRoomSurface.RallarLeaveRoomOptions;
-  eventOptions: CompatibilityRoomSurface.RallarRoomEventOptions;
-  listEventsOptions: CompatibilityRoomSurface.RallarListRoomEventsOptions;
-  listEventsInput: CompatibilityRoomSurface.RallarListRoomEventsInput;
-  replayEventsOptions: CompatibilityRoomSurface.RallarReplayRoomEventsOptions;
-  replayEventsInput: CompatibilityRoomSurface.RallarReplayRoomEventsInput;
-  eventListener: CompatibilityRoomSurface.RallarRoomEventListener;
-  sessionRealtimeInput: CompatibilityRoomSurface.RallarRoomSessionRealtimeInput;
-  sessionMessageDefinition: CompatibilityRoomSurface.RallarRoomSessionMessageDefinition;
-  session: CompatibilityRoomSurface.RallarRoomSession;
-}>;
+interface CompatibilityRoomContracts {
+  readonly summary: CompatibilityRoomSurface.RallarRoomSummary;
+  readonly member: CompatibilityRoomSurface.RallarRoomMember;
+  readonly state: CompatibilityRoomSurface.RallarRoomState;
+  readonly presenceWaitOptions: CompatibilityRoomSurface.RallarRoomPresenceWaitOptions;
+  readonly presenceWaitResult: CompatibilityRoomSurface.RallarRoomPresenceWaitResult;
+  readonly createInput: CompatibilityRoomSurface.RallarCreateRoomInput;
+  readonly targetInput: CompatibilityRoomSurface.RallarRoomTargetInput;
+  readonly updateInput: CompatibilityRoomSurface.RallarUpdateRoomInput;
+  readonly lifecycleOptions: CompatibilityRoomSurface.RallarRoomLifecycleOptions;
+  readonly inviteOptions: CompatibilityRoomSurface.RallarRoomInviteOptions;
+  readonly governanceOptions: CompatibilityRoomSurface.RallarRoomGovernanceOptions;
+  readonly joinOptions: CompatibilityRoomSurface.RallarJoinRoomOptions;
+  readonly joinInput: CompatibilityRoomSurface.RallarJoinRoomInput;
+  readonly switchOperation: CompatibilityRoomSurface.RallarRoomSwitchOperation;
+  readonly switchError: CompatibilityRoomSurface.RallarRoomSwitchPartialFailureError;
+  readonly leaveOptions: CompatibilityRoomSurface.RallarLeaveRoomOptions;
+  readonly eventOptions: CompatibilityRoomSurface.RallarRoomEventOptions;
+  readonly listEventsOptions: CompatibilityRoomSurface.RallarListRoomEventsOptions;
+  readonly listEventsInput: CompatibilityRoomSurface.RallarListRoomEventsInput;
+  readonly replayEventsOptions: CompatibilityRoomSurface.RallarReplayRoomEventsOptions;
+  readonly replayEventsInput: CompatibilityRoomSurface.RallarReplayRoomEventsInput;
+  readonly eventListener: CompatibilityRoomSurface.RallarRoomEventListener;
+  readonly sessionRealtimeInput: CompatibilityRoomSurface.RallarRoomSessionRealtimeInput;
+  readonly sessionMessageDefinition: CompatibilityRoomSurface.RallarRoomSessionMessageDefinition;
+  readonly session: CompatibilityRoomSurface.RallarRoomSession;
+}
 
-type OwningContracts = Readonly<{
-  summary: OwningRoomContracts.RallarRoomSummary;
-  member: OwningRoomContracts.RallarRoomMember;
-  state: OwningRoomContracts.RallarRoomState;
-  presenceWaitOptions: OwningRoomContracts.RallarRoomPresenceWaitOptions;
-  presenceWaitResult: OwningRoomContracts.RallarRoomPresenceWaitResult;
-  createInput: OwningRoomContracts.RallarCreateRoomInput;
-  targetInput: OwningRoomContracts.RallarRoomTargetInput;
-  updateInput: OwningRoomContracts.RallarUpdateRoomInput;
-  lifecycleOptions: OwningRoomContracts.RallarRoomLifecycleOptions;
-  inviteOptions: OwningRoomContracts.RallarRoomInviteOptions;
-  governanceOptions: OwningRoomContracts.RallarRoomGovernanceOptions;
-  joinOptions: OwningRoomContracts.RallarJoinRoomOptions;
-  joinInput: OwningRoomContracts.RallarJoinRoomInput;
-  switchOperation: OwningRoomContracts.RallarRoomSwitchOperation;
-  switchError: OwningRoomContracts.RallarRoomSwitchPartialFailureError;
-  leaveOptions: OwningRoomContracts.RallarLeaveRoomOptions;
-  eventOptions: OwningRoomContracts.RallarRoomEventOptions;
-  listEventsOptions: OwningRoomContracts.RallarListRoomEventsOptions;
-  listEventsInput: OwningRoomContracts.RallarListRoomEventsInput;
-  replayEventsOptions: OwningRoomContracts.RallarReplayRoomEventsOptions;
-  replayEventsInput: OwningRoomContracts.RallarReplayRoomEventsInput;
-  eventListener: OwningRoomContracts.RallarRoomEventListener;
-  sessionRealtimeInput: OwningRoomContracts.RallarRoomSessionRealtimeInput;
-  sessionMessageDefinition: OwningRoomContracts.RallarRoomSessionMessageDefinition;
-  session: OwningRoomContracts.RallarRoomSession;
-}>;
+interface OwningContracts {
+  readonly summary: OwningRoomContracts.RallarRoomSummary;
+  readonly member: OwningRoomContracts.RallarRoomMember;
+  readonly state: OwningRoomContracts.RallarRoomState;
+  readonly presenceWaitOptions: OwningRoomContracts.RallarRoomPresenceWaitOptions;
+  readonly presenceWaitResult: OwningRoomContracts.RallarRoomPresenceWaitResult;
+  readonly createInput: OwningRoomContracts.RallarCreateRoomInput;
+  readonly targetInput: OwningRoomContracts.RallarRoomTargetInput;
+  readonly updateInput: OwningRoomContracts.RallarUpdateRoomInput;
+  readonly lifecycleOptions: OwningRoomContracts.RallarRoomLifecycleOptions;
+  readonly inviteOptions: OwningRoomContracts.RallarRoomInviteOptions;
+  readonly governanceOptions: OwningRoomContracts.RallarRoomGovernanceOptions;
+  readonly joinOptions: OwningRoomContracts.RallarJoinRoomOptions;
+  readonly joinInput: OwningRoomContracts.RallarJoinRoomInput;
+  readonly switchOperation: OwningRoomContracts.RallarRoomSwitchOperation;
+  readonly switchError: OwningRoomContracts.RallarRoomSwitchPartialFailureError;
+  readonly leaveOptions: OwningRoomContracts.RallarLeaveRoomOptions;
+  readonly eventOptions: OwningRoomContracts.RallarRoomEventOptions;
+  readonly listEventsOptions: OwningRoomContracts.RallarListRoomEventsOptions;
+  readonly listEventsInput: OwningRoomContracts.RallarListRoomEventsInput;
+  readonly replayEventsOptions: OwningRoomContracts.RallarReplayRoomEventsOptions;
+  readonly replayEventsInput: OwningRoomContracts.RallarReplayRoomEventsInput;
+  readonly eventListener: OwningRoomContracts.RallarRoomEventListener;
+  readonly sessionRealtimeInput: OwningRoomContracts.RallarRoomSessionRealtimeInput;
+  readonly sessionMessageDefinition: OwningRoomContracts.RallarRoomSessionMessageDefinition;
+  readonly session: OwningRoomContracts.RallarRoomSession;
+}
 
-type FocusedTypeCheckResult = Readonly<{
-  status: number | null;
-  version: string;
-  diagnostics: string;
-}>;
+interface FocusedTypeCheckResult {
+  readonly status: number | null;
+  readonly version: string;
+  readonly diagnostics: string;
+}
 
-type CompatibilityExport = Readonly<{
-  exportedName: string;
-  typeOnly: boolean;
-  specifier?: string;
-}>;
+interface CompatibilityExport {
+  readonly exportedName: string;
+  readonly typeOnly: boolean;
+  readonly specifier?: string;
+}
 
 function runFocusedTypeCheck(): FocusedTypeCheckResult {
   const temporaryDirectory = mkdtempSync(path.join(tmpdir(), 'rallar-room-facade-types-'));

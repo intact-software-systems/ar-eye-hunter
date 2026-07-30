@@ -37,7 +37,7 @@ import type {
   StateScope,
 } from '@shared-web/browser/rooms/room-group-state-translation.ts';
 
-export type RallarRoomsFacade = Readonly<{
+export interface RallarRoomsFacade {
   state(): RallarRoomState;
   list(): readonly RallarRoomSummary[];
   refresh(input?: StateScope | RallarRefreshOptions): Promise<RallarRoomState>;
@@ -118,16 +118,33 @@ export type RallarRoomsFacade = Readonly<{
     options?: RallarOnChangeOptions,
   ): RallarUnsubscribe;
   onEvent(listener: RallarRoomEventListener, options?: RallarRoomEventOptions): RallarUnsubscribe;
-}>;
+}
+
+interface OptionalCreateAndSwitchRoomOperation {
+  readonly createAndSwitch?: RallarRoomsFacade['createAndSwitch'];
+}
 
 export type CreateRallarRoomsFacadeOptions = Omit<RallarRoomsFacade, 'createAndSwitch'> &
-  Readonly<{
-    createAndSwitch?: RallarRoomsFacade['createAndSwitch'];
-  }>;
+  OptionalCreateAndSwitchRoomOperation;
 
 export function createRallarRoomsFacade(
   operations: CreateRallarRoomsFacadeOptions,
 ): RallarRoomsFacade {
+  return {
+    ...createRoomQueryFacadeOperations(operations),
+    ...createRoomEntryFacadeOperations(operations),
+    ...createRoomUpdateFacadeOperations(operations),
+    ...createRoomMembershipFacadeOperations(operations),
+    ...createRoomStateFacadeOperations(operations),
+  };
+}
+
+function createRoomQueryFacadeOperations(
+  operations: CreateRallarRoomsFacadeOptions,
+): Pick<
+  RallarRoomsFacade,
+  'state' | 'list' | 'refresh' | 'listEvents' | 'listEventPage' | 'replayEvents'
+> {
   return {
     state: (): RallarRoomState => operations.state(),
     list: (): readonly RallarRoomSummary[] => operations.list(),
@@ -137,6 +154,13 @@ export function createRallarRoomsFacade(
       await operations.listEventPage(input),
     replayEvents: async (input, listener): Promise<RallarReplayEventsResult<GroupEvent>> =>
       await operations.replayEvents(input, listener),
+  };
+}
+
+function createRoomEntryFacadeOperations(
+  operations: CreateRallarRoomsFacadeOptions,
+): Pick<RallarRoomsFacade, 'create' | 'createAndSwitch' | 'join' | 'enter' | 'session' | 'leave'> {
+  return {
     create: async (input): Promise<GroupSnapshot> => await operations.create(input),
     createAndSwitch: async (input): Promise<GroupSnapshot> =>
       await (operations.createAndSwitch ?? operations.create)(input),
@@ -146,11 +170,34 @@ export function createRallarRoomsFacade(
       await operations.enter(room, options),
     session: (room): RallarRoomSession => operations.session(room),
     leave: async (input): Promise<GroupSnapshot | undefined> => await operations.leave(input),
+  };
+}
+
+function createRoomUpdateFacadeOperations(
+  operations: CreateRallarRoomsFacadeOptions,
+): Pick<RallarRoomsFacade, 'update' | 'archive' | 'delete'> {
+  return {
     update: async (input): Promise<GroupSnapshot> => await operations.update(input),
     archive: async (room, options: RallarRoomLifecycleOptions = {}): Promise<GroupSnapshot> =>
       await operations.archive(room, options),
     delete: async (room, options: RallarRoomLifecycleOptions = {}): Promise<GroupSnapshot> =>
       await operations.delete(room, options),
+  };
+}
+
+function createRoomMembershipFacadeOperations(
+  operations: CreateRallarRoomsFacadeOptions,
+): Pick<
+  RallarRoomsFacade,
+  | 'invite'
+  | 'acceptInvite'
+  | 'removeMember'
+  | 'banMember'
+  | 'unbanMember'
+  | 'setMemberRole'
+  | 'transferOwnership'
+> {
+  return {
     invite: async (
       room,
       principalId,
@@ -186,6 +233,16 @@ export function createRallarRoomsFacade(
       principalId,
       options: RallarRoomGovernanceOptions = {},
     ): Promise<GroupSnapshot> => await operations.transferOwnership(room, principalId, options),
+  };
+}
+
+function createRoomStateFacadeOperations(
+  operations: CreateRallarRoomsFacadeOptions,
+): Pick<
+  RallarRoomsFacade,
+  'updateMetadata' | 'waitForPresence' | 'current' | 'onChange' | 'onEvent'
+> {
+  return {
     updateMetadata: async (
       room,
       patch,

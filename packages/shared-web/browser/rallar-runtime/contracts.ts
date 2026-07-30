@@ -94,14 +94,12 @@ export type RallarStatePort = Readonly<{
 }> &
   Pick<
     RallarRoomStateStorePort,
-    | 'resolveCurrentRoomId'
     | 'resolveCurrentRoomRef'
     | 'readGroupSnapshots'
     | 'findGroupSnapshot'
     | 'resolveRoomMinSnapshotVersion'
     | 'setCurrentRoom'
     | 'clearCurrentRoomIfMatches'
-    | 'isSameRoomRefOrId'
     | 'toRoomId'
     | 'resolveRoomRef'
     | 'resolveGroupRefFromRoomId'

@@ -82,8 +82,8 @@ Git rename detection, and GitHub Actions publication gates.
 
 Date: 2026-07-29
 
-Status: approved; structure/boundary Tasks 0 through 5 implemented; Task 6
-review, verification, and publication pending
+Status: approved; structure/boundary Tasks 0 through 6 published and merged;
+code-standard alignment Tasks 7 and 8 in progress
 
 **2026-07-30 pre-Task 6 internal-contract reconciliation:** Human review
 authorized this plan-only correction after a fresh whole-structure review found
@@ -95,6 +95,15 @@ generic dependency bag. This correction approves no new method, runtime
 behavior, public surface, compatibility structure, lifecycle, state, bundle
 budget, or Task 7 alignment work.
 
+**2026-07-30 Task 7 internal-contract alignment:** After the structure pass
+merged, the approved Task 7 consumer review found that
+`resolveCurrentRoomId` and `isSameRoomRefOrId` had no remaining callers beyond
+their private room-state-store and retained-runtime delegation sites. The
+alignment ratchet therefore removes those two unused private pass-throughs and
+retains the exact thirteen-method cohesive internal owner recorded below. This
+approves no behavior, public-contract, compatibility, lifecycle, state,
+dependency, workflow, checker, TypeScript, or bundle-budget change.
+
 Planning base and prerequisite evidence:
 
 - The human approved exact child-plan blob
@@ -103,19 +112,22 @@ Planning base and prerequisite evidence:
   request-object compatibility, fixed `<192 KiB` headless budget, scoped review
   fixes, test-layout split, and fifteen-method internal state-store contract
   amendments recorded in this document.
-- Structure branch `codex/rallar-room-group-state-boundary-structure` and draft
-  PR #53 contain the implemented Tasks 0 through 5 milestones. All previously
-  reported Critical and Important structure findings were resolved and
-  independently accepted before this pre-freeze progress reconciliation.
+- Structure branch `codex/rallar-room-group-state-boundary-structure` published
+  Tasks 0 through 6 through PR #53 at exact feature SHA
+  `ca6c907c50d12a5d52a2b54ebf81e81cff2c4a54`, tree
+  `a43c05ee5046a2a5fec6c7bc7223dfaec5868365`. The PR merged to exact
+  `origin/main` SHA `a0baa7ed77c9759e9a3c2c3c3c5da4c5ca845960`, and **Run
+  Hetzner Supported Distributed Manifests** run `30506826362` attempt 1
+  succeeded for that exact main SHA.
 - The pre-Task 6 structure evidence records TypeScript `7.0.2`,
   `layout.browser-room-boundary=0`, the exact four-way test split at
   `164/394/244/313` physical lines with 16 named cases and 65 `expect(...)`
   sites, and a latest accepted headless measurement of `191.541016 KiB`,
   strictly below the fixed `<192 KiB` child budget.
-- Task 6 final review, local completion gates, immutable replacement tree,
-  final feature SHA, Branch Release Gate, merge, resulting default SHA, and
-  default workflow are not recorded here before they exist. Alignment and the
-  later evidence ledger remain unstarted.
+- The alignment branch starts from that exact successful structure merge SHA.
+  Its future frozen tree, feature SHA, Branch Release Gate, pull request merge,
+  resulting default SHA, and default workflow remain external until each fact
+  exists. The later evidence ledger remains unstarted.
 - The planning branch starts from freshly fetched `origin/main` exact SHA
   `7a6c8e0c2cfb3413b4c0fbaaf0af31af2571c015`, tree
   `94270ad17f7f68eaa9b95529764c23a844514ae9`.
@@ -514,7 +526,6 @@ interface RallarRoomStateStorePort {
     options?: RallarOnChangeOptions,
   ): RallarUnsubscribe;
   onCacheChange(listener: () => void | Promise<void>): RallarUnsubscribe;
-  resolveCurrentRoomId(): string | undefined;
   resolveCurrentRoomRef(): GroupRef | undefined;
   readGroupSnapshots(): GroupSnapshot[];
   findGroupSnapshot(room: string | GroupRef | undefined): GroupSnapshot | undefined;
@@ -524,7 +535,6 @@ interface RallarRoomStateStorePort {
   ): number | undefined;
   setCurrentRoom(snapshot: GroupSnapshot): void;
   clearCurrentRoomIfMatches(room: string | GroupRef, clearCurrent: boolean): void;
-  isSameRoomRefOrId(left: GroupRef, right: string | GroupRef): boolean;
   toRoomId(room: string | GroupRef | undefined): string | undefined;
   resolveRoomRef(room: string | GroupRef | undefined): GroupRef | undefined;
   resolveGroupRefFromRoomId(roomId: string, scope?: StateScope): GroupRef | undefined;
@@ -552,16 +562,19 @@ capability. `state-events.ts` retains the one WS inbox subscription and calls
 only `RallarRoomEventsPort.dispatch` for group events. The room facade receives
 the other four room-event operations directly.
 
-The eight methods missing from the original plan inventory are `emit`,
+The eight methods missing from the original plan inventory were `emit`,
 `onCacheChange`, `resolveCurrentRoomId`, `resolveRoomMinSnapshotVersion`,
 `isSameRoomRefOrId`, `toRoomId`, `resolveRoomRef`, and
 `resolveGroupRefFromRoomId`. All eight existed on the predecessor
-`rallar-runtime/state-store.ts` owner. The retained state store and lifecycle
-use `emit` and `resolveCurrentRoomId`; room presence uses `onCacheChange`;
-messaging uses minimum-snapshot-version and room identity resolution; RTC,
-director, and calls use room ID/reference resolution; and composition uses the
-group-reference conversion for defaults and scoped identity. Their relocation
-changes neither their callers nor their behavior.
+`rallar-runtime/state-store.ts` owner and were preserved through the structure
+pass. Task 7's repo-wide current-consumer review then proved that
+`resolveCurrentRoomId` and `isSameRoomRefOrId` had become unused private
+pass-throughs, so the approved behavior-neutral alignment removes them. The
+retained state store and lifecycle use `emit`; room presence uses
+`onCacheChange`; messaging uses minimum-snapshot-version and room identity
+resolution; RTC, director, and calls use room ID/reference resolution; and
+composition uses the group-reference conversion for defaults and scoped
+identity. The resulting thirteen-method contract changes no caller or behavior.
 
 ### 5.2 Target test tree
 
@@ -1507,14 +1520,21 @@ late-bound callback point, construction order, or lifecycle position.
   through `room-group-state-translation.ts`; the boundary remains the sole
   current-room and member projection owner.
 
-  Preserve all fifteen exact `RallarRoomStateStorePort` capabilities from
-  Section 5.1. In addition to the original seven-method plan inventory, retain
-  the predecessor's `emit`, `onCacheChange`, `resolveCurrentRoomId`,
-  `resolveRoomMinSnapshotVersion`, `isSameRoomRefOrId`, `toRoomId`,
-  `resolveRoomRef`, and `resolveGroupRefFromRoomId` methods for the current
-  retained runtime, composition, messaging, RTC, room-presence, identity, and
-  cache-emission consumers. This is ownership relocation, not a new behavior or
-  public capability.
+  Preserve all fifteen `RallarRoomStateStorePort` capabilities authorized by
+  the pre-Task 6 amendment. In addition to the original seven-method plan
+  inventory, retain the predecessor's `emit`, `onCacheChange`,
+  `resolveCurrentRoomId`, `resolveRoomMinSnapshotVersion`,
+  `isSameRoomRefOrId`, `toRoomId`, `resolveRoomRef`, and
+  `resolveGroupRefFromRoomId` methods for the current retained runtime,
+  composition, messaging, RTC, room-presence, identity, and cache-emission
+  consumers. This is ownership relocation, not a new behavior or public
+  capability.
+
+  Task 7 later reviews the two private pass-throughs
+  `resolveCurrentRoomId` and `isSameRoomRefOrId` against current consumers. Its
+  explicitly approved behavior-neutral alignment may remove them only after a
+  repo-wide usage ratchet proves that no consumer remains; the final internal
+  owner is then the thirteen-method contract in Section 5.1.
 
 - [x] **Step 3: Extract room event ownership**
 
@@ -1616,14 +1636,14 @@ receive a fresh scoped review before Task 6 resumes.
 
 ### Task 7: Create The Code-Standard Alignment Branch Test-First
 
-- [ ] **Step 1: Start from the exact successful structure merge SHA**
+- [x] **Step 1: Start from the exact successful structure merge SHA**
 
   Create and publish
   `codex/rallar-room-group-state-boundary-alignment` from that exact
   `origin/main`. Keep the same child-specific goal; open a separate draft PR
   after the first meaningful commit.
 
-- [ ] **Step 2: Write the scoped source-structure ratchet before alignment**
+- [x] **Step 2: Write the scoped source-structure ratchet before alignment**
 
   Create `packages/tests/shared-web/rooms/room-code-standard.test.ts`. Using the
   existing source-analysis test support, assert the exact target file list,
@@ -1633,14 +1653,19 @@ receive a fresh scoped review before Task 6 resumes.
   the initial red assertions against remaining structure-pass code-standard
   debt; do not weaken thresholds to obtain green.
 
-- [ ] **Step 3: Align only the newly owned room code**
+- [x] **Step 3: Align only the newly owned room code**
 
   Apply `interface`/`type`, named input, file ordering, 100-column, and 40/50/60
   rules to new or materially rewritten room code. Keep legacy public positional
   workflow signatures in the approved compatibility re-export surface; their
   room-owned implementations receive named input records.
 
-- [ ] **Step 4: Verify the source ratchet and unchanged behavior**
+  Review the retained internal `resolveCurrentRoomId` and
+  `isSameRoomRefOrId` pass-throughs. Remove them only when the source ratchet
+  proves they are private and unused, without changing room identity behavior
+  or the cohesive state-store ownership model.
+
+- [x] **Step 4: Verify the source ratchet and unchanged behavior**
 
   ```bash
   npx vitest run \
@@ -1844,7 +1869,7 @@ required to predict its own future SHA, merge, or workflow.
 - [x] Current API methods, URLs, requests, IDs, ordering, and server continuation
       remain unchanged.
 - [x] Room state ordering/current/member behavior remains unchanged.
-- [x] The exact fifteen-method internal `RallarRoomStateStorePort` remains one
+- [x] The exact thirteen-method internal `RallarRoomStateStorePort` remains one
       cohesive non-public room-state owner and contains no unrelated dependency
       or behavior.
 - [x] Room event list/replay/subscription/dedupe behavior remains unchanged.
@@ -1858,17 +1883,17 @@ required to predict its own future SHA, merge, or workflow.
 
 ## 14. Risks And Reserved Decisions
 
-| Risk                                                                | Mitigation / human decision                                                                                                              |
-| ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| Deep-import consumers are not enumerable                            | Preserve both old public paths with the explicit one-hop structures; removal requires a separate breaking-release plan.                  |
-| Splitting state/events could change subscription or emission order  | Characterize order/dedupe first; retain one shared inbox/cache lifecycle; no merge without literal regression evidence.                  |
-| Moving group workflows could regenerate IDs or reorder operations   | Generate all volatile values at the same existing point and pass them into pure translation; assert request literals and call order.     |
-| A product alias could look compatible while changing declarations   | Keep `GroupSnapshot`/`GroupEvent` names and add compile-time/public snapshot assertions; no new public room snapshot type.               |
-| The boundary/contracts type edge could become a runtime cycle       | Permit only the documented erased `import type` cycle and assert emitted bundle edges; no runtime import may cross in both directions.   |
-| A stale internal-port inventory could hide predecessor capabilities | Keep the exact fifteen-method room-state-store contract in Section 5.1 and map the eight reconciled methods to their retained consumers. |
-| File-size pressure could create pass-through modules                | Use the exact ownership map and independent review; stop if the responsibilities do not fit cohesively.                                  |
-| Structure/boundary and alignment diffs could obscure each other     | Require two PRs and successful default publication between them.                                                                         |
-| Existing consumers could rely on untested behavior                  | Build both apps, black-box UI, and shared-test; run Relic tests plus public/bundle and repository gates for each frozen tree.            |
+| Risk                                                                | Mitigation / human decision                                                                                                                                 |
+| ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Deep-import consumers are not enumerable                            | Preserve both old public paths with the explicit one-hop structures; removal requires a separate breaking-release plan.                                     |
+| Splitting state/events could change subscription or emission order  | Characterize order/dedupe first; retain one shared inbox/cache lifecycle; no merge without literal regression evidence.                                     |
+| Moving group workflows could regenerate IDs or reorder operations   | Generate all volatile values at the same existing point and pass them into pure translation; assert request literals and call order.                        |
+| A product alias could look compatible while changing declarations   | Keep `GroupSnapshot`/`GroupEvent` names and add compile-time/public snapshot assertions; no new public room snapshot type.                                  |
+| The boundary/contracts type edge could become a runtime cycle       | Permit only the documented erased `import type` cycle and assert emitted bundle edges; no runtime import may cross in both directions.                      |
+| A stale internal-port inventory could hide predecessor capabilities | Record the structure pass's fifteen-method preservation, then keep the exact thirteen-method Task 7 contract and its consumer-usage ratchet in Section 5.1. |
+| File-size pressure could create pass-through modules                | Use the exact ownership map and independent review; stop if the responsibilities do not fit cohesively.                                                     |
+| Structure/boundary and alignment diffs could obscure each other     | Require two PRs and successful default publication between them.                                                                                            |
+| Existing consumers could rely on untested behavior                  | Build both apps, black-box UI, and shared-test; run Relic tests plus public/bundle and repository gates for each frozen tree.                               |
 
 No behavior choice is reserved for silent implementation judgment. A discovered
 behavior change, additional compatibility path, target filename change,
@@ -1882,10 +1907,10 @@ material plan revision and new explicit human approval.
 | Governance/checker prerequisite | `ledger-published`    | Implementation PR #47 and later ledger PR #51 evidence in the planning status above; exact ledger default workflow `30407710853` passed for `7a6c8e0c2cfb3413b4c0fbaaf0af31af2571c015`. |
 | Browser child inventory         | complete for drafting | Current source/tests/exports/consumers/examples/API calls and representative create-to-AppInbox trace recorded in Sections 2-4.                                                         |
 | Browser child plan              | `approved`            | Human approval binds exact plan blob `37861202ce25c3cd5832663a5a3f6d7e2e4a0e4e` plus only the explicitly recorded amendments.                                                           |
-| Internal state-store contract   | reconciled            | The exact fifteen-method predecessor-preserving owner is recorded and its plan-only review found Critical 0 and Important 0.                                                            |
+| Internal state-store contract   | aligned               | The structure pass preserved fifteen predecessor capabilities; Task 7's consumer ratchet removes only two unused private pass-throughs and retains the exact thirteen-method owner.     |
 | Human approval                  | complete              | Approval covers the two locked implementation PRs and the explicitly recorded narrow amendments; it does not approve later child plans.                                                 |
-| Structure/boundary PR           | implemented           | Draft PR #53 contains Tasks 0 through 5; Task 6 final review, immutable-tree verification, publication gate, and human merge decision remain pending.                                   |
-| Alignment implementation PR     | `needed`              | Starts only after structure/boundary merge and exact successful default workflow.                                                                                                       |
+| Structure/boundary PR           | published             | PR #53 feature `ca6c907c50d12a5d52a2b54ebf81e81cff2c4a54` merged as `a0baa7ed77c9759e9a3c2c3c3c5da4c5ca845960`; default run `30506826362` attempt 1 succeeded.                          |
+| Alignment implementation PR     | in progress           | Task 7's source ratchet and focused behavior batch are green on `codex/rallar-room-group-state-boundary-alignment`; independent review and Task 8 gates remain pending.                 |
 | Later evidence ledger           | `needed`              | Separately authorized only after both implementation envelopes are green.                                                                                                               |
 | Server/API-v1 children          | blocked by sequence   | Must not begin under this plan.                                                                                                                                                         |
 
