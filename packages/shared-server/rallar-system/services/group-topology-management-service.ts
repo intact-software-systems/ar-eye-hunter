@@ -23,8 +23,10 @@ import { validateGroupTopologyNextHops } from '@shared-graph/group-topology-vali
 import { GroupTopologyConfigRepository } from '../repositories/GroupTopologyConfigRepository.ts';
 import {
     GroupStateRepository,
-    type GroupStateAuthorityGuard,
-} from '../repositories/GroupStateRepository.ts';
+} from '../group-state/persistence/group-state-repository.ts';
+import type {
+    GroupStateAuthorityGuard,
+} from '../group-state/persistence/group-state-persistence-contracts.ts';
 import { PSqlRuntimeStateRepository } from '../../postgres/runtime-state/PSqlRuntimeStateRepository.ts';
 import type { PSqlTransactionSql } from '../../postgres/PostgresSqlClient.ts';
 import { RtcRttRepository } from '../repositories/RtcRttRepository.ts';

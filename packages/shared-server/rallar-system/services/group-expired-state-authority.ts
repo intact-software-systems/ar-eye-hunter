@@ -4,7 +4,7 @@ import { validateRuntimeStateExpiredAuthority } from '../../runtime-state/Runtim
 import {
     groupStateGroupStorageKey,
     groupStatePresenceSessionStorageKey,
-} from '../group-state-storage-keys.ts';
+} from '../group-state/persistence/group-state-storage-keys.ts';
 
 export function validateGroupExpiredStateAuthority(input: Readonly<{
     ref: GroupRef;

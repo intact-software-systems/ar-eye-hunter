@@ -5,12 +5,12 @@ import type {
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import {
     GroupStateRepository,
-} from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
+} from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import {
     groupStateGroupStorageKey,
     groupStateMemberStorageKey,
-} from '@shared-server/rallar-system/group-state-storage-keys.ts';
-import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
+} from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
+import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
 
 describe('GroupStateRepository authority fence', () => {
     it('preserves the exact raw group bytes, physical expiry, and every domain field', async () => {

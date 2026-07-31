@@ -14,8 +14,8 @@ import { ResourceInboxRepository } from '../../postgres/resource-inbox/ResourceI
 import {
     createTransactionBoundGroupStateRepository,
     GroupStateRepository,
-} from '../repositories/GroupStateRepository.ts';
-import { assembleGroupStateSnapshot } from '../repositories/group-state-snapshot-assembly.ts';
+} from '../group-state/persistence/group-state-repository.ts';
+import { assembleGroupStateSnapshot } from '../group-state/persistence/assemble-group-state-snapshot.ts';
 import {
     computeGroupPresenceSummary,
     type GroupPresenceSummaryComputed,

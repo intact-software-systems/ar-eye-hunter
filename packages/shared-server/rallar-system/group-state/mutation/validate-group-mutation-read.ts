@@ -10,7 +10,7 @@ import {
   groupStatePresenceAdmissionStorageKey,
   groupStatePresenceSessionStorageKey,
   groupStatePresenceSummaryStorageKey,
-} from '../../group-state-storage-keys.ts';
+} from '../persistence/group-state-storage-keys.ts';
 import { validateGroupExpiredStateAuthority } from '../../services/group-expired-state-authority.ts';
 import type { GroupMutationCommand, GroupMutationRead } from './group-mutation-contracts.ts';
 import { validateGroupMutationIdempotencyRecord } from './group-mutation-result.ts';

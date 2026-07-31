@@ -6,26 +6,27 @@ import type {
   GroupPresenceSummary,
   GroupRef,
 } from '@shared/api/group-types.ts';
-import type { RuntimeStateEntryValue } from '../../runtime-state/RuntimeStateJsonStore.ts';
+import type { RuntimeStateEntryValue } from '../../../runtime-state/RuntimeStateJsonStore.ts';
 import type {
   RuntimeStateEntry,
   RuntimeStateRepositoryLike,
-} from '../../runtime-state/RuntimeStateRepository.ts';
+} from '../../../runtime-state/RuntimeStateRepository.ts';
 import {
   isRuntimeStateReadBatchRepositoryLike,
   type RuntimeStateReadBatchSelector,
-} from '../../runtime-state/RuntimeStateReadBatch.ts';
+} from '../../../runtime-state/RuntimeStateReadBatch.ts';
 import {
   resolveRuntimeStateReadBatchLiveValues,
-} from '../../runtime-state/RuntimeStateReadBatchLiveValues.ts';
-import type { GroupMutationIdempotencyRecord } from '../group-state/mutation/group-mutation-contracts.ts';
+  type RuntimeStateReadBatchLiveSelection,
+} from '../../../runtime-state/RuntimeStateReadBatchLiveValues.ts';
+import type { GroupMutationIdempotencyRecord } from '../mutation/group-mutation-contracts.ts';
 import {
   groupStateGroupStorageKey,
   groupStateIdempotencyStorageKey,
   groupStateMemberStorageKey,
   groupStatePresenceAdmissionStorageKey,
   groupStatePresenceSessionStorageKey,
-} from '../group-state-storage-keys.ts';
+} from './group-state-storage-keys.ts';
 import {
   GROUPS_NAMESPACE,
   IDEMPOTENT_NAMESPACE,
@@ -95,6 +96,29 @@ type ReadSlot =
   | Readonly<{ kind: 'presence'; identity: string }>
   | Readonly<{ kind: 'admission'; identity: string }>;
 
+interface ExactReadAccumulator {
+  readonly status: 'stable';
+  readonly groups: RuntimeStateEntryValue<Group>[];
+  expiredGroupEntry: RuntimeStateEntry | null;
+  readonly presenceSummaries: RuntimeStateEntryValue<GroupPresenceSummary>[];
+  readonly idempotency: ExactEntry<string, GroupMutationIdempotencyRecord>[];
+  readonly members: ExactEntry<string, GroupMember>[];
+  readonly presenceSessions: ExactEntry<string, GroupPresenceSession>[];
+  readonly admissions: ExactEntry<string, GroupPresenceAdmission>[];
+}
+
+interface ExactReadIdentities {
+  readonly requestIds: readonly string[];
+  readonly memberIds: readonly string[];
+  readonly sessionIds: readonly string[];
+  readonly admissionIds: readonly string[];
+}
+
+interface ExactReadSelectorSet {
+  readonly selectors: readonly RuntimeStateReadBatchSelector[];
+  readonly slots: readonly ReadSlot[];
+}
+
 export async function readGroupStateMutationExactEntries(
   repository: RuntimeStateRepositoryLike,
   input: GroupStateMutationExactReadInput,
@@ -132,77 +156,71 @@ export async function readGroupStateMutationExactEntries(
     toLiveEntryValue,
   );
   if (resolved.status === 'changed') return { status: 'fallback' };
+  return toExactReadResult(slots, resolved.selections, decoders);
+}
 
-  const groups: RuntimeStateEntryValue<Group>[] = [];
-  let expiredGroupEntry: RuntimeStateEntry | null = null;
-  const presenceSummaries: RuntimeStateEntryValue<GroupPresenceSummary>[] = [];
-  const idempotency: ExactEntry<string, GroupMutationIdempotencyRecord>[] = [];
-  const members: ExactEntry<string, GroupMember>[] = [];
-  const presenceSessions: ExactEntry<string, GroupPresenceSession>[] = [];
-  const admissions: ExactEntry<string, GroupPresenceAdmission>[] = [];
+function toExactReadResult(
+  slots: readonly ReadSlot[],
+  selections: readonly RuntimeStateReadBatchLiveSelection<unknown>[],
+  decoders: GroupStateMutationExactReadDecoders,
+): Extract<GroupStateMutationExactReadResult, { status: 'stable' }> {
+  const result: ExactReadAccumulator = {
+    status: 'stable',
+    groups: [],
+    expiredGroupEntry: null,
+    presenceSummaries: [],
+    idempotency: [],
+    members: [],
+    presenceSessions: [],
+    admissions: [],
+  };
   slots.forEach((slot, index) => {
-    const entry = resolved.selections[index].entries[0];
+    const selection = selections[index];
+    const entry = selection.entries[0];
     switch (slot.kind) {
       case 'group':
-        if (entry) groups.push(decoders.group(entry));
-        expiredGroupEntry = resolved.selections[index].expiredEntries[0] ?? null;
+        if (entry) result.groups.push(decoders.group(entry));
+        result.expiredGroupEntry = selection.expiredEntries[0] ?? null;
         break;
       case 'presence-summary':
-        if (entry) presenceSummaries.push(decoders.presenceSummary(entry));
+        if (entry) result.presenceSummaries.push(decoders.presenceSummary(entry));
         break;
       case 'idempotency':
-        idempotency.push({
+        result.idempotency.push({
           identity: slot.identity,
           entry: entry ? decoders.idempotency(slot.identity, entry) : null,
-          expiredEntry: resolved.selections[index].expiredEntries[0] ?? null,
+          expiredEntry: selection.expiredEntries[0] ?? null,
         });
         break;
       case 'member':
-        members.push({
+        result.members.push({
           identity: slot.identity,
           entry: entry ? decoders.member(slot.identity, entry) : null,
-          expiredEntry: resolved.selections[index].expiredEntries[0] ?? null,
+          expiredEntry: selection.expiredEntries[0] ?? null,
         });
         break;
       case 'presence':
-        presenceSessions.push({
+        result.presenceSessions.push({
           identity: slot.identity,
           entry: entry ? decoders.presenceSession(slot.identity, entry) : null,
-          expiredEntry: resolved.selections[index].expiredEntries[0] ?? null,
+          expiredEntry: selection.expiredEntries[0] ?? null,
         });
         break;
       case 'admission':
-        admissions.push({
+        result.admissions.push({
           identity: slot.identity,
           entry: entry ? decoders.admission(slot.identity, entry) : null,
-          expiredEntry: resolved.selections[index].expiredEntries[0] ?? null,
+          expiredEntry: selection.expiredEntries[0] ?? null,
         });
     }
   });
-  return {
-    status: 'stable',
-    groups,
-    expiredGroupEntry,
-    presenceSummaries,
-    idempotency,
-    members,
-    presenceSessions,
-    admissions,
-  };
+  return result;
 }
 
 function createSelectors(
   input: GroupStateMutationExactReadInput,
-  identities: Readonly<{
-    requestIds: readonly string[];
-    memberIds: readonly string[];
-    sessionIds: readonly string[];
-    admissionIds: readonly string[];
-  }>,
-): Readonly<{
-  selectors: readonly RuntimeStateReadBatchSelector[];
-  slots: readonly ReadSlot[];
-}> {
+  identities: ExactReadIdentities,
+): ExactReadSelectorSet {
   const selectors: RuntimeStateReadBatchSelector[] = [];
   const slots: ReadSlot[] = [];
   const add = (selector: RuntimeStateReadBatchSelector, slot: ReadSlot): void => {
@@ -211,41 +229,37 @@ function createSelectors(
   };
   const groupKey = groupStateGroupStorageKey(input.aggregateRef);
   if (input.includeGroup) {
-    add({
-      selectorId: 'group',
-      kind: 'key',
-      namespace: GROUPS_NAMESPACE,
-      key: groupKey,
-    }, { kind: 'group' });
+    add(
+      { selectorId: 'group', kind: 'key', namespace: GROUPS_NAMESPACE, key: groupKey },
+      { kind: 'group' },
+    );
   }
   if (input.includePresenceSummary) {
-    add({
-      selectorId: 'presence-summary',
-      kind: 'key',
-      namespace: PRESENCE_SUMMARIES_NAMESPACE,
-      key: groupKey,
-    }, { kind: 'presence-summary' });
+    add(
+      {
+        selectorId: 'presence-summary', kind: 'key',
+        namespace: PRESENCE_SUMMARIES_NAMESPACE, key: groupKey,
+      },
+      { kind: 'presence-summary' },
+    );
   }
   identities.requestIds.forEach((requestId, index) =>
     add({
-      selectorId: `idempotency:${index}`,
-      kind: 'key',
+      selectorId: `idempotency:${index}`, kind: 'key',
       namespace: IDEMPOTENT_NAMESPACE,
       key: groupStateIdempotencyStorageKey(input.aggregateRef, requestId),
     }, { kind: 'idempotency', identity: requestId })
   );
   identities.memberIds.forEach((principalId, index) =>
     add({
-      selectorId: `member:${index}`,
-      kind: 'key',
+      selectorId: `member:${index}`, kind: 'key',
       namespace: MEMBERS_NAMESPACE,
       key: groupStateMemberStorageKey({ ...input.aggregateRef, principalId }),
     }, { kind: 'member', identity: principalId })
   );
   identities.sessionIds.forEach((sessionId, index) =>
     add({
-      selectorId: `presence:${index}`,
-      kind: 'key',
+      selectorId: `presence:${index}`, kind: 'key',
       namespace: SESSIONS_NAMESPACE,
       key: groupStatePresenceSessionStorageKey({ ...input.aggregateRef, sessionId }),
     }, { kind: 'presence', identity: sessionId })

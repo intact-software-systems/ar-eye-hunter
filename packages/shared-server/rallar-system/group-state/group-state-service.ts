@@ -5,7 +5,7 @@ import type {
 import { computeGroupMutation } from './mutation/compute-group-mutation.ts';
 import { validateGroupMutation } from './mutation/validate-group-mutation.ts';
 import { validateGroupMutationCommand } from './mutation/group-mutation-command-validation.ts';
-import { GroupStateRepository } from '../repositories/GroupStateRepository.ts';
+import { GroupStateRepository } from './persistence/group-state-repository.ts';
 import { readGroupMutation } from './mutation/read-group-mutation.ts';
 import { writeGroupMutation } from './mutation/write-group-state-mutation.ts';
 import { createWsSessionGenerationLifecycleService } from '../services/ws-session-generation-lifecycle.ts';

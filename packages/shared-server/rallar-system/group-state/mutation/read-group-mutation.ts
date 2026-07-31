@@ -1,6 +1,6 @@
 import { readRallarGroupDirectorAppointment } from '@shared/api/group-director.ts';
-import { GroupStateRepository } from '../../repositories/GroupStateRepository.ts';
-import type { GroupStateMutationExactReadResult } from '../../repositories/group-state-mutation-exact-read.ts';
+import { GroupStateRepository } from '../persistence/group-state-repository.ts';
+import type { GroupStateMutationExactReadResult } from '../persistence/read-exact-group-state-mutation.ts';
 import type { GroupMutationCommand, GroupMutationRead } from './group-mutation-contracts.ts';
 
 export async function readGroupMutation(

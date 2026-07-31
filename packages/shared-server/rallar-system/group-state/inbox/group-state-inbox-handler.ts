@@ -1,7 +1,7 @@
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
 import type { PSqlTransactionSql } from '../../../postgres/PostgresSqlClient.ts';
-import { createTransactionBoundGroupStateRepository } from '../../repositories/GroupStateRepository.ts';
+import { createTransactionBoundGroupStateRepository } from '../persistence/group-state-repository.ts';
 import { processGroupPresenceConnect } from '../../services/app-group-ws-session-lifecycle.ts';
 import type {
   AppInboxEnqueueInput,

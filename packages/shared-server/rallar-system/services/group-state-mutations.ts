@@ -17,7 +17,7 @@ import {
     groupStatePresenceAdmissionStorageKey,
     groupStatePresenceSessionStorageKey,
     groupStatePresenceSummaryStorageKey,
-} from '../group-state-storage-keys.ts';
+} from '../group-state/persistence/group-state-storage-keys.ts';
 import { validateRuntimeEntryValue } from '../group-state/mutation/validate-group-mutation-read.ts';
 import { admissionIdentity } from '../group-state/mutation/compute-group-presence-mutation.ts';
 import {

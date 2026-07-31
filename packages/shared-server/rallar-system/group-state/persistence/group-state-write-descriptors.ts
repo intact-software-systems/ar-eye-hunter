@@ -13,28 +13,28 @@ import type {
   RuntimeStateGuardedBatchInsert,
   RuntimeStateGuardedBatchPut,
   RuntimeStateGuardedBatchUpdate,
-} from '../../runtime-state/RuntimeStateGuardedBatch.ts';
+} from '../../../runtime-state/RuntimeStateGuardedBatch.ts';
 import {
   groupStateGroupStorageKey,
   groupStateIdempotencyStorageKey,
   groupStateMemberStorageKey,
   groupStatePresenceAdmissionStorageKey,
   groupStatePresenceSessionStorageKey,
-} from '../group-state-storage-keys.ts';
+} from './group-state-storage-keys.ts';
 import {
   type GroupMutationIdempotencyRecord,
-} from '../group-state/mutation/group-mutation-contracts.ts';
-import { validateGroupMutationIdempotencyRecord } from '../group-state/mutation/group-mutation-result.ts';
+} from '../mutation/group-mutation-contracts.ts';
+import { validateGroupMutationIdempotencyRecord } from '../mutation/group-mutation-result.ts';
 import {
   validatePersistedGroup,
   validatePersistedGroupMember,
-} from '../group-state/persistence/validate-persisted-group.ts';
+} from './validate-persisted-group.ts';
 import {
   validatePersistedGroupPresenceAdmission,
   validatePersistedGroupPresenceSession,
   validatePersistedGroupPresenceSummary,
-} from '../group-state/persistence/validate-persisted-group-presence.ts';
-import { toSessionPurgeAfterEpochMs } from './session-expiry.ts';
+} from './validate-persisted-group-presence.ts';
+import { toSessionPurgeAfterEpochMs } from '../../repositories/session-expiry.ts';
 
 export const GROUPS_NAMESPACE = 'group-state:groups';
 export const MEMBERS_NAMESPACE = 'group-state:members';

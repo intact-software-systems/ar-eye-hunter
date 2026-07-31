@@ -2,7 +2,7 @@ import type { StateScope } from '@shared/api/state-types.ts';
 import type { GroupPresenceSession } from '@shared/api/group-types.ts';
 import type { AuthSessionRepository } from '../repositories/AuthSessionRepository.ts';
 import type { IssuedAuthSession } from '../repositories/AuthSessionRepository.ts';
-import type { GroupStateRepository } from '../repositories/GroupStateRepository.ts';
+import type { GroupStateRepository } from '../group-state/persistence/group-state-repository.ts';
 
 export interface GroupSessionCleanupInput {
   readonly scope: StateScope;

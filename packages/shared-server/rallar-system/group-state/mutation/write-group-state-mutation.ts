@@ -24,8 +24,8 @@ import {
   groupStateUpdatePresenceAdmissionDescriptor,
   groupStateUpdatePresenceDescriptor,
   groupStateUpdatePresenceSummaryDescriptor,
-} from '../../repositories/group-state-write-descriptors.ts';
-import { createTransactionBoundGroupStateRepository } from '../../repositories/GroupStateRepository.ts';
+} from '../persistence/group-state-write-descriptors.ts';
+import { createTransactionBoundGroupStateRepository } from '../persistence/group-state-repository.ts';
 import type { PSqlTransactionSql } from '../../../postgres/PostgresSqlClient.ts';
 import { PSqlRuntimeStateRepository } from '../../../postgres/runtime-state/PSqlRuntimeStateRepository.ts';
 import { ResourceInboxRepository } from '../../../postgres/resource-inbox/ResourceInboxRepository.ts';

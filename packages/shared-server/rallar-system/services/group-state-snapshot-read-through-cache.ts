@@ -18,7 +18,7 @@ import {
 import type { StateSnapshotObservation } from '@shared/repository/state-snapshot-revision.ts';
 import { ObservableLoanedRepository } from '@shared/cache/ObservableLoanedRepository.ts';
 import type { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
-import type { GroupStateRepository } from '../repositories/GroupStateRepository.ts';
+import type { GroupStateRepository } from '../group-state/persistence/group-state-repository.ts';
 import { isGroupSnapshotPresenceFresh, type RallarSnapshotPresenceClock, } from '../snapshot-presence.ts';
 
 const DEFAULT_TTL_MS = 60_000;
