@@ -6,17 +6,6 @@ import type {
 } from '@shared/api/group-types.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 
-import {
-  assertExactKeys,
-  assertRequiredKeys,
-  nullableNonEmptyString,
-  nullablePositiveSafeInteger,
-  requireNonEmptyString,
-  requireNonNegativeSafeInteger,
-  requireOneOf,
-  requirePositiveSafeInteger,
-  requireRecord,
-} from '../mutation/group-state-validation-primitives.ts';
 import { validateCausalRevision, validateScopedRecord } from './validate-persisted-group.ts';
 
 export function validatePresenceSession(
@@ -321,4 +310,68 @@ export function compareGenerationOrder(
   right: readonly [number, string],
 ): number {
   return Math.sign(left[0] - right[0]) || left[1].localeCompare(right[1]);
+}
+
+function assertExactKeys(
+  value: Readonly<Record<string, unknown>>,
+  allowed: readonly string[],
+  label: string,
+): void {
+  const allowedSet = new Set(allowed);
+  const unexpected = Object.keys(value).find((key) => !allowedSet.has(key));
+  if (unexpected) throw new TypeError(`${label} has unexpected key: ${unexpected}`);
+}
+
+function assertRequiredKeys(
+  value: Readonly<Record<string, unknown>>,
+  required: readonly string[],
+  label: string,
+): void {
+  const missing = required.find((key) => !Object.hasOwn(value, key));
+  if (missing) throw new TypeError(`${label} is missing mandatory key: ${missing}`);
+}
+
+function requireOneOf(value: unknown, allowed: readonly string[], label: string): void {
+  if (typeof value !== 'string' || !allowed.includes(value)) {
+    throw new TypeError(`${label} is invalid`);
+  }
+}
+
+function requireRecord(value: unknown, label: string): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new TypeError(`${label} must be an object`);
+  }
+  return value as Record<string, unknown>;
+}
+
+function requireNonEmptyString(value: unknown, label: string): asserts value is string {
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new TypeError(`${label} must be a non-empty string`);
+  }
+}
+
+function nullableNonEmptyString(value: unknown, label: string): void {
+  if (value !== null) requireNonEmptyString(value, label);
+}
+
+function requireNonNegativeSafeInteger(
+  value: unknown,
+  label: string,
+): asserts value is number {
+  if (!Number.isSafeInteger(value) || (value as number) < 0) {
+    throw new TypeError(`${label} must be a non-negative safe integer`);
+  }
+}
+
+function requirePositiveSafeInteger(value: unknown, label: string): asserts value is number {
+  if (!Number.isSafeInteger(value) || (value as number) <= 0) {
+    throw new TypeError(`${label} must be a positive safe integer`);
+  }
+}
+
+function nullablePositiveSafeInteger(
+  value: unknown,
+  label: string,
+): asserts value is number | null {
+  if (value !== null) requirePositiveSafeInteger(value, label);
 }

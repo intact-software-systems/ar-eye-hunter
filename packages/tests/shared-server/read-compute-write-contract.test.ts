@@ -5,6 +5,7 @@ import { findMutationBoundaryViolations } from './mutation-boundary-analysis.ts'
 const serviceRoot = 'packages/shared-server/rallar-system/services';
 const repositoryRoot = 'packages/shared-server/rallar-system/repositories';
 const groupStateRoot = 'packages/shared-server/rallar-system/group-state';
+const persistenceRoot = `${groupStateRoot}/persistence`;
 
 const sources = {
     appAdmin: read(`${serviceRoot}/AppAdminInboxService.ts`),
@@ -89,6 +90,18 @@ describe('read/compute/validate/write implementation contract', { timeout: 30_00
         expect(sources.groupService).not.toContain(
             '../services/group-state-mutations.ts',
         );
+    });
+
+    it('keeps persistence validators below mutation and stateful owners', () => {
+        for (const file of [
+            `${persistenceRoot}/validate-persisted-group.ts`,
+            `${persistenceRoot}/validate-persisted-group-presence.ts`,
+        ]) {
+            const source = read(file);
+            expect(source, file).not.toMatch(
+                /from ['"](?:\.\.\/)+(?:mutation|services|inbox|repositories\/GroupStateRepository)(?:\/|\.ts)/,
+            );
+        }
     });
 
     it.each([
