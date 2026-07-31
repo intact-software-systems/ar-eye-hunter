@@ -201,7 +201,7 @@ function hasOwnerDispatch(
     return roots.some((root) =>
       hasReachableAstNode(program, root, (node) => {
         const path = readMemberPath(asNode(node.callee));
-        return path === dispatchPath || path.endsWith(`.${dispatchPath}`);
+        return path === dispatchPath;
       }),
     );
   });

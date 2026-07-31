@@ -79,6 +79,52 @@ describe('AppInbox mutation routing contract', { timeout: 30_000 }, () => {
     );
   });
 
+  it.each([
+    {
+      name: 'topology',
+      type: AppInboxType.TOPOLOGY_CONFIG_PUT,
+      from: 'async (_payload, context) => await this.topologyAppInboxHandler.processMutation(context)',
+      to: `async (_payload, context) => {
+                    const alias = { topologyAppInboxHandler: this.groupStateInboxHandler };
+                    return await alias.topologyAppInboxHandler.processMutation(context);
+                }`,
+    },
+    {
+      name: 'RTC',
+      type: AppInboxType.RTC_RTT_SUBMIT,
+      from: 'async (_payload, context) => await this.rtcRttAppInboxHandler.processMutation(context)',
+      to: `async (_payload, context) => {
+                const alias = { rtcRttAppInboxHandler: this.groupStateInboxHandler };
+                return await alias.rtcRttAppInboxHandler.processMutation(context);
+            }`,
+    },
+    {
+      name: 'group',
+      type: AppInboxType.GROUP_CREATE,
+      from: `async (_payload: unknown, context: AppInboxMessageContext) =>
+            await this.groupStateInboxHandler.processMutation(context)`,
+      to: `async (_payload: unknown, context: AppInboxMessageContext) => {
+            const alias = { groupStateInboxHandler: this.topologyAppInboxHandler };
+            return await alias.groupStateInboxHandler.processMutation(context);
+        }`,
+    },
+  ])('rejects a $name alias receiver backed by the wrong handler', ({ type, from, to }) => {
+    const source = readFileSync(GROUP_DISPATCH_PATH, 'utf8');
+    const mutated = source.replace(from, to);
+    expect(mutated).not.toBe(source);
+    const route = MUTATION_ROUTE_INVENTORY.find((entry) => entry.type === type);
+    expect(route).toBeDefined();
+
+    expect(
+      validateMutationRouteInventory(MUTATION_ROUTE_INVENTORY, {
+        sourceOverrides: new Map([[GROUP_DISPATCH_PATH, mutated]]),
+      }),
+    ).toContain(
+      `${route!.transport}:${route!.entrypoint}:${route!.type} ` +
+        `owner dispatch is not connected to ${route!.owner}`,
+    );
+  });
+
   it('has no direct mutator calls or mutating persistence imports at route and WS boundaries', () => {
     expect(findMutationBoundaryViolations()).toEqual([]);
   });
