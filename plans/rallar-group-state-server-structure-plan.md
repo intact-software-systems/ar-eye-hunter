@@ -644,6 +644,7 @@ packages/tests/shared-server/group-state/
   group-state-service-idempotency.test.ts
   group-state-concurrency-test-fixtures.ts
   group-state-concurrency-test-runtime.ts
+  group-state-test-mutation-executor.ts
   group-state-test-runtime.ts
   inbox/
     group-state-inbox-authority.test.ts
@@ -704,24 +705,27 @@ parsing and validation and `mutation-routing-owner-inventory.ts` for the exact
 owner paths and deterministic route rows. This keeps both test-support modules
 within 400 lines without moving or weakening a behavior case.
 
-Every resulting test module is at most 400 physical lines. Directly owned
-fixtures may move to the named runtimes and fixture owners above. The two root
-helpers own only the concurrency repository and pure mutation constructors
-shared by the exact responsibility-owned successors; no broad predecessor test
-module remains. The snapshot fixture owns only complete snapshot construction.
-The two presence runtimes own only concurrent presence setup and presence
-lifecycle retry setup respectively. A runtime or fixture must serve one test
-responsibility, accept named inputs, and must not become a generic dependency
-bag. The architecture ratchet locks this exact tree, predecessor absence,
-`<=400`-line test modules, and `<=60`-line materially split construction
-helpers.
+Every resulting target TypeScript module is at most 400 physical lines.
+Directly owned fixtures may move to the named runtimes and fixture owners above.
+The two root concurrency helpers own only the concurrency repository and pure
+mutation constructors shared by the exact responsibility-owned successors; no
+broad predecessor test module remains. The root test runtime owns shared service
+construction, while `group-state-test-mutation-executor.ts` owns the test-only
+authenticated/internal mutation retries, conditional persistence, and result
+adaptation that the construction owner invokes. The snapshot fixture owns only
+complete snapshot construction. The two presence runtimes own only concurrent
+presence setup and presence lifecycle retry setup respectively. A runtime or
+fixture must serve one test responsibility, accept named inputs, and must not
+become a generic dependency bag. The architecture ratchet locks this exact
+tree, predecessor absence, `<=400`-line target TypeScript modules, and
+`<=60`-line materially split general helpers.
 
 ### 5.2 Exact current-to-target test map
 
 | Current test                                                                                            | Target disposition                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `group-app-inbox-authority.test.ts`                                                                     | Split by existing cases into `inbox/group-state-inbox-authority.test.ts`, `group-state-inbox-operation-matrix.test.ts`, and `group-state-inbox-retry.test.ts`.                                                                                                                                                                                                                                                                               |
-| `group-state-test-runtime.ts`                                                                           | Move the retained shared construction owner under the mirrored `group-state/` root after splitting its inbox and mutation responsibilities to their existing named runtimes.                                                                                                                                                                                                                                                                 |
+| `group-state-test-runtime.ts`                                                                           | Move the retained shared construction owner under the mirrored `group-state/` root after splitting its inbox and mutation responsibilities to their existing named runtimes; split its test-only authenticated/internal mutation execution, persistence, and result adaptation into `group-state-test-mutation-executor.ts` so both support owners satisfy the hard module limit.                                                            |
 | `group-state-service-idempotency.test.ts`                                                               | Keep its first seven aggregate/service cases in target `group-state-service-idempotency.test.ts`; move its final nine presence lifecycle cases to `presence/group-presence-retry.test.ts`.                                                                                                                                                                                                                                                   |
 | `group-state-concurrency.test.ts`                                                                       | Remove after moving every case to the exact aggregate, membership, presence, repository identity/corruption/read-integrity/write-integrity, snapshot, inbox retry/construction, result-persistence, or idempotency owner in Section 5.1. Presence-summary validation and expiry/retry cases use their refined exact owners so every target remains under 400 lines. No case, assertion, or independently written literal may be merged away. |
 | seven `group-state-guarded-batch*.ts` files                                                             | matching `mutation/write-group-state-mutation*.ts` files and `group-mutation-test-runtime.ts`.                                                                                                                                                                                                                                                                                                                                               |
@@ -1048,6 +1052,13 @@ helpers without changing their returned values, and lock the result with the
 exact-tree/source-limit ratchet. It does not change production, contracts,
 compatibility shims, or runtime behavior.
 
+The Task 7 whole-structure hard-limit review found that the exact-tree ratchet
+covered only `*.test.ts` modules and therefore missed the 490-line
+`group-state-test-runtime.ts` support owner. The behavior-neutral correction
+splits the named mutation executor above, preserves the construction owner's
+public test surface and every fixture default/data shape, and extends the
+ratchet to every TypeScript support/test module in the exact Section 5 tree.
+
 ### Task 6: Separate Topology And RTC RTT AppInbox Decisions
 
 Move only the existing topology and RTC RTT AppInbox command construction,
@@ -1083,8 +1094,8 @@ that the apparently named but non-canonical receiver is rejected.
 
 - Perform an independent whole-structure review for Critical/Important findings,
   hidden behavior/compatibility changes, missing assertions, runtime cycles,
-  extra hops, file/function limits, generic ownership, direct old-owner imports,
-  and all Section 7 invariants.
+  extra hops, file/function limits across both tests and their support modules,
+  generic ownership, direct old-owner imports, and all Section 7 invariants.
 - Run every focused and completion command in Section 10 on one unchanged tree.
 - Create cohesive non-default commits, push non-forced, keep one draft structure
   PR current, and record exact tree/commit and test evidence externally.
@@ -1303,6 +1314,13 @@ child `ledger-published` and unlock drafting the API-v1 child.
    behavior-neutral final predecessor test move, exact target-tree ratchet,
    construction-helper splits, direct test import repairs, and Task 5
    review/evidence amendments recorded in Sections 5 and 9.
+   The Task 7 hard-limit review correction starts from head
+   `2c0cec54fcbac5331ebfa78a5f26484e2a11c63b` and tree
+   `d4b0c59a1fce0c1026ba64e2d8a9345a0f0c238a`; it authorizes only the
+   behavior-neutral test-runtime ownership split, exact Section 5 tree/map and
+   Task 5/Task 7 evidence repair, direct consumer imports if required, and the
+   architecture-ratchet extension from test files to every target TypeScript
+   support module.
    The Task 6 formal-review fix starts from head
    `759706c233940eab5207a274c5819e5767d7fa63` and tree
    `788a77e3f45f6702166d34ef3acc941ff95bcff7`; it authorizes only the repeated
@@ -1378,14 +1396,14 @@ topology/RTC algorithm refactor.
 
 ## 15. Progress Record
 
-| Milestone                | Status             | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| ------------------------ | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Browser prerequisite     | `ledger-published` | PR #55, feature `7db208ed977fdcad4a1afef8a5d08c3cfdbb862c`, tree `96f0f763577a18983a9a9f08f87147a9ab154930`, Branch Release Gate `30519129484` attempt 1 success, resulting main `b4fe2a6ae5893f3adae86061bd38cf416bac8aaf`, default workflow `30520679271` attempt 1 success.                                                                                                                                                                                                                                                                                                                             |
-| Server inventory         | drafted            | Current services, mutation phases, AppInbox, persistence, presence, snapshot, topology, RTC RTT, exports, consumers, examples, tests, and representative trace inspected at the base SHA.                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| Child plan               | `human-approved`   | Approved plan blob `1a74159d37f76a459009e99ca5a08f3cd620b1b4`; the Task 3 persistence amendment authorizes two validator owners at `6695d4d527373791708386527c3e131590775877` / `17ed9ad3351c884a1926cfa6e098aff835febc9c`, and the formal-review fix authorizes the root primitive refinement at `f5c0085b7eaa0c82f0dd659673feaaa33604d3bd` / `e9da9628a98102bf0d7fa714f92588fb9fde7f28`.                                                                                                                                                                                                                 |
-| Structure implementation | in progress        | Tasks 0–5 are complete through published feature head `417137afe79af7b03c67813e61e0956104889172` / tree `67f2dd00b6664fade587b7347351a23dd3c1de42`. Task 6 milestone `759706c233940eab5207a274c5819e5767d7fa63` / `788a77e3f45f6702166d34ef3acc941ff95bcff7` moved the exact approved owners; fix round 1 at `a9e97a751d55e93e9e7c387a8f1b10564c27053d` / `22955b3b5edffdf1068082fde0c5afe8d3e2840d` removed repeated payload validation and added named dispatch paths. Fix round 2 requires exact receiver equality and alias-receiver negatives. Re-review, final fix gates, and Task 7 remain pending. |
-| Alignment implementation | pending            | Waits for green structure merge/default workflow.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| Evidence ledger          | pending            | Waits for both implementation envelopes and separate authorization.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Milestone                | Status             | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ------------------------ | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Browser prerequisite     | `ledger-published` | PR #55, feature `7db208ed977fdcad4a1afef8a5d08c3cfdbb862c`, tree `96f0f763577a18983a9a9f08f87147a9ab154930`, Branch Release Gate `30519129484` attempt 1 success, resulting main `b4fe2a6ae5893f3adae86061bd38cf416bac8aaf`, default workflow `30520679271` attempt 1 success.                                                                                                                                                                                                                                                         |
+| Server inventory         | drafted            | Current services, mutation phases, AppInbox, persistence, presence, snapshot, topology, RTC RTT, exports, consumers, examples, tests, and representative trace inspected at the base SHA.                                                                                                                                                                                                                                                                                                                                              |
+| Child plan               | `human-approved`   | Approved plan blob `1a74159d37f76a459009e99ca5a08f3cd620b1b4`; the Task 3 persistence amendment authorizes two validator owners at `6695d4d527373791708386527c3e131590775877` / `17ed9ad3351c884a1926cfa6e098aff835febc9c`, and the formal-review fix authorizes the root primitive refinement at `f5c0085b7eaa0c82f0dd659673feaaa33604d3bd` / `e9da9628a98102bf0d7fa714f92588fb9fde7f28`.                                                                                                                                             |
+| Structure implementation | in progress        | Tasks 0–5 are complete at `417137afe79af7b03c67813e61e0956104889172` / `67f2dd00b6664fade587b7347351a23dd3c1de42`; Task 6 milestone is `759706c233940eab5207a274c5819e5767d7fa63` / `788a77e3f45f6702166d34ef3acc941ff95bcff7`, fix 1 is `a9e97a751d55e93e9e7c387a8f1b10564c27053d` / `22955b3b5edffdf1068082fde0c5afe8d3e2840d`, and fix 2 is `2c0cec54fcbac5331ebfa78a5f26484e2a11c63b` / `d4b0c59a1fce0c1026ba64e2d8a9345a0f0c238a`. Task 7 hard-limit correction is in progress; re-review, gates, and publication remain pending. |
+| Alignment implementation | pending            | Waits for green structure merge/default workflow.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Evidence ledger          | pending            | Waits for both implementation envelopes and separate authorization.                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 
 ## 16. Draft Self-Review Record
 
@@ -1410,6 +1428,13 @@ AST mapping, exact titles, 65 assertion sites, 583 independently written
 literals, `<=400`-line target test modules, `<=60`-line split/new general
 helpers, zero production changes, direct test-import ownership, and unchanged
 compatibility/export/signature evidence before its single local fix commit.
+
+The Task 7 hard-limit correction re-review additionally checks every target
+TypeScript support/test module rather than only `*.test.ts`, the exact added
+mutation-executor owner, unchanged runtime fixture defaults and data shapes,
+unchanged affected test AST/assertions/literals, direct consumer imports,
+zero production changes, and the same compatibility/signature/cycle evidence
+before its single local fix commit.
 
 The Task 6 review additionally checks the seven exact topology/RTC inbox
 owners, the retained topology registration family, direct one-hop public

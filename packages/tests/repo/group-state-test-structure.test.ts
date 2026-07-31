@@ -16,6 +16,7 @@ const expectedTargetTree = [
   'group-state-service-idempotency-command.test.ts',
   'group-state-service-idempotency-concurrency.test.ts',
   'group-state-service-idempotency.test.ts',
+  'group-state-test-mutation-executor.ts',
   'group-state-test-runtime.ts',
   'inbox/group-state-inbox-authority.test.ts',
   'inbox/group-state-inbox-construction.test.ts',
@@ -65,6 +66,8 @@ const expectedTargetTree = [
 
 const constructionHelperPaths = [
   'group-state-concurrency-test-fixtures.ts',
+  'group-state-test-mutation-executor.ts',
+  'group-state-test-runtime.ts',
   'presence/group-presence-summary-evaluation-time.test.ts',
   'snapshot/group-state-snapshot-read-through-cache.test.ts',
   'snapshot/group-state-snapshot-test-fixtures.ts',
@@ -82,9 +85,9 @@ describe('group-state test structure', () => {
     expect(readRelativeFileTree(groupStateTestRoot)).toEqual([...expectedTargetTree].sort());
   });
 
-  it('keeps every responsibility-owned test module within 400 physical lines', () => {
+  it('keeps every responsibility-owned TypeScript module within 400 physical lines', () => {
     const oversizedModules = readRelativeFileTree(groupStateTestRoot)
-      .filter((filePath) => filePath.endsWith('.test.ts'))
+      .filter((filePath) => filePath.endsWith('.ts'))
       .map((filePath) => ({
         filePath,
         lines: physicalLineCount(readFile(path.join(groupStateTestRoot, filePath))),
@@ -94,7 +97,7 @@ describe('group-state test structure', () => {
     expect(oversizedModules).toEqual([]);
   });
 
-  it('keeps split construction helpers within 60 physical lines', () => {
+  it('keeps materially split general helpers within 60 physical lines', () => {
     const oversizedHelpers = constructionHelperPaths
       .flatMap((filePath) => readNamedFunctions(filePath))
       .filter(({ lines }) => lines > 60);
@@ -139,6 +142,19 @@ function readNamedFunctions(relativePath: string): readonly NamedFunctionSize[] 
           lines: declaration.loc.end.line - declaration.loc.start.line + 1,
         },
       ];
+    }
+    if (declaration?.type === 'ClassDeclaration') {
+      return declaration.body.body.flatMap((member) => {
+        if (member.type !== 'ClassMethod' || !member.loc) return [];
+        const name = member.key.type === 'Identifier' ? member.key.name : '<computed>';
+        return [
+          {
+            filePath: relativePath,
+            name,
+            lines: member.loc.end.line - member.loc.start.line + 1,
+          },
+        ];
+      });
     }
     return [];
   });
