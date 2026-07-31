@@ -15,6 +15,7 @@ const sources = {
     groupHandler: read(
         `${groupStateRoot}/inbox/group-state-inbox-handler.ts`,
     ),
+    groupService: read(`${groupStateRoot}/group-state-service.ts`),
     client: read(`${serviceRoot}/client-state-service.ts`),
     group: read(`${groupStateRoot}/mutation/write-group-state-mutation.ts`),
     topologyConfig: read(`${serviceRoot}/group-topology-management-service.ts`),
@@ -84,6 +85,9 @@ describe('read/compute/validate/write implementation contract', { timeout: 30_00
         );
         expect(sources.groupHandler).toContain(
             'export class GroupStateInboxHandler',
+        );
+        expect(sources.groupService).not.toContain(
+            '../services/group-state-mutations.ts',
         );
     });
 
