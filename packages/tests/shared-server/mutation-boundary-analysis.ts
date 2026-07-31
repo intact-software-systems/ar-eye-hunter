@@ -153,7 +153,7 @@ function mutationBoundaryFiles(): readonly string[] {
     'packages/shared-server/rallar-system/ws-system-topics.ts',
     'packages/shared-server/rallar-system/ws-rtc-topology-runtime.ts',
     'packages/shared-server/rallar-system/services/authorised-ws-client-app-inbox.ts',
-    'packages/shared-server/rallar-system/services/presence-expiry-reconciliation-service.ts',
+    'packages/shared-server/rallar-system/group-state/presence/reconcile-expired-group-presence.ts',
     'packages/shared-server/rallar-system/services/ws-lifecycle-service.ts',
   ];
 }

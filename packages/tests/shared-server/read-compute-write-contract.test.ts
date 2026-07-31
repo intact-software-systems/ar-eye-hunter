@@ -52,7 +52,7 @@ const trackedRuntimeSource = [
   `${serviceRoot}/group-state-mutations.ts`,
   `${serviceRoot}/group-topology-config-mutations.ts`,
   `${serviceRoot}/group-topology-management-service.ts`,
-  `${serviceRoot}/GroupPresenceSummaryWork.ts`,
+  `${groupStateRoot}/presence/group-presence-summary-work.ts`,
   `${serviceRoot}/rtc-rtt-mutation-service.ts`,
   `${serviceRoot}/canonical-command-hash.ts`,
   `${repositoryRoot}/RtcTopologyPublicationRepository.ts`,

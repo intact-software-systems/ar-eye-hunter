@@ -19,7 +19,7 @@ import {
   validateStoredGeneration,
 } from '../persistence/validate-persisted-group-presence.ts';
 import { requirePositiveSafeInteger } from '../group-state-validation-primitives.ts';
-import { toExpiredAwareInsertCandidate } from '../../services/group-expired-state-authority.ts';
+import { toExpiredAwareInsertCandidate } from '../presence/group-expired-state-authority.ts';
 
 const DEFAULT_GROUP_SESSION_TTL_MS = 24 * 60 * 60 * 1_000;
 

@@ -22,7 +22,7 @@ import {
   validatePresenceSession,
   validatePresenceSummaryValue,
 } from '../persistence/validate-persisted-group-presence.ts';
-import { validateInitialGroupPresenceSummaryCandidate } from '../../services/group-initial-presence-summary.ts';
+import { validateInitialGroupPresenceSummaryCandidate } from '../presence/group-initial-presence-summary.ts';
 import {
   assertExactKeys,
   assertRequiredKeys,

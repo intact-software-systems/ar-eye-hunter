@@ -639,7 +639,9 @@ must prove the new dependency graph is acyclic.
 
 ```text
 packages/tests/shared-server/group-state/
-    group-state-service-idempotency.test.ts
+  group-state-service-idempotency.test.ts
+  group-state-concurrency-test-fixtures.ts
+  group-state-concurrency-test-runtime.ts
   group-state-test-runtime.ts
   inbox/
     group-state-inbox-authority.test.ts
@@ -672,8 +674,12 @@ packages/tests/shared-server/group-state/
     group-presence-summary-work.test.ts
     group-presence-summary-evaluation-time.test.ts
     group-presence-summary-storage-revision.test.ts
+    group-presence-summary-validation.test.ts
     group-presence-concurrency.test.ts
+    group-presence-expiry-retry.test.ts
     group-presence-retry.test.ts
+    group-presence-retry-test-runtime.ts
+    group-presence-test-runtime.ts
     reconcile-expired-group-presence.test.ts
   snapshot/
     group-state-snapshot-read-through-cache.test.ts
@@ -681,9 +687,12 @@ packages/tests/shared-server/group-state/
 ```
 
 Every resulting test module is at most 400 physical lines. Directly owned
-fixtures may move to the three named runtimes; a runtime must serve one test
-responsibility, accept named inputs, and must not become a generic dependency
-bag.
+fixtures may move to the named runtimes and fixture owner above. The two root
+helpers own only the retained predecessor's concurrency repository and pure
+mutation constructors; the two presence runtimes own only concurrent presence
+setup and presence lifecycle retry setup respectively. A runtime must serve one
+test responsibility, accept named inputs, and must not become a generic
+dependency bag.
 
 ### 5.2 Exact current-to-target test map
 
@@ -692,7 +701,7 @@ bag.
 | `group-app-inbox-authority.test.ts`                                                                     | Split by existing cases into `inbox/group-state-inbox-authority.test.ts`, `group-state-inbox-operation-matrix.test.ts`, and `group-state-inbox-retry.test.ts`.                                                |
 | `group-state-test-runtime.ts`                                                                           | Split only its directly owned construction into root, inbox, and mutation test runtimes.                                                                                                                      |
 | `group-state-service-idempotency.test.ts`                                                               | Keep its first seven aggregate/service cases in target `group-state-service-idempotency.test.ts`; move its final nine presence lifecycle cases to `presence/group-presence-retry.test.ts`.                    |
-| `group-state-concurrency.test.ts`                                                                       | Move existing aggregate, membership, presence, repository identity/corruption, snapshot, and request/command cases to the exactly named target responsibility files. No case or assertion may be merged away. |
+| `group-state-concurrency.test.ts`                                                                       | Move existing aggregate, membership, presence, repository identity/corruption, snapshot, and request/command cases to the exactly named target responsibility files. Presence-summary validation and expiry/retry cases use their refined exact owners from Section 5.1 so every target remains under 400 lines. No case or assertion may be merged away. |
 | seven `group-state-guarded-batch*.ts` files                                                             | matching `mutation/write-group-state-mutation*.ts` files and `group-mutation-test-runtime.ts`.                                                                                                                |
 | `group-state-mutation-read-batch.test.ts`                                                               | `mutation/read-group-mutation.test.ts`.                                                                                                                                                                       |
 | `group-state-mutation-read-retry.test.ts`                                                               | `mutation/read-group-mutation-retry.test.ts`.                                                                                                                                                                 |
@@ -717,11 +726,11 @@ case boundaries; execution may refine fixture placement but not case ownership:
 | `builds collision-safe maintenance identities from the complete semantic command`                                                                                          | `group-state-service-idempotency.test.ts`                                                                                                        |
 | `re-authorizes group mutation actors from the current retry read` through `does not persist a rejected receipt, event, or outbox effect`                                   | `inbox/group-state-inbox-retry.test.ts` and `mutation/group-mutation-result.test.ts`                                                             |
 | `keeps pure mutation computation synchronous, deterministic, and input preserving` through `binds resolved join-code facts to the command operation and explicit intent`   | `mutation/group-mutation-command-validation.test.ts` and the matching compute owners                                                             |
-| `rejects a wrong-scope owner member before it can authorize a mutation` through `rebases stale presence-summary reads and validates dominating writes`                     | the exact read, command-validation, computed-validation, result, and presence-summary owners named in the case subject                           |
+| `rejects a wrong-scope owner member before it can authorize a mutation` through `rebases stale presence-summary reads and validates dominating writes`                     | the exact read, command-validation, computed-validation, result, and presence-summary owners named in the case subject; summary validation refinements use `presence/group-presence-summary-validation.test.ts` |
 | `rebases simultaneous create and last-slot joins through the group guard` through `re-authorizes a queued admin update after a concurrent demotion`                        | `mutation/group-aggregate-mutation.test.ts`, `group-membership-mutation.test.ts`, and `inbox/group-state-inbox-retry.test.ts`                    |
 | `accepts two independent presence sessions without a group aggregate guard` through `commits presence independently while an aggregate CAS write is held`                  | `presence/group-presence-concurrency.test.ts`                                                                                                    |
 | `replays omitted join-code defaults by semantic caller intent` through `rebases socket cleanup observations at different times without idempotency conflict`               | `group-state-service-idempotency.test.ts` and `presence/group-presence-retry.test.ts`, divided by aggregate versus presence operation            |
-| `replays exact duplicate expiry work with one terminal effect` through `exposes single-attempt presence-summary phases for a queue-owned transaction`                      | the presence retry, concurrency, summary-work, snapshot-presence, and inbox retry owners named by each case                                      |
+| `replays exact duplicate expiry work with one terminal effect` through `exposes single-attempt presence-summary phases for a queue-owned transaction`                      | `presence/group-presence-expiry-retry.test.ts`, the presence concurrency and summary-work owners, `snapshot/group-state-snapshot-presence.test.ts`, and the matching inbox retry owner named by each case       |
 
 The 17 `group-app-inbox-authority.test.ts` cases move as follows:
 

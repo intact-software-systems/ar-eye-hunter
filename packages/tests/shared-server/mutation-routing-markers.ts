@@ -41,7 +41,7 @@ export const ROUTING_SOURCE_MARKERS = {
     'enqueueClientSessionDisconnect',
     'enqueueGroupSessionCleanup',
   ],
-  'packages/shared-server/rallar-system/services/presence-expiry-reconciliation-service.ts': [
+  'packages/shared-server/rallar-system/group-state/presence/reconcile-expired-group-presence.ts': [
     'enqueueExpiredSessions',
     'enqueueExpiredPresenceSessions',
   ],

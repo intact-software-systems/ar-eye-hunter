@@ -55,12 +55,12 @@ import {
 export type { RtcRttAppInboxResult } from './rtc-rtt-app-inbox-result.ts';
 import { validateRtcRttMeasurement } from '../rtc-rtt-persistence-validation.ts';
 import {
+    GroupPresenceService,
     processGroupSessionCleanup,
-    requireTopologyManagementService,
-    toExpiredPresenceEnqueue,
-    toGroupSessionCleanupEnqueue,
-    type GroupPresenceSessionCleanupAppInboxPayload,
-} from './app-group-ws-session-lifecycle.ts';
+} from '../group-state/presence/group-presence-service.ts';
+import type {
+    GroupPresenceSessionCleanupAppInboxPayload,
+} from '../group-state/presence/group-presence-contracts.ts';
 import { GroupStateInboxHandler } from '../group-state/inbox/group-state-inbox-handler.ts';
 import {
     AUTHENTICATED_GROUP_INBOX_TYPES,
@@ -101,7 +101,9 @@ export {
     type GroupUpdateAppInboxPayload,
 } from '../group-state/inbox/group-state-inbox-contracts.ts';
 
-export type { GroupPresenceSessionCleanupAppInboxPayload } from './app-group-ws-session-lifecycle.ts';
+export type {
+    GroupPresenceSessionCleanupAppInboxPayload,
+} from '../group-state/presence/group-presence-contracts.ts';
 
 export type TopologyAppInboxOperation =
     | 'putConfig'
@@ -283,7 +285,9 @@ export class AppGroupInboxService extends AppInboxService {
                 atEpochMs,
         );
         for (const preparation of preparations) {
-            await super.enqueue(toExpiredPresenceEnqueue(preparation));
+            await super.enqueue(
+                GroupPresenceService.toExpiredPresenceEnqueue(preparation),
+            );
         }
         return preparations.length;
     }
@@ -291,7 +295,12 @@ export class AppGroupInboxService extends AppInboxService {
     public async enqueueGroupSessionCleanup(
         input: GroupPresenceSessionCleanupAppInboxPayload,
     ): Promise<number> {
-        await super.enqueue(toGroupSessionCleanupEnqueue(input, this.serviceId));
+        await super.enqueue(
+            GroupPresenceService.toGroupSessionCleanupEnqueue(
+                input,
+                this.serviceId,
+            ),
+        );
         return 1;
     }
 
@@ -596,7 +605,9 @@ export class AppGroupInboxService extends AppInboxService {
                 authority,
             );
         }
-        const service = requireTopologyManagementService(this.topologyManagementService);
+        const service = GroupPresenceService.requireTopologyManagementService(
+            this.topologyManagementService,
+        );
         const preparation = await service.prepareTopologyConfigMutation({
             command: toTopologyConfigMutationCommand(authority.command),
             commandHash: authority.command.commandHash,
@@ -646,7 +657,9 @@ export class AppGroupInboxService extends AppInboxService {
         context: AppInboxMessageContext,
         authority: TopologyReconfigureAppInboxAuthority,
     ): Promise<unknown> {
-        const service = requireTopologyManagementService(this.topologyManagementService);
+        const service = GroupPresenceService.requireTopologyManagementService(
+            this.topologyManagementService,
+        );
         if (authority.command.payload.operation !== 'reconfigureTopology') {
             throw new TypeError('Topology reconfigure authority operation is invalid');
         }

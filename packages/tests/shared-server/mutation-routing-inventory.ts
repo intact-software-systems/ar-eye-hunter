@@ -38,7 +38,7 @@ const PATHS = {
   ag: 'apps/api-v1/src/services/create-api-admin-mutation-gateway.ts',
   rq: 'apps/api-v1/src/services/request-auth-service.ts',
   l: 'packages/shared-server/rallar-system/services/ws-lifecycle-service.ts',
-  e: 'packages/shared-server/rallar-system/services/presence-expiry-reconciliation-service.ts',
+  e: 'packages/shared-server/rallar-system/group-state/presence/reconcile-expired-group-presence.ts',
   s: 'packages/shared-server/rallar-system/ws-system-topics.ts',
   d: 'packages/shared-server/crdt/RallarCrdtServer.ts',
 } as const;

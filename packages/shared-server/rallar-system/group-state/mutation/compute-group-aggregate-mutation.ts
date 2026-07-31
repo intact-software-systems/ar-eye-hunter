@@ -22,8 +22,8 @@ import type { GroupPolicyResult } from '@shared/api/group-policy-types.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 
 import { canGovernGroupMember, canMutateActiveGroup, type GroupGovernanceAction, GroupPolicyDeniedError } from '../../group-policy.ts';
-import { toExpiredAwareInsertCandidate } from '../../services/group-expired-state-authority.ts';
-import { nextInitialGroupSnapshotVersion, toInitialGroupPresenceSummaryCandidate } from '../../services/group-initial-presence-summary.ts';
+import { toExpiredAwareInsertCandidate } from '../presence/group-expired-state-authority.ts';
+import { nextInitialGroupSnapshotVersion, toInitialGroupPresenceSummaryCandidate } from '../presence/group-initial-presence-summary.ts';
 import type { GroupMutationCommand, GroupMutationComputed, GroupMutationFacts, GroupMutationRead } from './group-mutation-contracts.ts';
 import { GroupMutationRejectedError } from './group-mutation-contracts.ts';
 import { auditStamp, currentCausalRevision, materializedRotateJoinCode, noOp, rejected, requireGroup, writeResult } from './group-mutation-result.ts';

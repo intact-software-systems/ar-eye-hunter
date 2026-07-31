@@ -2,7 +2,7 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
 import type { PSqlTransactionSql } from '../../../postgres/PostgresSqlClient.ts';
 import { createTransactionBoundGroupStateRepository } from '../persistence/group-state-repository.ts';
-import { processGroupPresenceConnect } from '../../services/app-group-ws-session-lifecycle.ts';
+import { GroupPresenceService } from '../presence/group-presence-service.ts';
 import type {
   AppInboxEnqueueInput,
   AppInboxMessageContext,
@@ -70,7 +70,7 @@ export class GroupStateInboxHandler {
       },
     };
     if (command.command.operation === 'connectPresence') {
-      return await processGroupPresenceConnect({
+      return await GroupPresenceService.processConnect({
         command,
         groupStateService: this.dependencies.groupStateService,
         writeMutation: async (write) => await this.dependencies.writeMutation(context, write),

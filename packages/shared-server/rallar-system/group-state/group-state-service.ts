@@ -9,7 +9,7 @@ import { GroupStateRepository } from './persistence/group-state-repository.ts';
 import { readGroupMutation } from './mutation/read-group-mutation.ts';
 import { writeGroupMutation } from './mutation/write-group-state-mutation.ts';
 import { createWsSessionGenerationLifecycleService } from '../services/ws-session-generation-lifecycle.ts';
-import { readGroupSessionCleanupCandidates } from '../services/group-session-cleanup.ts';
+import { readGroupSessionCleanupCandidates } from './presence/group-session-cleanup.ts';
 import { type RallarTimingSink, timeRallarAsync } from '../services/timing.ts';
 import { hashMutationCommand, type JsonWireValue } from '../services/mutation-command-identity.ts';
 import { sha256CanonicalJson } from './mutation/group-state-crypto.ts';

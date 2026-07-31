@@ -1,10 +1,12 @@
 import type { GroupRef } from '@shared/api/group-types.ts';
-import type { RuntimeStateEntry } from '../../runtime-state/RuntimeStateRepository.ts';
-import { validateRuntimeStateExpiredAuthority } from '../../runtime-state/RuntimeStateExpiredEntry.ts';
+import type { RuntimeStateEntry } from '../../../runtime-state/RuntimeStateRepository.ts';
+import {
+    validateRuntimeStateExpiredAuthority,
+} from '../../../runtime-state/RuntimeStateExpiredEntry.ts';
 import {
     groupStateGroupStorageKey,
     groupStatePresenceSessionStorageKey,
-} from '../group-state/persistence/group-state-storage-keys.ts';
+} from '../persistence/group-state-storage-keys.ts';
 
 export function validateGroupExpiredStateAuthority(input: Readonly<{
     ref: GroupRef;

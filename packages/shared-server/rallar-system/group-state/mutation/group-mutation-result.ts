@@ -30,8 +30,8 @@ import {
 } from '../group-state-validation-primitives.ts';
 import { validateCausalRevision, validateScopedValue } from '../persistence/validate-persisted-group.ts';
 import { validatePresenceAdmission, validatePresenceSession, validatePresenceSummaryValue } from '../persistence/validate-persisted-group-presence.ts';
-import type { InitialGroupPresenceSummaryCandidate } from '../../services/group-initial-presence-summary.ts';
-import { validateInitialGroupPresenceSummaryCandidate } from '../../services/group-initial-presence-summary.ts';
+import type { InitialGroupPresenceSummaryCandidate } from '../presence/group-initial-presence-summary.ts';
+import { validateInitialGroupPresenceSummaryCandidate } from '../presence/group-initial-presence-summary.ts';
 import { validateGroupEvent } from '../../persisted-group-event.ts';
 
 const DEFAULT_GROUP_JOIN_CODE_TTL_MS = 7 * 24 * 60 * 60 * 1_000;

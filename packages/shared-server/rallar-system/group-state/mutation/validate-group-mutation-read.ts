@@ -11,7 +11,7 @@ import {
   groupStatePresenceSessionStorageKey,
   groupStatePresenceSummaryStorageKey,
 } from '../persistence/group-state-storage-keys.ts';
-import { validateGroupExpiredStateAuthority } from '../../services/group-expired-state-authority.ts';
+import { validateGroupExpiredStateAuthority } from '../presence/group-expired-state-authority.ts';
 import type { GroupMutationCommand, GroupMutationRead } from './group-mutation-contracts.ts';
 import { validateGroupMutationIdempotencyRecord } from './group-mutation-result.ts';
 import {

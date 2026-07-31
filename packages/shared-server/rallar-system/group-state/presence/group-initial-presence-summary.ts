@@ -1,6 +1,6 @@
 import type { GroupPresenceSummary } from '@shared/api/group-types.ts';
-import type { RuntimeStateEntryValue } from '../../runtime-state/RuntimeStateJsonStore.ts';
-import type { RuntimeStateEntry } from '../../runtime-state/RuntimeStateRepository.ts';
+import type { RuntimeStateEntryValue } from '../../../runtime-state/RuntimeStateJsonStore.ts';
+import type { RuntimeStateEntry } from '../../../runtime-state/RuntimeStateRepository.ts';
 
 export type InitialGroupPresenceSummaryCandidate =
   | Readonly<{ operation: 'insert'; value: GroupPresenceSummary }>

@@ -22,7 +22,7 @@ import type {
     RtcRttMutationReceipt,
     RtcRttRecomputeIntent,
 } from '../services/rtc-topology-mutations.ts';
-import { validatePersistedGroupSnapshot } from '../services/group-snapshot-validation.ts';
+import { validatePersistedGroupSnapshot } from '../group-state/snapshot/validate-persisted-group-snapshot.ts';
 import { groupStateGroupStorageKey } from '../group-state-storage-keys.ts';
 import { RtcTopologyRepositoryInvariantCorruptionError } from '../rtc-topology-errors.ts';
 import {

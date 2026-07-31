@@ -749,7 +749,7 @@ describe('Rallar repo skill and documentation integrity', () => {
       'packages/shared-server/rallar-system/group-state/group-state-service.ts',
     );
     const summaryWork = readRepo(
-      'packages/shared-server/rallar-system/services/GroupPresenceSummaryWork.ts',
+      'packages/shared-server/rallar-system/group-state/presence/group-presence-summary-work.ts',
     );
     const clientService = readRepo(
       'packages/shared-server/rallar-system/services/client-state-service.ts',
@@ -796,6 +796,29 @@ describe('Rallar repo skill and documentation integrity', () => {
       'this.clientStateService.validate(command, read, computed)',
       'this.writeMutation(context',
     ]);
+  });
+
+  it('routes group presence lifecycle work through its canonical service owner', () => {
+    const presenceService = readRepo(
+      'packages/shared-server/rallar-system/group-state/presence/group-presence-service.ts',
+    );
+    const groupInbox = readRepo(
+      'packages/shared-server/rallar-system/services/AppGroupInboxService.ts',
+    );
+    const groupInboxHandler = readRepo(
+      'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts',
+    );
+    const compatibility = readRepo(
+      'packages/shared-server/rallar-system/services/app-group-ws-session-lifecycle.ts',
+    );
+
+    expect(presenceService).toContain('export class GroupPresenceService');
+    expect(presenceService).toContain(
+      'return await GroupPresenceService.processSessionCleanup(input)',
+    );
+    expect(groupInbox).toContain('processGroupSessionCleanup({');
+    expect(groupInboxHandler).toContain('GroupPresenceService.processConnect');
+    expect(compatibility).not.toContain('class GroupPresenceService');
   });
 
   it('keeps current startup and recipe documentation internally consistent', () => {
