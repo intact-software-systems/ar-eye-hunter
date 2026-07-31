@@ -143,31 +143,11 @@
     {
       "mergeBase": "52d973bb71dda2100455e8585a0a8f98d177bd13",
       "source": {
-        "path": "packages/shared-test/black-box-runner/api-v1-state-write-command-codecs.ts",
-        "blob": "ff2209eebb25bcbf0744d11de55041452ca351d9"
-      },
-      "targets": [
-        "packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-command-codecs.ts"
-      ]
-    },
-    {
-      "mergeBase": "52d973bb71dda2100455e8585a0a8f98d177bd13",
-      "source": {
         "path": "packages/shared-test/black-box-runner/api-v1-state-write-group-causal-evidence.ts",
         "blob": "9be5158ab51c0106cf73a2f855cf97ad4eadd24b"
       },
       "targets": [
         "packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-group-causal-evidence.ts"
-      ]
-    },
-    {
-      "mergeBase": "52d973bb71dda2100455e8585a0a8f98d177bd13",
-      "source": {
-        "path": "packages/shared-test/black-box-runner/api-v1-state-write-intermediate-evidence.ts",
-        "blob": "d2a467fa2e788c1b43984f8b97271e982779e02f"
-      },
-      "targets": [
-        "packages/shared-test/black-box-runner/state-write-evidence/read-intermediate-mutation-intents.ts"
       ]
     },
     {
@@ -193,40 +173,12 @@
     {
       "mergeBase": "52d973bb71dda2100455e8585a0a8f98d177bd13",
       "source": {
-        "path": "packages/shared-test/black-box-runner/api-v1-state-write-receipt-evidence.ts",
-        "blob": "51a2b12a239b6e2543e0fb45553c8c3b40373267"
-      },
-      "targets": [
-        "packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-receipt-evidence.ts"
-      ]
-    },
-    {
-      "mergeBase": "52d973bb71dda2100455e8585a0a8f98d177bd13",
-      "source": {
-        "path": "packages/shared-test/black-box-runner/api-v1-state-write-result-evidence.ts",
-        "blob": "633eb4824009d5c44c66248ddc7e59d6648a56e6"
-      },
-      "targets": [
-        "packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-result-evidence.ts"
-      ]
-    },
-    {
-      "mergeBase": "52d973bb71dda2100455e8585a0a8f98d177bd13",
-      "source": {
         "path": "packages/shared-test/black-box-runner/api-v1-state-write-topology-result-evidence.ts",
         "blob": "c88f184577dfad6af825f8caa2643a0ca6dc2d9c"
       },
       "targets": [
         "packages/shared-test/black-box-runner/state-write-evidence/validate-topology-mutation-result-payload.ts"
       ]
-    },
-    {
-      "mergeBase": "52d973bb71dda2100455e8585a0a8f98d177bd13",
-      "source": {
-        "path": "packages/shared-test/black-box-runner/artifact-reader.ts",
-        "blob": "33fd9fffcdefe99ed624611d20a720ad8de1d500"
-      },
-      "targets": ["packages/shared-test/black-box-runner/artifacts/artifact-reader.ts"]
     },
     {
       "mergeBase": "52d973bb71dda2100455e8585a0a8f98d177bd13",
@@ -241,34 +193,10 @@
     {
       "mergeBase": "52d973bb71dda2100455e8585a0a8f98d177bd13",
       "source": {
-        "path": "packages/shared-test/black-box-runner/handoff-contract.ts",
-        "blob": "33aa4869232e166807a3a2e520966d126e9de6a4"
-      },
-      "targets": ["packages/shared-test/black-box-runner/artifacts/handoff-contract.ts"]
-    },
-    {
-      "mergeBase": "52d973bb71dda2100455e8585a0a8f98d177bd13",
-      "source": {
         "path": "packages/shared-test/black-box-runner/live-preflight-variables.ts",
         "blob": "2ede5ae0110654cc4cae9f1e80cfe37f6b670933"
       },
       "targets": ["packages/shared-test/black-box-runner/preflight/resolve-variable-by-env.ts"]
-    },
-    {
-      "mergeBase": "52d973bb71dda2100455e8585a0a8f98d177bd13",
-      "source": {
-        "path": "packages/shared-test/black-box-runner/live-preflight.ts",
-        "blob": "bd9b3399a55680f1fa447dbc53df289770c21c46"
-      },
-      "targets": ["packages/shared-test/black-box-runner/preflight/live-preflight.ts"]
-    },
-    {
-      "mergeBase": "52d973bb71dda2100455e8585a0a8f98d177bd13",
-      "source": {
-        "path": "packages/shared-test/black-box-runner/plan-preflight.ts",
-        "blob": "6753796f708d8cd265af76dcf076ad6dcd8eb87c"
-      },
-      "targets": ["packages/shared-test/black-box-runner/preflight/plan-preflight.ts"]
     }
   ]
 }

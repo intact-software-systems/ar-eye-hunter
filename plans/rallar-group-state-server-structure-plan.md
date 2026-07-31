@@ -1304,6 +1304,24 @@ output, warning-only mode, and strictness decision. It does not authorize the
 remaining non-lineage/layout repairs, performance, publication, workflow
 dispatch, merge, Task 10, the ledger, or the API-v1 child.
 
+The final whole-PR review at head
+`ae77b9026475932fed8396719d0021e96571408d` / tree
+`4f98cef2c2fd199e64fc1e4284313d0cb6148b50` reported Critical 0, Important 1,
+Minor 0 because eight one-to-one manifest targets were also ordinary Git
+renames. The narrow correction removes those eight complete redundant lineage
+records and leaves 17 lineages with 48 unique targets. Git rename detection now
+owns those comparisons; the fail-closed manifest/Git-rename conflict rule and
+all remaining structural-lineage semantics stay unchanged. This correction
+records no publication, performance, final-gate, workflow, merge, Task 10,
+ledger, or API-v1 evidence.
+The final uncommitted two-path worktree and an isolated ephemeral commit made
+from those same two paths both pass the exact changed-style comparison with
+zero findings. Scoped re-review accepted the isolated candidate commit
+`670152863399a3a7d69be0a00da029130a80c11c` / tree
+`60258fd1a867b85ac7c3dc539784ba5514efaf6c` with Critical 0, Important 0,
+Minor 0. The ignored fix report records the exact validation identities; the
+ephemeral object is not a branch commit or publication fact.
+
 The authorized non-lineage cohort starts from exact commit
 `0afacc09c75044e9d983cdc3f228464432cb6773` and tree
 `a1a4e4ee47a3f31a837d6ab7541d82d88ceee1c5`. It moves the mutation owners
