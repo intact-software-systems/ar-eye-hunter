@@ -75,7 +75,12 @@ green. Its separate evidence ledger was published through PR #55 and reached
 `ledger-published` at resulting `main`
 `b4fe2a6ae5893f3adae86061bd38cf416bac8aaf`. The
 [authoritative group-state server structure child](rallar-group-state-server-structure-plan.md)
-is now drafted and unapproved; drafting it authorizes no implementation.
+is approved at Git blob `1a74159d37f76a459009e99ca5a08f3cd620b1b4` with its
+authorized amendments. Tasks 0–6 and prior Task 7 fixes exist in its child
+progress evidence. Its expanded pre-merge convergence amendment authorizes the
+three pending repairs and behavior-neutral Tasks 8–9 alignment in existing draft
+PR #59 before a single merge; Task 10, the ledger, and the later API-v1 child
+remain gated.
 
 Program drafting, approval, execution, publication, and human handoffs follow
 the [Repository Human Traceability Program Execution Plan](repo-human-traceability-program-execution-plan.md).
@@ -416,12 +421,12 @@ packages/shared-server/rallar-system/group-state/
     validate-persisted-group-snapshot.ts
 ```
 
-The drafted
+The approved
 [server structure child](rallar-group-state-server-structure-plan.md) refines
 this responsibility skeleton into an exact current/target move map, mirrored
 test tree, public and internal compatibility inventory, AppInbox call trace,
-and topology/RTC inbox-owner split. That child remains unapproved until a human
-approves its exact Git blob.
+and topology/RTC inbox-owner split. Its authorized amendments retain the pending
+repair and pre-merge alignment boundaries recorded in the child plan.
 
 `AppGroupInboxService` must not remain the owner of topology configuration and
 RTC RTT mutation behavior merely because those messages currently arrive
@@ -989,8 +994,11 @@ to write, review, approve, execute, and hand off these child plans in order:
   - explicit translation functions;
   - facade compatibility decision;
   - shared-web and app consumer validation.
-- [ ] [Rallar group-state server structure](rallar-group-state-server-structure-plan.md)
-  - state: drafted and unapproved; no implementation goal or branch exists;
+- [x] [Rallar group-state server structure](rallar-group-state-server-structure-plan.md)
+  - state: approved at Git blob `1a74159d37f76a459009e99ca5a08f3cd620b1b4` with
+    authorized amendments; Tasks 0–6 and prior Task 7 fixes exist in the child
+    progress evidence; the three repairs and behavior-neutral Tasks 8–9 remain
+    pending in existing draft PR #59 before its one merge;
   - exact move map for group-state service, mutation, persistence, presence,
     snapshot, and AppInbox files;
   - split of topology and RTC RTT ownership from `AppGroupInboxService`;
@@ -1043,6 +1051,7 @@ Human review has approved all master-plan execution choices:
 
 The browser child is `ledger-published` through PR #55 and exact resulting
 `main` SHA `b4fe2a6ae5893f3adae86061bd38cf416bac8aaf`. The shared-server
-child is drafted and unapproved. The API-v1 child remains unstarted and may not
-be drafted until the server child's later evidence ledger is
-`ledger-published`.
+child is approved and in progress under its authorized pre-merge convergence
+path; its three repairs and behavior-neutral Tasks 8–9 alignment remain pending
+in existing draft PR #59. The API-v1 child remains unstarted and may not be
+drafted until the server child's later evidence ledger is `ledger-published`.

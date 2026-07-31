@@ -2,9 +2,10 @@
 
 > Status: Human-approved at exact Git blob
 > `1a74159d37f76a459009e99ca5a08f3cd620b1b4`, with the explicitly authorized
-> Section 12 amendments. Tasks 0 through 6 are complete; Task 7 validation and
-> publication remain pending. This approval does not authorize Tasks 8 through
-> 10 or the later API-v1 child.
+> Section 12 amendments. Tasks 0 through 6 are complete. The expanded
+> pre-merge convergence amendment authorizes the pending Task 7 repairs and
+> behavior-neutral Tasks 8–9 alignment in existing draft PR #59; Task 10 and
+> the later API-v1 child remain separately gated.
 
 This plan is the authoritative shared-server child of the
 [Repository Human Traceability Refactoring Program](repo-human-traceability-refactoring-program-plan.md).
@@ -25,9 +26,11 @@ Distributed Manifests** run `30520679271` attempt 1 success for that exact
 
 ## Global Constraints
 
-- Implementation authority covers Tasks 0 through 7 under the approved exact
-  blob and the Section 12 amendments. Alignment, ledger publication, and the
-  later API-v1 child remain separately gated.
+- Implementation authority covers Tasks 0 through 9 under the approved exact
+  blob and the Section 12 amendments. The expanded pre-merge convergence
+  amendment permits the behavior-neutral Tasks 8–9 alignment in existing draft
+  PR #59 before merge; ledger publication and the later API-v1 child remain
+  separately gated.
 - Preserve TypeScript `7.0.2`, every public package export and deep import,
   every API-v1 route and request/response contract, persisted formats, storage
   keys, resource names, and wire order.
@@ -50,18 +53,19 @@ Distributed Manifests** run `30520679271` attempt 1 success for that exact
 - Preserve
   `plans/rallar-rest-snapshot-read-convergence-implementation-plan.md`
   unchanged. It is outside this program child.
-- Structure and code-standard alignment use two implementation pull requests.
-  The alignment branch may start only from the first PR's exact resulting
-  `main` SHA after its required default-branch workflow succeeds.
+- The expanded pre-merge convergence amendment supersedes only the two-PR
+  sequencing rule: existing draft PR #59 may carry the behavior-neutral
+  code-standard alignment with the Task 7 repairs before its single merge. It
+  does not authorize Task 10, the ledger, or the later API-v1 child.
 - Keep each new or materially rewritten general function at most 60 physical
   lines and each module at most 400 physical lines. A threshold is not
   permission to add pass-through helpers, generic dependency bags, hidden
   defaults, or one-file-per-symbol scaffolding.
 - Every compatibility path in Section 6 is locked. No additional re-export or
   wrapper is approved by this child.
-- The existing server implementation goal, branch, and structure PR cover only
-  Tasks 0 through 7. Tasks 8 through 10 require their later gates and do not
-  inherit structure-pass authority.
+- The existing server implementation goal, branch, and draft PR #59 cover
+  Tasks 0 through 9 under this amendment. Task 10 requires its later gate and
+  does not inherit this implementation authority.
 
 ## 1. Scope And Success Boundary
 
@@ -918,7 +922,7 @@ outside this child unless a human amends and reapproves the exact plan.
 - test moves with exact cases, literals, and assertions preserved;
 - formatting required to keep moved files parseable and under 400 lines.
 
-### 8.2 Alignment PR: permitted only after structure publication
+### 8.2 Pre-merge alignment amendment: permitted only in existing PR #59
 
 - a source ratchet covering only new or materially rewritten server files;
 - filename/primary-symbol alignment, declaration order, named inputs,
@@ -926,6 +930,10 @@ outside this child unless a human amends and reapproves the exact plan.
   100-column formatting guidance;
 - removal of private pass-throughs only when characterization proves identical
   call order, arguments, errors, identity, and state.
+
+This behavior-neutral alignment is authorized only with the Task 7 repairs in
+existing draft PR #59 before its single merge. It must not change public or
+persisted presence semantics, API-v1 organization, or any Section 7 invariant.
 
 ### 8.3 Not approved
 
@@ -1102,41 +1110,55 @@ suffix acceptance. Three additional source fixtures bind the expected topology,
 RTC, or group property name on an alias receiver to the wrong handler and prove
 that the apparently named but non-canonical receiver is rejected.
 
-### Task 7: Freeze, Review, And Publish The Structure PR
+### Task 7: Repair And Validate Structure Work Before Expanded PR Review
 
 - Perform an independent whole-structure review for Critical/Important findings,
   hidden behavior/compatibility changes, missing assertions, runtime cycles,
   extra hops, file/function limits across both tests and their support modules,
   generic ownership, direct old-owner imports, and all Section 7 invariants.
-- Run every focused and completion command in Section 10 on one unchanged tree.
-- Create cohesive non-default commits, push non-forced, keep one draft structure
-  PR current, and record exact tree/commit and test evidence externally.
+- Repair the reproduced memory auth-session evidence, committed admin
+  `APP_OUTBOX` prune completion, and Postgres medium-scale presence convergence
+  failures. The memory evidence must observe the active PGlite backing store
+  while retaining PostgreSQL evidence behavior. Any admin missing-wake repair
+  is post-commit only and preserves the AppInbox transaction, retry,
+  idempotency, receipt, ordering, and outbox invariants. Preserve the unchanged
+  medium-scale 100 clients, five groups, two API processes, 10 client lanes,
+  five control lanes, operation matrix, and assertions; prefer recipe
+  orchestration, wake/drain evidence, or test timing over public or persisted
+  presence semantics.
+- Run every focused and completion command in Section 10 on one unchanged tree,
+  including the one predeclared paired PostgreSQL 16 performance comparison.
+- Create cohesive non-default commits, push non-forced, keep existing draft PR
+  #59 current, and record exact tree/commit and test evidence externally.
 - Require **Branch Release Gate** success for the exact final feature SHA.
 - Stop for human merge approval. After merge, require **Run Hetzner Supported
   Distributed Manifests** success for the exact resulting `main` SHA before
-  Task 8.
+  Task 10.
 
-### Task 8: Align Only The New Server Files
+### Task 8: Align Only The New Server Files Before The Existing PR Merge
 
-Create a new non-default alignment branch from the exact green resulting main
-SHA. Add a source ratchet first. Align only files new or materially rewritten by
-Tasks 2 through 6 and their mirrored tests. Preserve all characterization and
-Section 7 invariants. No semantic cleanup or API-v1 organization is allowed.
+In existing draft PR #59, add a source ratchet first. Align only files new or
+materially rewritten by Tasks 2 through 6 and their mirrored tests. Preserve all
+characterization and Section 7 invariants. No semantic cleanup, API-v1
+organization, public/persisted presence-semantic change, new compatibility
+layer, or lifecycle reordering is allowed.
 
-### Task 9: Freeze, Review, And Publish The Alignment PR
+### Task 9: Freeze, Review, And Publish The Expanded PR
 
 Repeat the independent whole-alignment review and every invalidated focused,
 mutation-path, repository, and completion gate on the final unchanged tree.
-Require Branch Release Gate on the exact feature SHA, human merge approval, and
-the required default-branch workflow for the exact resulting main SHA.
+Review the Task 7 repairs and Task 8 alignment together in existing draft PR
+#59. Require Branch Release Gate on the exact final feature SHA, human merge
+approval, and the required default-branch workflow for the exact resulting main
+SHA.
 
 ### Task 10: Publish The Later Evidence Ledger Separately
 
-Only after both implementation publications are green, use a separately
-authorized non-default ledger branch to update this child, the master program,
-and execution plan. Record existing implementation evidence only. The ledger's
-own future tree, commit, PR, branch gate, merge, and default workflow remain in
-the external PR/handoff envelope until they exist.
+Only after the single expanded PR #59 implementation publication is green, use
+a separately authorized non-default ledger branch to update this child, the
+master program, and execution plan. Record existing implementation evidence
+only. The ledger's own future tree, commit, PR, branch gate, merge, and default
+workflow remain in the external PR/handoff envelope until they exist.
 
 ## 10. Validation Matrix
 
@@ -1144,9 +1166,7 @@ the external PR/handoff envelope until they exist.
 
 ```bash
 npx prettier --write \
-  plans/rallar-group-state-server-structure-plan.md \
-  plans/repo-human-traceability-refactoring-program-plan.md \
-  plans/repo-human-traceability-program-execution-plan.md
+  plans/rallar-group-state-server-structure-plan.md
 git diff --check
 npx vitest run \
   packages/tests/repo/rallar-skill-integrity.test.ts \
@@ -1231,35 +1251,51 @@ npm run test:api-v1:black-box:memory
 npm run test:api-v1:black-box:postgres:medium-scale
 ```
 
+The final memory black-box evidence must read auth-session state from the active
+PGlite backing store and retain the PostgreSQL evidence path. The final
+PostgreSQL medium-scale run is the unchanged fixed gate: 100 independently
+authenticated clients, five groups, two API processes, 10 client lanes, five
+control lanes, and its existing operation matrix and assertions. The final
+admin prune evidence must prove committed `APP_OUTBOX` work drains and completes
+deterministically in the active black-box lifecycle without changing Section 7
+transaction, retry, idempotency, receipt, ordering, or outbox behavior.
+
 If Task 1 resolves a differently named active test, record the exact
 replacement in the child progress record before moving it; do not silently
 skip it.
 
 ### 10.3 Mutation-path comparative gate
 
-Capture a fresh base artifact before edits and a candidate on each final
-implementation tree using distinct exact paths:
+Run exactly one predeclared paired comparison between approved base
+`52d973bb71dda2100455e8585a0a8f98d177bd13` and the final current tree. Use
+PostgreSQL 16 and a fresh isolated database for each side; do not reroll either
+side. The paired artifacts use these distinct paths:
 
 ```bash
 npm run perf:api-v1:state-write -- \
-  --backend=postgres --warmup=1 --runs=3 --concurrency=10 \
-  --out=tmp/perf/api-v1-state-write-server-structure-baseline.json
+  --backend=postgres --warmup=1 --runs=9 --concurrency=10 \
+  --out=tmp/perf/api-v1-state-write-server-structure-approved-base.json
 
 npm run perf:api-v1:state-write -- \
-  --backend=postgres --warmup=1 --runs=3 --concurrency=10 \
-  --out=tmp/perf/api-v1-state-write-server-structure-candidate.json
+  --backend=postgres --warmup=1 --runs=9 --concurrency=10 \
+  --out=tmp/perf/api-v1-state-write-server-structure-current.json
 
 node scripts/perf/compare-api-v1-state-write-results.mjs \
-  tmp/perf/api-v1-state-write-server-structure-baseline.json \
-  tmp/perf/api-v1-state-write-server-structure-candidate.json
+  tmp/perf/api-v1-state-write-server-structure-approved-base.json \
+  tmp/perf/api-v1-state-write-server-structure-current.json
 ```
 
-The alignment PR uses a new candidate filename and compares against the same
-fresh approved-base artifact. Generated artifacts remain under `tmp/perf/` and
-are not committed. The comparison must pass artifact correctness, receipt/
-outbox linkage, retry exhaustion, latency, throughput, SQL/row/byte counts, and
-transaction duration. Unavailable Postgres infrastructure is a blocker, not a
-skipped gate.
+Generated artifacts remain under `tmp/perf/` and are not committed. Preserve
+exact artifact correctness, receipt/final-effect linkage, atomic completion,
+zero forbidden exhaustion, and zero forbidden transient retry. Uncontended p95
+and p99 may regress by at most 5%; shared throughput must not regress; this
+child alone permits hot throughput to regress by at most 10%. Every SQL,
+row, byte, or transaction increase requires an explicit measured
+conflict-depth explanation. Run the global comparator unchanged and record its
+output; this predeclared child-specific policy supersedes only its stricter
+shared-improvement and hot-throughput outcomes for these two named artifacts.
+Do not change the global comparator or its future thresholds. Unavailable
+PostgreSQL 16 infrastructure is a blocker, not a skipped gate.
 
 ### 10.4 Checker and completion gates
 
@@ -1277,13 +1313,14 @@ npm run build
 
 Run Prettier verification, `git diff --check`, file/function line checks,
 runtime-cycle checks, shared-server TypeScript, API-v1 Deno check, the memory
-black-box test, and the Postgres medium-scale/convergence comparison again on
-each final unchanged implementation tree. Any content change invalidates prior
-validation.
+black-box test, the committed-admin-prune black-box evidence, the unchanged
+Postgres medium-scale/convergence gate, and the single paired performance
+comparison on the final unchanged implementation tree. Any content change
+invalidates prior validation.
 
 ## 11. Non-Circular Completion Evidence
 
-Each structure/alignment implementation publication records externally:
+The single expanded PR #59 implementation publication records externally:
 
 1. approved plan blob and approved-base SHA;
 2. final feature tree and feature commit;
@@ -1293,17 +1330,18 @@ Each structure/alignment implementation publication records externally:
 6. **Run Hetzner Supported Distributed Manifests** run ID, attempt, conclusion,
    and exact resulting SHA.
 
-The frozen implementation tree may record only facts that existed before it
-was frozen. Its future PR head, merge SHA, workflow result, or replacement tree
-must remain in the PR and Mandatory Completion Handoff external envelope.
+The frozen expanded implementation tree may record only facts that existed
+before it was frozen. Its future PR head, merge SHA, workflow result, or
+replacement tree must remain in the PR and Mandatory Completion Handoff external
+envelope.
 
-After both implementation envelopes are green, a separate three-plan ledger
-may record those now-existing facts and mark implementation `complete` while
-its own publication remains `pending`. The frozen ledger tree may not record
-its own future tree, commit, PR number, branch gate, merge SHA, or default-
-workflow result. Those remain external. Only after the ledger PR is merged and
-its exact resulting-main workflow succeeds may the external handoff call this
-child `ledger-published` and unlock drafting the API-v1 child.
+After the single expanded PR #59 implementation envelope is green, a separate
+three-plan ledger may record those now-existing facts and mark implementation
+`complete` while its own publication remains `pending`. The frozen ledger tree
+may not record its own future tree, commit, PR number, branch gate, merge SHA,
+or default-workflow result. Those remain external. Only after the ledger PR is
+merged and its exact resulting-main workflow succeeds may the external handoff
+call this child `ledger-published` and unlock drafting the API-v1 child.
 
 ## 12. Exact Human Review Points
 
@@ -1356,15 +1394,19 @@ child `ledger-published` and unlock drafting the API-v1 child.
    `a9e97a751d55e93e9e7c387a8f1b10564c27053d` and tree
    `22955b3b5edffdf1068082fde0c5afe8d3e2840d`; it narrows the dispatch check to
    exact receiver equality and adds only the three alias-receiver negatives.
+   The expanded pre-merge convergence amendment starts from head
+   `addf41b9b6d89933d65a8b222581cd900577e22a` and tree
+   `4fe54ccc362ed86fc2132aae2c0a1433edb2528f`. It authorizes the three
+   reproduced convergence repairs, the behavior-neutral Tasks 8–9 alignment in
+   existing draft PR #59 before merge, and the single fixed child-specific
+   PostgreSQL 16 performance comparison in Section 10. It supersedes only the
+   stale two-PR sequencing rule and preserves every locked constraint.
 3. **Structure PR:** review and explicitly approve the exact final head/tree
    only after Critical 0, Important 0, all local gates, and Branch Release Gate.
-4. **Structure merge:** human performs/approves merge. Task 8 waits for the exact
-   resulting-main default workflow.
-5. **Alignment PR:** independently review and approve its exact final head/tree
-   under the same gates.
-6. **Alignment merge:** human performs/approves merge and verifies resulting-
-   main workflow.
-7. **Ledger authorization and merge:** separate human authorization starts the
+4. **Expanded PR merge:** human performs/approves the single merge only after
+   the Task 7 repairs and Task 8–9 alignment pass their exact gates; then verify
+   the resulting-main workflow.
+5. **Ledger authorization and merge:** separate human authorization starts the
    evidence-only branch; a later human decision merges its exact head/tree.
 
 No approval above authorizes the later API-v1 child.
@@ -1392,11 +1434,19 @@ No approval above authorizes the later API-v1 child.
       materially rewritten file is within size/function limits.
 - [x] No runtime cycle, generic dependency bag, extra hop, duplicated state,
       hidden default, or lifecycle reordering exists.
-- [ ] Structure PR passed independent review, focused gates, Postgres medium-
-      scale, comparative gate, completion gates, Branch Release Gate, human
-      merge, and exact resulting-main workflow.
-- [ ] Alignment started only from that green resulting main and passed the same
-      applicable gates and publication envelope.
+- [ ] The three reproduced failures are repaired with the mandated evidence:
+      active-PGlite auth-session observation with retained PostgreSQL evidence,
+      deterministic committed admin `APP_OUTBOX` prune completion, and the
+      unchanged deterministic Postgres medium-scale presence gate.
+- [ ] Existing draft PR #59 passed independent review, focused gates, the one
+      paired PostgreSQL 16 comparison, completion gates, Branch Release Gate,
+      human merge, and exact resulting-main workflow after its Task 7 repairs
+      and behavior-neutral Task 8–9 alignment.
+- [ ] The paired comparison preserves exact artifacts, receipts, final effects,
+      atomic completion, zero forbidden exhaustion/transient retry, the 5%
+      uncontended p95/p99 limit, no shared-throughput regression, the
+      child-only 10% hot-throughput limit, and measured conflict-depth reasons
+      for every SQL/row/byte/transaction increase.
 - [x] Protected REST plan remained byte-identical.
 - [ ] Later three-plan ledger was separately authorized and published under the
       non-circular contract.
@@ -1412,8 +1462,11 @@ No approval above authorizes the later API-v1 child.
 | Compatibility files become permanent chains                     | Explicit one-hop named exports only, with exact removal conditions in Section 6.                                                                                                                             |
 | Test splits weaken evidence                                     | Preserve named-case, literal, and assertion counts; no source-text replacement for runtime behavior.                                                                                                         |
 | Persisted validation duplicates cross-cutting primitive bodies  | Keep normalization and domain validation in their approved owners while the feature-root validation-primitives module solely owns the existing generic bodies and every Task 3 consumer imports it directly. |
-| A structural move changes concurrency performance               | Require fresh baseline/candidate comparison and Postgres medium-scale despite no intended concurrency-domain change.                                                                                         |
-| Formatting/alignment obscures movement                          | Separate locked structure and alignment PRs with a green default workflow between them.                                                                                                                      |
+| A structural move changes concurrency performance               | Use the one non-rerolled approved-base/current PostgreSQL 16 pair, enforce exact durable evidence plus the child-only limits in Section 10, and explain every resource increase by measured conflict depth.  |
+| Memory evidence reads a stale auth-session store                | Read the active PGlite backing store in memory mode while retaining PostgreSQL evidence behavior.                                                                                                            |
+| Committed admin prune work is not observed by the active drain  | Correct only a missing post-commit wake and prove deterministic `APP_OUTBOX` completion without altering Section 7 ordering or transaction semantics.                                                        |
+| Medium-scale presence evidence is timing-dependent              | Preserve the fixed 100-client/five-group/two-process matrix and repair orchestration, wake/drain evidence, or timing rather than presence semantics.                                                         |
+| Formatting/alignment obscures movement                          | Keep the behavior-neutral alignment in existing PR #59 under one final combined review; no API-v1 organization or semantic cleanup is allowed.                                                               |
 
 Reserved for separate human approval: any public/breaking release, API-v1
 reorganization, schema/key/persistence migration, authority/policy change,
@@ -1422,14 +1475,14 @@ topology/RTC algorithm refactor.
 
 ## 15. Progress Record
 
-| Milestone                | Status             | Evidence                                                                                                                                                                                                                                                                                                                                                  |
-| ------------------------ | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Browser prerequisite     | `ledger-published` | PR #55, feature `7db208ed977fdcad4a1afef8a5d08c3cfdbb862c`, tree `96f0f763577a18983a9a9f08f87147a9ab154930`, Branch Release Gate `30519129484` attempt 1 success, resulting main `b4fe2a6ae5893f3adae86061bd38cf416bac8aaf`, default workflow `30520679271` attempt 1 success.                                                                            |
-| Server inventory         | drafted            | Current services, mutation phases, AppInbox, persistence, presence, snapshot, topology, RTC RTT, exports, consumers, examples, tests, and representative trace inspected at the base SHA.                                                                                                                                                                 |
-| Child plan               | `human-approved`   | Approved plan blob `1a74159d37f76a459009e99ca5a08f3cd620b1b4`; Section 12 records the authorized Task 2 command-owner amendment, Task 3 persistence amendment and root-primitive fix, Task 5 test-ownership fix, Task 7 hard-limit correction and result-adapter fix, and both Task 6 dispatch-review fixes with their exact predecessor heads and trees. |
-| Structure implementation | in progress        | Tasks 0–6 and the two Task 7 review fixes are complete through existing head `1eb3bc7c0bc0c3bbfaaa240f8702f8704e392067` / tree `d9574022a45ae78ce325f60cffc8ef61be16aa73`. The hard-limit and result-adapter reviews report Critical 0, Important 0, Minor 0. Task 7 mandatory completion, performance, publication, and remote gates remain pending.     |
-| Alignment implementation | pending            | Waits for green structure merge/default workflow.                                                                                                                                                                                                                                                                                                         |
-| Evidence ledger          | pending            | Waits for both implementation envelopes and separate authorization.                                                                                                                                                                                                                                                                                       |
+| Milestone                | Status             | Evidence                                                                                                                                                                                                                                                                                       |
+| ------------------------ | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Browser prerequisite     | `ledger-published` | PR #55, feature `7db208ed977fdcad4a1afef8a5d08c3cfdbb862c`, tree `96f0f763577a18983a9a9f08f87147a9ab154930`, Branch Release Gate `30519129484` attempt 1 success, resulting main `b4fe2a6ae5893f3adae86061bd38cf416bac8aaf`, default workflow `30520679271` attempt 1 success.                 |
+| Server inventory         | drafted            | Current services, mutation phases, AppInbox, persistence, presence, snapshot, topology, RTC RTT, exports, consumers, examples, tests, and representative trace inspected at the base SHA.                                                                                                      |
+| Child plan               | `human-approved`   | Approved plan blob `1a74159d37f76a459009e99ca5a08f3cd620b1b4`; Section 12 records the prior authorized amendments and the expanded pre-merge convergence authorization at existing head `addf41b9b6d89933d65a8b222581cd900577e22a` / tree `4fe54ccc362ed86fc2132aae2c0a1433edb2528f`.          |
+| Structure implementation | in progress        | Tasks 0–6 and the two Task 7 review fixes are complete through existing head `1eb3bc7c0bc0c3bbfaaa240f8702f8704e392067` / tree `d9574022a45ae78ce325f60cffc8ef61be16aa73`. The three mandatory repairs, fixed performance gate, combined review, publication, and remote gates remain pending. |
+| Alignment implementation | authorized/pending | The behavior-neutral Tasks 8–9 alignment is authorized only in existing draft PR #59 before its single merge; it has no future publication evidence.                                                                                                                                           |
+| Evidence ledger          | pending            | Waits for the single expanded PR #59 implementation envelope and separate authorization.                                                                                                                                                                                                       |
 
 ## 16. Implementation Self-Review Record
 
@@ -1485,3 +1538,14 @@ source-mutation route-closure families before accepting the local fix commit.
 Fix round 2 additionally checks three valid alias receivers whose expected
 property names point at the wrong group, topology, or RTC handler; suffix-only
 path matching is not acceptable evidence of canonical dispatch ownership.
+
+The expanded pre-merge convergence amendment self-review additionally checks
+that the three mandatory repairs retain every Section 7 invariant, that memory
+auth-session evidence observes the active PGlite store while PostgreSQL evidence
+remains intact, that any admin-prune wake occurs only after commit, and that the
+unchanged medium-scale matrix remains deterministic. It also checks that Tasks
+8–9 are behavior-neutral and confined to existing PR #59, that the one
+predeclared PostgreSQL 16 pair uses fresh isolated databases with
+`--warmup=1 --runs=9 --concurrency=10` and no reroll, and that no future
+commit/tree, Branch Release Gate, merge, resulting-main, default-workflow, or
+ledger fact is recorded here.
