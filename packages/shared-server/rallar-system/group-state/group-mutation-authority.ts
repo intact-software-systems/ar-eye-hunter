@@ -16,8 +16,8 @@ import {
 import {
   type GroupMutationCommand,
   type GroupMutationFacts,
-  validateGroupMutationCommand,
-} from '../services/group-state-mutations.ts';
+} from './mutation/group-mutation-contracts.ts';
+import { validateGroupMutationCommand } from './mutation/group-mutation-command-validation.ts';
 import { hashMutationCommand, type JsonWireValue } from '../services/mutation-command-identity.ts';
 import {
   toAggregateMutationCommand,

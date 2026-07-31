@@ -43,7 +43,7 @@ import type {
   GroupMutationFacts,
   GroupMutationRead,
   GroupMutationReceipt,
-} from '../services/group-state-mutations.ts';
+} from './mutation/group-mutation-contracts.ts';
 import type { GroupSessionCleanupInput } from '../services/group-session-cleanup.ts';
 import type { RallarTimingSink } from '../services/timing.ts';
 import type { WsSessionGenerationLifecycleService } from '../services/ws-session-generation-lifecycle.ts';

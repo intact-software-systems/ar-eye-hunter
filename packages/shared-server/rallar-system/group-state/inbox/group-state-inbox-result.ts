@@ -2,7 +2,7 @@ import type { GroupEvent, GroupRef, GroupSnapshot } from '@shared/api/group-type
 import { Either } from '@shared/resilience/Either.ts';
 
 import type { GroupStateRepository } from '../../repositories/GroupStateRepository.ts';
-import type { GroupMutationReceipt } from '../../services/group-state-mutations.ts';
+import type { GroupMutationReceipt } from '../mutation/group-mutation-contracts.ts';
 import type { GroupStateMutationCommand } from '../group-state-service-contracts.ts';
 
 export interface GroupStateInboxResult {

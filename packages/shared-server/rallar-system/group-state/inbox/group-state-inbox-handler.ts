@@ -8,7 +8,7 @@ import type {
   AppInboxMessageContext,
 } from '../../services/AppInboxService.ts';
 import { AppInboxType } from '../../services/AppInboxService.ts';
-import type { GroupMutationComputed } from '../../services/group-state-mutations.ts';
+import type { GroupMutationComputed } from '../mutation/group-mutation-contracts.ts';
 import type { WsSessionGenerationLifecycleComputed } from '../../services/ws-session-generation-lifecycle.ts';
 import {
   GroupMutationAuthorizationError,

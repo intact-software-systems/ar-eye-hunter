@@ -1,12 +1,9 @@
 import type {
   GroupMutationCommand,
   GroupMutationFacts,
-} from '../services/group-state-mutations.ts';
-import {
-  computeGroupMutation,
-  validateGroupMutation,
-  validateGroupMutationCommand,
-} from '../services/group-state-mutations.ts';
+} from './mutation/group-mutation-contracts.ts';
+import { computeGroupMutation, validateGroupMutation } from '../services/group-state-mutations.ts';
+import { validateGroupMutationCommand } from './mutation/group-mutation-command-validation.ts';
 import { GroupStateRepository } from '../repositories/GroupStateRepository.ts';
 import { readGroupMutation } from '../services/group-state-mutation-read.ts';
 import { writeGroupMutation } from '../services/group-state-guarded-batch.ts';

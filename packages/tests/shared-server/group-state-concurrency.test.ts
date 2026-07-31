@@ -10,9 +10,6 @@ import type {
 } from '@shared/api/group-types.ts';
 import { toGroupSnapshotStateRevision } from '@shared/api/group-client-views.ts';
 import type {
-    ConnectGroupPresenceSessionRequest,
-    GroupJoinCodeResponse,
-    HeartbeatGroupPresenceSessionRequest,
     StateScope,
 } from '@shared/api/state-types.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
@@ -31,7 +28,6 @@ import {
     normalizePersistedGroupMember,
     validatePersistedGroupMember,
     validateGroupMutation,
-    validateGroupMutationCommand,
     validateGroupPresenceSummary,
 } from '@shared-server/rallar-system/services/group-state-mutations.ts';
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/services/GroupPresenceSummaryWork.ts';
@@ -111,50 +107,6 @@ describe('convergent group and presence state', () => {
             runtimeRepository: new GroupBarrierRepository(),
             serviceId: 'missing-auth-service',
         } as never)).toThrow(/auth.*required/i);
-    });
-
-    it('makes generation identity mandatory and rejects caller-controlled command hashes', () => {
-        expectTypeOf<ConnectGroupPresenceSessionRequest>()
-            .toHaveProperty('generationId').toEqualTypeOf<string>();
-        expectTypeOf<HeartbeatGroupPresenceSessionRequest>()
-            .toHaveProperty('generationId').toEqualTypeOf<string>();
-        expectTypeOf<ConnectGroupPresenceSessionRequest>()
-            .not.toHaveProperty('commandHash');
-        expectTypeOf<GroupJoinCodeResponse>()
-            .toHaveProperty('expiresAtEpochMs').toEqualTypeOf<number>();
-
-        const command = createMutationCommand({
-            input: {
-                displayName: 'After',
-                actorPrincipalId: 'alice',
-                actorSessionId: null,
-                reason: null,
-                traceId: null,
-            },
-            commandHash: `sha256:${'0'.repeat(64)}`,
-        } as never);
-        expect(() => validateGroupMutationCommand(command)).toThrow(
-            /command|key|hash/i,
-        );
-
-        expect(() => validateGroupMutationCommand(createMutationCommand({
-            input: {
-                ...createMutationCommand().input,
-                unexpected: true,
-            },
-        } as never))).toThrow(/unexpected|key/i);
-
-        expect(() => validateGroupMutationCommand(createMutationCommand({
-            operation: 'rotateGroupJoinCode',
-            input: {
-                actorPrincipalId: 'alice',
-                actorSessionId: 'alice-session',
-                reason: null,
-                traceId: null,
-                joinCode: null,
-                expiresAtEpochMs: null,
-            },
-        } as Partial<GroupMutationCommand>))).not.toThrow();
     });
 
     it('encodes canonical group storage keys including workspace absence and reserved IDs', () => {

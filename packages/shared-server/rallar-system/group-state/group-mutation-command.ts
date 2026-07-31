@@ -19,7 +19,7 @@ import type {
 } from '@shared/api/state-types.ts';
 import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryController.ts';
 
-import type { GroupMutationCommand } from '../services/group-state-mutations.ts';
+import type { GroupMutationCommand } from './mutation/group-mutation-contracts.ts';
 import type { GroupMutationDescriptor } from './group-state-service-contracts.ts';
 
 export function toAggregateMutationCommand(

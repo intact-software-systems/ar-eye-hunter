@@ -7,7 +7,7 @@ import type {
 } from '@shared/api/state-types.ts';
 import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryController.ts';
 
-import type { GroupMutationCommand } from '../services/group-state-mutations.ts';
+import type { GroupMutationCommand } from './mutation/group-mutation-contracts.ts';
 import { canonicalJson } from '../services/group-state-crypto.ts';
 import { toGroupMutationActorInput, toGroupMutationIdentity } from './group-mutation-command.ts';
 import type { GroupMutationDescriptor } from './group-state-service-contracts.ts';
