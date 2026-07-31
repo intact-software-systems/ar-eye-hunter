@@ -1,3 +1,5 @@
+import type { GroupRef } from '@shared/api/group-types.ts';
+
 export function assertExactKeys(
   value: Readonly<Record<string, unknown>>,
   allowed: readonly string[],
@@ -101,4 +103,3 @@ export function validateGroupRef(value: unknown): asserts value is GroupRef {
   requireNonEmptyString(ref.workspaceId, 'Group workspaceId');
   requireNonEmptyString(ref.groupId, 'Group groupId');
 }
-import type { GroupRef } from '@shared/api/group-types.ts';

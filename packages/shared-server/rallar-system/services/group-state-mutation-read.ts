@@ -3,7 +3,10 @@ import { GroupStateRepository } from '../repositories/GroupStateRepository.ts';
 import type {
   GroupStateMutationExactReadResult,
 } from '../repositories/group-state-mutation-exact-read.ts';
-import type { GroupMutationCommand, GroupMutationRead } from './group-state-mutations.ts';
+import type {
+  GroupMutationCommand,
+  GroupMutationRead,
+} from '../group-state/mutation/group-mutation-contracts.ts';
 
 export async function readGroupMutation(
   repository: GroupStateRepository,

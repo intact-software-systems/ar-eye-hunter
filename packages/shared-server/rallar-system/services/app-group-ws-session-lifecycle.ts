@@ -1,6 +1,6 @@
 import type { PSqlTransactionSql } from '../../postgres/PostgresSqlClient.ts';
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
-import type { GroupMutationComputed } from './group-state-mutations.ts';
+import type { GroupMutationComputed } from '../group-state/mutation/group-mutation-contracts.ts';
 import type {
   GroupMutationPreparation,
   GroupStateMutationCommand,

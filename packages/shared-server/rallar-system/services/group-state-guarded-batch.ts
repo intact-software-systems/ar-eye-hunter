@@ -34,7 +34,7 @@ import { ResourceInboxRepository } from '../../postgres/resource-inbox/ResourceI
 import type {
   GroupMutationComputedWrite,
   GroupMutationReceipt,
-} from './group-state-mutations.ts';
+} from '../group-state/mutation/group-mutation-contracts.ts';
 
 export interface MaterializedGroupStateGuardedBatch {
   readonly batch: RuntimeStateGuardedBatch;
