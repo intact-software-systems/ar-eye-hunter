@@ -21,10 +21,11 @@ import {
   groupStatePresenceAdmissionStorageKey,
   groupStatePresenceSessionStorageKey,
 } from './group-state-storage-keys.ts';
+import { type GroupMutationIdempotencyRecord } from '../mutation/group-mutation-contracts.ts';
+// prettier-ignore
 import {
-  type GroupMutationIdempotencyRecord,
-} from '../mutation/group-mutation-contracts.ts';
-import { validateGroupMutationIdempotencyRecord } from '../mutation/group-mutation-result.ts';
+  validateGroupMutationIdempotencyRecord,
+} from '../mutation/validate-group-mutation-result.ts';
 import {
   validatePersistedGroup,
   validatePersistedGroupMember,

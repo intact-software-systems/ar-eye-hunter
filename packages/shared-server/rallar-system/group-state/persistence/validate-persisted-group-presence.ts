@@ -20,50 +20,59 @@ import {
 
 import { validateCausalRevision, validateScopedRecord } from './validate-persisted-group.ts';
 
+const PRESENCE_SESSION_KEYS = [
+  'applicationId',
+  'workspaceId',
+  'groupId',
+  'sessionId',
+  'principalId',
+  'generationId',
+  'generationVersion',
+  'connectedAtEpochMs',
+  'lastHeartbeatAtEpochMs',
+  'expiresAtEpochMs',
+  'disconnectedAtEpochMs',
+  'disconnectReason',
+  'status',
+] as const;
+
+const PRESENCE_SUMMARY_KEYS = [
+  'applicationId',
+  'workspaceId',
+  'groupId',
+  'causalRevision',
+  'activePrincipalIds',
+  'activeSessionIds',
+  'activeSessions',
+  'activePrincipalCount',
+  'activeSessionCount',
+  'computedAtEpochMs',
+] as const;
+
+const PRESENCE_ADMISSION_KEYS = [
+  'applicationId',
+  'workspaceId',
+  'groupId',
+  'principalId',
+  'admittedSessions',
+  'updatedAtEpochMs',
+] as const;
+
+const ADMITTED_SESSION_KEYS = [
+  'sessionId',
+  'generationId',
+  'generationVersion',
+  'connectedAtEpochMs',
+] as const;
+
 export function validatePresenceSession(
   session: unknown,
   ref: GroupRef,
   label: string,
 ): asserts session is GroupPresenceSession {
   const value = requireRecord(session, `${label} value`);
-  assertExactKeys(
-    value,
-    [
-      'applicationId',
-      'workspaceId',
-      'groupId',
-      'sessionId',
-      'principalId',
-      'generationId',
-      'generationVersion',
-      'connectedAtEpochMs',
-      'lastHeartbeatAtEpochMs',
-      'expiresAtEpochMs',
-      'disconnectedAtEpochMs',
-      'disconnectReason',
-      'status',
-    ],
-    `${label} value`,
-  );
-  assertRequiredKeys(
-    value,
-    [
-      'applicationId',
-      'workspaceId',
-      'groupId',
-      'sessionId',
-      'principalId',
-      'generationId',
-      'status',
-      'generationVersion',
-      'connectedAtEpochMs',
-      'lastHeartbeatAtEpochMs',
-      'expiresAtEpochMs',
-      'disconnectedAtEpochMs',
-      'disconnectReason',
-    ],
-    `${label} value`,
-  );
+  assertExactKeys(value, PRESENCE_SESSION_KEYS, `${label} value`);
+  assertRequiredKeys(value, PRESENCE_SESSION_KEYS, `${label} value`);
   validateScopedRecord(value, ref, label);
   requireNonEmptyString(value.sessionId, `${label} sessionId`);
   requireNonEmptyString(value.principalId, `${label} principalId`);
@@ -130,38 +139,8 @@ export function validatePresenceSummaryValue(
   ref: GroupRef,
 ): asserts summary is GroupPresenceSummary {
   const value = requireRecord(summary, 'Stored presence summary value');
-  assertExactKeys(
-    value,
-    [
-      'applicationId',
-      'workspaceId',
-      'groupId',
-      'causalRevision',
-      'activePrincipalIds',
-      'activeSessionIds',
-      'activeSessions',
-      'activePrincipalCount',
-      'activeSessionCount',
-      'computedAtEpochMs',
-    ],
-    'Stored presence summary value',
-  );
-  assertRequiredKeys(
-    value,
-    [
-      'applicationId',
-      'workspaceId',
-      'groupId',
-      'causalRevision',
-      'activePrincipalIds',
-      'activeSessionIds',
-      'activeSessions',
-      'activePrincipalCount',
-      'activeSessionCount',
-      'computedAtEpochMs',
-    ],
-    'Stored presence summary value',
-  );
+  assertExactKeys(value, PRESENCE_SUMMARY_KEYS, 'Stored presence summary value');
+  assertRequiredKeys(value, PRESENCE_SUMMARY_KEYS, 'Stored presence summary value');
   validateScopedRecord(value, ref, 'Stored presence summary');
   validateCausalRevision(value.causalRevision, 'Stored presence summary');
   if (
@@ -219,30 +198,8 @@ export function validatePresenceAdmission(
   ref?: GroupRef,
 ): asserts admission is GroupPresenceAdmission {
   const value = requireRecord(admission, 'Presence admission');
-  assertExactKeys(
-    value,
-    [
-      'applicationId',
-      'workspaceId',
-      'groupId',
-      'principalId',
-      'admittedSessions',
-      'updatedAtEpochMs',
-    ],
-    'Presence admission',
-  );
-  assertRequiredKeys(
-    value,
-    [
-      'applicationId',
-      'workspaceId',
-      'groupId',
-      'principalId',
-      'admittedSessions',
-      'updatedAtEpochMs',
-    ],
-    'Presence admission',
-  );
+  assertExactKeys(value, PRESENCE_ADMISSION_KEYS, 'Presence admission');
+  assertRequiredKeys(value, PRESENCE_ADMISSION_KEYS, 'Presence admission');
   if (ref) validateScopedRecord(value, ref, 'Presence admission');
   requireNonEmptyString(value.principalId, 'Presence admission principalId');
   requirePositiveSafeInteger(value.updatedAtEpochMs, 'Presence admission updatedAtEpochMs');
@@ -260,16 +217,8 @@ export function validatePresenceAdmission(
   const sessionIds = new Set<string>();
   for (const session of value.admittedSessions) {
     const sessionValue = requireRecord(session, 'Presence admission session');
-    assertExactKeys(
-      sessionValue,
-      ['sessionId', 'generationId', 'generationVersion', 'connectedAtEpochMs'],
-      'Presence admission session',
-    );
-    assertRequiredKeys(
-      sessionValue,
-      ['sessionId', 'generationId', 'generationVersion', 'connectedAtEpochMs'],
-      'Presence admission session',
-    );
+    assertExactKeys(sessionValue, ADMITTED_SESSION_KEYS, 'Presence admission session');
+    assertRequiredKeys(sessionValue, ADMITTED_SESSION_KEYS, 'Presence admission session');
     requireNonEmptyString(sessionValue.sessionId, 'Presence admission sessionId');
     requireNonEmptyString(sessionValue.generationId, 'Presence admission generationId');
     requirePositiveSafeInteger(

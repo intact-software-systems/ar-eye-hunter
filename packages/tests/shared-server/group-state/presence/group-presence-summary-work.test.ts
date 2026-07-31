@@ -4,7 +4,10 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { GroupPresenceSummaryWork as CompatibilityGroupPresenceSummaryWork } from '@shared-server/rallar-system/services/GroupPresenceSummaryWork.ts';
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-work.ts';
-import { computeGroupPresenceSummaryEntry, type GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
+import {
+  computeGroupPresenceSummaryEntry,
+  type GroupPresenceSummaryWorkData,
+} from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
 import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
 
@@ -142,7 +145,9 @@ describe('GroupPresenceSummaryWork canonical persisted command', () => {
       wakeQueue,
       now: () => 5_000,
     });
-    const read = vi.spyOn(worker, 'read').mockRejectedValue(new Error('summary read must not run for malformed work'));
+    const read = vi
+      .spyOn(worker, 'read')
+      .mockRejectedValue(new Error('summary read must not run for malformed work'));
     const compute = vi.spyOn(worker, 'compute');
     const write = vi.spyOn(worker, 'write');
     const { message, entry } = mutate(createCanonicalReservation());
@@ -226,7 +231,10 @@ function createCanonicalReservation(): ReservedSummary {
   };
 }
 
-function routeScenario(name: string, update: (route: ALMessage['route']) => ALMessage['route']): InvalidSummaryScenario {
+function routeScenario(
+  name: string,
+  update: (route: ALMessage['route']) => ALMessage['route'],
+): InvalidSummaryScenario {
   return {
     name,
     mutate: ({ entry, message }) => {
@@ -244,7 +252,10 @@ function routeScenario(name: string, update: (route: ALMessage['route']) => ALMe
   };
 }
 
-function messageScenario(name: string, update: (message: ALMessage) => ALMessage): InvalidSummaryScenario {
+function messageScenario(
+  name: string,
+  update: (message: ALMessage) => ALMessage,
+): InvalidSummaryScenario {
   return {
     name,
     mutate: ({ entry, message }) => {
@@ -257,7 +268,10 @@ function messageScenario(name: string, update: (message: ALMessage) => ALMessage
   };
 }
 
-function envelopeScenario(name: string, update: (envelope: Record<string, unknown>) => Record<string, unknown>): InvalidSummaryScenario {
+function envelopeScenario(
+  name: string,
+  update: (envelope: Record<string, unknown>) => Record<string, unknown>,
+): InvalidSummaryScenario {
   return messageScenario(name, (message) => {
     const envelope = JSON.parse(message.payload.resource) as Record<string, unknown>;
     return {
@@ -270,14 +284,20 @@ function envelopeScenario(name: string, update: (envelope: Record<string, unknow
   });
 }
 
-function workScenario(name: string, update: (work: Record<string, unknown>) => Record<string, unknown>): InvalidSummaryScenario {
+function workScenario(
+  name: string,
+  update: (work: Record<string, unknown>) => Record<string, unknown>,
+): InvalidSummaryScenario {
   return envelopeScenario(name, (envelope) => ({
     ...envelope,
     data: update(envelope.data as Record<string, unknown>),
   }));
 }
 
-function entryScenario(name: string, update: (entry: ResourceEntry) => ResourceEntry): InvalidSummaryScenario {
+function entryScenario(
+  name: string,
+  update: (entry: ResourceEntry) => ResourceEntry,
+): InvalidSummaryScenario {
   return {
     name,
     mutate: ({ entry, message }) => ({ entry: update(entry), message }),

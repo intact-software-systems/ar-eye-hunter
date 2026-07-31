@@ -1,7 +1,18 @@
-import type { AuditStamp, Group, GroupEvent, GroupEventType, GroupMember, GroupRef, GroupStateCausalRevision } from '@shared/api/group-types.ts';
+import type {
+  AuditStamp,
+  Group,
+  GroupEvent,
+  GroupEventType,
+  GroupMember,
+  GroupRef,
+  GroupStateCausalRevision,
+} from '@shared/api/group-types.ts';
 import { toGroupSnapshotStateRevision } from '@shared/api/group-client-views.ts';
 import type { MutationActor } from '@shared/api/mutation-actor.ts';
-import { computeGroupPresenceSummaryEntry } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
+// prettier-ignore
+import {
+  computeGroupPresenceSummaryEntry,
+} from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/RuntimeStateJsonStore.ts';
 
 import type {
@@ -9,187 +20,44 @@ import type {
   GroupMutationCommand,
   GroupMutationComputed,
   GroupMutationFacts,
-  GroupMutationIdempotencyRecord,
   GroupMutationRead,
   GroupMutationReceipt,
   PresenceAdmissionCandidate,
   PresenceGuardCandidate,
 } from './group-mutation-contracts.ts';
 import { GroupMutationRejectedError } from './group-mutation-contracts.ts';
-import {
-  assertExactKeys,
-  assertRequiredKeys,
-  nullableNonEmptyString,
-  nullablePositiveSafeInteger,
-  requireNonEmptyString,
-  requireNonNegativeSafeInteger,
-  requireOneOf,
-  requirePositiveSafeInteger,
-  requireRecord,
-  validateGroupRef,
-} from '../group-state-validation-primitives.ts';
-import { validateCausalRevision, validateScopedValue } from '../persistence/validate-persisted-group.ts';
-import { validatePresenceAdmission, validatePresenceSession, validatePresenceSummaryValue } from '../persistence/validate-persisted-group-presence.ts';
-import type { InitialGroupPresenceSummaryCandidate } from '../presence/group-initial-presence-summary.ts';
-import { validateInitialGroupPresenceSummaryCandidate } from '../presence/group-initial-presence-summary.ts';
-import { validateGroupEvent } from '../../persisted-group-event.ts';
+// prettier-ignore
+import type {
+  InitialGroupPresenceSummaryCandidate,
+} from '../presence/group-initial-presence-summary.ts';
 
 const DEFAULT_GROUP_JOIN_CODE_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
 
-export function validateGroupMutationIdempotencyRecord(record: unknown, ref: GroupRef): asserts record is GroupMutationIdempotencyRecord {
-  const value = requireRecord(record, 'Stored group idempotency value');
-  assertExactKeys(value, ['aggregateRef', 'requestId', 'commandHash', 'receipt'], 'Stored group idempotency value');
-  assertRequiredKeys(value, ['aggregateRef', 'requestId', 'commandHash', 'receipt'], 'Stored group idempotency value');
-  validateGroupRef(value.aggregateRef);
-  validateScopedValue(value.aggregateRef as GroupRef, ref, 'Stored group idempotency aggregateRef');
-  requireNonEmptyString(value.requestId, 'Stored group idempotency requestId');
-  validateCommandHash(value.commandHash, 'Stored group idempotency commandHash');
-  validateMutationReceipt(value.receipt, ref, 'Stored group idempotency receipt');
-  const receipt = value.receipt as GroupMutationReceipt;
-  if (receipt.commandHash !== value.commandHash) {
-    throw new TypeError('Stored group idempotency hashes differ');
-  }
-  if (receipt.commandId !== value.requestId) {
-    throw new TypeError('Stored group idempotency receipt command differs from request identity');
-  }
-  if (
-    receipt.requestId !== value.requestId ||
-    receipt.aggregateRef.applicationId !== ref.applicationId ||
-    receipt.aggregateRef.workspaceId !== ref.workspaceId ||
-    receipt.aggregateRef.groupId !== ref.groupId
-  ) {
-    throw new TypeError('Stored group idempotency receipt differs from request identity');
-  }
+export interface WriteGroupMutationResultInput {
+  readonly command: GroupMutationCommand;
+  readonly read: GroupMutationRead;
+  readonly facts: GroupMutationFacts;
+  readonly guard: GroupGuardCandidate | PresenceGuardCandidate;
+  readonly members: readonly GroupMember[];
+  readonly initialPresenceSummary: InitialGroupPresenceSummaryCandidate | null;
+  readonly presenceAdmission?: PresenceAdmissionCandidate | null;
+  readonly eventType: GroupEventType;
+  readonly eventGroup?: Group;
 }
 
-export function validateMutationReceipt(value: unknown, ref: GroupRef, label: string): void {
-  const receipt = requireRecord(value, label);
-  assertExactKeys(
-    receipt,
-    [
-      'commandId',
-      'requestId',
-      'commandHash',
-      'aggregateRef',
-      'outcome',
-      'attemptCount',
-      'acceptedStorageRevision',
-      'stateRevision',
-      'snapshotVersion',
-      'causalRevision',
-      'eventId',
-      'outboxIds',
-      'joinCode',
-      'joinCodeExpiresAtEpochMs',
-      'rejection',
-    ],
-    label,
-  );
-  assertRequiredKeys(
-    receipt,
-    [
-      'commandId',
-      'requestId',
-      'commandHash',
-      'aggregateRef',
-      'outcome',
-      'attemptCount',
-      'acceptedStorageRevision',
-      'stateRevision',
-      'snapshotVersion',
-      'causalRevision',
-      'eventId',
-      'outboxIds',
-      'joinCode',
-      'joinCodeExpiresAtEpochMs',
-      'rejection',
-    ],
-    label,
-  );
-  requireNonEmptyString(receipt.commandId, `${label} commandId`);
-  nullableNonEmptyString(receipt.requestId, `${label} requestId`);
-  validateCommandHash(receipt.commandHash, `${label} commandHash`);
-  const aggregateRef = receipt.aggregateRef;
-  validateGroupRef(aggregateRef);
-  validateScopedValue(aggregateRef, ref, `${label} aggregateRef`);
-  requireOneOf(receipt.outcome, ['applied', 'no-op', 'rejected'], `${label} outcome`);
-  requirePositiveSafeInteger(receipt.attemptCount, `${label} attemptCount`);
-  if (receipt.acceptedStorageRevision !== null) {
-    requireNonNegativeSafeInteger(receipt.acceptedStorageRevision, `${label} acceptedStorageRevision`);
-  }
-  requireNonNegativeSafeInteger(receipt.stateRevision, `${label} stateRevision`);
-  requireNonNegativeSafeInteger(receipt.snapshotVersion, `${label} snapshotVersion`);
-  const causalRevision = receipt.causalRevision;
-  validateCausalRevision(causalRevision, label);
-  if (receipt.snapshotVersion !== causalRevision.groupRevision) throw new TypeError(`${label} snapshotVersion differs from causalRevision`);
-  if (receipt.stateRevision !== toGroupSnapshotStateRevision(causalRevision.groupRevision, causalRevision.presenceRevision)) {
-    throw new TypeError(`${label} stateRevision differs from causalRevision`);
-  }
-  nullableNonEmptyString(receipt.eventId, `${label} eventId`);
-  if (!Array.isArray(receipt.outboxIds)) {
-    throw new TypeError(`${label} outboxIds is invalid`);
-  }
-  for (const outboxId of receipt.outboxIds) {
-    requireNonEmptyString(outboxId, `${label} outboxId`);
-  }
-  if ((receipt.outcome === 'applied') !== (receipt.eventId !== null)) {
-    throw new TypeError(`${label} event differs from outcome`);
-  }
-  if (receipt.joinCode !== null) {
-    requireNonEmptyString(receipt.joinCode, `${label} joinCode`);
-  }
-  if (receipt.joinCodeExpiresAtEpochMs !== null) {
-    requirePositiveSafeInteger(receipt.joinCodeExpiresAtEpochMs, `${label} joinCodeExpiresAtEpochMs`);
-  }
-  if ((receipt.joinCode === null) !== (receipt.joinCodeExpiresAtEpochMs === null)) {
-    throw new TypeError(`${label} join-code fields must have matching presence`);
-  }
-  if (receipt.rejection !== null) {
-    requireNonEmptyString(receipt.rejection, `${label} rejection`);
-  }
-  if ((receipt.outcome === 'rejected') !== (receipt.rejection !== null)) {
-    throw new TypeError(`${label} rejection differs from outcome`);
-  }
-  if (receipt.outcome === 'applied') {
-    if (receipt.acceptedStorageRevision === null) {
-      throw new TypeError(`${label} acceptedStorageRevision is required when applied`);
-    }
-    requirePositiveSafeInteger(receipt.snapshotVersion, `${label} applied snapshotVersion`);
-    requirePositiveSafeInteger(causalRevision.groupRevision, `${label} applied groupRevision`);
-    if (receipt.outboxIds.length !== 1) {
-      throw new TypeError(`${label} outboxIds differs from applied outcome`);
-    }
-    return;
-  }
-  if (receipt.outboxIds.length !== 0) {
-    throw new TypeError(`${label} outboxIds differs from non-applied outcome`);
-  }
-  if (receipt.joinCode !== null || receipt.joinCodeExpiresAtEpochMs !== null) {
-    throw new TypeError(`${label} join-code fields require an applied outcome`);
-  }
-  if (receipt.outcome === 'no-op') {
-    requirePositiveSafeInteger(receipt.snapshotVersion, `${label} no-op snapshotVersion`);
-    if (receipt.acceptedStorageRevision === null || causalRevision.groupRevision !== receipt.acceptedStorageRevision + 1) {
-      throw new TypeError(`${label} no-op revision differs from its predecessor`);
-    }
-    return;
-  }
-  if (receipt.acceptedStorageRevision === null) {
-    if (causalRevision.groupRevision !== 0 || causalRevision.presenceRevision !== 0 || receipt.snapshotVersion !== 0) {
-      throw new TypeError(`${label} absent-group rejection has authority`);
-    }
-    return;
-  }
-  requirePositiveSafeInteger(receipt.snapshotVersion, `${label} rejected snapshotVersion`);
-  if (causalRevision.groupRevision !== receipt.acceptedStorageRevision + 1) {
-    throw new TypeError(`${label} rejected revision differs from its predecessor`);
-  }
+export interface RejectedGroupMutationInput {
+  readonly command: GroupMutationCommand;
+  readonly read: GroupMutationRead;
+  readonly facts: GroupMutationFacts;
+  readonly message: string;
 }
 
-export function validateCommandHash(value: unknown, label: string): void {
-  if (typeof value !== 'string' || !/^sha256:[0-9a-f]{64}$/.test(value)) {
-    throw new TypeError(`${label} is invalid`);
-  }
+export interface NewGroupEventInput {
+  readonly eventType: GroupEventType;
+  readonly group: Group;
+  readonly causalRevision: GroupStateCausalRevision;
+  readonly command: GroupMutationCommand;
+  readonly facts: GroupMutationFacts;
 }
 
 export function materializedRotateJoinCode(
@@ -197,31 +65,31 @@ export function materializedRotateJoinCode(
   facts: GroupMutationFacts,
 ): Readonly<{ joinCode: string; expiresAtEpochMs: number }> {
   const joinCode = command.input.joinCode ?? facts.resolvedJoinCode;
-  const expiresAtEpochMs = command.input.expiresAtEpochMs ?? facts.nowEpochMs + DEFAULT_GROUP_JOIN_CODE_TTL_MS;
+  const expiresAtEpochMs =
+    command.input.expiresAtEpochMs ?? facts.nowEpochMs + DEFAULT_GROUP_JOIN_CODE_TTL_MS;
   if (!joinCode || !Number.isSafeInteger(expiresAtEpochMs) || expiresAtEpochMs <= 0) {
     throw new GroupMutationRejectedError('Join code defaults could not be materialized safely');
   }
   return { joinCode, expiresAtEpochMs };
 }
 
-export function writeResult(
-  command: GroupMutationCommand,
-  read: GroupMutationRead,
-  facts: GroupMutationFacts,
-  input: Readonly<{
-    guard: GroupGuardCandidate | PresenceGuardCandidate;
-    members: readonly GroupMember[];
-    initialPresenceSummary: InitialGroupPresenceSummaryCandidate | null;
-    presenceAdmission?: PresenceAdmissionCandidate | null;
-    eventType: GroupEventType;
-    eventGroup?: Group;
-  }>,
-): GroupMutationComputed {
-  const group = input.eventGroup ?? (input.guard.kind === 'group' ? input.guard.value : requireGroup(read, command.aggregateRef).value);
+export function writeResult(input: WriteGroupMutationResultInput): GroupMutationComputed {
+  const { command, facts, read } = input;
+  const group =
+    input.eventGroup ??
+    (input.guard.kind === 'group'
+      ? input.guard.value
+      : requireGroup(read, command.aggregateRef).value);
   const groupRevision = group.snapshotVersion;
   const presenceRevision = read.presenceSummary?.value.causalRevision.presenceRevision ?? 0;
   const causalRevision = { groupRevision, presenceRevision };
-  const event = newGroupEvent(input.eventType, group, causalRevision, command, facts);
+  const event = newGroupEvent({
+    eventType: input.eventType,
+    group,
+    causalRevision,
+    command,
+    facts,
+  });
   const outboxEntry = computeGroupPresenceSummaryEntry(
     {
       effectKind: 'group-presence-summary',
@@ -238,7 +106,8 @@ export function writeResult(
     outcome: 'applied',
     causalRevision,
     snapshotVersion: group.snapshotVersion,
-    acceptedStorageRevision: input.guard.operation === 'insert' ? 0 : input.guard.expectedRevision + 1,
+    acceptedStorageRevision:
+      input.guard.operation === 'insert' ? 0 : input.guard.expectedRevision + 1,
     eventId: event.eventId,
     outboxIds: [outboxEntry.key.resourceId],
     rejection: null,
@@ -265,7 +134,11 @@ export function writeResult(
   };
 }
 
-export function noOp(command: GroupMutationCommand, read: GroupMutationRead, facts: GroupMutationFacts): GroupMutationComputed {
+export function noOp(
+  command: GroupMutationCommand,
+  read: GroupMutationRead,
+  facts: GroupMutationFacts,
+): GroupMutationComputed {
   const stored = requireGroup(read, command.aggregateRef);
   const causalRevision = currentCausalRevision(read);
   return {
@@ -282,7 +155,8 @@ export function noOp(command: GroupMutationCommand, read: GroupMutationRead, fac
   };
 }
 
-export function rejected(command: GroupMutationCommand, read: GroupMutationRead, facts: GroupMutationFacts, message: string): GroupMutationComputed {
+export function rejected(input: RejectedGroupMutationInput): GroupMutationComputed {
+  const { command, facts, message, read } = input;
   const causalRevision = currentCausalRevision(read);
   return {
     outcome: 'rejected',
@@ -311,7 +185,8 @@ export function receiptFor(
     rejection: string | null;
   }>,
 ): GroupMutationReceipt {
-  const joinCode = command.operation === 'rotateGroupJoinCode' ? materializedRotateJoinCode(command, facts) : null;
+  const joinCode =
+    command.operation === 'rotateGroupJoinCode' ? materializedRotateJoinCode(command, facts) : null;
   return {
     commandId: command.commandId,
     requestId: command.requestId,
@@ -320,7 +195,10 @@ export function receiptFor(
     outcome: input.outcome,
     attemptCount: facts.attemptCount,
     acceptedStorageRevision: input.acceptedStorageRevision,
-    stateRevision: toGroupSnapshotStateRevision(input.causalRevision.groupRevision, input.causalRevision.presenceRevision),
+    stateRevision: toGroupSnapshotStateRevision(
+      input.causalRevision.groupRevision,
+      input.causalRevision.presenceRevision,
+    ),
     snapshotVersion: input.snapshotVersion,
     causalRevision: input.causalRevision,
     eventId: input.eventId,
@@ -338,12 +216,19 @@ export function currentCausalRevision(read: GroupMutationRead): GroupStateCausal
   };
 }
 
-export function requireGroup(read: GroupMutationRead, ref: GroupRef): RuntimeStateEntryValue<Group> {
+export function requireGroup(
+  read: GroupMutationRead,
+  ref: GroupRef,
+): RuntimeStateEntryValue<Group> {
   if (!read.group) throw new GroupMutationRejectedError(`Group not found: ${ref.groupId}`);
   return read.group;
 }
 
-export function auditStamp(command: GroupMutationCommand, facts: GroupMutationFacts, fallbackPrincipalId: string | undefined): AuditStamp {
+export function auditStamp(
+  command: GroupMutationCommand,
+  facts: GroupMutationFacts,
+  fallbackPrincipalId: string | undefined,
+): AuditStamp {
   return {
     atEpochMs: facts.nowEpochMs,
     actor: mutationActor(command, facts, fallbackPrincipalId),
@@ -353,7 +238,11 @@ export function auditStamp(command: GroupMutationCommand, facts: GroupMutationFa
   };
 }
 
-export function mutationActor(command: GroupMutationCommand, facts: GroupMutationFacts, fallbackPrincipalId?: string): MutationActor {
+export function mutationActor(
+  command: GroupMutationCommand,
+  facts: GroupMutationFacts,
+  fallbackPrincipalId?: string,
+): MutationActor {
   const principalId = command.input.actorPrincipalId ?? fallbackPrincipalId;
   if (command.input.actorSessionId !== null) {
     if (!principalId) {
@@ -369,13 +258,8 @@ export function mutationActor(command: GroupMutationCommand, facts: GroupMutatio
   return { kind: 'service', serviceId: facts.serviceId };
 }
 
-export function newGroupEvent(
-  eventType: GroupEventType,
-  group: Group,
-  causalRevision: GroupStateCausalRevision,
-  command: GroupMutationCommand,
-  facts: GroupMutationFacts,
-): GroupEvent {
+export function newGroupEvent(input: NewGroupEventInput): GroupEvent {
+  const { causalRevision, command, eventType, facts, group } = input;
   return {
     applicationId: group.applicationId,
     workspaceId: group.workspaceId,

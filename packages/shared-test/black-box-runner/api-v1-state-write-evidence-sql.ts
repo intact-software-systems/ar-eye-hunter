@@ -2,12 +2,14 @@ import { type Sql } from 'postgres';
 import {
   deriveApiV1StateWriteEvidence,
   parseApiV1StateWriteEvidenceRow,
+} from './api-v1-state-write-evidence-derivation.ts';
+import {
   type ApiV1StateWriteEvidenceSpec,
   type InboxRow,
   type OverdueRecoveryEvidence,
   type ParsedInboxRow,
   type OutboxRow,
-} from './api-v1-state-write-evidence.ts';
+} from './api-v1-state-write-evidence-contracts.ts';
 import { readIntermediateMutationIntents } from './api-v1-state-write-intermediate-evidence.ts';
 import { toExactPersistedEvidenceMatches } from './api-v1-state-write-match.ts';
 import { readPersistedCommandEvidence } from './api-v1-state-write-receipt-evidence.ts';

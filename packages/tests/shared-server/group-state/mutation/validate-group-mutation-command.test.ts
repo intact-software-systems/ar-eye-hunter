@@ -6,10 +6,10 @@ import type {
   HeartbeatGroupPresenceSessionRequest,
 } from '@shared/api/state-types.ts';
 import { type GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
-import { validateGroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-command-validation.ts';
+import { validateGroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/validate-group-mutation-command.ts';
 
 const commandValidationOwner =
-  'packages/shared-server/rallar-system/group-state/mutation/group-mutation-command-validation.ts';
+  'packages/shared-server/rallar-system/group-state/mutation/validate-group-mutation-command.ts';
 
 describe('group mutation command validation', () => {
   it('locates command validation at the canonical mutation owner', () => {

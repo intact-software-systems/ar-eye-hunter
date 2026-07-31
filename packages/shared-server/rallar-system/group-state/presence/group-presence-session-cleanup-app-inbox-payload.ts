@@ -1,3 +1,4 @@
+// prettier-ignore
 import type {
   ClientAuthorisedWsSessionConnectAppInboxPayload,
 } from '../../services/AppClientInboxService.ts';

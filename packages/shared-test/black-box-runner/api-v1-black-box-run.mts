@@ -1,4 +1,5 @@
 /// <reference lib="deno.ns" />
+import { readApiV1BlackBoxArgValues } from './read-api-v1-black-box-arg-values.mts';
 import { verifyApiV1FairnessProof } from './api-v1-fairness-proof.ts';
 import {
   startManagedApiServer,
@@ -7,14 +8,6 @@ import {
   type ManagedPGliteRunStorage,
   withManagedPGliteRunStorage,
 } from './api-v1-managed-process-lifecycle.mts';
-export {
-  managedApiDiagnosticSecrets,
-  readBoundedLogTail,
-  waitForManagedApiReady,
-  type BoundedLogTailFile,
-  type ReadBoundedLogTailOptions,
-  type WaitForManagedApiReadyInput,
-} from './api-v1-managed-api-readiness.mts';
 import {
   managedApiDiagnosticSecrets,
   waitForManagedApiReady,
@@ -23,6 +16,15 @@ import {
   requiresManagedPostgresRunDatabase,
   withManagedPostgresRunDatabase,
 } from './api-v1-managed-postgres-run-database.mts';
+
+export {
+  managedApiDiagnosticSecrets,
+  readBoundedLogTail,
+  waitForManagedApiReady,
+  type BoundedLogTailFile,
+  type ReadBoundedLogTailOptions,
+  type WaitForManagedApiReadyInput,
+} from './api-v1-managed-api-readiness.mts';
 export type ApiV1BlackBoxBackend = 'postgres' | 'pglite-memory';
 export type ApiV1BlackBoxOptions = Readonly<{
   backend: ApiV1BlackBoxBackend;
@@ -54,11 +56,7 @@ export const API_V1_STATE_WRITE_EVIDENCE_OUTPUT = 'stateWriteEvidence';
 const DEFAULT_DATABASE_URL = 'postgres://app:app@localhost:5432/appdb';
 
 export function parseApiV1BlackBoxArgs(args: readonly string[]): ApiV1BlackBoxOptions {
-  const values = new Map<string, string | boolean>();
-  for (const arg of args) {
-    const [name, value] = arg.includes('=') ? arg.split(/=(.*)/s, 2) : [arg, true];
-    values.set(name, value);
-  }
+  const values = readApiV1BlackBoxArgValues(args);
 
   const backend = String(values.get('--backend') ?? 'postgres') as ApiV1BlackBoxBackend;
   if (backend !== 'postgres' && backend !== 'pglite-memory') {
@@ -367,6 +365,14 @@ async function main(): Promise<void> {
       );
     }
   };
+  await runManagedBlackBoxBackend(options, env, runWithStorage);
+}
+
+async function runManagedBlackBoxBackend(
+  options: ApiV1BlackBoxOptions,
+  env: Record<string, string>,
+  runWithStorage: (storage: ManagedPGliteRunStorage | undefined) => Promise<void>,
+): Promise<void> {
   if (options.backend === 'pglite-memory' && !options.recipesOnly) {
     await withManagedPGliteRunStorage(runWithStorage);
   } else if (requiresManagedPostgresRunDatabase(options)) {

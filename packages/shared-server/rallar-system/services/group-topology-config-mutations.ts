@@ -13,7 +13,10 @@ export type {
 } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupRef, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import type { RuntimeStateEntryValue } from '../../runtime-state/RuntimeStateJsonStore.ts';
-import type { GroupStateAuthorityGuard } from '../group-state/persistence/group-state-persistence-contracts.ts';
+// prettier-ignore
+import type {
+    GroupStateAuthorityGuard,
+} from '../group-state/persistence/group-state-persistence-contracts.ts';
 import {
     canMutateActiveGroup,
     canUpdateGroupSnapshot,

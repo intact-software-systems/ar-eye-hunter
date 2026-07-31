@@ -101,12 +101,12 @@ describe('AppInbox mutation routing contract', { timeout: 30_000 }, () => {
     {
       name: 'group',
       type: AppInboxType.GROUP_CREATE,
-      from: `async (_payload: unknown, context: AppInboxMessageContext) =>
-            await this.groupStateInboxHandler.processMutation(context)`,
-      to: `async (_payload: unknown, context: AppInboxMessageContext) => {
-            const alias = { groupStateInboxHandler: this.topologyAppInboxHandler };
-            return await alias.groupStateInboxHandler.processMutation(context);
-        }`,
+      from: `const processGroupMutation = async (_payload: unknown, context: AppInboxMessageContext) =>
+      await this.groupStateInboxHandler.processMutation(context);`,
+      to: `const processGroupMutation = async (_payload: unknown, context: AppInboxMessageContext) => {
+      const alias = { groupStateInboxHandler: this.topologyAppInboxHandler };
+      return await alias.groupStateInboxHandler.processMutation(context);
+    };`,
     },
   ])('rejects a $name alias receiver backed by the wrong handler', ({ type, from, to }) => {
     const source = readFileSync(GROUP_DISPATCH_PATH, 'utf8');

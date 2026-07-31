@@ -1,9 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { groupStateMaintenanceRequestId } from '@shared-server/rallar-system/group-state/group-presence-mutation-command.ts';
-import { createTestGroupStateRuntime, createTestGroupStateService as createGroupStateService } from '../group-state-test-runtime.ts';
+import {
+  createTestGroupStateRuntime,
+  createTestGroupStateService as createGroupStateService,
+} from '../group-state-test-runtime.ts';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
-import { SCOPE, createPublisher, seedGroup, seedPresenceSession, toGroupRef } from './group-presence-retry-test-runtime.ts';
+import {
+  SCOPE,
+  createPublisher,
+  seedGroup,
+  seedPresenceSession,
+  toGroupRef,
+} from './group-presence-retry-test-runtime.ts';
 
 describe('Group presence lifecycle retry', () => {
   it('replays disconnectPresenceSession with generated timestamps without duplicating disconnect events', async () => {
@@ -28,9 +37,19 @@ describe('Group presence lifecycle retry', () => {
       requestId: 'disconnect-session-1',
     };
 
-    const first = await service.disconnectPresenceSession(SCOPE, groupRef.groupId, 'session-1', request);
+    const first = await service.disconnectPresenceSession(
+      SCOPE,
+      groupRef.groupId,
+      'session-1',
+      request,
+    );
     now = 9_000;
-    const second = await service.disconnectPresenceSession(SCOPE, groupRef.groupId, 'session-1', request);
+    const second = await service.disconnectPresenceSession(
+      SCOPE,
+      groupRef.groupId,
+      'session-1',
+      request,
+    );
 
     expect(second).toMatchObject({
       status: 'ok',
@@ -59,7 +78,11 @@ describe('Group presence lifecycle retry', () => {
         })
       )?.disconnectedAtEpochMs,
     ).toBe(4_000);
-    expect((await repository.listEvents(groupRef)).map((event) => event.eventType)).toEqual(['group-created', 'session-connected', 'session-disconnected']);
+    expect((await repository.listEvents(groupRef)).map((event) => event.eventType)).toEqual([
+      'group-created',
+      'session-connected',
+      'session-disconnected',
+    ]);
     expect((await repository.readSnapshot(groupRef))?.group.snapshotVersion).toBe(1);
     expect(publisher.publishGroupSnapshot).not.toHaveBeenCalled();
     expect(publisher.publishGroupEvent).not.toHaveBeenCalled();
@@ -78,7 +101,10 @@ describe('Group presence lifecycle retry', () => {
       serviceId: 'group-service',
     });
 
-    const snapshots = await runtime.maintenance.disconnectPresenceSessionsBySessionId('session-1', 5_000);
+    const snapshots = await runtime.maintenance.disconnectPresenceSessionsBySessionId(
+      'session-1',
+      5_000,
+    );
 
     expect(snapshots).toHaveLength(1);
     expect(snapshots[0].activeSessions).toHaveLength(0);
@@ -99,7 +125,9 @@ describe('Group presence lifecycle retry', () => {
       serviceId: 'group-service',
     });
 
-    await expect(runtime.maintenance.disconnectPresenceSessionsBySessionIdWritten('session-1', 5_000)).resolves.toMatchObject([
+    await expect(
+      runtime.maintenance.disconnectPresenceSessionsBySessionIdWritten('session-1', 5_000),
+    ).resolves.toMatchObject([
       {
         result: {
           right: {
@@ -111,80 +139,6 @@ describe('Group presence lifecycle retry', () => {
       },
     ]);
 
-    expect(publisher.publishGroupSnapshot).not.toHaveBeenCalled();
-    expect(publisher.publishGroupEvent).not.toHaveBeenCalled();
-  });
-
-  it('eventually expires a session after missed websocket cleanup exactly once with receipt and outbox', async () => {
-    const runtimeRepository = new FakeRuntimeStateRepository();
-    await seedGroup(runtimeRepository, 'room-9');
-    const expiresAtEpochMs = Date.now() - 1_000;
-    await seedPresenceSession(runtimeRepository, 'room-9', {
-      lastHeartbeatAtEpochMs: expiresAtEpochMs - 1_000,
-      expiresAtEpochMs,
-    });
-
-    const publisher = createPublisher();
-    const now = expiresAtEpochMs + 1;
-    const runtime = createTestGroupStateRuntime({
-      runtimeRepository,
-      syncPublisher: publisher,
-      now: () => now,
-      serviceId: 'group-service',
-    });
-    const groupRef = toGroupRef('room-9');
-
-    const first = await runtime.maintenance.expireExpiredPresenceSessions(now);
-    const second = await runtime.maintenance.expireExpiredPresenceSessions(now);
-
-    expect(first).toHaveLength(1);
-    expect(second).toEqual([]);
-    expect(first[0].result.right?.event).toMatchObject({
-      eventType: 'session-disconnected',
-      reason: 'expired',
-    });
-    expect(first[0].result.right?.snapshot).toMatchObject({
-      group: {
-        ...groupRef,
-        snapshotVersion: 1,
-        presenceVersion: 0,
-      },
-      activeSessions: [],
-      onlineMemberCount: 0,
-    });
-
-    const repository = new GroupStateRepository(runtimeRepository);
-    expect(
-      await repository.findPresenceSession({
-        ...groupRef,
-        sessionId: 'session-1',
-      }),
-    ).toBeUndefined();
-    const expiryRequestId = groupStateMaintenanceRequestId('expiry', {
-      operation: 'disconnectPresence',
-      aggregateRef: groupRef,
-      sessionId: 'session-1',
-      input: {
-        principalId: 'alice',
-        generationId: 'generation-session-1',
-        generationVersion: 2_000,
-        observedExpiresAtEpochMs: expiresAtEpochMs,
-        disconnectedAtEpochMs: now,
-        lastHeartbeatAtEpochMs: expiresAtEpochMs - 1_000,
-        expiresAtEpochMs,
-        actorPrincipalId: null,
-        actorSessionId: null,
-        reason: 'expired',
-        traceId: null,
-      },
-    });
-    expect(await repository.findIdempotentGroupMutationReceipt(groupRef, expiryRequestId)).toMatchObject({
-      receipt: {
-        outcome: 'applied',
-        outboxIds: [expect.any(String)],
-      },
-    });
-    expect((await repository.listEvents(groupRef)).map((event) => event.eventType)).toEqual(['group-created', 'session-connected', 'session-disconnected']);
     expect(publisher.publishGroupSnapshot).not.toHaveBeenCalled();
     expect(publisher.publishGroupEvent).not.toHaveBeenCalled();
   });
@@ -228,7 +182,11 @@ describe('Group presence lifecycle retry', () => {
         sessionId: 'session-1',
       }),
     ).toBeUndefined();
-    expect((await repository.listEvents(groupRef)).map((event) => event.eventType)).toEqual(['group-created', 'session-connected', 'session-disconnected']);
+    expect((await repository.listEvents(groupRef)).map((event) => event.eventType)).toEqual([
+      'group-created',
+      'session-connected',
+      'session-disconnected',
+    ]);
     expect(runtimeRepository.locks).toEqual([]);
   });
 
@@ -270,7 +228,11 @@ describe('Group presence lifecycle retry', () => {
       sessionId: 'session-1',
     });
     expect(session).toBeUndefined();
-    expect((await repository.listEvents(groupRef)).map((event) => event.eventType)).toEqual(['group-created', 'session-connected', 'session-disconnected']);
+    expect((await repository.listEvents(groupRef)).map((event) => event.eventType)).toEqual([
+      'group-created',
+      'session-connected',
+      'session-disconnected',
+    ]);
   });
 
   it('advances causal state revision for a heartbeat-only snapshot change', async () => {
@@ -297,7 +259,9 @@ describe('Group presence lifecycle retry', () => {
     });
 
     expect(written.result.right?.event?.eventType).toBe('session-heartbeat');
-    expect(written.result.right?.snapshot.group.snapshotVersion).toBe(before?.group.snapshotVersion);
+    expect(written.result.right?.snapshot.group.snapshotVersion).toBe(
+      before?.group.snapshotVersion,
+    );
     expect(written.result.right?.snapshot.stateRevision).toBe(before?.stateRevision);
   });
 

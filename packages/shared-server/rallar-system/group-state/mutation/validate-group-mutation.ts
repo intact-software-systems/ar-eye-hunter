@@ -6,7 +6,7 @@ import type {
   GroupMutationFacts,
   GroupMutationRead,
 } from './group-mutation-contracts.ts';
-import { validateGroupMutationCommand } from './group-mutation-command-validation.ts';
+import { validateGroupMutationCommand } from './validate-group-mutation-command.ts';
 import { validateGroupMutationRead } from './validate-group-mutation-read.ts';
 import {
   computeGroupMutation,
@@ -36,7 +36,7 @@ export function validateGroupMutation(
     input.computed.outcome === 'write' ? { ...input.computed, outboxEntries: [] } : input.computed,
     'Group mutation computed result',
   );
-  validateComputedMutationShape(input.command, input.read, input.facts, input.computed);
+  validateComputedMutationShape(input);
   const canonical = computeGroupMutation({
     command: input.command,
     read: input.read,
@@ -44,7 +44,8 @@ export function validateGroupMutation(
   });
   if (!jsonEquals(input.computed, canonical)) {
     throw new TypeError(
-      `Group ${input.command.operation} mutation differs from its canonical deterministic projection`,
+      `Group ${input.command.operation} mutation differs from its canonical ` +
+        'deterministic projection',
     );
   }
   if (input.computed.outcome === 'idempotency-conflict') return;

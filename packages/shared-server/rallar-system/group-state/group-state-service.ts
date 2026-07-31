@@ -4,13 +4,20 @@ import type {
 } from './mutation/group-mutation-contracts.ts';
 import { computeGroupMutation } from './mutation/compute-group-mutation.ts';
 import { validateGroupMutation } from './mutation/validate-group-mutation.ts';
-import { validateGroupMutationCommand } from './mutation/group-mutation-command-validation.ts';
+import { validateGroupMutationCommand } from './mutation/validate-group-mutation-command.ts';
 import { GroupStateRepository } from './persistence/group-state-repository.ts';
 import { readGroupMutation } from './mutation/read-group-mutation.ts';
 import { writeGroupMutation } from './mutation/write-group-state-mutation.ts';
-import { createWsSessionGenerationLifecycleService } from '../services/ws-session-generation-lifecycle.ts';
+// prettier-ignore
+import {
+  createWsSessionGenerationLifecycleService,
+} from '../services/ws-session-generation-lifecycle.ts';
 import { readGroupSessionCleanupCandidates } from './presence/group-session-cleanup.ts';
-import { type RallarTimingSink, timeRallarAsync } from '../services/timing.ts';
+import {
+  type RallarTimingEventInput,
+  type RallarTimingSink,
+  timeRallarAsync,
+} from '../services/timing.ts';
 import { hashMutationCommand, type JsonWireValue } from '../services/mutation-command-identity.ts';
 import { sha256CanonicalJson } from './mutation/group-state-crypto.ts';
 import {
@@ -274,55 +281,14 @@ function withGroupStateServiceTiming(
     operation: string,
     details: Record<string, unknown>,
     action: () => Promise<T>,
-  ) =>
-    timeRallarAsync(
-      timing,
-      {
-        component: 'group-state-service',
-        operation,
-        serviceId,
-        requestId: typeof details.requestId === 'string' ? details.requestId : undefined,
-        applicationId:
-          typeof details.applicationId === 'string' ? details.applicationId : undefined,
-        workspaceId: typeof details.workspaceId === 'string' ? details.workspaceId : undefined,
-        groupId: typeof details.groupId === 'string' ? details.groupId : undefined,
-        principalId:
-          typeof details.principalId === 'string'
-            ? details.principalId
-            : typeof details.actorPrincipalId === 'string'
-              ? details.actorPrincipalId
-              : typeof details.createdByPrincipalId === 'string'
-                ? details.createdByPrincipalId
-                : undefined,
-        sessionId: typeof details.sessionId === 'string' ? details.sessionId : undefined,
-      },
-      action,
-    );
+  ) => timeRallarAsync(timing, toGroupStateTimingDetails(serviceId, operation, details), action);
   return new Proxy(service, {
     get(target, property, receiver) {
       const value = Reflect.get(target, property, receiver);
       if (typeof value !== 'function') return value;
       if (property === 'compute' || property === 'validate') return value.bind(target);
       return (...args: unknown[]) => {
-        const first = args[0];
-        const phaseCommand =
-          first &&
-          typeof first === 'object' &&
-          'command' in first &&
-          first.command &&
-          typeof first.command === 'object'
-            ? (first.command as GroupMutationCommand)
-            : undefined;
-        const scope =
-          phaseCommand?.aggregateRef ??
-          (first && typeof first === 'object'
-            ? (first as GroupMutationDescriptor['scope'])
-            : undefined);
-        const request = args.findLast((candidate) =>
-          Boolean(candidate && typeof candidate === 'object' && 'requestId' in candidate),
-        );
-        const requestRecord =
-          request && typeof request === 'object' ? (request as Record<string, unknown>) : {};
+        const { phaseCommand, requestRecord, scope } = resolveGroupStateTimingInvocation(args);
         return timed(
           String(property),
           {
@@ -339,4 +305,56 @@ function withGroupStateServiceTiming(
       };
     },
   });
+}
+
+function toGroupStateTimingDetails(
+  serviceId: string,
+  operation: string,
+  details: Record<string, unknown>,
+): RallarTimingEventInput {
+  return {
+    component: 'group-state-service',
+    operation,
+    serviceId,
+    requestId: typeof details.requestId === 'string' ? details.requestId : undefined,
+    applicationId: typeof details.applicationId === 'string' ? details.applicationId : undefined,
+    workspaceId: typeof details.workspaceId === 'string' ? details.workspaceId : undefined,
+    groupId: typeof details.groupId === 'string' ? details.groupId : undefined,
+    principalId:
+      typeof details.principalId === 'string'
+        ? details.principalId
+        : typeof details.actorPrincipalId === 'string'
+          ? details.actorPrincipalId
+          : typeof details.createdByPrincipalId === 'string'
+            ? details.createdByPrincipalId
+            : undefined,
+    sessionId: typeof details.sessionId === 'string' ? details.sessionId : undefined,
+  };
+}
+
+interface GroupStateTimingInvocation {
+  readonly phaseCommand: GroupMutationCommand | undefined;
+  readonly scope: GroupMutationDescriptor['scope'] | undefined;
+  readonly requestRecord: Record<string, unknown>;
+}
+
+function resolveGroupStateTimingInvocation(args: readonly unknown[]): GroupStateTimingInvocation {
+  const first = args[0];
+  const phaseCommand =
+    first &&
+    typeof first === 'object' &&
+    'command' in first &&
+    first.command &&
+    typeof first.command === 'object'
+      ? (first.command as GroupMutationCommand)
+      : undefined;
+  const scope =
+    phaseCommand?.aggregateRef ??
+    (first && typeof first === 'object' ? (first as GroupMutationDescriptor['scope']) : undefined);
+  const request = args.findLast((candidate) =>
+    Boolean(candidate && typeof candidate === 'object' && 'requestId' in candidate),
+  );
+  const requestRecord =
+    request && typeof request === 'object' ? (request as Record<string, unknown>) : {};
+  return { phaseCommand, scope, requestRecord };
 }

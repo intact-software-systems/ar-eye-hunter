@@ -17,7 +17,7 @@ import {
   type GroupMutationCommand,
   type GroupMutationFacts,
 } from './mutation/group-mutation-contracts.ts';
-import { validateGroupMutationCommand } from './mutation/group-mutation-command-validation.ts';
+import { validateGroupMutationCommand } from './mutation/validate-group-mutation-command.ts';
 import { hashMutationCommand, type JsonWireValue } from '../services/mutation-command-identity.ts';
 import {
   toAggregateMutationCommand,
@@ -46,6 +46,13 @@ interface VerifiedGroupMutationAuthority {
   readonly descriptor: GroupMutationDescriptor;
 }
 
+interface VerifyGroupMutationAuthorityInput {
+  readonly repository: Pick<AuthSessionRepository, 'findBySessionId'>;
+  readonly descriptor: GroupMutationDescriptor;
+  readonly authority: GroupMutationAuthority;
+  readonly nowEpochMs: number;
+}
+
 export class GroupMutationAuthorizationError extends Error {
   readonly status = 403;
   readonly code = 'group-mutation-authority-denied';
@@ -61,12 +68,12 @@ export async function prepareGroupMutation(
   descriptor: GroupMutationDescriptor,
   authority: IssuedAuthSession,
 ): Promise<GroupMutationPreparation> {
-  const verified = await verifyGroupMutationAuthority(
-    dependencies.authSessionRepository,
+  const verified = await verifyGroupMutationAuthority({
+    repository: dependencies.authSessionRepository,
     descriptor,
     authority,
-    dependencies.now(),
-  );
+    nowEpochMs: dependencies.now(),
+  });
   requireGroupMutationRequestId(verified.descriptor);
   const command = toDescriptorCommand(verified.descriptor, dependencies.randomId);
   validateGroupMutationCommand(command);
@@ -125,12 +132,12 @@ export async function verifyPreparedGroupMutationAuthority(
   if (prepared.authorityProof === null || prepared.descriptor === null) {
     throw new GroupMutationAuthorizationError('Authenticated group mutation authority is missing.');
   }
-  const verified = await verifyGroupMutationAuthority(
-    dependencies.authSessionRepository,
-    prepared.descriptor,
-    prepared.authorityProof,
-    dependencies.now(),
-  );
+  const verified = await verifyGroupMutationAuthority({
+    repository: dependencies.authSessionRepository,
+    descriptor: prepared.descriptor,
+    authority: prepared.authorityProof,
+    nowEpochMs: dependencies.now(),
+  });
   if (canonicalJson(verified.descriptor) !== canonicalJson(prepared.descriptor)) {
     throw new GroupMutationAuthorizationError(
       'Authenticated mutation descriptor changed before execution.',
@@ -181,11 +188,9 @@ export function toDescriptorCommand(
 }
 
 async function verifyGroupMutationAuthority(
-  repository: Pick<AuthSessionRepository, 'findBySessionId'>,
-  descriptor: GroupMutationDescriptor,
-  authority: GroupMutationAuthority,
-  nowEpochMs: number,
+  input: VerifyGroupMutationAuthorityInput,
 ): Promise<VerifiedGroupMutationAuthority> {
+  const { authority, descriptor, nowEpochMs, repository } = input;
   const claimed = isGroupMutationAuthorityProof(authority)
     ? {
         clientId: authority.principalId,

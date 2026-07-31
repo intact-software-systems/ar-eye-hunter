@@ -19,70 +19,54 @@ import {
   requireRecord,
 } from '../group-state-validation-primitives.ts';
 
+const STORED_GROUP_KEYS = [
+  'applicationId',
+  'workspaceId',
+  'groupId',
+  'slug',
+  'displayName',
+  'description',
+  'kind',
+  'status',
+  'joinMode',
+  'maxMembers',
+  'maxSessionsPerMember',
+  'metadata',
+  'activeMemberCount',
+  'ownerPrincipalId',
+  'snapshotVersion',
+  'metadataVersion',
+  'rosterVersion',
+  'presenceVersion',
+  'created',
+  'updated',
+  'archived',
+  'deleted',
+  'expiresAtEpochMs',
+  'emptySinceEpochMs',
+  'purgeAfterEpochMs',
+] as const;
+
+const STORED_MEMBER_KEYS = [
+  'applicationId',
+  'workspaceId',
+  'groupId',
+  'principalId',
+  'role',
+  'status',
+  'joined',
+  'updated',
+  'left',
+  'removed',
+  'banned',
+  'invitedByPrincipalId',
+  'invitationExpiresAtEpochMs',
+] as const;
+
 export function validateStoredGroup(group: unknown, ref: GroupRef): asserts group is Group {
   const value = requireRecord(group, 'Stored group value');
-  assertExactKeys(
-    value,
-    [
-      'applicationId',
-      'workspaceId',
-      'groupId',
-      'slug',
-      'displayName',
-      'description',
-      'kind',
-      'status',
-      'joinMode',
-      'maxMembers',
-      'maxSessionsPerMember',
-      'metadata',
-      'activeMemberCount',
-      'ownerPrincipalId',
-      'snapshotVersion',
-      'metadataVersion',
-      'rosterVersion',
-      'presenceVersion',
-      'created',
-      'updated',
-      'archived',
-      'deleted',
-      'expiresAtEpochMs',
-      'emptySinceEpochMs',
-      'purgeAfterEpochMs',
-    ],
-    'Stored group value',
-  );
-  assertRequiredKeys(
-    value,
-    [
-      'applicationId',
-      'workspaceId',
-      'groupId',
-      'slug',
-      'displayName',
-      'description',
-      'kind',
-      'status',
-      'joinMode',
-      'maxMembers',
-      'maxSessionsPerMember',
-      'metadata',
-      'activeMemberCount',
-      'ownerPrincipalId',
-      'snapshotVersion',
-      'metadataVersion',
-      'rosterVersion',
-      'presenceVersion',
-      'created',
-      'updated',
-      'archived',
-      'deleted',
-      'expiresAtEpochMs',
-      'emptySinceEpochMs',
-      'purgeAfterEpochMs',
-    ],
-    'Stored group value',
-  );
+  assertExactKeys(value, STORED_GROUP_KEYS, 'Stored group value');
+  assertRequiredKeys(value, STORED_GROUP_KEYS, 'Stored group value');
   validateScopedRecord(value, ref, 'Stored group');
   nullableNonEmptyString(value.slug, 'Stored group slug');
   requireNonEmptyString(value.displayName, 'Stored group displayName');
@@ -123,44 +107,8 @@ export function validateStoredMember(
   label: string,
 ): asserts member is GroupMember {
   const value = requireRecord(member, `${label} value`);
-  assertExactKeys(
-    value,
-    [
-      'applicationId',
-      'workspaceId',
-      'groupId',
-      'principalId',
-      'role',
-      'status',
-      'joined',
-      'updated',
-      'left',
-      'removed',
-      'banned',
-      'invitedByPrincipalId',
-      'invitationExpiresAtEpochMs',
-    ],
-    `${label} value`,
-  );
-  assertRequiredKeys(
-    value,
-    [
-      'applicationId',
-      'workspaceId',
-      'groupId',
-      'principalId',
-      'role',
-      'status',
-      'joined',
-      'updated',
-      'left',
-      'removed',
-      'banned',
-      'invitedByPrincipalId',
-      'invitationExpiresAtEpochMs',
-    ],
-    `${label} value`,
-  );
+  assertExactKeys(value, STORED_MEMBER_KEYS, `${label} value`);
+  assertRequiredKeys(value, STORED_MEMBER_KEYS, `${label} value`);
   validateScopedRecord(value, ref, label);
   requireNonEmptyString(value.principalId, `${label} principalId`);
   requireOneOf(value.role, ['owner', 'admin', 'member'], `${label} role`);

@@ -22,6 +22,18 @@ import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryCont
 import type { GroupMutationCommand } from './mutation/group-mutation-contracts.ts';
 import type { GroupMutationDescriptor } from './group-state-service-contracts.ts';
 
+export interface GroupMutationIdentity {
+  readonly commandId: string;
+  readonly requestId: string | null;
+}
+
+export interface GroupMutationActorInput {
+  readonly actorPrincipalId: string | null;
+  readonly actorSessionId: string | null;
+  readonly reason: string | null;
+  readonly traceId: string | null;
+}
+
 export function toAggregateMutationCommand(
   descriptor: GroupMutationDescriptor,
   randomId: () => string,
@@ -35,26 +47,11 @@ export function toAggregateMutationCommand(
       return toCreateCommand(descriptor.scope, request, randomId);
     }
     case 'updateGroup':
-      return toUpdateCommand(
-        descriptor.scope,
-        descriptor.groupId,
-        descriptor.request as UpdateGroupRequest,
-        randomId,
-      );
+      return toUpdateCommand(descriptor, randomId);
     case 'appointDirector':
-      return toDirectorCommand(
-        descriptor.scope,
-        descriptor.groupId,
-        descriptor.request as AppointGroupDirectorRequest,
-        randomId,
-      );
+      return toDirectorCommand(descriptor, randomId);
     case 'rotateGroupJoinCode':
-      return toRotateCommand(
-        descriptor.scope,
-        descriptor.groupId,
-        descriptor.request as RotateGroupJoinCodeRequest,
-        randomId,
-      );
+      return toRotateCommand(descriptor, randomId);
     default:
       throw new TypeError(`Unsupported aggregate group mutation: ${descriptor.operation}`);
   }
@@ -67,51 +64,20 @@ export function toMembershipMutationCommand(
   switch (descriptor.operation) {
     case 'joinGroup':
     case 'acceptGroupInvite':
-      return toJoinCommand(
-        descriptor.operation,
-        descriptor.scope,
-        descriptor.groupId,
-        descriptor.request as JoinGroupRequest | AcceptGroupInviteRequest,
-        randomId,
-      );
+      return toJoinCommand(descriptor, randomId);
     case 'createGroupInvite':
-      return toInviteCommand(
-        descriptor.scope,
-        descriptor.groupId,
-        requireTargetPrincipalId(descriptor),
-        descriptor.request as CreateGroupInviteRequest,
-        randomId,
-      );
+      return toInviteCommand(descriptor, randomId);
     case 'revokeGroupInvite':
     case 'removeGroupMember':
     case 'banGroupMember':
     case 'unbanGroupMember':
-      return toTargetCommand(
-        descriptor.operation,
-        descriptor.scope,
-        descriptor.groupId,
-        requireTargetPrincipalId(descriptor),
-        descriptor.request as RevokeGroupInviteRequest,
-        randomId,
-      );
+      return toTargetCommand(descriptor, randomId);
     case 'setGroupMemberRole':
-      return toRoleCommand(
-        descriptor.scope,
-        descriptor.groupId,
-        requireTargetPrincipalId(descriptor),
-        descriptor.request as SetGroupMemberRoleRequest,
-        randomId,
-      );
+      return toRoleCommand(descriptor, randomId);
     case 'transferGroupOwnership':
       return toTransferCommand(descriptor, randomId);
     case 'upsertMember':
-      return toUpsertMemberCommand(
-        descriptor.scope,
-        descriptor.groupId,
-        requireTargetPrincipalId(descriptor),
-        descriptor.request as UpsertGroupMemberRequest,
-        randomId,
-      );
+      return toUpsertMemberCommand(descriptor, randomId);
     default:
       throw new TypeError(`Unsupported membership group mutation: ${descriptor.operation}`);
   }
@@ -154,14 +120,13 @@ function toCreateCommand(
 }
 
 function toUpdateCommand(
-  scope: StateScope,
-  groupId: string,
-  request: UpdateGroupRequest,
+  descriptor: GroupMutationDescriptor,
   randomId: () => string,
 ): GroupMutationCommand {
+  const request = descriptor.request as UpdateGroupRequest;
   return {
     operation: 'updateGroup',
-    aggregateRef: { ...scope, groupId },
+    aggregateRef: { ...descriptor.scope, groupId: descriptor.groupId },
     ...toGroupMutationIdentity(request.requestId, randomId),
     input: {
       slug: request.slug ?? null,
@@ -182,14 +147,13 @@ function toUpdateCommand(
 }
 
 function toDirectorCommand(
-  scope: StateScope,
-  groupId: string,
-  request: AppointGroupDirectorRequest,
+  descriptor: GroupMutationDescriptor,
   randomId: () => string,
 ): GroupMutationCommand {
+  const request = descriptor.request as AppointGroupDirectorRequest;
   return {
     operation: 'appointDirector',
-    aggregateRef: { ...scope, groupId },
+    aggregateRef: { ...descriptor.scope, groupId: descriptor.groupId },
     ...toGroupMutationIdentity(request.requestId, randomId),
     input: {
       heartbeatTtlMs: normalizeRallarGroupDirectorHeartbeatTtlMs(
@@ -201,18 +165,16 @@ function toDirectorCommand(
 }
 
 function toJoinCommand(
-  operation: 'joinGroup' | 'acceptGroupInvite',
-  scope: StateScope,
-  groupId: string,
-  request: JoinGroupRequest | AcceptGroupInviteRequest,
+  descriptor: GroupMutationDescriptor,
   randomId: () => string,
 ): GroupMutationCommand {
+  const request = descriptor.request as JoinGroupRequest | AcceptGroupInviteRequest;
   if (!request.actorPrincipalId) {
     throw new NonRetryableException('Forbidden: Cannot join a group without a principal.');
   }
   return {
-    operation,
-    aggregateRef: { ...scope, groupId },
+    operation: descriptor.operation as 'joinGroup' | 'acceptGroupInvite',
+    aggregateRef: { ...descriptor.scope, groupId: descriptor.groupId },
     targetPrincipalId: request.actorPrincipalId,
     ...toGroupMutationIdentity(request.requestId, randomId),
     input: {
@@ -225,16 +187,14 @@ function toJoinCommand(
 }
 
 function toInviteCommand(
-  scope: StateScope,
-  groupId: string,
-  principalId: string,
-  request: CreateGroupInviteRequest,
+  descriptor: GroupMutationDescriptor,
   randomId: () => string,
 ): GroupMutationCommand {
+  const request = descriptor.request as CreateGroupInviteRequest;
   return {
     operation: 'createGroupInvite',
-    aggregateRef: { ...scope, groupId },
-    targetPrincipalId: principalId,
+    aggregateRef: { ...descriptor.scope, groupId: descriptor.groupId },
+    targetPrincipalId: requireTargetPrincipalId(descriptor),
     ...toGroupMutationIdentity(request.requestId, randomId),
     input: {
       invitationExpiresAtEpochMs: request.invitationExpiresAtEpochMs ?? null,
@@ -244,33 +204,29 @@ function toInviteCommand(
 }
 
 function toTargetCommand(
-  operation: 'revokeGroupInvite' | 'removeGroupMember' | 'banGroupMember' | 'unbanGroupMember',
-  scope: StateScope,
-  groupId: string,
-  principalId: string,
-  request: RevokeGroupInviteRequest | RemoveGroupMemberRequest,
+  descriptor: GroupMutationDescriptor,
   randomId: () => string,
 ): GroupMutationCommand {
+  const request = descriptor.request as RevokeGroupInviteRequest | RemoveGroupMemberRequest;
   return {
-    operation,
-    aggregateRef: { ...scope, groupId },
-    targetPrincipalId: principalId,
+    operation: descriptor.operation as
+      'revokeGroupInvite' | 'removeGroupMember' | 'banGroupMember' | 'unbanGroupMember',
+    aggregateRef: { ...descriptor.scope, groupId: descriptor.groupId },
+    targetPrincipalId: requireTargetPrincipalId(descriptor),
     ...toGroupMutationIdentity(request.requestId, randomId),
     input: toGroupMutationActorInput(request),
   };
 }
 
 function toRoleCommand(
-  scope: StateScope,
-  groupId: string,
-  principalId: string,
-  request: SetGroupMemberRoleRequest,
+  descriptor: GroupMutationDescriptor,
   randomId: () => string,
 ): GroupMutationCommand {
+  const request = descriptor.request as SetGroupMemberRoleRequest;
   return {
     operation: 'setGroupMemberRole',
-    aggregateRef: { ...scope, groupId },
-    targetPrincipalId: principalId,
+    aggregateRef: { ...descriptor.scope, groupId: descriptor.groupId },
+    targetPrincipalId: requireTargetPrincipalId(descriptor),
     ...toGroupMutationIdentity(request.requestId, randomId),
     input: { role: request.role, ...toGroupMutationActorInput(request) },
   };
@@ -294,16 +250,14 @@ function toTransferCommand(
 }
 
 function toUpsertMemberCommand(
-  scope: StateScope,
-  groupId: string,
-  principalId: string,
-  request: UpsertGroupMemberRequest,
+  descriptor: GroupMutationDescriptor,
   randomId: () => string,
 ): GroupMutationCommand {
+  const request = descriptor.request as UpsertGroupMemberRequest;
   return {
     operation: 'upsertMember',
-    aggregateRef: { ...scope, groupId },
-    targetPrincipalId: principalId,
+    aggregateRef: { ...descriptor.scope, groupId: descriptor.groupId },
+    targetPrincipalId: requireTargetPrincipalId(descriptor),
     ...toGroupMutationIdentity(request.requestId, randomId),
     input: {
       role: request.role ?? null,
@@ -316,14 +270,13 @@ function toUpsertMemberCommand(
 }
 
 function toRotateCommand(
-  scope: StateScope,
-  groupId: string,
-  request: RotateGroupJoinCodeRequest,
+  descriptor: GroupMutationDescriptor,
   randomId: () => string,
 ): GroupMutationCommand {
+  const request = descriptor.request as RotateGroupJoinCodeRequest;
   return {
     operation: 'rotateGroupJoinCode',
-    aggregateRef: { ...scope, groupId },
+    aggregateRef: { ...descriptor.scope, groupId: descriptor.groupId },
     ...toGroupMutationIdentity(request.requestId, randomId),
     input: {
       joinCode: request.joinCode === undefined ? null : normalizeJoinCode(request.joinCode),
@@ -333,7 +286,10 @@ function toRotateCommand(
   };
 }
 
-export function toGroupMutationIdentity(requestId: string | undefined, randomId: () => string) {
+export function toGroupMutationIdentity(
+  requestId: string | undefined,
+  randomId: () => string,
+): GroupMutationIdentity {
   const commandId = requestId ?? randomId();
   return { commandId, requestId: requestId ?? null };
 }
@@ -345,7 +301,7 @@ export function toGroupMutationActorInput(
     reason?: string;
     traceId?: string;
   }>,
-) {
+): GroupMutationActorInput {
   return {
     actorPrincipalId: request.actorPrincipalId ?? null,
     actorSessionId: request.actorSessionId ?? null,

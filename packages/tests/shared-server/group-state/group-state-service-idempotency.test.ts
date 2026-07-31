@@ -1,80 +1,80 @@
-import { describe, expect, it, vi } from "vitest";
-import type { GroupRef } from "@shared/api/group-types.ts";
-import type { StateScope } from "@shared/api/state-types.ts";
-import { GroupStateRepository } from "@shared-server/rallar-system/repositories/GroupStateRepository.ts";
-import { groupStateMaintenanceRequestId } from "@shared-server/rallar-system/services/group-state-service.ts";
+import { describe, expect, it, vi } from 'vitest';
+import type { GroupRef } from '@shared/api/group-types.ts';
+import type { StateScope } from '@shared/api/state-types.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
+import { groupStateMaintenanceRequestId } from '@shared-server/rallar-system/services/group-state-service.ts';
 import {
   createTestGroupStateRuntime,
   createTestGroupStateService as createGroupStateService,
-} from "./group-state-test-runtime.ts";
-import type { RallarTimingEvent } from "@shared-server/rallar-system/services/timing.ts";
-import type { StateSyncPublisher } from "@shared-server/rallar-system/state-sync-publisher.ts";
-import { FakeRuntimeStateRepository } from "../fake-runtime-state-repository.ts";
+} from './group-state-test-runtime.ts';
+import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
+import type { StateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
+import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
 import {
   SCOPE,
   createPublisher,
   seedGroup,
   toGroupRef,
-} from "./presence/group-presence-retry-test-runtime.ts";
+} from './presence/group-presence-retry-test-runtime.ts';
 
-describe("GroupStateService command idempotency", () => {
-  it("records timing for group state service methods when a timing sink is supplied", async () => {
+describe('GroupStateService command idempotency', () => {
+  it('records timing for group state service methods when a timing sink is supplied', async () => {
     const timingEvents: RallarTimingEvent[] = [];
     const service = createGroupStateService({
       runtimeRepository: new FakeRuntimeStateRepository(),
       syncPublisher: createPublisher(),
       now: () => 1_000,
-      serviceId: "group-service",
+      serviceId: 'group-service',
       timing: (event) => timingEvents.push(event),
     });
 
     await service.createGroup(SCOPE, {
-      groupId: "timed-room",
-      displayName: "Timed Room",
-      kind: "room",
-      joinMode: "open",
-      createdByPrincipalId: "alice",
-      requestId: "create-timed-room",
+      groupId: 'timed-room',
+      displayName: 'Timed Room',
+      kind: 'room',
+      joinMode: 'open',
+      createdByPrincipalId: 'alice',
+      requestId: 'create-timed-room',
     });
 
     expect(timingEvents).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          component: "group-state-service",
-          operation: "read",
-          status: "ok",
-          serviceId: "group-service",
-          requestId: "create-timed-room",
+          component: 'group-state-service',
+          operation: 'read',
+          status: 'ok',
+          serviceId: 'group-service',
+          requestId: 'create-timed-room',
           applicationId: SCOPE.applicationId,
           workspaceId: SCOPE.workspaceId,
-          groupId: "timed-room",
+          groupId: 'timed-room',
         }),
       ]),
     );
-    expect(typeof timingEvents[0]?.durationMs).toBe("number");
+    expect(typeof timingEvents[0]?.durationMs).toBe('number');
   });
 
-  it("retries createGroup with the same requestId without creating duplicate state or events", async () => {
+  it('retries createGroup with the same requestId without creating duplicate state or events', async () => {
     const runtimeRepository = new FakeRuntimeStateRepository();
     const publisher = createPublisher();
     const service = createGroupStateService({
       runtimeRepository,
       syncPublisher: publisher,
       now: () => 1_000,
-      serviceId: "group-service",
+      serviceId: 'group-service',
     });
-    const groupRef = toGroupRef("room-1");
+    const groupRef = toGroupRef('room-1');
     const request = {
       groupId: groupRef.groupId,
-      displayName: "Room 1",
-      kind: "room" as const,
-      joinMode: "open" as const,
-      createdByPrincipalId: "alice",
-      requestId: "create-room-1",
+      displayName: 'Room 1',
+      kind: 'room' as const,
+      joinMode: 'open' as const,
+      createdByPrincipalId: 'alice',
+      requestId: 'create-room-1',
     };
 
     await expect(service.createGroup(SCOPE, request)).resolves.toMatchObject({
-      status: "created",
+      status: 'created',
       result: {
         right: {
           snapshot: {
@@ -87,7 +87,7 @@ describe("GroupStateService command idempotency", () => {
       },
     });
     await expect(service.createGroup(SCOPE, request)).resolves.toMatchObject({
-      status: "created",
+      status: 'created',
       result: {
         right: {
           snapshot: {
@@ -101,87 +101,85 @@ describe("GroupStateService command idempotency", () => {
     });
 
     const repository = new GroupStateRepository(runtimeRepository);
-    expect(
-      (await repository.listEvents(groupRef)).map((event) => event.eventType),
-    ).toEqual(["group-created"]);
-    expect(
-      (await repository.readSnapshot(groupRef))?.group.snapshotVersion,
-    ).toBe(1);
+    expect((await repository.listEvents(groupRef)).map((event) => event.eventType)).toEqual([
+      'group-created',
+    ]);
+    expect((await repository.readSnapshot(groupRef))?.group.snapshotVersion).toBe(1);
     expect(publisher.publishGroupSnapshot).not.toHaveBeenCalled();
     expect(publisher.publishGroupEvent).not.toHaveBeenCalled();
   });
 
-  it("returns a group-exists result when createGroup uses a different requestId for an existing group", async () => {
+  it('returns a group-exists result when createGroup uses a different requestId for an existing group', async () => {
     const runtimeRepository = new FakeRuntimeStateRepository();
     const runtime = createTestGroupStateRuntime({
       runtimeRepository,
       syncPublisher: createPublisher(),
       now: () => 1_000,
-      serviceId: "group-service",
+      serviceId: 'group-service',
     });
     const service = runtime.service;
-    const groupRef = toGroupRef("room-6");
+    const groupRef = toGroupRef('room-6');
 
     await service.createGroup(SCOPE, {
       groupId: groupRef.groupId,
-      displayName: "Room 6",
-      kind: "room",
-      joinMode: "open",
-      createdByPrincipalId: "alice",
-      requestId: "create-room-6-a",
+      displayName: 'Room 6',
+      kind: 'room',
+      joinMode: 'open',
+      createdByPrincipalId: 'alice',
+      requestId: 'create-room-6-a',
     });
 
     await expect(
       service.createGroup(SCOPE, {
         groupId: groupRef.groupId,
-        displayName: "Room 6",
-        kind: "room",
-        joinMode: "open",
-        createdByPrincipalId: "alice",
-        requestId: "create-room-6-b",
+        displayName: 'Room 6',
+        kind: 'room',
+        joinMode: 'open',
+        createdByPrincipalId: 'alice',
+        requestId: 'create-room-6-b',
       }),
     ).resolves.toMatchObject({
-      status: "error",
+      status: 'error',
       result: {
-        left: "Group already exists: room-6",
+        left: 'Group already exists: room-6',
       },
     });
 
     const repository = new GroupStateRepository(runtimeRepository);
-    expect(
-      (await repository.listEvents(groupRef)).map((event) => event.eventType),
-    ).toEqual(["group-created"]);
+    expect((await repository.listEvents(groupRef)).map((event) => event.eventType)).toEqual([
+      'group-created',
+    ]);
   });
 
-  it("returns the stored revisioned createGroup snapshot", async () => {
+  it('returns the stored revisioned createGroup snapshot', async () => {
     const runtimeRepository = new FakeRuntimeStateRepository();
     const service = createGroupStateService({
       runtimeRepository,
       syncPublisher: createPublisher(),
       now: () => 1_000,
-      serviceId: "group-service",
+      serviceId: 'group-service',
     });
 
     await expect(
       service.createGroup(SCOPE, {
-        groupId: "room-no-readback",
-        displayName: "Room no readback",
-        kind: "room",
-        joinMode: "open",
-        createdByPrincipalId: "alice",
-        requestId: "create-room-no-readback",
+        groupId: 'room-no-readback',
+        displayName: 'Room no readback',
+        kind: 'room',
+        joinMode: 'open',
+        createdByPrincipalId: 'alice',
+        requestId: 'create-room-no-readback',
       }),
     ).resolves.toMatchObject({
-      status: "created",
+      status: 'created',
       result: {
         right: {
           snapshot: {
             stateRevision: 1,
             members: [
               {
-                principalId: "alice",
-                role: "owner",
-                status: "active",
+                principalId: 'alice',
+                role: 'owner',
+                status: 'active',
               },
             ],
             activeSessions: [],
@@ -193,129 +191,116 @@ describe("GroupStateService command idempotency", () => {
     });
   });
 
-  it("rejects createGroup reuse with the same requestId and different semantic content", async () => {
+  it('rejects createGroup reuse with the same requestId and different semantic content', async () => {
     const runtimeRepository = new FakeRuntimeStateRepository();
     const service = createGroupStateService({
       runtimeRepository,
       syncPublisher: createPublisher(),
       now: () => 1_000,
-      serviceId: "group-service",
+      serviceId: 'group-service',
     });
 
     await service.createGroup(SCOPE, {
-      groupId: "room-3",
-      displayName: "Room 3",
-      kind: "room",
-      joinMode: "open",
-      createdByPrincipalId: "alice",
-      requestId: "create-room-3",
+      groupId: 'room-3',
+      displayName: 'Room 3',
+      kind: 'room',
+      joinMode: 'open',
+      createdByPrincipalId: 'alice',
+      requestId: 'create-room-3',
     });
 
     await expect(
       service.createGroup(SCOPE, {
-        groupId: "room-3",
-        displayName: "Room 3 with different payload",
-        kind: "room",
-        joinMode: "open",
-        createdByPrincipalId: "alice",
-        requestId: "create-room-3",
+        groupId: 'room-3',
+        displayName: 'Room 3 with different payload',
+        kind: 'room',
+        joinMode: 'open',
+        createdByPrincipalId: 'alice',
+        requestId: 'create-room-3',
       }),
     ).rejects.toMatchObject({
-      code: "group-mutation-idempotency-conflict",
+      code: 'group-mutation-idempotency-conflict',
       status: 409,
     });
 
     const repository = new GroupStateRepository(runtimeRepository);
-    expect(
-      (await repository.readSnapshot(toGroupRef("room-3")))?.group,
-    ).toMatchObject({
-      displayName: "Room 3",
+    expect((await repository.readSnapshot(toGroupRef('room-3')))?.group).toMatchObject({
+      displayName: 'Room 3',
       snapshotVersion: 1,
     });
   });
 
-  it("replays updateGroup with the same requestId without bumping versions twice", async () => {
+  it('replays updateGroup with the same requestId without bumping versions twice', async () => {
     const runtimeRepository = new FakeRuntimeStateRepository();
-    await seedGroup(runtimeRepository, "room-2");
+    await seedGroup(runtimeRepository, 'room-2');
 
     const publisher = createPublisher();
     const service = createGroupStateService({
       runtimeRepository,
       syncPublisher: publisher,
       now: () => 2_000,
-      serviceId: "group-service",
+      serviceId: 'group-service',
     });
-    const groupRef = toGroupRef("room-2");
+    const groupRef = toGroupRef('room-2');
     const request = {
-      displayName: "Room 2 renamed",
-      actorPrincipalId: "alice",
-      requestId: "rename-room-2",
+      displayName: 'Room 2 renamed',
+      actorPrincipalId: 'alice',
+      requestId: 'rename-room-2',
     };
 
     const first = await service.updateGroup(SCOPE, groupRef.groupId, request);
     const second = await service.updateGroup(SCOPE, groupRef.groupId, request);
 
     expect(second).toMatchObject({
-      status: "ok",
+      status: 'ok',
       result: {
         right: {
           snapshot: {
             group: {
-              displayName: "Room 2 renamed",
+              displayName: 'Room 2 renamed',
               snapshotVersion: 2,
             },
           },
         },
       },
     });
-    expect(first.result.right?.event?.eventType).toBe("group-updated");
+    expect(first.result.right?.event?.eventType).toBe('group-updated');
     expect(second.result.right?.event).toEqual(first.result.right?.event);
 
     const repository = new GroupStateRepository(runtimeRepository);
-    expect(
-      (await repository.readSnapshot(groupRef))?.group.snapshotVersion,
-    ).toBe(2);
-    expect(
-      (await repository.listEvents(groupRef)).map((event) => event.eventType),
-    ).toEqual(["group-created", "group-updated"]);
+    expect((await repository.readSnapshot(groupRef))?.group.snapshotVersion).toBe(2);
+    expect((await repository.listEvents(groupRef)).map((event) => event.eventType)).toEqual([
+      'group-created',
+      'group-updated',
+    ]);
     expect(publisher.publishGroupSnapshot).not.toHaveBeenCalled();
     expect(publisher.publishGroupEvent).not.toHaveBeenCalled();
   });
 
-  it("replays upsertMember with the same requestId without adding duplicate roster events", async () => {
+  it('replays upsertMember with the same requestId without adding duplicate roster events', async () => {
     const runtimeRepository = new FakeRuntimeStateRepository();
-    await seedGroup(runtimeRepository, "room-5");
+    await seedGroup(runtimeRepository, 'room-5');
 
     const publisher = createPublisher();
     const service = createGroupStateService({
       runtimeRepository,
       syncPublisher: publisher,
       now: () => 3_000,
-      serviceId: "group-service",
+      serviceId: 'group-service',
     });
-    const groupRef = toGroupRef("room-5");
+    const groupRef = toGroupRef('room-5');
     const request = {
-      role: "member" as const,
-      status: "active" as const,
-      actorPrincipalId: "alice",
-      requestId: "join-bob-room-5",
+      role: 'member' as const,
+      status: 'active' as const,
+      actorPrincipalId: 'alice',
+      requestId: 'join-bob-room-5',
     };
 
-    const first = await service.upsertMember(
-      SCOPE,
-      groupRef.groupId,
-      "bob",
-      request,
-    );
-    const second = await service.upsertMember(
-      SCOPE,
-      groupRef.groupId,
-      "bob",
-      request,
-    );
+    const first = await service.upsertMember(SCOPE, groupRef.groupId, 'bob', request);
+    const second = await service.upsertMember(SCOPE, groupRef.groupId, 'bob', request);
 
     expect(second).toMatchObject({
-      status: "ok",
+      status: 'ok',
       result: {
         right: {
           snapshot: {
@@ -328,20 +313,18 @@ describe("GroupStateService command idempotency", () => {
         },
       },
     });
-    expect(first.result.right?.event?.eventType).toBe("member-joined");
+    expect(first.result.right?.event?.eventType).toBe('member-joined');
     expect(second.result.right?.event).toEqual(first.result.right?.event);
 
     const repository = new GroupStateRepository(runtimeRepository);
+    expect((await repository.listEvents(groupRef)).map((event) => event.eventType)).toEqual([
+      'group-created',
+      'member-joined',
+    ]);
     expect(
-      (await repository.listEvents(groupRef)).map((event) => event.eventType),
-    ).toEqual(["group-created", "member-joined"]);
-    expect(
-      (await repository.readSnapshot(groupRef))?.members
-        .map((member) => member.principalId)
-        .sort(),
-    ).toEqual(["alice", "bob"]);
+      (await repository.readSnapshot(groupRef))?.members.map((member) => member.principalId).sort(),
+    ).toEqual(['alice', 'bob']);
     expect(publisher.publishGroupSnapshot).not.toHaveBeenCalled();
     expect(publisher.publishGroupEvent).not.toHaveBeenCalled();
   });
-
 });

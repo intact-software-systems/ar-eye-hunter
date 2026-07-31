@@ -8,7 +8,10 @@ import type { GroupTopologyConfigPatch } from '@shared/api/graph-topology-manage
 import type { IssuedAuthSession } from '../../repositories/auth-session-types.ts';
 import { GroupMutationAuthorizationError } from '../../group-state/group-mutation-authority.ts';
 import { hashCanonicalCommand } from '../../services/canonical-command-hash.ts';
-import type { GroupTopologyConfigMutationCommand } from '../../services/group-topology-config-mutations.ts';
+// prettier-ignore
+import type {
+  GroupTopologyConfigMutationCommand,
+} from '../../services/group-topology-config-mutations.ts';
 import type { AppInboxEnqueueInput } from '../../services/AppInboxService.ts';
 import { AppInboxType } from '../../services/AppInboxService.ts';
 import type {
@@ -17,6 +20,13 @@ import type {
   TopologyAppInboxPayload,
   TopologyAppInboxRequestPayload,
 } from './topology-app-inbox-contracts.ts';
+
+interface TopologyConfigMutationCommandInput {
+  readonly command: TopologyAppInboxCommand;
+  readonly config: GroupTopologyConfigPatch | null;
+  readonly ttlMs: number | null;
+  readonly expiresAtEpochMs: number | null;
+}
 
 export async function toTopologyAppInboxCommand(
   input: CreateTopologyAppInboxCommandInput,
@@ -121,23 +131,33 @@ export function toTopologyConfigMutationCommand(
 ): GroupTopologyConfigMutationCommand {
   switch (command.payload.operation) {
     case 'putConfig':
-      return topologyConfigMutationCommand(
+      return topologyConfigMutationCommand({
         command,
-        fromCanonicalGroupTopologyConfigPatch(command.payload.config),
-        null,
-        null,
-      );
+        config: fromCanonicalGroupTopologyConfigPatch(command.payload.config),
+        ttlMs: null,
+        expiresAtEpochMs: null,
+      });
     case 'deleteConfig':
-      return topologyConfigMutationCommand(command, null, null, null);
-    case 'putOverride':
-      return topologyConfigMutationCommand(
+      return topologyConfigMutationCommand({
         command,
-        fromCanonicalGroupTopologyConfigPatch(command.payload.config),
-        command.payload.ttlMs,
-        command.payload.expiresAtEpochMs,
-      );
+        config: null,
+        ttlMs: null,
+        expiresAtEpochMs: null,
+      });
+    case 'putOverride':
+      return topologyConfigMutationCommand({
+        command,
+        config: fromCanonicalGroupTopologyConfigPatch(command.payload.config),
+        ttlMs: command.payload.ttlMs,
+        expiresAtEpochMs: command.payload.expiresAtEpochMs,
+      });
     case 'deleteOverride':
-      return topologyConfigMutationCommand(command, null, null, null);
+      return topologyConfigMutationCommand({
+        command,
+        config: null,
+        ttlMs: null,
+        expiresAtEpochMs: null,
+      });
     case 'reconfigureTopology':
       throw new TypeError('Reconfigure is not a topology config mutation');
   }
@@ -259,11 +279,9 @@ function topologyInboxTypeForOperation(
 }
 
 function topologyConfigMutationCommand(
-  command: TopologyAppInboxCommand,
-  config: GroupTopologyConfigPatch | null,
-  ttlMs: number | null,
-  expiresAtEpochMs: number | null,
+  input: TopologyConfigMutationCommandInput,
 ): GroupTopologyConfigMutationCommand {
+  const { command, config, expiresAtEpochMs, ttlMs } = input;
   if (command.operation === 'reconfigureTopology') {
     throw new TypeError('Reconfigure is not a topology config mutation');
   }

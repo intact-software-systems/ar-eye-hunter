@@ -20,6 +20,15 @@ type PGliteSqlArrayFragment = Readonly<{
   values: readonly unknown[];
 }>;
 
+type SqlCallableOptions = Readonly<{
+  raw: PGlite;
+  executor: PGliteQueryExecutor;
+  ready: Promise<unknown>;
+  stopBeforeClose?: () => Promise<void>;
+  inTransaction: boolean;
+  savepointState?: PGliteSavepointState;
+}>;
+
 export type PGliteSql = PSqlSql & {
   readonly raw: PGlite;
   close(): Promise<void>;
@@ -49,16 +58,7 @@ export function createPGliteSqlClient(
   }) as PGliteSql;
 }
 
-function createSqlCallable(
-  options: Readonly<{
-    raw: PGlite;
-    executor: PGliteQueryExecutor;
-    ready: Promise<unknown>;
-    stopBeforeClose?: () => Promise<void>;
-    inTransaction: boolean;
-    savepointState?: PGliteSavepointState;
-  }>,
-): PSqlSql | PGliteSql {
+function createSqlCallable(options: SqlCallableOptions): PSqlSql | PGliteSql {
   const sql = ((
     stringsOrValues: TemplateStringsArray | readonly unknown[],
     ...values: unknown[]
@@ -73,7 +73,13 @@ function createSqlCallable(
     return queryRows(options, stringsOrValues, values);
   }) as PSqlSql;
 
-  sql.begin = async <T>(fn: (sql: PSqlTransactionSql) => Promise<T>): Promise<T> => {
+  attachPGliteBegin(sql, options);
+  attachPGliteSavepoint(sql, options);
+  return attachPGliteLifecycle(sql, options);
+}
+
+function attachPGliteBegin(sql: PSqlSql, options: SqlCallableOptions): void {
+  sql.begin = async <T>(fn: (transactionSql: PSqlTransactionSql) => Promise<T>): Promise<T> => {
     await options.ready;
 
     if (options.inTransaction) {
@@ -92,31 +98,34 @@ function createSqlCallable(
       return await fn(txSql as PSqlTransactionSql);
     });
   };
+}
 
-  if (options.inTransaction) {
-    const savepointState = options.savepointState;
-    if (!savepointState) {
-      throw new Error('PGlite transaction SQL requires savepoint state.');
-    }
-    const savepointSql = sql as PGliteSavepointSql;
-    savepointSql.savepoint = async <T>(
-      fn: (sql: PSqlTransactionSql) => Promise<T>,
-    ): Promise<T> => {
-      const savepointName = `rallar_savepoint_${savepointState.nextId}`;
-      savepointState.nextId += 1;
-      await options.executor.query(`savepoint ${savepointName}`);
-      try {
-        const result = await fn(savepointSql);
-        await options.executor.query(`release savepoint ${savepointName}`);
-        return result;
-      } catch (error) {
-        await options.executor.query(`rollback to savepoint ${savepointName}`);
-        await options.executor.query(`release savepoint ${savepointName}`);
-        throw error;
-      }
-    };
+function attachPGliteSavepoint(sql: PSqlSql, options: SqlCallableOptions): void {
+  if (!options.inTransaction) return;
+  const savepointState = options.savepointState;
+  if (!savepointState) {
+    throw new Error('PGlite transaction SQL requires savepoint state.');
   }
+  const savepointSql = sql as PGliteSavepointSql;
+  savepointSql.savepoint = async <T>(
+    fn: (transactionSql: PSqlTransactionSql) => Promise<T>,
+  ): Promise<T> => {
+    const savepointName = `rallar_savepoint_${savepointState.nextId}`;
+    savepointState.nextId += 1;
+    await options.executor.query(`savepoint ${savepointName}`);
+    try {
+      const result = await fn(savepointSql);
+      await options.executor.query(`release savepoint ${savepointName}`);
+      return result;
+    } catch (error) {
+      await options.executor.query(`rollback to savepoint ${savepointName}`);
+      await options.executor.query(`release savepoint ${savepointName}`);
+      throw error;
+    }
+  };
+}
 
+function attachPGliteLifecycle(sql: PSqlSql, options: SqlCallableOptions): PGliteSql {
   return Object.assign(sql, {
     raw: options.raw,
     close: async () => {

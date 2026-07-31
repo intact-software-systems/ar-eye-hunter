@@ -279,7 +279,12 @@ class ExpiryReplacementReadBatchRuntime extends ReadBatchFakeRuntimeStateReposit
   }
 }
 
-async function createSeededService(groupId: string) {
+interface SeededGroupStateService {
+  readonly runtime: ReadBatchFakeRuntimeStateRepository | ExpiryReplacementReadBatchRuntime;
+  readonly service: ReturnType<typeof createTestGroupStateService>;
+}
+
+async function createSeededService(groupId: string): Promise<SeededGroupStateService> {
   const runtime =
     groupId === 'expiry-replacement'
       ? new ExpiryReplacementReadBatchRuntime()

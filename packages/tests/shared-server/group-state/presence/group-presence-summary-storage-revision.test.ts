@@ -6,10 +6,19 @@ import type {
   GroupMutationFacts,
   GroupMutationRead,
 } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
-import { groupStateGroupStorageKey, groupStateMemberStorageKey } from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
+import {
+  groupStateGroupStorageKey,
+  groupStateMemberStorageKey,
+} from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
 import { decodeCanonicalGroupPresenceSummaryEntry } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { Temporal } from '@js-temporal/polyfill';
-import { parseTemporalPlainDateTime, toPgTimestamp } from '@shared-server/postgres/resource-inbox/repository-utils.ts';
+import {
+  parseTemporalPlainDateTime,
+  toPgTimestamp,
+} from '@shared-server/postgres/resource-inbox/repository-utils.ts';
+import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
+import { SCOPE } from '../mutation/group-mutation-test-runtime.ts';
+import { createService, seedOpenGroup } from './group-presence-test-runtime.ts';
 
 const ref: GroupRef = {
   applicationId: 'cross-process-app',
@@ -25,13 +34,72 @@ const seedAudit: AuditStamp = {
 };
 
 describe('group presence-summary causal identity', () => {
+  it('advances 100 independent heartbeats without acquiring the group guard', async () => {
+    const baseEpochMs = Date.now();
+    const runtime = new GroupBarrierRepository();
+    await seedOpenGroup(runtime, 'heartbeat-room', 200);
+    const service = createService(runtime, baseEpochMs + 2_000);
+    for (let index = 0; index < 100; index += 1) {
+      const principalId = `member-${index}`;
+      await service.upsertMember(SCOPE, 'heartbeat-room', principalId, {
+        status: 'active',
+        actorPrincipalId: principalId,
+        requestId: `member-${index}`,
+      });
+      await service.connectPresenceSession(SCOPE, 'heartbeat-room', `session-${index}`, {
+        principalId,
+        generationId: `generation-${index}`,
+        actorPrincipalId: `member-${index}`,
+        expiresAtEpochMs: baseEpochMs + 50_000,
+        requestId: `connect-${index}`,
+      });
+    }
+    runtime.resetGuards();
+    await Promise.all(
+      Array.from({ length: 100 }, (_, index) =>
+        createService(runtime, baseEpochMs + 3_000 + index).heartbeatPresenceSessionReceipt(
+          SCOPE,
+          'heartbeat-room',
+          `session-${index}`,
+          {
+            generationId: `generation-${index}`,
+            actorPrincipalId: `member-${index}`,
+            lastHeartbeatAtEpochMs: baseEpochMs + 3_000 + index,
+            expiresAtEpochMs: baseEpochMs + 60_000 + index,
+            requestId: `heartbeat-${index}`,
+          },
+        ),
+      ),
+    );
+    expect(runtime.groupGuards).toBe(0);
+    expect(runtime.presenceGuards).toBe(100);
+    expect(runtime.hotPathListReads).toBe(0);
+    expect(runtime.compatibilitySnapshotListReads).toBe(0);
+
+    await createService(runtime, baseEpochMs + 4_000).heartbeatPresenceSession(
+      SCOPE,
+      'heartbeat-room',
+      'session-0',
+      {
+        generationId: 'generation-0',
+        actorPrincipalId: 'member-0',
+        lastHeartbeatAtEpochMs: baseEpochMs + 4_000,
+        expiresAtEpochMs: baseEpochMs + 70_000,
+        requestId: 'compatibility-heartbeat',
+      },
+    );
+    expect(runtime.compatibilitySnapshotListReads).toBeGreaterThan(0);
+  });
+
   it('preserves UTC wall-clock fields returned as Date values by postgres', () => {
     const previousTimezone = process.env.TZ;
     process.env.TZ = 'Asia/Tokyo';
     try {
       const canonical = Temporal.PlainDateTime.from('2026-07-26T18:01:26.954');
       expect(toPgTimestamp(canonical)).toBe('2026-07-26T18:01:26.954Z');
-      expect(parseTemporalPlainDateTime(new Date('2026-07-26T09:01:26.954Z')).toString()).toBe(canonical.toString());
+      expect(parseTemporalPlainDateTime(new Date('2026-07-26T09:01:26.954Z')).toString()).toBe(
+        canonical.toString(),
+      );
     } finally {
       process.env.TZ = previousTimezone;
     }
@@ -108,7 +176,11 @@ function mutationRead(storageRevision: number): GroupMutationRead {
     directorMember: null,
     actorMemberEntry: null,
     targetMemberEntry: null,
-    authorityMemberEntry: stored(groupStateMemberStorageKey({ ...ref, principalId: owner.principalId }), owner, 0),
+    authorityMemberEntry: stored(
+      groupStateMemberStorageKey({ ...ref, principalId: owner.principalId }),
+      owner,
+      0,
+    ),
     directorMemberEntry: null,
     targetPresence: null,
     expiredTargetPresenceEntry: null,

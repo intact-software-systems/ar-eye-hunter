@@ -1,6 +1,11 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { findMutationBoundaryViolations } from './mutation-boundary-analysis.ts';
+import {
+  readBranchBody as branchBody,
+  readFunctionBody as functionBody,
+  readMethodBody as methodBody,
+} from './read-compute-write-source-analysis.ts';
 
 const serviceRoot = 'packages/shared-server/rallar-system/services';
 const repositoryRoot = 'packages/shared-server/rallar-system/repositories';
@@ -70,7 +75,11 @@ const trackedRuntimeSource = [
   .map(read)
   .join('\n');
 
-const removedIntermediateOutboxSymbols = ['state-mutation:' + 'outbox', 'StateMutation' + 'OutboxRepository', 'StateMutation' + 'OutboxWork'] as const;
+const removedIntermediateOutboxSymbols = [
+  'state-mutation:' + 'outbox',
+  'StateMutation' + 'OutboxRepository',
+  'StateMutation' + 'OutboxWork',
+] as const;
 
 describe('read/compute/validate/write implementation contract', { timeout: 30_000 }, () => {
   it('contains no intermediate state-mutation outbox runtime wiring', () => {
@@ -99,18 +108,32 @@ describe('read/compute/validate/write implementation contract', { timeout: 30_00
   });
 
   it('keeps persistence validators below mutation and stateful owners', () => {
-    for (const file of [`${persistenceRoot}/validate-persisted-group.ts`, `${persistenceRoot}/validate-persisted-group-presence.ts`]) {
+    for (const file of [
+      `${persistenceRoot}/validate-persisted-group.ts`,
+      `${persistenceRoot}/validate-persisted-group-presence.ts`,
+    ]) {
       const source = read(file);
-      expect(source, file).not.toMatch(/from ['"](?:\.\.\/)+(?:mutation|services|inbox|repositories\/GroupStateRepository)(?:\/|\.ts)/);
+      expect(source, file).not.toMatch(
+        /from ['"](?:\.\.\/)+(?:mutation|services|inbox|repositories\/GroupStateRepository)(?:\/|\.ts)/,
+      );
     }
   });
 
   it('keeps one implementation of each shared group-state validation primitive', () => {
-    const validatorPaths = [`${persistenceRoot}/validate-persisted-group.ts`, `${persistenceRoot}/validate-persisted-group-presence.ts`];
-    const ownerSources = [validationPrimitivesPath, oldValidationPrimitivesPath, ...validatorPaths].filter(existsSync).map(read).join('\n');
+    const validatorPaths = [
+      `${persistenceRoot}/validate-persisted-group.ts`,
+      `${persistenceRoot}/validate-persisted-group-presence.ts`,
+    ];
+    const ownerSources = [validationPrimitivesPath, oldValidationPrimitivesPath, ...validatorPaths]
+      .filter(existsSync)
+      .map(read)
+      .join('\n');
 
     for (const name of sharedValidationPrimitiveNames) {
-      expect(ownerSources.match(new RegExp(`function\\s+${name}\\s*\\(`, 'g')) ?? [], name).toHaveLength(1);
+      expect(
+        ownerSources.match(new RegExp(`function\\s+${name}\\s*\\(`, 'g')) ?? [],
+        name,
+      ).toHaveLength(1);
     }
   });
 
@@ -118,7 +141,10 @@ describe('read/compute/validate/write implementation contract', { timeout: 30_00
     expect(existsSync(validationPrimitivesPath), validationPrimitivesPath).toBe(true);
     expect(existsSync(oldValidationPrimitivesPath), oldValidationPrimitivesPath).toBe(false);
 
-    for (const file of [`${persistenceRoot}/validate-persisted-group.ts`, `${persistenceRoot}/validate-persisted-group-presence.ts`]) {
+    for (const file of [
+      `${persistenceRoot}/validate-persisted-group.ts`,
+      `${persistenceRoot}/validate-persisted-group-presence.ts`,
+    ]) {
       expect(read(file), file).toContain("from '../group-state-validation-primitives.ts'");
     }
   });
@@ -150,7 +176,12 @@ describe('read/compute/validate/write implementation contract', { timeout: 30_00
       name: 'admin AppInbox',
       source: sources.appAdmin,
       owner: 'processCommand',
-      calls: ['this.read(command)', 'this.compute(command, read)', 'this.validate(command, read, computed)', 'this.writeMutation(context'],
+      calls: [
+        'this.read(command)',
+        'this.compute(command, read)',
+        'this.validate(command, read, computed)',
+        'this.writeMutation(context',
+      ],
     },
     {
       name: 'client AppInbox',
@@ -202,7 +233,12 @@ describe('read/compute/validate/write implementation contract', { timeout: 30_00
       name: 'RTC RTT AppInbox',
       source: sources.rtcHandler,
       owner: 'processMutation',
-      calls: ['readRttMutation(', 'computeRttMutation(', 'validateRttMutation(', 'this.commitMutation('],
+      calls: [
+        'readRttMutation(',
+        'computeRttMutation(',
+        'validateRttMutation(',
+        'this.commitMutation(',
+      ],
     },
   ])('$name keeps one visible read/compute/validate/write path', ({ source, owner, calls }) => {
     const body = methodBody(source, owner);
@@ -226,7 +262,12 @@ describe('read/compute/validate/write implementation contract', { timeout: 30_00
   });
 
   it('keeps AppInbox as the only retry and transaction owner for HTTP and WS mutations', () => {
-    for (const source of [sources.topologyConfig, sources.topologyRepository, sources.rtt, sources.topologyWorker]) {
+    for (const source of [
+      sources.topologyConfig,
+      sources.topologyRepository,
+      sources.rtt,
+      sources.topologyWorker,
+    ]) {
       expect(source).not.toMatch(/waitForRuntimeStateWriteRetry/);
       expect(source).not.toMatch(/for\s*\([^)]*attempt/);
     }
@@ -262,7 +303,12 @@ describe('read/compute/validate/write implementation contract', { timeout: 30_00
 
   it('writes RTT admission, measurement, receipt, and direct APP_OUTBOX rows atomically', () => {
     const seam = functionBody(sources.rtt, 'writeRttMutation');
-    expectInOrder(seam, ['commitEndpointAdmission(', 'commitMeasurement(', 'insertMutationReceipt(', 'writeRtcTopologyOutbox(transaction,']);
+    expectInOrder(seam, [
+      'commitEndpointAdmission(',
+      'commitMeasurement(',
+      'insertMutationReceipt(',
+      'writeRtcTopologyOutbox(transaction,',
+    ]);
     expect(seam).not.toContain('insertRecomputeIntent');
     expect(seam).not.toContain('StateMutation' + 'Outbox');
   });
@@ -318,7 +364,12 @@ describe('read/compute/validate/write implementation contract', { timeout: 30_00
   });
 
   it('does not reintroduce intermediate state-mutation intents on Task 7 paths', () => {
-    for (const source of [sources.appGroup, sources.topologyConfig, sources.rtt, sources.topologyWorker]) {
+    for (const source of [
+      sources.appGroup,
+      sources.topologyConfig,
+      sources.rtt,
+      sources.topologyWorker,
+    ]) {
       expect(source).not.toContain('StateMutation' + 'OutboxWork');
     }
     expect(sources.topologyConfig).not.toContain('StateMutation' + 'OutboxRepository');
@@ -329,55 +380,6 @@ describe('read/compute/validate/write implementation contract', { timeout: 30_00
 function read(file: string): string {
   return readFileSync(file, 'utf8');
 }
-function methodBody(source: string, name: string): string {
-  return extractBody(source, new RegExp(`^\\s*(?:public\\s+|private\\s+|protected\\s+)?(?:async\\s+)?${name}\\s*\\(`, 'm'), name);
-}
-
-function functionBody(source: string, name: string): string {
-  return extractBody(source, new RegExp(`^\\s*(?:export\\s+)?(?:async\\s+)?function\\s+${name}\\s*\\(`, 'm'), name);
-}
-
-function branchBody(source: string, marker: string): string {
-  const start = source.indexOf(marker);
-  if (start < 0) throw new Error(`Missing branch: ${marker}`);
-  return balancedBody(source, source.indexOf('{', start), marker);
-}
-
-function extractBody(source: string, signature: RegExp, label: string): string {
-  const match = signature.exec(source);
-  if (!match) throw new Error(`Missing function or method: ${label}`);
-  const parametersStart = source.indexOf('(', match.index);
-  const parametersEnd = matchingDelimiter(source, parametersStart, '(', ')', label);
-  const bodyStart = source.indexOf('{', parametersEnd + 1);
-  const body = balancedBody(source, bodyStart, label);
-  return source.slice(match.index, bodyStart) + body;
-}
-
-function matchingDelimiter(source: string, start: number, open: string, close: string, label: string): number {
-  let depth = 0;
-  for (let index = start; index < source.length; index += 1) {
-    if (source[index] === open) depth += 1;
-    if (source[index] === close) {
-      depth -= 1;
-      if (depth === 0) return index;
-    }
-  }
-  throw new Error(`Unclosed signature: ${label}`);
-}
-
-function balancedBody(source: string, bodyStart: number, label: string): string {
-  if (bodyStart < 0) throw new Error(`Missing body: ${label}`);
-  let depth = 0;
-  for (let index = bodyStart; index < source.length; index += 1) {
-    if (source[index] === '{') depth += 1;
-    if (source[index] === '}') {
-      depth -= 1;
-      if (depth === 0) return source.slice(bodyStart, index + 1);
-    }
-  }
-  throw new Error(`Unclosed body: ${label}`);
-}
-
 function expectInOrder(source: string, expected: readonly string[]): void {
   let cursor = -1;
   for (const marker of expected) {

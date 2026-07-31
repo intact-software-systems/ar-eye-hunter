@@ -5,7 +5,7 @@ import type {
   GroupMutationIdempotencyProbe,
   GroupMutationRead,
 } from './group-mutation-contracts.ts';
-import { validateGroupMutationCommand } from './group-mutation-command-validation.ts';
+import { validateGroupMutationCommand } from './validate-group-mutation-command.ts';
 import { validateGroupMutationRead } from './validate-group-mutation-read.ts';
 import {
   computeCreate,
@@ -26,7 +26,7 @@ import {
   computeDisconnectPresence,
   computeHeartbeatPresence,
 } from './compute-group-presence-mutation.ts';
-import { validateCommandHash } from './group-mutation-result.ts';
+import { validateCommandHash } from './validate-group-mutation-result.ts';
 import {
   assertExactKeys,
   requireJsonSafe,
@@ -138,9 +138,19 @@ export function validateFacts(facts: GroupMutationFacts): void {
   if (!['none', 'expiry', 'session-cleanup'].includes(facts.internalAuthority)) {
     throw new TypeError('Group mutation internal authority is invalid');
   }
-  if (facts.authenticatedAuthority !== null) {
+  validateAuthenticatedAuthority(facts.authenticatedAuthority);
+  validateResolvedJoinCodePair(facts);
+  if (facts.internalAuthority !== 'none' && facts.authenticatedAuthority !== null) {
+    throw new TypeError('Internal group authority cannot also be authenticated authority');
+  }
+}
+
+function validateAuthenticatedAuthority(
+  authenticatedAuthority: GroupMutationFacts['authenticatedAuthority'],
+): void {
+  if (authenticatedAuthority !== null) {
     const authority = requireRecord(
-      facts.authenticatedAuthority,
+      authenticatedAuthority,
       'Group mutation authenticated authority',
     );
     assertExactKeys(
@@ -154,6 +164,9 @@ export function validateFacts(facts: GroupMutationFacts): void {
     );
     requireNonEmptyString(authority.sessionId, 'Group mutation authenticated authority sessionId');
   }
+}
+
+function validateResolvedJoinCodePair(facts: GroupMutationFacts): void {
   if (facts.joinCodeVerifier !== null) {
     requireNonEmptyString(facts.joinCodeVerifier, 'Group mutation joinCodeVerifier');
   }
@@ -162,9 +175,6 @@ export function validateFacts(facts: GroupMutationFacts): void {
   }
   if ((facts.resolvedJoinCode === null) !== (facts.joinCodeVerifier === null)) {
     throw new TypeError('Group mutation resolved join code and verifier differ');
-  }
-  if (facts.internalAuthority !== 'none' && facts.authenticatedAuthority !== null) {
-    throw new TypeError('Internal group authority cannot also be authenticated authority');
   }
 }
 

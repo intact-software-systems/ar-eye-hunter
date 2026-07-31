@@ -10,7 +10,10 @@ export const SCOPE: StateScope = {
   workspaceId: 'workspace-1',
 };
 
-export async function seedGroup(runtimeRepository: FakeRuntimeStateRepository, groupId: string): Promise<void> {
+export async function seedGroup(
+  runtimeRepository: FakeRuntimeStateRepository,
+  groupId: string,
+): Promise<void> {
   await createGroupStateService({
     runtimeRepository,
     syncPublisher: createPublisher(),

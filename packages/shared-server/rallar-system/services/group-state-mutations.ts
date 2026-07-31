@@ -18,7 +18,7 @@ export type {
   GroupMutationReceipt,
 } from '../group-state/mutation/group-mutation-contracts.ts';
 export { GroupMutationRejectedError } from '../group-state/mutation/group-mutation-contracts.ts';
-export { validateGroupMutationCommand } from '../group-state/mutation/group-mutation-command-validation.ts';
+export { validateGroupMutationCommand } from '../group-state/mutation/validate-group-mutation-command.ts';
 export {
   computeGroupMutation,
   probeGroupMutationIdempotency,
@@ -44,7 +44,10 @@ export {
   validatePersistedGroupPresenceSession,
   validatePersistedGroupPresenceSummary,
 } from '../group-state/persistence/validate-persisted-group-presence.ts';
-export { validateGroupMutationIdempotencyRecord } from '../group-state/mutation/group-mutation-result.ts';
+// prettier-ignore
+export {
+  validateGroupMutationIdempotencyRecord,
+} from '../group-state/mutation/validate-group-mutation-result.ts';
 export {
   compareGroupCausalRevision,
   computeGroupPresenceSummary,

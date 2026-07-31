@@ -35,8 +35,8 @@ import {
   type GroupStateService,
   type GroupStateWritten,
 } from '@shared-server/rallar-system/services/group-state-service.ts';
-import type { IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
+import { authSession } from '../group-state-test-runtime.ts';
 
 export const SCOPE: StateScope = {
   applicationId: 'ar-eye-hunter',
@@ -227,7 +227,12 @@ export async function createAuthorityHarness(
   const sessions = Object.fromEntries(
     principalIds.map((principalId) => [
       principalId,
-      authSession(principalId, `${principalId}-session`, `${principalId}-token`, nowEpochMs),
+      authSession({
+        clientId: principalId,
+        sessionId: `${principalId}-session`,
+        accessToken: `${principalId}-token`,
+        nowEpochMs,
+      }),
     ]),
   );
   for (const session of Object.values(sessions)) {
@@ -348,22 +353,6 @@ export async function waitForQueueEntry(queue: InMemoryQueueBox): Promise<void> 
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
   throw new Error('Expected authenticated app inbox entry to be enqueued');
-}
-
-export function authSession(
-  clientId: string,
-  sessionId: string,
-  accessToken: string,
-  nowEpochMs: number,
-): IssuedAuthSession {
-  return {
-    clientId,
-    sessionId,
-    accessToken,
-    username: clientId,
-    issuedAtEpochMs: nowEpochMs - 1_000,
-    expiresAtEpochMs: nowEpochMs + 60_000,
-  };
 }
 
 export class TestResourceInbox extends InMemoryQueueBox {

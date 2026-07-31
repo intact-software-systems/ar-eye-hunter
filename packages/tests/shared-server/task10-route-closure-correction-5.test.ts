@@ -83,7 +83,7 @@ describe('Task 10 route-closure correction 5 contracts', () => {
 
   it('binds topology loops to their live types', () => {
     const group = readFileSync(GROUP_OWNER, 'utf8');
-    const withoutTopology = group.replace('    AppInboxType.TOPOLOGY_CONFIG_PUT,\n', '');
+    const withoutTopology = group.replace('  AppInboxType.TOPOLOGY_CONFIG_PUT,\n', '');
 
     expect(validateWithOverrides(new Map([[GROUP_OWNER, withoutTopology]]))).toEqual(
       expect.arrayContaining([

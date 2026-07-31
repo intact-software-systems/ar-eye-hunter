@@ -15,12 +15,12 @@ import {
   type GroupStateWritten,
 } from '@shared-server/rallar-system/services/group-state-service.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+import { authSession } from '../group-state-test-runtime.ts';
 import {
   SCOPE,
   type AuthorityHarness,
   TestResourceInbox,
   TestResourceInboxResults,
-  authSession,
   authenticatedProcessor,
   createAuthorityHarness,
   createResilience,
@@ -125,7 +125,12 @@ describe('AppGroupInboxService authenticated authority', { timeout: 30_000 }, ()
       phaseService as never,
       'server-12345678',
     );
-    const authority = authSession('owner', 'owner-session', 'owner-token', nowEpochMs);
+    const authority = authSession({
+      clientId: 'owner',
+      sessionId: 'owner-session',
+      accessToken: 'owner-token',
+      nowEpochMs,
+    });
     const pending = authenticatedProcessor<GroupUpdateAppInboxPayload, GroupStateWritten>(service)(
       {
         type: AppInboxType.GROUP_UPDATE,

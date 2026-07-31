@@ -55,15 +55,15 @@ type ExactEntry<Identity extends string, Value> = Readonly<{
 export type GroupStateMutationExactReadResult =
   | Readonly<{ status: 'fallback' }>
   | Readonly<{
-    status: 'stable';
-    groups: readonly RuntimeStateEntryValue<Group>[];
-    expiredGroupEntry: RuntimeStateEntry | null;
-    presenceSummaries: readonly RuntimeStateEntryValue<GroupPresenceSummary>[];
-    idempotency: readonly ExactEntry<string, GroupMutationIdempotencyRecord>[];
-    members: readonly ExactEntry<string, GroupMember>[];
-    presenceSessions: readonly ExactEntry<string, GroupPresenceSession>[];
-    admissions: readonly ExactEntry<string, GroupPresenceAdmission>[];
-  }>;
+      status: 'stable';
+      groups: readonly RuntimeStateEntryValue<Group>[];
+      expiredGroupEntry: RuntimeStateEntry | null;
+      presenceSummaries: readonly RuntimeStateEntryValue<GroupPresenceSummary>[];
+      idempotency: readonly ExactEntry<string, GroupMutationIdempotencyRecord>[];
+      members: readonly ExactEntry<string, GroupMember>[];
+      presenceSessions: readonly ExactEntry<string, GroupPresenceSession>[];
+      admissions: readonly ExactEntry<string, GroupPresenceAdmission>[];
+    }>;
 
 export type GroupStateMutationExactReadDecoders = Readonly<{
   group(entry: RuntimeStateEntryValue<unknown>): RuntimeStateEntryValue<Group>;
@@ -129,14 +129,8 @@ export async function readGroupStateMutationExactEntries(
   decoders: GroupStateMutationExactReadDecoders,
 ): Promise<GroupStateMutationExactReadResult> {
   const requestIds = requireUniqueDenseStrings(input.requestIds, 'request IDs');
-  const memberIds = requireUniqueDenseStrings(
-    input.memberPrincipalIds,
-    'member principal IDs',
-  );
-  const sessionIds = requireUniqueDenseStrings(
-    input.presenceSessionIds,
-    'presence session IDs',
-  );
+  const memberIds = requireUniqueDenseStrings(input.memberPrincipalIds, 'member principal IDs');
+  const sessionIds = requireUniqueDenseStrings(input.presenceSessionIds, 'presence session IDs');
   const admissionIds = requireUniqueDenseStrings(
     input.admissionPrincipalIds,
     'admission principal IDs',
@@ -221,6 +215,15 @@ function createSelectors(
   input: GroupStateMutationExactReadInput,
   identities: ExactReadIdentities,
 ): ExactReadSelectorSet {
+  const singleton = createSingletonSelectors(input);
+  const identity = createIdentitySelectors(input, identities);
+  return {
+    selectors: [...singleton.selectors, ...identity.selectors],
+    slots: [...singleton.slots, ...identity.slots],
+  };
+}
+
+function createSingletonSelectors(input: GroupStateMutationExactReadInput): ExactReadSelectorSet {
   const selectors: RuntimeStateReadBatchSelector[] = [];
   const slots: ReadSlot[] = [];
   const add = (selector: RuntimeStateReadBatchSelector, slot: ReadSlot): void => {
@@ -237,51 +240,78 @@ function createSelectors(
   if (input.includePresenceSummary) {
     add(
       {
-        selectorId: 'presence-summary', kind: 'key',
-        namespace: PRESENCE_SUMMARIES_NAMESPACE, key: groupKey,
+        selectorId: 'presence-summary',
+        kind: 'key',
+        namespace: PRESENCE_SUMMARIES_NAMESPACE,
+        key: groupKey,
       },
       { kind: 'presence-summary' },
     );
   }
+  return { selectors, slots };
+}
+
+function createIdentitySelectors(
+  input: GroupStateMutationExactReadInput,
+  identities: ExactReadIdentities,
+): ExactReadSelectorSet {
+  const selectors: RuntimeStateReadBatchSelector[] = [];
+  const slots: ReadSlot[] = [];
+  const add = (selector: RuntimeStateReadBatchSelector, slot: ReadSlot): void => {
+    selectors.push(selector);
+    slots.push(slot);
+  };
   identities.requestIds.forEach((requestId, index) =>
-    add({
-      selectorId: `idempotency:${index}`, kind: 'key',
-      namespace: IDEMPOTENT_NAMESPACE,
-      key: groupStateIdempotencyStorageKey(input.aggregateRef, requestId),
-    }, { kind: 'idempotency', identity: requestId })
+    add(
+      {
+        selectorId: `idempotency:${index}`,
+        kind: 'key',
+        namespace: IDEMPOTENT_NAMESPACE,
+        key: groupStateIdempotencyStorageKey(input.aggregateRef, requestId),
+      },
+      { kind: 'idempotency', identity: requestId },
+    ),
   );
   identities.memberIds.forEach((principalId, index) =>
-    add({
-      selectorId: `member:${index}`, kind: 'key',
-      namespace: MEMBERS_NAMESPACE,
-      key: groupStateMemberStorageKey({ ...input.aggregateRef, principalId }),
-    }, { kind: 'member', identity: principalId })
+    add(
+      {
+        selectorId: `member:${index}`,
+        kind: 'key',
+        namespace: MEMBERS_NAMESPACE,
+        key: groupStateMemberStorageKey({ ...input.aggregateRef, principalId }),
+      },
+      { kind: 'member', identity: principalId },
+    ),
   );
   identities.sessionIds.forEach((sessionId, index) =>
-    add({
-      selectorId: `presence:${index}`, kind: 'key',
-      namespace: SESSIONS_NAMESPACE,
-      key: groupStatePresenceSessionStorageKey({ ...input.aggregateRef, sessionId }),
-    }, { kind: 'presence', identity: sessionId })
+    add(
+      {
+        selectorId: `presence:${index}`,
+        kind: 'key',
+        namespace: SESSIONS_NAMESPACE,
+        key: groupStatePresenceSessionStorageKey({ ...input.aggregateRef, sessionId }),
+      },
+      { kind: 'presence', identity: sessionId },
+    ),
   );
   identities.admissionIds.forEach((principalId, index) =>
-    add({
-      selectorId: `admission:${index}`,
-      kind: 'key',
-      namespace: PRESENCE_ADMISSIONS_NAMESPACE,
-      key: groupStatePresenceAdmissionStorageKey({
-        ...input.aggregateRef,
-        principalId,
-      }),
-    }, { kind: 'admission', identity: principalId })
+    add(
+      {
+        selectorId: `admission:${index}`,
+        kind: 'key',
+        namespace: PRESENCE_ADMISSIONS_NAMESPACE,
+        key: groupStatePresenceAdmissionStorageKey({
+          ...input.aggregateRef,
+          principalId,
+        }),
+      },
+      { kind: 'admission', identity: principalId },
+    ),
   );
   return { selectors, slots };
 }
 
-function requireUniqueDenseStrings(
-  input: readonly string[],
-  label: string,
-): readonly string[] {
+function requireUniqueDenseStrings(input: readonly string[], label: string): readonly string[] {
   if (!Array.isArray(input)) throw new TypeError(`${label} must be an array`);
   const values = new Set<string>();
   for (let index = 0; index < input.length; index += 1) {

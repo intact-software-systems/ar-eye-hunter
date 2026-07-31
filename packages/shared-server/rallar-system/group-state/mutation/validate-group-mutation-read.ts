@@ -1,4 +1,3 @@
-import { readRallarGroupDirectorAppointment } from '@shared/api/group-director.ts';
 import type { GroupMember, GroupRef } from '@shared/api/group-types.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/RuntimeStateJsonStore.ts';
@@ -13,7 +12,11 @@ import {
 } from '../persistence/group-state-storage-keys.ts';
 import { validateGroupExpiredStateAuthority } from '../presence/group-expired-state-authority.ts';
 import type { GroupMutationCommand, GroupMutationRead } from './group-mutation-contracts.ts';
-import { validateGroupMutationIdempotencyRecord } from './group-mutation-result.ts';
+import {
+  resolveGroupMutationReadIdentities,
+  type GroupMutationReadIdentities,
+} from './resolve-group-mutation-read-identities.ts';
+import { validateGroupMutationIdempotencyRecord } from './validate-group-mutation-result.ts';
 import {
   assertExactKeys,
   assertRequiredKeys,
@@ -32,100 +35,113 @@ import {
   validatePresenceSummaryValue,
 } from '../persistence/validate-persisted-group-presence.ts';
 
+interface AdmissionReadValidationInput {
+  readonly read: GroupMutationRead;
+  readonly command: GroupMutationCommand;
+  readonly ref: GroupRef;
+  readonly identities: GroupMutationReadIdentities;
+}
+
 export function validateGroupMutationRead(
   read: GroupMutationRead,
   command: GroupMutationCommand,
 ): void {
   const ref = command.aggregateRef;
+  validateReadShape(read);
+  validateStoredGroupRead(read, ref);
+  const identities = resolveGroupMutationReadIdentities(read, command);
+  validateMemberReads(read, ref, identities);
+  validateTargetPresenceRead(read, ref, identities);
+  validateGroupExpiredStateAuthority({
+    ref,
+    targetSessionId: identities.targetSessionId,
+    group: read.group,
+    expiredGroupEntry: read.expiredGroupEntry,
+    targetPresence: read.targetPresence,
+    expiredTargetPresenceEntry: read.expiredTargetPresenceEntry,
+  });
+  validateAdmissionReads({ read, command, ref, identities });
+  validateAuthorityPresenceReads(read, ref);
+  validateSummaryAndIdempotencyReads(read, command, ref);
+}
+
+const GROUP_MUTATION_READ_KEYS = [
+  'idempotency',
+  'group',
+  'actorMember',
+  'targetMember',
+  'authorityMember',
+  'expiredGroupEntry',
+  'expiredTargetPresenceEntry',
+  'directorMember',
+  'actorMemberEntry',
+  'targetMemberEntry',
+  'authorityMemberEntry',
+  'directorMemberEntry',
+  'targetPresence',
+  'targetAdmission',
+  'authorityAdmission',
+  'directorAdmission',
+  'authorityPresenceSessions',
+  'authorityPresenceSessionEntries',
+  'presenceSummary',
+] as const;
+
+function validateReadShape(read: GroupMutationRead): void {
   requireJsonSafe(read, 'Group mutation read');
-  assertExactKeys(
-    read as unknown as Record<string, unknown>,
-    [
-      'idempotency',
-      'group',
-      'actorMember',
-      'targetMember',
-      'authorityMember',
-      'expiredGroupEntry',
-      'expiredTargetPresenceEntry',
-      'directorMember',
-      'actorMemberEntry',
-      'targetMemberEntry',
-      'authorityMemberEntry',
-      'directorMemberEntry',
-      'targetPresence',
-      'targetAdmission',
-      'authorityAdmission',
-      'directorAdmission',
-      'authorityPresenceSessions',
-      'authorityPresenceSessionEntries',
-      'presenceSummary',
-    ],
-    'Group mutation read',
-  );
-  assertRequiredKeys(
-    read as unknown as Record<string, unknown>,
-    [
-      'idempotency',
-      'group',
-      'actorMember',
-      'targetMember',
-      'authorityMember',
-      'expiredGroupEntry',
-      'expiredTargetPresenceEntry',
-      'directorMember',
-      'actorMemberEntry',
-      'targetMemberEntry',
-      'authorityMemberEntry',
-      'directorMemberEntry',
-      'targetPresence',
-      'targetAdmission',
-      'authorityAdmission',
-      'directorAdmission',
-      'authorityPresenceSessions',
-      'authorityPresenceSessionEntries',
-      'presenceSummary',
-    ],
-    'Group mutation read',
-  );
+  const value = read as unknown as Record<string, unknown>;
+  assertExactKeys(value, GROUP_MUTATION_READ_KEYS, 'Group mutation read');
+  assertRequiredKeys(value, GROUP_MUTATION_READ_KEYS, 'Group mutation read');
+}
+
+function validateStoredGroupRead(read: GroupMutationRead, ref: GroupRef): void {
   if (read.group) {
     validateRuntimeEntryValue(read.group, 'Stored group', groupStateGroupStorageKey(ref));
     validateStoredGroup(read.group.value, ref);
   }
-  const actorPrincipalId = command.input.actorPrincipalId;
-  const targetPrincipalId = mutationTargetPrincipalId(command);
-  const ownerPrincipalId = read.group?.value.ownerPrincipalId ?? null;
-  const directorPrincipalId =
-    readRallarGroupDirectorAppointment(read.group?.value.metadata)?.principalId ?? null;
-  validateMemberReadPair(
-    read.actorMember,
-    read.actorMemberEntry,
+}
+
+function validateMemberReads(
+  read: GroupMutationRead,
+  ref: GroupRef,
+  identities: GroupMutationReadIdentities,
+): void {
+  validateMemberReadPair({
+    member: read.actorMember,
+    stored: read.actorMemberEntry,
     ref,
-    actorPrincipalId,
-    'Actor member',
-  );
-  validateMemberReadPair(
-    read.targetMember,
-    read.targetMemberEntry,
+    expectedPrincipalId: identities.actorPrincipalId,
+    label: 'Actor member',
+  });
+  validateMemberReadPair({
+    member: read.targetMember,
+    stored: read.targetMemberEntry,
     ref,
-    targetPrincipalId,
-    'Target member',
-  );
-  validateMemberReadPair(
-    read.authorityMember,
-    read.authorityMemberEntry,
+    expectedPrincipalId: identities.targetPrincipalId,
+    label: 'Target member',
+  });
+  validateMemberReadPair({
+    member: read.authorityMember,
+    stored: read.authorityMemberEntry,
     ref,
-    ownerPrincipalId,
-    'Authority member',
-  );
-  validateMemberReadPair(
-    read.directorMember,
-    read.directorMemberEntry,
+    expectedPrincipalId: identities.ownerPrincipalId,
+    label: 'Authority member',
+  });
+  validateMemberReadPair({
+    member: read.directorMember,
+    stored: read.directorMemberEntry,
     ref,
-    directorPrincipalId,
-    'Director member',
-  );
-  const targetSessionId = mutationTargetSessionId(command);
+    expectedPrincipalId: identities.directorPrincipalId,
+    label: 'Director member',
+  });
+}
+
+function validateTargetPresenceRead(
+  read: GroupMutationRead,
+  ref: GroupRef,
+  identities: GroupMutationReadIdentities,
+): void {
+  const { targetSessionId, targetPrincipalId } = identities;
   if (read.targetPresence) {
     if (targetSessionId === null || read.targetPresence.value.sessionId !== targetSessionId) {
       throw new TypeError('Stored target presence session differs from command slot identity');
@@ -140,20 +156,20 @@ export function validateGroupMutationRead(
     );
     validatePresenceSession(read.targetPresence.value, ref, 'Stored target presence');
   }
-  validateGroupExpiredStateAuthority({
-    ref,
-    targetSessionId,
-    group: read.group,
-    expiredGroupEntry: read.expiredGroupEntry,
-    targetPresence: read.targetPresence,
-    expiredTargetPresenceEntry: read.expiredTargetPresenceEntry,
-  });
+}
+
+function validateAdmissionReads({
+  read,
+  command,
+  ref,
+  identities,
+}: AdmissionReadValidationInput): void {
   const authorityAdmissionPrincipalId =
-    command.operation === 'appointDirector' ? ownerPrincipalId : null;
+    command.operation === 'appointDirector' ? identities.ownerPrincipalId : null;
   const directorAdmissionPrincipalId =
-    command.operation === 'appointDirector' ? directorPrincipalId : null;
+    command.operation === 'appointDirector' ? identities.directorPrincipalId : null;
   for (const [label, admission, expectedPrincipalId] of [
-    ['Target admission', read.targetAdmission, targetPrincipalId],
+    ['Target admission', read.targetAdmission, identities.targetPrincipalId],
     ['Authority admission', read.authorityAdmission, authorityAdmissionPrincipalId],
     ['Director admission', read.directorAdmission, directorAdmissionPrincipalId],
   ] as const) {
@@ -171,6 +187,9 @@ export function validateGroupMutationRead(
     );
     validatePresenceAdmission(admission.value, ref);
   }
+}
+
+function validateAuthorityPresenceReads(read: GroupMutationRead, ref: GroupRef): void {
   if (
     !Array.isArray(read.authorityPresenceSessions) ||
     !Array.isArray(read.authorityPresenceSessionEntries)
@@ -180,15 +199,21 @@ export function validateGroupMutationRead(
   if (read.authorityPresenceSessions.length !== read.authorityPresenceSessionEntries.length) {
     throw new TypeError('Authority presence sessions differ from stored entries');
   }
-  const referencedAuthoritySessions = new Map<
-    string,
-    Readonly<{
-      principalId: string;
-      generationId: string;
-      generationVersion: number;
-      connectedAtEpochMs: number;
-    }>
-  >();
+  const referencedAuthoritySessions = collectReferencedAuthoritySessions(read);
+  validateAuthorityPresenceEntries(read, ref, referencedAuthoritySessions);
+}
+
+interface ReferencedAuthoritySession {
+  readonly principalId: string;
+  readonly generationId: string;
+  readonly generationVersion: number;
+  readonly connectedAtEpochMs: number;
+}
+
+function collectReferencedAuthoritySessions(
+  read: GroupMutationRead,
+): ReadonlyMap<string, ReferencedAuthoritySession> {
+  const referencedAuthoritySessions = new Map<string, ReferencedAuthoritySession>();
   for (const admission of [read.authorityAdmission, read.directorAdmission]) {
     if (!admission) continue;
     for (const session of admission.value.admittedSessions) {
@@ -216,6 +241,14 @@ export function validateGroupMutationRead(
       });
     }
   }
+  return referencedAuthoritySessions;
+}
+
+function validateAuthorityPresenceEntries(
+  read: GroupMutationRead,
+  ref: GroupRef,
+  referencedAuthoritySessions: ReadonlyMap<string, ReferencedAuthoritySession>,
+): void {
   read.authorityPresenceSessionEntries.forEach((entry, index) => {
     const expected = referencedAuthoritySessions.get(entry.value.sessionId);
     if (
@@ -242,6 +275,13 @@ export function validateGroupMutationRead(
       throw new TypeError('Authority presence session differs from stored entry');
     }
   });
+}
+
+function validateSummaryAndIdempotencyReads(
+  read: GroupMutationRead,
+  command: GroupMutationCommand,
+  ref: GroupRef,
+): void {
   if (read.presenceSummary) {
     validateRuntimeEntryValue(
       read.presenceSummary,
@@ -308,13 +348,21 @@ export function validateRuntimeEntryValue<T>(
   }
 }
 
-export function validateMemberReadPair(
-  member: GroupMember | null,
-  stored: RuntimeStateEntryValue<GroupMember> | null,
-  ref: GroupRef,
-  expectedPrincipalId: string | null,
-  label: string,
-): void {
+interface ValidateMemberReadPairInput {
+  readonly member: GroupMember | null;
+  readonly stored: RuntimeStateEntryValue<GroupMember> | null;
+  readonly ref: GroupRef;
+  readonly expectedPrincipalId: string | null;
+  readonly label: string;
+}
+
+export function validateMemberReadPair({
+  member,
+  stored,
+  ref,
+  expectedPrincipalId,
+  label,
+}: ValidateMemberReadPairInput): void {
   if ((member === null) !== (stored === null)) {
     throw new TypeError(`${label} differs from stored entry presence`);
   }
@@ -331,18 +379,4 @@ export function validateMemberReadPair(
   if (!jsonEquals(member, stored.value)) {
     throw new TypeError(`${label} differs from stored entry value`);
   }
-}
-
-export function mutationTargetPrincipalId(command: GroupMutationCommand): string | null {
-  if ('targetPrincipalId' in command) return command.targetPrincipalId;
-  if (command.operation === 'connectPresence') return command.input.principalId;
-  if (command.operation === 'heartbeatPresence' || command.operation === 'disconnectPresence') {
-    return command.input.principalId ?? command.input.actorPrincipalId;
-  }
-  return command.input.actorPrincipalId;
-}
-
-export function mutationTargetSessionId(command: GroupMutationCommand): string | null {
-  if ('sessionId' in command) return command.sessionId;
-  return command.operation === 'appointDirector' ? command.input.actorSessionId : null;
 }

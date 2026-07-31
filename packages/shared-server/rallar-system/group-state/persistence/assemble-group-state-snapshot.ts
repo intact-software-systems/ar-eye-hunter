@@ -1,12 +1,12 @@
 import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-state-validation.ts';
 import { toGroupSnapshotStateRevision } from '@shared/api/group-client-views.ts';
 import type {
-    Group,
-    GroupMember,
-    GroupPresenceSession,
-    GroupPresenceSummary,
-    GroupRef,
-    GroupSnapshot,
+  Group,
+  GroupMember,
+  GroupPresenceSession,
+  GroupPresenceSummary,
+  GroupRef,
+  GroupSnapshot,
 } from '@shared/api/group-types.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/RuntimeStateJsonStore.ts';
 import { isLogicallyActiveSession } from '../../repositories/session-expiry.ts';
@@ -61,7 +61,8 @@ export function assembleGroupStateSnapshot(
   invariantError: (storageKey: string, message: string) => Error,
 ): GroupSnapshot {
   const activeMemberIds = new Set(
-    input.members.filter((member) => member.status === 'active')
+    input.members
+      .filter((member) => member.status === 'active')
       .map((member) => member.principalId),
   );
   const activeSessions = readActiveSessions(input, activeMemberIds);
@@ -70,12 +71,8 @@ export function assembleGroupStateSnapshot(
     groupRevision: input.groupRevision,
     presenceRevision,
   };
-  const activePrincipals = new Set(
-    activeSessions.map((session) => session.principalId),
-  );
-  const activeMembers = input.members.filter(
-    (member) => member.status === 'active',
-  );
+  const activePrincipals = new Set(activeSessions.map((session) => session.principalId));
+  const activeMembers = input.members.filter((member) => member.status === 'active');
   const invariantContext = {
     storageKey: groupStateGroupStorageKey(input.group),
     invariantError,
@@ -91,9 +88,8 @@ export function assembleGroupStateSnapshot(
     members: input.members,
     activeSessions,
     memberCount: activeMembers.length,
-    onlineMemberCount: activeMembers.filter((member) =>
-      activePrincipals.has(member.principalId)
-    ).length,
+    onlineMemberCount: activeMembers.filter((member) => activePrincipals.has(member.principalId))
+      .length,
   };
   assertValidSnapshot(snapshot, input.group, invariantContext);
   return snapshot;
@@ -103,29 +99,26 @@ function readActiveSessions(
   input: GroupStateSnapshotAssemblyInput,
   activeMemberIds: ReadonlySet<string>,
 ): readonly GroupPresenceSession[] {
-  const groupAllowsLivePresence = input.group.status === 'active' &&
+  const groupAllowsLivePresence =
+    input.group.status === 'active' &&
     (input.group.expiresAtEpochMs === null ||
       input.group.expiresAtEpochMs > input.observedAtEpochMs);
   if (!groupAllowsLivePresence) return [];
   const authoritativeSessionsById = new Map(
     input.authoritativeSessions.map((session) => [session.sessionId, session]),
   );
-  return toActiveSessions(
-    input.summary?.activeSessions ?? [],
-    input.observedAtEpochMs,
-  )
+  return toActiveSessions(input.summary?.activeSessions ?? [], input.observedAtEpochMs)
     .filter((session) => activeMemberIds.has(session.principalId))
     .filter((session) => {
       const authoritative = authoritativeSessionsById.get(session.sessionId);
-      return authoritative !== undefined &&
+      return (
+        authoritative !== undefined &&
         authoritative.principalId === session.principalId &&
         authoritative.generationId === session.generationId &&
         authoritative.generationVersion === session.generationVersion &&
         authoritative.disconnectedAtEpochMs === null &&
-        isLogicallyActiveSession(
-          authoritative.expiresAtEpochMs,
-          input.observedAtEpochMs,
-        );
+        isLogicallyActiveSession(authoritative.expiresAtEpochMs, input.observedAtEpochMs)
+      );
     });
 }
 
@@ -137,8 +130,7 @@ function assertStoredRoster(
   const activeOwners = activeMembers.filter((member) => member.role === 'owner');
   if (
     input.group.activeMemberCount !== activeMembers.length ||
-    (input.group.maxMembers !== null &&
-      activeMembers.length > input.group.maxMembers) ||
+    (input.group.maxMembers !== null && activeMembers.length > input.group.maxMembers) ||
     activeOwners.length !== 1 ||
     activeOwners[0]?.principalId !== input.group.ownerPrincipalId
   ) {
@@ -168,8 +160,9 @@ function toActiveSessions(
   sessions: readonly GroupPresenceSession[],
   observedAtEpochMs: number,
 ): readonly GroupPresenceSession[] {
-  return sessions.filter((session) =>
-    session.disconnectedAtEpochMs === null &&
-    isLogicallyActiveSession(session.expiresAtEpochMs, observedAtEpochMs)
+  return sessions.filter(
+    (session) =>
+      session.disconnectedAtEpochMs === null &&
+      isLogicallyActiveSession(session.expiresAtEpochMs, observedAtEpochMs),
   );
 }

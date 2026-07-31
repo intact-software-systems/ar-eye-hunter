@@ -10,7 +10,10 @@ import {
   validateRuntimeStateGuardedBatch,
   validateRuntimeStateGuardedBatchResult,
 } from '@shared-server/runtime-state/RuntimeStateGuardedBatch.ts';
-import type { RuntimeStateEntry, RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+import type {
+  RuntimeStateEntry,
+  RuntimeStateOptimisticTransactionalRepositoryLike,
+} from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import { InMemoryGroupStateEventStore } from '@shared-server/rallar-system/repositories/StateEventStore.ts';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
 
@@ -24,7 +27,11 @@ export function storagePart(name: string, value?: string): string {
 }
 
 export function groupStorageKey(): string {
-  return [storagePart('app', 'app-1'), storagePart('ws', 'workspace-1'), storagePart('group', 'pure-room')].join(':');
+  return [
+    storagePart('app', 'app-1'),
+    storagePart('ws', 'workspace-1'),
+    storagePart('group', 'pure-room'),
+  ].join(':');
 }
 
 export function groupMemberStorageKey(principalId: string): string {
@@ -48,7 +55,11 @@ export function storedEntry<T>(key: string, value: T) {
   };
 }
 
-export function presenceFor(principalId: string, sessionId: string, generationId: string): GroupPresenceSession {
+export function presenceFor(
+  principalId: string,
+  sessionId: string,
+  generationId: string,
+): GroupPresenceSession {
   return {
     ...groupRef('pure-room'),
     principalId,
@@ -113,17 +124,25 @@ export class ApplyingGuardedBatchRepository extends FakeRuntimeStateRepository {
     return await super.findAllEntries(namespace);
   }
 
-  override async findEntriesByPrefix(namespace: string, keyPrefix: string): Promise<readonly RuntimeStateEntry[]> {
+  override async findEntriesByPrefix(
+    namespace: string,
+    keyPrefix: string,
+  ): Promise<readonly RuntimeStateEntry[]> {
     this.recordRead();
     return await super.findEntriesByPrefix(namespace, keyPrefix);
   }
 
-  override async findEntriesByKeys(namespace: string, keys: readonly string[]): Promise<readonly RuntimeStateEntry[]> {
+  override async findEntriesByKeys(
+    namespace: string,
+    keys: readonly string[],
+  ): Promise<readonly RuntimeStateEntry[]> {
     this.recordRead();
     return await super.findEntriesByKeys(namespace, keys);
   }
 
-  override async begin<T>(fn: (repository: RuntimeStateOptimisticTransactionalRepositoryLike) => Promise<T>): Promise<T> {
+  override async begin<T>(
+    fn: (repository: RuntimeStateOptimisticTransactionalRepositoryLike) => Promise<T>,
+  ): Promise<T> {
     this.beginCount += 1;
     const result = await super.begin(async () => {
       this.transactionDepth += 1;
@@ -137,7 +156,9 @@ export class ApplyingGuardedBatchRepository extends FakeRuntimeStateRepository {
     return result;
   }
 
-  async executeGuardedBatch(input: RuntimeStateGuardedBatch): Promise<RuntimeStateGuardedBatchResult> {
+  async executeGuardedBatch(
+    input: RuntimeStateGuardedBatch,
+  ): Promise<RuntimeStateGuardedBatchResult> {
     if (!this.runtimeStateGuardedBatchCapability) {
       throw new Error('Guarded batch requires an active transaction');
     }
@@ -145,7 +166,9 @@ export class ApplyingGuardedBatchRepository extends FakeRuntimeStateRepository {
     this.batches.push(batch);
     this.readCountsBeforeBatch.push(this.outsideTransactionReadCount);
     this.transactionOrder.push('batch');
-    const guard = this.consume(this.forcedConflicts, 'guard') ? forcedGuardConflict(batch.guard) : await applyGuard(this, batch.guard);
+    const guard = this.consume(this.forcedConflicts, 'guard')
+      ? forcedGuardConflict(batch.guard)
+      : await applyGuard(this, batch.guard);
     if (guard.status === 'conflict') {
       return validateRuntimeStateGuardedBatchResult(batch, {
         guard,
@@ -162,7 +185,9 @@ export class ApplyingGuardedBatchRepository extends FakeRuntimeStateRepository {
     const effects: RuntimeStateGuardedBatchEffectResult[] = [];
     let omittedResult = false;
     for (const effect of batch.effects) {
-      const result = this.consume(this.forcedConflicts, effect.effectId) ? forcedEffectConflict(effect) : await applyEffect(this, effect);
+      const result = this.consume(this.forcedConflicts, effect.effectId)
+        ? forcedEffectConflict(effect)
+        : await applyEffect(this, effect);
       if (this.consume(this.omittedEffectResults, effect.effectId)) {
         omittedResult = true;
       } else {
@@ -170,7 +195,9 @@ export class ApplyingGuardedBatchRepository extends FakeRuntimeStateRepository {
       }
     }
     const result = { guard, effects };
-    return omittedResult ? (result as RuntimeStateGuardedBatchResult) : validateRuntimeStateGuardedBatchResult(batch, result);
+    return omittedResult
+      ? (result as RuntimeStateGuardedBatchResult)
+      : validateRuntimeStateGuardedBatchResult(batch, result);
   }
 
   private consume(targets: string[], target: string): boolean {
@@ -205,7 +232,9 @@ export class OrderedGroupEventStore extends InMemoryGroupStateEventStore {
   }
 }
 
-function forcedGuardConflict(guard: RuntimeStateGuardedBatchGuard): RuntimeStateGuardedBatchGuardResult {
+function forcedGuardConflict(
+  guard: RuntimeStateGuardedBatchGuard,
+): RuntimeStateGuardedBatchGuardResult {
   return {
     status: 'conflict',
     operation: guard.operation,
@@ -215,7 +244,9 @@ function forcedGuardConflict(guard: RuntimeStateGuardedBatchGuard): RuntimeState
   };
 }
 
-function forcedEffectConflict(effect: RuntimeStateGuardedBatchEffect): RuntimeStateGuardedBatchEffectResult {
+function forcedEffectConflict(
+  effect: RuntimeStateGuardedBatchEffect,
+): RuntimeStateGuardedBatchEffectResult {
   if (effect.operation === 'put') {
     throw new Error('Guarded batch put effects cannot conflict');
   }
@@ -229,12 +260,26 @@ function forcedEffectConflict(effect: RuntimeStateGuardedBatchEffect): RuntimeSt
   };
 }
 
-async function applyGuard(repository: FakeRuntimeStateRepository, guard: RuntimeStateGuardedBatchGuard): Promise<RuntimeStateGuardedBatchGuardResult> {
+async function applyGuard(
+  repository: FakeRuntimeStateRepository,
+  guard: RuntimeStateGuardedBatchGuard,
+): Promise<RuntimeStateGuardedBatchGuardResult> {
   const result =
     guard.operation === 'insert'
-      ? await repository.insertIfAbsent(guard.namespace, guard.key, guard.value, guard.expireAtTimestamp)
+      ? await repository.insertIfAbsent(
+          guard.namespace,
+          guard.key,
+          guard.value,
+          guard.expireAtTimestamp,
+        )
       : guard.operation === 'update'
-        ? await repository.upsertIfRevision(guard.namespace, guard.key, guard.value, guard.expireAtTimestamp, guard.expectedRevision)
+        ? await repository.upsertIfRevision(
+            guard.namespace,
+            guard.key,
+            guard.value,
+            guard.expireAtTimestamp,
+            guard.expectedRevision,
+          )
         : await repository.deleteIfRevision(guard.namespace, guard.key, guard.expectedRevision);
   if (result.status === 'conflict') {
     return forcedGuardConflict(guard);
@@ -260,7 +305,10 @@ async function applyGuard(repository: FakeRuntimeStateRepository, guard: Runtime
   };
 }
 
-async function applyEffect(repository: FakeRuntimeStateRepository, effect: RuntimeStateGuardedBatchEffect): Promise<RuntimeStateGuardedBatchEffectResult> {
+async function applyEffect(
+  repository: FakeRuntimeStateRepository,
+  effect: RuntimeStateGuardedBatchEffect,
+): Promise<RuntimeStateGuardedBatchEffectResult> {
   if (effect.operation === 'put') {
     await repository.upsert(effect.namespace, effect.key, effect.value, effect.expireAtTimestamp);
     const stored = await repository.findEntry(effect.namespace, effect.key);
@@ -271,9 +319,20 @@ async function applyEffect(repository: FakeRuntimeStateRepository, effect: Runti
   }
   const result =
     effect.operation === 'insert'
-      ? await repository.insertIfAbsent(effect.namespace, effect.key, effect.value, effect.expireAtTimestamp)
+      ? await repository.insertIfAbsent(
+          effect.namespace,
+          effect.key,
+          effect.value,
+          effect.expireAtTimestamp,
+        )
       : effect.operation === 'update'
-        ? await repository.upsertIfRevision(effect.namespace, effect.key, effect.value, effect.expireAtTimestamp, effect.expectedRevision)
+        ? await repository.upsertIfRevision(
+            effect.namespace,
+            effect.key,
+            effect.value,
+            effect.expireAtTimestamp,
+            effect.expectedRevision,
+          )
         : await repository.deleteIfRevision(effect.namespace, effect.key, effect.expectedRevision);
   if (result.status === 'conflict') {
     return forcedEffectConflict(effect);
@@ -301,7 +360,10 @@ async function applyEffect(repository: FakeRuntimeStateRepository, effect: Runti
   };
 }
 
-function appliedPutResult(effect: Extract<RuntimeStateGuardedBatchEffect, { operation: 'put' }>, stored: RuntimeStateEntry): RuntimeStateGuardedBatchEffectResult {
+function appliedPutResult(
+  effect: Extract<RuntimeStateGuardedBatchEffect, { operation: 'put' }>,
+  stored: RuntimeStateEntry,
+): RuntimeStateGuardedBatchEffectResult {
   return {
     status: 'applied',
     effectId: effect.effectId,

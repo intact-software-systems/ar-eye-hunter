@@ -5,11 +5,19 @@ import {
 } from '@shared/api/admin-operations-types.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import { TryWithExhaustedError, TryWithPolicy, tryWithPolicy } from '@shared/resilience/TryWith.ts';
+// prettier-ignore
+import {
+  TryWithExhaustedError,
+  TryWithPolicy,
+  tryWithPolicy,
+} from '@shared/resilience/TryWith.ts';
 import type { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import type { PSqlSql } from '../../postgres/PostgresSqlClient.ts';
 import { ResourceInboxRepository } from '../../postgres/resource-inbox/ResourceInboxRepository.ts';
-import { ResourceInboxResultsRepository } from '../../postgres/resource-inbox/ResourceInboxResultsRepository.ts';
+// prettier-ignore
+import {
+  ResourceInboxResultsRepository,
+} from '../../postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import {
   type AdminPruneAppData,
   type AdminPruneCommand,
@@ -237,26 +245,7 @@ export class AppAdminInboxService extends AppInboxService {
       deletedRows: 0,
       dryRun: command.dryRun,
     }));
-    const outboxEntries = command.dryRun
-      ? []
-      : command.categories.map((category) =>
-          toAdminPruneOutbox(
-            {
-              kind: 'page',
-              jobId: command.jobId,
-              category,
-              requestedBy: command.requestedBy,
-              requestedSessionId: command.requestedSessionId,
-              capturedAtEpochMs: command.capturedAtEpochMs,
-              expireAtEpochMs: command.expireAtEpochMs,
-              pageSize: command.pageSize,
-              afterCursor: null,
-              pageIndex: 0,
-              appData: command.appData,
-            },
-            this.serviceId,
-          ),
-        );
+    const outboxEntries = createInitialAdminPrunePages(command, this.serviceId);
     return {
       outboxEntries,
       aggregateEntry: command.dryRun
@@ -321,6 +310,31 @@ export class AppAdminInboxService extends AppInboxService {
       throw error;
     }
   }
+}
+
+function createInitialAdminPrunePages(
+  command: AdminPruneCommand,
+  serviceId: string,
+): readonly ResourceEntry[] {
+  if (command.dryRun) return [];
+  return command.categories.map((category) =>
+    toAdminPruneOutbox(
+      {
+        kind: 'page',
+        jobId: command.jobId,
+        category,
+        requestedBy: command.requestedBy,
+        requestedSessionId: command.requestedSessionId,
+        capturedAtEpochMs: command.capturedAtEpochMs,
+        expireAtEpochMs: command.expireAtEpochMs,
+        pageSize: command.pageSize,
+        afterCursor: null,
+        pageIndex: 0,
+        appData: command.appData,
+      },
+      serviceId,
+    ),
+  );
 }
 
 function requireRecord(value: unknown): Record<string, unknown> {

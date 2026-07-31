@@ -171,7 +171,12 @@ function createStoredMutationGroup(audit: AuditStamp) {
   return storedEntry(groupStorageKey(), group);
 }
 
-function createMutationActor(audit: AuditStamp) {
+interface MutationActorFixture {
+  readonly member: GroupMember;
+  readonly entry: ReturnType<typeof storedEntry<GroupMember>>;
+}
+
+function createMutationActor(audit: AuditStamp): MutationActorFixture {
   const member = {
     ...groupRef('pure-room'),
     principalId: 'alice',

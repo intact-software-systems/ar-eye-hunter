@@ -22,7 +22,13 @@ describe('GroupStateService guarded batch convergence', () => {
     const runtime = new ApplyingGuardedBatchRepository();
     runtime.serializeTransactions = true;
     const eventStore = new OrderedGroupEventStore(runtime);
-    const seed = createService(runtime, eventStore, BASE_EPOCH_MS, vi.fn(), 'seed');
+    const seed = createService({
+      runtime,
+      eventStore,
+      nowEpochMs: BASE_EPOCH_MS,
+      sleep: vi.fn(),
+      instanceId: 'seed',
+    });
     const groupId = 'independent-group-convergence';
     await seed.createGroup(SCOPE, {
       groupId,
@@ -36,8 +42,20 @@ describe('GroupStateService guarded batch convergence', () => {
     const sleep = vi.fn(async () => {
       expect(runtime.activeTransactionDepth).toBe(0);
     });
-    const first = createService(runtime, eventStore, BASE_EPOCH_MS + 1_000, sleep, 'first');
-    const second = createService(runtime, eventStore, BASE_EPOCH_MS + 1_001, sleep, 'second');
+    const first = createService({
+      runtime,
+      eventStore,
+      nowEpochMs: BASE_EPOCH_MS + 1_000,
+      sleep,
+      instanceId: 'first',
+    });
+    const second = createService({
+      runtime,
+      eventStore,
+      nowEpochMs: BASE_EPOCH_MS + 1_001,
+      sleep,
+      instanceId: 'second',
+    });
     blockFirstReadsTogether(
       runtime,
       'group-state:groups',
@@ -84,7 +102,13 @@ describe('GroupStateService guarded batch convergence', () => {
     runtime.serializeTransactions = true;
     const eventStore = new OrderedGroupEventStore(runtime);
     const groupId = 'independent-presence-convergence';
-    const seed = createService(runtime, eventStore, BASE_EPOCH_MS, vi.fn(), 'seed');
+    const seed = createService({
+      runtime,
+      eventStore,
+      nowEpochMs: BASE_EPOCH_MS,
+      sleep: vi.fn(),
+      instanceId: 'seed',
+    });
     await seed.createGroup(SCOPE, {
       groupId,
       displayName: 'Independent presence convergence',
@@ -98,8 +122,20 @@ describe('GroupStateService guarded batch convergence', () => {
     const sleep = vi.fn(async () => {
       expect(runtime.activeTransactionDepth).toBe(0);
     });
-    const first = createService(runtime, eventStore, BASE_EPOCH_MS + 1_000, sleep, 'first');
-    const second = createService(runtime, eventStore, BASE_EPOCH_MS + 1_001, sleep, 'second');
+    const first = createService({
+      runtime,
+      eventStore,
+      nowEpochMs: BASE_EPOCH_MS + 1_000,
+      sleep,
+      instanceId: 'first',
+    });
+    const second = createService({
+      runtime,
+      eventStore,
+      nowEpochMs: BASE_EPOCH_MS + 1_001,
+      sleep,
+      instanceId: 'second',
+    });
     const ref = { ...SCOPE, groupId };
     blockFirstReadsTogether(
       runtime,
@@ -144,13 +180,21 @@ describe('GroupStateService guarded batch convergence', () => {
   });
 });
 
-function createService(
-  runtime: ApplyingGuardedBatchRepository,
-  eventStore: OrderedGroupEventStore,
-  nowEpochMs: number,
-  sleep: (delayMs: number) => Promise<void>,
-  instanceId: string,
-) {
+interface ConvergenceServiceInput {
+  readonly runtime: ApplyingGuardedBatchRepository;
+  readonly eventStore: OrderedGroupEventStore;
+  readonly nowEpochMs: number;
+  readonly sleep: (delayMs: number) => Promise<void>;
+  readonly instanceId: string;
+}
+
+function createService({
+  runtime,
+  eventStore,
+  nowEpochMs,
+  sleep,
+  instanceId,
+}: ConvergenceServiceInput) {
   let generatedId = 0;
   return createTestGroupStateService({
     runtimeRepository: runtime,

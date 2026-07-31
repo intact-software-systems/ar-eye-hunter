@@ -56,9 +56,7 @@ export class GroupStateRepositoryReads extends GroupStateSnapshotRepository {
         group: (entry) => canonicalStoredGroup(entry, input.aggregateRef),
         presenceSummary: (entry) => canonicalStoredSummary(entry, input.aggregateRef),
         idempotency: (requestId, entry) => {
-          const stored = entry as RuntimeStateEntryValue<
-            GroupMutationIdempotencyRecord
-          >;
+          const stored = entry as RuntimeStateEntryValue<GroupMutationIdempotencyRecord>;
           assertStoredIdempotency(stored, { ...input.aggregateRef, requestId });
           return stored;
         },
@@ -85,8 +83,7 @@ export class GroupStateRepositoryReads extends GroupStateSnapshotRepository {
     ref: GroupRef,
     requestId: string,
   ): Promise<GroupMutationIdempotencyRecord | undefined> {
-    return (await this.findIdempotentGroupMutationReceiptEntry(ref, requestId))
-      ?.value;
+    return (await this.findIdempotentGroupMutationReceiptEntry(ref, requestId))?.value;
   }
 
   async findIdempotentGroupMutationReceiptEntry(
@@ -103,9 +100,7 @@ export class GroupStateRepositoryReads extends GroupStateSnapshotRepository {
     return stored;
   }
 
-  override async findGroupEntry(
-    ref: GroupRef,
-  ): Promise<RuntimeStateEntryValue<Group> | undefined> {
+  override async findGroupEntry(ref: GroupRef): Promise<RuntimeStateEntryValue<Group> | undefined> {
     return (await this.readGroupEntry(ref)).value;
   }
 
@@ -127,27 +122,22 @@ export class GroupStateRepositoryReads extends GroupStateSnapshotRepository {
   async readStateRevision(ref: GroupRef): Promise<number | undefined> {
     const causalRevision = await this.readCausalRevision(ref);
     return causalRevision
-      ? toGroupSnapshotStateRevision(
-        causalRevision.groupRevision,
-        causalRevision.presenceRevision,
-      )
+      ? toGroupSnapshotStateRevision(causalRevision.groupRevision, causalRevision.presenceRevision)
       : undefined;
   }
 
   async readCausalRevision(
     ref: GroupRef,
-  ): Promise<
-    import('@shared/api/group-types.ts').GroupStateCausalRevision | undefined
-  > {
+  ): Promise<import('@shared/api/group-types.ts').GroupStateCausalRevision | undefined> {
     const [stored, summary] = await Promise.all([
       this.findGroupEntry(ref),
       this.findPresenceSummaryEntry(ref),
     ]);
     return stored
       ? {
-        groupRevision: stored.value.snapshotVersion,
-        presenceRevision: summary?.value.causalRevision.presenceRevision ?? 0,
-      }
+          groupRevision: stored.value.snapshotVersion,
+          presenceRevision: summary?.value.causalRevision.presenceRevision ?? 0,
+        }
       : undefined;
   }
 
@@ -159,10 +149,7 @@ export class GroupStateRepositoryReads extends GroupStateSnapshotRepository {
     return stored.map((entry) => canonicalStoredGroup(entry, scope).value);
   }
 
-  async findGroupBySlug(
-    scope: GroupScope,
-    slug: string,
-  ): Promise<Group | undefined> {
+  async findGroupBySlug(scope: GroupScope, slug: string): Promise<Group | undefined> {
     return (await this.listGroups(scope)).find((group) => group.slug === slug);
   }
 
@@ -186,9 +173,7 @@ export class GroupStateRepositoryReads extends GroupStateSnapshotRepository {
     return (await this.listMemberEntries(ref)).map(({ value }) => value);
   }
 
-  async listMemberEntries(
-    ref: GroupRef,
-  ): Promise<readonly RuntimeStateEntryValue<GroupMember>[]> {
+  async listMemberEntries(ref: GroupRef): Promise<readonly RuntimeStateEntryValue<GroupMember>[]> {
     const stored = await this.listEntryValues<unknown>(
       MEMBERS_NAMESPACE,
       `${groupStateGroupStorageKey(ref)}:`,
@@ -221,11 +206,8 @@ export class GroupStateRepositoryReads extends GroupStateSnapshotRepository {
     return (await this.findPresenceEntry(ref))?.value;
   }
 
-  override async listPresenceSessions(
-    ref: GroupRef,
-  ): Promise<readonly GroupPresenceSession[]> {
-    return (await this.listPresenceSessionEntries(ref))
-      .map(({ value }) => value);
+  override async listPresenceSessions(ref: GroupRef): Promise<readonly GroupPresenceSession[]> {
+    return (await this.listPresenceSessionEntries(ref)).map(({ value }) => value);
   }
 
   async listPresenceSessionEntries(
@@ -248,11 +230,8 @@ export class GroupStateRepositoryReads extends GroupStateSnapshotRepository {
     return stored ? canonicalStoredAdmission(stored, ref) : undefined;
   }
 
-  async listPresenceAdmissions(
-    ref: GroupRef,
-  ): Promise<readonly GroupPresenceAdmission[]> {
-    return (await this.listPresenceAdmissionEntries(ref))
-      .map(({ value }) => value);
+  async listPresenceAdmissions(ref: GroupRef): Promise<readonly GroupPresenceAdmission[]> {
+    return (await this.listPresenceAdmissionEntries(ref)).map(({ value }) => value);
   }
 
   async listPresenceAdmissionEntries(

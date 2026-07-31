@@ -1,4 +1,7 @@
-import { fromCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
+// prettier-ignore
+import {
+  fromCanonicalGroupTopologyConfigPatch,
+} from '@shared/api/group-topology-config-canonical.ts';
 
 import type { PSqlTransactionSql } from '../../../postgres/PostgresSqlClient.ts';
 import type { IssuedAuthSession } from '../../repositories/auth-session-types.ts';

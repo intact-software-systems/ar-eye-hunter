@@ -3,10 +3,7 @@ import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvid
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state-storage-keys.ts';
 import { materializeGroupStateGuardedBatch } from '@shared-server/rallar-system/group-state/mutation/write-group-state-mutation.ts';
 import { mutationDescriptor } from '@shared-server/rallar-system/services/group-state-service.ts';
-import {
-  createTestAuthSession,
-  createTestGroupStateRuntime,
-} from '../group-state-test-runtime.ts';
+import { createTestAuthSession, createTestGroupStateRuntime } from '../group-state-test-runtime.ts';
 import {
   ApplyingGuardedBatchRepository,
   OrderedGroupEventStore,

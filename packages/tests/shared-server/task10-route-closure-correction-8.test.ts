@@ -10,8 +10,8 @@ import {
 const FIXTURES = 'packages/tests/shared-server/fixtures/mutation-boundary-capability-receivers';
 const GROUP_OWNER = 'packages/shared-server/rallar-system/services/AppGroupInboxService.ts';
 const LIVE_GROUP_COLLECTION = `GROUP_MUTATION_INBOX_TYPES.filter(
-            (candidate) => candidate !== AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP,
-        )`;
+      (candidate) => candidate !== AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP,
+    )`;
 const UNKNOWN_TYPES = 'function unknownTypes(): readonly AppInboxType[] { return []; }';
 
 describe('Task 10 route-closure correction 8 contracts', () => {

@@ -22,39 +22,37 @@ import {
   validatePersistedGroupPresenceSummary,
 } from './validate-persisted-group-presence.ts';
 
+const PERSISTED_GROUP_KEYS = [
+  'applicationId',
+  'workspaceId',
+  'groupId',
+  'slug',
+  'displayName',
+  'description',
+  'kind',
+  'status',
+  'joinMode',
+  'maxMembers',
+  'maxSessionsPerMember',
+  'metadata',
+  'activeMemberCount',
+  'ownerPrincipalId',
+  'snapshotVersion',
+  'metadataVersion',
+  'rosterVersion',
+  'presenceVersion',
+  'created',
+  'updated',
+  'archived',
+  'deleted',
+  'expiresAtEpochMs',
+  'emptySinceEpochMs',
+  'purgeAfterEpochMs',
+] as const;
+
 export function normalizePersistedGroup(value: unknown, ref: GroupRef): Group {
   const legacy = requireRecord(value, 'Stored group value');
-  assertExactKeys(
-    legacy,
-    [
-      'applicationId',
-      'workspaceId',
-      'groupId',
-      'slug',
-      'displayName',
-      'description',
-      'kind',
-      'status',
-      'joinMode',
-      'maxMembers',
-      'maxSessionsPerMember',
-      'metadata',
-      'activeMemberCount',
-      'ownerPrincipalId',
-      'snapshotVersion',
-      'metadataVersion',
-      'rosterVersion',
-      'presenceVersion',
-      'created',
-      'updated',
-      'archived',
-      'deleted',
-      'expiresAtEpochMs',
-      'emptySinceEpochMs',
-      'purgeAfterEpochMs',
-    ],
-    'Stored group value',
-  );
+  assertExactKeys(legacy, PERSISTED_GROUP_KEYS, 'Stored group value');
   const canonical: unknown = {
     applicationId: legacy.applicationId,
     workspaceId: persistedOrDefault(legacy, 'workspaceId', ref.workspaceId),

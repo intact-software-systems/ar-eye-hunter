@@ -53,6 +53,15 @@ export interface MutationRouteValidationOptions {
   readonly sourceOverrides?: ReadonlyMap<string, string>;
 }
 
+interface AstMarkerCheckInput {
+  readonly issues: string[];
+  readonly filePath: string;
+  readonly marker: string;
+  readonly label: string;
+  readonly item: MutationRouteInventoryEntry;
+  readonly sources: SourceReader;
+}
+
 export function validateMutationRouteInventory(
   inventory: readonly MutationRouteInventoryEntry[],
   options: MutationRouteValidationOptions = {},
@@ -90,15 +99,22 @@ export function validateMutationRouteInventory(
       if (item[field] !== canonical[field]) issues.push(`${key(item)} has incorrect ${field}`);
     }
     checkRegistration(issues, item, sources);
-    checkAstMarker(issues, item.enqueueSourcePath, item.enqueueMarker, 'enqueue', item, sources);
-    checkAstMarker(
+    checkAstMarker({
       issues,
-      item.typeOwnerSourcePath,
-      `AppInboxType.${item.type}`,
-      'type ownership',
+      filePath: item.enqueueSourcePath,
+      marker: item.enqueueMarker,
+      label: 'enqueue',
       item,
       sources,
-    );
+    });
+    checkAstMarker({
+      issues,
+      filePath: item.typeOwnerSourcePath,
+      marker: `AppInboxType.${item.type}`,
+      label: 'type ownership',
+      item,
+      sources,
+    });
     checkOwnerMethod(issues, item, sources);
     checkRegisteredHandlerCallChain(issues, item, sources);
   }
@@ -175,26 +191,32 @@ function checkRegistration(
   sources: SourceReader,
 ): void {
   if (item.transport !== 'HTTP') {
-    checkAstMarker(issues, item.sourcePath, item.registrationMarker, 'registration', item, sources);
+    checkAstMarker({
+      issues,
+      filePath: item.sourcePath,
+      marker: item.registrationMarker,
+      label: 'registration',
+      item,
+      sources,
+    });
     return;
   }
-  const [method, rawPath] = item.entrypoint.split(' ');
-  const routePath = rawPath;
+  const [method, routePath] = item.entrypoint.split(' ');
   const program = sources.readProgram(issues, item.sourcePath, 'registration', item);
   if (!program) return;
-  if (!hasRouteRegistration(program, method.toLowerCase(), routePath)) {
+  if (findRouteRegistration(program, method.toLowerCase(), routePath) === undefined) {
     issues.push(`${key(item)} registration is absent from ${item.sourcePath}`);
   }
 }
 
-function checkAstMarker(
-  issues: string[],
-  filePath: string,
-  marker: string,
-  label: string,
-  item: MutationRouteInventoryEntry,
-  sources: SourceReader,
-): void {
+function checkAstMarker({
+  issues,
+  filePath,
+  marker,
+  label,
+  item,
+  sources,
+}: AstMarkerCheckInput): void {
   const program = sources.readProgram(issues, filePath, label, item);
   if (program && !hasExactMarker(program, marker)) {
     issues.push(`${key(item)} ${label} marker is absent from ${filePath}`);
@@ -256,21 +278,17 @@ function checkRegisteredHandlerCallChain(
   const dispatch = sources.readProgram(issues, item.dispatchSourcePath, 'owner dispatch', item);
   if (!source || !enqueue || !owner || !dispatch) return;
   issues.push(
-    ...findMutationRouteReachabilityIssues(
+    ...findMutationRouteReachabilityIssues({
       item,
       source,
-      enqueue,
-      owner,
-      dispatch,
-      hasExactMarker,
-      hasDirectExactMarker,
-      (filePath) => sources.readProgram(issues, filePath, 'owner dependency', item),
-    ),
+      enqueueSource: enqueue,
+      ownerSource: owner,
+      dispatchSource: dispatch,
+      containsMarker: hasExactMarker,
+      matchesMarker: hasDirectExactMarker,
+      loadProgram: (filePath) => sources.readProgram(issues, filePath, 'owner dependency', item),
+    }),
   );
-}
-
-function hasRouteRegistration(program: AstNode, method: string, routePath: string): boolean {
-  return findRouteRegistration(program, method, routePath) !== undefined;
 }
 
 function hasExactMarker(program: AstNode, marker: string): boolean {

@@ -1,6 +1,7 @@
+// prettier-ignore
 export type {
   GroupPresenceSessionCleanupAppInboxPayload,
-} from '../group-state/presence/group-presence-contracts.ts';
+} from '../group-state/presence/group-presence-session-cleanup-app-inbox-payload.ts';
 export {
   processGroupPresenceConnect,
   processGroupSessionCleanup,

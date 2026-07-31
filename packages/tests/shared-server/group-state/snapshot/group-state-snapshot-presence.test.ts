@@ -56,7 +56,11 @@ describe('group snapshot presence', () => {
           summary.entry.revision,
         ),
       ).toMatchObject({ status: 'applied' });
-      const lifecycleAudit = auditStamp(observedAtEpochMs - 1_000, 'alice', `lifecycle-${testCase.groupId}`);
+      const lifecycleAudit = auditStamp(
+        observedAtEpochMs - 1_000,
+        'alice',
+        `lifecycle-${testCase.groupId}`,
+      );
       const group: Group =
         testCase.status === 'archived'
           ? {
@@ -90,9 +94,9 @@ describe('group snapshot presence', () => {
       ).toMatchObject({ status: 'applied' });
       expectedPresenceRevisions.set(testCase.groupId, presenceRevision);
     }
-    const direct = (await Promise.all(cases.map(({ groupId }) => repository.readSnapshot(groupRef(groupId))))).filter(
-      (snapshot): snapshot is NonNullable<typeof snapshot> => snapshot !== undefined,
-    );
+    const direct = (
+      await Promise.all(cases.map(({ groupId }) => repository.readSnapshot(groupRef(groupId))))
+    ).filter((snapshot): snapshot is NonNullable<typeof snapshot> => snapshot !== undefined);
     const listed = await repository.listSnapshots(SCOPE);
     const paged = (await repository.listSnapshotsPage(SCOPE, { limit: 10 })).snapshots;
     for (const snapshots of [direct, listed, paged]) {
@@ -190,7 +194,12 @@ describe('group snapshot presence', () => {
           sessionId: summarizedSession.sessionId,
         });
         if (!stored) throw new Error('Missing session to delete');
-        expect(await repository.deletePresence({ ...ref, sessionId: summarizedSession.sessionId }, stored.entry.revision)).toMatchObject({ status: 'applied' });
+        expect(
+          await repository.deletePresence(
+            { ...ref, sessionId: summarizedSession.sessionId },
+            stored.entry.revision,
+          ),
+        ).toMatchObject({ status: 'applied' });
       } else if (testCase.latest === 'replacement') {
         await repository.putPresenceSession({
           ...summarizedSession,
@@ -203,9 +212,9 @@ describe('group snapshot presence', () => {
       expectedPresenceRevisions.set(testCase.groupId, presenceRevision);
     }
 
-    const direct = (await Promise.all(cases.map(({ groupId }) => repository.readSnapshot(groupRef(groupId))))).filter(
-      (snapshot): snapshot is NonNullable<typeof snapshot> => snapshot !== undefined,
-    );
+    const direct = (
+      await Promise.all(cases.map(({ groupId }) => repository.readSnapshot(groupRef(groupId))))
+    ).filter((snapshot): snapshot is NonNullable<typeof snapshot> => snapshot !== undefined);
     const listed = await repository.listSnapshots(SCOPE);
     const paged = (await repository.listSnapshotsPage(SCOPE, { limit: 10 })).snapshots;
 
@@ -213,7 +222,9 @@ describe('group snapshot presence', () => {
       expect(snapshots).toHaveLength(cases.length);
       for (const snapshot of snapshots) {
         const isCurrent = snapshot.group.groupId === 'snapshot-current-session';
-        expect(snapshot.activeSessions.map((session) => session.sessionId)).toEqual(isCurrent ? [`session-${snapshot.group.groupId}`] : []);
+        expect(snapshot.activeSessions.map((session) => session.sessionId)).toEqual(
+          isCurrent ? [`session-${snapshot.group.groupId}`] : [],
+        );
         expect(snapshot.onlineMemberCount).toBe(isCurrent ? 1 : 0);
         expect(snapshot.causalRevision).toEqual({
           groupRevision: 1,

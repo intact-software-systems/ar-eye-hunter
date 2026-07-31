@@ -31,7 +31,6 @@ import {
 describe('AppGroupInboxService authenticated authority', () => {
   it('exposes transaction-injected mutation phases without direct mutation bypasses', async () => {
     const harness = await createAuthorityHarness(['owner']);
-
     expect(harness.groupStateService).toMatchObject({
       read: expect.any(Function),
       compute: expect.any(Function),

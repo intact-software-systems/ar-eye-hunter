@@ -16,6 +16,7 @@ import {
   requirePositiveSafeInteger,
   requireRecord,
 } from '../group-state-validation-primitives.ts';
+import { validateGroupMutationOperationInput } from './validate-group-mutation-operation-input.ts';
 
 export function validateGroupMutationRequest(
   operation: GroupMutationCommand['operation'],
@@ -32,101 +33,13 @@ export function validateGroupMutationRequest(
       requireNonEmptyString(input[key], `Group ${operation} ${key}`);
     }
   }
-  const optionalString = (key: string) => {
-    if (input[key] !== undefined) {
-      requireNonEmptyString(input[key], `Group ${operation} ${key}`);
-    }
-  };
-  const optionalPositiveInteger = (key: string) => {
-    if (input[key] !== undefined) {
-      requirePositiveSafeInteger(input[key], `Group ${operation} ${key}`);
-    }
-  };
-  switch (operation) {
-    case 'createGroup':
-      requireNonEmptyString(input.groupId, 'Group createGroup groupId');
-      optionalString('slug');
-      requireNonEmptyString(input.displayName, 'Group createGroup displayName');
-      optionalString('description');
-      requireOneOf(input.kind, ['party', 'room', 'team', 'custom'], 'Group kind');
-      if (input.joinMode !== undefined) {
-        requireOneOf(input.joinMode, ['invite-only', 'code', 'open'], 'Group joinMode');
-      }
-      optionalPositiveInteger('maxMembers');
-      optionalPositiveInteger('maxSessionsPerMember');
-      if (input.metadata !== undefined) requireRecord(input.metadata, 'Group metadata');
-      requireNonEmptyString(input.createdByPrincipalId, 'Group createGroup createdByPrincipalId');
-      optionalPositiveInteger('expiresAtEpochMs');
-      optionalPositiveInteger('purgeAfterEpochMs');
-      return;
-    case 'updateGroup':
-      optionalString('slug');
-      optionalString('displayName');
-      optionalString('description');
-      if (input.kind !== undefined)
-        requireOneOf(input.kind, ['party', 'room', 'team', 'custom'], 'Group kind');
-      if (input.status !== undefined)
-        requireOneOf(input.status, ['active', 'archived', 'deleted'], 'Group status');
-      if (input.joinMode !== undefined)
-        requireOneOf(input.joinMode, ['invite-only', 'code', 'open'], 'Group joinMode');
-      optionalPositiveInteger('maxMembers');
-      optionalPositiveInteger('maxSessionsPerMember');
-      if (input.metadata !== undefined) requireRecord(input.metadata, 'Group metadata');
-      optionalPositiveInteger('expiresAtEpochMs');
-      optionalPositiveInteger('emptySinceEpochMs');
-      optionalPositiveInteger('purgeAfterEpochMs');
-      return;
-    case 'appointDirector':
-      optionalPositiveInteger('heartbeatTtlMs');
-      return;
-    case 'joinGroup':
-    case 'acceptGroupInvite':
-      optionalString('inviteToken');
-      optionalString('joinCode');
-      return;
-    case 'createGroupInvite':
-      optionalPositiveInteger('invitationExpiresAtEpochMs');
-      return;
-    case 'setGroupMemberRole':
-      requireOneOf(input.role, ['owner', 'admin', 'member'], 'Group role');
-      return;
-    case 'transferGroupOwnership':
-      requireNonEmptyString(
-        input.newOwnerPrincipalId,
-        'Group transferGroupOwnership newOwnerPrincipalId',
-      );
-      return;
-    case 'upsertMember':
-      if (input.role !== undefined) {
-        requireOneOf(input.role, ['owner', 'admin', 'member'], 'Group role');
-      }
-      requireOneOf(
-        input.status,
-        ['invited', 'active', 'left', 'removed', 'banned'],
-        'Group member status',
-      );
-      optionalString('invitedByPrincipalId');
-      optionalPositiveInteger('invitationExpiresAtEpochMs');
-      return;
-    case 'rotateGroupJoinCode':
-      optionalString('joinCode');
-      optionalPositiveInteger('expiresAtEpochMs');
-      return;
-    case 'connectPresence':
-      validateGroupPresenceMutationRequest('connectPresence', request);
-      return;
-    case 'heartbeatPresence':
-      validateGroupPresenceMutationRequest('heartbeatPresence', request);
-      return;
-    case 'disconnectPresence':
-      validateGroupPresenceMutationRequest('disconnectPresence', request);
-      return;
-    case 'revokeGroupInvite':
-    case 'removeGroupMember':
-    case 'banGroupMember':
-    case 'unbanGroupMember':
-      return;
-  }
+  if (operation === 'connectPresence')
+    return validateGroupPresenceMutationRequest(operation, request);
+  if (operation === 'heartbeatPresence')
+    return validateGroupPresenceMutationRequest(operation, request);
+  if (operation === 'disconnectPresence')
+    return validateGroupPresenceMutationRequest(operation, request);
+  validateGroupMutationOperationInput({ operation, input });
 }
 
 export function validateGroupPresenceMutationRequest(
@@ -194,6 +107,13 @@ export function validateGroupPresenceMutationRequest(
       );
     }
   }
+  validatePresenceTimestampOrder(operation, value);
+}
+
+function validatePresenceTimestampOrder(
+  operation: 'connectPresence' | 'heartbeatPresence' | 'disconnectPresence',
+  value: Record<string, unknown>,
+): void {
   const heartbeatAt = value.lastHeartbeatAtEpochMs as number | undefined;
   const expiresAt = value.expiresAtEpochMs as number | undefined;
   if (heartbeatAt !== undefined && expiresAt !== undefined && expiresAt < heartbeatAt) {

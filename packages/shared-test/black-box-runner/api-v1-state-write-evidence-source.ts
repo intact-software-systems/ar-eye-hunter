@@ -132,36 +132,16 @@ export async function requestPGliteStateWriteEvidenceSnapshot(
       },
     );
     await rename(temporaryRequestPath, requestPath);
-    while (now() <= deadline) {
-      const response = await readSnapshotResponse(responsePath);
-      if (response) {
-        if (
-          response.nonce !== nonce ||
-          response.generation !== generation ||
-          response.requestedAtEpochMs !== requestedAtEpochMs ||
-          response.publishedAtEpochMs <= requestedAtEpochMs
-        ) {
-          throw new Error(
-            'PGlite snapshot publisher returned a stale or mismatched snapshot response.',
-          );
-        }
-        if (response.failure) {
-          throw new Error(`PGlite snapshot publisher failed: ${response.failure}`);
-        }
-        const snapshotFile = `${nonce}.tar`;
-        if (response.snapshotFile !== snapshotFile) {
-          throw new Error(
-            'PGlite snapshot publisher returned an archive other than the exact nonce archive.',
-          );
-        }
-        return {
-          path: join(snapshotDir, 'snapshots', snapshotFile),
-          cleanup: async () => await cleanupSnapshotArtifacts(snapshotDir, nonce),
-        };
-      }
-      await waitForSnapshotPoll();
-    }
-    throw new Error(`Timed out waiting ${timeoutMs}ms for a PGlite evidence snapshot.`);
+    return await waitForPGliteSnapshotResponse({
+      snapshotDir,
+      responsePath,
+      nonce,
+      generation,
+      requestedAtEpochMs,
+      deadline,
+      timeoutMs,
+      now,
+    });
   } catch (error) {
     const operations = options.rejectionOperations ?? {
       publishCancellation: publishSnapshotCancellation,
@@ -183,6 +163,56 @@ export async function requestPGliteStateWriteEvidenceSnapshot(
       );
     }
     throw error;
+  }
+}
+
+interface WaitForPGliteSnapshotResponseInput {
+  readonly snapshotDir: string;
+  readonly responsePath: string;
+  readonly nonce: string;
+  readonly generation: string;
+  readonly requestedAtEpochMs: number;
+  readonly deadline: number;
+  readonly timeoutMs: number;
+  readonly now: () => number;
+}
+
+async function waitForPGliteSnapshotResponse(
+  input: WaitForPGliteSnapshotResponseInput,
+): Promise<Readonly<{ path: string; cleanup(): Promise<void> }>> {
+  while (input.now() <= input.deadline) {
+    const response = await readSnapshotResponse(input.responsePath);
+    if (!response) {
+      await waitForSnapshotPoll();
+      continue;
+    }
+    validateSnapshotResponse(response, input);
+    const snapshotFile = `${input.nonce}.tar`;
+    return {
+      path: join(input.snapshotDir, 'snapshots', snapshotFile),
+      cleanup: async () => await cleanupSnapshotArtifacts(input.snapshotDir, input.nonce),
+    };
+  }
+  throw new Error(`Timed out waiting ${input.timeoutMs}ms for a PGlite evidence snapshot.`);
+}
+
+function validateSnapshotResponse(
+  response: SnapshotResponse,
+  input: WaitForPGliteSnapshotResponseInput,
+): void {
+  if (
+    response.nonce !== input.nonce ||
+    response.generation !== input.generation ||
+    response.requestedAtEpochMs !== input.requestedAtEpochMs ||
+    response.publishedAtEpochMs <= input.requestedAtEpochMs
+  ) {
+    throw new Error('PGlite snapshot publisher returned a stale or mismatched snapshot response.');
+  }
+  if (response.failure) throw new Error(`PGlite snapshot publisher failed: ${response.failure}`);
+  if (response.snapshotFile !== `${input.nonce}.tar`) {
+    throw new Error(
+      'PGlite snapshot publisher returned an archive other than the exact nonce archive.',
+    );
   }
 }
 
@@ -258,14 +288,16 @@ async function runPGliteSnapshotReader(
   return JSON.parse(output) as Record<string, unknown>;
 }
 
+interface PGliteReaderOptions {
+  readonly timeoutMs: number;
+  readonly maxOutputBytes: number;
+  readonly afterClose?: () => void;
+}
+
 export function runBoundedPGliteReaderCommand(
   command: string,
   args: readonly string[],
-  options: Readonly<{
-    timeoutMs: number;
-    maxOutputBytes: number;
-    afterClose?: () => void;
-  }>,
+  options: PGliteReaderOptions,
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -313,15 +345,23 @@ export function runBoundedPGliteReaderCommand(
     child.once('close', (code) => {
       clearTimeout(timeout);
       options.afterClose?.();
-      if (failure) {
-        reject(failure);
-      } else if (code === 0) {
-        resolve(stdout);
+      const closeFailure = toPGliteReaderCloseFailure(code, failure, stderr);
+      if (closeFailure) {
+        reject(closeFailure);
       } else {
-        reject(new Error(`PGlite snapshot reader exited ${code ?? 'without a code'}: ${stderr}`));
+        resolve(stdout);
       }
     });
   });
+}
+
+function toPGliteReaderCloseFailure(
+  code: number | null,
+  failure: Error | undefined,
+  stderr: string,
+): Error | undefined {
+  if (failure || code === 0) return failure;
+  return new Error(`PGlite snapshot reader exited ${code ?? 'without a code'}: ${stderr}`);
 }
 
 function waitForSnapshotPoll(): Promise<void> {

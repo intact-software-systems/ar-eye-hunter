@@ -10,9 +10,11 @@ import type {
 import type { StateEventPage } from '@shared/api/state-event-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import type { PSqlTransactionSql } from '../../../postgres/PostgresSqlClient.ts';
+// prettier-ignore
 import {
   PSqlRuntimeStateRepository,
 } from '../../../postgres/runtime-state/PSqlRuntimeStateRepository.ts';
+// prettier-ignore
 import {
   PSqlGroupStateEventRepository,
 } from '../../../postgres/rallar-system/PSqlStateEventRepository.ts';
@@ -36,10 +38,9 @@ import { GroupStateRepositoryReads } from './group-state-repository-reads.ts';
 export function createTransactionBoundGroupStateRepository(
   transaction: PSqlTransactionSql,
 ): GroupStateRepository {
-  return new GroupStateRepository(
-    new PSqlRuntimeStateRepository(transaction),
-    { events: new PSqlGroupStateEventRepository(transaction) },
-  );
+  return new GroupStateRepository(new PSqlRuntimeStateRepository(transaction), {
+    events: new PSqlGroupStateEventRepository(transaction),
+  });
 }
 
 export class GroupStateRepository extends GroupStateRepositoryReads {
@@ -47,10 +48,7 @@ export class GroupStateRepository extends GroupStateRepositoryReads {
   private readonly membership: GroupMembershipRepository;
   private readonly presence: GroupPresenceRepository;
 
-  constructor(
-    repository: RuntimeStateRepositoryLike,
-    options: GroupStateRepositoryOptions = {},
-  ) {
+  constructor(repository: RuntimeStateRepositoryLike, options: GroupStateRepositoryOptions = {}) {
     super(repository);
     const events = options.events ?? defaultGroupStateEventStoreFor(repository);
     this.aggregate = new GroupAggregateRepository(repository, events);
@@ -101,9 +99,7 @@ export class GroupStateRepository extends GroupStateRepositoryReads {
     await this.membership.putMember(member);
   }
 
-  async removeMember(
-    ref: GroupRef & Readonly<{ principalId: string }>,
-  ): Promise<void> {
+  async removeMember(ref: GroupRef & Readonly<{ principalId: string }>): Promise<void> {
     await this.membership.removeMember(ref);
   }
 
@@ -111,9 +107,7 @@ export class GroupStateRepository extends GroupStateRepositoryReads {
     await this.presence.putPresenceSession(session);
   }
 
-  async insertPresence(
-    session: GroupPresenceSession,
-  ): Promise<RuntimeStateConditionalWriteResult> {
+  async insertPresence(session: GroupPresenceSession): Promise<RuntimeStateConditionalWriteResult> {
     return await this.presence.insertPresence(session);
   }
 
@@ -141,15 +135,10 @@ export class GroupStateRepository extends GroupStateRepositoryReads {
     admission: GroupPresenceAdmission,
     expectedRevision: number,
   ): Promise<RuntimeStateConditionalWriteResult> {
-    return await this.presence.updatePresenceAdmission(
-      admission,
-      expectedRevision,
-    );
+    return await this.presence.updatePresenceAdmission(admission, expectedRevision);
   }
 
-  async removePresenceSession(
-    ref: GroupRef & Readonly<{ sessionId: string }>,
-  ): Promise<void> {
+  async removePresenceSession(ref: GroupRef & Readonly<{ sessionId: string }>): Promise<void> {
     await this.presence.removePresenceSession(ref);
   }
 

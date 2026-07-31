@@ -4,32 +4,51 @@ import {
   readRallarGroupDirectorFromSnapshot,
   resolveRallarGroupDirectorAppointmentEligibility,
 } from '@shared/api/group-director.ts';
-import { toGroupSnapshotStateRevision } from '@shared/api/group-client-views.ts';
-import type {
-  AuditStamp,
-  Group,
-  GroupEventType,
-  GroupMember,
-  GroupMemberStatus,
-  GroupPresenceAdmission,
-  GroupPresenceSession,
-  GroupPresenceSummary,
-  GroupRole,
-  GroupSnapshot,
-  GroupStatus,
-} from '@shared/api/group-types.ts';
-import type { GroupPolicyResult } from '@shared/api/group-policy-types.ts';
+import type { AuditStamp, Group, GroupEventType, GroupStatus } from '@shared/api/group-types.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 
-import { canGovernGroupMember, canMutateActiveGroup, type GroupGovernanceAction, GroupPolicyDeniedError } from '../../group-policy.ts';
+import { GroupPolicyDeniedError } from '../../group-policy.ts';
 import { toExpiredAwareInsertCandidate } from '../presence/group-expired-state-authority.ts';
-import { nextInitialGroupSnapshotVersion, toInitialGroupPresenceSummaryCandidate } from '../presence/group-initial-presence-summary.ts';
-import type { GroupMutationCommand, GroupMutationComputed, GroupMutationFacts, GroupMutationRead } from './group-mutation-contracts.ts';
+import {
+  nextInitialGroupSnapshotVersion,
+  toInitialGroupPresenceSummaryCandidate,
+} from '../presence/group-initial-presence-summary.ts';
+import type {
+  GroupMutationCommand,
+  GroupMutationComputed,
+  GroupMutationFacts,
+  GroupMutationRead,
+} from './group-mutation-contracts.ts';
 import { GroupMutationRejectedError } from './group-mutation-contracts.ts';
-import { auditStamp, currentCausalRevision, materializedRotateJoinCode, noOp, rejected, requireGroup, writeResult } from './group-mutation-result.ts';
+import {
+  auditStamp,
+  materializedRotateJoinCode,
+  noOp,
+  rejected,
+  requireGroup,
+  writeResult,
+} from './group-mutation-result.ts';
+import {
+  assertActive,
+  assertGovernance,
+  toPolicySnapshot,
+} from './group-aggregate-mutation-policy.ts';
+import {
+  createInitialGroup,
+  createInitialOwner,
+  createInitialPresenceSummary,
+} from './create-initial-group-mutation.ts';
 
 const RALLAR_GROUP_JOIN_CODE_METADATA_KEY = 'rallarJoinCode';
 const RALLAR_GROUP_JOIN_CODE_VERSION = 1;
+
+interface GroupWriteInput {
+  readonly command: GroupMutationCommand;
+  readonly read: GroupMutationRead;
+  readonly facts: GroupMutationFacts;
+  readonly group: Group;
+  readonly eventType: GroupEventType;
+}
 
 export function computeCreate(
   command: Extract<GroupMutationCommand, { operation: 'createGroup' }>,
@@ -37,65 +56,33 @@ export function computeCreate(
   facts: GroupMutationFacts,
 ): GroupMutationComputed {
   if (command.input.actorPrincipalId !== command.input.createdByPrincipalId) {
-    return rejected(command, read, facts, 'Creator authority does not match createdByPrincipalId');
+    return rejected({
+      command,
+      read,
+      facts,
+      message: 'Creator authority does not match createdByPrincipalId',
+    });
   }
   if (read.group) {
-    return rejected(command, read, facts, `Group already exists: ${command.aggregateRef.groupId}`);
+    return rejected({
+      command,
+      read,
+      facts,
+      message: `Group already exists: ${command.aggregateRef.groupId}`,
+    });
   }
   const audit = auditStamp(command, facts, command.input.createdByPrincipalId);
-  const snapshotVersion = nextInitialGroupSnapshotVersion(read.expiredGroupEntry, read.presenceSummary);
-  const group: Group = {
-    ...command.aggregateRef,
-    slug: command.input.slug,
-    displayName: command.input.displayName,
-    description: command.input.description,
-    kind: command.input.kind,
-    status: 'active',
-    joinMode: command.input.joinMode,
-    maxMembers: command.input.maxMembers,
-    maxSessionsPerMember: command.input.maxSessionsPerMember,
-    metadata: cloneRecord(command.input.metadata),
-    activeMemberCount: 1,
-    ownerPrincipalId: command.input.createdByPrincipalId,
-    snapshotVersion,
-    metadataVersion: 1,
-    rosterVersion: 1,
-    presenceVersion: 0,
-    created: audit,
-    updated: audit,
-    archived: null,
-    deleted: null,
-    expiresAtEpochMs: command.input.expiresAtEpochMs,
-    emptySinceEpochMs: null,
-    purgeAfterEpochMs: command.input.purgeAfterEpochMs,
-  };
-  const owner: GroupMember = {
-    ...command.aggregateRef,
-    principalId: command.input.createdByPrincipalId,
-    role: 'owner',
-    status: 'active',
-    joined: audit,
-    updated: audit,
-    left: null,
-    removed: null,
-    banned: null,
-    invitedByPrincipalId: null,
-    invitationExpiresAtEpochMs: null,
-  };
-  const summary: GroupPresenceSummary = {
-    ...command.aggregateRef,
-    causalRevision: {
-      groupRevision: snapshotVersion,
-      presenceRevision: read.presenceSummary?.value.causalRevision.presenceRevision ?? 0,
-    },
-    activePrincipalIds: [],
-    activeSessionIds: [],
-    activeSessions: [],
-    activePrincipalCount: 0,
-    activeSessionCount: 0,
-    computedAtEpochMs: facts.nowEpochMs,
-  };
-  return writeResult(command, read, facts, {
+  const snapshotVersion = nextInitialGroupSnapshotVersion(
+    read.expiredGroupEntry,
+    read.presenceSummary,
+  );
+  const group = createInitialGroup({ command, audit, snapshotVersion });
+  const owner = createInitialOwner(command, audit);
+  const summary = createInitialPresenceSummary({ command, read, facts, snapshotVersion });
+  return writeResult({
+    command,
+    read,
+    facts,
     guard: {
       kind: 'group',
       ...toExpiredAwareInsertCandidate(read.expiredGroupEntry, group),
@@ -114,7 +101,8 @@ export function computeUpdate(
 ): GroupMutationComputed {
   const stored = requireGroup(read, command.aggregateRef);
   assertUpdateAuthority(command, read);
-  const allowsArchivedDeletion = stored.value.status === 'archived' && command.input.status === 'deleted';
+  const allowsArchivedDeletion =
+    stored.value.status === 'archived' && command.input.status === 'deleted';
   if (!allowsArchivedDeletion) {
     assertActive(stored.value, facts.nowEpochMs);
   }
@@ -131,7 +119,8 @@ export function computeUpdate(
       joinMode: command.input.joinMode ?? current.joinMode,
       maxMembers: command.input.maxMembers ?? current.maxMembers,
       maxSessionsPerMember: command.input.maxSessionsPerMember ?? current.maxSessionsPerMember,
-      metadata: command.input.metadata === null ? current.metadata : cloneRecord(command.input.metadata),
+      metadata:
+        command.input.metadata === null ? current.metadata : cloneRecord(command.input.metadata),
       snapshotVersion: current.snapshotVersion + 1,
       metadataVersion: current.metadataVersion + 1,
       updated: audit,
@@ -143,10 +132,23 @@ export function computeUpdate(
     audit,
   );
   if (next.maxMembers !== null && next.maxMembers < next.activeMemberCount) {
-    throw new GroupMutationRejectedError('Group maxMembers cannot be lower than activeMemberCount.');
+    throw new GroupMutationRejectedError(
+      'Group maxMembers cannot be lower than activeMemberCount.',
+    );
   }
   if (sameGroupIgnoringVersions(current, next)) return noOp(command, read, facts);
-  return groupWrite(command, read, facts, next, status === 'archived' ? 'group-archived' : status === 'deleted' ? 'group-deleted' : 'group-updated');
+  return groupWrite({
+    command,
+    read,
+    facts,
+    group: next,
+    eventType:
+      status === 'archived'
+        ? 'group-archived'
+        : status === 'deleted'
+          ? 'group-deleted'
+          : 'group-updated',
+  });
 }
 
 export function computeDirector(
@@ -159,7 +161,9 @@ export function computeDirector(
   const principalId = command.input.actorPrincipalId;
   const sessionId = command.input.actorSessionId;
   if (!principalId || !sessionId) {
-    throw new GroupMutationRejectedError('Forbidden: Cannot appoint a director without a local session.');
+    throw new GroupMutationRejectedError(
+      'Forbidden: Cannot appoint a director without a local session.',
+    );
   }
   const snapshot = toPolicySnapshot(read, facts.nowEpochMs);
   const eligibility = resolveRallarGroupDirectorAppointmentEligibility({
@@ -168,7 +172,9 @@ export function computeDirector(
     sessionId,
   });
   if (!eligibility.allowed) {
-    throw new GroupMutationRejectedError(`Forbidden: ${eligibility.reason ?? 'Cannot appoint the browser director.'}`);
+    throw new GroupMutationRejectedError(
+      `Forbidden: ${eligibility.reason ?? 'Cannot appoint the browser director.'}`,
+    );
   }
   const appointment = createRallarGroupDirectorAppointment({
     session: { clientId: principalId, sessionId },
@@ -183,7 +189,7 @@ export function computeDirector(
     metadataVersion: stored.value.metadataVersion + 1,
     updated: auditStamp(command, facts, principalId),
   };
-  return groupWrite(command, read, facts, next, 'group-updated');
+  return groupWrite({ command, read, facts, group: next, eventType: 'group-updated' });
 }
 
 export function computeRotateJoinCode(
@@ -192,7 +198,7 @@ export function computeRotateJoinCode(
   facts: GroupMutationFacts,
 ): GroupMutationComputed {
   const stored = requireGroup(read, command.aggregateRef);
-  assertGovernance(command, read, facts, 'invite');
+  assertGovernance({ command, read, facts, action: 'invite' });
   const materialized = materializedRotateJoinCode(command, facts);
   if (!facts.joinCodeVerifier) {
     throw new GroupMutationRejectedError('Join code verifier is required');
@@ -210,18 +216,16 @@ export function computeRotateJoinCode(
     metadataVersion: stored.value.metadataVersion + 1,
     updated: audit,
   };
-  return groupWrite(command, read, facts, next, 'group-updated');
+  return groupWrite({ command, read, facts, group: next, eventType: 'group-updated' });
 }
 
-function groupWrite(
-  command: GroupMutationCommand,
-  read: GroupMutationRead,
-  facts: GroupMutationFacts,
-  group: Group,
-  eventType: GroupEventType,
-): GroupMutationComputed {
+function groupWrite(input: GroupWriteInput): GroupMutationComputed {
+  const { command, eventType, facts, group, read } = input;
   const stored = requireGroup(read, command.aggregateRef);
-  return writeResult(command, read, facts, {
+  return writeResult({
+    command,
+    read,
+    facts,
     guard: {
       kind: 'group',
       operation: 'update',
@@ -234,84 +238,10 @@ function groupWrite(
   });
 }
 
-export function toPolicySnapshot(read: GroupMutationRead, nowEpochMs: number): GroupSnapshot {
-  const stored = requireGroup(read, {
-    applicationId: '',
-    workspaceId: '',
-    groupId: '',
-  });
-  const members = [read.actorMember, read.targetMember, read.authorityMember, read.directorMember]
-    .filter((member): member is GroupMember => member !== null)
-    .filter((member, index, values) => values.findIndex((candidate) => candidate.principalId === member.principalId) === index);
-  const targetSessions =
-    read.targetPresence &&
-    read.targetPresence.value.disconnectedAtEpochMs === null &&
-    read.targetPresence.value.expiresAtEpochMs > nowEpochMs &&
-    isExactlyAdmitted(read.targetAdmission?.value, read.targetPresence.value)
-      ? [read.targetPresence.value]
-      : [];
-  const authoritySessions = read.authorityPresenceSessions.filter(
-    (session) =>
-      session.disconnectedAtEpochMs === null &&
-      session.expiresAtEpochMs > nowEpochMs &&
-      (isExactlyAdmitted(read.authorityAdmission?.value, session) || isExactlyAdmitted(read.directorAdmission?.value, session)),
-  );
-  const activeSessions = [...targetSessions, ...authoritySessions].filter(
-    (session, index, sessions) =>
-      sessions.findIndex(
-        (candidate) =>
-          candidate.sessionId === session.sessionId &&
-          candidate.generationId === session.generationId &&
-          candidate.generationVersion === session.generationVersion,
-      ) === index,
-  );
-  const activePrincipals = new Set(activeSessions.map((session) => session.principalId));
-  const causalRevision = currentCausalRevision(read);
-  return {
-    stateRevision: toGroupSnapshotStateRevision(causalRevision.groupRevision, causalRevision.presenceRevision),
-    causalRevision,
-    group: {
-      ...stored.value,
-      presenceVersion: causalRevision.presenceRevision,
-    },
-    members,
-    activeSessions,
-    memberCount: stored.value.activeMemberCount,
-    onlineMemberCount: members.filter((member) => member.status === 'active' && activePrincipals.has(member.principalId)).length,
-  };
-}
-
-export function assertActive(group: Group, nowEpochMs: number): void {
-  assertAllowed(canMutateActiveGroup({ group, nowEpochMs }));
-}
-
-export function assertGovernance(
-  command: Extract<GroupMutationCommand, { targetPrincipalId: string }> | Extract<GroupMutationCommand, { operation: 'rotateGroupJoinCode' }>,
+function assertUpdateAuthority(
+  command: Extract<GroupMutationCommand, { operation: 'updateGroup' }>,
   read: GroupMutationRead,
-  facts: GroupMutationFacts,
-  action: GroupGovernanceAction,
 ): void {
-  const stored = requireGroup(read, command.aggregateRef);
-  assertActive(stored.value, facts.nowEpochMs);
-  assertAllowed(
-    canGovernGroupMember({
-      snapshot: toPolicySnapshot(read, facts.nowEpochMs),
-      actor: {
-        principalId: command.input.actorPrincipalId ?? undefined,
-        sessionId: command.input.actorSessionId ?? undefined,
-      },
-      targetPrincipalId: 'targetPrincipalId' in command ? command.targetPrincipalId : `${command.aggregateRef.groupId}:join-code`,
-      action,
-    }),
-  );
-}
-
-export function assertAllowed(result: GroupPolicyResult): void {
-  if (result.allowed) return;
-  throw new GroupPolicyDeniedError(result);
-}
-
-function assertUpdateAuthority(command: Extract<GroupMutationCommand, { operation: 'updateGroup' }>, read: GroupMutationRead): void {
   const actor = read.actorMember;
   if (
     !command.input.actorPrincipalId ||
@@ -325,27 +255,6 @@ function assertUpdateAuthority(command: Extract<GroupMutationCommand, { operatio
       message: 'Only active group owners/admins can update groups.',
     });
   }
-}
-
-export function assertNotLastOwner(group: Group, existing: GroupMember | undefined, nextStatus: GroupMemberStatus, nextRole: GroupRole): void {
-  if (!existing || existing.role !== 'owner' || existing.status !== 'active') return;
-  if (nextStatus === 'active' && nextRole === 'owner') return;
-  if (group.ownerPrincipalId === existing.principalId) {
-    throw new GroupPolicyDeniedError({
-      allowed: false,
-      code: 'last-owner',
-      message: 'Cannot remove or demote the last active owner.',
-    });
-  }
-}
-
-export function isExactlyAdmitted(admission: GroupPresenceAdmission | undefined, session: GroupPresenceSession): boolean {
-  return (
-    admission?.principalId === session.principalId &&
-    admission.admittedSessions.some(
-      (entry) => entry.sessionId === session.sessionId && entry.generationId === session.generationId && entry.generationVersion === session.generationVersion,
-    ) === true
-  );
 }
 
 function transitionGroupLifecycle(group: Group, status: GroupStatus, audit: AuditStamp): Group {
@@ -369,10 +278,15 @@ function transitionGroupLifecycle(group: Group, status: GroupStatus, audit: Audi
 }
 
 function sameGroupIgnoringVersions(current: Group, next: Group): boolean {
-  return jsonEquals({ ...current, snapshotVersion: 0, metadataVersion: 0, updated: null }, { ...next, snapshotVersion: 0, metadataVersion: 0, updated: null });
+  return jsonEquals(
+    { ...current, snapshotVersion: 0, metadataVersion: 0, updated: null },
+    { ...next, snapshotVersion: 0, metadataVersion: 0, updated: null },
+  );
 }
 
-export function readJoinCode(metadata: Readonly<Record<string, unknown>>): JoinCodeMetadata | undefined {
+export function readJoinCode(
+  metadata: Readonly<Record<string, unknown>>,
+): JoinCodeMetadata | undefined {
   const value = metadata[RALLAR_GROUP_JOIN_CODE_METADATA_KEY];
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
   const candidate = value as Record<string, unknown>;
@@ -391,7 +305,10 @@ type JoinCodeMetadata = Readonly<{
   rotatedAtEpochMs: number;
 }>;
 
-function mergeJoinCode(metadata: Readonly<Record<string, unknown>>, joinCode: JoinCodeMetadata): Record<string, unknown> {
+function mergeJoinCode(
+  metadata: Readonly<Record<string, unknown>>,
+  joinCode: JoinCodeMetadata,
+): Record<string, unknown> {
   return { ...metadata, [RALLAR_GROUP_JOIN_CODE_METADATA_KEY]: joinCode };
 }
 

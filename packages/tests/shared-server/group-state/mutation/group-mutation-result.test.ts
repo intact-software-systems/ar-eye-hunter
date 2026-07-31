@@ -10,7 +10,7 @@ import type {
   GroupMutationRead,
 } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/compute-group-mutation.ts';
-import { validateGroupMutationIdempotencyRecord } from '@shared-server/rallar-system/group-state/mutation/group-mutation-result.ts';
+import { validateGroupMutationIdempotencyRecord } from '@shared-server/rallar-system/group-state/mutation/validate-group-mutation-result.ts';
 import { validateGroupMutation } from '@shared-server/rallar-system/group-state/mutation/validate-group-mutation.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';

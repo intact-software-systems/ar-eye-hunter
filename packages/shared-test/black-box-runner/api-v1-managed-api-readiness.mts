@@ -6,6 +6,13 @@ import {
   SENSITIVE_QUERY_VALUE,
   URL_USERINFO_PASSWORD,
 } from './api-v1-managed-api-redaction-patterns.mts';
+import { readLogTailSafely, resolveLogTailReader } from './api-v1-managed-log-tail.mts';
+
+export {
+  readBoundedLogTail,
+  type BoundedLogTailFile,
+  type ReadBoundedLogTailOptions,
+} from './api-v1-managed-log-tail.mts';
 
 export type WaitForManagedApiReadyInput = Readonly<{
   baseUrl: string;
@@ -31,17 +38,17 @@ export type WaitForManagedApiReadyInput = Readonly<{
   sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
 }>;
 
-export type BoundedLogTailFile = Readonly<{
-  size: () => Promise<number>;
-  readAt: (offset: number, target: Uint8Array) => Promise<number | null>;
-  close: () => void;
-}>;
+type ManagedApiReadinessWinner = 'ready' | 'child' | 'timeout' | 'error';
 
-export type ReadBoundedLogTailOptions = Readonly<{
-  openFile?: (path: string) => Promise<BoundedLogTailFile>;
-}>;
-
-const LOG_TAIL_MAX_BYTES = 4096;
+interface ManagedApiReadinessState {
+  winner: ManagedApiReadinessWinner | undefined;
+  startupObserved: boolean;
+  lastError: unknown;
+  readonly controller: AbortController;
+  readonly completion: Promise<void>;
+  readonly resolveCompletion: () => void;
+  readonly rejectCompletion: (error: unknown) => void;
+}
 
 export async function waitForManagedApiReady(input: WaitForManagedApiReadyInput): Promise<void> {
   const timeoutMs = input.timeoutMs ?? 30000;
@@ -52,136 +59,182 @@ export async function waitForManagedApiReady(input: WaitForManagedApiReadyInput)
   const sleepImpl = input.sleep ?? sleep;
   const deadline = now() + timeoutMs;
   const url = input.baseUrl.replace(/\/+$/, '') + '/api/config';
-  const controller = new AbortController();
-  let winner: 'ready' | 'child' | 'timeout' | 'error' | undefined;
-  let startupObserved = false;
-  let lastError: unknown;
+  const state = createManagedApiReadinessState();
+  const triggerTimeout = () =>
+    triggerManagedApiTimeout({ state, input, url, readLogTail, diagnosticSecrets });
+  observeManagedApiChild({ state, input, readLogTail, diagnosticSecrets });
+  const timeout = setTimeout(triggerTimeout, Math.max(0, timeoutMs));
+  const readinessLoop = pollManagedApiReadiness({
+    state,
+    input,
+    url,
+    deadline,
+    fetchImpl,
+    now,
+    sleepImpl,
+    triggerTimeout,
+  });
+
+  try {
+    await state.completion;
+  } finally {
+    clearTimeout(timeout);
+    abortManagedApiReadiness(state, new Error('API-v1 managed readiness stopped'));
+    await readinessLoop;
+  }
+}
+
+function createManagedApiReadinessState(): ManagedApiReadinessState {
   let resolveCompletion!: () => void;
   let rejectCompletion!: (error: unknown) => void;
   const completion = new Promise<void>((resolve, reject) => {
     resolveCompletion = resolve;
     rejectCompletion = reject;
   });
-
-  const claim = (candidate: NonNullable<typeof winner>): boolean => {
-    if (winner) {
-      return false;
-    }
-    winner = candidate;
-    return true;
+  return {
+    winner: undefined,
+    startupObserved: false,
+    lastError: undefined,
+    controller: new AbortController(),
+    completion,
+    resolveCompletion,
+    rejectCompletion,
   };
+}
 
-  const abort = (reason: Error): void => {
-    if (!controller.signal.aborted) {
-      controller.abort(reason);
-    }
-  };
+function claimManagedApiReadiness(
+  state: ManagedApiReadinessState,
+  candidate: ManagedApiReadinessWinner,
+): boolean {
+  if (state.winner) return false;
+  state.winner = candidate;
+  return true;
+}
 
-  const settleUnexpectedError = (error: unknown): void => {
-    if (!claim('error')) {
-      return;
-    }
-    const reason = error instanceof Error ? error : new Error(String(error));
-    abort(reason);
-    rejectCompletion(reason);
-  };
+function abortManagedApiReadiness(state: ManagedApiReadinessState, reason: Error): void {
+  if (!state.controller.signal.aborted) state.controller.abort(reason);
+}
 
-  const triggerTimeout = (): void => {
-    if (!claim('timeout')) {
-      return;
-    }
-    abort(new Error(`Timed out waiting for ${url}`));
-    void managedApiTimeoutError({
-      url,
-      startupObserved,
-      lastError,
-      logPath: input.logPath,
-      readLogTail,
-      diagnosticSecrets,
-    }).then(rejectCompletion, rejectCompletion);
-  };
+interface ObserveManagedApiChildInput {
+  readonly state: ManagedApiReadinessState;
+  readonly input: WaitForManagedApiReadyInput;
+  readonly readLogTail: (path: string) => Promise<string>;
+  readonly diagnosticSecrets: readonly string[];
+}
 
-  const checkDeadline = (): void => {
-    if (!winner && now() >= deadline) {
-      triggerTimeout();
-    }
-  };
+function observeManagedApiChild({
+  state,
+  input,
+  readLogTail,
+  diagnosticSecrets,
+}: ObserveManagedApiChildInput): void {
+  void Promise.resolve(input.childStatus).then(
+    async (status) => {
+      if (!claimManagedApiReadiness(state, 'child')) return;
+      abortManagedApiReadiness(
+        state,
+        new Error(`API-v1 child exited before readiness (code ${status.code})`),
+      );
+      await Promise.resolve(input.streamsDrained).catch(() => undefined);
+      state.rejectCompletion(
+        await managedApiChildExitError(status, input.logPath, readLogTail, diagnosticSecrets),
+      );
+    },
+    (error: unknown) => settleUnexpectedManagedApiError(state, error),
+  );
+}
 
-  void Promise.resolve(input.childStatus).then(async (status) => {
-    if (!claim('child')) {
-      return;
-    }
-    abort(new Error(`API-v1 child exited before readiness (code ${status.code})`));
-    await Promise.resolve(input.streamsDrained).catch(() => undefined);
-    rejectCompletion(
-      await managedApiChildExitError(status, input.logPath, readLogTail, diagnosticSecrets),
-    );
-  }, settleUnexpectedError);
+interface TriggerManagedApiTimeoutInput extends ObserveManagedApiChildInput {
+  readonly url: string;
+}
 
-  const timeout = setTimeout(triggerTimeout, Math.max(0, timeoutMs));
+function triggerManagedApiTimeout({
+  state,
+  input,
+  url,
+  readLogTail,
+  diagnosticSecrets,
+}: TriggerManagedApiTimeoutInput): void {
+  if (!claimManagedApiReadiness(state, 'timeout')) return;
+  abortManagedApiReadiness(state, new Error(`Timed out waiting for ${url}`));
+  void managedApiTimeoutError({
+    url,
+    startupObserved: state.startupObserved,
+    lastError: state.lastError,
+    logPath: input.logPath,
+    readLogTail,
+    diagnosticSecrets,
+  }).then(state.rejectCompletion, state.rejectCompletion);
+}
 
-  const readinessLoop = (async () => {
-    try {
-      await raceWithAbort(input.startup, controller.signal);
-      startupObserved = true;
-      checkDeadline();
+function settleUnexpectedManagedApiError(state: ManagedApiReadinessState, error: unknown): void {
+  if (!claimManagedApiReadiness(state, 'error')) return;
+  const reason = error instanceof Error ? error : new Error(String(error));
+  abortManagedApiReadiness(state, reason);
+  state.rejectCompletion(reason);
+}
 
-      while (!winner) {
-        let response: Pick<Response, 'ok' | 'status' | 'body'> | undefined;
-        try {
-          const responseWithDisposedBody = Promise.resolve(
-            fetchImpl(url, { signal: controller.signal }),
-          ).then((configResponse) => {
-            cancelResponseBodyBestEffort(configResponse);
-            return configResponse;
-          });
-          response = await raceWithAbort(responseWithDisposedBody, controller.signal);
-        } catch (error) {
-          if (winner) {
-            return;
-          }
-          lastError = error;
-        }
+interface PollManagedApiReadinessInput {
+  readonly state: ManagedApiReadinessState;
+  readonly input: WaitForManagedApiReadyInput;
+  readonly url: string;
+  readonly deadline: number;
+  readonly fetchImpl: NonNullable<WaitForManagedApiReadyInput['fetchImpl']>;
+  readonly now: () => number;
+  readonly sleepImpl: NonNullable<WaitForManagedApiReadyInput['sleep']>;
+  readonly triggerTimeout: () => void;
+}
 
-        checkDeadline();
-        if (winner) {
-          return;
-        }
-        if (response?.ok) {
-          if (claim('ready')) {
-            abort(new Error('API-v1 managed readiness completed'));
-            resolveCompletion();
-          }
-          return;
-        }
-        if (response) {
-          lastError = new Error(`${url} returned ${response.status}`);
-        }
-
-        try {
-          await raceWithAbort(sleepImpl(250, controller.signal), controller.signal);
-        } catch (error) {
-          if (winner) {
-            return;
-          }
-          throw error;
-        }
-        checkDeadline();
-      }
-    } catch (error) {
-      if (!winner) {
-        settleUnexpectedError(error);
-      }
-    }
-  })();
-
+async function pollManagedApiReadiness(input: PollManagedApiReadinessInput): Promise<void> {
+  const { state } = input;
   try {
-    await completion;
-  } finally {
-    clearTimeout(timeout);
-    abort(new Error('API-v1 managed readiness stopped'));
-    await readinessLoop;
+    await raceWithAbort(input.input.startup, state.controller.signal);
+    state.startupObserved = true;
+    checkManagedApiDeadline(input);
+    while (!state.winner) {
+      const response = await fetchManagedApiReadiness(input);
+      checkManagedApiDeadline(input);
+      if (state.winner) return;
+      if (response?.ok) {
+        if (claimManagedApiReadiness(state, 'ready')) {
+          abortManagedApiReadiness(state, new Error('API-v1 managed readiness completed'));
+          state.resolveCompletion();
+        }
+        return;
+      }
+      if (response) state.lastError = new Error(`${input.url} returned ${response.status}`);
+      try {
+        await raceWithAbort(input.sleepImpl(250, state.controller.signal), state.controller.signal);
+      } catch (error) {
+        if (state.winner) return;
+        throw error;
+      }
+      checkManagedApiDeadline(input);
+    }
+  } catch (error) {
+    if (!state.winner) settleUnexpectedManagedApiError(state, error);
   }
+}
+
+async function fetchManagedApiReadiness(
+  input: PollManagedApiReadinessInput,
+): Promise<Pick<Response, 'ok' | 'status' | 'body'> | undefined> {
+  try {
+    const responseWithDisposedBody = Promise.resolve(
+      input.fetchImpl(input.url, { signal: input.state.controller.signal }),
+    ).then((response) => {
+      cancelResponseBodyBestEffort(response);
+      return response;
+    });
+    return await raceWithAbort(responseWithDisposedBody, input.state.controller.signal);
+  } catch (error) {
+    if (!input.state.winner) input.state.lastError = error;
+    return undefined;
+  }
+}
+
+function checkManagedApiDeadline(input: PollManagedApiReadinessInput): void {
+  if (!input.state.winner && input.now() >= input.deadline) input.triggerTimeout();
 }
 
 type ManagedApiTimeoutErrorInput = Readonly<{
@@ -224,81 +277,6 @@ async function managedApiChildExitError(
       diagnosticSecrets,
     ),
   );
-}
-
-export async function readBoundedLogTail(
-  logPath: string,
-  options: ReadBoundedLogTailOptions = {},
-): Promise<string> {
-  let file: BoundedLogTailFile | undefined;
-  try {
-    file = await (options.openFile ?? openDenoBoundedLogTailFile)(logPath);
-    const size = Math.max(0, await file.size());
-    const length = Math.min(size, LOG_TAIL_MAX_BYTES);
-    if (length === 0) {
-      return '(empty)';
-    }
-
-    const bytes = new Uint8Array(length);
-    const start = size - length;
-    let bytesRead = 0;
-    while (bytesRead < length) {
-      const count = await file.readAt(start + bytesRead, bytes.subarray(bytesRead));
-      if (count === null || count <= 0) {
-        break;
-      }
-      bytesRead += Math.min(count, length - bytesRead);
-    }
-    return normalizeLogTail(new TextDecoder().decode(bytes.subarray(0, bytesRead)));
-  } catch (error) {
-    return `[unable to read ${logPath}: ${error instanceof Error ? error.message : String(error)}]`;
-  } finally {
-    try {
-      file?.close();
-    } catch (_error) {
-      // Diagnostic cleanup must not replace the readiness outcome.
-    }
-  }
-}
-
-async function openDenoBoundedLogTailFile(path: string): Promise<BoundedLogTailFile> {
-  const file = await Deno.open(path, { read: true });
-  return {
-    size: async () => (await file.stat()).size,
-    readAt: async (offset, target) => {
-      await file.seek(offset, Deno.SeekMode.Start);
-      return await file.read(target);
-    },
-    close: () => file.close(),
-  };
-}
-
-function resolveLogTailReader(
-  input: WaitForManagedApiReadyInput,
-): (path: string) => Promise<string> {
-  if (input.readLogTail) {
-    return input.readLogTail;
-  }
-  if (input.readTextFile) {
-    const readTextFile = input.readTextFile;
-    return async (path) => normalizeLogTail((await readTextFile(path)).slice(-LOG_TAIL_MAX_BYTES));
-  }
-  return readBoundedLogTail;
-}
-
-async function readLogTailSafely(
-  path: string,
-  readLogTail: (path: string) => Promise<string>,
-): Promise<string> {
-  try {
-    return normalizeLogTail(await readLogTail(path));
-  } catch (error) {
-    return `[unable to read ${path}: ${error instanceof Error ? error.message : String(error)}]`;
-  }
-}
-
-function normalizeLogTail(contents: string): string {
-  return contents.trimEnd() || '(empty)';
 }
 
 function cancelResponseBodyBestEffort(response: Pick<Response, 'body'>): void {

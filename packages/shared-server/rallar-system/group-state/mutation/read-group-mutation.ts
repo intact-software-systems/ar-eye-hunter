@@ -1,7 +1,14 @@
 import { readRallarGroupDirectorAppointment } from '@shared/api/group-director.ts';
 import { GroupStateRepository } from '../persistence/group-state-repository.ts';
-import type { GroupStateMutationExactReadResult } from '../persistence/read-exact-group-state-mutation.ts';
+// prettier-ignore
+import type {
+  GroupStateMutationExactReadResult,
+} from '../persistence/read-exact-group-state-mutation.ts';
 import type { GroupMutationCommand, GroupMutationRead } from './group-mutation-contracts.ts';
+import {
+  readGroupMutationRelatedEntries,
+  type SequentialRelatedEntries,
+} from './read-group-mutation-related-entries.ts';
 
 export async function readGroupMutation(
   repository: GroupStateRepository,
@@ -91,6 +98,44 @@ async function readGroupMutationSequentially(
   repository: GroupStateRepository,
   command: GroupMutationCommand,
 ): Promise<GroupMutationRead> {
+  const primary = await readSequentialPrimaryEntries(repository, command);
+  const identities = resolveSequentialIdentities(command, primary.groupRead.value?.value);
+  const related = await readGroupMutationRelatedEntries({
+    repository,
+    command,
+    actorPrincipalId: identities.actorPrincipalId,
+    targetPrincipalId: identities.targetPrincipalId,
+    ownerPrincipalId: identities.ownerPrincipalId,
+    directorPrincipalId: identities.director?.principalId,
+  });
+  const authorityPresenceSessionEntries = await readAuthorityPresenceEntries({
+    repository,
+    command,
+    authorityAdmission: related.authorityAdmission,
+    directorAdmission: related.directorAdmission,
+  });
+  return assembleSequentialGroupMutationRead({
+    command,
+    primary,
+    identities,
+    related,
+    authorityPresenceSessionEntries,
+  });
+}
+
+interface SequentialPrimaryEntries {
+  readonly idempotency: Awaited<
+    ReturnType<GroupStateRepository['findIdempotentGroupMutationReceiptEntry']>
+  >;
+  readonly groupRead: Awaited<ReturnType<GroupStateRepository['readGroupEntry']>>;
+  readonly targetPresenceRead: Awaited<ReturnType<GroupStateRepository['readPresenceEntry']>>;
+  readonly presenceSummary: Awaited<ReturnType<GroupStateRepository['findPresenceSummaryEntry']>>;
+}
+
+async function readSequentialPrimaryEntries(
+  repository: GroupStateRepository,
+  command: GroupMutationCommand,
+): Promise<SequentialPrimaryEntries> {
   const presenceSessionId = presenceSessionIdFor(command);
   const [idempotency, groupRead, targetPresenceRead, presenceSummary] = await Promise.all([
     command.requestId === null
@@ -105,71 +150,43 @@ async function readGroupMutationSequentially(
       : Promise.resolve({ value: undefined, expiredEntry: undefined }),
     repository.findPresenceSummaryEntry(command.aggregateRef),
   ]);
-  const group = groupRead.value;
-  const targetPresence = targetPresenceRead.value;
-  const actorPrincipalId = command.input.actorPrincipalId;
-  const targetPrincipalId = targetPrincipalIdFor(command);
-  const ownerPrincipalId = group?.value.ownerPrincipalId;
-  const director = readRallarGroupDirectorAppointment(group?.value.metadata);
-  const [
-    actorMemberEntry,
-    targetMemberEntry,
-    targetAdmission,
-    authorityMemberEntry,
-    authorityAdmission,
-    directorMemberEntry,
-    directorAdmission,
-  ] = await Promise.all([
-    actorPrincipalId
-      ? repository.findMemberEntry({
-          ...command.aggregateRef,
-          principalId: actorPrincipalId,
-        })
-      : Promise.resolve(undefined),
-    targetPrincipalId && targetPrincipalId !== actorPrincipalId
-      ? repository.findMemberEntry({
-          ...command.aggregateRef,
-          principalId: targetPrincipalId,
-        })
-      : Promise.resolve(undefined),
-    targetPrincipalId
-      ? repository.findPresenceAdmissionEntry({
-          ...command.aggregateRef,
-          principalId: targetPrincipalId,
-        })
-      : Promise.resolve(undefined),
-    command.operation === 'appointDirector' &&
-    ownerPrincipalId &&
-    ownerPrincipalId !== actorPrincipalId &&
-    ownerPrincipalId !== targetPrincipalId
-      ? repository.findMemberEntry({
-          ...command.aggregateRef,
-          principalId: ownerPrincipalId,
-        })
-      : Promise.resolve(undefined),
-    command.operation === 'appointDirector' && ownerPrincipalId
-      ? repository.findPresenceAdmissionEntry({
-          ...command.aggregateRef,
-          principalId: ownerPrincipalId,
-        })
-      : Promise.resolve(undefined),
-    command.operation === 'appointDirector' &&
-    director &&
-    director.principalId !== actorPrincipalId &&
-    director.principalId !== targetPrincipalId &&
-    director.principalId !== ownerPrincipalId
-      ? repository.findMemberEntry({
-          ...command.aggregateRef,
-          principalId: director.principalId,
-        })
-      : Promise.resolve(undefined),
-    command.operation === 'appointDirector' && director
-      ? repository.findPresenceAdmissionEntry({
-          ...command.aggregateRef,
-          principalId: director.principalId,
-        })
-      : Promise.resolve(undefined),
-  ]);
+  return { idempotency, groupRead, targetPresenceRead, presenceSummary };
+}
+
+interface SequentialIdentities {
+  readonly actorPrincipalId: string | null;
+  readonly targetPrincipalId: string | null;
+  readonly ownerPrincipalId: string | undefined;
+  readonly director: ReturnType<typeof readRallarGroupDirectorAppointment>;
+}
+
+function resolveSequentialIdentities(
+  command: GroupMutationCommand,
+  group: NonNullable<GroupMutationRead['group']>['value'] | undefined,
+): SequentialIdentities {
+  return {
+    actorPrincipalId: command.input.actorPrincipalId,
+    targetPrincipalId: targetPrincipalIdFor(command),
+    ownerPrincipalId: group?.ownerPrincipalId,
+    director: readRallarGroupDirectorAppointment(group?.metadata),
+  };
+}
+
+interface ReadAuthorityPresenceEntriesInput {
+  readonly repository: GroupStateRepository;
+  readonly command: GroupMutationCommand;
+  readonly authorityAdmission: GroupMutationRead['authorityAdmission'] | undefined;
+  readonly directorAdmission: GroupMutationRead['directorAdmission'] | undefined;
+}
+
+async function readAuthorityPresenceEntries({
+  repository,
+  command,
+  authorityAdmission,
+  directorAdmission,
+}: ReadAuthorityPresenceEntriesInput): Promise<
+  GroupMutationRead['authorityPresenceSessionEntries']
+> {
   const authorityPresenceSessionEntries = await Promise.all(
     [
       ...(authorityAdmission?.value.admittedSessions ?? []),
@@ -183,6 +200,37 @@ async function readGroupMutationSequentially(
   ).then((sessions) =>
     sessions.filter((session): session is NonNullable<typeof session> => session !== undefined),
   );
+  return authorityPresenceSessionEntries;
+}
+
+interface AssembleSequentialGroupMutationReadInput {
+  readonly command: GroupMutationCommand;
+  readonly primary: SequentialPrimaryEntries;
+  readonly identities: SequentialIdentities;
+  readonly related: SequentialRelatedEntries;
+  readonly authorityPresenceSessionEntries: GroupMutationRead['authorityPresenceSessionEntries'];
+}
+
+function assembleSequentialGroupMutationRead({
+  command,
+  primary,
+  identities,
+  related,
+  authorityPresenceSessionEntries,
+}: AssembleSequentialGroupMutationReadInput): GroupMutationRead {
+  const { idempotency, groupRead, targetPresenceRead, presenceSummary } = primary;
+  const { actorPrincipalId, targetPrincipalId, ownerPrincipalId, director } = identities;
+  const {
+    actorMemberEntry,
+    targetMemberEntry,
+    targetAdmission,
+    authorityMemberEntry,
+    authorityAdmission,
+    directorMemberEntry,
+    directorAdmission,
+  } = related;
+  const group = groupRead.value;
+  const targetPresence = targetPresenceRead.value;
   const resolvedTargetMemberEntry =
     targetPrincipalId === actorPrincipalId ? actorMemberEntry : targetMemberEntry;
   const resolvedAuthorityMemberEntry =

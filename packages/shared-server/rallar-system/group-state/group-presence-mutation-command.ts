@@ -3,7 +3,6 @@ import type {
   ConnectGroupPresenceSessionRequest,
   DisconnectGroupPresenceSessionRequest,
   HeartbeatGroupPresenceSessionRequest,
-  StateScope,
 } from '@shared/api/state-types.ts';
 import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryController.ts';
 
@@ -19,29 +18,11 @@ export function toPresenceMutationCommand(
   const sessionId = requireSessionId(descriptor);
   switch (descriptor.operation) {
     case 'connectPresence':
-      return toConnectPresenceCommand(
-        descriptor.scope,
-        descriptor.groupId,
-        sessionId,
-        descriptor.request as ConnectGroupPresenceSessionRequest,
-        randomId,
-      );
+      return toConnectPresenceCommand(descriptor, sessionId, randomId);
     case 'heartbeatPresence':
-      return toHeartbeatPresenceCommand(
-        descriptor.scope,
-        descriptor.groupId,
-        sessionId,
-        descriptor.request as HeartbeatGroupPresenceSessionRequest,
-        randomId,
-      );
+      return toHeartbeatPresenceCommand(descriptor, sessionId, randomId);
     case 'disconnectPresence':
-      return toDisconnectPresenceCommand(
-        descriptor.scope,
-        descriptor.groupId,
-        sessionId,
-        descriptor.request as DisconnectGroupPresenceSessionRequest,
-        randomId,
-      );
+      return toDisconnectPresenceCommand(descriptor, sessionId, randomId);
     default:
       throw new TypeError(`Unsupported presence group mutation: ${descriptor.operation}`);
   }
@@ -55,16 +36,15 @@ function requireSessionId(descriptor: GroupMutationDescriptor): string {
 }
 
 function toConnectPresenceCommand(
-  scope: StateScope,
-  groupId: string,
+  descriptor: GroupMutationDescriptor,
   sessionId: string,
-  request: ConnectGroupPresenceSessionRequest,
   randomId: () => string,
 ): GroupMutationCommand {
+  const request = descriptor.request as ConnectGroupPresenceSessionRequest;
   requireGenerationId(request.generationId);
   return {
     operation: 'connectPresence',
-    aggregateRef: { ...scope, groupId },
+    aggregateRef: { ...descriptor.scope, groupId: descriptor.groupId },
     sessionId,
     ...toGroupMutationIdentity(request.requestId, randomId),
     input: {
@@ -80,16 +60,15 @@ function toConnectPresenceCommand(
 }
 
 function toHeartbeatPresenceCommand(
-  scope: StateScope,
-  groupId: string,
+  descriptor: GroupMutationDescriptor,
   sessionId: string,
-  request: HeartbeatGroupPresenceSessionRequest,
   randomId: () => string,
 ): GroupMutationCommand {
+  const request = descriptor.request as HeartbeatGroupPresenceSessionRequest;
   requireGenerationId(request.generationId);
   return {
     operation: 'heartbeatPresence',
-    aggregateRef: { ...scope, groupId },
+    aggregateRef: { ...descriptor.scope, groupId: descriptor.groupId },
     sessionId,
     ...toGroupMutationIdentity(request.requestId, randomId),
     input: {
@@ -103,16 +82,15 @@ function toHeartbeatPresenceCommand(
 }
 
 function toDisconnectPresenceCommand(
-  scope: StateScope,
-  groupId: string,
+  descriptor: GroupMutationDescriptor,
   sessionId: string,
-  request: DisconnectGroupPresenceSessionRequest,
   randomId: () => string,
 ): GroupMutationCommand {
+  const request = descriptor.request as DisconnectGroupPresenceSessionRequest;
   requireGenerationId(request.generationId);
   return {
     operation: 'disconnectPresence',
-    aggregateRef: { ...scope, groupId },
+    aggregateRef: { ...descriptor.scope, groupId: descriptor.groupId },
     sessionId,
     ...toGroupMutationIdentity(request.requestId, randomId),
     input: {

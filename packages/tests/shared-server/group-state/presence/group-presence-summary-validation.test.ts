@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-work.ts';
 import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
-import { corruptFirstEntry, convergeSummaryForTest, createService } from './group-presence-test-runtime.ts';
+import {
+  corruptFirstEntry,
+  convergeSummaryForTest,
+  createService,
+} from './group-presence-test-runtime.ts';
 import { SCOPE, groupRef } from '../mutation/group-mutation-test-runtime.ts';
 
 const BASE_EPOCH_MS = Date.now();
@@ -43,17 +47,26 @@ describe('group presence summary validation', () => {
       actorPrincipalId: 'alice',
       requestId: 'ban-filter-bob',
     });
-    await corruptFirstEntry(runtime, 'group-state:presence-admissions', (value) => ({
-      ...value,
-      admittedSessions: admitted.value.admittedSessions,
-    }));
+    await corruptFirstEntry({
+      runtime,
+      namespace: 'group-state:presence-admissions',
+      corrupt: (value) => ({
+        ...value,
+        admittedSessions: admitted.value.admittedSessions,
+      }),
+    });
 
     const summaryWork = new GroupPresenceSummaryWork({
       runtimeRepository: runtime,
       now: () => BASE_EPOCH_MS + 3_000,
       serviceId: 'summary-worker',
     });
-    await convergeSummaryForTest(summaryWork, runtime, ref, 'inactive-summary-filter');
+    await convergeSummaryForTest({
+      work: summaryWork,
+      runtime,
+      ref,
+      commandId: 'inactive-summary-filter',
+    });
 
     expect((await repository.findPresenceSummaryEntry(ref))?.value).toMatchObject({
       activePrincipalIds: [],
@@ -70,7 +83,11 @@ describe('group presence summary validation', () => {
         groupId: 'wrong-group',
       }),
     ],
-    ['wrong-scope admission', 'group-state:presence-admissions', (value: Record<string, unknown>) => ({ ...value, groupId: 'wrong-group' })],
+    [
+      'wrong-scope admission',
+      'group-state:presence-admissions',
+      (value: Record<string, unknown>) => ({ ...value, groupId: 'wrong-group' }),
+    ],
     [
       'impossible session lifecycle',
       'group-state:sessions',
@@ -80,7 +97,11 @@ describe('group presence summary validation', () => {
         expiresAtEpochMs: BASE_EPOCH_MS + 40_000,
       }),
     ],
-    ['malformed current summary', 'group-state:presence-summaries', (value: Record<string, unknown>) => ({ ...value, unexpected: true })],
+    [
+      'malformed current summary',
+      'group-state:presence-summaries',
+      (value: Record<string, unknown>) => ({ ...value, unexpected: true }),
+    ],
   ] as const)('rejects %s before the summary CAS', async (_label, namespace, corrupt) => {
     const runtime = new GroupBarrierRepository();
     const service = createService(runtime, BASE_EPOCH_MS);
@@ -92,14 +113,19 @@ describe('group presence summary validation', () => {
       createdByPrincipalId: 'alice',
       requestId: `seed-corrupt-summary-${namespace}`,
     });
-    await service.connectPresenceSession(SCOPE, `corrupt-summary-${namespace}`, 'alice-corrupt-session', {
-      principalId: 'alice',
-      generationId: 'alice-corrupt-generation',
-      actorPrincipalId: 'alice',
-      expiresAtEpochMs: BASE_EPOCH_MS + 60_000,
-      requestId: `connect-corrupt-summary-${namespace}`,
-    });
-    await corruptFirstEntry(runtime, namespace, corrupt);
+    await service.connectPresenceSession(
+      SCOPE,
+      `corrupt-summary-${namespace}`,
+      'alice-corrupt-session',
+      {
+        principalId: 'alice',
+        generationId: 'alice-corrupt-generation',
+        actorPrincipalId: 'alice',
+        expiresAtEpochMs: BASE_EPOCH_MS + 60_000,
+        requestId: `connect-corrupt-summary-${namespace}`,
+      },
+    );
+    await corruptFirstEntry({ runtime, namespace, corrupt });
     runtime.resetGuards();
 
     const summaryWork = new GroupPresenceSummaryWork({
@@ -107,9 +133,14 @@ describe('group presence summary validation', () => {
       now: () => BASE_EPOCH_MS + 3_000,
       serviceId: 'summary-worker',
     });
-    await expect(convergeSummaryForTest(summaryWork, runtime, groupRef(`corrupt-summary-${namespace}`), `corrupt-${namespace}`)).rejects.toThrow(
-      /scope|lifecycle|timestamp|unexpected|serialized|summary/i,
-    );
+    await expect(
+      convergeSummaryForTest({
+        work: summaryWork,
+        runtime,
+        ref: groupRef(`corrupt-summary-${namespace}`),
+        commandId: `corrupt-${namespace}`,
+      }),
+    ).rejects.toThrow(/scope|lifecycle|timestamp|unexpected|serialized|summary/i);
     expect(runtime.presenceSummaryGuards).toBe(0);
   });
 });

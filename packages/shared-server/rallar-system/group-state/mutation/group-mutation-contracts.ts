@@ -17,7 +17,10 @@ import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import type { RuntimeStateEntryValue } from '../../../runtime-state/RuntimeStateJsonStore.ts';
 import type { RuntimeStateEntry } from '../../../runtime-state/RuntimeStateRepository.ts';
-import type { InitialGroupPresenceSummaryCandidate } from '../presence/group-initial-presence-summary.ts';
+// prettier-ignore
+import type {
+  InitialGroupPresenceSummaryCandidate,
+} from '../presence/group-initial-presence-summary.ts';
 
 type NullableActorInput = Readonly<{
   actorPrincipalId: string | null;

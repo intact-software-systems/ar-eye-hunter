@@ -62,57 +62,76 @@ function validateOperationInput(
   operation: GroupMutationCommand['operation'],
   input: Readonly<Record<string, unknown>>,
 ): void {
-  const nullableString = (key: string) => {
-    if (input[key] !== null) requireNonEmptyString(input[key], `Group ${key}`);
-  };
-  const nullableInteger = (key: string, positive = false) => {
-    const value = input[key];
-    if (value === null) return;
-    if (!Number.isSafeInteger(value) || (value as number) < (positive ? 1 : 0)) {
-      throw new TypeError(`Group ${key} is invalid`);
-    }
-  };
+  if (AGGREGATE_GROUP_MUTATION_OPERATIONS.has(operation)) {
+    validateAggregateOperationInput(operation, input);
+    return;
+  }
+  if (PRESENCE_GROUP_MUTATION_OPERATIONS.has(operation)) {
+    validatePresenceOperationInput(operation, input);
+    return;
+  }
+  validateMembershipOperationInput(operation, input);
+}
+
+function validateAggregateOperationInput(
+  operation: GroupMutationCommand['operation'],
+  input: Readonly<Record<string, unknown>>,
+): void {
   switch (operation) {
     case 'createGroup':
-      nullableString('slug');
+      validateNullableString(input, 'slug');
       requireNonEmptyString(input.displayName, 'Group displayName');
-      nullableString('description');
+      validateNullableString(input, 'description');
       requireOneOf(input.kind, ['party', 'room', 'team', 'custom'], 'Group kind');
       requireOneOf(input.joinMode, ['invite-only', 'code', 'open'], 'Group joinMode');
-      nullableInteger('maxMembers', true);
-      nullableInteger('maxSessionsPerMember', true);
+      validateNullableInteger(input, 'maxMembers', true);
+      validateNullableInteger(input, 'maxSessionsPerMember', true);
       requireRecord(input.metadata, 'Group metadata');
       requireNonEmptyString(input.createdByPrincipalId, 'Group createdByPrincipalId');
-      nullableInteger('expiresAtEpochMs', true);
-      nullableInteger('purgeAfterEpochMs', true);
+      validateNullableInteger(input, 'expiresAtEpochMs', true);
+      validateNullableInteger(input, 'purgeAfterEpochMs', true);
       return;
     case 'updateGroup':
-      nullableString('slug');
-      nullableString('displayName');
-      nullableString('description');
+      validateNullableString(input, 'slug');
+      validateNullableString(input, 'displayName');
+      validateNullableString(input, 'description');
       if (input.kind !== null)
         requireOneOf(input.kind, ['party', 'room', 'team', 'custom'], 'Group kind');
       if (input.status !== null)
         requireOneOf(input.status, ['active', 'archived', 'deleted'], 'Group status');
       if (input.joinMode !== null)
         requireOneOf(input.joinMode, ['invite-only', 'code', 'open'], 'Group joinMode');
-      nullableInteger('maxMembers', true);
-      nullableInteger('maxSessionsPerMember', true);
+      validateNullableInteger(input, 'maxMembers', true);
+      validateNullableInteger(input, 'maxSessionsPerMember', true);
       if (input.metadata !== null) requireRecord(input.metadata, 'Group metadata');
-      nullableInteger('expiresAtEpochMs', true);
-      nullableInteger('emptySinceEpochMs', true);
-      nullableInteger('purgeAfterEpochMs', true);
+      validateNullableInteger(input, 'expiresAtEpochMs', true);
+      validateNullableInteger(input, 'emptySinceEpochMs', true);
+      validateNullableInteger(input, 'purgeAfterEpochMs', true);
       return;
     case 'appointDirector':
       requirePositiveSafeInteger(input.heartbeatTtlMs, 'Group heartbeatTtlMs');
       return;
+    case 'rotateGroupJoinCode':
+      validateNullableString(input, 'joinCode');
+      validateNullableInteger(input, 'expiresAtEpochMs', true);
+      return;
+    default:
+      return;
+  }
+}
+
+function validateMembershipOperationInput(
+  operation: GroupMutationCommand['operation'],
+  input: Readonly<Record<string, unknown>>,
+): void {
+  switch (operation) {
     case 'joinGroup':
     case 'acceptGroupInvite':
-      nullableString('inviteToken');
-      nullableString('joinCode');
+      validateNullableString(input, 'inviteToken');
+      validateNullableString(input, 'joinCode');
       return;
     case 'createGroupInvite':
-      nullableInteger('invitationExpiresAtEpochMs', true);
+      validateNullableInteger(input, 'invitationExpiresAtEpochMs', true);
       return;
     case 'setGroupMemberRole':
       requireOneOf(input.role, ['owner', 'admin', 'member'], 'Group role');
@@ -124,31 +143,8 @@ function validateOperationInput(
         ['invited', 'active', 'left', 'removed', 'banned'],
         'Group member status',
       );
-      nullableString('invitedByPrincipalId');
-      nullableInteger('invitationExpiresAtEpochMs', true);
-      return;
-    case 'rotateGroupJoinCode':
-      nullableString('joinCode');
-      nullableInteger('expiresAtEpochMs', true);
-      return;
-    case 'connectPresence':
-      requireNonEmptyString(input.principalId, 'Group presence principalId');
-      nullableInteger('connectedAtEpochMs', true);
-      nullableInteger('lastHeartbeatAtEpochMs', true);
-      nullableInteger('expiresAtEpochMs', true);
-      return;
-    case 'heartbeatPresence':
-      nullableString('principalId');
-      nullableInteger('lastHeartbeatAtEpochMs', true);
-      nullableInteger('expiresAtEpochMs', true);
-      return;
-    case 'disconnectPresence':
-      nullableString('principalId');
-      nullableInteger('generationVersion', true);
-      nullableInteger('observedExpiresAtEpochMs', true);
-      nullableInteger('disconnectedAtEpochMs', true);
-      nullableInteger('lastHeartbeatAtEpochMs', true);
-      nullableInteger('expiresAtEpochMs', true);
+      validateNullableString(input, 'invitedByPrincipalId');
+      validateNullableInteger(input, 'invitationExpiresAtEpochMs', true);
       return;
     case 'revokeGroupInvite':
     case 'removeGroupMember':
@@ -156,6 +152,41 @@ function validateOperationInput(
     case 'unbanGroupMember':
     case 'transferGroupOwnership':
       return;
+  }
+}
+
+function validatePresenceOperationInput(
+  operation: GroupMutationCommand['operation'],
+  input: Readonly<Record<string, unknown>>,
+): void {
+  if (operation === 'connectPresence') {
+    requireNonEmptyString(input.principalId, 'Group presence principalId');
+    validateNullableInteger(input, 'connectedAtEpochMs', true);
+  } else {
+    validateNullableString(input, 'principalId');
+  }
+  if (operation === 'disconnectPresence') {
+    validateNullableInteger(input, 'generationVersion', true);
+    validateNullableInteger(input, 'observedExpiresAtEpochMs', true);
+    validateNullableInteger(input, 'disconnectedAtEpochMs', true);
+  }
+  validateNullableInteger(input, 'lastHeartbeatAtEpochMs', true);
+  validateNullableInteger(input, 'expiresAtEpochMs', true);
+}
+
+function validateNullableString(input: Readonly<Record<string, unknown>>, key: string): void {
+  if (input[key] !== null) requireNonEmptyString(input[key], `Group ${key}`);
+}
+
+function validateNullableInteger(
+  input: Readonly<Record<string, unknown>>,
+  key: string,
+  positive = false,
+): void {
+  const value = input[key];
+  if (value === null) return;
+  if (!Number.isSafeInteger(value) || (value as number) < (positive ? 1 : 0)) {
+    throw new TypeError(`Group ${key} is invalid`);
   }
 }
 
@@ -196,6 +227,13 @@ const PRESENCE_GROUP_MUTATION_OPERATIONS = new Set<GroupMutationCommand['operati
   'connectPresence',
   'heartbeatPresence',
   'disconnectPresence',
+]);
+
+const AGGREGATE_GROUP_MUTATION_OPERATIONS = new Set<GroupMutationCommand['operation']>([
+  'createGroup',
+  'updateGroup',
+  'appointDirector',
+  'rotateGroupJoinCode',
 ]);
 
 const GROUP_MUTATION_INPUT_KEYS: Readonly<

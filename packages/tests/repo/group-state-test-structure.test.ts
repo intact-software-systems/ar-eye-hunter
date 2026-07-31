@@ -3,6 +3,8 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+import { expectedGroupStateTestTree } from './group-state-server-source-ratchet-inventory.ts';
+
 const repoRoot = process.cwd();
 const groupStateTestRoot = path.join(repoRoot, 'packages/tests/shared-server/group-state');
 const predecessorPath = path.join(
@@ -10,59 +12,22 @@ const predecessorPath = path.join(
   'packages/tests/shared-server/group-state-concurrency.test.ts',
 );
 
-const expectedTargetTree = [
-  'group-state-concurrency-test-fixtures.ts',
-  'group-state-concurrency-test-runtime.ts',
-  'group-state-service-idempotency-command.test.ts',
-  'group-state-service-idempotency-concurrency.test.ts',
-  'group-state-service-idempotency.test.ts',
-  'group-state-test-mutation-executor.ts',
-  'group-state-test-runtime.ts',
-  'inbox/group-state-inbox-authority.test.ts',
-  'inbox/group-state-inbox-construction.test.ts',
-  'inbox/group-state-inbox-operation-matrix.test.ts',
-  'inbox/group-state-inbox-retry-convergence.test.ts',
-  'inbox/group-state-inbox-retry.test.ts',
-  'inbox/group-state-inbox-test-runtime.ts',
-  'mutation/group-aggregate-mutation-concurrency.test.ts',
-  'mutation/group-aggregate-mutation.test.ts',
-  'mutation/group-membership-mutation.test.ts',
-  'mutation/group-mutation-command-validation.test.ts',
-  'mutation/group-mutation-request-validation.test.ts',
-  'mutation/group-mutation-result-adaptation.test.ts',
-  'mutation/group-mutation-result-persistence.test.ts',
-  'mutation/group-mutation-result.test.ts',
-  'mutation/group-mutation-test-runtime.ts',
-  'mutation/group-presence-mutation.test.ts',
-  'mutation/read-group-mutation-retry.test.ts',
-  'mutation/read-group-mutation.test.ts',
-  'mutation/write-group-state-mutation-atomicity.test.ts',
-  'mutation/write-group-state-mutation-behavior.test.ts',
-  'mutation/write-group-state-mutation-convergence.test.ts',
-  'mutation/write-group-state-mutation-equivalence.test.ts',
-  'mutation/write-group-state-mutation-presence.test.ts',
-  'mutation/write-group-state-mutation.test.ts',
-  'persistence/group-state-authority-fence.test.ts',
-  'persistence/group-state-repository-corruption.test.ts',
-  'persistence/group-state-repository-dispatch.test.ts',
-  'persistence/group-state-repository-identity.test.ts',
-  'persistence/group-state-repository-read-integrity.test.ts',
-  'persistence/group-state-repository-write-integrity.test.ts',
-  'persistence/group-state-snapshot-assembly.test.ts',
-  'persistence/group-state-storage-keys.test.ts',
-  'presence/group-presence-concurrency.test.ts',
-  'presence/group-presence-expiry-retry.test.ts',
-  'presence/group-presence-retry-test-runtime.ts',
-  'presence/group-presence-retry.test.ts',
-  'presence/group-presence-summary-evaluation-time.test.ts',
-  'presence/group-presence-summary-storage-revision.test.ts',
-  'presence/group-presence-summary-validation.test.ts',
-  'presence/group-presence-summary-work.test.ts',
-  'presence/group-presence-test-runtime.ts',
-  'presence/reconcile-expired-group-presence.test.ts',
-  'snapshot/group-state-snapshot-presence.test.ts',
-  'snapshot/group-state-snapshot-read-through-cache.test.ts',
-  'snapshot/group-state-snapshot-test-fixtures.ts',
+const namedInputSourcePaths = [
+  'packages/shared-server/rallar-system/group-state/mutation/validate-group-mutation-read.ts',
+  'packages/tests/shared-server/group-state/group-state-test-runtime.ts',
+  'packages/tests/shared-server/mutation-routing-inventory.ts',
+] as const;
+
+const persistenceFixtureLiteralPaths = [
+  'packages/tests/shared-server/group-state/persistence/group-state-repository-corruption.test.ts',
+  'packages/tests/shared-server/group-state/persistence/group-state-repository-identity.test.ts',
+  'packages/tests/shared-server/group-state/persistence/group-state-snapshot-assembly.test.ts',
+  'packages/tests/shared-server/group-state-persistence-mutation-read-fixtures.ts',
+] as const;
+
+const persistenceFixtureCasePaths = [
+  ...persistenceFixtureLiteralPaths.slice(0, 3),
+  'packages/tests/shared-server/group-state-persistence-ownership.test.ts',
 ] as const;
 
 const constructionHelperPaths = [
@@ -84,7 +49,7 @@ interface NamedFunctionSize {
 describe('group-state test structure', () => {
   it('keeps the exact responsibility-owned target tree and removes the predecessor', () => {
     expect(existsSync(predecessorPath), predecessorPath).toBe(false);
-    expect(readRelativeFileTree(groupStateTestRoot)).toEqual([...expectedTargetTree].sort());
+    expect(readRelativeFileTree(groupStateTestRoot)).toEqual([...expectedGroupStateTestTree]);
   });
 
   it('keeps every responsibility-owned TypeScript module within 400 physical lines', () => {
@@ -106,7 +71,164 @@ describe('group-state test structure', () => {
 
     expect(oversizedHelpers).toEqual([]);
   });
+
+  it('keeps four-or-more-value internal calls on named input contracts', () => {
+    expect(readWideTupleParameterFunctions(namedInputSourcePaths)).toEqual([]);
+  });
+
+  it('detects prior four- and six-value tuple parameter regressions', () => {
+    expect(
+      readWideTupleParameterFunctionsFromSources([
+        {
+          relativePath: namedInputSourcePaths[0],
+          source:
+            'function validateAdmissionReads([read, command, ref, identities]: ' +
+            'readonly [unknown, unknown, unknown, unknown]): void {}',
+        },
+        {
+          relativePath: namedInputSourcePaths[1],
+          source:
+            'function authSession([clientId, sessionId, accessToken, ...times]: ' +
+            'readonly unknown[]): void {}',
+        },
+        {
+          relativePath: namedInputSourcePaths[2],
+          source:
+            'function checkAstMarker([issues, filePath, marker, label, item, sources]: ' +
+            'readonly unknown[]): void {}',
+        },
+      ]),
+    ).toEqual([
+      `${namedInputSourcePaths[0]}:validateAdmissionReads`,
+      `${namedInputSourcePaths[1]}:authSession`,
+      `${namedInputSourcePaths[2]}:checkAstMarker`,
+    ]);
+  });
+
+  it('keeps the independently written persistence fixture evidence cohort', () => {
+    expect(countSemanticLiterals(persistenceFixtureLiteralPaths)).toBe(508);
+    expect(countNamedCalls(persistenceFixtureCasePaths, new Set(['it', 'test']))).toBe(16);
+    expect(countNamedCalls(persistenceFixtureCasePaths, new Set(['expect']))).toBe(31);
+  });
 });
+
+interface SyntaxNode {
+  readonly type: string;
+  readonly [key: string]: unknown;
+}
+
+interface NamedSource {
+  readonly relativePath: string;
+  readonly source: string;
+}
+
+function readWideTupleParameterFunctions(relativePaths: readonly string[]): readonly string[] {
+  return readWideTupleParameterFunctionsFromSources(
+    relativePaths.map((relativePath) => ({
+      relativePath,
+      source: readFile(path.join(repoRoot, relativePath)),
+    })),
+  );
+}
+
+function readWideTupleParameterFunctionsFromSources(
+  sources: readonly NamedSource[],
+): readonly string[] {
+  return sources.flatMap(({ relativePath, source }) => {
+    const syntaxTree = parse(source, {
+      sourceType: 'module',
+      plugins: ['typescript'],
+    });
+    const findings: string[] = [];
+    visitSyntaxNodes(syntaxTree.program as SyntaxNode, (node) => {
+      if (node.type !== 'FunctionDeclaration' || !Array.isArray(node.params)) {
+        return;
+      }
+      const firstParameter = node.params[0];
+      if (!isSyntaxNode(firstParameter) || firstParameter.type !== 'ArrayPattern') {
+        return;
+      }
+      const elements = Array.isArray(firstParameter.elements) ? firstParameter.elements : [];
+      if (elements.filter((element) => element !== null).length >= 4) {
+        const identifier =
+          isSyntaxNode(node.id) && node.id.type === 'Identifier' ? node.id.name : '';
+        findings.push(`${relativePath}:${String(identifier)}`);
+      }
+    });
+    return findings;
+  });
+}
+
+function countSemanticLiterals(relativePaths: readonly string[]): number {
+  let count = 0;
+  for (const relativePath of relativePaths) {
+    const syntaxTree = parse(readFile(path.join(repoRoot, relativePath)), {
+      sourceType: 'module',
+      plugins: ['typescript'],
+    });
+    visitSyntaxNodes(syntaxTree.program as SyntaxNode, (node, parent, propertyName) => {
+      if (
+        [
+          'StringLiteral',
+          'NumericLiteral',
+          'BooleanLiteral',
+          'NullLiteral',
+          'TemplateLiteral',
+          'RegExpLiteral',
+        ].includes(node.type) &&
+        !(parent?.type === 'ImportDeclaration' && propertyName === 'source')
+      ) {
+        count += 1;
+      }
+    });
+  }
+  return count;
+}
+
+function countNamedCalls(relativePaths: readonly string[], names: ReadonlySet<string>): number {
+  let count = 0;
+  for (const relativePath of relativePaths) {
+    const syntaxTree = parse(readFile(path.join(repoRoot, relativePath)), {
+      sourceType: 'module',
+      plugins: ['typescript'],
+    });
+    visitSyntaxNodes(syntaxTree.program as SyntaxNode, (node) => {
+      if (node.type !== 'CallExpression' || !isSyntaxNode(node.callee)) {
+        return;
+      }
+      if (node.callee.type === 'Identifier' && names.has(String(node.callee.name))) {
+        count += 1;
+      }
+    });
+  }
+  return count;
+}
+
+function visitSyntaxNodes(
+  node: SyntaxNode,
+  visitor: (node: SyntaxNode, parent?: SyntaxNode, propertyName?: string) => void,
+  parent?: SyntaxNode,
+  propertyName?: string,
+): void {
+  visitor(node, parent, propertyName);
+  for (const [key, value] of Object.entries(node)) {
+    if (Array.isArray(value)) {
+      for (const child of value) {
+        if (isSyntaxNode(child)) {
+          visitSyntaxNodes(child, visitor, node, key);
+        }
+      }
+    } else if (isSyntaxNode(value)) {
+      visitSyntaxNodes(value, visitor, node, key);
+    }
+  }
+}
+
+function isSyntaxNode(value: unknown): value is SyntaxNode {
+  return (
+    typeof value === 'object' && value !== null && typeof Reflect.get(value, 'type') === 'string'
+  );
+}
 
 function readRelativeFileTree(directoryPath: string, prefix = ''): readonly string[] {
   return readdirSync(directoryPath, { withFileTypes: true })

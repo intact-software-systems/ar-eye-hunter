@@ -6,6 +6,7 @@ import type {
   GroupStateMutationCommand,
   GroupStateService,
 } from '../group-state-service-contracts.ts';
+// prettier-ignore
 import type {
   GroupTopologyManagementService,
 } from '../../services/group-topology-management-service.ts';
@@ -16,7 +17,10 @@ import type {
   WsSessionGenerationLifecycleComputed,
   WsSessionHighWaterIdentity,
 } from '../../services/ws-session-generation-lifecycle.ts';
-import type { GroupPresenceSessionCleanupAppInboxPayload } from './group-presence-contracts.ts';
+// prettier-ignore
+import type {
+  GroupPresenceSessionCleanupAppInboxPayload,
+} from './group-presence-session-cleanup-app-inbox-payload.ts';
 
 type WriteMutation = (
   write: (transaction: PSqlTransactionSql) => Promise<unknown>,

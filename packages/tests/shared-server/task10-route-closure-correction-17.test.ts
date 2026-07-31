@@ -13,10 +13,10 @@ import {
 const FIXTURES = 'packages/tests/shared-server/fixtures/mutation-boundary-capability-receivers';
 const GROUP_OWNER = 'packages/shared-server/rallar-system/services/AppGroupInboxService.ts';
 const LIVE_GROUP_COLLECTION = `GROUP_MUTATION_INBOX_TYPES.filter(
-            (candidate) => candidate !== AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP,
-        )`;
-const LOOP_START = '        for (const type of GROUP_MUTATION_INBOX_TYPES.filter(';
-const LOOP_END = '        this.onStateMessage<GroupPresenceSessionCleanupAppInboxPayload>(';
+      (candidate) => candidate !== AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP,
+    )`;
+const LOOP_START = '    for (const type of GROUP_MUTATION_INBOX_TYPES.filter(';
+const LOOP_END = '    this.onStateMessage<GroupPresenceSessionCleanupAppInboxPayload>(';
 const CLASS_START = 'export class AppGroupInboxService extends AppInboxService {';
 const TYPE_MAP = `const C17_TYPE_MAP = new Map([
     [AppInboxType.GROUP_CREATE, AppInboxType.GROUP_UPDATE],

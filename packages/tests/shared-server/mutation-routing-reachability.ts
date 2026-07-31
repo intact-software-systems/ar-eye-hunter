@@ -11,23 +11,34 @@ import {
   type MutationRoutingProgramLoader,
 } from './mutation-routing-live-registration.ts';
 
-export function findMutationRouteReachabilityIssues(
-  item: MutationRouteInventoryEntry,
-  source: AstNode,
-  enqueueSource: AstNode,
-  ownerSource: AstNode,
-  dispatchSource: AstNode,
-  containsMarker: (node: AstNode, marker: string) => boolean,
-  matchesMarker: (node: AstNode, marker: string) => boolean,
-  loadProgram: MutationRoutingProgramLoader,
-): readonly string[] {
+interface MutationRouteReachabilityInput {
+  readonly item: MutationRouteInventoryEntry;
+  readonly source: AstNode;
+  readonly enqueueSource: AstNode;
+  readonly ownerSource: AstNode;
+  readonly dispatchSource: AstNode;
+  readonly containsMarker: (node: AstNode, marker: string) => boolean;
+  readonly matchesMarker: (node: AstNode, marker: string) => boolean;
+  readonly loadProgram: MutationRoutingProgramLoader;
+}
+
+export function findMutationRouteReachabilityIssues({
+  item,
+  source,
+  enqueueSource,
+  ownerSource,
+  dispatchSource,
+  containsMarker,
+  matchesMarker,
+  loadProgram,
+}: MutationRouteReachabilityInput): readonly string[] {
   const routeKey = `${item.transport}:${item.entrypoint}:${item.type}`;
   const handlers = findRegisteredHandlers(item, source, containsMarker, matchesMarker);
   if (handlers.length === 0) {
     return [`${routeKey} registered callback cannot be resolved`];
   }
   const handoff = handlers
-    .map((handler) => findReachableHandoff(item, source, enqueueSource, handler, matchesMarker))
+    .map((handler) => findReachableHandoff({ item, source, enqueueSource, handler, matchesMarker }))
     .find((candidate) => candidate !== undefined);
   const issues: string[] = [];
   if (
@@ -41,14 +52,14 @@ export function findMutationRouteReachabilityIssues(
     );
   }
   if (
-    !hasOwnerDispatch(
-      dispatchSource,
-      item.dispatchSourcePath,
-      item.type,
-      item.ownerDispatchPath,
+    !hasOwnerDispatch({
+      program: dispatchSource,
+      filePath: item.dispatchSourcePath,
+      type: item.type,
+      dispatchPath: item.ownerDispatchPath,
       matchesMarker,
       loadProgram,
-    )
+    })
   ) {
     issues.push(`${routeKey} owner dispatch is not connected to ${item.owner}`);
   }
@@ -125,13 +136,21 @@ function findRegisteredHandlers(
   );
 }
 
-function findReachableHandoff(
-  item: MutationRouteInventoryEntry,
-  source: AstNode,
-  enqueueSource: AstNode,
-  handler: AstNode,
-  matchesMarker: (node: AstNode, marker: string) => boolean,
-): ReachableHandoff | undefined {
+interface FindReachableHandoffInput {
+  readonly item: MutationRouteInventoryEntry;
+  readonly source: AstNode;
+  readonly enqueueSource: AstNode;
+  readonly handler: AstNode;
+  readonly matchesMarker: (node: AstNode, marker: string) => boolean;
+}
+
+function findReachableHandoff({
+  item,
+  source,
+  enqueueSource,
+  handler,
+  matchesMarker,
+}: FindReachableHandoffInput): ReachableHandoff | undefined {
   if (item.sourcePath === item.enqueueSourcePath) {
     return hasReachableAstNode(source, handler, (node) =>
       hasHandoffCall(node, item.enqueueMarker, matchesMarker),
@@ -174,14 +193,23 @@ interface ReachableHandoff {
   readonly root: AstNode;
 }
 
-function hasOwnerDispatch(
-  program: AstNode,
-  filePath: string,
-  type: AppInboxType,
-  dispatchPath: string,
-  matchesMarker: (node: AstNode, marker: string) => boolean,
-  loadProgram: MutationRoutingProgramLoader,
-): boolean {
+interface HasOwnerDispatchInput {
+  readonly program: AstNode;
+  readonly filePath: string;
+  readonly type: AppInboxType;
+  readonly dispatchPath: string;
+  readonly matchesMarker: (node: AstNode, marker: string) => boolean;
+  readonly loadProgram: MutationRoutingProgramLoader;
+}
+
+function hasOwnerDispatch({
+  program,
+  filePath,
+  type,
+  dispatchPath,
+  matchesMarker,
+  loadProgram,
+}: HasOwnerDispatchInput): boolean {
   const calls = findAll(
     program,
     (node) =>

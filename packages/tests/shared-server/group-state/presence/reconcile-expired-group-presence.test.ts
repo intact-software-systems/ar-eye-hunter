@@ -4,7 +4,9 @@ import { enqueuePresenceExpiryReconciliation } from '@shared-server/rallar-syste
 
 describe('enqueuePresenceExpiryReconciliation', () => {
   it('keeps expiry reconciliation behind the stable one-hop public path', () => {
-    expect(enqueueCompatibilityPresenceExpiryReconciliation).toBe(enqueuePresenceExpiryReconciliation);
+    expect(enqueueCompatibilityPresenceExpiryReconciliation).toBe(
+      enqueuePresenceExpiryReconciliation,
+    );
   });
 
   it('awaits durable client and group expiry enqueue through their app inboxes', async () => {
@@ -54,7 +56,9 @@ describe('enqueuePresenceExpiryReconciliation', () => {
       },
     };
 
-    await expect(enqueuePresenceExpiryReconciliation(runtime as never, 123_456)).rejects.toBe(failure);
+    await expect(enqueuePresenceExpiryReconciliation(runtime as never, 123_456)).rejects.toBe(
+      failure,
+    );
     expect(runtime.appClientInboxService.enqueueExpiredSessions).toHaveBeenCalledWith(123_456);
   });
 });

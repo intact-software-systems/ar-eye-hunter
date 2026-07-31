@@ -88,11 +88,20 @@ export class GroupBarrierRepository extends FakeRuntimeStateRepository {
     this.compatibilitySnapshotListReads = 0;
   }
 
-  override findEntriesByPrefix(namespace: string, keyPrefix: string): Promise<readonly RuntimeStateEntry[]> {
-    if ((namespace === 'group-state:members' || namespace === 'group-state:sessions') && new Error().stack?.includes('readGroupMutation')) {
+  override findEntriesByPrefix(
+    namespace: string,
+    keyPrefix: string,
+  ): Promise<readonly RuntimeStateEntry[]> {
+    if (
+      (namespace === 'group-state:members' || namespace === 'group-state:sessions') &&
+      new Error().stack?.includes('readGroupMutation')
+    ) {
       this.hotPathListReads += 1;
     }
-    if ((namespace === 'group-state:members' || namespace === 'group-state:sessions') && new Error().stack?.includes('readStableStateSnapshot')) {
+    if (
+      (namespace === 'group-state:members' || namespace === 'group-state:sessions') &&
+      new Error().stack?.includes('readStableStateSnapshot')
+    ) {
       this.compatibilitySnapshotListReads += 1;
     }
     return super.findEntriesByPrefix(namespace, keyPrefix);
@@ -116,7 +125,9 @@ export class GroupBarrierRepository extends FakeRuntimeStateRepository {
     return value;
   }
 
-  override async begin<T>(fn: (repository: RuntimeStateOptimisticTransactionalRepositoryLike) => Promise<T>): Promise<T> {
+  override async begin<T>(
+    fn: (repository: RuntimeStateOptimisticTransactionalRepositoryLike) => Promise<T>,
+  ): Promise<T> {
     if (!this.serializeGroupTestTransactions) {
       return await super.begin(fn);
     }
@@ -133,7 +144,12 @@ export class GroupBarrierRepository extends FakeRuntimeStateRepository {
     }
   }
 
-  override insertIfAbsent(namespace: string, key: string, value: string, expireAtTimestamp: number): Promise<RuntimeStateConditionalWriteResult> {
+  override insertIfAbsent(
+    namespace: string,
+    key: string,
+    value: string,
+    expireAtTimestamp: number,
+  ): Promise<RuntimeStateConditionalWriteResult> {
     this.conditionalOperations.push(`insert:${namespace}`);
     this.recordGuard(namespace);
     return super.insertIfAbsent(namespace, key, value, expireAtTimestamp);
@@ -163,14 +179,21 @@ export class GroupBarrierRepository extends FakeRuntimeStateRepository {
       this.groupConflictsRemaining -= 1;
       return { status: 'conflict' };
     }
-    if (namespace === 'group-state:presence-summaries' && this.presenceSummaryConflictsRemaining > 0) {
+    if (
+      namespace === 'group-state:presence-summaries' &&
+      this.presenceSummaryConflictsRemaining > 0
+    ) {
       this.presenceSummaryConflictsRemaining -= 1;
       return { status: 'conflict' };
     }
     return await super.upsertIfRevision(namespace, key, value, expireAtTimestamp, expectedRevision);
   }
 
-  override deleteIfRevision(namespace: string, key: string, expectedRevision: number): Promise<RuntimeStateConditionalDeleteResult> {
+  override deleteIfRevision(
+    namespace: string,
+    key: string,
+    expectedRevision: number,
+  ): Promise<RuntimeStateConditionalDeleteResult> {
     this.conditionalOperations.push(`delete:${namespace}`);
     this.recordGuard(namespace);
     if (namespace === 'group-state:sessions' && this.presenceDeleteConflictsRemaining > 0) {

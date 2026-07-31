@@ -1,7 +1,5 @@
 import type { GroupRef } from '@shared/api/group-types.ts';
-import type {
-  RuntimeStateEntryValue,
-} from '../../../runtime-state/RuntimeStateJsonStore.ts';
+import type { RuntimeStateEntryValue } from '../../../runtime-state/RuntimeStateJsonStore.ts';
 import type {
   RuntimeStateEntry,
   RuntimeStateRepositoryLike,
@@ -10,6 +8,7 @@ import {
   isRuntimeStateReadBatchRepositoryLike,
   type RuntimeStateReadBatchSelector,
 } from '../../../runtime-state/RuntimeStateReadBatch.ts';
+// prettier-ignore
 import {
   resolveRuntimeStateReadBatchLiveValues,
 } from '../../../runtime-state/RuntimeStateReadBatchLiveValues.ts';
@@ -24,12 +23,12 @@ import {
 export type GroupStateAuthorityBatchRead =
   | Readonly<{ status: 'fallback' }>
   | Readonly<{
-    status: 'stable';
-    group: RuntimeStateEntryValue<unknown> | undefined;
-    members: readonly RuntimeStateEntryValue<unknown>[];
-    summary: RuntimeStateEntryValue<unknown> | undefined;
-    sessions: readonly RuntimeStateEntryValue<unknown>[];
-  }>;
+      status: 'stable';
+      group: RuntimeStateEntryValue<unknown> | undefined;
+      members: readonly RuntimeStateEntryValue<unknown>[];
+      summary: RuntimeStateEntryValue<unknown> | undefined;
+      sessions: readonly RuntimeStateEntryValue<unknown>[];
+    }>;
 
 export async function readGroupStateAuthorityBatch(
   repository: RuntimeStateRepositoryLike,
@@ -44,27 +43,32 @@ export async function readGroupStateAuthorityBatch(
   }
   const groupKey = groupStateGroupStorageKey(ref);
   const childPrefix = `${groupKey}:`;
-  const selectors: readonly RuntimeStateReadBatchSelector[] = [{
-    selectorId: 'group',
-    kind: 'key',
-    namespace: GROUPS_NAMESPACE,
-    key: groupKey,
-  }, {
-    selectorId: 'members',
-    kind: 'prefix',
-    namespace: MEMBERS_NAMESPACE,
-    keyPrefix: childPrefix,
-  }, {
-    selectorId: 'presence-summary',
-    kind: 'key',
-    namespace: PRESENCE_SUMMARIES_NAMESPACE,
-    key: groupKey,
-  }, {
-    selectorId: 'presence-sessions',
-    kind: 'prefix',
-    namespace: SESSIONS_NAMESPACE,
-    keyPrefix: childPrefix,
-  }];
+  const selectors: readonly RuntimeStateReadBatchSelector[] = [
+    {
+      selectorId: 'group',
+      kind: 'key',
+      namespace: GROUPS_NAMESPACE,
+      key: groupKey,
+    },
+    {
+      selectorId: 'members',
+      kind: 'prefix',
+      namespace: MEMBERS_NAMESPACE,
+      keyPrefix: childPrefix,
+    },
+    {
+      selectorId: 'presence-summary',
+      kind: 'key',
+      namespace: PRESENCE_SUMMARIES_NAMESPACE,
+      key: groupKey,
+    },
+    {
+      selectorId: 'presence-sessions',
+      kind: 'prefix',
+      namespace: SESSIONS_NAMESPACE,
+      keyPrefix: childPrefix,
+    },
+  ];
   const resolved = await resolveRuntimeStateReadBatchLiveValues(
     selectors,
     await repository.readRuntimeStateBatch(selectors),

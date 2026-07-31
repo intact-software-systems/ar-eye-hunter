@@ -16,6 +16,13 @@ export interface ReadGroupStateInboxResultInput {
   readonly receipt: GroupMutationReceipt;
 }
 
+interface ToGroupMutationResultInput {
+  readonly command: GroupStateMutationCommand;
+  readonly receipt: GroupMutationReceipt;
+  readonly snapshot: GroupSnapshot;
+  readonly event: GroupEvent | null;
+}
+
 export async function readGroupStateInboxResult(
   input: ReadGroupStateInboxResultInput,
 ): Promise<GroupStateInboxResult> {
@@ -34,7 +41,7 @@ export async function readGroupStateInboxResult(
   const durableResult =
     input.command.command.operation === 'rotateGroupJoinCode'
       ? toJoinCodeResult(input.receipt, snapshot, event)
-      : toGroupMutationResult(input.command, input.receipt, snapshot, event);
+      : toGroupMutationResult({ command: input.command, receipt: input.receipt, snapshot, event });
   return { durableResult, committedSnapshot: snapshot };
 }
 
@@ -86,12 +93,8 @@ function toJoinCodeResult(
   };
 }
 
-function toGroupMutationResult(
-  command: GroupStateMutationCommand,
-  receipt: GroupMutationReceipt,
-  snapshot: GroupSnapshot,
-  event: GroupEvent | null,
-): unknown {
+function toGroupMutationResult(input: ToGroupMutationResultInput): unknown {
+  const { command, event, receipt, snapshot } = input;
   if (receipt.outcome === 'rejected') {
     return {
       status: 'error',

@@ -23,11 +23,13 @@ export function validateInitialGroupPresenceSummaryCandidate(
   candidate: InitialGroupPresenceSummaryCandidate,
   predecessor: RuntimeStateEntryValue<GroupPresenceSummary> | null,
 ): void {
-  const expectedKeys = candidate.operation === 'update'
-    ? ['expectedRevision', 'operation', 'value']
-    : ['operation', 'value'];
+  const expectedKeys =
+    candidate.operation === 'update'
+      ? ['expectedRevision', 'operation', 'value']
+      : ['operation', 'value'];
   if (
-    typeof candidate !== 'object' || candidate === null ||
+    typeof candidate !== 'object' ||
+    candidate === null ||
     JSON.stringify(Object.keys(candidate).sort()) !== JSON.stringify(expectedKeys)
   ) {
     throw new TypeError('Initial group presence summary fields are invalid');

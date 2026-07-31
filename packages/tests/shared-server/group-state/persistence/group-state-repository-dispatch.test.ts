@@ -11,9 +11,7 @@ import type {
 } from '@shared/api/group-types.ts';
 import type { RuntimeStateEntryValue } from '@shared-server/runtime-state/RuntimeStateJsonStore.ts';
 import type { RuntimeStateEntry } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
-import {
-  GroupStateRepository,
-} from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
 
 describe('GroupStateRepository facade dispatch', () => {
@@ -49,8 +47,9 @@ describe('GroupStateRepository snapshot facade dispatch', () => {
     runtime.changePageRevision = true;
     repository.resetDispatchCalls();
 
-    await expect(repository.listSnapshotsPage(fixture.group, { limit: 10 }))
-      .resolves.toMatchObject({ snapshots: [expect.any(Object)] });
+    await expect(repository.listSnapshotsPage(fixture.group, { limit: 10 })).resolves.toMatchObject(
+      { snapshots: [expect.any(Object)] },
+    );
 
     expect(repository.dispatchCalls).toMatchObject({
       readSnapshot: 1,
@@ -61,15 +60,14 @@ describe('GroupStateRepository snapshot facade dispatch', () => {
   });
 
   it('dispatches fallback authority reads through facade overrides', async () => {
-    const repository = new TrackingGroupStateRepository(
-      new SnapshotRevisionRuntime(),
-    );
+    const repository = new TrackingGroupStateRepository(new SnapshotRevisionRuntime());
     const fixture = createFixture();
     await seedFixture(repository, fixture);
     repository.resetDispatchCalls();
 
-    await expect(repository.readSnapshotWithAuthorityGuard(fixture.group))
-      .resolves.toMatchObject({ snapshot: expect.any(Object) });
+    await expect(repository.readSnapshotWithAuthorityGuard(fixture.group)).resolves.toMatchObject({
+      snapshot: expect.any(Object),
+    });
 
     expect(repository.dispatchCalls).toMatchObject({
       findGroupEntry: 2,
@@ -103,9 +101,7 @@ class TrackingGroupStateRepository extends GroupStateRepository {
     return await super.readSnapshot(ref);
   }
 
-  override async findGroupEntry(
-    ref: GroupRef,
-  ): Promise<RuntimeStateEntryValue<Group> | undefined> {
+  override async findGroupEntry(ref: GroupRef): Promise<RuntimeStateEntryValue<Group> | undefined> {
     this.dispatchCalls.findGroupEntry += 1;
     return await super.findGroupEntry(ref);
   }
@@ -122,9 +118,7 @@ class TrackingGroupStateRepository extends GroupStateRepository {
     return await super.findPresenceSummaryEntry(ref);
   }
 
-  override async listPresenceSessions(
-    ref: GroupRef,
-  ): Promise<readonly GroupPresenceSession[]> {
+  override async listPresenceSessions(ref: GroupRef): Promise<readonly GroupPresenceSession[]> {
     this.dispatchCalls.listPresenceSessions += 1;
     return await super.listPresenceSessions(ref);
   }
@@ -134,11 +128,7 @@ class TrackingGroupStateRepository extends GroupStateRepository {
   }
 
   resetDispatchCalls(): void {
-    for (
-      const name of Object.keys(this.dispatchCalls) as Array<
-        keyof typeof this.dispatchCalls
-      >
-    ) {
+    for (const name of Object.keys(this.dispatchCalls) as Array<keyof typeof this.dispatchCalls>) {
       this.dispatchCalls[name] = 0;
     }
   }
@@ -333,9 +323,7 @@ function createDispatchOwner(context: DispatchFixtureContext): GroupMember {
   };
 }
 
-function createDispatchSession(
-  context: DispatchFixtureContext,
-): GroupPresenceSession {
+function createDispatchSession(context: DispatchFixtureContext): GroupPresenceSession {
   return {
     ...context.ref,
     sessionId: 'facade-dispatch-session',
@@ -358,12 +346,14 @@ function createDispatchAdmission(
   return {
     ...context.ref,
     principalId: 'owner',
-    admittedSessions: [{
-      sessionId: session.sessionId,
-      generationId: session.generationId,
-      generationVersion: session.generationVersion,
-      connectedAtEpochMs: session.connectedAtEpochMs,
-    }],
+    admittedSessions: [
+      {
+        sessionId: session.sessionId,
+        generationId: session.generationId,
+        generationVersion: session.generationVersion,
+        connectedAtEpochMs: session.connectedAtEpochMs,
+      },
+    ],
     updatedAtEpochMs: context.observedAtEpochMs,
   };
 }

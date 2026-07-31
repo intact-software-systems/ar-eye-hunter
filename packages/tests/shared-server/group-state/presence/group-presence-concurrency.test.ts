@@ -3,7 +3,12 @@ import { GroupStateRepository } from '@shared-server/rallar-system/group-state/p
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-work.ts';
 import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
-import { convergeSummaryForTest, createService, requireSnapshot, seedOpenGroup } from './group-presence-test-runtime.ts';
+import {
+  convergeSummaryForTest,
+  createService,
+  requireSnapshot,
+  seedOpenGroup,
+} from './group-presence-test-runtime.ts';
 import { SCOPE, groupRef } from '../mutation/group-mutation-test-runtime.ts';
 
 const BASE_EPOCH_MS = Date.now();
@@ -31,7 +36,9 @@ describe('group presence concurrency', () => {
     expect(results).toHaveLength(2);
     expect(runtime.groupGuards).toBe(0);
     expect(runtime.presenceGuards).toBe(2);
-    expect(await new GroupStateRepository(runtime).listPresenceSessions(groupRef('two-session-room'))).toEqual(
+    expect(
+      await new GroupStateRepository(runtime).listPresenceSessions(groupRef('two-session-room')),
+    ).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           sessionId: 'session-a',
@@ -69,7 +76,9 @@ describe('group presence concurrency', () => {
     ]);
 
     expect(sleep).not.toHaveBeenCalled();
-    expect((await requireSnapshot(runtime, 'cross-service-lane-room')).group.snapshotVersion).toBe(3);
+    expect((await requireSnapshot(runtime, 'cross-service-lane-room')).group.snapshotVersion).toBe(
+      3,
+    );
   });
 
   it('commits presence independently while an aggregate CAS write is held', async () => {
@@ -79,7 +88,9 @@ describe('group presence concurrency', () => {
     runtime.resetGuards();
     let nowEpochMs = BASE_EPOCH_MS + 2_000;
     const service = createService(runtime, () => nowEpochMs);
-    const heldGuard = runtime.holdGroupGuardFor(groupStateGroupStorageKey(groupRef('presence-lane-bypass-room')));
+    const heldGuard = runtime.holdGroupGuardFor(
+      groupStateGroupStorageKey(groupRef('presence-lane-bypass-room')),
+    );
     let aggregateSettled = false;
 
     const aggregate = service.updateGroup(SCOPE, 'presence-lane-bypass-room', {
@@ -94,28 +105,47 @@ describe('group presence concurrency', () => {
       .catch(() => undefined);
     await heldGuard.firstArrival;
 
-    const connected = await service.connectPresenceSessionReceipt(SCOPE, 'presence-lane-bypass-room', 'presence-lane-session', {
-      principalId: 'alice',
-      generationId: 'presence-lane-generation',
-      expiresAtEpochMs: BASE_EPOCH_MS + 60_000,
-      requestId: 'presence-lane-connect',
-    });
+    const connected = await service.connectPresenceSessionReceipt(
+      SCOPE,
+      'presence-lane-bypass-room',
+      'presence-lane-session',
+      {
+        principalId: 'alice',
+        generationId: 'presence-lane-generation',
+        expiresAtEpochMs: BASE_EPOCH_MS + 60_000,
+        requestId: 'presence-lane-connect',
+      },
+    );
     nowEpochMs = BASE_EPOCH_MS + 3_000;
-    const heartbeat = await service.heartbeatPresenceSessionReceipt(SCOPE, 'presence-lane-bypass-room', 'presence-lane-session', {
-      generationId: 'presence-lane-generation',
-      lastHeartbeatAtEpochMs: nowEpochMs,
-      expiresAtEpochMs: BASE_EPOCH_MS + 70_000,
-      requestId: 'presence-lane-heartbeat',
-    });
+    const heartbeat = await service.heartbeatPresenceSessionReceipt(
+      SCOPE,
+      'presence-lane-bypass-room',
+      'presence-lane-session',
+      {
+        generationId: 'presence-lane-generation',
+        lastHeartbeatAtEpochMs: nowEpochMs,
+        expiresAtEpochMs: BASE_EPOCH_MS + 70_000,
+        requestId: 'presence-lane-heartbeat',
+      },
+    );
     nowEpochMs = BASE_EPOCH_MS + 4_000;
-    const disconnected = await service.disconnectPresenceSessionReceipt(SCOPE, 'presence-lane-bypass-room', 'presence-lane-session', {
-      generationId: 'presence-lane-generation',
-      disconnectedAtEpochMs: nowEpochMs,
-      requestId: 'presence-lane-disconnect',
-    });
+    const disconnected = await service.disconnectPresenceSessionReceipt(
+      SCOPE,
+      'presence-lane-bypass-room',
+      'presence-lane-session',
+      {
+        generationId: 'presence-lane-generation',
+        disconnectedAtEpochMs: nowEpochMs,
+        requestId: 'presence-lane-disconnect',
+      },
+    );
 
     expect(aggregateSettled).toBe(false);
-    expect([connected.outcome, heartbeat.outcome, disconnected.outcome]).toEqual(['applied', 'applied', 'applied']);
+    expect([connected.outcome, heartbeat.outcome, disconnected.outcome]).toEqual([
+      'applied',
+      'applied',
+      'applied',
+    ]);
     expect(runtime.groupGuards).toBe(1);
     expect(runtime.presenceGuards).toBe(3);
     heldGuard.release();
@@ -144,7 +174,10 @@ describe('group presence concurrency', () => {
         },
       ];
       for (const request of reverse ? connects.toReversed() : connects) {
-        await service.connectPresenceSession(SCOPE, `ordered-${reverse}`, 'session-a', { principalId: 'alice', ...request });
+        await service.connectPresenceSession(SCOPE, `ordered-${reverse}`, 'session-a', {
+          principalId: 'alice',
+          ...request,
+        });
       }
       const heartbeats = [
         { expiresAtEpochMs: BASE_EPOCH_MS + 12_000, requestId: `hb-a-${reverse}` },
@@ -186,18 +219,30 @@ describe('group presence concurrency', () => {
     });
     runtime.armPresenceReadBarrier(2);
     const results = await Promise.allSettled([
-      createService(runtime, BASE_EPOCH_MS + 2_000).connectPresenceSession(SCOPE, 'session-cap-room', 'session-a', {
-        principalId: 'alice',
-        generationId: 'generation-a',
-        requestId: 'session-cap-a',
-      }),
-      createService(runtime, BASE_EPOCH_MS + 2_001).connectPresenceSession(SCOPE, 'session-cap-room', 'session-b', {
-        principalId: 'alice',
-        generationId: 'generation-b',
-        requestId: 'session-cap-b',
-      }),
+      createService(runtime, BASE_EPOCH_MS + 2_000).connectPresenceSession(
+        SCOPE,
+        'session-cap-room',
+        'session-a',
+        {
+          principalId: 'alice',
+          generationId: 'generation-a',
+          requestId: 'session-cap-a',
+        },
+      ),
+      createService(runtime, BASE_EPOCH_MS + 2_001).connectPresenceSession(
+        SCOPE,
+        'session-cap-room',
+        'session-b',
+        {
+          principalId: 'alice',
+          generationId: 'generation-b',
+          requestId: 'session-cap-b',
+        },
+      ),
     ]);
-    expect(results.filter((result) => result.status === 'fulfilled' && result.value.status === 'ok')).toHaveLength(1);
+    expect(
+      results.filter((result) => result.status === 'fulfilled' && result.value.status === 'ok'),
+    ).toHaveLength(1);
     const admission = await new GroupStateRepository(runtime).findPresenceAdmissionEntry({
       ...groupRef('session-cap-room'),
       principalId: 'alice',
@@ -210,142 +255,134 @@ describe('group presence concurrency', () => {
     ['ban', 'membership-first'],
     ['remove', 'connect-first'],
     ['remove', 'membership-first'],
-  ] as const)('fences a first connect racing %s with forced %s commit ordering', async (operation, order) => {
-    const runtime = new GroupBarrierRepository();
-    const seed = createService(runtime, BASE_EPOCH_MS);
-    await seed.createGroup(SCOPE, {
-      groupId: `${operation}-${order}`,
-      displayName: 'Admission fence',
-      kind: 'room',
-      joinMode: 'open',
-      maxSessionsPerMember: 1,
-      createdByPrincipalId: 'alice',
-      requestId: `seed-${operation}-${order}`,
-    });
-    await seed.upsertMember(SCOPE, `${operation}-${order}`, 'bob', {
-      status: 'active',
-      actorPrincipalId: 'alice',
-      requestId: `activate-bob-${operation}-${order}`,
-    });
-
-    runtime.armAdmissionReadBarrier(2);
-    const connect = () =>
-      createService(runtime, BASE_EPOCH_MS + 2_000).connectPresenceSession(SCOPE, `${operation}-${order}`, 'bob-session-old', {
-        principalId: 'bob',
-        generationId: 'bob-generation-old',
-        actorPrincipalId: 'bob',
-        expiresAtEpochMs: BASE_EPOCH_MS + 60_000,
-        requestId: `connect-old-${operation}-${order}`,
+  ] as const)(
+    'fences a first connect racing %s with forced %s commit ordering',
+    async (operation, order) => {
+      const runtime = new GroupBarrierRepository();
+      const seed = createService(runtime, BASE_EPOCH_MS);
+      await seed.createGroup(SCOPE, {
+        groupId: `${operation}-${order}`,
+        displayName: 'Admission fence',
+        kind: 'room',
+        joinMode: 'open',
+        maxSessionsPerMember: 1,
+        createdByPrincipalId: 'alice',
+        requestId: `seed-${operation}-${order}`,
       });
-    const changeMembership = () => {
-      const service = createService(runtime, BASE_EPOCH_MS + 2_001);
-      const request = {
-        actorPrincipalId: 'alice',
-        requestId: `${operation}-bob-${order}`,
-      };
-      return operation === 'ban'
-        ? service.banGroupMember(SCOPE, `${operation}-${order}`, 'bob', request)
-        : service.removeGroupMember(SCOPE, `${operation}-${order}`, 'bob', request);
-    };
-
-    const results =
-      order === 'connect-first' ? await Promise.allSettled([changeMembership(), connect()]) : await Promise.allSettled([connect(), changeMembership()]);
-    const membershipResult = results[order === 'connect-first' ? 0 : 1];
-    const connectResult = results[order === 'connect-first' ? 1 : 0];
-    expect(membershipResult).toMatchObject({ status: 'fulfilled' });
-    if (connectResult?.status === 'rejected') {
-      expect(connectResult.reason).toMatchObject({
-        message: expect.stringMatching(/active group member required/i),
-      });
-    }
-
-    const repository = new GroupStateRepository(runtime);
-    const ref = groupRef(`${operation}-${order}`);
-    const snapshot = await repository.readSnapshot(ref);
-    expect(snapshot?.members.find((member) => member.principalId === 'bob')).toMatchObject({ status: operation === 'ban' ? 'banned' : 'removed' });
-    const admission = await repository.findPresenceAdmissionEntry({
-      ...ref,
-      principalId: 'bob',
-    });
-    expect(admission?.value.admittedSessions).toEqual([]);
-
-    const work = new GroupPresenceSummaryWork({
-      runtimeRepository: runtime,
-      now: () => BASE_EPOCH_MS + 3_000,
-      serviceId: 'summary-worker',
-    });
-    await convergeSummaryForTest(work, runtime, ref, `inactive-summary-${operation}-${order}`);
-    expect((await repository.findPresenceSummaryEntry(ref))?.value).toMatchObject({ activePrincipalIds: [], activeSessionIds: [] });
-
-    await createService(runtime, BASE_EPOCH_MS + 4_000).upsertMember(SCOPE, `${operation}-${order}`, 'bob', {
-      status: 'active',
-      actorPrincipalId: 'alice',
-      requestId: `reactivate-bob-${operation}-${order}`,
-    });
-    await convergeSummaryForTest(work, runtime, ref, `reactivated-summary-${operation}-${order}`);
-    expect((await repository.findPresenceSummaryEntry(ref))?.value).toMatchObject({ activePrincipalIds: [], activeSessionIds: [] });
-
-    const fresh = await createService(runtime, BASE_EPOCH_MS + 5_000).connectPresenceSession(SCOPE, `${operation}-${order}`, 'bob-session-fresh', {
-      principalId: 'bob',
-      generationId: 'bob-generation-fresh',
-      actorPrincipalId: 'bob',
-      expiresAtEpochMs: BASE_EPOCH_MS + 70_000,
-      requestId: `connect-fresh-${operation}-${order}`,
-    });
-    expect(fresh.status).toBe('ok');
-    expect(
-      (
-        await repository.findPresenceAdmissionEntry({
-          ...ref,
-          principalId: 'bob',
-        })
-      )?.value.admittedSessions.map((session) => session.sessionId),
-    ).toEqual(['bob-session-fresh']);
-  });
-
-  it('advances 100 independent heartbeats without acquiring the group guard', async () => {
-    const runtime = new GroupBarrierRepository();
-    await seedOpenGroup(runtime, 'heartbeat-room', 200);
-    const service = createService(runtime, BASE_EPOCH_MS + 2_000);
-    for (let index = 0; index < 100; index += 1) {
-      const principalId = `member-${index}`;
-      await service.upsertMember(SCOPE, 'heartbeat-room', principalId, {
+      await seed.upsertMember(SCOPE, `${operation}-${order}`, 'bob', {
         status: 'active',
-        actorPrincipalId: principalId,
-        requestId: `member-${index}`,
+        actorPrincipalId: 'alice',
+        requestId: `activate-bob-${operation}-${order}`,
       });
-      await service.connectPresenceSession(SCOPE, 'heartbeat-room', `session-${index}`, {
-        principalId,
-        generationId: `generation-${index}`,
-        actorPrincipalId: `member-${index}`,
-        expiresAtEpochMs: BASE_EPOCH_MS + 50_000,
-        requestId: `connect-${index}`,
-      });
-    }
-    runtime.resetGuards();
-    await Promise.all(
-      Array.from({ length: 100 }, (_, index) =>
-        createService(runtime, BASE_EPOCH_MS + 3_000 + index).heartbeatPresenceSessionReceipt(SCOPE, 'heartbeat-room', `session-${index}`, {
-          generationId: `generation-${index}`,
-          actorPrincipalId: `member-${index}`,
-          lastHeartbeatAtEpochMs: BASE_EPOCH_MS + 3_000 + index,
-          expiresAtEpochMs: BASE_EPOCH_MS + 60_000 + index,
-          requestId: `heartbeat-${index}`,
-        }),
-      ),
-    );
-    expect(runtime.groupGuards).toBe(0);
-    expect(runtime.presenceGuards).toBe(100);
-    expect(runtime.hotPathListReads).toBe(0);
-    expect(runtime.compatibilitySnapshotListReads).toBe(0);
 
-    await createService(runtime, BASE_EPOCH_MS + 4_000).heartbeatPresenceSession(SCOPE, 'heartbeat-room', 'session-0', {
-      generationId: 'generation-0',
-      actorPrincipalId: 'member-0',
-      lastHeartbeatAtEpochMs: BASE_EPOCH_MS + 4_000,
-      expiresAtEpochMs: BASE_EPOCH_MS + 70_000,
-      requestId: 'compatibility-heartbeat',
-    });
-    expect(runtime.compatibilitySnapshotListReads).toBeGreaterThan(0);
-  });
+      runtime.armAdmissionReadBarrier(2);
+      const connect = () =>
+        createService(runtime, BASE_EPOCH_MS + 2_000).connectPresenceSession(
+          SCOPE,
+          `${operation}-${order}`,
+          'bob-session-old',
+          {
+            principalId: 'bob',
+            generationId: 'bob-generation-old',
+            actorPrincipalId: 'bob',
+            expiresAtEpochMs: BASE_EPOCH_MS + 60_000,
+            requestId: `connect-old-${operation}-${order}`,
+          },
+        );
+      const changeMembership = () => {
+        const service = createService(runtime, BASE_EPOCH_MS + 2_001);
+        const request = {
+          actorPrincipalId: 'alice',
+          requestId: `${operation}-bob-${order}`,
+        };
+        return operation === 'ban'
+          ? service.banGroupMember(SCOPE, `${operation}-${order}`, 'bob', request)
+          : service.removeGroupMember(SCOPE, `${operation}-${order}`, 'bob', request);
+      };
+
+      const results =
+        order === 'connect-first'
+          ? await Promise.allSettled([changeMembership(), connect()])
+          : await Promise.allSettled([connect(), changeMembership()]);
+      const membershipResult = results[order === 'connect-first' ? 0 : 1];
+      const connectResult = results[order === 'connect-first' ? 1 : 0];
+      expect(membershipResult).toMatchObject({ status: 'fulfilled' });
+      if (connectResult?.status === 'rejected') {
+        expect(connectResult.reason).toMatchObject({
+          message: expect.stringMatching(/active group member required/i),
+        });
+      }
+
+      const repository = new GroupStateRepository(runtime);
+      const ref = groupRef(`${operation}-${order}`);
+      const snapshot = await repository.readSnapshot(ref);
+      expect(snapshot?.members.find((member) => member.principalId === 'bob')).toMatchObject({
+        status: operation === 'ban' ? 'banned' : 'removed',
+      });
+      const admission = await repository.findPresenceAdmissionEntry({
+        ...ref,
+        principalId: 'bob',
+      });
+      expect(admission?.value.admittedSessions).toEqual([]);
+
+      const work = new GroupPresenceSummaryWork({
+        runtimeRepository: runtime,
+        now: () => BASE_EPOCH_MS + 3_000,
+        serviceId: 'summary-worker',
+      });
+      await convergeSummaryForTest({
+        work,
+        runtime,
+        ref,
+        commandId: `inactive-summary-${operation}-${order}`,
+      });
+      expect((await repository.findPresenceSummaryEntry(ref))?.value).toMatchObject({
+        activePrincipalIds: [],
+        activeSessionIds: [],
+      });
+
+      await createService(runtime, BASE_EPOCH_MS + 4_000).upsertMember(
+        SCOPE,
+        `${operation}-${order}`,
+        'bob',
+        {
+          status: 'active',
+          actorPrincipalId: 'alice',
+          requestId: `reactivate-bob-${operation}-${order}`,
+        },
+      );
+      await convergeSummaryForTest({
+        work,
+        runtime,
+        ref,
+        commandId: `reactivated-summary-${operation}-${order}`,
+      });
+      expect((await repository.findPresenceSummaryEntry(ref))?.value).toMatchObject({
+        activePrincipalIds: [],
+        activeSessionIds: [],
+      });
+
+      const fresh = await createService(runtime, BASE_EPOCH_MS + 5_000).connectPresenceSession(
+        SCOPE,
+        `${operation}-${order}`,
+        'bob-session-fresh',
+        {
+          principalId: 'bob',
+          generationId: 'bob-generation-fresh',
+          actorPrincipalId: 'bob',
+          expiresAtEpochMs: BASE_EPOCH_MS + 70_000,
+          requestId: `connect-fresh-${operation}-${order}`,
+        },
+      );
+      expect(fresh.status).toBe('ok');
+      expect(
+        (
+          await repository.findPresenceAdmissionEntry({
+            ...ref,
+            principalId: 'bob',
+          })
+        )?.value.admittedSessions.map((session) => session.sessionId),
+      ).toEqual(['bob-session-fresh']);
+    },
+  );
 });

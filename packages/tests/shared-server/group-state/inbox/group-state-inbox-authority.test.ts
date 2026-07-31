@@ -26,11 +26,11 @@ import {
 } from '@shared-server/rallar-system/services/group-state-service.ts';
 import type { GroupMutationReceipt } from '@shared-server/rallar-system/services/group-state-mutations.ts';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
+import { authSession } from '../group-state-test-runtime.ts';
 import {
   SCOPE,
   TestResourceInbox,
   TestResourceInboxResults,
-  authSession,
   authenticatedProcessor,
   createAuthorityHarness,
   createResilience,
@@ -45,7 +45,6 @@ describe('AppGroupInboxService authenticated authority', () => {
     await createRoom(harness, 'direct-missing-authority', 'Before');
 
     expect(Reflect.get(harness.groupStateService, 'updateGroup')).toBeUndefined();
-
     expect(
       (
         await harness.repository.readSnapshot({
@@ -81,7 +80,6 @@ describe('AppGroupInboxService authenticated authority', () => {
     await expect(
       Reflect.apply(harness.service.processEntryUntilCompletion, harness.service, [input]),
     ).rejects.toMatchObject({ status: 403 });
-
     expect(
       await harness.repository.readSnapshot({
         ...SCOPE,
@@ -167,8 +165,14 @@ describe('AppGroupInboxService authenticated authority', () => {
     const nowEpochMs = Date.now();
     const runtimeRepository = new FakeRuntimeStateRepository();
     const authSessions = new AuthSessionRepository(runtimeRepository);
-    const owner = authSession('owner', 'owner-session', 'owner-token', nowEpochMs);
-    const attacker = authSession('attacker', 'attacker-session', 'attacker-token', nowEpochMs);
+    const owner = authSession({
+      ...{ clientId: 'owner', sessionId: 'owner-session' },
+      ...{ accessToken: 'owner-token', nowEpochMs },
+    });
+    const attacker = authSession({
+      ...{ clientId: 'attacker', sessionId: 'attacker-session' },
+      ...{ accessToken: 'attacker-token', nowEpochMs },
+    });
     await authSessions.putSession(owner);
     await authSessions.putSession(attacker);
 
@@ -255,7 +259,6 @@ describe('AppGroupInboxService authenticated authority', () => {
     await createRoom(harness, 'raw-authority-room', 'Raw Authority Room');
 
     expect(Reflect.get(harness.groupStateService, 'updateGroup')).toBeUndefined();
-
     const snapshot = await harness.repository.readSnapshot({
       ...SCOPE,
       groupId: 'raw-authority-room',
