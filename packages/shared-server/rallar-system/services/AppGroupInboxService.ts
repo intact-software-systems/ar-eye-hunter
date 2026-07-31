@@ -498,6 +498,14 @@ export class AppGroupInboxService extends AppInboxService {
                 await this.writeMutation(context, write),
             wakeQueue: this.wakeQueue,
         });
+        this.registerStateMessageHandlers();
+    }
+
+    private readonly groupStateInboxHandler: GroupStateInboxHandler;
+    private topologyManagementService?: GroupTopologyManagementService;
+    private rtcRttDependencies?: RtcRttAppInboxDependencies;
+
+    private registerStateMessageHandlers(): void {
         const processGroupMutation = async (
             _payload: unknown,
             context: AppInboxMessageContext,
@@ -533,10 +541,6 @@ export class AppGroupInboxService extends AppInboxService {
             async (_payload, context) => await processRtcRttMutation(context),
         );
     }
-
-    private readonly groupStateInboxHandler: GroupStateInboxHandler;
-    private topologyManagementService?: GroupTopologyManagementService;
-    private rtcRttDependencies?: RtcRttAppInboxDependencies;
 
     private async processMutation(
         context: AppInboxMessageContext,

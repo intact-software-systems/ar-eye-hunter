@@ -9,6 +9,8 @@ import {
 
 const FIXTURES = 'packages/tests/shared-server/fixtures/mutation-boundary-capability-receivers';
 const GROUP_OWNER = 'packages/shared-server/rallar-system/services/AppGroupInboxService.ts';
+const GROUP_TYPES =
+  'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 const AUTH_OWNER = 'packages/shared-server/rallar-system/services/AppAuthInboxService.ts';
 const CRDT_OWNER = 'packages/shared-server/rallar-system/services/AppCrdtInboxService.ts';
 const CRDT_TYPES = 'packages/shared-server/rallar-system/services/crdt-mutation-contracts.ts';
@@ -40,12 +42,12 @@ describe('Task 10 route-closure correction 5 contracts', () => {
     ])).toEqual([]);
   });
 
-  it('rejects GROUP_CREATE removed from the live group registration array', () => {
-    const source = readFileSync(GROUP_OWNER, 'utf8');
-    const mutated = source.replace('    AppInboxType.GROUP_CREATE,\n', '');
+  it('rejects GROUP_CREATE removed from the imported live group registration collection', () => {
+    const source = readFileSync(GROUP_TYPES, 'utf8');
+    const mutated = source.replace('  AppInboxType.GROUP_CREATE,\n', '');
     expect(mutated).not.toBe(source);
 
-    expect(validateWithOverrides(new Map([[GROUP_OWNER, mutated]]))).toEqual(
+    expect(validateWithOverrides(new Map([[GROUP_TYPES, mutated]]))).toEqual(
       expect.arrayContaining([
         expect.stringContaining('GROUP_CREATE owner dispatch is not connected'),
       ]),

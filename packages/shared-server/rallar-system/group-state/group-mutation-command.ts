@@ -147,7 +147,7 @@ function toCreateCommand(
       createdByPrincipalId: request.createdByPrincipalId,
       expiresAtEpochMs: request.expiresAtEpochMs ?? null,
       purgeAfterEpochMs: request.purgeAfterEpochMs ?? null,
-      ...toActorInput(request),
+      ...toGroupMutationActorInput(request),
       actorPrincipalId: request.actorPrincipalId ?? request.createdByPrincipalId,
     },
   };
@@ -162,7 +162,7 @@ function toUpdateCommand(
   return {
     operation: 'updateGroup',
     aggregateRef: { ...scope, groupId },
-    ...toIdentity(request.requestId, randomId),
+    ...toGroupMutationIdentity(request.requestId, randomId),
     input: {
       slug: request.slug ?? null,
       displayName: request.displayName ?? null,
@@ -176,7 +176,7 @@ function toUpdateCommand(
       expiresAtEpochMs: request.expiresAtEpochMs ?? null,
       emptySinceEpochMs: request.emptySinceEpochMs ?? null,
       purgeAfterEpochMs: request.purgeAfterEpochMs ?? null,
-      ...toActorInput(request),
+      ...toGroupMutationActorInput(request),
     },
   };
 }
@@ -190,12 +190,12 @@ function toDirectorCommand(
   return {
     operation: 'appointDirector',
     aggregateRef: { ...scope, groupId },
-    ...toIdentity(request.requestId, randomId),
+    ...toGroupMutationIdentity(request.requestId, randomId),
     input: {
       heartbeatTtlMs: normalizeRallarGroupDirectorHeartbeatTtlMs(
         request.heartbeatTtlMs ?? DEFAULT_RALLAR_GROUP_DIRECTOR_HEARTBEAT_TTL_MS,
       ),
-      ...toActorInput(request),
+      ...toGroupMutationActorInput(request),
     },
   };
 }
@@ -214,12 +214,12 @@ function toJoinCommand(
     operation,
     aggregateRef: { ...scope, groupId },
     targetPrincipalId: request.actorPrincipalId,
-    ...toIdentity(request.requestId, randomId),
+    ...toGroupMutationIdentity(request.requestId, randomId),
     input: {
       inviteToken: 'inviteToken' in request ? (request.inviteToken ?? null) : null,
       joinCode:
         'joinCode' in request && request.joinCode ? normalizeJoinCode(request.joinCode) : null,
-      ...toActorInput(request),
+      ...toGroupMutationActorInput(request),
     },
   };
 }
@@ -235,10 +235,10 @@ function toInviteCommand(
     operation: 'createGroupInvite',
     aggregateRef: { ...scope, groupId },
     targetPrincipalId: principalId,
-    ...toIdentity(request.requestId, randomId),
+    ...toGroupMutationIdentity(request.requestId, randomId),
     input: {
       invitationExpiresAtEpochMs: request.invitationExpiresAtEpochMs ?? null,
-      ...toActorInput(request),
+      ...toGroupMutationActorInput(request),
     },
   };
 }
@@ -255,8 +255,8 @@ function toTargetCommand(
     operation,
     aggregateRef: { ...scope, groupId },
     targetPrincipalId: principalId,
-    ...toIdentity(request.requestId, randomId),
-    input: toActorInput(request),
+    ...toGroupMutationIdentity(request.requestId, randomId),
+    input: toGroupMutationActorInput(request),
   };
 }
 
@@ -271,8 +271,8 @@ function toRoleCommand(
     operation: 'setGroupMemberRole',
     aggregateRef: { ...scope, groupId },
     targetPrincipalId: principalId,
-    ...toIdentity(request.requestId, randomId),
-    input: { role: request.role, ...toActorInput(request) },
+    ...toGroupMutationIdentity(request.requestId, randomId),
+    input: { role: request.role, ...toGroupMutationActorInput(request) },
   };
 }
 
@@ -288,8 +288,8 @@ function toTransferCommand(
     operation: 'transferGroupOwnership',
     aggregateRef: { ...descriptor.scope, groupId: descriptor.groupId },
     targetPrincipalId: request.newOwnerPrincipalId,
-    ...toIdentity(request.requestId, randomId),
-    input: toActorInput(request),
+    ...toGroupMutationIdentity(request.requestId, randomId),
+    input: toGroupMutationActorInput(request),
   };
 }
 
@@ -304,13 +304,13 @@ function toUpsertMemberCommand(
     operation: 'upsertMember',
     aggregateRef: { ...scope, groupId },
     targetPrincipalId: principalId,
-    ...toIdentity(request.requestId, randomId),
+    ...toGroupMutationIdentity(request.requestId, randomId),
     input: {
       role: request.role ?? null,
       status: request.status,
       invitedByPrincipalId: request.invitedByPrincipalId ?? null,
       invitationExpiresAtEpochMs: request.invitationExpiresAtEpochMs ?? null,
-      ...toActorInput(request),
+      ...toGroupMutationActorInput(request),
     },
   };
 }
@@ -324,21 +324,21 @@ function toRotateCommand(
   return {
     operation: 'rotateGroupJoinCode',
     aggregateRef: { ...scope, groupId },
-    ...toIdentity(request.requestId, randomId),
+    ...toGroupMutationIdentity(request.requestId, randomId),
     input: {
       joinCode: request.joinCode === undefined ? null : normalizeJoinCode(request.joinCode),
       expiresAtEpochMs: request.expiresAtEpochMs ?? null,
-      ...toActorInput(request),
+      ...toGroupMutationActorInput(request),
     },
   };
 }
 
-function toIdentity(requestId: string | undefined, randomId: () => string) {
+export function toGroupMutationIdentity(requestId: string | undefined, randomId: () => string) {
   const commandId = requestId ?? randomId();
   return { commandId, requestId: requestId ?? null };
 }
 
-function toActorInput(
+export function toGroupMutationActorInput(
   request: Readonly<{
     actorPrincipalId?: string;
     actorSessionId?: string;

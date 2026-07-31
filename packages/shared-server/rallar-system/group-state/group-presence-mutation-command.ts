@@ -9,6 +9,7 @@ import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryCont
 
 import type { GroupMutationCommand } from '../services/group-state-mutations.ts';
 import { canonicalJson } from '../services/group-state-crypto.ts';
+import { toGroupMutationActorInput, toGroupMutationIdentity } from './group-mutation-command.ts';
 import type { GroupMutationDescriptor } from './group-state-service-contracts.ts';
 
 export function toPresenceMutationCommand(
@@ -65,14 +66,14 @@ function toConnectPresenceCommand(
     operation: 'connectPresence',
     aggregateRef: { ...scope, groupId },
     sessionId,
-    ...toIdentity(request.requestId, randomId),
+    ...toGroupMutationIdentity(request.requestId, randomId),
     input: {
       principalId: request.principalId,
       generationId: request.generationId,
       connectedAtEpochMs: request.connectedAtEpochMs ?? null,
       lastHeartbeatAtEpochMs: request.lastHeartbeatAtEpochMs ?? null,
       expiresAtEpochMs: request.expiresAtEpochMs ?? null,
-      ...toActorInput(request),
+      ...toGroupMutationActorInput(request),
       actorPrincipalId: request.actorPrincipalId ?? request.principalId,
     },
   };
@@ -90,13 +91,13 @@ function toHeartbeatPresenceCommand(
     operation: 'heartbeatPresence',
     aggregateRef: { ...scope, groupId },
     sessionId,
-    ...toIdentity(request.requestId, randomId),
+    ...toGroupMutationIdentity(request.requestId, randomId),
     input: {
       principalId: request.principalId ?? null,
       generationId: request.generationId,
       lastHeartbeatAtEpochMs: request.lastHeartbeatAtEpochMs ?? null,
       expiresAtEpochMs: request.expiresAtEpochMs ?? null,
-      ...toActorInput(request),
+      ...toGroupMutationActorInput(request),
     },
   };
 }
@@ -113,7 +114,7 @@ function toDisconnectPresenceCommand(
     operation: 'disconnectPresence',
     aggregateRef: { ...scope, groupId },
     sessionId,
-    ...toIdentity(request.requestId, randomId),
+    ...toGroupMutationIdentity(request.requestId, randomId),
     input: {
       principalId: request.principalId ?? null,
       generationId: request.generationId,
@@ -122,7 +123,7 @@ function toDisconnectPresenceCommand(
       disconnectedAtEpochMs: request.disconnectedAtEpochMs ?? null,
       lastHeartbeatAtEpochMs: request.lastHeartbeatAtEpochMs ?? null,
       expiresAtEpochMs: request.expiresAtEpochMs ?? null,
-      ...toActorInput(request),
+      ...toGroupMutationActorInput(request),
     },
   };
 }
@@ -199,27 +200,6 @@ export function groupStateMaintenanceRequestId(
   const domain =
     authority === 'expiry' ? 'expire-group-presence' : 'cleanup-group-presence-session';
   return `${domain}:v1:${canonicalJson(semanticCommand)}`;
-}
-
-function toIdentity(requestId: string | undefined, randomId: () => string) {
-  const commandId = requestId ?? randomId();
-  return { commandId, requestId: requestId ?? null };
-}
-
-function toActorInput(
-  request: Readonly<{
-    actorPrincipalId?: string;
-    actorSessionId?: string;
-    reason?: string;
-    traceId?: string;
-  }>,
-) {
-  return {
-    actorPrincipalId: request.actorPrincipalId ?? null,
-    actorSessionId: request.actorSessionId ?? null,
-    reason: request.reason ?? null,
-    traceId: request.traceId ?? null,
-  };
 }
 
 function requireGenerationId(value: string): void {

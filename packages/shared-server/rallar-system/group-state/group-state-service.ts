@@ -1,6 +1,5 @@
 import type {
   GroupMutationCommand,
-  GroupMutationComputedWrite,
   GroupMutationFacts,
 } from '../services/group-state-mutations.ts';
 import {
@@ -30,7 +29,6 @@ import {
   type GroupStateRuntime,
   type GroupStateService,
   type GroupStateServiceDependencies,
-  type GroupStateMutationCommand,
 } from './group-state-service-contracts.ts';
 
 export class GroupMutationIdempotencyConflictError extends Error {
@@ -344,6 +342,3 @@ function withGroupStateServiceTiming(
     },
   });
 }
-
-void (null as GroupStateMutationCommand | null);
-void (null as GroupMutationComputedWrite | null);
