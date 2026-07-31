@@ -53,6 +53,7 @@ import {
     findSingleRetriedAppInboxAttemptSequence,
     waitForPostgresAppInboxWorkerParticipants,
 } from './fixtures/postgres-app-inbox-worker-runtime.ts';
+import { toOwnedAppInboxResourceIds } from './postgres-app-inbox-attempt-evidence.ts';
 
 type PostgresSql = PSqlSql & Readonly<{
     end(): Promise<void>;
@@ -1330,7 +1331,10 @@ function assertOneTopologyWorkerRebased(
     expect(new Set(traces.map((trace) => trace.backendPid)).size).toBe(2);
     const loserIndex = outputs.findIndex((output) => output.attemptCount === 2);
     expect(loserIndex).toBeGreaterThanOrEqual(0);
-    expect(findSingleRetriedAppInboxAttemptSequence(traces)
+    expect(findSingleRetriedAppInboxAttemptSequence({
+        traces,
+        ownedResourceIds: toOwnedAppInboxResourceIds(outputs.map((output) => output.requestId)),
+    })
         .map(({ attempt, classification, retryDelayMs }) => ({
             attempt, classification, retryDelayMs,
         }))).toEqual([
