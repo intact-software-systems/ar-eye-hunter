@@ -25,7 +25,7 @@ import { type GroupMutationIdempotencyRecord } from '../mutation/group-mutation-
 // prettier-ignore
 import {
   validateGroupMutationIdempotencyRecord,
-} from '../mutation/validate-group-mutation-result.ts';
+} from '../mutation/result-validation/validate-group-mutation-result.ts';
 import {
   validatePersistedGroup,
   validatePersistedGroupMember,

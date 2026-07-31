@@ -13,7 +13,7 @@ const predecessorPath = path.join(
 );
 
 const namedInputSourcePaths = [
-  'packages/shared-server/rallar-system/group-state/mutation/validate-group-mutation-read.ts',
+  'packages/shared-server/rallar-system/group-state/mutation/state-validation/validate-group-mutation-read.ts',
   'packages/tests/shared-server/group-state/group-state-test-runtime.ts',
   'packages/tests/shared-server/mutation-routing-inventory.ts',
 ] as const;

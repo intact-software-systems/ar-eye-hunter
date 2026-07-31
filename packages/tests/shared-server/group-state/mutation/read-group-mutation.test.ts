@@ -8,7 +8,7 @@ import {
   groupStatePresenceSessionStorageKey,
 } from '@shared-server/rallar-system/group-state-storage-keys.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
-import { readGroupMutation } from '@shared-server/rallar-system/group-state/mutation/read-group-mutation.ts';
+import { readGroupMutation } from '@shared-server/rallar-system/group-state/mutation/read/read-group-mutation.ts';
 import type { GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import type { RuntimeStateEntry } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import { createTestGroupStateService } from '../group-state-test-runtime.ts';

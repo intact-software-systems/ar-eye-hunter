@@ -1,18 +1,19 @@
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
 import type { PSqlTransactionSql } from '../../../postgres/PostgresSqlClient.ts';
-// prettier-ignore
 import {
   createTransactionBoundGroupStateRepository,
 } from '../persistence/group-state-repository.ts';
-import { GroupPresenceService } from '../presence/group-presence-service.ts';
+import {
+  GroupPresenceService,
+  type InactiveGroupPresenceResult,
+} from '../presence/group-presence-service.ts';
 import type {
   AppInboxEnqueueInput,
   AppInboxMessageContext,
 } from '../../services/AppInboxService.ts';
 import { AppInboxType } from '../../services/AppInboxService.ts';
 import type { GroupMutationComputed } from '../mutation/group-mutation-contracts.ts';
-// prettier-ignore
 import type {
   WsSessionGenerationLifecycleComputed,
 } from '../../services/ws-session-generation-lifecycle.ts';
@@ -43,14 +44,17 @@ import {
   type GroupPresenceHeartbeatAppInboxPayload,
   type GroupUpdateAppInboxPayload,
 } from './group-state-inbox-contracts.ts';
-import { readGroupStateInboxResult } from './group-state-inbox-result.ts';
+import {
+  readGroupStateInboxResult,
+  type GroupStateInboxDurableResult,
+} from './group-state-inbox-result.ts';
 
 export interface GroupStateInboxHandlerDependencies {
   readonly groupStateService: GroupStateService;
-  readonly writeMutation: (
+  readonly writeMutation: <Result>(
     context: AppInboxMessageContext,
-    write: (transaction: PSqlTransactionSql) => Promise<unknown>,
-  ) => Promise<unknown>;
+    write: (transaction: PSqlTransactionSql) => Promise<Result>,
+  ) => Promise<Result>;
   readonly wakeQueue?: () => void;
 }
 
@@ -64,7 +68,9 @@ interface CommitGroupStateMutationInput {
 export class GroupStateInboxHandler {
   constructor(private readonly dependencies: GroupStateInboxHandlerDependencies) {}
 
-  async processMutation(context: AppInboxMessageContext): Promise<unknown> {
+  async processMutation(
+    context: AppInboxMessageContext,
+  ): Promise<GroupStateInboxDurableResult | InactiveGroupPresenceResult> {
     const prepared = readGroupMutationPreparation(context.enqueue.authority);
     const command: GroupStateMutationCommand = {
       authorityProof: prepared.authorityProof,
@@ -94,7 +100,9 @@ export class GroupStateInboxHandler {
     return toGroupMutationDescriptor(enqueue);
   }
 
-  private async commitMutation(input: CommitGroupStateMutationInput): Promise<unknown> {
+  private async commitMutation(
+    input: CommitGroupStateMutationInput,
+  ): Promise<GroupStateInboxDurableResult> {
     let committedSnapshot: GroupSnapshot | undefined;
     const result = await this.dependencies.writeMutation(input.context, async (transaction) => {
       if (input.lifecycleGuard) {

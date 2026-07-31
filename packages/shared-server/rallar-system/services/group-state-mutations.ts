@@ -18,16 +18,16 @@ export type {
   GroupMutationReceipt,
 } from '../group-state/mutation/group-mutation-contracts.ts';
 export { GroupMutationRejectedError } from '../group-state/mutation/group-mutation-contracts.ts';
-export { validateGroupMutationCommand } from '../group-state/mutation/validate-group-mutation-command.ts';
+export { validateGroupMutationCommand } from '../group-state/mutation/command-validation/validate-group-mutation-command.ts';
 export {
   computeGroupMutation,
   probeGroupMutationIdempotency,
-} from '../group-state/mutation/compute-group-mutation.ts';
-export { validateGroupMutation } from '../group-state/mutation/validate-group-mutation.ts';
+} from '../group-state/mutation/orchestration/compute-group-mutation.ts';
+export { validateGroupMutation } from '../group-state/mutation/state-validation/validate-group-mutation.ts';
 export {
   validateGroupMutationRequest,
   validateGroupPresenceMutationRequest,
-} from '../group-state/mutation/group-mutation-request-validation.ts';
+} from '../group-state/mutation/command-validation/group-mutation-request-validation.ts';
 export {
   normalizePersistedGroup,
   normalizePersistedGroupMember,
@@ -47,7 +47,7 @@ export {
 // prettier-ignore
 export {
   validateGroupMutationIdempotencyRecord,
-} from '../group-state/mutation/validate-group-mutation-result.ts';
+} from '../group-state/mutation/result-validation/validate-group-mutation-result.ts';
 export {
   compareGroupCausalRevision,
   computeGroupPresenceSummary,

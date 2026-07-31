@@ -7,7 +7,7 @@ import {
     shouldRunBlackBoxRunnerLivePreflight,
     type BlackBoxRunnerLivePreflightMatrixRequirement,
     type BlackBoxRunnerLivePreflightReport,
-} from './live-preflight.ts'
+} from './preflight/live-preflight.ts'
 
 type MatrixMode = 'dry-run' | 'run'
 

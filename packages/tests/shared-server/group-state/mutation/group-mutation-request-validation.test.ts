@@ -4,10 +4,10 @@ import { GroupMutationRejectedError } from '@shared-server/rallar-system/group-s
 import {
   validateGroupMutationRequest,
   validateGroupPresenceMutationRequest,
-} from '@shared-server/rallar-system/group-state/mutation/group-mutation-request-validation.ts';
+} from '@shared-server/rallar-system/group-state/mutation/command-validation/group-mutation-request-validation.ts';
 
 const requestValidationOwner =
-  'packages/shared-server/rallar-system/group-state/mutation/group-mutation-request-validation.ts';
+  'packages/shared-server/rallar-system/group-state/mutation/command-validation/group-mutation-request-validation.ts';
 
 describe('group mutation request validation', () => {
   it('locates request validation at the canonical mutation owner', () => {

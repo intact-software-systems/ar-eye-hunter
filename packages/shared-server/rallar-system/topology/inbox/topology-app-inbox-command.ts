@@ -21,6 +21,8 @@ import type {
   TopologyAppInboxRequestPayload,
 } from './topology-app-inbox-contracts.ts';
 
+type TopologyRecord = Record<string, unknown>;
+
 interface TopologyConfigMutationCommandInput {
   readonly command: TopologyAppInboxCommand;
   readonly config: GroupTopologyConfigPatch | null;
@@ -164,13 +166,13 @@ export function toTopologyConfigMutationCommand(
 }
 
 export function requireExactTopologyKeys(
-  record: Record<string, unknown>,
+  record: TopologyRecord,
   expected: readonly string[],
 ): void {
   requireExactKeys(record, expected);
 }
 
-export function isTopologyRecord(value: unknown): value is Record<string, unknown> {
+export function isTopologyRecord(value: unknown): value is TopologyRecord {
   return isRecord(value);
 }
 
@@ -300,9 +302,9 @@ function topologyConfigMutationCommand(
 }
 
 function hasValidTopologyCommandIdentity(
-  value: Record<string, unknown>,
-  actor: Record<string, unknown>,
-  groupRef: Record<string, unknown>,
+  value: TopologyRecord,
+  actor: TopologyRecord,
+  groupRef: TopologyRecord,
 ): boolean {
   return (
     typeof actor.principalId === 'string' &&
@@ -324,11 +326,11 @@ function hasValidTopologyCommandIdentity(
   );
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+function isRecord(value: unknown): value is TopologyRecord {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function requireExactKeys(record: Record<string, unknown>, expected: readonly string[]): void {
+function requireExactKeys(record: TopologyRecord, expected: readonly string[]): void {
   if (JSON.stringify(Object.keys(record).toSorted()) !== JSON.stringify([...expected].toSorted())) {
     throw new TypeError('Topology durable command has missing or unknown fields');
   }

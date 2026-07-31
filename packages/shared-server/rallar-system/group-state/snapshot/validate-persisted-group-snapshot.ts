@@ -10,9 +10,11 @@ import {
   validatePersistedGroupPresenceSession,
 } from '../persistence/validate-persisted-group-presence.ts';
 
+type PersistedSnapshotRecord = Record<string, unknown>;
+
 interface PersistedGroupSnapshotValidation {
-  readonly snapshot: Record<string, unknown>;
-  readonly group: Record<string, unknown>;
+  readonly snapshot: PersistedSnapshotRecord;
+  readonly group: PersistedSnapshotRecord;
   readonly ref: GroupRef;
 }
 
@@ -122,7 +124,7 @@ function validatePersistedGroupSnapshotPresence(
   }
 }
 
-function canonicalGroupRef(group: Record<string, unknown>): GroupRef {
+function canonicalGroupRef(group: PersistedSnapshotRecord): GroupRef {
   if (
     typeof group.applicationId !== 'string' ||
     group.applicationId.length === 0 ||
@@ -140,14 +142,14 @@ function canonicalGroupRef(group: Record<string, unknown>): GroupRef {
   };
 }
 
-function requireRecord(value: unknown, label: string): Record<string, unknown> {
+function requireRecord(value: unknown, label: string): PersistedSnapshotRecord {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new TypeError(`${label} is invalid`);
   }
-  return value as Record<string, unknown>;
+  return value as PersistedSnapshotRecord;
 }
 
-function assertExactRequiredKeys(value: Record<string, unknown>, keys: readonly string[]): void {
+function assertExactRequiredKeys(value: PersistedSnapshotRecord, keys: readonly string[]): void {
   if (JSON.stringify(Object.keys(value).sort()) !== JSON.stringify([...keys].sort())) {
     throw new TypeError('Stored group snapshot has invalid keys');
   }

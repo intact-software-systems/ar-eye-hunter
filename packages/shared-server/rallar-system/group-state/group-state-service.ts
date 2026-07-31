@@ -2,12 +2,15 @@ import type {
   GroupMutationCommand,
   GroupMutationFacts,
 } from './mutation/group-mutation-contracts.ts';
-import { computeGroupMutation } from './mutation/compute-group-mutation.ts';
-import { validateGroupMutation } from './mutation/validate-group-mutation.ts';
-import { validateGroupMutationCommand } from './mutation/validate-group-mutation-command.ts';
+import { computeGroupMutation } from './mutation/orchestration/compute-group-mutation.ts';
+import { validateGroupMutation } from './mutation/state-validation/validate-group-mutation.ts';
+// prettier-ignore
+import {
+  validateGroupMutationCommand,
+} from './mutation/command-validation/validate-group-mutation-command.ts';
 import { GroupStateRepository } from './persistence/group-state-repository.ts';
-import { readGroupMutation } from './mutation/read-group-mutation.ts';
-import { writeGroupMutation } from './mutation/write-group-state-mutation.ts';
+import { readGroupMutation } from './mutation/read/read-group-mutation.ts';
+import { writeGroupMutation } from './mutation/write/write-group-state-mutation.ts';
 // prettier-ignore
 import {
   createWsSessionGenerationLifecycleService,
@@ -279,7 +282,7 @@ function withGroupStateServiceTiming(
   if (!timing) return service;
   const timed = <T>(
     operation: string,
-    details: Record<string, unknown>,
+    details: GroupStateTimingDetails,
     action: () => Promise<T>,
   ) => timeRallarAsync(timing, toGroupStateTimingDetails(serviceId, operation, details), action);
   return new Proxy(service, {
@@ -287,7 +290,7 @@ function withGroupStateServiceTiming(
       const value = Reflect.get(target, property, receiver);
       if (typeof value !== 'function') return value;
       if (property === 'compute' || property === 'validate') return value.bind(target);
-      return (...args: unknown[]) => {
+      return (...args: GroupStateServiceArgument[]) => {
         const { phaseCommand, requestRecord, scope } = resolveGroupStateTimingInvocation(args);
         return timed(
           String(property),
@@ -310,7 +313,7 @@ function withGroupStateServiceTiming(
 function toGroupStateTimingDetails(
   serviceId: string,
   operation: string,
-  details: Record<string, unknown>,
+  details: GroupStateTimingDetails,
 ): RallarTimingEventInput {
   return {
     component: 'group-state-service',
@@ -335,10 +338,25 @@ function toGroupStateTimingDetails(
 interface GroupStateTimingInvocation {
   readonly phaseCommand: GroupMutationCommand | undefined;
   readonly scope: GroupMutationDescriptor['scope'] | undefined;
-  readonly requestRecord: Record<string, unknown>;
+  readonly requestRecord: GroupStateTimingDetails;
 }
 
-function resolveGroupStateTimingInvocation(args: readonly unknown[]): GroupStateTimingInvocation {
+interface GroupStateTimingDetails {
+  readonly applicationId?: string;
+  readonly workspaceId?: string;
+  readonly groupId?: string;
+  readonly principalId?: string;
+  readonly actorPrincipalId?: string;
+  readonly createdByPrincipalId?: string;
+  readonly requestId?: string;
+  readonly sessionId?: string;
+}
+
+type GroupStateServiceArgument = object | string | number | undefined;
+
+function resolveGroupStateTimingInvocation(
+  args: readonly GroupStateServiceArgument[],
+): GroupStateTimingInvocation {
   const first = args[0];
   const phaseCommand =
     first &&
@@ -355,6 +373,6 @@ function resolveGroupStateTimingInvocation(args: readonly unknown[]): GroupState
     Boolean(candidate && typeof candidate === 'object' && 'requestId' in candidate),
   );
   const requestRecord =
-    request && typeof request === 'object' ? (request as Record<string, unknown>) : {};
+    request && typeof request === 'object' ? (request as GroupStateTimingDetails) : {};
   return { phaseCommand, scope, requestRecord };
 }

@@ -8,7 +8,7 @@ import {
     BLACK_BOX_RUNNER_COVERAGE_HANDOFF,
     toBlackBoxRunnerRecipeCatalog,
     type BlackBoxRunnerRecipeMatrix,
-} from '../../shared-test/black-box-runner/handoff-contract.ts';
+} from '../../shared-test/black-box-runner/artifacts/handoff-contract.ts';
 
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url));
 const matrixPath = path.join(repoRoot, 'packages/shared-test/black-box-runner/recipe-matrix.json');

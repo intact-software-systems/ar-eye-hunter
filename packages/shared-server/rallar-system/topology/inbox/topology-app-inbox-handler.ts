@@ -26,13 +26,26 @@ import type { TopologyReconfigureAppInboxAuthority } from './topology-app-inbox-
 
 export interface TopologyAppInboxHandlerDependencies {
   readonly groupStateService: GroupStateService;
-  readonly writeMutation: (
+  readonly writeMutation: <Result>(
     context: AppInboxMessageContext,
-    write: (transaction: PSqlTransactionSql) => Promise<unknown>,
-  ) => Promise<unknown>;
+    write: (transaction: PSqlTransactionSql) => Promise<Result>,
+  ) => Promise<Result>;
   readonly nowEpochMs: () => number;
   readonly wakeQueue?: () => void;
 }
+
+type TopologyConfigInboxResult = ReturnType<
+  GroupTopologyManagementService['toTopologyConfigMutationResult']
+>;
+
+interface TopologyReconfigureInboxResult {
+  readonly status: 'queued';
+  readonly groupRef: GroupTopologyReconfigureCommand['groupRef'];
+  readonly requestId: string;
+  readonly outboxId: string;
+}
+
+type TopologyAppInboxResult = TopologyConfigInboxResult | TopologyReconfigureInboxResult;
 
 export class TopologyAppInboxHandler {
   private topologyManagementService?: GroupTopologyManagementService;
@@ -58,7 +71,7 @@ export class TopologyAppInboxHandler {
     });
   }
 
-  async processMutation(context: AppInboxMessageContext): Promise<unknown> {
+  async processMutation(context: AppInboxMessageContext): Promise<TopologyAppInboxResult> {
     const authority = readTopologyAppInboxAuthority(context.enqueue.authority);
     await verifyTopologyAppInboxAuthority({
       authority,
@@ -99,7 +112,7 @@ export class TopologyAppInboxHandler {
   private async processTopologyReconfigureMutation(
     context: AppInboxMessageContext,
     authority: TopologyReconfigureAppInboxAuthority,
-  ): Promise<unknown> {
+  ): Promise<TopologyReconfigureInboxResult> {
     const service = GroupPresenceService.requireTopologyManagementService(
       this.topologyManagementService,
     );
@@ -127,7 +140,7 @@ export class TopologyAppInboxHandler {
         groupRef: command.groupRef,
         requestId: command.commandId,
         outboxId: computed.resourceId,
-      };
+      } as const;
     });
     this.dependencies.wakeQueue?.();
     return result;

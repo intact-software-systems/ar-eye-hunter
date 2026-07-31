@@ -577,6 +577,93 @@ describe('api-v1 black-box run helper', () => {
         expect(fetchImpl).not.toHaveBeenCalled();
     });
 
+    it('normalizes a string child-status rejection at the readiness boundary', async () => {
+        const outcome = await observeReadiness(waitForManagedApiReady({
+            baseUrl: 'http://127.0.0.1:18080',
+            logPath: '/tmp/api-v1-server.log',
+            childStatus: Promise.reject('child-status-string'),
+            startup: new Promise<void>(() => undefined),
+            streamsDrained: Promise.resolve(),
+            readTextFile: async () => 'unused',
+            timeoutMs: 1_000,
+        }));
+
+        expect(outcome).toEqual({ ok: false, error: new Error('child-status-string') });
+    });
+
+    it('normalizes an object startup rejection at the readiness boundary', async () => {
+        const outcome = await observeReadiness(waitForManagedApiReady({
+            baseUrl: 'http://127.0.0.1:18080',
+            logPath: '/tmp/api-v1-server.log',
+            childStatus: new Promise(() => undefined),
+            startup: Promise.reject({ kind: 'startup-object' }),
+            streamsDrained: Promise.resolve(),
+            readTextFile: async () => 'unused',
+            timeoutMs: 1_000,
+        }));
+
+        expect(outcome).toEqual({ ok: false, error: new Error('[object Object]') });
+    });
+
+    it('normalizes an AbortSignal reason at the readiness boundary', async () => {
+        const controller = new AbortController();
+        controller.abort('startup-abort-reason');
+        const outcome = await observeReadiness(waitForManagedApiReady({
+            baseUrl: 'http://127.0.0.1:18080',
+            logPath: '/tmp/api-v1-server.log',
+            childStatus: new Promise(() => undefined),
+            startup: Promise.reject(controller.signal.reason),
+            streamsDrained: Promise.resolve(),
+            readTextFile: async () => 'unused',
+            timeoutMs: 1_000,
+        }));
+
+        expect(outcome).toEqual({ ok: false, error: new Error('startup-abort-reason') });
+    });
+
+    for (const rejection of [
+        { name: 'null', value: null },
+        { name: 'undefined', value: undefined },
+    ] as const) {
+        it(`keeps a ${rejection.name} fetch rejection as an absent timeout error`, async () => {
+            vi.useFakeTimers();
+            try {
+                let attempt = 0;
+                const outcomePromise = observeReadiness(waitForManagedApiReady({
+                    baseUrl: 'http://127.0.0.1:18080',
+                    logPath: '/tmp/api-v1-server.log',
+                    childStatus: new Promise(() => undefined),
+                    startup: Promise.resolve(),
+                    streamsDrained: Promise.resolve(),
+                    fetchImpl: () => {
+                        attempt += 1;
+                        if (attempt === 1) return Promise.resolve(new Response(null, { status: 503 }));
+                        if (attempt === 2) return Promise.reject(rejection.value);
+                        return new Promise(() => undefined);
+                    },
+                    readTextFile: async () => 'Server started on port 18080.',
+                    sleep: async () => undefined,
+                    timeoutMs: 100,
+                }));
+
+                await vi.advanceTimersByTimeAsync(100);
+                const outcome = await outcomePromise;
+
+                expect(outcome).toEqual({
+                    ok: false,
+                    error: new Error(
+                        'Timed out waiting for http://127.0.0.1:18080/api/config: ' +
+                            'no successful response\nLatest API-v1 log tail:\n' +
+                            'Server started on port 18080.',
+                    ),
+                });
+                expect(attempt).toBe(3);
+            } finally {
+                vi.useRealTimers();
+            }
+        });
+    }
+
     it('waits for the child startup marker before accepting config', async () => {
         const startup = deferred<void>();
         const fetchSignals: AbortSignal[] = [];

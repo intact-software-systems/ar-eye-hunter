@@ -24,7 +24,7 @@ import {
   type toExpiryCommand,
   type toSessionCleanupCommand,
 } from '@shared-server/rallar-system/services/group-state-service.ts';
-import { materializeGroupStateGuardedBatch } from '@shared-server/rallar-system/group-state/mutation/write-group-state-mutation.ts';
+import { materializeGroupStateGuardedBatch } from '@shared-server/rallar-system/group-state/mutation/write/write-group-state-mutation.ts';
 import type {
   GroupMutationComputed,
   GroupMutationComputedWrite,
@@ -87,7 +87,7 @@ export class GroupStateTestMutationExecutor {
     let computed: GroupMutationComputed | undefined;
     for (let attempt = 1; attempt <= 3; attempt += 1) {
       const read =
-        await import('@shared-server/rallar-system/group-state/mutation/read-group-mutation.ts').then(
+        await import('@shared-server/rallar-system/group-state/mutation/read/read-group-mutation.ts').then(
           ({ readGroupMutation }) => readGroupMutation(this.repository(), command),
         );
       const facts: GroupMutationFacts = {

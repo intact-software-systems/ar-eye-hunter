@@ -6,7 +6,7 @@ import {
   toManagedPostgresDatabaseName,
   toManagedPostgresDatabaseUrl,
   withManagedPostgresRunDatabase,
-} from '@shared-test/black-box-runner/api-v1-managed-postgres-run-database.mts';
+} from '@shared-test/black-box-runner/managed-api/api-v1-managed-postgres-run-database.mts';
 
 vi.mock('postgres', () => ({ default: vi.fn() }));
 

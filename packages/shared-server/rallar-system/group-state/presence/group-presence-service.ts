@@ -22,9 +22,19 @@ import type {
   GroupPresenceSessionCleanupAppInboxPayload,
 } from './group-presence-session-cleanup-app-inbox-payload.ts';
 
-type WriteMutation = (
-  write: (transaction: PSqlTransactionSql) => Promise<unknown>,
-) => Promise<unknown>;
+type WriteMutation = <Result>(
+  write: (transaction: PSqlTransactionSql) => Promise<Result>,
+) => Promise<Result>;
+
+export interface InactiveGroupPresenceResult {
+  readonly status: 'inactive';
+  readonly sessionId: string;
+  readonly generationId: string;
+}
+
+interface GroupSessionCleanupResult extends InactiveGroupPresenceResult {
+  readonly affectedGroups: number;
+}
 
 export class GroupPresenceService {
   static toGroupSessionCleanupEnqueue(
@@ -65,7 +75,7 @@ export class GroupPresenceService {
     return service;
   }
 
-  static async processConnect(
+  static async processConnect<Result>(
     input: Readonly<{
       command: GroupStateMutationCommand;
       groupStateService: GroupStateService;
@@ -73,9 +83,9 @@ export class GroupPresenceService {
       commitMutation(
         computed: GroupMutationComputed,
         lifecycleGuard: WsSessionGenerationLifecycleComputed,
-      ): Promise<unknown>;
+      ): Promise<Result>;
     }>,
-  ): Promise<unknown> {
+  ): Promise<Result | InactiveGroupPresenceResult> {
     const operation = input.command.command;
     if (operation.operation !== 'connectPresence') {
       throw new TypeError('Group presence connect command is invalid');
@@ -120,7 +130,7 @@ export class GroupPresenceService {
       writeMutation: WriteMutation;
       wakeQueue?: () => void;
     }>,
-  ): Promise<unknown> {
+  ): Promise<GroupSessionCleanupResult> {
     const closeFacts = toGroupCloseFacts(input.facts);
     const lifecycle = input.groupStateService.sessionGenerationLifecycle;
     const lifecycleRead = await lifecycle.read(closeFacts);
@@ -157,7 +167,7 @@ export class GroupPresenceService {
         sessionId: input.facts.connection.authSession.sessionId,
         generationId: input.facts.connection.generationId,
         affectedGroups: mutations.length,
-      };
+      } as const;
     });
     input.wakeQueue?.();
     return result;
@@ -183,7 +193,7 @@ export function requireTopologyManagementService(
   return GroupPresenceService.requireTopologyManagementService(service);
 }
 
-export async function processGroupPresenceConnect(
+export async function processGroupPresenceConnect<Result>(
   input: Readonly<{
     command: GroupStateMutationCommand;
     groupStateService: GroupStateService;
@@ -191,9 +201,9 @@ export async function processGroupPresenceConnect(
     commitMutation(
       computed: GroupMutationComputed,
       lifecycleGuard: WsSessionGenerationLifecycleComputed,
-    ): Promise<unknown>;
+    ): Promise<Result>;
   }>,
-): Promise<unknown> {
+): Promise<Result | InactiveGroupPresenceResult> {
   return await GroupPresenceService.processConnect(input);
 }
 
@@ -205,7 +215,7 @@ export async function processGroupSessionCleanup(
     writeMutation: WriteMutation;
     wakeQueue?: () => void;
   }>,
-): Promise<unknown> {
+): Promise<GroupSessionCleanupResult> {
   return await GroupPresenceService.processSessionCleanup(input);
 }
 

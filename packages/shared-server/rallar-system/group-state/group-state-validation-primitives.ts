@@ -1,17 +1,13 @@
 import type { GroupRef } from '@shared/api/group-types.ts';
 
-export function assertExactKeys(
-  value: Readonly<Record<string, unknown>>,
-  allowed: readonly string[],
-  label: string,
-): void {
+export function assertExactKeys(value: object, allowed: readonly string[], label: string): void {
   const allowedSet = new Set(allowed);
   const unexpected = Object.keys(value).find((key) => !allowedSet.has(key));
   if (unexpected) throw new TypeError(`${label} has unexpected key: ${unexpected}`);
 }
 
 export function assertRequiredKeys(
-  value: Readonly<Record<string, unknown>>,
+  value: object,
   required: readonly string[],
   label: string,
 ): void {

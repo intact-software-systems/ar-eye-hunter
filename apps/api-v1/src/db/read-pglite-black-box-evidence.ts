@@ -1,5 +1,4 @@
 import { PGlite } from '@electric-sql/pglite';
-import type { Sql } from 'postgres';
 import {
   collectApiV1StateWriteEvidenceFromSql,
 } from '../../../../packages/shared-test/black-box-runner/api-v1-state-write-evidence.ts';
@@ -16,7 +15,7 @@ if (import.meta.main) {
   try {
     const evidence = await collectApiV1StateWriteEvidenceFromSql(
       JSON.parse(inputJson),
-      sql as unknown as Sql,
+      sql,
     );
     console.log(JSON.stringify(evidence));
   } finally {

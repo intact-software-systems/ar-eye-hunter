@@ -17,7 +17,10 @@ import {
   type GroupMutationCommand,
   type GroupMutationFacts,
 } from './mutation/group-mutation-contracts.ts';
-import { validateGroupMutationCommand } from './mutation/validate-group-mutation-command.ts';
+// prettier-ignore
+import {
+  validateGroupMutationCommand,
+} from './mutation/command-validation/validate-group-mutation-command.ts';
 import { hashMutationCommand, type JsonWireValue } from '../services/mutation-command-identity.ts';
 import {
   toAggregateMutationCommand,

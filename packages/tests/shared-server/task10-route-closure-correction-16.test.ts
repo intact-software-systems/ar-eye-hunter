@@ -16,7 +16,7 @@ const LIVE_GROUP_COLLECTION = `GROUP_MUTATION_INBOX_TYPES.filter(
     )`;
 const LOOP_START = '    for (const type of GROUP_MUTATION_INBOX_TYPES.filter(';
 const LOOP_END = '    this.onStateMessage<GroupPresenceSessionCleanupAppInboxPayload>(';
-const CLASS_START = 'export class AppGroupInboxService extends AppInboxService {';
+const CLASS_START = 'class AppGroupInboxService extends AppInboxService {';
 const TYPE_MAP = `const C16_TYPE_MAP = new Map([
     [AppInboxType.GROUP_CREATE, AppInboxType.GROUP_UPDATE],
 ]);`;

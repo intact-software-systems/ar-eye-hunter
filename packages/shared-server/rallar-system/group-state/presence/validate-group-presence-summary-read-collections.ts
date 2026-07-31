@@ -1,6 +1,9 @@
 import type { GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
 
-import { validateRuntimeEntryValue } from '../mutation/validate-group-mutation-read.ts';
+// prettier-ignore
+import {
+  validateRuntimeEntryValue,
+} from '../mutation/state-validation/validate-group-mutation-read.ts';
 import {
   groupStateMemberStorageKey,
   groupStatePresenceAdmissionStorageKey,

@@ -5,12 +5,16 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
+  collectApiV1StateWriteEvidence,
   readPostgresStateWriteEvidenceSource,
+  readPGliteStateWriteEvidenceSnapshot,
   requestPGliteStateWriteEvidenceSnapshot,
   resolveApiV1StateWriteEvidenceSource,
   runBoundedPGliteReaderCommand,
   selectApiV1StateWriteEvidenceSource,
-} from '@shared-test/black-box-runner/api-v1-state-write-evidence-source.ts';
+  toStateWriteEvidenceSql,
+} from '@shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-source.ts';
+import { collectApiV1StateWriteEvidenceFromSql } from '@shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-sql.ts';
 
 async function createSnapshotRoot(): Promise<string> {
   const root = await mkdtemp(path.join(tmpdir(), 'pglite-evidence-request-'));
@@ -81,6 +85,107 @@ describe('API-v1 PGlite state-write evidence source', () => {
     );
     expect(value).toBe('evidence');
     expect(events).toEqual(['open', 'read', 'end:5']);
+  });
+
+  it('delegates transaction queries without replacing the PostgreSQL begin owner', async () => {
+    const rootQueries: string[] = [];
+    const transactionQueries: string[] = [];
+    const transaction = vi.fn(async (strings: TemplateStringsArray) => {
+      transactionQueries.push(strings.join('?'));
+      return [];
+    });
+    const begin = vi.fn(
+      async (write: (query: typeof transaction) => Promise<void>) => await write(transaction),
+    );
+    const postgresSql = Object.assign(
+      vi.fn(async (strings: TemplateStringsArray) => {
+        rootQueries.push(strings.join('?'));
+        return [];
+      }),
+      { begin },
+    );
+
+    const evidenceSql = toStateWriteEvidenceSql(postgresSql as never);
+    expect(evidenceSql).not.toBe(postgresSql);
+    await evidenceSql.begin(async (query) => {
+      expect(query).not.toBe(transaction);
+      await query`select ${'transaction-value'}`;
+    });
+
+    expect(begin).toHaveBeenCalledOnce();
+    expect(rootQueries).toEqual([]);
+    expect(transactionQueries).toEqual(['select ?']);
+  });
+
+  it('keeps raw JSON evidence inputs untrusted until the SQL validator runs', async () => {
+    const rawInput: unknown = JSON.parse('{"match":""}');
+    const sql = Object.assign(vi.fn(), { begin: vi.fn() });
+
+    const collectInput: Parameters<typeof collectApiV1StateWriteEvidence>[0] = rawInput;
+    const snapshotInput: Parameters<typeof readPGliteStateWriteEvidenceSnapshot>[1] = rawInput;
+
+    await expect(collectApiV1StateWriteEvidenceFromSql(rawInput, sql as never)).rejects.toThrow(
+      'stateWriteEvidence.match must be a non-empty string.',
+    );
+    expect(sql).not.toHaveBeenCalled();
+    expect(collectInput).toBe(rawInput);
+    expect(snapshotInput).toBe(rawInput);
+  });
+
+  it('retains numeric-string minimum and string commandTypes behavior', async () => {
+    const row = {
+      ri_row_id: 1,
+      ri_resource_id: 'command-1',
+      ri_topic_id: 'app-inbox',
+      fk_ext_bank_id: 'scope',
+      ri_resource: JSON.stringify({ payload: { typeId: 'GROUP_UPDATE' } }),
+      ri_status: 'COMPLETED',
+      ri_attempts: 1,
+      start_ts: null,
+      end_ts: null,
+      next_ts: null,
+      result_status: 'COMPLETED',
+      result_resource: '{}',
+    };
+    const sql = Object.assign(
+      vi.fn(async () => [row]),
+      { begin: vi.fn() },
+    );
+    const rawInput = JSON.parse(
+      '{"match":"scope","minimumMatchedRows":"2","commandTypes":"GROUP_UPDATE"}',
+    );
+
+    await expect(collectApiV1StateWriteEvidenceFromSql(rawInput, sql as never)).rejects.toThrow(
+      'Expected at least 2 matching AppInbox rows; found 1.',
+    );
+    expect(sql).toHaveBeenCalledOnce();
+  });
+
+  it('acquires the PGlite snapshot before validating its raw evidence input', async () => {
+    const root = await createSnapshotRoot();
+    try {
+      const pending = readPGliteStateWriteEvidenceSnapshot(
+        { kind: 'pglite', snapshotDir: root },
+        JSON.parse('{"match":""}'),
+      );
+      const requestName = await waitForSnapshotRequest(root);
+      const request = JSON.parse(readFileSync(path.join(root, 'requests', requestName), 'utf8'));
+      await writeFile(
+        path.join(root, 'responses', `${request.nonce}.json`),
+        JSON.stringify({
+          ...request,
+          publishedAtEpochMs: request.requestedAtEpochMs + 1,
+          failure: 'snapshot unavailable',
+        }),
+        { mode: 0o600 },
+      );
+
+      await expect(pending).rejects.toThrow(
+        'PGlite snapshot publisher failed: snapshot unavailable',
+      );
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
   });
 
   it('requires the exact nonce archive and removes every artifact on rejection', async () => {

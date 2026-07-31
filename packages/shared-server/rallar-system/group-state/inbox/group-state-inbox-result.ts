@@ -4,9 +4,13 @@ import { Either } from '@shared/resilience/Either.ts';
 import type { GroupStateRepository } from '../persistence/group-state-repository.ts';
 import type { GroupMutationReceipt } from '../mutation/group-mutation-contracts.ts';
 import type { GroupStateMutationCommand } from '../group-state-service-contracts.ts';
+import type { GroupJoinCodeWritten, GroupStateWritten } from '../group-state-service-contracts.ts';
+
+export type GroupStateInboxDurableResult =
+  GroupMutationReceipt | GroupJoinCodeWritten | GroupStateWritten;
 
 export interface GroupStateInboxResult {
-  readonly durableResult: unknown;
+  readonly durableResult: GroupStateInboxDurableResult;
   readonly committedSnapshot: GroupSnapshot | undefined;
 }
 
@@ -72,7 +76,7 @@ function toJoinCodeResult(
   receipt: GroupMutationReceipt,
   snapshot: GroupSnapshot,
   event: GroupEvent | null,
-): unknown {
+): GroupJoinCodeWritten {
   if (receipt.outcome === 'rejected') {
     return {
       status: 'error',
@@ -93,7 +97,7 @@ function toJoinCodeResult(
   };
 }
 
-function toGroupMutationResult(input: ToGroupMutationResultInput): unknown {
+function toGroupMutationResult(input: ToGroupMutationResultInput): GroupStateWritten {
   const { command, event, receipt, snapshot } = input;
   if (receipt.outcome === 'rejected') {
     return {

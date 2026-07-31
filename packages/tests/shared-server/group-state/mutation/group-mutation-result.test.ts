@@ -9,9 +9,9 @@ import type {
   GroupMutationFacts,
   GroupMutationRead,
 } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
-import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/compute-group-mutation.ts';
-import { validateGroupMutationIdempotencyRecord } from '@shared-server/rallar-system/group-state/mutation/validate-group-mutation-result.ts';
-import { validateGroupMutation } from '@shared-server/rallar-system/group-state/mutation/validate-group-mutation.ts';
+import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
+import { validateGroupMutationIdempotencyRecord } from '@shared-server/rallar-system/group-state/mutation/result-validation/validate-group-mutation-result.ts';
+import { validateGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/validate-group-mutation.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
 import { createTestGroupStateService } from '../group-state-test-runtime.ts';

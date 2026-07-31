@@ -13,8 +13,14 @@ import {
   groupStateGroupStorageKey,
   groupStatePresenceSummaryStorageKey,
 } from '../persistence/group-state-storage-keys.ts';
-import { validateRuntimeEntryValue } from '../mutation/validate-group-mutation-read.ts';
-import { presenceAdmissionIdentity } from '../mutation/compute-group-presence-admission.ts';
+// prettier-ignore
+import {
+  validateRuntimeEntryValue,
+} from '../mutation/state-validation/validate-group-mutation-read.ts';
+// prettier-ignore
+import {
+  presenceAdmissionIdentity,
+} from '../mutation/presence/compute-group-presence-admission.ts';
 import { validateStoredGroup } from '../persistence/validate-persisted-group.ts';
 import { validatePresenceSummaryValue } from '../persistence/validate-persisted-group-presence.ts';
 import {
@@ -110,12 +116,12 @@ export function validateGroupPresenceSummary(
   requireJsonSafe(read, 'Group presence summary read');
   requireJsonSafe(computed, 'Group presence summary computed result');
   assertExactKeys(
-    read as unknown as Record<string, unknown>,
+    read,
     ['group', 'members', 'admissions', 'presenceSessions', 'current'],
     'Group presence summary read',
   );
   assertRequiredKeys(
-    read as unknown as Record<string, unknown>,
+    read,
     ['group', 'members', 'admissions', 'presenceSessions', 'current'],
     'Group presence summary read',
   );
@@ -166,10 +172,9 @@ function validateGroupPresenceSummaryCandidate(
 
 function validateGroupPresenceSummaryOutcome(validation: GroupPresenceSummaryValidation): void {
   const { ref, read, computed, expectedContent, groupRevision, current, expectedNoOp } = validation;
-  const shape = computed as unknown as Record<string, unknown>;
   if (computed.outcome === 'no-op') {
     assertExactKeys(
-      shape,
+      computed,
       ['outcome', 'evaluatedAtEpochMs', 'summary'],
       'Group presence summary computed result',
     );
@@ -179,7 +184,7 @@ function validateGroupPresenceSummaryOutcome(validation: GroupPresenceSummaryVal
     return;
   }
   assertExactKeys(
-    shape,
+    computed,
     ['outcome', 'evaluatedAtEpochMs', 'operation', 'expectedRevision', 'summary'],
     'Group presence summary computed result',
   );

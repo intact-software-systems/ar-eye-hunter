@@ -256,8 +256,8 @@ export function validateStoredGeneration(session: GroupPresenceSession): void {
 }
 
 export function validateStoredGenerationValues(
-  connectedAtEpochMs: unknown,
-  generationVersion: unknown,
+  connectedAtEpochMs: number,
+  generationVersion: number,
 ): void {
   requirePositiveSafeInteger(connectedAtEpochMs, 'Stored presence connectedAtEpochMs');
   requirePositiveSafeInteger(generationVersion, 'Stored presence generationVersion');

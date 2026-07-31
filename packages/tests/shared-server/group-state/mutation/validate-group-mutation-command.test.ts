@@ -6,12 +6,28 @@ import type {
   HeartbeatGroupPresenceSessionRequest,
 } from '@shared/api/state-types.ts';
 import { type GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
-import { validateGroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/validate-group-mutation-command.ts';
+import { validateGroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/command-validation/validate-group-mutation-command.ts';
 
 const commandValidationOwner =
-  'packages/shared-server/rallar-system/group-state/mutation/validate-group-mutation-command.ts';
+  'packages/shared-server/rallar-system/group-state/mutation/command-validation/validate-group-mutation-command.ts';
 
 describe('group mutation command validation', () => {
+  it('keeps create and update metadata readonly in the public command contract', () => {
+    type CreateCommand = Extract<GroupMutationCommand, { operation: 'createGroup' }>;
+    type UpdateCommand = Extract<GroupMutationCommand, { operation: 'updateGroup' }>;
+    const mutateCreateMetadata = (command: CreateCommand): void => {
+      // @ts-expect-error Public command metadata must remain readonly.
+      command.input.metadata.reviewMutation = true;
+    };
+    const mutateUpdateMetadata = (command: UpdateCommand): void => {
+      if (!command.input.metadata) return;
+      // @ts-expect-error Public command metadata must remain readonly.
+      command.input.metadata.reviewMutation = true;
+    };
+
+    expect(mutateCreateMetadata).toBeTypeOf('function');
+    expect(mutateUpdateMetadata).toBeTypeOf('function');
+  });
   it('locates command validation at the canonical mutation owner', () => {
     expect(existsSync(commandValidationOwner)).toBe(true);
   });

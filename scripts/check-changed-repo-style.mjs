@@ -242,8 +242,14 @@ function groupStructuralBoundaryCapacity(input) {
 }
 
 function boundaryUnknownMagnitude(finding) {
-  const summaryMatch = /^\.\.\. and (\d+) additional unknown occurrences/u.exec(finding.message);
-  return summaryMatch === null ? 1 : Number(summaryMatch[1]);
+  const summaryPrefix = '... and ';
+  const summarySuffix =
+    ' additional unknown occurrences. Reduce unknown propagation at domain boundaries.';
+  if (!finding.message.startsWith(summaryPrefix) || !finding.message.endsWith(summarySuffix)) {
+    return 1;
+  }
+  const magnitude = finding.message.slice(summaryPrefix.length, -summarySuffix.length);
+  return /^\d+$/u.test(magnitude) ? Number(magnitude) : 1;
 }
 
 function findingKey(repoRoot, finding, logicalSourceByTargetPath) {

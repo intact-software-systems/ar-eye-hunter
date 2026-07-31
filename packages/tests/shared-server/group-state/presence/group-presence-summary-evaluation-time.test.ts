@@ -19,7 +19,7 @@ import {
   type GroupPresenceSummaryRead,
   validateGroupPresenceSummary,
 } from '@shared-server/rallar-system/group-state/presence/compute-group-presence-summary.ts';
-import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/compute-group-mutation.ts';
+import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
 import {
   createMutationCommand,
   createMutationFacts,

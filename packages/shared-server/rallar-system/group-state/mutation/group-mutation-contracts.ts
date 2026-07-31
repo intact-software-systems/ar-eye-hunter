@@ -48,7 +48,7 @@ export type GroupMutationCommand =
             joinMode: GroupJoinMode;
             maxMembers: number | null;
             maxSessionsPerMember: number | null;
-            metadata: Readonly<Record<string, unknown>>;
+            metadata: Readonly<Group['metadata']>;
             createdByPrincipalId: string;
             expiresAtEpochMs: number | null;
             purgeAfterEpochMs: number | null;
@@ -67,7 +67,7 @@ export type GroupMutationCommand =
             joinMode: GroupJoinMode | null;
             maxMembers: number | null;
             maxSessionsPerMember: number | null;
-            metadata: Readonly<Record<string, unknown>> | null;
+            metadata: Readonly<Group['metadata']> | null;
             expiresAtEpochMs: number | null;
             emptySinceEpochMs: number | null;
             purgeAfterEpochMs: number | null;

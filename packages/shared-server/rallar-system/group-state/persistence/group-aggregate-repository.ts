@@ -18,7 +18,7 @@ import type { GroupMutationIdempotencyRecord } from '../mutation/group-mutation-
 // prettier-ignore
 import {
   validateGroupMutationIdempotencyRecord,
-} from '../mutation/validate-group-mutation-result.ts';
+} from '../mutation/result-validation/validate-group-mutation-result.ts';
 import { validatePersistedGroupEvent } from '../../persisted-group-event.ts';
 import type { GroupStateEventStore } from '../../repositories/StateEventStore.ts';
 import { filterStateEventsForList, type StateEventListQuery } from '../../state-event-listing.ts';

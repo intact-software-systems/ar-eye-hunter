@@ -10,7 +10,7 @@ import {
     parseBlackBoxRunnerExpandedPlan,
     validateBlackBoxRunnerRecipeCatalogEntryFixture,
     type BlackBoxRunnerArtifactBundleFiles,
-} from '../../shared-test/black-box-runner/artifact-reader.ts';
+} from '../../shared-test/black-box-runner/artifacts/artifact-reader.ts';
 
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url));
 const fixturesRoot = path.join(repoRoot, 'packages/shared-test/black-box-runner/fixtures/schema');

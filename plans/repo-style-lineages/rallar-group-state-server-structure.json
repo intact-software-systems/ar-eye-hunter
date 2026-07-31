@@ -34,16 +34,16 @@
         "blob": "66a5a6fcbd86a1d144a2e0a1394ee80eca2fb520"
       },
       "targets": [
-        "packages/shared-server/rallar-system/group-state/mutation/compute-group-aggregate-mutation.ts",
-        "packages/shared-server/rallar-system/group-state/mutation/compute-group-mutation.ts",
+        "packages/shared-server/rallar-system/group-state/mutation/aggregate/compute-group-aggregate-mutation.ts",
+        "packages/shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts",
         "packages/shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts",
-        "packages/shared-server/rallar-system/group-state/mutation/group-mutation-request-validation.ts",
-        "packages/shared-server/rallar-system/group-state/mutation/validate-computed-group-mutation-write.ts",
-        "packages/shared-server/rallar-system/group-state/mutation/validate-computed-group-mutation.ts",
-        "packages/shared-server/rallar-system/group-state/mutation/validate-group-mutation-command.ts",
-        "packages/shared-server/rallar-system/group-state/mutation/validate-group-mutation-operation-input.ts",
-        "packages/shared-server/rallar-system/group-state/mutation/validate-group-mutation-read.ts",
-        "packages/shared-server/rallar-system/group-state/mutation/validate-group-mutation-result.ts",
+        "packages/shared-server/rallar-system/group-state/mutation/command-validation/group-mutation-request-validation.ts",
+        "packages/shared-server/rallar-system/group-state/mutation/result-validation/validate-computed-group-mutation-write.ts",
+        "packages/shared-server/rallar-system/group-state/mutation/result-validation/validate-computed-group-mutation.ts",
+        "packages/shared-server/rallar-system/group-state/mutation/command-validation/validate-group-mutation-command.ts",
+        "packages/shared-server/rallar-system/group-state/mutation/command-validation/validate-group-mutation-operation-input.ts",
+        "packages/shared-server/rallar-system/group-state/mutation/state-validation/validate-group-mutation-read.ts",
+        "packages/shared-server/rallar-system/group-state/mutation/result-validation/validate-group-mutation-result.ts",
         "packages/shared-server/rallar-system/group-state/persistence/group-state-persistence-codec.ts",
         "packages/shared-server/rallar-system/group-state/persistence/validate-persisted-group-presence.ts",
         "packages/shared-server/rallar-system/group-state/persistence/validate-persisted-group.ts",
@@ -120,8 +120,11 @@
         "blob": "baaadae42ebe02e4d6cdd9a856f77dd8afc77c45"
       },
       "targets": [
-        "packages/shared-test/black-box-runner/api-v1-managed-api-readiness.mts",
-        "packages/shared-test/black-box-runner/api-v1-managed-process-lifecycle.mts"
+        "packages/shared-test/black-box-runner/managed-api/api-v1-managed-api-readiness.mts",
+        "packages/shared-test/black-box-runner/managed-api/api-v1-managed-api-redaction-patterns.mts",
+        "packages/shared-test/black-box-runner/managed-api/api-v1-managed-log-tail.mts",
+        "packages/shared-test/black-box-runner/managed-api/api-v1-managed-postgres-run-database.mts",
+        "packages/shared-test/black-box-runner/managed-api/api-v1-managed-process-lifecycle.mts"
       ]
     },
     {
@@ -131,11 +134,141 @@
         "blob": "90f1497f1636ea8685dba92b7757f9f94e5d6088"
       },
       "targets": [
-        "packages/shared-test/black-box-runner/api-v1-state-write-evidence-contracts.ts",
-        "packages/shared-test/black-box-runner/api-v1-state-write-evidence-derivation.ts",
-        "packages/shared-test/black-box-runner/api-v1-state-write-evidence-source.ts",
-        "packages/shared-test/black-box-runner/api-v1-state-write-evidence-sql.ts"
+        "packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-contracts.ts",
+        "packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-derivation.ts",
+        "packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-source.ts",
+        "packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-sql.ts"
       ]
+    },
+    {
+      "mergeBase": "52d973bb71dda2100455e8585a0a8f98d177bd13",
+      "source": {
+        "path": "packages/shared-test/black-box-runner/api-v1-state-write-command-codecs.ts",
+        "blob": "ff2209eebb25bcbf0744d11de55041452ca351d9"
+      },
+      "targets": [
+        "packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-command-codecs.ts"
+      ]
+    },
+    {
+      "mergeBase": "52d973bb71dda2100455e8585a0a8f98d177bd13",
+      "source": {
+        "path": "packages/shared-test/black-box-runner/api-v1-state-write-group-causal-evidence.ts",
+        "blob": "9be5158ab51c0106cf73a2f855cf97ad4eadd24b"
+      },
+      "targets": [
+        "packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-group-causal-evidence.ts"
+      ]
+    },
+    {
+      "mergeBase": "52d973bb71dda2100455e8585a0a8f98d177bd13",
+      "source": {
+        "path": "packages/shared-test/black-box-runner/api-v1-state-write-intermediate-evidence.ts",
+        "blob": "d2a467fa2e788c1b43984f8b97271e982779e02f"
+      },
+      "targets": [
+        "packages/shared-test/black-box-runner/state-write-evidence/read-intermediate-mutation-intents.ts"
+      ]
+    },
+    {
+      "mergeBase": "52d973bb71dda2100455e8585a0a8f98d177bd13",
+      "source": {
+        "path": "packages/shared-test/black-box-runner/api-v1-state-write-json-evidence.ts",
+        "blob": "9dfbd2c6a5c350ee14ba56088b3c56d62ce9ba24"
+      },
+      "targets": [
+        "packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-json-evidence.ts"
+      ]
+    },
+    {
+      "mergeBase": "52d973bb71dda2100455e8585a0a8f98d177bd13",
+      "source": {
+        "path": "packages/shared-test/black-box-runner/api-v1-state-write-match.ts",
+        "blob": "30af6a2b9de18b3215700b89fb0166af466fa9d3"
+      },
+      "targets": [
+        "packages/shared-test/black-box-runner/state-write-evidence/to-exact-persisted-evidence-matches.ts"
+      ]
+    },
+    {
+      "mergeBase": "52d973bb71dda2100455e8585a0a8f98d177bd13",
+      "source": {
+        "path": "packages/shared-test/black-box-runner/api-v1-state-write-receipt-evidence.ts",
+        "blob": "51a2b12a239b6e2543e0fb45553c8c3b40373267"
+      },
+      "targets": [
+        "packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-receipt-evidence.ts"
+      ]
+    },
+    {
+      "mergeBase": "52d973bb71dda2100455e8585a0a8f98d177bd13",
+      "source": {
+        "path": "packages/shared-test/black-box-runner/api-v1-state-write-result-evidence.ts",
+        "blob": "633eb4824009d5c44c66248ddc7e59d6648a56e6"
+      },
+      "targets": [
+        "packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-result-evidence.ts"
+      ]
+    },
+    {
+      "mergeBase": "52d973bb71dda2100455e8585a0a8f98d177bd13",
+      "source": {
+        "path": "packages/shared-test/black-box-runner/api-v1-state-write-topology-result-evidence.ts",
+        "blob": "c88f184577dfad6af825f8caa2643a0ca6dc2d9c"
+      },
+      "targets": [
+        "packages/shared-test/black-box-runner/state-write-evidence/validate-topology-mutation-result-payload.ts"
+      ]
+    },
+    {
+      "mergeBase": "52d973bb71dda2100455e8585a0a8f98d177bd13",
+      "source": {
+        "path": "packages/shared-test/black-box-runner/artifact-reader.ts",
+        "blob": "33fd9fffcdefe99ed624611d20a720ad8de1d500"
+      },
+      "targets": ["packages/shared-test/black-box-runner/artifacts/artifact-reader.ts"]
+    },
+    {
+      "mergeBase": "52d973bb71dda2100455e8585a0a8f98d177bd13",
+      "source": {
+        "path": "packages/shared-test/black-box-runner/artifact-report-bounds.ts",
+        "blob": "2bf9ee11bb835ab44706d964a5caff9d0dae2f1c"
+      },
+      "targets": [
+        "packages/shared-test/black-box-runner/artifacts/with-bounded-artifact-report-results.ts"
+      ]
+    },
+    {
+      "mergeBase": "52d973bb71dda2100455e8585a0a8f98d177bd13",
+      "source": {
+        "path": "packages/shared-test/black-box-runner/handoff-contract.ts",
+        "blob": "33aa4869232e166807a3a2e520966d126e9de6a4"
+      },
+      "targets": ["packages/shared-test/black-box-runner/artifacts/handoff-contract.ts"]
+    },
+    {
+      "mergeBase": "52d973bb71dda2100455e8585a0a8f98d177bd13",
+      "source": {
+        "path": "packages/shared-test/black-box-runner/live-preflight-variables.ts",
+        "blob": "2ede5ae0110654cc4cae9f1e80cfe37f6b670933"
+      },
+      "targets": ["packages/shared-test/black-box-runner/preflight/resolve-variable-by-env.ts"]
+    },
+    {
+      "mergeBase": "52d973bb71dda2100455e8585a0a8f98d177bd13",
+      "source": {
+        "path": "packages/shared-test/black-box-runner/live-preflight.ts",
+        "blob": "bd9b3399a55680f1fa447dbc53df289770c21c46"
+      },
+      "targets": ["packages/shared-test/black-box-runner/preflight/live-preflight.ts"]
+    },
+    {
+      "mergeBase": "52d973bb71dda2100455e8585a0a8f98d177bd13",
+      "source": {
+        "path": "packages/shared-test/black-box-runner/plan-preflight.ts",
+        "blob": "6753796f708d8cd265af76dcf076ad6dcd8eb87c"
+      },
+      "targets": ["packages/shared-test/black-box-runner/preflight/plan-preflight.ts"]
     }
   ]
 }

@@ -1,21 +1,21 @@
 /// <reference lib="deno.ns" />
 import { readApiV1BlackBoxArgValues } from './read-api-v1-black-box-arg-values.mts';
-import { verifyApiV1FairnessProof } from './api-v1-fairness-proof.ts';
+import { verifyApiV1FairnessProof } from './state-write-evidence/api-v1-fairness-proof.ts';
 import {
   startManagedApiServer,
   stopManagedApiServer,
   type ManagedApiServer,
   type ManagedPGliteRunStorage,
   withManagedPGliteRunStorage,
-} from './api-v1-managed-process-lifecycle.mts';
+} from './managed-api/api-v1-managed-process-lifecycle.mts';
 import {
   managedApiDiagnosticSecrets,
   waitForManagedApiReady,
-} from './api-v1-managed-api-readiness.mts';
+} from './managed-api/api-v1-managed-api-readiness.mts';
 import {
   requiresManagedPostgresRunDatabase,
   withManagedPostgresRunDatabase,
-} from './api-v1-managed-postgres-run-database.mts';
+} from './managed-api/api-v1-managed-postgres-run-database.mts';
 
 export {
   managedApiDiagnosticSecrets,
@@ -24,7 +24,7 @@ export {
   type BoundedLogTailFile,
   type ReadBoundedLogTailOptions,
   type WaitForManagedApiReadyInput,
-} from './api-v1-managed-api-readiness.mts';
+} from './managed-api/api-v1-managed-api-readiness.mts';
 export type ApiV1BlackBoxBackend = 'postgres' | 'pglite-memory';
 export type ApiV1BlackBoxOptions = Readonly<{
   backend: ApiV1BlackBoxBackend;

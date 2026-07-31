@@ -105,7 +105,7 @@ function isTopologyConfigInboxType(type: AppInboxType): boolean {
   return (TOPOLOGY_CONFIG_INBOX_TYPES as readonly AppInboxType[]).includes(type);
 }
 
-export class AppGroupInboxService extends AppInboxService {
+class AppGroupInboxService extends AppInboxService {
   private readonly groupStateInboxHandler: GroupStateInboxHandler;
   private readonly topologyAppInboxHandler: TopologyAppInboxHandler;
   private readonly rtcRttAppInboxHandler: RtcRttAppInboxHandler;
@@ -300,3 +300,5 @@ export class AppGroupInboxService extends AppInboxService {
     );
   }
 }
+
+export { AppGroupInboxService };

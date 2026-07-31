@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {
   createManagedPGliteRunStorage,
   withManagedPGliteRunStorage,
-} from '../../../../packages/shared-test/black-box-runner/api-v1-managed-process-lifecycle.mts';
+} from '../../../../packages/shared-test/black-box-runner/managed-api/api-v1-managed-process-lifecycle.mts';
 
 Deno.test('managed PGlite private root uses 0700 directories and is removed after success', async () => {
   const storage = await createManagedPGliteRunStorage();

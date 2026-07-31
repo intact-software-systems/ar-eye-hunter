@@ -383,8 +383,8 @@ actual shell execution to explicit local tooling or the control server.
   contract.
 - `packages/shared-test/rallar-bb-test/provider-parity.ts`: portable SPA/runner
   parity recipes, runner conversion, and report comparison helpers.
-- `packages/shared-test/black-box-runner/handoff-contract.ts`: shared-test
+- `packages/shared-test/black-box-runner/artifacts/handoff-contract.ts`: shared-test
   recipe catalog, artifact contract, and coverage ownership contract consumed by
   the command center.
-- `packages/shared-test/black-box-runner/artifact-reader.ts`: browser-safe
+- `packages/shared-test/black-box-runner/artifacts/artifact-reader.ts`: browser-safe
   parser and validator for runner artifact bundles.

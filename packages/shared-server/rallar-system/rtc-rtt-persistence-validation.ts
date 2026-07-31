@@ -1,9 +1,6 @@
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-// prettier-ignore
-import {
-  validatePersistedGroupSnapshot,
-} from './group-state/snapshot/validate-persisted-group-snapshot.ts';
+import * as snapshotValidation from './group-state/snapshot/validate-persisted-group-snapshot.ts';
 import {
     compareRtcTopologyIdentifiers,
     toCanonicalRtcTopologyGroupIdentity,
@@ -159,7 +156,7 @@ export function validateRtcRttRecomputeIntent(
     safeInteger(intent.createdAtEpochMs, 0, 'recompute creation time');
     validateCommandHash(intent.commandHash);
     nonEmptyString(intent.senderId, 'recompute sender id');
-    validatePersistedGroupSnapshot(intent.groupSnapshot);
+    snapshotValidation.validatePersistedGroupSnapshot(intent.groupSnapshot);
     validateRtcRttMeasurement(intent.rtt);
     const group = intent.groupSnapshot as GroupSnapshot;
     const rtt = intent.rtt as RttMeasurementInfo;
@@ -268,7 +265,7 @@ function validateAffectedGroups(
     }
     const observed: string[] = [];
     for (const rawGroup of value) {
-        validatePersistedGroupSnapshot(rawGroup);
+        snapshotValidation.validatePersistedGroupSnapshot(rawGroup);
         const group = rawGroup as GroupSnapshot;
         const identity = toCanonicalRtcTopologyGroupIdentity(group.group);
         const intent = intentByGroup.get(identity);

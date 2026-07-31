@@ -9,6 +9,7 @@ import {
   expectedGroupStateTestTree,
   readRuntimeCycles,
   reviewedPredecessorFunctionSizes,
+  taskNineLayoutProductionOwners,
   taskSevenRepairProductionOwners,
   taskSevenRepairTestOwners,
   type NamedFunctionSize,
@@ -31,33 +32,33 @@ const expectedGroupStateProductionTree = [
   'inbox/group-state-inbox-contracts.ts',
   'inbox/group-state-inbox-handler.ts',
   'inbox/group-state-inbox-result.ts',
-  'mutation/compute-group-aggregate-mutation.ts',
-  'mutation/compute-group-membership-mutation.ts',
-  'mutation/compute-group-membership-write.ts',
-  'mutation/compute-group-mutation.ts',
-  'mutation/compute-group-presence-admission.ts',
-  'mutation/compute-group-presence-mutation.ts',
-  'mutation/create-initial-group-mutation.ts',
-  'mutation/group-aggregate-mutation-policy.ts',
-  'mutation/group-membership-mutation-policy.ts',
+  'mutation/aggregate/compute-group-aggregate-mutation.ts',
+  'mutation/aggregate/create-initial-group-mutation.ts',
+  'mutation/aggregate/group-aggregate-mutation-policy.ts',
+  'mutation/command-validation/group-mutation-request-validation.ts',
+  'mutation/command-validation/validate-group-mutation-command.ts',
+  'mutation/command-validation/validate-group-mutation-operation-input.ts',
   'mutation/group-mutation-contracts.ts',
-  'mutation/group-mutation-request-validation.ts',
   'mutation/group-mutation-result.ts',
   'mutation/group-state-crypto.ts',
-  'mutation/read-group-mutation-related-entries.ts',
-  'mutation/read-group-mutation.ts',
-  'mutation/resolve-group-mutation-read-identities.ts',
-  'mutation/resolve-group-mutation-target.ts',
-  'mutation/transition-group-member-lifecycle.ts',
-  'mutation/validate-computed-group-mutation-write.ts',
-  'mutation/validate-computed-group-mutation.ts',
-  'mutation/validate-computed-roster-facts.ts',
-  'mutation/validate-group-mutation-command.ts',
-  'mutation/validate-group-mutation-operation-input.ts',
-  'mutation/validate-group-mutation-read.ts',
-  'mutation/validate-group-mutation-result.ts',
-  'mutation/validate-group-mutation.ts',
-  'mutation/write-group-state-mutation.ts',
+  'mutation/membership/compute-group-membership-mutation.ts',
+  'mutation/membership/group-membership-mutation-policy.ts',
+  'mutation/membership/transition-group-member-lifecycle.ts',
+  'mutation/orchestration/compute-group-mutation.ts',
+  'mutation/orchestration/resolve-group-mutation-target.ts',
+  'mutation/presence/compute-group-presence-admission.ts',
+  'mutation/presence/compute-group-presence-mutation.ts',
+  'mutation/read/read-group-mutation-related-entries.ts',
+  'mutation/read/read-group-mutation.ts',
+  'mutation/read/resolve-group-mutation-read-identities.ts',
+  'mutation/result-validation/validate-computed-group-mutation-write.ts',
+  'mutation/result-validation/validate-computed-group-mutation.ts',
+  'mutation/result-validation/validate-group-mutation-result.ts',
+  'mutation/state-validation/validate-computed-roster-facts.ts',
+  'mutation/state-validation/validate-group-mutation-read.ts',
+  'mutation/state-validation/validate-group-mutation.ts',
+  'mutation/write/compute-group-membership-write.ts',
+  'mutation/write/write-group-state-mutation.ts',
   'persistence/assemble-group-state-snapshot.ts',
   'persistence/group-aggregate-repository.ts',
   'persistence/group-membership-repository.ts',
@@ -135,6 +136,7 @@ describe('authoritative group-state server source ratchet', () => {
     expect(taskSixProductionOwners.filter((filePath) => !existsSync(filePath))).toEqual([]);
     expect(taskSixTestOwners.filter((filePath) => !existsSync(filePath))).toEqual([]);
     expect(taskSevenRepairProductionOwners.filter((filePath) => !existsSync(filePath))).toEqual([]);
+    expect(taskNineLayoutProductionOwners.filter((filePath) => !existsSync(filePath))).toEqual([]);
     expect(taskSevenRepairTestOwners.filter((filePath) => !existsSync(filePath))).toEqual([]);
   });
 
@@ -177,7 +179,7 @@ describe('authoritative group-state server source ratchet', () => {
         message: finding.message,
       })),
     ).toEqual([]);
-    expect(reviewedFindings).toHaveLength(4);
+    expect(reviewedFindings).toHaveLength(3);
   });
 
   it('keeps every named general function within 60 physical lines', () => {
@@ -196,6 +198,24 @@ describe('authoritative group-state server source ratchet', () => {
 
     expect(misplacedImports).toEqual([]);
     expect(readRuntimeCycles({ repoRoot, sources })).toEqual([]);
+  });
+
+  it('normalizes managed-readiness failures without asserting Error values', () => {
+    const source = readRepoSource(
+      'packages/shared-test/black-box-runner/managed-api/api-v1-managed-api-readiness.mts',
+    );
+
+    expect(source).not.toContain('(error: Error) => settleUnexpectedManagedApiError');
+    expect(source).not.toContain('error as Error');
+    expect(source).not.toContain('as Error;');
+  });
+
+  it('delegates PostgreSQL evidence queries without a production query assertion', () => {
+    const source = readRepoSource(
+      'packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-source.ts',
+    );
+
+    expect(source).not.toContain('as ApiV1StateWriteEvidenceQuery');
   });
 
   it('detects runtime re-export cycles and ignores type-only re-exports', () => {
@@ -267,6 +287,10 @@ function readSources(
   }));
 }
 
+function readRepoSource(relativePath: string): string {
+  return readFileSync(path.join(repoRoot, relativePath), 'utf8');
+}
+
 function readRelativeFileTree(directoryPath: string, prefix = ''): readonly string[] {
   return readdirSync(directoryPath, { withFileTypes: true })
     .flatMap((entry) => {
@@ -300,15 +324,14 @@ function isReviewedMechanicalFinding(finding: MechanicalFinding): boolean {
     return true;
   }
   if (
-    (relativePath === 'packages/shared-server/rallar-system/services/AppGroupInboxService.ts' ||
-      relativePath === 'packages/shared-server/rallar-system/services/AppAdminInboxService.ts') &&
+    relativePath === 'packages/shared-server/rallar-system/services/AppAdminInboxService.ts' &&
     finding.ruleId === 'layout.primary-export-name'
   ) {
     return true;
   }
   if (
     relativePath ===
-      'packages/shared-test/black-box-runner/api-v1-state-write-evidence-derivation.ts' &&
+      'packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-derivation.ts' &&
     finding.ruleId === 'function.input-contract'
   ) {
     return true;

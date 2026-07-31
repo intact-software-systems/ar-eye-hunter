@@ -29,7 +29,7 @@ import {
     type RecipeConsoleScaleFixture,
 } from '../../../packages/shared-test/rallar-bb-test/scale-fixture.ts';
 import { parseBlackBoxRunnerArtifactIndex } from
-    '../../../packages/shared-test/black-box-runner/artifact-reader.ts';
+    '../../../packages/shared-test/black-box-runner/artifacts/artifact-reader.ts';
 
 function inputForFixture(
     fixture: RecipeConsoleScaleFixture,

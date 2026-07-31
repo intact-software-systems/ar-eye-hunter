@@ -5,13 +5,13 @@ import path from 'node:path';
 import type { ScenarioInput } from './scenario-algorithm.ts';
 import * as scenarioAlgorithms from './scenario-algorithm.ts';
 import { collectApiV1StateWriteEvidence } from './api-v1-state-write-evidence.ts';
-import { withBoundedArtifactReportResults } from './artifact-report-bounds.ts';
+import * as artifactBounds from './artifacts/with-bounded-artifact-report-results.ts';
 import {
     collectBlackBoxRunnerEnvRequirements,
     explainBlackBoxRunnerPlan,
     resolveBlackBoxRunnerVariablesForPreflight,
     type BlackBoxRunnerPreflightProfile,
-} from './plan-preflight.ts';
+} from './preflight/plan-preflight.ts';
 import utils from './utils.ts';
 type CliOptions = {
     config: string
@@ -2341,7 +2341,7 @@ async function writeArtifacts(report: any, dir: string): Promise<void> {
         correlation: artifactReport.correlation,
         command: sync.redactBlackBoxData(process.argv, resolvedVariables.redactions),
     };
-    const boundedReport = withBoundedArtifactReportResults(artifactReport,
+    const boundedReport = artifactBounds.withBoundedArtifactReportResults(artifactReport,
         configuredArtifactOptions().maxReportResults);
     await Deno.writeTextFile(artifactPath(dir, 'report.json'), JSON.stringify(boundedReport, null, 2));
     await Deno.writeTextFile(artifactPath(dir, 'events.jsonl'), events.map(toJsonLine).join(''));
@@ -3406,7 +3406,7 @@ if (preflightMode) {
             if (artifactDir) {
                 await writeArtifacts(report, artifactDir);
             }
-            console.log(JSON.stringify(withBoundedArtifactReportResults(
+            console.log(JSON.stringify(artifactBounds.withBoundedArtifactReportResults(
                 report, configuredArtifactOptions().maxReportResults), null, 2));
 
             if (hasReportFailures(report)) {

@@ -302,6 +302,7 @@ async function removeSnapshotArtifacts(
       entries.push(entry);
     }
   } catch (error) {
+    if (!(error instanceof Error)) throw error;
     ignoreNotFound(error);
     return;
   }
@@ -318,7 +319,7 @@ async function removeSnapshotArtifacts(
   );
 }
 
-function ignoreNotFound(error: unknown): void {
+function ignoreNotFound(error: Error): void {
   if (error instanceof Deno.errors.NotFound) return;
   throw error;
 }
@@ -371,6 +372,6 @@ async function publishResponse(
   await Deno.rename(temporary, destination);
 }
 
-function isSnapshotToken(value: unknown): value is string {
+function isSnapshotToken(value: string | undefined): value is string {
   return typeof value === 'string' && /^[A-Za-z0-9_-]+$/u.test(value);
 }

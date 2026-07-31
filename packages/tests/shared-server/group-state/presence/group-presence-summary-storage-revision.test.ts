@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AuditStamp, Group, GroupMember, GroupRef } from '@shared/api/group-types.ts';
-import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/compute-group-mutation.ts';
+import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
 import type {
   GroupMutationCommand,
   GroupMutationFacts,
