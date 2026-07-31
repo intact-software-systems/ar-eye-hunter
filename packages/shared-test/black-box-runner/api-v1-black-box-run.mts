@@ -19,6 +19,10 @@ import {
   managedApiDiagnosticSecrets,
   waitForManagedApiReady,
 } from './api-v1-managed-api-readiness.mts';
+import {
+  requiresManagedPostgresRunDatabase,
+  withManagedPostgresRunDatabase,
+} from './api-v1-managed-postgres-run-database.mts';
 export type ApiV1BlackBoxBackend = 'postgres' | 'pglite-memory';
 export type ApiV1BlackBoxOptions = Readonly<{
   backend: ApiV1BlackBoxBackend;
@@ -365,6 +369,14 @@ async function main(): Promise<void> {
   };
   if (options.backend === 'pglite-memory' && !options.recipesOnly) {
     await withManagedPGliteRunStorage(runWithStorage);
+  } else if (requiresManagedPostgresRunDatabase(options)) {
+    if (!env.DATABASE_URL) {
+      throw new Error('Managed PostgreSQL isolation requires DATABASE_URL.');
+    }
+    await withManagedPostgresRunDatabase(env.DATABASE_URL, options.runId, async (databaseUrl) => {
+      env.DATABASE_URL = databaseUrl;
+      await runWithStorage(undefined);
+    });
   } else {
     await runWithStorage(undefined);
   }
