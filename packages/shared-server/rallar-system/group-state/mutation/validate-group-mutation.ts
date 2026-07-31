@@ -1,25 +1,12 @@
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 
-import type {
-  GroupMutationCommand,
-  GroupMutationComputed,
-  GroupMutationFacts,
-  GroupMutationRead,
-} from './group-mutation-contracts.ts';
+import type { GroupMutationCommand, GroupMutationComputed, GroupMutationFacts, GroupMutationRead } from './group-mutation-contracts.ts';
 import { validateGroupMutationCommand } from './group-mutation-command-validation.ts';
 import { validateGroupMutationRead } from './validate-group-mutation-read.ts';
-import {
-  computeGroupMutation,
-  validateFacts,
-  validateTrustedAuthorityMode,
-} from './compute-group-mutation.ts';
-import {
-  validateComputedMutationShape,
-  validateComputedOutboxEntries,
-  validateComputedRosterFacts,
-} from './validate-computed-group-mutation.ts';
+import { computeGroupMutation, validateFacts, validateTrustedAuthorityMode } from './compute-group-mutation.ts';
+import { validateComputedMutationShape, validateComputedOutboxEntries, validateComputedRosterFacts } from './validate-computed-group-mutation.ts';
 import { validatePresenceAdmission } from '../persistence/validate-persisted-group-presence.ts';
-import { requireJsonSafe } from './group-state-validation-primitives.ts';
+import { requireJsonSafe } from '../group-state-validation-primitives.ts';
 export function validateGroupMutation(
   input: Readonly<{
     command: GroupMutationCommand;
@@ -32,10 +19,7 @@ export function validateGroupMutation(
   validateGroupMutationRead(input.read, input.command);
   validateFacts(input.facts);
   validateTrustedAuthorityMode(input.command, input.facts);
-  requireJsonSafe(
-    input.computed.outcome === 'write' ? { ...input.computed, outboxEntries: [] } : input.computed,
-    'Group mutation computed result',
-  );
+  requireJsonSafe(input.computed.outcome === 'write' ? { ...input.computed, outboxEntries: [] } : input.computed, 'Group mutation computed result');
   validateComputedMutationShape(input.command, input.read, input.facts, input.computed);
   const canonical = computeGroupMutation({
     command: input.command,
@@ -43,9 +27,7 @@ export function validateGroupMutation(
     facts: input.facts,
   });
   if (!jsonEquals(input.computed, canonical)) {
-    throw new TypeError(
-      `Group ${input.command.operation} mutation differs from its canonical deterministic projection`,
-    );
+    throw new TypeError(`Group ${input.command.operation} mutation differs from its canonical deterministic projection`);
   }
   if (input.computed.outcome === 'idempotency-conflict') return;
   const receipt = input.computed.receipt;

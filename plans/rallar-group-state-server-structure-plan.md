@@ -408,6 +408,7 @@ packages/shared-server/rallar-system/
     group-mutation-authority.ts
     group-mutation-command.ts
     group-presence-mutation-command.ts
+    group-state-validation-primitives.ts
     inbox/
       group-state-inbox-contracts.ts
       group-state-inbox-handler.ts
@@ -427,7 +428,6 @@ packages/shared-server/rallar-system/
       write-group-state-mutation.ts
       group-mutation-result.ts
       group-state-crypto.ts
-      group-state-validation-primitives.ts
     persistence/
       group-state-persistence-contracts.ts
       group-state-repository.ts
@@ -502,6 +502,7 @@ paths named as removed in Section 4.3 receive no compatibility file.
 | Group AppInbox command decoding, per-attempt orchestration, result assembly, and post-commit observation                            | `group-state/inbox/group-state-inbox-handler.ts` (`GroupStateInboxHandler`)                                                                                                                                  |
 | Shared group inbox payloads and command types                                                                                       | `group-state/inbox/group-state-inbox-contracts.ts`                                                                                                                                                           |
 | Mutation command/read/facts/computed/receipt contracts                                                                              | `group-state/mutation/group-mutation-contracts.ts`                                                                                                                                                           |
+| Shared generic group-state validation primitives                                                                                    | `group-state/group-state-validation-primitives.ts`; it is the sole canonical owner imported directly by mutation, codec, and persistence validators                                                          |
 | Pure operation-independent orchestration                                                                                            | `compute-group-mutation.ts`, `validate-group-mutation.ts`, and `write-group-state-mutation.ts`                                                                                                               |
 | Pure aggregate, membership, and presence candidate construction                                                                     | their three `compute-group-*.ts` modules                                                                                                                                                                     |
 | Exact mutation reads and authority batches                                                                                          | `persistence/read-exact-group-state-mutation.ts` and `read-group-state-authority.ts`, coordinated by `mutation/read-group-mutation.ts`                                                                       |
@@ -544,7 +545,7 @@ composition root supplies every dependency explicitly.
 | `services/group-state-guarded-batch.ts`                                                                                      | `mutation/write-group-state-mutation.ts`; update its group-owned imports and remove the old file.                                                                                                                                              |
 | `services/group-state-mutation-read.ts`                                                                                      | `mutation/read-group-mutation.ts`; update its group-owned imports and remove the old file.                                                                                                                                                     |
 | `services/group-state-crypto.ts`                                                                                             | `mutation/group-state-crypto.ts`; update its group-owned imports and remove the old file.                                                                                                                                                      |
-| `services/group-state-validation-primitives.ts`                                                                              | `mutation/group-state-validation-primitives.ts`; update its group-owned imports and remove the old file.                                                                                                                                       |
+| `services/group-state-validation-primitives.ts`                                                                              | `group-state/group-state-validation-primitives.ts`; update every group-owned mutation, codec, persistence-validator, and direct compatibility import and remove the old file.                                                                  |
 | `repositories/GroupStateRepository.ts`                                                                                       | Public facade at `persistence/group-state-repository.ts`, with cohesive aggregate/membership/presence/snapshot repository modules; old path explicitly re-exports exact public symbols.                                                        |
 | `repositories/group-state-authority-batch-read.ts`                                                                           | `persistence/read-group-state-authority.ts`; update group-owned imports and remove the old file.                                                                                                                                               |
 | `repositories/group-state-mutation-exact-read.ts`                                                                            | `persistence/read-exact-group-state-mutation.ts`; update group-owned imports and remove the old file.                                                                                                                                          |
@@ -601,7 +602,7 @@ locked naming compatibility decision, not permission for aliases elsewhere.
 | `mutation/write-group-state-mutation.ts`              | `writeGroupStateMutation` plus the retained guarded-batch materializer                                                                                       | new internal owner; no old-path shim                                                         |
 | `mutation/group-mutation-result.ts`                   | `GroupMutationComputed`, `GroupMutationReceipt`, and receipt/event assemblers                                                                                | exact public contract names retained                                                         |
 | `mutation/group-state-crypto.ts`                      | existing crypto functions                                                                                                                                    | exact names retained                                                                         |
-| `mutation/group-state-validation-primitives.ts`       | existing validation primitive family                                                                                                                         | exact names retained                                                                         |
+| `group-state-validation-primitives.ts`                | existing validation primitive family as the sole feature-level owner                                                                                         | exact names retained                                                                         |
 | `persistence/group-state-persistence-codec.ts`        | all five `normalizePersisted*` functions plus persisted defaults and migration decoding                                                                      | exact exported normalization names retained                                                  |
 | `persistence/validate-persisted-group.ts`             | `validatePersistedGroup`, `validatePersistedGroupMember`, and their audit/actor/scope/record/causal family                                                   | exact exported validation names retained                                                     |
 | `persistence/validate-persisted-group-presence.ts`    | `validatePersistedGroupPresenceSession`, `validatePersistedGroupPresenceSummary`, `validatePersistedGroupPresenceAdmission`, and generation/order validation | exact exported validation names retained                                                     |
@@ -953,12 +954,15 @@ commits, one independently reviewable responsibility at a time:
 Each step starts with the existing characterization suite on the predecessor,
 moves tests with their owner, proves exact assertions/literals remain, and runs
 the focused successor suites. No operation may be rewritten while being moved.
-The codec imports both persistence validators; the presence validator may
-import only narrow scope/causal validation from the group validator; read
-validation imports the exact persistence validators it uses. Neither validator
-may import mutation, service, inbox, repository-facade, or compatibility
-modules. Complete these dependencies in Task 3 before Task 4 moves any
-repository implementation.
+The root `group-state-validation-primitives.ts` is the sole canonical owner of
+the existing generic validation primitives. Mutation, codec, both persistence
+validators, and the direct compatibility service import that owner without a
+private duplicate or compatibility hop. The codec imports both persistence
+validators; apart from the root primitives, the presence validator may import
+only narrow scope/causal validation from the group validator; read validation
+imports the exact persistence validators it uses. Neither validator may import
+mutation, service, inbox, repository-facade, or compatibility modules. Complete
+these dependencies in Task 3 before Task 4 moves any repository implementation.
 
 ### Task 4: Split Persistence Behind The Public Repository Facade
 
@@ -1204,7 +1208,11 @@ child `ledger-published` and unlock drafting the API-v1 child.
    The Task 3 persistence amendment was approved against head
    `6695d4d527373791708386527c3e131590775877` and tree
    `17ed9ad3351c884a1926cfa6e098aff835febc9c`, authorizing only the two
-   validator owners listed in Sections 4 and 9.
+   validator owners listed in Sections 4 and 9. The Task 3 formal-review fix was
+   approved against head `f5c0085b7eaa0c82f0dd659673feaaa33604d3bd`
+   and tree `e9da9628a98102bf0d7fa714f92588fb9fde7f28`, authorizing only the
+   behavior-neutral root primitive move, duplicate removal, direct imports,
+   architecture ratchet, and evidence repair recorded in those sections.
 3. **Structure PR:** review and explicitly approve the exact final head/tree
    only after Critical 0, Important 0, all local gates, and Branch Release Gate.
 4. **Structure merge:** human performs/approves merge. Task 8 waits for the exact
@@ -1228,6 +1236,9 @@ No approval above authorizes the later API-v1 child.
       and storage keys are unchanged.
 - [ ] The persistence codec and two approved validator owners retain exact
       normalization/validation order and direct one-hop compatibility exports.
+- [ ] The root group-state validation-primitives module is the sole owner of
+      the existing generic primitive bodies; all Task 3 consumers import it
+      directly and neither persistence validator owns a duplicate.
 - [ ] `AppGroupInboxService` is infrastructure composition only; group-state,
       topology, and RTC RTT decisions have named domain handlers.
 - [ ] A reviewer can follow the Section 3 target trace by matching filenames
@@ -1248,17 +1259,17 @@ No approval above authorizes the later API-v1 child.
 
 ## 14. Risks And Reserved Decisions
 
-| Risk                                                            | Locked response                                                                                                                                               |
-| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Moving 4,000-line mutation code accidentally rewrites semantics | Move one characterized cohort at a time; preserve exact literals/assertions and independently review each responsibility.                                     |
-| Repository split creates hidden transactions or retries         | Keep one public facade and existing transaction-bound construction; concrete repositories receive the existing runtime/transaction dependency only.           |
-| AppInbox delegation changes order or retry context              | Characterize registrations, command/facts construction, per-attempt calls, transaction callbacks, and post-commit hooks before extraction.                    |
-| Topology/RTC work expands into later waves                      | Move only inbox-owned command/authority/handler code; their services and repositories stay put.                                                               |
-| Compatibility files become permanent chains                     | Explicit one-hop named exports only, with exact removal conditions in Section 6.                                                                              |
-| Test splits weaken evidence                                     | Preserve named-case, literal, and assertion counts; no source-text replacement for runtime behavior.                                                          |
-| Combined persisted validation exceeds one cohesive module       | Keep normalization in the codec and split validation only between the approved group/member and presence owners with the locked acyclic dependency direction. |
-| A structural move changes concurrency performance               | Require fresh baseline/candidate comparison and Postgres medium-scale despite no intended concurrency-domain change.                                          |
-| Formatting/alignment obscures movement                          | Separate locked structure and alignment PRs with a green default workflow between them.                                                                       |
+| Risk                                                            | Locked response                                                                                                                                                                                              |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Moving 4,000-line mutation code accidentally rewrites semantics | Move one characterized cohort at a time; preserve exact literals/assertions and independently review each responsibility.                                                                                    |
+| Repository split creates hidden transactions or retries         | Keep one public facade and existing transaction-bound construction; concrete repositories receive the existing runtime/transaction dependency only.                                                          |
+| AppInbox delegation changes order or retry context              | Characterize registrations, command/facts construction, per-attempt calls, transaction callbacks, and post-commit hooks before extraction.                                                                   |
+| Topology/RTC work expands into later waves                      | Move only inbox-owned command/authority/handler code; their services and repositories stay put.                                                                                                              |
+| Compatibility files become permanent chains                     | Explicit one-hop named exports only, with exact removal conditions in Section 6.                                                                                                                             |
+| Test splits weaken evidence                                     | Preserve named-case, literal, and assertion counts; no source-text replacement for runtime behavior.                                                                                                         |
+| Persisted validation duplicates cross-cutting primitive bodies  | Keep normalization and domain validation in their approved owners while the feature-root validation-primitives module solely owns the existing generic bodies and every Task 3 consumer imports it directly. |
+| A structural move changes concurrency performance               | Require fresh baseline/candidate comparison and Postgres medium-scale despite no intended concurrency-domain change.                                                                                         |
+| Formatting/alignment obscures movement                          | Separate locked structure and alignment PRs with a green default workflow between them.                                                                                                                      |
 
 Reserved for separate human approval: any public/breaking release, API-v1
 reorganization, schema/key/persistence migration, authority/policy change,
@@ -1267,14 +1278,14 @@ topology/RTC algorithm refactor.
 
 ## 15. Progress Record
 
-| Milestone                | Status             | Evidence                                                                                                                                                                                                                                                                       |
-| ------------------------ | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Browser prerequisite     | `ledger-published` | PR #55, feature `7db208ed977fdcad4a1afef8a5d08c3cfdbb862c`, tree `96f0f763577a18983a9a9f08f87147a9ab154930`, Branch Release Gate `30519129484` attempt 1 success, resulting main `b4fe2a6ae5893f3adae86061bd38cf416bac8aaf`, default workflow `30520679271` attempt 1 success. |
-| Server inventory         | drafted            | Current services, mutation phases, AppInbox, persistence, presence, snapshot, topology, RTC RTT, exports, consumers, examples, tests, and representative trace inspected at the base SHA.                                                                                      |
-| Child plan               | `human-approved`   | Approved plan blob `1a74159d37f76a459009e99ca5a08f3cd620b1b4`; the Task 3 persistence amendment additionally authorizes exactly two validator owners against head `6695d4d527373791708386527c3e131590775877` and tree `17ed9ad3351c884a1926cfa6e098aff835febc9c`.              |
-| Structure implementation | in progress        | Task 2 and Task 3 cohort 1 are committed; Task 3 resumes at cohort 2 under the approved persistence amendment.                                                                                                                                                                 |
-| Alignment implementation | pending            | Waits for green structure merge/default workflow.                                                                                                                                                                                                                              |
-| Evidence ledger          | pending            | Waits for both implementation envelopes and separate authorization.                                                                                                                                                                                                            |
+| Milestone                | Status             | Evidence                                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------------ | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Browser prerequisite     | `ledger-published` | PR #55, feature `7db208ed977fdcad4a1afef8a5d08c3cfdbb862c`, tree `96f0f763577a18983a9a9f08f87147a9ab154930`, Branch Release Gate `30519129484` attempt 1 success, resulting main `b4fe2a6ae5893f3adae86061bd38cf416bac8aaf`, default workflow `30520679271` attempt 1 success.                                                                                                             |
+| Server inventory         | drafted            | Current services, mutation phases, AppInbox, persistence, presence, snapshot, topology, RTC RTT, exports, consumers, examples, tests, and representative trace inspected at the base SHA.                                                                                                                                                                                                  |
+| Child plan               | `human-approved`   | Approved plan blob `1a74159d37f76a459009e99ca5a08f3cd620b1b4`; the Task 3 persistence amendment authorizes two validator owners at `6695d4d527373791708386527c3e131590775877` / `17ed9ad3351c884a1926cfa6e098aff835febc9c`, and the formal-review fix authorizes the root primitive refinement at `f5c0085b7eaa0c82f0dd659673feaaa33604d3bd` / `e9da9628a98102bf0d7fa714f92588fb9fde7f28`. |
+| Structure implementation | in progress        | Task 2 and Task 3 cohorts 1-7 plus their earlier review fixes are committed; Task 3 formal-review fix round 1 is in progress from the exact authorized head/tree. Task 4 remains pending.                                                                                                                                                                                                  |
+| Alignment implementation | pending            | Waits for green structure merge/default workflow.                                                                                                                                                                                                                                                                                                                                          |
+| Evidence ledger          | pending            | Waits for both implementation envelopes and separate authorization.                                                                                                                                                                                                                                                                                                                        |
 
 ## 16. Draft Self-Review Record
 

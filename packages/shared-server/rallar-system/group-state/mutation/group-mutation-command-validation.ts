@@ -8,11 +8,9 @@ import {
   requirePositiveSafeInteger,
   requireRecord,
   validateGroupRef,
-} from './group-state-validation-primitives.ts';
+} from '../group-state-validation-primitives.ts';
 
-export function validateGroupMutationCommand(
-  command: unknown,
-): asserts command is GroupMutationCommand {
+export function validateGroupMutationCommand(command: unknown): asserts command is GroupMutationCommand {
   requireJsonSafe(command, 'Group mutation command');
   const value = requireRecord(command, 'Group mutation command');
   if ('commandHash' in value) {
@@ -27,15 +25,7 @@ export function validateGroupMutationCommand(
   const hasSession = PRESENCE_GROUP_MUTATION_OPERATIONS.has(operation);
   assertExactKeys(
     value,
-    [
-      'operation',
-      'aggregateRef',
-      'commandId',
-      'requestId',
-      'input',
-      ...(hasTarget ? ['targetPrincipalId'] : []),
-      ...(hasSession ? ['sessionId'] : []),
-    ],
+    ['operation', 'aggregateRef', 'commandId', 'requestId', 'input', ...(hasTarget ? ['targetPrincipalId'] : []), ...(hasSession ? ['sessionId'] : [])],
     'Group mutation command',
   );
   requireNonEmptyString(value.commandId, 'Group mutation commandId');
@@ -58,10 +48,7 @@ export function validateGroupMutationCommand(
   validateOperationInput(operation, input);
 }
 
-function validateOperationInput(
-  operation: GroupMutationCommand['operation'],
-  input: Readonly<Record<string, unknown>>,
-): void {
+function validateOperationInput(operation: GroupMutationCommand['operation'], input: Readonly<Record<string, unknown>>): void {
   const nullableString = (key: string) => {
     if (input[key] !== null) requireNonEmptyString(input[key], `Group ${key}`);
   };
@@ -90,12 +77,9 @@ function validateOperationInput(
       nullableString('slug');
       nullableString('displayName');
       nullableString('description');
-      if (input.kind !== null)
-        requireOneOf(input.kind, ['party', 'room', 'team', 'custom'], 'Group kind');
-      if (input.status !== null)
-        requireOneOf(input.status, ['active', 'archived', 'deleted'], 'Group status');
-      if (input.joinMode !== null)
-        requireOneOf(input.joinMode, ['invite-only', 'code', 'open'], 'Group joinMode');
+      if (input.kind !== null) requireOneOf(input.kind, ['party', 'room', 'team', 'custom'], 'Group kind');
+      if (input.status !== null) requireOneOf(input.status, ['active', 'archived', 'deleted'], 'Group status');
+      if (input.joinMode !== null) requireOneOf(input.joinMode, ['invite-only', 'code', 'open'], 'Group joinMode');
       nullableInteger('maxMembers', true);
       nullableInteger('maxSessionsPerMember', true);
       if (input.metadata !== null) requireRecord(input.metadata, 'Group metadata');
@@ -119,11 +103,7 @@ function validateOperationInput(
       return;
     case 'upsertMember':
       if (input.role !== null) requireOneOf(input.role, ['owner', 'admin', 'member'], 'Group role');
-      requireOneOf(
-        input.status,
-        ['invited', 'active', 'left', 'removed', 'banned'],
-        'Group member status',
-      );
+      requireOneOf(input.status, ['invited', 'active', 'left', 'removed', 'banned'], 'Group member status');
       nullableString('invitedByPrincipalId');
       nullableInteger('invitationExpiresAtEpochMs', true);
       return;
@@ -192,15 +172,9 @@ const TARGET_GROUP_MUTATION_OPERATIONS = new Set<GroupMutationCommand['operation
   'upsertMember',
 ]);
 
-const PRESENCE_GROUP_MUTATION_OPERATIONS = new Set<GroupMutationCommand['operation']>([
-  'connectPresence',
-  'heartbeatPresence',
-  'disconnectPresence',
-]);
+const PRESENCE_GROUP_MUTATION_OPERATIONS = new Set<GroupMutationCommand['operation']>(['connectPresence', 'heartbeatPresence', 'disconnectPresence']);
 
-const GROUP_MUTATION_INPUT_KEYS: Readonly<
-  Record<GroupMutationCommand['operation'], readonly string[]>
-> = {
+const GROUP_MUTATION_INPUT_KEYS: Readonly<Record<GroupMutationCommand['operation'], readonly string[]>> = {
   createGroup: [
     ...ACTOR_INPUT_KEYS,
     'slug',
@@ -240,29 +214,10 @@ const GROUP_MUTATION_INPUT_KEYS: Readonly<
   unbanGroupMember: ACTOR_INPUT_KEYS,
   setGroupMemberRole: [...ACTOR_INPUT_KEYS, 'role'],
   transferGroupOwnership: ACTOR_INPUT_KEYS,
-  upsertMember: [
-    ...ACTOR_INPUT_KEYS,
-    'role',
-    'status',
-    'invitedByPrincipalId',
-    'invitationExpiresAtEpochMs',
-  ],
+  upsertMember: [...ACTOR_INPUT_KEYS, 'role', 'status', 'invitedByPrincipalId', 'invitationExpiresAtEpochMs'],
   rotateGroupJoinCode: [...ACTOR_INPUT_KEYS, 'joinCode', 'expiresAtEpochMs'],
-  connectPresence: [
-    ...ACTOR_INPUT_KEYS,
-    'principalId',
-    'generationId',
-    'connectedAtEpochMs',
-    'lastHeartbeatAtEpochMs',
-    'expiresAtEpochMs',
-  ],
-  heartbeatPresence: [
-    ...ACTOR_INPUT_KEYS,
-    'principalId',
-    'generationId',
-    'lastHeartbeatAtEpochMs',
-    'expiresAtEpochMs',
-  ],
+  connectPresence: [...ACTOR_INPUT_KEYS, 'principalId', 'generationId', 'connectedAtEpochMs', 'lastHeartbeatAtEpochMs', 'expiresAtEpochMs'],
+  heartbeatPresence: [...ACTOR_INPUT_KEYS, 'principalId', 'generationId', 'lastHeartbeatAtEpochMs', 'expiresAtEpochMs'],
   disconnectPresence: [
     ...ACTOR_INPUT_KEYS,
     'principalId',

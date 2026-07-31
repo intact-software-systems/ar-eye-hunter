@@ -1,20 +1,12 @@
 import type { GroupRef } from '@shared/api/group-types.ts';
 
-export function assertExactKeys(
-  value: Readonly<Record<string, unknown>>,
-  allowed: readonly string[],
-  label: string,
-): void {
+export function assertExactKeys(value: Readonly<Record<string, unknown>>, allowed: readonly string[], label: string): void {
   const allowedSet = new Set(allowed);
   const unexpected = Object.keys(value).find((key) => !allowedSet.has(key));
   if (unexpected) throw new TypeError(`${label} has unexpected key: ${unexpected}`);
 }
 
-export function assertRequiredKeys(
-  value: Readonly<Record<string, unknown>>,
-  required: readonly string[],
-  label: string,
-): void {
+export function assertRequiredKeys(value: Readonly<Record<string, unknown>>, required: readonly string[], label: string): void {
   const missing = required.find((key) => !Object.hasOwn(value, key));
   if (missing) throw new TypeError(`${label} is missing mandatory key: ${missing}`);
 }
@@ -42,10 +34,7 @@ export function nullableNonEmptyString(value: unknown, label: string): void {
   if (value !== null) requireNonEmptyString(value, label);
 }
 
-export function requireNonNegativeSafeInteger(
-  value: unknown,
-  label: string,
-): asserts value is number {
+export function requireNonNegativeSafeInteger(value: unknown, label: string): asserts value is number {
   if (!Number.isSafeInteger(value) || (value as number) < 0) {
     throw new TypeError(`${label} must be a non-negative safe integer`);
   }
@@ -57,10 +46,7 @@ export function requirePositiveSafeInteger(value: unknown, label: string): asser
   }
 }
 
-export function nullablePositiveSafeInteger(
-  value: unknown,
-  label: string,
-): asserts value is number | null {
+export function nullablePositiveSafeInteger(value: unknown, label: string): asserts value is number | null {
   if (value !== null) requirePositiveSafeInteger(value, label);
 }
 

@@ -1,11 +1,17 @@
-import type {
-  AuditStamp,
-  Group,
-  GroupMember,
-  GroupRef,
-  GroupStateCausalRevision,
-} from '@shared/api/group-types.ts';
+import type { AuditStamp, Group, GroupMember, GroupRef, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import type { MutationActor } from '@shared/api/mutation-actor.ts';
+
+import {
+  assertExactKeys,
+  assertRequiredKeys,
+  nullableNonEmptyString,
+  nullablePositiveSafeInteger,
+  requireNonEmptyString,
+  requireNonNegativeSafeInteger,
+  requireOneOf,
+  requirePositiveSafeInteger,
+  requireRecord,
+} from '../group-state-validation-primitives.ts';
 
 export function validateStoredGroup(group: unknown, ref: GroupRef): asserts group is Group {
   const value = requireRecord(group, 'Stored group value');
@@ -105,11 +111,7 @@ export function validateStoredGroup(group: unknown, ref: GroupRef): asserts grou
   nullablePositiveSafeInteger(value.purgeAfterEpochMs, 'Stored group purgeAfterEpochMs');
 }
 
-export function validateStoredMember(
-  member: unknown,
-  ref: GroupRef,
-  label: string,
-): asserts member is GroupMember {
+export function validateStoredMember(member: unknown, ref: GroupRef, label: string): asserts member is GroupMember {
   const value = requireRecord(member, `${label} value`);
   assertExactKeys(
     value,
@@ -158,14 +160,7 @@ export function validateStoredMember(
   for (const key of ['left', 'removed', 'banned'] as const) {
     if (value[key] !== null) validateAuditStamp(value[key], `${label} ${key}`);
   }
-  const lifecycleKey =
-    value.status === 'left'
-      ? 'left'
-      : value.status === 'removed'
-        ? 'removed'
-        : value.status === 'banned'
-          ? 'banned'
-          : null;
+  const lifecycleKey = value.status === 'left' ? 'left' : value.status === 'removed' ? 'removed' : value.status === 'banned' ? 'banned' : null;
   for (const terminal of ['left', 'removed', 'banned'] as const) {
     if ((terminal === lifecycleKey) !== (value[terminal] !== null)) {
       throw new TypeError(`${label} terminal lifecycle audits are inconsistent`);
@@ -178,55 +173,33 @@ export function validateStoredMember(
     throw new TypeError(`${label} active member joined is required`);
   }
   nullableNonEmptyString(value.invitedByPrincipalId, `${label} invitedByPrincipalId`);
-  nullablePositiveSafeInteger(
-    value.invitationExpiresAtEpochMs,
-    `${label} invitationExpiresAtEpochMs`,
-  );
+  nullablePositiveSafeInteger(value.invitationExpiresAtEpochMs, `${label} invitationExpiresAtEpochMs`);
 }
 
 export function validatePersistedGroup(value: unknown, ref: GroupRef): asserts value is Group {
   validateStoredGroup(value, ref);
 }
 
-export function validatePersistedGroupMember(
-  value: unknown,
-  ref: GroupRef,
-): asserts value is GroupMember {
+export function validatePersistedGroupMember(value: unknown, ref: GroupRef): asserts value is GroupMember {
   validateStoredMember(value, ref, 'Stored group member');
 }
 
-export function validateScopedValue(
-  value: Pick<GroupRef, 'applicationId' | 'workspaceId' | 'groupId'>,
-  ref: GroupRef,
-  label: string,
-): void {
+export function validateScopedValue(value: Pick<GroupRef, 'applicationId' | 'workspaceId' | 'groupId'>, ref: GroupRef, label: string): void {
   requireNonEmptyString(value.applicationId, `${label} applicationId`);
   requireNonEmptyString(value.groupId, `${label} groupId`);
   if (value.workspaceId !== undefined) {
     requireNonEmptyString(value.workspaceId, `${label} workspaceId`);
   }
-  if (
-    value.applicationId !== ref.applicationId ||
-    value.workspaceId !== ref.workspaceId ||
-    value.groupId !== ref.groupId
-  ) {
+  if (value.applicationId !== ref.applicationId || value.workspaceId !== ref.workspaceId || value.groupId !== ref.groupId) {
     throw new TypeError(`${label} scope differs from mutation group`);
   }
 }
 
-export function validateScopedRecord(
-  value: Readonly<Record<string, unknown>>,
-  ref: GroupRef,
-  label: string,
-): void {
+export function validateScopedRecord(value: Readonly<Record<string, unknown>>, ref: GroupRef, label: string): void {
   requireNonEmptyString(value.applicationId, `${label} applicationId`);
   requireNonEmptyString(value.workspaceId, `${label} workspaceId`);
   requireNonEmptyString(value.groupId, `${label} groupId`);
-  if (
-    value.applicationId !== ref.applicationId ||
-    value.workspaceId !== ref.workspaceId ||
-    value.groupId !== ref.groupId
-  ) {
+  if (value.applicationId !== ref.applicationId || value.workspaceId !== ref.workspaceId || value.groupId !== ref.groupId) {
     throw new TypeError(`${label} scope differs from mutation group`);
   }
 }
@@ -242,18 +215,10 @@ export function validateAuditStamp(value: unknown, label: string): asserts value
   nullableNonEmptyString(audit.requestId, `${label} requestId`);
 }
 
-export function validateMutationActor(
-  value: unknown,
-  label: string,
-): asserts value is MutationActor {
+export function validateMutationActor(value: unknown, label: string): asserts value is MutationActor {
   const actor = requireRecord(value, label);
   requireOneOf(actor.kind, ['principal', 'session', 'service'], `${label} kind`);
-  const keys =
-    actor.kind === 'principal'
-      ? ['kind', 'principalId']
-      : actor.kind === 'session'
-        ? ['kind', 'sessionId', 'principalId']
-        : ['kind', 'serviceId'];
+  const keys = actor.kind === 'principal' ? ['kind', 'principalId'] : actor.kind === 'session' ? ['kind', 'sessionId', 'principalId'] : ['kind', 'serviceId'];
   assertExactKeys(actor, keys, label);
   assertRequiredKeys(actor, keys, label);
   for (const key of keys.filter((key) => key !== 'kind')) {
@@ -261,77 +226,10 @@ export function validateMutationActor(
   }
 }
 
-export function validateCausalRevision(
-  value: unknown,
-  label: string,
-): asserts value is GroupStateCausalRevision {
+export function validateCausalRevision(value: unknown, label: string): asserts value is GroupStateCausalRevision {
   const revision = requireRecord(value, `${label} causalRevision`);
   assertExactKeys(revision, ['groupRevision', 'presenceRevision'], `${label} causalRevision`);
   assertRequiredKeys(revision, ['groupRevision', 'presenceRevision'], `${label} causalRevision`);
   requireNonNegativeSafeInteger(revision.groupRevision, `${label} groupRevision`);
   requireNonNegativeSafeInteger(revision.presenceRevision, `${label} presenceRevision`);
-}
-
-function assertExactKeys(
-  value: Readonly<Record<string, unknown>>,
-  allowed: readonly string[],
-  label: string,
-): void {
-  const allowedSet = new Set(allowed);
-  const unexpected = Object.keys(value).find((key) => !allowedSet.has(key));
-  if (unexpected) throw new TypeError(`${label} has unexpected key: ${unexpected}`);
-}
-
-function assertRequiredKeys(
-  value: Readonly<Record<string, unknown>>,
-  required: readonly string[],
-  label: string,
-): void {
-  const missing = required.find((key) => !Object.hasOwn(value, key));
-  if (missing) throw new TypeError(`${label} is missing mandatory key: ${missing}`);
-}
-
-function requireOneOf(value: unknown, allowed: readonly string[], label: string): void {
-  if (typeof value !== 'string' || !allowed.includes(value)) {
-    throw new TypeError(`${label} is invalid`);
-  }
-}
-
-function requireRecord(value: unknown, label: string): Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new TypeError(`${label} must be an object`);
-  }
-  return value as Record<string, unknown>;
-}
-
-function requireNonEmptyString(value: unknown, label: string): asserts value is string {
-  if (typeof value !== 'string' || value.length === 0) {
-    throw new TypeError(`${label} must be a non-empty string`);
-  }
-}
-
-function nullableNonEmptyString(value: unknown, label: string): void {
-  if (value !== null) requireNonEmptyString(value, label);
-}
-
-function requireNonNegativeSafeInteger(
-  value: unknown,
-  label: string,
-): asserts value is number {
-  if (!Number.isSafeInteger(value) || (value as number) < 0) {
-    throw new TypeError(`${label} must be a non-negative safe integer`);
-  }
-}
-
-function requirePositiveSafeInteger(value: unknown, label: string): asserts value is number {
-  if (!Number.isSafeInteger(value) || (value as number) <= 0) {
-    throw new TypeError(`${label} must be a positive safe integer`);
-  }
-}
-
-function nullablePositiveSafeInteger(
-  value: unknown,
-  label: string,
-): asserts value is number | null {
-  if (value !== null) requirePositiveSafeInteger(value, label);
 }

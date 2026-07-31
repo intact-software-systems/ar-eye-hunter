@@ -7,12 +7,7 @@ import type {
 } from './group-mutation-contracts.ts';
 import { validateGroupMutationCommand } from './group-mutation-command-validation.ts';
 import { validateGroupMutationRead } from './validate-group-mutation-read.ts';
-import {
-  computeCreate,
-  computeDirector,
-  computeRotateJoinCode,
-  computeUpdate,
-} from './compute-group-aggregate-mutation.ts';
+import { computeCreate, computeDirector, computeRotateJoinCode, computeUpdate } from './compute-group-aggregate-mutation.ts';
 import {
   computeGovernedMember,
   computeInvite,
@@ -21,19 +16,9 @@ import {
   computeTransfer,
   computeUpsertMember,
 } from './compute-group-membership-mutation.ts';
-import {
-  computeConnectPresence,
-  computeDisconnectPresence,
-  computeHeartbeatPresence,
-} from './compute-group-presence-mutation.ts';
+import { computeConnectPresence, computeDisconnectPresence, computeHeartbeatPresence } from './compute-group-presence-mutation.ts';
 import { validateCommandHash } from './group-mutation-result.ts';
-import {
-  assertExactKeys,
-  requireJsonSafe,
-  requireNonEmptyString,
-  requirePositiveSafeInteger,
-  requireRecord,
-} from './group-state-validation-primitives.ts';
+import { assertExactKeys, requireJsonSafe, requireNonEmptyString, requirePositiveSafeInteger, requireRecord } from '../group-state-validation-primitives.ts';
 export function computeGroupMutation(
   input: Readonly<{
     command: GroupMutationCommand;
@@ -83,11 +68,7 @@ export function computeGroupMutation(
   }
 }
 
-export function probeGroupMutationIdempotency(
-  command: GroupMutationCommand,
-  read: GroupMutationRead,
-  commandHash: string,
-): GroupMutationIdempotencyProbe {
+export function probeGroupMutationIdempotency(command: GroupMutationCommand, read: GroupMutationRead, commandHash: string): GroupMutationIdempotencyProbe {
   validateGroupMutationCommand(command);
   validateGroupMutationRead(read, command);
   validateCommandHash(commandHash, 'Group mutation commandHash');
@@ -139,19 +120,9 @@ export function validateFacts(facts: GroupMutationFacts): void {
     throw new TypeError('Group mutation internal authority is invalid');
   }
   if (facts.authenticatedAuthority !== null) {
-    const authority = requireRecord(
-      facts.authenticatedAuthority,
-      'Group mutation authenticated authority',
-    );
-    assertExactKeys(
-      authority,
-      ['principalId', 'sessionId'],
-      'Group mutation authenticated authority',
-    );
-    requireNonEmptyString(
-      authority.principalId,
-      'Group mutation authenticated authority principalId',
-    );
+    const authority = requireRecord(facts.authenticatedAuthority, 'Group mutation authenticated authority');
+    assertExactKeys(authority, ['principalId', 'sessionId'], 'Group mutation authenticated authority');
+    requireNonEmptyString(authority.principalId, 'Group mutation authenticated authority principalId');
     requireNonEmptyString(authority.sessionId, 'Group mutation authenticated authority sessionId');
   }
   if (facts.joinCodeVerifier !== null) {
@@ -168,10 +139,7 @@ export function validateFacts(facts: GroupMutationFacts): void {
   }
 }
 
-export function validateTrustedAuthorityMode(
-  command: GroupMutationCommand,
-  facts: GroupMutationFacts,
-): void {
+export function validateTrustedAuthorityMode(command: GroupMutationCommand, facts: GroupMutationFacts): void {
   validateResolvedJoinCodeFacts(command, facts);
   const authority = facts.authenticatedAuthority;
   if (facts.internalAuthority === 'none' && authority === null) {
@@ -198,18 +166,12 @@ export function validateTrustedAuthorityMode(
   if (!authority) {
     throw new TypeError('Authenticated group mutation authority is missing');
   }
-  if (
-    command.input.actorPrincipalId !== authority.principalId ||
-    command.input.actorSessionId !== authority.sessionId
-  ) {
+  if (command.input.actorPrincipalId !== authority.principalId || command.input.actorSessionId !== authority.sessionId) {
     throw new TypeError('Group mutation actor differs from authenticated authority');
   }
 }
 
-function validateResolvedJoinCodeFacts(
-  command: GroupMutationCommand,
-  facts: GroupMutationFacts,
-): void {
+function validateResolvedJoinCodeFacts(command: GroupMutationCommand, facts: GroupMutationFacts): void {
   if (command.operation === 'rotateGroupJoinCode') {
     if (facts.resolvedJoinCode === null || facts.joinCodeVerifier === null) {
       throw new TypeError('Group rotate mutation is missing its generated join code facts');

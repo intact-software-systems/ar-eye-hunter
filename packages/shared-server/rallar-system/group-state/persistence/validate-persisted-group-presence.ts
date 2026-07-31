@@ -1,18 +1,20 @@
-import type {
-  GroupPresenceAdmission,
-  GroupPresenceSession,
-  GroupPresenceSummary,
-  GroupRef,
-} from '@shared/api/group-types.ts';
+import type { GroupPresenceAdmission, GroupPresenceSession, GroupPresenceSummary, GroupRef } from '@shared/api/group-types.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 
+import {
+  assertExactKeys,
+  assertRequiredKeys,
+  nullableNonEmptyString,
+  nullablePositiveSafeInteger,
+  requireNonEmptyString,
+  requireNonNegativeSafeInteger,
+  requireOneOf,
+  requirePositiveSafeInteger,
+  requireRecord,
+} from '../group-state-validation-primitives.ts';
 import { validateCausalRevision, validateScopedRecord } from './validate-persisted-group.ts';
 
-export function validatePresenceSession(
-  session: unknown,
-  ref: GroupRef,
-  label: string,
-): asserts session is GroupPresenceSession {
+export function validatePresenceSession(session: unknown, ref: GroupRef, label: string): asserts session is GroupPresenceSession {
   const value = requireRecord(session, `${label} value`);
   assertExactKeys(
     value,
@@ -63,60 +65,36 @@ export function validatePresenceSession(
   }
   requirePositiveSafeInteger(value.lastHeartbeatAtEpochMs, `${label} lastHeartbeatAtEpochMs`);
   requirePositiveSafeInteger(value.expiresAtEpochMs, `${label} expiresAtEpochMs`);
-  if (
-    value.lastHeartbeatAtEpochMs < value.connectedAtEpochMs ||
-    value.expiresAtEpochMs < value.lastHeartbeatAtEpochMs
-  ) {
+  if (value.lastHeartbeatAtEpochMs < value.connectedAtEpochMs || value.expiresAtEpochMs < value.lastHeartbeatAtEpochMs) {
     throw new TypeError(`${label} timestamps are causally inconsistent`);
   }
   requireOneOf(value.status, ['active', 'disconnected'], `${label} status`);
   nullablePositiveSafeInteger(value.disconnectedAtEpochMs, `${label} disconnectedAtEpochMs`);
   nullableNonEmptyString(value.disconnectReason, `${label} disconnectReason`);
-  if (
-    value.disconnectedAtEpochMs !== null &&
-    value.disconnectedAtEpochMs < value.lastHeartbeatAtEpochMs
-  ) {
+  if (value.disconnectedAtEpochMs !== null && value.disconnectedAtEpochMs < value.lastHeartbeatAtEpochMs) {
     throw new TypeError(`${label} disconnect predates heartbeat`);
   }
-  if (
-    value.status === 'active' &&
-    (value.disconnectedAtEpochMs !== null || value.disconnectReason !== null)
-  ) {
+  if (value.status === 'active' && (value.disconnectedAtEpochMs !== null || value.disconnectReason !== null)) {
     throw new TypeError(`${label} active disconnect fields must be null`);
   }
-  if (
-    value.status === 'disconnected' &&
-    (value.disconnectedAtEpochMs === null || value.disconnectReason === null)
-  ) {
+  if (value.status === 'disconnected' && (value.disconnectedAtEpochMs === null || value.disconnectReason === null)) {
     throw new TypeError(`${label} disconnect lifecycle fields differ`);
   }
 }
 
-export function validatePersistedGroupPresenceSession(
-  value: unknown,
-  ref: GroupRef,
-): asserts value is GroupPresenceSession {
+export function validatePersistedGroupPresenceSession(value: unknown, ref: GroupRef): asserts value is GroupPresenceSession {
   validatePresenceSession(value, ref, 'Stored group presence session');
 }
 
-export function validatePersistedGroupPresenceSummary(
-  value: unknown,
-  ref: GroupRef,
-): asserts value is GroupPresenceSummary {
+export function validatePersistedGroupPresenceSummary(value: unknown, ref: GroupRef): asserts value is GroupPresenceSummary {
   validatePresenceSummaryValue(value, ref);
 }
 
-export function validatePersistedGroupPresenceAdmission(
-  value: unknown,
-  ref: GroupRef,
-): asserts value is GroupPresenceAdmission {
+export function validatePersistedGroupPresenceAdmission(value: unknown, ref: GroupRef): asserts value is GroupPresenceAdmission {
   validatePresenceAdmission(value, ref);
 }
 
-export function validatePresenceSummaryValue(
-  summary: unknown,
-  ref: GroupRef,
-): asserts summary is GroupPresenceSummary {
+export function validatePresenceSummaryValue(summary: unknown, ref: GroupRef): asserts summary is GroupPresenceSummary {
   const value = requireRecord(summary, 'Stored presence summary value');
   assertExactKeys(
     value,
@@ -152,11 +130,7 @@ export function validatePresenceSummaryValue(
   );
   validateScopedRecord(value, ref, 'Stored presence summary');
   validateCausalRevision(value.causalRevision, 'Stored presence summary');
-  if (
-    !Array.isArray(value.activePrincipalIds) ||
-    !Array.isArray(value.activeSessionIds) ||
-    !Array.isArray(value.activeSessions)
-  ) {
+  if (!Array.isArray(value.activePrincipalIds) || !Array.isArray(value.activeSessionIds) || !Array.isArray(value.activeSessions)) {
     throw new TypeError('Stored presence summary collections must be arrays');
   }
   for (const principalId of value.activePrincipalIds) {
@@ -170,23 +144,13 @@ export function validatePresenceSummaryValue(
     validatePresenceSession(session, ref, 'Stored presence summary session');
     activeSessions.push(session);
   }
-  requireNonNegativeSafeInteger(
-    value.activePrincipalCount,
-    'Stored presence summary activePrincipalCount',
-  );
-  requireNonNegativeSafeInteger(
-    value.activeSessionCount,
-    'Stored presence summary activeSessionCount',
-  );
+  requireNonNegativeSafeInteger(value.activePrincipalCount, 'Stored presence summary activePrincipalCount');
+  requireNonNegativeSafeInteger(value.activeSessionCount, 'Stored presence summary activeSessionCount');
   requirePositiveSafeInteger(value.computedAtEpochMs, 'Stored presence summary computedAtEpochMs');
   const canonicalSessions = activeSessions.toSorted(
-    (left, right) =>
-      left.sessionId.localeCompare(right.sessionId) ||
-      left.generationVersion - right.generationVersion,
+    (left, right) => left.sessionId.localeCompare(right.sessionId) || left.generationVersion - right.generationVersion,
   );
-  const canonicalPrincipals = [
-    ...new Set(activeSessions.map((session) => session.principalId)),
-  ].toSorted();
+  const canonicalPrincipals = [...new Set(activeSessions.map((session) => session.principalId))].toSorted();
   if (
     value.activePrincipalCount !== value.activePrincipalIds.length ||
     value.activeSessionCount !== value.activeSessionIds.length ||
@@ -202,35 +166,10 @@ export function validatePresenceSummaryValue(
   }
 }
 
-export function validatePresenceAdmission(
-  admission: unknown,
-  ref?: GroupRef,
-): asserts admission is GroupPresenceAdmission {
+export function validatePresenceAdmission(admission: unknown, ref?: GroupRef): asserts admission is GroupPresenceAdmission {
   const value = requireRecord(admission, 'Presence admission');
-  assertExactKeys(
-    value,
-    [
-      'applicationId',
-      'workspaceId',
-      'groupId',
-      'principalId',
-      'admittedSessions',
-      'updatedAtEpochMs',
-    ],
-    'Presence admission',
-  );
-  assertRequiredKeys(
-    value,
-    [
-      'applicationId',
-      'workspaceId',
-      'groupId',
-      'principalId',
-      'admittedSessions',
-      'updatedAtEpochMs',
-    ],
-    'Presence admission',
-  );
+  assertExactKeys(value, ['applicationId', 'workspaceId', 'groupId', 'principalId', 'admittedSessions', 'updatedAtEpochMs'], 'Presence admission');
+  assertRequiredKeys(value, ['applicationId', 'workspaceId', 'groupId', 'principalId', 'admittedSessions', 'updatedAtEpochMs'], 'Presence admission');
   if (ref) validateScopedRecord(value, ref, 'Presence admission');
   requireNonEmptyString(value.principalId, 'Presence admission principalId');
   requirePositiveSafeInteger(value.updatedAtEpochMs, 'Presence admission updatedAtEpochMs');
@@ -248,26 +187,12 @@ export function validatePresenceAdmission(
   const sessionIds = new Set<string>();
   for (const session of value.admittedSessions) {
     const sessionValue = requireRecord(session, 'Presence admission session');
-    assertExactKeys(
-      sessionValue,
-      ['sessionId', 'generationId', 'generationVersion', 'connectedAtEpochMs'],
-      'Presence admission session',
-    );
-    assertRequiredKeys(
-      sessionValue,
-      ['sessionId', 'generationId', 'generationVersion', 'connectedAtEpochMs'],
-      'Presence admission session',
-    );
+    assertExactKeys(sessionValue, ['sessionId', 'generationId', 'generationVersion', 'connectedAtEpochMs'], 'Presence admission session');
+    assertRequiredKeys(sessionValue, ['sessionId', 'generationId', 'generationVersion', 'connectedAtEpochMs'], 'Presence admission session');
     requireNonEmptyString(sessionValue.sessionId, 'Presence admission sessionId');
     requireNonEmptyString(sessionValue.generationId, 'Presence admission generationId');
-    requirePositiveSafeInteger(
-      sessionValue.generationVersion,
-      'Presence admission generationVersion',
-    );
-    requirePositiveSafeInteger(
-      sessionValue.connectedAtEpochMs,
-      'Presence admission connectedAtEpochMs',
-    );
+    requirePositiveSafeInteger(sessionValue.generationVersion, 'Presence admission generationVersion');
+    requirePositiveSafeInteger(sessionValue.connectedAtEpochMs, 'Presence admission connectedAtEpochMs');
     if (sessionValue.generationVersion !== sessionValue.connectedAtEpochMs) {
       throw new TypeError('Presence admission generation version is ambiguous');
     }
@@ -282,9 +207,7 @@ export function validatePresenceAdmission(
       connectedAtEpochMs: sessionValue.connectedAtEpochMs,
     });
   }
-  const canonical = sessionIdentities.toSorted((left, right) =>
-    left.sessionId.localeCompare(right.sessionId),
-  );
+  const canonical = sessionIdentities.toSorted((left, right) => left.sessionId.localeCompare(right.sessionId));
   if (!jsonEquals(canonical, sessionIdentities)) {
     throw new TypeError('Presence admission sessions must be canonically sorted');
   }
@@ -294,10 +217,7 @@ export function validateStoredGeneration(session: GroupPresenceSession): void {
   validateStoredGenerationValues(session.connectedAtEpochMs, session.generationVersion);
 }
 
-export function validateStoredGenerationValues(
-  connectedAtEpochMs: unknown,
-  generationVersion: unknown,
-): void {
+export function validateStoredGenerationValues(connectedAtEpochMs: unknown, generationVersion: unknown): void {
   requirePositiveSafeInteger(connectedAtEpochMs, 'Stored presence connectedAtEpochMs');
   requirePositiveSafeInteger(generationVersion, 'Stored presence generationVersion');
   if (generationVersion !== connectedAtEpochMs) {
@@ -305,73 +225,6 @@ export function validateStoredGenerationValues(
   }
 }
 
-export function compareGenerationOrder(
-  left: readonly [number, string],
-  right: readonly [number, string],
-): number {
+export function compareGenerationOrder(left: readonly [number, string], right: readonly [number, string]): number {
   return Math.sign(left[0] - right[0]) || left[1].localeCompare(right[1]);
-}
-
-function assertExactKeys(
-  value: Readonly<Record<string, unknown>>,
-  allowed: readonly string[],
-  label: string,
-): void {
-  const allowedSet = new Set(allowed);
-  const unexpected = Object.keys(value).find((key) => !allowedSet.has(key));
-  if (unexpected) throw new TypeError(`${label} has unexpected key: ${unexpected}`);
-}
-
-function assertRequiredKeys(
-  value: Readonly<Record<string, unknown>>,
-  required: readonly string[],
-  label: string,
-): void {
-  const missing = required.find((key) => !Object.hasOwn(value, key));
-  if (missing) throw new TypeError(`${label} is missing mandatory key: ${missing}`);
-}
-
-function requireOneOf(value: unknown, allowed: readonly string[], label: string): void {
-  if (typeof value !== 'string' || !allowed.includes(value)) {
-    throw new TypeError(`${label} is invalid`);
-  }
-}
-
-function requireRecord(value: unknown, label: string): Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new TypeError(`${label} must be an object`);
-  }
-  return value as Record<string, unknown>;
-}
-
-function requireNonEmptyString(value: unknown, label: string): asserts value is string {
-  if (typeof value !== 'string' || value.length === 0) {
-    throw new TypeError(`${label} must be a non-empty string`);
-  }
-}
-
-function nullableNonEmptyString(value: unknown, label: string): void {
-  if (value !== null) requireNonEmptyString(value, label);
-}
-
-function requireNonNegativeSafeInteger(
-  value: unknown,
-  label: string,
-): asserts value is number {
-  if (!Number.isSafeInteger(value) || (value as number) < 0) {
-    throw new TypeError(`${label} must be a non-negative safe integer`);
-  }
-}
-
-function requirePositiveSafeInteger(value: unknown, label: string): asserts value is number {
-  if (!Number.isSafeInteger(value) || (value as number) <= 0) {
-    throw new TypeError(`${label} must be a positive safe integer`);
-  }
-}
-
-function nullablePositiveSafeInteger(
-  value: unknown,
-  label: string,
-): asserts value is number | null {
-  if (value !== null) requirePositiveSafeInteger(value, label);
 }

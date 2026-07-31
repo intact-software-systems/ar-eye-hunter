@@ -2,26 +2,12 @@ import type { MutationActor } from '@shared/api/mutation-actor.ts';
 import { computeGroupPresenceSummaryEntry } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 
-import type {
-  GroupMutationCommand,
-  GroupMutationComputed,
-  GroupMutationFacts,
-  GroupMutationRead,
-} from './group-mutation-contracts.ts';
+import type { GroupMutationCommand, GroupMutationComputed, GroupMutationFacts, GroupMutationRead } from './group-mutation-contracts.ts';
 import { mutationTargetPrincipalId, mutationTargetSessionId } from './validate-group-mutation-read.ts';
-import {
-  requireGroup,
-  validateCommandHash,
-  validateGroupMutationIdempotencyRecord,
-  validateMutationReceipt,
-} from './group-mutation-result.ts';
+import { requireGroup, validateCommandHash, validateGroupMutationIdempotencyRecord, validateMutationReceipt } from './group-mutation-result.ts';
 import { findKnownMember } from './compute-group-membership-mutation.ts';
 import { validateStoredGroup, validateStoredMember } from '../persistence/validate-persisted-group.ts';
-import {
-  validatePresenceAdmission,
-  validatePresenceSession,
-  validatePresenceSummaryValue,
-} from '../persistence/validate-persisted-group-presence.ts';
+import { validatePresenceAdmission, validatePresenceSession, validatePresenceSummaryValue } from '../persistence/validate-persisted-group-presence.ts';
 import { validateInitialGroupPresenceSummaryCandidate } from '../../services/group-initial-presence-summary.ts';
 import {
   assertExactKeys,
@@ -29,7 +15,7 @@ import {
   requireNonEmptyString,
   requireNonNegativeSafeInteger,
   requireOneOf,
-} from './group-state-validation-primitives.ts';
+} from '../group-state-validation-primitives.ts';
 import { validateGroupEvent } from '../../persisted-group-event.ts';
 export function validateComputedMutationShape(
   command: GroupMutationCommand,
@@ -53,16 +39,8 @@ export function validateComputedMutationShape(
       }
       return;
     case 'idempotency-conflict':
-      assertExactKeys(
-        value,
-        ['outcome', 'existingCommandHash', 'receivedCommandHash'],
-        'Group mutation computed result',
-      );
-      assertRequiredKeys(
-        value,
-        ['outcome', 'existingCommandHash', 'receivedCommandHash'],
-        'Group mutation computed result',
-      );
+      assertExactKeys(value, ['outcome', 'existingCommandHash', 'receivedCommandHash'], 'Group mutation computed result');
+      assertRequiredKeys(value, ['outcome', 'existingCommandHash', 'receivedCommandHash'], 'Group mutation computed result');
       validateCommandHash(computed.existingCommandHash, 'Group mutation existingCommandHash');
       validateCommandHash(computed.receivedCommandHash, 'Group mutation receivedCommandHash');
       if (computed.receivedCommandHash !== facts.commandHash) {
@@ -72,32 +50,12 @@ export function validateComputedMutationShape(
     case 'write':
       assertExactKeys(
         value,
-        [
-          'outcome',
-          'guard',
-          'members',
-          'initialPresenceSummary',
-          'presenceAdmission',
-          'event',
-          'receipt',
-          'idempotency',
-          'outboxEntries',
-        ],
+        ['outcome', 'guard', 'members', 'initialPresenceSummary', 'presenceAdmission', 'event', 'receipt', 'idempotency', 'outboxEntries'],
         'Group mutation computed result',
       );
       assertRequiredKeys(
         value,
-        [
-          'outcome',
-          'guard',
-          'members',
-          'initialPresenceSummary',
-          'presenceAdmission',
-          'event',
-          'receipt',
-          'idempotency',
-          'outboxEntries',
-        ],
+        ['outcome', 'guard', 'members', 'initialPresenceSummary', 'presenceAdmission', 'event', 'receipt', 'idempotency', 'outboxEntries'],
         'Group mutation computed result',
       );
       validateComputedWrite(command, read, facts, computed);
@@ -163,9 +121,7 @@ function validateComputedWrite(
     }
     if (
       computed.guard.operation === 'delete' &&
-      (command.operation !== 'disconnectPresence' ||
-        facts.internalAuthority !== 'expiry' ||
-        command.input.reason !== 'expired')
+      (command.operation !== 'disconnectPresence' || facts.internalAuthority !== 'expiry' || command.input.reason !== 'expired')
     ) {
       throw new TypeError('Presence delete guard requires expiry authority');
     }
@@ -182,8 +138,7 @@ function validateComputedWrite(
     throw new TypeError('Group mutation member candidate identity differs from command target');
   }
   if (computed.initialPresenceSummary !== null) {
-    if (command.operation !== 'createGroup')
-      throw new TypeError('Initial group presence summary operation requires group creation');
+    if (command.operation !== 'createGroup') throw new TypeError('Initial group presence summary operation requires group creation');
     validateInitialGroupPresenceSummaryCandidate(computed.initialPresenceSummary, read.presenceSummary);
     validatePresenceSummaryValue(computed.initialPresenceSummary.value, ref);
   }
@@ -199,17 +154,10 @@ function validateComputedWrite(
       ['operation', 'value', ...(computed.presenceAdmission.operation === 'update' ? ['expectedRevision'] : [])],
       'Group mutation computed admission',
     );
-    requireOneOf(
-      computed.presenceAdmission.operation,
-      ['insert', 'update'],
-      'Group mutation computed admission operation',
-    );
+    requireOneOf(computed.presenceAdmission.operation, ['insert', 'update'], 'Group mutation computed admission operation');
     validatePresenceAdmission(computed.presenceAdmission.value, ref);
     if (computed.presenceAdmission.operation === 'update') {
-      requireNonNegativeSafeInteger(
-        computed.presenceAdmission.expectedRevision,
-        'Group mutation computed admission expectedRevision',
-      );
+      requireNonNegativeSafeInteger(computed.presenceAdmission.expectedRevision, 'Group mutation computed admission expectedRevision');
     }
     const predecessor = read.targetAdmission;
     if (computed.presenceAdmission.operation === 'insert') {
@@ -236,19 +184,12 @@ function validateComputedWrite(
     throw new TypeError('Group mutation computed event identity differs from command and facts');
   }
   validateMutationReceipt(computed.receipt, ref, 'Group mutation computed receipt');
-  if (
-    computed.receipt.outcome !== 'applied' ||
-    computed.receipt.commandId !== command.commandId ||
-    computed.receipt.commandHash !== facts.commandHash
-  ) {
+  if (computed.receipt.outcome !== 'applied' || computed.receipt.commandId !== command.commandId || computed.receipt.commandHash !== facts.commandHash) {
     throw new TypeError('Group mutation computed receipt differs from command');
   }
   if (computed.idempotency !== null) {
     validateGroupMutationIdempotencyRecord(computed.idempotency, ref);
-    if (
-      computed.idempotency.requestId !== command.requestId ||
-      !jsonEquals(computed.idempotency.receipt, computed.receipt)
-    ) {
+    if (computed.idempotency.requestId !== command.requestId || !jsonEquals(computed.idempotency.receipt, computed.receipt)) {
       throw new TypeError('Group mutation computed idempotency differs from receipt');
     }
   } else if (command.requestId !== null) {
@@ -273,9 +214,7 @@ function expectedMutationMemberPrincipalIds(command: GroupMutationCommand, read:
       return [command.targetPrincipalId];
     case 'transferGroupOwnership': {
       const currentOwner = read.group?.value.ownerPrincipalId;
-      return currentOwner === undefined
-        ? [command.targetPrincipalId]
-        : [currentOwner, command.targetPrincipalId].toSorted();
+      return currentOwner === undefined ? [command.targetPrincipalId] : [currentOwner, command.targetPrincipalId].toSorted();
     }
     case 'updateGroup':
     case 'appointDirector':
@@ -312,10 +251,7 @@ export function validateComputedOutboxEntries(
   }
 }
 
-export function validateComputedRosterFacts(
-  read: GroupMutationRead,
-  computed: Extract<GroupMutationComputed, { outcome: 'write' }>,
-): void {
+export function validateComputedRosterFacts(read: GroupMutationRead, computed: Extract<GroupMutationComputed, { outcome: 'write' }>): void {
   if (computed.guard.kind !== 'group') return;
   const candidate = computed.guard.value;
   if (!Number.isSafeInteger(candidate.activeMemberCount) || candidate.activeMemberCount < 1) {
@@ -324,17 +260,11 @@ export function validateComputedRosterFacts(
   requireNonEmptyString(candidate.ownerPrincipalId, 'Group ownerPrincipalId');
   if (
     computed.guard.operation === 'insert' ||
-    (read.group === null &&
-      computed.guard.operation === 'update' &&
-      computed.guard.expectedRevision === read.expiredGroupEntry?.revision)
+    (read.group === null && computed.guard.operation === 'update' && computed.guard.expectedRevision === read.expiredGroupEntry?.revision)
   ) {
     const active = computed.members.filter((member) => member.status === 'active');
     const owners = active.filter((member) => member.role === 'owner');
-    if (
-      candidate.activeMemberCount !== active.length ||
-      owners.length !== 1 ||
-      owners[0]?.principalId !== candidate.ownerPrincipalId
-    ) {
+    if (candidate.activeMemberCount !== active.length || owners.length !== 1 || owners[0]?.principalId !== candidate.ownerPrincipalId) {
       throw new TypeError('Inserted group roster facts differ from member candidates');
     }
     return;
@@ -351,16 +281,11 @@ export function validateComputedRosterFacts(
     throw new TypeError('Updated group activeMemberCount has an invalid predecessor delta');
   }
   const promoted = computed.members.filter(
-    (member) =>
-      member.status === 'active' && member.role === 'owner' && member.principalId !== current.value.ownerPrincipalId,
+    (member) => member.status === 'active' && member.role === 'owner' && member.principalId !== current.value.ownerPrincipalId,
   );
-  const currentOwnerCandidate = computed.members.find(
-    (member) => member.principalId === current.value.ownerPrincipalId,
-  );
+  const currentOwnerCandidate = computed.members.find((member) => member.principalId === current.value.ownerPrincipalId);
   const expectedOwner =
-    promoted.length === 1 &&
-    currentOwnerCandidate &&
-    (currentOwnerCandidate.status !== 'active' || currentOwnerCandidate.role !== 'owner')
+    promoted.length === 1 && currentOwnerCandidate && (currentOwnerCandidate.status !== 'active' || currentOwnerCandidate.role !== 'owner')
       ? promoted[0]!.principalId
       : current.value.ownerPrincipalId;
   if (promoted.length > 1 || candidate.ownerPrincipalId !== expectedOwner) {

@@ -27,7 +27,7 @@ import {
   requirePositiveSafeInteger,
   requireRecord,
   validateGroupRef,
-} from './group-state-validation-primitives.ts';
+} from '../group-state-validation-primitives.ts';
 import { validateCausalRevision, validateScopedValue } from '../persistence/validate-persisted-group.ts';
 import { validatePresenceAdmission, validatePresenceSession, validatePresenceSummaryValue } from '../persistence/validate-persisted-group-presence.ts';
 import type { InitialGroupPresenceSummaryCandidate } from '../../services/group-initial-presence-summary.ts';
