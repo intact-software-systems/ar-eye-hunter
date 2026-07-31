@@ -9,12 +9,10 @@ import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvid
 import {
     isRuntimeStateConditionalRepositoryLike,
     type RuntimeStateConditionalWriteResult,
-    type RuntimeStateEntry,
     type RuntimeStateRepositoryLike,
 } from '../../../runtime-state/RuntimeStateRepository.ts';
 import {
     RuntimeStateJsonStore,
-    type RuntimeStateEntryRead,
     type RuntimeStateEntryValue,
 } from '../../../runtime-state/RuntimeStateJsonStore.ts';
 import type {
@@ -31,12 +29,10 @@ import {
 import { normalizePersistedGroup } from './group-state-persistence-codec.ts';
 import {
     assertGroupRefIdentity,
-    assertDecodedGroupScope,
     decodeStoredGroupStateKey,
     GroupStateRepositoryInvariantCorruptionError,
     normalizeStoredGroupStateValue,
     throwGroupStateIdentityCorruption,
-    toLiveGroupStateEntryValue,
     type GroupStateAuthorityGuard,
 } from './group-state-persistence-contracts.ts';
 import {
@@ -44,7 +40,6 @@ import {
     decodeGroupStateIdempotencyStorageKey,
     groupStateGroupStorageKey,
     groupStateIdempotencyStorageKey,
-    groupStateScopeStorageKey,
 } from './group-state-storage-keys.ts';
 import {
     GROUPS_NAMESPACE,
@@ -74,31 +69,6 @@ export class GroupAggregateRepository extends RuntimeStateJsonStore {
             record,
             purgeAfterEpochMs,
         );
-    }
-
-    async findIdempotentGroupMutationReceiptEntry(
-        ref: GroupRef,
-        requestId: string,
-    ): Promise<RuntimeStateEntryValue<GroupMutationIdempotencyRecord> | undefined> {
-        const stored = await this.getEntryValue<GroupMutationIdempotencyRecord>(
-            IDEMPOTENT_NAMESPACE,
-            groupStateIdempotencyStorageKey(ref, requestId),
-        );
-        if (stored) {
-            assertStoredIdempotency(stored, { ...ref, requestId });
-        }
-        return stored;
-    }
-
-    async readGroupEntry(ref: GroupRef): Promise<RuntimeStateEntryRead<Group>> {
-        const stored = await this.getEntryRead<unknown>(
-            GROUPS_NAMESPACE,
-            groupStateGroupStorageKey(ref),
-        );
-        return {
-            value: stored.value ? canonicalStoredGroup(stored.value, ref) : undefined,
-            expiredEntry: stored.expiredEntry,
-        };
     }
 
     async insertGroup(group: Group): Promise<RuntimeStateConditionalWriteResult> {
@@ -153,14 +123,6 @@ export class GroupAggregateRepository extends RuntimeStateJsonStore {
         );
     }
 
-    async listGroups(scope: GroupScope): Promise<readonly Group[]> {
-        const stored = await this.listEntryValues<unknown>(
-            GROUPS_NAMESPACE,
-            `${groupStateScopeStorageKey(scope)}:`,
-        );
-        return stored.map((entry) => canonicalStoredGroup(entry, scope).value);
-    }
-
     async removeGroup(ref: GroupRef): Promise<void> {
         await this.deleteValue(GROUPS_NAMESPACE, groupStateGroupStorageKey(ref));
     }
@@ -188,13 +150,6 @@ export class GroupAggregateRepository extends RuntimeStateJsonStore {
         query: StateEventListQuery = {},
     ): Promise<StateEventPage<GroupEvent>> {
         return await this.events.listGroupEventPage(ref, query);
-    }
-
-    protected override async toLiveEntryValue<T>(
-        _namespace: string,
-        entry: RuntimeStateEntry,
-    ): Promise<RuntimeStateEntryValue<T> | undefined> {
-        return await toLiveGroupStateEntryValue<T>(entry);
     }
 }
 
@@ -225,7 +180,15 @@ export function canonicalStoredGroup(
             error instanceof Error ? error.message : 'Stored group key is invalid',
         );
     }
-    assertDecodedGroupScope(decoded, expectedScope, stored.entry.key);
+    if (
+        decoded.applicationId !== expectedScope.applicationId ||
+        decoded.workspaceId !== expectedScope.workspaceId
+    ) {
+        throw new GroupStateRepositoryInvariantCorruptionError(
+            stored.entry.key,
+            'Stored group key differs from the requested scope',
+        );
+    }
     if (isGroupRef(expectedScope)) {
         assertGroupRefIdentity(decoded, expectedScope, stored.entry.key);
     }

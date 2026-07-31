@@ -7,13 +7,11 @@ import type {
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import {
     RuntimeStateJsonStore,
-    type RuntimeStateEntryRead,
     type RuntimeStateEntryValue,
 } from '../../../runtime-state/RuntimeStateJsonStore.ts';
 import type {
     RuntimeStateConditionalDeleteResult,
     RuntimeStateConditionalWriteResult,
-    RuntimeStateEntry,
     RuntimeStateRepositoryLike,
 } from '../../../runtime-state/RuntimeStateRepository.ts';
 import { toSessionPurgeAfterEpochMs } from '../../repositories/session-expiry.ts';
@@ -28,7 +26,6 @@ import {
     decodeStoredGroupStateKey,
     normalizeStoredGroupStateValue,
     throwGroupStateIdentityCorruption,
-    toLiveGroupStateEntryValue,
 } from './group-state-persistence-contracts.ts';
 import {
     decodeGroupStateGroupStorageKey,
@@ -65,19 +62,6 @@ export class GroupPresenceRepository extends RuntimeStateJsonStore {
                 session.disconnectedAtEpochMs,
             ),
         );
-    }
-
-    async readPresenceEntry(
-        ref: GroupRef & Readonly<{ sessionId: string }>,
-    ): Promise<RuntimeStateEntryRead<GroupPresenceSession>> {
-        const stored = await this.getEntryRead<unknown>(
-            SESSIONS_NAMESPACE,
-            groupStatePresenceSessionStorageKey(ref),
-        );
-        return {
-            value: stored.value ? canonicalStoredSession(stored.value, ref) : undefined,
-            expiredEntry: stored.expiredEntry,
-        };
     }
 
     async insertPresence(
@@ -123,26 +107,6 @@ export class GroupPresenceRepository extends RuntimeStateJsonStore {
         );
     }
 
-    async listPresenceSessionEntries(
-        ref: GroupRef,
-    ): Promise<readonly RuntimeStateEntryValue<GroupPresenceSession>[]> {
-        const stored = await this.listEntryValues<unknown>(
-            SESSIONS_NAMESPACE,
-            `${groupStateGroupStorageKey(ref)}:`,
-        );
-        return stored.map((entry) => canonicalStoredSession(entry, ref));
-    }
-
-    async findPresenceAdmissionEntry(
-        ref: GroupRef & Readonly<{ principalId: string }>,
-    ): Promise<RuntimeStateEntryValue<GroupPresenceAdmission> | undefined> {
-        const stored = await this.getEntryValue<unknown>(
-            PRESENCE_ADMISSIONS_NAMESPACE,
-            groupStatePresenceAdmissionStorageKey(ref),
-        );
-        return stored ? canonicalStoredAdmission(stored, ref) : undefined;
-    }
-
     async insertPresenceAdmission(
         admission: GroupPresenceAdmission,
     ): Promise<RuntimeStateConditionalWriteResult> {
@@ -168,21 +132,6 @@ export class GroupPresenceRepository extends RuntimeStateJsonStore {
         );
     }
 
-    async listPresenceAdmissionEntries(
-        ref: GroupRef,
-    ): Promise<readonly RuntimeStateEntryValue<GroupPresenceAdmission>[]> {
-        const stored = await this.listEntryValues<unknown>(
-            PRESENCE_ADMISSIONS_NAMESPACE,
-            `${groupStateGroupStorageKey(ref)}:`,
-        );
-        return stored.map((entry) => canonicalStoredAdmission(entry, ref));
-    }
-
-    async listAllPresenceSessions(): Promise<readonly GroupPresenceSession[]> {
-        const stored = await this.listEntryValues<unknown>(SESSIONS_NAMESPACE);
-        return stored.map((entry) => canonicalStoredSession(entry).value);
-    }
-
     async removePresenceSession(
         ref: GroupRef & Readonly<{ sessionId: string }>,
     ): Promise<void> {
@@ -190,16 +139,6 @@ export class GroupPresenceRepository extends RuntimeStateJsonStore {
             SESSIONS_NAMESPACE,
             groupStatePresenceSessionStorageKey(ref),
         );
-    }
-
-    async findPresenceSummaryEntry(
-        ref: GroupRef,
-    ): Promise<RuntimeStateEntryValue<GroupPresenceSummary> | undefined> {
-        const stored = await this.getEntryValue<unknown>(
-            PRESENCE_SUMMARIES_NAMESPACE,
-            groupStateGroupStorageKey(ref),
-        );
-        return stored ? canonicalStoredSummary(stored, ref) : undefined;
     }
 
     async insertPresenceSummary(
@@ -225,13 +164,6 @@ export class GroupPresenceRepository extends RuntimeStateJsonStore {
             NEVER_EXPIRE_AT_TIMESTAMP,
             expectedRevision,
         );
-    }
-
-    protected override async toLiveEntryValue<T>(
-        _namespace: string,
-        entry: RuntimeStateEntry,
-    ): Promise<RuntimeStateEntryValue<T> | undefined> {
-        return await toLiveGroupStateEntryValue<T>(entry);
     }
 }
 

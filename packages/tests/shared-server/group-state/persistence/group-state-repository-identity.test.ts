@@ -96,13 +96,14 @@ describe('GroupStateRepository persistence', () => {
             updatedTimestamp: new Date().toISOString(),
             revision: 0,
         });
-
         await expect(new GroupStateRepository(runtime).findGroup(ref))
             .rejects.toMatchObject({
                 code: 'group-state-repository-invariant-corruption',
+                message:
+                    'Stored group key differs from the requested scope:' +
+                    ' app=other:ws=_:group=other',
             });
     });
-
     it('enforces the exact compact idempotency contract on insert and both read APIs', async () => {
         const ref = {
             applicationId: 'exact-receipt-app',
@@ -335,11 +336,11 @@ describe('GroupStateRepository persistence', () => {
             }
         }
     });
-
     it('keeps the approved persistence owners behind one public compatibility hop', () => {
         const root = 'packages/shared-server/rallar-system/group-state/persistence';
         for (const [file, symbol] of [
             ['group-state-repository.ts', 'GroupStateRepository'],
+            ['group-state-repository-reads.ts', 'GroupStateRepositoryReads'],
             ['group-aggregate-repository.ts', 'GroupAggregateRepository'],
             ['group-membership-repository.ts', 'GroupMembershipRepository'],
             ['group-presence-repository.ts', 'GroupPresenceRepository'],
@@ -357,7 +358,6 @@ describe('GroupStateRepository persistence', () => {
         }
     });
 });
-
 function auditStamp(
   atEpochMs: number,
   principalId: string,

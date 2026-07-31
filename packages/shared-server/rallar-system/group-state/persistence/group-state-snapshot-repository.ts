@@ -2,6 +2,7 @@ import type {
     Group,
     GroupMember,
     GroupPresenceSession,
+    GroupPresenceSummary,
     GroupRef,
     GroupScope,
     GroupSnapshot,
@@ -58,10 +59,25 @@ import {
 } from './group-state-runtime-namespaces.ts';
 import { readGroupStateAuthorityBatch } from './read-group-state-authority.ts';
 
-export class GroupStateSnapshotRepository extends RuntimeStateJsonStore {
+export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore {
     constructor(repository: RuntimeStateRepositoryLike) {
         super(repository);
     }
+
+    protected abstract findGroupEntry(
+        ref: GroupRef,
+    ): Promise<RuntimeStateEntryValue<Group> | undefined>;
+
+    protected abstract listMembers(ref: GroupRef): Promise<readonly GroupMember[]>;
+
+    protected abstract findPresenceSummaryEntry(
+        ref: GroupRef,
+    ): Promise<RuntimeStateEntryValue<GroupPresenceSummary> | undefined>;
+
+    protected abstract listPresenceSessions(
+        ref: GroupRef,
+    ): Promise<readonly GroupPresenceSession[]>;
+
     async listSnapshots(scope: GroupScope): Promise<readonly GroupSnapshot[]> {
         const observedAtEpochMs = Date.now();
         const read = await this.readScopeSnapshot(scope);
@@ -308,46 +324,11 @@ export class GroupStateSnapshotRepository extends RuntimeStateJsonStore {
     }
 
     protected override async toLiveEntryValue<T>(
-        _namespace: string,
+        namespace: string,
         entry: RuntimeStateEntry,
     ): Promise<RuntimeStateEntryValue<T> | undefined> {
+        void namespace;
         return await toLiveGroupStateEntryValue<T>(entry);
-    }
-
-    private async findGroupEntry(
-        ref: GroupRef,
-    ): Promise<RuntimeStateEntryValue<Group> | undefined> {
-        const stored = await this.getEntryValue<unknown>(
-            GROUPS_NAMESPACE,
-            groupStateGroupStorageKey(ref),
-        );
-        return stored ? canonicalStoredGroup(stored, ref) : undefined;
-    }
-
-    private async findPresenceSummaryEntry(ref: GroupRef) {
-        const stored = await this.getEntryValue<unknown>(
-            PRESENCE_SUMMARIES_NAMESPACE,
-            groupStateGroupStorageKey(ref),
-        );
-        return stored ? canonicalStoredSummary(stored, ref) : undefined;
-    }
-
-    private async listMembers(ref: GroupRef): Promise<readonly GroupMember[]> {
-        const stored = await this.listEntryValues<unknown>(
-            MEMBERS_NAMESPACE,
-            `${groupStateGroupStorageKey(ref)}:`,
-        );
-        return stored.map((entry) => canonicalStoredMember(entry, ref).value);
-    }
-
-    private async listPresenceSessions(
-        ref: GroupRef,
-    ): Promise<readonly GroupPresenceSession[]> {
-        const stored = await this.listEntryValues<unknown>(
-            SESSIONS_NAMESPACE,
-            `${groupStateGroupStorageKey(ref)}:`,
-        );
-        return stored.map((entry) => canonicalStoredSession(entry, ref).value);
     }
 
     private toSnapshot(input: GroupStateSnapshotAssemblyInput): GroupSnapshot {
