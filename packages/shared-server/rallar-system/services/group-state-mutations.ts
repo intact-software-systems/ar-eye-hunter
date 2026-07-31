@@ -1,6 +1,5 @@
 import type {
     Group,
-    GroupEventType,
     GroupMember,
     GroupPresenceAdmission,
     GroupPresenceSession,
@@ -14,10 +13,7 @@ import {
 import type { MutationActor } from '@shared/api/mutation-actor.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { RuntimeStateEntryValue } from '../../runtime-state/RuntimeStateJsonStore.ts';
-import {
-    canConnectGroupPresenceSession,
-    GroupPolicyDeniedError,
-} from '../group-policy.ts';
+import { GroupPolicyDeniedError } from '../group-policy.ts';
 import {
     computeGroupPresenceSummaryEntry,
     GROUP_PRESENCE_SUMMARY_TOPIC,
@@ -40,7 +36,6 @@ import type {
     GroupMutationIdempotencyRecord,
     GroupMutationRead,
     GroupMutationReceipt,
-    PresenceAdmissionCandidate,
 } from '../group-state/mutation/group-mutation-contracts.ts';
 import { GroupMutationRejectedError } from '../group-state/mutation/group-mutation-contracts.ts';
 import { validateGroupMutationCommand } from '../group-state/mutation/group-mutation-command-validation.ts';
@@ -51,22 +46,16 @@ import {
     validateRuntimeEntryValue,
 } from '../group-state/mutation/validate-group-mutation-read.ts';
 import {
-    noOp,
     requireGroup,
     validateCommandHash,
     validateGroupMutationIdempotencyRecord,
     validateMutationReceipt,
-    writeResult,
 } from '../group-state/mutation/group-mutation-result.ts';
 import {
-    assertActive,
-    assertAllowed,
     computeCreate,
     computeDirector,
     computeRotateJoinCode,
     computeUpdate,
-    isExactlyAdmitted,
-    toPolicySnapshot,
 } from '../group-state/mutation/compute-group-aggregate-mutation.ts';
 import {
     computeGovernedMember,
@@ -77,21 +66,21 @@ import {
     computeUpsertMember,
     findKnownMember,
 } from '../group-state/mutation/compute-group-membership-mutation.ts';
-import { assertPrincipalAuthority } from '../group-state/mutation/compute-group-presence-mutation.ts';
+import {
+    admissionIdentity,
+    computeConnectPresence,
+    computeDisconnectPresence,
+    computeHeartbeatPresence,
+} from '../group-state/mutation/compute-group-presence-mutation.ts';
 import {
     validateStoredGroup,
     validateStoredMember,
 } from '../group-state/persistence/validate-persisted-group.ts';
 import {
-    compareGenerationOrder,
     validatePresenceAdmission,
     validatePresenceSession,
     validatePresenceSummaryValue,
-    validateStoredGeneration,
 } from '../group-state/persistence/validate-persisted-group-presence.ts';
-import {
-    toExpiredAwareInsertCandidate,
-} from './group-expired-state-authority.ts';
 import { validateInitialGroupPresenceSummaryCandidate } from './group-initial-presence-summary.ts';
 import {
     assertExactKeys,
@@ -147,7 +136,6 @@ export {
 } from '../group-state/persistence/validate-persisted-group-presence.ts';
 export { validateGroupMutationIdempotencyRecord };
 
-const DEFAULT_GROUP_SESSION_TTL_MS = 24 * 60 * 60 * 1_000;
 export type GroupPresenceSummaryRead = Readonly<{
     group: RuntimeStateEntryValue<Group>;
     members: readonly RuntimeStateEntryValue<GroupMember>[];
@@ -898,308 +886,6 @@ function validateGroupPresenceSummaryReadCollections(
             }
         }
     }
-}
-
-function computeConnectPresence(
-    command: Extract<GroupMutationCommand, { operation: 'connectPresence' }>,
-    read: GroupMutationRead,
-    facts: GroupMutationFacts,
-): GroupMutationComputed {
-    requireGroup(read, command.aggregateRef);
-    assertPrincipalAuthority(command, command.input.principalId);
-    const member = read.targetMember ?? undefined;
-    if (!member || member.status !== 'active') {
-        throw new GroupMutationRejectedError(
-            `Forbidden: active group member required for presence: ${command.input.principalId}`,
-        );
-    }
-    assertAllowed(canConnectGroupPresenceSession({
-        snapshot: toPolicySnapshot(read, facts.nowEpochMs),
-        actor: {
-            principalId: command.input.principalId,
-            sessionId: command.input.actorSessionId ?? undefined,
-        },
-        sessionId: command.sessionId,
-        nowEpochMs: facts.nowEpochMs,
-    }));
-    const existing = read.targetPresence;
-    const connectedAt = existing?.value.generationId === command.input.generationId &&
-            command.input.connectedAtEpochMs === null
-        ? existing.value.connectedAtEpochMs
-        : command.input.connectedAtEpochMs ?? facts.nowEpochMs;
-    requirePositiveSafeInteger(connectedAt, 'Group presence connectedAtEpochMs');
-    // connectedAt is the durable generation version. The generation id only
-    // breaks equal-timestamp ties, so every writer derives the same total order.
-    const incomingOrder = [connectedAt, command.input.generationId] as const;
-    if (existing) {
-        validateStoredGeneration(existing.value);
-        if (existing.value.principalId !== command.input.principalId) {
-            throw new GroupMutationRejectedError(
-                'A presence session cannot be reassigned to another principal.',
-            );
-        }
-        const currentOrder = [
-            existing.value.generationVersion,
-            existing.value.generationId,
-        ] as const;
-        const order = compareGenerationOrder(incomingOrder, currentOrder);
-        if (order < 0) return noOp(command, read, facts);
-        if (order === 0 && existing.value.disconnectedAtEpochMs !== null) {
-            return noOp(command, read, facts);
-        }
-        if (
-            existing.value.generationId === command.input.generationId &&
-            command.input.connectedAtEpochMs !== null &&
-            connectedAt !== existing.value.connectedAtEpochMs
-        ) {
-            throw new GroupMutationRejectedError(
-                'A generationId cannot be reused with a different connectedAtEpochMs.',
-            );
-        }
-    }
-    const sameGeneration = existing !== null &&
-        existing.value.generationId === command.input.generationId &&
-        existing.value.generationVersion === connectedAt;
-    const heartbeatAt = command.input.lastHeartbeatAtEpochMs ?? facts.nowEpochMs;
-    const expiresAt = command.input.expiresAtEpochMs ??
-        facts.nowEpochMs + DEFAULT_GROUP_SESSION_TTL_MS;
-    if (heartbeatAt < connectedAt || expiresAt < heartbeatAt) {
-        throw new GroupMutationRejectedError(
-            'Presence connection timestamps are causally inconsistent.',
-        );
-    }
-    const session: GroupPresenceSession = {
-        ...command.aggregateRef,
-        sessionId: command.sessionId,
-        principalId: command.input.principalId,
-        generationId: command.input.generationId,
-        generationVersion: connectedAt,
-        connectedAtEpochMs: sameGeneration
-            ? existing.value.connectedAtEpochMs
-            : connectedAt,
-        lastHeartbeatAtEpochMs: sameGeneration
-            ? Math.max(existing.value.lastHeartbeatAtEpochMs, heartbeatAt)
-            : heartbeatAt,
-        expiresAtEpochMs: sameGeneration
-            ? Math.max(existing.value.expiresAtEpochMs, expiresAt)
-            : expiresAt,
-        status: 'active',
-        disconnectedAtEpochMs: null,
-        disconnectReason: null,
-    };
-    if (existing && jsonEquals(existing.value, session)) return noOp(command, read, facts);
-    const admission = admissionForConnect(command, read, session, facts);
-    return presenceWrite(command, read, facts, session,
-        existing ? 'update' : 'insert', 'session-connected', admission);
-}
-
-function computeHeartbeatPresence(
-    command: Extract<GroupMutationCommand, { operation: 'heartbeatPresence' }>,
-    read: GroupMutationRead,
-    facts: GroupMutationFacts,
-): GroupMutationComputed {
-    const group = requireGroup(read, command.aggregateRef);
-    assertActive(group.value, facts.nowEpochMs);
-    const existing = read.targetPresence;
-    if (!existing) throw new GroupMutationRejectedError(`Group presence session not found: ${command.sessionId}`);
-    assertPresenceAuthority(command, existing.value.principalId, facts);
-    if (
-        existing.value.generationId !== command.input.generationId ||
-        existing.value.disconnectedAtEpochMs !== null
-    ) return noOp(command, read, facts);
-    if (!isExactlyAdmitted(read.targetAdmission?.value, existing.value)) {
-        return noOp(command, read, facts);
-    }
-    const member = read.targetMember ?? undefined;
-    if (!member || member.status !== 'active') return noOp(command, read, facts);
-    const heartbeatAt = command.input.lastHeartbeatAtEpochMs ?? facts.nowEpochMs;
-    if (heartbeatAt < existing.value.lastHeartbeatAtEpochMs) return noOp(command, read, facts);
-    const expiresAt = Math.max(
-        existing.value.expiresAtEpochMs,
-        command.input.expiresAtEpochMs ?? existing.value.expiresAtEpochMs,
-    );
-    if (expiresAt < heartbeatAt) {
-        throw new GroupMutationRejectedError(
-            'Presence heartbeat expiry must not predate the heartbeat.',
-        );
-    }
-    const session: GroupPresenceSession = {
-        ...existing.value,
-        lastHeartbeatAtEpochMs: heartbeatAt,
-        expiresAtEpochMs: expiresAt,
-    };
-    if (jsonEquals(existing.value, session)) return noOp(command, read, facts);
-    return presenceWrite(command, read, facts, session, 'update', 'session-heartbeat');
-}
-
-function computeDisconnectPresence(
-    command: Extract<GroupMutationCommand, { operation: 'disconnectPresence' }>,
-    read: GroupMutationRead,
-    facts: GroupMutationFacts,
-): GroupMutationComputed {
-    requireGroup(read, command.aggregateRef);
-    const existing = read.targetPresence;
-    if (!existing) {
-        if (facts.internalAuthority === 'expiry') return noOp(command, read, facts);
-        throw new GroupMutationRejectedError(
-            `Group presence session not found: ${command.sessionId}`,
-        );
-    }
-    assertPresenceAuthority(command, existing.value.principalId, facts);
-    if (
-        existing.value.generationId !== command.input.generationId ||
-        (command.input.generationVersion !== null &&
-            existing.value.generationVersion !== command.input.generationVersion) ||
-        (command.input.observedExpiresAtEpochMs !== null &&
-            existing.value.expiresAtEpochMs !== command.input.observedExpiresAtEpochMs) ||
-        existing.value.disconnectedAtEpochMs !== null
-    ) return noOp(command, read, facts);
-    const disconnectedAt = command.input.disconnectedAtEpochMs ?? facts.nowEpochMs;
-    if (disconnectedAt < existing.value.lastHeartbeatAtEpochMs) {
-        return noOp(command, read, facts);
-    }
-    if (facts.internalAuthority === 'expiry') {
-        return presenceWrite(
-            command,
-            read,
-            facts,
-            existing.value,
-            'delete',
-            'session-disconnected',
-            admissionForDisconnect(read, existing.value, facts),
-        );
-    }
-    const session: GroupPresenceSession = {
-        ...existing.value,
-        status: 'disconnected',
-        disconnectedAtEpochMs: disconnectedAt,
-        disconnectReason: command.input.reason ?? 'closed',
-    };
-    return presenceWrite(command, read, facts, session, 'update',
-        'session-disconnected', admissionForDisconnect(read, existing.value, facts));
-}
-
-function presenceWrite(
-    command: Extract<GroupMutationCommand, {
-        operation: 'connectPresence' | 'heartbeatPresence' | 'disconnectPresence';
-    }>,
-    read: GroupMutationRead,
-    facts: GroupMutationFacts,
-    session: GroupPresenceSession,
-    operation: 'insert' | 'update' | 'delete',
-    eventType: GroupEventType,
-    presenceAdmission: PresenceAdmissionCandidate | null = null,
-): GroupMutationComputed {
-    const stored = requireGroup(read, command.aggregateRef);
-    const guard = operation === 'insert'
-        ? {
-            kind: 'presence',
-            ...toExpiredAwareInsertCandidate(read.expiredTargetPresenceEntry, session),
-        } as const
-        : operation === 'update'
-        ? {
-            kind: 'presence',
-            operation: 'update',
-            value: session,
-            expectedRevision: read.targetPresence!.entry.revision,
-        } as const
-        : {
-            kind: 'presence',
-            operation: 'delete',
-            value: session,
-            expectedRevision: read.targetPresence!.entry.revision,
-        } as const;
-    return writeResult(command, read, facts, {
-        guard,
-        members: [],
-        initialPresenceSummary: null,
-        eventType,
-        eventGroup: stored.value,
-        presenceAdmission,
-    });
-}
-
-function assertPresenceAuthority(
-    command: GroupMutationCommand,
-    principalId: string,
-    facts: GroupMutationFacts,
-): void {
-    if (facts.internalAuthority !== 'none') return;
-    assertPrincipalAuthority(command, principalId);
-}
-
-function admissionForConnect(
-    command: Extract<GroupMutationCommand, { operation: 'connectPresence' }>,
-    read: GroupMutationRead,
-    session: GroupPresenceSession,
-    facts: GroupMutationFacts,
-): PresenceAdmissionCandidate {
-    const current = read.targetAdmission;
-    if (current) validatePresenceAdmission(current.value);
-    const retained = (current?.value.admittedSessions ?? [])
-        .filter((entry) => entry.sessionId !== session.sessionId);
-    const admittedSessions = [...retained, {
-        sessionId: session.sessionId,
-        generationId: session.generationId,
-        generationVersion: session.generationVersion,
-        connectedAtEpochMs: session.connectedAtEpochMs,
-    }].toSorted((left, right) => left.sessionId.localeCompare(right.sessionId));
-    const cap = requireGroup(read, command.aggregateRef).value.maxSessionsPerMember;
-    if (cap !== null && admittedSessions.length > cap) {
-        throw new GroupPolicyDeniedError({
-            allowed: false,
-            code: 'member-session-limit-reached',
-            message: 'Group member session capacity has been reached.',
-        });
-    }
-    const value: GroupPresenceAdmission = {
-        ...command.aggregateRef,
-        principalId: session.principalId,
-        admittedSessions,
-        updatedAtEpochMs: Math.max(
-            current?.value.updatedAtEpochMs ?? 0,
-            facts.nowEpochMs,
-        ),
-    };
-    validatePresenceAdmission(value);
-    return current
-        ? { operation: 'update', value, expectedRevision: current.entry.revision }
-        : { operation: 'insert', value };
-}
-
-function admissionForDisconnect(
-    read: GroupMutationRead,
-    session: GroupPresenceSession,
-    facts: GroupMutationFacts,
-): PresenceAdmissionCandidate | null {
-    const current = read.targetAdmission;
-    if (!current || !isExactlyAdmitted(current.value, session)) return null;
-    const value: GroupPresenceAdmission = {
-        ...current.value,
-        admittedSessions: current.value.admittedSessions.filter((entry) =>
-            entry.sessionId !== session.sessionId
-        ),
-        updatedAtEpochMs: Math.max(current.value.updatedAtEpochMs, facts.nowEpochMs),
-    };
-    validatePresenceAdmission(value);
-    return {
-        operation: 'update',
-        value,
-        expectedRevision: current.entry.revision,
-    };
-}
-
-
-function admissionIdentity(
-    principalId: string,
-    session: Pick<GroupPresenceSession, 'sessionId' | 'generationId' | 'generationVersion'>,
-): string {
-    return JSON.stringify([
-        principalId,
-        session.sessionId,
-        session.generationId,
-        session.generationVersion,
-    ]);
 }
 
 

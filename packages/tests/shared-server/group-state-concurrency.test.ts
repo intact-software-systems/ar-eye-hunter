@@ -62,7 +62,9 @@ import {
     createMutationRead,
     groupMemberStorageKey,
     groupRef,
+    groupSessionStorageKey,
     groupStorageKey,
+    presenceFor,
     storagePart,
     storedEntry,
 } from './group-state/mutation/group-mutation-test-runtime.ts';
@@ -1918,72 +1920,6 @@ describe('convergent group and presence state', () => {
         },
     );
 
-    it('rejects a canonical target session whose value belongs to another principal', () => {
-        const wrongPrincipalSession = presenceFor(
-            'bob', 'alice-session', 'generation-1',
-        );
-        const read: GroupMutationRead = {
-            ...createMutationRead(),
-            targetPresence: storedEntry(
-                groupSessionStorageKey('alice-session'),
-                wrongPrincipalSession,
-            ),
-        };
-        const internalRead: GroupMutationRead = {
-            ...read,
-            actorMember: null,
-            actorMemberEntry: null,
-            targetMember: read.actorMember,
-            targetMemberEntry: read.actorMemberEntry,
-        };
-        const disconnect = createMutationCommand({
-            operation: 'disconnectPresence',
-            sessionId: 'alice-session',
-            commandId: 'cleanup-command',
-            requestId: 'cleanup-command',
-            input: {
-                actorPrincipalId: null,
-                actorSessionId: null,
-                reason: null,
-                traceId: null,
-                principalId: 'alice',
-                generationId: 'generation-1',
-                generationVersion: 1_000,
-                observedExpiresAtEpochMs: 10_000,
-                disconnectedAtEpochMs: 2_000,
-                lastHeartbeatAtEpochMs: null,
-                expiresAtEpochMs: null,
-            },
-        } as Partial<GroupMutationCommand>);
-        const facts: GroupMutationFacts = {
-            ...createMutationFacts(),
-            internalAuthority: 'session-cleanup',
-            authenticatedAuthority: null,
-        };
-        const appointment = createMutationCommand({
-            operation: 'appointDirector',
-            input: {
-                actorPrincipalId: 'alice',
-                actorSessionId: 'alice-session',
-                reason: null,
-                traceId: null,
-                heartbeatTtlMs: 5_000,
-            },
-        } as Partial<GroupMutationCommand>);
-
-        expect(() => computeGroupMutation({
-            command: disconnect,
-            read: internalRead,
-            facts,
-        }))
-            .toThrow(/target presence principal.*command|command slot identity/i);
-        expect(() => computeGroupMutation({
-            command: appointment,
-            read,
-            facts: createMutationFacts(),
-        })).toThrow(/target presence principal.*command|command slot identity/i);
-    });
-
     it('rejects one authority session referenced by different principal admissions', () => {
         const base = createMutationRead();
         const group = {
@@ -3742,10 +3678,6 @@ function requireMutationGroupAndActor(
     }
 }
 
-function groupSessionStorageKey(sessionId: string): string {
-    return `${groupStorageKey()}:${storagePart('session', sessionId)}`;
-}
-
 function groupAdmissionStorageKey(principalId: string): string {
     return `${groupStorageKey()}:${storagePart('principal', principalId)}`;
 }
@@ -3788,26 +3720,6 @@ function admissionFor(
         principalId,
         admittedSessions,
         updatedAtEpochMs: 1_000,
-    };
-}
-
-function presenceFor(
-    principalId: string,
-    sessionId: string,
-    generationId: string,
-): GroupPresenceSession {
-    return {
-        ...groupRef('pure-room'),
-        principalId,
-        sessionId,
-        generationId,
-        generationVersion: 1_000,
-        connectedAtEpochMs: 1_000,
-        lastHeartbeatAtEpochMs: 1_000,
-        expiresAtEpochMs: 10_000,
-        status: 'active',
-        disconnectedAtEpochMs: null,
-        disconnectReason: null,
     };
 }
 

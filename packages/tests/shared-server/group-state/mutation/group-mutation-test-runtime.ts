@@ -1,4 +1,4 @@
-import type { AuditStamp, GroupRef } from '@shared/api/group-types.ts';
+import type { AuditStamp, GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import type {
   GroupMutationCommand,
@@ -137,6 +137,10 @@ export function groupMemberStorageKey(principalId: string): string {
   return `${groupStorageKey()}:${storagePart('member', principalId)}`;
 }
 
+export function groupSessionStorageKey(sessionId: string): string {
+  return `${groupStorageKey()}:${storagePart('session', sessionId)}`;
+}
+
 export function storedEntry<T>(key: string, value: T) {
   return {
     entry: {
@@ -165,6 +169,26 @@ export function createMutationFacts(): GroupMutationFacts {
       principalId: 'alice',
       sessionId: 'alice-session',
     },
+  };
+}
+
+export function presenceFor(
+  principalId: string,
+  sessionId: string,
+  generationId: string,
+): GroupPresenceSession {
+  return {
+    ...groupRef('pure-room'),
+    principalId,
+    sessionId,
+    generationId,
+    generationVersion: 1_000,
+    connectedAtEpochMs: 1_000,
+    lastHeartbeatAtEpochMs: 1_000,
+    expiresAtEpochMs: 10_000,
+    status: 'active',
+    disconnectedAtEpochMs: null,
+    disconnectReason: null,
   };
 }
 
