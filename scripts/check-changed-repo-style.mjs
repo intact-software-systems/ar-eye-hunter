@@ -7,6 +7,10 @@ import {
   isProductionCodeFile,
   scanProductionSources,
 } from './repo-style-check/repository-scan.mjs';
+import {
+  readStructuralLineageMap,
+  StructuralLineageValidationError,
+} from './repo-style-check/structural-lineage.mjs';
 
 const worktreeTarget = 'WORKTREE';
 const [baseReference, targetReference = worktreeTarget] = process.argv.slice(2);
@@ -31,9 +35,7 @@ async function main() {
   }
   const headCommit = runGit(['rev-parse', 'HEAD']).trim();
   const targetCommit =
-    targetReference === worktreeTarget
-      ? headCommit
-      : resolveCommit(targetReference, 'target');
+    targetReference === worktreeTarget ? headCommit : resolveCommit(targetReference, 'target');
   if (targetCommit === undefined) {
     return;
   }
@@ -44,6 +46,14 @@ async function main() {
 
   const mergeBase = runGit(['merge-base', baseCommit, targetCommit]).trim();
   const changes = readChanges(mergeBase, targetReference, repoRoot);
+  const renameByTargetPath = toRenameMap(changes);
+  const structuralLineageByTargetPath = readStructuralLineageMap({
+    repoRoot,
+    mergeBase,
+    targetReference,
+    targetCommit,
+    renameByTargetPath,
+  });
   const governedTargetSources =
     targetReference === worktreeTarget
       ? await collectProductionSources([repoRoot])
@@ -68,7 +78,8 @@ async function main() {
     repoRoot,
     baseFindings,
     targetFindings,
-    renameByTargetPath: toRenameMap(changes),
+    structuralLineageSourcePaths: new Set(structuralLineageByTargetPath.values()),
+    logicalSourceByTargetPath: new Map([...renameByTargetPath, ...structuralLineageByTargetPath]),
   });
 
   printChangedFindings({ repoRoot, mergeBase, targetReference, newFindings });
@@ -158,17 +169,42 @@ function toBaseSources(input) {
 }
 
 function subtractExistingFindings(input) {
-  const baseMagnitudesByKey = groupFindingMagnitudes(
-    input.repoRoot,
-    input.baseFindings,
-    new Map(),
-  );
+  const newFindingSet = new Set();
+  const baseBoundaryCapacityByPath = groupStructuralBoundaryCapacity({
+    repoRoot: input.repoRoot,
+    findings: input.baseFindings,
+    structuralLineageSourcePaths: input.structuralLineageSourcePaths,
+    logicalSourceByTargetPath: new Map(),
+  });
+  const regularTargetFindings = [];
+  for (const finding of input.targetFindings) {
+    const logicalPath = findingLogicalPath(
+      input.repoRoot,
+      finding,
+      input.logicalSourceByTargetPath,
+    );
+    if (
+      finding.ruleId !== 'boundary.unknown' ||
+      !input.structuralLineageSourcePaths.has(logicalPath)
+    ) {
+      regularTargetFindings.push(finding);
+      continue;
+    }
+    const targetMagnitude = boundaryUnknownMagnitude(finding);
+    const baseCapacity = baseBoundaryCapacityByPath.get(logicalPath) ?? 0;
+    if (baseCapacity < targetMagnitude) {
+      newFindingSet.add(finding);
+      continue;
+    }
+    baseBoundaryCapacityByPath.set(logicalPath, baseCapacity - targetMagnitude);
+  }
+
+  const baseMagnitudesByKey = groupFindingMagnitudes(input.repoRoot, input.baseFindings, new Map());
   const targetFindingsByKey = groupFindings(
     input.repoRoot,
-    input.targetFindings,
-    input.renameByTargetPath,
+    regularTargetFindings,
+    input.logicalSourceByTargetPath,
   );
-  const newFindings = [];
   for (const [key, findings] of targetFindingsByKey) {
     const baseMagnitudes = baseMagnitudesByKey.get(key) ?? [];
     for (const finding of findings.toSorted(compareFindingMagnitudeDescending)) {
@@ -177,21 +213,49 @@ function subtractExistingFindings(input) {
         (baseMagnitude) => baseMagnitude >= targetMagnitude,
       );
       if (matchIndex < 0) {
-        newFindings.push(finding);
+        newFindingSet.add(finding);
         continue;
       }
       baseMagnitudes.splice(matchIndex, 1);
     }
   }
-  return newFindings;
+  return input.targetFindings.filter((finding) => newFindingSet.has(finding));
 }
 
-function findingKey(repoRoot, finding, renameByTargetPath) {
-  const targetPath = toRelativePath(repoRoot, finding.file);
-  const logicalPath = finding.ruleId.startsWith('layout.')
-    ? targetPath
-    : (renameByTargetPath.get(targetPath) ?? targetPath);
+function groupStructuralBoundaryCapacity(input) {
+  const capacityByPath = new Map();
+  for (const finding of input.findings) {
+    const logicalPath = findingLogicalPath(
+      input.repoRoot,
+      finding,
+      input.logicalSourceByTargetPath,
+    );
+    if (
+      finding.ruleId === 'boundary.unknown' &&
+      input.structuralLineageSourcePaths.has(logicalPath)
+    ) {
+      const capacity = capacityByPath.get(logicalPath) ?? 0;
+      capacityByPath.set(logicalPath, capacity + boundaryUnknownMagnitude(finding));
+    }
+  }
+  return capacityByPath;
+}
+
+function boundaryUnknownMagnitude(finding) {
+  const summaryMatch = /^\.\.\. and (\d+) additional unknown occurrences/u.exec(finding.message);
+  return summaryMatch === null ? 1 : Number(summaryMatch[1]);
+}
+
+function findingKey(repoRoot, finding, logicalSourceByTargetPath) {
+  const logicalPath = findingLogicalPath(repoRoot, finding, logicalSourceByTargetPath);
   return [logicalPath, finding.ruleId, findingVariant(finding)].join('\0');
+}
+
+function findingLogicalPath(repoRoot, finding, logicalSourceByTargetPath) {
+  const targetPath = toRelativePath(repoRoot, finding.file);
+  return finding.ruleId.startsWith('layout.')
+    ? targetPath
+    : (logicalSourceByTargetPath.get(targetPath) ?? targetPath);
 }
 
 function groupFindingMagnitudes(repoRoot, findings, renameByTargetPath) {
@@ -249,9 +313,7 @@ function compareFindingMagnitudeDescending(left, right) {
 
 function toRenameMap(changes) {
   return new Map(
-    changes
-      .filter((change) => change.kind === 'R')
-      .map((change) => [change.target, change.source]),
+    changes.filter((change) => change.kind === 'R').map((change) => [change.target, change.source]),
   );
 }
 
@@ -300,13 +362,15 @@ function toRelativePath(repoRoot, file) {
 
 function failUsage(message) {
   console.error(message);
-  console.error(
-    'Usage: node scripts/check-changed-repo-style.mjs <base-ref> [HEAD|WORKTREE]',
-  );
+  console.error('Usage: node scripts/check-changed-repo-style.mjs <base-ref> [HEAD|WORKTREE]');
   process.exitCode = 2;
 }
 
 main().catch((error) => {
-  console.error('changed repository style check failed:', error.message);
+  if (error instanceof StructuralLineageValidationError) {
+    console.error(error.message);
+  } else {
+    console.error('changed repository style check failed:', error.message);
+  }
   process.exitCode = 2;
 });
