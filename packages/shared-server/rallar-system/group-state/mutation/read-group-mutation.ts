@@ -1,12 +1,7 @@
 import { readRallarGroupDirectorAppointment } from '@shared/api/group-director.ts';
-import { GroupStateRepository } from '../repositories/GroupStateRepository.ts';
-import type {
-  GroupStateMutationExactReadResult,
-} from '../repositories/group-state-mutation-exact-read.ts';
-import type {
-  GroupMutationCommand,
-  GroupMutationRead,
-} from '../group-state/mutation/group-mutation-contracts.ts';
+import { GroupStateRepository } from '../../repositories/GroupStateRepository.ts';
+import type { GroupStateMutationExactReadResult } from '../../repositories/group-state-mutation-exact-read.ts';
+import type { GroupMutationCommand, GroupMutationRead } from './group-mutation-contracts.ts';
 
 export async function readGroupMutation(
   repository: GroupStateRepository,
@@ -33,10 +28,7 @@ async function readExactGroupMutation(
     includeGroup: true,
     includePresenceSummary: true,
     requestIds: command.requestId === null ? [] : [command.requestId],
-    memberPrincipalIds: uniqueDefined([
-      actorPrincipalId,
-      targetPrincipalId,
-    ]),
+    memberPrincipalIds: uniqueDefined([actorPrincipalId, targetPrincipalId]),
     presenceSessionIds: uniqueDefined([presenceSessionId]),
     admissionPrincipalIds: uniqueDefined([targetPrincipalId]),
   });
@@ -51,27 +43,29 @@ function assembleExactGroupMutationRead(
   const presenceSessionId = presenceSessionIdFor(command);
   const group = read.groups[0] ?? null;
   const actorMemberEntry = exactEntry(read.members, actorPrincipalId);
-  const targetMemberEntry = targetPrincipalId === actorPrincipalId
-    ? actorMemberEntry
-    : exactEntry(read.members, targetPrincipalId);
+  const targetMemberEntry =
+    targetPrincipalId === actorPrincipalId
+      ? actorMemberEntry
+      : exactEntry(read.members, targetPrincipalId);
   const targetPresence = exactEntry(read.presenceSessions, presenceSessionId);
   const targetAdmission = exactEntry(read.admissions, targetPrincipalId);
   const ownerPrincipalId = group?.value.ownerPrincipalId;
   const director = readRallarGroupDirectorAppointment(group?.value.metadata);
-  const authorityMemberEntry = ownerPrincipalId === actorPrincipalId
-    ? actorMemberEntry
-    : ownerPrincipalId === targetPrincipalId
-    ? targetMemberEntry
-    : null;
-  const directorMemberEntry = director?.principalId === actorPrincipalId
-    ? actorMemberEntry
-    : director?.principalId === targetPrincipalId
-    ? targetMemberEntry
-    : null;
+  const authorityMemberEntry =
+    ownerPrincipalId === actorPrincipalId
+      ? actorMemberEntry
+      : ownerPrincipalId === targetPrincipalId
+        ? targetMemberEntry
+        : null;
+  const directorMemberEntry =
+    director?.principalId === actorPrincipalId
+      ? actorMemberEntry
+      : director?.principalId === targetPrincipalId
+        ? targetMemberEntry
+        : null;
   return {
-    idempotency: command.requestId === null
-      ? null
-      : exactEntry(read.idempotency, command.requestId),
+    idempotency:
+      command.requestId === null ? null : exactEntry(read.idempotency, command.requestId),
     group,
     expiredGroupEntry: read.expiredGroupEntry,
     actorMember: actorMemberEntry?.value ?? null,
@@ -83,10 +77,7 @@ function assembleExactGroupMutationRead(
     authorityMemberEntry,
     directorMemberEntry,
     targetPresence,
-    expiredTargetPresenceEntry: exactExpiredEntry(
-      read.presenceSessions,
-      presenceSessionId,
-    ),
+    expiredTargetPresenceEntry: exactExpiredEntry(read.presenceSessions, presenceSessionId),
     targetAdmission,
     authorityAdmission: null,
     directorAdmission: null,
@@ -104,16 +95,13 @@ async function readGroupMutationSequentially(
   const [idempotency, groupRead, targetPresenceRead, presenceSummary] = await Promise.all([
     command.requestId === null
       ? Promise.resolve(undefined)
-      : repository.findIdempotentGroupMutationReceiptEntry(
-        command.aggregateRef,
-        command.requestId,
-      ),
+      : repository.findIdempotentGroupMutationReceiptEntry(command.aggregateRef, command.requestId),
     repository.readGroupEntry(command.aggregateRef),
     presenceSessionId
       ? repository.readPresenceEntry({
-        ...command.aggregateRef,
-        sessionId: presenceSessionId,
-      })
+          ...command.aggregateRef,
+          sessionId: presenceSessionId,
+        })
       : Promise.resolve({ value: undefined, expiredEntry: undefined }),
     repository.findPresenceSummaryEntry(command.aggregateRef),
   ]);
@@ -134,50 +122,52 @@ async function readGroupMutationSequentially(
   ] = await Promise.all([
     actorPrincipalId
       ? repository.findMemberEntry({
-        ...command.aggregateRef,
-        principalId: actorPrincipalId,
-      })
+          ...command.aggregateRef,
+          principalId: actorPrincipalId,
+        })
       : Promise.resolve(undefined),
     targetPrincipalId && targetPrincipalId !== actorPrincipalId
       ? repository.findMemberEntry({
-        ...command.aggregateRef,
-        principalId: targetPrincipalId,
-      })
+          ...command.aggregateRef,
+          principalId: targetPrincipalId,
+        })
       : Promise.resolve(undefined),
     targetPrincipalId
       ? repository.findPresenceAdmissionEntry({
-        ...command.aggregateRef,
-        principalId: targetPrincipalId,
-      })
+          ...command.aggregateRef,
+          principalId: targetPrincipalId,
+        })
       : Promise.resolve(undefined),
-    command.operation === 'appointDirector' && ownerPrincipalId &&
-      ownerPrincipalId !== actorPrincipalId &&
-      ownerPrincipalId !== targetPrincipalId
+    command.operation === 'appointDirector' &&
+    ownerPrincipalId &&
+    ownerPrincipalId !== actorPrincipalId &&
+    ownerPrincipalId !== targetPrincipalId
       ? repository.findMemberEntry({
-        ...command.aggregateRef,
-        principalId: ownerPrincipalId,
-      })
+          ...command.aggregateRef,
+          principalId: ownerPrincipalId,
+        })
       : Promise.resolve(undefined),
     command.operation === 'appointDirector' && ownerPrincipalId
       ? repository.findPresenceAdmissionEntry({
-        ...command.aggregateRef,
-        principalId: ownerPrincipalId,
-      })
+          ...command.aggregateRef,
+          principalId: ownerPrincipalId,
+        })
       : Promise.resolve(undefined),
-    command.operation === 'appointDirector' && director &&
-      director.principalId !== actorPrincipalId &&
-      director.principalId !== targetPrincipalId &&
-      director.principalId !== ownerPrincipalId
+    command.operation === 'appointDirector' &&
+    director &&
+    director.principalId !== actorPrincipalId &&
+    director.principalId !== targetPrincipalId &&
+    director.principalId !== ownerPrincipalId
       ? repository.findMemberEntry({
-        ...command.aggregateRef,
-        principalId: director.principalId,
-      })
+          ...command.aggregateRef,
+          principalId: director.principalId,
+        })
       : Promise.resolve(undefined),
     command.operation === 'appointDirector' && director
       ? repository.findPresenceAdmissionEntry({
-        ...command.aggregateRef,
-        principalId: director.principalId,
-      })
+          ...command.aggregateRef,
+          principalId: director.principalId,
+        })
       : Promise.resolve(undefined),
   ]);
   const authorityPresenceSessionEntries = await Promise.all(
@@ -188,28 +178,27 @@ async function readGroupMutationSequentially(
       repository.findPresenceEntry({
         ...command.aggregateRef,
         sessionId: session.sessionId,
-      })
+      }),
     ),
   ).then((sessions) =>
-    sessions.filter(
-      (session): session is NonNullable<typeof session> => session !== undefined,
-    )
+    sessions.filter((session): session is NonNullable<typeof session> => session !== undefined),
   );
-  const resolvedTargetMemberEntry = targetPrincipalId === actorPrincipalId
-    ? actorMemberEntry
-    : targetMemberEntry;
-  const resolvedAuthorityMemberEntry = ownerPrincipalId === actorPrincipalId
-    ? actorMemberEntry
-    : ownerPrincipalId === targetPrincipalId
-    ? targetMemberEntry
-    : authorityMemberEntry;
-  const resolvedDirectorMemberEntry = director?.principalId === actorPrincipalId
-    ? actorMemberEntry
-    : director?.principalId === targetPrincipalId
-    ? targetMemberEntry
-    : director?.principalId === ownerPrincipalId
-    ? authorityMemberEntry
-    : directorMemberEntry;
+  const resolvedTargetMemberEntry =
+    targetPrincipalId === actorPrincipalId ? actorMemberEntry : targetMemberEntry;
+  const resolvedAuthorityMemberEntry =
+    ownerPrincipalId === actorPrincipalId
+      ? actorMemberEntry
+      : ownerPrincipalId === targetPrincipalId
+        ? targetMemberEntry
+        : authorityMemberEntry;
+  const resolvedDirectorMemberEntry =
+    director?.principalId === actorPrincipalId
+      ? actorMemberEntry
+      : director?.principalId === targetPrincipalId
+        ? targetMemberEntry
+        : director?.principalId === ownerPrincipalId
+          ? authorityMemberEntry
+          : directorMemberEntry;
   return {
     idempotency: idempotency ?? null,
     group: group ?? null,
@@ -237,8 +226,8 @@ function presenceSessionIdFor(command: GroupMutationCommand): string | null {
   return 'sessionId' in command
     ? command.sessionId
     : command.operation === 'appointDirector'
-    ? command.input.actorSessionId
-    : null;
+      ? command.input.actorSessionId
+      : null;
 }
 
 function targetPrincipalIdFor(command: GroupMutationCommand): string | null {
@@ -246,11 +235,10 @@ function targetPrincipalIdFor(command: GroupMutationCommand): string | null {
   return 'targetPrincipalId' in command
     ? command.targetPrincipalId
     : command.operation === 'connectPresence'
-    ? command.input.principalId
-    : command.operation === 'heartbeatPresence' ||
-        command.operation === 'disconnectPresence'
-    ? command.input.principalId ?? actorPrincipalId
-    : actorPrincipalId;
+      ? command.input.principalId
+      : command.operation === 'heartbeatPresence' || command.operation === 'disconnectPresence'
+        ? (command.input.principalId ?? actorPrincipalId)
+        : actorPrincipalId;
 }
 
 function exactEntry<Identity extends string, Value>(
@@ -267,7 +255,8 @@ function exactEntry<Identity extends string, Value>(
 function exactExpiredEntry<Identity extends string>(
   entries: readonly Readonly<{
     identity: Identity;
-    expiredEntry: import('../../runtime-state/RuntimeStateRepository.ts').RuntimeStateEntry | null;
+    expiredEntry:
+      import('../../../runtime-state/RuntimeStateRepository.ts').RuntimeStateEntry | null;
   }>[],
   identity: Identity | null | undefined,
 ) {
@@ -275,12 +264,10 @@ function exactExpiredEntry<Identity extends string>(
   return entries.find((candidate) => candidate.identity === identity)?.expiredEntry ?? null;
 }
 
-function uniqueDefined(
-  values: readonly (string | null | undefined)[],
-): readonly string[] {
+function uniqueDefined(values: readonly (string | null | undefined)[]): readonly string[] {
   return [
-    ...new Set(values.filter(
-      (value): value is string => typeof value === 'string' && value.length > 0,
-    )),
+    ...new Set(
+      values.filter((value): value is string => typeof value === 'string' && value.length > 0),
+    ),
   ];
 }

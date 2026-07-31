@@ -176,7 +176,7 @@ export function createTestGroupStateRuntime(
         const commandHash = await hashMutationCommand(command as JsonWireValue);
         let computed: GroupMutationComputed | undefined;
         for (let attempt = 1; attempt <= 3; attempt += 1) {
-            const read = await import('@shared-server/rallar-system/services/group-state-mutation-read.ts')
+            const read = await import('@shared-server/rallar-system/group-state/mutation/read-group-mutation.ts')
                 .then(({ readGroupMutation }) =>
                     readGroupMutation(repositoryFor(dependencies.runtimeRepository), command)
                 );

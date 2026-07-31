@@ -7,15 +7,13 @@ import {
   groupStatePresenceAdmissionStorageKey,
   groupStatePresenceSessionStorageKey,
 } from '@shared-server/rallar-system/group-state-storage-keys.ts';
-import {
-  GroupStateRepository,
-} from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
-import { readGroupMutation } from '@shared-server/rallar-system/services/group-state-mutation-read.ts';
-import type { GroupMutationCommand } from '@shared-server/rallar-system/services/group-state-mutations.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
+import { readGroupMutation } from '@shared-server/rallar-system/group-state/mutation/read-group-mutation.ts';
+import type { GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import type { RuntimeStateEntry } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
-import { createTestGroupStateService } from './group-state-test-runtime.ts';
-import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
-import { ReadBatchFakeRuntimeStateRepository } from './read-batch-fake-runtime-state-repository.ts';
+import { createTestGroupStateService } from '../../group-state-test-runtime.ts';
+import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
+import { ReadBatchFakeRuntimeStateRepository } from '../../read-batch-fake-runtime-state-repository.ts';
 
 const SCOPE: StateScope = {
   applicationId: 'batch-read-app',
@@ -35,47 +33,49 @@ describe('GroupStateService mutation exact reads', () => {
       requestId: 'membership-request',
     });
 
-    expect(mutationReadCalls(runtime)).toEqual([[
-      {
-        selectorId: 'group',
-        kind: 'key',
-        namespace: 'group-state:groups',
-        key: groupStateGroupStorageKey(ref),
-      },
-      {
-        selectorId: 'presence-summary',
-        kind: 'key',
-        namespace: 'group-state:presence-summaries',
-        key: groupStateGroupStorageKey(ref),
-      },
-      {
-        selectorId: 'idempotency:0',
-        kind: 'key',
-        namespace: 'group-state:idempotent',
-        key: groupStateIdempotencyStorageKey(ref, 'membership-request'),
-      },
-      {
-        selectorId: 'member:0',
-        kind: 'key',
-        namespace: 'group-state:members',
-        key: groupStateMemberStorageKey({ ...ref, principalId: 'owner' }),
-      },
-      {
-        selectorId: 'member:1',
-        kind: 'key',
-        namespace: 'group-state:members',
-        key: groupStateMemberStorageKey({ ...ref, principalId: 'bob' }),
-      },
-      {
-        selectorId: 'admission:0',
-        kind: 'key',
-        namespace: 'group-state:presence-admissions',
-        key: groupStatePresenceAdmissionStorageKey({
-          ...ref,
-          principalId: 'bob',
-        }),
-      },
-    ]]);
+    expect(mutationReadCalls(runtime)).toEqual([
+      [
+        {
+          selectorId: 'group',
+          kind: 'key',
+          namespace: 'group-state:groups',
+          key: groupStateGroupStorageKey(ref),
+        },
+        {
+          selectorId: 'presence-summary',
+          kind: 'key',
+          namespace: 'group-state:presence-summaries',
+          key: groupStateGroupStorageKey(ref),
+        },
+        {
+          selectorId: 'idempotency:0',
+          kind: 'key',
+          namespace: 'group-state:idempotent',
+          key: groupStateIdempotencyStorageKey(ref, 'membership-request'),
+        },
+        {
+          selectorId: 'member:0',
+          kind: 'key',
+          namespace: 'group-state:members',
+          key: groupStateMemberStorageKey({ ...ref, principalId: 'owner' }),
+        },
+        {
+          selectorId: 'member:1',
+          kind: 'key',
+          namespace: 'group-state:members',
+          key: groupStateMemberStorageKey({ ...ref, principalId: 'bob' }),
+        },
+        {
+          selectorId: 'admission:0',
+          kind: 'key',
+          namespace: 'group-state:presence-admissions',
+          key: groupStatePresenceAdmissionStorageKey({
+            ...ref,
+            principalId: 'bob',
+          }),
+        },
+      ],
+    ]);
   });
 
   it('batches the known group-config mutation read slots', async () => {
@@ -89,41 +89,43 @@ describe('GroupStateService mutation exact reads', () => {
       requestId: 'config-request',
     });
 
-    expect(mutationReadCalls(runtime)).toEqual([[
-      {
-        selectorId: 'group',
-        kind: 'key',
-        namespace: 'group-state:groups',
-        key: groupStateGroupStorageKey(ref),
-      },
-      {
-        selectorId: 'presence-summary',
-        kind: 'key',
-        namespace: 'group-state:presence-summaries',
-        key: groupStateGroupStorageKey(ref),
-      },
-      {
-        selectorId: 'idempotency:0',
-        kind: 'key',
-        namespace: 'group-state:idempotent',
-        key: groupStateIdempotencyStorageKey(ref, 'config-request'),
-      },
-      {
-        selectorId: 'member:0',
-        kind: 'key',
-        namespace: 'group-state:members',
-        key: groupStateMemberStorageKey({ ...ref, principalId: 'owner' }),
-      },
-      {
-        selectorId: 'admission:0',
-        kind: 'key',
-        namespace: 'group-state:presence-admissions',
-        key: groupStatePresenceAdmissionStorageKey({
-          ...ref,
-          principalId: 'owner',
-        }),
-      },
-    ]]);
+    expect(mutationReadCalls(runtime)).toEqual([
+      [
+        {
+          selectorId: 'group',
+          kind: 'key',
+          namespace: 'group-state:groups',
+          key: groupStateGroupStorageKey(ref),
+        },
+        {
+          selectorId: 'presence-summary',
+          kind: 'key',
+          namespace: 'group-state:presence-summaries',
+          key: groupStateGroupStorageKey(ref),
+        },
+        {
+          selectorId: 'idempotency:0',
+          kind: 'key',
+          namespace: 'group-state:idempotent',
+          key: groupStateIdempotencyStorageKey(ref, 'config-request'),
+        },
+        {
+          selectorId: 'member:0',
+          kind: 'key',
+          namespace: 'group-state:members',
+          key: groupStateMemberStorageKey({ ...ref, principalId: 'owner' }),
+        },
+        {
+          selectorId: 'admission:0',
+          kind: 'key',
+          namespace: 'group-state:presence-admissions',
+          key: groupStatePresenceAdmissionStorageKey({
+            ...ref,
+            principalId: 'owner',
+          }),
+        },
+      ],
+    ]);
   });
 
   it('batches the known presence mutation read slots', async () => {
@@ -139,50 +141,52 @@ describe('GroupStateService mutation exact reads', () => {
       requestId: 'presence-request',
     });
 
-    expect(mutationReadCalls(runtime)).toEqual([[
-      {
-        selectorId: 'group',
-        kind: 'key',
-        namespace: 'group-state:groups',
-        key: groupStateGroupStorageKey(ref),
-      },
-      {
-        selectorId: 'presence-summary',
-        kind: 'key',
-        namespace: 'group-state:presence-summaries',
-        key: groupStateGroupStorageKey(ref),
-      },
-      {
-        selectorId: 'idempotency:0',
-        kind: 'key',
-        namespace: 'group-state:idempotent',
-        key: groupStateIdempotencyStorageKey(ref, 'presence-request'),
-      },
-      {
-        selectorId: 'member:0',
-        kind: 'key',
-        namespace: 'group-state:members',
-        key: groupStateMemberStorageKey({ ...ref, principalId: 'owner' }),
-      },
-      {
-        selectorId: 'presence:0',
-        kind: 'key',
-        namespace: 'group-state:sessions',
-        key: groupStatePresenceSessionStorageKey({
-          ...ref,
-          sessionId: 'presence-session',
-        }),
-      },
-      {
-        selectorId: 'admission:0',
-        kind: 'key',
-        namespace: 'group-state:presence-admissions',
-        key: groupStatePresenceAdmissionStorageKey({
-          ...ref,
-          principalId: 'owner',
-        }),
-      },
-    ]]);
+    expect(mutationReadCalls(runtime)).toEqual([
+      [
+        {
+          selectorId: 'group',
+          kind: 'key',
+          namespace: 'group-state:groups',
+          key: groupStateGroupStorageKey(ref),
+        },
+        {
+          selectorId: 'presence-summary',
+          kind: 'key',
+          namespace: 'group-state:presence-summaries',
+          key: groupStateGroupStorageKey(ref),
+        },
+        {
+          selectorId: 'idempotency:0',
+          kind: 'key',
+          namespace: 'group-state:idempotent',
+          key: groupStateIdempotencyStorageKey(ref, 'presence-request'),
+        },
+        {
+          selectorId: 'member:0',
+          kind: 'key',
+          namespace: 'group-state:members',
+          key: groupStateMemberStorageKey({ ...ref, principalId: 'owner' }),
+        },
+        {
+          selectorId: 'presence:0',
+          kind: 'key',
+          namespace: 'group-state:sessions',
+          key: groupStatePresenceSessionStorageKey({
+            ...ref,
+            sessionId: 'presence-session',
+          }),
+        },
+        {
+          selectorId: 'admission:0',
+          kind: 'key',
+          namespace: 'group-state:presence-admissions',
+          key: groupStatePresenceAdmissionStorageKey({
+            ...ref,
+            principalId: 'owner',
+          }),
+        },
+      ],
+    ]);
   });
 
   it('uses the complete sequential oracle for a marker-less batch method', async () => {
@@ -219,12 +223,7 @@ describe('GroupStateService mutation exact reads', () => {
     const groupKey = groupStateGroupStorageKey(ref);
     const group = await runtime.findEntry('group-state:groups', groupKey);
     if (!group) throw new Error('Expected seeded group entry');
-    await runtime.upsert(
-      'group-state:groups',
-      groupKey,
-      group.value,
-      Date.now() - 1,
-    );
+    await runtime.upsert('group-state:groups', groupKey, group.value, Date.now() - 1);
     runtime.readBatchCalls.length = 0;
     runtime.beforeConditionalWrite = async (operation, namespace, key) => {
       if (
@@ -232,17 +231,15 @@ describe('GroupStateService mutation exact reads', () => {
         operation !== 'deleteIfRevision' ||
         namespace !== 'group-state:groups' ||
         key !== groupKey
-      ) return;
+      )
+        return;
       await runtime.upsert(namespace, key, group.value, group.expireAtTimestamp);
       runtime.replacementVisible = true;
     };
     const requestId = 'expiry-replacement-request';
     const command = updateCommand(ref, requestId);
 
-    const observed = await readGroupMutation(
-      new GroupStateRepository(runtime),
-      command,
-    );
+    const observed = await readGroupMutation(new GroupStateRepository(runtime), command);
     const expected = await readGroupMutation(
       new GroupStateRepository(cloneRuntime(runtime)),
       command,
@@ -274,10 +271,7 @@ class ExpiryReplacementReadBatchRuntime extends ReadBatchFakeRuntimeStateReposit
     }>
   > = [];
 
-  override findEntry(
-    namespace: string,
-    key: string,
-  ): Promise<RuntimeStateEntry | undefined> {
+  override findEntry(namespace: string, key: string): Promise<RuntimeStateEntry | undefined> {
     if (this.replacementVisible) {
       this.postReplacementFinds.push({ namespace, key });
     }
@@ -286,9 +280,10 @@ class ExpiryReplacementReadBatchRuntime extends ReadBatchFakeRuntimeStateReposit
 }
 
 async function createSeededService(groupId: string) {
-  const runtime = groupId === 'expiry-replacement'
-    ? new ExpiryReplacementReadBatchRuntime()
-    : new ReadBatchFakeRuntimeStateRepository();
+  const runtime =
+    groupId === 'expiry-replacement'
+      ? new ExpiryReplacementReadBatchRuntime()
+      : new ReadBatchFakeRuntimeStateRepository();
   let generatedId = 0;
   const service = createTestGroupStateService({
     runtimeRepository: runtime,
@@ -337,18 +332,14 @@ function updateCommand(
   };
 }
 
-function cloneRuntime(
-  source: FakeRuntimeStateRepository,
-): FakeRuntimeStateRepository {
+function cloneRuntime(source: FakeRuntimeStateRepository): FakeRuntimeStateRepository {
   const clone = new FakeRuntimeStateRepository();
   for (const [key, entry] of source.data) clone.data.set(key, { ...entry });
   return clone;
 }
 
-function mutationReadCalls(
-  runtime: ReadBatchFakeRuntimeStateRepository,
-) {
+function mutationReadCalls(runtime: ReadBatchFakeRuntimeStateRepository) {
   return runtime.readBatchCalls.filter((selectors) =>
-    selectors.some((selector) => selector.selectorId.startsWith('idempotency:'))
+    selectors.some((selector) => selector.selectorId.startsWith('idempotency:')),
   );
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createGroupStateRuntime } from '@shared-server/rallar-system/services/group-state-service.ts';
-import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
 
 describe('GroupStateService retry ownership', () => {
   it('exposes single-attempt phases and leaves complete retries to AppGroupInbox', () => {

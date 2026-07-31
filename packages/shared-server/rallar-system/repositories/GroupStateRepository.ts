@@ -28,19 +28,25 @@ import type {
 } from '../../runtime-state/RuntimeStateGuardedBatch.ts';
 import {
     type GroupMutationIdempotencyRecord,
+} from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
+import { validateGroupMutationIdempotencyRecord } from '@shared-server/rallar-system/group-state/mutation/group-mutation-result.ts';
+import {
     normalizePersistedGroup,
     normalizePersistedGroupMember,
     normalizePersistedGroupPresenceAdmission,
     normalizePersistedGroupPresenceSession,
     normalizePersistedGroupPresenceSummary,
-    validateGroupMutationIdempotencyRecord,
+} from '@shared-server/rallar-system/group-state/persistence/group-state-persistence-codec.ts';
+import {
     validatePersistedGroup,
     validatePersistedGroupMember,
+} from '@shared-server/rallar-system/group-state/persistence/validate-persisted-group.ts';
+import {
     validatePersistedGroupPresenceAdmission,
     validatePersistedGroupPresenceSession,
     validatePersistedGroupPresenceSummary,
-    validatePersistedGroupEvent,
-} from '@shared-server/rallar-system/services/group-state-mutations.ts';
+} from '@shared-server/rallar-system/group-state/persistence/validate-persisted-group-presence.ts';
+import { validatePersistedGroupEvent } from '@shared-server/rallar-system/persisted-group-event.ts';
 import type { GroupSnapshotPage, GroupSnapshotPageOptions } from '@shared-server/rallar-system/services/group-state-service.ts';
 import type { PSqlTransactionSql } from '../../postgres/PostgresSqlClient.ts';
 import { PSqlRuntimeStateRepository } from '../../postgres/runtime-state/PSqlRuntimeStateRepository.ts';

@@ -22,7 +22,6 @@ import {
 import type { MutationActor } from '@shared/api/mutation-actor.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { RuntimeStateEntryValue } from '../../runtime-state/RuntimeStateJsonStore.ts';
-import type { RuntimeStateEntry } from '../../runtime-state/RuntimeStateRepository.ts';
 import {
     canActivateGroupMember,
     canConnectGroupPresenceSession,
@@ -48,7 +47,6 @@ import {
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 import {
     groupStateGroupStorageKey,
-    groupStateIdempotencyStorageKey,
     groupStateMemberStorageKey,
     groupStatePresenceAdmissionStorageKey,
     groupStatePresenceSessionStorageKey,
@@ -70,23 +68,41 @@ import type {
 import { GroupMutationRejectedError } from '../group-state/mutation/group-mutation-contracts.ts';
 import { validateGroupMutationCommand } from '../group-state/mutation/group-mutation-command-validation.ts';
 import {
+    validateGroupMutationRead,
+    mutationTargetPrincipalId,
+    mutationTargetSessionId,
+    validateRuntimeEntryValue,
+} from '../group-state/mutation/validate-group-mutation-read.ts';
+import {
+    validateCommandHash,
+    validateGroupMutationIdempotencyRecord,
+    validateMutationReceipt,
+} from '../group-state/mutation/group-mutation-result.ts';
+import {
+    validateStoredGroup,
+    validateStoredMember,
+} from '../group-state/persistence/validate-persisted-group.ts';
+import {
+    compareGenerationOrder,
+    validatePresenceAdmission,
+    validatePresenceSession,
+    validatePresenceSummaryValue,
+    validateStoredGeneration,
+} from '../group-state/persistence/validate-persisted-group-presence.ts';
+import {
     toExpiredAwareInsertCandidate,
-    validateGroupExpiredStateAuthority,
 } from './group-expired-state-authority.ts';
 import { type InitialGroupPresenceSummaryCandidate, nextInitialGroupSnapshotVersion,
     toInitialGroupPresenceSummaryCandidate, validateInitialGroupPresenceSummaryCandidate } from './group-initial-presence-summary.ts';
 import {
     assertExactKeys,
     assertRequiredKeys,
-    nullableNonEmptyString,
-    nullablePositiveSafeInteger,
     requireJsonSafe,
     requireNonEmptyString,
     requireNonNegativeSafeInteger,
     requireOneOf,
     requirePositiveSafeInteger,
     requireRecord,
-    validateGroupRef,
 } from '../group-state/mutation/group-state-validation-primitives.ts';
 import { validateGroupEvent } from '../persisted-group-event.ts';
 export {
@@ -114,6 +130,23 @@ export {
     validateGroupMutationRequest,
     validateGroupPresenceMutationRequest,
 } from '../group-state/mutation/group-mutation-request-validation.ts';
+export {
+    normalizePersistedGroup,
+    normalizePersistedGroupMember,
+    normalizePersistedGroupPresenceAdmission,
+    normalizePersistedGroupPresenceSession,
+    normalizePersistedGroupPresenceSummary,
+} from '../group-state/persistence/group-state-persistence-codec.ts';
+export {
+    validatePersistedGroup,
+    validatePersistedGroupMember,
+} from '../group-state/persistence/validate-persisted-group.ts';
+export {
+    validatePersistedGroupPresenceAdmission,
+    validatePersistedGroupPresenceSession,
+    validatePersistedGroupPresenceSummary,
+} from '../group-state/persistence/validate-persisted-group-presence.ts';
+export { validateGroupMutationIdempotencyRecord };
 
 const DEFAULT_GROUP_SESSION_TTL_MS = 24 * 60 * 60 * 1_000;
 const DEFAULT_GROUP_INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
@@ -270,760 +303,25 @@ export function validateGroupMutation(input: Readonly<{
     }
 }
 
-function validateGroupMutationRead(
-    read: GroupMutationRead,
-    command: GroupMutationCommand,
-): void {
-    const ref = command.aggregateRef;
-    requireJsonSafe(read, 'Group mutation read');
-    assertExactKeys(read as unknown as Record<string, unknown>, [
-        'idempotency', 'group', 'actorMember', 'targetMember', 'authorityMember',
-        'expiredGroupEntry', 'expiredTargetPresenceEntry',
-        'directorMember', 'actorMemberEntry', 'targetMemberEntry',
-        'authorityMemberEntry', 'directorMemberEntry', 'targetPresence', 'targetAdmission',
-        'authorityAdmission', 'directorAdmission', 'authorityPresenceSessions',
-        'authorityPresenceSessionEntries', 'presenceSummary',
-    ], 'Group mutation read');
-    assertRequiredKeys(read as unknown as Record<string, unknown>, [
-        'idempotency', 'group', 'actorMember', 'targetMember', 'authorityMember',
-        'expiredGroupEntry', 'expiredTargetPresenceEntry',
-        'directorMember', 'actorMemberEntry', 'targetMemberEntry',
-        'authorityMemberEntry', 'directorMemberEntry', 'targetPresence',
-        'targetAdmission', 'authorityAdmission', 'directorAdmission',
-        'authorityPresenceSessions', 'authorityPresenceSessionEntries',
-        'presenceSummary',
-    ], 'Group mutation read');
-    if (read.group) {
-        validateRuntimeEntryValue(
-            read.group,
-            'Stored group',
-            groupStateGroupStorageKey(ref),
-        );
-        validateStoredGroup(read.group.value, ref);
-    }
-    const actorPrincipalId = command.input.actorPrincipalId;
-    const targetPrincipalId = mutationTargetPrincipalId(command);
-    const ownerPrincipalId = read.group?.value.ownerPrincipalId ?? null;
-    const directorPrincipalId = readRallarGroupDirectorAppointment(
-        read.group?.value.metadata,
-    )?.principalId ?? null;
-    validateMemberReadPair(read.actorMember, read.actorMemberEntry, ref,
-        actorPrincipalId, 'Actor member');
-    validateMemberReadPair(read.targetMember, read.targetMemberEntry, ref,
-        targetPrincipalId, 'Target member');
-    validateMemberReadPair(read.authorityMember, read.authorityMemberEntry, ref,
-        ownerPrincipalId, 'Authority member');
-    validateMemberReadPair(read.directorMember, read.directorMemberEntry, ref,
-        directorPrincipalId, 'Director member');
-    const targetSessionId = mutationTargetSessionId(command);
-    if (read.targetPresence) {
-        if (targetSessionId === null ||
-            read.targetPresence.value.sessionId !== targetSessionId) {
-            throw new TypeError(
-                'Stored target presence session differs from command slot identity',
-            );
-        }
-        if (targetPrincipalId === null ||
-            read.targetPresence.value.principalId !== targetPrincipalId) {
-            throw new TypeError(
-                'Stored target presence principal differs from command slot identity',
-            );
-        }
-        validateRuntimeEntryValue(
-            read.targetPresence,
-            'Stored target presence',
-            groupStatePresenceSessionStorageKey({ ...ref, sessionId: targetSessionId }),
-        );
-        validatePresenceSession(read.targetPresence.value, ref,
-            'Stored target presence');
-    }
-    validateGroupExpiredStateAuthority({
-        ref,
-        targetSessionId,
-        group: read.group,
-        expiredGroupEntry: read.expiredGroupEntry,
-        targetPresence: read.targetPresence,
-        expiredTargetPresenceEntry: read.expiredTargetPresenceEntry,
-    });
-    const authorityAdmissionPrincipalId = command.operation === 'appointDirector'
-        ? ownerPrincipalId
-        : null;
-    const directorAdmissionPrincipalId = command.operation === 'appointDirector'
-        ? directorPrincipalId
-        : null;
-    for (const [label, admission, expectedPrincipalId] of [
-        ['Target admission', read.targetAdmission, targetPrincipalId],
-        ['Authority admission', read.authorityAdmission, authorityAdmissionPrincipalId],
-        ['Director admission', read.directorAdmission, directorAdmissionPrincipalId],
-    ] as const) {
-        if (!admission) continue;
-        if (expectedPrincipalId === null ||
-            admission.value.principalId !== expectedPrincipalId) {
-            throw new TypeError(`${label} principal differs from command slot identity`);
-        }
-        validateRuntimeEntryValue(
-            admission,
-            label,
-            groupStatePresenceAdmissionStorageKey({
-                ...ref,
-                principalId: expectedPrincipalId,
-            }),
-        );
-        validatePresenceAdmission(admission.value, ref);
-    }
-    if (!Array.isArray(read.authorityPresenceSessions) ||
-        !Array.isArray(read.authorityPresenceSessionEntries)) {
-        throw new TypeError('Authority presence sessions must be arrays');
-    }
-    if (read.authorityPresenceSessions.length !==
-        read.authorityPresenceSessionEntries.length) {
-        throw new TypeError('Authority presence sessions differ from stored entries');
-    }
-    const referencedAuthoritySessions = new Map<string, Readonly<{
-        principalId: string;
-        generationId: string;
-        generationVersion: number;
-        connectedAtEpochMs: number;
-    }>>();
-    for (const admission of [read.authorityAdmission, read.directorAdmission]) {
-        if (!admission) continue;
-        for (const session of admission.value.admittedSessions) {
-            const existing = referencedAuthoritySessions.get(session.sessionId);
-            if (existing && existing.principalId !== admission.value.principalId) {
-                throw new TypeError(
-                    'Stored authority presence session is referenced by multiple principals',
-                );
-            }
-            if (existing && (
-                existing.generationId !== session.generationId ||
-                existing.generationVersion !== session.generationVersion ||
-                existing.connectedAtEpochMs !== session.connectedAtEpochMs
-            )) {
-                throw new TypeError(
-                    'Stored authority presence session has conflicting admission generations',
-                );
-            }
-            referencedAuthoritySessions.set(session.sessionId, {
-                principalId: admission.value.principalId,
-                generationId: session.generationId,
-                generationVersion: session.generationVersion,
-                connectedAtEpochMs: session.connectedAtEpochMs,
-            });
-        }
-    }
-    read.authorityPresenceSessionEntries.forEach((entry, index) => {
-        const expected = referencedAuthoritySessions.get(entry.value.sessionId);
-        if (!expected || expected.principalId !== entry.value.principalId ||
-            expected.generationId !== entry.value.generationId ||
-            expected.generationVersion !== entry.value.generationVersion ||
-            expected.connectedAtEpochMs !== entry.value.connectedAtEpochMs) {
-            throw new TypeError(
-                'Stored authority presence is not referenced by its corresponding admission',
-            );
-        }
-        validateRuntimeEntryValue(
-            entry,
-            'Stored authority presence',
-            groupStatePresenceSessionStorageKey({
-                ...ref,
-                sessionId: entry.value.sessionId,
-            }),
-        );
-        validatePresenceSession(entry.value, ref, 'Stored authority presence');
-        if (!jsonEquals(entry.value, read.authorityPresenceSessions[index])) {
-            throw new TypeError('Authority presence session differs from stored entry');
-        }
-    });
-    if (read.presenceSummary) {
-        validateRuntimeEntryValue(
-            read.presenceSummary,
-            'Stored presence summary',
-            groupStatePresenceSummaryStorageKey(ref),
-        );
-        validatePresenceSummaryValue(read.presenceSummary.value, ref);
-    }
-    if (read.idempotency) {
-        if (command.requestId === null ||
-            read.idempotency.value.requestId !== command.requestId) {
-            throw new TypeError(
-                'Stored group idempotency request differs from command identity',
-            );
-        }
-        validateRuntimeEntryValue(
-            read.idempotency,
-            'Stored group idempotency',
-            groupStateIdempotencyStorageKey(ref, command.requestId),
-        );
-        validateGroupMutationIdempotencyRecord(read.idempotency.value, ref);
-    }
-}
 
-function validateRuntimeEntryValue<T>(
-    stored: RuntimeStateEntryValue<T>,
-    label: string,
-    expectedKey?: string,
-): void {
-    const wrapper = requireRecord(stored, label);
-    assertExactKeys(wrapper, ['entry', 'value'], label);
-    assertRequiredKeys(wrapper, ['entry', 'value'], label);
-    const entry = requireRecord(wrapper.entry, `${label} entry`);
-    assertExactKeys(entry, [
-        'key', 'value', 'expireAtTimestamp', 'updatedTimestamp', 'revision',
-    ], `${label} entry`);
-    assertRequiredKeys(entry, [
-        'key', 'value', 'expireAtTimestamp', 'updatedTimestamp', 'revision',
-    ], `${label} entry`);
-    requireNonEmptyString(entry.key, `${label} entry key`);
-    if (expectedKey !== undefined && entry.key !== expectedKey) {
-        throw new TypeError(`${label} entry key is not canonical for its identity`);
-    }
-    if (typeof entry.value !== 'string') {
-        throw new TypeError(`${label} entry value must be serialized JSON`);
-    }
-    if (!Number.isSafeInteger(entry.expireAtTimestamp) ||
-        (entry.expireAtTimestamp as number) < 0) {
-        throw new TypeError(`${label} expiry must be a non-negative safe integer`);
-    }
-    requireNonNegativeSafeInteger(entry.revision, `${label} revision`);
-    requireNonEmptyString(entry.updatedTimestamp, `${label} updatedTimestamp`);
-    if (Number.isNaN(Date.parse(entry.updatedTimestamp as string))) {
-        throw new TypeError(`${label} updatedTimestamp must be an ISO timestamp`);
-    }
-    let parsed: unknown;
-    try {
-        parsed = JSON.parse(entry.value as string);
-    } catch {
-        throw new TypeError(`${label} entry value must be valid JSON`);
-    }
-    if (!jsonEquals(parsed, wrapper.value)) {
-        throw new TypeError(`${label} entry value differs from parsed value`);
-    }
-}
 
-function validateStoredGroup(group: unknown, ref: GroupRef): asserts group is Group {
-    const value = requireRecord(group, 'Stored group value');
-    assertExactKeys(value, [
-        'applicationId', 'workspaceId', 'groupId', 'slug', 'displayName',
-        'description', 'kind', 'status', 'joinMode', 'maxMembers',
-        'maxSessionsPerMember', 'metadata', 'activeMemberCount',
-        'ownerPrincipalId', 'snapshotVersion', 'metadataVersion', 'rosterVersion',
-        'presenceVersion', 'created', 'updated', 'archived', 'deleted',
-        'expiresAtEpochMs', 'emptySinceEpochMs', 'purgeAfterEpochMs',
-    ], 'Stored group value');
-    assertRequiredKeys(value, [
-        'applicationId', 'workspaceId', 'groupId', 'slug', 'displayName',
-        'description', 'kind', 'status', 'joinMode', 'maxMembers',
-        'maxSessionsPerMember', 'metadata', 'activeMemberCount',
-        'ownerPrincipalId', 'snapshotVersion', 'metadataVersion', 'rosterVersion',
-        'presenceVersion', 'created', 'updated', 'archived', 'deleted',
-        'expiresAtEpochMs', 'emptySinceEpochMs', 'purgeAfterEpochMs',
-    ], 'Stored group value');
-    validateScopedRecord(value, ref, 'Stored group');
-    nullableNonEmptyString(value.slug, 'Stored group slug');
-    requireNonEmptyString(value.displayName, 'Stored group displayName');
-    nullableNonEmptyString(value.description, 'Stored group description');
-    requireOneOf(value.kind, ['party', 'room', 'team', 'custom'], 'Stored group kind');
-    requireOneOf(value.status, ['active', 'archived', 'deleted'], 'Stored group status');
-    requireOneOf(value.joinMode, ['invite-only', 'code', 'open'],
-        'Stored group joinMode');
-    nullablePositiveSafeInteger(value.maxMembers, 'Stored group maxMembers');
-    nullablePositiveSafeInteger(value.maxSessionsPerMember,
-        'Stored group maxSessionsPerMember');
-    requireRecord(value.metadata, 'Stored group metadata');
-    requirePositiveSafeInteger(value.activeMemberCount, 'Stored group activeMemberCount');
-    requireNonEmptyString(value.ownerPrincipalId, 'Stored group ownerPrincipalId');
-    requirePositiveSafeInteger(value.snapshotVersion, 'Stored group snapshotVersion');
-    requirePositiveSafeInteger(value.metadataVersion, 'Stored group metadataVersion');
-    requirePositiveSafeInteger(value.rosterVersion, 'Stored group rosterVersion');
-    requireNonNegativeSafeInteger(value.presenceVersion, 'Stored group presenceVersion');
-    validateAuditStamp(value.created, 'Stored group created');
-    validateAuditStamp(value.updated, 'Stored group updated');
-    if (value.archived !== null) validateAuditStamp(value.archived,
-        'Stored group archived');
-    if (value.deleted !== null) validateAuditStamp(value.deleted,
-        'Stored group deleted');
-    if (value.status === 'active' &&
-        (value.archived !== null || value.deleted !== null)) {
-        throw new TypeError('Stored active group lifecycle fields must be null');
-    }
-    if (value.status === 'archived' &&
-        (value.archived === null || value.deleted !== null)) {
-        throw new TypeError('Stored archived group lifecycle fields are invalid');
-    }
-    if (value.status === 'deleted' && value.deleted === null) {
-        throw new TypeError('Stored deleted group is missing lifecycle audit');
-    }
-    nullablePositiveSafeInteger(value.expiresAtEpochMs, 'Stored group expiresAtEpochMs');
-    nullablePositiveSafeInteger(value.emptySinceEpochMs, 'Stored group emptySinceEpochMs');
-    nullablePositiveSafeInteger(value.purgeAfterEpochMs, 'Stored group purgeAfterEpochMs');
-}
 
-function validateMemberReadPair(
-    member: GroupMember | null,
-    stored: RuntimeStateEntryValue<GroupMember> | null,
-    ref: GroupRef,
-    expectedPrincipalId: string | null,
-    label: string,
-): void {
-    if ((member === null) !== (stored === null)) {
-        throw new TypeError(`${label} differs from stored entry presence`);
-    }
-    if (!member || !stored) return;
-    if (expectedPrincipalId === null || member.principalId !== expectedPrincipalId) {
-        throw new TypeError(`${label} principal differs from command slot identity`);
-    }
-    validateRuntimeEntryValue(
-        stored,
-        `Stored ${label.toLowerCase()}`,
-        groupStateMemberStorageKey({ ...ref, principalId: expectedPrincipalId }),
-    );
-    validateStoredMember(stored.value, ref, label);
-    if (!jsonEquals(member, stored.value)) {
-        throw new TypeError(`${label} differs from stored entry value`);
-    }
-}
 
-function mutationTargetPrincipalId(
-    command: GroupMutationCommand,
-): string | null {
-    if ('targetPrincipalId' in command) return command.targetPrincipalId;
-    if (command.operation === 'connectPresence') return command.input.principalId;
-    if (command.operation === 'heartbeatPresence' ||
-        command.operation === 'disconnectPresence') {
-        return command.input.principalId ?? command.input.actorPrincipalId;
-    }
-    return command.input.actorPrincipalId;
-}
 
-function mutationTargetSessionId(command: GroupMutationCommand): string | null {
-    if ('sessionId' in command) return command.sessionId;
-    return command.operation === 'appointDirector'
-        ? command.input.actorSessionId
-        : null;
-}
 
-function validateStoredMember(
-    member: unknown,
-    ref: GroupRef,
-    label: string,
-): asserts member is GroupMember {
-    const value = requireRecord(member, `${label} value`);
-    assertExactKeys(value, [
-        'applicationId', 'workspaceId', 'groupId', 'principalId', 'role', 'status',
-        'joined', 'updated', 'left', 'removed', 'banned', 'invitedByPrincipalId',
-        'invitationExpiresAtEpochMs',
-    ], `${label} value`);
-    assertRequiredKeys(value, [
-        'applicationId', 'workspaceId', 'groupId', 'principalId', 'role', 'status',
-        'joined', 'updated', 'left', 'removed', 'banned',
-        'invitedByPrincipalId', 'invitationExpiresAtEpochMs',
-    ], `${label} value`);
-    validateScopedRecord(value, ref, label);
-    requireNonEmptyString(value.principalId, `${label} principalId`);
-    requireOneOf(value.role, ['owner', 'admin', 'member'], `${label} role`);
-    requireOneOf(value.status, ['invited', 'active', 'left', 'removed', 'banned'],
-        `${label} status`);
-    if (value.joined !== null) validateAuditStamp(value.joined, `${label} joined`);
-    validateAuditStamp(value.updated, `${label} updated`);
-    for (const key of ['left', 'removed', 'banned'] as const) {
-        if (value[key] !== null) validateAuditStamp(value[key], `${label} ${key}`);
-    }
-    const lifecycleKey = value.status === 'left'
-        ? 'left'
-        : value.status === 'removed'
-        ? 'removed'
-        : value.status === 'banned'
-        ? 'banned'
-        : null;
-    for (const terminal of ['left', 'removed', 'banned'] as const) {
-        if ((terminal === lifecycleKey) !== (value[terminal] !== null)) {
-            throw new TypeError(`${label} terminal lifecycle audits are inconsistent`);
-        }
-    }
-    if (value.status === 'invited' && value.joined !== null) {
-        throw new TypeError(`${label} invited member joined must be null`);
-    }
-    if (value.status === 'active' && value.joined === null) {
-        throw new TypeError(`${label} active member joined is required`);
-    }
-    nullableNonEmptyString(value.invitedByPrincipalId, `${label} invitedByPrincipalId`);
-    nullablePositiveSafeInteger(value.invitationExpiresAtEpochMs,
-        `${label} invitationExpiresAtEpochMs`);
-}
 
-function validatePresenceSession(
-    session: unknown,
-    ref: GroupRef,
-    label: string,
-): asserts session is GroupPresenceSession {
-    const value = requireRecord(session, `${label} value`);
-    assertExactKeys(value, [
-        'applicationId', 'workspaceId', 'groupId', 'sessionId', 'principalId',
-        'generationId', 'generationVersion', 'connectedAtEpochMs',
-        'lastHeartbeatAtEpochMs', 'expiresAtEpochMs', 'disconnectedAtEpochMs',
-        'disconnectReason', 'status',
-    ], `${label} value`);
-    assertRequiredKeys(value, [
-        'applicationId', 'workspaceId', 'groupId', 'sessionId', 'principalId',
-        'generationId', 'status',
-        'generationVersion', 'connectedAtEpochMs', 'lastHeartbeatAtEpochMs',
-        'expiresAtEpochMs', 'disconnectedAtEpochMs', 'disconnectReason',
-    ], `${label} value`);
-    validateScopedRecord(value, ref, label);
-    requireNonEmptyString(value.sessionId, `${label} sessionId`);
-    requireNonEmptyString(value.principalId, `${label} principalId`);
-    requireNonEmptyString(value.generationId, `${label} generationId`);
-    requirePositiveSafeInteger(value.connectedAtEpochMs,
-        'Stored presence connectedAtEpochMs');
-    requirePositiveSafeInteger(value.generationVersion,
-        'Stored presence generationVersion');
-    if (value.generationVersion !== value.connectedAtEpochMs) {
-        throw new TypeError('Stored presence generation order is ambiguous');
-    }
-    requirePositiveSafeInteger(value.lastHeartbeatAtEpochMs,
-        `${label} lastHeartbeatAtEpochMs`);
-    requirePositiveSafeInteger(value.expiresAtEpochMs, `${label} expiresAtEpochMs`);
-    if (value.lastHeartbeatAtEpochMs < value.connectedAtEpochMs ||
-        value.expiresAtEpochMs < value.lastHeartbeatAtEpochMs) {
-        throw new TypeError(`${label} timestamps are causally inconsistent`);
-    }
-    requireOneOf(value.status, ['active', 'disconnected'], `${label} status`);
-    nullablePositiveSafeInteger(value.disconnectedAtEpochMs,
-        `${label} disconnectedAtEpochMs`);
-    nullableNonEmptyString(value.disconnectReason, `${label} disconnectReason`);
-    if (value.disconnectedAtEpochMs !== null &&
-        value.disconnectedAtEpochMs < value.lastHeartbeatAtEpochMs) {
-        throw new TypeError(`${label} disconnect predates heartbeat`);
-    }
-    if (value.status === 'active' &&
-        (value.disconnectedAtEpochMs !== null || value.disconnectReason !== null)) {
-        throw new TypeError(`${label} active disconnect fields must be null`);
-    }
-    if (value.status === 'disconnected' &&
-        (value.disconnectedAtEpochMs === null || value.disconnectReason === null)) {
-        throw new TypeError(`${label} disconnect lifecycle fields differ`);
-    }
-}
 
-export function normalizePersistedGroup(
-    value: unknown,
-    ref: GroupRef,
-): Group {
-    const legacy = requireRecord(value, 'Stored group value');
-    assertExactKeys(legacy, [
-        'applicationId', 'workspaceId', 'groupId', 'slug', 'displayName',
-        'description', 'kind', 'status', 'joinMode', 'maxMembers',
-        'maxSessionsPerMember', 'metadata', 'activeMemberCount',
-        'ownerPrincipalId', 'snapshotVersion', 'metadataVersion', 'rosterVersion',
-        'presenceVersion', 'created', 'updated', 'archived', 'deleted',
-        'expiresAtEpochMs', 'emptySinceEpochMs', 'purgeAfterEpochMs',
-    ], 'Stored group value');
-    const canonical: unknown = {
-        applicationId: legacy.applicationId,
-        workspaceId: persistedOrDefault(legacy, 'workspaceId', ref.workspaceId),
-        groupId: legacy.groupId,
-        slug: persistedOrDefault(legacy, 'slug', null),
-        displayName: legacy.displayName,
-        description: persistedOrDefault(legacy, 'description', null),
-        kind: legacy.kind,
-        status: legacy.status,
-        joinMode: legacy.joinMode,
-        maxMembers: persistedOrDefault(legacy, 'maxMembers', null),
-        maxSessionsPerMember: persistedOrDefault(
-            legacy,
-            'maxSessionsPerMember',
-            null,
-        ),
-        metadata: legacy.metadata,
-        activeMemberCount: legacy.activeMemberCount,
-        ownerPrincipalId: legacy.ownerPrincipalId,
-        snapshotVersion: legacy.snapshotVersion,
-        metadataVersion: legacy.metadataVersion,
-        rosterVersion: legacy.rosterVersion,
-        presenceVersion: legacy.presenceVersion,
-        created: normalizePersistedGroupAudit(legacy.created, 'Stored group created'),
-        updated: normalizePersistedGroupAudit(legacy.updated, 'Stored group updated'),
-        archived: normalizeOptionalPersistedGroupAudit(
-            legacy,
-            'archived',
-            'Stored group archived',
-        ),
-        deleted: normalizeOptionalPersistedGroupAudit(
-            legacy,
-            'deleted',
-            'Stored group deleted',
-        ),
-        expiresAtEpochMs: persistedOrDefault(legacy, 'expiresAtEpochMs', null),
-        emptySinceEpochMs: persistedOrDefault(legacy, 'emptySinceEpochMs', null),
-        purgeAfterEpochMs: persistedOrDefault(legacy, 'purgeAfterEpochMs', null),
-    };
-    validatePersistedGroup(canonical, ref);
-    return canonical;
-}
 
-export function normalizePersistedGroupMember(
-    value: unknown,
-    ref: GroupRef,
-): GroupMember {
-    const legacy = requireRecord(value, 'Stored group member');
-    assertExactKeys(legacy, [
-        'applicationId', 'workspaceId', 'groupId', 'principalId', 'role', 'status',
-        'joined', 'updated', 'left', 'removed', 'banned', 'invitedByPrincipalId',
-        'invitationExpiresAtEpochMs',
-    ], 'Stored group member');
-    const status = legacy.status;
-    const joined = status === 'invited'
-        ? null
-        : Object.hasOwn(legacy, 'joined')
-        ? normalizeNullablePersistedGroupAudit(legacy.joined, 'Stored member joined')
-        : null;
-    const canonical: unknown = {
-        applicationId: legacy.applicationId,
-        workspaceId: persistedOrDefault(legacy, 'workspaceId', ref.workspaceId),
-        groupId: legacy.groupId,
-        principalId: legacy.principalId,
-        role: legacy.role,
-        status,
-        joined,
-        updated: normalizePersistedGroupAudit(legacy.updated, 'Stored member updated'),
-        left: normalizeOptionalPersistedGroupAudit(legacy, 'left', 'Stored member left'),
-        removed: normalizeOptionalPersistedGroupAudit(
-            legacy,
-            'removed',
-            'Stored member removed',
-        ),
-        banned: normalizeOptionalPersistedGroupAudit(
-            legacy,
-            'banned',
-            'Stored member banned',
-        ),
-        invitedByPrincipalId: persistedOrDefault(
-            legacy,
-            'invitedByPrincipalId',
-            null,
-        ),
-        invitationExpiresAtEpochMs: persistedOrDefault(
-            legacy,
-            'invitationExpiresAtEpochMs',
-            null,
-        ),
-    };
-    validatePersistedGroupMember(canonical, ref);
-    return canonical;
-}
 
-export function normalizePersistedGroupPresenceSession(
-    value: unknown,
-    ref: GroupRef,
-): GroupPresenceSession {
-    const legacy = requireRecord(value, 'Stored group presence session');
-    assertExactKeys(legacy, [
-        'applicationId', 'workspaceId', 'groupId', 'sessionId', 'principalId',
-        'generationId', 'generationVersion', 'status', 'connectedAtEpochMs',
-        'lastHeartbeatAtEpochMs', 'expiresAtEpochMs', 'disconnectedAtEpochMs',
-        'disconnectReason',
-    ], 'Stored group presence session');
-    const disconnectedAtEpochMs = persistedOrDefault(
-        legacy,
-        'disconnectedAtEpochMs',
-        null,
-    );
-    const disconnectReason = persistedOrDefault(legacy, 'disconnectReason', null);
-    const canonical: unknown = {
-        applicationId: legacy.applicationId,
-        workspaceId: persistedOrDefault(legacy, 'workspaceId', ref.workspaceId),
-        groupId: legacy.groupId,
-        sessionId: legacy.sessionId,
-        principalId: legacy.principalId,
-        generationId: legacy.generationId,
-        generationVersion: legacy.generationVersion,
-        status: Object.hasOwn(legacy, 'status')
-            ? legacy.status
-            : disconnectedAtEpochMs === null
-            ? 'active'
-            : 'disconnected',
-        connectedAtEpochMs: legacy.connectedAtEpochMs,
-        lastHeartbeatAtEpochMs: legacy.lastHeartbeatAtEpochMs,
-        expiresAtEpochMs: legacy.expiresAtEpochMs,
-        disconnectedAtEpochMs,
-        disconnectReason,
-    };
-    validatePersistedGroupPresenceSession(canonical, ref);
-    return canonical;
-}
 
-export function normalizePersistedGroupPresenceSummary(
-    value: unknown,
-    ref: GroupRef,
-): GroupPresenceSummary {
-    const legacy = requireRecord(value, 'Stored presence summary value');
-    assertExactKeys(legacy, [
-        'applicationId', 'workspaceId', 'groupId', 'causalRevision',
-        'activePrincipalIds', 'activeSessionIds', 'activeSessions',
-        'activePrincipalCount', 'activeSessionCount', 'computedAtEpochMs',
-    ], 'Stored presence summary value');
-    if (!Array.isArray(legacy.activeSessions)) {
-        throw new TypeError('Stored presence summary activeSessions is invalid');
-    }
-    const activeSessions = legacy.activeSessions.map((session) =>
-        normalizePersistedGroupPresenceSession(session, ref)
-    );
-    const canonical: unknown = {
-        ...legacy,
-        workspaceId: persistedOrDefault(legacy, 'workspaceId', ref.workspaceId),
-        activeSessions,
-    };
-    validatePersistedGroupPresenceSummary(canonical, ref);
-    return canonical;
-}
 
-export function normalizePersistedGroupPresenceAdmission(
-    value: unknown,
-    ref: GroupRef,
-): GroupPresenceAdmission {
-    const legacy = requireRecord(value, 'Presence admission');
-    assertExactKeys(legacy, [
-        'applicationId', 'workspaceId', 'groupId', 'principalId',
-        'admittedSessions', 'updatedAtEpochMs',
-    ], 'Presence admission');
-    const canonical: unknown = {
-        ...legacy,
-        workspaceId: persistedOrDefault(legacy, 'workspaceId', ref.workspaceId),
-    };
-    validatePersistedGroupPresenceAdmission(canonical, ref);
-    return canonical;
-}
 
-export function validatePersistedGroup(
-    value: unknown,
-    ref: GroupRef,
-): asserts value is Group {
-    validateStoredGroup(value, ref);
-}
 
-export function validatePersistedGroupMember(
-    value: unknown,
-    ref: GroupRef,
-): asserts value is GroupMember {
-    validateStoredMember(value, ref, 'Stored group member');
-}
 
-export function validatePersistedGroupPresenceSession(
-    value: unknown,
-    ref: GroupRef,
-): asserts value is GroupPresenceSession {
-    validatePresenceSession(value, ref, 'Stored group presence session');
-}
 
-export function validatePersistedGroupPresenceSummary(
-    value: unknown,
-    ref: GroupRef,
-): asserts value is GroupPresenceSummary {
-    validatePresenceSummaryValue(value, ref);
-}
 
-export function validatePersistedGroupPresenceAdmission(
-    value: unknown,
-    ref: GroupRef,
-): asserts value is GroupPresenceAdmission {
-    validatePresenceAdmission(value, ref);
-}
 
-function validatePresenceSummaryValue(
-    summary: unknown,
-    ref: GroupRef,
-): asserts summary is GroupPresenceSummary {
-    const value = requireRecord(summary, 'Stored presence summary value');
-    assertExactKeys(value, [
-        'applicationId', 'workspaceId', 'groupId', 'causalRevision',
-        'activePrincipalIds', 'activeSessionIds', 'activeSessions',
-        'activePrincipalCount', 'activeSessionCount', 'computedAtEpochMs',
-    ], 'Stored presence summary value');
-    assertRequiredKeys(value, [
-        'applicationId', 'workspaceId', 'groupId', 'causalRevision', 'activePrincipalIds',
-        'activeSessionIds', 'activeSessions', 'activePrincipalCount',
-        'activeSessionCount', 'computedAtEpochMs',
-    ], 'Stored presence summary value');
-    validateScopedRecord(value, ref, 'Stored presence summary');
-    validateCausalRevision(value.causalRevision, 'Stored presence summary');
-    if (!Array.isArray(value.activePrincipalIds) ||
-        !Array.isArray(value.activeSessionIds) ||
-        !Array.isArray(value.activeSessions)) {
-        throw new TypeError('Stored presence summary collections must be arrays');
-    }
-    for (const principalId of value.activePrincipalIds) {
-        requireNonEmptyString(principalId, 'Stored presence summary principalId');
-    }
-    for (const sessionId of value.activeSessionIds) {
-        requireNonEmptyString(sessionId, 'Stored presence summary sessionId');
-    }
-    const activeSessions: GroupPresenceSession[] = [];
-    for (const session of value.activeSessions) {
-        validatePresenceSession(session, ref, 'Stored presence summary session');
-        activeSessions.push(session);
-    }
-    requireNonNegativeSafeInteger(value.activePrincipalCount,
-        'Stored presence summary activePrincipalCount');
-    requireNonNegativeSafeInteger(value.activeSessionCount,
-        'Stored presence summary activeSessionCount');
-    requirePositiveSafeInteger(value.computedAtEpochMs,
-        'Stored presence summary computedAtEpochMs');
-    const canonicalSessions = activeSessions.toSorted((left, right) =>
-        left.sessionId.localeCompare(right.sessionId) ||
-        left.generationVersion - right.generationVersion
-    );
-    const canonicalPrincipals = [...new Set(
-        activeSessions.map((session) => session.principalId),
-    )].toSorted();
-    if (value.activePrincipalCount !== value.activePrincipalIds.length ||
-        value.activeSessionCount !== value.activeSessionIds.length ||
-        value.activeSessionCount !== activeSessions.length ||
-        !jsonEquals(value.activePrincipalIds, canonicalPrincipals) ||
-        !jsonEquals(activeSessions, canonicalSessions) ||
-        !jsonEquals(value.activeSessionIds,
-            activeSessions.map((session) => session.sessionId))) {
-        throw new TypeError('Stored presence summary facts are inconsistent');
-    }
-}
 
-export function validateGroupMutationIdempotencyRecord(
-    record: unknown,
-    ref: GroupRef,
-): asserts record is GroupMutationIdempotencyRecord {
-    const value = requireRecord(record, 'Stored group idempotency value');
-    assertExactKeys(value, ['aggregateRef', 'requestId', 'commandHash', 'receipt'],
-        'Stored group idempotency value');
-    assertRequiredKeys(value, ['aggregateRef', 'requestId', 'commandHash', 'receipt'],
-        'Stored group idempotency value');
-    validateGroupRef(value.aggregateRef);
-    validateScopedValue(
-        value.aggregateRef as GroupRef,
-        ref,
-        'Stored group idempotency aggregateRef',
-    );
-    requireNonEmptyString(value.requestId, 'Stored group idempotency requestId');
-    validateCommandHash(value.commandHash, 'Stored group idempotency commandHash');
-    validateMutationReceipt(value.receipt, ref, 'Stored group idempotency receipt');
-    const receipt = value.receipt as GroupMutationReceipt;
-    if (receipt.commandHash !== value.commandHash) {
-        throw new TypeError('Stored group idempotency hashes differ');
-    }
-    if (receipt.commandId !== value.requestId) {
-        throw new TypeError(
-            'Stored group idempotency receipt command differs from request identity',
-        );
-    }
-    if (
-        receipt.requestId !== value.requestId ||
-        receipt.aggregateRef.applicationId !== ref.applicationId ||
-        receipt.aggregateRef.workspaceId !== ref.workspaceId ||
-        receipt.aggregateRef.groupId !== ref.groupId
-    ) {
-        throw new TypeError(
-            'Stored group idempotency receipt differs from request identity',
-        );
-    }
-}
 
 function validateComputedMutationShape(
     command: GroupMutationCommand,
@@ -2801,68 +2099,6 @@ function isExactlyAdmitted(
         ) === true;
 }
 
-function validatePresenceAdmission(
-    admission: unknown,
-    ref?: GroupRef,
-): asserts admission is GroupPresenceAdmission {
-    const value = requireRecord(admission, 'Presence admission');
-    assertExactKeys(value, [
-        'applicationId', 'workspaceId', 'groupId', 'principalId',
-        'admittedSessions', 'updatedAtEpochMs',
-    ], 'Presence admission');
-    assertRequiredKeys(value, [
-        'applicationId', 'workspaceId', 'groupId', 'principalId', 'admittedSessions',
-        'updatedAtEpochMs',
-    ], 'Presence admission');
-    if (ref) validateScopedRecord(value, ref, 'Presence admission');
-    requireNonEmptyString(value.principalId, 'Presence admission principalId');
-    requirePositiveSafeInteger(value.updatedAtEpochMs,
-        'Presence admission updatedAtEpochMs');
-    if (!Array.isArray(value.admittedSessions)) {
-        throw new TypeError('Presence admission sessions must be an array');
-    }
-    const sessionIdentities: Array<Readonly<{
-        sessionId: string;
-        generationId: string;
-        generationVersion: number;
-        connectedAtEpochMs: number;
-    }>> = [];
-    const sessionIds = new Set<string>();
-    for (const session of value.admittedSessions) {
-        const sessionValue = requireRecord(session, 'Presence admission session');
-        assertExactKeys(sessionValue, [
-            'sessionId', 'generationId', 'generationVersion', 'connectedAtEpochMs',
-        ], 'Presence admission session');
-        assertRequiredKeys(sessionValue, [
-            'sessionId', 'generationId', 'generationVersion', 'connectedAtEpochMs',
-        ], 'Presence admission session');
-        requireNonEmptyString(sessionValue.sessionId, 'Presence admission sessionId');
-        requireNonEmptyString(sessionValue.generationId, 'Presence admission generationId');
-        requirePositiveSafeInteger(sessionValue.generationVersion,
-            'Presence admission generationVersion');
-        requirePositiveSafeInteger(sessionValue.connectedAtEpochMs,
-            'Presence admission connectedAtEpochMs');
-        if (sessionValue.generationVersion !== sessionValue.connectedAtEpochMs) {
-            throw new TypeError('Presence admission generation version is ambiguous');
-        }
-        if (sessionIds.has(sessionValue.sessionId)) {
-            throw new TypeError('Presence admission sessionId must be unique');
-        }
-        sessionIds.add(sessionValue.sessionId);
-        sessionIdentities.push({
-            sessionId: sessionValue.sessionId,
-            generationId: sessionValue.generationId,
-            generationVersion: sessionValue.generationVersion,
-            connectedAtEpochMs: sessionValue.connectedAtEpochMs,
-        });
-    }
-    const canonical = sessionIdentities.toSorted((left, right) =>
-        left.sessionId.localeCompare(right.sessionId)
-    );
-    if (!jsonEquals(canonical, sessionIdentities)) {
-        throw new TypeError('Presence admission sessions must be canonically sorted');
-    }
-}
 
 function admissionIdentity(
     principalId: string,
@@ -2876,32 +2112,8 @@ function admissionIdentity(
     ]);
 }
 
-function validateStoredGeneration(session: GroupPresenceSession): void {
-    validateStoredGenerationValues(
-        session.connectedAtEpochMs,
-        session.generationVersion,
-    );
-}
 
-function validateStoredGenerationValues(
-    connectedAtEpochMs: unknown,
-    generationVersion: unknown,
-): void {
-    requirePositiveSafeInteger(connectedAtEpochMs,
-        'Stored presence connectedAtEpochMs');
-    requirePositiveSafeInteger(generationVersion,
-        'Stored presence generationVersion');
-    if (generationVersion !== connectedAtEpochMs) {
-        throw new TypeError('Stored presence generation order is ambiguous');
-    }
-}
 
-function compareGenerationOrder(
-    left: readonly [number, string],
-    right: readonly [number, string],
-): number {
-    return Math.sign(left[0] - right[0]) || left[1].localeCompare(right[1]);
-}
 
 function findTargetMember(
     read: GroupMutationRead,
@@ -3243,283 +2455,5 @@ function validateResolvedJoinCodeFacts(
     }
     if (facts.resolvedJoinCode !== null || facts.joinCodeVerifier !== null) {
         throw new TypeError('Unrelated group operation contains resolved join code facts');
-    }
-}
-
-function validateScopedValue(
-    value: Pick<GroupRef, 'applicationId' | 'workspaceId' | 'groupId'>,
-    ref: GroupRef,
-    label: string,
-): void {
-    requireNonEmptyString(value.applicationId, `${label} applicationId`);
-    requireNonEmptyString(value.groupId, `${label} groupId`);
-    if (value.workspaceId !== undefined) {
-        requireNonEmptyString(value.workspaceId, `${label} workspaceId`);
-    }
-    if (value.applicationId !== ref.applicationId ||
-        value.workspaceId !== ref.workspaceId || value.groupId !== ref.groupId) {
-        throw new TypeError(`${label} scope differs from mutation group`);
-    }
-}
-
-function validateScopedRecord(
-    value: Readonly<Record<string, unknown>>,
-    ref: GroupRef,
-    label: string,
-): void {
-    requireNonEmptyString(value.applicationId, `${label} applicationId`);
-    requireNonEmptyString(value.workspaceId, `${label} workspaceId`);
-    requireNonEmptyString(value.groupId, `${label} groupId`);
-    if (
-        value.applicationId !== ref.applicationId ||
-        value.workspaceId !== ref.workspaceId ||
-        value.groupId !== ref.groupId
-    ) {
-        throw new TypeError(`${label} scope differs from mutation group`);
-    }
-}
-
-function persistedOrDefault(
-    value: Readonly<Record<string, unknown>>,
-    key: string,
-    fallback: unknown,
-): unknown {
-    return Object.hasOwn(value, key) ? value[key] : fallback;
-}
-
-function normalizeOptionalPersistedGroupAudit(
-    value: Readonly<Record<string, unknown>>,
-    key: string,
-    label: string,
-): AuditStamp | null {
-    return Object.hasOwn(value, key)
-        ? normalizeNullablePersistedGroupAudit(value[key], label)
-        : null;
-}
-
-function normalizeNullablePersistedGroupAudit(
-    value: unknown,
-    label: string,
-): AuditStamp | null {
-    return value === null ? null : normalizePersistedGroupAudit(value, label);
-}
-
-function normalizePersistedGroupAudit(value: unknown, label: string): AuditStamp {
-    const legacy = requireRecord(value, label);
-    assertExactKeys(legacy, [
-        'atEpochMs', 'actor', 'byPrincipalId', 'bySessionId', 'byServiceId',
-        'reason', 'traceId', 'requestId',
-    ], label);
-    const canonical: unknown = {
-        atEpochMs: legacy.atEpochMs,
-        actor: Object.hasOwn(legacy, 'actor')
-            ? legacy.actor
-            : normalizePersistedGroupActor(legacy, `${label} actor`),
-        reason: persistedOrDefault(legacy, 'reason', null),
-        traceId: persistedOrDefault(legacy, 'traceId', null),
-        requestId: persistedOrDefault(legacy, 'requestId', null),
-    };
-    validateAuditStamp(canonical, label);
-    return canonical;
-}
-
-function normalizePersistedGroupActor(
-    legacy: Readonly<Record<string, unknown>>,
-    label: string,
-): MutationActor {
-    let canonical: unknown;
-    if (Object.hasOwn(legacy, 'bySessionId')) {
-        canonical = {
-            kind: 'session',
-            sessionId: legacy.bySessionId,
-            principalId: legacy.byPrincipalId,
-        };
-    } else if (Object.hasOwn(legacy, 'byPrincipalId')) {
-        canonical = { kind: 'principal', principalId: legacy.byPrincipalId };
-    } else {
-        canonical = { kind: 'service', serviceId: legacy.byServiceId };
-    }
-    validateMutationActor(canonical, label);
-    return canonical;
-}
-
-function validateAuditStamp(
-    value: unknown,
-    label: string,
-): asserts value is AuditStamp {
-    const audit = requireRecord(value, label);
-    assertExactKeys(audit, [
-        'atEpochMs', 'actor', 'reason', 'traceId', 'requestId',
-    ], label);
-    assertRequiredKeys(audit, [
-        'atEpochMs', 'actor', 'reason', 'traceId', 'requestId',
-    ], label);
-    requireNonNegativeSafeInteger(audit.atEpochMs, `${label} atEpochMs`);
-    validateMutationActor(audit.actor, `${label} actor`);
-    nullableNonEmptyString(audit.reason, `${label} reason`);
-    nullableNonEmptyString(audit.traceId, `${label} traceId`);
-    nullableNonEmptyString(audit.requestId, `${label} requestId`);
-}
-
-function validateMutationActor(
-    value: unknown,
-    label: string,
-): asserts value is MutationActor {
-    const actor = requireRecord(value, label);
-    requireOneOf(actor.kind, ['principal', 'session', 'service'], `${label} kind`);
-    const keys = actor.kind === 'principal'
-        ? ['kind', 'principalId']
-        : actor.kind === 'session'
-        ? ['kind', 'sessionId', 'principalId']
-        : ['kind', 'serviceId'];
-    assertExactKeys(actor, keys, label);
-    assertRequiredKeys(actor, keys, label);
-    for (const key of keys.filter((key) => key !== 'kind')) {
-        requireNonEmptyString(actor[key], `${label} ${key}`);
-    }
-}
-
-function validateCausalRevision(
-    value: unknown,
-    label: string,
-): asserts value is GroupStateCausalRevision {
-    const revision = requireRecord(value, `${label} causalRevision`);
-    assertExactKeys(revision, ['groupRevision', 'presenceRevision'], `${label} causalRevision`);
-    assertRequiredKeys(revision, ['groupRevision', 'presenceRevision'],
-        `${label} causalRevision`);
-    requireNonNegativeSafeInteger(revision.groupRevision,
-        `${label} groupRevision`);
-    requireNonNegativeSafeInteger(revision.presenceRevision,
-        `${label} presenceRevision`);
-}
-
-function validateMutationReceipt(
-    value: unknown,
-    ref: GroupRef,
-    label: string,
-): void {
-    const receipt = requireRecord(value, label);
-    assertExactKeys(receipt, [
-        'commandId', 'requestId', 'commandHash', 'aggregateRef', 'outcome',
-        'attemptCount', 'acceptedStorageRevision', 'stateRevision',
-        'snapshotVersion', 'causalRevision', 'eventId', 'outboxIds', 'joinCode',
-        'joinCodeExpiresAtEpochMs', 'rejection',
-    ], label);
-    assertRequiredKeys(receipt, [
-        'commandId', 'requestId', 'commandHash', 'aggregateRef', 'outcome',
-        'attemptCount', 'acceptedStorageRevision', 'stateRevision',
-        'snapshotVersion', 'causalRevision', 'eventId', 'outboxIds', 'joinCode',
-        'joinCodeExpiresAtEpochMs', 'rejection',
-    ], label);
-    requireNonEmptyString(receipt.commandId, `${label} commandId`);
-    nullableNonEmptyString(receipt.requestId, `${label} requestId`);
-    validateCommandHash(receipt.commandHash, `${label} commandHash`);
-    const aggregateRef = receipt.aggregateRef;
-    validateGroupRef(aggregateRef);
-    validateScopedValue(aggregateRef, ref, `${label} aggregateRef`);
-    requireOneOf(receipt.outcome, ['applied', 'no-op', 'rejected'], `${label} outcome`);
-    requirePositiveSafeInteger(receipt.attemptCount, `${label} attemptCount`);
-    if (receipt.acceptedStorageRevision !== null) {
-        requireNonNegativeSafeInteger(
-            receipt.acceptedStorageRevision,
-            `${label} acceptedStorageRevision`,
-        );
-    }
-    requireNonNegativeSafeInteger(receipt.stateRevision, `${label} stateRevision`);
-    requireNonNegativeSafeInteger(receipt.snapshotVersion, `${label} snapshotVersion`);
-    const causalRevision = receipt.causalRevision;
-    validateCausalRevision(causalRevision, label);
-    if (receipt.snapshotVersion !== causalRevision.groupRevision)
-        throw new TypeError(`${label} snapshotVersion differs from causalRevision`);
-    if (receipt.stateRevision !== toGroupSnapshotStateRevision(
-        causalRevision.groupRevision,
-        causalRevision.presenceRevision,
-    )) {
-        throw new TypeError(`${label} stateRevision differs from causalRevision`);
-    }
-    nullableNonEmptyString(receipt.eventId, `${label} eventId`);
-    if (!Array.isArray(receipt.outboxIds)) {
-        throw new TypeError(`${label} outboxIds is invalid`);
-    }
-    for (const outboxId of receipt.outboxIds) {
-        requireNonEmptyString(outboxId, `${label} outboxId`);
-    }
-    if ((receipt.outcome === 'applied') !== (receipt.eventId !== null)) {
-        throw new TypeError(`${label} event differs from outcome`);
-    }
-    if (receipt.joinCode !== null) {
-        requireNonEmptyString(receipt.joinCode, `${label} joinCode`);
-    }
-    if (receipt.joinCodeExpiresAtEpochMs !== null) {
-        requirePositiveSafeInteger(receipt.joinCodeExpiresAtEpochMs,
-            `${label} joinCodeExpiresAtEpochMs`);
-    }
-    if ((receipt.joinCode === null) !== (receipt.joinCodeExpiresAtEpochMs === null)) {
-        throw new TypeError(`${label} join-code fields must have matching presence`);
-    }
-    if (receipt.rejection !== null) {
-        requireNonEmptyString(receipt.rejection, `${label} rejection`);
-    }
-    if ((receipt.outcome === 'rejected') !== (receipt.rejection !== null)) {
-        throw new TypeError(`${label} rejection differs from outcome`);
-    }
-    if (receipt.outcome === 'applied') {
-        if (receipt.acceptedStorageRevision === null) {
-            throw new TypeError(`${label} acceptedStorageRevision is required when applied`);
-        }
-        requirePositiveSafeInteger(
-            receipt.snapshotVersion,
-            `${label} applied snapshotVersion`,
-        );
-        requirePositiveSafeInteger(
-            causalRevision.groupRevision,
-            `${label} applied groupRevision`,
-        );
-        if (receipt.outboxIds.length !== 1) {
-            throw new TypeError(`${label} outboxIds differs from applied outcome`);
-        }
-        return;
-    }
-    if (receipt.outboxIds.length !== 0) {
-        throw new TypeError(`${label} outboxIds differs from non-applied outcome`);
-    }
-    if (receipt.joinCode !== null || receipt.joinCodeExpiresAtEpochMs !== null) {
-        throw new TypeError(`${label} join-code fields require an applied outcome`);
-    }
-    if (receipt.outcome === 'no-op') {
-        requirePositiveSafeInteger(
-            receipt.snapshotVersion,
-            `${label} no-op snapshotVersion`,
-        );
-        if (
-            receipt.acceptedStorageRevision === null ||
-            causalRevision.groupRevision !== receipt.acceptedStorageRevision + 1
-        ) {
-            throw new TypeError(`${label} no-op revision differs from its predecessor`);
-        }
-        return;
-    }
-    if (receipt.acceptedStorageRevision === null) {
-        if (
-            causalRevision.groupRevision !== 0 ||
-            causalRevision.presenceRevision !== 0 ||
-            receipt.snapshotVersion !== 0
-        ) {
-            throw new TypeError(`${label} absent-group rejection has authority`);
-        }
-        return;
-    }
-    requirePositiveSafeInteger(
-        receipt.snapshotVersion,
-        `${label} rejected snapshotVersion`,
-    );
-    if (causalRevision.groupRevision !== receipt.acceptedStorageRevision + 1) {
-        throw new TypeError(`${label} rejected revision differs from its predecessor`);
-    }
-}
-
-function validateCommandHash(value: unknown, label: string): void {
-    if (typeof value !== 'string' || !/^sha256:[0-9a-f]{64}$/.test(value)) {
-        throw new TypeError(`${label} is invalid`);
     }
 }

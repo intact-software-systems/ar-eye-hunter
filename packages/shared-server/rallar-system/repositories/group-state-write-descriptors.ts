@@ -23,13 +23,17 @@ import {
 } from '../group-state-storage-keys.ts';
 import {
   type GroupMutationIdempotencyRecord,
-  validateGroupMutationIdempotencyRecord,
+} from '../group-state/mutation/group-mutation-contracts.ts';
+import { validateGroupMutationIdempotencyRecord } from '../group-state/mutation/group-mutation-result.ts';
+import {
   validatePersistedGroup,
   validatePersistedGroupMember,
+} from '../group-state/persistence/validate-persisted-group.ts';
+import {
   validatePersistedGroupPresenceAdmission,
   validatePersistedGroupPresenceSession,
   validatePersistedGroupPresenceSummary,
-} from '../services/group-state-mutations.ts';
+} from '../group-state/persistence/validate-persisted-group-presence.ts';
 import { toSessionPurgeAfterEpochMs } from './session-expiry.ts';
 
 export const GROUPS_NAMESPACE = 'group-state:groups';

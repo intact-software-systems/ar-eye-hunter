@@ -18,7 +18,7 @@ import {
 import {
   resolveRuntimeStateReadBatchLiveValues,
 } from '../../runtime-state/RuntimeStateReadBatchLiveValues.ts';
-import type { GroupMutationIdempotencyRecord } from '../services/group-state-mutations.ts';
+import type { GroupMutationIdempotencyRecord } from '../group-state/mutation/group-mutation-contracts.ts';
 import {
   groupStateGroupStorageKey,
   groupStateIdempotencyStorageKey,

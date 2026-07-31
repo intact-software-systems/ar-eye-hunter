@@ -4,8 +4,8 @@ import { DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import {
     validatePersistedGroup,
     validatePersistedGroupMember,
-    validatePersistedGroupPresenceSession,
-} from './group-state-mutations.ts';
+} from '../group-state/persistence/validate-persisted-group.ts';
+import { validatePersistedGroupPresenceSession } from '../group-state/persistence/validate-persisted-group-presence.ts';
 
 /** Validates the complete persisted GroupSnapshot contract at storage boundaries. */
 export function validatePersistedGroupSnapshot(
