@@ -1,8 +1,10 @@
 # Rallar Group-State Server Structure Implementation Plan
 
-> Status: Drafted for human review on 2026-07-30. This child is unapproved and
-> authorizes no production change. Execution requires explicit human approval
-> of the exact Git blob containing this plan.
+> Status: Human-approved at exact Git blob
+> `1a74159d37f76a459009e99ca5a08f3cd620b1b4`, with the explicitly authorized
+> Section 12 amendments. Tasks 0 through 6 are complete; Task 7 validation and
+> publication remain pending. This approval does not authorize Tasks 8 through
+> 10 or the later API-v1 child.
 
 This plan is the authoritative shared-server child of the
 [Repository Human Traceability Refactoring Program](repo-human-traceability-refactoring-program-plan.md).
@@ -23,8 +25,9 @@ Distributed Manifests** run `30520679271` attempt 1 success for that exact
 
 ## Global Constraints
 
-- This plan is planning and governance only until its exact blob is explicitly
-  approved. Drafting or publishing it does not approve implementation.
+- Implementation authority covers Tasks 0 through 7 under the approved exact
+  blob and the Section 12 amendments. Alignment, ledger publication, and the
+  later API-v1 child remain separately gated.
 - Preserve TypeScript `7.0.2`, every public package export and deep import,
   every API-v1 route and request/response contract, persisted formats, storage
   keys, resource names, and wire order.
@@ -55,9 +58,10 @@ Distributed Manifests** run `30520679271` attempt 1 success for that exact
   permission to add pass-through helpers, generic dependency bags, hidden
   defaults, or one-file-per-symbol scaffolding.
 - Every compatibility path in Section 6 is locked. No additional re-export or
-  wrapper is approved by this draft.
-- No server implementation goal or implementation branch exists until a human
-  approves the exact plan blob.
+  wrapper is approved by this child.
+- The existing server implementation goal, branch, and structure PR cover only
+  Tasks 0 through 7. Tasks 8 through 10 require their later gates and do not
+  inherit structure-pass authority.
 
 ## 1. Scope And Success Boundary
 
@@ -1308,6 +1312,12 @@ child `ledger-published` and unlock drafting the API-v1 child.
 2. **Material drift:** review any required behavior, authority, contract,
    compatibility, persistence, concurrency, dependency, workflow, TypeScript,
    checker, or out-of-scope path change before it is made.
+   The Task 2 command-owner amendment was approved from head
+   `52d973bb71dda2100455e8585a0a8f98d177bd13` and tree
+   `8b54cde2cd8563409bdb6929b768ad4bc1c73829`, authorizing exactly
+   `group-mutation-command.ts`, `group-presence-mutation-command.ts`, and the
+   at-most-60-line `toDescriptorCommand` operation-family router with behavior
+   and contracts unchanged.
    The Task 3 persistence amendment was approved against head
    `6695d4d527373791708386527c3e131590775877` and tree
    `17ed9ad3351c884a1926cfa6e098aff835febc9c`, authorizing only the two
@@ -1361,32 +1371,33 @@ No approval above authorizes the later API-v1 child.
 
 ## 13. Acceptance Checklist
 
-- [ ] Human explicitly approved the exact plan Git blob.
-- [ ] Exact current production/test trees, exports, consumers, cases, assertions,
+- [x] Human explicitly approved the exact plan Git blob.
+- [x] Exact current production/test trees, exports, consumers, cases, assertions,
       layout counts, and line counts were reverified at the execution base.
-- [ ] Fresh mutation-path baseline was captured before implementation.
-- [ ] Public exports, signatures, deep paths, API-v1 calls, persisted formats,
+- [x] Fresh mutation-path baseline was captured before implementation.
+- [x] Public exports, signatures, deep paths, API-v1 calls, persisted formats,
       and storage keys are unchanged.
-- [ ] The persistence codec and two approved validator owners retain exact
+- [x] The persistence codec and two approved validator owners retain exact
       normalization/validation order and direct one-hop compatibility exports.
-- [ ] The root group-state validation-primitives module is the sole owner of
+- [x] The root group-state validation-primitives module is the sole owner of
       the existing generic primitive bodies; all Task 3 consumers import it
       directly and neither persistence validator owns a duplicate.
-- [ ] `AppGroupInboxService` is infrastructure composition only; group-state,
+- [x] `AppGroupInboxService` is infrastructure composition only; group-state,
       topology, and RTC RTT decisions have named domain handlers.
-- [ ] A reviewer can follow the Section 3 target trace by matching filenames
+- [x] A reviewer can follow the Section 3 target trace by matching filenames
       and primary symbols.
-- [ ] Every Section 7 invariant is explicitly verified.
-- [ ] Every moved test case, literal, and assertion is preserved; every new or
+- [x] Every Section 7 invariant is explicitly verified by the focused Task 0
+      through Task 6 characterization and review evidence.
+- [x] Every moved test case, literal, and assertion is preserved; every new or
       materially rewritten file is within size/function limits.
-- [ ] No runtime cycle, generic dependency bag, extra hop, duplicated state,
+- [x] No runtime cycle, generic dependency bag, extra hop, duplicated state,
       hidden default, or lifecycle reordering exists.
 - [ ] Structure PR passed independent review, focused gates, Postgres medium-
       scale, comparative gate, completion gates, Branch Release Gate, human
       merge, and exact resulting-main workflow.
 - [ ] Alignment started only from that green resulting main and passed the same
       applicable gates and publication envelope.
-- [ ] Protected REST plan remained byte-identical.
+- [x] Protected REST plan remained byte-identical.
 - [ ] Later three-plan ledger was separately authorized and published under the
       non-circular contract.
 
@@ -1411,16 +1422,16 @@ topology/RTC algorithm refactor.
 
 ## 15. Progress Record
 
-| Milestone                | Status             | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| ------------------------ | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Browser prerequisite     | `ledger-published` | PR #55, feature `7db208ed977fdcad4a1afef8a5d08c3cfdbb862c`, tree `96f0f763577a18983a9a9f08f87147a9ab154930`, Branch Release Gate `30519129484` attempt 1 success, resulting main `b4fe2a6ae5893f3adae86061bd38cf416bac8aaf`, default workflow `30520679271` attempt 1 success.                                                                                                                                                                                            |
-| Server inventory         | drafted            | Current services, mutation phases, AppInbox, persistence, presence, snapshot, topology, RTC RTT, exports, consumers, examples, tests, and representative trace inspected at the base SHA.                                                                                                                                                                                                                                                                                 |
-| Child plan               | `human-approved`   | Approved plan blob `1a74159d37f76a459009e99ca5a08f3cd620b1b4`; the Task 3 persistence amendment authorizes two validator owners at `6695d4d527373791708386527c3e131590775877` / `17ed9ad3351c884a1926cfa6e098aff835febc9c`, and the formal-review fix authorizes the root primitive refinement at `f5c0085b7eaa0c82f0dd659673feaaa33604d3bd` / `e9da9628a98102bf0d7fa714f92588fb9fde7f28`.                                                                                |
-| Structure implementation | in progress        | Tasks 0–5 are complete at `417137afe79af7b03c67813e61e0956104889172` / `67f2dd00b6664fade587b7347351a23dd3c1de42`; Task 6 is complete at `2c0cec54fcbac5331ebfa78a5f26484e2a11c63b` / `d4b0c59a1fce0c1026ba64e2d8a9345a0f0c238a`. The Task 7 hard-limit correction is local at `2bb99538665c1ec7be2bd4a88c7ac6476c89a5fd` / `ed5a9cc27c552299126e48959f834e41680ef80a`; result-adapter fix round 1 is in progress, while completion gates and publication remain pending. |
-| Alignment implementation | pending            | Waits for green structure merge/default workflow.                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| Evidence ledger          | pending            | Waits for both implementation envelopes and separate authorization.                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Milestone                | Status             | Evidence                                                                                                                                                                                                                                                                                                                                                  |
+| ------------------------ | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Browser prerequisite     | `ledger-published` | PR #55, feature `7db208ed977fdcad4a1afef8a5d08c3cfdbb862c`, tree `96f0f763577a18983a9a9f08f87147a9ab154930`, Branch Release Gate `30519129484` attempt 1 success, resulting main `b4fe2a6ae5893f3adae86061bd38cf416bac8aaf`, default workflow `30520679271` attempt 1 success.                                                                            |
+| Server inventory         | drafted            | Current services, mutation phases, AppInbox, persistence, presence, snapshot, topology, RTC RTT, exports, consumers, examples, tests, and representative trace inspected at the base SHA.                                                                                                                                                                 |
+| Child plan               | `human-approved`   | Approved plan blob `1a74159d37f76a459009e99ca5a08f3cd620b1b4`; Section 12 records the authorized Task 2 command-owner amendment, Task 3 persistence amendment and root-primitive fix, Task 5 test-ownership fix, Task 7 hard-limit correction and result-adapter fix, and both Task 6 dispatch-review fixes with their exact predecessor heads and trees. |
+| Structure implementation | in progress        | Tasks 0–6 and the two Task 7 review fixes are complete through existing head `1eb3bc7c0bc0c3bbfaaa240f8702f8704e392067` / tree `d9574022a45ae78ce325f60cffc8ef61be16aa73`. The hard-limit and result-adapter reviews report Critical 0, Important 0, Minor 0. Task 7 mandatory completion, performance, publication, and remote gates remain pending.     |
+| Alignment implementation | pending            | Waits for green structure merge/default workflow.                                                                                                                                                                                                                                                                                                         |
+| Evidence ledger          | pending            | Waits for both implementation envelopes and separate authorization.                                                                                                                                                                                                                                                                                       |
 
-## 16. Draft Self-Review Record
+## 16. Implementation Self-Review Record
 
 The planning pass checked the complete draft for:
 
@@ -1434,9 +1445,10 @@ The planning pass checked the complete draft for:
 - ungoverned mutation-path/concurrency verification;
 - stale browser prerequisite evidence or circular future evidence.
 
-Any remaining Critical or Important finding must be resolved before the plan is
-presented for approval. Publication of this draft records planning evidence
-only and does not change its `human-review` state.
+Any remaining Critical or Important finding must be resolved before the
+structure PR can be marked ready. Future final replacement-tree, PR-ready,
+Branch Release Gate, merge, resulting-main, and default-workflow facts remain
+outside this implementation tree until they exist.
 
 The Task 5 formal-review fix self-review additionally checks the 23/23 test-node
 AST mapping, exact titles, 65 assertion sites, 583 independently written
@@ -1456,13 +1468,16 @@ repository for snapshot/event visibility, unchanged outputs/order/errors, the
 one new result-adaptation test only, and every previously accounted test AST,
 assertion, and literal before its single local fix commit.
 
-The Task 6 review additionally checks the seven exact topology/RTC inbox
-owners, the retained topology registration family, direct one-hop public
-exports, separate domain-owner and facade-dispatch route evidence, unchanged
-AppInbox transaction/retry ownership, exact read/compute/validate/write and
-wake order, runtime-cycle absence, and the 400/60-line hard tiers. Future Task 6
-commit, publication, merge, default-workflow, and later-ledger facts remain
-outside this in-progress plan tree until they exist.
+The Task 6 review accepted existing head
+`2c0cec54fcbac5331ebfa78a5f26484e2a11c63b` / tree
+`d4b0c59a1fce0c1026ba64e2d8a9345a0f0c238a` after checking the seven exact
+topology/RTC inbox owners, the retained topology registration family, direct
+one-hop public exports, separate domain-owner and facade-dispatch route
+evidence, unchanged AppInbox transaction/retry ownership, exact
+read/compute/validate/write and wake order, runtime-cycle absence, and the
+400/60-line hard tiers. Future final replacement-tree, PR-ready, Branch Release
+Gate, merge, default-workflow, and later-ledger facts remain outside this
+in-progress plan tree until they exist.
 
 The Task 6 fix re-review additionally checks the observable payload access
 trace, all five cross-routing negatives, correct-route positives, and all 13
