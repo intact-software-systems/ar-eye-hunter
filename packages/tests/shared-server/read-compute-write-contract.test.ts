@@ -5,6 +5,8 @@ import { findMutationBoundaryViolations } from './mutation-boundary-analysis.ts'
 const serviceRoot = 'packages/shared-server/rallar-system/services';
 const repositoryRoot = 'packages/shared-server/rallar-system/repositories';
 const groupStateRoot = 'packages/shared-server/rallar-system/group-state';
+const topologyInboxRoot = 'packages/shared-server/rallar-system/topology/inbox';
+const rtcInboxRoot = 'packages/shared-server/rallar-system/rtc-topology/inbox';
 const persistenceRoot = `${groupStateRoot}/persistence`;
 const validationPrimitivesPath = `${groupStateRoot}/group-state-validation-primitives.ts`;
 const oldValidationPrimitivesPath = `${groupStateRoot}/mutation/group-state-validation-primitives.ts`;
@@ -27,6 +29,8 @@ const sources = {
   appClient: read(`${serviceRoot}/AppClientInboxService.ts`),
   appCrdt: read(`${serviceRoot}/AppCrdtInboxService.ts`),
   appGroup: read(`${serviceRoot}/AppGroupInboxService.ts`),
+  topologyHandler: read(`${topologyInboxRoot}/topology-app-inbox-handler.ts`),
+  rtcHandler: read(`${rtcInboxRoot}/rtc-rtt-app-inbox-handler.ts`),
   groupHandler: read(`${groupStateRoot}/inbox/group-state-inbox-handler.ts`),
   groupService: read(`${groupStateRoot}/group-state-service.ts`),
   client: read(`${serviceRoot}/client-state-service.ts`),
@@ -49,6 +53,8 @@ const trackedRuntimeSource = [
   `${groupStateRoot}/inbox/group-state-inbox-contracts.ts`,
   `${groupStateRoot}/inbox/group-state-inbox-handler.ts`,
   `${groupStateRoot}/inbox/group-state-inbox-result.ts`,
+  `${topologyInboxRoot}/topology-app-inbox-handler.ts`,
+  `${rtcInboxRoot}/rtc-rtt-app-inbox-handler.ts`,
   `${serviceRoot}/group-state-mutations.ts`,
   `${serviceRoot}/group-topology-config-mutations.ts`,
   `${serviceRoot}/group-topology-management-service.ts`,
@@ -170,33 +176,33 @@ describe('read/compute/validate/write implementation contract', { timeout: 30_00
     },
     {
       name: 'topology config AppInbox',
-      source: sources.appGroup,
-      owner: 'processTopologyConfigMutation',
+      source: sources.topologyHandler,
+      owner: 'processMutation',
       calls: [
         'service.readTopologyConfigMutation(',
         'service.computeTopologyConfigMutation(',
         'service.validateTopologyConfigMutation(',
-        'this.writeMutation(',
+        'this.dependencies.writeMutation(',
         'service.writeTopologyConfigMutation(',
       ],
     },
     {
       name: 'topology reconfigure AppInbox',
-      source: sources.appGroup,
+      source: sources.topologyHandler,
       owner: 'processTopologyReconfigureMutation',
       calls: [
         'service.readTopologyMutation(command)',
         'service.computeTopologyMutation(command, read)',
         'service.validateTopologyMutation(command, read, computed)',
-        'this.writeMutation(',
+        'this.dependencies.writeMutation(',
         'service.writeTopologyMutation(transaction, computed)',
       ],
     },
     {
       name: 'RTC RTT AppInbox',
-      source: sources.appGroup,
-      owner: 'processRtcRttMutation',
-      calls: ['readRttMutation(', 'computeRttMutation(', 'validateRttMutation(', 'this.writeMutation(', 'writeRttMutation('],
+      source: sources.rtcHandler,
+      owner: 'processMutation',
+      calls: ['readRttMutation(', 'computeRttMutation(', 'validateRttMutation(', 'this.commitMutation('],
     },
   ])('$name keeps one visible read/compute/validate/write path', ({ source, owner, calls }) => {
     const body = methodBody(source, owner);
@@ -224,7 +230,8 @@ describe('read/compute/validate/write implementation contract', { timeout: 30_00
       expect(source).not.toMatch(/waitForRuntimeStateWriteRetry/);
       expect(source).not.toMatch(/for\s*\([^)]*attempt/);
     }
-    expect(sources.appGroup).toContain('this.writeMutation(');
+    expect(sources.topologyHandler).toContain('this.dependencies.writeMutation(');
+    expect(sources.rtcHandler).toContain('this.dependencies.writeMutation(');
     expect(sources.appGroup).toContain('AppInboxType.RTC_RTT_SUBMIT');
     expect(sources.appGroup).toContain('AppInboxType.TOPOLOGY_RECONFIGURE');
   });
@@ -322,7 +329,6 @@ describe('read/compute/validate/write implementation contract', { timeout: 30_00
 function read(file: string): string {
   return readFileSync(file, 'utf8');
 }
-
 function methodBody(source: string, name: string): string {
   return extractBody(source, new RegExp(`^\\s*(?:public\\s+|private\\s+|protected\\s+)?(?:async\\s+)?${name}\\s*\\(`, 'm'), name);
 }

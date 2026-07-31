@@ -126,6 +126,10 @@ describe('RTC topology mutation phases', () => {
             '../../shared-server/rallar-system/services/AppGroupInboxService.ts',
             import.meta.url,
         ), 'utf8');
+        const topologyHandler = readFileSync(new URL(
+            '../../shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts',
+            import.meta.url,
+        ), 'utf8');
         const expected = [
             'TOPOLOGY_CONFIG_PUT',
             'TOPOLOGY_CONFIG_DELETE',
@@ -139,9 +143,9 @@ describe('RTC topology mutation phases', () => {
             expect(contracts).toContain(`${operation} = '${operation}'`);
             expect(service).toContain(`AppInboxType.${operation}`);
         }
-        expect(service).toMatch(/readTopologyMutation[\s\S]*computeTopologyMutation/);
-        expect(service).toMatch(/computeTopologyMutation[\s\S]*validateTopologyMutation/);
-        expect(service).toMatch(/validateTopologyMutation[\s\S]*writeMutation\(/);
+        expect(topologyHandler).toMatch(/readTopologyMutation[\s\S]*computeTopologyMutation/);
+        expect(topologyHandler).toMatch(/computeTopologyMutation[\s\S]*validateTopologyMutation/);
+        expect(topologyHandler).toMatch(/validateTopologyMutation[\s\S]*writeMutation\(/);
     });
 
     it('keeps receipt-family cleanup reads and validation outside its write transaction', () => {
@@ -1036,7 +1040,6 @@ function topologySnapshot(
         updatedAtEpochMs: 2,
     } as const;
 }
-
 function topologyPublication(
     snapshot: RallarOverlayTopologySnapshot,
     workId: string,

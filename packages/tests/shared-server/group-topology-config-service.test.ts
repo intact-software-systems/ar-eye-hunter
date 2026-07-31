@@ -382,7 +382,7 @@ describe('group topology config service', () => {
         );
         const appInboxSource = readFileSync(
             new URL(
-                '../../shared-server/rallar-system/services/AppGroupInboxService.ts',
+                '../../shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts',
                 import.meta.url,
             ),
             'utf8',
@@ -399,7 +399,7 @@ describe('group topology config service', () => {
             compute,
         );
         const transaction = appInboxSource.indexOf(
-            'const result = await this.writeMutation',
+            'const result = await this.dependencies.writeMutation',
             validate,
         );
         const write = appInboxSource.indexOf(
@@ -557,7 +557,6 @@ function createGroupRef() {
         groupId: 'room-1',
     };
 }
-
 function createConfigMutationInput(
     input: Readonly<{
         operation: 'putConfig' | 'putOverride';
