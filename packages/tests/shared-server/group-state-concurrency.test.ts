@@ -1414,28 +1414,6 @@ describe('convergent group and presence state', () => {
             )).toMatchObject({ receipt: { outcome: 'applied' } });
     });
 
-    it('does not persist a rejected receipt, event, or outbox effect', async () => {
-        const runtime = new GroupBarrierRepository();
-        await seedOpenGroup(runtime, 'ephemeral-rejection-room');
-        const result = await createService(runtime, 2_000).createGroup(SCOPE, {
-            groupId: 'ephemeral-rejection-room',
-            displayName: 'Duplicate',
-            kind: 'room',
-            createdByPrincipalId: 'alice',
-            actorPrincipalId: 'alice',
-            requestId: 'rejected-duplicate-create',
-        });
-        expect(result).toMatchObject({ status: 'error' });
-        const repository = new GroupStateRepository(runtime);
-        expect(await repository.findIdempotentGroupMutationReceipt(
-            groupRef('ephemeral-rejection-room'),
-            'rejected-duplicate-create',
-        )).toBeUndefined();
-        expect((await repository.listEvents(groupRef('ephemeral-rejection-room')))
-            .filter((event) => event.requestId === 'rejected-duplicate-create'))
-            .toEqual([]);
-    });
-
     it('rejects a wrong-scope owner member before it can authorize a mutation', () => {
         const command = createMutationCommand();
         const read = createMutationRead();

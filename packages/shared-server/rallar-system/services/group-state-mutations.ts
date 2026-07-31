@@ -51,27 +51,14 @@ import {
     validateGroupMutationIdempotencyRecord,
     validateMutationReceipt,
 } from '../group-state/mutation/group-mutation-result.ts';
+import { findKnownMember } from '../group-state/mutation/compute-group-membership-mutation.ts';
+import { admissionIdentity } from '../group-state/mutation/compute-group-presence-mutation.ts';
 import {
-    computeCreate,
-    computeDirector,
-    computeRotateJoinCode,
-    computeUpdate,
-} from '../group-state/mutation/compute-group-aggregate-mutation.ts';
-import {
-    computeGovernedMember,
-    computeInvite,
-    computeJoin,
-    computeRevokeInvite,
-    computeTransfer,
-    computeUpsertMember,
-    findKnownMember,
-} from '../group-state/mutation/compute-group-membership-mutation.ts';
-import {
-    admissionIdentity,
-    computeConnectPresence,
-    computeDisconnectPresence,
-    computeHeartbeatPresence,
-} from '../group-state/mutation/compute-group-presence-mutation.ts';
+    computeGroupMutation,
+    probeGroupMutationIdempotency,
+    validateFacts,
+    validateTrustedAuthorityMode,
+} from '../group-state/mutation/compute-group-mutation.ts';
 import {
     validateStoredGroup,
     validateStoredMember,
@@ -115,6 +102,10 @@ export type {
 export { GroupMutationRejectedError } from '../group-state/mutation/group-mutation-contracts.ts';
 export { validateGroupMutationCommand } from '../group-state/mutation/group-mutation-command-validation.ts';
 export {
+    computeGroupMutation,
+    probeGroupMutationIdempotency,
+} from '../group-state/mutation/compute-group-mutation.ts';
+export {
     validateGroupMutationRequest,
     validateGroupPresenceMutationRequest,
 } from '../group-state/mutation/group-mutation-request-validation.ts';
@@ -157,81 +148,6 @@ export type GroupPresenceSummaryComputed =
         expectedRevision: number | null;
         summary: GroupPresenceSummary;
     }>;
-
-export function computeGroupMutation(input: Readonly<{
-    command: GroupMutationCommand;
-    read: GroupMutationRead;
-    facts: GroupMutationFacts;
-}>): GroupMutationComputed {
-    const { command, read, facts } = input;
-    validateGroupMutationCommand(command);
-    validateGroupMutationRead(read, command);
-    validateFacts(facts);
-    validateTrustedAuthorityMode(command, facts);
-    const idempotency = probeGroupMutationIdempotency(
-        command,
-        read,
-        facts.commandHash,
-    );
-    if (idempotency.outcome !== 'miss') return idempotency;
-
-    switch (command.operation) {
-        case 'createGroup':
-            return computeCreate(command, read, facts);
-        case 'updateGroup':
-            return computeUpdate(command, read, facts);
-        case 'appointDirector':
-            return computeDirector(command, read, facts);
-        case 'joinGroup':
-        case 'acceptGroupInvite':
-            return computeJoin(command, read, facts);
-        case 'createGroupInvite':
-            return computeInvite(command, read, facts);
-        case 'revokeGroupInvite':
-            return computeRevokeInvite(command, read, facts);
-        case 'rotateGroupJoinCode':
-            return computeRotateJoinCode(command, read, facts);
-        case 'removeGroupMember':
-        case 'banGroupMember':
-        case 'unbanGroupMember':
-        case 'setGroupMemberRole':
-            return computeGovernedMember(command, read, facts);
-        case 'transferGroupOwnership':
-            return computeTransfer(command, read, facts);
-        case 'upsertMember':
-            return computeUpsertMember(command, read, facts);
-        case 'connectPresence':
-            return computeConnectPresence(command, read, facts);
-        case 'heartbeatPresence':
-            return computeHeartbeatPresence(command, read, facts);
-        case 'disconnectPresence':
-            return computeDisconnectPresence(command, read, facts);
-    }
-}
-
-export function probeGroupMutationIdempotency(
-    command: GroupMutationCommand,
-    read: GroupMutationRead,
-    commandHash: string,
-): GroupMutationIdempotencyProbe {
-    validateGroupMutationCommand(command);
-    validateGroupMutationRead(read, command);
-    validateCommandHash(commandHash, 'Group mutation commandHash');
-    if (!read.idempotency) return { outcome: 'miss' };
-    const record = read.idempotency.value;
-    if (record.receipt.commandId !== command.commandId) {
-        throw new TypeError(
-            'Stored group idempotency receipt command differs from command identity',
-        );
-    }
-    return record.commandHash === commandHash
-        ? { outcome: 'replay', receipt: record.receipt }
-        : {
-            outcome: 'idempotency-conflict',
-            existingCommandHash: record.commandHash,
-            receivedCommandHash: commandHash,
-        };
-}
 
 export function validateGroupMutation(input: Readonly<{
     command: GroupMutationCommand;
@@ -916,127 +832,3 @@ function summaryContent(summary: GroupPresenceSummary): Readonly<{
 }
 
 export { compareGroupCausalRevision };
-
-function validateFacts(facts: GroupMutationFacts): void {
-    requireJsonSafe(facts, 'Group mutation facts');
-    assertExactKeys(facts as unknown as Record<string, unknown>, [
-        'nowEpochMs', 'expireAtEpochMs', 'serviceId', 'eventId', 'commandHash', 'resolvedJoinCode',
-        'joinCodeVerifier', 'internalAuthority', 'authenticatedAuthority',
-        'attemptCount',
-    ], 'Group mutation facts');
-    if (!Number.isSafeInteger(facts.nowEpochMs) || facts.nowEpochMs < 0) {
-        throw new TypeError('Group mutation timestamp is invalid');
-    }
-    if (!Number.isSafeInteger(facts.expireAtEpochMs) ||
-        facts.expireAtEpochMs <= facts.nowEpochMs) {
-        throw new TypeError('Group mutation expiry timestamp is invalid');
-    }
-    requirePositiveSafeInteger(facts.attemptCount, 'Group mutation attemptCount');
-    requireNonEmptyString(facts.serviceId, 'Group mutation serviceId');
-    requireNonEmptyString(facts.eventId, 'Group mutation eventId');
-    if (!/^sha256:[0-9a-f]{64}$/.test(facts.commandHash)) {
-        throw new TypeError('Group mutation commandHash is invalid');
-    }
-    if (!['none', 'expiry', 'session-cleanup'].includes(facts.internalAuthority)) {
-        throw new TypeError('Group mutation internal authority is invalid');
-    }
-    if (facts.authenticatedAuthority !== null) {
-        const authority = requireRecord(
-            facts.authenticatedAuthority,
-            'Group mutation authenticated authority',
-        );
-        assertExactKeys(authority, ['principalId', 'sessionId'],
-            'Group mutation authenticated authority');
-        requireNonEmptyString(authority.principalId,
-            'Group mutation authenticated authority principalId');
-        requireNonEmptyString(authority.sessionId,
-            'Group mutation authenticated authority sessionId');
-    }
-    if (facts.joinCodeVerifier !== null) {
-        requireNonEmptyString(facts.joinCodeVerifier,
-            'Group mutation joinCodeVerifier');
-    }
-    if (facts.resolvedJoinCode !== null) {
-        requireNonEmptyString(facts.resolvedJoinCode,
-            'Group mutation resolvedJoinCode');
-    }
-    if ((facts.resolvedJoinCode === null) !== (facts.joinCodeVerifier === null)) {
-        throw new TypeError('Group mutation resolved join code and verifier differ');
-    }
-    if (facts.internalAuthority !== 'none' && facts.authenticatedAuthority !== null) {
-        throw new TypeError('Internal group authority cannot also be authenticated authority');
-    }
-}
-
-function validateTrustedAuthorityMode(
-    command: GroupMutationCommand,
-    facts: GroupMutationFacts,
-): void {
-    validateResolvedJoinCodeFacts(command, facts);
-    const authority = facts.authenticatedAuthority;
-    if (facts.internalAuthority === 'none' && authority === null) {
-        throw new TypeError(
-            'User group mutation requires authenticated authority facts',
-        );
-    }
-    if (facts.internalAuthority !== 'none') {
-        if (authority !== null) {
-            throw new TypeError(
-                'Internal group mutation cannot use authenticated authority facts',
-            );
-        }
-        if (command.operation !== 'disconnectPresence') {
-            throw new TypeError(
-                'Internal group authority is limited to presence maintenance',
-            );
-        }
-        if (command.input.actorPrincipalId !== null ||
-            command.input.actorSessionId !== null) {
-            throw new TypeError(
-                'Internal group maintenance cannot claim semantic actor authority',
-            );
-        }
-        if (facts.internalAuthority === 'expiry' && command.input.reason !== 'expired') {
-            throw new TypeError('Group expiry authority requires an expiry command');
-        }
-        if (facts.internalAuthority === 'session-cleanup' &&
-            command.input.reason !== null) {
-            throw new TypeError('Group session cleanup authority has invalid command facts');
-        }
-        return;
-    }
-    if (!authority) {
-        throw new TypeError('Authenticated group mutation authority is missing');
-    }
-    if (command.input.actorPrincipalId !== authority.principalId ||
-        command.input.actorSessionId !== authority.sessionId) {
-        throw new TypeError('Group mutation actor differs from authenticated authority');
-    }
-}
-
-function validateResolvedJoinCodeFacts(
-    command: GroupMutationCommand,
-    facts: GroupMutationFacts,
-): void {
-    if (command.operation === 'rotateGroupJoinCode') {
-        if (facts.resolvedJoinCode === null || facts.joinCodeVerifier === null) {
-            throw new TypeError('Group rotate mutation is missing its generated join code facts');
-        }
-        if (command.input.joinCode !== null &&
-            facts.resolvedJoinCode !== command.input.joinCode) {
-            throw new TypeError(
-                'Group rotate resolved join code differs from explicit command intent',
-            );
-        }
-        return;
-    }
-    if (command.operation === 'joinGroup' || command.operation === 'acceptGroupInvite') {
-        if (facts.resolvedJoinCode !== command.input.joinCode) {
-            throw new TypeError('Group resolved join code differs from join command intent');
-        }
-        return;
-    }
-    if (facts.resolvedJoinCode !== null || facts.joinCodeVerifier !== null) {
-        throw new TypeError('Unrelated group operation contains resolved join code facts');
-    }
-}
