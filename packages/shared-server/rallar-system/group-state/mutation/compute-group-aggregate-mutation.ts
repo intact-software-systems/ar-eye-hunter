@@ -10,9 +10,11 @@ import type {
   Group,
   GroupEventType,
   GroupMember,
+  GroupMemberStatus,
   GroupPresenceAdmission,
   GroupPresenceSession,
   GroupPresenceSummary,
+  GroupRole,
   GroupSnapshot,
   GroupStatus,
 } from '@shared/api/group-types.ts';
@@ -321,6 +323,18 @@ function assertUpdateAuthority(command: Extract<GroupMutationCommand, { operatio
       allowed: false,
       code: 'forbidden-role',
       message: 'Only active group owners/admins can update groups.',
+    });
+  }
+}
+
+export function assertNotLastOwner(group: Group, existing: GroupMember | undefined, nextStatus: GroupMemberStatus, nextRole: GroupRole): void {
+  if (!existing || existing.role !== 'owner' || existing.status !== 'active') return;
+  if (nextStatus === 'active' && nextRole === 'owner') return;
+  if (group.ownerPrincipalId === existing.principalId) {
+    throw new GroupPolicyDeniedError({
+      allowed: false,
+      code: 'last-owner',
+      message: 'Cannot remove or demote the last active owner.',
     });
   }
 }

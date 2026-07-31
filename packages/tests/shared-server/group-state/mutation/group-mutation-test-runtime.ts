@@ -5,6 +5,9 @@ import type {
   GroupMutationFacts,
   GroupMutationRead,
 } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
+import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
+import { createTestGroupStateService } from '../../group-state-test-runtime.ts';
 
 export const SCOPE: StateScope = {
   applicationId: 'app-1',
@@ -176,4 +179,38 @@ export function deepFreeze<T>(value: T): T {
   Object.freeze(value);
   for (const child of Object.values(value)) deepFreeze(child);
   return value;
+}
+
+export class GroupBarrierRepository extends FakeRuntimeStateRepository {}
+
+export function createService(runtimeRepository: GroupBarrierRepository, nowEpochMs: number) {
+  let id = 0;
+  return createTestGroupStateService({
+    runtimeRepository,
+    now: () => nowEpochMs,
+    randomId: () => `id-${nowEpochMs}-${++id}`,
+    serviceId: 'group-service',
+  });
+}
+
+export async function seedOpenGroup(
+  runtime: GroupBarrierRepository,
+  groupId: string,
+  maxMembers = 10,
+): Promise<void> {
+  await createService(runtime, 1_000).createGroup(SCOPE, {
+    groupId,
+    displayName: groupId,
+    kind: 'room',
+    joinMode: 'open',
+    maxMembers,
+    createdByPrincipalId: 'alice',
+    requestId: `seed-${groupId}`,
+  });
+}
+
+export async function requireSnapshot(runtime: GroupBarrierRepository, groupId: string) {
+  const snapshot = await new GroupStateRepository(runtime).readSnapshot(groupRef(groupId));
+  if (!snapshot) throw new Error(`Missing group snapshot: ${groupId}`);
+  return snapshot;
 }
