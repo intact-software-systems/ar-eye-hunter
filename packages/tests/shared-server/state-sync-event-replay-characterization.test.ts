@@ -7,7 +7,7 @@ import { GroupStateRepository } from '@shared-server/rallar-system/repositories/
 import {
     createLegacyClientStateTestDriver as createClientStateService,
 } from './client-state-phase-test-driver.ts';
-import { createTestGroupStateService as createGroupStateService } from './group-state-test-runtime.ts';
+import { createTestGroupStateService as createGroupStateService } from './group-state/group-state-test-runtime.ts';
 import type { StateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 

@@ -639,16 +639,21 @@ must prove the new dependency graph is acyclic.
 
 ```text
 packages/tests/shared-server/group-state/
+  group-state-service-idempotency-command.test.ts
+  group-state-service-idempotency-concurrency.test.ts
   group-state-service-idempotency.test.ts
   group-state-concurrency-test-fixtures.ts
   group-state-concurrency-test-runtime.ts
   group-state-test-runtime.ts
   inbox/
     group-state-inbox-authority.test.ts
+    group-state-inbox-construction.test.ts
     group-state-inbox-operation-matrix.test.ts
+    group-state-inbox-retry-convergence.test.ts
     group-state-inbox-retry.test.ts
     group-state-inbox-test-runtime.ts
   mutation/
+    group-aggregate-mutation-concurrency.test.ts
     group-mutation-request-validation.test.ts
     group-mutation-command-validation.test.ts
     group-aggregate-mutation.test.ts
@@ -663,10 +668,14 @@ packages/tests/shared-server/group-state/
     write-group-state-mutation-presence.test.ts
     write-group-state-mutation.test.ts
     group-mutation-result.test.ts
+    group-mutation-result-persistence.test.ts
     group-mutation-test-runtime.ts
   persistence/
     group-state-repository-identity.test.ts
     group-state-repository-corruption.test.ts
+    group-state-repository-dispatch.test.ts
+    group-state-repository-read-integrity.test.ts
+    group-state-repository-write-integrity.test.ts
     group-state-authority-fence.test.ts
     group-state-snapshot-assembly.test.ts
     group-state-storage-keys.test.ts
@@ -684,53 +693,76 @@ packages/tests/shared-server/group-state/
   snapshot/
     group-state-snapshot-read-through-cache.test.ts
     group-state-snapshot-presence.test.ts
+    group-state-snapshot-test-fixtures.ts
 ```
 
 Every resulting test module is at most 400 physical lines. Directly owned
-fixtures may move to the named runtimes and fixture owner above. The two root
-helpers own only the retained predecessor's concurrency repository and pure
-mutation constructors; the two presence runtimes own only concurrent presence
-setup and presence lifecycle retry setup respectively. A runtime must serve one
-test responsibility, accept named inputs, and must not become a generic
-dependency bag.
+fixtures may move to the named runtimes and fixture owners above. The two root
+helpers own only the concurrency repository and pure mutation constructors
+shared by the exact responsibility-owned successors; no broad predecessor test
+module remains. The snapshot fixture owns only complete snapshot construction.
+The two presence runtimes own only concurrent presence setup and presence
+lifecycle retry setup respectively. A runtime or fixture must serve one test
+responsibility, accept named inputs, and must not become a generic dependency
+bag. The architecture ratchet locks this exact tree, predecessor absence,
+`<=400`-line test modules, and `<=60`-line materially split construction
+helpers.
 
 ### 5.2 Exact current-to-target test map
 
-| Current test                                                                                            | Target disposition                                                                                                                                                                                            |
-| ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `group-app-inbox-authority.test.ts`                                                                     | Split by existing cases into `inbox/group-state-inbox-authority.test.ts`, `group-state-inbox-operation-matrix.test.ts`, and `group-state-inbox-retry.test.ts`.                                                |
-| `group-state-test-runtime.ts`                                                                           | Split only its directly owned construction into root, inbox, and mutation test runtimes.                                                                                                                      |
-| `group-state-service-idempotency.test.ts`                                                               | Keep its first seven aggregate/service cases in target `group-state-service-idempotency.test.ts`; move its final nine presence lifecycle cases to `presence/group-presence-retry.test.ts`.                    |
-| `group-state-concurrency.test.ts`                                                                       | Move existing aggregate, membership, presence, repository identity/corruption, snapshot, and request/command cases to the exactly named target responsibility files. Presence-summary validation and expiry/retry cases use their refined exact owners from Section 5.1 so every target remains under 400 lines. No case or assertion may be merged away. |
-| seven `group-state-guarded-batch*.ts` files                                                             | matching `mutation/write-group-state-mutation*.ts` files and `group-mutation-test-runtime.ts`.                                                                                                                |
-| `group-state-mutation-read-batch.test.ts`                                                               | `mutation/read-group-mutation.test.ts`.                                                                                                                                                                       |
-| `group-state-mutation-read-retry.test.ts`                                                               | `mutation/read-group-mutation-retry.test.ts`.                                                                                                                                                                 |
-| `group-state-authority-fence.test.ts`                                                                   | `persistence/group-state-authority-fence.test.ts`.                                                                                                                                                            |
-| three `group-presence-summary-*.test.ts` files                                                          | matching `presence/group-presence-summary-*.test.ts`; `work-canonical` becomes `group-presence-summary-work.test.ts`.                                                                                         |
-| `presence-expiry-reconciliation-service.test.ts`                                                        | `presence/reconcile-expired-group-presence.test.ts`.                                                                                                                                                          |
-| `group-receipt-causal-invariants.test.ts`                                                               | `mutation/group-mutation-result.test.ts`.                                                                                                                                                                     |
-| `group-state-snapshot-read-through-cache.test.ts`                                                       | matching `snapshot/group-state-snapshot-read-through-cache.test.ts`; the snapshot-presence cases currently in `group-state-concurrency.test.ts` move to `snapshot/group-state-snapshot-presence.test.ts`.     |
-| `postgres-presence-expiry-concurrency.test.ts` and `postgres-runtime-state-concurrency.test.ts`         | Remain at current paths as PostgreSQL concurrency compatibility gates; this child does not split or rename them.                                                                                              |
-| broad AppInbox, routing, policy, topology, RTC, public-package, API-v1, and PGlite tests in Section 2.2 | Remain at current paths and serve as compatibility/architecture gates; only factual owning-source inventories may change.                                                                                     |
+| Current test                                                                                            | Target disposition                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `group-app-inbox-authority.test.ts`                                                                     | Split by existing cases into `inbox/group-state-inbox-authority.test.ts`, `group-state-inbox-operation-matrix.test.ts`, and `group-state-inbox-retry.test.ts`.                                                                                                                                                                                                                                                                               |
+| `group-state-test-runtime.ts`                                                                           | Move the retained shared construction owner under the mirrored `group-state/` root after splitting its inbox and mutation responsibilities to their existing named runtimes.                                                                                                                                                                                                   |
+| `group-state-service-idempotency.test.ts`                                                               | Keep its first seven aggregate/service cases in target `group-state-service-idempotency.test.ts`; move its final nine presence lifecycle cases to `presence/group-presence-retry.test.ts`.                                                                                                                                                                                                                                                   |
+| `group-state-concurrency.test.ts`                                                                       | Remove after moving every case to the exact aggregate, membership, presence, repository identity/corruption/read-integrity/write-integrity, snapshot, inbox retry/construction, result-persistence, or idempotency owner in Section 5.1. Presence-summary validation and expiry/retry cases use their refined exact owners so every target remains under 400 lines. No case, assertion, or independently written literal may be merged away. |
+| seven `group-state-guarded-batch*.ts` files                                                             | matching `mutation/write-group-state-mutation*.ts` files and `group-mutation-test-runtime.ts`.                                                                                                                                                                                                                                                                                                                                               |
+| `group-state-mutation-read-batch.test.ts`                                                               | `mutation/read-group-mutation.test.ts`.                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `group-state-mutation-read-retry.test.ts`                                                               | `mutation/read-group-mutation-retry.test.ts`.                                                                                                                                                                                                                                                                                                                                                                                                |
+| `group-state-authority-fence.test.ts`                                                                   | `persistence/group-state-authority-fence.test.ts`.                                                                                                                                                                                                                                                                                                                                                                                           |
+| three `group-presence-summary-*.test.ts` files                                                          | matching `presence/group-presence-summary-*.test.ts`; `work-canonical` becomes `group-presence-summary-work.test.ts`.                                                                                                                                                                                                                                                                                                                        |
+| `presence-expiry-reconciliation-service.test.ts`                                                        | `presence/reconcile-expired-group-presence.test.ts`.                                                                                                                                                                                                                                                                                                                                                                                         |
+| `group-receipt-causal-invariants.test.ts`                                                               | `mutation/group-mutation-result.test.ts`.                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `group-state-snapshot-read-through-cache.test.ts`                                                       | matching `snapshot/group-state-snapshot-read-through-cache.test.ts`; the snapshot-presence cases currently in `group-state-concurrency.test.ts` move to `snapshot/group-state-snapshot-presence.test.ts`.                                                                                                                                                                                                                                    |
+| `postgres-presence-expiry-concurrency.test.ts` and `postgres-runtime-state-concurrency.test.ts`         | Remain at current paths as PostgreSQL concurrency compatibility gates; this child does not split or rename them.                                                                                                                                                                                                                                                                                                                             |
+| broad AppInbox, routing, policy, topology, RTC, public-package, API-v1, and PGlite tests in Section 2.2 | Remain at current paths and serve as compatibility/architecture gates; only factual owning-source inventories may change.                                                                                                                                                                                                                                                                                                                    |
 
 ### 5.3 Locked case ownership for the three large predecessors
 
 The 63 `group-state-concurrency.test.ts` cases move by these inclusive named
 case boundaries; execution may refine fixture placement but not case ownership:
 
-| Existing inclusive case range                                                                                                                                              | Target responsibility                                                                                                                            |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `rejects contradictory persisted terminal member audits`                                                                                                                   | `persistence/group-state-repository-corruption.test.ts`                                                                                          |
-| `refuses to construct a user mutation service without an auth repository` through `makes generation identity mandatory and rejects caller-controlled command hashes`       | `inbox/group-state-inbox-authority.test.ts` and `mutation/group-mutation-command-validation.test.ts` respectively.                               |
-| `encodes canonical group storage keys including workspace absence and reserved IDs` through `enforces the exact compact idempotency contract on insert and both read APIs` | the five exact `persistence/` test owners, split by storage-key, repository identity, corruption, authority, or snapshot assembly responsibility |
-| `builds collision-safe maintenance identities from the complete semantic command`                                                                                          | `group-state-service-idempotency.test.ts`                                                                                                        |
-| `re-authorizes group mutation actors from the current retry read` through `does not persist a rejected receipt, event, or outbox effect`                                   | `inbox/group-state-inbox-retry.test.ts` and `mutation/group-mutation-result.test.ts`                                                             |
-| `keeps pure mutation computation synchronous, deterministic, and input preserving` through `binds resolved join-code facts to the command operation and explicit intent`   | `mutation/group-mutation-command-validation.test.ts` and the matching compute owners                                                             |
+| Existing inclusive case range                                                                                                                                              | Target responsibility                                                                                                                                                                                           |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `rejects contradictory persisted terminal member audits`                                                                                                                   | `persistence/group-state-repository-corruption.test.ts`                                                                                                                                                         |
+| `refuses to construct a user mutation service without an auth repository` through `makes generation identity mandatory and rejects caller-controlled command hashes`       | `inbox/group-state-inbox-authority.test.ts` and `mutation/group-mutation-command-validation.test.ts` respectively.                                                                                              |
+| `encodes canonical group storage keys including workspace absence and reserved IDs` through `enforces the exact compact idempotency contract on insert and both read APIs` | the five exact `persistence/` test owners, split by storage-key, repository identity, corruption, authority, or snapshot assembly responsibility                                                                |
+| `builds collision-safe maintenance identities from the complete semantic command`                                                                                          | `group-state-service-idempotency.test.ts`                                                                                                                                                                       |
+| `re-authorizes group mutation actors from the current retry read` through `does not persist a rejected receipt, event, or outbox effect`                                   | `inbox/group-state-inbox-retry.test.ts` and `mutation/group-mutation-result.test.ts`                                                                                                                            |
+| `keeps pure mutation computation synchronous, deterministic, and input preserving` through `binds resolved join-code facts to the command operation and explicit intent`   | `mutation/group-mutation-command-validation.test.ts` and the matching compute owners                                                                                                                            |
 | `rejects a wrong-scope owner member before it can authorize a mutation` through `rebases stale presence-summary reads and validates dominating writes`                     | the exact read, command-validation, computed-validation, result, and presence-summary owners named in the case subject; summary validation refinements use `presence/group-presence-summary-validation.test.ts` |
-| `rebases simultaneous create and last-slot joins through the group guard` through `re-authorizes a queued admin update after a concurrent demotion`                        | `mutation/group-aggregate-mutation.test.ts`, `group-membership-mutation.test.ts`, and `inbox/group-state-inbox-retry.test.ts`                    |
-| `accepts two independent presence sessions without a group aggregate guard` through `commits presence independently while an aggregate CAS write is held`                  | `presence/group-presence-concurrency.test.ts`                                                                                                    |
-| `replays omitted join-code defaults by semantic caller intent` through `rebases socket cleanup observations at different times without idempotency conflict`               | `group-state-service-idempotency.test.ts` and `presence/group-presence-retry.test.ts`, divided by aggregate versus presence operation            |
+| `rebases simultaneous create and last-slot joins through the group guard` through `re-authorizes a queued admin update after a concurrent demotion`                        | `mutation/group-aggregate-mutation.test.ts`, `group-membership-mutation.test.ts`, and `inbox/group-state-inbox-retry.test.ts`                                                                                   |
+| `accepts two independent presence sessions without a group aggregate guard` through `commits presence independently while an aggregate CAS write is held`                  | `presence/group-presence-concurrency.test.ts`                                                                                                                                                                   |
+| `replays omitted join-code defaults by semantic caller intent` through `rebases socket cleanup observations at different times without idempotency conflict`               | `group-state-service-idempotency.test.ts` and `presence/group-presence-retry.test.ts`, divided by aggregate versus presence operation                                                                           |
 | `replays exact duplicate expiry work with one terminal effect` through `exposes single-attempt presence-summary phases for a queue-owned transaction`                      | `presence/group-presence-expiry-retry.test.ts`, the presence concurrency and summary-work owners, `snapshot/group-state-snapshot-presence.test.ts`, and the matching inbox retry owner named by each case       |
+
+The formal-review fix accounts for the predecessor's final 23 test nodes with
+these refined responsibility owners: one authority-construction case in
+`inbox/group-state-inbox-construction.test.ts`; three queue retry/re-authorization
+cases in `inbox/group-state-inbox-retry-convergence.test.ts`; one durable
+no-op/result case in
+`mutation/group-mutation-result-persistence.test.ts`; three persisted-read
+identity/corruption cases in
+`persistence/group-state-repository-read-integrity.test.ts`; four persisted
+read/write binding cases in
+`persistence/group-state-repository-write-integrity.test.ts`; three aggregate
+serialization cases in
+`mutation/group-aggregate-mutation-concurrency.test.ts`; three command-intent
+idempotency cases in `group-state-service-idempotency-command.test.ts`; and five
+first-writer/retry-exhaustion cases in
+`group-state-service-idempotency-concurrency.test.ts`. Exact test-node AST,
+titles, 65 assertion sites, and 583 independently written literals are locked
+to the reviewed `677b22110767d0835f533f07df9f574b931d7bbf` predecessor.
 
 The 17 `group-app-inbox-authority.test.ts` cases move as follows:
 
@@ -1000,6 +1032,14 @@ cache behavior. The work service's own transaction remains its existing queue-
 work boundary; this task does not merge it into AppInbox or change its retry
 model.
 
+The Task 5 formal-review fix is test-structural only: remove the fully accounted
+`group-state-concurrency.test.ts` predecessor, move its final 23 exact test nodes
+to the refined Section 5 owners, move the four Section 5 root test/support files
+under the mirrored `group-state/` root, split the three reviewed construction
+helpers without changing their returned values, and lock the result with the
+exact-tree/source-limit ratchet. It does not change production, contracts,
+compatibility shims, or runtime behavior.
+
 ### Task 6: Separate Topology And RTC RTT AppInbox Decisions
 
 Move only the existing topology and RTC RTT AppInbox command construction,
@@ -1228,6 +1268,12 @@ child `ledger-published` and unlock drafting the API-v1 child.
    and tree `e9da9628a98102bf0d7fa714f92588fb9fde7f28`, authorizing only the
    behavior-neutral root primitive move, duplicate removal, direct imports,
    architecture ratchet, and evidence repair recorded in those sections.
+   The Task 5 formal-review fix starts from head
+   `677b22110767d0835f533f07df9f574b931d7bbf` and tree
+   `5556bade125e4560130c0251318fe3e212e01a6b`; it authorizes only the
+   behavior-neutral final predecessor test move, exact target-tree ratchet,
+   construction-helper splits, direct test import repairs, and Task 5
+   review/evidence amendments recorded in Sections 5 and 9.
 3. **Structure PR:** review and explicitly approve the exact final head/tree
    only after Critical 0, Important 0, all local gates, and Branch Release Gate.
 4. **Structure merge:** human performs/approves merge. Task 8 waits for the exact
@@ -1298,7 +1344,7 @@ topology/RTC algorithm refactor.
 | Browser prerequisite     | `ledger-published` | PR #55, feature `7db208ed977fdcad4a1afef8a5d08c3cfdbb862c`, tree `96f0f763577a18983a9a9f08f87147a9ab154930`, Branch Release Gate `30519129484` attempt 1 success, resulting main `b4fe2a6ae5893f3adae86061bd38cf416bac8aaf`, default workflow `30520679271` attempt 1 success.                                                                                                             |
 | Server inventory         | drafted            | Current services, mutation phases, AppInbox, persistence, presence, snapshot, topology, RTC RTT, exports, consumers, examples, tests, and representative trace inspected at the base SHA.                                                                                                                                                                                                  |
 | Child plan               | `human-approved`   | Approved plan blob `1a74159d37f76a459009e99ca5a08f3cd620b1b4`; the Task 3 persistence amendment authorizes two validator owners at `6695d4d527373791708386527c3e131590775877` / `17ed9ad3351c884a1926cfa6e098aff835febc9c`, and the formal-review fix authorizes the root primitive refinement at `f5c0085b7eaa0c82f0dd659673feaaa33604d3bd` / `e9da9628a98102bf0d7fa714f92588fb9fde7f28`. |
-| Structure implementation | in progress        | Task 2 and Task 3 cohorts 1-7 plus their earlier review fixes are committed; Task 3 formal-review fix round 1 is in progress from the exact authorized head/tree. Task 4 remains pending.                                                                                                                                                                                                  |
+| Structure implementation | in progress        | Task 5 is committed locally at `677b22110767d0835f533f07df9f574b931d7bbf` / tree `5556bade125e4560130c0251318fe3e212e01a6b`; formal-review fix round 1 moves the final 23 predecessor test nodes, locks the refined exact target tree and source limits, and splits the three reviewed construction helpers. Publication and later structure completion gates remain pending.              |
 | Alignment implementation | pending            | Waits for green structure merge/default workflow.                                                                                                                                                                                                                                                                                                                                          |
 | Evidence ledger          | pending            | Waits for both implementation envelopes and separate authorization.                                                                                                                                                                                                                                                                                                                        |
 
@@ -1319,3 +1365,9 @@ The planning pass checked the complete draft for:
 Any remaining Critical or Important finding must be resolved before the plan is
 presented for approval. Publication of this draft records planning evidence
 only and does not change its `human-review` state.
+
+The Task 5 formal-review fix self-review additionally checks the 23/23 test-node
+AST mapping, exact titles, 65 assertion sites, 583 independently written
+literals, `<=400`-line target test modules, `<=60`-line split/new general
+helpers, zero production changes, direct test-import ownership, and unchanged
+compatibility/export/signature evidence before its single local fix commit.

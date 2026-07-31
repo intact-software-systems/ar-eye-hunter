@@ -2,7 +2,7 @@ import { vi } from 'vitest';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import type { StateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
-import { createTestGroupStateService as createGroupStateService } from '../../group-state-test-runtime.ts';
+import { createTestGroupStateService as createGroupStateService } from '../group-state-test-runtime.ts';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
 
 export const SCOPE: StateScope = {

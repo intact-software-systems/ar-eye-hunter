@@ -7,7 +7,7 @@ import {
   createTestGroupStateRuntime,
   type TestAuthenticatedGroupStateService,
   type TestGroupStateMaintenanceService,
-} from '../../../../packages/tests/shared-server/group-state-test-runtime.ts';
+} from '../../../../packages/tests/shared-server/group-state/group-state-test-runtime.ts';
 import type { StateSyncPublisher } from '../../src/services/state-sync-service.ts';
 import type { GroupStateWritten } from '@shared-server/rallar-system/services/group-state-service.ts';
 import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-policy.ts';

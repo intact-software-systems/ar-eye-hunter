@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import type { Group, GroupMember, GroupPresenceAdmission, GroupPresenceSession, GroupPresenceSummary, GroupRef } from '@shared/api/group-types.ts';
+import type {
+  Group,
+  GroupMember,
+  GroupPresenceAdmission,
+  GroupPresenceSession,
+  GroupPresenceSummary,
+  GroupRef,
+} from '@shared/api/group-types.ts';
 import {
   groupStateGroupStorageKey,
   groupStateMemberStorageKey,
@@ -19,7 +26,7 @@ import {
   createMutationRead,
   groupPresenceSummaryStorageKey,
   rekey,
-} from '../../group-state-concurrency-test-fixtures.ts';
+} from '../group-state-concurrency-test-fixtures.ts';
 import { groupRef, presenceFor } from '../mutation/group-mutation-test-runtime.ts';
 
 const REF: GroupRef = {
@@ -27,6 +34,11 @@ const REF: GroupRef = {
   workspaceId: 'summary-workspace',
   groupId: 'summary-group',
 };
+
+interface ExpiryCrossingPresence {
+  readonly admission: GroupPresenceAdmission;
+  readonly session: GroupPresenceSession;
+}
 
 describe('group presence summary evaluation time', () => {
   it('validates an expiry-crossing no-op at the compute observation time', () => {
@@ -54,8 +66,16 @@ describe('group presence summary evaluation time', () => {
   it('rebases stale presence-summary reads and validates dominating writes', () => {
     const storedGroup = createMutationRead().group!;
     const groupValue = { ...storedGroup.value, displayName: 'After' };
-    const group = { ...storedGroup, value: groupValue, entry: { ...storedGroup.entry, value: JSON.stringify(groupValue), revision: 40 } };
-    const noOp = computeGroupMutation({ command: createMutationCommand(), read: { ...createMutationRead(), group }, facts: createMutationFacts() });
+    const group = {
+      ...storedGroup,
+      value: groupValue,
+      entry: { ...storedGroup.entry, value: JSON.stringify(groupValue), revision: 40 },
+    };
+    const noOp = computeGroupMutation({
+      command: createMutationCommand(),
+      read: { ...createMutationRead(), group },
+      facts: createMutationFacts(),
+    });
     expect(noOp).toMatchObject({
       outcome: 'no-op',
       receipt: {
@@ -111,7 +131,14 @@ describe('group presence summary evaluation time', () => {
       activePrincipalCount: 1,
       activeSessionCount: 1,
     };
-    const divergent = { ...read, current: { ...current, entry: { ...current.entry, value: JSON.stringify(divergentValue) }, value: divergentValue } };
+    const divergent = {
+      ...read,
+      current: {
+        ...current,
+        entry: { ...current.entry, value: JSON.stringify(divergentValue) },
+        value: divergentValue,
+      },
+    };
     const write = computeGroupPresenceSummary({
       ref: groupRef('pure-room'),
       read: divergent,
@@ -130,14 +157,28 @@ describe('group presence summary evaluation time', () => {
         computed: write,
       }),
     ).not.toThrow();
-    const aheadValue = { ...divergentValue, causalRevision: { groupRevision: 2, presenceRevision: 1 } };
-    const ahead = { ...read, current: { ...current, entry: { ...current.entry, value: JSON.stringify(aheadValue) }, value: aheadValue } };
+    const aheadValue = {
+      ...divergentValue,
+      causalRevision: { groupRevision: 2, presenceRevision: 1 },
+    };
+    const ahead = {
+      ...read,
+      current: {
+        ...current,
+        entry: { ...current.entry, value: JSON.stringify(aheadValue) },
+        value: aheadValue,
+      },
+    };
     const concurrent = computeGroupPresenceSummary({
       ref: groupRef('pure-room'),
       read: ahead,
       nowEpochMs: 2_000,
     });
-    expect(concurrent).toEqual({ outcome: 'no-op', evaluatedAtEpochMs: 2_000, summary: aheadValue });
+    expect(concurrent).toEqual({
+      outcome: 'no-op',
+      evaluatedAtEpochMs: 2_000,
+      summary: aheadValue,
+    });
     expect(() =>
       validateGroupPresenceSummary({
         ref: groupRef('pure-room'),
@@ -166,7 +207,38 @@ function createExpiryCrossingRead(): GroupPresenceSummaryRead {
     traceId: null,
     requestId: 'summary-test',
   };
-  const group: Group = {
+  const group = createExpiryCrossingGroup(audit);
+  const member = createExpiryCrossingMember(audit);
+  const presence = createExpiryCrossingPresence();
+  const current = createExpiryCrossingSummary();
+
+  return {
+    group: stored(groupStateGroupStorageKey(REF), group),
+    members: [stored(groupStateMemberStorageKey({ ...REF, principalId: 'alice' }), member)],
+    admissions: [
+      stored(
+        groupStatePresenceAdmissionStorageKey({
+          ...REF,
+          principalId: 'alice',
+        }),
+        presence.admission,
+      ),
+    ],
+    presenceSessions: [
+      stored(
+        groupStatePresenceSessionStorageKey({
+          ...REF,
+          sessionId: 'alice-session',
+        }),
+        presence.session,
+      ),
+    ],
+    current: stored(groupStatePresenceSummaryStorageKey(REF), current),
+  };
+}
+
+function createExpiryCrossingGroup(audit: Group['created']): Group {
+  return {
     ...REF,
     slug: null,
     displayName: 'Summary group',
@@ -191,7 +263,10 @@ function createExpiryCrossingRead(): GroupPresenceSummaryRead {
     created: audit,
     updated: audit,
   };
-  const member: GroupMember = {
+}
+
+function createExpiryCrossingMember(audit: GroupMember['joined']): GroupMember {
+  return {
     ...REF,
     principalId: 'alice',
     role: 'owner',
@@ -204,6 +279,9 @@ function createExpiryCrossingRead(): GroupPresenceSummaryRead {
     joined: audit,
     updated: audit,
   };
+}
+
+function createExpiryCrossingPresence(): ExpiryCrossingPresence {
   const admitted = {
     sessionId: 'alice-session',
     generationId: 'alice-generation',
@@ -226,7 +304,12 @@ function createExpiryCrossingRead(): GroupPresenceSummaryRead {
     disconnectedAtEpochMs: null,
     disconnectReason: null,
   };
-  const current: GroupPresenceSummary = {
+
+  return { admission, session };
+}
+
+function createExpiryCrossingSummary(): GroupPresenceSummary {
+  return {
     ...REF,
     causalRevision: { groupRevision: 1, presenceRevision: 1 },
     activePrincipalIds: [],
@@ -235,29 +318,6 @@ function createExpiryCrossingRead(): GroupPresenceSummaryRead {
     activePrincipalCount: 0,
     activeSessionCount: 0,
     computedAtEpochMs: 1_000,
-  };
-  return {
-    group: stored(groupStateGroupStorageKey(REF), group),
-    members: [stored(groupStateMemberStorageKey({ ...REF, principalId: 'alice' }), member)],
-    admissions: [
-      stored(
-        groupStatePresenceAdmissionStorageKey({
-          ...REF,
-          principalId: 'alice',
-        }),
-        admission,
-      ),
-    ],
-    presenceSessions: [
-      stored(
-        groupStatePresenceSessionStorageKey({
-          ...REF,
-          sessionId: 'alice-session',
-        }),
-        session,
-      ),
-    ],
-    current: stored(groupStatePresenceSummaryStorageKey(REF), current),
   };
 }
 

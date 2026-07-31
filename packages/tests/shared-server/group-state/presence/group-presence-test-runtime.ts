@@ -6,8 +6,8 @@ import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-sta
 import type { StateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
 import { requireConditionalWrite } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
-import { createTestGroupStateRuntime, createTestGroupStateService, type TestAuthenticatedGroupStateService } from '../../group-state-test-runtime.ts';
-import { GroupBarrierRepository } from '../../group-state-concurrency-test-runtime.ts';
+import { createTestGroupStateRuntime, createTestGroupStateService, type TestAuthenticatedGroupStateService } from '../group-state-test-runtime.ts';
+import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
 import { SCOPE, groupRef } from '../mutation/group-mutation-test-runtime.ts';
 
 export function createService(

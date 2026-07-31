@@ -14,7 +14,7 @@ import { validateGroupMutationIdempotencyRecord } from '@shared-server/rallar-sy
 import { validateGroupMutation } from '@shared-server/rallar-system/group-state/mutation/validate-group-mutation.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
-import { createTestGroupStateService } from '../../group-state-test-runtime.ts';
+import { createTestGroupStateService } from '../group-state-test-runtime.ts';
 
 import {
   SCOPE,

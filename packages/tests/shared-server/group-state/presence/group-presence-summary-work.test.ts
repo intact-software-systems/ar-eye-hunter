@@ -6,7 +6,7 @@ import { GroupPresenceSummaryWork as CompatibilityGroupPresenceSummaryWork } fro
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-work.ts';
 import { computeGroupPresenceSummaryEntry, type GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
-import { GroupBarrierRepository } from '../../group-state-concurrency-test-runtime.ts';
+import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
 
 type ReservedSummary = Readonly<{
   entry: ResourceEntry;

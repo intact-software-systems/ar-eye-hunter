@@ -5,9 +5,19 @@ import type {
   GroupMutationRead,
 } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import type { TestAuthenticatedGroupStateService } from './group-state-test-runtime.ts';
-import { groupMemberStorageKey, groupRef, groupStorageKey, storagePart, storedEntry } from './group-state/mutation/group-mutation-test-runtime.ts';
+import {
+  groupMemberStorageKey,
+  groupRef,
+  groupStorageKey,
+  storagePart,
+  storedEntry,
+} from './mutation/group-mutation-test-runtime.ts';
 
-export function requireMutationGroupAndActor(read: GroupMutationRead): asserts read is GroupMutationRead &
+export const BASE_EPOCH_MS = Date.now();
+
+export function requireMutationGroupAndActor(
+  read: GroupMutationRead,
+): asserts read is GroupMutationRead &
   Readonly<{
     group: NonNullable<GroupMutationRead['group']>;
     actorMember: GroupMember;
@@ -50,14 +60,18 @@ export function memberFor(principalId: string): GroupMember {
   };
 }
 
-export function requireJoinCodeResult(written: Awaited<ReturnType<TestAuthenticatedGroupStateService['rotateGroupJoinCode']>>) {
+export function requireJoinCodeResult(
+  written: Awaited<ReturnType<TestAuthenticatedGroupStateService['rotateGroupJoinCode']>>,
+) {
   if (!written.result.right) {
     throw new Error(written.result.left ?? 'Expected join-code rotation result');
   }
   return written.result.right;
 }
 
-export function createMutationCommand(overrides: Partial<GroupMutationCommand> = {}): GroupMutationCommand {
+export function createMutationCommand(
+  overrides: Partial<GroupMutationCommand> = {},
+): GroupMutationCommand {
   return {
     operation: 'updateGroup',
     aggregateRef: groupRef('pure-room'),
@@ -85,7 +99,11 @@ export function createMutationCommand(overrides: Partial<GroupMutationCommand> =
   } as GroupMutationCommand;
 }
 
-export function auditStamp(atEpochMs: number, principalId: string, requestId: string | null): AuditStamp {
+export function auditStamp(
+  atEpochMs: number,
+  principalId: string,
+  requestId: string | null,
+): AuditStamp {
   return {
     atEpochMs,
     actor: { kind: 'principal', principalId },
@@ -97,6 +115,33 @@ export function auditStamp(atEpochMs: number, principalId: string, requestId: st
 
 export function createMutationRead(): GroupMutationRead {
   const audit = auditStamp(1_000, 'alice', 'seed');
+  const group = createStoredMutationGroup(audit);
+  const actor = createMutationActor(audit);
+
+  return {
+    idempotency: null,
+    group,
+    expiredGroupEntry: null,
+    actorMember: actor.member,
+    targetMember: null,
+    authorityMember: null,
+    directorMember: null,
+    actorMemberEntry: actor.entry,
+    targetMemberEntry: null,
+    authorityMemberEntry: null,
+    directorMemberEntry: null,
+    targetPresence: null,
+    expiredTargetPresenceEntry: null,
+    targetAdmission: null,
+    authorityAdmission: null,
+    directorAdmission: null,
+    authorityPresenceSessions: [],
+    authorityPresenceSessionEntries: [],
+    presenceSummary: null,
+  } as GroupMutationRead;
+}
+
+function createStoredMutationGroup(audit: AuditStamp) {
   const group = {
     ...groupRef('pure-room'),
     slug: null,
@@ -122,7 +167,12 @@ export function createMutationRead(): GroupMutationRead {
     created: audit,
     updated: audit,
   };
-  const actorMember = {
+
+  return storedEntry(groupStorageKey(), group);
+}
+
+function createMutationActor(audit: AuditStamp) {
+  const member = {
     ...groupRef('pure-room'),
     principalId: 'alice',
     role: 'owner' as const,
@@ -135,27 +185,11 @@ export function createMutationRead(): GroupMutationRead {
     joined: audit,
     updated: audit,
   };
+
   return {
-    idempotency: null,
-    group: storedEntry(groupStorageKey(), group),
-    expiredGroupEntry: null,
-    actorMember,
-    targetMember: null,
-    authorityMember: null,
-    directorMember: null,
-    actorMemberEntry: storedEntry(groupMemberStorageKey('alice'), actorMember),
-    targetMemberEntry: null,
-    authorityMemberEntry: null,
-    directorMemberEntry: null,
-    targetPresence: null,
-    expiredTargetPresenceEntry: null,
-    targetAdmission: null,
-    authorityAdmission: null,
-    directorAdmission: null,
-    authorityPresenceSessions: [],
-    authorityPresenceSessionEntries: [],
-    presenceSummary: null,
-  } as GroupMutationRead;
+    member,
+    entry: storedEntry(groupMemberStorageKey('alice'), member),
+  };
 }
 
 export function createMutationFacts(): GroupMutationFacts {
@@ -176,7 +210,10 @@ export function createMutationFacts(): GroupMutationFacts {
   };
 }
 
-export function admissionFor(principalId: string, admittedSessions: GroupPresenceAdmission['admittedSessions']): GroupPresenceAdmission {
+export function admissionFor(
+  principalId: string,
+  admittedSessions: GroupPresenceAdmission['admittedSessions'],
+): GroupPresenceAdmission {
   return {
     ...groupRef('pure-room'),
     principalId,

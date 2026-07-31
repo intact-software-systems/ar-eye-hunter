@@ -16,7 +16,7 @@ import {
 import {
   createTestGroupStateRuntime,
   createTestGroupStateService,
-} from '../../group-state-test-runtime.ts';
+} from '../group-state-test-runtime.ts';
 
 const SCOPE = {
   applicationId: 'app-1',

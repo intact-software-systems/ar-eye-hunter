@@ -1,6 +1,10 @@
 import { Either } from '@shared/resilience/Either.ts';
 import type { GroupEvent, GroupPresenceSession } from '@shared/api/group-types.ts';
-import { persistAuthSession, type AuthSession, type StoredAuthSession } from './auth-fixture.ts';
+import {
+    persistAuthSession,
+    type AuthSession,
+    type StoredAuthSession,
+} from '../auth-fixture.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import { hashMutationCommand, type JsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/RuntimeStateRepository.ts';

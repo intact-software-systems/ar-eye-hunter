@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { RuntimeStateRetryExhaustedError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
-import { GroupBarrierRepository } from '../../group-state-concurrency-test-runtime.ts';
+import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
 import { createMaintenance, createService, seedOpenGroup } from './group-presence-test-runtime.ts';
 import { SCOPE, groupRef } from '../mutation/group-mutation-test-runtime.ts';
 

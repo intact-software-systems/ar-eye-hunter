@@ -11,7 +11,7 @@ import { GroupStateRepository } from '@shared-server/rallar-system/repositories/
 import { readGroupMutation } from '@shared-server/rallar-system/group-state/mutation/read-group-mutation.ts';
 import type { GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import type { RuntimeStateEntry } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
-import { createTestGroupStateService } from '../../group-state-test-runtime.ts';
+import { createTestGroupStateService } from '../group-state-test-runtime.ts';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
 import { ReadBatchFakeRuntimeStateRepository } from '../../read-batch-fake-runtime-state-repository.ts';
 

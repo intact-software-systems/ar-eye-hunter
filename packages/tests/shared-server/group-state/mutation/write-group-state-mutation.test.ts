@@ -10,7 +10,7 @@ import {
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import type { RuntimeStateGuardedBatch } from '@shared-server/runtime-state/RuntimeStateGuardedBatch.ts';
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
-import { createTestGroupStateService } from '../../group-state-test-runtime.ts';
+import { createTestGroupStateService } from '../group-state-test-runtime.ts';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
 import {
   ApplyingGuardedBatchRepository,

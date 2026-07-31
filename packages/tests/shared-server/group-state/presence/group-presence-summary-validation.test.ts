@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-work.ts';
-import { GroupBarrierRepository } from '../../group-state-concurrency-test-runtime.ts';
+import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
 import { corruptFirstEntry, convergeSummaryForTest, createService } from './group-presence-test-runtime.ts';
 import { SCOPE, groupRef } from '../mutation/group-mutation-test-runtime.ts';
 

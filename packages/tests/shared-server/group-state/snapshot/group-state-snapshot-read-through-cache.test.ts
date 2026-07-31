@@ -1,13 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type {
-  AuditStamp,
-  Group,
-  GroupMember,
   GroupPresenceSummary,
-  GroupPresenceSession,
   GroupRef,
   GroupScope,
   GroupSnapshot,
+  GroupStateCausalRevision,
 } from '@shared/api/group-types.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import type { GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
@@ -16,15 +13,27 @@ import { createCachedGroupStateService as createCompatibilityCachedGroupStateSer
 import { createGroupStateSnapshotReadThroughCache as createCompatibilityGroupStateSnapshotReadThroughCache } from '@shared-server/rallar-system/services/group-state-snapshot-read-through-cache.ts';
 import { createCachedGroupStateService } from '@shared-server/rallar-system/group-state/snapshot/cached-group-state-service.ts';
 import { createGroupStateSnapshotReadThroughCache } from '@shared-server/rallar-system/group-state/snapshot/group-state-snapshot-read-through-cache.ts';
-import type { GroupSnapshotPageOptions, GroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
+import type {
+  GroupSnapshotPageOptions,
+  GroupStateService,
+} from '@shared-server/rallar-system/services/group-state-service.ts';
 import { configureTestCacheRepositories } from '../../../cache-repository-config.ts';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
 import { requireConditionalWrite } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+import { createGroupSnapshot } from './group-state-snapshot-test-fixtures.ts';
+
+interface CacheConvergenceCommandConstruction {
+  readonly groupRef: GroupRef;
+  readonly snapshotVersion: number;
+  readonly acceptedCausalRevision: GroupStateCausalRevision;
+}
 
 describe('GroupStateSnapshotReadThroughCache', () => {
   it('keeps canonical snapshot services behind their stable one-hop public paths', () => {
     expect(createCompatibilityCachedGroupStateService).toBe(createCachedGroupStateService);
-    expect(createCompatibilityGroupStateSnapshotReadThroughCache).toBe(createGroupStateSnapshotReadThroughCache);
+    expect(createCompatibilityGroupStateSnapshotReadThroughCache).toBe(
+      createGroupStateSnapshotReadThroughCache,
+    );
   });
 
   it('hydrates and refreshes by durable state revision', async () => {
@@ -101,7 +110,8 @@ describe('GroupStateSnapshotReadThroughCache', () => {
     const durable = {
       readSnapshot: (groupRef: GroupRef) => repository.readSnapshot(groupRef),
       listSnapshots: (scope: GroupScope) => repository.listSnapshots(scope),
-      listSnapshotsPage: (scope: GroupScope, options: GroupSnapshotPageOptions) => repository.listSnapshotsPage(scope, options),
+      listSnapshotsPage: (scope: GroupScope, options: GroupSnapshotPageOptions) =>
+        repository.listSnapshotsPage(scope, options),
     } as unknown as GroupStateService;
     const service = createCachedGroupStateService({
       durable,
@@ -157,12 +167,18 @@ describe('GroupStateSnapshotReadThroughCache', () => {
     await convergePresenceSummaryForCacheTest(runtime, repository, ref);
     const converged = await cache.refreshByRef(ref);
     expect(converged?.activeSessions).toEqual([]);
-    expect(converged?.causalRevision.presenceRevision).toBeGreaterThan(primed.causalRevision.presenceRevision);
+    expect(converged?.causalRevision.presenceRevision).toBeGreaterThan(
+      primed.causalRevision.presenceRevision,
+    );
     expect(cache.peek(ref)).toEqual(converged);
   });
 });
 
-async function convergePresenceSummaryForCacheTest(runtime: FakeRuntimeStateRepository, repository: GroupStateRepository, ref: GroupRef): Promise<void> {
+async function convergePresenceSummaryForCacheTest(
+  runtime: FakeRuntimeStateRepository,
+  repository: GroupStateRepository,
+  ref: GroupRef,
+): Promise<void> {
   const groupRef: GroupRef = {
     applicationId: ref.applicationId,
     workspaceId: ref.workspaceId,
@@ -175,29 +191,11 @@ async function convergePresenceSummaryForCacheTest(runtime: FakeRuntimeStateRepo
     groupRevision: group.entry.revision + 1,
     presenceRevision: current?.value.causalRevision.presenceRevision ?? 0,
   };
-  const command: GroupPresenceSummaryWorkData = {
-    effectKind: 'group-presence-summary',
-    aggregateRef: groupRef,
-    commandId: 'cache-convergence-delivery',
-    createdAtEpochMs: 2_000,
-    expireAtEpochMs: 253_402_300_799_999,
+  const command = createCacheConvergenceCommand({
+    groupRef,
+    snapshotVersion: group.value.snapshotVersion,
     acceptedCausalRevision,
-    event: {
-      applicationId: groupRef.applicationId,
-      workspaceId: groupRef.workspaceId,
-      groupId: groupRef.groupId,
-      eventId: 'cache-convergence-event',
-      eventType: 'session-disconnected',
-      snapshotVersion: group.value.snapshotVersion,
-      causalRevision: acceptedCausalRevision,
-      occurredAtEpochMs: 2_000,
-      actor: { kind: 'service', serviceId: 'cache-convergence-test' },
-      reason: 'client-disconnect',
-      traceId: null,
-      requestId: 'cache-convergence-delivery',
-      payload: {},
-    },
-  };
+  });
   const work = new GroupPresenceSummaryWork({
     runtimeRepository: runtime,
     now: () => 2_001,
@@ -212,15 +210,53 @@ async function convergePresenceSummaryForCacheTest(runtime: FakeRuntimeStateRepo
     requireConditionalWrite(
       computed.summary.operation === 'insert'
         ? await transactionRepository.insertPresenceSummary(computed.summary.summary)
-        : await transactionRepository.updatePresenceSummary(computed.summary.summary, computed.summary.expectedRevision!),
+        : await transactionRepository.updatePresenceSummary(
+            computed.summary.summary,
+            computed.summary.expectedRevision!,
+          ),
     );
   });
 }
 
-async function putGroupSnapshot(repository: GroupStateRepository, snapshot: GroupSnapshot): Promise<void> {
+function createCacheConvergenceCommand(
+  construction: CacheConvergenceCommandConstruction,
+): GroupPresenceSummaryWorkData {
+  const { groupRef, snapshotVersion, acceptedCausalRevision } = construction;
+
+  return {
+    effectKind: 'group-presence-summary',
+    aggregateRef: groupRef,
+    commandId: 'cache-convergence-delivery',
+    createdAtEpochMs: 2_000,
+    expireAtEpochMs: 253_402_300_799_999,
+    acceptedCausalRevision,
+    event: {
+      applicationId: groupRef.applicationId,
+      workspaceId: groupRef.workspaceId,
+      groupId: groupRef.groupId,
+      eventId: 'cache-convergence-event',
+      eventType: 'session-disconnected',
+      snapshotVersion,
+      causalRevision: acceptedCausalRevision,
+      occurredAtEpochMs: 2_000,
+      actor: { kind: 'service', serviceId: 'cache-convergence-test' },
+      reason: 'client-disconnect',
+      traceId: null,
+      requestId: 'cache-convergence-delivery',
+      payload: {},
+    },
+  };
+}
+
+async function putGroupSnapshot(
+  repository: GroupStateRepository,
+  snapshot: GroupSnapshot,
+): Promise<void> {
   await repository.putGroup(snapshot.group);
   await Promise.all(snapshot.members.map((member) => repository.putMember(member)));
-  await Promise.all(snapshot.activeSessions.map((session) => repository.putPresenceSession(session)));
+  await Promise.all(
+    snapshot.activeSessions.map((session) => repository.putPresenceSession(session)),
+  );
   const group = await repository.findGroupEntry(snapshot.group);
   if (!group) throw new Error('Expected persisted group');
   const current = await repository.findPresenceSummaryEntry(snapshot.group);
@@ -245,104 +281,4 @@ async function putGroupSnapshot(repository: GroupStateRepository, snapshot: Grou
   } else {
     await repository.insertPresenceSummary(summary);
   }
-}
-
-function createGroupSnapshot(snapshotVersion: number, sessionIds: readonly string[]): GroupSnapshot {
-  const members: GroupMember[] = [
-    {
-      applicationId: 'app-1',
-      workspaceId: 'workspace-1',
-      groupId: 'group-1',
-      principalId: 'alice',
-      role: 'owner',
-      status: 'active',
-      invitedByPrincipalId: null,
-      invitationExpiresAtEpochMs: null,
-      left: null,
-      removed: null,
-      banned: null,
-      joined: audit(1),
-      updated: audit(snapshotVersion),
-    },
-    ...sessionIds.map((sessionId) => ({
-      applicationId: 'app-1',
-      workspaceId: 'workspace-1',
-      groupId: 'group-1',
-      principalId: `principal-${sessionId}`,
-      role: 'member' as const,
-      status: 'active' as const,
-      invitedByPrincipalId: null,
-      invitationExpiresAtEpochMs: null,
-      left: null,
-      removed: null,
-      banned: null,
-      joined: audit(1),
-      updated: audit(snapshotVersion),
-    })),
-  ];
-  const group: Group = {
-    applicationId: 'app-1',
-    workspaceId: 'workspace-1',
-    groupId: 'group-1',
-    slug: null,
-    displayName: 'Group 1',
-    description: null,
-    kind: 'room',
-    status: 'active',
-    archived: null,
-    deleted: null,
-    joinMode: 'open',
-    maxMembers: null,
-    maxSessionsPerMember: null,
-    metadata: {},
-    activeMemberCount: members.length,
-    ownerPrincipalId: 'alice',
-    snapshotVersion,
-    metadataVersion: 1,
-    rosterVersion: 1,
-    presenceVersion: snapshotVersion,
-    expiresAtEpochMs: null,
-    emptySinceEpochMs: null,
-    purgeAfterEpochMs: null,
-    created: audit(1),
-    updated: audit(snapshotVersion),
-  };
-  const activeSessions: GroupPresenceSession[] = sessionIds.map((sessionId) => ({
-    applicationId: group.applicationId,
-    workspaceId: group.workspaceId,
-    groupId: group.groupId,
-    sessionId,
-    principalId: `principal-${sessionId}`,
-    generationId: `generation-${sessionId}`,
-    generationVersion: 1,
-    connectedAtEpochMs: 1,
-    lastHeartbeatAtEpochMs: snapshotVersion,
-    expiresAtEpochMs: 4_000_000_000_000,
-    status: 'active',
-    disconnectedAtEpochMs: null,
-    disconnectReason: null,
-  }));
-
-  return {
-    stateRevision: snapshotVersion + sessionIds.length,
-    causalRevision: {
-      groupRevision: snapshotVersion,
-      presenceRevision: sessionIds.length,
-    },
-    group,
-    members,
-    activeSessions,
-    memberCount: members.length,
-    onlineMemberCount: sessionIds.length,
-  };
-}
-
-function audit(atEpochMs: number): AuditStamp {
-  return {
-    atEpochMs,
-    actor: { kind: 'service', serviceId: 'test' },
-    reason: null,
-    traceId: null,
-    requestId: null,
-  };
 }

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-work.ts';
-import { GroupBarrierRepository } from '../../group-state-concurrency-test-runtime.ts';
+import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
 import { convergeSummaryForTest, createService, requireSnapshot, seedOpenGroup } from './group-presence-test-runtime.ts';
 import { SCOPE, groupRef } from '../mutation/group-mutation-test-runtime.ts';
 

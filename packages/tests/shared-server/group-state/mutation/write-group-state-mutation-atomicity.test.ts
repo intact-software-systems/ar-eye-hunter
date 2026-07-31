@@ -15,7 +15,7 @@ import {
   ApplyingGuardedBatchRepository,
   OrderedGroupEventStore,
 } from './group-mutation-test-runtime.ts';
-import { createTestGroupStateService } from '../../group-state-test-runtime.ts';
+import { createTestGroupStateService } from '../group-state-test-runtime.ts';
 
 class CollidingGroupEventStore extends InMemoryGroupStateEventStore {
   constructor(private readonly runtime: ApplyingGuardedBatchRepository) {

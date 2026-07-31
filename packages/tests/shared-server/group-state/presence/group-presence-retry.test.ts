@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { groupStateMaintenanceRequestId } from '@shared-server/rallar-system/group-state/group-presence-mutation-command.ts';
-import { createTestGroupStateRuntime, createTestGroupStateService as createGroupStateService } from '../../group-state-test-runtime.ts';
+import { createTestGroupStateRuntime, createTestGroupStateService as createGroupStateService } from '../group-state-test-runtime.ts';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
 import { SCOPE, createPublisher, seedGroup, seedPresenceSession, toGroupRef } from './group-presence-retry-test-runtime.ts';
 

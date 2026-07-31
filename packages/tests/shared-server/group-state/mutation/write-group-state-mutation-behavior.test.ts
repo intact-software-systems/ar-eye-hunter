@@ -6,7 +6,7 @@ import { mutationDescriptor } from '@shared-server/rallar-system/services/group-
 import {
   createTestAuthSession,
   createTestGroupStateRuntime,
-} from '../../group-state-test-runtime.ts';
+} from '../group-state-test-runtime.ts';
 import {
   ApplyingGuardedBatchRepository,
   OrderedGroupEventStore,

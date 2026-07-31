@@ -20,7 +20,7 @@ import {
   createGroupStateRepository,
 } from "@shared-server/postgres/rallar-system/createStateRepositories.ts";
 import { PSqlRuntimeStateRepository } from "@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts";
-import { createTestGroupStateRuntime } from "./group-state-test-runtime.ts";
+import { createTestGroupStateRuntime } from "./group-state/group-state-test-runtime.ts";
 import type { StateSyncPublisher } from "@shared-server/rallar-system/state-sync-publisher.ts";
 import { groupStateMaintenanceRequestId } from "@shared-server/rallar-system/services/group-state-service.ts";
 import type { GroupMutationReceipt } from "@shared-server/rallar-system/services/group-state-mutations.ts";

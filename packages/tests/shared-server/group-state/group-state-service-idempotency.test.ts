@@ -9,13 +9,13 @@ import {
 } from "./group-state-test-runtime.ts";
 import type { RallarTimingEvent } from "@shared-server/rallar-system/services/timing.ts";
 import type { StateSyncPublisher } from "@shared-server/rallar-system/state-sync-publisher.ts";
-import { FakeRuntimeStateRepository } from "./fake-runtime-state-repository.ts";
+import { FakeRuntimeStateRepository } from "../fake-runtime-state-repository.ts";
 import {
   SCOPE,
   createPublisher,
   seedGroup,
   toGroupRef,
-} from "./group-state/presence/group-presence-retry-test-runtime.ts";
+} from "./presence/group-presence-retry-test-runtime.ts";
 
 describe("GroupStateService command idempotency", () => {
   it("records timing for group state service methods when a timing sink is supplied", async () => {

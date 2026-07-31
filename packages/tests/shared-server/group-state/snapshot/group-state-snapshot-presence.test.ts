@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import type { AuditStamp, Group, GroupPresenceSession } from '@shared/api/group-types.ts';
 import { toGroupSnapshotStateRevision } from '@shared/api/group-client-views.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
-import { GroupBarrierRepository } from '../../group-state-concurrency-test-runtime.ts';
-import { auditStamp } from '../../group-state-concurrency-test-fixtures.ts';
+import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
+import { auditStamp } from '../group-state-concurrency-test-fixtures.ts';
 import { seedOpenGroup } from '../presence/group-presence-test-runtime.ts';
 import { SCOPE, groupRef } from '../mutation/group-mutation-test-runtime.ts';
 
