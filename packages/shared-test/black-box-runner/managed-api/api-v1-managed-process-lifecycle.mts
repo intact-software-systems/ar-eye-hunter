@@ -14,7 +14,7 @@ type ManagedApiChild = Readonly<{
   stdout: ReadableStream<Uint8Array> | null;
   stderr: ReadableStream<Uint8Array> | null;
   status: Promise<Readonly<{ success: boolean; code: number; signal: string | null }>>;
-  kill(signal: string): void;
+  kill(signo?: number | Deno.Signal): void;
 }>;
 
 type ManagedApiFile = Readonly<{

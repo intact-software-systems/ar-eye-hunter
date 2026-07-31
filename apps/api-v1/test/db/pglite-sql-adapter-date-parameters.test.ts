@@ -1,16 +1,23 @@
 import assert from 'node:assert/strict';
+import { fileURLToPath } from 'node:url';
+
 Deno.test('PGlite SQL preserves UTC timestamp parity in an explicitly non-UTC subprocess', async () => {
+  const apiV1Root = fileURLToPath(new URL('../../', import.meta.url));
+  const apiV1Config = fileURLToPath(new URL('../../deno.json', import.meta.url));
+  const childScript = fileURLToPath(
+    new URL('./pglite-sql-adapter-timezone-child.ts', import.meta.url),
+  );
   const output = await new Deno.Command(Deno.execPath(), {
     args: [
       'run',
       '--config',
-      'apps/api-v1/deno.json',
+      apiV1Config,
       '--allow-env',
       '--allow-read',
       '--allow-write',
-      'apps/api-v1/test/db/pglite-sql-adapter-timezone-child.ts',
+      childScript,
     ],
-    cwd: Deno.cwd(),
+    cwd: apiV1Root,
     env: { ...Deno.env.toObject(), TZ: 'America/New_York' },
     stdout: 'piped',
     stderr: 'piped',
