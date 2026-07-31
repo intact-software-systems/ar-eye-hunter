@@ -8,6 +8,7 @@ import {
 import {
     toTopologyAppInboxCommand,
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
+import { readAuthenticatedTopologyCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
 import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import {
     serializeCanonicalJsonWire,
@@ -136,6 +137,37 @@ describe('topology AppInbox durable command contract', () => {
         });
 
         expect(clear.commandHash).not.toBe(set.commandHash);
+    });
+
+    it('validates and hashes an observable payload exactly once per required phase', async () => {
+        const command = await topologyCommand(1_000);
+        const observations = { ownKeys: 0, operationReads: 0, configReads: 0 };
+        const payload = new Proxy(command.payload, {
+            ownKeys(target) {
+                observations.ownKeys += 1;
+                return Reflect.ownKeys(target);
+            },
+            get(target, property, receiver) {
+                if (property === 'operation') observations.operationReads += 1;
+                if (property === 'config') observations.configReads += 1;
+                return Reflect.get(target, property, receiver);
+            },
+        });
+        const observableCommand = { ...command, payload };
+
+        const result = await readAuthenticatedTopologyCommand({
+            type: AppInboxType.TOPOLOGY_CONFIG_PUT,
+            resourceId: command.requestId,
+            data: observableCommand,
+        }, {
+            clientId: command.actor.principalId,
+            sessionId: command.actor.sessionId,
+        } as never);
+
+        expect(result).toBe(observableCommand);
+        expect(observations).toEqual({ ownKeys: 3, operationReads: 4, configReads: 2 });
+        expect(result.payload).toEqual(command.payload);
+        expect(result.commandHash).toBe(command.commandHash);
     });
 });
 

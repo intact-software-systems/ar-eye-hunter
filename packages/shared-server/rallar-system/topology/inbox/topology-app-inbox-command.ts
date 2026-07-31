@@ -69,7 +69,6 @@ export async function readAuthenticatedTopologyCommand<V>(
     typeof command.groupRef !== 'object' ||
     typeof command.operation !== 'string' ||
     !isTopologyAppInboxPayload(command.payload) ||
-    !isTopologyAppInboxPayload(command.payload) ||
     command.payload.operation !== command.operation ||
     command.actor.principalId !== authority.clientId ||
     command.actor.sessionId !== authority.sessionId ||

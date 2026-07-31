@@ -45,7 +45,7 @@ export function findMutationRouteReachabilityIssues(
       dispatchSource,
       item.dispatchSourcePath,
       item.type,
-      ownerMethod(item),
+      item.ownerDispatchPath,
       matchesMarker,
       loadProgram,
     )
@@ -178,7 +178,7 @@ function hasOwnerDispatch(
   program: AstNode,
   filePath: string,
   type: AppInboxType,
-  method: string,
+  dispatchPath: string,
   matchesMarker: (node: AstNode, marker: string) => boolean,
   loadProgram: MutationRoutingProgramLoader,
 ): boolean {
@@ -199,7 +199,10 @@ function hasOwnerDispatch(
     const roots =
       handler.type === 'Identifier' ? findFunctionLikes(program, readName(handler)) : [handler];
     return roots.some((root) =>
-      hasReachableAstNode(program, root, (node) => readCallName(asNode(node.callee)) === method),
+      hasReachableAstNode(program, root, (node) => {
+        const path = readMemberPath(asNode(node.callee));
+        return path === dispatchPath || path.endsWith(`.${dispatchPath}`);
+      }),
     );
   });
 }
@@ -301,7 +304,8 @@ function visit(value: unknown, visitor: (node: AstNode) => void): void {
   }
 }
 
-function readMemberPath(node: AstNode): string {
+function readMemberPath(node: AstNode | undefined): string {
+  if (!node) return '';
   if (node.type === 'Identifier') return readName(node);
   if (node.type !== 'MemberExpression' && node.type !== 'OptionalMemberExpression') return '';
   const object = asNode(node.object);
@@ -334,10 +338,6 @@ function isFunction(node: AstNode): boolean {
     'ClassMethod',
     'ClassPrivateMethod',
   ].includes(node.type);
-}
-
-function ownerMethod(item: MutationRouteInventoryEntry): string {
-  return item.owner.split('.').at(-1) ?? '';
 }
 
 function asNode(value: unknown): AstNode | undefined {

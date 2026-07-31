@@ -15,6 +15,21 @@ export const MUTATION_ROUTE_OWNER_PATHS = {
   D: 'packages/shared-server/rallar-system/services/AppCrdtInboxService.ts',
   N: 'packages/shared-server/rallar-system/services/AppAdminInboxService.ts',
 } as const;
+
+export const MUTATION_ROUTE_OWNER_DISPATCH_PATHS = {
+  'AppAdminInboxService.processCommand': 'processCommand',
+  'AppAuthInboxService.processCommand': 'processCommand',
+  'AppClientInboxService.processAuthorisedWsConnect': 'processAuthorisedWsConnect',
+  'AppClientInboxService.processAuthorisedWsDisconnect': 'processAuthorisedWsDisconnect',
+  'AppClientInboxService.processCommand': 'processCommand',
+  'AppClientInboxService.processExpiredSessionCommands': 'processExpiredSessionCommands',
+  'AppCrdtInboxService.processCommand': 'processCommand',
+  'GroupStateInboxHandler.processMutation': 'groupStateInboxHandler.processMutation',
+  'RtcRttAppInboxHandler.processMutation': 'rtcRttAppInboxHandler.processMutation',
+  'TopologyAppInboxHandler.processMutation': 'topologyAppInboxHandler.processMutation',
+  processGroupSessionCleanup: 'processGroupSessionCleanup',
+} as const;
+
 export const MUTATION_ROUTE_INVENTORY_ROWS = `
 HTTP\tPUT ${CLIENT_ROUTE}/:principalId/principal\tCLIENT_PRINCIPAL_UPSERT\tc\t/clients/:principalId/principal\tc\tprocessClientAppInbox\tC\tAppClientInboxService.processCommand
 HTTP\tPUT ${CLIENT_ROUTE}/:principalId/instances/:clientInstanceId\tCLIENT_INSTANCE_UPSERT\tc\t/instances/:clientInstanceId\tc\tprocessClientAppInbox\tC\tAppClientInboxService.processCommand

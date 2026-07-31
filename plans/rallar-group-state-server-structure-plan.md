@@ -1066,6 +1066,15 @@ both materially changed modules remain within 400 lines. The retained facade
 continues to own the exact `TOPOLOGY_CONFIG_INBOX_TYPES` registration family in
 unchanged order.
 
+The Task 6 formal-review fix removes one repeated payload-validation call while
+locking the exact accepted values, errors, normalization, command output, and
+single validation/hash observation phases with an observable proxy fixture.
+The routing inventory now records an exact `ownerDispatchPath` for every owner;
+the reachability check must match the named group, topology, or RTC receiver,
+not only the shared terminal `processMutation` method. Cross-routing fixtures
+cover topology-to-group, RTC-to-group/topology, and group-to-topology/RTC while
+the existing 13 route-closure families retain their source-mutation purpose.
+
 ### Task 7: Freeze, Review, And Publish The Structure PR
 
 - Perform an independent whole-structure review for Critical/Important findings,
@@ -1290,6 +1299,12 @@ child `ledger-published` and unlock drafting the API-v1 child.
    behavior-neutral final predecessor test move, exact target-tree ratchet,
    construction-helper splits, direct test import repairs, and Task 5
    review/evidence amendments recorded in Sections 5 and 9.
+   The Task 6 formal-review fix starts from head
+   `759706c233940eab5207a274c5819e5767d7fa63` and tree
+   `788a77e3f45f6702166d34ef3acc941ff95bcff7`; it authorizes only the repeated
+   payload-validation removal, observable equivalence fixture, exact named
+   dispatch-path inventory, cross-routing fixtures, and evidence repair
+   recorded in Sections 5 and 9.
 3. **Structure PR:** review and explicitly approve the exact final head/tree
    only after Critical 0, Important 0, all local gates, and Branch Release Gate.
 4. **Structure merge:** human performs/approves merge. Task 8 waits for the exact
@@ -1355,14 +1370,14 @@ topology/RTC algorithm refactor.
 
 ## 15. Progress Record
 
-| Milestone                | Status             | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| ------------------------ | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Browser prerequisite     | `ledger-published` | PR #55, feature `7db208ed977fdcad4a1afef8a5d08c3cfdbb862c`, tree `96f0f763577a18983a9a9f08f87147a9ab154930`, Branch Release Gate `30519129484` attempt 1 success, resulting main `b4fe2a6ae5893f3adae86061bd38cf416bac8aaf`, default workflow `30520679271` attempt 1 success.                                                                                                                                               |
-| Server inventory         | drafted            | Current services, mutation phases, AppInbox, persistence, presence, snapshot, topology, RTC RTT, exports, consumers, examples, tests, and representative trace inspected at the base SHA.                                                                                                                                                                                                                                    |
-| Child plan               | `human-approved`   | Approved plan blob `1a74159d37f76a459009e99ca5a08f3cd620b1b4`; the Task 3 persistence amendment authorizes two validator owners at `6695d4d527373791708386527c3e131590775877` / `17ed9ad3351c884a1926cfa6e098aff835febc9c`, and the formal-review fix authorizes the root primitive refinement at `f5c0085b7eaa0c82f0dd659673feaaa33604d3bd` / `e9da9628a98102bf0d7fa714f92588fb9fde7f28`.                                   |
-| Structure implementation | in progress        | Tasks 0–5 are complete through published feature head `417137afe79af7b03c67813e61e0956104889172` / tree `67f2dd00b6664fade587b7347351a23dd3c1de42`. Task 6 has moved topology and RTC RTT command, authority, and per-attempt orchestration into the exact approved owners; focused validation and independent review are pending before its local milestone commit. Task 7 publication and completion gates remain pending. |
-| Alignment implementation | pending            | Waits for green structure merge/default workflow.                                                                                                                                                                                                                                                                                                                                                                            |
-| Evidence ledger          | pending            | Waits for both implementation envelopes and separate authorization.                                                                                                                                                                                                                                                                                                                                                          |
+| Milestone                | Status             | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ------------------------ | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Browser prerequisite     | `ledger-published` | PR #55, feature `7db208ed977fdcad4a1afef8a5d08c3cfdbb862c`, tree `96f0f763577a18983a9a9f08f87147a9ab154930`, Branch Release Gate `30519129484` attempt 1 success, resulting main `b4fe2a6ae5893f3adae86061bd38cf416bac8aaf`, default workflow `30520679271` attempt 1 success.                                                                                                                                                                              |
+| Server inventory         | drafted            | Current services, mutation phases, AppInbox, persistence, presence, snapshot, topology, RTC RTT, exports, consumers, examples, tests, and representative trace inspected at the base SHA.                                                                                                                                                                                                                                                                   |
+| Child plan               | `human-approved`   | Approved plan blob `1a74159d37f76a459009e99ca5a08f3cd620b1b4`; the Task 3 persistence amendment authorizes two validator owners at `6695d4d527373791708386527c3e131590775877` / `17ed9ad3351c884a1926cfa6e098aff835febc9c`, and the formal-review fix authorizes the root primitive refinement at `f5c0085b7eaa0c82f0dd659673feaaa33604d3bd` / `e9da9628a98102bf0d7fa714f92588fb9fde7f28`.                                                                  |
+| Structure implementation | in progress        | Tasks 0–5 are complete through published feature head `417137afe79af7b03c67813e61e0956104889172` / tree `67f2dd00b6664fade587b7347351a23dd3c1de42`. Task 6 milestone `759706c233940eab5207a274c5819e5767d7fa63` / `788a77e3f45f6702166d34ef3acc941ff95bcff7` moved the exact approved owners; formal-review fix round 1 removes repeated payload validation and requires exact named dispatch paths. Re-review, final fix gates, and Task 7 remain pending. |
+| Alignment implementation | pending            | Waits for green structure merge/default workflow.                                                                                                                                                                                                                                                                                                                                                                                                           |
+| Evidence ledger          | pending            | Waits for both implementation envelopes and separate authorization.                                                                                                                                                                                                                                                                                                                                                                                         |
 
 ## 16. Draft Self-Review Record
 
@@ -1395,3 +1410,7 @@ AppInbox transaction/retry ownership, exact read/compute/validate/write and
 wake order, runtime-cycle absence, and the 400/60-line hard tiers. Future Task 6
 commit, publication, merge, default-workflow, and later-ledger facts remain
 outside this in-progress plan tree until they exist.
+
+The Task 6 fix re-review additionally checks the observable payload access
+trace, all five cross-routing negatives, correct-route positives, and all 13
+source-mutation route-closure families before accepting the local fix commit.

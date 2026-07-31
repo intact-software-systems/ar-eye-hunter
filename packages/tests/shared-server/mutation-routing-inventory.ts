@@ -10,6 +10,7 @@ import {
 import { findMutationRouteReachabilityIssues } from './mutation-routing-reachability.ts';
 import {
   MUTATION_ROUTE_INVENTORY_ROWS,
+  MUTATION_ROUTE_OWNER_DISPATCH_PATHS,
   MUTATION_ROUTE_OWNER_PATHS,
 } from './mutation-routing-owner-inventory.ts';
 
@@ -23,6 +24,7 @@ export interface MutationRouteInventoryEntry {
   readonly enqueueSourcePath: string;
   readonly enqueueMarker: string;
   readonly ownerSourcePath: string;
+  readonly ownerDispatchPath: string;
   readonly typeOwnerSourcePath: string;
   readonly dispatchSourcePath: string;
 }
@@ -81,6 +83,7 @@ export function validateMutationRouteInventory(
       'enqueueSourcePath',
       'enqueueMarker',
       'ownerSourcePath',
+      'ownerDispatchPath',
       'typeOwnerSourcePath',
       'dispatchSourcePath',
     ] as const) {
@@ -124,6 +127,10 @@ function decodeInventory(rows: string): readonly MutationRouteInventoryEntry[] {
       const enqueueSourcePath = PATHS[enqueueSource as keyof typeof PATHS];
       const ownerSourcePath =
         MUTATION_ROUTE_OWNER_PATHS[ownerSource as keyof typeof MUTATION_ROUTE_OWNER_PATHS];
+      const ownerDispatchPath =
+        MUTATION_ROUTE_OWNER_DISPATCH_PATHS[
+          owner as keyof typeof MUTATION_ROUTE_OWNER_DISPATCH_PATHS
+        ];
       const typeOwnerSourcePath = typeOwnerSource
         ? MUTATION_ROUTE_OWNER_PATHS[typeOwnerSource as keyof typeof MUTATION_ROUTE_OWNER_PATHS]
         : ownerSourcePath;
@@ -135,6 +142,7 @@ function decodeInventory(rows: string): readonly MutationRouteInventoryEntry[] {
         !sourcePath ||
         !enqueueSourcePath ||
         !ownerSourcePath ||
+        !ownerDispatchPath ||
         !typeOwnerSourcePath ||
         !dispatchSourcePath ||
         !appInboxType
@@ -151,6 +159,7 @@ function decodeInventory(rows: string): readonly MutationRouteInventoryEntry[] {
         enqueueSourcePath,
         enqueueMarker,
         ownerSourcePath,
+        ownerDispatchPath,
         typeOwnerSourcePath,
         dispatchSourcePath,
       };
