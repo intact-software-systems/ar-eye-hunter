@@ -6,12 +6,12 @@ import { computeGroupMutation, validateGroupMutation } from '../services/group-s
 import { validateGroupMutationCommand } from './mutation/group-mutation-command-validation.ts';
 import { GroupStateRepository } from '../repositories/GroupStateRepository.ts';
 import { readGroupMutation } from './mutation/read-group-mutation.ts';
-import { writeGroupMutation } from '../services/group-state-guarded-batch.ts';
+import { writeGroupMutation } from './mutation/write-group-state-mutation.ts';
 import { createWsSessionGenerationLifecycleService } from '../services/ws-session-generation-lifecycle.ts';
 import { readGroupSessionCleanupCandidates } from '../services/group-session-cleanup.ts';
 import { type RallarTimingSink, timeRallarAsync } from '../services/timing.ts';
 import { hashMutationCommand, type JsonWireValue } from '../services/mutation-command-identity.ts';
-import { sha256CanonicalJson } from '../services/group-state-crypto.ts';
+import { sha256CanonicalJson } from './mutation/group-state-crypto.ts';
 import {
   prepareGroupMutation,
   type GroupMutationAuthorityDependencies,

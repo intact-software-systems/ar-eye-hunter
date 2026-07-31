@@ -16,7 +16,7 @@ const sources = {
         `${groupStateRoot}/inbox/group-state-inbox-handler.ts`,
     ),
     client: read(`${serviceRoot}/client-state-service.ts`),
-    group: read(`${serviceRoot}/group-state-guarded-batch.ts`),
+    group: read(`${groupStateRoot}/mutation/write-group-state-mutation.ts`),
     topologyConfig: read(`${serviceRoot}/group-topology-management-service.ts`),
     topologyWorker: read(`${serviceRoot}/RtcTopologyOutboxWork.ts`),
     topologyRepository: read(

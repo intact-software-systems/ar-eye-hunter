@@ -12,11 +12,11 @@ import { toSessionPurgeAfterEpochMs } from '@shared-server/rallar-system/reposit
 import {
   ApplyingGuardedBatchRepository,
   OrderedGroupEventStore,
-} from './group-state-guarded-batch-test-runtime.ts';
+} from './group-mutation-test-runtime.ts';
 import {
   createTestGroupStateRuntime,
   createTestGroupStateService,
-} from './group-state-test-runtime.ts';
+} from '../../group-state-test-runtime.ts';
 
 const SCOPE = {
   applicationId: 'app-1',
@@ -157,9 +157,7 @@ describe('GroupStateService guarded presence batch', () => {
             presence.value.disconnectedAtEpochMs,
           ),
         },
-        effects: [
-          exactReceiptEffect(ref, 'presence-update-heartbeat', heartbeatIdempotency),
-        ],
+        effects: [exactReceiptEffect(ref, 'presence-update-heartbeat', heartbeatIdempotency)],
       },
     ]);
     expect(runtime.transactionOrder).toEqual(['batch', 'event', 'commit']);

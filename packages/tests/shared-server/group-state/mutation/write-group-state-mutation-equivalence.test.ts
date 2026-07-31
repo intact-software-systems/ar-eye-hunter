@@ -5,9 +5,9 @@ import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-
 import {
   ApplyingGuardedBatchRepository,
   OrderedGroupEventStore,
-} from './group-state-guarded-batch-test-runtime.ts';
-import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
-import { createTestGroupStateService } from './group-state-test-runtime.ts';
+} from './group-mutation-test-runtime.ts';
+import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
+import { createTestGroupStateService } from '../../group-state-test-runtime.ts';
 
 const SCOPE = {
   applicationId: 'app-1',

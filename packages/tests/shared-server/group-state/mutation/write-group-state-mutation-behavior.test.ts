@@ -1,16 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state-storage-keys.ts';
-import { materializeGroupStateGuardedBatch } from '@shared-server/rallar-system/services/group-state-guarded-batch.ts';
+import { materializeGroupStateGuardedBatch } from '@shared-server/rallar-system/group-state/mutation/write-group-state-mutation.ts';
 import { mutationDescriptor } from '@shared-server/rallar-system/services/group-state-service.ts';
 import {
   createTestAuthSession,
   createTestGroupStateRuntime,
-} from './group-state-test-runtime.ts';
+} from '../../group-state-test-runtime.ts';
 import {
   ApplyingGuardedBatchRepository,
   OrderedGroupEventStore,
-} from './group-state-guarded-batch-test-runtime.ts';
+} from './group-mutation-test-runtime.ts';
 
 const SCOPE = {
   applicationId: 'app-1',

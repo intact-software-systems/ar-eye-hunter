@@ -1,5 +1,6 @@
 import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 import type {
+    AuditStamp,
     Group,
     GroupMember,
     GroupPresenceAdmission,
@@ -56,10 +57,6 @@ import {
 } from './group-state-test-runtime.ts';
 import {
     SCOPE,
-    auditStamp,
-    createMutationCommand,
-    createMutationFacts,
-    createMutationRead,
     groupMemberStorageKey,
     groupRef,
     groupSessionStorageKey,
@@ -1957,114 +1954,6 @@ describe('convergent group and presence state', () => {
         })).toThrow(/multiple principals|different principal admissions|duplicated authority/i);
     });
 
-    it('rejects malformed computed guards, receipts, and outbox projections', () => {
-        const command = createMutationCommand();
-        const read = createMutationRead();
-        const facts = createMutationFacts();
-        const computed = computeGroupMutation({ command, read, facts });
-        if (computed.outcome !== 'write') throw new Error('Expected write computation');
-        const cases = [
-            {
-                ...computed,
-                guard: {
-                    ...computed.guard,
-                    value: { ...computed.guard.value, groupId: 'wrong-room' },
-                },
-            },
-            {
-                ...computed,
-                receipt: { ...computed.receipt, stateRevision: -1 },
-            },
-            {
-                ...computed,
-                outboxEntries: [],
-            },
-            {
-                ...computed,
-                outboxEntries: [{
-                    ...computed.outboxEntries[0],
-                    key: {
-                        ...computed.outboxEntries[0].key,
-                        resourceId: 'non-canonical-summary-entry',
-                    },
-                }],
-            },
-        ] as const;
-
-        for (const malformed of cases) {
-            expect(() => validateGroupMutation({
-                command,
-                read,
-                facts,
-                computed: malformed as never,
-            })).toThrow(/scope|revision|snapshot|effect|outbox|receipt/i);
-        }
-    });
-
-    it('rejects every non-canonical operation projection before write', () => {
-        const command = createMutationCommand();
-        const read = createMutationRead();
-        const facts = createMutationFacts();
-        const computed = computeGroupMutation({ command, read, facts });
-        if (computed.outcome !== 'write' || computed.guard.kind !== 'group') {
-            throw new Error('Expected group write computation');
-        }
-        const sessionEvent = {
-            ...computed.event,
-            eventType: 'session-connected' as const,
-        };
-        const consistentlyWrongEvent = {
-            ...computed,
-            event: sessionEvent,
-            receipt: {
-                ...computed.receipt,
-                event: { kind: 'group' as const, event: sessionEvent },
-            },
-            idempotency: computed.idempotency && {
-                ...computed.idempotency,
-                receipt: {
-                    ...computed.receipt,
-                    event: { kind: 'group' as const, event: sessionEvent },
-                },
-            },
-            outbox: {
-                ...computed.outbox,
-                event: { kind: 'group' as const, event: sessionEvent },
-            },
-        };
-        const injectedSummary: GroupPresenceSummary = {
-            ...groupRef('pure-room'),
-            causalRevision: { groupRevision: 2, presenceRevision: 0 },
-            activePrincipalIds: [],
-            activeSessionIds: [],
-            activeSessions: [],
-            activePrincipalCount: 0,
-            activeSessionCount: 0,
-            computedAtEpochMs: facts.nowEpochMs,
-        };
-        const wrongDependent = {
-            ...computed,
-            presenceAdmission: {
-                operation: 'insert' as const,
-                value: admissionFor('alice', []),
-            },
-        };
-
-        for (const [label, malformed] of [
-            ['operation event', consistentlyWrongEvent],
-            ['initial summary', { ...computed, initialPresenceSummary: injectedSummary }],
-            ['dependent admission', wrongDependent],
-        ] as const) {
-            expect.soft(() => validateGroupMutation({
-                command,
-                read,
-                facts,
-                computed: malformed as never,
-            }), label).toThrow(
-                /canonical|deterministic|projection|operation|unexpected key/i,
-            );
-        }
-    });
     it('rebases stale presence-summary reads and validates dominating writes', () => {
         const storedGroup = createMutationRead().group!;
         const groupValue = { ...storedGroup.value, displayName: 'After' };
@@ -3689,18 +3578,6 @@ function memberFor(principalId: string): GroupMember {
     };
 }
 
-function admissionFor(
-    principalId: string,
-    admittedSessions: GroupPresenceAdmission['admittedSessions'],
-): GroupPresenceAdmission {
-    return {
-        ...groupRef('pure-room'),
-        principalId,
-        admittedSessions,
-        updatedAtEpochMs: 1_000,
-    };
-}
-
 class GroupBarrierRepository extends FakeRuntimeStateRepository {
     entryReadKeys: string[] = [];
     groupGuards = 0;
@@ -4136,3 +4013,140 @@ function createPublisher(): StateSyncPublisher {
 }
 
 void (null as GroupPresenceSession | null);
+
+function createMutationCommand(
+  overrides: Partial<GroupMutationCommand> = {},
+): GroupMutationCommand {
+  return {
+    operation: 'updateGroup',
+    aggregateRef: groupRef('pure-room'),
+    commandId: 'pure-command',
+    requestId: 'pure-command',
+    input: {
+      slug: null,
+      displayName: 'After',
+      description: null,
+      kind: null,
+      status: null,
+      joinMode: null,
+      maxMembers: null,
+      maxSessionsPerMember: null,
+      metadata: null,
+      expiresAtEpochMs: null,
+      emptySinceEpochMs: null,
+      purgeAfterEpochMs: null,
+      actorPrincipalId: 'alice',
+      actorSessionId: 'alice-session',
+      reason: null,
+      traceId: null,
+    },
+    ...overrides,
+  } as GroupMutationCommand;
+}
+
+function auditStamp(
+  atEpochMs: number,
+  principalId: string,
+  requestId: string | null,
+): AuditStamp {
+  return {
+    atEpochMs,
+    actor: { kind: 'principal', principalId },
+    reason: null,
+    traceId: null,
+    requestId,
+  };
+}
+
+function createMutationRead(): GroupMutationRead {
+  const audit = auditStamp(1_000, 'alice', 'seed');
+  const group = {
+    ...groupRef('pure-room'),
+    slug: null,
+    displayName: 'Before',
+    description: null,
+    kind: 'room' as const,
+    status: 'active' as const,
+    archived: null,
+    deleted: null,
+    joinMode: 'open' as const,
+    maxMembers: null,
+    maxSessionsPerMember: null,
+    metadata: {},
+    activeMemberCount: 1,
+    ownerPrincipalId: 'alice',
+    snapshotVersion: 1,
+    metadataVersion: 1,
+    rosterVersion: 1,
+    presenceVersion: 0,
+    expiresAtEpochMs: null,
+    emptySinceEpochMs: null,
+    purgeAfterEpochMs: null,
+    created: audit,
+    updated: audit,
+  };
+  const actorMember = {
+    ...groupRef('pure-room'),
+    principalId: 'alice',
+    role: 'owner' as const,
+    status: 'active' as const,
+    invitedByPrincipalId: null,
+    invitationExpiresAtEpochMs: null,
+    left: null,
+    removed: null,
+    banned: null,
+    joined: audit,
+    updated: audit,
+  };
+  return {
+    idempotency: null,
+    group: storedEntry(groupStorageKey(), group),
+    expiredGroupEntry: null,
+    actorMember,
+    targetMember: null,
+    authorityMember: null,
+    directorMember: null,
+    actorMemberEntry: storedEntry(groupMemberStorageKey('alice'), actorMember),
+    targetMemberEntry: null,
+    authorityMemberEntry: null,
+    directorMemberEntry: null,
+    targetPresence: null,
+    expiredTargetPresenceEntry: null,
+    targetAdmission: null,
+    authorityAdmission: null,
+    directorAdmission: null,
+    authorityPresenceSessions: [],
+    authorityPresenceSessionEntries: [],
+    presenceSummary: null,
+  } as GroupMutationRead;
+}
+
+function createMutationFacts(): GroupMutationFacts {
+  return {
+    nowEpochMs: 2_000,
+    expireAtEpochMs: 253_402_300_799_999,
+    serviceId: 'group-service',
+    eventId: 'event-1',
+    commandHash: `sha256:${'a'.repeat(64)}`,
+    attemptCount: 1,
+    resolvedJoinCode: null,
+    joinCodeVerifier: null,
+    internalAuthority: 'none',
+    authenticatedAuthority: {
+      principalId: 'alice',
+      sessionId: 'alice-session',
+    },
+  };
+}
+
+function admissionFor(
+  principalId: string,
+  admittedSessions: GroupPresenceAdmission['admittedSessions'],
+): GroupPresenceAdmission {
+  return {
+    ...groupRef('pure-room'),
+    principalId,
+    admittedSessions,
+    updatedAtEpochMs: 1_000,
+  };
+}

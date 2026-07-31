@@ -25,7 +25,7 @@ import {
     type GroupStateMutationCommand,
     type GroupStateWritten,
 } from '@shared-server/rallar-system/services/group-state-service.ts';
-import { materializeGroupStateGuardedBatch } from '@shared-server/rallar-system/services/group-state-guarded-batch.ts';
+import { materializeGroupStateGuardedBatch } from '@shared-server/rallar-system/group-state/mutation/write-group-state-mutation.ts';
 import type {
     GroupMutationComputed,
     GroupMutationComputedWrite,

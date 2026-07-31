@@ -1,20 +1,35 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { GroupEvent } from '@shared/api/group-types.ts';
 
 import {
   groupStatePresenceAdmissionStorageKey,
   groupStatePresenceSessionStorageKey,
 } from '@shared-server/rallar-system/group-state-storage-keys.ts';
 import { GroupStateEventCollisionError } from '@shared-server/postgres/rallar-system/PSqlStateEventRepository.ts';
+import { InMemoryGroupStateEventStore } from '@shared-server/rallar-system/repositories/StateEventStore.ts';
 import {
   RuntimeStateRetryExhaustedError,
   RuntimeStateWriteConflictError,
 } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import {
   ApplyingGuardedBatchRepository,
-  CollidingGroupEventStore,
   OrderedGroupEventStore,
-} from './group-state-guarded-batch-test-runtime.ts';
-import { createTestGroupStateService } from './group-state-test-runtime.ts';
+} from './group-mutation-test-runtime.ts';
+import { createTestGroupStateService } from '../../group-state-test-runtime.ts';
+
+class CollidingGroupEventStore extends InMemoryGroupStateEventStore {
+  constructor(private readonly runtime: ApplyingGuardedBatchRepository) {
+    super();
+  }
+
+  override appendGroupEvent(event: GroupEvent): Promise<void> {
+    if (this.runtime.activeTransactionDepth !== 1) {
+      throw new Error('Group event append must stay inside the transaction');
+    }
+    this.runtime.transactionOrder.push('event');
+    return Promise.reject(new GroupStateEventCollisionError(event));
+  }
+}
 
 const SCOPE = {
   applicationId: 'app-1',

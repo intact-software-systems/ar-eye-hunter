@@ -8,13 +8,43 @@ import {
   groupStateMemberStorageKey,
 } from '@shared-server/rallar-system/group-state-storage-keys.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
-import { createTestGroupStateService } from './group-state-test-runtime.ts';
+import type { RuntimeStateGuardedBatch } from '@shared-server/runtime-state/RuntimeStateGuardedBatch.ts';
+import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+import { createTestGroupStateService } from '../../group-state-test-runtime.ts';
+import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
 import {
   ApplyingGuardedBatchRepository,
-  BATCH_SELECTED,
-  BeginOnlyGuardedBatchRepository,
   OrderedGroupEventStore,
-} from './group-state-guarded-batch-test-runtime.ts';
+} from './group-mutation-test-runtime.ts';
+
+const BATCH_SELECTED = new Error('guarded group batch selected');
+
+class BeginOnlyGuardedBatchRepository extends FakeRuntimeStateRepository {
+  batchCalls = 0;
+  private transactionDepth = 0;
+
+  get runtimeStateGuardedBatchCapability(): true | false {
+    return this.transactionDepth > 0;
+  }
+
+  override async begin<T>(
+    fn: (repository: RuntimeStateOptimisticTransactionalRepositoryLike) => Promise<T>,
+  ): Promise<T> {
+    return await super.begin(async () => {
+      this.transactionDepth += 1;
+      try {
+        return await fn(this);
+      } finally {
+        this.transactionDepth -= 1;
+      }
+    });
+  }
+
+  executeGuardedBatch(_batch: RuntimeStateGuardedBatch): Promise<never> {
+    this.batchCalls += 1;
+    return Promise.reject(BATCH_SELECTED);
+  }
+}
 
 const SCOPE = {
   applicationId: 'app-1',
@@ -143,12 +173,7 @@ describe('GroupStateService guarded runtime-state batch', () => {
     const [groupBefore] = await runtime.findAllEntries('group-state:groups');
     const [summaryBefore] = await runtime.findAllEntries('group-state:presence-summaries');
     if (!groupBefore || !summaryBefore) throw new Error('Expected group predecessors');
-    await runtime.upsert(
-      'group-state:groups',
-      groupBefore.key,
-      groupBefore.value,
-      0,
-    );
+    await runtime.upsert('group-state:groups', groupBefore.key, groupBefore.value, 0);
     const expiredGroup = await runtime.findEntry('group-state:groups', groupBefore.key);
     if (!expiredGroup) throw new Error('Expected expired group predecessor');
     runtime.resetObservations();
@@ -164,17 +189,19 @@ describe('GroupStateService guarded runtime-state batch', () => {
       operation: 'update',
       expectedRevision: expiredGroup.revision,
     });
-    expect(runtime.batches[0]?.effects).toContainEqual(expect.objectContaining({
-      effectId: 'initial-presence-summary',
-      operation: 'update',
-      expectedRevision: summaryBefore.revision,
-    }));
-    expect((await runtime.findEntry('group-state:groups', groupBefore.key))?.revision)
-      .toBe(expiredGroup.revision + 1);
-    expect((await runtime.findEntry(
-      'group-state:presence-summaries',
-      summaryBefore.key,
-    ))?.revision).toBe(summaryBefore.revision + 1);
+    expect(runtime.batches[0]?.effects).toContainEqual(
+      expect.objectContaining({
+        effectId: 'initial-presence-summary',
+        operation: 'update',
+        expectedRevision: summaryBefore.revision,
+      }),
+    );
+    expect((await runtime.findEntry('group-state:groups', groupBefore.key))?.revision).toBe(
+      expiredGroup.revision + 1,
+    );
+    expect(
+      (await runtime.findEntry('group-state:presence-summaries', summaryBefore.key))?.revision,
+    ).toBe(summaryBefore.revision + 1);
   });
 });
 

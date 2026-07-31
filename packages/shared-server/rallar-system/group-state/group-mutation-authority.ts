@@ -12,7 +12,7 @@ import {
   constantTimeSecretEqual,
   hmacSha256Hex,
   sha256CanonicalJson,
-} from '../services/group-state-crypto.ts';
+} from './mutation/group-state-crypto.ts';
 import {
   type GroupMutationCommand,
   type GroupMutationFacts,
