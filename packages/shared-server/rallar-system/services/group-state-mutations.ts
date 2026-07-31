@@ -1,9 +1,7 @@
 import type {
     AuditStamp,
     Group,
-    GroupEvent,
     GroupEventType,
-    GroupJoinMode,
     GroupMember,
     GroupPresenceAdmission,
     GroupMemberStatus,
@@ -11,9 +9,6 @@ import type {
     GroupPresenceSummary,
     GroupRef,
     GroupRole,
-    GroupSnapshot,
-    GroupStateCausalRevision,
-    GroupStatus,
 } from '@shared/api/group-types.ts';
 import {
     compareGroupCausalRevision,
@@ -25,25 +20,15 @@ import type { RuntimeStateEntryValue } from '../../runtime-state/RuntimeStateJso
 import {
     canActivateGroupMember,
     canConnectGroupPresenceSession,
-    canGovernGroupMember,
     canJoinGroup,
-    canMutateActiveGroup,
     type GroupGovernanceAction,
     GroupPolicyDeniedError,
 } from '../group-policy.ts';
-import type { GroupPolicyResult } from '@shared/api/group-policy-types.ts';
 import {
     computeGroupPresenceSummaryEntry,
     GROUP_PRESENCE_SUMMARY_TOPIC,
     type GroupPresenceSummaryWorkData,
 } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
-import {
-    createRallarGroupDirectorAppointment,
-    mergeRallarGroupDirectorMetadata,
-    readRallarGroupDirectorAppointment,
-    readRallarGroupDirectorFromSnapshot,
-    resolveRallarGroupDirectorAppointmentEligibility,
-} from '@shared/api/group-director.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 import {
     groupStateGroupStorageKey,
@@ -61,9 +46,7 @@ import type {
     GroupMutationIdempotencyRecord,
     GroupMutationRead,
     GroupMutationReceipt,
-    GroupGuardCandidate,
     PresenceAdmissionCandidate,
-    PresenceGuardCandidate,
 } from '../group-state/mutation/group-mutation-contracts.ts';
 import { GroupMutationRejectedError } from '../group-state/mutation/group-mutation-contracts.ts';
 import { validateGroupMutationCommand } from '../group-state/mutation/group-mutation-command-validation.ts';
@@ -74,10 +57,26 @@ import {
     validateRuntimeEntryValue,
 } from '../group-state/mutation/validate-group-mutation-read.ts';
 import {
+    auditStamp,
+    noOp,
+    requireGroup,
     validateCommandHash,
     validateGroupMutationIdempotencyRecord,
     validateMutationReceipt,
+    writeResult,
 } from '../group-state/mutation/group-mutation-result.ts';
+import {
+    assertActive,
+    assertAllowed,
+    assertGovernance,
+    computeCreate,
+    computeDirector,
+    computeRotateJoinCode,
+    computeUpdate,
+    isExactlyAdmitted,
+    readJoinCode,
+    toPolicySnapshot,
+} from '../group-state/mutation/compute-group-aggregate-mutation.ts';
 import {
     validateStoredGroup,
     validateStoredMember,
@@ -92,8 +91,7 @@ import {
 import {
     toExpiredAwareInsertCandidate,
 } from './group-expired-state-authority.ts';
-import { type InitialGroupPresenceSummaryCandidate, nextInitialGroupSnapshotVersion,
-    toInitialGroupPresenceSummaryCandidate, validateInitialGroupPresenceSummaryCandidate } from './group-initial-presence-summary.ts';
+import { validateInitialGroupPresenceSummaryCandidate } from './group-initial-presence-summary.ts';
 import {
     assertExactKeys,
     assertRequiredKeys,
@@ -150,9 +148,6 @@ export { validateGroupMutationIdempotencyRecord };
 
 const DEFAULT_GROUP_SESSION_TTL_MS = 24 * 60 * 60 * 1_000;
 const DEFAULT_GROUP_INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
-const DEFAULT_GROUP_JOIN_CODE_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
-const RALLAR_GROUP_JOIN_CODE_METADATA_KEY = 'rallarJoinCode';
-const RALLAR_GROUP_JOIN_CODE_VERSION = 1;
 
 export type GroupPresenceSummaryRead = Readonly<{
     group: RuntimeStateEntryValue<Group>;
@@ -906,160 +901,6 @@ function validateGroupPresenceSummaryReadCollections(
     }
 }
 
-function computeCreate(
-    command: Extract<GroupMutationCommand, { operation: 'createGroup' }>,
-    read: GroupMutationRead,
-    facts: GroupMutationFacts,
-): GroupMutationComputed {
-    if (command.input.actorPrincipalId !== command.input.createdByPrincipalId) {
-        return rejected(command, read, facts, 'Creator authority does not match createdByPrincipalId');
-    }
-    if (read.group) {
-        return rejected(command, read, facts, `Group already exists: ${command.aggregateRef.groupId}`);
-    }
-    const audit = auditStamp(command, facts, command.input.createdByPrincipalId);
-    const snapshotVersion = nextInitialGroupSnapshotVersion(read.expiredGroupEntry, read.presenceSummary);
-    const group: Group = {
-        ...command.aggregateRef,
-        slug: command.input.slug, displayName: command.input.displayName,
-        description: command.input.description, kind: command.input.kind,
-        status: 'active', joinMode: command.input.joinMode,
-        maxMembers: command.input.maxMembers, maxSessionsPerMember: command.input.maxSessionsPerMember,
-        metadata: cloneRecord(command.input.metadata),
-        activeMemberCount: 1,
-        ownerPrincipalId: command.input.createdByPrincipalId,
-        snapshotVersion, metadataVersion: 1,
-        rosterVersion: 1, presenceVersion: 0,
-        created: audit, updated: audit,
-        archived: null,
-        deleted: null,
-        expiresAtEpochMs: command.input.expiresAtEpochMs,
-        emptySinceEpochMs: null,
-        purgeAfterEpochMs: command.input.purgeAfterEpochMs,
-    };
-    const owner: GroupMember = {
-        ...command.aggregateRef,
-        principalId: command.input.createdByPrincipalId,
-        role: 'owner',
-        status: 'active',
-        joined: audit,
-        updated: audit,
-        left: null,
-        removed: null,
-        banned: null,
-        invitedByPrincipalId: null,
-        invitationExpiresAtEpochMs: null,
-    };
-    const summary: GroupPresenceSummary = {
-        ...command.aggregateRef,
-        causalRevision: { groupRevision: snapshotVersion,
-            presenceRevision: read.presenceSummary?.value.causalRevision.presenceRevision ?? 0 },
-        activePrincipalIds: [],
-        activeSessionIds: [],
-        activeSessions: [],
-        activePrincipalCount: 0,
-        activeSessionCount: 0,
-        computedAtEpochMs: facts.nowEpochMs,
-    };
-    return writeResult(command, read, facts, {
-        guard: {
-            kind: 'group',
-            ...toExpiredAwareInsertCandidate(read.expiredGroupEntry, group),
-        },
-        members: [owner],
-        initialPresenceSummary: toInitialGroupPresenceSummaryCandidate(summary, read.presenceSummary),
-        presenceAdmission: null,
-        eventType: 'group-created',
-    });
-}
-
-function computeUpdate(
-    command: Extract<GroupMutationCommand, { operation: 'updateGroup' }>,
-    read: GroupMutationRead,
-    facts: GroupMutationFacts,
-): GroupMutationComputed {
-    const stored = requireGroup(read, command.aggregateRef);
-    assertUpdateAuthority(command, read);
-    const allowsArchivedDeletion = stored.value.status === 'archived' &&
-        command.input.status === 'deleted';
-    if (!allowsArchivedDeletion) {
-        assertActive(stored.value, facts.nowEpochMs);
-    }
-    const audit = auditStamp(command, facts, command.input.actorPrincipalId ?? undefined);
-    const current = stored.value;
-    const status = command.input.status ?? current.status;
-    const next = transitionGroupLifecycle({
-        ...current,
-        slug: command.input.slug ?? current.slug,
-        displayName: command.input.displayName ?? current.displayName,
-        description: command.input.description ?? current.description,
-        kind: command.input.kind ?? current.kind,
-        joinMode: command.input.joinMode ?? current.joinMode,
-        maxMembers: command.input.maxMembers ?? current.maxMembers,
-        maxSessionsPerMember:
-            command.input.maxSessionsPerMember ?? current.maxSessionsPerMember,
-        metadata: command.input.metadata === null
-            ? current.metadata
-            : cloneRecord(command.input.metadata),
-        snapshotVersion: current.snapshotVersion + 1,
-        metadataVersion: current.metadataVersion + 1,
-        updated: audit,
-        expiresAtEpochMs: command.input.expiresAtEpochMs ?? current.expiresAtEpochMs,
-        emptySinceEpochMs: command.input.emptySinceEpochMs ?? current.emptySinceEpochMs,
-        purgeAfterEpochMs: command.input.purgeAfterEpochMs ?? current.purgeAfterEpochMs,
-    }, status, audit);
-    if (next.maxMembers !== null && next.maxMembers < next.activeMemberCount) {
-        throw new GroupMutationRejectedError(
-            'Group maxMembers cannot be lower than activeMemberCount.',
-        );
-    }
-    if (sameGroupIgnoringVersions(current, next)) return noOp(command, read, facts);
-    return groupWrite(command, read, facts, next,
-        status === 'archived' ? 'group-archived' :
-        status === 'deleted' ? 'group-deleted' : 'group-updated');
-}
-
-function computeDirector(
-    command: Extract<GroupMutationCommand, { operation: 'appointDirector' }>,
-    read: GroupMutationRead,
-    facts: GroupMutationFacts,
-): GroupMutationComputed {
-    const stored = requireGroup(read, command.aggregateRef);
-    assertActive(stored.value, facts.nowEpochMs);
-    const principalId = command.input.actorPrincipalId;
-    const sessionId = command.input.actorSessionId;
-    if (!principalId || !sessionId) {
-        throw new GroupMutationRejectedError(
-            'Forbidden: Cannot appoint a director without a local session.',
-        );
-    }
-    const snapshot = toPolicySnapshot(read, facts.nowEpochMs);
-    const eligibility = resolveRallarGroupDirectorAppointmentEligibility({
-        snapshot,
-        principalId,
-        sessionId,
-    });
-    if (!eligibility.allowed) {
-        throw new GroupMutationRejectedError(
-            `Forbidden: ${eligibility.reason ?? 'Cannot appoint the browser director.'}`,
-        );
-    }
-    const appointment = createRallarGroupDirectorAppointment({
-        session: { clientId: principalId, sessionId },
-        previous: readRallarGroupDirectorFromSnapshot(snapshot),
-        now: facts.nowEpochMs,
-        heartbeatTtlMs: command.input.heartbeatTtlMs,
-    });
-    const next: Group = {
-        ...stored.value,
-        metadata: mergeRallarGroupDirectorMetadata(stored.value.metadata, appointment),
-        snapshotVersion: stored.value.snapshotVersion + 1,
-        metadataVersion: stored.value.metadataVersion + 1,
-        updated: auditStamp(command, facts, principalId),
-    };
-    return groupWrite(command, read, facts, next, 'group-updated');
-}
-
 function computeJoin(
     command: Extract<GroupMutationCommand, { operation: 'joinGroup' | 'acceptGroupInvite' }>,
     read: GroupMutationRead,
@@ -1148,48 +989,6 @@ function computeRevokeInvite(
         ...existing,
         updated: audit,
     }, 'left', audit)], 'member-left');
-}
-
-function computeRotateJoinCode(
-    command: Extract<GroupMutationCommand, { operation: 'rotateGroupJoinCode' }>,
-    read: GroupMutationRead,
-    facts: GroupMutationFacts,
-): GroupMutationComputed {
-    const stored = requireGroup(read, command.aggregateRef);
-    assertGovernance(command, read, facts, 'invite');
-    const materialized = materializedRotateJoinCode(command, facts);
-    if (!facts.joinCodeVerifier) {
-        throw new GroupMutationRejectedError('Join code verifier is required');
-    }
-    const audit = auditStamp(command, facts, command.input.actorPrincipalId ?? undefined);
-    const next: Group = {
-        ...stored.value,
-        metadata: mergeJoinCode(stored.value.metadata, {
-            version: RALLAR_GROUP_JOIN_CODE_VERSION,
-            verifier: facts.joinCodeVerifier,
-            expiresAtEpochMs: materialized.expiresAtEpochMs,
-            rotatedAtEpochMs: facts.nowEpochMs,
-        }),
-        snapshotVersion: stored.value.snapshotVersion + 1,
-        metadataVersion: stored.value.metadataVersion + 1,
-        updated: audit,
-    };
-    return groupWrite(command, read, facts, next, 'group-updated');
-}
-
-function materializedRotateJoinCode(
-    command: Extract<GroupMutationCommand, { operation: 'rotateGroupJoinCode' }>,
-    facts: GroupMutationFacts,
-): Readonly<{ joinCode: string; expiresAtEpochMs: number }> {
-    const joinCode = command.input.joinCode ?? facts.resolvedJoinCode;
-    const expiresAtEpochMs = command.input.expiresAtEpochMs ??
-        facts.nowEpochMs + DEFAULT_GROUP_JOIN_CODE_TTL_MS;
-    if (!joinCode || !Number.isSafeInteger(expiresAtEpochMs) || expiresAtEpochMs <= 0) {
-        throw new GroupMutationRejectedError(
-            'Join code defaults could not be materialized safely',
-        );
-    }
-    return { joinCode, expiresAtEpochMs };
 }
 
 function computeGovernedMember(
@@ -1551,27 +1350,6 @@ function computeDisconnectPresence(
         'session-disconnected', admissionForDisconnect(read, existing.value, facts));
 }
 
-function groupWrite(
-    command: GroupMutationCommand,
-    read: GroupMutationRead,
-    facts: GroupMutationFacts,
-    group: Group,
-    eventType: GroupEventType,
-): GroupMutationComputed {
-    const stored = requireGroup(read, command.aggregateRef);
-    return writeResult(command, read, facts, {
-        guard: {
-            kind: 'group',
-            operation: 'update',
-            value: group,
-            expectedRevision: stored.entry.revision,
-        },
-        members: [],
-        initialPresenceSummary: null,
-        eventType,
-    });
-}
-
 function memberWrite(
     command: GroupMutationCommand,
     read: GroupMutationRead,
@@ -1677,276 +1455,6 @@ function presenceWrite(
         eventGroup: stored.value,
         presenceAdmission,
     });
-}
-
-function writeResult(
-    command: GroupMutationCommand,
-    read: GroupMutationRead,
-    facts: GroupMutationFacts,
-    input: Readonly<{
-        guard: GroupGuardCandidate | PresenceGuardCandidate;
-        members: readonly GroupMember[];
-        initialPresenceSummary: InitialGroupPresenceSummaryCandidate | null;
-        presenceAdmission?: PresenceAdmissionCandidate | null;
-        eventType: GroupEventType;
-        eventGroup?: Group;
-    }>,
-): GroupMutationComputed {
-    const group = input.eventGroup ??
-        (input.guard.kind === 'group' ? input.guard.value : requireGroup(read, command.aggregateRef).value);
-    const groupRevision = group.snapshotVersion;
-    const presenceRevision = read.presenceSummary?.value.causalRevision.presenceRevision ?? 0;
-    const causalRevision = { groupRevision, presenceRevision };
-    const event = newGroupEvent(
-        input.eventType,
-        group,
-        causalRevision,
-        command,
-        facts,
-    );
-    const outboxEntry = computeGroupPresenceSummaryEntry({
-        effectKind: 'group-presence-summary',
-        aggregateRef: command.aggregateRef,
-        commandId: command.commandId,
-        createdAtEpochMs: facts.nowEpochMs,
-        expireAtEpochMs: facts.expireAtEpochMs,
-        acceptedCausalRevision: causalRevision,
-        event,
-    }, facts.serviceId);
-    const receipt = receiptFor(command, facts, {
-        outcome: 'applied',
-        causalRevision,
-        snapshotVersion: group.snapshotVersion,
-        acceptedStorageRevision: input.guard.operation === 'insert'
-            ? 0
-            : input.guard.expectedRevision + 1,
-        eventId: event.eventId,
-        outboxIds: [outboxEntry.key.resourceId],
-        rejection: null,
-    });
-    const idempotency = command.requestId === null ? null : {
-        aggregateRef: command.aggregateRef,
-        requestId: command.requestId,
-        commandHash: facts.commandHash,
-        receipt,
-    };
-    return {
-        outcome: 'write',
-        guard: input.guard,
-        members: input.members,
-        initialPresenceSummary: input.initialPresenceSummary,
-        presenceAdmission: input.presenceAdmission ?? null,
-        event,
-        receipt,
-        idempotency,
-        outboxEntries: [outboxEntry],
-    };
-}
-
-function noOp(
-    command: GroupMutationCommand,
-    read: GroupMutationRead,
-    facts: GroupMutationFacts,
-): GroupMutationComputed {
-    const stored = requireGroup(read, command.aggregateRef);
-    const causalRevision = currentCausalRevision(read);
-    return {
-        outcome: 'no-op',
-        receipt: receiptFor(command, facts, {
-            outcome: 'no-op',
-            causalRevision,
-            snapshotVersion: stored.value.snapshotVersion,
-            acceptedStorageRevision: stored.entry.revision,
-            eventId: null,
-            outboxIds: [],
-            rejection: null,
-        }),
-    };
-}
-
-function rejected(
-    command: GroupMutationCommand,
-    read: GroupMutationRead,
-    facts: GroupMutationFacts,
-    message: string,
-): GroupMutationComputed {
-    const causalRevision = currentCausalRevision(read);
-    return {
-        outcome: 'rejected',
-        receipt: receiptFor(command, facts, {
-            outcome: 'rejected',
-            causalRevision,
-            snapshotVersion: read.group?.value.snapshotVersion ?? 0,
-            acceptedStorageRevision: read.group?.entry.revision ?? null,
-            eventId: null,
-            outboxIds: [],
-            rejection: message,
-        }),
-    };
-}
-
-function receiptFor(
-    command: GroupMutationCommand,
-    facts: GroupMutationFacts,
-    input: Readonly<{
-        outcome: GroupMutationReceipt['outcome'];
-        causalRevision: GroupStateCausalRevision;
-        snapshotVersion: number;
-        acceptedStorageRevision: number | null;
-        eventId: string | null;
-        outboxIds: readonly string[];
-        rejection: string | null;
-    }>,
-): GroupMutationReceipt {
-    const joinCode = command.operation === 'rotateGroupJoinCode'
-        ? materializedRotateJoinCode(command, facts)
-        : null;
-    return {
-        commandId: command.commandId,
-        requestId: command.requestId,
-        commandHash: facts.commandHash,
-        aggregateRef: command.aggregateRef,
-        outcome: input.outcome,
-        attemptCount: facts.attemptCount,
-        acceptedStorageRevision: input.acceptedStorageRevision,
-        stateRevision: toGroupSnapshotStateRevision(
-            input.causalRevision.groupRevision,
-            input.causalRevision.presenceRevision,
-        ),
-        snapshotVersion: input.snapshotVersion,
-        causalRevision: input.causalRevision,
-        eventId: input.eventId,
-        outboxIds: input.outboxIds,
-        joinCode: joinCode?.joinCode ?? null,
-        joinCodeExpiresAtEpochMs: joinCode?.expiresAtEpochMs ?? null,
-        rejection: input.rejection,
-    };
-}
-
-function currentCausalRevision(read: GroupMutationRead): GroupStateCausalRevision {
-    return {
-        groupRevision: read.group?.value.snapshotVersion ?? 0,
-        presenceRevision: read.presenceSummary?.value.causalRevision.presenceRevision ?? 0,
-    };
-}
-
-function toPolicySnapshot(read: GroupMutationRead, nowEpochMs: number): GroupSnapshot {
-    const stored = requireGroup(read, {
-        applicationId: '',
-        workspaceId: '',
-        groupId: '',
-    });
-    const members = [
-        read.actorMember,
-        read.targetMember,
-        read.authorityMember,
-        read.directorMember,
-    ]
-        .filter((member): member is GroupMember => member !== null)
-        .filter((member, index, values) =>
-            values.findIndex((candidate) =>
-                candidate.principalId === member.principalId
-            ) === index
-        );
-    const targetSessions = read.targetPresence &&
-        read.targetPresence.value.disconnectedAtEpochMs === null &&
-        read.targetPresence.value.expiresAtEpochMs > nowEpochMs &&
-        isExactlyAdmitted(read.targetAdmission?.value, read.targetPresence.value)
-        ? [read.targetPresence.value]
-        : [];
-    const authoritySessions = read.authorityPresenceSessions.filter((session) =>
-        session.disconnectedAtEpochMs === null &&
-        session.expiresAtEpochMs > nowEpochMs &&
-        (
-            isExactlyAdmitted(read.authorityAdmission?.value, session) ||
-            isExactlyAdmitted(read.directorAdmission?.value, session)
-        )
-    );
-    const activeSessions = [...targetSessions, ...authoritySessions]
-        .filter((session, index, sessions) =>
-            sessions.findIndex((candidate) =>
-                candidate.sessionId === session.sessionId &&
-                candidate.generationId === session.generationId &&
-                candidate.generationVersion === session.generationVersion
-            ) === index
-        );
-    const activePrincipals = new Set(activeSessions.map((session) => session.principalId));
-    const causalRevision = currentCausalRevision(read);
-    return {
-        stateRevision: toGroupSnapshotStateRevision(
-            causalRevision.groupRevision,
-            causalRevision.presenceRevision,
-        ),
-        causalRevision,
-        group: {
-            ...stored.value,
-            presenceVersion: causalRevision.presenceRevision,
-        },
-        members,
-        activeSessions,
-        memberCount: stored.value.activeMemberCount,
-        onlineMemberCount: members.filter((member) =>
-            member.status === 'active' && activePrincipals.has(member.principalId)
-        ).length,
-    };
-}
-
-function requireGroup(
-    read: GroupMutationRead,
-    ref: GroupRef,
-): RuntimeStateEntryValue<Group> {
-    if (!read.group) throw new GroupMutationRejectedError(`Group not found: ${ref.groupId}`);
-    return read.group;
-}
-
-function assertActive(group: Group, nowEpochMs: number): void {
-    assertAllowed(canMutateActiveGroup({ group, nowEpochMs }));
-}
-
-function assertGovernance(
-    command: Extract<GroupMutationCommand, { targetPrincipalId: string }> |
-        Extract<GroupMutationCommand, { operation: 'rotateGroupJoinCode' }>,
-    read: GroupMutationRead,
-    facts: GroupMutationFacts,
-    action: GroupGovernanceAction,
-): void {
-    const stored = requireGroup(read, command.aggregateRef);
-    assertActive(stored.value, facts.nowEpochMs);
-    assertAllowed(canGovernGroupMember({
-        snapshot: toPolicySnapshot(read, facts.nowEpochMs),
-        actor: {
-            principalId: command.input.actorPrincipalId ?? undefined,
-            sessionId: command.input.actorSessionId ?? undefined,
-        },
-        targetPrincipalId: 'targetPrincipalId' in command
-            ? command.targetPrincipalId
-            : `${command.aggregateRef.groupId}:join-code`,
-        action,
-    }));
-}
-
-function assertAllowed(result: GroupPolicyResult): void {
-    if (result.allowed) return;
-    throw new GroupPolicyDeniedError(result);
-}
-
-function assertUpdateAuthority(
-    command: Extract<GroupMutationCommand, { operation: 'updateGroup' }>,
-    read: GroupMutationRead,
-): void {
-    const actor = read.actorMember;
-    if (
-        !command.input.actorPrincipalId ||
-        actor?.principalId !== command.input.actorPrincipalId ||
-        actor.status !== 'active' ||
-        (actor.role !== 'owner' && actor.role !== 'admin')
-    ) {
-        throw new GroupPolicyDeniedError({
-            allowed: false,
-            code: 'forbidden-role',
-            message: 'Only active group owners/admins can update groups.',
-        });
-    }
 }
 
 function assertPrincipalAuthority(
@@ -2087,18 +1595,6 @@ function commandRefForAdmission(
     };
 }
 
-function isExactlyAdmitted(
-    admission: GroupPresenceAdmission | undefined,
-    session: GroupPresenceSession,
-): boolean {
-    return admission?.principalId === session.principalId &&
-        admission.admittedSessions.some((entry) =>
-            entry.sessionId === session.sessionId &&
-            entry.generationId === session.generationId &&
-            entry.generationVersion === session.generationVersion
-        ) === true;
-}
-
 
 function admissionIdentity(
     principalId: string,
@@ -2138,72 +1634,12 @@ function assertNotLastOwner(
     }
 }
 
-function auditStamp(
-    command: GroupMutationCommand,
-    facts: GroupMutationFacts,
-    fallbackPrincipalId: string | undefined,
-): AuditStamp {
-    return {
-        atEpochMs: facts.nowEpochMs,
-        actor: mutationActor(command, facts, fallbackPrincipalId),
-        reason: command.input.reason,
-        traceId: command.input.traceId,
-        requestId: command.requestId,
-    };
-}
-
-function mutationActor(
-    command: GroupMutationCommand,
-    facts: GroupMutationFacts,
-    fallbackPrincipalId?: string,
-): MutationActor {
-    const principalId = command.input.actorPrincipalId ?? fallbackPrincipalId;
-    if (command.input.actorSessionId !== null) {
-        if (!principalId) {
-            throw new GroupMutationRejectedError(
-                'A session actor requires a principal identity.',
-            );
-        }
-        return {
-            kind: 'session',
-            sessionId: command.input.actorSessionId,
-            principalId,
-        };
-    }
-    if (principalId) return { kind: 'principal', principalId };
-    return { kind: 'service', serviceId: facts.serviceId };
-}
-
 function actorPrincipalId(actor: MutationActor): string | null {
     return actor.kind === 'service' ? null : actor.principalId;
 }
 
 function actorSessionId(actor: MutationActor): string | null {
     return actor.kind === 'session' ? actor.sessionId : null;
-}
-
-function transitionGroupLifecycle(
-    group: Group,
-    status: GroupStatus,
-    audit: AuditStamp,
-): Group {
-    if (status === 'active') {
-        return { ...group, status, archived: null, deleted: null };
-    }
-    if (status === 'archived') {
-        return {
-            ...group,
-            status,
-            archived: group.archived ?? audit,
-            deleted: null,
-        };
-    }
-    return {
-        ...group,
-        status,
-        archived: group.archived,
-        deleted: group.deleted ?? audit,
-    };
 }
 
 function transitionMemberLifecycle(
@@ -2245,37 +1681,6 @@ function transitionMemberLifecycle(
     return { ...member, status, left: null, removed: null, banned: audit };
 }
 
-function newGroupEvent(
-    eventType: GroupEventType,
-    group: Group,
-    causalRevision: GroupStateCausalRevision,
-    command: GroupMutationCommand,
-    facts: GroupMutationFacts,
-): GroupEvent {
-    return {
-        applicationId: group.applicationId,
-        workspaceId: group.workspaceId,
-        groupId: group.groupId,
-        eventId: facts.eventId,
-        eventType,
-        snapshotVersion: group.snapshotVersion,
-        causalRevision,
-        occurredAtEpochMs: facts.nowEpochMs,
-        actor: mutationActor(command, facts),
-        reason: command.input.reason,
-        traceId: command.input.traceId,
-        requestId: command.requestId,
-        payload: {},
-    };
-}
-
-function sameGroupIgnoringVersions(current: Group, next: Group): boolean {
-    return jsonEquals(
-        { ...current, snapshotVersion: 0, metadataVersion: 0, updated: null },
-        { ...next, snapshotVersion: 0, metadataVersion: 0, updated: null },
-    );
-}
-
 function memberEventType(status: GroupMemberStatus): GroupEventType {
     switch (status) {
         case 'invited': return 'member-invited';
@@ -2284,36 +1689,6 @@ function memberEventType(status: GroupMemberStatus): GroupEventType {
         case 'removed': return 'member-removed';
         case 'banned': return 'member-banned';
     }
-}
-
-type JoinCodeMetadata = Readonly<{
-    version: number;
-    verifier: string;
-    expiresAtEpochMs: number;
-    rotatedAtEpochMs: number;
-}>;
-
-function readJoinCode(metadata: Readonly<Record<string, unknown>>): JoinCodeMetadata | undefined {
-    const value = metadata[RALLAR_GROUP_JOIN_CODE_METADATA_KEY];
-    if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
-    const candidate = value as Record<string, unknown>;
-    return typeof candidate.version === 'number' &&
-            typeof candidate.verifier === 'string' &&
-            typeof candidate.expiresAtEpochMs === 'number' &&
-            typeof candidate.rotatedAtEpochMs === 'number'
-        ? candidate as JoinCodeMetadata
-        : undefined;
-}
-
-function mergeJoinCode(
-    metadata: Readonly<Record<string, unknown>>,
-    joinCode: JoinCodeMetadata,
-): Record<string, unknown> {
-    return { ...metadata, [RALLAR_GROUP_JOIN_CODE_METADATA_KEY]: joinCode };
-}
-
-function cloneRecord(value: Readonly<Record<string, unknown>>): Record<string, unknown> {
-    return structuredClone(value) as Record<string, unknown>;
 }
 
 function summaryContent(summary: GroupPresenceSummary): Readonly<{

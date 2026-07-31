@@ -1,6 +1,5 @@
 import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 import type {
-    AuditStamp,
     Group,
     GroupMember,
     GroupPresenceAdmission,
@@ -9,9 +8,6 @@ import type {
     GroupRef,
 } from '@shared/api/group-types.ts';
 import { toGroupSnapshotStateRevision } from '@shared/api/group-client-views.ts';
-import type {
-    StateScope,
-} from '@shared/api/state-types.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import {
     createGroupStateService as createDurableGroupStateService,
@@ -58,11 +54,19 @@ import {
     createTestGroupStateService,
     type TestAuthenticatedGroupStateService,
 } from './group-state-test-runtime.ts';
+import {
+    SCOPE,
+    auditStamp,
+    createMutationCommand,
+    createMutationFacts,
+    createMutationRead,
+    groupMemberStorageKey,
+    groupRef,
+    groupStorageKey,
+    storagePart,
+    storedEntry,
+} from './group-state/mutation/group-mutation-test-runtime.ts';
 
-const SCOPE: StateScope = {
-    applicationId: 'app-1',
-    workspaceId: 'workspace-1',
-};
 const BASE_EPOCH_MS = Date.now();
 
 describe('convergent group and presence state', () => {
@@ -1428,66 +1432,6 @@ describe('convergent group and presence state', () => {
         expect((await repository.listEvents(groupRef('ephemeral-rejection-room')))
             .filter((event) => event.requestId === 'rejected-duplicate-create'))
             .toEqual([]);
-    });
-
-    it('keeps pure mutation computation synchronous, deterministic, and input preserving', () => {
-        const command = deepFreeze(createMutationCommand());
-        const read = deepFreeze(createMutationRead());
-        const facts = deepFreeze(createMutationFacts());
-
-        const first = computeGroupMutation({ command, read, facts });
-        const second = computeGroupMutation({ command, read, facts });
-        validateGroupMutation({ command, read, facts, computed: first });
-        validateGroupMutation({ command, read, facts, computed: second });
-
-        expect(first).toEqual(second);
-        expect(command).toEqual(createMutationCommand());
-        expect(read).toEqual(createMutationRead());
-    });
-
-    it('binds resolved join-code facts to the command operation and explicit intent', () => {
-        const read = createMutationRead();
-        const update = createMutationCommand();
-        const explicitRotate = createMutationCommand({
-            operation: 'rotateGroupJoinCode',
-            input: {
-                actorPrincipalId: 'alice',
-                actorSessionId: 'alice-session',
-                reason: null,
-                traceId: null,
-                joinCode: 'EXPLICIT',
-                expiresAtEpochMs: null,
-            },
-        } as Partial<GroupMutationCommand>);
-        const omittedRotate = createMutationCommand({
-            operation: 'rotateGroupJoinCode',
-            input: {
-                actorPrincipalId: 'alice',
-                actorSessionId: 'alice-session',
-                reason: null,
-                traceId: null,
-                joinCode: null,
-                expiresAtEpochMs: null,
-            },
-        } as Partial<GroupMutationCommand>);
-        const codeFacts: GroupMutationFacts = {
-            ...createMutationFacts(),
-            resolvedJoinCode: 'OTHER',
-            joinCodeVerifier: 'verifier',
-        };
-
-        expect(() => computeGroupMutation({ command: update, read, facts: codeFacts }))
-            .toThrow(/resolved.*join code|operation|unrelated/i);
-        expect(() => computeGroupMutation({
-            command: explicitRotate,
-            read,
-            facts: codeFacts,
-        })).toThrow(/resolved.*join code|explicit|command/i);
-        expect(() => computeGroupMutation({
-            command: omittedRotate,
-            read,
-            facts: createMutationFacts(),
-        })).toThrow(/resolved.*join code|generated|missing/i);
     });
 
     it('rejects a wrong-scope owner member before it can authorize a mutation', () => {
@@ -3808,111 +3752,6 @@ describe('convergent group and presence state', () => {
 
 });
 
-function createMutationCommand(
-    overrides: Partial<GroupMutationCommand> = {},
-): GroupMutationCommand {
-    return {
-        operation: 'updateGroup',
-        aggregateRef: groupRef('pure-room'),
-        commandId: 'pure-command',
-        requestId: 'pure-command',
-        input: {
-            slug: null,
-            displayName: 'After',
-            description: null,
-            kind: null,
-            status: null,
-            joinMode: null,
-            maxMembers: null,
-            maxSessionsPerMember: null,
-            metadata: null,
-            expiresAtEpochMs: null,
-            emptySinceEpochMs: null,
-            purgeAfterEpochMs: null,
-            actorPrincipalId: 'alice',
-            actorSessionId: 'alice-session',
-            reason: null,
-            traceId: null,
-        },
-        ...overrides,
-    } as GroupMutationCommand;
-}
-
-function auditStamp(
-    atEpochMs: number,
-    principalId: string,
-    requestId: string | null,
-): AuditStamp {
-    return {
-        atEpochMs,
-        actor: { kind: 'principal', principalId },
-        reason: null,
-        traceId: null,
-        requestId,
-    };
-}
-
-function createMutationRead(): GroupMutationRead {
-    const audit = auditStamp(1_000, 'alice', 'seed');
-    const group = {
-        ...groupRef('pure-room'),
-        slug: null,
-        displayName: 'Before',
-        description: null,
-        kind: 'room' as const,
-        status: 'active' as const,
-        archived: null,
-        deleted: null,
-        joinMode: 'open' as const,
-        maxMembers: null,
-        maxSessionsPerMember: null,
-        metadata: {},
-        activeMemberCount: 1,
-        ownerPrincipalId: 'alice',
-        snapshotVersion: 1,
-        metadataVersion: 1,
-        rosterVersion: 1,
-        presenceVersion: 0,
-        expiresAtEpochMs: null,
-        emptySinceEpochMs: null,
-        purgeAfterEpochMs: null,
-        created: audit,
-        updated: audit,
-    };
-    const actorMember = {
-        ...groupRef('pure-room'),
-        principalId: 'alice',
-        role: 'owner' as const,
-        status: 'active' as const,
-        invitedByPrincipalId: null,
-        invitationExpiresAtEpochMs: null,
-        left: null,
-        removed: null,
-        banned: null,
-        joined: audit,
-        updated: audit,
-    };
-    return {
-        idempotency: null,
-        group: storedEntry(groupStorageKey(), group), expiredGroupEntry: null,
-        actorMember,
-        targetMember: null,
-        authorityMember: null,
-        directorMember: null,
-        actorMemberEntry: storedEntry(groupMemberStorageKey('alice'), actorMember),
-        targetMemberEntry: null,
-        authorityMemberEntry: null,
-        directorMemberEntry: null,
-        targetPresence: null, expiredTargetPresenceEntry: null,
-        targetAdmission: null,
-        authorityAdmission: null,
-        directorAdmission: null,
-        authorityPresenceSessions: [],
-        authorityPresenceSessionEntries: [],
-        presenceSummary: null,
-    } as GroupMutationRead;
-}
-
 function requireMutationGroupAndActor(
     read: GroupMutationRead,
 ): asserts read is GroupMutationRead & Readonly<{
@@ -3922,22 +3761,6 @@ function requireMutationGroupAndActor(
     if (!read.group || !read.actorMember) {
         throw new Error('Mutation test fixture requires a group and actor member.');
     }
-}
-
-function storagePart(name: string, value?: string): string {
-    return `${name}=${encodeURIComponent(value ?? '_')}`;
-}
-
-function groupStorageKey(): string {
-    return [
-        storagePart('app', 'app-1'),
-        storagePart('ws', 'workspace-1'),
-        storagePart('group', 'pure-room'),
-    ].join(':');
-}
-
-function groupMemberStorageKey(principalId: string): string {
-    return `${groupStorageKey()}:${storagePart('member', principalId)}`;
 }
 
 function groupSessionStorageKey(sessionId: string): string {
@@ -3954,19 +3777,6 @@ function groupIdempotencyStorageKey(requestId: string): string {
 
 function groupPresenceSummaryStorageKey(): string {
     return groupStorageKey();
-}
-
-function storedEntry<T>(key: string, value: T) {
-    return {
-        entry: {
-            key,
-            value: JSON.stringify(value),
-            expireAtTimestamp: Number.MAX_SAFE_INTEGER,
-            updatedTimestamp: new Date(0).toISOString(),
-            revision: 0,
-        },
-        value,
-    };
 }
 
 function rekey<T>(stored: ReturnType<typeof storedEntry<T>>, key: string) {
@@ -4019,24 +3829,6 @@ function presenceFor(
         status: 'active',
         disconnectedAtEpochMs: null,
         disconnectReason: null,
-    };
-}
-
-function createMutationFacts(): GroupMutationFacts {
-    return {
-        nowEpochMs: 2_000,
-        expireAtEpochMs: 253_402_300_799_999,
-        serviceId: 'group-service',
-        eventId: 'event-1',
-        commandHash: `sha256:${'a'.repeat(64)}`,
-        attemptCount: 1,
-        resolvedJoinCode: null,
-        joinCodeVerifier: null,
-        internalAuthority: 'none',
-        authenticatedAuthority: {
-            principalId: 'alice',
-            sessionId: 'alice-session',
-        },
     };
 }
 
@@ -4465,10 +4257,6 @@ async function requireSnapshot(runtime: GroupBarrierRepository, groupId: string)
     return snapshot;
 }
 
-function groupRef(groupId: string): GroupRef {
-    return { ...SCOPE, groupId };
-}
-
 function createPublisher(): StateSyncPublisher {
     return {
         publishClientSnapshot: vi.fn(() => Promise.resolve()),
@@ -4476,15 +4264,6 @@ function createPublisher(): StateSyncPublisher {
         publishGroupSnapshot: vi.fn(() => Promise.resolve()),
         publishGroupEvent: vi.fn(() => Promise.resolve()),
     };
-}
-
-function deepFreeze<T>(value: T): T {
-    if (typeof value !== 'object' || value === null || Object.isFrozen(value)) {
-        return value;
-    }
-    Object.freeze(value);
-    for (const child of Object.values(value)) deepFreeze(child);
-    return value;
 }
 
 void (null as GroupPresenceSession | null);
