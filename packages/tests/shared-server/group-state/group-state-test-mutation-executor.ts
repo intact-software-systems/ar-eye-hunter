@@ -125,13 +125,14 @@ export class GroupStateTestMutationExecutor {
     computed: Exclude<GroupMutationComputed, { outcome: 'idempotency-conflict' }>,
     receiptOnly = false,
   ): Promise<any> {
+    const repository = this.repository();
     const receipt = computed.receipt;
     if (receiptOnly) return receipt;
-    const snapshot = await this.repository().readSnapshot(receipt.aggregateRef);
+    const snapshot = await repository.readSnapshot(receipt.aggregateRef);
     if (!snapshot) {
       throw new TypeError(`Group snapshot not found: ${receipt.aggregateRef.groupId}`);
     }
-    const event = await this.receiptEvent(receipt);
+    const event = await this.receiptEvent(repository, receipt);
     if (operation === 'rotateGroupJoinCode') {
       return receipt.outcome === 'rejected'
         ? { status: 'error', result: Either.ofLeft(receipt.rejection ?? 'Rejected') }
@@ -172,10 +173,13 @@ export class GroupStateTestMutationExecutor {
     await this.dependencies.sleep?.(attempt === 1 ? 2 : 8);
   }
 
-  private async receiptEvent(receipt: GroupMutationReceipt): Promise<GroupEvent | null> {
+  private async receiptEvent(
+    repository: GroupStateRepository,
+    receipt: GroupMutationReceipt,
+  ): Promise<GroupEvent | null> {
     if (receipt.eventId === null) return null;
     return (
-      (await this.repository().listEvents(receipt.aggregateRef)).find(
+      (await repository.listEvents(receipt.aggregateRef)).find(
         (event) => event.eventId === receipt.eventId,
       ) ?? null
     );
