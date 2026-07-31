@@ -2,12 +2,35 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+import { constructionRuleIds } from '../../../scripts/repo-style-check/construction-rules.mjs';
+
 const repoRoot = process.cwd();
 const canonicalStylePath = '.agents/skills/rallar-code-writing/references/repo-code-style.md';
 const canonicalServiceWritingPath =
   '.agents/skills/rallar-code-writing/references/convergent-service-writing.md';
 
 describe('repo code style authority integrity', () => {
+  it('applies universal human-readability doctrine to every human-authored code surface', () => {
+    const agents = readRepo('AGENTS.md');
+    const codeWriting = readRepo('.agents/skills/rallar-code-writing/SKILL.md');
+    const canonicalStyle = readRepo(canonicalStylePath);
+    const humanGuide = readRepo('docs/repo-human-style-guide.md');
+    const skillDescription = codeWriting.match(/^description:\s*(.+)$/mu)?.[1] ?? '';
+
+    expectAll(agents, [
+      'all human-authored code',
+      'ownership, dataflow, decisions, side effects, failures, and call paths',
+    ]);
+    expectAll(codeWriting, ['all human-authored code', 'TypeScript-specific rules']);
+    expectAll(canonicalStyle, [
+      'Universal structural rules',
+      'all human-authored code',
+      'TypeScript-specific rules',
+    ]);
+    expectAll(humanGuide, ['all human-authored code', 'TypeScript checker']);
+    expect(skillDescription).toContain('all human-authored code');
+  });
+
   it('routes every TypeScript change through one repo-wide style authority', () => {
     const agents = readRepo('AGENTS.md');
     const codeWriting = readRepo('.agents/skills/rallar-code-writing/SKILL.md');
@@ -110,7 +133,9 @@ describe('repo code style authority integrity', () => {
     const releaseGate = readRepo('.github/workflows/release-gate.yml');
     const humanGuide = readRepo('docs/repo-human-style-guide.md');
     const canonicalStyle = readRepo(canonicalStylePath);
-    const refactoringProgram = readRepo('plans/repo-human-traceability-refactoring-program-plan.md');
+    const refactoringProgram = readRepo(
+      'plans/repo-human-traceability-refactoring-program-plan.md',
+    );
 
     expect(branchReleaseGate).toContain('changed_repo_style_base: origin/main');
     expect(releaseGate).toContain('changed_repo_style_base:');
@@ -260,6 +285,46 @@ describe('repo code style authority integrity', () => {
     expect(codeWriting).toMatch(/smallest\s+directory containing changed production files/);
   });
 
+  it('documents the calibrated construction checker boundary', () => {
+    const canonicalStyle = readRepo(canonicalStylePath);
+    const humanGuide = readRepo('docs/repo-human-style-guide.md');
+    const packageJson = readJson('package.json') as {
+      scripts?: Readonly<Record<string, string>>;
+    };
+    const semanticBoundary = [
+      'These findings identify syntax shapes for human review. They do not prove a',
+      'construction graph is cyclic, a callback is unjustified, or a facade lacks a',
+      'real boundary.',
+    ].join(' ');
+
+    expect(packageJson.scripts).toHaveProperty(
+      'check:repo-style:construction-details',
+      'node scripts/repo-style-check.mjs --construction-details',
+    );
+    expectAll(canonicalStyle, [
+      '`construction.forward-capture`',
+      'broader construction diagnostics remain opt-in',
+    ]);
+    expectAll(humanGuide, [
+      '`construction.forward-capture`',
+      'npm run check:repo-style:construction-details',
+      '`construction.definite-assignment`',
+      '`control.nested-callback-depth`',
+      '`abstraction.pass-through`',
+    ]);
+    expect(humanGuide.replace(/\s+/g, ' ')).toContain(semanticBoundary);
+  });
+
+  it('keeps construction rule identifiers stable for checker integrations', () => {
+    expect(Object.isFrozen(constructionRuleIds)).toBe(true);
+    expect(constructionRuleIds).toEqual({
+      forwardCapture: 'construction.forward-capture',
+      definiteAssignment: 'construction.definite-assignment',
+      nestedCallbackDepth: 'control.nested-callback-depth',
+      passThrough: 'abstraction.pass-through',
+    });
+  });
+
   it('keeps TypeScript formatter settings aligned with the canonical baseline', () => {
     expect(existsSync(path.join(repoRoot, '.prettierrc.json'))).toBe(true);
 
@@ -324,6 +389,8 @@ describe('repo code style authority integrity', () => {
       'packages/tests/repo/rallar-skill-integrity.test.ts',
       'packages/tests/repo/repo-code-style-integrity.test.ts',
       'packages/tests/repo/repo-style-check.test.ts',
+      'packages/tests/repo/repo-style-construction-check.test.ts',
+      'packages/tests/repo/repo-style-construction-edge-cases.test.ts',
       'packages/tests/repo/repo-style-layout-rules.test.ts',
       'packages/tests/repo/repo-style-changed-check.test.ts',
       'packages/tests/rallar-black-box/rallar-testing-skill.test.ts',

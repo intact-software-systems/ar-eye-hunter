@@ -44,6 +44,7 @@ async function main() {
   const options = {
     layoutOnly: args.has('--layout-only'),
     layoutDetails: args.has('--layout-details'),
+    constructionDetails: args.has('--construction-details'),
     outputContracts: args.has('--output-contracts'),
     objectInterfaces: args.has('--object-interfaces'),
   };

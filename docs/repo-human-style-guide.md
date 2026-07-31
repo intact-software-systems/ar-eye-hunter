@@ -1,7 +1,7 @@
 # Repo Human Style Review Guide
 
-Use this guide when reviewing TypeScript written or refactored by a human or AI
-anywhere in the repository.
+Use this guide when reviewing all human-authored code written or refactored by
+a human or AI anywhere in the repository.
 
 The authoritative coding standard is
 `.agents/skills/rallar-code-writing/references/repo-code-style.md`. Read it before
@@ -35,7 +35,39 @@ For each changed use case or route, identify in order:
 If one of these cannot be located from the top-level function and its immediate
 calls, the change is not yet traceable.
 
-### 2. Check contracts before implementation details
+### 2. Trace construction and callbacks
+
+Start at the composition root and follow construction from top to bottom:
+
+- Every dependency exists before its consumer is constructed.
+- The graph is acyclic and each stateful or lifecycle capability has one visible
+  owner.
+- No definite-assignment assertion, mutable closure, setter, supplier, registry,
+  service locator, or test-only factory hides late binding.
+- A dependency bundle is supplied once rather than forwarded unchanged through
+  wrapper layers.
+- Tests replace dependencies through the same narrow ports used by production;
+  no alternate factory, overload, or wiring path exists only for tests.
+
+For every callback, state who invokes it, when it can run, how often it can run,
+what values or state it captures, who owns any captured mutation, how it fails,
+and who owns cleanup. Event, lifecycle, transaction, retry, resource-scope, and
+protocol callbacks are often the correct boundary. Keep that boundary visible,
+but move business policy, loops, multiple decisions, and multi-step I/O into a
+direct named operation.
+
+Follow one representative input through the callbacks and immediate calls. Its
+domain name should remain stable until an explicit translation creates a new
+representation. Request a rewrite when generic `input`, `options`, `context`,
+`payload`, or `data` names make the reader reconstruct identity from nested
+closures.
+
+This is a semantic human-review step. The checker does not prove that a
+construction graph is acyclic, a callback is justified, or names preserve one
+dataflow. Add automation only as a separately reviewed change with demonstrated
+signal and acceptable false positives.
+
+### 3. Check contracts before implementation details
 
 - Domain, command, persisted, event, snapshot, and response values are required
   by default.
@@ -50,7 +82,7 @@ calls, the change is not yet traceable.
 Do not accept an optional field because it reduces test setup or allows a partial
 object to compile.
 
-### 3. Read names as behavioral contracts
+### 4. Read names as behavioral contracts
 
 Compare each new function prefix with the canonical vocabulary table in the
 standard. In particular:
@@ -65,7 +97,7 @@ standard. In particular:
 Request a rename when a reader would need a thesaurus, repository archaeology,
 or the function body to understand the verb.
 
-### 4. Find important decisions
+### 5. Find important decisions
 
 Locate defaults, authorization, policy, invariants, and retry classification.
 Apply the decision-depth thresholds in the authoritative standard.
@@ -74,7 +106,7 @@ Do not accept a critical choice hidden behind generic pipeline, context,
 orchestration, handler, or helper layers. Moving a decision into another file is
 not an improvement unless its owner and name become clearer.
 
-### 5. Inspect failure flow
+### 6. Inspect failure flow
 
 - `validateXxx` returns issues and does not throw.
 - Expected failures use `Either`.
@@ -87,7 +119,7 @@ not an improvement unless its owner and name become clearer.
 List the failures you believe can occur. If the code has additional hidden
 failure paths, request another pass.
 
-### 6. Inspect state and responsibility
+### 7. Inspect state and responsibility
 
 - No caller-owned object is silently mutated.
 - Stateful objects state what they own and how lifecycle ends.
@@ -98,7 +130,7 @@ failure paths, request another pass.
 Existing architecture can explain a constraint, but it does not excuse adding a
 new violation.
 
-### 7. Inspect layout
+### 8. Inspect layout
 
 Apply the formatting, spacing, file-order, file-size, handler-size, and
 complexity sections of the standard. Blank lines should expose phases in long
@@ -136,7 +168,7 @@ register untouched legacy debt or place the justification in a source comment.
 Prefer self-explanatory names and structure. Ask for a comment only when it
 records a non-obvious invariant, external constraint, safety reason, or tradeoff.
 
-### 8. Check change scope
+### 9. Check change scope
 
 - New and changed code follows the standard.
 - Unrelated legacy code is not reformatted or refactored without authorization.
@@ -146,6 +178,9 @@ records a non-obvious invariant, external constraint, safety reason, or tradeoff
   [repo code-style exception registry](./repo-code-style-exceptions.md).
 
 ## Warning-only checker
+
+The TypeScript checker automates only syntax it can parse. The preceding human
+review sequence remains language-neutral and applies to all human-authored code.
 
 Run from the repository root:
 
@@ -169,6 +204,8 @@ Current default warnings cover:
 - discouraged compound service names;
 - factories that hide several defaults behind optional inputs;
 - long unsegmented blocks in supported factory forms;
+- callbacks passed to `createXxx` factories that capture a local binding first
+  assigned after construction (`construction.forward-capture`);
 - potential `unknown` propagation;
 - directories with more than 20 direct production TypeScript files
   (`layout.directory-density`);
@@ -201,6 +238,22 @@ meaningful absence, useful inlining, and whether blank-line groups belong
 together.
 
 ### Optional noisy checks
+
+Run detailed construction-shape checks when reviewing late binding, callback
+depth, or boundary-free wrappers:
+
+```bash
+npm run check:repo-style:construction-details
+```
+
+This adds `construction.definite-assignment`,
+`control.nested-callback-depth`, and `abstraction.pass-through`. The default
+`construction.forward-capture` rule remains active with or without this option.
+The broader rules stay opt-in because repository calibration found mixed signal.
+
+These findings identify syntax shapes for human review. They do not prove a
+construction graph is cyclic, a callback is unjustified, or a facade lacks a
+real boundary.
 
 Run output-contract naming checks only when useful for the workstream:
 
@@ -287,6 +340,11 @@ disappear without blocking the branch.
 End the review with:
 
 - accepted behavior and why it is traceable;
+- construction cycles ruled out or resolved, with ownership made explicit;
+- callbacks retained or replaced, including their invocation and lifecycle
+  rationale;
+- one representative input traced with stable semantic names;
+- test fakes use the production ports without alternate test-only wiring;
 - requested changes, each tied to the authoritative standard;
 - checker warnings reviewed and whether they apply;
 - explicit exceptions approved by the human;

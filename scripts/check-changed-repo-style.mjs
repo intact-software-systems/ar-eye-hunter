@@ -10,6 +10,13 @@ import {
 
 const worktreeTarget = 'WORKTREE';
 const [baseReference, targetReference = worktreeTarget] = process.argv.slice(2);
+const scanOptions = Object.freeze({
+  layoutOnly: false,
+  layoutDetails: true,
+  constructionDetails: false,
+  outputContracts: true,
+  objectInterfaces: true,
+});
 
 async function main() {
   if (baseReference === undefined) {
@@ -47,17 +54,15 @@ async function main() {
     targetSources: governedTargetSources,
     changes,
   });
-  const options = {
-    layoutOnly: false,
-    layoutDetails: true,
-    outputContracts: true,
-    objectInterfaces: true,
-  };
-  const baseFindings = scanProductionSources({ repoRoot, sources: baseSources, options }).findings;
+  const baseFindings = scanProductionSources({
+    repoRoot,
+    sources: baseSources,
+    options: scanOptions,
+  }).findings;
   const targetFindings = scanProductionSources({
     repoRoot,
     sources: governedTargetSources,
-    options,
+    options: scanOptions,
   }).findings;
   const newFindings = subtractExistingFindings({
     repoRoot,
@@ -66,19 +71,25 @@ async function main() {
     renameByTargetPath: toRenameMap(changes),
   });
 
-  if (newFindings.length === 0) {
+  printChangedFindings({ repoRoot, mergeBase, targetReference, newFindings });
+}
+
+function printChangedFindings(result) {
+  if (result.newFindings.length === 0) {
     console.log(
-      `PASS: no new repository style findings (${mergeBase} -> ${targetReference}).`,
+      `PASS: no new repository style findings ` +
+        `(${result.mergeBase} -> ${result.targetReference}).`,
     );
     return;
   }
 
   console.log(
-    `FAIL: ${newFindings.length} new or worsened repository style finding` +
-      `${newFindings.length === 1 ? '' : 's'} (${mergeBase} -> ${targetReference}):`,
+    `FAIL: ${result.newFindings.length} new or worsened repository style finding` +
+      `${result.newFindings.length === 1 ? '' : 's'} ` +
+      `(${result.mergeBase} -> ${result.targetReference}):`,
   );
-  for (const finding of newFindings) {
-    console.log(`${toRelativePath(repoRoot, finding.file)} [${finding.ruleId}]`);
+  for (const finding of result.newFindings) {
+    console.log(`${toRelativePath(result.repoRoot, finding.file)} [${finding.ruleId}]`);
     console.log(`  ${finding.message}`);
   }
   process.exitCode = 1;

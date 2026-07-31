@@ -60,6 +60,20 @@ describe('repo style checker', () => {
     );
   });
 
+  it('does not require TypeScript output contracts in JavaScript modules', () => {
+    const fixtureRoot = createFixture({
+      'computed.mjs': [
+        'export function computeThing() {',
+        '  return { first: 1, second: 2 };',
+        '}',
+      ].join('\n'),
+    });
+
+    expect(runChecker(fixtureRoot, '--output-contracts')).not.toContain(
+      'without an explicit output contract',
+    );
+  });
+
   it('warns for an inline object return type when output checks are requested', () => {
     const fixtureRoot = createFixture({
       'computed.ts': [
@@ -259,6 +273,9 @@ describe('repo style checker', () => {
       'scripts/check-changed-repo-style.mjs',
       'scripts/repo-style-check.mjs',
       'scripts/repo-style-check/contract-rules.mjs',
+      'scripts/repo-style-check/construction-callback-references.mjs',
+      'scripts/repo-style-check/construction-rules.mjs',
+      'scripts/repo-style-check/construction-scope-model.mjs',
       'scripts/repo-style-check/factory-route-rules.mjs',
       'scripts/repo-style-check/function-analysis.mjs',
       'scripts/repo-style-check/layout-rules.mjs',

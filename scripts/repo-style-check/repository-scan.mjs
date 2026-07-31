@@ -9,6 +9,7 @@ import {
   scanOutputContractNaming,
   scanPlainObjectTypeAliases,
 } from './contract-rules.mjs';
+import { scanConstructionRules } from './construction-rules.mjs';
 import {
   estimateCyclomaticComplexity,
   extractRouteHandlerRanges,
@@ -24,6 +25,7 @@ import {
 import { lineFromOffset, lineOffsets } from './source-text.mjs';
 
 const checkedExtensions = new Set(['.ts', '.tsx', '.d.ts', '.mts', '.cts', '.mjs']);
+const outputContractExtensions = new Set(['.ts', '.tsx', '.mts', '.cts']);
 const skippedDirectoryNames = new Set([
   '.git',
   '.deno',
@@ -107,10 +109,7 @@ const detailedLayoutRuleIds = [
 ];
 
 export const activeLayoutRuleIds = (includeDetails) =>
-  [
-    ...defaultLayoutRuleIds,
-    ...(includeDetails ? detailedLayoutRuleIds : []),
-  ].toSorted();
+  [...defaultLayoutRuleIds, ...(includeDetails ? detailedLayoutRuleIds : [])].toSorted();
 
 export async function resolveScanRoots(candidates) {
   const existingRoots = [];
@@ -163,7 +162,7 @@ export function scanProductionSources(input) {
   if (!input.options.layoutOnly) {
     for (const source of input.sources) {
       findings.push(
-        ...scanFile(source.raw, input.options).map((finding) => ({
+        ...scanFile(source, input.options).map((finding) => ({
           ...finding,
           file: source.file,
           kind: 'warn',
@@ -175,11 +174,19 @@ export function scanProductionSources(input) {
   return { findings, layoutCounts: layoutResult.counts };
 }
 
-function scanFile(raw, options) {
+function scanFile(source, options) {
+  const { file, raw } = source;
   const findings = [];
-  const lines = raw.split('\n');
-  const offsets = lineOffsets(raw);
+  const sourceText = { file, raw, lines: raw.split('\n') };
+  addFileMeasurementFindings(findings, sourceText.lines);
+  addRouteFindings(findings, raw);
+  addContractAndFactoryFindings(findings, sourceText, options);
+  addUnknownFindings(findings, sourceText.lines);
+  findings.push(...scanConstructionRules({ file, raw }, { details: options.constructionDetails }));
+  return findings;
+}
 
+function addFileMeasurementFindings(findings, lines) {
   if (lines.length > limits.fileLineCount) {
     findings.push(
       finding(
@@ -207,7 +214,10 @@ function scanFile(raw, options) {
       finding('line.width', `... and ${longLines.length - 8} additional over-long lines.`),
     );
   }
+}
 
+function addRouteFindings(findings, raw) {
+  const offsets = lineOffsets(raw);
   for (const range of extractRouteHandlerRanges(raw)) {
     const startLine = lineFromOffset(offsets, range.start);
     const endLine = lineFromOffset(offsets, range.end);
@@ -233,7 +243,10 @@ function scanFile(raw, options) {
       );
     }
   }
+}
 
+function addContractAndFactoryFindings(findings, sourceText, options) {
+  const { file, raw, lines } = sourceText;
   for (const commandType of extractCommandTypesWithOptionalFields(lines)) {
     const fields = commandType.fields.map((field) => field.text).join('; ');
     findings.push(
@@ -252,7 +265,7 @@ function scanFile(raw, options) {
     scanFunctionInputContracts(functions, limits.functionArgumentCount),
   );
   addMessages(findings, 'service.name', scanDiscouragedServiceNames(raw));
-  if (options.outputContracts) {
+  if (options.outputContracts && outputContractExtensions.has(path.extname(file).toLowerCase())) {
     addMessages(findings, 'function.output-contract', scanOutputContractNaming(raw, functions));
   }
   if (options.objectInterfaces) {
@@ -279,7 +292,9 @@ function scanFile(raw, options) {
       }),
     );
   }
+}
 
+function addUnknownFindings(findings, lines) {
   const unknownUsages = findUnknownUsages(lines);
   for (const usage of unknownUsages.slice(0, 5)) {
     findings.push(
@@ -299,7 +314,6 @@ function scanFile(raw, options) {
       ),
     );
   }
-  return findings;
 }
 
 async function collectSourceFiles(current) {

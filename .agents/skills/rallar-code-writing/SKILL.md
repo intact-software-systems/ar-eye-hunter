@@ -1,6 +1,6 @@
 ---
 name: rallar-code-writing
-description: Use when writing, generating, refactoring, or reviewing TypeScript anywhere in the Rallar repository, including apps, packages, scripts, examples, and tests.
+description: Use when writing, generating, refactoring, or reviewing any human-authored code in the Rallar repository; TypeScript-specific rules also apply to TypeScript surfaces. It governs all human-authored code.
 ---
 
 # Rallar Code Writing
@@ -17,9 +17,14 @@ hides a decision, fragments one dataflow, weakens names, or makes ownership
 less obvious. When a detailed rule conflicts with human understandability,
 stop and explain the conflict instead of satisfying the rule mechanically.
 
+The first principle, construction and callback rules, responsibility boundaries,
+explicit dataflow, and testability doctrine apply to all human-authored code.
 Always read `references/repo-code-style.md` completely before writing,
-refactoring, generating, or reviewing TypeScript. It is the authoritative
-repo-wide coding standard; local guidance may tighten it but may not relax it.
+refactoring, generating, or reviewing code. It is the authoritative repo-wide
+coding standard; local guidance may tighten it but may not relax it.
+
+TypeScript changes must also follow every TypeScript-specific rule in
+`references/repo-code-style.md`.
 
 For authoritative database or realtime service mutations, also read
 `references/convergent-service-writing.md` completely. Its repository path is
@@ -39,15 +44,27 @@ rg --files apps packages examples scripts
 ## Workflow
 
 1. Identify the owning domain and side-effect boundary.
-2. Trace input, defaults, decisions, reads, computation, writes, and failures
-   before changing the shape.
-3. Reuse a well-named existing implementation when it has the same semantics.
-4. Keep one canonical implementation of domain behavior. Adapters translate;
+2. Sketch construction order and the representative dataflow before changing
+   the shape. Make each dependency available before its consumer is constructed.
+3. Trace input, defaults, decisions, reads, computation, writes, and failures.
+   Preserve one semantic name for each value until an explicit translation
+   creates a genuinely different value.
+4. Classify every callback as a genuine deferred boundary or removable control
+   indirection. Keep lifecycle, event, retry, transaction, and protocol callbacks
+   visible; move business workflows into direct named operations.
+5. Inspect factories and extracted helpers for dependency cycles, late binding,
+   pass-through layers, renamed inputs, and important decisions buried below
+   callback or helper chains.
+6. Reuse a well-named existing implementation when it has the same semantics.
+7. Keep one canonical implementation of domain behavior. Adapters translate;
    they do not reimplement.
-5. Keep defaults and policy decisions high in the call stack.
-6. Prefer required contracts and explicit value flow.
-7. Add or update behavior tests for changed behavior.
-8. Use the `rallar-testing` skill to select focused checks, type-checks, and any
+8. Keep defaults and policy decisions high in the call stack.
+9. Prefer required contracts and explicit value flow.
+10. Add or update behavior tests for changed behavior.
+11. Trace one representative input from the public entry point to its result,
+    including callback invocation count and timing, before considering the shape
+    complete.
+12. Use the `rallar-testing` skill to select focused checks, type-checks, and any
    broader consumer validation.
 
 ## Authoritative Database Mutations
@@ -85,6 +102,13 @@ rg --files apps packages examples scripts
 - No hidden clock, randomness, network, storage, repository, config, or
   environment dependency.
 - No clever code where named helpers or explicit branches would be easier to review.
+- No construction cycle hidden by a definite-assignment assertion, setter,
+  mutable closure, supplier, service locator, global, or test-only wiring path.
+- No callback used only to move a business workflow deeper in the call stack.
+- No generic `input`, `options`, or `context` renaming that obscures which value
+  is flowing through the operation.
+- No pass-through factory, wrapper, or facade without a real ownership,
+  lifecycle, translation, policy, or protocol boundary.
 - No parallel implementations of the same algorithm.
 - No app-local duplicate of behavior that already belongs in `packages/**`.
 - No unconditional authoritative upsert after a read-derived decision.

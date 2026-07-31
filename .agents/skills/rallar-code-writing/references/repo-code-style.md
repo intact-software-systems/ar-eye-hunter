@@ -1,8 +1,10 @@
 # Rallar Repo Code Style
 
-This is the authoritative coding standard for TypeScript in this repository.
-`AGENTS.md`, repo skills, human review guides, and automated checks must point here rather than restating a different
-version of these rules.
+Universal structural rules in this standard govern all human-authored code in
+the repository. TypeScript-specific rules additionally govern TypeScript and
+JavaScript-family source where their syntax and tooling apply. `AGENTS.md`, repo
+skills, human review guides, and automated checks must point here rather than
+restating a different version of these rules.
 
 ## Contents
 
@@ -17,6 +19,7 @@ version of these rules.
 - [Variables and local flow](#variables-and-local-flow)
 - [Required fields and boundary defaults](#required-fields-and-boundary-defaults)
 - [Factory inputs and visible defaults](#factory-inputs-and-visible-defaults)
+- [Construction, dependencies, and callbacks](#construction-dependencies-and-callbacks)
 - [Function inputs and outputs](#function-inputs-and-outputs)
 - [`interface` and `type`](#interface-and-type)
 - [Narrowing, `unknown`, and assertions](#narrowing-unknown-and-assertions)
@@ -50,8 +53,15 @@ inventing another abstraction.
 
 ## Scope and adoption
 
-- The standard applies to TypeScript under `apps/**`, `packages/**`, `scripts/**`, examples, tests, and support tooling.
-  A closer domain guide may add stricter rules, but may not relax this baseline.
+- Universal structural rules apply to all human-authored code, including source,
+  scripts, tests, fixtures, examples, configuration code, and support tooling,
+  regardless of language or directory. These universal sections are the first
+  principle; construction, dependencies, and callbacks; functional dataflow and
+  state; services and responsibility boundaries; decision depth; comments and
+  self-explanatory code; and review and automation.
+- TypeScript-specific rules apply additionally to TypeScript and
+  JavaScript-family source where their syntax and tooling apply. A closer domain
+  guide may add stricter rules, but may not relax this baseline.
 - Apply the standard to all new code and to code changed during a task. Do not expand an unrelated task into a
   repository-wide cleanup.
 - The manual review gate is active now. The full-repository checker remains warning-only while legacy debt remains.
@@ -365,6 +375,61 @@ function createDefaultRallarServer(): RallarServerApplication {
 The default factory is a composition root: its purpose is to bring defaults and dependency choices into view.
 Lower-level factories take explicit values.
 
+## Construction, dependencies, and callbacks
+
+Construction order must be visible and acyclic. Construct each dependency
+before the consumer that receives it, then pass the completed dependency as a
+value through a required, narrow port. A reader should be able to scan the
+composition root from top to bottom and identify who creates, owns, and invokes
+each capability.
+
+Do not hide a construction cycle with a definite-assignment assertion, mutable
+closure, setter injection, post-construction binding, forward-captured callback,
+supplier introduced only to defer lookup, global registry, or service locator.
+These shapes replace a structural dependency with a temporal invariant and make
+use-before-wiring possible. Test-only factories or overloads must not create a
+second construction path.
+
+Resolve a cycle by changing ownership:
+
+1. move the shared decision or state to the single unit that owns it;
+2. depend in one direction on a smaller, lower-level port; or
+3. combine units that share one lifecycle and cannot state independent
+   responsibilities.
+
+Compatibility and deadlines may constrain the public surface, but they do not
+justify hidden late binding. Preserve an existing boundary with a thin adapter
+only when that adapter has an explicit compatibility purpose and lifetime.
+
+A callback is appropriate when another owner genuinely decides whether, when,
+or how often work runs. Common examples are event delivery, lifecycle hooks,
+transactions, retry attempts, resource scopes, and protocol/framework entry
+points. Keep the registration or invocation boundary visible. Make callback
+timing, invocation count, captured values, failure behavior, and cleanup clear
+from its contract and owning call site.
+
+Keep a callback body short and specific to that boundary. When it contains
+business policy, loops, several decisions, multi-step I/O, or a complete
+workflow, move that work to a direct, descriptively named operation and pass or
+call that operation at the boundary. Do not build a callback chain merely to
+make functions injectable. Inject the narrow capabilities used by the named
+operation and test the same production path with fakes.
+
+Names must preserve the dataflow. Use `XxxServiceDependencies` for behavior
+dependencies, `XxxServiceConfig` for behavior configuration, and a domain-named
+DTO or stage record for data. Do not rename one value through generic
+`input`, `options`, `context`, `payload`, or `data` parameters as it travels down
+the call stack. Keep the domain name stable until an explicitly named `toXxx`
+translation creates a different representation, then give the result its new
+domain name.
+
+Keep the mainline operation visible near the entry point. Extract a wrapper,
+factory, or facade only when it owns a real lifecycle, policy, translation,
+compatibility, or protocol boundary. A layer that accepts a dependency bundle
+and forwards it unchanged does not improve testability. Test pure decisions as
+values and test side-effect boundaries through their narrow production ports;
+do not add factory injection or alternate wiring solely for tests.
+
 ## Function inputs and outputs
 
 A function may have at most three positional parameters. At four parameters, replace them with one named input
@@ -640,3 +705,9 @@ does. Do not add narration comments to AI-generated code.
 Use `docs/repo-human-style-guide.md` for the human review sequence and checker commands. The checker is intentionally
 warning-only by default. A warning is a review prompt, not proof that code is wrong, and a clean checker result is not
 proof that code satisfies this standard.
+
+The TypeScript checker reports `construction.forward-capture` by default when a
+factory callback captures a local binding first assigned after construction.
+The broader construction diagnostics remain opt-in because they have mixed
+signal and require human interpretation. They identify reviewable syntax, not
+proof of a dependency cycle, an unjustified callback, or a boundary-free facade.

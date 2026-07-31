@@ -13,8 +13,14 @@ failures, and call paths a human can locate and follow most directly.
 
 Every coding and architecture rule is interpreted through this principle. A
 mechanically compliant change is not successful when it makes the code harder
-for a human to understand, review, debug, or modify. For TypeScript, use the
-`rallar-code-writing` skill and its authoritative repo standard.
+for a human to understand, review, debug, or modify.
+
+These human-understandability rules govern all human-authored code, including
+source, scripts, tests, examples, configuration code, and support tooling. A
+language-specific standard may add mechanics for that language but may not
+relax visible ownership, dataflow, decisions, side effects, failures, and call paths.
+For TypeScript, use the `rallar-code-writing` skill and its authoritative repo
+standard.
 
 ## Start Here
 
