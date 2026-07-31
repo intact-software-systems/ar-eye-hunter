@@ -30,17 +30,21 @@ export type PGliteSql = PSqlSql & {
 
 export type PGliteSqlClientOptions = Readonly<{
   ready?: Promise<unknown>;
+  stopBeforeClose?: () => Promise<void>;
 }>;
 
 export function createPGliteSqlClient(
   raw: PGlite,
   options: PGliteSqlClientOptions = {},
 ): PGliteSql {
-  const ready = options.ready ?? raw.waitReady;
+  const ready = (options.ready ?? raw.waitReady).then(async () => {
+    await raw.query("set time zone 'UTC'");
+  });
   return createSqlCallable({
     raw,
     executor: raw,
     ready,
+    stopBeforeClose: options.stopBeforeClose,
     inTransaction: false,
   }) as PGliteSql;
 }
@@ -50,6 +54,7 @@ function createSqlCallable(
     raw: PGlite;
     executor: PGliteQueryExecutor;
     ready: Promise<unknown>;
+    stopBeforeClose?: () => Promise<void>;
     inTransaction: boolean;
     savepointState?: PGliteSavepointState;
   }>,
@@ -115,8 +120,12 @@ function createSqlCallable(
   return Object.assign(sql, {
     raw: options.raw,
     close: async () => {
-      await options.ready;
-      await options.raw.close();
+      try {
+        await options.stopBeforeClose?.();
+        await options.ready;
+      } finally {
+        await options.raw.close();
+      }
     },
     exec: async (query: string) => {
       await options.ready;

@@ -9,6 +9,7 @@ import {
   resolvePGliteDataDir,
 } from './database-config.ts';
 import { bootstrapApiV1InMemorySchemaIfNeeded } from './in-memory-schema-bootstrap.ts';
+import { startPGliteBlackBoxSnapshotPublisher } from './pglite-black-box-evidence-snapshot.ts';
 import { createPGliteSqlClient, type PGliteSql } from './pglite-sql-adapter.ts';
 
 export type ApiV1Sql = Sql | PSqlSql;
@@ -42,8 +43,14 @@ export function createApiV1PGliteSqlClient(
   config: ApiV1DatabaseBackendConfig,
 ): PGliteSql {
   const pglite = new PGlite(resolvePGliteDataDir(config));
+  const snapshotPublisher = bootstrapApiV1InMemorySchemaIfNeeded(pglite, config).then(async () => {
+    return await startPGliteBlackBoxSnapshotPublisher(pglite);
+  });
   return createPGliteSqlClient(pglite, {
-    ready: bootstrapApiV1InMemorySchemaIfNeeded(pglite, config),
+    ready: snapshotPublisher,
+    stopBeforeClose: async () => {
+      await (await snapshotPublisher)?.stop();
+    },
   });
 }
 

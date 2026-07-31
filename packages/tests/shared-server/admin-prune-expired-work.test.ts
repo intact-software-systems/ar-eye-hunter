@@ -38,13 +38,13 @@ describe('AdminPruneExpiredWork', () => {
       decodeAdminPruneCommand({
         ...command,
         categories: ['unknown'],
-      })
+      }),
     ).toThrow(TypeError);
     expect(() =>
       decodeAdminPruneCommand({
         ...command,
         pageSize: 0,
-      })
+      }),
     ).toThrow(TypeError);
   });
 
@@ -105,17 +105,20 @@ describe('AdminPruneExpiredWork', () => {
       now: () => NOW,
       readAuthority: () => Promise.resolve({ allowed: true, code: 'allowed' }),
     });
-    const entry = createReservedEntry({
-      kind: 'page',
-      jobId: 'prune-queue',
-      category: 'resource-inbox',
-      capturedAtEpochMs: NOW,
-      expireAtEpochMs: NOW + 60_000,
-      pageSize: 3,
-      afterCursor: null,
-      pageIndex: 0,
-      appData: null,
-    }, '11');
+    const entry = createReservedEntry(
+      {
+        kind: 'page',
+        jobId: 'prune-queue',
+        category: 'resource-inbox',
+        capturedAtEpochMs: NOW,
+        expireAtEpochMs: NOW + 60_000,
+        pageSize: 3,
+        afterCursor: null,
+        pageIndex: 0,
+        appData: null,
+      },
+      '11',
+    );
 
     const command = decodeAdminPruneWork(entry);
     const read = await work.read(command);
@@ -152,6 +155,38 @@ describe('AdminPruneExpiredWork', () => {
     expect(repository.writtenEntries).toEqual([]);
   });
 
+  it('wakes the queue only after committed successor page work', async () => {
+    const repository = new MemoryPruneRepository(['1', '2', '3']);
+    let wakeCount = 0;
+    const work = new AdminPruneExpiredWork({
+      database: repository.database,
+      repository,
+      serviceId: 'server-1',
+      pageSize: 2,
+      now: () => NOW,
+      readAuthority: () => Promise.resolve({ allowed: true, code: 'allowed' }),
+      wakeQueue: () => {
+        wakeCount += 1;
+      },
+    });
+    const entry = createReservedEntry({
+      kind: 'page',
+      jobId: 'prune-successor',
+      category: 'runtime-state',
+      capturedAtEpochMs: NOW,
+      expireAtEpochMs: NOW + 60_000,
+      pageSize: 2,
+      afterCursor: null,
+      pageIndex: 0,
+      appData: null,
+    });
+
+    await work.processReservedEntry(entry);
+
+    expect(repository.writtenEntries).toHaveLength(1);
+    expect(wakeCount).toBe(1);
+  });
+
   it('extends pending aggregate and successor expiry from the page read time', async () => {
     const repository = new MemoryPruneRepository(['1', '2', '3']);
     const work = new AdminPruneExpiredWork({
@@ -177,11 +212,10 @@ describe('AdminPruneExpiredWork', () => {
     const command = decodeAdminPruneWork(entry);
     const computed = work.compute(command, await work.read(command));
 
-    expect(computed.next?.expireAtEpochMs).toBe(
+    expect(computed.next?.expireAtEpochMs).toBe(resourceInboxRetryExpiryAtEpochMs(NOW + 50_000));
+    expect(computed.aggregateSuccessor.audit.expiryTs.epochMilliseconds).toBe(
       resourceInboxRetryExpiryAtEpochMs(NOW + 50_000),
     );
-    expect(computed.aggregateSuccessor.audit.expiryTs.epochMilliseconds)
-      .toBe(resourceInboxRetryExpiryAtEpochMs(NOW + 50_000));
   });
 
   it('rejects forged multi-category work and page-size widening', () => {
@@ -300,9 +334,9 @@ function createReservedEntry(work: unknown, _resourceId = 'prune-work-1'): Resou
     requestedSessionId: 'session-1',
   };
   const jobId = String(normalized.jobId);
-  const computedResourceId = `${jobId}:${String(normalized.category)}:${
-    String(normalized.pageIndex)
-  }`;
+  const computedResourceId = `${jobId}:${String(normalized.category)}:${String(
+    normalized.pageIndex,
+  )}`;
   const expireAtEpochMs = Number(normalized.expireAtEpochMs);
   const createdTs = Temporal.Instant.fromEpochMilliseconds(NOW)
     .toZonedDateTimeISO('UTC')
