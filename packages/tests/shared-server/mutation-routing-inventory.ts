@@ -19,6 +19,7 @@ export interface MutationRouteInventoryEntry {
   readonly enqueueSourcePath: string;
   readonly enqueueMarker: string;
   readonly ownerSourcePath: string;
+  readonly typeOwnerSourcePath: string;
 }
 
 const CLIENT_ROUTE = '/api/state/apps/:applicationId/workspaces/:workspaceId/clients';
@@ -45,6 +46,7 @@ const PATHS = {
 const OWNERS = {
   C: 'packages/shared-server/rallar-system/services/AppClientInboxService.ts',
   G: 'packages/shared-server/rallar-system/services/AppGroupInboxService.ts',
+  I: 'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts',
   A: 'packages/shared-server/rallar-system/services/AppAuthInboxService.ts',
   D: 'packages/shared-server/rallar-system/services/AppCrdtInboxService.ts',
   N: 'packages/shared-server/rallar-system/services/AppAdminInboxService.ts',
@@ -65,24 +67,24 @@ HTTP\tPOST /api/auth/logout\tAUTH_SESSION_LOGOUT\ta\t'/api/auth/logout'\ta\tlogo
 HTTP\tPOST /api/auth/ws-ticket\tAUTH_WS_TICKET_ISSUE\ta\t'/api/auth/ws-ticket'\ta\tissueWebSocketTicket\tA\tAppAuthInboxService.processCommand
 HTTP\tPOST /api/auth/agent-session-tickets\tAUTH_AGENT_SESSION_TICKETS_ISSUE\ta\t'/api/auth/agent-session-tickets'\ta\tissueAgentSessionTickets\tA\tAppAuthInboxService.processCommand
 HTTP\tPOST /api/auth/agent-session-tickets/consume\tAUTH_AGENT_SESSION_TICKET_CONSUME\ta\t'/api/auth/agent-session-tickets/consume'\ta\tconsumeAgentSessionTicket\tA\tAppAuthInboxService.processCommand
-HTTP\tPOST ${GROUP_ROUTE}\tGROUP_CREATE\tg\t'/api/state/apps/:applicationId/workspaces/:workspaceId/groups'\tg\tAppInboxType.GROUP_CREATE\tG\tAppGroupInboxService.processMutation
-HTTP\tPUT ${GROUP_ITEM_ROUTE}\tGROUP_UPDATE\tg\t'/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId'\tg\tAppInboxType.GROUP_UPDATE\tG\tAppGroupInboxService.processMutation
-HTTP\tPOST ${GROUP_ITEM_ROUTE}/director/appoint\tGROUP_DIRECTOR_APPOINT\tg\t/director/appoint\tg\tAppInboxType.GROUP_DIRECTOR_APPOINT\tG\tAppGroupInboxService.processMutation
-HTTP\tPOST ${GROUP_ITEM_ROUTE}/join\tGROUP_JOIN\tg\t/groups/:groupId/join\tg\tAppInboxType.GROUP_JOIN\tG\tAppGroupInboxService.processMutation
-HTTP\tPOST ${GROUP_ITEM_ROUTE}/invites/:principalId\tGROUP_INVITE_CREATE\tg\t/invites/:principalId\tg\tAppInboxType.GROUP_INVITE_CREATE\tG\tAppGroupInboxService.processMutation
-HTTP\tPOST ${GROUP_ITEM_ROUTE}/invites/:principalId/revoke\tGROUP_INVITE_REVOKE\tg\t/invites/:principalId/revoke\tg\tAppInboxType.GROUP_INVITE_REVOKE\tG\tAppGroupInboxService.processMutation
-HTTP\tPOST ${GROUP_ITEM_ROUTE}/invites/accept\tGROUP_INVITE_ACCEPT\tg\t/invites/accept\tg\tAppInboxType.GROUP_INVITE_ACCEPT\tG\tAppGroupInboxService.processMutation
-HTTP\tPOST ${GROUP_ITEM_ROUTE}/join-code/rotate\tGROUP_JOIN_CODE_ROTATE\tg\t/join-code/rotate\tg\tAppInboxType.GROUP_JOIN_CODE_ROTATE\tG\tAppGroupInboxService.processMutation
-HTTP\tPOST ${GROUP_ITEM_ROUTE}/members/:principalId/remove\tGROUP_MEMBER_REMOVE\tg\t/members/:principalId/remove\tg\tAppInboxType.GROUP_MEMBER_REMOVE\tG\tAppGroupInboxService.processMutation
-HTTP\tPOST ${GROUP_ITEM_ROUTE}/members/:principalId/ban\tGROUP_MEMBER_BAN\tg\t/members/:principalId/ban\tg\tAppInboxType.GROUP_MEMBER_BAN\tG\tAppGroupInboxService.processMutation
-HTTP\tPOST ${GROUP_ITEM_ROUTE}/members/:principalId/unban\tGROUP_MEMBER_UNBAN\tg\t/members/:principalId/unban\tg\tAppInboxType.GROUP_MEMBER_UNBAN\tG\tAppGroupInboxService.processMutation
-HTTP\tPUT ${GROUP_ITEM_ROUTE}/members/:principalId/role\tGROUP_MEMBER_ROLE_SET\tg\t/members/:principalId/role\tg\tAppInboxType.GROUP_MEMBER_ROLE_SET\tG\tAppGroupInboxService.processMutation
-HTTP\tPOST ${GROUP_ITEM_ROUTE}/owner/transfer\tGROUP_OWNERSHIP_TRANSFER\tg\t/owner/transfer\tg\tAppInboxType.GROUP_OWNERSHIP_TRANSFER\tG\tAppGroupInboxService.processMutation
-HTTP\tPUT ${GROUP_ITEM_ROUTE}/members/:principalId\tGROUP_MEMBER_UPSERT\tg\t/members/:principalId\tg\tAppInboxType.GROUP_MEMBER_UPSERT\tG\tAppGroupInboxService.processMutation
-HTTP\tPUT ${GROUP_ITEM_ROUTE}/sessions/:sessionId\tGROUP_PRESENCE_CONNECT\tg\t/sessions/:sessionId\tg\tAppInboxType.GROUP_PRESENCE_CONNECT\tG\tAppGroupInboxService.processMutation
-HTTP\tPOST ${GROUP_ITEM_ROUTE}/sessions/:sessionId/heartbeat\tGROUP_PRESENCE_HEARTBEAT\tg\t/sessions/:sessionId/heartbeat\tg\tAppInboxType.GROUP_PRESENCE_HEARTBEAT\tG\tAppGroupInboxService.processMutation
-HTTP\tPOST ${GROUP_ITEM_ROUTE}/sessions/:sessionId/disconnect\tGROUP_PRESENCE_DISCONNECT\tg\t/sessions/:sessionId/disconnect\tg\tAppInboxType.GROUP_PRESENCE_DISCONNECT\tG\tAppGroupInboxService.processMutation
-MAINTENANCE\tgroup presence expiry reconciliation\tGROUP_PRESENCE_EXPIRE\te\tenqueuePresenceExpiryReconciliation\te\tenqueueExpiredPresenceSessions\tG\tAppGroupInboxService.processMutation
+HTTP\tPOST ${GROUP_ROUTE}\tGROUP_CREATE\tg\t'/api/state/apps/:applicationId/workspaces/:workspaceId/groups'\tg\tAppInboxType.GROUP_CREATE\tG\tAppGroupInboxService.processMutation\tI
+HTTP\tPUT ${GROUP_ITEM_ROUTE}\tGROUP_UPDATE\tg\t'/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId'\tg\tAppInboxType.GROUP_UPDATE\tG\tAppGroupInboxService.processMutation\tI
+HTTP\tPOST ${GROUP_ITEM_ROUTE}/director/appoint\tGROUP_DIRECTOR_APPOINT\tg\t/director/appoint\tg\tAppInboxType.GROUP_DIRECTOR_APPOINT\tG\tAppGroupInboxService.processMutation\tI
+HTTP\tPOST ${GROUP_ITEM_ROUTE}/join\tGROUP_JOIN\tg\t/groups/:groupId/join\tg\tAppInboxType.GROUP_JOIN\tG\tAppGroupInboxService.processMutation\tI
+HTTP\tPOST ${GROUP_ITEM_ROUTE}/invites/:principalId\tGROUP_INVITE_CREATE\tg\t/invites/:principalId\tg\tAppInboxType.GROUP_INVITE_CREATE\tG\tAppGroupInboxService.processMutation\tI
+HTTP\tPOST ${GROUP_ITEM_ROUTE}/invites/:principalId/revoke\tGROUP_INVITE_REVOKE\tg\t/invites/:principalId/revoke\tg\tAppInboxType.GROUP_INVITE_REVOKE\tG\tAppGroupInboxService.processMutation\tI
+HTTP\tPOST ${GROUP_ITEM_ROUTE}/invites/accept\tGROUP_INVITE_ACCEPT\tg\t/invites/accept\tg\tAppInboxType.GROUP_INVITE_ACCEPT\tG\tAppGroupInboxService.processMutation\tI
+HTTP\tPOST ${GROUP_ITEM_ROUTE}/join-code/rotate\tGROUP_JOIN_CODE_ROTATE\tg\t/join-code/rotate\tg\tAppInboxType.GROUP_JOIN_CODE_ROTATE\tG\tAppGroupInboxService.processMutation\tI
+HTTP\tPOST ${GROUP_ITEM_ROUTE}/members/:principalId/remove\tGROUP_MEMBER_REMOVE\tg\t/members/:principalId/remove\tg\tAppInboxType.GROUP_MEMBER_REMOVE\tG\tAppGroupInboxService.processMutation\tI
+HTTP\tPOST ${GROUP_ITEM_ROUTE}/members/:principalId/ban\tGROUP_MEMBER_BAN\tg\t/members/:principalId/ban\tg\tAppInboxType.GROUP_MEMBER_BAN\tG\tAppGroupInboxService.processMutation\tI
+HTTP\tPOST ${GROUP_ITEM_ROUTE}/members/:principalId/unban\tGROUP_MEMBER_UNBAN\tg\t/members/:principalId/unban\tg\tAppInboxType.GROUP_MEMBER_UNBAN\tG\tAppGroupInboxService.processMutation\tI
+HTTP\tPUT ${GROUP_ITEM_ROUTE}/members/:principalId/role\tGROUP_MEMBER_ROLE_SET\tg\t/members/:principalId/role\tg\tAppInboxType.GROUP_MEMBER_ROLE_SET\tG\tAppGroupInboxService.processMutation\tI
+HTTP\tPOST ${GROUP_ITEM_ROUTE}/owner/transfer\tGROUP_OWNERSHIP_TRANSFER\tg\t/owner/transfer\tg\tAppInboxType.GROUP_OWNERSHIP_TRANSFER\tG\tAppGroupInboxService.processMutation\tI
+HTTP\tPUT ${GROUP_ITEM_ROUTE}/members/:principalId\tGROUP_MEMBER_UPSERT\tg\t/members/:principalId\tg\tAppInboxType.GROUP_MEMBER_UPSERT\tG\tAppGroupInboxService.processMutation\tI
+HTTP\tPUT ${GROUP_ITEM_ROUTE}/sessions/:sessionId\tGROUP_PRESENCE_CONNECT\tg\t/sessions/:sessionId\tg\tAppInboxType.GROUP_PRESENCE_CONNECT\tG\tAppGroupInboxService.processMutation\tI
+HTTP\tPOST ${GROUP_ITEM_ROUTE}/sessions/:sessionId/heartbeat\tGROUP_PRESENCE_HEARTBEAT\tg\t/sessions/:sessionId/heartbeat\tg\tAppInboxType.GROUP_PRESENCE_HEARTBEAT\tG\tAppGroupInboxService.processMutation\tI
+HTTP\tPOST ${GROUP_ITEM_ROUTE}/sessions/:sessionId/disconnect\tGROUP_PRESENCE_DISCONNECT\tg\t/sessions/:sessionId/disconnect\tg\tAppInboxType.GROUP_PRESENCE_DISCONNECT\tG\tAppGroupInboxService.processMutation\tI
+MAINTENANCE\tgroup presence expiry reconciliation\tGROUP_PRESENCE_EXPIRE\te\tenqueuePresenceExpiryReconciliation\te\tenqueueExpiredPresenceSessions\tG\tAppGroupInboxService.processMutation\tI
 WS_LIFECYCLE\twebsocket onClose group cleanup\tGROUP_PRESENCE_SESSION_CLEANUP\tl\tonClose:\tl\tenqueueGroupSessionCleanup\tG\tAppGroupInboxService.processGroupSessionCleanup
 HTTP\tPUT ${TOPOLOGY_ROUTE}/config\tTOPOLOGY_CONFIG_PUT\tt\t/topology/config\tt\tAppInboxType.TOPOLOGY_CONFIG_PUT\tG\tAppGroupInboxService.processTopologyConfigMutation
 HTTP\tDELETE ${TOPOLOGY_ROUTE}/config\tTOPOLOGY_CONFIG_DELETE\tt\t/topology/config\tt\tAppInboxType.TOPOLOGY_CONFIG_DELETE\tG\tAppGroupInboxService.processTopologyConfigMutation
@@ -141,6 +143,7 @@ export function validateMutationRouteInventory(
         'enqueueSourcePath',
         'enqueueMarker',
         'ownerSourcePath',
+        'typeOwnerSourcePath',
       ] as const
     ) {
       if (item[field] !== canonical[field]) issues.push(`${key(item)} has incorrect ${field}`);
@@ -149,7 +152,7 @@ export function validateMutationRouteInventory(
     checkAstMarker(issues, item.enqueueSourcePath, item.enqueueMarker, 'enqueue', item, sources);
     checkAstMarker(
       issues,
-      item.ownerSourcePath,
+      item.typeOwnerSourcePath,
       `AppInboxType.${item.type}`,
       'type ownership',
       item,
@@ -173,12 +176,22 @@ function decodeInventory(rows: string): readonly MutationRouteInventoryEntry[] {
       enqueueMarker,
       ownerSource,
       owner,
+      typeOwnerSource,
     ] = row.split('\t');
     const sourcePath = PATHS[source as keyof typeof PATHS];
     const enqueueSourcePath = PATHS[enqueueSource as keyof typeof PATHS];
     const ownerSourcePath = OWNERS[ownerSource as keyof typeof OWNERS];
+    const typeOwnerSourcePath = typeOwnerSource
+      ? OWNERS[typeOwnerSource as keyof typeof OWNERS]
+      : ownerSourcePath;
     const appInboxType = AppInboxType[type as keyof typeof AppInboxType];
-    if (!sourcePath || !enqueueSourcePath || !ownerSourcePath || !appInboxType) {
+    if (
+      !sourcePath ||
+      !enqueueSourcePath ||
+      !ownerSourcePath ||
+      !typeOwnerSourcePath ||
+      !appInboxType
+    ) {
       throw new Error(`Invalid mutation route inventory row: ${row}`);
     }
     return {
@@ -191,6 +204,7 @@ function decodeInventory(rows: string): readonly MutationRouteInventoryEntry[] {
       enqueueSourcePath,
       enqueueMarker,
       ownerSourcePath,
+      typeOwnerSourcePath,
     };
   });
 }

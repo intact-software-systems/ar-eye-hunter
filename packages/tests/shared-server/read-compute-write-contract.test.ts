@@ -1,9 +1,10 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { findMutationBoundaryViolations } from './mutation-boundary-analysis.ts';
 
 const serviceRoot = 'packages/shared-server/rallar-system/services';
 const repositoryRoot = 'packages/shared-server/rallar-system/repositories';
+const groupStateRoot = 'packages/shared-server/rallar-system/group-state';
 
 const sources = {
     appAdmin: read(`${serviceRoot}/AppAdminInboxService.ts`),
@@ -11,6 +12,9 @@ const sources = {
     appClient: read(`${serviceRoot}/AppClientInboxService.ts`),
     appCrdt: read(`${serviceRoot}/AppCrdtInboxService.ts`),
     appGroup: read(`${serviceRoot}/AppGroupInboxService.ts`),
+    groupHandler: read(
+        `${groupStateRoot}/inbox/group-state-inbox-handler.ts`,
+    ),
     client: read(`${serviceRoot}/client-state-service.ts`),
     group: read(`${serviceRoot}/group-state-guarded-batch.ts`),
     topologyConfig: read(`${serviceRoot}/group-topology-management-service.ts`),
@@ -25,6 +29,14 @@ const trackedRuntimeSource = [
     `${serviceRoot}/AppInboxService.ts`,
     `${serviceRoot}/client-state-service.ts`,
     `${serviceRoot}/group-state-service.ts`,
+    `${groupStateRoot}/group-mutation-authority.ts`,
+    `${groupStateRoot}/group-mutation-command.ts`,
+    `${groupStateRoot}/group-presence-mutation-command.ts`,
+    `${groupStateRoot}/group-state-service-contracts.ts`,
+    `${groupStateRoot}/group-state-service.ts`,
+    `${groupStateRoot}/inbox/group-state-inbox-contracts.ts`,
+    `${groupStateRoot}/inbox/group-state-inbox-handler.ts`,
+    `${groupStateRoot}/inbox/group-state-inbox-result.ts`,
     `${serviceRoot}/group-state-mutations.ts`,
     `${serviceRoot}/group-topology-config-mutations.ts`,
     `${serviceRoot}/group-topology-management-service.ts`,
@@ -49,6 +61,30 @@ describe('read/compute/validate/write implementation contract', { timeout: 30_00
         for (const forbidden of removedIntermediateOutboxSymbols) {
             expect(trackedRuntimeSource).not.toContain(forbidden);
         }
+    });
+
+    it('keeps group-state service and inbox ownership in the target modules', () => {
+        for (const file of [
+            `${groupStateRoot}/group-mutation-authority.ts`,
+            `${groupStateRoot}/group-mutation-command.ts`,
+            `${groupStateRoot}/group-presence-mutation-command.ts`,
+            `${groupStateRoot}/group-state-service-contracts.ts`,
+            `${groupStateRoot}/group-state-service.ts`,
+            `${groupStateRoot}/inbox/group-state-inbox-contracts.ts`,
+            `${groupStateRoot}/inbox/group-state-inbox-handler.ts`,
+            `${groupStateRoot}/inbox/group-state-inbox-result.ts`,
+        ]) {
+            expect(existsSync(file), file).toBe(true);
+        }
+        expect(read(`${serviceRoot}/group-state-service.ts`)).not.toContain(
+            'createGroupStateRuntime(',
+        );
+        expect(read(`${serviceRoot}/group-state-service.ts`)).not.toContain(
+            'toDescriptorCommand(',
+        );
+        expect(sources.groupHandler).toContain(
+            'export class GroupStateInboxHandler',
+        );
     });
 
     it.each([
@@ -98,13 +134,13 @@ describe('read/compute/validate/write implementation contract', { timeout: 30_00
         },
         {
             name: 'group AppInbox',
-            source: sources.appGroup,
+            source: sources.groupHandler,
             owner: 'processMutation',
             calls: [
-                'this.groupStateService.read(command)',
-                'this.groupStateService.compute(command, read)',
-                'this.groupStateService.validate(command, read, computed)',
-                'this.commitMutation(context, command, computed)',
+                'this.dependencies.groupStateService.read(command)',
+                'this.dependencies.groupStateService.compute(command, read)',
+                'this.dependencies.groupStateService.validate(command, read, computed)',
+                'this.commitMutation({ context, command, computed })',
             ],
         },
         {

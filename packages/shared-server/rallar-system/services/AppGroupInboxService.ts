@@ -1,24 +1,4 @@
-import type {
-    AcceptGroupInviteRequest,
-    AppointGroupDirectorRequest,
-    BanGroupMemberRequest,
-    ConnectGroupPresenceSessionRequest,
-    CreateGroupInviteRequest,
-    CreateGroupRequest,
-    DisconnectGroupPresenceSessionRequest,
-    HeartbeatGroupPresenceSessionRequest,
-    JoinGroupRequest,
-    RemoveGroupMemberRequest,
-    RevokeGroupInviteRequest,
-    RotateGroupJoinCodeRequest,
-    SetGroupMemberRoleRequest,
-    StateScope,
-    TransferGroupOwnershipRequest,
-    UnbanGroupMemberRequest,
-    UpdateGroupRequest,
-    UpsertGroupMemberRequest,
-} from '@shared/api/state-types.ts';
-import type { GroupEvent, GroupRef } from '@shared/api/group-types.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
@@ -35,9 +15,6 @@ import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import type {
-    GroupMutationDescriptor,
-    GroupMutationPreparation,
-    GroupStateMutationCommand,
     GroupStateService,
 } from '@shared-server/rallar-system/services/group-state-service.ts';
 import { GroupMutationAuthorizationError } from '@shared-server/rallar-system/services/group-state-service.ts';
@@ -57,11 +34,6 @@ import type { PersistedAuthSession } from '../repositories/auth-persistence-cont
 import { authSessionProofSecret } from './auth-session-proof-secret.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
-import {
-    createTransactionBoundGroupStateRepository,
-    type GroupStateRepository,
-} from '../repositories/GroupStateRepository.ts';
-import type { GroupMutationComputed, GroupMutationReceipt } from './group-state-mutations.ts';
 import { hashCanonicalCommand } from './canonical-command-hash.ts';
 import type {
     GroupTopologyManagementService,
@@ -83,14 +55,18 @@ import {
 export type { RtcRttAppInboxResult } from './rtc-rtt-app-inbox-result.ts';
 import { validateRtcRttMeasurement } from '../rtc-rtt-persistence-validation.ts';
 import {
-    processGroupPresenceConnect,
     processGroupSessionCleanup,
     requireTopologyManagementService,
     toExpiredPresenceEnqueue,
     toGroupSessionCleanupEnqueue,
     type GroupPresenceSessionCleanupAppInboxPayload,
 } from './app-group-ws-session-lifecycle.ts';
-import type { WsSessionGenerationLifecycleComputed } from './ws-session-generation-lifecycle.ts';
+import { GroupStateInboxHandler } from '../group-state/inbox/group-state-inbox-handler.ts';
+import {
+    AUTHENTICATED_GROUP_INBOX_TYPES,
+    GROUP_MUTATION_INBOX_TYPES,
+    isAuthenticatedGroupMutationInboxType,
+} from '../group-state/inbox/group-state-inbox-contracts.ts';
 
 import {
     createTopologyMutationAuthorityProof,
@@ -104,116 +80,26 @@ export {
     AppInboxType,
 } from '@shared-server/rallar-system/services/AppInboxService.ts';
 
-export type GroupCreateAppInboxPayload = Readonly<{
-    scope: StateScope;
-    request: CreateGroupRequest;
-}>;
-
-export type GroupUpdateAppInboxPayload = Readonly<{
-    scope: StateScope;
-    groupId: string;
-    request: UpdateGroupRequest;
-}>;
-
-export type GroupDirectorAppointAppInboxPayload = Readonly<{
-    scope: StateScope;
-    groupId: string;
-    request: AppointGroupDirectorRequest;
-}>;
-
-export type GroupJoinAppInboxPayload = Readonly<{
-    scope: StateScope;
-    groupId: string;
-    request: JoinGroupRequest;
-}>;
-
-export type GroupInviteCreateAppInboxPayload = Readonly<{
-    scope: StateScope;
-    groupId: string;
-    principalId: string;
-    request: CreateGroupInviteRequest;
-}>;
-
-export type GroupInviteRevokeAppInboxPayload = Readonly<{
-    scope: StateScope;
-    groupId: string;
-    principalId: string;
-    request: RevokeGroupInviteRequest;
-}>;
-
-export type GroupInviteAcceptAppInboxPayload = Readonly<{
-    scope: StateScope;
-    groupId: string;
-    request: AcceptGroupInviteRequest;
-}>;
-
-export type GroupJoinCodeRotateAppInboxPayload = Readonly<{
-    scope: StateScope;
-    groupId: string;
-    request: RotateGroupJoinCodeRequest;
-}>;
-
-export type GroupMemberRemoveAppInboxPayload = Readonly<{
-    scope: StateScope;
-    groupId: string;
-    principalId: string;
-    request: RemoveGroupMemberRequest;
-}>;
-
-export type GroupMemberBanAppInboxPayload = Readonly<{
-    scope: StateScope;
-    groupId: string;
-    principalId: string;
-    request: BanGroupMemberRequest;
-}>;
-
-export type GroupMemberUnbanAppInboxPayload = Readonly<{
-    scope: StateScope;
-    groupId: string;
-    principalId: string;
-    request: UnbanGroupMemberRequest;
-}>;
-
-export type GroupMemberRoleSetAppInboxPayload = Readonly<{
-    scope: StateScope;
-    groupId: string;
-    principalId: string;
-    request: SetGroupMemberRoleRequest;
-}>;
-
-export type GroupOwnershipTransferAppInboxPayload = Readonly<{
-    scope: StateScope;
-    groupId: string;
-    request: TransferGroupOwnershipRequest;
-}>;
-
-export type GroupMemberUpsertAppInboxPayload = Readonly<{
-    scope: StateScope;
-    groupId: string;
-    principalId: string;
-    request: UpsertGroupMemberRequest;
-}>;
-
-export type GroupPresenceConnectAppInboxPayload = Readonly<{
-    scope: StateScope;
-    groupId: string;
-    sessionId: string;
-    request: ConnectGroupPresenceSessionRequest;
-}>;
-
-export type GroupPresenceHeartbeatAppInboxPayload = Readonly<{
-    scope: StateScope;
-    groupId: string;
-    sessionId: string;
-    request: HeartbeatGroupPresenceSessionRequest;
-}>;
-
-export type GroupPresenceDisconnectAppInboxPayload = Readonly<{
-    scope: StateScope;
-    groupId: string;
-    sessionId: string;
-    request: DisconnectGroupPresenceSessionRequest;
-}>;
+export {
+    AUTHENTICATED_GROUP_INBOX_TYPES,
+    type GroupCreateAppInboxPayload,
+    type GroupDirectorAppointAppInboxPayload,
+    type GroupInviteAcceptAppInboxPayload,
+    type GroupInviteCreateAppInboxPayload,
+    type GroupInviteRevokeAppInboxPayload,
+    type GroupJoinAppInboxPayload,
+    type GroupJoinCodeRotateAppInboxPayload,
+    type GroupMemberBanAppInboxPayload,
+    type GroupMemberRemoveAppInboxPayload,
+    type GroupMemberRoleSetAppInboxPayload,
+    type GroupMemberUnbanAppInboxPayload,
+    type GroupMemberUpsertAppInboxPayload,
+    type GroupOwnershipTransferAppInboxPayload,
+    type GroupPresenceConnectAppInboxPayload,
+    type GroupPresenceDisconnectAppInboxPayload,
+    type GroupPresenceHeartbeatAppInboxPayload,
+    type GroupUpdateAppInboxPayload,
+} from '../group-state/inbox/group-state-inbox-contracts.ts';
 
 export type { GroupPresenceSessionCleanupAppInboxPayload } from './app-group-ws-session-lifecycle.ts';
 
@@ -342,6 +228,18 @@ export type RtcRttAppInboxDependencies = Readonly<{
     observeCommitted?(rtt: RttMeasurementInfo): void;
 }>;
 
+interface TopologyAppInboxHandler {
+    readonly processMutation: (
+        context: AppInboxMessageContext,
+    ) => Promise<unknown>;
+}
+
+interface RtcRttAppInboxHandler {
+    readonly processMutation: (
+        context: AppInboxMessageContext,
+    ) => Promise<RtcRttAppInboxResult>;
+}
+
 export async function toTopologyAppInboxCommand(
     input: CreateTopologyAppInboxCommandInput,
 ): Promise<TopologyAppInboxCommand> {
@@ -457,7 +355,7 @@ export class AppGroupInboxService extends AppInboxService {
             );
         }
         const preparation = await this.groupStateService.prepareMutation(
-            toGroupMutationDescriptor(enqueue),
+            this.groupStateInboxHandler.toMutationDescriptor(enqueue),
             authority,
         );
         return await super.processEntryUntilCompletion<V, R>({
@@ -483,7 +381,7 @@ export class AppGroupInboxService extends AppInboxService {
             );
         }
         const preparation = await this.groupStateService.prepareMutation(
-            toGroupMutationDescriptor(enqueue),
+            this.groupStateInboxHandler.toMutationDescriptor(enqueue),
             authority,
         );
         return await super.processEntryUntilCompletionResult<V, R>({
@@ -594,14 +492,20 @@ export class AppGroupInboxService extends AppInboxService {
             options,
             wakeQueue,
         );
-        const processMutation = async (
+        this.groupStateInboxHandler = new GroupStateInboxHandler({
+            groupStateService: this.groupStateService,
+            writeMutation: async (context, write) =>
+                await this.writeMutation(context, write),
+            wakeQueue: this.wakeQueue,
+        });
+        const processGroupMutation = async (
             _payload: unknown,
             context: AppInboxMessageContext,
         ) => await this.processMutation(context);
         for (const type of GROUP_MUTATION_INBOX_TYPES.filter(
             (candidate) => candidate !== AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP,
         )) {
-            this.onStateMessage(type, processMutation);
+            this.onStateMessage(type, processGroupMutation);
         }
         this.onStateMessage<GroupPresenceSessionCleanupAppInboxPayload>(
             AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP,
@@ -613,21 +517,32 @@ export class AppGroupInboxService extends AppInboxService {
                 wakeQueue: this.wakeQueue,
             }),
         );
+        const processTopologyMutation: TopologyAppInboxHandler['processMutation'] =
+            async (context) => await this.processTopologyConfigMutation(context);
         const processTopology = async (
             _payload: unknown,
             context: AppInboxMessageContext,
-        ) => await this.processTopologyConfigMutation(context);
+        ) => await processTopologyMutation(context);
         for (const type of TOPOLOGY_CONFIG_INBOX_TYPES) {
             this.onStateMessage(type, processTopology);
         }
+        const processRtcRttMutation: RtcRttAppInboxHandler['processMutation'] =
+            async (context) => await this.processRtcRttMutation(context);
         this.onStateMessage(
             AppInboxType.RTC_RTT_SUBMIT,
-            async (_payload, context) => await this.processRtcRttMutation(context),
+            async (_payload, context) => await processRtcRttMutation(context),
         );
     }
 
+    private readonly groupStateInboxHandler: GroupStateInboxHandler;
     private topologyManagementService?: GroupTopologyManagementService;
     private rtcRttDependencies?: RtcRttAppInboxDependencies;
+
+    private async processMutation(
+        context: AppInboxMessageContext,
+    ): Promise<unknown> {
+        return await this.groupStateInboxHandler.processMutation(context);
+    }
 
     private async processAuthenticatedTopologyEntry<V, R>(
         enqueue: AppInboxEnqueueInput<V>,
@@ -954,220 +869,7 @@ export class AppGroupInboxService extends AppInboxService {
         }
     }
 
-    private async processMutation(
-        context: AppInboxMessageContext,
-    ): Promise<unknown> {
-        const prepared = readGroupMutationPreparation(
-            context.enqueue.authority,
-        );
-        const command: GroupStateMutationCommand = {
-            authorityProof: prepared.authorityProof,
-            descriptor: prepared.descriptor,
-            command: prepared.command,
-            facts: {
-                ...prepared.facts,
-                attemptCount: context.entry.dequeueAudit.attempts,
-            },
-        };
-        if (command.command.operation === 'connectPresence') {
-            return await processGroupPresenceConnect({
-                command,
-                groupStateService: this.groupStateService,
-                writeMutation: async (write) => await this.writeMutation(context, write),
-                commitMutation: async (computed, lifecycleGuard) =>
-                    await this.commitMutation(context, command, computed, lifecycleGuard),
-            });
-        }
-        const read = await this.groupStateService.read(command);
-        const computed = this.groupStateService.compute(command, read);
-        this.groupStateService.validate(command, read, computed);
-        return await this.commitMutation(context, command, computed);
-    }
-
-    private async commitMutation(
-        context: AppInboxMessageContext,
-        command: GroupStateMutationCommand,
-        computed: GroupMutationComputed,
-        lifecycleGuard?: WsSessionGenerationLifecycleComputed,
-    ): Promise<unknown> {
-        let committedSnapshot: GroupSnapshot | undefined;
-        const result = await this.writeMutation(
-            context,
-            async (transaction) => {
-                if (lifecycleGuard) {
-                    await this.groupStateService.sessionGenerationLifecycle.write(
-                        transaction,
-                        lifecycleGuard,
-                    );
-                }
-                if (computed.outcome === 'idempotency-conflict') {
-                    throw new TypeError(
-                        'Validated group idempotency conflict is unreachable',
-                    );
-                }
-                const receipt = computed.receipt;
-                if (computed.outcome === 'write') {
-                    await this.groupStateService.write(transaction, computed);
-                }
-                const repository = createTransactionBoundGroupStateRepository(transaction);
-                const snapshot = await repository.readSnapshot(
-                    command.command.aggregateRef,
-                );
-                committedSnapshot = snapshot;
-                if (isPresenceOperation(command.command.operation)) {
-                    return receipt;
-                }
-                if (!snapshot) {
-                    throw new TypeError(
-                        `Group snapshot not found after ${command.command.operation}`,
-                    );
-                }
-                const event = await readReceiptEvent(
-                    repository,
-                    command.command.aggregateRef,
-                    receipt,
-                );
-                if (command.command.operation === 'rotateGroupJoinCode') {
-                    if (receipt.outcome === 'rejected') {
-                        return {
-                            status: 'error',
-                            result: Either.ofLeft(
-                                receipt.rejection ??
-                                    'Join-code rotation rejected',
-                            ),
-                        };
-                    }
-                    if (
-                        receipt.joinCode === null ||
-                        receipt.joinCodeExpiresAtEpochMs === null
-                    ) {
-                        throw new TypeError(
-                            'Join-code mutation result is incomplete',
-                        );
-                    }
-                    return {
-                        status: 'ok',
-                        result: Either.ofRight({
-                            joinCode: receipt.joinCode,
-                            expiresAtEpochMs: receipt.joinCodeExpiresAtEpochMs,
-                            snapshot,
-                            event,
-                        }),
-                    };
-                }
-                if (receipt.outcome === 'rejected') {
-                    return {
-                        status: 'error',
-                        result: Either.ofLeft(
-                            receipt.rejection ?? 'Group mutation rejected',
-                        ),
-                    };
-                }
-                return {
-                    status: command.command.operation === 'createGroup' ? 'created' : 'ok',
-                    result: Either.ofRight({ snapshot, event }),
-                };
-            },
-        );
-        if (committedSnapshot) {
-            await this.groupStateService.observeSnapshot(committedSnapshot);
-        }
-        this.wakeQueue?.();
-        return result;
-    }
 }
-
-function isPresenceOperation(
-    operation: GroupStateMutationCommand['command']['operation'],
-): boolean {
-    return (
-        operation === 'connectPresence' ||
-        operation === 'heartbeatPresence' ||
-        operation === 'disconnectPresence'
-    );
-}
-
-async function readReceiptEvent(
-    repository: GroupStateRepository,
-    ref: GroupRef,
-    receipt: GroupMutationReceipt,
-): Promise<GroupEvent | null> {
-    if (receipt.eventId === null) return null;
-    const event = (await repository.listEvents(ref)).find(
-        (candidate) => candidate.eventId === receipt.eventId,
-    );
-    if (!event) {
-        throw new TypeError(
-            `Group mutation event not found: ${receipt.eventId}`,
-        );
-    }
-    return event;
-}
-
-function readGroupMutationPreparation(
-    value: unknown,
-): GroupMutationPreparation {
-    const expectedKeys = [
-        'authorityProof',
-        'descriptor',
-        'command',
-        'facts',
-        'causalToken',
-        'queueResourceId',
-    ].toSorted();
-    if (
-        !value ||
-        typeof value !== 'object' ||
-        Array.isArray(value) ||
-        JSON.stringify(Object.keys(value).toSorted()) !==
-            JSON.stringify(expectedKeys) ||
-        !('authorityProof' in value) ||
-        !isAuthorityProofOrNull(value.authorityProof) ||
-        !('descriptor' in value) ||
-        !isRecordOrNull(value.descriptor) ||
-        !('command' in value) ||
-        !value.command ||
-        typeof value.command !== 'object' ||
-        !('facts' in value) ||
-        !value.facts ||
-        typeof value.facts !== 'object' ||
-        !('causalToken' in value) ||
-        typeof value.causalToken !== 'string' ||
-        !('queueResourceId' in value) ||
-        typeof value.queueResourceId !== 'string'
-    ) {
-        throw new GroupMutationAuthorizationError(
-            'App inbox durable group mutation facts are malformed.',
-        );
-    }
-    return value as GroupMutationPreparation;
-}
-
-export const AUTHENTICATED_GROUP_INBOX_TYPES = [
-    AppInboxType.GROUP_CREATE,
-    AppInboxType.GROUP_UPDATE,
-    AppInboxType.GROUP_DIRECTOR_APPOINT,
-    AppInboxType.GROUP_JOIN,
-    AppInboxType.GROUP_INVITE_CREATE,
-    AppInboxType.GROUP_INVITE_REVOKE,
-    AppInboxType.GROUP_INVITE_ACCEPT,
-    AppInboxType.GROUP_JOIN_CODE_ROTATE,
-    AppInboxType.GROUP_MEMBER_REMOVE,
-    AppInboxType.GROUP_MEMBER_BAN,
-    AppInboxType.GROUP_MEMBER_UNBAN,
-    AppInboxType.GROUP_MEMBER_ROLE_SET,
-    AppInboxType.GROUP_OWNERSHIP_TRANSFER,
-    AppInboxType.GROUP_MEMBER_UPSERT,
-    AppInboxType.GROUP_PRESENCE_CONNECT,
-    AppInboxType.GROUP_PRESENCE_HEARTBEAT,
-    AppInboxType.GROUP_PRESENCE_DISCONNECT,
-] as const;
-
-const GROUP_MUTATION_INBOX_TYPES = [
-    ...AUTHENTICATED_GROUP_INBOX_TYPES,
-    AppInboxType.GROUP_PRESENCE_EXPIRE,
-    AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP,
-] as const;
 
 const TOPOLOGY_CONFIG_INBOX_TYPES = [
     AppInboxType.TOPOLOGY_CONFIG_PUT,
@@ -1176,30 +878,6 @@ const TOPOLOGY_CONFIG_INBOX_TYPES = [
     AppInboxType.TOPOLOGY_OVERRIDE_DELETE,
     AppInboxType.TOPOLOGY_RECONFIGURE,
 ] as const;
-
-function isAuthorityProofOrNull(value: unknown): boolean {
-    return (
-        value === null ||
-        (typeof value === 'object' &&
-        !Array.isArray(value) &&
-        value !== null &&
-        'version' in value &&
-            value.version === 1)
-    );
-}
-
-function isRecordOrNull(value: unknown): boolean {
-    return (
-        value === null ||
-        (typeof value === 'object' && !Array.isArray(value) && value !== null)
-    );
-}
-
-function isAuthenticatedGroupMutationInboxType(type: AppInboxType): boolean {
-    return (
-        AUTHENTICATED_GROUP_INBOX_TYPES as readonly AppInboxType[]
-    ).includes(type);
-}
 
 function isTopologyConfigInboxType(type: AppInboxType): boolean {
     return (TOPOLOGY_CONFIG_INBOX_TYPES as readonly AppInboxType[]).includes(
@@ -1574,180 +1252,4 @@ function constantTimeEqual(left: string, right: string): boolean {
         difference |= (left.charCodeAt(index) || 0) ^ (right.charCodeAt(index) || 0);
     }
     return difference === 0;
-}
-
-function toGroupMutationDescriptor<V>(
-    enqueue: AppInboxEnqueueInput<V>,
-): GroupMutationDescriptor {
-    switch (enqueue.type) {
-        case AppInboxType.GROUP_CREATE: {
-            const payload = enqueue.data as GroupCreateAppInboxPayload;
-            return descriptor(
-                'createGroup',
-                payload.scope,
-                payload.request.groupId,
-                payload.request,
-            );
-        }
-        case AppInboxType.GROUP_UPDATE: {
-            const payload = enqueue.data as GroupUpdateAppInboxPayload;
-            return descriptor(
-                'updateGroup',
-                payload.scope,
-                payload.groupId,
-                payload.request,
-            );
-        }
-        case AppInboxType.GROUP_DIRECTOR_APPOINT: {
-            const payload = enqueue.data as GroupDirectorAppointAppInboxPayload;
-            return descriptor(
-                'appointDirector',
-                payload.scope,
-                payload.groupId,
-                payload.request,
-            );
-        }
-        case AppInboxType.GROUP_JOIN: {
-            const payload = enqueue.data as GroupJoinAppInboxPayload;
-            return descriptor(
-                'joinGroup',
-                payload.scope,
-                payload.groupId,
-                payload.request,
-            );
-        }
-        case AppInboxType.GROUP_INVITE_CREATE: {
-            const payload = enqueue.data as GroupInviteCreateAppInboxPayload;
-            return descriptor(
-                'createGroupInvite',
-                payload.scope,
-                payload.groupId,
-                payload.request,
-                payload.principalId,
-            );
-        }
-        case AppInboxType.GROUP_INVITE_REVOKE: {
-            const payload = enqueue.data as GroupInviteRevokeAppInboxPayload;
-            return descriptor(
-                'revokeGroupInvite',
-                payload.scope,
-                payload.groupId,
-                payload.request,
-                payload.principalId,
-            );
-        }
-        case AppInboxType.GROUP_INVITE_ACCEPT: {
-            const payload = enqueue.data as GroupInviteAcceptAppInboxPayload;
-            return descriptor(
-                'acceptGroupInvite',
-                payload.scope,
-                payload.groupId,
-                payload.request,
-            );
-        }
-        case AppInboxType.GROUP_JOIN_CODE_ROTATE: {
-            const payload = enqueue.data as GroupJoinCodeRotateAppInboxPayload;
-            return descriptor(
-                'rotateGroupJoinCode',
-                payload.scope,
-                payload.groupId,
-                payload.request,
-            );
-        }
-        case AppInboxType.GROUP_MEMBER_REMOVE:
-        case AppInboxType.GROUP_MEMBER_BAN:
-        case AppInboxType.GROUP_MEMBER_UNBAN: {
-            const payload = enqueue.data as GroupMemberRemoveAppInboxPayload;
-            const operation = enqueue.type === AppInboxType.GROUP_MEMBER_REMOVE
-                ? 'removeGroupMember'
-                : enqueue.type === AppInboxType.GROUP_MEMBER_BAN
-                ? 'banGroupMember'
-                : 'unbanGroupMember';
-            return descriptor(
-                operation,
-                payload.scope,
-                payload.groupId,
-                payload.request,
-                payload.principalId,
-            );
-        }
-        case AppInboxType.GROUP_MEMBER_ROLE_SET: {
-            const payload = enqueue.data as GroupMemberRoleSetAppInboxPayload;
-            return descriptor(
-                'setGroupMemberRole',
-                payload.scope,
-                payload.groupId,
-                payload.request,
-                payload.principalId,
-            );
-        }
-        case AppInboxType.GROUP_OWNERSHIP_TRANSFER: {
-            const payload = enqueue.data as GroupOwnershipTransferAppInboxPayload;
-            return descriptor(
-                'transferGroupOwnership',
-                payload.scope,
-                payload.groupId,
-                payload.request,
-                payload.request.newOwnerPrincipalId,
-            );
-        }
-        case AppInboxType.GROUP_MEMBER_UPSERT: {
-            const payload = enqueue.data as GroupMemberUpsertAppInboxPayload;
-            return descriptor(
-                'upsertMember',
-                payload.scope,
-                payload.groupId,
-                payload.request,
-                payload.principalId,
-            );
-        }
-        case AppInboxType.GROUP_PRESENCE_CONNECT: {
-            const payload = enqueue.data as GroupPresenceConnectAppInboxPayload;
-            return descriptor(
-                'connectPresence',
-                payload.scope,
-                payload.groupId,
-                payload.request,
-                payload.request.principalId,
-                payload.sessionId,
-            );
-        }
-        case AppInboxType.GROUP_PRESENCE_HEARTBEAT: {
-            const payload = enqueue.data as GroupPresenceHeartbeatAppInboxPayload;
-            return descriptor(
-                'heartbeatPresence',
-                payload.scope,
-                payload.groupId,
-                payload.request,
-                payload.request.principalId ?? null,
-                payload.sessionId,
-            );
-        }
-        case AppInboxType.GROUP_PRESENCE_DISCONNECT: {
-            const payload = enqueue.data as GroupPresenceDisconnectAppInboxPayload;
-            return descriptor(
-                'disconnectPresence',
-                payload.scope,
-                payload.groupId,
-                payload.request,
-                payload.request.principalId ?? null,
-                payload.sessionId,
-            );
-        }
-        default:
-            throw new GroupMutationAuthorizationError(
-                'App inbox type is not an authenticated group mutation.',
-            );
-    }
-}
-
-function descriptor(
-    operation: GroupMutationDescriptor['operation'],
-    scope: StateScope,
-    groupId: string,
-    request: GroupMutationDescriptor['request'],
-    targetPrincipalId: string | null = null,
-    sessionId: string | null = null,
-): GroupMutationDescriptor {
-    return { operation, scope, groupId, targetPrincipalId, sessionId, request };
 }
