@@ -4,7 +4,10 @@ import type {
   HeartbeatGroupPresenceSessionRequest,
 } from '@shared/api/state-types.ts';
 
-import { GroupMutationRejectedError, type GroupMutationCommand } from './group-mutation-contracts.ts';
+import {
+  GroupMutationRejectedError,
+  type GroupMutationCommand,
+} from './group-mutation-contracts.ts';
 import {
   assertExactKeys,
   requireJsonSafe,
@@ -14,7 +17,10 @@ import {
   requireRecord,
 } from '../group-state-validation-primitives.ts';
 
-export function validateGroupMutationRequest(operation: GroupMutationCommand['operation'], request: unknown): void {
+export function validateGroupMutationRequest(
+  operation: GroupMutationCommand['operation'],
+  request: unknown,
+): void {
   requireJsonSafe(request, `Group ${operation} request`);
   const input = requireRecord(request, `Group ${operation} request`);
   assertExactKeys(input, GROUP_MUTATION_REQUEST_KEYS[operation], `Group ${operation} request`);
@@ -57,9 +63,12 @@ export function validateGroupMutationRequest(operation: GroupMutationCommand['op
       optionalString('slug');
       optionalString('displayName');
       optionalString('description');
-      if (input.kind !== undefined) requireOneOf(input.kind, ['party', 'room', 'team', 'custom'], 'Group kind');
-      if (input.status !== undefined) requireOneOf(input.status, ['active', 'archived', 'deleted'], 'Group status');
-      if (input.joinMode !== undefined) requireOneOf(input.joinMode, ['invite-only', 'code', 'open'], 'Group joinMode');
+      if (input.kind !== undefined)
+        requireOneOf(input.kind, ['party', 'room', 'team', 'custom'], 'Group kind');
+      if (input.status !== undefined)
+        requireOneOf(input.status, ['active', 'archived', 'deleted'], 'Group status');
+      if (input.joinMode !== undefined)
+        requireOneOf(input.joinMode, ['invite-only', 'code', 'open'], 'Group joinMode');
       optionalPositiveInteger('maxMembers');
       optionalPositiveInteger('maxSessionsPerMember');
       if (input.metadata !== undefined) requireRecord(input.metadata, 'Group metadata');
@@ -82,13 +91,20 @@ export function validateGroupMutationRequest(operation: GroupMutationCommand['op
       requireOneOf(input.role, ['owner', 'admin', 'member'], 'Group role');
       return;
     case 'transferGroupOwnership':
-      requireNonEmptyString(input.newOwnerPrincipalId, 'Group transferGroupOwnership newOwnerPrincipalId');
+      requireNonEmptyString(
+        input.newOwnerPrincipalId,
+        'Group transferGroupOwnership newOwnerPrincipalId',
+      );
       return;
     case 'upsertMember':
       if (input.role !== undefined) {
         requireOneOf(input.role, ['owner', 'admin', 'member'], 'Group role');
       }
-      requireOneOf(input.status, ['invited', 'active', 'left', 'removed', 'banned'], 'Group member status');
+      requireOneOf(
+        input.status,
+        ['invited', 'active', 'left', 'removed', 'banned'],
+        'Group member status',
+      );
       optionalString('invitedByPrincipalId');
       optionalPositiveInteger('invitationExpiresAtEpochMs');
       return;
@@ -113,13 +129,22 @@ export function validateGroupMutationRequest(operation: GroupMutationCommand['op
   }
 }
 
-export function validateGroupPresenceMutationRequest(operation: 'connectPresence', request: unknown): asserts request is ConnectGroupPresenceSessionRequest;
-export function validateGroupPresenceMutationRequest(operation: 'heartbeatPresence', request: unknown): asserts request is HeartbeatGroupPresenceSessionRequest;
+export function validateGroupPresenceMutationRequest(
+  operation: 'connectPresence',
+  request: unknown,
+): asserts request is ConnectGroupPresenceSessionRequest;
+export function validateGroupPresenceMutationRequest(
+  operation: 'heartbeatPresence',
+  request: unknown,
+): asserts request is HeartbeatGroupPresenceSessionRequest;
 export function validateGroupPresenceMutationRequest(
   operation: 'disconnectPresence',
   request: unknown,
 ): asserts request is DisconnectGroupPresenceSessionRequest;
-export function validateGroupPresenceMutationRequest(operation: 'connectPresence' | 'heartbeatPresence' | 'disconnectPresence', request: unknown): void {
+export function validateGroupPresenceMutationRequest(
+  operation: 'connectPresence' | 'heartbeatPresence' | 'disconnectPresence',
+  request: unknown,
+): void {
   requireJsonSafe(request, `Group ${operation} request`);
   const value = requireRecord(request, `Group ${operation} request`);
   assertExactKeys(
@@ -140,7 +165,14 @@ export function validateGroupPresenceMutationRequest(operation: 'connectPresence
     `Group ${operation} request`,
   );
   requireNonEmptyString(value.generationId, `Group ${operation} generationId`);
-  for (const field of ['requestId', 'actorPrincipalId', 'actorSessionId', 'reason', 'traceId', 'principalId']) {
+  for (const field of [
+    'requestId',
+    'actorPrincipalId',
+    'actorSessionId',
+    'reason',
+    'traceId',
+    'principalId',
+  ]) {
     if (value[field] !== undefined) {
       requireNonEmptyString(value[field], `Group ${operation} ${field}`);
     }
@@ -153,34 +185,52 @@ export function validateGroupPresenceMutationRequest(operation: 'connectPresence
         : ['disconnectedAtEpochMs', 'lastHeartbeatAtEpochMs', 'expiresAtEpochMs'];
   for (const field of timestampFields) {
     const timestamp = value[field];
-    if (timestamp !== undefined && (!Number.isSafeInteger(timestamp) || (timestamp as number) <= 0)) {
-      throw new GroupMutationRejectedError(`Group ${operation} ${field} must be a positive safe integer`);
+    if (
+      timestamp !== undefined &&
+      (!Number.isSafeInteger(timestamp) || (timestamp as number) <= 0)
+    ) {
+      throw new GroupMutationRejectedError(
+        `Group ${operation} ${field} must be a positive safe integer`,
+      );
     }
   }
   const heartbeatAt = value.lastHeartbeatAtEpochMs as number | undefined;
   const expiresAt = value.expiresAtEpochMs as number | undefined;
   if (heartbeatAt !== undefined && expiresAt !== undefined && expiresAt < heartbeatAt) {
-    throw new GroupMutationRejectedError(`Group ${operation} expiresAtEpochMs must not predate lastHeartbeatAtEpochMs`);
+    throw new GroupMutationRejectedError(
+      `Group ${operation} expiresAtEpochMs must not predate lastHeartbeatAtEpochMs`,
+    );
   }
   if (operation === 'connectPresence') {
     const connectedAt = value.connectedAtEpochMs as number | undefined;
     if (connectedAt !== undefined && heartbeatAt !== undefined && heartbeatAt < connectedAt) {
-      throw new GroupMutationRejectedError('Group connectPresence lastHeartbeatAtEpochMs must not predate connectedAtEpochMs');
+      throw new GroupMutationRejectedError(
+        'Group connectPresence lastHeartbeatAtEpochMs must not predate connectedAtEpochMs',
+      );
     }
   }
   if (operation === 'disconnectPresence') {
     const disconnectedAt = value.disconnectedAtEpochMs as number | undefined;
     if (disconnectedAt !== undefined && heartbeatAt !== undefined && disconnectedAt < heartbeatAt) {
-      throw new GroupMutationRejectedError('Group disconnectPresence disconnectedAtEpochMs must not predate lastHeartbeatAtEpochMs');
+      throw new GroupMutationRejectedError(
+        'Group disconnectPresence disconnectedAtEpochMs must not predate lastHeartbeatAtEpochMs',
+      );
     }
   }
 }
 
-export const ACTOR_INPUT_KEYS = ['actorPrincipalId', 'actorSessionId', 'reason', 'traceId'] as const;
+export const ACTOR_INPUT_KEYS = [
+  'actorPrincipalId',
+  'actorSessionId',
+  'reason',
+  'traceId',
+] as const;
 
 const MUTATION_REQUEST_KEYS = [...ACTOR_INPUT_KEYS, 'requestId'] as const;
 
-const GROUP_MUTATION_REQUEST_KEYS: Readonly<Record<GroupMutationCommand['operation'], readonly string[]>> = {
+const GROUP_MUTATION_REQUEST_KEYS: Readonly<
+  Record<GroupMutationCommand['operation'], readonly string[]>
+> = {
   createGroup: [
     ...MUTATION_REQUEST_KEYS,
     'groupId',
@@ -221,10 +271,29 @@ const GROUP_MUTATION_REQUEST_KEYS: Readonly<Record<GroupMutationCommand['operati
   unbanGroupMember: MUTATION_REQUEST_KEYS,
   setGroupMemberRole: [...MUTATION_REQUEST_KEYS, 'role'],
   transferGroupOwnership: [...MUTATION_REQUEST_KEYS, 'newOwnerPrincipalId'],
-  upsertMember: [...MUTATION_REQUEST_KEYS, 'role', 'status', 'invitedByPrincipalId', 'invitationExpiresAtEpochMs'],
+  upsertMember: [
+    ...MUTATION_REQUEST_KEYS,
+    'role',
+    'status',
+    'invitedByPrincipalId',
+    'invitationExpiresAtEpochMs',
+  ],
   rotateGroupJoinCode: [...MUTATION_REQUEST_KEYS, 'joinCode', 'expiresAtEpochMs'],
-  connectPresence: [...MUTATION_REQUEST_KEYS, 'principalId', 'generationId', 'connectedAtEpochMs', 'lastHeartbeatAtEpochMs', 'expiresAtEpochMs'],
-  heartbeatPresence: [...MUTATION_REQUEST_KEYS, 'principalId', 'generationId', 'lastHeartbeatAtEpochMs', 'expiresAtEpochMs'],
+  connectPresence: [
+    ...MUTATION_REQUEST_KEYS,
+    'principalId',
+    'generationId',
+    'connectedAtEpochMs',
+    'lastHeartbeatAtEpochMs',
+    'expiresAtEpochMs',
+  ],
+  heartbeatPresence: [
+    ...MUTATION_REQUEST_KEYS,
+    'principalId',
+    'generationId',
+    'lastHeartbeatAtEpochMs',
+    'expiresAtEpochMs',
+  ],
   disconnectPresence: [
     ...MUTATION_REQUEST_KEYS,
     'principalId',

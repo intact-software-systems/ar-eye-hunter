@@ -22,10 +22,20 @@ import {
   requireNonNegativeSafeInteger,
   requireRecord,
 } from '../group-state-validation-primitives.ts';
-import { validateStoredGroup, validateStoredMember } from '../persistence/validate-persisted-group.ts';
-import { validatePresenceAdmission, validatePresenceSession, validatePresenceSummaryValue } from '../persistence/validate-persisted-group-presence.ts';
+import {
+  validateStoredGroup,
+  validateStoredMember,
+} from '../persistence/validate-persisted-group.ts';
+import {
+  validatePresenceAdmission,
+  validatePresenceSession,
+  validatePresenceSummaryValue,
+} from '../persistence/validate-persisted-group-presence.ts';
 
-export function validateGroupMutationRead(read: GroupMutationRead, command: GroupMutationCommand): void {
+export function validateGroupMutationRead(
+  read: GroupMutationRead,
+  command: GroupMutationCommand,
+): void {
   const ref = command.aggregateRef;
   requireJsonSafe(read, 'Group mutation read');
   assertExactKeys(
@@ -85,11 +95,36 @@ export function validateGroupMutationRead(read: GroupMutationRead, command: Grou
   const actorPrincipalId = command.input.actorPrincipalId;
   const targetPrincipalId = mutationTargetPrincipalId(command);
   const ownerPrincipalId = read.group?.value.ownerPrincipalId ?? null;
-  const directorPrincipalId = readRallarGroupDirectorAppointment(read.group?.value.metadata)?.principalId ?? null;
-  validateMemberReadPair(read.actorMember, read.actorMemberEntry, ref, actorPrincipalId, 'Actor member');
-  validateMemberReadPair(read.targetMember, read.targetMemberEntry, ref, targetPrincipalId, 'Target member');
-  validateMemberReadPair(read.authorityMember, read.authorityMemberEntry, ref, ownerPrincipalId, 'Authority member');
-  validateMemberReadPair(read.directorMember, read.directorMemberEntry, ref, directorPrincipalId, 'Director member');
+  const directorPrincipalId =
+    readRallarGroupDirectorAppointment(read.group?.value.metadata)?.principalId ?? null;
+  validateMemberReadPair(
+    read.actorMember,
+    read.actorMemberEntry,
+    ref,
+    actorPrincipalId,
+    'Actor member',
+  );
+  validateMemberReadPair(
+    read.targetMember,
+    read.targetMemberEntry,
+    ref,
+    targetPrincipalId,
+    'Target member',
+  );
+  validateMemberReadPair(
+    read.authorityMember,
+    read.authorityMemberEntry,
+    ref,
+    ownerPrincipalId,
+    'Authority member',
+  );
+  validateMemberReadPair(
+    read.directorMember,
+    read.directorMemberEntry,
+    ref,
+    directorPrincipalId,
+    'Director member',
+  );
   const targetSessionId = mutationTargetSessionId(command);
   if (read.targetPresence) {
     if (targetSessionId === null || read.targetPresence.value.sessionId !== targetSessionId) {
@@ -98,7 +133,11 @@ export function validateGroupMutationRead(read: GroupMutationRead, command: Grou
     if (targetPrincipalId === null || read.targetPresence.value.principalId !== targetPrincipalId) {
       throw new TypeError('Stored target presence principal differs from command slot identity');
     }
-    validateRuntimeEntryValue(read.targetPresence, 'Stored target presence', groupStatePresenceSessionStorageKey({ ...ref, sessionId: targetSessionId }));
+    validateRuntimeEntryValue(
+      read.targetPresence,
+      'Stored target presence',
+      groupStatePresenceSessionStorageKey({ ...ref, sessionId: targetSessionId }),
+    );
     validatePresenceSession(read.targetPresence.value, ref, 'Stored target presence');
   }
   validateGroupExpiredStateAuthority({
@@ -109,8 +148,10 @@ export function validateGroupMutationRead(read: GroupMutationRead, command: Grou
     targetPresence: read.targetPresence,
     expiredTargetPresenceEntry: read.expiredTargetPresenceEntry,
   });
-  const authorityAdmissionPrincipalId = command.operation === 'appointDirector' ? ownerPrincipalId : null;
-  const directorAdmissionPrincipalId = command.operation === 'appointDirector' ? directorPrincipalId : null;
+  const authorityAdmissionPrincipalId =
+    command.operation === 'appointDirector' ? ownerPrincipalId : null;
+  const directorAdmissionPrincipalId =
+    command.operation === 'appointDirector' ? directorPrincipalId : null;
   for (const [label, admission, expectedPrincipalId] of [
     ['Target admission', read.targetAdmission, targetPrincipalId],
     ['Authority admission', read.authorityAdmission, authorityAdmissionPrincipalId],
@@ -130,7 +171,10 @@ export function validateGroupMutationRead(read: GroupMutationRead, command: Grou
     );
     validatePresenceAdmission(admission.value, ref);
   }
-  if (!Array.isArray(read.authorityPresenceSessions) || !Array.isArray(read.authorityPresenceSessionEntries)) {
+  if (
+    !Array.isArray(read.authorityPresenceSessions) ||
+    !Array.isArray(read.authorityPresenceSessionEntries)
+  ) {
     throw new TypeError('Authority presence sessions must be arrays');
   }
   if (read.authorityPresenceSessions.length !== read.authorityPresenceSessionEntries.length) {
@@ -150,7 +194,9 @@ export function validateGroupMutationRead(read: GroupMutationRead, command: Grou
     for (const session of admission.value.admittedSessions) {
       const existing = referencedAuthoritySessions.get(session.sessionId);
       if (existing && existing.principalId !== admission.value.principalId) {
-        throw new TypeError('Stored authority presence session is referenced by multiple principals');
+        throw new TypeError(
+          'Stored authority presence session is referenced by multiple principals',
+        );
       }
       if (
         existing &&
@@ -158,7 +204,9 @@ export function validateGroupMutationRead(read: GroupMutationRead, command: Grou
           existing.generationVersion !== session.generationVersion ||
           existing.connectedAtEpochMs !== session.connectedAtEpochMs)
       ) {
-        throw new TypeError('Stored authority presence session has conflicting admission generations');
+        throw new TypeError(
+          'Stored authority presence session has conflicting admission generations',
+        );
       }
       referencedAuthoritySessions.set(session.sessionId, {
         principalId: admission.value.principalId,
@@ -177,7 +225,9 @@ export function validateGroupMutationRead(read: GroupMutationRead, command: Grou
       expected.generationVersion !== entry.value.generationVersion ||
       expected.connectedAtEpochMs !== entry.value.connectedAtEpochMs
     ) {
-      throw new TypeError('Stored authority presence is not referenced by its corresponding admission');
+      throw new TypeError(
+        'Stored authority presence is not referenced by its corresponding admission',
+      );
     }
     validateRuntimeEntryValue(
       entry,
@@ -193,25 +243,45 @@ export function validateGroupMutationRead(read: GroupMutationRead, command: Grou
     }
   });
   if (read.presenceSummary) {
-    validateRuntimeEntryValue(read.presenceSummary, 'Stored presence summary', groupStatePresenceSummaryStorageKey(ref));
+    validateRuntimeEntryValue(
+      read.presenceSummary,
+      'Stored presence summary',
+      groupStatePresenceSummaryStorageKey(ref),
+    );
     validatePresenceSummaryValue(read.presenceSummary.value, ref);
   }
   if (read.idempotency) {
     if (command.requestId === null || read.idempotency.value.requestId !== command.requestId) {
       throw new TypeError('Stored group idempotency request differs from command identity');
     }
-    validateRuntimeEntryValue(read.idempotency, 'Stored group idempotency', groupStateIdempotencyStorageKey(ref, command.requestId));
+    validateRuntimeEntryValue(
+      read.idempotency,
+      'Stored group idempotency',
+      groupStateIdempotencyStorageKey(ref, command.requestId),
+    );
     validateGroupMutationIdempotencyRecord(read.idempotency.value, ref);
   }
 }
 
-export function validateRuntimeEntryValue<T>(stored: RuntimeStateEntryValue<T>, label: string, expectedKey?: string): void {
+export function validateRuntimeEntryValue<T>(
+  stored: RuntimeStateEntryValue<T>,
+  label: string,
+  expectedKey?: string,
+): void {
   const wrapper = requireRecord(stored, label);
   assertExactKeys(wrapper, ['entry', 'value'], label);
   assertRequiredKeys(wrapper, ['entry', 'value'], label);
   const entry = requireRecord(wrapper.entry, `${label} entry`);
-  assertExactKeys(entry, ['key', 'value', 'expireAtTimestamp', 'updatedTimestamp', 'revision'], `${label} entry`);
-  assertRequiredKeys(entry, ['key', 'value', 'expireAtTimestamp', 'updatedTimestamp', 'revision'], `${label} entry`);
+  assertExactKeys(
+    entry,
+    ['key', 'value', 'expireAtTimestamp', 'updatedTimestamp', 'revision'],
+    `${label} entry`,
+  );
+  assertRequiredKeys(
+    entry,
+    ['key', 'value', 'expireAtTimestamp', 'updatedTimestamp', 'revision'],
+    `${label} entry`,
+  );
   requireNonEmptyString(entry.key, `${label} entry key`);
   if (expectedKey !== undefined && entry.key !== expectedKey) {
     throw new TypeError(`${label} entry key is not canonical for its identity`);
@@ -252,7 +322,11 @@ export function validateMemberReadPair(
   if (expectedPrincipalId === null || member.principalId !== expectedPrincipalId) {
     throw new TypeError(`${label} principal differs from command slot identity`);
   }
-  validateRuntimeEntryValue(stored, `Stored ${label.toLowerCase()}`, groupStateMemberStorageKey({ ...ref, principalId: expectedPrincipalId }));
+  validateRuntimeEntryValue(
+    stored,
+    `Stored ${label.toLowerCase()}`,
+    groupStateMemberStorageKey({ ...ref, principalId: expectedPrincipalId }),
+  );
   validateStoredMember(stored.value, ref, label);
   if (!jsonEquals(member, stored.value)) {
     throw new TypeError(`${label} differs from stored entry value`);

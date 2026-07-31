@@ -1,8 +1,21 @@
-import type { AuditStamp, Group, GroupMember, GroupPresenceAdmission, GroupPresenceSession, GroupPresenceSummary, GroupRef } from '@shared/api/group-types.ts';
+import type {
+  AuditStamp,
+  Group,
+  GroupMember,
+  GroupPresenceAdmission,
+  GroupPresenceSession,
+  GroupPresenceSummary,
+  GroupRef,
+} from '@shared/api/group-types.ts';
 import type { MutationActor } from '@shared/api/mutation-actor.ts';
 
 import { assertExactKeys, requireRecord } from '../group-state-validation-primitives.ts';
-import { validateAuditStamp, validateMutationActor, validatePersistedGroup, validatePersistedGroupMember } from './validate-persisted-group.ts';
+import {
+  validateAuditStamp,
+  validateMutationActor,
+  validatePersistedGroup,
+  validatePersistedGroupMember,
+} from './validate-persisted-group.ts';
 import {
   validatePersistedGroupPresenceAdmission,
   validatePersistedGroupPresenceSession,
@@ -96,7 +109,11 @@ export function normalizePersistedGroupMember(value: unknown, ref: GroupRef): Gr
   );
   const status = legacy.status;
   const joined =
-    status === 'invited' ? null : Object.hasOwn(legacy, 'joined') ? normalizeNullablePersistedGroupAudit(legacy.joined, 'Stored member joined') : null;
+    status === 'invited'
+      ? null
+      : Object.hasOwn(legacy, 'joined')
+        ? normalizeNullablePersistedGroupAudit(legacy.joined, 'Stored member joined')
+        : null;
   const canonical: unknown = {
     applicationId: legacy.applicationId,
     workspaceId: persistedOrDefault(legacy, 'workspaceId', ref.workspaceId),
@@ -116,7 +133,10 @@ export function normalizePersistedGroupMember(value: unknown, ref: GroupRef): Gr
   return canonical;
 }
 
-export function normalizePersistedGroupPresenceSession(value: unknown, ref: GroupRef): GroupPresenceSession {
+export function normalizePersistedGroupPresenceSession(
+  value: unknown,
+  ref: GroupRef,
+): GroupPresenceSession {
   const legacy = requireRecord(value, 'Stored group presence session');
   assertExactKeys(
     legacy,
@@ -147,7 +167,11 @@ export function normalizePersistedGroupPresenceSession(value: unknown, ref: Grou
     principalId: legacy.principalId,
     generationId: legacy.generationId,
     generationVersion: legacy.generationVersion,
-    status: Object.hasOwn(legacy, 'status') ? legacy.status : disconnectedAtEpochMs === null ? 'active' : 'disconnected',
+    status: Object.hasOwn(legacy, 'status')
+      ? legacy.status
+      : disconnectedAtEpochMs === null
+        ? 'active'
+        : 'disconnected',
     connectedAtEpochMs: legacy.connectedAtEpochMs,
     lastHeartbeatAtEpochMs: legacy.lastHeartbeatAtEpochMs,
     expiresAtEpochMs: legacy.expiresAtEpochMs,
@@ -158,7 +182,10 @@ export function normalizePersistedGroupPresenceSession(value: unknown, ref: Grou
   return canonical;
 }
 
-export function normalizePersistedGroupPresenceSummary(value: unknown, ref: GroupRef): GroupPresenceSummary {
+export function normalizePersistedGroupPresenceSummary(
+  value: unknown,
+  ref: GroupRef,
+): GroupPresenceSummary {
   const legacy = requireRecord(value, 'Stored presence summary value');
   assertExactKeys(
     legacy,
@@ -179,7 +206,9 @@ export function normalizePersistedGroupPresenceSummary(value: unknown, ref: Grou
   if (!Array.isArray(legacy.activeSessions)) {
     throw new TypeError('Stored presence summary activeSessions is invalid');
   }
-  const activeSessions = legacy.activeSessions.map((session) => normalizePersistedGroupPresenceSession(session, ref));
+  const activeSessions = legacy.activeSessions.map((session) =>
+    normalizePersistedGroupPresenceSession(session, ref),
+  );
   const canonical: unknown = {
     ...legacy,
     workspaceId: persistedOrDefault(legacy, 'workspaceId', ref.workspaceId),
@@ -189,9 +218,23 @@ export function normalizePersistedGroupPresenceSummary(value: unknown, ref: Grou
   return canonical;
 }
 
-export function normalizePersistedGroupPresenceAdmission(value: unknown, ref: GroupRef): GroupPresenceAdmission {
+export function normalizePersistedGroupPresenceAdmission(
+  value: unknown,
+  ref: GroupRef,
+): GroupPresenceAdmission {
   const legacy = requireRecord(value, 'Presence admission');
-  assertExactKeys(legacy, ['applicationId', 'workspaceId', 'groupId', 'principalId', 'admittedSessions', 'updatedAtEpochMs'], 'Presence admission');
+  assertExactKeys(
+    legacy,
+    [
+      'applicationId',
+      'workspaceId',
+      'groupId',
+      'principalId',
+      'admittedSessions',
+      'updatedAtEpochMs',
+    ],
+    'Presence admission',
+  );
   const canonical: unknown = {
     ...legacy,
     workspaceId: persistedOrDefault(legacy, 'workspaceId', ref.workspaceId),
@@ -200,11 +243,19 @@ export function normalizePersistedGroupPresenceAdmission(value: unknown, ref: Gr
   return canonical;
 }
 
-function persistedOrDefault(value: Readonly<Record<string, unknown>>, key: string, fallback: unknown): unknown {
+function persistedOrDefault(
+  value: Readonly<Record<string, unknown>>,
+  key: string,
+  fallback: unknown,
+): unknown {
   return Object.hasOwn(value, key) ? value[key] : fallback;
 }
 
-function normalizeOptionalPersistedGroupAudit(value: Readonly<Record<string, unknown>>, key: string, label: string): AuditStamp | null {
+function normalizeOptionalPersistedGroupAudit(
+  value: Readonly<Record<string, unknown>>,
+  key: string,
+  label: string,
+): AuditStamp | null {
   return Object.hasOwn(value, key) ? normalizeNullablePersistedGroupAudit(value[key], label) : null;
 }
 
@@ -214,10 +265,25 @@ function normalizeNullablePersistedGroupAudit(value: unknown, label: string): Au
 
 function normalizePersistedGroupAudit(value: unknown, label: string): AuditStamp {
   const legacy = requireRecord(value, label);
-  assertExactKeys(legacy, ['atEpochMs', 'actor', 'byPrincipalId', 'bySessionId', 'byServiceId', 'reason', 'traceId', 'requestId'], label);
+  assertExactKeys(
+    legacy,
+    [
+      'atEpochMs',
+      'actor',
+      'byPrincipalId',
+      'bySessionId',
+      'byServiceId',
+      'reason',
+      'traceId',
+      'requestId',
+    ],
+    label,
+  );
   const canonical: unknown = {
     atEpochMs: legacy.atEpochMs,
-    actor: Object.hasOwn(legacy, 'actor') ? legacy.actor : normalizePersistedGroupActor(legacy, `${label} actor`),
+    actor: Object.hasOwn(legacy, 'actor')
+      ? legacy.actor
+      : normalizePersistedGroupActor(legacy, `${label} actor`),
     reason: persistedOrDefault(legacy, 'reason', null),
     traceId: persistedOrDefault(legacy, 'traceId', null),
     requestId: persistedOrDefault(legacy, 'requestId', null),
@@ -226,7 +292,10 @@ function normalizePersistedGroupAudit(value: unknown, label: string): AuditStamp
   return canonical;
 }
 
-function normalizePersistedGroupActor(legacy: Readonly<Record<string, unknown>>, label: string): MutationActor {
+function normalizePersistedGroupActor(
+  legacy: Readonly<Record<string, unknown>>,
+  label: string,
+): MutationActor {
   let canonical: unknown;
   if (Object.hasOwn(legacy, 'bySessionId')) {
     canonical = {
