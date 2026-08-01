@@ -21,6 +21,14 @@ not an acceptance criterion.
 
 ## Selection Rules
 
+- Use behavior-named test modules. Historical task numbers, correction waves,
+  and implementation chronology do not tell a developer which behavior failed.
+- For a materially changed callback, transaction, retry, protocol, or lifecycle
+  family, assert semantic behavior at the entry, transaction, commit return,
+  after-commit, failure, cleanup, and final result boundaries. Count and
+  source-text ratchets may supplement these assertions during a move but never
+  replace them; each temporary ratchet records its owner and removal condition.
+
 - Shared contracts: run the relevant `packages/tests/shared*` Vitest files and the package `tsc`.
 - When shared state contracts, mandatory fields, repository interfaces, or
   service composition/signatures change, native-check every affected reusable

@@ -26,10 +26,20 @@ rg -n "GroupRef|groupRef|groupId|roomId|createAndSwitch|createAndJoin|joinRoom|w
 - Narrow browser entry points: `packages/shared-web/browser/rallar-core.ts`, `rallar-realtime.ts`, `rallar-data.ts`, `rallar-crdt.ts`, and `rallar-media-calls.ts`.
 - Browser room helpers: `rallar.realtime.room<T>(...)` for room-scoped RTC JSON sends and `rallar.messages.room<T>(...)` for typed room messages with RTC/WS options.
 - HTTP API calls: `packages/shared-web/browser/api-integration.ts`.
-- Server room/group services: `packages/shared-server/rallar-system/services`.
+- Canonical authoritative group state:
+  `packages/shared-server/rallar-system/group-state/**`.
+- Canonical topology inbox handling:
+  `packages/shared-server/rallar-system/topology/inbox/**`.
+- Canonical RTC RTT inbox handling:
+  `packages/shared-server/rallar-system/rtc-topology/inbox/**`.
+- For group-state, topology inbox, and RTC RTT inbox capabilities,
+  `packages/shared-server/rallar-system/services/**` paths are compatibility-only
+  exports or composition surfaces, not canonical implementation owners. Do not
+  add a new canonical implementation for these capabilities under `services/**`.
 - State sync routing/publication: `packages/shared-server/rallar-system/state-sync-*`.
 - WS topic routing: `packages/shared-server/rallar-facade/ws-topic-router.ts` and `packages/shared-server/rallar-system/ws-system-topics.ts`.
-- RTC topology/graph: `packages/shared-server/rallar-system/services/rallar-rtc-topology-service.ts` and `packages/shared-graph`.
+- RTC topology/graph: the canonical inbox path above, the owning topology
+  feature modules, and `packages/shared-graph`.
 
 ## Rules Of Thumb
 

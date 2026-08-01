@@ -430,6 +430,44 @@ and forwards it unchanged does not improve testability. Test pure decisions as
 values and test side-effect boundaries through their narrow production ports;
 do not add factory injection or alternate wiring solely for tests.
 
+For every materially different callback, transaction, retry, protocol, or
+lifecycle family, complete a family-level code-derived trace as two distinct
+timelines:
+
+The two timelines separate registration from invocation.
+
+1. A construction and registration timeline names each required or captured
+   dependency's creation and owner, the callback registration point, the first
+   point at which it can be invoked, and proves every required dependency exists
+   before that point.
+2. A runtime invocation timeline names:
+
+- the external or protocol entry;
+- callback registration owner and registration time;
+- runtime invoker and callback invocation count or retry rule;
+- representation translation and read, compute, validate, and write owners;
+- transaction and retry owner and the first conditional guard;
+- receipt, event, exact durable result, and final outbox writes;
+- commit-return point and private after-commit data;
+- after-commit effects, early exits, failures, and cleanup; and
+- final caller-visible result and canonical versus compatibility paths.
+
+One trace plus a variant inventory covers variants with the same control-flow
+family. The trace is a code-only trace exercise: follow production symbols
+without using a plan, inventory count, or source-text assertion as the answer.
+
+The fail-closed rule is that mutable values do not escape a transaction callback
+unless the transaction contract explicitly proves invocation count, retry
+behavior, commit semantics, failure behavior, and why mutation is safe. Prefer
+an immutable callback result whose durable projection is visibly separate from
+private after-commit data.
+
+Literal, named-case, `expect(...)`, and exact-tree inventories are temporary
+ratchets. Each temporary ratchet records an owner and removal condition and is
+supplementary to semantic runtime or architecture assertions. Remove or replace
+it after the move's resulting-main workflow and later ledger are published and
+semantic assertions directly cover the same loss risk.
+
 ## Function inputs and outputs
 
 A function may have at most three positional parameters. At four parameters, replace them with one named input
@@ -711,3 +749,10 @@ factory callback captures a local binding first assigned after construction.
 The broader construction diagnostics remain opt-in because they have mixed
 signal and require human interpretation. They identify reviewable syntax, not
 proof of a dependency cycle, an unjustified callback, or a boundary-free facade.
+
+For changed production code, record a construction-warning disposition for
+every construction-detail warning by path, rule, and symbol: fixed,
+demonstrated false positive, or accepted existing debt with no new/worsened
+magnitude and an owner. The review rule is that silence or a warning-only exit
+code is not a disposition. This human-review requirement does not make every
+optional warning globally blocking.

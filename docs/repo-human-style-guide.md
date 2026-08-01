@@ -62,6 +62,24 @@ representation. Request a rewrite when generic `input`, `options`, `context`,
 `payload`, or `data` names make the reader reconstruct identity from nested
 closures.
 
+Complete a code-only trace exercise for every materially different callback,
+transaction, retry, protocol, or lifecycle family as two distinct timelines.
+The construction and registration timeline names each required or captured
+dependency's creation and owner, callback registration, earliest possible
+invocation, and proves all required dependencies exist first. The runtime
+invocation timeline records the external entry, runtime invoker and
+invocation/retry rule, translation and phase owners, transaction/retry owner and
+first guard, atomic writes, commit return, private after-commit data,
+after-commit effects, early exits, failures, cleanup, caller-visible result, and
+canonical versus compatibility paths. Start from production symbols, not a
+plan, inventory, or source-text assertion. Shared variants use one trace plus a
+variant inventory.
+
+The fail-closed rule is that mutable values do not escape a transaction callback
+unless its contract proves invocation count, retry behavior, commit semantics,
+failure behavior, and why mutation is safe. Prefer an immutable returned result
+whose durable projection is visibly separate from private after-commit data.
+
 This is a semantic human-review step. The checker does not prove that a
 construction graph is acyclic, a callback is justified, or names preserve one
 dataflow. Add automation only as a separately reviewed change with demonstrated
@@ -177,6 +195,12 @@ records a non-obvious invariant, external constraint, safety reason, or tradeoff
   completion handoff and, when required by the hard size tier, the
   [repo code-style exception registry](./repo-code-style-exceptions.md).
 
+Literal, named-case, `expect(...)`, and exact-tree inventories are temporary
+ratchets. Verify each temporary ratchet has an owner and removal condition,
+remains supplementary to semantic runtime or architecture assertions, and is
+removed or replaced after the move's resulting-main workflow and later ledger
+are published when semantic assertions cover the same loss risk.
+
 ## Warning-only checker
 
 The TypeScript checker automates only syntax it can parse. The preceding human
@@ -254,6 +278,13 @@ The broader rules stay opt-in because repository calibration found mixed signal.
 These findings identify syntax shapes for human review. They do not prove a
 construction graph is cyclic, a callback is unjustified, or a facade lacks a
 real boundary.
+
+For changed production code, the review map lists every construction-detail
+warning by path, rule, and symbol and records one construction-warning
+disposition: fixed, demonstrated false positive, or accepted existing debt with
+no new/worsened magnitude and an owner. The review rule is that silence or a
+warning-only exit code is not a disposition. This evidence does not make every
+optional warning globally blocking.
 
 Run output-contract naming checks only when useful for the workstream:
 
@@ -336,6 +367,14 @@ changed production code. Existing findings may remain unchanged, improve, or
 disappear without blocking the branch.
 
 ## Review outcome
+
+Review pressure exists at more than 100 changed files, more than 10,000 changed
+lines, more than 20 changed production modules, or more than three materially
+different control-flow families. Require a written stacked-versus-single
+decision rather than an automatic split. If one large pull request is accepted,
+require a one-screen read-first map of entry owners, transaction and exit
+owners, compatibility surfaces, review slices, and exact current evidence.
+Stale head, tree, or workflow evidence blocks completion until corrected.
 
 End the review with:
 

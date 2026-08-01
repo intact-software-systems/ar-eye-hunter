@@ -33,6 +33,43 @@ npm run test:repo-governance
 Run this after changing repo skills, plugin metadata, active Rallar examples,
 startup guidance, or root app-path configuration.
 
+## Group-State Traceability QA
+
+Use behavior-named test modules for route-owner analysis and semantic mutation
+boundaries. PR A owns this discoverability batch:
+
+```bash
+npx vitest run \
+  packages/tests/shared-server/mutation-route-owner-analysis.test.ts \
+  packages/tests/shared-server/mutation-route-owner-boundary-traversal.test.ts \
+  packages/tests/shared-server/mutation-route-owner-provenance.test.ts \
+  packages/tests/shared-server/mutation-route-owner-registration-collections.test.ts \
+  packages/tests/shared-server/mutation-route-owner-registration-predicates.test.ts \
+  packages/tests/shared-server/mutation-route-owner-logical-predicates.test.ts \
+  packages/tests/shared-server/mutation-route-owner-call-effects.test.ts \
+  packages/tests/shared-server/mutation-route-owner-object-projections.test.ts \
+  packages/tests/shared-server/mutation-route-owner-map-projections.test.ts \
+  packages/tests/shared-server/mutation-route-owner-lexical-resolution.test.ts \
+  packages/tests/shared-server/mutation-route-owner-call-aliases.test.ts \
+  packages/tests/shared-server/mutation-route-owner-control-flow-alternatives.test.ts \
+  packages/tests/shared-server/mutation-route-owner-loop-and-switch-flow.test.ts \
+  packages/tests/shared-server/mutation-route-owner-execution-state.test.ts \
+  packages/tests/shared-server/mutation-route-owner-abrupt-completion.test.ts \
+  packages/tests/shared-server/mutation-route-owner-loop-completion.test.ts \
+  packages/tests/shared-server/mutation-route-owner-loop-divergence.test.ts \
+  packages/tests/shared-server/mutation-route-owner-loop-fixed-point.test.ts \
+  packages/tests/shared-server/mutation-route-owner-state-coalescing.test.ts
+```
+
+PR B uses the focused semantic entry, transaction, and exit suites:
+
+```bash
+npx vitest run \
+  packages/tests/shared-server/app-group-inbox-registration-lifecycle.test.ts \
+  packages/tests/shared-server/group-state-inbox-transaction-result.test.ts \
+  packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts
+```
+
 ## Type Checks And Builds
 
 ```bash
