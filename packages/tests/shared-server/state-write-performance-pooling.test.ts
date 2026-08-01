@@ -63,7 +63,7 @@ const ENVIRONMENT = `${[
   'postflight_automatic_maintenance_count=0',
 ].join('\n')}\n`;
 
-describe('API-v1 state-write order-balanced pooling', { timeout: 30_000 }, () => {
+describe('API-v1 state-write order-balanced pooling', { timeout: 120_000 }, () => {
   it('pools A-B-B-A sources into validated 18-run artifacts without losing raw samples', () => {
     const input = createPoolingInput();
     const pooled = poolApiV1StateWriteResults(input);

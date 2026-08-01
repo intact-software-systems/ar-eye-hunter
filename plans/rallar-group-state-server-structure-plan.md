@@ -21,8 +21,18 @@
 > `2fac327448324a0338a8ea32f9ebc8601d8630d8`; the unchanged child evaluator
 > accepted it within the existing 1.5% adverse-equivalence policy with every
 > correctness invariant green. Final validation and publication gates remain
-> pending. The
-> Task 9 structural-lineage cohort is human-authorized at exact head
+> pending. The first exact-final-tree publication attempt at feature head
+> `16bd66a621b13e39e0ece88690222ae8cf78bc73` / tree
+> `98220bb7fc0e57f8b3581847ae559d95ac8aeebc` reached Branch Release Gate run
+> `30694199481` attempt 1. Changed-style and TypeScript 7 checks passed, but the
+> root unit suite exhausted the directly owned 5-second child-policy and
+> 30-second pooling-test budgets on the shared CI runner. The same complete
+> cases passed locally; no production, measurement, comparator, policy,
+> threshold, or correctness assertion failed. The affected test owners use an
+> explicit 120-second CI-safe unit-test budget for the required artifact-heavy
+> work without changing governed semantics. The exact replacement publication
+> SHA and workflow result remain external pending evidence. The Task 9
+> structural-lineage cohort is human-authorized at exact head
 > `b8d6d8516f2c1caff46494569940c06e7ee06c43` and tree
 > `9344df9af0b24f29341ebf8d8cebdb9d54963b69`. Task 10 and the later API-v1
 > child remain separately gated.
@@ -2065,6 +2075,18 @@ throughput limits pass, and every zero-tolerance correctness and artifact-
 integrity invariant remains green. Corrected-runtime performance acceptance is
 complete. Final unchanged-tree validation, publication, PR-ready, and remote
 workflow evidence remain pending.
+
+The first final-tree Branch Release Gate attempt, run `30694199481` attempt 1
+for exact feature head `16bd66a621b13e39e0ece88690222ae8cf78bc73`, failed only
+inside the root unit suite when two artifact-heavy child-policy cases exhausted
+Vitest's default 5-second budget and one pooled-output case exhausted its
+30-second suite budget on the shared runner. Changed-style and TypeScript 7
+checks had already passed. The timeout-only test-owner correction raises those
+unit-test budgets to 120 seconds; it changes no production/runtime source,
+benchmark harness, governed artifact, comparator, evaluator, performance or
+correctness threshold, assertion, or expected outcome. The exact replacement
+head and Branch Release Gate result remain in the external publication
+envelope until they exist.
 
 ### 10.4 Checker and completion gates
 

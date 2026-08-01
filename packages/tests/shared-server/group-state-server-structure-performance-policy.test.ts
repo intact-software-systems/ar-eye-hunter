@@ -27,7 +27,7 @@ interface SetResourceValueInput extends ResourceMetricInput {
   readonly value: number;
 }
 
-describe('group-state server structure performance policy', () => {
+describe('group-state server structure performance policy', { timeout: 120_000 }, () => {
   it.each([
     ['uncontended', 'sql', 'statements'],
     ['shared', 'sql', 'rowsRead'],
