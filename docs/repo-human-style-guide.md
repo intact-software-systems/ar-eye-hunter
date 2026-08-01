@@ -382,7 +382,8 @@ End the review with:
 - construction cycles ruled out or resolved, with ownership made explicit;
 - callbacks retained or replaced, including their invocation and lifecycle
   rationale;
-- one representative input traced with stable semantic names;
+- family-level construction/registration and runtime-invocation trace evidence,
+  with the variant inventory required by the authoritative trace contract above;
 - test fakes use the production ports without alternate test-only wiring;
 - requested changes, each tied to the authoritative standard;
 - checker warnings reviewed and whether they apply;

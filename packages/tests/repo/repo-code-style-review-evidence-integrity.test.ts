@@ -29,6 +29,18 @@ describe('repo code style review evidence integrity', () => {
       ]);
     }
   });
+
+  it('requires the final review outcome to retain every family-level two-timeline trace', () => {
+    const humanGuide = readRepo('docs/repo-human-style-guide.md');
+    const reviewOutcome = humanGuide.slice(humanGuide.indexOf('## Review outcome'));
+
+    expectAllNormalized(reviewOutcome, [
+      'family-level construction/registration and runtime-invocation trace evidence',
+      'variant inventory',
+      'authoritative trace contract above',
+    ]);
+    expect(reviewOutcome).not.toContain('one representative input traced');
+  });
 });
 
 function readRepo(filePath: string): string {
