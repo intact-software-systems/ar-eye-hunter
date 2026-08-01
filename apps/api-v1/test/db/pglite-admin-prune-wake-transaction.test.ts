@@ -5,15 +5,24 @@ import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import { createApiAdminInboxService } from '../../src/services/create-api-admin-inbox-service.ts';
+import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import { toResilienceDto } from '../../src/middleware-resilience.ts';
 import {
   readPGliteDatabaseEpochMs,
   waitForPGliteQueueRow,
-  withPGliteSql,
+  withUtcPGliteSql,
 } from './pglite-auth-test-harness.ts';
+import {
+  assertUtcPGliteSession,
+  RealEngineAdminPruneFixture,
+} from './pglite-admin-prune-real-engine-fixture.ts';
+
+Deno.test('committed initial admin page work wakes the running queue engine into APP_OUTBOX processing', async () => {
+  await withUtcPGliteSql(runRealEngineHandoffTest);
+});
 
 Deno.test('initial admin page work does not wake until its successful transaction commits', async () => {
-  await withPGliteSql(async (sql) => {
+  await withUtcPGliteSql(async (sql) => {
     const repository = new ResourceInboxRepository(sql);
     const queue = new PSqlQueueBox(repository);
     const inbox = new InboxQueueReader(queue);
@@ -93,7 +102,7 @@ Deno.test('initial admin page work does not wake until its successful transactio
 });
 
 Deno.test('dry-run initial admin work does not wake after its transaction commits', async () => {
-  await withPGliteSql(async (sql) => {
+  await withUtcPGliteSql(async (sql) => {
     const repository = new ResourceInboxRepository(sql);
     const queue = new PSqlQueueBox(repository);
     const inbox = new InboxQueueReader(queue);
@@ -145,7 +154,7 @@ Deno.test('dry-run initial admin work does not wake after its transaction commit
 });
 
 Deno.test('rolled-back initial admin page work does not wake the queue', async () => {
-  await withPGliteSql(async (sql) => {
+  await withUtcPGliteSql(async (sql) => {
     const repository = new ResourceInboxRepository(sql);
     const queue = new PSqlQueueBox(repository);
     const inbox = new InboxQueueReader(queue);
@@ -213,7 +222,7 @@ Deno.test('rolled-back initial admin page work does not wake the queue', async (
 });
 
 Deno.test('rejected initial admin outbox write does not wake or persist page work', async () => {
-  await withPGliteSql(async (sql) => {
+  await withUtcPGliteSql(async (sql) => {
     const repository = new ResourceInboxRepository(sql);
     const queue = new PSqlQueueBox(repository);
     const inbox = new InboxQueueReader(queue);
@@ -290,3 +299,23 @@ Deno.test('rejected initial admin outbox write does not wake or persist page wor
     assert.equal(Number(page?.count ?? 0), 0);
   });
 });
+
+async function runRealEngineHandoffTest(sql: PGliteSql): Promise<void> {
+  await assertUtcPGliteSession(sql);
+  const fixture = await RealEngineAdminPruneFixture.create(sql);
+  fixture.start();
+  try {
+    const result = await fixture.prune();
+    const rows = await sql<Readonly<{ status: string; attempts: number }>[]>`
+      select ri_status as status, ri_attempts as attempts
+      from resource_inbox
+      where fk_ext_bank_id = 'queue-engine-handoff-prune'
+        and ri_type_id = 'APP_OUTBOX'
+    `;
+    assert.equal(result.right?.status, 'completed');
+    assert.deepEqual(rows, [{ status: 'COMPLETED', attempts: 1 }]);
+    assert.equal(fixture.wakeCount, 3);
+  } finally {
+    await fixture.stopAndDrain();
+  }
+}

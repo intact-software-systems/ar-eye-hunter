@@ -160,6 +160,7 @@ export function toApiV1BlackBoxEnvironment(
     env.DATABASE_URL = env.DATABASE_URL ?? DEFAULT_DATABASE_URL;
   } else {
     env.RALLAR_SQL_BACKEND = 'pglite-memory';
+    env.TZ = 'UTC';
     env.RALLAR_PGLITE_DATA_DIR = 'memory://';
     env.RALLAR_PGLITE_SCHEMA_INIT = 'auto';
     env.RALLAR_DB_PUBSUB = 'local';

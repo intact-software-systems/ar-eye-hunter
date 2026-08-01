@@ -9,11 +9,11 @@ import { toResilienceDto } from '../../src/middleware-resilience.ts';
 import {
   readPGliteDatabaseEpochMs,
   waitForPGliteQueueRow,
-  withPGliteSql,
+  withUtcPGliteSql,
 } from './pglite-auth-test-harness.ts';
 
 Deno.test('production admin prune rereads current admin authority before creating page work', async () => {
-  await withPGliteSql(async (sql) => {
+  await withUtcPGliteSql(async (sql) => {
     const repository = new ResourceInboxRepository(sql);
     const queue = new PSqlQueueBox(repository);
     const inbox = new InboxQueueReader(queue);
@@ -77,7 +77,7 @@ Deno.test('production admin prune rereads current admin authority before creatin
 });
 
 Deno.test('committed initial admin page work wakes the queue after its transaction commits', async () => {
-  await withPGliteSql(async (sql) => {
+  await withUtcPGliteSql(async (sql) => {
     const repository = new ResourceInboxRepository(sql);
     const queue = new PSqlQueueBox(repository);
     const inbox = new InboxQueueReader(queue);
