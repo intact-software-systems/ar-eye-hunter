@@ -4,10 +4,10 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 
 import { executeBlackBox } from '@shared-test/black-box-runner/execute-black-box.ts';
-import { explainBlackBoxRunnerPlan } from '@shared-test/black-box-runner/plan-preflight.ts';
+import { explainBlackBoxRunnerPlan } from '@shared-test/black-box-runner/preflight/plan-preflight.ts';
 import { deriveApiV1StateWriteEvidence } from '@shared-test/black-box-runner/api-v1-state-write-evidence.ts';
 import { toExactPersistedEvidenceMatches } from
-    '@shared-test/black-box-runner/api-v1-state-write-match.ts';
+    '@shared-test/black-box-runner/state-write-evidence/to-exact-persisted-evidence-matches.ts';
 import { toRallarCrdtDocumentKey } from '@shared/crdt/mod.ts';
 
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url));

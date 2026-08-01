@@ -11,26 +11,39 @@ import {
   type MutationRoutingProgramLoader,
 } from './mutation-routing-live-registration.ts';
 
-export function findMutationRouteReachabilityIssues(
-  item: MutationRouteInventoryEntry,
-  source: AstNode,
-  enqueueSource: AstNode,
-  ownerSource: AstNode,
-  containsMarker: (node: AstNode, marker: string) => boolean,
-  matchesMarker: (node: AstNode, marker: string) => boolean,
-  loadProgram: MutationRoutingProgramLoader,
-): readonly string[] {
+interface MutationRouteReachabilityInput {
+  readonly item: MutationRouteInventoryEntry;
+  readonly source: AstNode;
+  readonly enqueueSource: AstNode;
+  readonly ownerSource: AstNode;
+  readonly dispatchSource: AstNode;
+  readonly containsMarker: (node: AstNode, marker: string) => boolean;
+  readonly matchesMarker: (node: AstNode, marker: string) => boolean;
+  readonly loadProgram: MutationRoutingProgramLoader;
+}
+
+export function findMutationRouteReachabilityIssues({
+  item,
+  source,
+  enqueueSource,
+  ownerSource,
+  dispatchSource,
+  containsMarker,
+  matchesMarker,
+  loadProgram,
+}: MutationRouteReachabilityInput): readonly string[] {
   const routeKey = `${item.transport}:${item.entrypoint}:${item.type}`;
   const handlers = findRegisteredHandlers(item, source, containsMarker, matchesMarker);
   if (handlers.length === 0) {
     return [`${routeKey} registered callback cannot be resolved`];
   }
-  const handoff = handlers.map((handler) =>
-    findReachableHandoff(item, source, enqueueSource, handler, matchesMarker)
-  ).find((candidate) => candidate !== undefined);
+  const handoff = handlers
+    .map((handler) => findReachableHandoff({ item, source, enqueueSource, handler, matchesMarker }))
+    .find((candidate) => candidate !== undefined);
   const issues: string[] = [];
   if (
-    !handoff || !hasExpectedTypeWhenExplicit(handoff, item.type, matchesMarker) ||
+    !handoff ||
+    !hasExpectedTypeWhenExplicit(handoff, item.type, matchesMarker) ||
     !hasOwnerCommandDiscriminator(ownerSource, item, containsMarker)
   ) {
     issues.push(
@@ -39,22 +52,19 @@ export function findMutationRouteReachabilityIssues(
     );
   }
   if (
-    !hasOwnerDispatch(
-      ownerSource,
-      item.ownerSourcePath,
-      item.type,
-      ownerMethod(item),
+    !hasOwnerDispatch({
+      program: dispatchSource,
+      filePath: item.dispatchSourcePath,
+      type: item.type,
+      dispatchPath: item.ownerDispatchPath,
       matchesMarker,
       loadProgram,
-    )
+    })
   ) {
-    issues.push(
-      `${routeKey} owner dispatch is not connected to ${item.owner}`,
-    );
+    issues.push(`${routeKey} owner dispatch is not connected to ${item.owner}`);
   }
   return issues;
 }
-
 const AUTH_COMMAND_KIND_BY_TYPE: Readonly<Partial<Record<AppInboxType, string>>> = {
   [AppInboxType.AUTH_USER_REGISTER]: 'register-user',
   [AppInboxType.AUTH_SESSION_ISSUE]: 'issue-session',
@@ -73,8 +83,10 @@ function hasOwnerCommandDiscriminator(
   const expected = AUTH_COMMAND_KIND_BY_TYPE[item.type];
   if (!expected) return true;
   const publicHandoffs = findFunctionLikes(ownerSource, item.enqueueMarker);
-  return publicHandoffs.length === 0 ||
-    publicHandoffs.some((method) => hasMarker(method, `'${expected}'`));
+  return (
+    publicHandoffs.length === 0 ||
+    publicHandoffs.some((method) => hasMarker(method, `'${expected}'`))
+  );
 }
 
 function findRegisteredHandlers(
@@ -96,51 +108,53 @@ function findRegisteredHandlers(
   }
   if (item.transport === 'WS_LIFECYCLE') {
     const registration = findCall(program, 'onWebsocketCallbacksDo', () => true);
-    const callbacks = registration &&
+    const callbacks =
+      registration &&
       asNodes(registration.arguments).find((node) => node.type === 'ObjectExpression');
     const onClose = callbacks && readObjectCallback(callbacks, 'onClose');
     return onClose ? [onClose] : [];
   }
-  const topicRegistration = findCall(
-    program,
-    'onInboxMessageDo',
-    (call) => containsMarker(call, item.registrationMarker),
+  const topicRegistration = findCall(program, 'onInboxMessageDo', (call) =>
+    containsMarker(call, item.registrationMarker),
   );
   if (topicRegistration) {
-    const callbacks = asNodes(topicRegistration.arguments).find((node) =>
-      node.type === 'ObjectExpression'
+    const callbacks = asNodes(topicRegistration.arguments).find(
+      (node) => node.type === 'ObjectExpression',
     );
     const onMessage = callbacks && readObjectCallback(callbacks, 'onMessage');
     return onMessage ? [onMessage] : [];
   }
   const install = findCall(program, 'on', () => true);
   const handlerFactory = install && asNodes(install.arguments)[1];
-  const handlerName = handlerFactory?.type === 'CallExpression'
-    ? readCallName(asNode(handlerFactory.callee))
-    : readCallName(handlerFactory);
+  const handlerName =
+    handlerFactory?.type === 'CallExpression'
+      ? readCallName(asNode(handlerFactory.callee))
+      : readCallName(handlerFactory);
   const handlers = handlerName ? findFunctionLikes(program, handlerName) : [];
   return handlers.filter((handler) =>
-    hasReachableAstNode(
-      program,
-      handler,
-      (node) => matchesMarker(node, item.registrationMarker),
-    )
+    hasReachableAstNode(program, handler, (node) => matchesMarker(node, item.registrationMarker)),
   );
 }
 
-function findReachableHandoff(
-  item: MutationRouteInventoryEntry,
-  source: AstNode,
-  enqueueSource: AstNode,
-  handler: AstNode,
-  matchesMarker: (node: AstNode, marker: string) => boolean,
-): ReachableHandoff | undefined {
+interface FindReachableHandoffInput {
+  readonly item: MutationRouteInventoryEntry;
+  readonly source: AstNode;
+  readonly enqueueSource: AstNode;
+  readonly handler: AstNode;
+  readonly matchesMarker: (node: AstNode, marker: string) => boolean;
+}
+
+function findReachableHandoff({
+  item,
+  source,
+  enqueueSource,
+  handler,
+  matchesMarker,
+}: FindReachableHandoffInput): ReachableHandoff | undefined {
   if (item.sourcePath === item.enqueueSourcePath) {
-    return hasReachableAstNode(
-        source,
-        handler,
-        (node) => hasHandoffCall(node, item.enqueueMarker, matchesMarker),
-      )
+    return hasReachableAstNode(source, handler, (node) =>
+      hasHandoffCall(node, item.enqueueMarker, matchesMarker),
+    )
       ? { program: source, root: handler }
       : undefined;
   }
@@ -148,12 +162,11 @@ function findReachableHandoff(
   for (const bridgeName of bridgeNames) {
     for (const target of findFunctionLikes(enqueueSource, bridgeName)) {
       if (
-        hasReachableAstNode(
-          enqueueSource,
-          target,
-          (node) => hasHandoffCall(node, item.enqueueMarker, matchesMarker),
+        hasReachableAstNode(enqueueSource, target, (node) =>
+          hasHandoffCall(node, item.enqueueMarker, matchesMarker),
         )
-      ) return { program: enqueueSource, root: target };
+      )
+        return { program: enqueueSource, root: target };
     }
   }
   return undefined;
@@ -164,15 +177,14 @@ function hasExpectedTypeWhenExplicit(
   expectedType: AppInboxType,
   matchesMarker: (node: AstNode, marker: string) => boolean,
 ): boolean {
-  const hasAnyExplicitType = hasReachableAstNode(
-    handoff.program,
-    handoff.root,
-    (node) => readMemberPath(node).startsWith('AppInboxType.'),
+  const hasAnyExplicitType = hasReachableAstNode(handoff.program, handoff.root, (node) =>
+    readMemberPath(node).startsWith('AppInboxType.'),
   );
-  return !hasAnyExplicitType || hasReachableAstNode(
-    handoff.program,
-    handoff.root,
-    (node) => matchesMarker(node, `AppInboxType.${expectedType}`),
+  return (
+    !hasAnyExplicitType ||
+    hasReachableAstNode(handoff.program, handoff.root, (node) =>
+      matchesMarker(node, `AppInboxType.${expectedType}`),
+    )
   );
 }
 
@@ -181,14 +193,23 @@ interface ReachableHandoff {
   readonly root: AstNode;
 }
 
-function hasOwnerDispatch(
-  program: AstNode,
-  filePath: string,
-  type: AppInboxType,
-  method: string,
-  matchesMarker: (node: AstNode, marker: string) => boolean,
-  loadProgram: MutationRoutingProgramLoader,
-): boolean {
+interface HasOwnerDispatchInput {
+  readonly program: AstNode;
+  readonly filePath: string;
+  readonly type: AppInboxType;
+  readonly dispatchPath: string;
+  readonly matchesMarker: (node: AstNode, marker: string) => boolean;
+  readonly loadProgram: MutationRoutingProgramLoader;
+}
+
+function hasOwnerDispatch({
+  program,
+  filePath,
+  type,
+  dispatchPath,
+  matchesMarker,
+  loadProgram,
+}: HasOwnerDispatchInput): boolean {
   const calls = findAll(
     program,
     (node) =>
@@ -199,24 +220,17 @@ function hasOwnerDispatch(
     const typeArgument = arguments_[0];
     const handler = arguments_.at(-1);
     const exactType = matchesMarker(typeArgument ?? call, `AppInboxType.${type}`);
-    const loopType = !!typeArgument && hasLiveAppInboxRegistration(
-      program,
-      filePath,
-      call,
-      typeArgument,
-      type,
-      loadProgram,
-    );
+    const loopType =
+      !!typeArgument &&
+      hasLiveAppInboxRegistration(program, filePath, call, typeArgument, type, loadProgram);
     if (!handler || (!exactType && !loopType)) return false;
-    const roots = handler.type === 'Identifier'
-      ? findFunctionLikes(program, readName(handler))
-      : [handler];
+    const roots =
+      handler.type === 'Identifier' ? findFunctionLikes(program, readName(handler)) : [handler];
     return roots.some((root) =>
-      hasReachableAstNode(
-        program,
-        root,
-        (node) => readCallName(asNode(node.callee)) === method,
-      )
+      hasReachableAstNode(program, root, (node) => {
+        const path = readMemberPath(asNode(node.callee));
+        return path === dispatchPath;
+      }),
     );
   });
 }
@@ -239,13 +253,18 @@ function findFunctionLikes(program: AstNode, name: string): readonly AstNode[] {
   return findAll(program, (node) => {
     if (node.type === 'FunctionDeclaration') return readName(node.id) === name;
     if (
-      node.type === 'ClassMethod' || node.type === 'ClassPrivateMethod' ||
+      node.type === 'ClassMethod' ||
+      node.type === 'ClassPrivateMethod' ||
       node.type === 'ObjectMethod'
-    ) return readName(node.key) === name;
+    )
+      return readName(node.key) === name;
     if (node.type !== 'VariableDeclarator' && node.type !== 'ObjectProperty') return false;
     const value = asNode(node.type === 'VariableDeclarator' ? node.init : node.value);
-    return readName(node.type === 'VariableDeclarator' ? node.id : node.key) === name &&
-      !!value && (value.type === 'ArrowFunctionExpression' || value.type === 'FunctionExpression');
+    return (
+      readName(node.type === 'VariableDeclarator' ? node.id : node.key) === name &&
+      !!value &&
+      (value.type === 'ArrowFunctionExpression' || value.type === 'FunctionExpression')
+    );
   }).map((node) => {
     if (node.type === 'VariableDeclarator') return asNode(node.init)!;
     if (node.type === 'ObjectProperty') return asNode(node.value)!;
@@ -275,7 +294,8 @@ function findCall(
   return findAstNode(
     program,
     (node) =>
-      node.type === 'CallExpression' && readMemberName(asNode(node.callee)) === name &&
+      node.type === 'CallExpression' &&
+      readMemberName(asNode(node.callee)) === name &&
       predicate(node),
   );
 }
@@ -285,7 +305,9 @@ function collectCallNames(value: AstNode): ReadonlySet<string> {
     findAll(
       value,
       (node) => node.type === 'CallExpression' || node.type === 'OptionalCallExpression',
-    ).map((call) => readCallName(asNode(call.callee))).filter(Boolean),
+    )
+      .map((call) => readCallName(asNode(call.callee)))
+      .filter(Boolean),
   );
 }
 
@@ -310,7 +332,8 @@ function visit(value: unknown, visitor: (node: AstNode) => void): void {
   }
 }
 
-function readMemberPath(node: AstNode): string {
+function readMemberPath(node: AstNode | undefined): string {
+  if (!node) return '';
   if (node.type === 'Identifier') return readName(node);
   if (node.type !== 'MemberExpression' && node.type !== 'OptionalMemberExpression') return '';
   const object = asNode(node.object);
@@ -345,12 +368,10 @@ function isFunction(node: AstNode): boolean {
   ].includes(node.type);
 }
 
-function ownerMethod(item: MutationRouteInventoryEntry): string {
-  return item.owner.split('.').at(-1) ?? '';
-}
-
 function asNode(value: unknown): AstNode | undefined {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as AstNode : undefined;
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as AstNode)
+    : undefined;
 }
 
 function asNodes(value: unknown): readonly AstNode[] {

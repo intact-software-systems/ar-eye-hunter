@@ -13,7 +13,7 @@ redacted artifact bundles.
 The contract lives in:
 
 ```text
-packages/shared-test/black-box-runner/handoff-contract.ts
+packages/shared-test/black-box-runner/artifacts/handoff-contract.ts
 ```
 
 It exports:
@@ -30,7 +30,7 @@ It exports:
 Artifact parsing and schema compatibility helpers live in:
 
 ```text
-packages/shared-test/black-box-runner/artifact-reader.ts
+packages/shared-test/black-box-runner/artifacts/artifact-reader.ts
 ```
 
 That module exports browser-safe parsers for runner artifact file text plus

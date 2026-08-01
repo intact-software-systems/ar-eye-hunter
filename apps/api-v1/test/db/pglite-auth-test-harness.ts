@@ -1,9 +1,6 @@
 import assert from 'node:assert/strict';
 import { Temporal } from '@js-temporal/polyfill';
-import {
-  EntityStatus,
-  type ResourceEntry,
-} from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { createApiV1SqlClient } from '../../src/db/db.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import {
@@ -25,6 +22,15 @@ export async function withPGliteSql(
   } finally {
     await sql.close();
   }
+}
+
+export async function withUtcPGliteSql(
+  fn: (sql: PGliteSql) => Promise<void>,
+): Promise<void> {
+  await withPGliteSql(async (sql) => {
+    await sql.exec("set time zone 'UTC'");
+    await fn(sql);
+  });
 }
 
 export async function readPGliteDatabaseEpochMs(sql: PGliteSql): Promise<number> {

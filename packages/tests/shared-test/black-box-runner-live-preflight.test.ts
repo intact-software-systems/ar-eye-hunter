@@ -3,7 +3,7 @@ import {
     runBlackBoxRunnerLivePreflight,
     shouldRunBlackBoxRunnerLivePreflight,
     type BlackBoxRunnerLivePreflightInput,
-} from '../../shared-test/black-box-runner/live-preflight.ts';
+} from '../../shared-test/black-box-runner/preflight/live-preflight.ts';
 
 type FetchCall = Readonly<{
     url: string;

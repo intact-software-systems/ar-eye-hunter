@@ -98,7 +98,7 @@ const performanceGateRequirements = [
 
 const lockFreeAuthoritativeWritePaths = [
   'packages/shared-server/rallar-system/services/client-state-service.ts',
-  'packages/shared-server/rallar-system/services/group-state-service.ts',
+  'packages/shared-server/rallar-system/group-state/group-state-service.ts',
   'packages/shared-server/rallar-system/repositories/GroupTopologyConfigRepository.ts',
   'packages/shared-server/rallar-system/repositories/RtcTopologySnapshotRepository.ts',
   'packages/shared-server/rallar-system/repositories/RtcTopologyPublicationRepository.ts',
@@ -746,10 +746,10 @@ describe('Rallar repo skill and documentation integrity', () => {
 
   it('keeps authoritative group and summary phases as direct statements', () => {
     const groupService = readRepo(
-      'packages/shared-server/rallar-system/services/group-state-service.ts',
+      'packages/shared-server/rallar-system/group-state/group-state-service.ts',
     );
     const summaryWork = readRepo(
-      'packages/shared-server/rallar-system/services/GroupPresenceSummaryWork.ts',
+      'packages/shared-server/rallar-system/group-state/presence/group-presence-summary-work.ts',
     );
     const clientService = readRepo(
       'packages/shared-server/rallar-system/services/client-state-service.ts',
@@ -757,12 +757,12 @@ describe('Rallar repo skill and documentation integrity', () => {
     const appClientInbox = readRepo(
       'packages/shared-server/rallar-system/services/AppClientInboxService.ts',
     );
-    const appGroupInbox = readRepo(
-      'packages/shared-server/rallar-system/services/AppGroupInboxService.ts',
+    const groupInboxHandler = readRepo(
+      'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts',
     );
 
     expect(groupService).not.toContain('timeMutationPhase');
-    expectAll(groupService, [
+    expectAllNormalized(groupService, [
       'return await readGroupMutation(repositoryFor(runtime), prepared.command)',
       'compute: (prepared, read) => computeGroupMutation',
       'validateGroupMutation({\n                command: prepared.command,',
@@ -775,11 +775,11 @@ describe('Rallar repo skill and documentation integrity', () => {
       'async write(',
       'transaction: PSqlTransactionSql',
     ]);
-    expectAll(appGroupInbox, [
-      'const read = await this.groupStateService.read(command)',
-      'const computed = this.groupStateService.compute(command, read)',
-      'this.groupStateService.validate(command, read, computed)',
-      'this.writeMutation(context',
+    expectAllNormalized(groupInboxHandler, [
+      'const read = await this.dependencies.groupStateService.read(command)',
+      'const computed = this.dependencies.groupStateService.compute(command, read)',
+      'this.dependencies.groupStateService.validate(command, read, computed)',
+      'const result = await this.dependencies.writeMutation(input.context',
     ]);
     expect(clientService).not.toContain('timeMutationPhase');
     expect(clientService).not.toContain('runtime.begin(');
@@ -796,6 +796,31 @@ describe('Rallar repo skill and documentation integrity', () => {
       'this.clientStateService.validate(command, read, computed)',
       'this.writeMutation(context',
     ]);
+  });
+
+  it('routes group presence lifecycle work through canonical pure functions', () => {
+    const presenceService = readRepo(
+      'packages/shared-server/rallar-system/group-state/presence/group-presence-service.ts',
+    );
+    const groupInbox = readRepo(
+      'packages/shared-server/rallar-system/services/AppGroupInboxService.ts',
+    );
+    const groupInboxHandler = readRepo(
+      'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts',
+    );
+    const compatibility = readRepo(
+      'packages/shared-server/rallar-system/services/app-group-ws-session-lifecycle.ts',
+    );
+
+    expect(presenceService).not.toContain('class GroupPresenceService');
+    expect(presenceService).not.toContain('GroupPresenceService.');
+    expect(presenceService).toContain('export function toGroupSessionCleanupEnqueue(');
+    expect(presenceService).toContain('export async function processGroupPresenceConnect');
+    expect(presenceService).toContain('export async function processGroupSessionCleanup');
+    expect(groupInbox).toContain('processGroupSessionCleanup({');
+    expect(groupInboxHandler).toContain('processGroupPresenceConnect({');
+    expect(compatibility).not.toContain('class GroupPresenceService');
+    expect(compatibility).toContain("from '../topology/inbox/topology-app-inbox-handler.ts';");
   });
 
   it('keeps current startup and recipe documentation internally consistent', () => {

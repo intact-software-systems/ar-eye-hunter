@@ -7,7 +7,7 @@ does not read from disk or execute recipes.
 Source:
 
 ```text
-packages/shared-test/black-box-runner/artifact-reader.ts
+packages/shared-test/black-box-runner/artifacts/artifact-reader.ts
 ```
 
 ## Public Surface

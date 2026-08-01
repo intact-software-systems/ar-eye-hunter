@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { runBlackBoxRunnerLivePreflight } from '../../shared-test/black-box-runner/live-preflight.ts'
-import { resolveBlackBoxRunnerLivePreflightVariableByEnv } from
-    '../../shared-test/black-box-runner/live-preflight-variables.ts'
+import { runBlackBoxRunnerLivePreflight } from '../../shared-test/black-box-runner/preflight/live-preflight.ts'
+import { resolveVariableByEnv } from
+    '../../shared-test/black-box-runner/preflight/resolve-variable-by-env.ts'
 
 function jsonResponse(value: unknown, status = 200): Response {
     return new Response(JSON.stringify(value), {
@@ -14,7 +14,7 @@ function jsonResponse(value: unknown, status = 200): Response {
 
 describe('black-box runner live preflight variables', () => {
     it('fails closed when fallback variables contain a cycle', () => {
-        const value = resolveBlackBoxRunnerLivePreflightVariableByEnv({
+        const value = resolveVariableByEnv({
             variables: {
                 runId: {
                     env: 'RALLAR_BB_RUN_ID',
@@ -31,7 +31,7 @@ describe('black-box runner live preflight variables', () => {
     })
 
     it('returns direct environment values verbatim', () => {
-        const value = resolveBlackBoxRunnerLivePreflightVariableByEnv({
+        const value = resolveVariableByEnv({
             variables: {
                 applicationId: {
                     env: 'RALLAR_BB_APPLICATION_ID',

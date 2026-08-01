@@ -9,20 +9,23 @@ import { toResilienceDto } from '../../src/middleware-resilience.ts';
 import {
   readPGliteDatabaseEpochMs,
   waitForPGliteQueueRow,
-  withPGliteSql,
+  withUtcPGliteSql,
 } from './pglite-auth-test-harness.ts';
 
 Deno.test('production admin prune rereads current admin authority before creating page work', async () => {
-  await withPGliteSql(async (sql) => {
+  await withUtcPGliteSql(async (sql) => {
     const repository = new ResourceInboxRepository(sql);
     const queue = new PSqlQueueBox(repository);
     const inbox = new InboxQueueReader(queue);
     const outbox = new OutboxQueueReader(queue);
     const now = await readPGliteDatabaseEpochMs(sql);
+    let wakeCount = 0;
     const appAdmin = createApiAdminInboxService({
       inboxQueueReader: inbox,
       outboxQueueReader: outbox,
-      wakeQueueEngine: () => undefined,
+      wakeQueueEngine: () => {
+        wakeCount += 1;
+      },
       resourceInboxRepository: repository,
       resourceInboxResultsRepository: new ResourceInboxResultsRepository(sql),
       database: sql,
@@ -41,14 +44,20 @@ Deno.test('production admin prune rereads current admin authority before creatin
     } as never);
     const pending = appAdmin.pruneExpired({
       adminSession: {
-        clientId: 'admin', username: 'admin', sessionId: 'revoked-session', accessToken: 'not-persisted',
+        clientId: 'admin',
+        username: 'admin',
+        sessionId: 'revoked-session',
+        accessToken: 'not-persisted',
         expiresAtEpochMs: now + 60_000,
       },
       request: {
-        requestId: 'revoked-prune', categories: ['runtime-state'], dryRun: false,
+        requestId: 'revoked-prune',
+        categories: ['runtime-state'],
+        dryRun: false,
       },
     });
     await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
+    wakeCount = 0;
     await inbox.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, toResilienceDto());
     await pending;
 
@@ -63,5 +72,75 @@ Deno.test('production admin prune rereads current admin authority before creatin
     assert.equal(Number(work?.count), 0);
     assert.equal(completion?.ris_status, 'FAILED');
     assert.match(completion?.ris_resource ?? '', /admin-prune-authority-denied/u);
+    assert.equal(wakeCount, 0);
+  });
+});
+
+Deno.test('committed initial admin page work wakes the queue after its transaction commits', async () => {
+  await withUtcPGliteSql(async (sql) => {
+    const repository = new ResourceInboxRepository(sql);
+    const queue = new PSqlQueueBox(repository);
+    const inbox = new InboxQueueReader(queue);
+    const outbox = new OutboxQueueReader(queue);
+    const now = await readPGliteDatabaseEpochMs(sql);
+    let wakeCount = 0;
+    const appAdmin = createApiAdminInboxService({
+      inboxQueueReader: inbox,
+      outboxQueueReader: outbox,
+      wakeQueueEngine: () => {
+        wakeCount += 1;
+      },
+      resourceInboxRepository: repository,
+      resourceInboxResultsRepository: new ResourceInboxResultsRepository(sql),
+      database: sql,
+      serviceId: 'server-1',
+      options: {
+        waitMaxElapsedMsecs: 1_000,
+        waitRetryIntervalMsecs: 0,
+        waitMaxRetryIntervalMsecs: 0,
+        waitJitterRatio: 0,
+        nowEpochMs: () => now,
+      },
+      currentAuthority: {
+        readSession: () =>
+          Promise.resolve({
+            clientId: 'admin',
+            sessionId: 'admin-session',
+            expiresAtEpochMs: now + 60_000,
+          }),
+        adminClientIds: ['admin'],
+      },
+    });
+    const pending = appAdmin.pruneExpired({
+      adminSession: {
+        clientId: 'admin',
+        username: 'admin',
+        sessionId: 'admin-session',
+        accessToken: 'not-persisted',
+        expiresAtEpochMs: now + 60_000,
+      },
+      request: {
+        requestId: 'committed-prune',
+        categories: ['runtime-state'],
+        dryRun: false,
+      },
+    });
+
+    await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
+    wakeCount = 0;
+    await inbox.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, toResilienceDto());
+
+    assert.equal(wakeCount, 1);
+    const [page] = await sql<{ future: boolean }[]>`
+      select expire_ts > now() as future
+      from resource_inbox
+      where ri_type_id = 'APP_OUTBOX'
+        and ri_topic_id = 'rallar.admin.prune-expired'
+        and fk_ext_bank_id = 'committed-prune'
+    `;
+    assert.equal(page?.future, true);
+    await waitForPGliteQueueRow(sql, 'APP_OUTBOX', 'NEW');
+    await outbox.dequeueOutbox(OutboxQueueReader.OUTBOX_DEQUEUE_TYPES, toResilienceDto());
+    await pending;
   });
 });

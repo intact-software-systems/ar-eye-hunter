@@ -1,4 +1,4 @@
-import type { GroupStateRepository } from '../repositories/GroupStateRepository.ts';
+import type { GroupStateRepository } from '../group-state/persistence/group-state-repository.ts';
 import type {
   GroupTopologyConfigRepository,
 } from '../repositories/GroupTopologyConfigRepository.ts';

@@ -5,11 +5,19 @@ import {
 } from '@shared/api/admin-operations-types.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import { TryWithExhaustedError, TryWithPolicy, tryWithPolicy } from '@shared/resilience/TryWith.ts';
+// prettier-ignore
+import {
+  TryWithExhaustedError,
+  TryWithPolicy,
+  tryWithPolicy,
+} from '@shared/resilience/TryWith.ts';
 import type { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import type { PSqlSql } from '../../postgres/PostgresSqlClient.ts';
 import { ResourceInboxRepository } from '../../postgres/resource-inbox/ResourceInboxRepository.ts';
-import { ResourceInboxResultsRepository } from '../../postgres/resource-inbox/ResourceInboxResultsRepository.ts';
+// prettier-ignore
+import {
+  ResourceInboxResultsRepository,
+} from '../../postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import {
   type AdminPruneAppData,
   type AdminPruneCommand,
@@ -85,7 +93,7 @@ export class AppAdminInboxService extends AppInboxService {
     options?: AppInboxServiceOptions,
     private readonly readAuthority: AdminPruneAuthorityReader = () =>
       Promise.resolve({ allowed: false, code: 'current-authority-reader-missing' }),
-    wakeQueue?: () => void,
+    private readonly wakeQueue?: () => void,
   ) {
     super(
       inbox,
@@ -158,50 +166,59 @@ export class AppAdminInboxService extends AppInboxService {
     if (
       context.entry.key.resourceId !== command.jobId ||
       context.enqueue.type !== AppInboxType.ADMIN_PRUNE_EXPIRED
-    ) throw new TypeError('Admin prune AppInbox identity differs from queue key');
+    )
+      throw new TypeError('Admin prune AppInbox identity differs from queue key');
     const read = await this.read(command);
     const computed = this.compute(command, read);
     this.validate(command, read, computed);
-    return await this.writeMutation(context, async (transaction) => {
+    const result = await this.writeMutation(context, async (transaction) => {
       const outbox = new ResourceInboxRepository(transaction);
       for (const entry of computed.outboxEntries) {
         await outbox.writeIfAbsentOrMatch(entry);
       }
       if (computed.aggregateEntry) {
-        const stored = await new ResourceInboxResultsRepository(transaction)
-          .writeIfAbsentOrReplaceExpired(computed.aggregateEntry);
+        const stored = await new ResourceInboxResultsRepository(
+          transaction,
+        ).writeIfAbsentOrReplaceExpired(computed.aggregateEntry);
         if (stored.resource !== computed.aggregateEntry.resource) {
           throw new Error('Admin prune aggregate collides with an active job');
         }
       }
       return computed.result;
     });
+    if (!command.dryRun) this.wakeQueue?.();
+    return result;
   }
 
   private async read(command: AdminPruneCommand): Promise<AdminPruneRead> {
     const nowEpochMs = this.nowEpochMs();
     const [pairs, authority] = await Promise.all([
-      Promise.all(ADMIN_PRUNE_EXPIRED_CATEGORIES.map(async (category) =>
-        [
-          category,
-          command.categories.includes(category)
-            ? await this.pruner.countExpired(
+      Promise.all(
+        ADMIN_PRUNE_EXPIRED_CATEGORIES.map(
+          async (category) =>
+            [
               category,
-              command.appData === null ? {
-                cutoffEpochMs: command.capturedAtEpochMs,
-              } : {
-                cutoffEpochMs: command.capturedAtEpochMs,
-                appData: {
-                  namespace: command.appData.namespace,
-                  ...(command.appData.storeName === null
-                    ? {}
-                    : { storeName: command.appData.storeName }),
-                },
-              },
-            )
-            : 0,
-        ] as const
-      )),
+              command.categories.includes(category)
+                ? await this.pruner.countExpired(
+                    category,
+                    command.appData === null
+                      ? {
+                          cutoffEpochMs: command.capturedAtEpochMs,
+                        }
+                      : {
+                          cutoffEpochMs: command.capturedAtEpochMs,
+                          appData: {
+                            namespace: command.appData.namespace,
+                            ...(command.appData.storeName === null
+                              ? {}
+                              : { storeName: command.appData.storeName }),
+                          },
+                        },
+                  )
+                : 0,
+            ] as const,
+        ),
+      ),
       this.readAuthority({
         requestedBy: command.requestedBy,
         requestedSessionId: command.requestedSessionId,
@@ -228,35 +245,23 @@ export class AppAdminInboxService extends AppInboxService {
       deletedRows: 0,
       dryRun: command.dryRun,
     }));
-    const outboxEntries = command.dryRun
-      ? []
-      : command.categories.map((category) =>
-        toAdminPruneOutbox({
-          kind: 'page',
-          jobId: command.jobId,
-          category,
-          requestedBy: command.requestedBy,
-          requestedSessionId: command.requestedSessionId,
-          capturedAtEpochMs: command.capturedAtEpochMs,
-          expireAtEpochMs: command.expireAtEpochMs,
-          pageSize: command.pageSize,
-          afterCursor: null,
-          pageIndex: 0,
-          appData: command.appData,
-        }, this.serviceId)
-      );
+    const outboxEntries = createInitialAdminPrunePages(command, this.serviceId);
     return {
       outboxEntries,
-      aggregateEntry: command.dryRun ? null : toAdminPruneAggregateEntry(createAdminPruneAggregate({
-        jobId: command.jobId,
-        generatedAtEpochMs: command.capturedAtEpochMs,
-        expireAtEpochMs: command.expireAtEpochMs,
-        serverId: this.serviceId,
-        requestedBy: command.requestedBy,
-        requestedSessionId: command.requestedSessionId,
-        categories: command.categories,
-        expiredRows: read.expiredRows,
-      })),
+      aggregateEntry: command.dryRun
+        ? null
+        : toAdminPruneAggregateEntry(
+            createAdminPruneAggregate({
+              jobId: command.jobId,
+              generatedAtEpochMs: command.capturedAtEpochMs,
+              expireAtEpochMs: command.expireAtEpochMs,
+              serverId: this.serviceId,
+              requestedBy: command.requestedBy,
+              requestedSessionId: command.requestedSessionId,
+              categories: command.categories,
+              expiredRows: read.expiredRows,
+            }),
+          ),
       result: {
         generatedAtEpochMs: command.capturedAtEpochMs,
         serverId: this.serviceId,
@@ -295,9 +300,7 @@ export class AppAdminInboxService extends AppInboxService {
         if (!entry || entry.status !== EntityStatus.COMPLETED) {
           throw new Error('Admin prune aggregate is pending');
         }
-        return toAdminPruneCompletedResult(
-          decodeAdminPruneAggregate(JSON.parse(entry.resource)),
-        );
+        return toAdminPruneCompletedResult(decodeAdminPruneAggregate(JSON.parse(entry.resource)));
       }, this.aggregateWaitPolicy);
       return Either.ofRight(result);
     } catch (error) {
@@ -307,6 +310,31 @@ export class AppAdminInboxService extends AppInboxService {
       throw error;
     }
   }
+}
+
+function createInitialAdminPrunePages(
+  command: AdminPruneCommand,
+  serviceId: string,
+): readonly ResourceEntry[] {
+  if (command.dryRun) return [];
+  return command.categories.map((category) =>
+    toAdminPruneOutbox(
+      {
+        kind: 'page',
+        jobId: command.jobId,
+        category,
+        requestedBy: command.requestedBy,
+        requestedSessionId: command.requestedSessionId,
+        capturedAtEpochMs: command.capturedAtEpochMs,
+        expireAtEpochMs: command.expireAtEpochMs,
+        pageSize: command.pageSize,
+        afterCursor: null,
+        pageIndex: 0,
+        appData: command.appData,
+      },
+      serviceId,
+    ),
+  );
 }
 
 function requireRecord(value: unknown): Record<string, unknown> {

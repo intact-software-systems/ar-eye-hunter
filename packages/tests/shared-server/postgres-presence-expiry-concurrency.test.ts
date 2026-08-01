@@ -20,7 +20,7 @@ import {
   createGroupStateRepository,
 } from "@shared-server/postgres/rallar-system/createStateRepositories.ts";
 import { PSqlRuntimeStateRepository } from "@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts";
-import { createTestGroupStateRuntime } from "./group-state-test-runtime.ts";
+import { createTestGroupStateRuntime } from "./group-state/group-state-test-runtime.ts";
 import type { StateSyncPublisher } from "@shared-server/rallar-system/state-sync-publisher.ts";
 import { groupStateMaintenanceRequestId } from "@shared-server/rallar-system/services/group-state-service.ts";
 import type { GroupMutationReceipt } from "@shared-server/rallar-system/services/group-state-mutations.ts";
@@ -38,6 +38,7 @@ import {
 } from
   "./fixtures/postgres-app-inbox-worker-runtime.ts";
 import { findDirectResourceOutboxEvidence } from "./direct-resource-outbox-evidence.ts";
+import { readOwnedAppInboxResourceIds } from "./postgres-app-inbox-attempt-evidence.ts";
 import {
   expectWorkerOutboxLifecycleEvidence,
   type WorkerOutboxEffect,
@@ -100,6 +101,12 @@ type WorkerTrace = Readonly<{
   }>[];
 }>;
 type WorkerHandle = Readonly<{ done: Promise<WorkerOutput> }>;
+interface AssertOneWorkerRebasedInput {
+  readonly sql: PSqlSql;
+  readonly scope: StateScope;
+  readonly outputs: readonly WorkerOutput[];
+  readonly traces: readonly WorkerTrace[];
+}
 
 const ROOT_DENO_CONFIG_PATH = fileURLToPath(new URL("../../../deno.json", import.meta.url));
 const STATE_MUTATION_WORKER_PATH = fileURLToPath(
@@ -267,7 +274,7 @@ describe("Postgres presence expiry concurrency", () => {
           ?.domainStatus).toMatch(/^(applied|no-op)$/u);
         expect(outputs.map((output) => output.attemptCount).sort()).toEqual([1, 2]);
         const traces = await Promise.all(inputs.map((input) => readTrace(input.traceFilePath)));
-        assertOneWorkerRebased(outputs, traces);
+        await assertOneWorkerRebased({ sql: setupSql, scope, outputs, traces });
         expect(await createClientStateRepository(setupSql).findSession(sessionRef))
           .toMatchObject({
             generationId: "generation-1",
@@ -369,7 +376,7 @@ describe("Postgres presence expiry concurrency", () => {
           .toMatch(/^(applied|no-op)$/u);
         expect(outputs.map((output) => output.attemptCount).sort()).toEqual([1, 2]);
         const traces = await Promise.all(inputs.map((input) => readTrace(input.traceFilePath)));
-        assertOneWorkerRebased(outputs, traces);
+        await assertOneWorkerRebased({ sql: setupSql, scope, outputs, traces });
 
         const repository = createClientStateRepository(setupSql);
         expect(await repository.findSession(sessionRef)).toMatchObject({
@@ -481,7 +488,7 @@ describe("Postgres presence expiry concurrency", () => {
         expect(outputs.map((output) => output.attemptCount).sort()).toEqual([1, 2]);
         expect(outputs.map((output) => output.domainStatus)).toEqual(["applied", "applied"]);
         const traces = await Promise.all(inputs.map((input) => readTrace(input.traceFilePath)));
-        assertOneWorkerRebased(outputs, traces);
+        await assertOneWorkerRebased({ sql: setupSql, scope, outputs, traces });
         const repository = createGroupStateRepository(setupSql);
         const snapshot = await repository.readSnapshot(groupRef);
         expect(snapshot?.members.find((member) => member.principalId === "bob"))
@@ -1579,12 +1586,20 @@ async function expectPendingWorkerOutboxes(
   );
 }
 
-function assertOneWorkerRebased(outputs: readonly WorkerOutput[], traces: readonly WorkerTrace[]) {
+async function assertOneWorkerRebased(input: AssertOneWorkerRebasedInput): Promise<void> {
+  const { outputs, traces } = input;
   expect(traces.every((trace) => trace.barrierWaitCount === 1)).toBe(true);
   expect(new Set(traces.map((trace) => trace.backendPid)).size).toBe(2);
   const loserIndex = outputs.findIndex((output) => output.attemptCount === 2);
   expect(loserIndex).toBeGreaterThanOrEqual(0);
-  expect(findSingleRetriedAppInboxAttemptSequence(traces).map((attempt) => ({
+  expect(findSingleRetriedAppInboxAttemptSequence({
+    traces,
+    ownedResourceIds: await readOwnedAppInboxResourceIds({
+      sql: input.sql,
+      scope: input.scope,
+      requestIds: outputs.map((output) => output.requestId),
+    }),
+  }).map((attempt) => ({
     attempt: attempt.attempt,
     classification: attempt.classification,
     retryDelayMs: attempt.retryDelayMs,

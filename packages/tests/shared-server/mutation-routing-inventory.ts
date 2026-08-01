@@ -8,6 +8,11 @@ import {
   type MutationRoutingAstNode,
 } from './mutation-routing-call-graph.ts';
 import { findMutationRouteReachabilityIssues } from './mutation-routing-reachability.ts';
+import {
+  MUTATION_ROUTE_INVENTORY_ROWS,
+  MUTATION_ROUTE_OWNER_DISPATCH_PATHS,
+  MUTATION_ROUTE_OWNER_PATHS,
+} from './mutation-routing-owner-inventory.ts';
 
 export interface MutationRouteInventoryEntry {
   readonly transport: 'HTTP' | 'WS_INBOX' | 'WS_LIFECYCLE' | 'MAINTENANCE';
@@ -19,12 +24,10 @@ export interface MutationRouteInventoryEntry {
   readonly enqueueSourcePath: string;
   readonly enqueueMarker: string;
   readonly ownerSourcePath: string;
+  readonly ownerDispatchPath: string;
+  readonly typeOwnerSourcePath: string;
+  readonly dispatchSourcePath: string;
 }
-
-const CLIENT_ROUTE = '/api/state/apps/:applicationId/workspaces/:workspaceId/clients';
-const GROUP_ROUTE = '/api/state/apps/:applicationId/workspaces/:workspaceId/groups';
-const GROUP_ITEM_ROUTE = `${GROUP_ROUTE}/:groupId`;
-const TOPOLOGY_ROUTE = `${GROUP_ITEM_ROUTE}/topology`;
 
 const PATHS = {
   c: 'apps/api-v1/src/routes/client-state-routes.ts',
@@ -37,77 +40,26 @@ const PATHS = {
   ag: 'apps/api-v1/src/services/create-api-admin-mutation-gateway.ts',
   rq: 'apps/api-v1/src/services/request-auth-service.ts',
   l: 'packages/shared-server/rallar-system/services/ws-lifecycle-service.ts',
-  e: 'packages/shared-server/rallar-system/services/presence-expiry-reconciliation-service.ts',
+  e: 'packages/shared-server/rallar-system/group-state/presence/reconcile-expired-group-presence.ts',
   s: 'packages/shared-server/rallar-system/ws-system-topics.ts',
   d: 'packages/shared-server/crdt/RallarCrdtServer.ts',
 } as const;
 
-const OWNERS = {
-  C: 'packages/shared-server/rallar-system/services/AppClientInboxService.ts',
-  G: 'packages/shared-server/rallar-system/services/AppGroupInboxService.ts',
-  A: 'packages/shared-server/rallar-system/services/AppAuthInboxService.ts',
-  D: 'packages/shared-server/rallar-system/services/AppCrdtInboxService.ts',
-  N: 'packages/shared-server/rallar-system/services/AppAdminInboxService.ts',
-} as const;
-const INVENTORY_ROWS = `
-HTTP\tPUT ${CLIENT_ROUTE}/:principalId/principal\tCLIENT_PRINCIPAL_UPSERT\tc\t/clients/:principalId/principal\tc\tprocessClientAppInbox\tC\tAppClientInboxService.processCommand
-HTTP\tPUT ${CLIENT_ROUTE}/:principalId/instances/:clientInstanceId\tCLIENT_INSTANCE_UPSERT\tc\t/instances/:clientInstanceId\tc\tprocessClientAppInbox\tC\tAppClientInboxService.processCommand
-HTTP\tPUT ${CLIENT_ROUTE}/:principalId/instances/:clientInstanceId/sessions/:sessionId\tCLIENT_SESSION_CONNECT\tc\t/sessions/:sessionId\tc\tprocessClientAppInbox\tC\tAppClientInboxService.processCommand
-HTTP\tPOST ${CLIENT_ROUTE}/:principalId/instances/:clientInstanceId/sessions/:sessionId/heartbeat\tCLIENT_SESSION_HEARTBEAT\tc\t/sessions/:sessionId/heartbeat\tc\tprocessClientAppInbox\tC\tAppClientInboxService.processCommand
-HTTP\tPOST ${CLIENT_ROUTE}/:principalId/instances/:clientInstanceId/sessions/:sessionId/disconnect\tCLIENT_SESSION_DISCONNECT\tc\t/sessions/:sessionId/disconnect\tc\tprocessClientAppInbox\tC\tAppClientInboxService.processCommand
-HTTP\tGET /api/ws/:sessionId upgrade\tAUTH_WS_TICKET_CONSUME\tw\t'/api/ws/:sessionId'\trq\trequireSharedWsAuthSession\tA\tAppAuthInboxService.processCommand
-HTTP\tGET /api/ws/:sessionId upgrade\tCLIENT_AUTHORISED_WS_CONNECT\tw\t'/api/ws/:sessionId'\tw\tenqueueAuthorisedWsClientConnect\tC\tAppClientInboxService.processAuthorisedWsConnect
-WS_LIFECYCLE\twebsocket onClose\tCLIENT_AUTHORISED_WS_DISCONNECT\tl\tonClose:\tl\tenqueueClientSessionDisconnect\tC\tAppClientInboxService.processAuthorisedWsDisconnect
-MAINTENANCE\tclient session expiry reconciliation\tCLIENT_EXPIRED_SESSIONS\te\tenqueuePresenceExpiryReconciliation\te\tenqueueExpiredSessions\tC\tAppClientInboxService.processExpiredSessionCommands
-HTTP\tPOST /api/auth/register\tAUTH_USER_REGISTER\ta\t'/api/auth/register'\ta\tregisterUser\tA\tAppAuthInboxService.processCommand
-HTTP\tPOST /api/auth/login\tAUTH_SESSION_ISSUE\ta\t'/api/auth/login'\ta\tissueSession\tA\tAppAuthInboxService.processCommand
-HTTP\tPOST /api/auth/logout\tAUTH_SESSION_LOGOUT\ta\t'/api/auth/logout'\ta\tlogoutSession\tA\tAppAuthInboxService.processCommand
-HTTP\tPOST /api/auth/ws-ticket\tAUTH_WS_TICKET_ISSUE\ta\t'/api/auth/ws-ticket'\ta\tissueWebSocketTicket\tA\tAppAuthInboxService.processCommand
-HTTP\tPOST /api/auth/agent-session-tickets\tAUTH_AGENT_SESSION_TICKETS_ISSUE\ta\t'/api/auth/agent-session-tickets'\ta\tissueAgentSessionTickets\tA\tAppAuthInboxService.processCommand
-HTTP\tPOST /api/auth/agent-session-tickets/consume\tAUTH_AGENT_SESSION_TICKET_CONSUME\ta\t'/api/auth/agent-session-tickets/consume'\ta\tconsumeAgentSessionTicket\tA\tAppAuthInboxService.processCommand
-HTTP\tPOST ${GROUP_ROUTE}\tGROUP_CREATE\tg\t'/api/state/apps/:applicationId/workspaces/:workspaceId/groups'\tg\tAppInboxType.GROUP_CREATE\tG\tAppGroupInboxService.processMutation
-HTTP\tPUT ${GROUP_ITEM_ROUTE}\tGROUP_UPDATE\tg\t'/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId'\tg\tAppInboxType.GROUP_UPDATE\tG\tAppGroupInboxService.processMutation
-HTTP\tPOST ${GROUP_ITEM_ROUTE}/director/appoint\tGROUP_DIRECTOR_APPOINT\tg\t/director/appoint\tg\tAppInboxType.GROUP_DIRECTOR_APPOINT\tG\tAppGroupInboxService.processMutation
-HTTP\tPOST ${GROUP_ITEM_ROUTE}/join\tGROUP_JOIN\tg\t/groups/:groupId/join\tg\tAppInboxType.GROUP_JOIN\tG\tAppGroupInboxService.processMutation
-HTTP\tPOST ${GROUP_ITEM_ROUTE}/invites/:principalId\tGROUP_INVITE_CREATE\tg\t/invites/:principalId\tg\tAppInboxType.GROUP_INVITE_CREATE\tG\tAppGroupInboxService.processMutation
-HTTP\tPOST ${GROUP_ITEM_ROUTE}/invites/:principalId/revoke\tGROUP_INVITE_REVOKE\tg\t/invites/:principalId/revoke\tg\tAppInboxType.GROUP_INVITE_REVOKE\tG\tAppGroupInboxService.processMutation
-HTTP\tPOST ${GROUP_ITEM_ROUTE}/invites/accept\tGROUP_INVITE_ACCEPT\tg\t/invites/accept\tg\tAppInboxType.GROUP_INVITE_ACCEPT\tG\tAppGroupInboxService.processMutation
-HTTP\tPOST ${GROUP_ITEM_ROUTE}/join-code/rotate\tGROUP_JOIN_CODE_ROTATE\tg\t/join-code/rotate\tg\tAppInboxType.GROUP_JOIN_CODE_ROTATE\tG\tAppGroupInboxService.processMutation
-HTTP\tPOST ${GROUP_ITEM_ROUTE}/members/:principalId/remove\tGROUP_MEMBER_REMOVE\tg\t/members/:principalId/remove\tg\tAppInboxType.GROUP_MEMBER_REMOVE\tG\tAppGroupInboxService.processMutation
-HTTP\tPOST ${GROUP_ITEM_ROUTE}/members/:principalId/ban\tGROUP_MEMBER_BAN\tg\t/members/:principalId/ban\tg\tAppInboxType.GROUP_MEMBER_BAN\tG\tAppGroupInboxService.processMutation
-HTTP\tPOST ${GROUP_ITEM_ROUTE}/members/:principalId/unban\tGROUP_MEMBER_UNBAN\tg\t/members/:principalId/unban\tg\tAppInboxType.GROUP_MEMBER_UNBAN\tG\tAppGroupInboxService.processMutation
-HTTP\tPUT ${GROUP_ITEM_ROUTE}/members/:principalId/role\tGROUP_MEMBER_ROLE_SET\tg\t/members/:principalId/role\tg\tAppInboxType.GROUP_MEMBER_ROLE_SET\tG\tAppGroupInboxService.processMutation
-HTTP\tPOST ${GROUP_ITEM_ROUTE}/owner/transfer\tGROUP_OWNERSHIP_TRANSFER\tg\t/owner/transfer\tg\tAppInboxType.GROUP_OWNERSHIP_TRANSFER\tG\tAppGroupInboxService.processMutation
-HTTP\tPUT ${GROUP_ITEM_ROUTE}/members/:principalId\tGROUP_MEMBER_UPSERT\tg\t/members/:principalId\tg\tAppInboxType.GROUP_MEMBER_UPSERT\tG\tAppGroupInboxService.processMutation
-HTTP\tPUT ${GROUP_ITEM_ROUTE}/sessions/:sessionId\tGROUP_PRESENCE_CONNECT\tg\t/sessions/:sessionId\tg\tAppInboxType.GROUP_PRESENCE_CONNECT\tG\tAppGroupInboxService.processMutation
-HTTP\tPOST ${GROUP_ITEM_ROUTE}/sessions/:sessionId/heartbeat\tGROUP_PRESENCE_HEARTBEAT\tg\t/sessions/:sessionId/heartbeat\tg\tAppInboxType.GROUP_PRESENCE_HEARTBEAT\tG\tAppGroupInboxService.processMutation
-HTTP\tPOST ${GROUP_ITEM_ROUTE}/sessions/:sessionId/disconnect\tGROUP_PRESENCE_DISCONNECT\tg\t/sessions/:sessionId/disconnect\tg\tAppInboxType.GROUP_PRESENCE_DISCONNECT\tG\tAppGroupInboxService.processMutation
-MAINTENANCE\tgroup presence expiry reconciliation\tGROUP_PRESENCE_EXPIRE\te\tenqueuePresenceExpiryReconciliation\te\tenqueueExpiredPresenceSessions\tG\tAppGroupInboxService.processMutation
-WS_LIFECYCLE\twebsocket onClose group cleanup\tGROUP_PRESENCE_SESSION_CLEANUP\tl\tonClose:\tl\tenqueueGroupSessionCleanup\tG\tAppGroupInboxService.processGroupSessionCleanup
-HTTP\tPUT ${TOPOLOGY_ROUTE}/config\tTOPOLOGY_CONFIG_PUT\tt\t/topology/config\tt\tAppInboxType.TOPOLOGY_CONFIG_PUT\tG\tAppGroupInboxService.processTopologyConfigMutation
-HTTP\tDELETE ${TOPOLOGY_ROUTE}/config\tTOPOLOGY_CONFIG_DELETE\tt\t/topology/config\tt\tAppInboxType.TOPOLOGY_CONFIG_DELETE\tG\tAppGroupInboxService.processTopologyConfigMutation
-HTTP\tPUT ${TOPOLOGY_ROUTE}/override\tTOPOLOGY_OVERRIDE_PUT\tt\t/topology/override\tt\tAppInboxType.TOPOLOGY_OVERRIDE_PUT\tG\tAppGroupInboxService.processTopologyConfigMutation
-HTTP\tDELETE ${TOPOLOGY_ROUTE}/override\tTOPOLOGY_OVERRIDE_DELETE\tt\t/topology/override\tt\tAppInboxType.TOPOLOGY_OVERRIDE_DELETE\tG\tAppGroupInboxService.processTopologyConfigMutation
-HTTP\tPOST ${TOPOLOGY_ROUTE}/reconfigure\tTOPOLOGY_RECONFIGURE\tt\t/topology/reconfigure\tt\tAppInboxType.TOPOLOGY_RECONFIGURE\tG\tAppGroupInboxService.processTopologyReconfigureMutation
-HTTP\tPOST /api/admin/operations/topology/recompute\tTOPOLOGY_RECONFIGURE\tad\t'/api/admin/operations/topology/recompute'\tag\tprocessAuthenticatedEntryUntilCompletionResult\tG\tAppGroupInboxService.processTopologyReconfigureMutation
-WS_INBOX\ttopic rallar/rtt\tRTC_RTT_SUBMIT\ts\tAppTopics.rtt\ts\tenqueueRtcRttMutation\tG\tAppGroupInboxService.processRtcRttMutation
-WS_INBOX\ttopic rallar/crdt/update\tCRDT_UPDATE_APPEND\td\tkind === 'update'\td\tmutationIngress.enqueueUpdate\tD\tAppCrdtInboxService.processCommand
-HTTP\tPOST /api/crdt/admin/documents/rebuild-projection\tCRDT_PROJECTION_REBUILD\tcr\t'/api/crdt/admin/documents/rebuild-projection'\tcr\tmutate(c, options, 'rebuild-projection'\tD\tAppCrdtInboxService.processCommand
-HTTP\tPOST /api/crdt/admin/documents/compact\tCRDT_SNAPSHOT_COMPACT\tcr\t'/api/crdt/admin/documents/compact'\tcr\tmutate(c, options, 'compact'\tD\tAppCrdtInboxService.processCommand
-HTTP\tPOST /api/admin/operations/crdt/compact\tCRDT_SNAPSHOT_COMPACT\tad\t'/api/admin/operations/crdt/compact'\tag\tprocessAdminMutationUntilCompletion('compact'\tD\tAppCrdtInboxService.processCommand
-HTTP\tPOST /api/crdt/admin/documents/lifecycle\tCRDT_LIFECYCLE_UPDATE\tcr\t'/api/crdt/admin/documents/lifecycle'\tcr\tmutate(c, options, 'lifecycle'\tD\tAppCrdtInboxService.processCommand
-HTTP\tPOST /api/admin/operations/crdt/lifecycle\tCRDT_LIFECYCLE_UPDATE\tad\t'/api/admin/operations/crdt/lifecycle'\tag\tprocessAdminMutationUntilCompletion('lifecycle'\tD\tAppCrdtInboxService.processCommand
-HTTP\tPOST /api/crdt/admin/documents/erase\tCRDT_ERASE\tcr\t'/api/crdt/admin/documents/erase'\tcr\tmutate(c, options, 'erase'\tD\tAppCrdtInboxService.processCommand
-HTTP\tPOST /api/admin/operations/crdt/erase\tCRDT_ERASE\tad\t'/api/admin/operations/crdt/erase'\tag\tprocessAdminMutationUntilCompletion('erase'\tD\tAppCrdtInboxService.processCommand
-HTTP\tPOST /api/admin/operations/maintenance/prune-expired\tADMIN_PRUNE_EXPIRED\tad\t'/api/admin/operations/maintenance/prune-expired'\tag\tappAdmin.pruneExpired\tN\tAppAdminInboxService.processCommand
-`;
-
 export const MUTATION_ROUTE_INVENTORY: readonly MutationRouteInventoryEntry[] = decodeInventory(
-  INVENTORY_ROWS,
+  MUTATION_ROUTE_INVENTORY_ROWS,
 );
 
 export interface MutationRouteValidationOptions {
   readonly sourceOverrides?: ReadonlyMap<string, string>;
+}
+
+interface AstMarkerCheckInput {
+  readonly issues: string[];
+  readonly filePath: string;
+  readonly marker: string;
+  readonly label: string;
+  readonly item: MutationRouteInventoryEntry;
+  readonly sources: SourceReader;
 }
 
 export function validateMutationRouteInventory(
@@ -133,28 +85,36 @@ export function validateMutationRouteInventory(
       issues.push(`Unknown mutation route: ${key(item)}`);
       continue;
     }
-    for (
-      const field of [
-        'owner',
-        'sourcePath',
-        'registrationMarker',
-        'enqueueSourcePath',
-        'enqueueMarker',
-        'ownerSourcePath',
-      ] as const
-    ) {
+    for (const field of [
+      'owner',
+      'sourcePath',
+      'registrationMarker',
+      'enqueueSourcePath',
+      'enqueueMarker',
+      'ownerSourcePath',
+      'ownerDispatchPath',
+      'typeOwnerSourcePath',
+      'dispatchSourcePath',
+    ] as const) {
       if (item[field] !== canonical[field]) issues.push(`${key(item)} has incorrect ${field}`);
     }
     checkRegistration(issues, item, sources);
-    checkAstMarker(issues, item.enqueueSourcePath, item.enqueueMarker, 'enqueue', item, sources);
-    checkAstMarker(
+    checkAstMarker({
       issues,
-      item.ownerSourcePath,
-      `AppInboxType.${item.type}`,
-      'type ownership',
+      filePath: item.enqueueSourcePath,
+      marker: item.enqueueMarker,
+      label: 'enqueue',
       item,
       sources,
-    );
+    });
+    checkAstMarker({
+      issues,
+      filePath: item.typeOwnerSourcePath,
+      marker: `AppInboxType.${item.type}`,
+      label: 'type ownership',
+      item,
+      sources,
+    });
     checkOwnerMethod(issues, item, sources);
     checkRegisteredHandlerCallChain(issues, item, sources);
   }
@@ -162,37 +122,64 @@ export function validateMutationRouteInventory(
 }
 
 function decodeInventory(rows: string): readonly MutationRouteInventoryEntry[] {
-  return rows.trim().split('\n').map((row) => {
-    const [
-      transport,
-      entrypoint,
-      type,
-      source,
-      registrationMarker,
-      enqueueSource,
-      enqueueMarker,
-      ownerSource,
-      owner,
-    ] = row.split('\t');
-    const sourcePath = PATHS[source as keyof typeof PATHS];
-    const enqueueSourcePath = PATHS[enqueueSource as keyof typeof PATHS];
-    const ownerSourcePath = OWNERS[ownerSource as keyof typeof OWNERS];
-    const appInboxType = AppInboxType[type as keyof typeof AppInboxType];
-    if (!sourcePath || !enqueueSourcePath || !ownerSourcePath || !appInboxType) {
-      throw new Error(`Invalid mutation route inventory row: ${row}`);
-    }
-    return {
-      transport: transport as MutationRouteInventoryEntry['transport'],
-      entrypoint,
-      type: appInboxType,
-      owner,
-      sourcePath,
-      registrationMarker,
-      enqueueSourcePath,
-      enqueueMarker,
-      ownerSourcePath,
-    };
-  });
+  return rows
+    .trim()
+    .split('\n')
+    .map((row) => {
+      const [
+        transport,
+        entrypoint,
+        type,
+        source,
+        registrationMarker,
+        enqueueSource,
+        enqueueMarker,
+        ownerSource,
+        owner,
+        typeOwnerSource,
+        dispatchSource,
+      ] = row.split('\t');
+      const sourcePath = PATHS[source as keyof typeof PATHS];
+      const enqueueSourcePath = PATHS[enqueueSource as keyof typeof PATHS];
+      const ownerSourcePath =
+        MUTATION_ROUTE_OWNER_PATHS[ownerSource as keyof typeof MUTATION_ROUTE_OWNER_PATHS];
+      const ownerDispatchPath =
+        MUTATION_ROUTE_OWNER_DISPATCH_PATHS[
+          owner as keyof typeof MUTATION_ROUTE_OWNER_DISPATCH_PATHS
+        ];
+      const typeOwnerSourcePath = typeOwnerSource
+        ? MUTATION_ROUTE_OWNER_PATHS[typeOwnerSource as keyof typeof MUTATION_ROUTE_OWNER_PATHS]
+        : ownerSourcePath;
+      const dispatchSourcePath = dispatchSource
+        ? MUTATION_ROUTE_OWNER_PATHS[dispatchSource as keyof typeof MUTATION_ROUTE_OWNER_PATHS]
+        : ownerSourcePath;
+      const appInboxType = AppInboxType[type as keyof typeof AppInboxType];
+      if (
+        !sourcePath ||
+        !enqueueSourcePath ||
+        !ownerSourcePath ||
+        !ownerDispatchPath ||
+        !typeOwnerSourcePath ||
+        !dispatchSourcePath ||
+        !appInboxType
+      ) {
+        throw new Error(`Invalid mutation route inventory row: ${row}`);
+      }
+      return {
+        transport: transport as MutationRouteInventoryEntry['transport'],
+        entrypoint,
+        type: appInboxType,
+        owner,
+        sourcePath,
+        registrationMarker,
+        enqueueSourcePath,
+        enqueueMarker,
+        ownerSourcePath,
+        ownerDispatchPath,
+        typeOwnerSourcePath,
+        dispatchSourcePath,
+      };
+    });
 }
 
 function key(item: MutationRouteInventoryEntry): string {
@@ -204,33 +191,32 @@ function checkRegistration(
   sources: SourceReader,
 ): void {
   if (item.transport !== 'HTTP') {
-    checkAstMarker(
+    checkAstMarker({
       issues,
-      item.sourcePath,
-      item.registrationMarker,
-      'registration',
+      filePath: item.sourcePath,
+      marker: item.registrationMarker,
+      label: 'registration',
       item,
       sources,
-    );
+    });
     return;
   }
-  const [method, rawPath] = item.entrypoint.split(' ');
-  const routePath = rawPath;
+  const [method, routePath] = item.entrypoint.split(' ');
   const program = sources.readProgram(issues, item.sourcePath, 'registration', item);
   if (!program) return;
-  if (!hasRouteRegistration(program, method.toLowerCase(), routePath)) {
+  if (findRouteRegistration(program, method.toLowerCase(), routePath) === undefined) {
     issues.push(`${key(item)} registration is absent from ${item.sourcePath}`);
   }
 }
 
-function checkAstMarker(
-  issues: string[],
-  filePath: string,
-  marker: string,
-  label: string,
-  item: MutationRouteInventoryEntry,
-  sources: SourceReader,
-): void {
+function checkAstMarker({
+  issues,
+  filePath,
+  marker,
+  label,
+  item,
+  sources,
+}: AstMarkerCheckInput): void {
   const program = sources.readProgram(issues, filePath, label, item);
   if (program && !hasExactMarker(program, marker)) {
     issues.push(`${key(item)} ${label} marker is absent from ${filePath}`);
@@ -288,21 +274,21 @@ function checkRegisteredHandlerCallChain(
 ): void {
   const source = sources.readProgram(issues, item.sourcePath, 'call chain', item);
   const enqueue = sources.readProgram(issues, item.enqueueSourcePath, 'call chain', item);
-  const owner = sources.readProgram(issues, item.ownerSourcePath, 'owner dispatch', item);
-  if (!source || !enqueue || !owner) return;
-  issues.push(...findMutationRouteReachabilityIssues(
-    item,
-    source,
-    enqueue,
-    owner,
-    hasExactMarker,
-    hasDirectExactMarker,
-    (filePath) => sources.readProgram(issues, filePath, 'owner dependency', item),
-  ));
-}
-
-function hasRouteRegistration(program: AstNode, method: string, routePath: string): boolean {
-  return findRouteRegistration(program, method, routePath) !== undefined;
+  const owner = sources.readProgram(issues, item.ownerSourcePath, 'owner', item);
+  const dispatch = sources.readProgram(issues, item.dispatchSourcePath, 'owner dispatch', item);
+  if (!source || !enqueue || !owner || !dispatch) return;
+  issues.push(
+    ...findMutationRouteReachabilityIssues({
+      item,
+      source,
+      enqueueSource: enqueue,
+      ownerSource: owner,
+      dispatchSource: dispatch,
+      containsMarker: hasExactMarker,
+      matchesMarker: hasDirectExactMarker,
+      loadProgram: (filePath) => sources.readProgram(issues, filePath, 'owner dependency', item),
+    }),
+  );
 }
 
 function hasExactMarker(program: AstNode, marker: string): boolean {
@@ -319,9 +305,12 @@ function hasDirectExactMarker(program: AstNode, marker: string): boolean {
   if (quoted) return readString(program) === quoted[1];
   const comparison = marker.match(/^(\w+) === '([^']+)'$/);
   if (comparison) {
-    return program.type === 'BinaryExpression' && program.operator === '===' &&
+    return (
+      program.type === 'BinaryExpression' &&
+      program.operator === '===' &&
       readIdentifier(asNode(program.left)) === comparison[1] &&
-      readString(asNode(program.right)) === comparison[2];
+      readString(asNode(program.right)) === comparison[2]
+    );
   }
   const call = marker.match(/^(?:(\w+)\.)?(\w+)\((?:[^']*'([^']+)')?/);
   if (call) {
@@ -329,13 +318,17 @@ function hasDirectExactMarker(program: AstNode, marker: string): boolean {
     const callee = asNode(program.callee);
     if (readCallName(callee) !== call[2]) return false;
     if (call[1] && readIdentifier(asNode(callee?.object)) !== call[1]) return false;
-    return !call[3] ||
-      asNodes(program.arguments).some((argument) => readString(argument) === call[3]);
+    return (
+      !call[3] || asNodes(program.arguments).some((argument) => readString(argument) === call[3])
+    );
   }
   const property = marker.replace(/:$/, '');
-  return readIdentifier(program) === property || readMemberName(program) === property ||
+  return (
+    readIdentifier(program) === property ||
+    readMemberName(program) === property ||
     ((program.type === 'ObjectProperty' || program.type === 'ObjectMethod') &&
-      readIdentifier(asNode(program.key)) === property);
+      readIdentifier(asNode(program.key)) === property)
+  );
 }
 
 function hasClassMethod(program: AstNode, method: string): boolean {
@@ -348,12 +341,16 @@ function hasClassMethod(program: AstNode, method: string): boolean {
 }
 
 function hasOwnerCallable(program: AstNode, method: string): boolean {
-  return hasClassMethod(program, method) || someNode(
-    program,
-    (node) =>
-      node.type === 'ImportSpecifier' &&
-      (readIdentifier(asNode(node.local)) === method ||
-        readIdentifier(asNode(node.imported)) === method),
+  return (
+    hasClassMethod(program, method) ||
+    someNode(
+      program,
+      (node) =>
+        (node.type === 'FunctionDeclaration' && readIdentifier(asNode(node.id)) === method) ||
+        (node.type === 'ImportSpecifier' &&
+          (readIdentifier(asNode(node.local)) === method ||
+            readIdentifier(asNode(node.imported)) === method)),
+    )
   );
 }
 
@@ -389,7 +386,9 @@ function readString(node: AstNode | undefined): string {
 }
 
 function asNode(value: unknown): AstNode | undefined {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as AstNode : undefined;
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as AstNode)
+    : undefined;
 }
 
 function asNodes(value: unknown): readonly AstNode[] {

@@ -3,46 +3,18 @@ import type { StateScope } from '@shared/api/state-types.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/Resilience.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
-import type { ResourceInboxAttemptReleaseTelemetry } from
-  '@shared/queuebox/ResourceInboxAttemptTelemetry.ts';
+import type { ResourceInboxAttemptReleaseTelemetry } from '@shared/queuebox/ResourceInboxAttemptTelemetry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import type {
-  PSqlSql,
-  PSqlTransactionSql,
-} from '@shared-server/postgres/PostgresSqlClient.ts';
-import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
-import { ResourceInboxRepository } from
-  '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
-import { ResourceInboxResultsRepository } from
-  '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
-import {
-  createClientStateEventRepository,
-  createGroupStateEventRepository,
-} from '@shared-server/postgres/rallar-system/createStateRepositories.ts';
-import { PSqlRuntimeStateRepository } from
-  '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
-import { AuthSessionRepository } from
-  '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
-import type { IssuedAuthSession } from
-  '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
-import { GroupStateRepository } from
-  '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
-import { GroupTopologyConfigRepository } from
-  '@shared-server/rallar-system/repositories/GroupTopologyConfigRepository.ts';
-import { AppClientInboxService } from
-  '@shared-server/rallar-system/services/AppClientInboxService.ts';
-import { AppGroupInboxService } from
-  '@shared-server/rallar-system/services/AppGroupInboxService.ts';
-import { AppInboxType } from
-  '@shared-server/rallar-system/services/AppInboxService.ts';
-import { createClientStateService } from
-  '@shared-server/rallar-system/services/client-state-service.ts';
-import { createGroupStateService } from
-  '@shared-server/rallar-system/services/group-state-service.ts';
-import { GroupTopologyManagementService } from
-  '@shared-server/rallar-system/services/group-topology-management-service.ts';
-import { RallarRtcTopologyService } from
-  '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
+import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
+import type { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
+import type { AuthSessionRepository } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+import type { IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+import type { AppClientInboxService } from '@shared-server/rallar-system/services/AppClientInboxService.ts';
+import type { AppGroupInboxService } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
+import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
+
+import { createPostgresAppInboxWorkerServices } from './postgres-app-inbox-worker-services.ts';
 
 export type WorkerBarrier = Readonly<{
   readyDirectoryPath: string;
@@ -57,15 +29,23 @@ export type PersistedAppInboxAttempt = Readonly<{
   retryDelayMs: number;
 }>;
 
-type RetriedAppInboxAttempt = Readonly<Pick<
-  PersistedAppInboxAttempt,
-  'resourceId' | 'attempt' | 'classification' | 'retryDelayMs'
->>;
+type RetriedAppInboxAttempt = Readonly<
+  Pick<PersistedAppInboxAttempt, 'resourceId' | 'attempt' | 'classification' | 'retryDelayMs'>
+>;
+
+export interface FindRetriedAppInboxAttemptSequenceInput {
+  readonly traces: readonly Readonly<{
+    attempts: readonly RetriedAppInboxAttempt[];
+  }>[];
+  readonly ownedResourceIds: readonly string[];
+}
 
 export type PostgresAppInboxWorkerTrace = {
   barrierWaitCount: number;
   attempts: PersistedAppInboxAttempt[];
 };
+
+export type TopologyReadBarrierPrimitive = 'readRuntimeStateBatch';
 
 export type PostgresAppInboxWorkerRuntime = Readonly<{
   client: AppClientInboxService;
@@ -78,11 +58,13 @@ export type PostgresAppInboxWorkerRuntime = Readonly<{
   runUntilAllCompletion<R>(starts: readonly (() => Promise<R>)[]): Promise<readonly R[]>;
 }>;
 
-export type AuthenticatedGroupAppInboxData = Readonly<{
-  scope: StateScope;
-  groupId: string;
-  request: Readonly<{ requestId: string } & Record<string, unknown>>;
-} & Record<string, unknown>>;
+export type AuthenticatedGroupAppInboxData = Readonly<
+  {
+    scope: StateScope;
+    groupId: string;
+    request: Readonly<{ requestId: string } & Record<string, unknown>>;
+  } & Record<string, unknown>
+>;
 
 export function createPostgresAppInboxTestAuthority(
   principalId: string,
@@ -108,17 +90,19 @@ export function groupAppInboxStart<R>(
   type: AppInboxType,
   data: AuthenticatedGroupAppInboxData,
 ): () => Promise<Either<string, R>> {
-  return () => runtime.group.processAuthenticatedEntryUntilCompletion<
-    AuthenticatedGroupAppInboxData,
-    R
-  >({
-    type,
-    resourceId: data.request.requestId,
-    contextId: [data.scope.applicationId, data.scope.workspaceId, data.groupId]
-      .map(encodeURIComponent).join(':'),
-    senderId: authority.clientId,
-    data,
-  }, authority);
+  return () =>
+    runtime.group.processAuthenticatedEntryUntilCompletion<AuthenticatedGroupAppInboxData, R>(
+      {
+        type,
+        resourceId: data.request.requestId,
+        contextId: [data.scope.applicationId, data.scope.workspaceId, data.groupId]
+          .map(encodeURIComponent)
+          .join(':'),
+        senderId: authority.clientId,
+        data,
+      },
+      authority,
+    );
 }
 
 export async function runGroupAppInbox<R>(
@@ -127,27 +111,33 @@ export async function runGroupAppInbox<R>(
   type: AppInboxType,
   data: AuthenticatedGroupAppInboxData,
 ): Promise<R> {
-  return unwrapAppInboxResult(await runtime.runUntilCompletion(
-    groupAppInboxStart<R>(runtime, authority, type, data),
-  ));
+  return unwrapAppInboxResult(
+    await runtime.runUntilCompletion(groupAppInboxStart<R>(runtime, authority, type, data)),
+  );
 }
 
 export function unwrapAppInboxResult<L, R>(result: Either<L, R>): R {
   return result.fold(
-    (error) => { throw new Error(String(error)); },
+    (error) => {
+      throw new Error(String(error));
+    },
     (value) => value,
   );
 }
 
 export function findSingleRetriedAppInboxAttemptSequence(
-  traces: readonly Readonly<{ attempts: readonly RetriedAppInboxAttempt[] }>[]
+  input: FindRetriedAppInboxAttemptSequenceInput,
 ): readonly RetriedAppInboxAttempt[] {
-  const attempts = traces.flatMap((trace) => trace.attempts);
+  const ownedResourceIds = new Set(input.ownedResourceIds);
+  const attempts = input.traces
+    .flatMap((trace) => trace.attempts)
+    .filter((attempt) => ownedResourceIds.has(attempt.resourceId));
   const retried = attempts.filter((attempt) => attempt.classification === 'retryable');
   if (retried.length !== 1) {
     throw new Error(`Expected one retryable AppInbox attempt, found ${retried.length}`);
   }
-  return attempts.filter((attempt) => attempt.resourceId === retried[0]!.resourceId)
+  return attempts
+    .filter((attempt) => attempt.resourceId === retried[0]!.resourceId)
     .sort((left, right) => left.attempt - right.attempt);
 }
 
@@ -178,90 +168,37 @@ export async function waitForPostgresAppInboxWorkerParticipants(
   ]);
 }
 
-export function createPostgresAppInboxWorkerRuntime(input: Readonly<{
-  sql: PSqlSql;
-  serviceId: string;
-  atEpochMs: number;
-  barrier?: WorkerBarrier;
-  beforeMutationTransaction?: () => Promise<void>;
-  trace: PostgresAppInboxWorkerTrace;
-}>): PostgresAppInboxWorkerRuntime {
-  const runtimeRepository = new PSqlRuntimeStateRepository(input.sql);
-  const authSessions = new AuthSessionRepository(runtimeRepository);
-  const resourceInbox = new ResourceInboxRepository(input.sql);
-  const inbox = new InboxQueueReader(new PSqlQueueBox(resourceInbox), {
-    onAttemptReleaseTelemetry: (event) => input.trace.attempts.push({
-      resourceId: event.key.resourceId,
-      attempt: event.attempt,
-      classification: event.classification,
-      status: event.status,
-      retryDelayMs: event.retryDelayMs,
-    }),
-  });
-  const results = new ResourceInboxResultsRepository(input.sql);
-  const transactionGate = createTransactionGate(
+export function createPostgresAppInboxWorkerRuntime(
+  input: Readonly<{
+    sql: PSqlSql;
+    serviceId: string;
+    atEpochMs: number;
+    barrier?: WorkerBarrier;
+    beforeTopologyConfigRead?: (primitive: TopologyReadBarrierPrimitive) => Promise<void>;
+    beforeMutationTransaction?: () => Promise<void>;
+    trace: PostgresAppInboxWorkerTrace;
+  }>,
+): PostgresAppInboxWorkerRuntime {
+  const transactionGate = createPostgresWorkerTransactionGate(
     input.sql,
-    input.beforeMutationTransaction ?? (input.barrier
-      ? async () => await waitAtBarrier(input.barrier!, input.serviceId)
-      : undefined),
+    input.beforeMutationTransaction ??
+      (input.barrier
+        ? async () => await waitForPostgresWorkerBarrier(input.barrier!, input.serviceId)
+        : undefined),
     input.trace,
   );
-  const waitOptions = {
-    nowEpochMs: () => input.atEpochMs,
-    waitRetryIntervalMsecs: 1,
-    waitMaxRetryIntervalMsecs: 5,
-    waitJitterRatio: 0,
-  } as const;
-  const clientState = createClientStateService({
-    runtimeRepository,
-    createClientStateEventStore: createClientStateEventRepository,
-    serviceId: input.serviceId,
+  const services = createPostgresAppInboxWorkerServices({
+    ...input,
+    transactionSql: transactionGate.sql,
   });
-  const groupState = createGroupStateService({
-    runtimeRepository,
-    createGroupStateEventStore: createGroupStateEventRepository,
-    authSessionRepository: authSessions,
-    now: () => input.atEpochMs,
-    serviceId: input.serviceId,
-  });
-  const client = new AppClientInboxService(
-    inbox,
-    resourceInbox,
-    results,
-    transactionGate.sql,
-    clientState,
-    input.serviceId,
-    undefined,
-    waitOptions,
-  );
-  const group = new AppGroupInboxService(
-    inbox,
-    resourceInbox,
-    results,
-    transactionGate.sql,
-    groupState,
-    input.serviceId,
-    undefined,
-    waitOptions,
-  );
-  group.setTopologyManagementService(new GroupTopologyManagementService({
-    findGroupSnapshotByRef: (ref) => groupState.readSnapshot(ref),
-    groupStateRepository: new GroupStateRepository(runtimeRepository),
-    configRepository: new GroupTopologyConfigRepository(runtimeRepository),
-    topologyService: new RallarRtcTopologyService(),
-    now: () => input.atEpochMs,
-    serviceId: input.serviceId,
-  }));
 
   const runUntilAllCompletion = async <R>(
     starts: readonly (() => Promise<R>)[],
   ): Promise<readonly R[]> => {
     let settled = false;
-    const pending = Promise.all(starts.map((start) => start())).finally(
-      () => settled = true,
-    );
+    const pending = Promise.all(starts.map((start) => start())).finally(() => (settled = true));
     while (!settled) {
-      await inbox.dequeueInbox(
+      await services.inbox.dequeueInbox(
         InboxQueueReader.INBOX_DEQUEUE_TYPES,
         createWorkerResilience(),
       );
@@ -271,11 +208,11 @@ export function createPostgresAppInboxWorkerRuntime(input: Readonly<{
   };
 
   return {
-    client,
-    group,
-    authSessions,
-    resourceInbox,
-    resourceInboxResults: results,
+    client: services.client,
+    group: services.group,
+    authSessions: services.authSessions,
+    resourceInbox: services.resourceInbox,
+    resourceInboxResults: services.resourceInboxResults,
     armBarrier: transactionGate.arm,
     runUntilCompletion: async <R>(start: () => Promise<R>) =>
       (await runUntilAllCompletion([start]))[0]!,
@@ -283,10 +220,10 @@ export function createPostgresAppInboxWorkerRuntime(input: Readonly<{
   };
 }
 
-function createTransactionGate(
+export function createPostgresWorkerTransactionGate(
   sql: PSqlSql,
   beforeMutationTransaction: (() => Promise<void>) | undefined,
-  trace: PostgresAppInboxWorkerTrace,
+  trace: Pick<PostgresAppInboxWorkerTrace, 'barrierWaitCount'>,
 ): Readonly<{ sql: PSqlSql; arm(): void }> {
   let armed = false;
   let consumed = false;
@@ -306,7 +243,7 @@ function createTransactionGate(
     }
     return await sql.begin(write);
   };
-  return { sql: gated, arm: () => armed = true };
+  return { sql: gated, arm: () => (armed = true) };
 }
 
 function createWorkerResilience(): ResilienceDto {
@@ -320,7 +257,10 @@ function createWorkerResilience(): ResilienceDto {
   );
 }
 
-async function waitAtBarrier(barrier: WorkerBarrier, participantId: string): Promise<void> {
+export async function waitForPostgresWorkerBarrier(
+  barrier: WorkerBarrier,
+  participantId: string,
+): Promise<void> {
   await Deno.mkdir(barrier.readyDirectoryPath, { recursive: true });
   await Deno.writeTextFile(
     `${barrier.readyDirectoryPath}/${encodeURIComponent(participantId)}.json`,
@@ -336,9 +276,7 @@ async function waitAtBarrier(barrier: WorkerBarrier, participantId: string): Pro
       await new Promise((resolve) => setTimeout(resolve, 5));
     }
   }
-  throw new Error(
-    `Timed out waiting for worker barrier release: ${barrier.releaseFilePath}`,
-  );
+  throw new Error(`Timed out waiting for worker barrier release: ${barrier.releaseFilePath}`);
 }
 
 function yieldEventLoop(): Promise<void> {

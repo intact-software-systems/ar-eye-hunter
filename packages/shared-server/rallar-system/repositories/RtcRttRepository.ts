@@ -22,7 +22,7 @@ import type {
     RtcRttMutationReceipt,
     RtcRttRecomputeIntent,
 } from '../services/rtc-topology-mutations.ts';
-import { validatePersistedGroupSnapshot } from '../services/group-snapshot-validation.ts';
+import * as snapshotValidation from '../group-state/snapshot/validate-persisted-group-snapshot.ts';
 import { groupStateGroupStorageKey } from '../group-state-storage-keys.ts';
 import { RtcTopologyRepositoryInvariantCorruptionError } from '../rtc-topology-errors.ts';
 import {
@@ -1047,7 +1047,7 @@ function validateRecomputeIntentBase(value: Record<string, unknown>): void {
         throw new TypeError('RTC RTT recompute intent fields are invalid');
     }
     validateCommandHash(value.commandHash);
-    validatePersistedGroupSnapshot(value.groupSnapshot);
+    snapshotValidation.validatePersistedGroupSnapshot(value.groupSnapshot);
     validateMeasurement(value.rtt);
     const groupRef = value.groupSnapshot.group;
     const expectedReceiptId = toRtcRttMutationReceiptId(value.rtt);

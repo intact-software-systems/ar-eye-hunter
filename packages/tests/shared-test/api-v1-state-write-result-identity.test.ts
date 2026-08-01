@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { validatePersistedAppInboxResult } from
-  '../../shared-test/black-box-runner/api-v1-state-write-result-evidence.ts';
+  '../../shared-test/black-box-runner/state-write-evidence/api-v1-state-write-result-evidence.ts';
 
 describe('API-v1 persisted black-box result identity', () => {
   it('rejects a valid same-type auth result swapped across commands', () => {

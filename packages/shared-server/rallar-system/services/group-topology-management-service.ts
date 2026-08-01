@@ -23,8 +23,8 @@ import { validateGroupTopologyNextHops } from '@shared-graph/group-topology-vali
 import { GroupTopologyConfigRepository } from '../repositories/GroupTopologyConfigRepository.ts';
 import {
     GroupStateRepository,
-    type GroupStateAuthorityGuard,
-} from '../repositories/GroupStateRepository.ts';
+} from '../group-state/persistence/group-state-repository.ts';
+import type * as persistence from '../group-state/persistence/group-state-persistence-contracts.ts';
 import { PSqlRuntimeStateRepository } from '../../postgres/runtime-state/PSqlRuntimeStateRepository.ts';
 import type { PSqlTransactionSql } from '../../postgres/PostgresSqlClient.ts';
 import { RtcRttRepository } from '../repositories/RtcRttRepository.ts';
@@ -223,11 +223,11 @@ export type GroupTopologyReconfigureCommand = Readonly<{
 
 export type GroupTopologyReconfigureRead = Readonly<{
     authority: GroupTopologyPlanningAuthority;
-    authorityGuard: GroupStateAuthorityGuard;
+    authorityGuard: persistence.GroupStateAuthorityGuard;
 }>;
 
 export type GroupTopologyReconfigureComputed = ComputedRtcTopologyOutbox &
-    Readonly<{ authorityGuard: GroupStateAuthorityGuard }>;
+    Readonly<{ authorityGuard: persistence.GroupStateAuthorityGuard }>;
 
 export class GroupTopologyManagementService {
     private readonly topologyConfigGenerationReadiness = new Map<

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { withBoundedArtifactReportResults } from '@shared-test/black-box-runner/artifact-report-bounds.ts';
+import { withBoundedArtifactReportResults } from '@shared-test/black-box-runner/artifacts/with-bounded-artifact-report-results.ts';
 
 describe('black-box artifact report result bounds', () => {
     it('preserves every failure and full report counts while omitting bulky successes', () => {

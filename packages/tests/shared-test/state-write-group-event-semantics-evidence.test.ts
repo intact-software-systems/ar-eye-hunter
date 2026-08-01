@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { deriveApiV1StateWriteEvidence } from
     '@shared-test/black-box-runner/api-v1-state-write-evidence.ts';
 import type { PersistedCommandEvidence } from
-    '@shared-test/black-box-runner/api-v1-state-write-receipt-evidence.ts';
+    '@shared-test/black-box-runner/state-write-evidence/api-v1-state-write-receipt-evidence.ts';
 import type { GroupEventType } from '@shared/api/group-types.ts';
 import { createGroupSnapshotFixture } from
     '../shared-web/authoritative-group-fixtures.ts';

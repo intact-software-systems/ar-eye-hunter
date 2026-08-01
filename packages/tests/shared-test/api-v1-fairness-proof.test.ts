@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { verifyApiV1FairnessProof } from '@shared-test/black-box-runner/api-v1-fairness-proof.ts';
+import { verifyApiV1FairnessProof } from '@shared-test/black-box-runner/state-write-evidence/api-v1-fairness-proof.ts';
 
 describe('API v1 fairness proof', () => {
     it('binds the exact overdue fixture to controller-selected FAIRNESS timing', async () => {

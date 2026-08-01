@@ -13,7 +13,7 @@ export type {
 } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupRef, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import type { RuntimeStateEntryValue } from '../../runtime-state/RuntimeStateJsonStore.ts';
-import type { GroupStateAuthorityGuard } from '../repositories/GroupStateRepository.ts';
+import type * as persistence from '../group-state/persistence/group-state-persistence-contracts.ts';
 import {
     canMutateActiveGroup,
     canUpdateGroupSnapshot,
@@ -78,7 +78,7 @@ export type GroupTopologyConfigMutationRead = Readonly<{
     invariantGeneration: RuntimeStateEntryValue<GroupTopologyConfigInvariantGeneration> | null;
     idempotency: RuntimeStateEntryValue<GroupTopologyConfigMutationRecord> | null;
     groupSnapshot: GroupSnapshot;
-    groupAuthorityGuard: GroupStateAuthorityGuard;
+    groupAuthorityGuard: persistence.GroupStateAuthorityGuard;
 }>;
 
 export type GroupTopologyConfigMutationStableFacts = Readonly<{
@@ -136,7 +136,7 @@ type TopologyConfigInvariantGenerationGuard = Readonly<{
 export type GroupTopologyConfigMutationComputed =
     | Readonly<{
         outcome: 'write';
-        groupAuthorityGuard: GroupStateAuthorityGuard;
+        groupAuthorityGuard: persistence.GroupStateAuthorityGuard;
         guard: TopologyConfigWriteGuard;
         invariantGenerationGuard: TopologyConfigInvariantGenerationGuard;
         generationGuard: TopologyConfigGenerationGuard;
@@ -147,7 +147,7 @@ export type GroupTopologyConfigMutationComputed =
     }>
     | Readonly<{
         outcome: 'claim';
-        groupAuthorityGuard: GroupStateAuthorityGuard;
+        groupAuthorityGuard: persistence.GroupStateAuthorityGuard;
         receipt: GroupTopologyConfigMutationReceipt;
         idempotency: GroupTopologyConfigMutationRecord;
         result: GroupTopologyConfigMutationAcceptedResult;
