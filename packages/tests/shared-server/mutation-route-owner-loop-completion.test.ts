@@ -21,7 +21,7 @@ const TYPE_MAP = `const C16_TYPE_MAP = new Map([
     [AppInboxType.GROUP_CREATE, AppInboxType.GROUP_UPDATE],
 ]);`;
 
-describe('Task 10 route-closure correction 16 contracts', { timeout: 30_000 }, () => {
+describe('Mutation route owner loop completion contracts', { timeout: 30_000 }, () => {
   it('skips boundary for-update and do-test writers after break, return, or throw', () => {
     expect(findBoundaryViolations('c16-loop-phase-controls.ts')).toEqual([]);
   });
@@ -121,27 +121,23 @@ describe('Task 10 route-closure correction 16 contracts', { timeout: 30_000 }, (
   });
 
   it('retains return and throw beyond update, test, and post-loop statements', () => {
-    for (
-      const invocation of [
-        `for (; true; registerC16(undefined, 'keys')) { return; }
+    for (const invocation of [
+      `for (; true; registerC16(undefined, 'keys')) { return; }
         registerC16(undefined, 'values');`,
-        `do { throw new Error('stop'); }
+      `do { throw new Error('stop'); }
         while (registerC16(undefined, 'keys'));
         registerC16(undefined, 'values');`,
-      ]
-    ) {
+    ]) {
       expectNeitherProjection(validateInvocations(invocation));
     }
   });
 
   it('preserves while, for-of, and for-in post-loop reachability', () => {
-    for (
-      const loop of [
-        `while (true) { break; }`,
-        `for (const item of [1, 2]) { void item; break; }`,
-        `for (const key in {}) { void key; break; }`,
-      ]
-    ) {
+    for (const loop of [
+      `while (true) { break; }`,
+      `for (const item of [1, 2]) { void item; break; }`,
+      `for (const key in {}) { void key; break; }`,
+    ]) {
       const issues = validateInvocations(`${loop}
         registerC16(undefined, 'keys');`);
       expectProjection(issues, 'GROUP_CREATE', 'GROUP_UPDATE');
@@ -223,11 +219,7 @@ function expectNeitherProjection(issues: readonly string[]): void {
   expectMissing(issues, 'GROUP_UPDATE');
 }
 
-function expectProjection(
-  issues: readonly string[],
-  connected: string,
-  missing: string,
-): void {
+function expectProjection(issues: readonly string[], connected: string, missing: string): void {
   expect(hasMissingIssue(issues, connected)).toBe(false);
   expectMissing(issues, missing);
 }

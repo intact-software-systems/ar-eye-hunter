@@ -12,7 +12,7 @@ const GROUP_OWNER = 'packages/shared-server/rallar-system/services/AppGroupInbox
 const AUTH_OWNER = 'packages/shared-server/rallar-system/services/AppAuthInboxService.ts';
 const CRDT_OWNER = 'packages/shared-server/rallar-system/services/AppCrdtInboxService.ts';
 
-describe('Task 10 route-closure correction 6 contracts', () => {
+describe('Mutation route owner registration predicates contracts', () => {
   it.each([
     'lexical-functions.ts',
     'lexical-block-catch.ts',
@@ -29,9 +29,9 @@ describe('Task 10 route-closure correction 6 contracts', () => {
   });
 
   it('keeps shadowed domain values and read-only member references clean', () => {
-    expect(findMutationBoundaryViolationsFromRoots([
-      `${FIXTURES}/lexical-controls.ts`,
-    ])).toEqual([]);
+    expect(findMutationBoundaryViolationsFromRoots([`${FIXTURES}/lexical-controls.ts`])).toEqual(
+      [],
+    );
   });
 
   it('narrows the group registration array with an exact equality filter', () => {
@@ -42,9 +42,11 @@ describe('Task 10 route-closure correction 6 contracts', () => {
     );
     expect(mutated).not.toBe(source);
 
-    expect(validateWithOverride(GROUP_OWNER, mutated)).toEqual(expect.arrayContaining([
-      expect.stringContaining('GROUP_UPDATE owner dispatch is not connected'),
-    ]));
+    expect(validateWithOverride(GROUP_OWNER, mutated)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('GROUP_UPDATE owner dispatch is not connected'),
+      ]),
+    );
   });
 
   it('rejects a group registration filter that is always false', () => {
@@ -55,9 +57,11 @@ describe('Task 10 route-closure correction 6 contracts', () => {
     );
     expect(mutated).not.toBe(source);
 
-    expect(validateWithOverride(GROUP_OWNER, mutated)).toEqual(expect.arrayContaining([
-      expect.stringContaining('GROUP_CREATE owner dispatch is not connected'),
-    ]));
+    expect(validateWithOverride(GROUP_OWNER, mutated)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('GROUP_CREATE owner dispatch is not connected'),
+      ]),
+    );
   });
 
   it('narrows the auth registration array with an exact equality filter', () => {
@@ -68,9 +72,11 @@ describe('Task 10 route-closure correction 6 contracts', () => {
     );
     expect(mutated).not.toBe(source);
 
-    expect(validateWithOverride(AUTH_OWNER, mutated)).toEqual(expect.arrayContaining([
-      expect.stringContaining('AUTH_SESSION_ISSUE owner dispatch is not connected'),
-    ]));
+    expect(validateWithOverride(AUTH_OWNER, mutated)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('AUTH_SESSION_ISSUE owner dispatch is not connected'),
+      ]),
+    );
   });
 
   it('narrows the imported CRDT collection with an exact equality filter', () => {
@@ -81,22 +87,27 @@ describe('Task 10 route-closure correction 6 contracts', () => {
     );
     expect(mutated).not.toBe(source);
 
-    expect(validateWithOverride(CRDT_OWNER, mutated)).toEqual(expect.arrayContaining([
-      expect.stringContaining('CRDT_ERASE owner dispatch is not connected'),
-    ]));
+    expect(validateWithOverride(CRDT_OWNER, mutated)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('CRDT_ERASE owner dispatch is not connected'),
+      ]),
+    );
   });
 
   it('fails closed for an opaque registration predicate', () => {
     const source = readFileSync(GROUP_OWNER, 'utf8');
-    const mutated = source.replace(
-      '(candidate) => candidate !== AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP',
-      '(candidate) => isGroupInboxTypeEnabled(candidate)',
-    ) + '\nfunction isGroupInboxTypeEnabled(_type: AppInboxType): boolean { return true; }\n';
+    const mutated =
+      source.replace(
+        '(candidate) => candidate !== AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP',
+        '(candidate) => isGroupInboxTypeEnabled(candidate)',
+      ) + '\nfunction isGroupInboxTypeEnabled(_type: AppInboxType): boolean { return true; }\n';
     expect(mutated).not.toBe(source);
 
-    expect(validateWithOverride(GROUP_OWNER, mutated)).toEqual(expect.arrayContaining([
-      expect.stringContaining('GROUP_CREATE owner dispatch is not connected'),
-    ]));
+    expect(validateWithOverride(GROUP_OWNER, mutated)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('GROUP_CREATE owner dispatch is not connected'),
+      ]),
+    );
   });
 
   it('evaluates safe logical includes and identity map chains exactly', () => {
@@ -110,13 +121,17 @@ describe('Task 10 route-closure correction 6 contracts', () => {
     expect(mutated).not.toBe(source);
 
     const issues = validateWithOverride(AUTH_OWNER, mutated);
-    expect(issues).toEqual(expect.arrayContaining([
-      expect.stringContaining('AUTH_USER_REGISTER owner dispatch is not connected'),
-      expect.stringContaining('AUTH_SESSION_LOGOUT owner dispatch is not connected'),
-    ]));
-    expect(issues).not.toEqual(expect.arrayContaining([
-      expect.stringContaining('AUTH_SESSION_ISSUE owner dispatch is not connected'),
-    ]));
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('AUTH_USER_REGISTER owner dispatch is not connected'),
+        expect.stringContaining('AUTH_SESSION_LOGOUT owner dispatch is not connected'),
+      ]),
+    );
+    expect(issues).not.toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('AUTH_SESSION_ISSUE owner dispatch is not connected'),
+      ]),
+    );
   });
 });
 

@@ -22,7 +22,7 @@ const TYPE_MAP = `const C17_TYPE_MAP = new Map([
     [AppInboxType.GROUP_CREATE, AppInboxType.GROUP_UPDATE],
 ]);`;
 
-describe('Task 10 route-closure correction 17 contracts', { timeout: 30_000 }, () => {
+describe('Mutation route owner loop divergence contracts', { timeout: 30_000 }, () => {
   it('keeps writers after statically non-terminating loops unreachable', () => {
     expect(findBoundaryViolations('c17-loop-divergence-controls.ts')).toEqual([]);
   });
@@ -38,12 +38,8 @@ describe('Task 10 route-closure correction 17 contracts', { timeout: 30_000 }, (
     expectBoundaryMutation('c17-loop-conditional-break.ts', [
       'ClientStateRepository.deletePrincipal',
     ]);
-    expectBoundaryMutation('c17-loop-owned-break.ts', [
-      'ClientStateRepository.insertPrincipal',
-    ]);
-    expectBoundaryMutation('c17-loop-false-exit.ts', [
-      'ClientStateRepository.deletePrincipal',
-    ]);
+    expectBoundaryMutation('c17-loop-owned-break.ts', ['ClientStateRepository.insertPrincipal']);
+    expectBoundaryMutation('c17-loop-false-exit.ts', ['ClientStateRepository.deletePrincipal']);
   });
 
   it.each([
@@ -62,9 +58,7 @@ describe('Task 10 route-closure correction 17 contracts', { timeout: 30_000 }, (
     expect(forExecution.completions).toEqual(['diverge']);
     expect(forExecution.calls).toEqual(['update']);
 
-    const doExecution = executeSource(
-      `do { continue; } while ((testMarker(), true));\nmarker();`,
-    );
+    const doExecution = executeSource(`do { continue; } while ((testMarker(), true));\nmarker();`);
     expect(doExecution.completions).toEqual(['diverge']);
     expect(doExecution.calls).toEqual(['testMarker']);
   });
@@ -81,12 +75,7 @@ describe('Task 10 route-closure correction 17 contracts', { timeout: 30_000 }, (
   });
 
   it('keeps direct and matching labeled breaks as normal post-loop exits', () => {
-    for (
-      const loop of [
-        'for (;;) { break; }',
-        'outer: while (true) { break outer; }',
-      ]
-    ) {
+    for (const loop of ['for (;;) { break; }', 'outer: while (true) { break outer; }']) {
       expect(executeSource(`${loop}\nmarker();`)).toEqual({
         calls: ['marker'],
         completions: ['normal'],
@@ -157,12 +146,14 @@ describe('Task 10 route-closure correction 17 contracts', { timeout: 30_000 }, (
       executeSource(`if (choice) { while (true) {} } else { while (true) {} }
         marker();`),
     ).toEqual({ calls: [], completions: ['diverge'] });
-    expect(
-      executeSource(`try { while (true) {} } finally { finalizer(); }`),
-    ).toEqual({ calls: [], completions: ['diverge'] });
-    expect(
-      executeSource(`try { return; } finally { while (true) {} }`),
-    ).toEqual({ calls: [], completions: ['diverge'] });
+    expect(executeSource(`try { while (true) {} } finally { finalizer(); }`)).toEqual({
+      calls: [],
+      completions: ['diverge'],
+    });
+    expect(executeSource(`try { return; } finally { while (true) {} }`)).toEqual({
+      calls: [],
+      completions: ['diverge'],
+    });
   });
 
   it('keeps nested conditional exploration bounded before divergence', () => {
@@ -176,16 +167,16 @@ describe('Task 10 route-closure correction 17 contracts', { timeout: 30_000 }, (
   });
 
   it('does not treat a dead post-loop registration as owned', () => {
-    for (
-      const loop of [
-        'for (;;) { continue; }',
-        'for (;;) {}',
-        'do { continue; } while (true);',
-        'while (true) {}',
-      ]
-    ) {
-      expectNeitherProjection(validateInvocations(`${loop}
-        registerC17(undefined, 'values');`));
+    for (const loop of [
+      'for (;;) { continue; }',
+      'for (;;) {}',
+      'do { continue; } while (true);',
+      'while (true) {}',
+    ]) {
+      expectNeitherProjection(
+        validateInvocations(`${loop}
+        registerC17(undefined, 'values');`),
+      );
     }
   });
 
@@ -215,18 +206,22 @@ describe('Task 10 route-closure correction 17 contracts', { timeout: 30_000 }, (
   });
 
   it('distinguishes nested divergence, inner break, and outer break in routing', () => {
-    expectNeitherProjection(validateInvocations(`while (true) {
+    expectNeitherProjection(
+      validateInvocations(`while (true) {
         while (true) {}
         registerC17(undefined, 'keys');
       }
-      registerC17(undefined, 'values');`));
+      registerC17(undefined, 'values');`),
+    );
 
-    expectBothProjections(validateInvocations(`while (true) {
+    expectBothProjections(
+      validateInvocations(`while (true) {
         while (true) { break; }
         registerC17(undefined, 'keys');
         break;
       }
-      registerC17(undefined, 'values');`));
+      registerC17(undefined, 'values');`),
+    );
 
     const outerIssues = validateInvocations(`outer: while (true) {
         while (true) { break outer; }
@@ -241,8 +236,8 @@ function executeSource(body: string): Readonly<{
   calls: readonly string[];
   completions: readonly string[];
 }> {
-  const root = parse(`function inspect() { ${body} }`, { sourceType: 'module' })
-    .program.body[0] as AstNode;
+  const root = parse(`function inspect() { ${body} }`, { sourceType: 'module' }).program
+    .body[0] as AstNode;
   const calls: string[] = [];
   const paths = executeMutationPaths(root, [undefined], {
     lexical: () => undefined,
@@ -303,11 +298,7 @@ function expectNeitherProjection(issues: readonly string[]): void {
   expectMissing(issues, 'GROUP_UPDATE');
 }
 
-function expectProjection(
-  issues: readonly string[],
-  connected: string,
-  missing: string,
-): void {
+function expectProjection(issues: readonly string[], connected: string, missing: string): void {
   expect(hasMissingIssue(issues, connected)).toBe(false);
   expectMissing(issues, missing);
 }

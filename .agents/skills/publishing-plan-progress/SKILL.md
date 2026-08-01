@@ -93,6 +93,21 @@ Keep the draft pull request current with the written-plan link, milestone
 checklist, current behavior and incomplete areas, plus exact passed, failed, and
 skipped validation results.
 
+Review pressure exists when a change has more than 100 changed files, more than
+10,000 changed lines (`additions + deletions`), more than 20 changed production
+modules, or more than three materially different control-flow families. Crossing
+any threshold requires a written stacked-versus-single decision; it does not
+automatically require splitting the pull request. Base the decision on cohesion,
+dependency order, compatibility risk, and whether reviewers can verify one
+invariant at a time.
+
+When a single large pull request is accepted, its body includes a one-screen
+read-first map ordered by entry owners, transaction and exit owners,
+compatibility surfaces, review slices, and exact evidence. Keep current
+head/tree/workflow evidence in the pull request. The rule is that stale evidence
+blocks completion: correct any head, tree, run, attempt, conclusion, or verified
+SHA that refers to older code before publication can be complete.
+
 ## Plan Completion Gate
 
 Do not approve, report, or mark a written implementation plan complete until

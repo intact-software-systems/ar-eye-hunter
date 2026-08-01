@@ -19,7 +19,7 @@ const TYPE_MAP = `const C11_TYPE_MAP = new Map([
     [AppInboxType.GROUP_CREATE, AppInboxType.GROUP_UPDATE],
 ]);`;
 
-describe('Task 10 route-closure correction 11 contracts', () => {
+describe('Mutation route owner lexical resolution contracts', () => {
   it.each([
     'c11-factory-local-alias.ts',
     'c11-factory-import-alias.ts',
@@ -30,12 +30,12 @@ describe('Task 10 route-closure correction 11 contracts', () => {
     expectMutation(name);
   });
 
-  it.each([
-    'c11-control-shadowed-factory.ts',
-    'c11-control-shadowed-namespace.ts',
-  ])('does not inherit capability provenance through a shadow in %s', (name) => {
-    expect(findMutationBoundaryViolationsFromRoots([`${FIXTURES}/${name}`])).toEqual([]);
-  });
+  it.each(['c11-control-shadowed-factory.ts', 'c11-control-shadowed-namespace.ts'])(
+    'does not inherit capability provenance through a shadow in %s',
+    (name) => {
+      expect(findMutationBoundaryViolationsFromRoots([`${FIXTURES}/${name}`])).toEqual([]);
+    },
+  );
 
   it.each([
     'c11-concise-return.ts',
@@ -184,23 +184,19 @@ function validateScopedMap(
   });
 }
 
-function expectProjection(
-  issues: readonly string[],
-  connected: string,
-  missing: string,
-): void {
+function expectProjection(issues: readonly string[], connected: string, missing: string): void {
   expectConnected(issues, connected);
   expectMissing(issues, missing);
 }
 
 function expectMissing(issues: readonly string[], type: string): void {
-  expect(issues).toEqual(expect.arrayContaining([
-    expect.stringContaining(`${type} owner dispatch is not connected`),
-  ]));
+  expect(issues).toEqual(
+    expect.arrayContaining([expect.stringContaining(`${type} owner dispatch is not connected`)]),
+  );
 }
 
 function expectConnected(issues: readonly string[], type: string): void {
-  expect(issues).not.toEqual(expect.arrayContaining([
-    expect.stringContaining(`${type} owner dispatch is not connected`),
-  ]));
+  expect(issues).not.toEqual(
+    expect.arrayContaining([expect.stringContaining(`${type} owner dispatch is not connected`)]),
+  );
 }

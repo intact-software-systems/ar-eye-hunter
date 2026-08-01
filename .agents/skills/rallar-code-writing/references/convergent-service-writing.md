@@ -136,6 +136,35 @@ concurrency rules for their snapshots.
 
 ## Verification
 
+For every materially different AppInbox callback, transaction, retry, protocol,
+or lifecycle family, produce a family-level code-derived trace as two distinct
+timelines:
+
+The two timelines separate registration from invocation.
+
+1. A construction and registration timeline names each required or captured
+   dependency's creation and owner, the callback registration point, the first
+   point at which it can be invoked, and proves every required dependency exists
+   before that point.
+2. A runtime invocation timeline names:
+
+- the external or protocol entry;
+- callback registration owner and registration time;
+- runtime invoker and callback invocation count or retry rule;
+- representation translation and read, compute, validate, and write owners;
+- transaction and retry owner and the first conditional guard;
+- receipt, event, exact durable result, and final outbox writes;
+- commit-return point and private after-commit data;
+- after-commit effects, early exits, failures, and cleanup; and
+- final caller-visible result and canonical versus compatibility paths.
+
+Make retry re-entry and the transaction commit-return boundary explicit. The
+fail-closed rule is that mutable values do not escape a transaction callback
+unless the transaction contract proves invocation count, retry behavior, commit
+semantics, failure behavior, and why mutation is safe. Prefer an immutable
+callback result with separate durable-result and private after-commit
+projections.
+
 Tests prove decision and write outcomes independently. Cover apply/written,
 apply/conflict/rebase, permitted no-op, typed rejection, overlapping writers,
 retry exhaustion, idempotency races, stale expiry, equal-revision corruption,

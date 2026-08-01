@@ -48,7 +48,7 @@ const REGISTRATION_VALUES = new Map<string, RegistrationTypeCollection>([
   ['unknownCreateUpdate', unknownRegistrationTypes(['GROUP_CREATE', 'GROUP_UPDATE'])],
 ]);
 
-describe('Task 10 route-closure correction 19 contracts', () => {
+describe('Mutation route owner state coalescing contracts', () => {
   it('bounds 14 identical binary branches through the public route analyzer', () => {
     const startedAt = performance.now();
     const issues = validateInvocations(
@@ -77,10 +77,7 @@ describe('Task 10 route-closure correction 19 contracts', () => {
   }, 30_000);
 
   it('coalesces identical registration values from identical alternatives', () => {
-    expectRegistrationPathCount(
-      'if (flag) knownCreate(); else knownCreate();',
-      1,
-    );
+    expectRegistrationPathCount('if (flag) knownCreate(); else knownCreate();', 1);
   });
 
   it('treats registration insertion order as irrelevant but matches duplicates one-to-one', () => {
@@ -103,10 +100,7 @@ describe('Task 10 route-closure correction 19 contracts', () => {
   });
 
   it('keeps different registration values distinct and ownership intersection safe', () => {
-    expectRegistrationPathCount(
-      'if (flag) knownCreate(); else knownUpdate();',
-      2,
-    );
+    expectRegistrationPathCount('if (flag) knownCreate(); else knownUpdate();', 2);
 
     const issues = validateInvocations(
       `if (c19Enabled) registerC19(undefined, 'keys');
@@ -117,18 +111,9 @@ describe('Task 10 route-closure correction 19 contracts', () => {
   });
 
   it('keeps known, unknown, and different unknown lower bounds distinct', () => {
-    expectRegistrationPathCount(
-      'if (flag) knownCreate(); else unknownCreate();',
-      2,
-    );
-    expectRegistrationPathCount(
-      'if (flag) unknown(); else unknownCreate();',
-      2,
-    );
-    expectRegistrationPathCount(
-      'if (flag) unknownCreate(); else unknownCreateUpdate();',
-      2,
-    );
+    expectRegistrationPathCount('if (flag) knownCreate(); else unknownCreate();', 2);
+    expectRegistrationPathCount('if (flag) unknown(); else unknownCreate();', 2);
+    expectRegistrationPathCount('if (flag) unknownCreate(); else unknownCreateUpdate();', 2);
   });
 
   it('keeps true and false executed lexical overlays distinct', () => {
@@ -150,18 +135,22 @@ describe('Task 10 route-closure correction 19 contracts', () => {
       executionPath({ kind: 'return' }),
       executionPath({ kind: 'break', label: 'outer' }),
       executionPath({ kind: 'break', label: 'inner' }),
-      executionPath(NORMAL_COMPLETION, [{
-        alternativeCount: 2,
-        alternativeIndex: 0,
-        group,
-        optional: false,
-      }]),
-      executionPath(NORMAL_COMPLETION, [{
-        alternativeCount: 2,
-        alternativeIndex: 1,
-        group,
-        optional: false,
-      }]),
+      executionPath(NORMAL_COMPLETION, [
+        {
+          alternativeCount: 2,
+          alternativeIndex: 0,
+          group,
+          optional: false,
+        },
+      ]),
+      executionPath(NORMAL_COMPLETION, [
+        {
+          alternativeCount: 2,
+          alternativeIndex: 1,
+          group,
+          optional: false,
+        },
+      ]),
     ];
 
     expect(coalesceExecutionPaths(paths, STRING_ADAPTER)).toHaveLength(paths.length);
@@ -203,15 +192,18 @@ function registrationTypeCollectionsEqual(
   left: RegistrationTypeCollection,
   right: RegistrationTypeCollection,
 ): boolean {
-  return left.kind === right.kind && left.types.size === right.types.size &&
-    [...left.types].every((type) => right.types.has(type));
+  return (
+    left.kind === right.kind &&
+    left.types.size === right.types.size &&
+    [...left.types].every((type) => right.types.has(type))
+  );
 }
 
 function parseFunction(body: string): Readonly<{ program: AstNode; root: AstNode }> {
-  const program = parse(
-    `function inspect(flag: boolean) { ${body} }`,
-    { sourceType: 'module', plugins: ['typescript'] },
-  ).program as unknown as AstNode;
+  const program = parse(`function inspect(flag: boolean) { ${body} }`, {
+    sourceType: 'module',
+    plugins: ['typescript'],
+  }).program as unknown as AstNode;
   const root = (program.body as readonly AstNode[])[0]!;
   return { program, root };
 }
@@ -243,10 +235,7 @@ function validateInvocations(invocation: string): readonly string[] {
             MAP_METHOD = 'keys',
         ): void {\n${LOOP_START}`,
   );
-  mutated = mutated.replace(
-    LOOP_END,
-    `        }\n        ${invocation}\n${LOOP_END}`,
-  );
+  mutated = mutated.replace(LOOP_END, `        }\n        ${invocation}\n${LOOP_END}`);
   mutated = mutated.replace(LIVE_GROUP_COLLECTION, 'C19_TYPE_MAP[MAP_METHOD]()');
   expect(mutated).not.toBe(source);
   return validateMutationRouteInventory(MUTATION_ROUTE_INVENTORY, {
@@ -258,11 +247,7 @@ function repeatBranches(count: number): string {
   return Array.from({ length: count }, () => IDENTICAL_BRANCH).join('\n        ');
 }
 
-function expectProjection(
-  issues: readonly string[],
-  connected: string,
-  missing: string,
-): void {
+function expectProjection(issues: readonly string[], connected: string, missing: string): void {
   expect(hasMissingIssue(issues, connected)).toBe(false);
   expectMissing(issues, missing);
 }
@@ -280,5 +265,7 @@ function readName(value: AstNode | undefined): string {
 }
 
 function asNode(value: unknown): AstNode | undefined {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as AstNode : undefined;
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as AstNode)
+    : undefined;
 }

@@ -65,7 +65,33 @@ rg --files apps packages examples scripts
     including callback invocation count and timing, before considering the shape
     complete.
 12. Use the `rallar-testing` skill to select focused checks, type-checks, and any
-   broader consumer validation.
+    broader consumer validation.
+
+For every materially different callback, transaction, retry, protocol, or
+lifecycle family, produce a family-level code-derived trace as two distinct
+timelines:
+
+The two timelines separate registration from invocation.
+
+1. A construction and registration timeline names each required or captured
+   dependency's creation and owner, the callback registration point, the first
+   point at which it can be invoked, and proves every required dependency exists
+   before that point.
+2. A runtime invocation timeline names:
+
+- the external or protocol entry;
+- callback registration owner and registration time;
+- runtime invoker and callback invocation count or retry rule;
+- representation translation and read, compute, validate, and write owners;
+- transaction and retry owner and the first conditional guard;
+- receipt, event, exact durable result, and final outbox writes;
+- commit-return point and private after-commit data;
+- after-commit effects, early exits, failures, and cleanup; and
+- final caller-visible result and canonical versus compatibility paths.
+
+Variants that share one control-flow family use one trace plus an explicit
+variant inventory. A plan, file inventory, source-text assertion, or passing
+checker does not substitute for following production symbols.
 
 ## Authoritative Database Mutations
 
@@ -105,6 +131,11 @@ rg --files apps packages examples scripts
 - No construction cycle hidden by a definite-assignment assertion, setter,
   mutable closure, supplier, service locator, global, or test-only wiring path.
 - No callback used only to move a business workflow deeper in the call stack.
+- The fail-closed rule is that mutable values do not escape a transaction
+  callback unless the callback contract proves invocation count, retry
+  behavior, commit semantics, failure behavior, and why mutation is safe.
+  Prefer an immutable callback result that visibly separates the durable result
+  from private after-commit data.
 - No generic `input`, `options`, or `context` renaming that obscures which value
   is flowing through the operation.
 - No pass-through factory, wrapper, or facade without a real ownership,
@@ -127,3 +158,10 @@ changes, check both browser and server consumers. Report passed, failed, and
 skipped commands in the completion handoff. For written implementation work,
 also follow the `rallar-testing` plan-completion gate. Focused checks never
 substitute for that final gate.
+
+For every construction-detail warning in changed production code, record its
+path, rule, and symbol plus one human disposition: fixed, demonstrated false
+positive, or accepted existing debt with no new/worsened magnitude and an
+owner. The review rule is that silence or a warning-only exit code is not a
+disposition. This review does not make every optional warning globally
+blocking.

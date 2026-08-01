@@ -22,16 +22,13 @@ const TYPE_OBJECT = `{
             [AppInboxType.GROUP_CREATE]: AppInboxType.GROUP_UPDATE,
         }`;
 
-describe('Task 10 route-closure correction 12 contracts', () => {
-  it.each([8, 9, 12, 30])(
-    'converges capability setter and factory chains at depth %i',
-    (depth) => {
-      expectMutation(`c12-depth-${depth}.ts`, [
-        'ClientStateRepository.insertPrincipal',
-        'ClientStateRepository.updatePrincipal',
-      ]);
-    },
-  );
+describe('Mutation route owner call aliases contracts', () => {
+  it.each([8, 9, 12, 30])('converges capability setter and factory chains at depth %i', (depth) => {
+    expectMutation(`c12-depth-${depth}.ts`, [
+      'ClientStateRepository.insertPrincipal',
+      'ClientStateRepository.updatePrincipal',
+    ]);
+  });
 
   it.each(['c12-control-cycle.ts', 'c12-control-factory-bind.ts'])(
     'terminates cleanly for a capability cycle or unused factory in %s',
@@ -41,9 +38,7 @@ describe('Task 10 route-closure correction 12 contracts', () => {
   );
 
   it('resolves a namespace factory through member, computed, bind, and call aliases', () => {
-    expectMutation('c12-namespace-alias.ts', [
-      'ClientStateRepository.insertPrincipal',
-    ]);
+    expectMutation('c12-namespace-alias.ts', ['ClientStateRepository.insertPrincipal']);
   });
 
   it('normalizes factory call, apply, and later-invoked bind shapes', () => {
@@ -55,9 +50,7 @@ describe('Task 10 route-closure correction 12 contracts', () => {
   });
 
   it('fails closed for a reachable unresolved local factory alternative', () => {
-    expectMutation('c12-factory-unknown-branch.ts', [
-      'ClientStateRepository.insertPrincipal',
-    ]);
+    expectMutation('c12-factory-unknown-branch.ts', ['ClientStateRepository.insertPrincipal']);
   });
 
   it.each([
@@ -125,14 +118,8 @@ describe('Task 10 route-closure correction 12 contracts', () => {
 
   it.each([
     [`const Object = { keys: (_value: unknown) => [] };`, ''],
-    [
-      `class Object { static keys(_value: unknown): unknown[] { return []; } }`,
-      '',
-    ],
-    [
-      `let Object = globalThis.Object;\n        Object = { keys: (_value: unknown) => [] };`,
-      '',
-    ],
+    [`class Object { static keys(_value: unknown): unknown[] { return []; } }`, ''],
+    [`let Object = globalThis.Object;\n        Object = { keys: (_value: unknown) => [] };`, ''],
   ])('does not trust a local Object shadow: %s', (beforeLoop, topLevel) => {
     const issues = validateScopedMap(
       `Object.keys(${TYPE_OBJECT})`,
@@ -184,11 +171,7 @@ describe('Task 10 route-closure correction 12 contracts', () => {
   });
 
   it('resolves globalThis.Object values', () => {
-    const issues = validateScopedMap(
-      `globalThis.Object.values(${TYPE_OBJECT})`,
-      '',
-      '',
-    );
+    const issues = validateScopedMap(`globalThis.Object.values(${TYPE_OBJECT})`, '', '');
     expectProjection(issues, 'GROUP_UPDATE', 'GROUP_CREATE');
   });
 
@@ -241,15 +224,10 @@ function expectMutation(name: string, methods: readonly string[]): void {
 }
 
 function expectClean(name: string): void {
-  expect(
-    findMutationBoundaryViolationsFromRoots([`${FIXTURES}/${name}`]),
-  ).toEqual([]);
+  expect(findMutationBoundaryViolationsFromRoots([`${FIXTURES}/${name}`])).toEqual([]);
 }
 
-function validateInvokedProjection(
-  invocation: string,
-  topLevel = '',
-): readonly string[] {
+function validateInvokedProjection(invocation: string, topLevel = ''): readonly string[] {
   return validateScopedMap(
     `C12_TYPE_MAP[MAP_METHOD]()`,
     `${TYPE_MAP}\n${topLevel}`,
@@ -275,27 +253,19 @@ function validateScopedMap(
   });
 }
 
-function expectProjection(
-  issues: readonly string[],
-  connected: string,
-  missing: string,
-): void {
+function expectProjection(issues: readonly string[], connected: string, missing: string): void {
   expectConnected(issues, connected);
   expectMissing(issues, missing);
 }
 
 function expectMissing(issues: readonly string[], type: string): void {
   expect(issues).toEqual(
-    expect.arrayContaining([
-      expect.stringContaining(`${type} owner dispatch is not connected`),
-    ]),
+    expect.arrayContaining([expect.stringContaining(`${type} owner dispatch is not connected`)]),
   );
 }
 
 function expectConnected(issues: readonly string[], type: string): void {
   expect(issues).not.toEqual(
-    expect.arrayContaining([
-      expect.stringContaining(`${type} owner dispatch is not connected`),
-    ]),
+    expect.arrayContaining([expect.stringContaining(`${type} owner dispatch is not connected`)]),
   );
 }

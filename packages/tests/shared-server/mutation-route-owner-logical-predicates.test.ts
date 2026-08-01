@@ -12,7 +12,7 @@ const GROUP_OWNER = 'packages/shared-server/rallar-system/services/AppGroupInbox
 const PRODUCTION_FILTER =
   '(candidate) => candidate !== AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP,';
 
-describe('Task 10 route-closure correction 7 contracts', () => {
+describe('Mutation route owner logical predicates contracts', () => {
   it.each([
     'flow-sequence.ts',
     'flow-object-member.ts',
@@ -30,9 +30,9 @@ describe('Task 10 route-closure correction 7 contracts', () => {
   });
 
   it('keeps a proven read-only overwrite clean when it precedes the only call', () => {
-    expect(findMutationBoundaryViolationsFromRoots([
-      `${FIXTURES}/flow-benign-overwrite.ts`,
-    ])).toEqual([]);
+    expect(
+      findMutationBoundaryViolationsFromRoots([`${FIXTURES}/flow-benign-overwrite.ts`]),
+    ).toEqual([]);
   });
 
   it('fails closed when negated includes reads an unknown function collection', () => {
@@ -40,9 +40,11 @@ describe('Task 10 route-closure correction 7 contracts', () => {
       '(candidate) => !disabledTypes().includes(candidate),',
       'function disabledTypes(): readonly AppInboxType[] { return []; }',
     );
-    expect(issues).toEqual(expect.arrayContaining([
-      expect.stringContaining('GROUP_CREATE owner dispatch is not connected'),
-    ]));
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('GROUP_CREATE owner dispatch is not connected'),
+      ]),
+    );
   });
 
   it('proves negated includes over a known empty collection', () => {
@@ -53,12 +55,16 @@ describe('Task 10 route-closure correction 7 contracts', () => {
     const issues = validateWithGroupFilter(
       '(candidate) => ![AppInboxType.GROUP_CREATE].includes(candidate),',
     );
-    expect(issues).toEqual(expect.arrayContaining([
-      expect.stringContaining('GROUP_CREATE owner dispatch is not connected'),
-    ]));
-    expect(issues).not.toEqual(expect.arrayContaining([
-      expect.stringContaining('GROUP_UPDATE owner dispatch is not connected'),
-    ]));
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('GROUP_CREATE owner dispatch is not connected'),
+      ]),
+    );
+    expect(issues).not.toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('GROUP_UPDATE owner dispatch is not connected'),
+      ]),
+    );
   });
 
   it('propagates unknown through logical predicates without losing proven true branches', () => {
@@ -66,12 +72,16 @@ describe('Task 10 route-closure correction 7 contracts', () => {
       '(candidate) => candidate === AppInboxType.GROUP_CREATE || !disabledTypes().includes(candidate),',
       'function disabledTypes(): readonly AppInboxType[] { return []; }',
     );
-    expect(issues).toEqual(expect.arrayContaining([
-      expect.stringContaining('GROUP_UPDATE owner dispatch is not connected'),
-    ]));
-    expect(issues).not.toEqual(expect.arrayContaining([
-      expect.stringContaining('GROUP_CREATE owner dispatch is not connected'),
-    ]));
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('GROUP_UPDATE owner dispatch is not connected'),
+      ]),
+    );
+    expect(issues).not.toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('GROUP_CREATE owner dispatch is not connected'),
+      ]),
+    );
   });
 
   it.each([
@@ -85,16 +95,15 @@ describe('Task 10 route-closure correction 7 contracts', () => {
         'function normalizeType(type: AppInboxType): AppInboxType { return type; }',
       ].join('\n'),
     );
-    expect(issues).toEqual(expect.arrayContaining([
-      expect.stringContaining('GROUP_CREATE owner dispatch is not connected'),
-    ]));
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('GROUP_CREATE owner dispatch is not connected'),
+      ]),
+    );
   });
 });
 
-function validateWithGroupFilter(
-  filter: string,
-  appendedSource = '',
-): readonly string[] {
+function validateWithGroupFilter(filter: string, appendedSource = ''): readonly string[] {
   const source = readFileSync(GROUP_OWNER, 'utf8');
   const mutated = source.replace(PRODUCTION_FILTER, filter) + `\n${appendedSource}\n`;
   expect(mutated).not.toBe(source);

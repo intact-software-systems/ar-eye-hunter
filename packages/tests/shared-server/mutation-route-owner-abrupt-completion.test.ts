@@ -19,7 +19,7 @@ const TYPE_MAP = `const C15_TYPE_MAP = new Map([
     [AppInboxType.GROUP_CREATE, AppInboxType.GROUP_UPDATE],
 ]);`;
 
-describe('Task 10 route-closure correction 15 contracts', { timeout: 30_000 }, () => {
+describe('Mutation route owner abrupt completion contracts', { timeout: 30_000 }, () => {
   it('makes nested guaranteed boundary abrupt completion equivalent to direct completion', () => {
     const direct = findBoundaryViolations('c15-boundary-direct-abrupt.ts');
     const nested = findBoundaryViolations('c15-boundary-nested-abrupt.ts');
@@ -38,12 +38,14 @@ describe('Task 10 route-closure correction 15 contracts', { timeout: 30_000 }, (
   it.each(['return', "throw new Error('stop')"])(
     'does not own a registration after direct %s',
     (abrupt) => {
-      expectNeitherProjection(validateInvocations(`switch ('create') {
+      expectNeitherProjection(
+        validateInvocations(`switch ('create') {
             case 'create':
                 ${abrupt};
             case 'later':
                 registerC15(undefined, 'keys');
-        }`));
+        }`),
+      );
     },
   );
 
@@ -210,11 +212,7 @@ function expectNeitherProjection(issues: readonly string[]): void {
   expectMissing(issues, 'GROUP_UPDATE');
 }
 
-function expectProjection(
-  issues: readonly string[],
-  connected: string,
-  missing: string,
-): void {
+function expectProjection(issues: readonly string[], connected: string, missing: string): void {
   expect(hasMissingIssue(issues, connected)).toBe(false);
   expectMissing(issues, missing);
 }

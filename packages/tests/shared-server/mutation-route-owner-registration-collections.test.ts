@@ -16,7 +16,7 @@ const CRDT_OWNER = 'packages/shared-server/rallar-system/services/AppCrdtInboxSe
 const CRDT_TYPES = 'packages/shared-server/rallar-system/services/crdt-mutation-contracts.ts';
 const CLIENT_OWNER = 'packages/shared-server/rallar-system/services/AppClientInboxService.ts';
 
-describe('Task 10 route-closure correction 5 contracts', () => {
+describe('Mutation route owner registration collections contracts', () => {
   it.each([
     'local-alias.ts',
     'imported-object-alias.ts',
@@ -36,10 +36,12 @@ describe('Task 10 route-closure correction 5 contracts', () => {
   });
 
   it('retains read-only provenance without flagging ordinary domain objects', () => {
-    expect(findMutationBoundaryViolationsFromRoots([
-      `${FIXTURES}/read-only-object.ts`,
-      `${FIXTURES}/ordinary-domain-object.ts`,
-    ])).toEqual([]);
+    expect(
+      findMutationBoundaryViolationsFromRoots([
+        `${FIXTURES}/read-only-object.ts`,
+        `${FIXTURES}/ordinary-domain-object.ts`,
+      ]),
+    ).toEqual([]);
   });
 
   it('rejects GROUP_CREATE removed from the imported live group registration collection', () => {
@@ -71,14 +73,18 @@ describe('Task 10 route-closure correction 5 contracts', () => {
     const mutated = source.replace('  AppInboxType.CRDT_UPDATE_APPEND,\n', '');
     expect(mutated).not.toBe(source);
 
-    expect(validateWithOverrides(
-      new Map([
-        [CRDT_OWNER, readFileSync(CRDT_OWNER, 'utf8')],
-        [CRDT_TYPES, mutated],
+    expect(
+      validateWithOverrides(
+        new Map([
+          [CRDT_OWNER, readFileSync(CRDT_OWNER, 'utf8')],
+          [CRDT_TYPES, mutated],
+        ]),
+      ),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('CRDT_UPDATE_APPEND owner dispatch is not connected'),
       ]),
-    )).toEqual(expect.arrayContaining([
-      expect.stringContaining('CRDT_UPDATE_APPEND owner dispatch is not connected'),
-    ]));
+    );
   });
 
   it('binds topology loops to their live types', () => {
@@ -94,10 +100,11 @@ describe('Task 10 route-closure correction 5 contracts', () => {
 
   it('binds direct client registrations to their live types', () => {
     const client = readFileSync(CLIENT_OWNER, 'utf8');
-    const wrongClient = client.replace(
-      'AppInboxType.CLIENT_PRINCIPAL_UPSERT,',
-      'AppInboxType.CLIENT_INSTANCE_UPSERT,',
-    ) + '\nfunction deadClientType(): void { void AppInboxType.CLIENT_PRINCIPAL_UPSERT; }\n';
+    const wrongClient =
+      client.replace(
+        'AppInboxType.CLIENT_PRINCIPAL_UPSERT,',
+        'AppInboxType.CLIENT_INSTANCE_UPSERT,',
+      ) + '\nfunction deadClientType(): void { void AppInboxType.CLIENT_PRINCIPAL_UPSERT; }\n';
 
     expect(validateWithOverrides(new Map([[CLIENT_OWNER, wrongClient]]))).toEqual(
       expect.arrayContaining([

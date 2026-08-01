@@ -19,7 +19,7 @@ const TYPE_MAP = `const C13_TYPE_MAP = new Map([
     [AppInboxType.GROUP_CREATE, AppInboxType.GROUP_UPDATE],
 ]);`;
 
-describe('Task 10 route-closure correction 13 contracts', { timeout: 30_000 }, () => {
+describe('Mutation route owner control-flow alternatives contracts', { timeout: 30_000 }, () => {
   it('collapses equivalent computed capability and factory member alternatives', () => {
     expectMutation('c13-computed-members.ts', [
       'ClientStateRepository.<unknown>',
@@ -57,9 +57,7 @@ describe('Task 10 route-closure correction 13 contracts', { timeout: 30_000 }, (
   });
 
   it('keeps reachable and unknown boundary selections conservative', () => {
-    expectMutation('c13-reachable-boundary.ts', [
-      'ClientStateRepository.insertPrincipal',
-    ]);
+    expectMutation('c13-reachable-boundary.ts', ['ClientStateRepository.insertPrincipal']);
   });
 
   it.each([
@@ -159,9 +157,7 @@ describe('Task 10 route-closure correction 13 contracts', { timeout: 30_000 }, (
       `const alias = registerC13;
         alias(undefined, 'values');`,
     );
-    const call = validateInvocations(
-      `registerC13.call(undefined, undefined, 'values');`,
-    );
+    const call = validateInvocations(`registerC13.call(undefined, undefined, 'values');`);
     expect(connectionProjection(alias)).toEqual(connectionProjection(direct));
     expect(connectionProjection(call)).toEqual(connectionProjection(direct));
   });
@@ -178,23 +174,14 @@ function expectClean(name: string): void {
   expect(findMutationBoundaryViolationsFromRoots([`${FIXTURES}/${name}`])).toEqual([]);
 }
 
-function validateInvocations(
-  invocation: string,
-  topLevel = '',
-): readonly string[] {
+function validateInvocations(invocation: string, topLevel = ''): readonly string[] {
   const source = readFileSync(GROUP_OWNER, 'utf8');
-  let mutated = source.replace(
-    CLASS_START,
-    `${TYPE_MAP}\n${topLevel}\n\n${CLASS_START}`,
-  );
+  let mutated = source.replace(CLASS_START, `${TYPE_MAP}\n${topLevel}\n\n${CLASS_START}`);
   mutated = mutated.replace(
     LOOP_START,
     `        function registerC13(\n            _ignored: unknown = undefined,\n            MAP_METHOD = 'keys',\n        ): void {\n${LOOP_START}`,
   );
-  mutated = mutated.replace(
-    LOOP_END,
-    `        }\n        ${invocation}\n${LOOP_END}`,
-  );
+  mutated = mutated.replace(LOOP_END, `        }\n        ${invocation}\n${LOOP_END}`);
   mutated = mutated.replace(LIVE_GROUP_COLLECTION, 'C13_TYPE_MAP[MAP_METHOD]()');
   expect(mutated).not.toBe(source);
   return validateMutationRouteInventory(MUTATION_ROUTE_INVENTORY, {
@@ -207,20 +194,13 @@ function expectNoProjection(issues: readonly string[]): void {
   expectMissing(issues, 'GROUP_UPDATE');
 }
 
-function expectProjection(
-  issues: readonly string[],
-  connected: string,
-  missing: string,
-): void {
+function expectProjection(issues: readonly string[], connected: string, missing: string): void {
   expectConnected(issues, connected);
   expectMissing(issues, missing);
 }
 
 function connectionProjection(issues: readonly string[]): readonly boolean[] {
-  return [
-    !hasMissingIssue(issues, 'GROUP_CREATE'),
-    !hasMissingIssue(issues, 'GROUP_UPDATE'),
-  ];
+  return [!hasMissingIssue(issues, 'GROUP_CREATE'), !hasMissingIssue(issues, 'GROUP_UPDATE')];
 }
 
 function hasMissingIssue(issues: readonly string[], type: string): boolean {

@@ -286,8 +286,13 @@ plans/repo-style-lineages/
   rallar-group-state-server-structure.json
   rallar-group-state-server-structure-provenance.md
 packages/tests/repo/
-  rallar-skill-integrity.test.ts
-  repo-code-style-integrity.test.ts
+  rallar-authoritative-mutation-guidance-integrity.test.ts
+  rallar-group-state-owner-integrity.test.ts
+  rallar-skill-app-examples-integrity.test.ts
+  rallar-skill-plugin-publication-integrity.test.ts
+  repo-code-style-authority-integrity.test.ts
+  repo-code-style-checker-integrity.test.ts
+  repo-code-style-review-evidence-integrity.test.ts
   repo-style-structural-lineage-provenance.test.ts
 packages/tests/rallar-black-box/rallar-testing-skill.test.ts
 packages/tests/shared-server/
@@ -873,10 +878,18 @@ may be waived or rerolled inside this plan.
 
 **Files:**
 
-- Modify: `packages/tests/repo/rallar-skill-integrity.test.ts`
-- Modify: `packages/tests/repo/repo-code-style-integrity.test.ts`
+- Delete: `packages/tests/repo/rallar-skill-integrity.test.ts`
+- Delete: `packages/tests/repo/repo-code-style-integrity.test.ts`
+- Create: `packages/tests/repo/rallar-skill-plugin-publication-integrity.test.ts`
+- Create: `packages/tests/repo/rallar-skill-app-examples-integrity.test.ts`
+- Create: `packages/tests/repo/rallar-authoritative-mutation-guidance-integrity.test.ts`
+- Create: `packages/tests/repo/rallar-group-state-owner-integrity.test.ts`
+- Create: `packages/tests/repo/repo-code-style-authority-integrity.test.ts`
+- Create: `packages/tests/repo/repo-code-style-review-evidence-integrity.test.ts`
+- Create: `packages/tests/repo/repo-code-style-checker-integrity.test.ts`
 - Modify: `packages/tests/rallar-black-box/rallar-testing-skill.test.ts`
 - Create: `packages/tests/repo/repo-style-structural-lineage-provenance.test.ts`
+- Modify: `package.json` (`test:repo-governance` registration only)
 
 - [ ] Start `codex/rallar-group-state-traceability-guidance` from the exact
       resulting `main` SHA of the planning PR after its default workflow.
@@ -887,6 +900,9 @@ may be waived or rerolled inside this plan.
 - [ ] Add focused assertions for Section 2 trace fields, canonical realtime
       paths, behavior-named tests, large-PR evidence, ratchet removal, human
       warning disposition, and complete provenance rows. Capture RED.
+- [ ] Split the two superseded mixed integrity owners into the seven descriptive
+      Task 1 owners, preserving every original case, fixture, literal,
+      expectation, and assertion site; keep each module at or below 400 lines.
 
 ### Task 2: Implement The PR A Guidance Contract
 
@@ -901,7 +917,7 @@ may be waived or rerolled inside this plan.
 - Modify: `.agents/skills/rallar-testing/references/test-commands.md`
 - Modify: `.agents/skills/publishing-plan-progress/SKILL.md`
 - Modify: `docs/repo-human-style-guide.md`
-- Test: the four Task 1 suites
+- Test: the Task 1 integrity suites and the behavior-named testing guidance suite
 
 - [ ] Use `superpowers:writing-skills` for the skill changes and verify their
       pressure scenarios before treating prose-integrity tests as sufficient.
@@ -1188,8 +1204,13 @@ npm run build
 
 ```bash
 npx vitest run \
-  packages/tests/repo/rallar-skill-integrity.test.ts \
-  packages/tests/repo/repo-code-style-integrity.test.ts \
+  packages/tests/repo/rallar-skill-plugin-publication-integrity.test.ts \
+  packages/tests/repo/rallar-skill-app-examples-integrity.test.ts \
+  packages/tests/repo/rallar-authoritative-mutation-guidance-integrity.test.ts \
+  packages/tests/repo/rallar-group-state-owner-integrity.test.ts \
+  packages/tests/repo/repo-code-style-authority-integrity.test.ts \
+  packages/tests/repo/repo-code-style-review-evidence-integrity.test.ts \
+  packages/tests/repo/repo-code-style-checker-integrity.test.ts \
   packages/tests/repo/repo-style-structural-lineage-provenance.test.ts \
   packages/tests/rallar-black-box/rallar-testing-skill.test.ts
 npx vitest run packages/tests/shared-server/mutation-route-owner-*.test.ts

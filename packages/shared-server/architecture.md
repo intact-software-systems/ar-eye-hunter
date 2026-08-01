@@ -205,7 +205,7 @@ also run:
 
 ```bash
 npx vitest run packages/tests/shared-server/read-compute-write-contract.test.ts
-npx vitest run packages/tests/repo/rallar-skill-integrity.test.ts
+npm run test:repo-governance
 npm run test:api-v1:black-box:postgres:medium-scale
 ```
 
