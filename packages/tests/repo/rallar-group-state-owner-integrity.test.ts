@@ -46,6 +46,13 @@ describe('group-state owner integrity', () => {
     expect(readRepo('AGENTS.md')).not.toContain('  - `...`');
   });
 
+  it('routes shared-server architecture validation through repository governance', () => {
+    const architecture = readRepo('packages/shared-server/architecture.md');
+
+    expect(architecture).toContain('npm run test:repo-governance');
+    expect(architecture).not.toContain('packages/tests/repo/rallar-skill-integrity.test.ts');
+  });
+
   it('keeps authoritative group and summary phases as direct statements', () => {
     const groupService = readRepo(
       'packages/shared-server/rallar-system/group-state/group-state-service.ts',
