@@ -159,6 +159,28 @@ const compatibilityPaths = [
   'packages/shared-test/black-box-runner/api-v1-state-write-evidence.ts',
 ] as const;
 
+const fixtureLineages = [
+  ['source-one.ts', 'source-blob', ['target-one.ts', 'target-two.ts']],
+] as const;
+const completeProvenanceFixture = `## Source: \`source-one.ts\`
+Source blob: \`source-blob\`
+Source symbol or line span: \`sourceOne\`
+Source changed regions: \`lines 1-10\`
+
+### Target: \`target-one.ts\`
+Target symbol or line span: \`targetOne\`
+Target changed regions: \`lines 11-20\`
+Mechanical-move classification: \`mechanical move\`
+Semantic additions excluded from inherited capacity: \`none\`
+Human disposition: \`approved\`
+
+### Target: \`target-two.ts\`
+Target symbol or line span: \`targetTwo\`
+Target changed regions: \`lines 21-30\`
+Mechanical-move classification: \`mechanical move\`
+Semantic additions excluded from inherited capacity: \`none\`
+Human disposition: \`approved\``;
+
 describe('group-state structural-lineage provenance', () => {
   it('keeps the immutable manifest inventory and its active compatibility paths exact', () => {
     const manifest = readJson(manifestPath) as { version: number; lineages: unknown };
@@ -190,26 +212,60 @@ describe('group-state structural-lineage provenance', () => {
     );
     if (!existsSync(provenanceAbsolutePath)) return;
 
-    const provenance = readFileSync(provenanceAbsolutePath, 'utf8');
-    for (const [sourcePath, blob, targets] of expectedLineages) {
-      expect(provenance).toContain(`## Source: \`${sourcePath}\``);
-      expect(provenance).toContain(`Source blob: \`${blob}\``);
-      for (const targetPath of targets) {
-        const targetStart = provenance.indexOf(`### Target: \`${targetPath}\``);
-        expect(targetStart, targetPath).toBeGreaterThanOrEqual(0);
-        const targetRow = provenance.slice(
-          targetStart,
-          provenance.indexOf('\n### Target:', targetStart + 1),
-        );
-        expectAll(targetRow, [
-          'Source symbol or line span:',
-          'Target symbol or line span:',
-          'Mechanical-move classification:',
-          'Semantic additions excluded from inherited capacity:',
-          'Human disposition:',
-        ]);
-      }
+    validateProvenance(readFileSync(provenanceAbsolutePath, 'utf8'), expectedLineages);
+  });
+
+  it('rejects wrong-source, duplicate, missing, and empty provenance fields', () => {
+    const twoSourceFixture = `${completeProvenanceFixture}
+
+## Source: \`source-two.ts\`
+Source blob: \`source-two-blob\`
+Source symbol or line span: \`sourceTwo\`
+Source changed regions: \`lines 31-40\`
+
+### Target: \`target-three.ts\`
+Target symbol or line span: \`targetThree\`
+Target changed regions: \`lines 41-50\`
+Mechanical-move classification: \`mechanical move\`
+Semantic additions excluded from inherited capacity: \`none\`
+Human disposition: \`approved\``;
+    const swappedTargets = twoSourceFixture
+      .replaceAll('target-two.ts', 'temporary-target.ts')
+      .replaceAll('target-three.ts', 'target-two.ts')
+      .replaceAll('temporary-target.ts', 'target-three.ts');
+    expect(() =>
+      validateProvenance(swappedTargets, [
+        ...fixtureLineages,
+        ['source-two.ts', 'source-two-blob', ['target-three.ts']],
+      ]),
+    ).toThrow('target for source-one.ts');
+
+    for (const [description, provenance, message] of [
+      [
+        'duplicate target',
+        completeProvenanceFixture.replace('target-two.ts', 'target-one.ts'),
+        'duplicate target',
+      ],
+      [
+        'missing target',
+        completeProvenanceFixture.replace(/\n### Target: `target-two.ts`[\s\S]*/, ''),
+        'target-two.ts',
+      ],
+      [
+        'empty field',
+        completeProvenanceFixture.replace(
+          'Target changed regions: `lines 11-20`',
+          'Target changed regions:',
+        ),
+        'Target changed regions',
+      ],
+    ] as const) {
+      expect(() => validateProvenance(provenance, fixtureLineages), description).toThrow(message);
     }
+  });
+
+  it('accepts a complete provenance structure with exactly owned targets', () => {
+    expect(validateProvenance(completeProvenanceFixture, fixtureLineages)).toBeUndefined();
   });
 });
 
@@ -217,6 +273,94 @@ function readJson(filePath: string): unknown {
   return JSON.parse(readFileSync(path.join(repoRoot, filePath), 'utf8'));
 }
 
-function expectAll(haystack: string, needles: readonly string[]): void {
-  for (const needle of needles) expect(haystack, needle).toContain(needle);
+type ExpectedLineage = readonly [sourcePath: string, blob: string, targets: readonly string[]];
+
+function validateProvenance(
+  provenance: string,
+  expectedLineages: readonly ExpectedLineage[],
+): void {
+  const sourceSections = parseSourceSections(provenance);
+  assertExactValues(
+    sourceSections.map((section) => section.sourcePath),
+    expectedLineages.map(([sourcePath]) => sourcePath),
+    'source',
+  );
+
+  for (const [sourcePath, blob, targetPaths] of expectedLineages) {
+    const sourceSection = sourceSections.find((section) => section.sourcePath === sourcePath);
+    if (sourceSection === undefined) throw new Error(`missing source ${sourcePath}`);
+    if (sourceSection.blob !== blob) throw new Error(`wrong blob for ${sourcePath}`);
+    assertRequiredFields(sourceSection.body, [
+      'Source symbol or line span',
+      'Source changed regions',
+    ]);
+    assertExactValues(
+      sourceSection.targetSections.map((section) => section.targetPath),
+      targetPaths,
+      `target for ${sourcePath}`,
+    );
+    for (const targetSection of sourceSection.targetSections) {
+      assertRequiredFields(targetSection.body, [
+        'Target symbol or line span',
+        'Target changed regions',
+        'Mechanical-move classification',
+        'Semantic additions excluded from inherited capacity',
+        'Human disposition',
+      ]);
+    }
+  }
+}
+
+function parseSourceSections(provenance: string): readonly SourceSection[] {
+  return [...provenance.matchAll(/^## Source: `([^`]+)`\s*$/gm)].map((match, index, matches) => {
+    const body = provenance.slice(match.index, matches[index + 1]?.index);
+    return {
+      sourcePath: match[1],
+      blob: readRequiredField(body, 'Source blob').replace(/^`|`$/g, ''),
+      body,
+      targetSections: parseTargetSections(body),
+    };
+  });
+}
+
+function parseTargetSections(sourceBody: string): readonly TargetSection[] {
+  return [...sourceBody.matchAll(/^### Target: `([^`]+)`\s*$/gm)].map((match, index, matches) => ({
+    targetPath: match[1],
+    body: sourceBody.slice(match.index, matches[index + 1]?.index),
+  }));
+}
+
+function readRequiredField(section: string, field: string): string {
+  const fieldMatch = section.match(new RegExp(`^${field}:[^\\S\\r\\n]*(.+\\S)[^\\S\\r\\n]*$`, 'm'));
+  if (fieldMatch === null) throw new Error(`missing or empty ${field}`);
+  return fieldMatch[1];
+}
+
+function assertRequiredFields(section: string, fields: readonly string[]): void {
+  for (const field of fields) readRequiredField(section, field);
+}
+
+function assertExactValues(
+  actualValues: readonly string[],
+  expectedValues: readonly string[],
+  valueKind: string,
+): void {
+  const uniqueActualValues = new Set(actualValues);
+  if (uniqueActualValues.size !== actualValues.length) throw new Error(`duplicate ${valueKind}`);
+  for (const value of expectedValues) {
+    if (!uniqueActualValues.has(value)) throw new Error(`missing ${valueKind} ${value}`);
+  }
+  if (actualValues.length !== expectedValues.length) throw new Error(`wrong ${valueKind} count`);
+}
+
+interface SourceSection {
+  readonly sourcePath: string;
+  readonly blob: string;
+  readonly body: string;
+  readonly targetSections: readonly TargetSection[];
+}
+
+interface TargetSection {
+  readonly targetPath: string;
+  readonly body: string;
 }
