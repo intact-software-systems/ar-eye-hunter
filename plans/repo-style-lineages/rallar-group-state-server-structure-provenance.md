@@ -16,8 +16,8 @@ symbol/span enforcement would require a separate, unapproved governance proposal
 ## Source: `packages/shared-server/rallar-system/services/AppGroupInboxService.ts`
 
 Source blob: `b7525b31bd38e24a883c69bdf97d0ef0a5232448`
-Source symbol or line span: `enqueueRtcRtt` lines 522-573; topology entry/authority methods lines 632-955; `processMutation` and `commitMutation` lines 957-1077; result/preparation helpers lines 1080-1144; topology command/authority helpers lines 1210-1577; `toGroupMutationDescriptor` and `descriptor` lines 1579-1753
-Source changed regions: `The preceding non-overlapping method/helper spans were distributed among the six targets; source imports, payload contracts, facade methods, and registration lines outside them are not claimed by these targets.`
+Source symbol or line span: `toTopologyAppInboxCommand lines 345-378; enqueueRtcRtt source-derived statements 522-562; toAuthenticatedTopologyEnqueue lines 650-665; topology handlers lines 667-761; verifyRtcRttAuthority lines 828-872; topology authority/session verification lines 881-955; group handler/result lines 957-1144; topology command helpers lines 1210-1453 and 1526-1568; topology authority readers lines 1455-1475 and 1502-1524; RTC RTT authority reader lines 1477-1500; constant-time proof comparison lines 1570-1577; descriptor mapping lines 1579-1753`
+Source changed regions: `The target sections partition those non-overlapping spans. Facade entry lines 632-648, RTC handler lines 763-825, dependency setter/lookup lines 496-520 and 874-879, imports, payload contracts, and registration are not claimed by these targets.`
 Compatibility status/path: `packages/shared-server/rallar-system/services/AppGroupInboxService.ts remains the public composition facade; extracted owners are direct internal imports, not another compatibility hop.`
 
 ### Target: `packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts`
@@ -39,15 +39,15 @@ Human disposition: `Accepted only for the mapped result-assembly statements and 
 ### Target: `packages/shared-server/rallar-system/rtc-topology/inbox/rtc-rtt-app-inbox-authority.ts`
 
 Target symbol or line span: `createRtcRttDurableEnqueue lines 38-79; readRtcRttAppInboxAuthority lines 81-102; verifyRtcRttAppInboxAuthority lines 104-131; verifyRtcRttCommandHashes lines 133-149`
-Target changed regions: `Whole added module lines 1-149; source enqueueRtcRtt 522-573, process/verify RTC authority 763-879, and readRtcRttAuthority 1477-1500.`
+Target changed regions: `Whole added module lines 1-149; source enqueueRtcRtt statements 522-562, verifyRtcRttAuthority 828-872, and readRtcRttAuthority 1477-1500.`
 Mechanical-move classification: `Mixed behavior-preserving extraction of RTC durable command construction, decoding, and authority verification.`
-Semantic additions excluded from inherited capacity: `Imports/interfaces lines 1-36 and newly separated verifyRtcRttCommandHashes boundary receive zero capacity.`
+Semantic additions excluded from inherited capacity: `Imports/interfaces lines 1-36, the enqueue-return rewrite at target lines 65-79, and newly separated verifyRtcRttCommandHashes boundary receive zero capacity; source RTC handler lines 763-825 and dependency lookup 874-879 are expressly excluded.`
 Human disposition: `Accepted for mapped RTC statements only; the new authority-owner surface receives no historical allowance.`
 
 ### Target: `packages/shared-server/rallar-system/topology/inbox/topology-app-inbox-authority.ts`
 
 Target symbol or line span: `createAuthenticatedTopologyEnqueue lines 36-52; read/verify authority lines 54-125; constantTimeTopologyProofEqual lines 127-134; session helpers lines 136-181`
-Target changed regions: `Whole added module lines 1-183; source authenticated enqueue 650-665, topology authority/session verification 881-955, authority readers 1455-1524, constant-time comparison 1570-1577.`
+Target changed regions: `Whole added module lines 1-183; source authenticated enqueue 650-665, topology authority/session verification 881-955, topology authority readers 1455-1475 and 1502-1524, and constant-time comparison 1570-1577. Source RTC RTT authority reader 1477-1500 belongs only to the RTC RTT authority target.`
 Mechanical-move classification: `Mixed behavior-preserving extraction into the topology authority owner.`
 Semantic additions excluded from inherited capacity: `Imports/interfaces and renamed helper boundaries receive zero capacity; only mapped proof/session logic may inherit.`
 Human disposition: `Accepted with capacity restricted to source-derived authority logic.`
@@ -63,30 +63,30 @@ Human disposition: `Accepted only for equivalent command parsing/conversion span
 ### Target: `packages/shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts`
 
 Target symbol or line span: `TopologyAppInboxHandler lines 49-151; requireTopologyManagementService lines 153-158`
-Target changed regions: `Whole added module lines 1-158; source topology config/reconfigure processing methods 667-761 and predecessor required-service checks at 496-508 and 629-665.`
+Target changed regions: `Whole added module lines 1-158; source topology config/reconfigure processing methods 667-761.`
 Mechanical-move classification: `Mixed extraction of topology execution into a stateless handler while retaining the facade setter compatibility surface.`
-Semantic additions excluded from inherited capacity: `Imports, dependency/result contracts lines 1-47, class construction, and newly named handler boundary receive zero capacity.`
-Human disposition: `Accepted only for the mapped processing and required-service behavior; new handler shape has no inherited debt.`
+Semantic additions excluded from inherited capacity: `Imports, dependency/result contracts lines 1-47, class construction, createAuthenticatedEnqueue lines 52-62, and requireTopologyManagementService lines 153-158 receive zero capacity; source setter/property and toAuthenticatedTopologyEnqueue spans remain outside this target.`
+Human disposition: `Accepted only for the mapped processing statements; the required-service behavior and new handler shape have no inherited debt.`
 
 ## Source: `packages/shared-server/rallar-system/services/group-state-service.ts`
 
 Source blob: `3c8356ee088d2963d6f8f0f3b688bc0954d4745b`
-Source symbol or line span: `authorization/idempotency errors lines 229-251; createGroupStateRuntime target-derived regions 253-329 and 331-477; createGroupStateService lines 479-483; authority/descriptor regions 485-778 and 1193-1213; withGroupStateServiceTiming lines 1215-1283`
-Source changed regions: `The authority target owns preparation plus lines 485-778 and 1193-1213; the service target owns runtime/service assembly, idempotency error, and timing spans. Command-family helpers at 780-1191 moved through separate exact-rename lineages and are not claimed here.`
+Source symbol or line span: `GroupMutationAuthorizationError lines 229-237; GroupMutationIdempotencyConflictError lines 239-251; runtime/service regions 253-269, 331-413, and 444-483; prepareMutation lines 270-329; prepared-authority revalidation lines 414-443; authority/descriptor functions lines 485-661; resolveCommandJoinCode/joinCodeVerifier lines 1193-1213; timing lines 1215-1283`
+Source changed regions: `The authority target owns 229-237, 270-329, 414-443, 485-661, and 1193-1213. The service target owns 239-269, 331-413, 444-483, and 1215-1283. Old toDescriptorCommand and command-family converters lines 663-1191 moved to undeclared command targets and are not claimed here.`
 Compatibility status/path: `packages/shared-server/rallar-system/services/group-state-service.ts is a direct named re-export-only compatibility path to both canonical targets.`
 
 ### Target: `packages/shared-server/rallar-system/group-state/group-mutation-authority.ts`
 
 Target symbol or line span: `GroupMutationAuthorizationError lines 59-67; prepare/verify authority lines 69-161 and 193-347; mutationDescriptor lines 163-172; toDescriptorCommand lines 174-191`
-Target changed regions: `Whole added module lines 1-347; source authorization error 229-237, prepareMutation 270-329, and authority/descriptor/command spans 485-1213.`
-Mechanical-move classification: `Mixed extraction of authentication, preparation, and descriptor-command authority.`
-Semantic additions excluded from inherited capacity: `Imports and dependency/input interfaces lines 1-57 plus newly separated preparation/verification boundaries receive zero capacity.`
+Target changed regions: `Whole added module lines 1-347; source authorization error 229-237, prepareMutation 270-329, prepared-authority revalidation 414-443, authority/descriptor functions 485-661, and join-code resolution 1193-1213.`
+Mechanical-move classification: `Mixed extraction of authentication, preparation, and descriptor authority; the current operation-family router is a behavior-preserving rewrite.`
+Semantic additions excluded from inherited capacity: `Imports/interfaces lines 1-57, new function boundaries, and toDescriptorCommand target lines 174-191 receive zero capacity; source command converters lines 663-1191 are expressly excluded.`
 Human disposition: `Accepted for source-derived authority algorithms only; new owner contracts are ineligible.`
 
 ### Target: `packages/shared-server/rallar-system/group-state/group-state-service.ts`
 
 Target symbol or line span: `GroupMutationIdempotencyConflictError lines 42-54; createGroupStateRuntime lines 56-89; owner/composition functions lines 91-269; createGroupStateService lines 271-275; timing functions/contracts lines 277-378`
-Target changed regions: `Whole added module lines 1-378; source error 239-251, runtime/service 253-483, and timing 1215-1283.`
+Target changed regions: `Whole added module lines 1-378; source error 239-251, runtime/service regions 253-269, 331-413, and 444-483, plus timing 1215-1283.`
 Mechanical-move classification: `Mixed behavior-preserving extraction and decomposition of the service composition and timing shell.`
 Semantic additions excluded from inherited capacity: `Imports, owner interfaces, named composition phases, timing detail contracts, and resolveGroupStateTimingInvocation receive zero capacity.`
 Human disposition: `Accepted only for equivalent runtime operations and timing behavior copied from the source; new composition structure gets no capacity.`
@@ -94,15 +94,15 @@ Human disposition: `Accepted only for equivalent runtime operations and timing b
 ## Source: `packages/shared-server/rallar-system/services/group-state-mutations.ts`
 
 Source blob: `66a5a6fcbd86a1d144a2e0a1394ee80eca2fb520`
-Source symbol or line span: `contracts lines 97-400; request/command validation lines 402-645 and 4037-4233; compute/probe lines 647-720; read/persisted validation lines 774-1527 and 3750-3895; computed validation lines 1529-1848 and 3897-4026; presence summary lines 1850-2110 and 3608-3622; aggregate compute lines 2112-2264, 2356-2400, 2757-2776, 3136-3153, 3474-3606; presence validation lines 3305-3405; fact/authority validation lines 3626-3748`
-Source changed regions: `These non-overlapping symbol families are split among the fourteen targets; mutation families moved to other PR #59 targets are not claimed here.`
+Source symbol or line span: `mutation contracts 97-292 and 316-400; presence-summary contracts 294-314; request shell 402-419, operation-request branches 420-512, presence request 515-604, command shell 606-645; compute/probe 647-720; read validation 774-1002 and 1062-1085; persisted-group validation 1004-1060, 1106-1153, 1398-1410, 3750-3781, and 3847-3895; persisted-presence validation 1155-1207, 1412-1488, and 3305-3405; persistence normalization 1209-1396 and 3783-3845; idempotency/receipt/hash validation 1490-1527 and 3897-4026; computed validation 1529-1795; presence summary 1850-2015 and 3608-3622; aggregate compute 2112-2264, 2356-2381, 2757-2776, 3136-3153, 3474-3496, 3561-3566, and 3578-3606; actor helpers 3466-3472; fact/authority validation 3626-3748; command input validation 4037-4165; request keys 4167-4202; command keys 4204-4233`
+Source changed regions: `The target sections partition those non-overlapping spans. Presence-summary contracts 294-314 and mutation families moved to undeclared exact-rename targets are not claimed by the mutation-contract target.`
 Compatibility status/path: `packages/shared-server/rallar-system/services/group-state-mutations.ts remains a direct named re-export-only compatibility path for the affected public symbols.`
 
 ### Target: `packages/shared-server/rallar-system/group-state/mutation/aggregate/compute-group-aggregate-mutation.ts`
 
 Target symbol or line span: `computeCreate/update/director/rotate lines 53-220; groupWrite and authority/lifecycle helpers lines 222-312`
-Target changed regions: `Whole added module lines 1-312; source aggregate functions 2112-2264, 2356-2400, 2757-2776, 3136-3153, and 3474-3606.`
-Mechanical-move classification: `Mechanical extraction with a named GroupWriteInput boundary.`
+Target changed regions: `Whole added module lines 1-312; source aggregate functions 2112-2264, 2356-2381, 2757-2776, 3136-3153, 3474-3496, 3561-3566, and 3578-3606. Source materializedRotateJoinCode 2383-2396 and member/event helpers 3498-3559 and 3568-3576 belong to other target owners and are excluded.`
+Mechanical-move classification: `Mixed extraction with a named GroupWriteInput boundary.`
 Semantic additions excluded from inherited capacity: `Imports and GroupWriteInput lines 1-51 receive zero capacity.`
 Human disposition: `Accepted for the listed aggregate symbols only.`
 
@@ -117,17 +117,17 @@ Human disposition: `Accepted for mapped compute/probe/fact statements; new helpe
 ### Target: `packages/shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts`
 
 Target symbol or line span: `NullableActorInput through GroupMutationRejectedError lines 25-325`
-Target changed regions: `Whole added module lines 1-325; source contracts and error lines 97-400 map one-for-one to lines 25-325.`
+Target changed regions: `Whole added module lines 1-325; source mutation contracts/error lines 97-292 and 316-400 map to target lines 25-325.`
 Mechanical-move classification: `Mechanical contract extraction with import/export relocation only.`
-Semantic additions excluded from inherited capacity: `Imports lines 1-23 receive zero capacity; no semantic target region was identified.`
+Semantic additions excluded from inherited capacity: `Imports lines 1-23 receive zero capacity; source presence-summary contracts lines 294-314 are explicitly excluded from this target.`
 Human disposition: `Accepted for the exact contract/error symbols; imports are excluded.`
 
 ### Target: `packages/shared-server/rallar-system/group-state/mutation/command-validation/group-mutation-request-validation.ts`
 
 Target symbol or line span: `request validators lines 21-140; request key inventories lines 142-227`
-Target changed regions: `Whole added module lines 1-227; source validateGroupMutationRequest/validateGroupPresenceMutationRequest lines 402-604 and request keys 4167-4202.`
+Target changed regions: `Whole added module lines 1-227; source request shell 402-419, presence request validation 515-604, and request-key inventories 4167-4202.`
 Mechanical-move classification: `Mixed extraction; presence timestamp ordering received a named helper boundary.`
-Semantic additions excluded from inherited capacity: `Imports and validatePresenceTimestampOrder function boundary receive zero capacity.`
+Semantic additions excluded from inherited capacity: `Imports and validatePresenceTimestampOrder function boundary receive zero capacity; source operation-specific request branches 420-512 belong only to the operation-input target.`
 Human disposition: `Accepted for source-derived validation statements and key inventories only.`
 
 ### Target: `packages/shared-server/rallar-system/group-state/mutation/result-validation/validate-computed-group-mutation-write.ts`
@@ -149,17 +149,17 @@ Human disposition: `Accepted only for validation statements demonstrably derived
 ### Target: `packages/shared-server/rallar-system/group-state/mutation/command-validation/validate-group-mutation-command.ts`
 
 Target symbol or line span: `validateGroupMutationCommand lines 13-59; operation validators lines 61-191; operation/key inventories lines 193-314`
-Target changed regions: `Whole added module lines 1-314; source validateGroupMutationCommand 606-645 and operation/key validation 4037-4233.`
+Target changed regions: `Whole added module lines 1-314; source command shell 606-645, command-input validation 4037-4165, and command-key inventory 4204-4233.`
 Mechanical-move classification: `Mixed extraction and split of aggregate, membership, presence, and nullable-field validation.`
-Semantic additions excluded from inherited capacity: `Imports, newly named split helpers, and AGGREGATE_GROUP_MUTATION_OPERATIONS receive zero capacity.`
+Semantic additions excluded from inherited capacity: `Imports, newly named split helpers, and AGGREGATE_GROUP_MUTATION_OPERATIONS receive zero capacity; request-key inventory 4167-4202 is excluded.`
 Human disposition: `Accepted for mapped command-validation branches and inventories only.`
 
 ### Target: `packages/shared-server/rallar-system/group-state/mutation/command-validation/validate-group-mutation-operation-input.ts`
 
 Target symbol or line span: `validateGroupMutationOperationInput lines 14-24; aggregate/membership validators and predicates lines 26-166`
-Target changed regions: `Whole added module lines 1-166; source operation-specific request branches in validateGroupMutationRequest lines 402-604 and validateOperationInput lines 4037-4135.`
+Target changed regions: `Whole added module lines 1-166; source optional-field helpers and operation-specific request branches lines 420-512.`
 Mechanical-move classification: `Mixed extraction of operation input checks into a dedicated owner.`
-Semantic additions excluded from inherited capacity: `Imports/input/type contracts and newly named predicate/function boundaries receive zero capacity.`
+Semantic additions excluded from inherited capacity: `Imports/input/type contracts and newly named predicate/function boundaries receive zero capacity; source presence request 515-604 and command validation 4037-4233 are excluded.`
 Human disposition: `Accepted only for the source-derived checks; the target owner surface has no inherited allowance.`
 
 ### Target: `packages/shared-server/rallar-system/group-state/mutation/state-validation/validate-group-mutation-read.ts`
@@ -197,7 +197,7 @@ Human disposition: `Accepted for the listed source validator bodies only.`
 ### Target: `packages/shared-server/rallar-system/group-state/persistence/validate-persisted-group.ts`
 
 Target symbol or line span: `stored key inventories lines 22-64; group/member/scoped/audit/actor/causal validators lines 66-233`
-Target changed regions: `Whole added module lines 1-233; source stored validation 1004-1153, persisted group/member 1398-1410, and scoped/audit/actor/causal validation 3750-3895.`
+Target changed regions: `Whole added module lines 1-233; source validateStoredGroup 1004-1060, validateStoredMember 1106-1153, persisted group/member validation 1398-1410, scoped validation 3750-3781, and audit/actor/causal validation 3847-3895. Source validateMemberReadPair 1062-1085 belongs to validate-group-mutation-read; mutation-target helpers 1087-1104 belong to their declared renamed owners; normalization helpers 3783-3845 belong to group-state-persistence-codec.`
 Mechanical-move classification: `Mechanical extraction with local key inventories.`
 Semantic additions excluded from inherited capacity: `Imports and STORED_GROUP_KEYS/STORED_MEMBER_KEYS receive zero capacity.`
 Human disposition: `Accepted for the exact source-derived validators only.`
@@ -213,14 +213,14 @@ Human disposition: `Accepted only for source-derived summary computations/checks
 ## Source: `packages/shared-server/rallar-system/repositories/GroupStateRepository.ts`
 
 Source blob: `ade6c012f1ea17ff3b3604f1bac05c6764b4f7a0`
-Source symbol or line span: `repository contracts/error lines 82-84 and 95-113; GroupStateRepository operation methods lines 126-888; persistence helpers lines 923-1244`
-Source changed regions: `Repository operation methods were distributed by aggregate, membership, presence, read, and snapshot ownership; helper spans map to the contracts and specialized repositories. Constructor/event and key-helper regions outside the listed spans are not claimed.`
+Source symbol or line span: `contracts/error 82-84 and 95-113; reads 126-163, 198-233, 293-329, 534-541, 552-580, 601-618, 663-693, 720-739, 747-755; shared entry conversion 165-180; aggregate writes 182-196, 235-257, 265-291, 543-545, 782-808; snapshots 331-532 and 810-888; membership writes 547-550 and 582-586; presence writes 588-599, 620-661, 695-718, 741-745, 757-780; helpers 923-1244 partitioned exactly below`
+Source changed regions: `The target sections partition all claimed operation/helper spans once. Constructor/event property and key-helper regions outside these spans are not claimed.`
 Compatibility status/path: `packages/shared-server/rallar-system/repositories/GroupStateRepository.ts remains a direct named re-export-only compatibility path.`
 
 ### Target: `packages/shared-server/rallar-system/group-state/persistence/group-aggregate-repository.ts`
 
 Target symbol or line span: `GroupAggregateRepository lines 43-140; aggregate guard/idempotency helpers lines 142-292`
-Target changed regions: `Whole added module lines 1-292; source aggregate write/event methods 182-196, 235-291, 543-545, 782-808 and helpers 923-1056, 1169-1204.`
+Target changed regions: `Whole added module lines 1-292; source aggregate methods 182-196, 235-257, 265-291, 543-545, 782-808 and helpers 923-935, 954-1056, 1169-1204.`
 Mechanical-move classification: `Mixed class extraction with unchanged aggregate repository operations.`
 Semantic additions excluded from inherited capacity: `Imports, renamed class/constructor, and owner wiring receive zero capacity.`
 Human disposition: `Accepted for mapped methods/helpers only.`
@@ -236,7 +236,7 @@ Human disposition: `Accepted for the mapped method/helper bodies only.`
 ### Target: `packages/shared-server/rallar-system/group-state/persistence/group-presence-repository.ts`
 
 Target symbol or line span: `GroupPresenceRepository lines 49-152; canonical presence helpers lines 154-221`
-Target changed regions: `Whole added module lines 1-221; source presence write methods 588-780 and canonical helpers 1083-1150.`
+Target changed regions: `Whole added module lines 1-221; source presence writes 588-599, 620-661, 695-718, 741-745, 757-780 and canonical helpers 1083-1150.`
 Mechanical-move classification: `Mixed class extraction of presence persistence operations.`
 Semantic additions excluded from inherited capacity: `Imports, class/constructor, and new owner wiring receive zero capacity.`
 Human disposition: `Accepted for mapped presence methods/helpers only.`
@@ -244,7 +244,7 @@ Human disposition: `Accepted for mapped presence methods/helpers only.`
 ### Target: `packages/shared-server/rallar-system/group-state/persistence/group-state-persistence-contracts.ts`
 
 Target symbol or line span: `repository contracts/error lines 6-31; entry and identity helpers lines 33-128`
-Target changed regions: `Whole added module lines 1-128; source contracts 82-113, toLiveEntryValue 165-180, and identity/decoding/normalization helpers 937-952 and 1152-1244.`
+Target changed regions: `Whole added module lines 1-128; source contracts/error 82-84 and 95-113, sole inherited toLiveEntryValue owner 165-180, and helpers 937-952, 1152-1167, 1206-1244.`
 Mechanical-move classification: `Mixed extraction with descriptive renames for generic repository helpers.`
 Semantic additions excluded from inherited capacity: `Imports and renamed function boundaries receive zero capacity; equivalent bodies alone may inherit.`
 Human disposition: `Accepted only for the mapped contract and helper behavior.`
@@ -252,7 +252,7 @@ Human disposition: `Accepted only for the mapped contract and helper behavior.`
 ### Target: `packages/shared-server/rallar-system/group-state/persistence/group-state-repository-reads.ts`
 
 Target symbol or line span: `GroupStateRepositoryReads methods lines 47-261`
-Target changed regions: `Whole added module lines 1-261; source read methods 126-163, 198-233, 293-329, 534-580, 601-618, 663-755.`
+Target changed regions: `Whole added module lines 1-261; source read methods 126-163, 198-233, 293-329, 534-541, 552-580, 601-618, 663-693, 720-739, and 747-755. Aggregate, membership, and presence writes interleaved at 543-550, 582-599, 620-661, 695-718, and 741-745 belong only to their owning targets.`
 Mechanical-move classification: `Mixed class extraction of exact read operations from GroupStateRepository.`
 Semantic additions excluded from inherited capacity: `Imports, class inheritance/owner surface, and method declarations newly required by the split receive zero capacity.`
 Human disposition: `Accepted for the listed predecessor method bodies only.`
@@ -260,9 +260,9 @@ Human disposition: `Accepted for the listed predecessor method bodies only.`
 ### Target: `packages/shared-server/rallar-system/group-state/persistence/group-state-snapshot-repository.ts`
 
 Target symbol or line span: `GroupStateSnapshotRepository lines 56-302`
-Target changed regions: `Whole added module lines 1-302; source snapshot/list/page methods 331-532 and 810-888 plus source toLiveEntryValue 165-180.`
+Target changed regions: `Whole added module lines 1-302; source snapshot/list/page methods 331-532 and 810-888.`
 Mechanical-move classification: `Mixed extraction and decomposition of snapshot assembly/page reads.`
-Semantic additions excluded from inherited capacity: `Imports, abstract owner surface, declared dependency methods, and new split helper boundaries receive zero capacity.`
+Semantic additions excluded from inherited capacity: `Imports, abstract owner surface, declared dependency methods, new split helper boundaries, and target toLiveEntryValue lines 287-293 receive zero capacity; source 165-180 belongs only to persistence-contracts.`
 Human disposition: `Accepted for mapped snapshot algorithms only.`
 
 ## Source: `packages/shared-server/rallar-system/services/app-group-ws-session-lifecycle.ts`
@@ -299,16 +299,16 @@ Human disposition: `Accepted only for validation statements derived from the sou
 
 Source blob: `71860577dc37f2c8fb8cf4025559a6cf0cff6bb4`
 Source symbol or line span: `all ten exported validation primitives lines 1-109`
-Source changed regions: `The ten primitives map one-for-one to target lines 3-93.`
+Source changed regions: `Eight primitives at source lines 20-109 map mechanically. Source assertExactKeys lines 1-9 and assertRequiredKeys lines 11-18 were rewritten with wider object parameters and are capacity-ineligible.`
 Compatibility status/path: `The old path was removed; internal consumers import the canonical feature-root owner directly, so no public compatibility path was required.`
 
 ### Target: `packages/shared-server/rallar-system/group-state/group-state-validation-primitives.ts`
 
-Target symbol or line span: `ten source-derived primitives lines 3-93; validateGroupRef lines 95-101`
-Target changed regions: `Whole added module lines 1-101; source-derived lines 3-93 and cross-source validateGroupRef lines 95-101.`
-Mechanical-move classification: `Mixed: ten exact primitives moved; validateGroupRef came from a different PR #59 source and is not part of this declared lineage.`
-Semantic additions excluded from inherited capacity: `Import line 1 and validateGroupRef lines 95-101 receive zero capacity.`
-Human disposition: `Accepted for the ten exact primitive bodies only; explicitly deny capacity to validateGroupRef.`
+Target symbol or line span: `validation primitive surface lines 3-93; validateGroupRef lines 95-101`
+Target changed regions: `Whole added module lines 1-101; eight mechanically source-derived primitives map to target lines 18-93. The widened assertExactKeys/assertRequiredKeys rewrites occupy target lines 3-16, and cross-source validateGroupRef occupies lines 95-101.`
+Mechanical-move classification: `Mixed: eight primitives moved mechanically; the first two parameter contracts widened from Readonly<Record<string, unknown>> to object, and validateGroupRef came from a different source.`
+Semantic additions excluded from inherited capacity: `Import line 1, assertExactKeys target lines 3-7, assertRequiredKeys target lines 9-16, and validateGroupRef lines 95-101 receive zero capacity.`
+Human disposition: `Accepted only for the eight source-derived primitives at target lines 18-93; deny capacity to both widened functions and validateGroupRef.`
 
 ## Source: `packages/shared-server/rallar-system/services/group-state-crypto.ts`
 
@@ -343,25 +343,25 @@ Human disposition: `Accepted for both function bodies only.`
 ## Source: `packages/shared-test/black-box-runner/api-v1-black-box-run.mts`
 
 Source blob: `baaadae42ebe02e4d6cdd9a856f77dd8afc77c45`
-Source symbol or line span: `managed API contracts/constants lines 17-74; server/environment helpers lines 144-390; readiness/logging helpers lines 392-742; lifecycle helpers lines 754-777`
-Source changed regions: `Readiness, redaction, log-tail, and process functions were separated; managed Postgres run-database behavior did not exist in this approved-base source.`
-Compatibility status/path: `api-v1-black-box-run.mts remains the active orchestrator and directly re-exports moved readiness/log-tail compatibility names.`
+Source symbol or line span: `readiness input 17-37; log-tail contracts/constants 39-47 and 69; server contracts 49-60; redaction constants 70-74; process functions 319-390 and 754-777; readiness/diagnostics 392-574 and 648-715; log-tail functions 575-646`
+Source changed regions: `The target sections partition those spans once. Source sleep lines 717-742 and managed Postgres run-database behavior receive zero capacity because no uniquely mechanical target mapping is accepted.`
+Compatibility status/path: `api-v1-black-box-run.mts remains the active orchestrator and directly re-exports moved readiness names; log-tail names remain available through the readiness compatibility export.`
 
 ### Target: `packages/shared-test/black-box-runner/managed-api/api-v1-managed-api-readiness.mts`
 
 Target symbol or line span: `WaitForManagedApiReadyInput lines 17-39; readiness state/operations lines 41-294; diagnostic/abort/sleep helpers lines 296-393`
-Target changed regions: `Whole added module lines 1-393; source readiness and diagnostic spans 392-742.`
+Target changed regions: `Whole added module lines 1-393; source readiness input 17-37 and readiness/diagnostic spans 392-574 and 648-715.`
 Mechanical-move classification: `Mixed extraction and explicit state-machine decomposition of waitForManagedApiReady.`
-Semantic additions excluded from inherited capacity: `Imports, new readiness state/contracts, and newly named decomposition boundaries receive zero capacity.`
+Semantic additions excluded from inherited capacity: `Imports, new readiness state/contracts, newly named decomposition boundaries, and target sleep lines 368-393 receive zero capacity; source log-tail 575-646 and sleep 717-742 are excluded.`
 Human disposition: `Accepted for source-derived readiness/diagnostic statements only.`
 
 ### Target: `packages/shared-test/black-box-runner/managed-api/api-v1-managed-api-redaction-patterns.mts`
 
 Target symbol or line span: `five exported redaction constants lines 1-23`
 Target changed regions: `Whole added module lines 1-23; source constants lines 70-74.`
-Mechanical-move classification: `Mechanical constant extraction and formatting.`
-Semantic additions excluded from inherited capacity: `none; no semantic addition was identified.`
-Human disposition: `Accepted for whole-target source lineage.`
+Mechanical-move classification: `Mixed: URL_USERINFO_PASSWORD and BEARER_CREDENTIAL moved mechanically; three long regex literals were rewritten as RegExp construction.`
+Semantic additions excluded from inherited capacity: `MANAGED_SECRET_ENV_KEY target lines 1-7, SENSITIVE_QUERY_VALUE lines 10-16, and SENSITIVE_ASSIGNMENT lines 17-23 receive zero capacity despite behavior preservation.`
+Human disposition: `Accept inherited capacity only for the unchanged regex literals at target lines 8-9; rewritten construction receives none.`
 
 ### Target: `packages/shared-test/black-box-runner/managed-api/api-v1-managed-log-tail.mts`
 
@@ -382,16 +382,16 @@ Human disposition: `Target existence is audited, but historical capacity is deni
 ### Target: `packages/shared-test/black-box-runner/managed-api/api-v1-managed-process-lifecycle.mts`
 
 Target symbol or line span: `server contracts lines 1-38; PGlite storage lines 40-85; start/stop/stream/sleep operations lines 87-185`
-Target changed regions: `Whole added module lines 1-185; source server contracts 49-60, start/append 319-390, stop 754-777, and sleep 717-742.`
+Target changed regions: `Whole added module lines 1-185; source server contracts 49-60, start/append 319-390, and stop 754-777.`
 Mechanical-move classification: `Mixed: server process lifecycle moved; PGlite storage lifecycle is semantic-new relative to the source.`
-Semantic additions excluded from inherited capacity: `Managed child/file/runtime contracts and PGlite storage lines 13-85 receive zero capacity; renamed owner boundaries also receive none.`
-Human disposition: `Accepted only for source-derived server start/stop/stream/sleep statements.`
+Semantic additions excluded from inherited capacity: `Managed child/file/runtime contracts, PGlite storage lines 13-85, renamed owner boundaries, and target sleep lines 183-185 receive zero capacity; source sleep 717-742 is unclaimed.`
+Human disposition: `Accepted only for source-derived server start/stop/stream statements; target sleep is excluded.`
 
 ## Source: `packages/shared-test/black-box-runner/api-v1-state-write-evidence.ts`
 
 Source blob: `90f1497f1636ea8685dba92b7757f9f94e5d6088`
-Source symbol or line span: `evidence contracts lines 15-82; parse/effect/derive lines 86-265; SQL reads/fixture collection lines 267-399`
-Source changed regions: `Contracts, derivation, SQL collection, and source selection were separated; later PGlite source protocol has no approved-base source span.`
+Source symbol or line span: `evidence contracts 15-82; DEFAULT_DATABASE_URL 84; parse/effect/derive 86-265; SQL reads/fixture 267-364; old collector SQL body 370-373 and 376-395; old collector connection lifecycle 374-375 and 396-398`
+Source changed regions: `The target sections partition the old collector statements: SQL validation/collection belongs to the SQL target, while connection creation/finalization belongs to the source adapter. The old declaration/signature lines 366-369, new dispatcher, source selection, and PGlite protocol receive zero capacity.`
 Compatibility status/path: `api-v1-state-write-evidence.ts remains a direct named re-export-only compatibility path.`
 
 ### Target: `packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-contracts.ts`
@@ -413,15 +413,15 @@ Human disposition: `Accepted only for source-derived parsing/effect/derivation s
 ### Target: `packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-source.ts`
 
 Target symbol or line span: `source-selection contracts/functions lines 13-132; PGlite snapshot protocol lines 134-394`
-Target changed regions: `Whole added module lines 1-394; only DEFAULT_DATABASE_URL source line 84 and collectApiV1StateWriteEvidence source lines 366-399 map directly.`
-Mechanical-move classification: `Predominantly semantic-new source-selection/PGlite target with a small moved collection entry.`
-Semantic additions excluded from inherited capacity: `All lines except the mapped constant and collect entry statements receive zero capacity, including the entire PGlite snapshot protocol.`
-Human disposition: `Accept only the two explicitly mapped source regions; deny capacity to all new source-selection and PGlite behavior.`
+Target changed regions: `Whole added module lines 1-394; only DEFAULT_DATABASE_URL source line 84 and old collector connection lifecycle statements 374-375 and 396-398 map to target lines 13 and 75-85.`
+Mechanical-move classification: `Predominantly semantic-new source-selection/PGlite target with mechanically extracted PostgreSQL connection lifecycle.`
+Semantic additions excluded from inherited capacity: `New source selection, dispatcher collectApiV1StateWriteEvidence lines 100-115, SQL port translation, and the entire PGlite snapshot protocol receive zero capacity; old collector signature 366-369 is unclaimed.`
+Human disposition: `Accept only the constant and exact connection lifecycle statements; deny capacity to the dispatcher and all new source/PGlite behavior.`
 
 ### Target: `packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-sql.ts`
 
 Target symbol or line span: `SQL read/fixture helpers lines 19-134; collectApiV1StateWriteEvidenceFromSql lines 136-178`
-Target changed regions: `Whole added module lines 1-178; source SQL reads and fixture collector lines 267-364 plus SQL branch of collect lines 366-399.`
+Target changed regions: `Whole added module lines 1-178; source SQL reads/fixture lines 267-364 and old collector SQL body statements 370-373 and 376-395.`
 Mechanical-move classification: `Mixed extraction of the source's SQL-backed evidence collection.`
 Semantic additions excluded from inherited capacity: `Imports, renamed SQL spec, and new collection-owner boundary receive zero capacity.`
 Human disposition: `Accepted for source-derived SQL query/fixture statements only.`
