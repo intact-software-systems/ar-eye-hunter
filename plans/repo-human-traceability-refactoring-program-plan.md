@@ -76,11 +76,15 @@ green. Its separate evidence ledger was published through PR #55 and reached
 `b4fe2a6ae5893f3adae86061bd38cf416bac8aaf`. The
 [authoritative group-state server structure child](rallar-group-state-server-structure-plan.md)
 is approved at Git blob `1a74159d37f76a459009e99ca5a08f3cd620b1b4` with its
-authorized amendments. Tasks 0–6 and prior Task 7 fixes exist in its child
-progress evidence. Its expanded pre-merge convergence amendment authorizes the
-three pending repairs and behavior-neutral Tasks 8–9 alignment in existing draft
-PR #59 before a single merge; Task 10, the ledger, and the later API-v1 child
-remain gated.
+authorized amendments. Its complete behavior-neutral implementation was
+published through PR #59 at feature head
+`bec8bea4eb095de9ad3a6b47c18e6799ab811239` and tree
+`c1ac6a57dad974d04264cbe1fa92313697256712`, then squash-merged as exact
+`main` SHA `06e0c5ab138c2ab55ac519b2244f727acd42d560`; the exact resulting-main
+workflow is green. A post-publication
+[server traceability QA child](rallar-group-state-server-traceability-qa-plan.md)
+is drafted and unapproved to address the human-navigation findings before the
+server's Task 10 ledger. The later API-v1 child remains gated.
 
 Program drafting, approval, execution, publication, and human handoffs follow
 the [Repository Human Traceability Program Execution Plan](repo-human-traceability-program-execution-plan.md).
@@ -164,6 +168,14 @@ Publication and progress reconciliation on 2026-07-28:
   `main` SHA `b4fe2a6ae5893f3adae86061bd38cf416bac8aaf`; **Run Hetzner
   Supported Distributed Manifests** run `30520679271` attempt 1 passed for
   that exact SHA. The browser child is therefore `ledger-published`.
+- Server structure PR #59 published frozen tree
+  `c1ac6a57dad974d04264cbe1fa92313697256712` from feature SHA
+  `bec8bea4eb095de9ad3a6b47c18e6799ab811239`. Branch Release Gate run
+  `30694693554` attempt 1 passed for that feature SHA. It squash-merged as
+  exact `main` SHA `06e0c5ab138c2ab55ac519b2244f727acd42d560`; **Run Hetzner
+  Supported Distributed Manifests** run `30697799787` attempt 1 passed for
+  that exact SHA. The server implementation is published; the traceability QA
+  child and later evidence ledger remain pending.
 
 ## 1. Why This Is A Program Instead Of One Refactor
 
@@ -728,12 +740,21 @@ expand the active feature scope.
 Goal: prove the migration method on the highest-value end-to-end navigation
 path.
 
-This wave is split into three child plans so each remains reviewable:
+This wave was initially split into three child plans so each remained
+reviewable:
 
 1. browser rooms and the explicit room/group-state translation boundary;
 2. authoritative shared-server group-state service, mutation, persistence,
    presence, and AppInbox ownership;
 3. API-v1 group-state routes, composition, and mirrored tests.
+
+PR #59's post-publication human review adds a fourth QA child between items 2
+and 3. The
+[server traceability QA plan](rallar-group-state-server-traceability-qa-plan.md)
+first strengthens skills and review guidance, then applies behavior-neutral
+entry/exit, timing-dispatch, and test-discoverability corrections. The server
+ledger waits for both QA PRs so the ledger describes the reviewed server result,
+not only the first structural publication.
 
 Acceptance requires that a human can start at `RallarRoomsFacade.create`, find
 the one room/group-state translation, continue to the API route and AppInbox,
@@ -996,14 +1017,23 @@ to write, review, approve, execute, and hand off these child plans in order:
   - shared-web and app consumer validation.
 - [x] [Rallar group-state server structure](rallar-group-state-server-structure-plan.md)
   - state: approved at Git blob `1a74159d37f76a459009e99ca5a08f3cd620b1b4` with
-    authorized amendments; Tasks 0–6 and prior Task 7 fixes exist in the child
-    progress evidence; the three repairs and behavior-neutral Tasks 8–9 remain
-    pending in existing draft PR #59 before its one merge;
+    authorized amendments; feature
+    `bec8bea4eb095de9ad3a6b47c18e6799ab811239` and tree
+    `c1ac6a57dad974d04264cbe1fa92313697256712` passed Branch Release Gate
+    `30694693554` attempt 1, PR #59 squash-merged as `main`
+    `06e0c5ab138c2ab55ac519b2244f727acd42d560`, and default workflow
+    `30697799787` attempt 1 succeeded; later ledger remains pending;
   - exact move map for group-state service, mutation, persistence, presence,
     snapshot, and AppInbox files;
   - split of topology and RTC RTT ownership from `AppGroupInboxService`;
   - mirrored shared-server tests;
   - mutation-path verification decision.
+- [ ] [Rallar group-state server traceability QA](rallar-group-state-server-traceability-qa-plan.md)
+  - state: drafted and unapproved;
+  - PR A: skills, review guidance, and descriptive traceability-analysis tests;
+  - PR B: behavior-neutral descriptor ownership, direct handler naming, explicit
+    timing adapter, and authoritative mutation test discoverability;
+  - no API-v1 route reorganization or semantic change.
 - [ ] `plans/api-v1-group-state-route-structure-plan.md`
   - route split and descriptive registration symbols;
   - request defaults and request-to-command translation;
@@ -1051,7 +1081,8 @@ Human review has approved all master-plan execution choices:
 
 The browser child is `ledger-published` through PR #55 and exact resulting
 `main` SHA `b4fe2a6ae5893f3adae86061bd38cf416bac8aaf`. The shared-server
-child is approved and in progress under its authorized pre-merge convergence
-path; its three repairs and behavior-neutral Tasks 8–9 alignment remain pending
-in existing draft PR #59. The API-v1 child remains unstarted and may not be
-drafted until the server child's later evidence ledger is `ledger-published`.
+implementation is published through PR #59 and exact resulting `main` SHA
+`06e0c5ab138c2ab55ac519b2244f727acd42d560`. Its traceability QA child is
+drafted and unapproved; its later ledger waits for both QA PRs. The API-v1 child
+remains unstarted and may not be drafted until the server ledger is
+`ledger-published`.
