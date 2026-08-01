@@ -13,7 +13,7 @@ const LIVE_GROUP_COLLECTION = `GROUP_MUTATION_INBOX_TYPES.filter(
       (candidate) => candidate !== AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP,
     )`;
 
-describe('Task 10 route-closure correction 10 contracts', () => {
+describe('Mutation route owner map projections contracts', () => {
   it.each([
     'c10-object-alias.ts',
     'c10-computed-object-alias.ts',
@@ -25,12 +25,12 @@ describe('Task 10 route-closure correction 10 contracts', () => {
     expectMutation(name);
   });
 
-  it.each([
-    'c10-factory-capability-assignment.ts',
-    'c10-imported-factory-capability.ts',
-  ])('does not skip capability provenance introduced by a typed factory in %s', (name) => {
-    expectMutation(name);
-  });
+  it.each(['c10-factory-capability-assignment.ts', 'c10-imported-factory-capability.ts'])(
+    'does not skip capability provenance introduced by a typed factory in %s',
+    (name) => {
+      expectMutation(name);
+    },
+  );
 
   it.each([
     'c10-control-read-only-object.ts',
@@ -51,12 +51,12 @@ describe('Task 10 route-closure correction 10 contracts', () => {
     expectMutation(name);
   });
 
-  it.each([
-    'c10-control-callback-ignore.ts',
-    'c10-control-callback-external.ts',
-  ])('keeps benign callback control clean in %s', (name) => {
-    expect(findMutationBoundaryViolationsFromRoots([`${FIXTURES}/${name}`])).toEqual([]);
-  });
+  it.each(['c10-control-callback-ignore.ts', 'c10-control-callback-external.ts'])(
+    'keeps benign callback control clean in %s',
+    (name) => {
+      expect(findMutationBoundaryViolationsFromRoots([`${FIXTURES}/${name}`])).toEqual([]);
+    },
+  );
 
   it('projects only keys from a Map', () => {
     const issues = validateWithGroupCollection(
@@ -165,10 +165,7 @@ function expectMutation(name: string): void {
   ]);
 }
 
-function validateWithGroupCollection(
-  collection: string,
-  appendedSource = '',
-): readonly string[] {
+function validateWithGroupCollection(collection: string, appendedSource = ''): readonly string[] {
   const source = readFileSync(GROUP_OWNER, 'utf8');
   const mutated = source.replace(LIVE_GROUP_COLLECTION, collection) + `\n${appendedSource}\n`;
   expect(mutated).not.toBe(source);
@@ -178,13 +175,13 @@ function validateWithGroupCollection(
 }
 
 function expectMissing(issues: readonly string[], type: string): void {
-  expect(issues).toEqual(expect.arrayContaining([
-    expect.stringContaining(`${type} owner dispatch is not connected`),
-  ]));
+  expect(issues).toEqual(
+    expect.arrayContaining([expect.stringContaining(`${type} owner dispatch is not connected`)]),
+  );
 }
 
 function expectConnected(issues: readonly string[], type: string): void {
-  expect(issues).not.toEqual(expect.arrayContaining([
-    expect.stringContaining(`${type} owner dispatch is not connected`),
-  ]));
+  expect(issues).not.toEqual(
+    expect.arrayContaining([expect.stringContaining(`${type} owner dispatch is not connected`)]),
+  );
 }

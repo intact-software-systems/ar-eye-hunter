@@ -33,7 +33,7 @@ interface SourceExecutionState {
   readonly lexical: MutationBoundaryLexicalValues;
 }
 
-describe('Task 10 route-closure correction 18 contracts', () => {
+describe('Mutation route owner loop fixed-point contracts', () => {
   it('keeps boundary writes reachable after per-path false next tests', () => {
     const root = `${FIXTURES}/c18-loop-next-test-writes.ts`;
     expect(findMutationBoundaryViolationsFromRoots([root])).toEqual([
@@ -105,51 +105,52 @@ describe('Task 10 route-closure correction 18 contracts', () => {
     expectProjection(issues, 'GROUP_CREATE', 'GROUP_UPDATE');
   });
 
-  it.each(
+  it.each([
     [
-      [
-        `let active = true;
+      `let active = true;
        for (; active; active = false) {}`,
-        ['normal'],
-        ['marker'],
-      ],
-      [
-        `let active = true;
+      ['normal'],
+      ['marker'],
+    ],
+    [
+      `let active = true;
        for (; active;) { active = false; }`,
-        ['normal'],
-        ['marker'],
-      ],
-      [
-        `let active = true;
+      ['normal'],
+      ['marker'],
+    ],
+    [
+      `let active = true;
        while (active) { active = false; }`,
-        ['normal'],
-        ['marker'],
-      ],
-      [
-        `let active = initiallyActive;
+      ['normal'],
+      ['marker'],
+    ],
+    [
+      `let active = initiallyActive;
        while (active) { active = true; }`,
-        ['diverge', 'normal'],
-        ['marker'],
-      ],
-      [
-        `let active = initiallyActive;
+      ['diverge', 'normal'],
+      ['marker'],
+    ],
+    [
+      `let active = initiallyActive;
        while (active) { active = false; }`,
-        ['normal', 'normal'],
-        ['marker', 'marker'],
-      ],
-      [
-        `let active = true;
+      ['normal', 'normal'],
+      ['marker', 'marker'],
+    ],
+    [
+      `let active = true;
        while (active) {
          if (chooseExit) active = false;
          else active = true;
        }`,
-        ['diverge', 'normal'],
-        ['marker'],
-      ],
-    ] as const,
-  )('re-evaluates a next test against the candidate state: %s', (loop, completions, calls) => {
-    expect(executeSource(`${loop}\nmarker();`)).toEqual({ calls, completions });
-  });
+      ['diverge', 'normal'],
+      ['marker'],
+    ],
+  ] as const)(
+    're-evaluates a next test against the candidate state: %s',
+    (loop, completions, calls) => {
+      expect(executeSource(`${loop}\nmarker();`)).toEqual({ calls, completions });
+    },
+  );
 
   it('keeps literal, no-test, break, continue, and do-while controls exact', () => {
     expect(executeSource('while (false) {}\nmarker();')).toEqual({
@@ -164,15 +165,21 @@ describe('Task 10 route-closure correction 18 contracts', () => {
       calls: [],
       completions: ['diverge'],
     });
-    expect(executeSource(`let active = true;
+    expect(
+      executeSource(`let active = true;
       for (; active; active = false) { break; }
-      marker();`)).toEqual({ calls: ['marker'], completions: ['normal'] });
-    expect(executeSource(`let active = true;
+      marker();`),
+    ).toEqual({ calls: ['marker'], completions: ['normal'] });
+    expect(
+      executeSource(`let active = true;
       for (; active; active = false) { continue; }
-      marker();`)).toEqual({ calls: ['marker'], completions: ['normal'] });
-    expect(executeSource(`let active = true;
+      marker();`),
+    ).toEqual({ calls: ['marker'], completions: ['normal'] });
+    expect(
+      executeSource(`let active = true;
       do { active = false; } while (active);
-      marker();`)).toEqual({ calls: ['marker'], completions: ['normal'] });
+      marker();`),
+    ).toEqual({ calls: ['marker'], completions: ['normal'] });
   });
 
   it('keeps unsupported executed writes conservative and bounded', () => {
@@ -209,16 +216,18 @@ describe('Task 10 route-closure correction 18 contracts', () => {
     );
     const right = withMutationBoundaryLexicalOverrides(
       lexical,
-      new Map([[
-        'binding:test',
-        {
-          values: [
-            { type: 'BooleanLiteral', value: true },
-            { type: 'BooleanLiteral', value: false },
-          ],
-          unknown: false,
-        },
-      ]]),
+      new Map([
+        [
+          'binding:test',
+          {
+            values: [
+              { type: 'BooleanLiteral', value: true },
+              { type: 'BooleanLiteral', value: false },
+            ],
+            unknown: false,
+          },
+        ],
+      ]),
     );
 
     expect(mutationBoundaryLexicalValuesEqual(left, right)).toBe(false);
@@ -237,25 +246,31 @@ function executeSource(body: string): Readonly<{
   ).program as unknown as AstNode;
   const root = (program.body as readonly AstNode[])[0]!;
   const calls: string[] = [];
-  const paths = executeMutationPaths(root, [{
-    lexical: createMutationBoundaryLexicalValues(program),
-  }], {
-    lexical: (state) => state.lexical,
-    nestedFunctions: 'skip',
-    statesEqual: (left, right) => mutationBoundaryLexicalValuesEqual(left.lexical, right.lexical),
-    visit: (node, state) => {
-      if (node.type === 'CallExpression') {
-        const callee = asNode(node.callee);
-        if (callee?.type === 'Identifier' && typeof callee.name === 'string') {
-          calls.push(callee.name);
+  const paths = executeMutationPaths(
+    root,
+    [
+      {
+        lexical: createMutationBoundaryLexicalValues(program),
+      },
+    ],
+    {
+      lexical: (state) => state.lexical,
+      nestedFunctions: 'skip',
+      statesEqual: (left, right) => mutationBoundaryLexicalValuesEqual(left.lexical, right.lexical),
+      visit: (node, state) => {
+        if (node.type === 'CallExpression') {
+          const callee = asNode(node.callee);
+          if (callee?.type === 'Identifier' && typeof callee.name === 'string') {
+            calls.push(callee.name);
+          }
         }
-      }
-      return state;
+        return state;
+      },
+      writeLexical: (node: AstNode, state: SourceExecutionState) => ({
+        lexical: withExecutedMutationBoundaryLexicalWrite(state.lexical, node),
+      }),
     },
-    writeLexical: (node: AstNode, state: SourceExecutionState) => ({
-      lexical: withExecutedMutationBoundaryLexicalWrite(state.lexical, node),
-    }),
-  });
+  );
   return {
     calls,
     completions: paths.map((path) => path.completion.kind).toSorted(),
@@ -285,11 +300,7 @@ function expectNeitherProjection(issues: readonly string[]): void {
   expectMissing(issues, 'GROUP_UPDATE');
 }
 
-function expectProjection(
-  issues: readonly string[],
-  connected: string,
-  missing: string,
-): void {
+function expectProjection(issues: readonly string[], connected: string, missing: string): void {
   expect(hasMissingIssue(issues, connected)).toBe(false);
   expectMissing(issues, missing);
 }
@@ -303,5 +314,7 @@ function expectMissing(issues: readonly string[], type: string): void {
 }
 
 function asNode(value: unknown): AstNode | undefined {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as AstNode : undefined;
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as AstNode)
+    : undefined;
 }

@@ -19,7 +19,7 @@ const TYPE_MAP = `const C14_TYPE_MAP = new Map([
     [AppInboxType.GROUP_CREATE, AppInboxType.GROUP_UPDATE],
 ]);`;
 
-describe('Task 10 route-closure correction 14 contracts', () => {
+describe('Mutation route owner loop and switch flow contracts', () => {
   it('uses the heap alias state at a writer call before a later rebind', () => {
     expectMutation('c14-ordered-heap-writer-before-rebind.ts', [
       'ClientStateRepository.insertPrincipal',
@@ -172,15 +172,9 @@ function expectClean(name: string): void {
   expect(findMutationBoundaryViolationsFromRoots([`${FIXTURES}/${name}`])).toEqual([]);
 }
 
-function validateInvocations(
-  invocation: string,
-  topLevel = '',
-): readonly string[] {
+function validateInvocations(invocation: string, topLevel = ''): readonly string[] {
   const source = readFileSync(GROUP_OWNER, 'utf8');
-  let mutated = source.replace(
-    CLASS_START,
-    `${TYPE_MAP}\n${topLevel}\n\n${CLASS_START}`,
-  );
+  let mutated = source.replace(CLASS_START, `${TYPE_MAP}\n${topLevel}\n\n${CLASS_START}`);
   mutated = mutated.replace(
     LOOP_START,
     `        function registerC14(
@@ -188,10 +182,7 @@ function validateInvocations(
             MAP_METHOD = 'keys',
         ): void {\n${LOOP_START}`,
   );
-  mutated = mutated.replace(
-    LOOP_END,
-    `        }\n        ${invocation}\n${LOOP_END}`,
-  );
+  mutated = mutated.replace(LOOP_END, `        }\n        ${invocation}\n${LOOP_END}`);
   mutated = mutated.replace(LIVE_GROUP_COLLECTION, 'C14_TYPE_MAP[MAP_METHOD]()');
   expect(mutated).not.toBe(source);
   return validateMutationRouteInventory(MUTATION_ROUTE_INVENTORY, {
@@ -204,11 +195,7 @@ function expectBothProjections(issues: readonly string[]): void {
   expectConnected(issues, 'GROUP_UPDATE');
 }
 
-function expectProjection(
-  issues: readonly string[],
-  connected: string,
-  missing: string,
-): void {
+function expectProjection(issues: readonly string[], connected: string, missing: string): void {
   expectConnected(issues, connected);
   expectMissing(issues, missing);
 }

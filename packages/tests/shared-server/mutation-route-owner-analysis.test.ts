@@ -10,25 +10,28 @@ const AUTHORISED_WS_HELPER =
 const ADMIN_OPERATIONS =
   'packages/shared-server/rallar-system/admin-operations/AdminOperationsService.ts';
 
-describe('Task 10 route-closure correction contracts', () => {
+describe('Mutation route owner analysis contracts', () => {
   it('uses one named readonly input object for each authorised websocket enqueue helper', () => {
     const program = parse(read(AUTHORISED_WS_HELPER), {
       sourceType: 'module',
       plugins: ['typescript'],
     }).program;
-    const helpers = program.body.filter((statement) =>
-      statement.type === 'ExportNamedDeclaration' &&
-      statement.declaration?.type === 'FunctionDeclaration' &&
-      statement.declaration.id?.name.startsWith('toAuthorisedWsClient')
-    ).map((statement) => {
-      if (
-        statement.type !== 'ExportNamedDeclaration' ||
-        statement.declaration?.type !== 'FunctionDeclaration'
-      ) {
-        throw new Error('Unexpected helper declaration');
-      }
-      return statement.declaration;
-    });
+    const helpers = program.body
+      .filter(
+        (statement) =>
+          statement.type === 'ExportNamedDeclaration' &&
+          statement.declaration?.type === 'FunctionDeclaration' &&
+          statement.declaration.id?.name.startsWith('toAuthorisedWsClient'),
+      )
+      .map((statement) => {
+        if (
+          statement.type !== 'ExportNamedDeclaration' ||
+          statement.declaration?.type !== 'FunctionDeclaration'
+        ) {
+          throw new Error('Unexpected helper declaration');
+        }
+        return statement.declaration;
+      });
 
     expect(helpers.map((helper) => [helper.id?.name, helper.params.length])).toEqual([
       ['toAuthorisedWsClientConnectEnqueue', 1],
@@ -49,26 +52,26 @@ describe('Task 10 route-closure correction contracts', () => {
     expect(source).toContain('mutationGateway: AdminOperationsMutationGateway;');
     expect(source).not.toContain('mutationGateway?:');
     expect(source).not.toContain('if (this.options.mutationGateway)');
-    for (
-      const directFallback of [
-        'this.options.topologyManagement?.reconfigureGroupTopology(',
-        'this.options.pruner.pruneExpired(',
-        'this.options.crdtAdminRepository?.writeSnapshot',
-        'this.options.crdtAdminRepository?.updateDocumentLifecycle(',
-        'createRallarCrdtErasureAuditEvent(',
-      ]
-    ) {
+    for (const directFallback of [
+      'this.options.topologyManagement?.reconfigureGroupTopology(',
+      'this.options.pruner.pruneExpired(',
+      'this.options.crdtAdminRepository?.writeSnapshot',
+      'this.options.crdtAdminRepository?.updateDocumentLifecycle(',
+      'createRallarCrdtErasureAuditEvent(',
+    ]) {
       expect(source, directFallback).not.toContain(directFallback);
     }
   });
 
   it('exports a syntax-aware analyzer for named, default, namespace, dynamic, and alias evasions', () => {
-    const analyze = (boundaryAnalysis as unknown as {
-      analyzeMutationBoundarySource?: (
-        source: string,
-        filePath: string,
-      ) => boundaryAnalysis.MutationBoundaryViolation;
-    }).analyzeMutationBoundarySource;
+    const analyze = (
+      boundaryAnalysis as unknown as {
+        analyzeMutationBoundarySource?: (
+          source: string,
+          filePath: string,
+        ) => boundaryAnalysis.MutationBoundaryViolation;
+      }
+    ).analyzeMutationBoundarySource;
 
     expect(analyze).toBeTypeOf('function');
     if (!analyze) return;
@@ -107,14 +110,12 @@ describe('Task 10 route-closure correction contracts', () => {
     const first = inventory[0];
     if (!first) throw new Error('Mutation route inventory is empty');
 
-    for (
-      const mutation of [
-        { ...first, entrypoint: `${first.entrypoint}-wrong` },
-        { ...first, type: inventory[1]?.type ?? first.type },
-        { ...first, owner: 'ArbitraryOwner.processCommand' },
-        { ...first, sourcePath: 'apps/api-v1/src/routes/not-a-route.ts' },
-      ]
-    ) {
+    for (const mutation of [
+      { ...first, entrypoint: `${first.entrypoint}-wrong` },
+      { ...first, type: inventory[1]?.type ?? first.type },
+      { ...first, owner: 'ArbitraryOwner.processCommand' },
+      { ...first, sourcePath: 'apps/api-v1/src/routes/not-a-route.ts' },
+    ]) {
       expect(validate([mutation])).not.toEqual([]);
     }
   });

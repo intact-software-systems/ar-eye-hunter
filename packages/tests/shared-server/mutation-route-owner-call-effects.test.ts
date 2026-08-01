@@ -14,7 +14,7 @@ const LIVE_GROUP_COLLECTION = `GROUP_MUTATION_INBOX_TYPES.filter(
     )`;
 const UNKNOWN_TYPES = 'function unknownTypes(): readonly AppInboxType[] { return []; }';
 
-describe('Task 10 route-closure correction 8 contracts', () => {
+describe('Mutation route owner call effects contracts', () => {
   it.each([
     'flow-closure-hoisted.ts',
     'flow-closure-late-initializer.ts',
@@ -32,31 +32,37 @@ describe('Task 10 route-closure correction 8 contracts', () => {
   });
 
   it('ignores never-executed writes and accepts an invoked read-only overwrite', () => {
-    expect(findMutationBoundaryViolationsFromRoots([
-      `${FIXTURES}/flow-closure-controls.ts`,
-    ])).toEqual([]);
+    expect(
+      findMutationBoundaryViolationsFromRoots([`${FIXTURES}/flow-closure-controls.ts`]),
+    ).toEqual([]);
   });
 
   it('filters every guaranteed member out of an unknown collection', () => {
     const issues = validateWithGroupCollection(
       '[...GROUP_MUTATION_INBOX_TYPES, ...unknownTypes()].filter(() => false)',
     );
-    expect(issues).toEqual(expect.arrayContaining([
-      expect.stringContaining('GROUP_CREATE owner dispatch is not connected'),
-      expect.stringContaining('GROUP_UPDATE owner dispatch is not connected'),
-    ]));
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('GROUP_CREATE owner dispatch is not connected'),
+        expect.stringContaining('GROUP_UPDATE owner dispatch is not connected'),
+      ]),
+    );
   });
 
   it('maps guaranteed members of an unknown collection to an exact constant', () => {
     const issues = validateWithGroupCollection(
       '[...GROUP_MUTATION_INBOX_TYPES, ...unknownTypes()].map(() => AppInboxType.GROUP_UPDATE)',
     );
-    expect(issues).toEqual(expect.arrayContaining([
-      expect.stringContaining('GROUP_CREATE owner dispatch is not connected'),
-    ]));
-    expect(issues).not.toEqual(expect.arrayContaining([
-      expect.stringContaining('GROUP_UPDATE owner dispatch is not connected'),
-    ]));
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('GROUP_CREATE owner dispatch is not connected'),
+      ]),
+    );
+    expect(issues).not.toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('GROUP_UPDATE owner dispatch is not connected'),
+      ]),
+    );
   });
 
   it('propagates unknown lower bounds through chained logical filter and map', () => {
@@ -65,10 +71,12 @@ describe('Task 10 route-closure correction 8 contracts', () => {
         .filter((candidate) => candidate !== AppInboxType.GROUP_CREATE && ![AppInboxType.GROUP_UPDATE].includes(candidate))
         .map((candidate) => candidate)`,
     );
-    expect(issues).toEqual(expect.arrayContaining([
-      expect.stringContaining('GROUP_CREATE owner dispatch is not connected'),
-      expect.stringContaining('GROUP_UPDATE owner dispatch is not connected'),
-    ]));
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('GROUP_CREATE owner dispatch is not connected'),
+        expect.stringContaining('GROUP_UPDATE owner dispatch is not connected'),
+      ]),
+    );
   });
 });
 

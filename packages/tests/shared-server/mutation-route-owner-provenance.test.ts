@@ -11,17 +11,15 @@ import {
 const CAPABILITY_FIXTURES =
   'packages/tests/shared-server/fixtures/mutation-boundary-capability-receivers';
 
-describe('Task 10 route-closure correction 4 contracts', { timeout: 30_000 }, () => {
+describe('Mutation route owner provenance contracts', { timeout: 30_000 }, () => {
   it('follows mutable capability provenance through production receiver shapes', () => {
-    for (
-      const name of [
-        'parameter.ts',
-        'bracket.ts',
-        'constructor.ts',
-        'declared-property.ts',
-        'destructured.ts',
-      ]
-    ) {
+    for (const name of [
+      'parameter.ts',
+      'bracket.ts',
+      'constructor.ts',
+      'declared-property.ts',
+      'destructured.ts',
+    ]) {
       const root = `${CAPABILITY_FIXTURES}/${name}`;
       expect(findMutationBoundaryViolationsFromRoots([root]), root).toEqual([
         expect.objectContaining({
@@ -30,55 +28,57 @@ describe('Task 10 route-closure correction 4 contracts', { timeout: 30_000 }, ()
         }),
       ]);
     }
-    expect(findMutationBoundaryViolationsFromRoots([
-      `${CAPABILITY_FIXTURES}/read-only.ts`,
-    ])).toEqual([]);
+    expect(
+      findMutationBoundaryViolationsFromRoots([`${CAPABILITY_FIXTURES}/read-only.ts`]),
+    ).toEqual([]);
   });
 
   it('rejects a dead correct type after an HTTP handler is given the wrong handoff type', () => {
     const item = requireEntry(AppInboxType.CLIENT_PRINCIPAL_UPSERT, 'HTTP');
     const source = readFileSync(item.sourcePath, 'utf8');
-    const mutated = source.replace(
-      'type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,',
-      'type: AppInboxType.CLIENT_INSTANCE_UPSERT,',
-    ).replace(
-      'const request = withActor(requestBody, authSession);',
-      `const request = withActor(requestBody, authSession);
+    const mutated = source
+      .replace(
+        'type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,',
+        'type: AppInboxType.CLIENT_INSTANCE_UPSERT,',
+      )
+      .replace(
+        'const request = withActor(requestBody, authSession);',
+        `const request = withActor(requestBody, authSession);
         const deadCorrectType = (): void => {
           void AppInboxType.CLIENT_PRINCIPAL_UPSERT;
           void deps.processClientAppInbox;
         };
         void deadCorrectType;`,
-    );
+      );
 
-    expect(validateWithOverride(item.sourcePath, mutated)).toEqual(expect.arrayContaining([
-      expect.stringContaining('registered handler is not connected'),
-    ]));
+    expect(validateWithOverride(item.sourcePath, mutated)).toEqual(
+      expect.arrayContaining([expect.stringContaining('registered handler is not connected')]),
+    );
   });
 
   it('rejects a rerouted websocket callback even when dead markers remain', () => {
     const item = requireEntry(AppInboxType.RTC_RTT_SUBMIT, 'WS_INBOX');
     const source = readFileSync(item.sourcePath, 'utf8');
-    const mutated = source.replace(
-      'await enqueueRtcRttMutation({',
-      'await Promise.resolve({',
-    ) + `
+    const mutated =
+      source.replace('await enqueueRtcRttMutation({', 'await Promise.resolve({') +
+      `
 function deadWsHandoff(enqueueRtcRttMutation: (...args: never[]) => unknown): void {
   void enqueueRtcRttMutation;
   void AppInboxType.RTC_RTT_SUBMIT;
 }
 `;
 
-    expect(validateWithOverride(item.sourcePath, mutated)).toEqual(expect.arrayContaining([
-      expect.stringContaining('registered handler is not connected'),
-    ]));
+    expect(validateWithOverride(item.sourcePath, mutated)).toEqual(
+      expect.arrayContaining([expect.stringContaining('registered handler is not connected')]),
+    );
   });
 
   it('rejects a lifecycle type dispatched to the wrong owner with a dead correct call', () => {
     const item = requireEntry(AppInboxType.CLIENT_AUTHORISED_WS_DISCONNECT, 'WS_LIFECYCLE');
     const source = readFileSync(item.ownerSourcePath, 'utf8');
     const live = 'await this.processAuthorisedWsDisconnect(input, context)';
-    const mutated = source.replace(live, 'await this.processAuthorisedWsConnect(input, context)') +
+    const mutated =
+      source.replace(live, 'await this.processAuthorisedWsConnect(input, context)') +
       `
 class DeadLifecycleOwner {
   process(): void { void this.processAuthorisedWsDisconnect; }
@@ -87,36 +87,39 @@ class DeadLifecycleOwner {
 `;
     expect(source).toContain(live);
 
-    expect(validateWithOverride(item.ownerSourcePath, mutated)).toEqual(expect.arrayContaining([
-      expect.stringContaining('owner dispatch is not connected'),
-    ]));
+    expect(validateWithOverride(item.ownerSourcePath, mutated)).toEqual(
+      expect.arrayContaining([expect.stringContaining('owner dispatch is not connected')]),
+    );
   });
 
   it('rejects a cross-file admin handoff with the wrong type and dead correct evidence', () => {
     const item = MUTATION_ROUTE_INVENTORY.find((entry) =>
-      entry.entrypoint.includes('/topology/recompute')
+      entry.entrypoint.includes('/topology/recompute'),
     );
     if (!item) throw new Error('Admin topology route is absent');
     const source = readFileSync(item.enqueueSourcePath, 'utf8');
-    const mutated = source.replace(
-      'type: AppInboxType.TOPOLOGY_RECONFIGURE,',
-      'type: AppInboxType.TOPOLOGY_CONFIG_PUT,',
-    ) + '\nfunction deadAdminType(): void { void AppInboxType.TOPOLOGY_RECONFIGURE; }\n';
+    const mutated =
+      source.replace(
+        'type: AppInboxType.TOPOLOGY_RECONFIGURE,',
+        'type: AppInboxType.TOPOLOGY_CONFIG_PUT,',
+      ) + '\nfunction deadAdminType(): void { void AppInboxType.TOPOLOGY_RECONFIGURE; }\n';
 
-    expect(validateWithOverride(item.enqueueSourcePath, mutated)).toEqual(expect.arrayContaining([
-      expect.stringContaining('registered handler is not connected'),
-    ]));
+    expect(validateWithOverride(item.enqueueSourcePath, mutated)).toEqual(
+      expect.arrayContaining([expect.stringContaining('registered handler is not connected')]),
+    );
   });
 
   it('rejects a cross-file auth handoff discriminator and owner reroute', () => {
     const item = requireEntry(AppInboxType.AUTH_USER_REGISTER, 'HTTP');
     const source = readFileSync(item.ownerSourcePath, 'utf8');
-    const wrongType = source.replace("kind: 'register-user',", "kind: 'issue-session',") +
+    const wrongType =
+      source.replace("kind: 'register-user',", "kind: 'issue-session',") +
       "\nfunction deadAuthType(): void { void 'register-user'; }\n";
-    const wrongOwner = source.replace(
-      'async (data, context) => await this.processCommand(data, context)',
-      'async (data, context) => await this.processAuthCommandUntilCompletion(data)',
-    ) +
+    const wrongOwner =
+      source.replace(
+        'async (data, context) => await this.processCommand(data, context)',
+        'async (data, context) => await this.processAuthCommandUntilCompletion(data)',
+      ) +
       '\nclass DeadAuthOwner { process(): void { void this.processCommand; } private processCommand(): void {} }\n';
 
     expect(validateWithOverride(item.ownerSourcePath, wrongType)).toEqual(
@@ -129,8 +132,8 @@ class DeadLifecycleOwner {
 });
 
 function requireEntry(type: AppInboxType, transport: string) {
-  const item = MUTATION_ROUTE_INVENTORY.find((entry) =>
-    entry.type === type && entry.transport === transport
+  const item = MUTATION_ROUTE_INVENTORY.find(
+    (entry) => entry.type === type && entry.transport === transport,
   );
   if (!item) throw new Error(`${transport}:${type} route is absent`);
   return item;

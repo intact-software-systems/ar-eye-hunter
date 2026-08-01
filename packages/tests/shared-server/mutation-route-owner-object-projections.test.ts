@@ -13,7 +13,7 @@ const LIVE_GROUP_COLLECTION = `GROUP_MUTATION_INBOX_TYPES.filter(
       (candidate) => candidate !== AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP,
     )`;
 
-describe('Task 10 route-closure correction 9 contracts', () => {
+describe('Mutation route owner object projections contracts', () => {
   it.each([
     'flow-closure-iife.ts',
     'flow-closure-helper-alias.ts',
@@ -87,10 +87,7 @@ describe('Task 10 route-closure correction 9 contracts', () => {
   });
 });
 
-function validateWithGroupCollection(
-  collection: string,
-  appendedSource = '',
-): readonly string[] {
+function validateWithGroupCollection(collection: string, appendedSource = ''): readonly string[] {
   const source = readFileSync(GROUP_OWNER, 'utf8');
   const mutated = source.replace(LIVE_GROUP_COLLECTION, collection) + `\n${appendedSource}\n`;
   expect(mutated).not.toBe(source);
@@ -100,13 +97,13 @@ function validateWithGroupCollection(
 }
 
 function expectMissing(issues: readonly string[], type: string): void {
-  expect(issues).toEqual(expect.arrayContaining([
-    expect.stringContaining(`${type} owner dispatch is not connected`),
-  ]));
+  expect(issues).toEqual(
+    expect.arrayContaining([expect.stringContaining(`${type} owner dispatch is not connected`)]),
+  );
 }
 
 function expectConnected(issues: readonly string[], type: string): void {
-  expect(issues).not.toEqual(expect.arrayContaining([
-    expect.stringContaining(`${type} owner dispatch is not connected`),
-  ]));
+  expect(issues).not.toEqual(
+    expect.arrayContaining([expect.stringContaining(`${type} owner dispatch is not connected`)]),
+  );
 }

@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { executeMutationPaths } from './mutation-execution-outcomes.ts';
 import type { MutationExecutionAstNode as AstNode } from './mutation-execution-path-state.ts';
 
-describe('Task 10 route-closure correction 15 executor contracts', () => {
+describe('Mutation route owner execution state contracts', () => {
   it('coalesces equivalent states at every nested logical junction', () => {
     const root = parseFunction(`function inspect(first, second, third, fourth, fifth, last) {
       first || second || third || fourth || fifth || last;
@@ -43,10 +43,7 @@ describe('Task 10 route-closure correction 15 executor contracts', () => {
     });
 
     expect(markerVisits).toBe(1);
-    expect(paths.map((path) => path.completion.kind).toSorted()).toEqual([
-      'normal',
-      'return',
-    ]);
+    expect(paths.map((path) => path.completion.kind).toSorted()).toEqual(['normal', 'return']);
   });
 
   it('retains distinct routing-like state values when coalescing is disabled', () => {
