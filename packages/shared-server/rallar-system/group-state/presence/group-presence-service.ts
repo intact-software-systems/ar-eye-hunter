@@ -6,10 +6,6 @@ import type {
   GroupStateMutationCommand,
   GroupStateService,
 } from '../group-state-service-contracts.ts';
-// prettier-ignore
-import type {
-  GroupTopologyManagementService,
-} from '../../services/group-topology-management-service.ts';
 import type { AppInboxEnqueueInput } from '../../services/AppInboxService.ts';
 import { AppInboxType } from '../../services/AppInboxService.ts';
 import type {
@@ -36,161 +32,37 @@ interface GroupSessionCleanupResult extends InactiveGroupPresenceResult {
   readonly affectedGroups: number;
 }
 
-export class GroupPresenceService {
-  static toGroupSessionCleanupEnqueue(
-    input: GroupPresenceSessionCleanupAppInboxPayload,
-    serviceId: string,
-  ): AppInboxEnqueueInput<GroupPresenceSessionCleanupAppInboxPayload> {
-    const connection = input.connection;
-    return {
-      type: AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP,
-      resourceId: [
-        'group-presence-session-cleanup',
-        connection.authSession.sessionId,
-        connection.generationId,
-      ]
-        .map(encodeURIComponent)
-        .join(':'),
-      contextId: connection.authSession.sessionId,
-      senderId: serviceId,
-      data: input,
-    };
-  }
-
-  static toExpiredPresenceEnqueue(
-    preparation: GroupMutationPreparation,
-  ): AppInboxEnqueueInput<Readonly<{ commandId: string }>> {
-    return {
-      type: AppInboxType.GROUP_PRESENCE_EXPIRE,
-      resourceId: preparation.queueResourceId,
-      authority: preparation,
-      data: { commandId: preparation.command.commandId },
-    };
-  }
-
-  static requireTopologyManagementService(
-    service: GroupTopologyManagementService | undefined,
-  ): GroupTopologyManagementService {
-    if (!service) throw new TypeError('Topology management service is not configured');
-    return service;
-  }
-
-  static async processConnect<Result>(
-    input: Readonly<{
-      command: GroupStateMutationCommand;
-      groupStateService: GroupStateService;
-      writeMutation: WriteMutation;
-      commitMutation(
-        computed: GroupMutationComputed,
-        lifecycleGuard: WsSessionGenerationLifecycleComputed,
-      ): Promise<Result>;
-    }>,
-  ): Promise<Result | InactiveGroupPresenceResult> {
-    const operation = input.command.command;
-    if (operation.operation !== 'connectPresence') {
-      throw new TypeError('Group presence connect command is invalid');
-    }
-    const observedAtEpochMs = operation.input.connectedAtEpochMs ?? input.command.facts.nowEpochMs;
-    const identity = toGroupHighWaterIdentity({
-      scope: operation.aggregateRef,
-      principalId: operation.input.principalId,
-      sessionId: operation.sessionId,
-    });
-    const lifecycle = input.groupStateService.sessionGenerationLifecycle;
-    const lifecycleRead = await lifecycle.read(identity);
-    if (lifecycle.isObservedAtClosed(identity, observedAtEpochMs, lifecycleRead)) {
-      return await input.writeMutation(() =>
-        Promise.resolve({
-          status: 'inactive',
-          sessionId: operation.sessionId,
-          generationId: operation.input.generationId,
-        }),
-      );
-    }
-    const read = await input.groupStateService.read(input.command);
-    const computed = input.groupStateService.compute(input.command, read);
-    input.groupStateService.validate(input.command, read, computed);
-    const lifecycleGuard = lifecycle.computeConnectGuard(
-      {
-        ...identity,
-        generationId: operation.input.generationId,
-        generationStartedAtEpochMs: observedAtEpochMs,
-        expireAtEpochMs: resourceInboxRetryExpiryAtEpochMs(observedAtEpochMs),
-      },
-      lifecycleRead,
-    );
-    return await input.commitMutation(computed, lifecycleGuard);
-  }
-
-  static async processSessionCleanup(
-    input: Readonly<{
-      facts: GroupPresenceSessionCleanupAppInboxPayload;
-      attemptCount: number;
-      groupStateService: GroupStateService;
-      writeMutation: WriteMutation;
-      wakeQueue?: () => void;
-    }>,
-  ): Promise<GroupSessionCleanupResult> {
-    const closeFacts = toGroupCloseFacts(input.facts);
-    const lifecycle = input.groupStateService.sessionGenerationLifecycle;
-    const lifecycleRead = await lifecycle.read(closeFacts);
-    const lifecycleComputed = lifecycle.computeClosed(closeFacts, lifecycleRead);
-    const preparations = await input.groupStateService.prepareSessionCleanupMutations({
-      scope: input.facts.connection.scope,
-      authSession: input.facts.connection.authSession,
-      principalId: input.facts.connection.principalId,
-      disconnectedAtEpochMs: input.facts.disconnectedAtEpochMs,
-    });
-    const mutations = await Promise.all(
-      preparations.map(async (prepared) => {
-        const command: GroupStateMutationCommand = {
-          authorityProof: prepared.authorityProof,
-          descriptor: prepared.descriptor,
-          command: prepared.command,
-          facts: { ...prepared.facts, attemptCount: input.attemptCount },
-        };
-        const read = await input.groupStateService.read(command);
-        const computed = input.groupStateService.compute(command, read);
-        input.groupStateService.validate(command, read, computed);
-        return computed;
-      }),
-    );
-    const result = await input.writeMutation(async (transaction) => {
-      await lifecycle.write(transaction, lifecycleComputed);
-      for (const computed of mutations) {
-        if (computed.outcome === 'write') {
-          await input.groupStateService.write(transaction, computed);
-        }
-      }
-      return {
-        status: 'inactive',
-        sessionId: input.facts.connection.authSession.sessionId,
-        generationId: input.facts.connection.generationId,
-        affectedGroups: mutations.length,
-      } as const;
-    });
-    input.wakeQueue?.();
-    return result;
-  }
-}
+export type ExpiredGroupPresenceEnqueue = AppInboxEnqueueInput<Readonly<{ commandId: string }>>;
 
 export function toGroupSessionCleanupEnqueue(
   input: GroupPresenceSessionCleanupAppInboxPayload,
   serviceId: string,
 ): AppInboxEnqueueInput<GroupPresenceSessionCleanupAppInboxPayload> {
-  return GroupPresenceService.toGroupSessionCleanupEnqueue(input, serviceId);
+  const connection = input.connection;
+  return {
+    type: AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP,
+    resourceId: [
+      'group-presence-session-cleanup',
+      connection.authSession.sessionId,
+      connection.generationId,
+    ]
+      .map(encodeURIComponent)
+      .join(':'),
+    contextId: connection.authSession.sessionId,
+    senderId: serviceId,
+    data: input,
+  };
 }
 
 export function toExpiredPresenceEnqueue(
   preparation: GroupMutationPreparation,
-): AppInboxEnqueueInput<Readonly<{ commandId: string }>> {
-  return GroupPresenceService.toExpiredPresenceEnqueue(preparation);
-}
-
-export function requireTopologyManagementService(
-  service: GroupTopologyManagementService | undefined,
-): GroupTopologyManagementService {
-  return GroupPresenceService.requireTopologyManagementService(service);
+): ExpiredGroupPresenceEnqueue {
+  return {
+    type: AppInboxType.GROUP_PRESENCE_EXPIRE,
+    resourceId: preparation.queueResourceId,
+    authority: preparation,
+    data: { commandId: preparation.command.commandId },
+  };
 }
 
 export async function processGroupPresenceConnect<Result>(
@@ -204,7 +76,40 @@ export async function processGroupPresenceConnect<Result>(
     ): Promise<Result>;
   }>,
 ): Promise<Result | InactiveGroupPresenceResult> {
-  return await GroupPresenceService.processConnect(input);
+  const operation = input.command.command;
+  if (operation.operation !== 'connectPresence') {
+    throw new TypeError('Group presence connect command is invalid');
+  }
+  const observedAtEpochMs = operation.input.connectedAtEpochMs ?? input.command.facts.nowEpochMs;
+  const identity = toGroupHighWaterIdentity({
+    scope: operation.aggregateRef,
+    principalId: operation.input.principalId,
+    sessionId: operation.sessionId,
+  });
+  const lifecycle = input.groupStateService.sessionGenerationLifecycle;
+  const lifecycleRead = await lifecycle.read(identity);
+  if (lifecycle.isObservedAtClosed(identity, observedAtEpochMs, lifecycleRead)) {
+    return await input.writeMutation(() =>
+      Promise.resolve({
+        status: 'inactive',
+        sessionId: operation.sessionId,
+        generationId: operation.input.generationId,
+      }),
+    );
+  }
+  const read = await input.groupStateService.read(input.command);
+  const computed = input.groupStateService.compute(input.command, read);
+  input.groupStateService.validate(input.command, read, computed);
+  const lifecycleGuard = lifecycle.computeConnectGuard(
+    {
+      ...identity,
+      generationId: operation.input.generationId,
+      generationStartedAtEpochMs: observedAtEpochMs,
+      expireAtEpochMs: resourceInboxRetryExpiryAtEpochMs(observedAtEpochMs),
+    },
+    lifecycleRead,
+  );
+  return await input.commitMutation(computed, lifecycleGuard);
 }
 
 export async function processGroupSessionCleanup(
@@ -216,7 +121,46 @@ export async function processGroupSessionCleanup(
     wakeQueue?: () => void;
   }>,
 ): Promise<GroupSessionCleanupResult> {
-  return await GroupPresenceService.processSessionCleanup(input);
+  const closeFacts = toGroupCloseFacts(input.facts);
+  const lifecycle = input.groupStateService.sessionGenerationLifecycle;
+  const lifecycleRead = await lifecycle.read(closeFacts);
+  const lifecycleComputed = lifecycle.computeClosed(closeFacts, lifecycleRead);
+  const preparations = await input.groupStateService.prepareSessionCleanupMutations({
+    scope: input.facts.connection.scope,
+    authSession: input.facts.connection.authSession,
+    principalId: input.facts.connection.principalId,
+    disconnectedAtEpochMs: input.facts.disconnectedAtEpochMs,
+  });
+  const mutations = await Promise.all(
+    preparations.map(async (prepared) => {
+      const command: GroupStateMutationCommand = {
+        authorityProof: prepared.authorityProof,
+        descriptor: prepared.descriptor,
+        command: prepared.command,
+        facts: { ...prepared.facts, attemptCount: input.attemptCount },
+      };
+      const read = await input.groupStateService.read(command);
+      const computed = input.groupStateService.compute(command, read);
+      input.groupStateService.validate(command, read, computed);
+      return computed;
+    }),
+  );
+  const result = await input.writeMutation(async (transaction) => {
+    await lifecycle.write(transaction, lifecycleComputed);
+    for (const computed of mutations) {
+      if (computed.outcome === 'write') {
+        await input.groupStateService.write(transaction, computed);
+      }
+    }
+    return {
+      status: 'inactive',
+      sessionId: input.facts.connection.authSession.sessionId,
+      generationId: input.facts.connection.generationId,
+      affectedGroups: mutations.length,
+    } as const;
+  });
+  input.wakeQueue?.();
+  return result;
 }
 
 function toGroupHighWaterIdentity(

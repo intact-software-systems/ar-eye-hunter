@@ -46,9 +46,7 @@ export function createPGliteSqlClient(
   raw: PGlite,
   options: PGliteSqlClientOptions = {},
 ): PGliteSql {
-  const ready = (options.ready ?? raw.waitReady).then(async () => {
-    await raw.query("set time zone 'UTC'");
-  });
+  const ready = options.ready ?? raw.waitReady;
   return createSqlCallable({
     raw,
     executor: raw,

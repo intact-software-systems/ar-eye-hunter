@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { withPGliteSql } from './pglite-auth-test-harness.ts';
+import { PGlite } from '@electric-sql/pglite';
+import { createPGliteSqlClient } from '../../src/db/pglite-sql-adapter.ts';
 
 const directInstant = new Date('2026-08-01T02:03:04.567Z');
 const arrayInstants = [
@@ -8,7 +9,11 @@ const arrayInstants = [
 ] as const;
 
 assert.notEqual(new Date().getTimezoneOffset(), 0, 'The subprocess must run outside UTC.');
-await withPGliteSql(async (sql) => {
+const raw = new PGlite();
+await raw.waitReady;
+await raw.query("set time zone 'America/New_York'");
+const sql = createPGliteSqlClient(raw);
+try {
   const [row] = await sql<
     { timezone: string; dateValue: Date; stringValue: Date; ordinary: string }[]
   >`
@@ -17,7 +22,7 @@ await withPGliteSql(async (sql) => {
            ${directInstant.toISOString()}::timestamp at time zone 'UTC' as "stringValue",
            ${'ordinary-text:2026-08-01T02:03:04.567Z'}::text as ordinary
   `;
-  assert.equal(row?.timezone, 'UTC');
+  assert.equal(row?.timezone, 'America/New_York');
   assert.equal(row?.dateValue.toISOString(), directInstant.toISOString());
   assert.equal(row?.stringValue.toISOString(), directInstant.toISOString());
   assert.equal(row?.ordinary, 'ordinary-text:2026-08-01T02:03:04.567Z');
@@ -33,4 +38,6 @@ await withPGliteSql(async (sql) => {
     rows.map((row) => row.value.toISOString()),
     arrayInstants.map((value) => value.toISOString()),
   );
-});
+} finally {
+  await sql.close();
+}

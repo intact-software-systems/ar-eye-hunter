@@ -60,6 +60,23 @@ describe('topology and RTC RTT AppInbox ownership', () => {
     expect(rtcHandler).not.toContain('../topology/inbox/');
   });
 
+  it('keeps predecessor setters only on the facade and passes complete handler dependencies', () => {
+    const facade = readOwner('services/AppGroupInboxService.ts');
+    const topologyHandler = readOwner('topology/inbox/topology-app-inbox-handler.ts');
+    const rtcHandler = readOwner('rtc-topology/inbox/rtc-rtt-app-inbox-handler.ts');
+
+    expect(facade).toContain('private topologyManagementService?: GroupTopologyManagementService;');
+    expect(facade).toContain('private rtcRttDependencies?: RtcRttAppInboxDependencies;');
+    expect(facade).toContain('setTopologyManagementService(');
+    expect(facade).toContain('setRtcRttAppInboxDependencies(');
+    expect(topologyHandler).not.toContain('private topologyManagementService?');
+    expect(topologyHandler).not.toContain('setTopologyManagementService(');
+    expect(rtcHandler).not.toContain('private rtcRttDependencies?');
+    expect(rtcHandler).not.toContain('setDependencies(');
+    expect(topologyHandler).toContain('topologyManagementService: GroupTopologyManagementService');
+    expect(rtcHandler).toContain('rtcRttDependencies: RtcRttAppInboxDependencies');
+  });
+
   it('keeps every materially changed production owner within the hard file limit', () => {
     for (const relativePath of materiallyChangedOwners) {
       expect(readOwner(relativePath).split('\n').length, relativePath).toBeLessThanOrEqual(400);

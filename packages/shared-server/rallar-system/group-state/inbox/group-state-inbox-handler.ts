@@ -1,12 +1,12 @@
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
 import type { PSqlTransactionSql } from '../../../postgres/PostgresSqlClient.ts';
+// prettier-ignore
+import { createTransactionBoundGroupStateRepository } from
+  '../persistence/group-state-repository.ts';
 import {
-  createTransactionBoundGroupStateRepository,
-} from '../persistence/group-state-repository.ts';
-import {
-  GroupPresenceService,
   type InactiveGroupPresenceResult,
+  processGroupPresenceConnect,
 } from '../presence/group-presence-service.ts';
 import type {
   AppInboxEnqueueInput,
@@ -14,9 +14,9 @@ import type {
 } from '../../services/AppInboxService.ts';
 import { AppInboxType } from '../../services/AppInboxService.ts';
 import type { GroupMutationComputed } from '../mutation/group-mutation-contracts.ts';
-import type {
-  WsSessionGenerationLifecycleComputed,
-} from '../../services/ws-session-generation-lifecycle.ts';
+// prettier-ignore
+import type { WsSessionGenerationLifecycleComputed } from
+  '../../services/ws-session-generation-lifecycle.ts';
 import {
   GroupMutationAuthorizationError,
   mutationDescriptor,
@@ -82,7 +82,7 @@ export class GroupStateInboxHandler {
       },
     };
     if (command.command.operation === 'connectPresence') {
-      return await GroupPresenceService.processConnect({
+      return await processGroupPresenceConnect({
         command,
         groupStateService: this.dependencies.groupStateService,
         writeMutation: async (write) => await this.dependencies.writeMutation(context, write),

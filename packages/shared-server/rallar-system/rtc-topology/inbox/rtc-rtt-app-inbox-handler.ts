@@ -30,16 +30,7 @@ export interface RtcRttAppInboxHandlerDependencies {
 }
 
 export class RtcRttAppInboxHandler {
-  private rtcRttDependencies?: RtcRttAppInboxDependencies;
-
   constructor(private readonly dependencies: RtcRttAppInboxHandlerDependencies) {}
-
-  setDependencies(dependencies: RtcRttAppInboxDependencies): void {
-    if (this.rtcRttDependencies && this.rtcRttDependencies !== dependencies) {
-      throw new TypeError('RTC RTT AppInbox dependencies are already configured');
-    }
-    this.rtcRttDependencies = dependencies;
-  }
 
   async createEnqueue(
     input: CreateRtcRttAppInboxEnqueueInput,
@@ -51,19 +42,21 @@ export class RtcRttAppInboxHandler {
     });
   }
 
-  async processMutation(context: AppInboxMessageContext): Promise<RtcRttAppInboxResult> {
+  async processMutation(
+    context: AppInboxMessageContext,
+    rtcRttDependencies: RtcRttAppInboxDependencies,
+  ): Promise<RtcRttAppInboxResult> {
     const authority = readRtcRttAppInboxAuthority(context.enqueue.authority);
     await verifyRtcRttAppInboxAuthority({
       authority,
       groupStateService: this.dependencies.groupStateService,
       nowEpochMs: this.dependencies.nowEpochMs,
     });
-    const dependencies = this.requireDependencies();
     const stableRequest = {
       rtt: authority.command.rtt,
       alSenderId: authority.command.actor.sessionId,
     };
-    const read = await readRttMutation(dependencies.repository, stableRequest);
+    const read = await readRttMutation(rtcRttDependencies.repository, stableRequest);
     const attemptCount = context.entry.dequeueAudit.attempts;
     const command = read.receipt
       ? {
@@ -74,11 +67,11 @@ export class RtcRttAppInboxHandler {
         }
       : {
           ...stableRequest,
-          ...(await dependencies.readPolicyInputs(authority.command)),
+          ...(await rtcRttDependencies.readPolicyInputs(authority.command)),
         };
     const lifecycleFacts = read.receipt
       ? { requestedAtEpochMs: null, purgeAfterEpochMs: null }
-      : await dependencies.repository.readMutationFacts();
+      : await rtcRttDependencies.repository.readMutationFacts();
     const facts = {
       ...lifecycleFacts,
       commandHash: authority.command.mutationCommandHash,
@@ -88,7 +81,7 @@ export class RtcRttAppInboxHandler {
     validateRttMutation({ command, read, facts, computed });
     const result = await this.commitMutation(context, authority.command, computed, facts);
     if (computed.outcome === 'write') {
-      dependencies.observeCommitted?.(computed.measurementGuard.value);
+      rtcRttDependencies.observeCommitted?.(computed.measurementGuard.value);
       this.dependencies.wakeQueue?.();
     }
     return result;
@@ -116,12 +109,5 @@ export class RtcRttAppInboxHandler {
       }
       return toRtcRttAppInboxResult(computed, command.requestId);
     });
-  }
-
-  private requireDependencies(): RtcRttAppInboxDependencies {
-    if (!this.rtcRttDependencies) {
-      throw new TypeError('RTC RTT AppInbox dependencies are not configured');
-    }
-    return this.rtcRttDependencies;
   }
 }

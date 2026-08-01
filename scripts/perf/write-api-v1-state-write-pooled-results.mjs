@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-import { createHash } from 'node:crypto';
-import { readFile, stat, writeFile } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
+import { open, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
 import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
@@ -32,23 +32,71 @@ export async function writeApiV1StateWritePooledResults(argumentsInput = process
     expectedCandidateCommit: paths.expectedCandidateCommit,
     sources: sourceTexts,
   });
-  const approvedBaseText = `${JSON.stringify(pooled.approvedBase, null, 2)}\n`;
-  const candidateText = `${JSON.stringify(pooled.candidate, null, 2)}\n`;
+  const approvedBaseSha256 = await writeCompactArtifact(paths.approvedBaseOut, pooled.approvedBase);
+  const candidateSha256 = await writeCompactArtifact(paths.candidateOut, pooled.candidate);
   const manifest = {
     ...pooled.manifest,
     outputs: {
-      approvedBase: { path: paths.approvedBaseOut, sha256: sha256(approvedBaseText) },
-      candidate: { path: paths.candidateOut, sha256: sha256(candidateText) },
+      approvedBase: { path: paths.approvedBaseOut, sha256: approvedBaseSha256 },
+      candidate: { path: paths.candidateOut, sha256: candidateSha256 },
     },
   };
-  await Promise.all([
-    writeFile(paths.approvedBaseOut, approvedBaseText),
-    writeFile(paths.candidateOut, candidateText),
-    writeFile(paths.manifestOut, `${JSON.stringify(manifest, null, 2)}\n`),
-  ]);
+  await writeFile(paths.manifestOut, `${JSON.stringify(manifest, null, 2)}\n`);
   console.log(`Wrote ${paths.approvedBaseOut}`);
   console.log(`Wrote ${paths.candidateOut}`);
   console.log(`Wrote ${paths.manifestOut}`);
+}
+
+async function writeCompactArtifact(path, artifact) {
+  const temporaryPath = `${path}.partial-${randomUUID()}`;
+  const handle = await open(temporaryPath, 'wx');
+  const hash = createHash('sha256');
+  try {
+    await writeArtifactChunks(handle, hash, artifact);
+    await handle.close();
+    await rename(temporaryPath, path);
+    return hash.digest('hex');
+  } catch (error) {
+    await handle.close().catch(() => undefined);
+    await rm(temporaryPath, { force: true });
+    throw error;
+  }
+}
+
+async function writeArtifactChunks(handle, hash, artifact) {
+  await writeChunk(handle, hash, '{');
+  let first = true;
+  for (const [key, value] of Object.entries(artifact)) {
+    await writeChunk(handle, hash, `${first ? '' : ','}${JSON.stringify(key)}:`);
+    if (key === 'workloads') {
+      await writeWorkloadChunks(handle, hash, value);
+    } else {
+      await writeChunk(handle, hash, JSON.stringify(value));
+    }
+    first = false;
+  }
+  await writeChunk(handle, hash, '}\n');
+}
+
+async function writeWorkloadChunks(handle, hash, workloads) {
+  await writeChunk(handle, hash, '[');
+  for (const [index, workload] of workloads.entries()) {
+    await writeChunk(handle, hash, `${index === 0 ? '' : ','}${JSON.stringify(workload)}`);
+  }
+  await writeChunk(handle, hash, ']');
+}
+
+async function writeChunk(handle, hash, chunk) {
+  const bytes = Buffer.from(chunk);
+  let offset = 0;
+  while (offset < bytes.length) {
+    const { bytesWritten } = await handle.write(bytes, offset, bytes.length - offset);
+    if (!Number.isInteger(bytesWritten) || bytesWritten <= 0) {
+      throw new Error('pooled artifact write did not make forward progress');
+    }
+    offset += bytesWritten;
+  }
+  hash.update(bytes);
 }
 
 function readCliPaths(argumentsInput) {
@@ -134,10 +182,6 @@ async function readCliSources(paths) {
     ]),
   );
   return Object.fromEntries(entries);
-}
-
-function sha256(value) {
-  return createHash('sha256').update(value).digest('hex');
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

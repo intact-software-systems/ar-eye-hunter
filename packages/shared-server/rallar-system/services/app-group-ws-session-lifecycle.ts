@@ -5,7 +5,7 @@ export type {
 export {
   processGroupPresenceConnect,
   processGroupSessionCleanup,
-  requireTopologyManagementService,
   toExpiredPresenceEnqueue,
   toGroupSessionCleanupEnqueue,
 } from '../group-state/presence/group-presence-service.ts';
+export { requireTopologyManagementService } from '../topology/inbox/topology-app-inbox-handler.ts';

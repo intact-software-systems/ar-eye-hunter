@@ -176,7 +176,9 @@ describe('API-v1 state-write order-balanced pooling', { timeout: 30_000 }, () =>
   it('writes both validated pooled artifacts and their exact output hashes', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'rallar-state-write-pooling-'));
     try {
-      const paths = await writeSourceFiles(directory, createPoolingInput());
+      const input = createPoolingInput();
+      const expected = poolApiV1StateWriteResults(input);
+      const paths = await writeSourceFiles(directory, input);
       const approvedBaseOut = join(directory, 'approved-base-pooled.json');
       const candidateOut = join(directory, 'candidate-pooled.json');
       const manifestOut = join(directory, 'manifest.json');
@@ -187,6 +189,8 @@ describe('API-v1 state-write order-balanced pooling', { timeout: 30_000 }, () =>
       const approvedBaseText = await readFile(approvedBaseOut, 'utf8');
       const candidateText = await readFile(candidateOut, 'utf8');
       const manifest = JSON.parse(await readFile(manifestOut, 'utf8'));
+      expect(approvedBaseText).toBe(`${JSON.stringify(expected.approvedBase)}\n`);
+      expect(candidateText).toBe(`${JSON.stringify(expected.candidate)}\n`);
       expect(validateStateWriteArtifact(JSON.parse(approvedBaseText))).toEqual([]);
       expect(validateStateWriteArtifact(JSON.parse(candidateText))).toEqual([]);
       expect(manifest.outputs).toEqual({

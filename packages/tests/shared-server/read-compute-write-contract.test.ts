@@ -210,11 +210,11 @@ describe('read/compute/validate/write implementation contract', { timeout: 30_00
       source: sources.topologyHandler,
       owner: 'processMutation',
       calls: [
-        'service.readTopologyConfigMutation(',
-        'service.computeTopologyConfigMutation(',
-        'service.validateTopologyConfigMutation(',
+        'topologyManagementService.readTopologyConfigMutation(',
+        'topologyManagementService.computeTopologyConfigMutation(',
+        'topologyManagementService.validateTopologyConfigMutation(',
         'this.dependencies.writeMutation(',
-        'service.writeTopologyConfigMutation(',
+        'topologyManagementService.writeTopologyConfigMutation(',
       ],
     },
     {
@@ -222,11 +222,11 @@ describe('read/compute/validate/write implementation contract', { timeout: 30_00
       source: sources.topologyHandler,
       owner: 'processTopologyReconfigureMutation',
       calls: [
-        'service.readTopologyMutation(command)',
-        'service.computeTopologyMutation(command, read)',
-        'service.validateTopologyMutation(command, read, computed)',
+        'topologyManagementService.readTopologyMutation(command)',
+        'topologyManagementService.computeTopologyMutation(command, read)',
+        'topologyManagementService.validateTopologyMutation(command, read, computed)',
         'this.dependencies.writeMutation(',
-        'service.writeTopologyMutation(transaction, computed)',
+        'topologyManagementService.writeTopologyMutation(transaction, computed)',
       ],
     },
     {

@@ -5,7 +5,6 @@ import {
 
 import type { PSqlTransactionSql } from '../../../postgres/PostgresSqlClient.ts';
 import type { IssuedAuthSession } from '../../repositories/auth-session-types.ts';
-import { GroupPresenceService } from '../../group-state/presence/group-presence-service.ts';
 import type { GroupStateService } from '../../group-state/group-state-service-contracts.ts';
 import {
   GroupTopologyConfigIdempotencyConflictError,
@@ -48,16 +47,7 @@ interface TopologyReconfigureInboxResult {
 type TopologyAppInboxResult = TopologyConfigInboxResult | TopologyReconfigureInboxResult;
 
 export class TopologyAppInboxHandler {
-  private topologyManagementService?: GroupTopologyManagementService;
-
   constructor(private readonly dependencies: TopologyAppInboxHandlerDependencies) {}
-
-  setTopologyManagementService(service: GroupTopologyManagementService): void {
-    if (this.topologyManagementService && this.topologyManagementService !== service) {
-      throw new TypeError('Topology management service is already configured');
-    }
-    this.topologyManagementService = service;
-  }
 
   async createAuthenticatedEnqueue<V>(
     enqueue: AppInboxEnqueueInput<V>,
@@ -71,7 +61,10 @@ export class TopologyAppInboxHandler {
     });
   }
 
-  async processMutation(context: AppInboxMessageContext): Promise<TopologyAppInboxResult> {
+  async processMutation(
+    context: AppInboxMessageContext,
+    topologyManagementService: GroupTopologyManagementService,
+  ): Promise<TopologyAppInboxResult> {
     const authority = readTopologyAppInboxAuthority(context.enqueue.authority);
     await verifyTopologyAppInboxAuthority({
       authority,
@@ -79,20 +72,30 @@ export class TopologyAppInboxHandler {
       nowEpochMs: this.dependencies.nowEpochMs,
     });
     if (authority.kind === 'topology-reconfigure') {
-      return await this.processTopologyReconfigureMutation(context, authority);
+      return await this.processTopologyReconfigureMutation(
+        context,
+        authority,
+        topologyManagementService,
+      );
     }
-    const service = GroupPresenceService.requireTopologyManagementService(
-      this.topologyManagementService,
-    );
-    const preparation = await service.prepareTopologyConfigMutation({
+    const preparation = await topologyManagementService.prepareTopologyConfigMutation({
       command: toTopologyConfigMutationCommand(authority.command),
       commandHash: authority.command.commandHash,
       capturedAtEpochMs: authority.command.capturedAtEpochMs,
     });
-    const read = await service.readTopologyConfigMutation(preparation.command);
+    const read = await topologyManagementService.readTopologyConfigMutation(preparation.command);
     const attemptCount = context.entry.dequeueAudit.attempts;
-    const computed = service.computeTopologyConfigMutation(preparation, read, attemptCount);
-    service.validateTopologyConfigMutation(preparation, read, attemptCount, computed);
+    const computed = topologyManagementService.computeTopologyConfigMutation(
+      preparation,
+      read,
+      attemptCount,
+    );
+    topologyManagementService.validateTopologyConfigMutation(
+      preparation,
+      read,
+      attemptCount,
+      computed,
+    );
     if (computed.outcome === 'idempotency-conflict') {
       throw new GroupTopologyConfigIdempotencyConflictError(
         computed.existingCommandHash,
@@ -101,9 +104,9 @@ export class TopologyAppInboxHandler {
     }
     const result = await this.dependencies.writeMutation(context, async (transaction) => {
       if (computed.outcome === 'write' || computed.outcome === 'claim') {
-        await service.writeTopologyConfigMutation(transaction, computed);
+        await topologyManagementService.writeTopologyConfigMutation(transaction, computed);
       }
-      return service.toTopologyConfigMutationResult(computed);
+      return topologyManagementService.toTopologyConfigMutationResult(computed);
     });
     if (computed.outcome === 'write') this.dependencies.wakeQueue?.();
     return result;
@@ -112,10 +115,8 @@ export class TopologyAppInboxHandler {
   private async processTopologyReconfigureMutation(
     context: AppInboxMessageContext,
     authority: TopologyReconfigureAppInboxAuthority,
+    topologyManagementService: GroupTopologyManagementService,
   ): Promise<TopologyReconfigureInboxResult> {
-    const service = GroupPresenceService.requireTopologyManagementService(
-      this.topologyManagementService,
-    );
     if (authority.command.payload.operation !== 'reconfigureTopology') {
       throw new TypeError('Topology reconfigure authority operation is invalid');
     }
@@ -128,13 +129,15 @@ export class TopologyAppInboxHandler {
         authority.command.payload.requestOptions,
       ),
       publish: authority.command.payload.publish,
-      isPlatformAdmin: service.isPlatformAdmin(authority.command.actor.principalId),
+      isPlatformAdmin: topologyManagementService.isPlatformAdmin(
+        authority.command.actor.principalId,
+      ),
     };
-    const read = await service.readTopologyMutation(command);
-    const computed = service.computeTopologyMutation(command, read);
-    service.validateTopologyMutation(command, read, computed);
+    const read = await topologyManagementService.readTopologyMutation(command);
+    const computed = topologyManagementService.computeTopologyMutation(command, read);
+    topologyManagementService.validateTopologyMutation(command, read, computed);
     const result = await this.dependencies.writeMutation(context, async (transaction) => {
-      await service.writeTopologyMutation(transaction, computed);
+      await topologyManagementService.writeTopologyMutation(transaction, computed);
       return {
         status: 'queued',
         groupRef: command.groupRef,
@@ -145,4 +148,11 @@ export class TopologyAppInboxHandler {
     this.dependencies.wakeQueue?.();
     return result;
   }
+}
+
+export function requireTopologyManagementService(
+  service: GroupTopologyManagementService | undefined,
+): GroupTopologyManagementService {
+  if (!service) throw new TypeError('Topology management service is not configured');
+  return service;
 }

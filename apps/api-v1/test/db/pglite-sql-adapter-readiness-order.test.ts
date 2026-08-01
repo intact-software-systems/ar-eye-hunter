@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createPGliteSqlClient } from '../../src/db/pglite-sql-adapter.ts';
 
-Deno.test('PGlite SQL initializes UTC exactly once before concurrent query and transaction work', async () => {
+Deno.test('PGlite SQL waits for readiness without mutating the existing session', async () => {
   let releaseReady: (() => void) | undefined;
   const ready = new Promise<void>((resolve) => {
     releaseReady = resolve;
@@ -37,5 +37,5 @@ Deno.test('PGlite SQL initializes UTC exactly once before concurrent query and t
 
   releaseReady?.();
   await Promise.all([direct, transaction]);
-  assert.deepEqual(calls, ["set time zone 'UTC'", "select 'direct'", "select 'transaction'"]);
+  assert.deepEqual(calls, ["select 'direct'", "select 'transaction'"]);
 });

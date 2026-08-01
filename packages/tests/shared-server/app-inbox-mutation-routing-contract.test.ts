@@ -35,19 +35,28 @@ describe('AppInbox mutation routing contract', { timeout: 30_000 }, () => {
     {
       name: 'topology to group',
       type: AppInboxType.TOPOLOGY_CONFIG_PUT,
-      from: 'this.topologyAppInboxHandler.processMutation(context)',
+      from: `this.topologyAppInboxHandler.processMutation(
+            context,
+            requireTopologyManagementService(this.topologyManagementService),
+          )`,
       to: 'this.groupStateInboxHandler.processMutation(context)',
     },
     {
       name: 'RTC to group',
       type: AppInboxType.RTC_RTT_SUBMIT,
-      from: 'this.rtcRttAppInboxHandler.processMutation(context)',
+      from: `this.rtcRttAppInboxHandler.processMutation(
+          context,
+          this.requireRtcRttAppInboxDependencies(),
+        )`,
       to: 'this.groupStateInboxHandler.processMutation(context)',
     },
     {
       name: 'RTC to topology',
       type: AppInboxType.RTC_RTT_SUBMIT,
-      from: 'this.rtcRttAppInboxHandler.processMutation(context)',
+      from: `this.rtcRttAppInboxHandler.processMutation(
+          context,
+          this.requireRtcRttAppInboxDependencies(),
+        )`,
       to: 'this.topologyAppInboxHandler.processMutation(context)',
     },
     {
@@ -83,7 +92,11 @@ describe('AppInbox mutation routing contract', { timeout: 30_000 }, () => {
     {
       name: 'topology',
       type: AppInboxType.TOPOLOGY_CONFIG_PUT,
-      from: 'async (_payload, context) => await this.topologyAppInboxHandler.processMutation(context)',
+      from: `async (_payload, context) =>
+          await this.topologyAppInboxHandler.processMutation(
+            context,
+            requireTopologyManagementService(this.topologyManagementService),
+          )`,
       to: `async (_payload, context) => {
                     const alias = { topologyAppInboxHandler: this.groupStateInboxHandler };
                     return await alias.topologyAppInboxHandler.processMutation(context);
@@ -92,7 +105,11 @@ describe('AppInbox mutation routing contract', { timeout: 30_000 }, () => {
     {
       name: 'RTC',
       type: AppInboxType.RTC_RTT_SUBMIT,
-      from: 'async (_payload, context) => await this.rtcRttAppInboxHandler.processMutation(context)',
+      from: `async (_payload, context) =>
+        await this.rtcRttAppInboxHandler.processMutation(
+          context,
+          this.requireRtcRttAppInboxDependencies(),
+        )`,
       to: `async (_payload, context) => {
                 const alias = { rtcRttAppInboxHandler: this.groupStateInboxHandler };
                 return await alias.rtcRttAppInboxHandler.processMutation(context);

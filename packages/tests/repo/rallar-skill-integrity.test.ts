@@ -798,7 +798,7 @@ describe('Rallar repo skill and documentation integrity', () => {
     ]);
   });
 
-  it('routes group presence lifecycle work through its canonical service owner', () => {
+  it('routes group presence lifecycle work through canonical pure functions', () => {
     const presenceService = readRepo(
       'packages/shared-server/rallar-system/group-state/presence/group-presence-service.ts',
     );
@@ -812,13 +812,15 @@ describe('Rallar repo skill and documentation integrity', () => {
       'packages/shared-server/rallar-system/services/app-group-ws-session-lifecycle.ts',
     );
 
-    expect(presenceService).toContain('export class GroupPresenceService');
-    expect(presenceService).toContain(
-      'return await GroupPresenceService.processSessionCleanup(input)',
-    );
+    expect(presenceService).not.toContain('class GroupPresenceService');
+    expect(presenceService).not.toContain('GroupPresenceService.');
+    expect(presenceService).toContain('export function toGroupSessionCleanupEnqueue(');
+    expect(presenceService).toContain('export async function processGroupPresenceConnect');
+    expect(presenceService).toContain('export async function processGroupSessionCleanup');
     expect(groupInbox).toContain('processGroupSessionCleanup({');
-    expect(groupInboxHandler).toContain('GroupPresenceService.processConnect');
+    expect(groupInboxHandler).toContain('processGroupPresenceConnect({');
     expect(compatibility).not.toContain('class GroupPresenceService');
+    expect(compatibility).toContain("from '../topology/inbox/topology-app-inbox-handler.ts';");
   });
 
   it('keeps current startup and recipe documentation internally consistent', () => {
