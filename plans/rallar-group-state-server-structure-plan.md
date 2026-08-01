@@ -2,40 +2,17 @@
 
 > Status: Human-approved at exact Git blob
 > `1a74159d37f76a459009e99ca5a08f3cd620b1b4`, with the explicitly authorized
-> Section 12 amendments. Tasks 0 through 8 are complete. The expanded
-> pre-merge convergence amendment authorizes the published Task 7 repairs and
-> behavior-neutral Task 8 alignment in existing draft PR #59. Task 9's
-> structural cohorts are independently accepted; the narrow final Deno child
-> contract and test-harness correction is independently accepted. The first
-> fixed performance pair was rejected as nonstationary. Its controlled
-> replacement also failed, while reverse-order diagnostics did not reproduce a
-> PR-specific regression. The fixed, non-rerolled A-B-B-A comparison retained
-> exact durable correctness but failed the prior zero-regression interpretation
-> on small pooled movements. A later explicit human amendment adopted a
-> child-specific 1.5% adverse-equivalence band for that measured runtime, after
-> observing the governed result and without claiming statistical significance
-> or improvement. That immutable evidence is historical-only for the pre-fix
-> runtime and does not validate the corrected candidate. The fixed,
-> non-rerolled corrected-runtime A-B-B-A protocol is complete at exact candidate
-> `9d02d9e19d7e5140dcbfc5a81ce5d4c4812d2615` / tree
-> `2fac327448324a0338a8ea32f9ebc8601d8630d8`; the unchanged child evaluator
-> accepted it within the existing 1.5% adverse-equivalence policy with every
-> correctness invariant green. Final validation and publication gates remain
-> pending. The first exact-final-tree publication attempt at feature head
-> `16bd66a621b13e39e0ece88690222ae8cf78bc73` / tree
-> `98220bb7fc0e57f8b3581847ae559d95ac8aeebc` reached Branch Release Gate run
-> `30694199481` attempt 1. Changed-style and TypeScript 7 checks passed, but the
-> root unit suite exhausted the directly owned 5-second child-policy and
-> 30-second pooling-test budgets on the shared CI runner. The same complete
-> cases passed locally; no production, measurement, comparator, policy,
-> threshold, or correctness assertion failed. The affected test owners use an
-> explicit 120-second CI-safe unit-test budget for the required artifact-heavy
-> work without changing governed semantics. The exact replacement publication
-> SHA and workflow result remain external pending evidence. The Task 9
-> structural-lineage cohort is human-authorized at exact head
-> `b8d6d8516f2c1caff46494569940c06e7ee06c43` and tree
-> `9344df9af0b24f29341ebf8d8cebdb9d54963b69`. Task 10 and the later API-v1
-> child remain separately gated.
+> Section 12 amendments. Tasks 0 through 9 are implemented and published at
+> final feature head `bec8bea4eb095de9ad3a6b47c18e6799ab811239` and tree
+> `c1ac6a57dad974d04264cbe1fa92313697256712`. Branch Release Gate run
+> `30694693554` attempt 1 succeeded for that exact head. PR #59 squash-merged
+> as exact `main` SHA `06e0c5ab138c2ab55ac519b2244f727acd42d560`, and **Run
+> Hetzner Supported Distributed Manifests** run `30697799787` attempt 1
+> succeeded for that exact SHA. The post-publication
+> [server traceability QA child](rallar-group-state-server-traceability-qa-plan.md)
+> is revised and unapproved. Its guidance/independent-lineage PR and
+> behavior-neutral runtime-traceability PR now precede Task 10. The later
+> evidence ledger and API-v1 child remain separately gated.
 
 This plan is the authoritative shared-server child of the
 [Repository Human Traceability Refactoring Program](repo-human-traceability-refactoring-program-plan.md).
@@ -45,6 +22,13 @@ the completed
 [governance/checker child](repo-human-traceability-governance-and-checker-plan.md),
 and the ledger-published
 [browser room/group-state translation-boundary child](rallar-room-group-state-translation-boundary-plan.md).
+The revised
+[server traceability QA child](rallar-group-state-server-traceability-qa-plan.md)
+records the post-PR #59 human-navigation follow-up: family-level review traces,
+independent lineage provenance, complete callback registration, immutable
+durable/private transaction results, narrow handler capabilities, explicit
+timing, and descriptive internal names. It does not reopen this child's public,
+persisted, AppInbox, authority, or behavior contracts.
 
 The browser prerequisite is satisfied by ledger PR #55: feature
 `7db208ed977fdcad4a1afef8a5d08c3cfdbb862c`, frozen tree
@@ -96,6 +80,9 @@ Distributed Manifests** run `30520679271` attempt 1 success for that exact
 - The existing server implementation goal, branch, and draft PR #59 cover
   Tasks 0 through 9 under this amendment. Task 10 requires its later gate and
   does not inherit this implementation authority.
+- The separately approved traceability QA child, if approved, must publish its
+  guidance PR and behavior-neutral code PR before Task 10. This plan revision
+  does not itself approve either QA implementation PR.
 
 ## 1. Scope And Success Boundary
 
@@ -1501,11 +1488,16 @@ waiver.
 
 ### Task 10: Publish The Later Evidence Ledger Separately
 
-Only after the single expanded PR #59 implementation publication is green, use
-a separately authorized non-default ledger branch to update this child, the
-master program, and execution plan. Record existing implementation evidence
-only. The ledger's own future tree, commit, PR, branch gate, merge, and default
-workflow remain in the external PR/handoff envelope until they exist.
+Only after PR #59 and both implementation PRs from the separately approved
+[server traceability QA child](rallar-group-state-server-traceability-qa-plan.md)
+have green publication envelopes, use a separately authorized non-default
+ledger branch to update this child, the QA child, the master program, and the
+execution plan. PR A must have completed its independent PR #59 lineage
+provenance without changing checker behavior; PR B must have preserved exact
+durable serialization and all locked AppInbox behavior. Record existing
+implementation evidence only. The ledger's own future tree, commit, PR, branch
+gate, merge, and default workflow remain in the external PR/handoff envelope
+until they exist.
 
 ## 10. Validation Matrix
 
@@ -2127,13 +2119,14 @@ before it was frozen. Its future PR head, merge SHA, workflow result, or
 replacement tree must remain in the PR and Mandatory Completion Handoff external
 envelope.
 
-After the single expanded PR #59 implementation envelope is green, a separate
-three-plan ledger may record those now-existing facts and mark implementation
-`complete` while its own publication remains `pending`. The frozen ledger tree
-may not record its own future tree, commit, PR number, branch gate, merge SHA,
-or default-workflow result. Those remain external. Only after the ledger PR is
-merged and its exact resulting-main workflow succeeds may the external handoff
-call this child `ledger-published` and unlock drafting the API-v1 child.
+After PR #59 and both QA implementation envelopes are green, a separate
+four-plan ledger may record those now-existing facts and mark implementation
+and traceability QA `complete` while its own publication remains `pending`. The
+frozen ledger tree may not record its own future tree, commit, PR number, branch
+gate, merge SHA, or default-workflow result. Those remain external. Only after
+the ledger PR is merged and its exact resulting-main workflow succeeds may the
+external handoff call this child `ledger-published` and unlock drafting the
+API-v1 child.
 
 ## 12. Exact Human Review Points
 
@@ -2231,7 +2224,13 @@ call this child `ledger-published` and unlock drafting the API-v1 child.
 4. **Expanded PR merge:** human performs/approves the single merge only after
    the Task 7 repairs and Task 8–9 alignment pass their exact gates; then verify
    the resulting-main workflow.
-5. **Ledger authorization and merge:** separate human authorization starts the
+5. **Traceability QA approval and merges:** human separately approves the exact
+   revised QA plan blob and the exact head/tree merge of each implementation
+   PR. PR A contains skills/review/test ownership and independent lineage
+   provenance but no checker behavior. PR B contains only behavior-neutral
+   registration, transaction-result, handler-capability, timing, descriptor,
+   naming, and test changes. PR #59 approval does not authorize them.
+6. **Ledger authorization and merge:** separate human authorization starts the
    evidence-only branch; a later human decision merges its exact head/tree.
 
 No approval above authorizes the later API-v1 child.
@@ -2265,10 +2264,18 @@ No approval above authorizes the later API-v1 child.
       unchanged deterministic Postgres medium-scale presence gate. The exact
       published repair commits and accepted cohort results are recorded in Task
       7 and Section 15; final combined gates remain pending.
-- [ ] Existing draft PR #59 passed independent review, focused gates, the one
+- [x] PR #59 passed independent review, focused gates, the one
       authorized order-balanced PostgreSQL 16 comparison, completion gates,
       Branch Release Gate, human merge, and exact resulting-main workflow after
-      its Task 7 repairs and behavior-neutral Task 8–9 alignment.
+      its Task 7 repairs and behavior-neutral Task 8–9 alignment. Exact final
+      feature `bec8bea4eb095de9ad3a6b47c18e6799ab811239` and tree
+      `c1ac6a57dad974d04264cbe1fa92313697256712` passed Branch Release Gate
+      `30694693554` attempt 1; PR #59 squash-merged as
+      `06e0c5ab138c2ab55ac519b2244f727acd42d560`, and default workflow
+      `30697799787` attempt 1 succeeded for that exact SHA.
+- [ ] The separately approved traceability QA guidance and behavior-neutral
+      runtime PRs passed their exact local, review, publication, merge, and
+      resulting-main workflow gates.
 - [x] The order-balanced comparison preserves four unique source artifacts,
       byte-identical environments, exact raw samples, receipts, final effects,
       atomic completion, zero forbidden exhaustion/transient retry, the 5%
@@ -2278,7 +2285,7 @@ No approval above authorizes the later API-v1 child.
       any above-band SQL/row/byte/transaction increase. The unchanged global
       failure remains recorded alongside the amended child-policy acceptance.
 - [x] Protected REST plan remained byte-identical.
-- [ ] Later three-plan ledger was separately authorized and published under the
+- [ ] Later four-plan ledger was separately authorized and published under the
       non-circular contract.
 
 ## 14. Risks And Reserved Decisions
@@ -2304,6 +2311,22 @@ transaction/retry/lock change, checker strictness change, TypeScript change, or
 topology/RTC algorithm refactor.
 
 ## 15. Progress Record
+
+Current publication state on 2026-08-01:
+
+| Milestone             | Status              | Evidence                                                                                                                                                                                                                                                                         |
+| --------------------- | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PR #59 implementation | published           | Feature `bec8bea4eb095de9ad3a6b47c18e6799ab811239`, tree `c1ac6a57dad974d04264cbe1fa92313697256712`, Branch Release Gate `30694693554` attempt 1 success, PR #59, resulting `main` `06e0c5ab138c2ab55ac519b2244f727acd42d560`, default workflow `30697799787` attempt 1 success. |
+| Traceability QA       | revised; unapproved | [QA child](rallar-group-state-server-traceability-qa-plan.md) defines sequential guidance/independent-lineage and behavior-neutral runtime PRs. Neither implementation PR is authorized.                                                                                         |
+| Evidence ledger       | pending             | Waits for both QA PR publication envelopes and separate ledger authorization.                                                                                                                                                                                                    |
+| API-v1 child          | blocked             | Waits for the later server ledger to reach `ledger-published`.                                                                                                                                                                                                                   |
+
+The detailed rows below retain milestone-time implementation evidence. Their
+“final gates pending” phrases describe those earlier frozen checkpoints; the
+current publication table above is authoritative and avoids rewriting that
+historical evidence.
+
+### 15.1 Historical Implementation Milestones
 
 | Milestone                 | Status                               | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | ------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
