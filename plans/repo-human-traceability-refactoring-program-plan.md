@@ -83,8 +83,14 @@ published through PR #59 at feature head
 `main` SHA `06e0c5ab138c2ab55ac519b2244f727acd42d560`; the exact resulting-main
 workflow is green. A post-publication
 [server traceability QA child](rallar-group-state-server-traceability-qa-plan.md)
-is drafted and unapproved to address the human-navigation findings before the
-server's Task 10 ledger. The later API-v1 child remains gated.
+is revised and remains unapproved. PR A covers family-level call traces,
+transaction-callback review, canonical skill paths, behavior-named tests,
+large-review evidence, temporary-ratchet ownership, construction-warning
+disposition, and independent PR #59 lineage provenance without changing checker
+behavior. PR B covers the behavior-neutral descriptor/timing work plus complete
+dependency registration, immutable durable/private transaction results, a
+narrow internal handler capability, and naming alignment. Both precede the
+server's Task 10 ledger; the later API-v1 child remains gated.
 
 Program drafting, approval, execution, publication, and human handoffs follow
 the [Repository Human Traceability Program Execution Plan](repo-human-traceability-program-execution-plan.md).
@@ -751,10 +757,12 @@ reviewable:
 PR #59's post-publication human review adds a fourth QA child between items 2
 and 3. The
 [server traceability QA plan](rallar-group-state-server-traceability-qa-plan.md)
-first strengthens skills and review guidance, then applies behavior-neutral
-entry/exit, timing-dispatch, and test-discoverability corrections. The server
-ledger waits for both QA PRs so the ledger describes the reviewed server result,
-not only the first structural publication.
+first strengthens skills, review guidance, test discoverability, review-size
+evidence, and independent lineage governance, then applies behavior-neutral
+entry/exit, registration-lifetime, immutable transaction-result,
+handler-capability, naming, and timing-dispatch corrections. The server ledger
+waits for both QA PRs so the ledger describes the reviewed server result, not
+only the first structural publication.
 
 Acceptance requires that a human can start at `RallarRoomsFacade.create`, find
 the one room/group-state translation, continue to the API route and AppInbox,
@@ -1029,10 +1037,15 @@ to write, review, approve, execute, and hand off these child plans in order:
   - mirrored shared-server tests;
   - mutation-path verification decision.
 - [ ] [Rallar group-state server traceability QA](rallar-group-state-server-traceability-qa-plan.md)
-  - state: drafted and unapproved;
-  - PR A: skills, review guidance, and descriptive traceability-analysis tests;
-  - PR B: behavior-neutral descriptor ownership, direct handler naming, explicit
-    timing adapter, and authoritative mutation test discoverability;
+  - state: review-driven revision drafted and unapproved;
+  - PR A: family-level trace/review skills, canonical realtime/test paths,
+    review-pressure evidence, temporary-ratchet governance, descriptive tests,
+    and independent target-by-target PR #59 lineage provenance; no checker
+    behavior change;
+  - PR B: behavior-neutral descriptor ownership, direct handler/naming
+    alignment, explicit timing adapter, complete topology/RTC callback
+    registration, immutable durable/private transaction results, a narrow
+    internal handler capability, and authoritative mutation discoverability;
   - no API-v1 route reorganization or semantic change.
 - [ ] `plans/api-v1-group-state-route-structure-plan.md`
   - route split and descriptive registration symbols;
@@ -1083,6 +1096,7 @@ The browser child is `ledger-published` through PR #55 and exact resulting
 `main` SHA `b4fe2a6ae5893f3adae86061bd38cf416bac8aaf`. The shared-server
 implementation is published through PR #59 and exact resulting `main` SHA
 `06e0c5ab138c2ab55ac519b2244f727acd42d560`. Its traceability QA child is
-drafted and unapproved; its later ledger waits for both QA PRs. The API-v1 child
-remains unstarted and may not be drafted until the server ledger is
-`ledger-published`.
+revised and unapproved; PR A contains guidance and independent lineage
+governance, while PR B contains only behavior-neutral runtime traceability. Its
+later ledger waits for both QA PRs. The API-v1 child remains unstarted and may
+not be drafted until the server ledger is `ledger-published`.
