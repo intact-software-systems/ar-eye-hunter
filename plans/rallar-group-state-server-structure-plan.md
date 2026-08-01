@@ -6,8 +6,10 @@
 > pre-merge convergence amendment authorizes the published Task 7 repairs and
 > behavior-neutral Task 8 alignment in existing draft PR #59. Task 9's
 > structural cohorts are independently accepted; the narrow final Deno child
-> contract and test-harness correction is independently accepted, with final
-> validation, performance, and publication gates pending. The
+> contract and test-harness correction is independently accepted. The first
+> fixed performance pair was rejected as nonstationary, and one controlled,
+> measurement-only replacement pair is human-authorized; that replacement and
+> its invalidated final validation/publication gates remain pending. The
 > Task 9 structural-lineage cohort is human-authorized at exact head
 > `b8d6d8516f2c1caff46494569940c06e7ee06c43` and tree
 > `9344df9af0b24f29341ebf8d8cebdb9d54963b69`. Task 10 and the later API-v1
@@ -1242,7 +1244,7 @@ that the apparently named but non-canonical receiver is rejected.
   performance comparison, Task 9 completion gates, final publication, or
   remote gates.
 - Run every focused and completion command in Section 10 on one unchanged tree,
-  including the one predeclared paired PostgreSQL 16 performance comparison.
+  including the authorized controlled replacement PostgreSQL 16 comparison.
 - Create cohesive non-default commits, push non-forced, keep existing draft PR
   #59 current, and record exact tree/commit and test evidence externally.
 - Require **Branch Release Gate** success for the exact final feature SHA.
@@ -1381,6 +1383,24 @@ Critical 0, Important 0, Minor 0 on candidate tree
 `1899730916deb8ed80ca8a28fc1fd06da195a952`; every remaining validation,
 performance, and publication fact is pending.
 
+The first fixed PostgreSQL 16 pair ran at exact feature head
+`57e7d57f51c0a88a854919dcafeb0ba06125c1a5` / tree
+`de4da10ded4542c69028226d1563442bdf03a353`. Its approved-base artifact had
+SHA-256 `883ef9d06f460937635f7553f32e7f1e87cfaf5e51b4bede6c919978411fe8b7`,
+and its current artifact had SHA-256
+`d9be8414a83052e94644c7eb11a6affff060cce3e9940124243ae7637fd4a90f`.
+Durable correctness passed, but the unchanged comparator exited 1: current
+uncontended p95/p99 regressed 15.712%/14.515%, shared throughput regressed
+15.034%, and hot throughput regressed 4.521%. The child-specific hot limit
+passed, while the uncontended and shared limits failed. Independent performance
+review reported Critical 0, Important 2, Minor 0 because conflict depth did not
+explain the increases and the current run was nonstationary. A read-only static
+audit reported Critical 0, Important 0, Minor 1 and found no evidence-backed
+production fix. The ignored raw files are no longer present after temporary
+benchmark cleanup; their exact hashes, recorded comparator outcome, metrics,
+and review remain in PR #59's external evidence. This plan does not reconstruct
+or relabel those files as passing evidence.
+
 ### Task 10: Publish The Later Evidence Ledger Separately
 
 Only after the single expanded PR #59 implementation publication is green, use
@@ -1495,26 +1515,127 @@ skip it.
 
 ### 10.3 Mutation-path comparative gate
 
-Run exactly one predeclared paired comparison between approved base
-`52d973bb71dda2100455e8585a0a8f98d177bd13` and the final current tree. Use
-PostgreSQL 16 and a fresh isolated database for each side; do not reroll either
-side. The paired artifacts use these distinct paths:
+The original fixed comparison between approved base
+`52d973bb71dda2100455e8585a0a8f98d177bd13` and feature head
+`57e7d57f51c0a88a854919dcafeb0ba06125c1a5` remains rejected evidence, as
+recorded in Task 9. Its nonstationary database-wide buffer activity prevents
+valid code attribution and does not authorize a production change, threshold
+waiver, post-hoc reason, or reroll of either original side.
+
+One human-authorized replacement comparison uses these exact code and database
+owners:
+
+- approved base: detached worktree
+  `/private/tmp/rallar-group-state-server-structure-perf-base` at exact commit
+  `52d973bb71dda2100455e8585a0a8f98d177bd13`, container
+  `rallar-perf-s59-replacement-base`, and explicit `DATABASE_URL`
+  `postgres://app:app@127.0.0.1:55439/appdb`;
+- current: existing worktree
+  `/private/tmp/ar-eye-hunter-group-state-server-structure` at the final exact
+  PR #59 commit, container `rallar-perf-s59-replacement-current`, and explicit
+  `DATABASE_URL` `postgres://app:app@127.0.0.1:55440/appdb`.
+
+Both fresh containers resolve exact image digest
+`postgres@sha256:081f1bc7bd5e143dbb6e487b710bbc27712cdcfaced4c071b8e47349aa1b4171`,
+use the same `app` user/database initialization, and start PostgreSQL with the
+same `postgres -c autovacuum=off` command, `--cpus=4`, `--memory=4g`,
+`--memory-swap=4g`, and `--shm-size=256m`. The base and current containers and
+benchmark processes must never overlap.
+
+Preflight both sides before consuming either one-shot measurement. Start,
+migrate, record, and stop the base container; then start, migrate, record, and
+stop the current container. For each side, run `npm run db:migrate` from its
+exact worktree with its explicit `DATABASE_URL`. Record these normalized fields
+under ignored `tmp/perf/`: resolved image ID/digest, platform, entrypoint,
+PostgreSQL command, shared-memory size, memory/swap limits, NanoCPUs, CPU
+period/quota, CPU set, `server_version`, `autovacuum`, `track_counts`,
+`shared_buffers`, `work_mem`, `maintenance_work_mem`, `effective_cache_size`,
+`random_page_cost`, `effective_io_concurrency`, `synchronous_commit`, `fsync`,
+`full_page_writes`, `max_wal_size`, `checkpoint_timeout`, `jit`, and
+`max_parallel_workers_per_gather`, plus host architecture and Node, npm, Deno,
+Docker, and Docker Compose versions. Normalize away only container name/ID and
+host port; compare the two records byte-for-byte. Any other mismatch stops the
+task before either benchmark.
+
+Run the migrations only through their owning worktrees and endpoints:
 
 ```bash
-npm run perf:api-v1:state-write -- \
-  --backend=postgres --warmup=1 --runs=9 --concurrency=10 \
-  --out=tmp/perf/api-v1-state-write-server-structure-approved-base.json
+(cd /private/tmp/rallar-group-state-server-structure-perf-base && \
+  DATABASE_URL=postgres://app:app@127.0.0.1:55439/appdb \
+  npm run db:migrate)
 
-npm run perf:api-v1:state-write -- \
-  --backend=postgres --warmup=1 --runs=9 --concurrency=10 \
-  --out=tmp/perf/api-v1-state-write-server-structure-current.json
-
-node scripts/perf/compare-api-v1-state-write-results.mjs \
-  tmp/perf/api-v1-state-write-server-structure-approved-base.json \
-  tmp/perf/api-v1-state-write-server-structure-current.json
+(cd /private/tmp/ar-eye-hunter-group-state-server-structure && \
+  DATABASE_URL=postgres://app:app@127.0.0.1:55440/appdb \
+  npm run db:migrate)
 ```
 
-Generated artifacts remain under `tmp/perf/` and are not committed. Preserve
+After each migration, require zero rows in `app_data_store`,
+`client_state_events`, `group_state_events`, `resource_inbox`,
+`resource_inbox_results`, and `runtime_state_store`. Also require
+`coalesce(sum(autovacuum_count + autoanalyze_count), 0) = 0` over
+`pg_stat_user_tables`. Recheck both invariants immediately before each
+measurement and require the automatic count to remain zero afterward.
+
+Use these exact SQL projections and require every returned count to equal zero:
+
+```sql
+select 'app_data_store' as owner, count(*) as row_count from app_data_store
+union all
+select 'client_state_events', count(*) from client_state_events
+union all
+select 'group_state_events', count(*) from group_state_events
+union all
+select 'resource_inbox', count(*) from resource_inbox
+union all
+select 'resource_inbox_results', count(*) from resource_inbox_results
+union all
+select 'runtime_state_store', count(*) from runtime_state_store
+order by owner;
+
+select coalesce(sum(autovacuum_count + autoanalyze_count), 0) as automatic_count
+from pg_stat_user_tables;
+```
+
+After the preflight records match, restart only the base container and run its
+benchmark exactly once. Stop and remove that container before restarting the
+current container. Copy the generated approved-base artifact byte-for-byte from
+the base worktree into the current worktree at the same relative path; require
+`cmp` success and identical SHA-256 values before deleting the detached base
+worktree. Then run the current benchmark exactly once and compare from the
+current worktree. Use new artifact paths so the replacement is never represented
+as the original pair:
+
+```bash
+(cd /private/tmp/rallar-group-state-server-structure-perf-base && \
+  DATABASE_URL=postgres://app:app@127.0.0.1:55439/appdb \
+  npm run perf:api-v1:state-write -- \
+  --backend=postgres --warmup=1 --runs=9 --concurrency=10 \
+  --out=tmp/perf/api-v1-state-write-server-structure-replacement-approved-base.json)
+
+cp \
+  /private/tmp/rallar-group-state-server-structure-perf-base/tmp/perf/api-v1-state-write-server-structure-replacement-approved-base.json \
+  /private/tmp/ar-eye-hunter-group-state-server-structure/tmp/perf/api-v1-state-write-server-structure-replacement-approved-base.json
+cmp -s \
+  /private/tmp/rallar-group-state-server-structure-perf-base/tmp/perf/api-v1-state-write-server-structure-replacement-approved-base.json \
+  /private/tmp/ar-eye-hunter-group-state-server-structure/tmp/perf/api-v1-state-write-server-structure-replacement-approved-base.json
+shasum -a 256 \
+  /private/tmp/rallar-group-state-server-structure-perf-base/tmp/perf/api-v1-state-write-server-structure-replacement-approved-base.json \
+  /private/tmp/ar-eye-hunter-group-state-server-structure/tmp/perf/api-v1-state-write-server-structure-replacement-approved-base.json
+
+(cd /private/tmp/ar-eye-hunter-group-state-server-structure && \
+  DATABASE_URL=postgres://app:app@127.0.0.1:55440/appdb \
+  npm run perf:api-v1:state-write -- \
+  --backend=postgres --warmup=1 --runs=9 --concurrency=10 \
+  --out=tmp/perf/api-v1-state-write-server-structure-replacement-current.json)
+
+(cd /private/tmp/ar-eye-hunter-group-state-server-structure && \
+  node scripts/perf/compare-api-v1-state-write-results.mjs \
+  tmp/perf/api-v1-state-write-server-structure-replacement-approved-base.json \
+  tmp/perf/api-v1-state-write-server-structure-replacement-current.json)
+```
+
+Generated replacement artifacts remain under `tmp/perf/` and are not committed.
+Preserve
 exact artifact correctness, receipt/final-effect linkage, atomic completion,
 zero forbidden exhaustion, and zero forbidden transient retry. Uncontended p95
 and p99 may regress by at most 5%; shared throughput must not regress; this
@@ -1543,7 +1664,8 @@ npm run build
 Run Prettier verification, `git diff --check`, file/function line checks,
 runtime-cycle checks, shared-server TypeScript, API-v1 Deno check, the memory
 black-box test, the committed-admin-prune black-box evidence, the unchanged
-Postgres medium-scale/convergence gate, and the single paired performance
+Postgres medium-scale/convergence gate, and the authorized replacement
+performance
 comparison on the final unchanged implementation tree. Any content change
 invalidates prior validation.
 
@@ -1630,6 +1752,13 @@ call this child `ledger-published` and unlock drafting the API-v1 child.
    existing draft PR #59 before merge, and the single fixed child-specific
    PostgreSQL 16 performance comparison in Section 10. It supersedes only the
    stale two-PR sequencing rule and preserves every locked constraint.
+   At exact feature head `57e7d57f51c0a88a854919dcafeb0ba06125c1a5`
+   and tree `de4da10ded4542c69028226d1563442bdf03a353`, the first fixed pair
+   was rejected as nonstationary. A later explicit human amendment authorizes
+   only the one controlled replacement pair in Section 10, this directly
+   affected performance-evidence wording, and the invalidated
+   validation/review/publication work. It authorizes no production change,
+   threshold waiver, repeated replacement run, or Task 10/API-v1 work.
    The Task 9 structural-lineage cohort starts from head
    `b8d6d8516f2c1caff46494569940c06e7ee06c43` and tree
    `9344df9af0b24f29341ebf8d8cebdb9d54963b69`. It authorizes only real
@@ -1684,10 +1813,10 @@ No approval above authorizes the later API-v1 child.
       published repair commits and accepted cohort results are recorded in Task
       7 and Section 15; final combined gates remain pending.
 - [ ] Existing draft PR #59 passed independent review, focused gates, the one
-      paired PostgreSQL 16 comparison, completion gates, Branch Release Gate,
-      human merge, and exact resulting-main workflow after its Task 7 repairs
-      and behavior-neutral Task 8–9 alignment.
-- [ ] The paired comparison preserves exact artifacts, receipts, final effects,
+      authorized replacement PostgreSQL 16 comparison, completion gates,
+      Branch Release Gate, human merge, and exact resulting-main workflow after
+      its Task 7 repairs and behavior-neutral Task 8–9 alignment.
+- [ ] The replacement comparison preserves exact artifacts, receipts, final effects,
       atomic completion, zero forbidden exhaustion/transient retry, the 5%
       uncontended p95/p99 limit, no shared-throughput regression, the
       child-only 10% hot-throughput limit, and measured conflict-depth reasons
@@ -1698,20 +1827,20 @@ No approval above authorizes the later API-v1 child.
 
 ## 14. Risks And Reserved Decisions
 
-| Risk                                                            | Locked response                                                                                                                                                                                              |
-| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Moving 4,000-line mutation code accidentally rewrites semantics | Move one characterized cohort at a time; preserve exact literals/assertions and independently review each responsibility.                                                                                    |
-| Repository split creates hidden transactions or retries         | Keep one public facade and existing transaction-bound construction; concrete repositories receive the existing runtime/transaction dependency only.                                                          |
-| AppInbox delegation changes order or retry context              | Characterize registrations, command/facts construction, per-attempt calls, transaction callbacks, and post-commit hooks before extraction.                                                                   |
-| Topology/RTC work expands into later waves                      | Move only inbox-owned command/authority/handler code; their services and repositories stay put.                                                                                                              |
-| Compatibility files become permanent chains                     | Explicit one-hop named exports only, with exact removal conditions in Section 6.                                                                                                                             |
-| Test splits weaken evidence                                     | Preserve named-case, literal, and assertion counts; no source-text replacement for runtime behavior.                                                                                                         |
-| Persisted validation duplicates cross-cutting primitive bodies  | Keep normalization and domain validation in their approved owners while the feature-root validation-primitives module solely owns the existing generic bodies and every Task 3 consumer imports it directly. |
-| A structural move changes concurrency performance               | Use the one non-rerolled approved-base/current PostgreSQL 16 pair, enforce exact durable evidence plus the child-only limits in Section 10, and explain every resource increase by measured conflict depth.  |
-| Memory evidence reads a stale auth-session store                | Read the active PGlite backing store in memory mode while retaining PostgreSQL evidence behavior.                                                                                                            |
-| Committed admin prune work is not observed by the active drain  | Correct only a missing post-commit wake and prove deterministic `APP_OUTBOX` completion without altering Section 7 ordering or transaction semantics.                                                        |
-| Medium-scale presence evidence is timing-dependent              | Preserve the fixed 100-client/five-group/two-process matrix and repair orchestration, wake/drain evidence, or timing rather than presence semantics.                                                         |
-| Formatting/alignment obscures movement                          | Keep the behavior-neutral alignment in existing PR #59 under one final combined review; no API-v1 organization or semantic cleanup is allowed.                                                               |
+| Risk                                                            | Locked response                                                                                                                                                                                                                   |
+| --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Moving 4,000-line mutation code accidentally rewrites semantics | Move one characterized cohort at a time; preserve exact literals/assertions and independently review each responsibility.                                                                                                         |
+| Repository split creates hidden transactions or retries         | Keep one public facade and existing transaction-bound construction; concrete repositories receive the existing runtime/transaction dependency only.                                                                               |
+| AppInbox delegation changes order or retry context              | Characterize registrations, command/facts construction, per-attempt calls, transaction callbacks, and post-commit hooks before extraction.                                                                                        |
+| Topology/RTC work expands into later waves                      | Move only inbox-owned command/authority/handler code; their services and repositories stay put.                                                                                                                                   |
+| Compatibility files become permanent chains                     | Explicit one-hop named exports only, with exact removal conditions in Section 6.                                                                                                                                                  |
+| Test splits weaken evidence                                     | Preserve named-case, literal, and assertion counts; no source-text replacement for runtime behavior.                                                                                                                              |
+| Persisted validation duplicates cross-cutting primitive bodies  | Keep normalization and domain validation in their approved owners while the feature-root validation-primitives module solely owns the existing generic bodies and every Task 3 consumer imports it directly.                      |
+| A structural move changes concurrency performance               | Preserve the rejected original evidence and use only the one non-rerolled controlled replacement PostgreSQL 16 pair; retain the exact durable evidence, child-only limits, and measured conflict-depth requirement in Section 10. |
+| Memory evidence reads a stale auth-session store                | Read the active PGlite backing store in memory mode while retaining PostgreSQL evidence behavior.                                                                                                                                 |
+| Committed admin prune work is not observed by the active drain  | Correct only a missing post-commit wake and prove deterministic `APP_OUTBOX` completion without altering Section 7 ordering or transaction semantics.                                                                             |
+| Medium-scale presence evidence is timing-dependent              | Preserve the fixed 100-client/five-group/two-process matrix and repair orchestration, wake/drain evidence, or timing rather than presence semantics.                                                                              |
+| Formatting/alignment obscures movement                          | Keep the behavior-neutral alignment in existing PR #59 under one final combined review; no API-v1 organization or semantic cleanup is allowed.                                                                                    |
 
 Reserved for separate human approval: any public/breaking release, API-v1
 reorganization, schema/key/persistence migration, authority/policy change,
@@ -1720,15 +1849,15 @@ topology/RTC algorithm refactor.
 
 ## 15. Progress Record
 
-| Milestone                 | Status                                 | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| ------------------------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Browser prerequisite      | `ledger-published`                     | PR #55, feature `7db208ed977fdcad4a1afef8a5d08c3cfdbb862c`, tree `96f0f763577a18983a9a9f08f87147a9ab154930`, Branch Release Gate `30519129484` attempt 1 success, resulting main `b4fe2a6ae5893f3adae86061bd38cf416bac8aaf`, default workflow `30520679271` attempt 1 success.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| Server inventory          | drafted                                | Current services, mutation phases, AppInbox, persistence, presence, snapshot, topology, RTC RTT, exports, consumers, examples, tests, and representative trace inspected at the base SHA.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| Child plan                | `human-approved`                       | Approved plan blob `1a74159d37f76a459009e99ca5a08f3cd620b1b4`; Section 12 records the prior authorized amendments and the expanded pre-merge convergence authorization at existing head `addf41b9b6d89933d65a8b222581cd900577e22a` / tree `4fe54ccc362ed86fc2132aae2c0a1433edb2528f`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| Structure implementation  | repairs published; final gates pending | Tasks 0–6 and the two earlier Task 7 review fixes are complete through `1eb3bc7c0bc0c3bbfaaa240f8702f8704e392067` / tree `d9574022a45ae78ce325f60cffc8ef61be16aa73`. The accepted memory/admin repair is published through `e2e109c21ba8f3739e519f1bc1375a00239e039e` / tree `b13847709e9eb69ef0ced04101c00f3bc44488ab`; its final Deno 26/26, focused Vitest 71/71 on three consecutive runs, memory matrix 11/11, auth-session 16/16, and admin-operation 12/12 cohorts passed. The accepted PostgreSQL convergence repair is published through `7a42c98a31fad1e26bd46622809dc8eb58599c0f` / tree `ac2f0fa7641eb229e0895114e3a2a31930e56563`; its focused 44/44 and 177/177 cohorts passed, and the unchanged 2,748-assertion medium-scale gate passed twice with zero failures. The accepted retry-evidence isolation is published through `1a17a6a322b83dd1799385013d36fac7100fabd4` / tree `1e1eaa536d77db69419c6951347df5d9177840bf`; the final presence-expiry gate passed 10/10 and the overlength topology queue-identity case passed. Paired performance, Task 9 completion gates, final publication, and remote gates remain pending.                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| Alignment implementation  | implemented, accepted, and published   | The behavior-neutral Task 8 source ratchet and alignment are published through `c0489e3b50401e589322b45117921884c198c0a0` / tree `ad9ec15ca9abe7621ad86e7ebc2eada03a8cf37f`. Formal review accepted Critical 0, Important 0, Minor 0 after three review-fix rounds. The final ratchet preserves the exact production/test/support trees, independent persistence fixture cohort, named inputs, tuple-parameter detection, runtime named/star re-export cycle analysis, type-only exclusions, and the deleted interim-owner dispositions. Task 9 gates and all future PR-ready, merge, workflow, and ledger evidence remain pending.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| Task 9 structural lineage | cohorts and Deno fix accepted          | Exact-base structural lineage is implemented test-first from `b8d6d8516f2c1caff46494569940c06e7ee06c43` / tree `9344df9af0b24f29341ebf8d8cebdb9d54963b69`; its three review rounds accepted Critical 0, Important 0, Minor 0 on candidate tree `ae4aab3f01cbcdb4cc933e7401f01625e64d71bf`. The non-lineage cohort starts from `0afacc09c75044e9d983cdc3f228464432cb6773` / tree `a1a4e4ee47a3f31a837d6ab7541d82d88ceee1c5` and reduces the exact `WORKTREE` comparison from 50 residual findings to zero through cohesive ownership moves and named boundary narrowing. Review round 1 reported Critical 0, Important 4, Minor 0. Candidate `093b0f929366cc9beb46c7b619e668ecf3ee2a2b` retained readonly metadata but re-review reported Critical 0, Important 3, Minor 0. Candidate `6456c595bd1eba595a8a97dc6223895bceb325f7` fixed those three but re-review reported Critical 0, Important 2, Minor 0 for stale nullish readiness state and a 404-line ratchet test. Candidate `77fa37a5bf27777b8f2861d79e445ac0220b5c9d` resolved those findings; independent review accepted Critical 0, Important 0, Minor 0 after three review-fix rounds. The final Deno gate at `5be76f2c70d1f1d1c9d162a735fc86db64fc1622` / tree `c8c0634fb35a48ea6f54f13eff4bdd915c31a0d8` then exposed the private child kill-parameter mismatch; its exact-runtime correction was independently accepted Critical 0, Important 0, Minor 0 on candidate tree `1899730916deb8ed80ca8a28fc1fd06da195a952`. Broader invalidated gates, performance, publication, final commit/tree, PR-ready, workflow, merge, and ledger evidence remain pending. |
-| Evidence ledger           | pending                                | Waits for the single expanded PR #59 implementation envelope and separate authorization.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Milestone                 | Status                                 | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ------------------------- | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Browser prerequisite      | `ledger-published`                     | PR #55, feature `7db208ed977fdcad4a1afef8a5d08c3cfdbb862c`, tree `96f0f763577a18983a9a9f08f87147a9ab154930`, Branch Release Gate `30519129484` attempt 1 success, resulting main `b4fe2a6ae5893f3adae86061bd38cf416bac8aaf`, default workflow `30520679271` attempt 1 success.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Server inventory          | drafted                                | Current services, mutation phases, AppInbox, persistence, presence, snapshot, topology, RTC RTT, exports, consumers, examples, tests, and representative trace inspected at the base SHA.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| Child plan                | `human-approved`                       | Approved plan blob `1a74159d37f76a459009e99ca5a08f3cd620b1b4`; Section 12 records the prior authorized amendments and the expanded pre-merge convergence authorization at existing head `addf41b9b6d89933d65a8b222581cd900577e22a` / tree `4fe54ccc362ed86fc2132aae2c0a1433edb2528f`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Structure implementation  | repairs published; final gates pending | Tasks 0–6 and the two earlier Task 7 review fixes are complete through `1eb3bc7c0bc0c3bbfaaa240f8702f8704e392067` / tree `d9574022a45ae78ce325f60cffc8ef61be16aa73`. The accepted memory/admin repair is published through `e2e109c21ba8f3739e519f1bc1375a00239e039e` / tree `b13847709e9eb69ef0ced04101c00f3bc44488ab`; its final Deno 26/26, focused Vitest 71/71 on three consecutive runs, memory matrix 11/11, auth-session 16/16, and admin-operation 12/12 cohorts passed. The accepted PostgreSQL convergence repair is published through `7a42c98a31fad1e26bd46622809dc8eb58599c0f` / tree `ac2f0fa7641eb229e0895114e3a2a31930e56563`; its focused 44/44 and 177/177 cohorts passed, and the unchanged 2,748-assertion medium-scale gate passed twice with zero failures. The accepted retry-evidence isolation is published through `1a17a6a322b83dd1799385013d36fac7100fabd4` / tree `1e1eaa536d77db69419c6951347df5d9177840bf`; the final presence-expiry gate passed 10/10 and the overlength topology queue-identity case passed. Replacement performance, Task 9 completion gates, final publication, and remote gates remain pending.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Alignment implementation  | implemented, accepted, and published   | The behavior-neutral Task 8 source ratchet and alignment are published through `c0489e3b50401e589322b45117921884c198c0a0` / tree `ad9ec15ca9abe7621ad86e7ebc2eada03a8cf37f`. Formal review accepted Critical 0, Important 0, Minor 0 after three review-fix rounds. The final ratchet preserves the exact production/test/support trees, independent persistence fixture cohort, named inputs, tuple-parameter detection, runtime named/star re-export cycle analysis, type-only exclusions, and the deleted interim-owner dispositions. Task 9 gates and all future PR-ready, merge, workflow, and ledger evidence remain pending.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Task 9 structural lineage | cohorts and Deno fix accepted          | Exact-base structural lineage is implemented test-first from `b8d6d8516f2c1caff46494569940c06e7ee06c43` / tree `9344df9af0b24f29341ebf8d8cebdb9d54963b69`; its three review rounds accepted Critical 0, Important 0, Minor 0 on candidate tree `ae4aab3f01cbcdb4cc933e7401f01625e64d71bf`. The non-lineage cohort starts from `0afacc09c75044e9d983cdc3f228464432cb6773` / tree `a1a4e4ee47a3f31a837d6ab7541d82d88ceee1c5` and reduces the exact `WORKTREE` comparison from 50 residual findings to zero through cohesive ownership moves and named boundary narrowing. Review round 1 reported Critical 0, Important 4, Minor 0. Candidate `093b0f929366cc9beb46c7b619e668ecf3ee2a2b` retained readonly metadata but re-review reported Critical 0, Important 3, Minor 0. Candidate `6456c595bd1eba595a8a97dc6223895bceb325f7` fixed those three but re-review reported Critical 0, Important 2, Minor 0 for stale nullish readiness state and a 404-line ratchet test. Candidate `77fa37a5bf27777b8f2861d79e445ac0220b5c9d` resolved those findings; independent review accepted Critical 0, Important 0, Minor 0 after three review-fix rounds. The final Deno gate at `5be76f2c70d1f1d1c9d162a735fc86db64fc1622` / tree `c8c0634fb35a48ea6f54f13eff4bdd915c31a0d8` then exposed the private child kill-parameter mismatch; its exact-runtime correction was independently accepted Critical 0, Important 0, Minor 0 on candidate tree `1899730916deb8ed80ca8a28fc1fd06da195a952`. The first fixed performance pair at `57e7d57f51c0a88a854919dcafeb0ba06125c1a5` / tree `de4da10ded4542c69028226d1563442bdf03a353` retained exact durable correctness but was independently rejected Critical 0, Important 2, Minor 0 for failed child thresholds and nonstationary database-wide activity; one controlled replacement pair is authorized and pending. Broader invalidated gates, final publication, PR-ready, workflow, merge, and ledger evidence remain pending. |
+| Evidence ledger           | pending                                | Waits for the single expanded PR #59 implementation envelope and separate authorization.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 
 ## 16. Implementation Self-Review Record
 
@@ -1817,11 +1946,20 @@ that the three mandatory repairs retain every Section 7 invariant, that memory
 auth-session evidence observes the active PGlite store while PostgreSQL evidence
 remains intact, that any admin-prune wake occurs only after commit, and that the
 unchanged medium-scale matrix remains deterministic. It also checks that Tasks
-8–9 are behavior-neutral and confined to existing PR #59, that the one
-predeclared PostgreSQL 16 pair uses fresh isolated databases with
+8–9 are behavior-neutral and confined to existing PR #59, that the rejected
+original pair remains historical evidence, that the one replacement PostgreSQL
+16 pair uses the pinned isolated environments with
 `--warmup=1 --runs=9 --concurrency=10` and no reroll, and that no future
 commit/tree, Branch Release Gate, merge, resulting-main, default-workflow, or
 ledger fact is recorded here.
+
+The performance-evidence recovery self-review additionally checks that the
+rejected original hashes, comparator failures, and review remain historical
+evidence; that no raw artifact is reconstructed; that the replacement sides use
+the same pinned PostgreSQL 16 image/configuration without overlap or automatic
+vacuum/analyze; that each replacement side runs once; and that no production,
+threshold, dependency, workflow, contract, AppInbox, Task 10, or API-v1 change
+is authorized.
 
 The Task 9 structural-lineage cohort self-review additionally checks a real
 checker process for one-to-many aggregate consumption, duplicated target
