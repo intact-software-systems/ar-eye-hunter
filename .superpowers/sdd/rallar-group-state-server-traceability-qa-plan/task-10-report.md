@@ -74,5 +74,7 @@ Self-review is Critical 0 / Important 0. The only production diffs are the
 approved internal symbol/path substitutions and direct imports; the write
 owner is a 100% rename, the pure computed-result body is unchanged, old private
 paths are absent, compatibility owners are unchanged, every target name matches
-its filename/role, and no new runtime dependency or cycle exists. Independent
-scoped review remains external until it exists.
+its filename/role, and no new runtime dependency or cycle exists. Fresh
+independent re-review accepted Critical 0 / Important 0 / Minor 0 at exact
+milestone head `41ae45afa268d186e65dfe0188be7f146ee80f7e` and tree
+`c6373a00e686bae64f7bc5b3361798fbfb105f98`.

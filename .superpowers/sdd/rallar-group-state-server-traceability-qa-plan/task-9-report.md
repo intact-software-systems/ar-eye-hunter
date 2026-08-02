@@ -92,4 +92,7 @@ imports remain acyclic.
 Self-review: Critical 0 / Important 0. The transaction owner exposes private
 data only after commit, persists/finalizes only durable data, shares one write
 sequence, and preserves every pre-existing failure/retry/public path. The
-capability is exact and internal. Independent scoped review remains pending.
+capability is exact and internal. Fresh independent re-review accepted Critical
+0 / Important 0 at exact milestone head
+`7556238729da5b485ca4811f2ee806d67205a1c0` and tree
+`f2358d6cf946a59a4ae3f66c3c185f7b89d9d3b5`.

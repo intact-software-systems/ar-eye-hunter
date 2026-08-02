@@ -83,7 +83,7 @@ pass with the exact reviewed predecessor allowances and no descriptor
 filename/export allowance.
 
 The first independent review reported Critical 0 / Important 1 for the filename
-and primary-symbol mismatch. This review-fix resolves that exact finding;
-review-fix self-review finds Critical 0 / Important 0, and independent re-review
-is pending. The final commit and tree remain external publication evidence and
-are not predicted inside this report.
+and primary-symbol mismatch. The review fix resolved that exact finding. The
+fresh independent re-review accepted Critical 0 / Important 0 / Minor 0 at
+exact milestone head `3a730b845a78a268f1c1e19dc9b3edb7a54619cb` and tree
+`a96ca6935840752328f26980fa72dcfdf59472f4`.

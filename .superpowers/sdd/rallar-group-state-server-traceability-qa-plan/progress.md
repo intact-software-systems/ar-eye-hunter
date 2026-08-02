@@ -1,8 +1,18 @@
 # SDD ledger — plan: plans/rallar-group-state-server-traceability-qa-plan.md
 
-Base: 2f7390c2b422a2b33f0ca781ecef8de9abd86a25
-Approved plan blob: 23aee4769fa49f623f8114073ea8c132e3f25671
-Scope: Tasks 1–4 / PR A only
+PR B base: a7a5f488cd185a7f2cc6bd814c319f97d5401d03
+Approved plan basis: original blob 23aee4769fa49f623f8114073ea8c132e3f25671
+plus the explicitly authorized Task 1 seven-owner test-tree and package.json
+registration amendment; effective merged plan blob
+13d0059c9fa1377bd15a1d384ad3c4a7137479f7.
+Current scope: Tasks 5–12 / PR B only
+
+PR A publication prerequisite: complete — PR #61 feature head
+8bc4ffd66f4a600f47ee0981ced1f4539bd6a91a, frozen tree
+c1e572d21b145287f59c8c28db6caa72853f0801, Branch Release Gate 30707723830
+attempt 1 success, resulting main a7a5f488cd185a7f2cc6bd814c319f97d5401d03,
+and Run Hetzner Supported Distributed Manifests 30724358065 attempt 1 success for
+that exact main SHA.
 
 Setup: complete (isolated branch/worktree, npm install, repo governance baseline 8 files / 180 tests passed)
 
@@ -103,6 +113,11 @@ testing command reference plus both active architecture-document corrections.
 All current GREEN, supplementary, source/tree, governance, Deno, TypeScript,
 format, and diff gates pass; the future-only RED remains exactly 14.
 
+Task 5: complete and independently accepted — exact head
+4e736692112842811204174aef3d27c7135f0acb, tree
+79728b406d27a21dc571b7dc0ad4315cac1eff7a, Critical 0 / Important 0 /
+Minor 0.
+
 Task 6: implemented — the exact descriptor translation now has one exported
 representation owner, `processGroupStateMutation` is the direct handler entry,
 and AppGroupInboxService calls both owners directly. All 17 authenticated
@@ -115,7 +130,10 @@ Critical 0 / Important 1 for that filename/export mismatch; review-fix round 1
 renames the private owner to `to-group-mutation-descriptor.ts`, removes the
 allowance, and adds no compatibility hop. The exact changed-style comparison
 fails on that one finding before the rename and passes afterward; the renamed
-owner is byte-identical. Independent re-review is pending.
+owner is byte-identical. Task 6 is independently accepted at exact head
+3a730b845a78a268f1c1e19dc9b3edb7a54619cb and tree
+a96ca6935840752328f26980fa72dcfdf59472f4 with Critical 0 / Important 0 /
+Minor 0.
 
 Task 7: implemented — `createTimedGroupStateService` is the explicit timing
 boundary and the runtime assembly calls it directly. No-timing returns the
@@ -140,7 +158,9 @@ records/asserts object or value identity for every argument of all 15 wrappers.
 `listRecentEvents` now has explicit present and absent cases; absence preserves
 no method, no call, and no timing event. Review-fix RED was 3 failed / 1 passed;
 timing GREEN is 2 files / 10 tests. Production is byte-identical to the
-reviewed Task 7 commit. Independent re-review is pending.
+reviewed Task 7 commit. Task 7 is independently accepted at exact head
+5e0a9fc5576c6975cd06de7b0280135eb1badf9d and tree
+b174d510666090d4a009cffc03d78b5367b2cff8 with Critical 0 / Important 0.
 
 Task 8: implemented — the complete consumer inventory found no supported
 topology or RTC processing before configuration. Construction retains exact
@@ -163,7 +183,10 @@ source-mutation inputs still named the removed optional facade lookups. Only
 those five inputs now match the captured `service` and `dependencies` callback
 forms; all wrong-handler replacements, mutation guards, and assertions are
 unchanged. Routing is 12 / 12 and the complete focused batch is 12 files / 131
-tests. Independent re-review is pending.
+tests. Task 8 is independently accepted at exact head
+9b1dd873b183132a4379dd532c8fc516dbc2dfd4 and tree
+b9094e7ccc77eff6318b1644cbc5916afc2babf7 with Critical 0 / Important 0 /
+Minor 0.
 
 Task 9: implemented — the AppInbox transaction writer now owns one immutable
 durable/private result and one shared transaction/finalization sequence. It
@@ -179,7 +202,9 @@ stronger test-first RED was 19 failures / 2 passes before implementation. Task
 AppInbox compatibility batch is 56 files / 280 tests. Source/tree/active/owner
 ratchets are 4 files / 26 tests; shared-server TypeScript and changed-style pass.
 The future-only suite now fails exactly the ten reserved Task 10 cases.
-Self-review is Critical 0 / Important 0; independent scoped review is pending.
+Self-review is Critical 0 / Important 0. Task 9 is independently accepted at
+exact head 7556238729da5b485ca4811f2ee806d67205a1c0 and tree
+f2358d6cf946a59a4ae3f66c3c185f7b89d9d3b5 with Critical 0 / Important 0.
 
 Task 10: implemented — the target-identity and mutation-write owners now have
 the exact approved filenames and primary symbols. The target resolver rules,
@@ -196,5 +221,20 @@ source/tree/active/owner is 4 / 43; the complete mirrored group-state tree is
 51 files / 235 tests, and the surrounding AppInbox/public-owner compatibility
 batch is 10 / 174. Shared-server TypeScript, Prettier, diff checks, exact
 changed-style comparison, file/function limits, and runtime cycles pass.
-Self-review is Critical 0 / Important 0; independent scoped review remains
-pending.
+Self-review is Critical 0 / Important 0. Task 10 is independently accepted at
+exact head 41ae45afa268d186e65dfe0188be7f146ee80f7e and tree
+c6373a00e686bae64f7bc5b3361798fbfb105f98 with Critical 0 / Important 0 /
+Minor 0.
+
+Task 11: in progress — factual plan/SDD evidence reconciliation is limited to
+the QA plan and Task 5–11 execution evidence. The first complete gate pass is
+accepted for evidence capture: exact focused 17-file batch 227/227, API-v1 Deno
+4/4, group-state 235/235, shared-server 1,528 passed / 18 skipped, ratchets
+14/14, memory matrix 11/11, PostgreSQL medium-scale 2,748/2,748,
+TypeScript/Deno checks, seven warning-only checker modes, unit 5,924 passed / 18
+skipped, CI, build, formatter ownership, protected-plan hash, and diff scope all
+pass. The final unchanged-tree rerun remains required after this last evidence
+edit. Fresh whole-PR independent review, exact candidate freeze, governed
+A-B-B-A performance, PR body correction, and Branch Release Gate remain
+pending and are not predicted. The later ledger and API-v1 child remain
+unstarted.

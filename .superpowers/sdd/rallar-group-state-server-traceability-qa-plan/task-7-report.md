@@ -102,5 +102,7 @@ external publication evidence until they exist.
 Critical 0 / Important 0. The derived operation list is exact in both
 directions, all argument tuples use identity assertions, direct navigation
 reaches every underlying method, the no-sink and optional-method shapes are
-preserved, and no later task or public surface is included. Independent scoped
-re-review is pending.
+preserved, and no later task or public surface is included. Fresh independent
+re-review accepted Critical 0 / Important 0 at exact milestone head
+`5e0a9fc5576c6975cd06de7b0280135eb1badf9d` and tree
+`b174d510666090d4a009cffc03d78b5367b2cff8`.

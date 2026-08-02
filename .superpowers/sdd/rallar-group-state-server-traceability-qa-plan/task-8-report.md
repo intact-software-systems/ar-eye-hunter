@@ -74,11 +74,14 @@ The focused construction-detail output has no Task 8 construction finding.
 boundary, and `abstraction.pass-through` on the unchanged
 `isTopologyConfigInboxType` predicate is an existing facade-owned routing-policy
 signal with no new magnitude. The final Prettier, diff, and line checks pass.
-Independent scoped review remains external until it exists.
+The independent review result is recorded below.
 
 ## Self-review
 
 Critical 0 / Important 0. Public setter identity and error behavior, family
 registration order, callback input identity, and the supported composition
 lifecycle are explicit. Transaction, retry, receipt, outbox, result, topology,
-and RTC algorithms remain unchanged. Independent scoped review is pending.
+and RTC algorithms remain unchanged. Fresh independent re-review accepted
+Critical 0 / Important 0 / Minor 0 at exact milestone head
+`9b1dd873b183132a4379dd532c8fc516dbc2dfd4` and tree
+`b9094e7ccc77eff6318b1644cbc5916afc2babf7`.
