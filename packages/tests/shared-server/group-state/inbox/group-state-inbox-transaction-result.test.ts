@@ -322,8 +322,11 @@ describe('group-state AppInbox transaction result boundary', () => {
     expect(existsSync(predecessorWritePath), predecessorWritePath).toBe(false);
   });
 
-  it('requires computeGroupMutationWrite without the predecessor writeResult symbol', () => {
-    expect(readTargetSource(computedWritePath)).toContain('computeGroupMutationWrite');
+  it('requires computeGroupMutationWriteResult without the predecessor write symbol', () => {
+    const source = readTargetSource(computedWritePath);
+
+    expect(source).toContain('computeGroupMutationWriteResult');
+    expect(source).not.toContain('computeGroupMutationWrite(');
   });
 
   it('removes the predecessor writeResult symbol from the computed-result owner', () => {

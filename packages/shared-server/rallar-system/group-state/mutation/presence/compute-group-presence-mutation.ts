@@ -16,7 +16,7 @@ import {
   isExactlyAdmitted,
   toPolicySnapshot,
 } from '../aggregate/group-aggregate-mutation-policy.ts';
-import { computeGroupMutationWrite, noOp, requireGroup } from '../group-mutation-result.ts';
+import { computeGroupMutationWriteResult, noOp, requireGroup } from '../group-mutation-result.ts';
 import {
   compareGenerationOrder,
   validateStoredGeneration,
@@ -335,7 +335,7 @@ function presenceWrite({
             value: session,
             expectedRevision: read.targetPresence!.entry.revision,
           } as const);
-  return computeGroupMutationWrite({
+  return computeGroupMutationWriteResult({
     command,
     read,
     facts,

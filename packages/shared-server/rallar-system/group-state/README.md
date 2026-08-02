@@ -106,6 +106,9 @@ the group handler uses.
    `no-op`, and `rejected` skip that write but remain inside the same AppInbox
    transaction so the handler can read and persist their exact durable caller
    result. An idempotency conflict is rejected before that durable-result read.
+   The aggregate, membership, and presence computations share
+   [computeGroupMutationWriteResult](./mutation/group-mutation-result.ts) for
+   their canonical `write` result.
 5. For a `write` outcome, `commitMutation` gives
    [writeGroupMutation](./mutation/write/write-group-mutation.ts) the AppInbox
    transaction. Its aggregate or presence-session guard is the first
@@ -220,6 +223,13 @@ to prefer the service's canonical recent-event query and otherwise filter its
 canonical event list; the page route calls `listEventPage` directly. Every
 thrown authorization, not-found, query, or parsing failure exits through
 [toGroupStateErrorResponse](../../../../apps/api-v1/src/routes/group-state-route-errors.ts).
+
+[createTimedGroupStateService](./group-state-service-timing.ts) times every
+asynchronous `GroupStateService` operation in its closed
+`GroupStateTimedOperation` inventory. It intentionally excludes the synchronous
+`compute` and `validate` phases and `sessionGenerationLifecycle`; the optional
+`listRecentEvents` wrapper exists only when the durable service exposes that
+method.
 
 ### Snapshot and cache reads
 

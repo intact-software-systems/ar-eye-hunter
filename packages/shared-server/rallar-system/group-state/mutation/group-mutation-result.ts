@@ -73,7 +73,9 @@ export function materializedRotateJoinCode(
   return { joinCode, expiresAtEpochMs };
 }
 
-export function computeGroupMutationWrite(input: GroupMutationWriteInput): GroupMutationComputed {
+export function computeGroupMutationWriteResult(
+  input: GroupMutationWriteInput,
+): GroupMutationComputed {
   const { command, facts, read } = input;
   const group =
     input.eventGroup ??
