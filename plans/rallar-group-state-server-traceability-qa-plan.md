@@ -1059,12 +1059,22 @@ may be waived or rerolled inside this plan.
 - Modify: `packages/shared-server/rallar-system/services/AppGroupInboxService.ts`
 - Modify: directly affected Task 5 tests/inventories
 
-- [ ] Move descriptor code without rewriting branches, casts, values, or errors.
-- [ ] Rename only the internal handler method to
+- [x] Move descriptor code without rewriting branches, casts, values, or errors.
+- [x] Rename only the internal handler method to
       `processGroupStateMutation` and update exact internal callers.
-- [ ] Remove the handler's pass-through descriptor method.
-- [ ] Run descriptor, authority, operation, routing, retry, and ratchet tests.
+- [x] Remove the handler's pass-through descriptor method.
+- [x] Run descriptor, authority, operation, routing, retry, and ratchet tests.
 - [ ] Obtain scoped review with Critical 0 / Important 0.
+
+Task 6 implementation moved the existing five descriptor functions without
+changing their branches, casts, projected values, errors, defaults, omissions,
+or volatile-value calls. The direct descriptor fixture covers all 17
+authenticated `GROUP_*` variants and the exact unsupported-family error. The
+approved filename and exported representation-boundary symbol intentionally
+produce one `layout.primary-export-name` heuristic warning; the Task 6 source
+ratchet records that exact plan-owned disposition rather than renaming either
+locked contract. Independent review and its verdict remain external until they
+exist.
 
 ### Task 7: Replace Dynamic Timing Dispatch With Explicit Operations
 

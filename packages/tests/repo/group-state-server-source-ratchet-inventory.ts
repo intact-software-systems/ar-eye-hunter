@@ -142,12 +142,16 @@ export const taskSevenRepairTestOwners = [
   'packages/tests/shared-test/api-v1-state-write-evidence-source.test.ts',
 ] as const;
 
-export const taskFiveChangedTypeScriptOwners = [
+export const prBChangedTypeScriptOwners = [
   'apps/api-v1/test/rallar-server.test.ts',
+  'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts',
+  'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-mutation-descriptor.ts',
+  'packages/shared-server/rallar-system/services/AppGroupInboxService.ts',
   'packages/tests/repo/group-state-server-source-ratchet-inventory.ts',
   'packages/tests/repo/group-state-server-source-ratchet.test.ts',
   'packages/tests/repo/group-state-source-ratchet-function-sizes.ts',
   'packages/tests/repo/group-state-traceability-active-paths.test.ts',
+  'packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts',
   'packages/tests/shared-server/app-inbox-test-database-contracts.ts',
   'packages/tests/shared-server/app-inbox-test-database-sql.ts',
   'packages/tests/shared-server/app-inbox-test-database-transaction.ts',
@@ -163,6 +167,7 @@ export const taskFiveChangedTypeScriptOwners = [
   'packages/tests/shared-server/group-state/inbox/group-state-inbox-transaction-failures.test.ts',
   'packages/tests/shared-server/group-state/inbox/group-state-inbox-transaction-result.test.ts',
   'packages/tests/shared-server/group-state/inbox/group-state-transaction-boundary-fixture.ts',
+  'packages/tests/shared-server/mutation-routing-owner-inventory.ts',
   'packages/tests/shared-server/topology-app-inbox-ownership.test.ts',
 ] as const;
 

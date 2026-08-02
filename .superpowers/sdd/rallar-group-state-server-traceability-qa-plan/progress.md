@@ -102,3 +102,12 @@ pre-existing test runtime from the three new test/ratchet owners and name the
 testing command reference plus both active architecture-document corrections.
 All current GREEN, supplementary, source/tree, governance, Deno, TypeScript,
 format, and diff gates pass; the future-only RED remains exactly 14.
+
+Task 6: implemented — the exact descriptor translation now has one exported
+representation owner, `processGroupStateMutation` is the direct handler entry,
+and AppGroupInboxService calls both owners directly. All 17 authenticated
+descriptor variants, the unsupported-family error, phase ordering, routing,
+retry, authority, source-tree, cycle, size, and TypeScript checks pass. The
+evolving PR B changed-source inventory now covers 26 paths. The approved exact
+filename/function pairing has one explicitly disposed
+`layout.primary-export-name` heuristic warning; independent review is pending.

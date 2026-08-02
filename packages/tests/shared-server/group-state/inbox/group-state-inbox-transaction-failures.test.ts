@@ -20,7 +20,7 @@ describe('group-state AppInbox transaction failure boundaries', () => {
     async (failurePhase) => {
       const harness = await createGroupStateTransactionBoundaryHarness(failurePhase);
 
-      await expect(harness.handler.processMutation(harness.context)).rejects.toThrow(
+      await expect(harness.handler.processGroupStateMutation(harness.context)).rejects.toThrow(
         `controlled ${failurePhase} failure`,
       );
 

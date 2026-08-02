@@ -63,7 +63,7 @@ describe('group-state AppInbox transaction result boundary', () => {
   it('persists the real durable result before exposing the committed snapshot', async () => {
     const harness = await createGroupStateTransactionBoundaryHarness();
 
-    const created = await harness.handler.processMutation(harness.context);
+    const created = await harness.handler.processGroupStateMutation(harness.context);
 
     const persisted = await harness.results.findByKey(harness.context.entry.key);
     expect(persisted?.status).toBe(EntityStatus.COMPLETED);
@@ -118,7 +118,7 @@ describe('group-state AppInbox transaction result boundary', () => {
     });
 
     await expect(
-      handler.processMutation({
+      handler.processGroupStateMutation({
         enqueue: {
           authority: {
             authorityProof: null,
@@ -158,15 +158,20 @@ describe('group-state AppInbox transaction result boundary', () => {
     expect(source).toContain('afterCommitResult');
   });
 
-  it('requires direct descriptor routing and a narrow handler capability', () => {
+  it('requires direct descriptor routing', () => {
     const handler = readFileSync(handlerPath, 'utf8');
-    const contracts = readFileSync(contractsPath, 'utf8');
 
     expect(handler).toContain('processGroupStateMutation(');
     expect(handler).not.toContain('toMutationDescriptor<V>(');
+    expect(readFileSync(descriptorPath, 'utf8')).toContain('toGroupMutationDescriptor');
+  });
+
+  it('requires a narrow handler capability', () => {
+    const handler = readFileSync(handlerPath, 'utf8');
+    const contracts = readFileSync(contractsPath, 'utf8');
+
     expect(handler).not.toContain('groupStateService: GroupStateService;');
     expect(contracts).toContain('interface GroupStateInboxMutationOperations');
-    expect(readFileSync(descriptorPath, 'utf8')).toContain('toGroupMutationDescriptor');
   });
 
   it('requires the Task 10 target-identity owner path', () => {

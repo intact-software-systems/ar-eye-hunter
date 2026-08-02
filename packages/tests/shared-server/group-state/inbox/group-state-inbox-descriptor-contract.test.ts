@@ -1,33 +1,34 @@
 import { describe, expect, it } from 'vitest';
 
-import type { AppInboxEnqueueInput } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
-import { AppInboxType } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
-import type { GroupMutationDescriptor } from '@shared-server/rallar-system/services/group-state-service.ts';
-import { SCOPE, createAuthorityHarness } from './group-state-inbox-test-runtime.ts';
+// prettier-ignore
+import type { AppInboxEnqueueInput } from
+  '@shared-server/rallar-system/services/AppGroupInboxService.ts';
+// prettier-ignore
+import { AppInboxType } from
+  '@shared-server/rallar-system/services/AppGroupInboxService.ts';
+// prettier-ignore
+import { toGroupMutationDescriptor } from
+  '@shared-server/rallar-system/group-state/inbox/group-state-inbox-mutation-descriptor.ts';
+// prettier-ignore
+import type { GroupMutationDescriptor } from
+  '@shared-server/rallar-system/services/group-state-service.ts';
+import { SCOPE } from './group-state-inbox-test-runtime.ts';
 
 const groupId = 'descriptor-room';
 const actor = { actorPrincipalId: 'owner', actorSessionId: 'owner-session' };
 
 describe('AppGroupInboxService authenticated mutation descriptors', () => {
-  it('maps every authenticated GROUP_* AppInbox variant to one exact descriptor', async () => {
-    const harness = await createAuthorityHarness(['owner']);
-    const handler = (harness.service as unknown as GroupStateInboxHandlerOwner)
-      .groupStateInboxHandler;
-
+  it('maps every authenticated GROUP_* AppInbox variant to one exact descriptor', () => {
     for (const testCase of descriptorCases) {
-      expect(handler.toMutationDescriptor(testCase.enqueue), testCase.name).toEqual(
+      expect(toGroupMutationDescriptor(testCase.enqueue), testCase.name).toEqual(
         testCase.descriptor,
       );
     }
   });
 
-  it('rejects an AppInbox type outside the authenticated group family', async () => {
-    const harness = await createAuthorityHarness(['owner']);
-    const handler = (harness.service as unknown as GroupStateInboxHandlerOwner)
-      .groupStateInboxHandler;
-
+  it('rejects an AppInbox type outside the authenticated group family', () => {
     expect(() =>
-      handler.toMutationDescriptor({
+      toGroupMutationDescriptor({
         type: AppInboxType.RTC_RTT_SUBMIT,
         resourceId: 'not-a-group-mutation',
         contextId: 'descriptor-contract',
@@ -37,12 +38,6 @@ describe('AppGroupInboxService authenticated mutation descriptors', () => {
     ).toThrow('App inbox type is not an authenticated group mutation.');
   });
 });
-
-interface GroupStateInboxHandlerOwner {
-  readonly groupStateInboxHandler: Readonly<{
-    toMutationDescriptor(enqueue: AppInboxEnqueueInput<unknown>): GroupMutationDescriptor;
-  }>;
-}
 
 interface DescriptorCase {
   readonly name: string;

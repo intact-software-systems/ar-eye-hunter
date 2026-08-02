@@ -57,6 +57,7 @@ const trackedRuntimeSource = [
   `${groupStateRoot}/group-state-service.ts`,
   `${groupStateRoot}/inbox/group-state-inbox-contracts.ts`,
   `${groupStateRoot}/inbox/group-state-inbox-handler.ts`,
+  `${groupStateRoot}/inbox/group-state-inbox-mutation-descriptor.ts`,
   `${groupStateRoot}/inbox/group-state-inbox-result.ts`,
   `${topologyInboxRoot}/topology-app-inbox-handler.ts`,
   `${rtcInboxRoot}/rtc-rtt-app-inbox-handler.ts`,
@@ -97,6 +98,7 @@ describe('authoritative mutation read/compute/validate/write contract', { timeou
       `${groupStateRoot}/group-state-service.ts`,
       `${groupStateRoot}/inbox/group-state-inbox-contracts.ts`,
       `${groupStateRoot}/inbox/group-state-inbox-handler.ts`,
+      `${groupStateRoot}/inbox/group-state-inbox-mutation-descriptor.ts`,
       `${groupStateRoot}/inbox/group-state-inbox-result.ts`,
     ]) {
       expect(existsSync(file), file).toBe(true);
@@ -197,7 +199,7 @@ describe('authoritative mutation read/compute/validate/write contract', { timeou
     {
       name: 'group AppInbox',
       source: sources.groupHandler,
-      owner: 'processMutation',
+      owner: 'processGroupStateMutation',
       calls: [
         'this.dependencies.groupStateService.read(command)',
         'this.dependencies.groupStateService.compute(command, read)',

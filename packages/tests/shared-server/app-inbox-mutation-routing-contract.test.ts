@@ -39,7 +39,7 @@ describe('AppInbox mutation routing contract', { timeout: 30_000 }, () => {
             context,
             requireTopologyManagementService(this.topologyManagementService),
           )`,
-      to: 'this.groupStateInboxHandler.processMutation(context)',
+      to: 'this.groupStateInboxHandler.processGroupStateMutation(context)',
     },
     {
       name: 'RTC to group',
@@ -48,7 +48,7 @@ describe('AppInbox mutation routing contract', { timeout: 30_000 }, () => {
           context,
           this.requireRtcRttAppInboxDependencies(),
         )`,
-      to: 'this.groupStateInboxHandler.processMutation(context)',
+      to: 'this.groupStateInboxHandler.processGroupStateMutation(context)',
     },
     {
       name: 'RTC to topology',
@@ -62,13 +62,13 @@ describe('AppInbox mutation routing contract', { timeout: 30_000 }, () => {
     {
       name: 'group to topology',
       type: AppInboxType.GROUP_CREATE,
-      from: 'this.groupStateInboxHandler.processMutation(context)',
+      from: 'this.groupStateInboxHandler.processGroupStateMutation(context)',
       to: 'this.topologyAppInboxHandler.processMutation(context)',
     },
     {
       name: 'group to RTC',
       type: AppInboxType.GROUP_CREATE,
-      from: 'this.groupStateInboxHandler.processMutation(context)',
+      from: 'this.groupStateInboxHandler.processGroupStateMutation(context)',
       to: 'this.rtcRttAppInboxHandler.processMutation(context)',
     },
   ])('rejects $name cross-routing despite the shared terminal method', ({ type, from, to }) => {
@@ -119,10 +119,10 @@ describe('AppInbox mutation routing contract', { timeout: 30_000 }, () => {
       name: 'group',
       type: AppInboxType.GROUP_CREATE,
       from: `const processGroupMutation = async (_payload: unknown, context: AppInboxMessageContext) =>
-      await this.groupStateInboxHandler.processMutation(context);`,
+      await this.groupStateInboxHandler.processGroupStateMutation(context);`,
       to: `const processGroupMutation = async (_payload: unknown, context: AppInboxMessageContext) => {
       const alias = { groupStateInboxHandler: this.topologyAppInboxHandler };
-      return await alias.groupStateInboxHandler.processMutation(context);
+      return await alias.groupStateInboxHandler.processGroupStateMutation(context);
     };`,
     },
   ])('rejects a $name alias receiver backed by the wrong handler', ({ type, from, to }) => {

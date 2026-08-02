@@ -12,6 +12,9 @@ import {
 import { GroupMutationAuthorizationError } from '../group-state/group-mutation-authority.ts';
 import type { GroupStateService } from '../group-state/group-state-service-contracts.ts';
 import { GroupStateInboxHandler } from '../group-state/inbox/group-state-inbox-handler.ts';
+// prettier-ignore
+import { toGroupMutationDescriptor } from
+  '../group-state/inbox/group-state-inbox-mutation-descriptor.ts';
 import {
   GROUP_MUTATION_INBOX_TYPES,
   isAuthenticatedGroupMutationInboxType,
@@ -271,7 +274,7 @@ class AppGroupInboxService extends AppInboxService {
       );
     }
     const preparation = await this.groupStateService.prepareMutation(
-      this.groupStateInboxHandler.toMutationDescriptor(enqueue),
+      toGroupMutationDescriptor(enqueue),
       authority,
     );
     return {
@@ -283,7 +286,7 @@ class AppGroupInboxService extends AppInboxService {
 
   private registerStateMessageHandlers(): void {
     const processGroupMutation = async (_payload: unknown, context: AppInboxMessageContext) =>
-      await this.groupStateInboxHandler.processMutation(context);
+      await this.groupStateInboxHandler.processGroupStateMutation(context);
     for (const type of GROUP_MUTATION_INBOX_TYPES.filter(
       (candidate) => candidate !== AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP,
     )) {

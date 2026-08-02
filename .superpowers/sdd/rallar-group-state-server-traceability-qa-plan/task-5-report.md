@@ -331,10 +331,10 @@ These independently named target failures are the approved RED contract for
 Tasks 6–10, not failures in predecessor behavior. No other target construct was
 asserted as absent.
 
-The Task 5 changed-source ratchet recursively checks named functions and test
-callbacks while excluding only declarative `describe` containers. It derives
-the complete changed TypeScript owner set from the exact PR A resulting-main
-base and fails when the inventory omits a changed path. Every changed
+The changed-source ratchet recursively checks named functions and test callbacks
+while excluding only declarative `describe` containers. At the Task 5 freeze it
+covered 21 paths; the evolving PR B inventory fails when a later task omits a
+changed TypeScript owner. Every changed
 function/callback is at most 60 physical lines except the exact reviewed
 predecessor `runOperationMatrix` at 64 lines, and every changed module is at
 most 400 physical lines. The API-v1 server test is 396 lines after separating

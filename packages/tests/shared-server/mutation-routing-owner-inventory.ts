@@ -24,7 +24,8 @@ export const MUTATION_ROUTE_OWNER_DISPATCH_PATHS = {
   'AppClientInboxService.processCommand': 'processCommand',
   'AppClientInboxService.processExpiredSessionCommands': 'processExpiredSessionCommands',
   'AppCrdtInboxService.processCommand': 'processCommand',
-  'GroupStateInboxHandler.processMutation': 'groupStateInboxHandler.processMutation',
+  'GroupStateInboxHandler.processGroupStateMutation':
+    'groupStateInboxHandler.processGroupStateMutation',
   'RtcRttAppInboxHandler.processMutation': 'rtcRttAppInboxHandler.processMutation',
   'TopologyAppInboxHandler.processMutation': 'topologyAppInboxHandler.processMutation',
   processGroupSessionCleanup: 'processGroupSessionCleanup',
@@ -46,24 +47,24 @@ HTTP\tPOST /api/auth/logout\tAUTH_SESSION_LOGOUT\ta\t'/api/auth/logout'\ta\tlogo
 HTTP\tPOST /api/auth/ws-ticket\tAUTH_WS_TICKET_ISSUE\ta\t'/api/auth/ws-ticket'\ta\tissueWebSocketTicket\tA\tAppAuthInboxService.processCommand
 HTTP\tPOST /api/auth/agent-session-tickets\tAUTH_AGENT_SESSION_TICKETS_ISSUE\ta\t'/api/auth/agent-session-tickets'\ta\tissueAgentSessionTickets\tA\tAppAuthInboxService.processCommand
 HTTP\tPOST /api/auth/agent-session-tickets/consume\tAUTH_AGENT_SESSION_TICKET_CONSUME\ta\t'/api/auth/agent-session-tickets/consume'\ta\tconsumeAgentSessionTicket\tA\tAppAuthInboxService.processCommand
-HTTP\tPOST ${GROUP_ROUTE}\tGROUP_CREATE\tg\t'/api/state/apps/:applicationId/workspaces/:workspaceId/groups'\tg\tAppInboxType.GROUP_CREATE\tH\tGroupStateInboxHandler.processMutation\tI\tG
-HTTP\tPUT ${GROUP_ITEM_ROUTE}\tGROUP_UPDATE\tg\t'/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId'\tg\tAppInboxType.GROUP_UPDATE\tH\tGroupStateInboxHandler.processMutation\tI\tG
-HTTP\tPOST ${GROUP_ITEM_ROUTE}/director/appoint\tGROUP_DIRECTOR_APPOINT\tg\t/director/appoint\tg\tAppInboxType.GROUP_DIRECTOR_APPOINT\tH\tGroupStateInboxHandler.processMutation\tI\tG
-HTTP\tPOST ${GROUP_ITEM_ROUTE}/join\tGROUP_JOIN\tg\t/groups/:groupId/join\tg\tAppInboxType.GROUP_JOIN\tH\tGroupStateInboxHandler.processMutation\tI\tG
-HTTP\tPOST ${GROUP_ITEM_ROUTE}/invites/:principalId\tGROUP_INVITE_CREATE\tg\t/invites/:principalId\tg\tAppInboxType.GROUP_INVITE_CREATE\tH\tGroupStateInboxHandler.processMutation\tI\tG
-HTTP\tPOST ${GROUP_ITEM_ROUTE}/invites/:principalId/revoke\tGROUP_INVITE_REVOKE\tg\t/invites/:principalId/revoke\tg\tAppInboxType.GROUP_INVITE_REVOKE\tH\tGroupStateInboxHandler.processMutation\tI\tG
-HTTP\tPOST ${GROUP_ITEM_ROUTE}/invites/accept\tGROUP_INVITE_ACCEPT\tg\t/invites/accept\tg\tAppInboxType.GROUP_INVITE_ACCEPT\tH\tGroupStateInboxHandler.processMutation\tI\tG
-HTTP\tPOST ${GROUP_ITEM_ROUTE}/join-code/rotate\tGROUP_JOIN_CODE_ROTATE\tg\t/join-code/rotate\tg\tAppInboxType.GROUP_JOIN_CODE_ROTATE\tH\tGroupStateInboxHandler.processMutation\tI\tG
-HTTP\tPOST ${GROUP_ITEM_ROUTE}/members/:principalId/remove\tGROUP_MEMBER_REMOVE\tg\t/members/:principalId/remove\tg\tAppInboxType.GROUP_MEMBER_REMOVE\tH\tGroupStateInboxHandler.processMutation\tI\tG
-HTTP\tPOST ${GROUP_ITEM_ROUTE}/members/:principalId/ban\tGROUP_MEMBER_BAN\tg\t/members/:principalId/ban\tg\tAppInboxType.GROUP_MEMBER_BAN\tH\tGroupStateInboxHandler.processMutation\tI\tG
-HTTP\tPOST ${GROUP_ITEM_ROUTE}/members/:principalId/unban\tGROUP_MEMBER_UNBAN\tg\t/members/:principalId/unban\tg\tAppInboxType.GROUP_MEMBER_UNBAN\tH\tGroupStateInboxHandler.processMutation\tI\tG
-HTTP\tPUT ${GROUP_ITEM_ROUTE}/members/:principalId/role\tGROUP_MEMBER_ROLE_SET\tg\t/members/:principalId/role\tg\tAppInboxType.GROUP_MEMBER_ROLE_SET\tH\tGroupStateInboxHandler.processMutation\tI\tG
-HTTP\tPOST ${GROUP_ITEM_ROUTE}/owner/transfer\tGROUP_OWNERSHIP_TRANSFER\tg\t/owner/transfer\tg\tAppInboxType.GROUP_OWNERSHIP_TRANSFER\tH\tGroupStateInboxHandler.processMutation\tI\tG
-HTTP\tPUT ${GROUP_ITEM_ROUTE}/members/:principalId\tGROUP_MEMBER_UPSERT\tg\t/members/:principalId\tg\tAppInboxType.GROUP_MEMBER_UPSERT\tH\tGroupStateInboxHandler.processMutation\tI\tG
-HTTP\tPUT ${GROUP_ITEM_ROUTE}/sessions/:sessionId\tGROUP_PRESENCE_CONNECT\tg\t/sessions/:sessionId\tg\tAppInboxType.GROUP_PRESENCE_CONNECT\tH\tGroupStateInboxHandler.processMutation\tI\tG
-HTTP\tPOST ${GROUP_ITEM_ROUTE}/sessions/:sessionId/heartbeat\tGROUP_PRESENCE_HEARTBEAT\tg\t/sessions/:sessionId/heartbeat\tg\tAppInboxType.GROUP_PRESENCE_HEARTBEAT\tH\tGroupStateInboxHandler.processMutation\tI\tG
-HTTP\tPOST ${GROUP_ITEM_ROUTE}/sessions/:sessionId/disconnect\tGROUP_PRESENCE_DISCONNECT\tg\t/sessions/:sessionId/disconnect\tg\tAppInboxType.GROUP_PRESENCE_DISCONNECT\tH\tGroupStateInboxHandler.processMutation\tI\tG
-MAINTENANCE\tgroup presence expiry reconciliation\tGROUP_PRESENCE_EXPIRE\te\tenqueuePresenceExpiryReconciliation\te\tenqueueExpiredPresenceSessions\tH\tGroupStateInboxHandler.processMutation\tI\tG
+HTTP\tPOST ${GROUP_ROUTE}\tGROUP_CREATE\tg\t'/api/state/apps/:applicationId/workspaces/:workspaceId/groups'\tg\tAppInboxType.GROUP_CREATE\tH\tGroupStateInboxHandler.processGroupStateMutation\tI\tG
+HTTP\tPUT ${GROUP_ITEM_ROUTE}\tGROUP_UPDATE\tg\t'/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId'\tg\tAppInboxType.GROUP_UPDATE\tH\tGroupStateInboxHandler.processGroupStateMutation\tI\tG
+HTTP\tPOST ${GROUP_ITEM_ROUTE}/director/appoint\tGROUP_DIRECTOR_APPOINT\tg\t/director/appoint\tg\tAppInboxType.GROUP_DIRECTOR_APPOINT\tH\tGroupStateInboxHandler.processGroupStateMutation\tI\tG
+HTTP\tPOST ${GROUP_ITEM_ROUTE}/join\tGROUP_JOIN\tg\t/groups/:groupId/join\tg\tAppInboxType.GROUP_JOIN\tH\tGroupStateInboxHandler.processGroupStateMutation\tI\tG
+HTTP\tPOST ${GROUP_ITEM_ROUTE}/invites/:principalId\tGROUP_INVITE_CREATE\tg\t/invites/:principalId\tg\tAppInboxType.GROUP_INVITE_CREATE\tH\tGroupStateInboxHandler.processGroupStateMutation\tI\tG
+HTTP\tPOST ${GROUP_ITEM_ROUTE}/invites/:principalId/revoke\tGROUP_INVITE_REVOKE\tg\t/invites/:principalId/revoke\tg\tAppInboxType.GROUP_INVITE_REVOKE\tH\tGroupStateInboxHandler.processGroupStateMutation\tI\tG
+HTTP\tPOST ${GROUP_ITEM_ROUTE}/invites/accept\tGROUP_INVITE_ACCEPT\tg\t/invites/accept\tg\tAppInboxType.GROUP_INVITE_ACCEPT\tH\tGroupStateInboxHandler.processGroupStateMutation\tI\tG
+HTTP\tPOST ${GROUP_ITEM_ROUTE}/join-code/rotate\tGROUP_JOIN_CODE_ROTATE\tg\t/join-code/rotate\tg\tAppInboxType.GROUP_JOIN_CODE_ROTATE\tH\tGroupStateInboxHandler.processGroupStateMutation\tI\tG
+HTTP\tPOST ${GROUP_ITEM_ROUTE}/members/:principalId/remove\tGROUP_MEMBER_REMOVE\tg\t/members/:principalId/remove\tg\tAppInboxType.GROUP_MEMBER_REMOVE\tH\tGroupStateInboxHandler.processGroupStateMutation\tI\tG
+HTTP\tPOST ${GROUP_ITEM_ROUTE}/members/:principalId/ban\tGROUP_MEMBER_BAN\tg\t/members/:principalId/ban\tg\tAppInboxType.GROUP_MEMBER_BAN\tH\tGroupStateInboxHandler.processGroupStateMutation\tI\tG
+HTTP\tPOST ${GROUP_ITEM_ROUTE}/members/:principalId/unban\tGROUP_MEMBER_UNBAN\tg\t/members/:principalId/unban\tg\tAppInboxType.GROUP_MEMBER_UNBAN\tH\tGroupStateInboxHandler.processGroupStateMutation\tI\tG
+HTTP\tPUT ${GROUP_ITEM_ROUTE}/members/:principalId/role\tGROUP_MEMBER_ROLE_SET\tg\t/members/:principalId/role\tg\tAppInboxType.GROUP_MEMBER_ROLE_SET\tH\tGroupStateInboxHandler.processGroupStateMutation\tI\tG
+HTTP\tPOST ${GROUP_ITEM_ROUTE}/owner/transfer\tGROUP_OWNERSHIP_TRANSFER\tg\t/owner/transfer\tg\tAppInboxType.GROUP_OWNERSHIP_TRANSFER\tH\tGroupStateInboxHandler.processGroupStateMutation\tI\tG
+HTTP\tPUT ${GROUP_ITEM_ROUTE}/members/:principalId\tGROUP_MEMBER_UPSERT\tg\t/members/:principalId\tg\tAppInboxType.GROUP_MEMBER_UPSERT\tH\tGroupStateInboxHandler.processGroupStateMutation\tI\tG
+HTTP\tPUT ${GROUP_ITEM_ROUTE}/sessions/:sessionId\tGROUP_PRESENCE_CONNECT\tg\t/sessions/:sessionId\tg\tAppInboxType.GROUP_PRESENCE_CONNECT\tH\tGroupStateInboxHandler.processGroupStateMutation\tI\tG
+HTTP\tPOST ${GROUP_ITEM_ROUTE}/sessions/:sessionId/heartbeat\tGROUP_PRESENCE_HEARTBEAT\tg\t/sessions/:sessionId/heartbeat\tg\tAppInboxType.GROUP_PRESENCE_HEARTBEAT\tH\tGroupStateInboxHandler.processGroupStateMutation\tI\tG
+HTTP\tPOST ${GROUP_ITEM_ROUTE}/sessions/:sessionId/disconnect\tGROUP_PRESENCE_DISCONNECT\tg\t/sessions/:sessionId/disconnect\tg\tAppInboxType.GROUP_PRESENCE_DISCONNECT\tH\tGroupStateInboxHandler.processGroupStateMutation\tI\tG
+MAINTENANCE\tgroup presence expiry reconciliation\tGROUP_PRESENCE_EXPIRE\te\tenqueuePresenceExpiryReconciliation\te\tenqueueExpiredPresenceSessions\tH\tGroupStateInboxHandler.processGroupStateMutation\tI\tG
 WS_LIFECYCLE\twebsocket onClose group cleanup\tGROUP_PRESENCE_SESSION_CLEANUP\tl\tonClose:\tl\tenqueueGroupSessionCleanup\tP\tprocessGroupSessionCleanup\tG\tG
 HTTP\tPUT ${TOPOLOGY_ROUTE}/config\tTOPOLOGY_CONFIG_PUT\tt\t/topology/config\tt\tAppInboxType.TOPOLOGY_CONFIG_PUT\tT\tTopologyAppInboxHandler.processMutation\tG\tG
 HTTP\tDELETE ${TOPOLOGY_ROUTE}/config\tTOPOLOGY_CONFIG_DELETE\tt\t/topology/config\tt\tAppInboxType.TOPOLOGY_CONFIG_DELETE\tT\tTopologyAppInboxHandler.processMutation\tG\tG
