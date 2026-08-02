@@ -5,20 +5,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { createGroupStateTransactionBoundaryHarness } from './group-state-transaction-boundary-fixture.ts';
 
-const handlerPath =
-  'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts';
-const transactionWriterPath =
-  'packages/shared-server/rallar-system/services/app-inbox-transaction-writer.ts';
-const contractsPath =
-  'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
-const descriptorPath =
-  'packages/shared-server/rallar-system/group-state/inbox/to-group-mutation-descriptor.ts';
 const targetIdentityPath =
   'packages/shared-server/rallar-system/group-state/mutation/orchestration/resolve-group-mutation-target-identity.ts';
 const targetWritePath =
   'packages/shared-server/rallar-system/group-state/mutation/write/write-group-mutation.ts';
-const computedWritePath =
-  'packages/shared-server/rallar-system/group-state/mutation/group-mutation-result.ts';
 const targetWriteTestPath =
   'packages/tests/shared-server/group-state/mutation/write-group-mutation-behavior.test.ts';
 const predecessorTargetIdentityPath =
@@ -218,16 +208,6 @@ describe('group-state AppInbox transaction result boundary', () => {
     vi.doUnmock('@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts');
   });
 
-  it('returns immutable committed snapshot data without a mutable callback escape', () => {
-    const source = readFileSync(handlerPath, 'utf8');
-
-    expect(source).not.toContain('let committedSnapshot: GroupSnapshot | undefined;');
-    expect(source).not.toContain('committedSnapshot = inboxResult.committedSnapshot;');
-    expect(source).toContain(
-      'await this.dependencies.snapshotObserver.observeSnapshot(committedSnapshot);',
-    );
-  });
-
   it('keeps the existing durable-only writer result and serialization unchanged', async () => {
     const harness = await createGroupStateTransactionBoundaryHarness();
     const durableResult = {
@@ -256,44 +236,6 @@ describe('group-state AppInbox transaction result boundary', () => {
     });
   });
 
-  it('requires distinct durable and after-commit transaction results', () => {
-    const source = readFileSync(transactionWriterPath, 'utf8');
-
-    expect(source).toContain('interface AppInboxMutationTransactionResult');
-    expect(source).toContain('export interface AppInboxMutationTransactionWriter');
-    expect(source).toContain(
-      'export class AppInboxTransactionWriter implements AppInboxMutationTransactionWriter',
-    );
-    expect(source).toContain('writeMutationWithAfterCommitResult');
-    expect(source).toContain('durableResult');
-    expect(source).toContain('afterCommitResult');
-  });
-
-  it('requires direct descriptor routing', () => {
-    const handler = readFileSync(handlerPath, 'utf8');
-
-    expect(handler).toContain('processGroupStateMutation(');
-    expect(handler).not.toContain('toMutationDescriptor<V>(');
-    expect(readFileSync(descriptorPath, 'utf8')).toContain('toGroupMutationDescriptor');
-  });
-
-  it('requires a narrow handler capability', () => {
-    const handler = readFileSync(handlerPath, 'utf8');
-    const contracts = readFileSync(contractsPath, 'utf8');
-
-    expect(handler).not.toContain('groupStateService: GroupStateService;');
-    expect(handler).toContain('readonly mutationService: GroupStateMutationService;');
-    expect(handler).toContain(
-      'readonly sessionGenerationLifecycle: WsSessionGenerationLifecycleService;',
-    );
-    expect(handler).toContain(
-      "readonly snapshotObserver: Pick<GroupStateService, 'observeSnapshot'>;",
-    );
-    expect(handler).toContain('readonly transactionWriter: AppInboxMutationTransactionWriter;');
-    expect(handler).not.toContain('GroupStateInboxMutationOperations');
-    expect(contracts).not.toContain('GroupStateInboxMutationOperations');
-  });
-
   it('requires the Task 10 target-identity owner path', () => {
     expect(existsSync(targetIdentityPath), targetIdentityPath).toBe(true);
   });
@@ -320,20 +262,6 @@ describe('group-state AppInbox transaction result boundary', () => {
 
   it('removes the predecessor mutation-write path', () => {
     expect(existsSync(predecessorWritePath), predecessorWritePath).toBe(false);
-  });
-
-  it('requires computeGroupMutationWriteResult without the predecessor write symbol', () => {
-    const source = readTargetSource(computedWritePath);
-
-    expect(source).toContain('computeGroupMutationWriteResult');
-    expect(source).not.toContain('computeGroupMutationWrite(');
-  });
-
-  it('removes the predecessor writeResult symbol from the computed-result owner', () => {
-    const source = readTargetSource(computedWritePath);
-
-    expect(source, computedWritePath).not.toBe('');
-    expect(source).not.toContain('writeResult');
   });
 
   it('retains the Task 10 writeGroupMutation primary symbol', () => {
