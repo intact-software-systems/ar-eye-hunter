@@ -17,6 +17,8 @@ const targetIdentityPath =
   'packages/shared-server/rallar-system/group-state/mutation/orchestration/resolve-group-mutation-target-identity.ts';
 const targetWritePath =
   'packages/shared-server/rallar-system/group-state/mutation/write/write-group-mutation.ts';
+const computedWritePath =
+  'packages/shared-server/rallar-system/group-state/mutation/group-mutation-result.ts';
 const targetWriteTestPath =
   'packages/tests/shared-server/group-state/mutation/write-group-mutation-behavior.test.ts';
 const predecessorTargetIdentityPath =
@@ -251,13 +253,13 @@ describe('group-state AppInbox transaction result boundary', () => {
   });
 
   it('requires computeGroupMutationWrite without the predecessor writeResult symbol', () => {
-    expect(readTargetSource(targetWritePath)).toContain('computeGroupMutationWrite');
+    expect(readTargetSource(computedWritePath)).toContain('computeGroupMutationWrite');
   });
 
-  it('removes the predecessor writeResult symbol from the Task 10 write owner', () => {
-    const source = readTargetSource(targetWritePath);
+  it('removes the predecessor writeResult symbol from the computed-result owner', () => {
+    const source = readTargetSource(computedWritePath);
 
-    expect(source, targetWritePath).not.toBe('');
+    expect(source, computedWritePath).not.toBe('');
     expect(source).not.toContain('writeResult');
   });
 

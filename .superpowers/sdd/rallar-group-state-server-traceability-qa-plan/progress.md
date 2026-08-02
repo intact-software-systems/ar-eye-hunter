@@ -180,3 +180,21 @@ AppInbox compatibility batch is 56 files / 280 tests. Source/tree/active/owner
 ratchets are 4 files / 26 tests; shared-server TypeScript and changed-style pass.
 The future-only suite now fails exactly the ten reserved Task 10 cases.
 Self-review is Critical 0 / Important 0; independent scoped review is pending.
+
+Task 10: implemented — the target-identity and mutation-write owners now have
+the exact approved filenames and primary symbols. The target resolver rules,
+pure computed-result body, write order, guarded batch, event, receipt, outbox,
+and all direct callers preserve their predecessor behavior without an alias,
+re-export, or compatibility hop. The renamed write owner is a 100% Git rename;
+the behavior suite preserves its single case and five assertion sites. The
+direct-function presence owner was already present at PR #59 blob
+e2e642d54bcbd9b7ff04917ef9d900e39d3827c8 and the re-export-only compatibility
+blob b811c2f7429e2e10ab0fecf1998b0a7d9f7dd052 remains byte-identical. RED was
+exactly 10 reserved Task 10 failures / 7 predecessor passes; target GREEN is
+17 / 17. Focused mutation and compatibility is 23 files / 113 tests, and
+source/tree/active/owner is 4 / 43; the complete mirrored group-state tree is
+51 files / 235 tests, and the surrounding AppInbox/public-owner compatibility
+batch is 10 / 174. Shared-server TypeScript, Prettier, diff checks, exact
+changed-style comparison, file/function limits, and runtime cycles pass.
+Self-review is Critical 0 / Important 0; independent scoped review remains
+pending.

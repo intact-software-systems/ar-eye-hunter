@@ -7,7 +7,7 @@ import type {
   GroupMutationRead,
 } from '../group-mutation-contracts.ts';
 import { GroupMutationRejectedError } from '../group-mutation-contracts.ts';
-import { auditStamp, requireGroup, writeResult } from '../group-mutation-result.ts';
+import { auditStamp, computeGroupMutationWrite, requireGroup } from '../group-mutation-result.ts';
 import { computeMemberPresenceAdmission } from '../presence/compute-group-presence-admission.ts';
 
 export interface ComputeGroupMembershipWriteInput {
@@ -38,7 +38,7 @@ export function computeGroupMembershipWrite({
     rosterVersion: stored.value.rosterVersion + 1,
     updated: audit,
   };
-  return writeResult({
+  return computeGroupMutationWrite({
     command,
     read,
     facts,

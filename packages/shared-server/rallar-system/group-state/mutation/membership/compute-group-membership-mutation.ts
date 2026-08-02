@@ -17,7 +17,7 @@ import {
   toPolicySnapshot,
 } from '../aggregate/group-aggregate-mutation-policy.ts';
 import { readJoinCode } from '../aggregate/compute-group-aggregate-mutation.ts';
-import { auditStamp, noOp, requireGroup, writeResult } from '../group-mutation-result.ts';
+import { auditStamp, noOp, requireGroup } from '../group-mutation-result.ts';
 import { computeGroupMembershipWrite } from '../write/compute-group-membership-write.ts';
 import {
   assertUpsertActivationAllowed,

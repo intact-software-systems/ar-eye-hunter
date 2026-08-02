@@ -10,7 +10,7 @@ import {
 } from './mutation/command-validation/validate-group-mutation-command.ts';
 import { GroupStateRepository } from './persistence/group-state-repository.ts';
 import { readGroupMutation } from './mutation/read/read-group-mutation.ts';
-import { writeGroupMutation } from './mutation/write/write-group-state-mutation.ts';
+import { writeGroupMutation } from './mutation/write/write-group-mutation.ts';
 // prettier-ignore
 import {
   createWsSessionGenerationLifecycleService,

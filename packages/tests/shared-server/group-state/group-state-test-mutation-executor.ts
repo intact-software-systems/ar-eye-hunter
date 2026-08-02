@@ -24,7 +24,7 @@ import {
   type toExpiryCommand,
   type toSessionCleanupCommand,
 } from '@shared-server/rallar-system/services/group-state-service.ts';
-import { materializeGroupStateGuardedBatch } from '@shared-server/rallar-system/group-state/mutation/write/write-group-state-mutation.ts';
+import { materializeGroupStateGuardedBatch } from '@shared-server/rallar-system/group-state/mutation/write/write-group-mutation.ts';
 import type {
   GroupMutationComputed,
   GroupMutationComputedWrite,

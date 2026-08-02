@@ -1224,13 +1224,38 @@ review remains external until recorded.
   `packages/tests/shared-server/group-state/group-state-test-mutation-executor.ts`
 - Modify: exact source inventories; no compatibility export changes
 
-- [ ] Rename the two resolver functions and pure result constructor exactly as
+- [x] Rename the two resolver functions and pure result constructor exactly as
       Section 4.3 defines; preserve parameters, returns, errors, and call order.
-- [ ] Prove the final direct presence owner and re-export-only old path were
+- [x] Prove the final direct presence owner and re-export-only old path were
       already present at the PR #59 prerequisite and remain unchanged.
-- [ ] Run focused compute/read/write, public export, compatibility, source
+- [x] Run focused compute/read/write, public export, compatibility, source
       inventory, file/function, and cycle tests.
 - [ ] Obtain scoped review with Critical 0 / Important 0.
+
+Task 10 moves the target-identity owner and write owner to the exact Section 4.3
+paths, renames both target resolvers and the pure computed-result constructor,
+and updates only their direct internal consumers and exact source/test
+inventories. The write owner is a 100% Git rename; its `writeGroupMutation`
+body, guard order, effects, event, receipt, and outbox work are unchanged. The
+behavior suite retains its single case and five `expect(...)` sites with only
+its path import updated. The longer computed-result symbol uses the shorter
+internal `GroupMutationWriteInput` contract name so its unchanged body remains
+exactly 60 physical lines; the input fields, parameter value, return, property
+order, defaults, errors, and every caller remain identical.
+
+PR #59 prerequisite blob `e2e642d54bcbd9b7ff04917ef9d900e39d3827c8`
+already owns the direct presence functions, and compatibility blob
+`b811c2f7429e2e10ab0fecf1998b0a7d9f7dd052` is byte-identical in the Task 10
+candidate. The only presence-owner difference after that prerequisite is Task
+9's already-reviewed type and property narrowing from broad
+`GroupStateService` to `GroupStateInboxMutationOperations`; no Task 10
+presence implementation, lifecycle, function export, or compatibility export
+changes. The Task 10 RED was exactly ten reserved path/name cases with the
+seven existing transaction cases green. GREEN is 17/17 for that target suite;
+the focused mutation, operation, retry, idempotency, presence, and owner batch
+is 23 files / 113 tests; the source/tree/active/owner batch is 4 files / 43
+tests; shared-server TypeScript passes. Scoped independent review remains
+external until it exists.
 
 ### Task 11: Prove Behavior, Compatibility, Concurrency, And Performance
 

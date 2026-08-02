@@ -39,7 +39,7 @@ const sources = {
   groupHandler: read(`${groupStateRoot}/inbox/group-state-inbox-handler.ts`),
   groupService: read(`${groupStateRoot}/group-state-service.ts`),
   client: read(`${serviceRoot}/client-state-service.ts`),
-  group: read(`${groupStateRoot}/mutation/write/write-group-state-mutation.ts`),
+  group: read(`${groupStateRoot}/mutation/write/write-group-mutation.ts`),
   topologyConfig: read(`${serviceRoot}/group-topology-management-service.ts`),
   topologyWorker: read(`${serviceRoot}/RtcTopologyOutboxWork.ts`),
   topologyRepository: read(`${repositoryRoot}/RtcTopologyExecutionRepository.ts`),
