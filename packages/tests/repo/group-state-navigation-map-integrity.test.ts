@@ -6,6 +6,10 @@ import { describe, expect, it } from 'vitest';
 const repoRoot = process.cwd();
 const navigationMapPath = 'packages/shared-server/rallar-system/group-state/README.md';
 const architecturePath = 'packages/shared-server/architecture.md';
+const architectureNavigationLink = {
+  label: 'Group-state server navigation map',
+  target: './rallar-system/group-state/README.md',
+} as const;
 
 const navigationSourceLinks = [
   {
@@ -167,12 +171,16 @@ describe('group-state navigation map integrity', () => {
 
   it('keeps the map reachable once from shared-server architecture', () => {
     const architecture = readRepo(architecturePath);
-    expect(readMarkdownLinks(architecture)).toEqual([
-      {
-        label: 'Group-state server navigation map',
-        target: './rallar-system/group-state/README.md',
-      },
-    ]);
+    expect(readArchitectureNavigationLinks(architecture)).toEqual([architectureNavigationLink]);
+  });
+
+  it('finds the required architecture link without forbidding unrelated links', () => {
+    const architecture = [
+      '[Group-state server navigation map](./rallar-system/group-state/README.md)',
+      '[Repository guide](./rallar-server-repositories.md)',
+    ].join('\n');
+
+    expect(readArchitectureNavigationLinks(architecture)).toEqual([architectureNavigationLink]);
   });
 
   it('records cache construction before runtime-state and auth-session repositories', () => {
@@ -193,6 +201,16 @@ function readMarkdownLinks(source: string): readonly Readonly<{ label: string; t
     label: match[1],
     target: match[2],
   }));
+}
+
+function readArchitectureNavigationLinks(
+  source: string,
+): readonly Readonly<{ label: string; target: string }>[] {
+  return readMarkdownLinks(source).filter(
+    (link) =>
+      link.label === architectureNavigationLink.label &&
+      link.target === architectureNavigationLink.target,
+  );
 }
 
 function uniqueSourceLinks(
