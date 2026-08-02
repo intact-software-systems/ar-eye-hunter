@@ -67,13 +67,13 @@ seconds overdue independently from timeout recovery.
 
 The implementation guard covers these exact operation families:
 
-| Family | Ordered phase symbols | First write guard | Atomic dependent effects |
-| --- | --- | --- | --- |
-| Client mutation | `readClientMutation`, `computeClientMutation`, `validateClientMutation`, `writeClientMutation` | principal insert/CAS | children, compact client `MutationReceipt`, direct `ResourceInbox` effects, event |
-| Group mutation | `readGroupMutation`, `computeGroupMutation`, `validateGroupMutation`, `writeGroupMutation` | group aggregate or presence-session insert/CAS/delete | admission/member rows, compact group `MutationReceipt`, direct `ResourceInbox` effects, event |
-| Topology config mutation | `readTopologyConfigMutation`, `computeTopologyConfigMutation`, `validateTopologyConfigMutation`, `writeTopologyConfigMutation` | group authority fence, then config/override guard | invariant/target generations, compact receipt, recompute outbox |
-| RTC topology mutation | `readTopologyMutation`, `computeTopologyMutation`, `validateTopologyMutation`, `writeTopologyMutation` | topology snapshot CAS | work claim and immutable publication when the computed variant carries a publication |
-| RTC RTT mutation | `readRttMutation`, `computeRttMutation`, `validateRttMutation`, `writeRttMutation` | lexically ordered endpoint-admission guards | measurement, compact receipt, every computed recompute intent |
+| Family                   | Ordered phase symbols                                                                                                          | First write guard                                     | Atomic dependent effects                                                                      |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Client mutation          | `readClientMutation`, `computeClientMutation`, `validateClientMutation`, `writeClientMutation`                                 | principal insert/CAS                                  | children, compact client `MutationReceipt`, direct `ResourceInbox` effects, event             |
+| Group mutation           | `readGroupMutation`, `computeGroupMutation`, `validateGroupMutation`, `writeGroupMutation`                                     | group aggregate or presence-session insert/CAS/delete | admission/member rows, compact group `MutationReceipt`, direct `ResourceInbox` effects, event |
+| Topology config mutation | `readTopologyConfigMutation`, `computeTopologyConfigMutation`, `validateTopologyConfigMutation`, `writeTopologyConfigMutation` | group authority fence, then config/override guard     | invariant/target generations, compact receipt, recompute outbox                               |
+| RTC topology mutation    | `readTopologyMutation`, `computeTopologyMutation`, `validateTopologyMutation`, `writeTopologyMutation`                         | topology snapshot CAS                                 | work claim and immutable publication when the computed variant carries a publication          |
+| RTC RTT mutation         | `readRttMutation`, `computeRttMutation`, `validateRttMutation`, `writeRttMutation`                                             | lexically ordered endpoint-admission guards           | measurement, compact receipt, every computed recompute intent                                 |
 
 `RtcTopologyOutboxWork` handles both publication-null and publication-bearing
 RTC topology variants. ResourceInbox/QueueBox owns the downstream attempt and
@@ -154,11 +154,11 @@ wrappers around both service stacks and transaction duration is wall-clock time
 inside production `sql.begin` calls. Exact workload totals stored in that
 artifact are:
 
-| Workload | SQL statements | Postgres transaction duration (ms) |
-| --- | ---: | ---: |
-| uncontended | 13000 | 3706.0120909999987 |
-| shared (five groups) | 13948 | 4070.0607589999927 |
-| hot (one group) | 12379 | 3891.845030999997 |
+| Workload             | SQL statements | Postgres transaction duration (ms) |
+| -------------------- | -------------: | ---------------------------------: |
+| uncontended          |          13000 |                 3706.0120909999987 |
+| shared (five groups) |          13948 |                 4070.0607589999927 |
+| hot (one group)      |          12379 |                  3891.845030999997 |
 
 These are artifact-wide totals across the three measured runs, not per-command
 budgets and not Task 10 acceptance. The retained artifact does not count
@@ -195,6 +195,9 @@ not current or approved exceptions.
 
 ## Documentation And Validation
 
+- [Group-state server navigation map](./rallar-system/group-state/README.md)
+  links the canonical group-state construction, queue, mutation, and cache
+  owners without duplicating their runtime contracts.
 - `rallar-server-repositories.md` inventories current persistence and data flow.
 - `rallar-server-repositories-improvements.md` is the historical hardening log.
 - `../../docs/rallar-convergent-state-and-rtc-topology.md` describes the

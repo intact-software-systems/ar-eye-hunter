@@ -161,6 +161,11 @@ feature-folder review. These thresholds do not require a folder or permit a
 pass-through module. A new one-file folder requires a real public, runtime, or
 ownership boundary.
 
+A feature with more than 20 production modules or more than three materially
+different control-flow families retains a durable repository navigation map.
+The map links to current owners and their entry/exit paths; a historical PR body
+is not a durable substitute.
+
 Every feature folder has one obvious feature entry file named for its public
 service, facade, or route-registration function. Prefer
 `feature/subfeature/file.ts`; add another directory level only when it removes
@@ -408,6 +413,13 @@ points. Keep the registration or invocation boundary visible. Make callback
 timing, invocation count, captured values, failure behavior, and cleanup clear
 from its contract and owning call site.
 
+When a protocol discriminant already determines its payload shape, express that
+existing relationship as a discriminated type-to-payload relationship. Repeated
+case-local assertions are not an acceptable substitute. One boundary narrowing
+may establish an existing typed protocol relationship, but it must not claim to
+validate fields it did not inspect, silently add payload validation, or alter
+runtime error timing.
+
 Keep a callback body short and specific to that boundary. When it contains
 business policy, loops, several decisions, multi-step I/O, or a complete
 workflow, move that work to a direct, descriptively named operation and pass or
@@ -429,6 +441,14 @@ compatibility, or protocol boundary. A layer that accepts a dependency bundle
 and forwards it unchanged does not improve testability. Test pure decisions as
 values and test side-effect boundaries through their narrow production ports;
 do not add factory injection or alternate wiring solely for tests.
+
+Transaction, retry, lifecycle, and after-commit dependencies use a named port
+declared beside the canonical owner. From a consumer, Go to Definition reveals
+invocation, retry, commit, and failure semantics instead of an anonymously
+duplicated signature. Capability cohesion is judged by responsibility, not
+method count: several methods that own one transaction phase may form one
+narrow capability, while several unrelated methods do not become cohesive
+because the count is small.
 
 For every materially different callback, transaction, retry, protocol, or
 lifecycle family, complete a family-level code-derived trace as two distinct
@@ -462,8 +482,9 @@ behavior, commit semantics, failure behavior, and why mutation is safe. Prefer
 an immutable callback result whose durable projection is visibly separate from
 private after-commit data.
 
-Literal, named-case, `expect(...)`, and exact-tree inventories are temporary
-ratchets. Each temporary ratchet records an owner and removal condition and is
+Semantic tests are primary. Source inventories, exact-tree checks, string
+assertions, and line/count ratchets are supplementary and temporary. Each
+temporary ratchet records a named owner and removal condition and is
 supplementary to semantic runtime or architecture assertions. Remove or replace
 it after the move's resulting-main workflow and later ledger are published and
 semantic assertions directly cover the same loss risk.

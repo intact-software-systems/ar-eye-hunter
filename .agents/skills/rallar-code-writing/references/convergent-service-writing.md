@@ -16,6 +16,10 @@ Use a functional core with an explicitly owned stateful shell:
 - a service owns one coherent business capability, one ownership boundary, and
   one reason to change.
 
+Capability cohesion is judged by responsibility, not method count. Several
+methods that own one transaction phase may form one narrow capability; several
+unrelated methods do not become cohesive merely because the count is small.
+
 Keep the control flow visible as direct, named `read`, `compute`, `validate`,
 and `write(transaction, computed)` statements. `read` performs the required
 repository reads. The `compute` and `validate` phases are pure. Computed
@@ -46,6 +50,11 @@ the transaction and never opens, commits, replaces, or retries one. A conflict
 starts a fresh `read`, then recomputes and revalidates authorization, policy,
 capacity, lifecycle, invariants, and the complete candidate. Retrying only a
 stale final write is incorrect.
+
+Transaction, retry, lifecycle, and after-commit dependencies use a named port
+declared beside the canonical owner. From a consumer, Go to Definition reveals
+invocation, retry, commit, and failure semantics instead of an anonymously
+duplicated signature.
 
 The operation-specific conditional guard is the first write. In the same
 transaction, write authoritative state, event, receipt, durable result, and
@@ -134,6 +143,20 @@ order. Preserve equal-revision content checks; ordering drift is a producer
 bug, not eventual consistency. Domain skills own any additional liveness and
 concurrency rules for their snapshots.
 
+## Protocol and timing traceability
+
+When a protocol discriminant already determines its payload shape, express that
+existing relationship as a discriminated type-to-payload relationship. Repeated
+case-local assertions are not an acceptable substitute. One boundary narrowing
+may establish an existing typed protocol relationship, but it must not claim to
+validate fields it did not inspect, silently add payload validation, or alter
+runtime error timing.
+
+An explicit timing or decorator owner uses a closed operation-name type and an
+exhaustive operation inventory. Timing identity fields are deliberately
+populated, deliberately retained for compatibility, or removed only through
+separately approved observable-behavior work.
+
 ## Verification
 
 For every materially different AppInbox callback, transaction, retry, protocol,
@@ -165,7 +188,10 @@ semantics, failure behavior, and why mutation is safe. Prefer an immutable
 callback result with separate durable-result and private after-commit
 projections.
 
-Tests prove decision and write outcomes independently. Cover apply/written,
+Semantic tests are primary. Source inventories, exact-tree checks, string
+assertions, and line/count ratchets are supplementary and temporary, with a
+named owner and removal condition. Tests prove decision and write outcomes
+independently. Cover apply/written,
 apply/conflict/rebase, permitted no-op, typed rejection, overlapping writers,
 retry exhaustion, idempotency races, stale expiry, equal-revision corruption,
 and deterministic final convergence at the real conditional-write boundary.

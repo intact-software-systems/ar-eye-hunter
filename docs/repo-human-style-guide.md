@@ -62,6 +62,20 @@ representation. Request a rewrite when generic `input`, `options`, `context`,
 `payload`, or `data` names make the reader reconstruct identity from nested
 closures.
 
+When a protocol discriminant already determines its payload shape, require the
+existing discriminated type-to-payload relationship. Repeated case-local
+assertions are not an acceptable substitute. One boundary narrowing may
+establish that relationship but must not claim to validate fields it did not
+inspect, silently add payload validation, or alter runtime error timing.
+
+For transaction, retry, lifecycle, and after-commit dependencies, require a
+named port declared beside the canonical owner. From a consumer, Go to Definition
+must reveal invocation, retry, commit, and failure semantics instead of an
+anonymously duplicated signature. Judge capability cohesion by responsibility,
+not method count: methods that own one transaction phase may form one narrow
+capability, while unrelated methods do not become cohesive merely because the
+count is small.
+
 Complete a code-only trace exercise for every materially different callback,
 transaction, retry, protocol, or lifecycle family as two distinct timelines.
 The construction and registration timeline names each required or captured
@@ -161,6 +175,14 @@ co-located with the feature that owns it.
 Inspect the room/group-state translation boundary when browser room code reaches
 authoritative group-state contracts.
 
+A feature with more than 20 production modules or more than three materially
+different control-flow families retains a durable repository navigation map;
+a historical PR body is not a durable substitute. For an explicit timing or
+decorator owner, require a closed operation-name type and exhaustive operation
+inventory. Timing identity fields are deliberately populated, deliberately
+retained for compatibility, or removed only through separately approved
+observable-behavior work.
+
 Use this size and cohesion review sequence:
 
 1. Summarize the file responsibility in one sentence.
@@ -195,11 +217,12 @@ records a non-obvious invariant, external constraint, safety reason, or tradeoff
   completion handoff and, when required by the hard size tier, the
   [repo code-style exception registry](./repo-code-style-exceptions.md).
 
-Literal, named-case, `expect(...)`, and exact-tree inventories are temporary
-ratchets. Verify each temporary ratchet has an owner and removal condition,
-remains supplementary to semantic runtime or architecture assertions, and is
-removed or replaced after the move's resulting-main workflow and later ledger
-are published when semantic assertions cover the same loss risk.
+Semantic tests are primary. Source inventories, exact-tree checks, string
+assertions, and line/count ratchets are supplementary and temporary. Verify each
+temporary ratchet has a named owner and removal condition, remains supplementary
+to semantic runtime or architecture assertions, and is removed or replaced after
+the move's resulting-main workflow and later ledger are published when semantic
+assertions cover the same loss risk.
 
 ## Warning-only checker
 

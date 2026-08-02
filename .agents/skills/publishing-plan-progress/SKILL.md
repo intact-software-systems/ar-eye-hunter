@@ -108,6 +108,13 @@ head/tree/workflow evidence in the pull request. The rule is that stale evidence
 blocks completion: correct any head, tree, run, attempt, conclusion, or verified
 SHA that refers to older code before publication can be complete.
 
+A feature with more than 20 production modules or more than three materially
+different control-flow families retains a durable repository navigation map in
+the repository. A historical PR body is not a durable substitute. Keep semantic
+tests primary; source inventories, exact-tree checks, string assertions, and
+line/count ratchets remain supplementary and temporary with a named owner and
+removal condition.
+
 ## Plan Completion Gate
 
 Do not approve, report, or mark a written implementation plan complete until

@@ -65,14 +65,18 @@ Actions.
 - Do not reorganize API-v1, browser code, topology ownership, RTC RTT ownership,
   another mutation domain, or the server evidence ledger in this child.
 - Keep all future implementation, pull-request, merge, workflow, and ledger
-  facts outside the Git trees that would create them.
+  facts outside the Git trees that would create them. Completed planning facts
+  and completed local PR A task facts are recorded only after they already
+  exist.
 
 ---
 
 Date: 2026-08-02
 
-Status: Drafted and unapproved. Planning publication is in progress. PR A, PR B,
-the server evidence ledger, and the API-v1 child are unstarted.
+Status: Approved planning plan. PR A Task 1 and Task 2 local work are complete;
+Task 3 review, validation, publication, and merge evidence remain pending. PR B,
+the server evidence ledger, and the API-v1 child are unstarted. After exact plan
+approval, this child plan is the current execution record.
 
 ## 1. Prerequisite And Scope Boundary
 
@@ -90,8 +94,23 @@ The exact PR #62 publication envelope is the prerequisite for this plan:
 
 These facts prove that PR #62 is published. They do not make the existing server
 evidence ledger publishable yet: this child deliberately inserts PR A and PR B
-before that ledger. No future plan tree, plan commit, planning PR, implementation
-PR, merge, default workflow, or ledger fact is recorded here.
+before that ledger.
+
+The planning envelope is also complete:
+
+- planning feature head: `477cf23c9e252f37b0a4f2cc9e1dc5943396eb3f`;
+- frozen planning tree: `c74ea92a13f38f49521a285d97e5a3eea4b99001`;
+- PR #63 approved the plan blob
+  `4ee1aca23ab50f94838cb3648432754b520a39f2`;
+- Branch Release Gate run `30742629944`, attempt 1, succeeded for that exact
+  planning feature head;
+- resulting `main` SHA: `61356b7c72310864917005053d5a4c9f431ee91e`; and
+- **Run Hetzner Supported Distributed Manifests** run `30744279428`, attempt 1,
+  succeeded for that exact resulting-main SHA.
+
+These completed planning facts authorize the existing local PR A Task 1 and
+Task 2 work. They do not record a PR A final head, tree, PR number, Branch
+Release Gate, merge, default workflow, ledger publication, or API-v1 start.
 
 This child addresses the remaining human-traceability findings after PR #62:
 
@@ -216,6 +235,8 @@ packages/tests/repo/rallar-authoritative-mutation-guidance-integrity.test.ts
 packages/tests/repo/rallar-group-state-owner-integrity.test.ts
 packages/tests/repo/repo-code-style-review-evidence-integrity.test.ts
 packages/tests/repo/group-state-navigation-map-integrity.test.ts
+packages/tests/repo/group-state-server-source-ratchet.test.ts
+packages/tests/repo/group-state-server-source-ratchet-inventory.ts
 packages/tests/rallar-black-box/rallar-testing-skill.test.ts
 package.json
 plans/rallar-group-state-server-traceability-hardening-plan.md
@@ -458,28 +479,40 @@ or new file solely for this rename.
 - [x] Mark it drafted/unapproved, keep the server ledger pending, and keep the
       API-v1 child blocked.
 - [x] Run Section 7.1 on one unchanged planning tree.
-- [ ] Publish one non-default draft planning PR, require Branch Release Gate for
-      its exact head, and stop for human approval of the exact plan Git blob.
-- [ ] Do not create the implementation goal or either implementation branch
-      before exact plan approval and planning-PR merge/default-workflow evidence.
+- [x] Publish the non-default planning PR #63, require Branch Release Gate
+      `30742629944` attempt 1 success for feature
+      `477cf23c9e252f37b0a4f2cc9e1dc5943396eb3f`, and obtain human approval of
+      exact plan blob `4ee1aca23ab50f94838cb3648432754b520a39f2`.
+- [x] Wait for planning-PR merge `61356b7c72310864917005053d5a4c9f431ee91e`
+      and default workflow `30744279428` attempt 1 success before creating the
+      implementation branch and child-specific goal.
 
 ### Task 1: Strengthen Human-Traceability Guidance Test-First
 
 **Files:** the PR A guidance and directly owned integrity files in Section 3.1.
 
-- [ ] Start PR A from the planning PR's exact resulting-main SHA after its
-      default workflow succeeds. Create one child-specific goal.
-- [ ] Add RED pressure scenarios for every Section 2.1 rule before changing
-      guidance.
-- [ ] Update the code standard, convergent-service guidance, realtime skill,
+- [x] Start PR A from planning `main`
+      `61356b7c72310864917005053d5a4c9f431ee91e` after its default workflow
+      succeeds and create one child-specific goal.
+- [x] Add baseline pressure scenarios for every Section 2.1 rule before changing
+      guidance. The authorization-focused controls produced RED for Rules 1-7;
+      Rule 8 was already baseline compliant, so its clearer semantic-primary
+      vocabulary is plan-driven clarification rather than failure-derived work.
+- [x] Update the code standard, convergent-service guidance, realtime skill,
       testing skill, publishing skill, and human review guide as one consistent
       contract.
-- [ ] Require human disposition of changed production construction warnings;
+- [x] Require human disposition of changed production construction warnings;
       do not make every optional warning globally blocking.
-- [ ] Keep mechanical ratchets supplementary with an owner and removal
+- [x] Keep mechanical ratchets supplementary with an owner and removal
       condition.
-- [ ] Run the focused skill/review suites and `npm run test:repo-governance` to
-      GREEN.
+- [x] Run the focused skill/review suites and `npm run test:repo-governance` to
+      GREEN; Task 1 was accepted at
+      `afe4760aaea04b29d8b9063f421903ec9c7f5f6f`. The ignored final repeated
+      campaign retained five independent baseline-control and five independent
+      updated-guidance samples covering all eight rules: baseline had three
+      choice vectors and no all-rule target sample, while updated guidance
+      converged on `BBBBBBBB` in all five samples. Rule 8 stayed baseline
+      compliant.
 
 ### Task 2: Add The Durable Group-State Navigation Map
 
@@ -490,18 +523,23 @@ or new file solely for this rename.
 - Create: `packages/tests/repo/group-state-navigation-map-integrity.test.ts`
 - Modify: `packages/tests/repo/rallar-group-state-owner-integrity.test.ts` only
   for non-overlapping owner assertions
+- Modify: `packages/tests/repo/group-state-server-source-ratchet.test.ts` and
+  `group-state-server-source-ratchet-inventory.ts` only to retain the exact-tree
+  ratchet for the new navigation map and the cumulative changed-TypeScript
+  owner inventory without parsing Markdown as TypeScript
 - Modify: `package.json` (`test:repo-governance` registration only)
 
-- [ ] Derive every timeline and family trace from current source before writing
+- [x] Derive every timeline and family trace from current source before writing
       the README.
-- [ ] Record construction/registration separately from request/runtime
+- [x] Record construction/registration separately from request/runtime
       invocation and name every entry, retry, transaction, normal/early/failure
       exit, cleanup, observation, wake, and caller-result owner.
-- [ ] Add an ordered read-first list with repository-relative links.
-- [ ] Add test-first path and primary-symbol integrity. Fail when links or named
+- [x] Add an ordered read-first list with repository-relative links.
+- [x] Add test-first path and primary-symbol integrity. Fail when links or named
       owners are stale, but do not make prose the runtime oracle.
-- [ ] Link the README once from package architecture without duplicating its
-      map.
+- [x] Link the README once from package architecture without duplicating its
+      map. Task 2 was accepted through
+      `c80d1e0ac519e46d9b4f3cfe35854b6960761340`.
 
 ### Task 3: Review And Publish PR A
 
@@ -789,9 +827,21 @@ Gate success for its exact final head before it may be marked ready.
 
 ## 9. Non-Circular Completion Evidence
 
-The planning tree may record only PR #62 and earlier evidence. The planning PR's
-tree, commit, PR number, Branch Release Gate, merge, and default workflow stay in
-its PR and Mandatory Completion Handoff until they exist.
+The planning tree recorded only PR #62 and earlier evidence. The now-complete
+planning envelope above records its existing feature/tree, approved plan blob,
+PR #63, Branch Release Gate, merge, and default-workflow facts.
+
+The reciprocal hardening-child rows in the
+[master program](repo-human-traceability-refactoring-program-plan.md),
+[execution plan](repo-human-traceability-program-execution-plan.md),
+[server structure child](rallar-group-state-server-structure-plan.md), and
+[server traceability QA child](rallar-group-state-server-traceability-qa-plan.md)
+are frozen historical planning-publication records. Under this plan's
+[Non-Circular Completion Evidence](#9-non-circular-completion-evidence)
+contract, they intentionally remain unchanged until the separately authorized
+later server ledger. Their earlier drafted/unapproved/no-implementation language
+is not current execution truth and must not be relied on for PR A status; after
+exact approval, this child plan is the current execution record.
 
 PR A's frozen tree may record completed Task 1-3 local facts but not its future
 final head, PR number, Branch Release Gate, merge SHA, or default workflow. PR B
@@ -809,8 +859,10 @@ work `ledger-published` and unblock the API-v1 child.
 
 ## 10. Acceptance Checklist
 
-- [ ] Human approved this exact plan Git blob.
-- [ ] Planning PR merged and its exact resulting-main workflow passed.
+- [x] Human approved plan blob `4ee1aca23ab50f94838cb3648432754b520a39f2`.
+- [x] Planning PR #63 merged as
+      `61356b7c72310864917005053d5a4c9f431ee91e` and its exact
+      resulting-main workflow `30744279428` attempt 1 passed.
 - [ ] PR A guidance pressure tests failed before implementation and passed after.
 - [ ] PR A published the durable group-state navigation map with verified paths
       and primary symbols.
@@ -860,14 +912,14 @@ work `ledger-published` and unblock the API-v1 child.
 
 ## 12. Progress Record
 
-| Milestone                 | State                 | Evidence                                                                                                                                                                                                                                                                 |
-| ------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| PR #62 prerequisite       | published             | Feature `b579aa56bc656b12f3717f2b02c0e24de9244357`, tree `3a7d80a3a9c522ba4954168be5f380aee04f871b`, Branch Release Gate `30739771277` attempt 1 success, resulting `main` `f124f8c3ac57e5f3a92c47f767f8b7e2b19e6af5`, default workflow `30741608017` attempt 1 success. |
-| Hardening child plan      | drafted; unapproved   | This exact planning revision passed its local planning gates and awaits publication, exact-blob review, and human approval.                                                                                                                                              |
-| PR A guidance/navigation  | unstarted             | Starts only after exact plan approval and planning merge/default-workflow evidence.                                                                                                                                                                                      |
-| PR B runtime traceability | unstarted             | Starts only after PR A merge/default-workflow evidence.                                                                                                                                                                                                                  |
-| Server later ledger       | pending               | Waits for both hardening PR publication envelopes and separate ledger authorization.                                                                                                                                                                                     |
-| API-v1 child              | blocked and unstarted | Waits for the server ledger to reach `ledger-published`.                                                                                                                                                                                                                 |
+| Milestone                 | State                                    | Evidence                                                                                                                                                                                                                                                                                                                                                 |
+| ------------------------- | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PR #62 prerequisite       | published                                | Feature `b579aa56bc656b12f3717f2b02c0e24de9244357`, tree `3a7d80a3a9c522ba4954168be5f380aee04f871b`, Branch Release Gate `30739771277` attempt 1 success, resulting `main` `f124f8c3ac57e5f3a92c47f767f8b7e2b19e6af5`, default workflow `30741608017` attempt 1 success.                                                                                 |
+| Hardening child plan      | approved and published                   | Planning feature `477cf23c9e252f37b0a4f2cc9e1dc5943396eb3f`, tree `c74ea92a13f38f49521a285d97e5a3eea4b99001`, PR #63, approved plan blob `4ee1aca23ab50f94838cb3648432754b520a39f2`, Branch Release Gate `30742629944` attempt 1 success, resulting `main` `61356b7c72310864917005053d5a4c9f431ee91e`, default workflow `30744279428` attempt 1 success. |
+| PR A guidance/navigation  | local Tasks 1-2 complete; Task 3 pending | Task 1 accepted at `afe4760aaea04b29d8b9063f421903ec9c7f5f6f`; Task 2 accepted through `c80d1e0ac519e46d9b4f3cfe35854b6960761340`. No PR A final head/tree, PR number, Branch Release Gate, merge, or default-workflow fact is recorded.                                                                                                                 |
+| PR B runtime traceability | unstarted                                | Starts only after PR A merge/default-workflow evidence.                                                                                                                                                                                                                                                                                                  |
+| Server later ledger       | pending                                  | Waits for both hardening PR publication envelopes and separate ledger authorization.                                                                                                                                                                                                                                                                     |
+| API-v1 child              | blocked and unstarted                    | Waits for the server ledger to reach `ledger-published`.                                                                                                                                                                                                                                                                                                 |
 
 ## 13. Planning Self-Review Record
 
