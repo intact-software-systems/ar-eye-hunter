@@ -128,7 +128,7 @@ const mechanicalRuleIds = new Set([
 ]);
 
 describe('authoritative group-state server source ratchet', () => {
-  it('keeps the exact production owner tree and the exact 52-file mirrored test tree', () => {
+  it('keeps the exact production owner tree and the mirrored test tree', () => {
     expect(readRelativeFileTree(groupStateProductionRoot)).toEqual(
       expectedGroupStateProductionTree,
     );

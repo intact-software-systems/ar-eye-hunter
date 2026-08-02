@@ -429,7 +429,9 @@ packages/tests/shared-server/
     inbox/
       group-state-inbox-authority.test.ts
       group-state-inbox-construction.test.ts
+      group-state-inbox-descriptor-contract.test.ts
       group-state-inbox-operation-matrix.test.ts
+      group-state-inbox-resource-fixtures.ts
       group-state-inbox-retry.test.ts
     mutation/
       write-group-state-mutation-behavior.test.ts
@@ -1236,6 +1238,7 @@ npx vitest run \
   packages/tests/shared-server/group-state/inbox/group-state-inbox-authority.test.ts \
   packages/tests/shared-server/group-state/inbox/app-group-inbox-registration-lifecycle.test.ts \
   packages/tests/shared-server/group-state/inbox/group-state-inbox-construction.test.ts \
+  packages/tests/shared-server/group-state/inbox/group-state-inbox-descriptor-contract.test.ts \
   packages/tests/shared-server/group-state/inbox/group-state-inbox-operation-matrix.test.ts \
   packages/tests/shared-server/group-state/inbox/group-state-inbox-retry.test.ts \
   packages/tests/shared-server/group-state/inbox/group-state-inbox-transaction-result.test.ts \

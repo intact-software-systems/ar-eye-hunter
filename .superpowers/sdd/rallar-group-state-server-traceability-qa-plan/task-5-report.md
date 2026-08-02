@@ -16,18 +16,18 @@ export, route, example, worker, fixture, and governed performance occurrence
 found by the Task 5 exact-path search. Documentation and repository-analysis
 occurrences remain evidence only; they are not live composition consumers.
 
-| Classification | Exact paths | Relationship |
-| --- | --- | --- |
-| Public export | `packages/shared-server/mod.ts` | Existing package path for the unchanged public class. |
-| API composition | `apps/api-v1/src/middleware.ts`; `apps/api-v1/src/create-rallar-server.ts` | Constructs the facade, then supplies topology and RTC dependencies before normal server use. |
-| API routes/gateway | `apps/api-v1/src/routes/group-state-routes.ts`; `apps/api-v1/src/routes/graph-topology-routes.ts`; `apps/api-v1/src/services/create-api-admin-mutation-gateway.ts` | Uses the public authenticated entry/result surface. |
-| API fixtures/tests | `apps/api-v1/test/rallar-server.test.ts`; `apps/api-v1/test/db/pglite-sql-adapter.test.ts`; `apps/api-v1/test/db/pglite-app-inbox-ws-close-convergence.test.ts`; `apps/api-v1/test/db/pglite-app-inbox-ws-close-test-harness.ts` | Composition double and PGlite lifecycle/setter coverage. |
-| Shared-server handler fixtures | `packages/tests/shared-server/group-state/inbox/group-state-inbox-test-runtime.ts`; `packages/tests/shared-server/app-inbox-expired-row-replacement.test.ts`; `packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts`; `packages/tests/shared-server/app-inbox-service.test.ts`; `packages/tests/shared-server/app-inbox-ws-close-convergence.test.ts`; `packages/tests/shared-server/app-inbox-ws-close-expiry.test.ts`; `packages/tests/shared-server/app-inbox-ws-close-test-harness.ts` | Constructs or exercises the unchanged group AppInbox facade. |
-| PostgreSQL workers/fixtures | `packages/tests/shared-server/fixtures/postgres-app-inbox-worker-runtime.ts`; `packages/tests/shared-server/fixtures/postgres-app-inbox-worker-services.ts`; `packages/tests/shared-server/fixtures/postgres-expiry-worker.ts`; `packages/tests/shared-server/fixtures/postgres-topology-app-inbox-worker.ts` | Worker construction; the services fixture configures topology before worker use. |
-| Topology/RTC tests | `packages/tests/shared-server/topology-app-inbox-contract.test.ts`; `packages/tests/shared-server/topology-app-inbox-ownership.test.ts`; `packages/tests/shared-server/rtc-topology-mutations.test.ts`; `packages/tests/shared-server/rallar-middleware.test.ts` | Keeps command, ownership, and middleware composition contracts visible. |
-| Governed performance | `scripts/perf/api-v1-state-write-concurrency-bench.ts:610` | Calls `setTopologyManagementService`; it remains in the Task 8 consumer audit despite omission from the abbreviated plan list. |
-| Examples | no `examples/**` occurrence | No example exposes a separate constructor or setter lifetime. |
-| Evidence only | `packages/tests/repo/*.test.ts`; `packages/shared-server/rallar-server-repositories*.md`; `packages/shared-server/rallar-system/app-inbox-completion-notifications.md` | Source inventories and architecture evidence, not runtime consumers. |
+| Classification                 | Exact paths                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Relationship                                                                                                                   |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Public export                  | `packages/shared-server/mod.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Existing package path for the unchanged public class.                                                                          |
+| API composition                | `apps/api-v1/src/middleware.ts`; `apps/api-v1/src/create-rallar-server.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                     | Constructs the facade, then supplies topology and RTC dependencies before normal server use.                                   |
+| API routes/gateway             | `apps/api-v1/src/routes/group-state-routes.ts`; `apps/api-v1/src/routes/graph-topology-routes.ts`; `apps/api-v1/src/services/create-api-admin-mutation-gateway.ts`                                                                                                                                                                                                                                                                                                                                             | Uses the public authenticated entry/result surface.                                                                            |
+| API fixtures/tests             | `apps/api-v1/test/rallar-server.test.ts`; `apps/api-v1/test/db/pglite-sql-adapter.test.ts`; `apps/api-v1/test/db/pglite-app-inbox-ws-close-convergence.test.ts`; `apps/api-v1/test/db/pglite-app-inbox-ws-close-test-harness.ts`                                                                                                                                                                                                                                                                               | Composition double and PGlite lifecycle/setter coverage.                                                                       |
+| Shared-server handler fixtures | `packages/tests/shared-server/group-state/inbox/group-state-inbox-test-runtime.ts`; `packages/tests/shared-server/app-inbox-expired-row-replacement.test.ts`; `packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts`; `packages/tests/shared-server/app-inbox-service.test.ts`; `packages/tests/shared-server/app-inbox-ws-close-convergence.test.ts`; `packages/tests/shared-server/app-inbox-ws-close-expiry.test.ts`; `packages/tests/shared-server/app-inbox-ws-close-test-harness.ts` | Constructs or exercises the unchanged group AppInbox facade.                                                                   |
+| PostgreSQL workers/fixtures    | `packages/tests/shared-server/fixtures/postgres-app-inbox-worker-runtime.ts`; `packages/tests/shared-server/fixtures/postgres-app-inbox-worker-services.ts`; `packages/tests/shared-server/fixtures/postgres-expiry-worker.ts`; `packages/tests/shared-server/fixtures/postgres-topology-app-inbox-worker.ts`                                                                                                                                                                                                  | Worker construction; the services fixture configures topology before worker use.                                               |
+| Topology/RTC tests             | `packages/tests/shared-server/topology-app-inbox-contract.test.ts`; `packages/tests/shared-server/topology-app-inbox-ownership.test.ts`; `packages/tests/shared-server/rtc-topology-mutations.test.ts`; `packages/tests/shared-server/rallar-middleware.test.ts`                                                                                                                                                                                                                                               | Keeps command, ownership, and middleware composition contracts visible.                                                        |
+| Governed performance           | `scripts/perf/api-v1-state-write-concurrency-bench.ts:610`                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Calls `setTopologyManagementService`; it remains in the Task 8 consumer audit despite omission from the abbreviated plan list. |
+| Examples                       | `examples/server-middleware/README.md`                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Documents the supported server middleware construction path; it is traceability evidence, not a separate runtime constructor.  |
+| Evidence only                  | `packages/tests/repo/*.test.ts`; `packages/shared-server/rallar-server-repositories*.md`; `packages/shared-server/rallar-system/app-inbox-completion-notifications.md`                                                                                                                                                                                                                                                                                                                                         | Source inventories and architecture evidence, not runtime consumers.                                                           |
 
 The supported predecessor bootstrap calls both setters in
 `apps/api-v1/src/create-rallar-server.ts` after facade construction. The
@@ -38,15 +38,15 @@ identity.
 
 ## Characterized control-flow families
 
-| Family | Construction/registration | Runtime invocation and exit |
-| --- | --- | --- |
+| Family                       | Construction/registration                                                                                     | Runtime invocation and exit                                                                                                                                                                                                                                                                |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Authenticated group mutation | constructor creates `GroupStateInboxHandler`; `registerStateMessageHandlers` registers every `GROUP_*` family | `processAuthenticatedEntryUntilCompletion(Result)` prepares `toMutationDescriptor`, then AppInbox invokes `processMutation`: read → compute → validate → `writeMutation`; the transaction stores the durable result, then observation/wake run and the caller receives the durable result. |
-| Presence connect | same group registration, with the handler's connect branch | `processGroupPresenceConnect` receives the same write/commit boundary and returns either inactive presence result or durable result. |
-| Presence cleanup | constructor registers `GROUP_PRESENCE_SESSION_CLEANUP` | AppInbox invokes `processGroupSessionCleanup` with facts, attempt count, service, transaction writer, and post-commit wake. |
-| Topology configuration | predecessor constructor registers topology callbacks before setter configuration | callback invokes `TopologyAppInboxHandler.processMutation(context, requireTopologyManagementService(optionalField))`; unset dependency throws at delivery. |
-| RTC RTT | predecessor constructor registers the RTC callback before setter configuration | callback invokes `RtcRttAppInboxHandler.processMutation(context, requireRtcRttAppInboxDependencies())`; unset dependency throws at delivery. |
-| Transaction/retry | `AppInboxTransactionWriter.begin` establishes pending state | transaction callback writes group state, receipt/event/outbox and durable inbox result, finalizes reservation, then returns; retries re-enter AppInbox's existing classification. `committedSnapshot` currently escapes mutably and observation/wake occur only after write returns. |
-| Timing | `createGroupStateRuntime` calls dynamic timing wrapper when timing exists | a `Proxy` resolves async methods dynamically; `compute`/`validate` are bound and untimed. No-timing returns the exact service object. |
+| Presence connect             | same group registration, with the handler's connect branch                                                    | `processGroupPresenceConnect` receives the same write/commit boundary and returns either inactive presence result or durable result.                                                                                                                                                       |
+| Presence cleanup             | constructor registers `GROUP_PRESENCE_SESSION_CLEANUP`                                                        | AppInbox invokes `processGroupSessionCleanup` with facts, attempt count, service, transaction writer, and post-commit wake.                                                                                                                                                                |
+| Topology configuration       | predecessor constructor registers topology callbacks before setter configuration                              | callback invokes `TopologyAppInboxHandler.processMutation(context, requireTopologyManagementService(optionalField))`; unset dependency throws at delivery.                                                                                                                                 |
+| RTC RTT                      | predecessor constructor registers the RTC callback before setter configuration                                | callback invokes `RtcRttAppInboxHandler.processMutation(context, requireRtcRttAppInboxDependencies())`; unset dependency throws at delivery.                                                                                                                                               |
+| Transaction/retry            | `AppInboxTransactionWriter.begin` establishes pending state                                                   | transaction callback writes group state, receipt/event/outbox and durable inbox result, finalizes reservation, then returns; retries re-enter AppInbox's existing classification. `committedSnapshot` currently escapes mutably and observation/wake occur only after write returns.       |
+| Timing                       | `createGroupStateRuntime` calls dynamic timing wrapper when timing exists                                     | a `Proxy` resolves async methods dynamically; `compute`/`validate` are bound and untimed. No-timing returns the exact service object.                                                                                                                                                      |
 
 ### Two-timeline trace details
 
@@ -105,13 +105,22 @@ caller-visible result; missing configuration fails before handling. Task 8 will
 capture the same complete dependency at registration, preserving invocation,
 retry, failure, cleanup, and exit semantics.
 
+**API composition/start family — construction/runtime.** The executable
+`apps/api-v1/test/rallar-server.test.ts` fake middleware records the real
+`createRallarServer` composition sequence as `topology` → `rtc-rtt` → `start`.
+It proves both current setter calls complete before the server engine can start;
+it does not claim the future Task 8 registration redesign already exists.
+
 **Timing family — construction/runtime.** `createGroupStateRuntime` has the
 complete service and optional timing sink before constructing the wrapper. With
 no sink it returns the exact service object. With a sink the dynamic wrapper
 selects each asynchronous method once, emits its predecessor component,
-operation, service/request/scope/group/principal/session details, returns its
+operation, service ID, and details resolved from direct arguments, returns its
 value or propagates its error, and leaves synchronous `compute`/`validate`
-untimed. Task 7 replaces only this dynamic representation boundary.
+untimed. The real predecessor `prepareMutation` descriptor call has no directly
+resolved scope, group, principal, session, or request ID; the characterization
+records those absent fields rather than inventing them. Task 7 replaces only
+this dynamic representation boundary.
 
 **Transaction-return family — construction/runtime.** `AppInboxTransactionWriter`
 owns the callback, database transaction, durable result replacement, and
@@ -134,11 +143,35 @@ renamed authoritative mutation contract. The source-contract suite/helper move
 preserved the same assertion bodies; the helper import and source-ratchet
 ownership inventory now use the descriptive paths.
 
-Review-fix runtime fixtures add actual timing return/detail and setter identity
-coverage. The original 9-file / 146-test predecessor batch remains intact; the
-two new runtime suites run their predecessor-only filters separately. They pass
-2 timing and 2 setter tests. The separate active-documentation path suite also
-passes, while the original source-ratchet mechanical/cycle suite remains 7/7.
+Review-fix runtime fixtures add actual timing operation/detail, setter identity,
+descriptor, and durable-result sequencing coverage. The original 9-file /
+146-test predecessor batch remains intact; predecessor-only filters pass three
+timing tests, two setter tests, two exact descriptor-contract tests, and the
+durable-result value/order characterization. A controlled current-handler
+fixture proves the exact private `committedSnapshot` object crosses the commit
+return boundary to `observeSnapshot` only after commit and before the final
+wake; the caller's separately deserialized durable JSON remains value-equal by
+design. The descriptor suite drives the real handler for all 17 authenticated
+`GROUP_*` types and the exact unsupported family error. The separate
+active-documentation path suite also passes, while the source-ratchet
+mechanical/cycle suite remains 7/7.
+
+The existing current-path failure fixtures remain the authoritative Task 5
+failure map. In `packages/tests/shared-server/app-inbox-transaction.test.ts`,
+`rolls the mutation back when the dependent-write fails`, `rolls the mutation
+back when the outbox-write fails`, `rolls every successful write back when the
+result write fails`, and `rolls every successful write back when reservation
+ownership changed` prove callback/result-write/finalization/commit failures
+roll back mutation, outbox, result, and completion together. Its
+`does not run legacy result persistence after a transaction-owned handler
+commits` and `returns the committed result when handler code throws after
+transaction finalization` cases prove finalization does not add a second result
+write. The directly owned handler-level case
+`does not expose a private result, observe, or wake when the transaction
+callback fails` supplies the missing group-handler proof: it fails the current
+write callback before result read, so no private snapshot is read, observed, or
+woken. Task 9 must retain that absence while moving the private result into its
+immutable carrier.
 
 ## Intentional RED evidence
 

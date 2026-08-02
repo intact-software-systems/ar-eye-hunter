@@ -8,13 +8,7 @@ import type { StateScope } from '@shared/api/state-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
-import {
-  EntityStatus,
-  isExpiredResourceEntry,
-  type Key,
-  type ResourceEntry,
-  toKeyAsString,
-} from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/Resilience.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
@@ -37,6 +31,15 @@ import {
 } from '@shared-server/rallar-system/services/group-state-service.ts';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
 import { authSession } from '../group-state-test-runtime.ts';
+import {
+  TestResourceInbox,
+  TestResourceInboxResults,
+} from './group-state-inbox-resource-fixtures.ts';
+
+export {
+  TestResourceInbox,
+  TestResourceInboxResults,
+} from './group-state-inbox-resource-fixtures.ts';
 
 export const SCOPE: StateScope = {
   applicationId: 'ar-eye-hunter',
@@ -53,6 +56,7 @@ export type AuthorityHarness = Readonly<{
   database: AppInboxTestDatabase;
   reader: InboxQueueReader;
   queue: TestResourceInbox;
+  results: TestResourceInboxResults;
   sessions: Readonly<Record<string, IssuedAuthSession>>;
   queueEntries(): readonly ResourceEntry[];
 }>;
@@ -220,6 +224,7 @@ export async function runOperationMatrix(
 
 export async function createAuthorityHarness(
   principalIds: readonly string[],
+  options: Readonly<{ wakeQueue?: () => void }> = {},
 ): Promise<AuthorityHarness> {
   const nowEpochMs = Date.now();
   const runtimeRepository = new FakeRuntimeStateRepository();
@@ -255,22 +260,21 @@ export async function createAuthorityHarness(
   return {
     nowEpochMs,
     runtimeRepository,
-    repository: new GroupStateRepository(runtimeRepository, {
-      events: database.groupEventStore,
-    }),
+    repository: new GroupStateRepository(runtimeRepository, { events: database.groupEventStore }),
     authSessions,
     groupStateService,
-    service: new AppGroupInboxService(
+    service: createAuthorityAppInboxService({
       reader,
-      queue as never,
-      results as never,
+      queue,
+      results,
       database,
       groupStateService,
-      'server-12345678',
-    ),
+      wakeQueue: options.wakeQueue,
+    }),
     database,
     reader,
     queue,
+    results,
     sessions,
     queueEntries: () => [
       ...(queue as unknown as { data: Map<string, ResourceEntry> }).data.values(),
@@ -278,11 +282,36 @@ export async function createAuthorityHarness(
   };
 }
 
+interface AuthorityAppInboxServiceInput {
+  readonly reader: InboxQueueReader;
+  readonly queue: TestResourceInbox;
+  readonly results: TestResourceInboxResults;
+  readonly database: AppInboxTestDatabase;
+  readonly groupStateService: GroupStateService;
+  readonly wakeQueue?: () => void;
+}
+
+function createAuthorityAppInboxService(
+  input: AuthorityAppInboxServiceInput,
+): AppGroupInboxService {
+  return new AppGroupInboxService(
+    input.reader,
+    input.queue as never,
+    input.results as never,
+    input.database,
+    input.groupStateService,
+    'server-12345678',
+    undefined,
+    undefined,
+    input.wakeQueue,
+  );
+}
+
 export async function createRoom(
   harness: AuthorityHarness,
   groupId: string,
   displayName: string,
-): Promise<void> {
+): Promise<GroupStateWritten> {
   const owner = harness.sessions.owner;
   const created = await processAuthenticated<GroupCreateAppInboxPayload, GroupStateWritten>(
     harness.service,
@@ -309,6 +338,8 @@ export async function createRoom(
     },
   );
   expect(created.right?.status).toBe('created');
+  if (!created.right) throw new Error('Expected authenticated group creation result');
+  return created.right;
 }
 
 export async function processAuthenticated<V, R>(
@@ -353,27 +384,6 @@ export async function waitForQueueEntry(queue: InMemoryQueueBox): Promise<void> 
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
   throw new Error('Expected authenticated app inbox entry to be enqueued');
-}
-
-export class TestResourceInbox extends InMemoryQueueBox {
-  async isEntryWithStatus(key: Key, statuses: EntityStatus[]): Promise<boolean> {
-    const entry = await this.getItem(key);
-    return entry !== undefined && statuses.includes(entry.status);
-  }
-}
-
-export class TestResourceInboxResults {
-  private readonly data = new Map<string, ResourceEntry>();
-
-  async replace(entry: ResourceEntry): Promise<ResourceEntry> {
-    this.data.set(toKeyAsString(entry.key), entry);
-    return entry;
-  }
-
-  async findByKey(key: Key): Promise<ResourceEntry | undefined> {
-    const entry = this.data.get(toKeyAsString(key));
-    return entry === undefined || isExpiredResourceEntry(entry) ? undefined : entry;
-  }
 }
 
 export function createResilience(): ResilienceDto {

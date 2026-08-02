@@ -33,6 +33,7 @@ Deno.test(
     rallar.start();
 
     assert.equal(runtime.starts, 1);
+    assert.deepEqual(runtime.appGroupInboxLifecycle, ['topology', 'rtc-rtt', 'start']);
     assert.deepEqual(runtime.inboxTopics, [
       AppTopics.clientStateSnapshot,
       AppTopics.clientStateEvent,
@@ -218,6 +219,7 @@ type FakeRuntime = Readonly<{
   starts: number;
   appInboxTopics: string[];
   appOutboxTopics: string[];
+  appGroupInboxLifecycle: string[];
 }>;
 
 function createFakeMiddleware(): FakeRuntime {
@@ -227,6 +229,7 @@ function createFakeMiddleware(): FakeRuntime {
   const websocketCallbackIds = new Set<string>();
   const appInboxTopics: string[] = [];
   const appOutboxTopics: string[] = [];
+  const appGroupInboxLifecycle: string[] = [];
   let starts = 0;
 
   const socket = {
@@ -261,6 +264,7 @@ function createFakeMiddleware(): FakeRuntime {
     qboxEngine: {
       start(): void {
         starts += 1;
+        appGroupInboxLifecycle.push('start');
       },
       wake(): void {
       },
@@ -280,8 +284,10 @@ function createFakeMiddleware(): FakeRuntime {
     wsQBoxServerService,
     appGroupInboxService: {
       setTopologyManagementService(): void {
+        appGroupInboxLifecycle.push('topology');
       },
       setRtcRttAppInboxDependencies(): void {
+        appGroupInboxLifecycle.push('rtc-rtt');
       },
     },
     appAdminInboxService: {},
@@ -301,6 +307,7 @@ function createFakeMiddleware(): FakeRuntime {
     websocketCallbackIds,
     appInboxTopics,
     appOutboxTopics,
+    appGroupInboxLifecycle,
     get starts() {
       return starts;
     },
