@@ -29,3 +29,11 @@ Task 3: complete — commits 34a21c70440deb6a6756a3209d8b09872b2becc4..afbd331ee
 Task 4: complete — commit c92265af9979c74c7210a42f2adc12432263f229, tree 30e696b572b6aa1e2f12cb17f0b231afe75a95d0. Independent review Critical 0 / Important 0 / Minor 0 accepted the nineteen exact ownership moves, deterministic Prettier application, and preservation of all 166 named cases, 1,524 lexical literals, 194 expect sites, fixtures, mutations, assertion bodies, and 293 expanded runtime tests. All targets are <=320 lines; route-owner 293/293, AppInbox routing 12/12, exact PR A batch 74/74, and governance 189/189 pass.
 
 Task 4 whole-PR review-fix round 1: implemented — whole-PR review Critical 0 / Important 1 / Minor 0 found the active shared-server architecture validation block still invoked the deleted mixed skill-integrity path. A focused integrity test captured RED, and the exact stale command now uses `npm run test:repo-governance` with adjacent commands and prose unchanged. Focused integrity 11/11, exact PR A batch 75/75, and governance 190/190 pass. Independent re-review and commit pending.
+
+Task 5: implemented — Task 5 stays test-only. The renamed authoritative mutation
+source-contract suite/helper, expanded mirrored test inventory, three focused
+characterization suites, and target-owner ratchets are ready for review. GREEN
+predecessor batch: 8 files / 139 tests. Intentional RED: 3 files, 4 failures,
+all limited to the Task 6–10 absent target constructs. Full consumer and
+construction/runtime family inventory, including the performance benchmark
+setter consumer and the plan/skill path mismatch, is in `task-5-report.md`.

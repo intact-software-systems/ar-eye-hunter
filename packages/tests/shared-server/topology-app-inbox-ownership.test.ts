@@ -22,7 +22,7 @@ const materiallyChangedTestSupport = [
   'mutation-routing-inventory.ts',
   'mutation-routing-owner-inventory.ts',
   'mutation-routing-reachability.ts',
-  'read-compute-write-contract.test.ts',
+  'authoritative-mutation-read-compute-validate-write.test.ts',
   'topology-app-inbox-ownership.test.ts',
 ] as const;
 

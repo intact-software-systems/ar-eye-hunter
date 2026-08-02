@@ -107,8 +107,8 @@ const taskSixTestOwners = [
   'packages/tests/shared-server/mutation-routing-inventory.ts',
   'packages/tests/shared-server/mutation-routing-owner-inventory.ts',
   'packages/tests/shared-server/mutation-routing-reachability.ts',
-  'packages/tests/shared-server/read-compute-write-contract.test.ts',
-  'packages/tests/shared-server/read-compute-write-source-analysis.ts',
+  'packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts',
+  'packages/tests/shared-server/authoritative-mutation-source-analysis.ts',
   'packages/tests/shared-server/topology-app-inbox-ownership.test.ts',
 ] as const;
 

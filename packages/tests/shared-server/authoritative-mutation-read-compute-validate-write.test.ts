@@ -5,7 +5,7 @@ import {
   readBranchBody as branchBody,
   readFunctionBody as functionBody,
   readMethodBody as methodBody,
-} from './read-compute-write-source-analysis.ts';
+} from './authoritative-mutation-source-analysis.ts';
 
 const serviceRoot = 'packages/shared-server/rallar-system/services';
 const repositoryRoot = 'packages/shared-server/rallar-system/repositories';
@@ -81,7 +81,7 @@ const removedIntermediateOutboxSymbols = [
   'StateMutation' + 'OutboxWork',
 ] as const;
 
-describe('read/compute/validate/write implementation contract', { timeout: 30_000 }, () => {
+describe('authoritative mutation read/compute/validate/write contract', { timeout: 30_000 }, () => {
   it('contains no intermediate state-mutation outbox runtime wiring', () => {
     for (const forbidden of removedIntermediateOutboxSymbols) {
       expect(trackedRuntimeSource).not.toContain(forbidden);
