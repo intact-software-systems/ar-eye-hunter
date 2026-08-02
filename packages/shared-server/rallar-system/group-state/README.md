@@ -39,9 +39,10 @@ invocation so it is not a second runtime specification.
 ## Construction And Registration
 
 The API-v1 [initialise](../../../../apps/api-v1/src/middleware.ts) composition
-creates the runtime-state and auth-session repositories, then creates the
-[GroupStateSnapshotReadThroughCache](./snapshot/group-state-snapshot-read-through-cache.ts).
-Its `createAppGroupInboxService` factory creates a durable
+creates the group repository and its GroupStateSnapshotReadThroughCache first,
+then creates the runtime-state repository and auth-session repository. Its
+later `createAppGroupInboxService` factory consumes those latter repositories
+to create a durable
 [createGroupStateService](./group-state-service.ts), wraps it through
 [createCachedGroupStateService](./snapshot/cached-group-state-service.ts), and
 constructs [GroupPresenceSummaryWork](./presence/group-presence-summary-work.ts)
@@ -61,13 +62,16 @@ invocation is therefore only possible after the repositories, transaction
 writer, handlers, summary worker, and queue-reader callbacks have been made
 available by this composition path.
 
-`AppInboxService.onStateMessage` is the generic queue callback boundary. It
-validates the stored command identity, starts its transaction-finalization
-state, calls the registered handler, and classifies exceptions. Retryable
-failures escape to the ResourceInbox retry owner; terminal failures are written
-as failed AppInbox results. The service's synchronous wait is separately owned
-by `AppInboxService.processEntryUntilCompletion`: a wait timeout returns an
-unavailable `Either` result rather than invoking the mutation directly.
+[AppInboxService](../services/AppInboxService.ts) owns the generic queue
+callback boundary through `onStateMessage`: it validates the stored command
+identity, starts its transaction-finalization state, calls the registered
+handler, and classifies exceptions. Retryable failures escape to the
+ResourceInbox retry owner; terminal failures are written as failed AppInbox
+results. Its synchronous `processEntryUntilCompletion` wait returns an
+unavailable `Either` result on timeout rather than invoking the mutation
+directly. [AppInboxTransactionWriter](../services/app-inbox-transaction-writer.ts)
+owns the transaction, completed result, and reserved-entry finalization that
+the group handler uses.
 
 ## Runtime Families
 
@@ -117,8 +121,8 @@ AppInbox transaction, and returns through the common durable-result path.
 
 ### Session-cleanup and expiry maintenance
 
-`initSharedWsLifecycle` in
-[create-rallar-server.ts](../../../../apps/api-v1/src/create-rallar-server.ts)
+[initWsLifecycle](../services/ws-lifecycle-service.ts), registered by
+[createRallarServer](../../../../apps/api-v1/src/create-rallar-server.ts),
 turns a WebSocket close into
 `AppGroupInboxService.enqueueGroupSessionCleanup`. The separately registered
 [processGroupSessionCleanup](./presence/group-presence-service.ts) reads and
@@ -129,7 +133,8 @@ inactive session result with `affectedGroups`, wakes the queue after the
 transaction returns, and otherwise uses the common AppInbox retry/terminal
 failure handling.
 
-`initPresenceExpiryReconciliation` calls
+[initPresenceExpiryReconciliation](./presence/reconcile-expired-group-presence.ts)
+calls
 [enqueuePresenceExpiryReconciliation](./presence/reconcile-expired-group-presence.ts),
 which asks [AppGroupInboxService](../services/AppGroupInboxService.ts) to
 prepare and enqueue expired-presence commands. Those `GROUP_PRESENCE_EXPIRE`
@@ -151,6 +156,33 @@ ResourceInbox entry. After commit it wakes the queue. Decode, validation,
 conditional-write, reservation, and transaction failures return to this queue
 family's retry/failure owner; this worker does not return a synchronous HTTP
 result.
+
+### HTTP snapshot, query, and event reads
+
+[init](../../../../apps/api-v1/src/routes/group-state-routes.ts) registers the
+list-snapshot, single-snapshot, array-event, and paged-event HTTP routes. For
+strict reads it uses
+[readStrictReadAuthSession](../../../../apps/api-v1/src/routes/group-state-routes.ts);
+the list route filters snapshots with
+[canReadGroupSnapshot](../group-policy.ts), while the single-snapshot and event
+routes use
+[assertCanReadGroupState](../../../../apps/api-v1/src/routes/group-state-routes.ts)
+or
+[assertCanReadGroupRef](../../../../apps/api-v1/src/routes/group-state-routes.ts).
+
+The canonical durable query owners are assembled by
+[createQueryOperations](./group-state-service.ts): `listSnapshots`,
+`readSnapshot`, `listEvents`, `listRecentEvents`, and `listEventPage` delegate
+to the group-state repository. The list and single-snapshot successes call
+[hydrateGroupSnapshots](../../../../apps/api-v1/src/routes/group-state-routes.ts)
+before returning JSON. A missing single snapshot returns that route's explicit
+404; an absent snapshot during event authorization throws a not-found error.
+The array event route uses
+[listRecentGroupEventsForArrayRoute](../../../../apps/api-v1/src/routes/group-state-routes.ts)
+to prefer the service's canonical recent-event query and otherwise filter its
+canonical event list; the page route calls `listEventPage` directly. Every
+thrown authorization, not-found, query, or parsing failure exits through
+[toGroupStateErrorResponse](../../../../apps/api-v1/src/routes/group-state-route-errors.ts).
 
 ### Snapshot and cache reads
 
