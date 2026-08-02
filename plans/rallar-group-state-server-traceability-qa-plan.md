@@ -1066,9 +1066,10 @@ may be waived or rerolled inside this plan.
 - [x] Run descriptor, authority, operation, routing, retry, and ratchet tests.
 - [ ] Obtain scoped review with Critical 0 / Important 0.
 
-Task 6 implementation moved the existing five descriptor functions without
-changing their branches, casts, projected values, errors, defaults, omissions,
-or volatile-value calls. The direct descriptor fixture covers all 17
+Task 6 implementation moved the top-level descriptor boundary plus five private
+family helpers—six declarations—without changing their branches, casts,
+projected values, errors, defaults, omissions, or volatile-value calls. The
+direct descriptor fixture covers all 17
 authenticated `GROUP_*` variants and the exact unsupported-family error. The
 independent review corrected the private target filename to
 `to-group-mutation-descriptor.ts`, matching the primary export without a

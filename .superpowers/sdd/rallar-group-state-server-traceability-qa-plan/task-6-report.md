@@ -79,8 +79,8 @@ Focused descriptor, authority, operation, routing, retry, phase-trace, source,
 mirrored-tree, and shared-server TypeScript validation passes. The complete PR
 B changed-source inventory contains 26 paths and fails closed on omission;
 mechanical findings, function/module limits, import order, and runtime cycles
-pass with the exact reviewed predecessor allowances plus the one locked-name
-disposition above.
+pass with the exact reviewed predecessor allowances and no descriptor
+filename/export allowance.
 
 The first independent review reported Critical 0 / Important 1 for the filename
 and primary-symbol mismatch. This review-fix resolves that exact finding;
