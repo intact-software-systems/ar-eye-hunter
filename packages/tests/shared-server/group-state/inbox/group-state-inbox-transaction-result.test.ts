@@ -10,6 +10,10 @@ const contractsPath =
   'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 const descriptorPath =
   'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-mutation-descriptor.ts';
+const targetIdentityPath =
+  'packages/shared-server/rallar-system/group-state/mutation/orchestration/resolve-group-mutation-target-identity.ts';
+const targetWritePath =
+  'packages/shared-server/rallar-system/group-state/mutation/write/write-group-mutation.ts';
 
 describe('group-state AppInbox transaction result boundary', () => {
   it('characterizes the predecessor mutable committed snapshot escape', () => {
@@ -40,5 +44,15 @@ describe('group-state AppInbox transaction result boundary', () => {
     expect(handler).not.toContain('groupStateService: GroupStateService;');
     expect(contracts).toContain('interface GroupStateInboxMutationOperations');
     expect(readFileSync(descriptorPath, 'utf8')).toContain('toGroupMutationDescriptor');
+  });
+
+  it('requires Task 10 ownership names without retaining internal predecessor paths', () => {
+    expect(readFileSync(targetIdentityPath, 'utf8')).toContain(
+      'resolveGroupMutationTargetPrincipalId',
+    );
+    expect(readFileSync(targetIdentityPath, 'utf8')).toContain(
+      'resolveGroupMutationTargetSessionId',
+    );
+    expect(readFileSync(targetWritePath, 'utf8')).toContain('writeGroupMutation');
   });
 });

@@ -33,7 +33,18 @@ Task 4 whole-PR review-fix round 1: implemented — whole-PR review Critical 0 /
 Task 5: implemented — Task 5 stays test-only. The renamed authoritative mutation
 source-contract suite/helper, expanded mirrored test inventory, three focused
 characterization suites, and target-owner ratchets are ready for review. GREEN
-predecessor batch: 8 files / 139 tests. Intentional RED: 3 files, 4 failures,
+predecessor behavior batch: 8 files / 139 tests, plus 1 source ratchet / 7
+tests for the original combined 9 files / 146 tests. Intentional RED: 3 files, 4 failures,
 all limited to the Task 6–10 absent target constructs. Full consumer and
 construction/runtime family inventory, including the performance benchmark
 setter consumer and the plan/skill path mismatch, is in `task-5-report.md`.
+
+Task 5 review-fix round 1: implemented — adds executable timing-return/detail
+and setter same-identity/different-value predecessor fixtures, an active-path
+documentation ratchet, the Task 10 name-owner RED, and the exact classified
+consumer manifest/two-timeline family traces. The original combined GREEN is
+explicitly classified as eight behavior files / 139 tests plus one source
+ratchet file / 7 tests; separate timing, setter, and active-path fixtures pass
+before their future-only RED cases. Future-only RED is separately runnable and now has five
+expected target-owner failures. The two skill command paths and two active
+source-contract documentation paths now name their live owners.
