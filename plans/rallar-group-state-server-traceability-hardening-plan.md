@@ -75,7 +75,8 @@ Date: 2026-08-02
 
 Status: Approved planning plan. PR A Task 1 and Task 2 local work are complete;
 Task 3 review, validation, publication, and merge evidence remain pending. PR B,
-the server evidence ledger, and the API-v1 child are unstarted.
+the server evidence ledger, and the API-v1 child are unstarted. After exact plan
+approval, this child plan is the current execution record.
 
 ## 1. Prerequisite And Scope Boundary
 
@@ -816,6 +817,18 @@ Gate success for its exact final head before it may be marked ready.
 The planning tree recorded only PR #62 and earlier evidence. The now-complete
 planning envelope above records its existing feature/tree, approved plan blob,
 PR #63, Branch Release Gate, merge, and default-workflow facts.
+
+The reciprocal hardening-child rows in the
+[master program](repo-human-traceability-refactoring-program-plan.md),
+[execution plan](repo-human-traceability-program-execution-plan.md),
+[server structure child](rallar-group-state-server-structure-plan.md), and
+[server traceability QA child](rallar-group-state-server-traceability-qa-plan.md)
+are frozen historical planning-publication records. Under this plan's
+[Non-Circular Completion Evidence](#9-non-circular-completion-evidence)
+contract, they intentionally remain unchanged until the separately authorized
+later server ledger. Their earlier drafted/unapproved/no-implementation language
+is not current execution truth and must not be relied on for PR A status; after
+exact approval, this child plan is the current execution record.
 
 PR A's frozen tree may record completed Task 1-3 local facts but not its future
 final head, PR number, Branch Release Gate, merge SHA, or default workflow. PR B
