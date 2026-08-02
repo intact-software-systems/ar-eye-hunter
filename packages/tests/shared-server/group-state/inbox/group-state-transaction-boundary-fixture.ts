@@ -47,6 +47,7 @@ export interface GroupStateTransactionBoundaryHarness {
   readonly outboxEntries: ReadonlyMap<string, ResourceEntry>;
   readonly reachedStages: readonly string[];
   readonly observedSnapshots: readonly GroupSnapshot[];
+  readonly transactionWriter: AppInboxTransactionWriter;
   readonly groupRef: typeof SCOPE & Readonly<{ groupId: string }>;
   readWakeCount(): number;
 }
@@ -83,9 +84,11 @@ export async function createGroupStateTransactionBoundaryHarness(
   });
   transactionWriter.begin(context);
   const handler = new GroupStateInboxHandler({
-    groupStateService: groupState.service,
+    mutationOperations: groupState.service,
     writeMutation: async (messageContext, write) =>
       await transactionWriter.writeMutation(messageContext, write),
+    writeMutationWithAfterCommitResult: async (messageContext, write) =>
+      await transactionWriter.writeMutationWithAfterCommitResult(messageContext, write),
     wakeQueue: () => {
       wakeCount += 1;
     },
@@ -101,6 +104,7 @@ export async function createGroupStateTransactionBoundaryHarness(
     outboxEntries: storage.database.outboxEntries,
     reachedStages: storage.reachedStages,
     observedSnapshots: groupState.observedSnapshots,
+    transactionWriter,
     groupRef: { ...SCOPE, groupId: GROUP_ID },
     readWakeCount: () => wakeCount,
   };

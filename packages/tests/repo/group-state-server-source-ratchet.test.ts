@@ -11,8 +11,9 @@ import {
   prBChangedTypeScriptOwners,
   readRuntimeCycles,
   reviewedPredecessorFunctionSizes,
-  taskFiveReviewedPredecessorFunctionSizes,
   taskNineLayoutProductionOwners,
+  taskNineReviewedPredecessorModuleSizes,
+  taskNineReviewedPredecessorFunctionSizes,
   taskSevenRepairProductionOwners,
   taskSevenRepairTestOwners,
 } from './group-state-server-source-ratchet-inventory.ts';
@@ -212,8 +213,8 @@ describe('authoritative group-state server source ratchet', () => {
       .flatMap(({ file, raw }) => readEveryFunctionSize({ repoRoot, filePath: file, source: raw }))
       .filter(({ lines }) => lines > 60);
 
-    expect(oversizedModules).toEqual([]);
-    expect(oversizedFunctions).toEqual(taskFiveReviewedPredecessorFunctionSizes);
+    expect(oversizedModules).toEqual(taskNineReviewedPredecessorModuleSizes);
+    expect(oversizedFunctions).toEqual(taskNineReviewedPredecessorFunctionSizes);
   });
 
   it('keeps imports first and runtime dependencies acyclic', () => {

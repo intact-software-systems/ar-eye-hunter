@@ -103,7 +103,7 @@ export class AppInboxService {
 
     private readonly options: NormalizedAppInboxServiceOptions;
     private readonly optionsInput: AppInboxServiceOptions;
-    private readonly transactionWriter: AppInboxTransactionWriter;
+    protected readonly transactionWriter: AppInboxTransactionWriter;
     constructor(
         public readonly inbox: InboxQueueReader,
         public readonly resourceInbox: ResourceInboxRepository,

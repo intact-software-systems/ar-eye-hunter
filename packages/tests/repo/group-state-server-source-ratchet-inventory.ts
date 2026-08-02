@@ -147,13 +147,18 @@ export const prBChangedTypeScriptOwners = [
   'apps/api-v1/test/rallar-server.test.ts',
   'packages/shared-server/rallar-system/group-state/group-state-service-timing.ts',
   'packages/shared-server/rallar-system/group-state/group-state-service.ts',
+  'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts',
   'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts',
   'packages/shared-server/rallar-system/group-state/inbox/to-group-mutation-descriptor.ts',
+  'packages/shared-server/rallar-system/group-state/presence/group-presence-service.ts',
   'packages/shared-server/rallar-system/services/AppGroupInboxService.ts',
+  'packages/shared-server/rallar-system/services/AppInboxService.ts',
+  'packages/shared-server/rallar-system/services/app-inbox-transaction-writer.ts',
   'packages/tests/repo/group-state-server-source-ratchet-inventory.ts',
   'packages/tests/repo/group-state-server-source-ratchet.test.ts',
   'packages/tests/repo/group-state-source-ratchet-function-sizes.ts',
   'packages/tests/repo/group-state-traceability-active-paths.test.ts',
+  'packages/tests/repo/rallar-group-state-owner-integrity.test.ts',
   'packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts',
   'packages/tests/shared-server/app-inbox-test-database-contracts.ts',
   'packages/tests/shared-server/app-inbox-test-database-sql.ts',
@@ -181,6 +186,37 @@ export const taskFiveReviewedPredecessorFunctionSizes: readonly NamedFunctionSiz
     name: 'runOperationMatrix',
     lines: 64,
   },
+] as const;
+
+export const taskNineReviewedPredecessorModuleSizes = [
+  {
+    filePath: 'packages/shared-server/rallar-system/services/AppInboxService.ts',
+    lines: 729,
+  },
+] as const;
+
+export const taskNineReviewedPredecessorFunctionSizes: readonly NamedFunctionSize[] = [
+  {
+    filePath: 'packages/shared-server/rallar-system/services/AppInboxService.ts',
+    name: 'processEntryUntilCompletionInternal',
+    lines: 71,
+  },
+  {
+    filePath: 'packages/shared-server/rallar-system/services/AppInboxService.ts',
+    name: 'onStateMessage',
+    lines: 109,
+  },
+  {
+    filePath: 'packages/shared-server/rallar-system/services/AppInboxService.ts',
+    name: '<callback>',
+    lines: 99,
+  },
+  {
+    filePath: 'packages/shared-server/rallar-system/services/AppInboxService.ts',
+    name: '<callback>',
+    lines: 74,
+  },
+  ...taskFiveReviewedPredecessorFunctionSizes,
 ] as const;
 
 export const reviewedPredecessorFunctionSizes: readonly NamedFunctionSize[] = [

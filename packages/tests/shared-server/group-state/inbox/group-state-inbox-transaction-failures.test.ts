@@ -33,6 +33,7 @@ describe('group-state AppInbox transaction failure boundaries', () => {
         dequeueAudit: { attempts: 1 },
       });
       expect(harness.outboxEntries.size).toBe(0);
+      expect(harness.transactionWriter.read(harness.context)).toEqual({ state: 'pending' });
       expect(harness.observedSnapshots).toEqual([]);
       expect(harness.readWakeCount()).toBe(0);
     },

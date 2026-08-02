@@ -76,9 +76,15 @@ describe('group-state AppInbox transaction result boundary', () => {
       Object.keys((rawDurableResult.result as { right: Record<string, unknown> }).right),
     ).toEqual(['snapshot', 'event']);
     expect(rawDurableResult).toEqual(created);
+    expect(harness.transactionWriter.read(harness.context)).toEqual({
+      state: 'transaction-finalized',
+      status: EntityStatus.COMPLETED,
+      result: created,
+    });
     expect(harness.observedSnapshots).toHaveLength(1);
     expect(harness.observedSnapshots[0]).toEqual(created.result.right?.snapshot);
     expect(harness.readWakeCount()).toBe(1);
+    expect(harness.outboxEntries.size).toBe(1);
   });
 
   it('passes the exact committed snapshot object to observation only after commit', async () => {
@@ -93,8 +99,13 @@ describe('group-state AppInbox transaction result boundary', () => {
       await import('@shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts');
     const actions: string[] = [];
     const observed: unknown[] = [];
+    const writeMutationWithAfterCommitResult = vi.fn(async (_context, write) => {
+      const result = await write({} as never);
+      actions.push('commit');
+      return result;
+    });
     const handler = new GroupStateInboxHandler({
-      groupStateService: {
+      mutationOperations: {
         read: async () => ({}),
         compute: () => ({ outcome: 'write', receipt: {} }),
         validate: () => undefined,
@@ -109,11 +120,8 @@ describe('group-state AppInbox transaction result boundary', () => {
         },
         sessionGenerationLifecycle: {},
       } as never,
-      writeMutation: async (_context, write) => {
-        const result = await write({} as never);
-        actions.push('commit');
-        return result;
-      },
+      writeMutation: async (_context, write) => await write({} as never),
+      writeMutationWithAfterCommitResult,
       wakeQueue: () => actions.push('wake'),
     });
 
@@ -133,20 +141,49 @@ describe('group-state AppInbox transaction result boundary', () => {
       } as never),
     ).resolves.toBe(durableResult);
     expect(readResult).toHaveBeenCalledOnce();
+    expect(writeMutationWithAfterCommitResult).toHaveBeenCalledOnce();
     expect(observed).toEqual([committedSnapshot]);
     expect(observed[0]).toBe(committedSnapshot);
     expect(actions).toEqual(['write', 'commit', 'observe', 'wake']);
     vi.doUnmock('@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts');
   });
 
-  it('characterizes the predecessor mutable committed snapshot escape', () => {
+  it('returns immutable committed snapshot data without a mutable callback escape', () => {
     const source = readFileSync(handlerPath, 'utf8');
 
-    expect(source).toContain('let committedSnapshot: GroupSnapshot | undefined;');
-    expect(source).toContain('committedSnapshot = inboxResult.committedSnapshot;');
+    expect(source).not.toContain('let committedSnapshot: GroupSnapshot | undefined;');
+    expect(source).not.toContain('committedSnapshot = inboxResult.committedSnapshot;');
     expect(source).toContain(
-      'await this.dependencies.groupStateService.observeSnapshot(committedSnapshot);',
+      'await this.dependencies.mutationOperations.observeSnapshot(committedSnapshot);',
     );
+  });
+
+  it('keeps the existing durable-only writer result and serialization unchanged', async () => {
+    const harness = await createGroupStateTransactionBoundaryHarness();
+    const durableResult = {
+      status: 'legacy-compatible',
+      result: { right: { value: 0, omitted: null } },
+    } as const;
+
+    const returned = await harness.transactionWriter.writeMutation(
+      harness.context,
+      async () => durableResult,
+    );
+    const persisted = await harness.results.findByKey(harness.context.entry.key);
+
+    expect(returned).toBe(durableResult);
+    expect(persisted?.resource).toBe(
+      '{"status":"legacy-compatible","result":{"right":{"value":0,"omitted":null}}}',
+    );
+    expect(Object.keys(JSON.parse(persisted!.resource) as Record<string, unknown>)).toEqual([
+      'status',
+      'result',
+    ]);
+    expect(harness.transactionWriter.read(harness.context)).toEqual({
+      state: 'transaction-finalized',
+      status: EntityStatus.COMPLETED,
+      result: durableResult,
+    });
   });
 
   it('requires distinct durable and after-commit transaction results', () => {
@@ -172,6 +209,17 @@ describe('group-state AppInbox transaction result boundary', () => {
 
     expect(handler).not.toContain('groupStateService: GroupStateService;');
     expect(contracts).toContain('interface GroupStateInboxMutationOperations');
+    expect(contracts).toContain('readonly sessionGenerationLifecycle:');
+    expect(contracts).toContain('observeSnapshot(snapshot: GroupSnapshot)');
+    for (const excludedOperation of [
+      'prepareMutation',
+      'prepareSessionCleanupMutations',
+      'listSnapshots',
+      'listEvents',
+      'readSnapshot',
+    ]) {
+      expect(readNarrowCapabilitySource(contracts)).not.toContain(excludedOperation);
+    }
   });
 
   it('requires the Task 10 target-identity owner path', () => {
@@ -220,4 +268,9 @@ describe('group-state AppInbox transaction result boundary', () => {
 
 function readTargetSource(path: string): string {
   return existsSync(path) ? readFileSync(path, 'utf8') : '';
+}
+
+function readNarrowCapabilitySource(source: string): string {
+  const start = source.indexOf('export interface GroupStateInboxMutationOperations');
+  return source.slice(start, source.indexOf('\n}\n', start) + 3);
 }

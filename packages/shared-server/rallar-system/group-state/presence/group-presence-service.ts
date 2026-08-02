@@ -6,6 +6,7 @@ import type {
   GroupStateMutationCommand,
   GroupStateService,
 } from '../group-state-service-contracts.ts';
+import type { GroupStateInboxMutationOperations } from '../inbox/group-state-inbox-contracts.ts';
 import type { AppInboxEnqueueInput } from '../../services/AppInboxService.ts';
 import { AppInboxType } from '../../services/AppInboxService.ts';
 import type {
@@ -68,7 +69,7 @@ export function toExpiredPresenceEnqueue(
 export async function processGroupPresenceConnect<Result>(
   input: Readonly<{
     command: GroupStateMutationCommand;
-    groupStateService: GroupStateService;
+    mutationOperations: GroupStateInboxMutationOperations;
     writeMutation: WriteMutation;
     commitMutation(
       computed: GroupMutationComputed,
@@ -86,7 +87,7 @@ export async function processGroupPresenceConnect<Result>(
     principalId: operation.input.principalId,
     sessionId: operation.sessionId,
   });
-  const lifecycle = input.groupStateService.sessionGenerationLifecycle;
+  const lifecycle = input.mutationOperations.sessionGenerationLifecycle;
   const lifecycleRead = await lifecycle.read(identity);
   if (lifecycle.isObservedAtClosed(identity, observedAtEpochMs, lifecycleRead)) {
     return await input.writeMutation(() =>
@@ -97,9 +98,9 @@ export async function processGroupPresenceConnect<Result>(
       }),
     );
   }
-  const read = await input.groupStateService.read(input.command);
-  const computed = input.groupStateService.compute(input.command, read);
-  input.groupStateService.validate(input.command, read, computed);
+  const read = await input.mutationOperations.read(input.command);
+  const computed = input.mutationOperations.compute(input.command, read);
+  input.mutationOperations.validate(input.command, read, computed);
   const lifecycleGuard = lifecycle.computeConnectGuard(
     {
       ...identity,

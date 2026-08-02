@@ -1154,6 +1154,8 @@ exists.
   `packages/shared-server/rallar-system/services/app-inbox-transaction-writer.ts`
 - Modify: `packages/shared-server/rallar-system/services/AppInboxService.ts`
 - Modify:
+  `packages/shared-server/rallar-system/services/AppGroupInboxService.ts`
+- Modify:
   `packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts`
 - Modify:
   `packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts`
@@ -1162,16 +1164,29 @@ exists.
 - Test: the transaction-result, AppInbox transaction, operation, retry,
   idempotency, presence, and source-ratchet suites
 
-- [ ] Add the Section 6.4 immutable result RED/GREEN fixtures before removing
+- [x] Add the Section 6.4 immutable result RED/GREEN fixtures before removing
       mutable callback escape. Independently compare raw durable JSON and key
       order rather than serializing an expected compound result.
-- [ ] Introduce the one Section 6.5 handler-facing capability and prove the
+- [x] Introduce the one Section 6.5 handler-facing capability and prove the
       exported broad service, factory result, and public compatibility paths are
       unchanged.
-- [ ] Preserve callback invocation/retry, commit/failure, finalization, exact
+- [x] Preserve callback invocation/retry, commit/failure, finalization, exact
       snapshot identity, observation/wake order, receipt/event/final-outbox, and
       caller return behavior.
 - [ ] Obtain scoped review with Critical 0 / Important 0.
+
+Task 9 implementation returns one immutable durable/private result through the
+transaction writer and persists only the predecessor durable projection. The
+handler and presence-connect owner now consume the exact six-operation internal
+capability while the exported broad service remains unchanged. The public
+`AppInboxService.ts` predecessor stays at its exact 729-line baseline: Task 9
+changes only the transaction-writer field from private to protected so the
+existing subclass can reach the new internal operation. Its four pre-existing
+over-60-line functions retain their exact baseline sizes; broad decomposition of
+that public base class is outside this child. Behavior, source-tree, cycle,
+size-baseline, TypeScript, and changed-style gates pass. The future-only target
+suite now fails only its ten reserved Task 10 naming cases. Independent scoped
+review remains external until recorded.
 
 ### Task 10: Reconcile Remaining Internal Names And Protect Presence Ownership
 

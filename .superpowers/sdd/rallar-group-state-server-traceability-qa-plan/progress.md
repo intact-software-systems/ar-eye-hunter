@@ -164,3 +164,19 @@ those five inputs now match the captured `service` and `dependencies` callback
 forms; all wrong-handler replacements, mutation guards, and assertions are
 unchanged. Routing is 12 / 12 and the complete focused batch is 12 files / 131
 tests. Independent re-review is pending.
+
+Task 9: implemented — the AppInbox transaction writer now owns one immutable
+durable/private result and one shared transaction/finalization sequence. It
+persists and records only the exact predecessor durable result, then exposes
+the private committed-snapshot identity after confirmed commit. The group
+handler and presence-connect operation consume the exact six-operation
+`GroupStateInboxMutationOperations` capability; the broad exported service,
+factory, package paths, inactive-presence durable-only writer, and non-group
+callers remain unchanged. The original focused predecessor batch was 6 files /
+105 tests GREEN with exactly 2 Task 9 and 10 Task 10 future failures. The
+stronger test-first RED was 19 failures / 2 passes before implementation. Task
+9 GREEN is 7 focused cases plus 13 files / 143 tests, and the broad group and
+AppInbox compatibility batch is 56 files / 280 tests. Source/tree/active/owner
+ratchets are 4 files / 26 tests; shared-server TypeScript and changed-style pass.
+The future-only suite now fails exactly the ten reserved Task 10 cases.
+Self-review is Critical 0 / Important 0; independent scoped review is pending.
