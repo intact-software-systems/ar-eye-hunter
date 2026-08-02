@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 
 import { describe, expect, it, vi } from 'vitest';
 
@@ -17,6 +17,12 @@ const targetIdentityPath =
   'packages/shared-server/rallar-system/group-state/mutation/orchestration/resolve-group-mutation-target-identity.ts';
 const targetWritePath =
   'packages/shared-server/rallar-system/group-state/mutation/write/write-group-mutation.ts';
+const targetWriteTestPath =
+  'packages/tests/shared-server/group-state/mutation/write-group-mutation-behavior.test.ts';
+const predecessorTargetIdentityPath =
+  'packages/shared-server/rallar-system/group-state/mutation/orchestration/resolve-group-mutation-target.ts';
+const predecessorWritePath =
+  'packages/shared-server/rallar-system/group-state/mutation/write/write-group-state-mutation.ts';
 
 describe('group-state AppInbox transaction result boundary', () => {
   it('persists the real durable result before exposing the committed snapshot', async () => {
@@ -165,6 +171,65 @@ describe('group-state AppInbox transaction result boundary', () => {
     vi.doUnmock('@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts');
   });
 
+  it.each(['result-write', 'finalization', 'commit'] as const)(
+    'does not expose a private result, observe, or wake when %s fails after callback work',
+    async (failurePhase) => {
+      const committedSnapshot = { snapshot: `${failurePhase}-snapshot` };
+      const readResult = vi
+        .fn()
+        .mockResolvedValue({ durableResult: { status: 'ok' }, committedSnapshot });
+      vi.resetModules();
+      vi.doMock(
+        '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts',
+        () => ({ readGroupStateInboxResult: readResult }),
+      );
+      const { GroupStateInboxHandler } =
+        await import('@shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts');
+      const actions: string[] = [];
+      const handler = new GroupStateInboxHandler({
+        groupStateService: {
+          read: async () => ({}),
+          compute: () => ({ outcome: 'write', receipt: {} }),
+          validate: () => undefined,
+          write: async () => {
+            actions.push('write');
+            return {};
+          },
+          observeSnapshot: async () => {
+            actions.push('observe');
+            return {};
+          },
+          sessionGenerationLifecycle: {},
+        } as never,
+        writeMutation: async (_context, write) => {
+          const durableResult = await write({} as never);
+          actions.push('private-result');
+          throw new Error(`controlled ${failurePhase} failure after ${String(durableResult)}`);
+        },
+        wakeQueue: () => actions.push('wake'),
+      });
+
+      await expect(
+        handler.processMutation({
+          enqueue: {
+            authority: {
+              authorityProof: null,
+              descriptor: null,
+              command: { operation: 'updateGroup', aggregateRef: {} },
+              facts: {},
+              causalToken: 'causal-token',
+              queueResourceId: 'queue-resource',
+            },
+          },
+          entry: { dequeueAudit: { attempts: 1 } },
+        } as never),
+      ).rejects.toThrow(`controlled ${failurePhase} failure after [object Object]`);
+      expect(readResult).toHaveBeenCalledOnce();
+      expect(actions).toEqual(['write', 'private-result']);
+      vi.doUnmock('@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts');
+    },
+  );
+
   it('characterizes the predecessor mutable committed snapshot escape', () => {
     const source = readFileSync(handlerPath, 'utf8');
 
@@ -195,13 +260,50 @@ describe('group-state AppInbox transaction result boundary', () => {
     expect(readFileSync(descriptorPath, 'utf8')).toContain('toGroupMutationDescriptor');
   });
 
-  it('requires Task 10 ownership names without retaining internal predecessor paths', () => {
-    expect(readFileSync(targetIdentityPath, 'utf8')).toContain(
-      'resolveGroupMutationTargetPrincipalId',
-    );
-    expect(readFileSync(targetIdentityPath, 'utf8')).toContain(
-      'resolveGroupMutationTargetSessionId',
-    );
-    expect(readFileSync(targetWritePath, 'utf8')).toContain('writeGroupMutation');
+  it('requires the Task 10 target-identity owner path', () => {
+    expect(existsSync(targetIdentityPath), targetIdentityPath).toBe(true);
+  });
+
+  it('requires the Task 10 principal identity resolver name', () => {
+    expect(readTargetSource(targetIdentityPath)).toContain('resolveGroupMutationTargetPrincipalId');
+  });
+
+  it('requires the Task 10 session identity resolver name', () => {
+    expect(readTargetSource(targetIdentityPath)).toContain('resolveGroupMutationTargetSessionId');
+  });
+
+  it('removes the predecessor target-identity resolver path', () => {
+    expect(existsSync(predecessorTargetIdentityPath), predecessorTargetIdentityPath).toBe(false);
+  });
+
+  it('requires the Task 10 mutation-write owner path', () => {
+    expect(existsSync(targetWritePath), targetWritePath).toBe(true);
+  });
+
+  it('requires the Task 10 behavior-named mutation-write test path', () => {
+    expect(existsSync(targetWriteTestPath), targetWriteTestPath).toBe(true);
+  });
+
+  it('removes the predecessor mutation-write path', () => {
+    expect(existsSync(predecessorWritePath), predecessorWritePath).toBe(false);
+  });
+
+  it('requires computeGroupMutationWrite without the predecessor writeResult symbol', () => {
+    expect(readTargetSource(targetWritePath)).toContain('computeGroupMutationWrite');
+  });
+
+  it('removes the predecessor writeResult symbol from the Task 10 write owner', () => {
+    const source = readTargetSource(targetWritePath);
+
+    expect(source, targetWritePath).not.toBe('');
+    expect(source).not.toContain('writeResult');
+  });
+
+  it('retains the Task 10 writeGroupMutation primary symbol', () => {
+    expect(readTargetSource(targetWritePath)).toContain('writeGroupMutation');
   });
 });
+
+function readTargetSource(path: string): string {
+  return existsSync(path) ? readFileSync(path, 'utf8') : '';
+}
