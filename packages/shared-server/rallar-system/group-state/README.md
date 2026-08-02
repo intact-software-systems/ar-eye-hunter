@@ -15,28 +15,32 @@ invocation so it is not a second runtime specification.
    route result.
 3. [AppGroupInboxService](../services/AppGroupInboxService.ts) owns
    authenticated enqueue preparation and group-message handler registration.
-4. [toGroupMutationDescriptor](./inbox/to-group-mutation-descriptor.ts) is the
+4. [isAuthenticatedGroupMutationEnqueue](./inbox/group-state-inbox-contracts.ts)
+   establishes the existing authenticated type-to-payload relationship by
+   checking only the inbox type.
+5. [toGroupMutationDescriptor](./inbox/to-group-mutation-descriptor.ts) is the
    canonical request-to-mutation-descriptor translation used during enqueue
    preparation.
-5. [GroupStateInboxHandler](./inbox/group-state-inbox-handler.ts) owns the
+6. [GroupStateInboxHandler](./inbox/group-state-inbox-handler.ts) owns the
    group mutation handler's commit-return boundary and after-commit snapshot
    observation.
-6. [createGroupStateService](./group-state-service.ts) constructs the durable
+7. [createGroupStateService](./group-state-service.ts) constructs the durable
    group-state read, compute, validate, and write operations.
-7. [writeGroupMutation](./mutation/write/write-group-mutation.ts) owns the
+8. [writeGroupMutation](./mutation/write/write-group-mutation.ts) owns the
    first aggregate or presence-session conditional guard and transaction-local
    event, receipt, and outbox writes.
-8. [processGroupPresenceConnect](./presence/group-presence-service.ts) owns
-   the connect-specific generation high-water early exit and guard.
-9. [processGroupSessionCleanup](./presence/group-presence-service.ts) owns
-   WebSocket-close cleanup preparation and its one transaction for all affected
-   group mutations.
-10. [GroupPresenceSummaryWork](./presence/group-presence-summary-work.ts)
+9. [processGroupPresenceConnect](./presence/group-presence-service.ts) owns
+   the connect-specific generation high-water decision and returns only an
+   inactive or ready-to-commit result.
+10. [processGroupSessionCleanup](./presence/group-presence-service.ts) owns
+    WebSocket-close cleanup preparation and its one transaction for all affected
+    group mutations.
+11. [GroupPresenceSummaryWork](./presence/group-presence-summary-work.ts)
     owns downstream summary convergence, its queue transaction, and post-commit
     wake.
-11. [createCachedGroupStateService](./snapshot/cached-group-state-service.ts)
+12. [createCachedGroupStateService](./snapshot/cached-group-state-service.ts)
     is the composition adapter for durable authority and cache reads.
-12. [GroupStateSnapshotReadThroughCache](./snapshot/group-state-snapshot-read-through-cache.ts)
+13. [GroupStateSnapshotReadThroughCache](./snapshot/group-state-snapshot-read-through-cache.ts)
     owns local snapshot observation, freshness checks, and durable read-through.
 
 ## Construction And Registration
@@ -89,7 +93,9 @@ the group handler uses.
    [defaultProcessGroupAppInbox](../../../../apps/api-v1/src/routes/group-state-routes.ts),
    which calls `AppGroupInboxService.processAuthenticatedEntryUntilCompletion`.
 2. [AppGroupInboxService](../services/AppGroupInboxService.ts) rejects a
-   non-authenticated group type, otherwise
+   non-authenticated group type through
+   [isAuthenticatedGroupMutationEnqueue](./inbox/group-state-inbox-contracts.ts),
+   otherwise
    `prepareAuthenticatedGroupMutation` calls
    [toGroupMutationDescriptor](./inbox/to-group-mutation-descriptor.ts) and
    passes that canonical descriptor to `GroupStateService.prepareMutation`.
@@ -137,12 +143,15 @@ the group handler uses.
 
 This family enters the same authenticated enqueue, registration, and handler
 path, but [processGroupPresenceConnect](./presence/group-presence-service.ts)
-first reads the session-generation lifecycle. If the observed connection is
-already closed, it uses the AppInbox transaction port to return an `inactive`
-result; it does not call group-state `read`, `compute`, `validate`, `write`,
-snapshot observation, or the handler's post-commit wake. Otherwise it performs
-those phases, writes the lifecycle guard before the group mutation in the same
-AppInbox transaction, and returns through the common durable-result path.
+first reads the session-generation lifecycle and returns only an `inactive` or
+`ready-to-commit` decision. It does not own a transaction, lifecycle write,
+snapshot observation, or wake. For an inactive decision,
+[GroupStateInboxHandler](./inbox/group-state-inbox-handler.ts) selects the
+inactive durable transaction without group-state `read`, `compute`, `validate`,
+or `write`. For a ready-to-commit decision, that handler selects the common
+mutation transaction, writes the lifecycle guard before the group mutation,
+then observes the committed snapshot and wakes the queue only after the
+transaction returns.
 
 ### Session-cleanup and expiry maintenance
 

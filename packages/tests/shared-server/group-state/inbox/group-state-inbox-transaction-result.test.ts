@@ -3,7 +3,15 @@ import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
-import { createGroupStateTransactionBoundaryHarness } from './group-state-transaction-boundary-fixture.ts';
+// prettier-ignore
+import {
+  GroupStateInboxHandler,
+} from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts';
+
+// prettier-ignore
+import {
+  createGroupStateTransactionBoundaryHarness,
+} from './group-state-transaction-boundary-fixture.ts';
 
 const targetIdentityPath =
   'packages/shared-server/rallar-system/group-state/mutation/orchestration/resolve-group-mutation-target-identity.ts';
@@ -80,8 +88,6 @@ describe('group-state AppInbox transaction result boundary', () => {
   });
 
   it('persists an inactive presence result once without active mutation effects', async () => {
-    const { GroupStateInboxHandler } =
-      await import('@shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts');
     const actions: string[] = [];
     const writeMutation = vi.fn(async (_context, write) => {
       actions.push('inactive-transaction');
@@ -132,9 +138,7 @@ describe('group-state AppInbox transaction result boundary', () => {
       transactionWriter: { writeMutation, writeMutationWithAfterCommitResult },
       wakeQueue: () => actions.push('wake'),
     });
-
     const result = await handler.processGroupStateMutation(inactiveConnectContext());
-
     expect(JSON.stringify(result)).toBe(
       '{"status":"inactive","sessionId":"inactive-session","generationId":"inactive-generation"}',
     );
@@ -151,39 +155,8 @@ describe('group-state AppInbox transaction result boundary', () => {
     vi.doMock('@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts', () => ({
       readGroupStateInboxResult: readResult,
     }));
-    const { GroupStateInboxHandler } =
-      await import('@shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts');
-    const actions: string[] = [];
-    const observed: unknown[] = [];
-    const writeMutationWithAfterCommitResult = vi.fn(async (_context, write) => {
-      const result = await write({} as never);
-      actions.push('commit');
-      return result;
-    });
-    const handler = new GroupStateInboxHandler({
-      mutationService: {
-        read: async () => ({}),
-        compute: () => ({ outcome: 'write', receipt: {} }),
-        validate: () => undefined,
-        write: async () => {
-          actions.push('write');
-          return {};
-        },
-      } as never,
-      sessionGenerationLifecycle: {} as never,
-      snapshotObserver: {
-        observeSnapshot: async (snapshot: unknown) => {
-          actions.push('observe');
-          observed.push(snapshot);
-          return snapshot;
-        },
-      } as never,
-      transactionWriter: {
-        writeMutation: async (_context, write) => await write({} as never),
-        writeMutationWithAfterCommitResult,
-      },
-      wakeQueue: () => actions.push('wake'),
-    });
+    const { actions, handler, observed, writeMutationWithAfterCommitResult } =
+      await createCommittedSnapshotObservationFixture();
 
     await expect(
       handler.processGroupStateMutation({
@@ -271,6 +244,50 @@ describe('group-state AppInbox transaction result boundary', () => {
 
 function readTargetSource(path: string): string {
   return existsSync(path) ? readFileSync(path, 'utf8') : '';
+}
+
+interface CommittedSnapshotFixture {
+  readonly actions: string[];
+  readonly handler: GroupStateInboxHandler;
+  readonly observed: unknown[];
+  readonly writeMutationWithAfterCommitResult: ReturnType<typeof vi.fn>;
+}
+
+async function createCommittedSnapshotObservationFixture(): Promise<CommittedSnapshotFixture> {
+  const { GroupStateInboxHandler: UncachedGroupStateInboxHandler } =
+    await import('@shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts');
+  const actions: string[] = [];
+  const observed: unknown[] = [];
+  const writeMutationWithAfterCommitResult = vi.fn(async (_context, write) => {
+    const result = await write({} as never);
+    actions.push('commit');
+    return result;
+  });
+  const handler = new UncachedGroupStateInboxHandler({
+    mutationService: {
+      read: async () => ({}),
+      compute: () => ({ outcome: 'write', receipt: {} }),
+      validate: () => undefined,
+      write: async () => {
+        actions.push('write');
+        return {};
+      },
+    } as never,
+    sessionGenerationLifecycle: {} as never,
+    snapshotObserver: {
+      observeSnapshot: async (snapshot: unknown) => {
+        actions.push('observe');
+        observed.push(snapshot);
+        return snapshot;
+      },
+    } as never,
+    transactionWriter: {
+      writeMutation: async (_context, write) => await write({} as never),
+      writeMutationWithAfterCommitResult,
+    },
+    wakeQueue: () => actions.push('wake'),
+  });
+  return { actions, handler, observed, writeMutationWithAfterCommitResult };
 }
 
 function inactiveConnectContext() {

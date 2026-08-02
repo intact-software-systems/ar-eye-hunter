@@ -154,13 +154,17 @@ export interface AuthenticatedGroupMutationPayloadByType {
 
 export type AuthenticatedGroupMutationInboxType = keyof AuthenticatedGroupMutationPayloadByType;
 
-export type AuthenticatedGroupMutationEnqueue = {
+export type AuthenticatedGroupMutationEnqueue = Readonly<{
   [Type in AuthenticatedGroupMutationInboxType]: Omit<
     AppInboxEnqueueInput<AuthenticatedGroupMutationPayloadByType[Type]>,
     'type'
   > &
     Readonly<{ type: Type }>;
-}[AuthenticatedGroupMutationInboxType];
+}>[AuthenticatedGroupMutationInboxType];
+
+interface AuthenticatedGroupMutationEnqueueCandidate {
+  readonly type: AppInboxType;
+}
 
 export const AUTHENTICATED_GROUP_INBOX_TYPES = [
   AppInboxType.GROUP_CREATE,
@@ -189,7 +193,7 @@ export const GROUP_MUTATION_INBOX_TYPES = [
 ] as const;
 
 export function isAuthenticatedGroupMutationEnqueue(
-  enqueue: AppInboxEnqueueInput<unknown>,
+  enqueue: AuthenticatedGroupMutationEnqueueCandidate,
 ): enqueue is AuthenticatedGroupMutationEnqueue {
   return (AUTHENTICATED_GROUP_INBOX_TYPES as readonly AppInboxType[]).includes(enqueue.type);
 }
