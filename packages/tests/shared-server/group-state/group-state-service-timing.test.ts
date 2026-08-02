@@ -24,14 +24,14 @@ const timingPath = `${groupStateRoot}/group-state-service-timing.ts`;
 const scope = { applicationId: 'app-1', workspaceId: 'workspace-1' };
 
 describe('group-state service timing boundary', () => {
-  it('characterizes the predecessor dynamic timing boundary', () => {
-    const source = readFileSync(servicePath, 'utf8');
+  it('assembles timing through the explicit group-state timing owner', () => {
+    const serviceSource = readFileSync(servicePath, 'utf8');
 
-    expect(source).toContain('function withGroupStateServiceTiming(');
-    expect(source).toContain('new Proxy(service, {');
-    expect(source).toContain('Reflect.get(target, property, receiver)');
-    expect(source).toContain('value.apply(target, args)');
-    expect(source).toContain('if (!timing) return service;');
+    expect(serviceSource).toContain("from './group-state-service-timing.ts';");
+    expect(serviceSource).toContain('service: createTimedGroupStateService({');
+    expect(serviceSource).not.toContain('new Proxy(');
+    expect(serviceSource).not.toContain('Reflect.get(');
+    expect(serviceSource).not.toContain('.apply(');
   });
 
   it('times one asynchronous service call with its exact return value and details', async () => {
@@ -256,7 +256,8 @@ function expectFutureTimingOwnerSource(): void {
   expect(source).not.toContain('new Proxy(');
   expect(source).not.toContain('Reflect.get(');
   expect(source).not.toContain('.apply(');
-  expect(source).toContain('if (!timing) return service;');
+  expect(source).toContain('if (!timing) {');
+  expect(source).toContain('return service;');
 }
 
 function expectNoTimingServiceIdentity(createTimed: CreateTimedGroupStateService): void {
@@ -267,12 +268,18 @@ function expectNoTimingServiceIdentity(createTimed: CreateTimedGroupStateService
 }
 
 async function expectEveryTimedSuccess(createTimed: CreateTimedGroupStateService): Promise<void> {
-  const fake = createGroupStateServiceTimingFake();
+  const timeline: string[] = [];
+  const fake = createGroupStateServiceTimingFake(undefined, (operation) =>
+    timeline.push(`call:${operation}`),
+  );
   const timingEvents: RallarTimingEvent[] = [];
   const timed = createTimed({
     service: fake.service,
     serviceId: 'timing-service',
-    timing: (event) => timingEvents.push(event),
+    timing: (event) => {
+      timingEvents.push(event);
+      timeline.push(`event:${event.operation}`);
+    },
   });
   expect(timed.compute).toBe(fake.service.compute);
   expect(timed.validate).toBe(fake.service.validate);
@@ -285,6 +292,9 @@ async function expectEveryTimedSuccess(createTimed: CreateTimedGroupStateService
   expect(invokeUntimedGroupStateOperations(timed)).toBe(fake.sentinels.compute);
   expect(fake.calls).toEqual([...TIMED_ASYNC_OPERATIONS, 'compute', 'validate']);
   expect(timingEvents).toHaveLength(TIMED_ASYNC_OPERATIONS.length);
+  expect(timeline).toEqual(
+    TIMED_ASYNC_OPERATIONS.flatMap((operation) => [`call:${operation}`, `event:${operation}`]),
+  );
   for (const [index, operation] of TIMED_ASYNC_OPERATIONS.entries()) {
     expect(timingEvents[index], operation).toMatchObject({
       type: 'rallar.timing',
@@ -307,16 +317,23 @@ async function expectTimedOperationRejection(
   createTimed: CreateTimedGroupStateService,
   operation: TimedAsyncOperation,
 ): Promise<void> {
-  const fake = createGroupStateServiceTimingFake(operation);
+  const timeline: string[] = [];
+  const fake = createGroupStateServiceTimingFake(operation, (called) =>
+    timeline.push(`call:${called}`),
+  );
   const timingEvents: RallarTimingEvent[] = [];
   const timed = createTimed({
     service: fake.service,
     serviceId: 'timing-service',
-    timing: (event) => timingEvents.push(event),
+    timing: (event) => {
+      timingEvents.push(event);
+      timeline.push(`event:${event.operation}`);
+    },
   });
 
   await expect(invokeTimedGroupStateOperation(timed, operation)).rejects.toBe(fake.rejection);
   expect(fake.calls).toEqual([operation]);
+  expect(timeline).toEqual([`call:${operation}`, `event:${operation}`]);
   expect(timingEvents).toEqual([
     {
       type: 'rallar.timing',

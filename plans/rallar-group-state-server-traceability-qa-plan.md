@@ -1087,12 +1087,21 @@ remain external until they exist.
   `packages/tests/shared-server/group-state/group-state-service-timing.test.ts`
 - Modify: directly affected source ratchets
 
-- [ ] Implement the exact Section 6.2 interface and factory.
-- [ ] Preserve no-timing identity and untimed synchronous `compute`/`validate`.
-- [ ] Preserve every timed name, detail, call, return, rejection, and order.
-- [ ] Delete only superseded proxy-specific types/helpers.
-- [ ] Run timing, idempotency, handler, AppInbox, and ratchet tests.
+- [x] Implement the exact Section 6.2 interface and factory.
+- [x] Preserve no-timing identity and untimed synchronous `compute`/`validate`.
+- [x] Preserve every timed name, detail, call, return, rejection, and order.
+- [x] Delete only superseded proxy-specific types/helpers.
+- [x] Run timing, idempotency, handler, AppInbox, and ratchet tests.
 - [ ] Obtain scoped review with Critical 0 / Important 0.
+
+Task 7 now routes the complete service through the explicit timing owner. The
+owner returns the exact service identity without a sink, retains synchronous
+`compute` and `validate`, and directly wraps all 15 asynchronous operations.
+The timing suite proves one underlying call followed by one success or error
+event for each operation, exact return or rejection identity, and the locked
+operation-specific details. The former proxy, reflective lookup, variadic
+arguments, runtime property discovery, and `Function.apply` helpers are gone.
+The scoped independent review remains external until it exists.
 
 ### Task 8: Make Topology And RTC Registration Construction-Valid
 

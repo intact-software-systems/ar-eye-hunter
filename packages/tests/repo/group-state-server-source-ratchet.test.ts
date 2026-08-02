@@ -33,6 +33,7 @@ const expectedGroupStateProductionTree = [
   'group-mutation-command.ts',
   'group-presence-mutation-command.ts',
   'group-state-service-contracts.ts',
+  'group-state-service-timing.ts',
   'group-state-service.ts',
   'group-state-validation-primitives.ts',
   'inbox/group-state-inbox-contracts.ts',

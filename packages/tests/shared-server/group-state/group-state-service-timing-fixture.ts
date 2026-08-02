@@ -29,6 +29,7 @@ export interface GroupStateServiceTimingFake {
 
 export function createGroupStateServiceTimingFake(
   rejectOperation?: TimedAsyncOperation,
+  onCall?: (operation: TimedAsyncOperation) => void,
 ): GroupStateServiceTimingFake {
   const calls: string[] = [];
   const rejection = new Error(`controlled ${rejectOperation ?? 'unused'} rejection`);
@@ -40,6 +41,7 @@ export function createGroupStateServiceTimingFake(
   ) as Readonly<Record<TimedAsyncOperation | 'compute', unknown>>;
   const record = async (operation: TimedAsyncOperation): Promise<unknown> => {
     calls.push(operation);
+    onCall?.(operation);
     if (operation === rejectOperation) throw rejection;
     return sentinels[operation];
   };

@@ -16,13 +16,9 @@ import {
   createWsSessionGenerationLifecycleService,
 } from '../services/ws-session-generation-lifecycle.ts';
 import { readGroupSessionCleanupCandidates } from './presence/group-session-cleanup.ts';
-import {
-  type RallarTimingEventInput,
-  type RallarTimingSink,
-  timeRallarAsync,
-} from '../services/timing.ts';
 import { hashMutationCommand, type JsonWireValue } from '../services/mutation-command-identity.ts';
 import { sha256CanonicalJson } from './mutation/group-state-crypto.ts';
+import { createTimedGroupStateService } from './group-state-service-timing.ts';
 import {
   prepareGroupMutation,
   type GroupMutationAuthorityDependencies,
@@ -32,7 +28,6 @@ import {
 import { toExpiryCommand, toSessionCleanupCommand } from './group-presence-mutation-command.ts';
 import {
   GROUP_MUTATION_QUEUE_EXPIRE_AT_EPOCH_MS,
-  type GroupMutationDescriptor,
   type GroupMutationPreparation,
   type GroupStateRuntime,
   type GroupStateService,
@@ -84,7 +79,11 @@ export function createGroupStateRuntime(
     ...createMutationOperations(owners),
   };
   return {
-    service: withGroupStateServiceTiming(service, dependencies.timing, dependencies.serviceId),
+    service: createTimedGroupStateService({
+      service,
+      timing: dependencies.timing,
+      serviceId: dependencies.serviceId,
+    }),
   };
 }
 
@@ -272,107 +271,4 @@ export function createGroupStateService(
   dependencies: GroupStateServiceDependencies,
 ): GroupStateService {
   return createGroupStateRuntime(dependencies).service;
-}
-
-function withGroupStateServiceTiming(
-  service: GroupStateService,
-  timing: RallarTimingSink | undefined,
-  serviceId: string,
-): GroupStateService {
-  if (!timing) return service;
-  const timed = <T>(
-    operation: string,
-    details: GroupStateTimingDetails,
-    action: () => Promise<T>,
-  ) => timeRallarAsync(timing, toGroupStateTimingDetails(serviceId, operation, details), action);
-  return new Proxy(service, {
-    get(target, property, receiver) {
-      const value = Reflect.get(target, property, receiver);
-      if (typeof value !== 'function') return value;
-      if (property === 'compute' || property === 'validate') return value.bind(target);
-      return (...args: GroupStateServiceArgument[]) => {
-        const { phaseCommand, requestRecord, scope } = resolveGroupStateTimingInvocation(args);
-        return timed(
-          String(property),
-          {
-            ...(scope ?? {}),
-            requestId: phaseCommand?.requestId ?? undefined,
-            groupId:
-              phaseCommand?.aggregateRef.groupId ??
-              (typeof args[1] === 'string' ? args[1] : requestRecord.groupId),
-            sessionId: typeof args[2] === 'string' ? args[2] : undefined,
-            ...requestRecord,
-          },
-          () => value.apply(target, args),
-        );
-      };
-    },
-  });
-}
-
-function toGroupStateTimingDetails(
-  serviceId: string,
-  operation: string,
-  details: GroupStateTimingDetails,
-): RallarTimingEventInput {
-  return {
-    component: 'group-state-service',
-    operation,
-    serviceId,
-    requestId: typeof details.requestId === 'string' ? details.requestId : undefined,
-    applicationId: typeof details.applicationId === 'string' ? details.applicationId : undefined,
-    workspaceId: typeof details.workspaceId === 'string' ? details.workspaceId : undefined,
-    groupId: typeof details.groupId === 'string' ? details.groupId : undefined,
-    principalId:
-      typeof details.principalId === 'string'
-        ? details.principalId
-        : typeof details.actorPrincipalId === 'string'
-          ? details.actorPrincipalId
-          : typeof details.createdByPrincipalId === 'string'
-            ? details.createdByPrincipalId
-            : undefined,
-    sessionId: typeof details.sessionId === 'string' ? details.sessionId : undefined,
-  };
-}
-
-interface GroupStateTimingInvocation {
-  readonly phaseCommand: GroupMutationCommand | undefined;
-  readonly scope: GroupMutationDescriptor['scope'] | undefined;
-  readonly requestRecord: GroupStateTimingDetails;
-}
-
-interface GroupStateTimingDetails {
-  readonly applicationId?: string;
-  readonly workspaceId?: string;
-  readonly groupId?: string;
-  readonly principalId?: string;
-  readonly actorPrincipalId?: string;
-  readonly createdByPrincipalId?: string;
-  readonly requestId?: string;
-  readonly sessionId?: string;
-}
-
-type GroupStateServiceArgument = object | string | number | undefined;
-
-function resolveGroupStateTimingInvocation(
-  args: readonly GroupStateServiceArgument[],
-): GroupStateTimingInvocation {
-  const first = args[0];
-  const phaseCommand =
-    first &&
-    typeof first === 'object' &&
-    'command' in first &&
-    first.command &&
-    typeof first.command === 'object'
-      ? (first.command as GroupMutationCommand)
-      : undefined;
-  const scope =
-    phaseCommand?.aggregateRef ??
-    (first && typeof first === 'object' ? (first as GroupMutationDescriptor['scope']) : undefined);
-  const request = args.findLast((candidate) =>
-    Boolean(candidate && typeof candidate === 'object' && 'requestId' in candidate),
-  );
-  const requestRecord =
-    request && typeof request === 'object' ? (request as GroupStateTimingDetails) : {};
-  return { phaseCommand, scope, requestRecord };
 }

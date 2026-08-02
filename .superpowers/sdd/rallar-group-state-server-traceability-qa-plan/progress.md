@@ -116,3 +116,16 @@ renames the private owner to `to-group-mutation-descriptor.ts`, removes the
 allowance, and adds no compatibility hop. The exact changed-style comparison
 fails on that one finding before the rename and passes afterward; the renamed
 owner is byte-identical. Independent re-review is pending.
+
+Task 7: implemented — `createTimedGroupStateService` is the explicit timing
+boundary and the runtime assembly calls it directly. No-timing returns the
+exact service identity; synchronous `compute`/`validate` remain direct and
+untimed; all 15 asynchronous operations preserve one call, exact return or
+rejection identity, predecessor detail projection, and call-before-event order.
+The dynamic proxy, reflective lookup, variadic dispatch, and `Function.apply`
+owners are removed. Focused timing is 1 file / 6 tests; the Task 7 behavior,
+idempotency, handler, AppInbox, source/tree, and active-path batch is 16 files /
+168 tests; shared-server TypeScript and changed-style comparison pass. The
+future-only selection now passes timing and retains exactly 13 Task 8–10
+failures with 12 passing predecessor/Task 6–7 cases. Independent review is
+pending.
