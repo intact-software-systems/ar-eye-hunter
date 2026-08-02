@@ -10,9 +10,11 @@
 > Hetzner Supported Distributed Manifests** run `30697799787` attempt 1
 > succeeded for that exact SHA. The post-publication
 > [server traceability QA child](rallar-group-state-server-traceability-qa-plan.md)
-> is revised and unapproved. Its guidance/independent-lineage PR and
-> behavior-neutral runtime-traceability PR now precede Task 10. The later
-> evidence ledger and API-v1 child remain separately gated.
+> published PR #61 and PR #62. The
+> [server traceability hardening child](rallar-group-state-server-traceability-hardening-plan.md)
+> is drafted and unapproved; its guidance/navigation PR and behavior-neutral
+> runtime PR now precede Task 10. The later evidence ledger and API-v1 child
+> remain separately gated.
 
 This plan is the authoritative shared-server child of the
 [Repository Human Traceability Refactoring Program](repo-human-traceability-refactoring-program-plan.md).
@@ -22,13 +24,17 @@ the completed
 [governance/checker child](repo-human-traceability-governance-and-checker-plan.md),
 and the ledger-published
 [browser room/group-state translation-boundary child](rallar-room-group-state-translation-boundary-plan.md).
-The revised
+The published
 [server traceability QA child](rallar-group-state-server-traceability-qa-plan.md)
 records the post-PR #59 human-navigation follow-up: family-level review traces,
 independent lineage provenance, complete callback registration, immutable
 durable/private transaction results, narrow handler capabilities, explicit
-timing, and descriptive internal names. It does not reopen this child's public,
-persisted, AppInbox, authority, or behavior contracts.
+timing, and descriptive internal names. The drafted
+[server traceability hardening child](rallar-group-state-server-traceability-hardening-plan.md)
+owns the remaining durable-navigation, protocol typing, transaction-owner,
+presence-decision, timing-inventory, semantic-ratchet, and naming work. Neither
+child reopens this plan's public, persisted, AppInbox, authority, or behavior
+contracts.
 
 The browser prerequisite is satisfied by ledger PR #55: feature
 `7db208ed977fdcad4a1afef8a5d08c3cfdbb862c`, frozen tree
@@ -80,9 +86,12 @@ Distributed Manifests** run `30520679271` attempt 1 success for that exact
 - The existing server implementation goal, branch, and draft PR #59 cover
   Tasks 0 through 9 under this amendment. Task 10 requires its later gate and
   does not inherit this implementation authority.
-- The separately approved traceability QA child, if approved, must publish its
-  guidance PR and behavior-neutral code PR before Task 10. This plan revision
-  does not itself approve either QA implementation PR.
+- The traceability QA child published its guidance and behavior-neutral runtime
+  PRs through PR #61 and PR #62. The separately drafted
+  [traceability hardening child](rallar-group-state-server-traceability-hardening-plan.md)
+  must publish its guidance/navigation PR and behavior-neutral runtime PR before
+  Task 10. This plan revision does not approve either hardening implementation
+  PR.
 
 ## 1. Scope And Success Boundary
 
@@ -1488,12 +1497,14 @@ waiver.
 
 ### Task 10: Publish The Later Evidence Ledger Separately
 
-Only after PR #59 and both implementation PRs from the separately approved
-[server traceability QA child](rallar-group-state-server-traceability-qa-plan.md)
+Only after PR #59, both implementation PRs from the
+[server traceability QA child](rallar-group-state-server-traceability-qa-plan.md),
+and both implementation PRs from the separately approved
+[server traceability hardening child](rallar-group-state-server-traceability-hardening-plan.md)
 have green publication envelopes, use a separately authorized non-default
-ledger branch to update this child, the QA child, the master program, and the
-execution plan. PR A must have completed its independent PR #59 lineage
-provenance without changing checker behavior; PR B must have preserved exact
+ledger branch to update this child, both traceability children, the master
+program, and the execution plan. The hardening guidance/navigation PR must
+change no production or checker behavior; its runtime PR must preserve exact
 durable serialization and all locked AppInbox behavior. Record existing
 implementation evidence only. The ledger's own future tree, commit, PR, branch
 gate, merge, and default workflow remain in the external PR/handoff envelope
@@ -2119,14 +2130,14 @@ before it was frozen. Its future PR head, merge SHA, workflow result, or
 replacement tree must remain in the PR and Mandatory Completion Handoff external
 envelope.
 
-After PR #59 and both QA implementation envelopes are green, a separate
-four-plan ledger may record those now-existing facts and mark implementation
-and traceability QA `complete` while its own publication remains `pending`. The
-frozen ledger tree may not record its own future tree, commit, PR number, branch
-gate, merge SHA, or default-workflow result. Those remain external. Only after
-the ledger PR is merged and its exact resulting-main workflow succeeds may the
-external handoff call this child `ledger-published` and unlock drafting the
-API-v1 child.
+After PR #59, both QA implementation envelopes, and both hardening
+implementation envelopes are green, a separate five-plan ledger may record
+those now-existing facts and mark implementation and traceability work
+`complete` while its own publication remains `pending`. The frozen ledger tree
+may not record its own future tree, commit, PR number, branch gate, merge SHA,
+or default-workflow result. Those remain external. Only after the ledger PR is
+merged and its exact resulting-main workflow succeeds may the external handoff
+call this child `ledger-published` and unlock drafting the API-v1 child.
 
 ## 12. Exact Human Review Points
 
@@ -2273,9 +2284,14 @@ No approval above authorizes the later API-v1 child.
       `30694693554` attempt 1; PR #59 squash-merged as
       `06e0c5ab138c2ab55ac519b2244f727acd42d560`, and default workflow
       `30697799787` attempt 1 succeeded for that exact SHA.
-- [ ] The separately approved traceability QA guidance and behavior-neutral
+- [x] The separately approved traceability QA guidance and behavior-neutral
       runtime PRs passed their exact local, review, publication, merge, and
-      resulting-main workflow gates.
+      resulting-main workflow gates; PR #62 ended at exact `main`
+      `f124f8c3ac57e5f3a92c47f767f8b7e2b19e6af5`, whose default workflow
+      `30741608017` attempt 1 succeeded.
+- [ ] The separately approved traceability hardening guidance/navigation and
+      behavior-neutral runtime PRs passed their exact local, review,
+      publication, merge, and resulting-main workflow gates.
 - [x] The order-balanced comparison preserves four unique source artifacts,
       byte-identical environments, exact raw samples, receipts, final effects,
       atomic completion, zero forbidden exhaustion/transient retry, the 5%
@@ -2312,14 +2328,15 @@ topology/RTC algorithm refactor.
 
 ## 15. Progress Record
 
-Current publication state on 2026-08-01:
+Current publication state on 2026-08-02:
 
-| Milestone             | Status              | Evidence                                                                                                                                                                                                                                                                         |
-| --------------------- | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| PR #59 implementation | published           | Feature `bec8bea4eb095de9ad3a6b47c18e6799ab811239`, tree `c1ac6a57dad974d04264cbe1fa92313697256712`, Branch Release Gate `30694693554` attempt 1 success, PR #59, resulting `main` `06e0c5ab138c2ab55ac519b2244f727acd42d560`, default workflow `30697799787` attempt 1 success. |
-| Traceability QA       | revised; unapproved | [QA child](rallar-group-state-server-traceability-qa-plan.md) defines sequential guidance/independent-lineage and behavior-neutral runtime PRs. Neither implementation PR is authorized.                                                                                         |
-| Evidence ledger       | pending             | Waits for both QA PR publication envelopes and separate ledger authorization.                                                                                                                                                                                                    |
-| API-v1 child          | blocked             | Waits for the later server ledger to reach `ledger-published`.                                                                                                                                                                                                                   |
+| Milestone              | Status              | Evidence                                                                                                                                                                                                                                                                                                                                                                   |
+| ---------------------- | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PR #59 implementation  | published           | Feature `bec8bea4eb095de9ad3a6b47c18e6799ab811239`, tree `c1ac6a57dad974d04264cbe1fa92313697256712`, Branch Release Gate `30694693554` attempt 1 success, PR #59, resulting `main` `06e0c5ab138c2ab55ac519b2244f727acd42d560`, default workflow `30697799787` attempt 1 success.                                                                                           |
+| Traceability QA        | published           | [QA child](rallar-group-state-server-traceability-qa-plan.md) published PR #61 and PR #62. PR #62 feature `b579aa56bc656b12f3717f2b02c0e24de9244357`, tree `3a7d80a3a9c522ba4954168be5f380aee04f871b`, Branch Release Gate `30739771277` attempt 1 success, resulting `main` `f124f8c3ac57e5f3a92c47f767f8b7e2b19e6af5`, default workflow `30741608017` attempt 1 success. |
+| Traceability hardening | drafted; unapproved | [Hardening child](rallar-group-state-server-traceability-hardening-plan.md) defines sequential guidance/navigation and behavior-neutral runtime PRs. No implementation work is authorized.                                                                                                                                                                                 |
+| Evidence ledger        | pending             | Waits for both hardening PR publication envelopes and separate ledger authorization.                                                                                                                                                                                                                                                                                       |
+| API-v1 child           | blocked             | Waits for the later server ledger to reach `ledger-published`.                                                                                                                                                                                                                                                                                                             |
 
 The detailed rows below retain milestone-time implementation evidence. Their
 “final gates pending” phrases describe those earlier frozen checkpoints; the

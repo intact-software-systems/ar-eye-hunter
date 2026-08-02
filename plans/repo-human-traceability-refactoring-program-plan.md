@@ -81,16 +81,19 @@ published through PR #59 at feature head
 `bec8bea4eb095de9ad3a6b47c18e6799ab811239` and tree
 `c1ac6a57dad974d04264cbe1fa92313697256712`, then squash-merged as exact
 `main` SHA `06e0c5ab138c2ab55ac519b2244f727acd42d560`; the exact resulting-main
-workflow is green. A post-publication
+workflow is green. The post-publication
 [server traceability QA child](rallar-group-state-server-traceability-qa-plan.md)
-is revised and remains unapproved. PR A covers family-level call traces,
-transaction-callback review, canonical skill paths, behavior-named tests,
-large-review evidence, temporary-ratchet ownership, construction-warning
-disposition, and independent PR #59 lineage provenance without changing checker
-behavior. PR B covers the behavior-neutral descriptor/timing work plus complete
-dependency registration, immutable durable/private transaction results, a
-narrow internal handler capability, and naming alignment. Both precede the
-server's Task 10 ledger; the later API-v1 child remains gated.
+published guidance/lineage PR #61 and behavior-neutral runtime PR #62. PR #62
+feature `b579aa56bc656b12f3717f2b02c0e24de9244357` and tree
+`3a7d80a3a9c522ba4954168be5f380aee04f871b` passed Branch Release Gate
+`30739771277` attempt 1, then squash-merged as exact `main`
+`f124f8c3ac57e5f3a92c47f767f8b7e2b19e6af5`; default workflow
+`30741608017` attempt 1 succeeded for that exact SHA. The linked
+[server traceability hardening child](rallar-group-state-server-traceability-hardening-plan.md)
+is drafted and unapproved. It adds durable navigation and stronger guidance in
+PR A, then behavior-neutral protocol, transaction-owner, presence-decision,
+timing-inventory, and naming corrections in PR B. Both hardening PRs now precede
+the server's evidence ledger; the later API-v1 child remains gated.
 
 Program drafting, approval, execution, publication, and human handoffs follow
 the [Repository Human Traceability Program Execution Plan](repo-human-traceability-program-execution-plan.md).
@@ -754,15 +757,20 @@ reviewable:
    presence, and AppInbox ownership;
 3. API-v1 group-state routes, composition, and mirrored tests.
 
-PR #59's post-publication human review adds a fourth QA child between items 2
+PR #59's post-publication human review added a fourth QA child between items 2
 and 3. The
 [server traceability QA plan](rallar-group-state-server-traceability-qa-plan.md)
 first strengthens skills, review guidance, test discoverability, review-size
 evidence, and independent lineage governance, then applies behavior-neutral
 entry/exit, registration-lifetime, immutable transaction-result,
-handler-capability, naming, and timing-dispatch corrections. The server ledger
-waits for both QA PRs so the ledger describes the reviewed server result, not
-only the first structural publication.
+handler-capability, naming, and timing-dispatch corrections. Its two PRs are
+published. The
+[server traceability hardening plan](rallar-group-state-server-traceability-hardening-plan.md)
+adds a fifth child with durable navigation/guidance first and behavior-neutral
+protocol, transaction-owner, presence-decision, timing-inventory, semantic-
+ratchet, and naming work second. The server ledger waits for both hardening PRs
+so it describes the reviewed server result, not only the earlier structural and
+QA publications.
 
 Acceptance requires that a human can start at `RallarRoomsFacade.create`, find
 the one room/group-state translation, continue to the API route and AppInbox,
@@ -1036,17 +1044,22 @@ to write, review, approve, execute, and hand off these child plans in order:
   - split of topology and RTC RTT ownership from `AppGroupInboxService`;
   - mirrored shared-server tests;
   - mutation-path verification decision.
-- [ ] [Rallar group-state server traceability QA](rallar-group-state-server-traceability-qa-plan.md)
-  - state: review-driven revision drafted and unapproved;
-  - PR A: family-level trace/review skills, canonical realtime/test paths,
-    review-pressure evidence, temporary-ratchet governance, descriptive tests,
-    and independent target-by-target PR #59 lineage provenance; no checker
-    behavior change;
-  - PR B: behavior-neutral descriptor ownership, direct handler/naming
-    alignment, explicit timing adapter, complete topology/RTC callback
-    registration, immutable durable/private transaction results, a narrow
-    internal handler capability, and authoritative mutation discoverability;
-  - no API-v1 route reorganization or semantic change.
+- [x] [Rallar group-state server traceability QA](rallar-group-state-server-traceability-qa-plan.md)
+  - state: guidance/lineage PR #61 and behavior-neutral runtime PR #62 are
+    published; PR #62 feature `b579aa56bc656b12f3717f2b02c0e24de9244357`
+    and tree `3a7d80a3a9c522ba4954168be5f380aee04f871b` passed Branch Release Gate
+    `30739771277` attempt 1, resulting `main`
+    `f124f8c3ac57e5f3a92c47f767f8b7e2b19e6af5`, default workflow
+    `30741608017` attempt 1 success;
+  - checker behavior, public/persisted contracts, and API-v1 organization stayed
+    unchanged.
+- [ ] [Rallar group-state server traceability hardening](rallar-group-state-server-traceability-hardening-plan.md)
+  - state: drafted and unapproved; no implementation branch, goal, or PR exists;
+  - PR A: human-traceability guidance and durable colocated navigation;
+  - PR B: behavior-neutral discriminated protocol mapping, named transaction
+    writer port, handler-owned presence transaction choice, closed timing
+    inventory, semantic ratchets, and internal naming alignment;
+  - both PRs precede the pending server evidence ledger.
 - [ ] `plans/api-v1-group-state-route-structure-plan.md`
   - route split and descriptive registration symbols;
   - request defaults and request-to-command translation;
@@ -1095,8 +1108,10 @@ Human review has approved all master-plan execution choices:
 The browser child is `ledger-published` through PR #55 and exact resulting
 `main` SHA `b4fe2a6ae5893f3adae86061bd38cf416bac8aaf`. The shared-server
 implementation is published through PR #59 and exact resulting `main` SHA
-`06e0c5ab138c2ab55ac519b2244f727acd42d560`. Its traceability QA child is
-revised and unapproved; PR A contains guidance and independent lineage
-governance, while PR B contains only behavior-neutral runtime traceability. Its
-later ledger waits for both QA PRs. The API-v1 child remains unstarted and may
-not be drafted until the server ledger is `ledger-published`.
+`06e0c5ab138c2ab55ac519b2244f727acd42d560`. Its traceability QA
+implementation is published through PR #61 and PR #62, ending at exact `main`
+`f124f8c3ac57e5f3a92c47f767f8b7e2b19e6af5` with default workflow
+`30741608017` attempt 1 success. The traceability hardening child is drafted and
+unapproved; its guidance/navigation PR and behavior-neutral runtime PR now
+precede the server ledger. The API-v1 child remains unstarted and may not be
+drafted until the server ledger is `ledger-published`.

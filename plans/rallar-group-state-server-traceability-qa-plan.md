@@ -62,16 +62,24 @@ child's later evidence ledger waits for both.
   human disposition. PR A does not make every optional construction warning
   globally blocking; checker calibration or schema enforcement requires a
   separately approved governance child.
-- The later server evidence ledger remains separately authorized after PR B.
-  The API-v1 child remains blocked until that ledger is `ledger-published`.
+- The linked
+  [server traceability hardening child](rallar-group-state-server-traceability-hardening-plan.md)
+  is a separately approved successor with two implementation PRs. The later
+  server evidence ledger waits for both hardening envelopes. The API-v1 child
+  remains blocked until that ledger is `ledger-published`.
 
 ---
 
 Date: 2026-08-01
 
-Status: Exact planning revision approved; PR A published; PR B Tasks 5-10
-implemented and independently accepted. Task 11 local completion evidence,
-whole-PR review, governed performance, and Branch Release Gate remain pending.
+Status: Exact planning revision approved; PR A and PR B are published. PR #62
+feature `b579aa56bc656b12f3717f2b02c0e24de9244357` and tree
+`3a7d80a3a9c522ba4954168be5f380aee04f871b` passed Branch Release Gate
+`30739771277` attempt 1, then squash-merged as exact `main`
+`f124f8c3ac57e5f3a92c47f767f8b7e2b19e6af5`; default workflow
+`30741608017` attempt 1 succeeded for that exact SHA. The linked traceability
+hardening child is drafted and unapproved. The later server ledger remains
+pending.
 
 ## 1. Prerequisite And Scope Boundary
 
@@ -1527,21 +1535,22 @@ Critical 0 / Important 0 / Minor 0.
       exact counts in the Task 11 SDD report; the final post-evidence rerun is
       required on the unchanged staged evidence tree and is reported externally
       so no post-gate edit invalidates it.
-- [ ] Perform whole-PR review from PR A's resulting `main` through the exact
+- [x] Perform whole-PR review from PR A's resulting `main` through the exact
       candidate; Critical 0 / Important 0 required. Resolve every in-scope
       finding and rerun invalidated gates before the freeze.
 - [x] Confirm TypeScript, checkers, public exports, compatibility paths,
       AppInbox durable serialization/finalization, registration behavior,
       transaction/retry semantics, and unrelated plans remain unchanged.
-- [ ] Before measurement, finish every implementation, plan-evidence, review,
+- [x] Before measurement, finish every implementation, plan-evidence, review,
       and local-gate edit, then create one exact local candidate commit. That
-      same commit must be the final PR B head if measurement succeeds.
-- [ ] Run one fixed, non-rerolled A-B-B-A comparison using PR A's exact
+      same commit became final PR B head
+      `b579aa56bc656b12f3717f2b02c0e24de9244357`.
+- [x] Run one fixed, non-rerolled A-B-B-A comparison using PR A's exact
       resulting `main` SHA as both A positions and the exact PR B candidate
       commit as both B positions. Use the approved server-child PostgreSQL 16
       protocol, pooling writer, unchanged global comparator, and existing 1.5%
       child-policy evaluator without changing any threshold.
-- [ ] Stop if the comparator or a correctness invariant fails. No optimization,
+- [x] Stop if the comparator or a correctness invariant fails. No optimization,
       threshold change, tolerance, or replacement run is authorized.
 
 ### Task 12: Publish PR B And Return To Human Merge Review
@@ -1550,29 +1559,35 @@ Critical 0 / Important 0 / Minor 0.
 
 - Publish the exact already-measured PR B candidate commit
 
-- [ ] Reconfirm the unchanged exact tree and commit; create no post-measurement
+- [x] Reconfirm the unchanged exact tree and commit; create no post-measurement
       evidence or formatting commit.
-- [ ] Push non-forced, update draft PR B with before/after trace and exact
+- [x] Push non-forced, update draft PR B with before/after trace and exact
       validation/performance evidence, and require Branch Release Gate.
-- [ ] Mark ready only when all gates and review are green.
-- [ ] Stop for exact human merge. Do not publish the ledger or begin API-v1.
+- [x] Mark ready only when all gates and review are green.
+- [x] Stop for exact human merge. The human squash-merged PR #62 as exact
+      `main` `f124f8c3ac57e5f3a92c47f767f8b7e2b19e6af5`; default workflow
+      `30741608017` attempt 1 succeeded. No ledger or API-v1 work began.
 
 ### Task 13: Publish The Server Ledger Later
 
-After PR B merges and its exact resulting `main` SHA passes **Run Hetzner
-Supported Distributed Manifests**, separate human authorization starts an
-evidence-only branch. It may update only:
+After PR B and both PRs from the separately approved
+[server traceability hardening child](rallar-group-state-server-traceability-hardening-plan.md)
+merge and their exact resulting `main` SHAs pass **Run Hetzner Supported
+Distributed Manifests**, separate human authorization starts an evidence-only
+branch. It may update only:
 
 - `plans/rallar-group-state-server-structure-plan.md`;
 - `plans/rallar-group-state-server-traceability-qa-plan.md`;
+- `plans/rallar-group-state-server-traceability-hardening-plan.md`;
 - `plans/repo-human-traceability-refactoring-program-plan.md`;
 - `plans/repo-human-traceability-program-execution-plan.md`.
 
-The ledger records already-existing PR #59, PR A, and PR B trees, commits, PRs,
-Branch Release Gates, resulting `main` SHAs, and default workflows. It marks the
-server implementation and QA complete while leaving the ledger's own future
-facts external. Only after that envelope succeeds may the server child be
-`ledger-published` and the API-v1 child be drafted.
+The ledger records already-existing PR #59, PR #61, PR #62, hardening planning,
+and both hardening implementation trees, commits, PRs, Branch Release Gates,
+resulting `main` SHAs, and default workflows. It marks server implementation and
+traceability work complete while leaving the ledger's own future facts external.
+Only after that envelope succeeds may the server child be `ledger-published`
+and the API-v1 child be drafted.
 
 ## 9. Validation Matrix
 
@@ -1707,9 +1722,12 @@ binds the final head and execution stops for a new human decision.
    direct, and no behavior, compatibility, state, lifecycle, transaction,
    retry, or performance contract changed. Human separately approves its exact
    merge.
-5. **Ledger authorization:** after PR B's default workflow, the human separately
-   authorizes and later merges the ledger.
-6. **API-v1 drafting:** only `ledger-published` unlocks a planning-only API-v1
+5. **Hardening successor:** the human separately approves the exact hardening
+   plan blob, planning merge, guidance/navigation PR merge, and behavior-neutral
+   runtime PR merge. This QA plan grants none of those approvals.
+6. **Ledger authorization:** after both hardening default workflows, the human
+   separately authorizes and later merges the ledger.
+7. **API-v1 drafting:** only `ledger-published` unlocks a planning-only API-v1
    child prompt.
 
 ## 11. Non-Circular Completion Evidence
@@ -1765,9 +1783,16 @@ never relabels or invalidates a frozen implementation tree.
       the exact Section 4.3 names.
 - [x] Direct-function presence ownership remains verified, not reimplemented.
 - [x] Public exports, compatibility, contracts, AppInbox, and API-v1 are unchanged.
-- [ ] Medium-scale convergence and governed performance comparison passed.
-- [ ] PR B review has Critical 0 / Important 0.
-- [ ] PR B local/remote gates and resulting-main workflow passed.
+- [x] Medium-scale convergence and governed performance comparison passed.
+- [x] PR B review has Critical 0 / Important 0.
+- [x] PR B local/remote gates and resulting-main workflow passed at feature
+      `b579aa56bc656b12f3717f2b02c0e24de9244357`, tree
+      `3a7d80a3a9c522ba4954168be5f380aee04f871b`, Branch Release Gate
+      `30739771277` attempt 1, resulting `main`
+      `f124f8c3ac57e5f3a92c47f767f8b7e2b19e6af5`, and default workflow
+      `30741608017` attempt 1.
+- [ ] The separately approved traceability hardening child published both
+      implementation envelopes.
 - [ ] Later server ledger reached `ledger-published`.
 - [ ] API-v1 remained unstarted throughout this QA child.
 
@@ -1805,9 +1830,10 @@ never relabels or invalidates a frozen implementation tree.
 | PR B Task 8         | complete and independently accepted | Milestone `9b1dd873b183132a4379dd532c8fc516dbc2dfd4`, tree `b9094e7ccc77eff6318b1644cbc5916afc2babf7`, Critical 0 / Important 0 / Minor 0.                                                                                                                                                                               |
 | PR B Task 9         | complete and independently accepted | Milestone `7556238729da5b485ca4811f2ee806d67205a1c0`, tree `f2358d6cf946a59a4ae3f66c3c185f7b89d9d3b5`, Critical 0 / Important 0.                                                                                                                                                                                         |
 | PR B Task 10        | complete and independently accepted | Milestone `41ae45afa268d186e65dfe0188be7f146ee80f7e`, tree `c6373a00e686bae64f7bc5b3361798fbfb105f98`, Critical 0 / Important 0 / Minor 0.                                                                                                                                                                               |
-| PR B Task 11        | in progress                         | Final factual evidence, one-tree Section 9.3 gates, whole-PR review, exact candidate freeze, and governed A-B-B-A performance remain pending. No performance or Branch Release Gate fact exists yet.                                                                                                                     |
-| PR B Task 12        | pending                             | PR #62 is draft. Final candidate push, current PR evidence, Branch Release Gate, and ready transition wait for Task 11.                                                                                                                                                                                                  |
-| Server later ledger | pending                             | Waits for PR B merge/default-workflow evidence and separate authorization. No ledger branch or evidence exists.                                                                                                                                                                                                          |
+| PR B Task 11        | complete                            | Final candidate `b579aa56bc656b12f3717f2b02c0e24de9244357` and tree `3a7d80a3a9c522ba4954168be5f380aee04f871b` passed the governed comparison, final validation, and independent review recorded in PR #62's external evidence.                                                                                          |
+| PR B Task 12        | published                           | PR #62 exact feature head passed Branch Release Gate `30739771277` attempt 1, squash-merged as `f124f8c3ac57e5f3a92c47f767f8b7e2b19e6af5`, and default workflow `30741608017` attempt 1 succeeded for that exact SHA.                                                                                                    |
+| Hardening successor | drafted; unapproved                 | [Hardening child](rallar-group-state-server-traceability-hardening-plan.md) defines sequential guidance/navigation and behavior-neutral runtime PRs. No implementation work exists.                                                                                                                                      |
+| Server later ledger | pending                             | Waits for both hardening implementation publication envelopes and separate authorization. No ledger branch or evidence exists.                                                                                                                                                                                           |
 | API-v1 child        | blocked and unstarted               | Waits for the server ledger to be `ledger-published`.                                                                                                                                                                                                                                                                    |
 
 ## 15. Planning Self-Review Record
