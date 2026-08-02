@@ -154,4 +154,13 @@ future-only registration is GREEN while exactly 12 Task 9–10 failures remain.
 Final focused behavior is 11 files / 119 tests, source/tree/active ratchets are
 3 / 15, API-v1 lifecycle is 4 / 4 plus check, two PGlite topology/RTC queue
 paths pass, shared-server TypeScript passes, and changed-style reports no new
-finding. Self-review is Critical 0 / Important 0; independent review is pending.
+finding. Self-review is Critical 0 / Important 0; independent review found one
+Important stale-fixture issue.
+
+Task 8 review-fix round 1: implemented — the routing-contract suite first
+reproduced exactly 5 failures / 7 passes because its topology and RTC
+source-mutation inputs still named the removed optional facade lookups. Only
+those five inputs now match the captured `service` and `dependencies` callback
+forms; all wrong-handler replacements, mutation guards, and assertions are
+unchanged. Routing is 12 / 12 and the complete focused batch is 12 files / 131
+tests. Independent re-review is pending.

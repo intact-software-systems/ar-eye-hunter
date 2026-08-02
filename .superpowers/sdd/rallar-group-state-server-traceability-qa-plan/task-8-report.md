@@ -49,8 +49,13 @@ dependency was added.
 - Isolated Task 8 RED: one named failure for the absent deferred-registration
   operations.
 - Target lifecycle suite: 1 file / 5 tests passed.
+- Review-fix routing RED/GREEN: the stale predecessor callback fixtures produced
+  exactly 5 failures / 7 passes; after changing only those five source-mutation
+  inputs to the captured `service` and `dependencies` forms, all 12 pass. Every
+  wrong-handler mutation and assertion remains unchanged.
 - Final focused registration, middleware, topology, operation, RTC, authority,
-  retry, AppInbox, and topology-management batch: 11 files / 119 tests passed.
+  retry, AppInbox, topology-management, and routing-contract batch: 12 files /
+  131 tests passed.
 - Source, mirrored-tree, active-path, function/module-limit, import, and runtime
   cycle ratchets: 3 files / 15 tests passed.
 - API-v1 lifecycle: 4 / 4 passed and Deno check passed. Its exact recorded
