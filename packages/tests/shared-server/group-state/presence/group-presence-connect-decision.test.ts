@@ -74,63 +74,77 @@ interface CreateDecisionDependenciesInput {
   readonly closedAtObservation: boolean;
 }
 
-function createDecisionDependencies(input: CreateDecisionDependenciesInput) {
+interface DecisionDependencies {
+  readonly command: GroupStateMutationCommand;
+  readonly computed: GroupMutationComputed;
+  readonly lifecycleGuard: WsSessionGenerationLifecycleComputed;
+  readonly mutationService: GroupStateMutationService;
+  readonly sessionGenerationLifecycle: WsSessionGenerationLifecycleService;
+}
+
+interface MutationServiceFixture {
+  readonly computed: GroupMutationComputed;
+  readonly service: GroupStateMutationService;
+}
+
+interface LifecycleServiceFixture {
+  readonly lifecycleGuard: WsSessionGenerationLifecycleComputed;
+  readonly service: WsSessionGenerationLifecycleService;
+}
+
+function createDecisionDependencies(input: CreateDecisionDependenciesInput): DecisionDependencies {
   const command = connectCommand();
-  const lifecycleRead = {
-    identity: {
-      scope: {
-        kind: 'group',
-        applicationId: 'ar-eye-hunter',
-        workspaceId: 'default',
-        principalId: 'owner',
-      },
-      sessionId: 'session-1',
-    },
-    key: 'lifecycle-key',
-    entry: null,
-    state: null,
-  } satisfies WsSessionGenerationLifecycleRead;
-  const lifecycleGuard = {
-    outcome: 'insert',
-    key: lifecycleRead.key,
-    expectedRevision: null,
-    state: {
-      version: 3,
-      status: 'open',
-      ...lifecycleRead.identity,
-      generationId: 'generation-1',
-      generationStartedAtEpochMs: 1_000,
-      expireAtEpochMs: 422_240,
-    },
-  } satisfies WsSessionGenerationLifecycleComputed;
+  const mutation = createMutationServiceFixture(command, input.phases);
+  const lifecycle = createLifecycleServiceFixture(input);
+  return {
+    command,
+    computed: mutation.computed,
+    lifecycleGuard: lifecycle.lifecycleGuard,
+    mutationService: mutation.service,
+    sessionGenerationLifecycle: lifecycle.service,
+  };
+}
+
+function createMutationServiceFixture(
+  command: GroupStateMutationCommand,
+  phases: string[],
+): MutationServiceFixture {
   const read = {} as GroupMutationRead;
   const computed = {
     outcome: 'no-op',
     receipt: {},
   } as GroupMutationComputed;
-  const mutationService: GroupStateMutationService = {
+  const service: GroupStateMutationService = {
     read: async (receivedCommand) => {
       expect(receivedCommand).toBe(command);
-      input.phases.push('mutation-read');
+      phases.push('mutation-read');
       return read;
     },
     compute: (receivedCommand, receivedRead) => {
       expect(receivedCommand).toBe(command);
       expect(receivedRead).toBe(read);
-      input.phases.push('mutation-compute');
+      phases.push('mutation-compute');
       return computed;
     },
     validate: (receivedCommand, receivedRead, receivedComputed) => {
       expect(receivedCommand).toBe(command);
       expect(receivedRead).toBe(read);
       expect(receivedComputed).toBe(computed);
-      input.phases.push('mutation-validate');
+      phases.push('mutation-validate');
     },
     write: async () => {
       throw new Error('The presence decision must not own the transaction write');
     },
   };
-  const sessionGenerationLifecycle: WsSessionGenerationLifecycleService = {
+  return { computed, service };
+}
+
+function createLifecycleServiceFixture(
+  input: CreateDecisionDependenciesInput,
+): LifecycleServiceFixture {
+  const lifecycleRead = lifecycleReadFixture();
+  const lifecycleGuard = lifecycleGuardFixture(lifecycleRead);
+  const service: WsSessionGenerationLifecycleService = {
     read: async (identity) => {
       expect(identity).toEqual(lifecycleRead.identity);
       input.phases.push('lifecycle-read');
@@ -162,8 +176,42 @@ function createDecisionDependencies(input: CreateDecisionDependenciesInput) {
       throw new Error('The presence decision must not own the lifecycle write');
     },
   };
+  return { lifecycleGuard, service };
+}
 
-  return { command, computed, lifecycleGuard, mutationService, sessionGenerationLifecycle };
+function lifecycleReadFixture(): WsSessionGenerationLifecycleRead {
+  return {
+    identity: {
+      scope: {
+        kind: 'group',
+        applicationId: 'ar-eye-hunter',
+        workspaceId: 'default',
+        principalId: 'owner',
+      },
+      sessionId: 'session-1',
+    },
+    key: 'lifecycle-key',
+    entry: null,
+    state: null,
+  };
+}
+
+function lifecycleGuardFixture(
+  lifecycleRead: WsSessionGenerationLifecycleRead,
+): WsSessionGenerationLifecycleComputed {
+  return {
+    outcome: 'insert',
+    key: lifecycleRead.key,
+    expectedRevision: null,
+    state: {
+      version: 3,
+      status: 'open',
+      ...lifecycleRead.identity,
+      generationId: 'generation-1',
+      generationStartedAtEpochMs: 1_000,
+      expireAtEpochMs: 422_240,
+    },
+  };
 }
 
 function connectCommand(): GroupStateMutationCommand {
