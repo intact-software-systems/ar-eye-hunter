@@ -58,6 +58,19 @@ four separately hooked real transaction phases prove rollback with no private
 result, observation, or wake escape. The exact-path inventory now classifies
 all live, documentation, analyzer, lineage, plan, and historical occurrences.
 The original predecessor batch remains 8 files / 139 tests plus source ratchet
-7 / 7; the supplementary predecessor batch is 6 files / 16 tests. Future RED
+7 / 7; the supplementary predecessor batch is 6 files / 17 tests. Future RED
 is limited to the approved absent Task 6–10 constructs. Production/runtime and
 checker behavior remain unchanged.
+
+Task 5 review-fix round 5: complete — a recursive changed-source ratchet first
+captured the 219-line database factory, its nested transaction callbacks, and
+the two 102/80-line timing scenarios. The final test-support tree gives the
+public database factory, contracts, SQL-family/stage hooks, and pending-write
+publication/commit separate cohesive owners; all existing defaults and four
+real failure phases remain unchanged. Timing success/no-timing/synchronous
+coverage remains intact, while the future runtime RED now creates an
+independent rejecting fake for each of all 15 asynchronous operations and
+requires exact rejection identity, one call, one error event, and exact
+operation details. Every changed function/callback is at most 60 lines and
+every changed module is at most 400 lines; production and checker behavior
+remain unchanged.

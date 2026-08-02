@@ -446,7 +446,11 @@ apps/api-v1/test/
 packages/tests/repo/
   group-state-server-source-ratchet-inventory.ts
   group-state-server-source-ratchet.test.ts
+  group-state-source-ratchet-function-sizes.ts
 packages/tests/shared-server/
+  app-inbox-test-database-contracts.ts
+  app-inbox-test-database-sql.ts
+  app-inbox-test-database-transaction.ts
   app-inbox-test-database.ts
   app-inbox-transaction.test.ts
   rallar-middleware.test.ts
@@ -474,9 +478,10 @@ packages/tests/shared-server/
 
 The production target remains limited to the approved explicit timing and
 descriptor owners plus the transaction/handler refinements and descriptive
-internal moves. Task 5 adds only cohesive timing and transaction test owners
-and optional in-memory database failure hooks needed to characterize those
-future boundaries:
+internal moves. Task 5 adds only cohesive timing and transaction test owners.
+The in-memory database test support separates its public factory, contracts,
+SQL-family dispatch and stage hooks, and transaction publication/commit owners;
+its existing defaults and every consumer remain unchanged:
 
 - `group-state-inbox-mutation-descriptor.ts` owns the exact AppInbox payload to
   `GroupMutationDescriptor` translation now embedded below the direct phase
@@ -807,8 +812,9 @@ Tests prove behavior, not prose:
   `writeMutationWithAfterCommitResult`, service write, durable/private result
   assembly, observation, and wake in the locked order;
 - timing absent returns the same object identity;
-- timing present calls every async operation once and preserves event details
-  and failure propagation;
+- timing present calls every async operation once and preserves event details;
+  every async operation independently preserves its exact rejection identity,
+  single underlying call, one error event, and operation-specific details;
 - `compute` and `validate` remain synchronous and untimed;
 - topology and RTC callbacks do not exist before complete configuration, capture
   the exact mandatory value once, and preserve setter idempotence/errors and
@@ -1000,12 +1006,16 @@ may be waived or rerolled inside this plan.
 - Create:
   `packages/tests/shared-server/group-state/group-state-service-timing-fixture.ts`
 - Modify: `packages/tests/shared-server/app-inbox-test-database.ts`
+- Create: `packages/tests/shared-server/app-inbox-test-database-contracts.ts`
+- Create: `packages/tests/shared-server/app-inbox-test-database-sql.ts`
+- Create: `packages/tests/shared-server/app-inbox-test-database-transaction.ts`
 - Modify: `packages/tests/shared-server/app-inbox-transaction.test.ts`
 - Modify: `packages/tests/shared-server/rallar-middleware.test.ts`
 - Modify: `packages/tests/shared-server/topology-app-inbox-ownership.test.ts`
 - Modify: `apps/api-v1/test/rallar-server.test.ts`
 - Rename: the two source-contract files in Section 4.3
 - Modify: direct imports and source-ratchet inventories
+- Create: `packages/tests/repo/group-state-source-ratchet-function-sizes.ts`
 
 - [ ] Start `codex/rallar-group-state-traceability-runtime` from PR A's exact
       resulting `main` SHA after its default workflow.

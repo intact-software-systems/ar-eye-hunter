@@ -142,6 +142,21 @@ export const taskSevenRepairTestOwners = [
   'packages/tests/shared-test/api-v1-state-write-evidence-source.test.ts',
 ] as const;
 
+export const taskFiveReviewFixFunctionOwners = [
+  'packages/tests/repo/group-state-server-source-ratchet-inventory.ts',
+  'packages/tests/repo/group-state-server-source-ratchet.test.ts',
+  'packages/tests/repo/group-state-source-ratchet-function-sizes.ts',
+  'packages/tests/shared-server/app-inbox-test-database-contracts.ts',
+  'packages/tests/shared-server/app-inbox-test-database-sql.ts',
+  'packages/tests/shared-server/app-inbox-test-database-transaction.ts',
+  'packages/tests/shared-server/app-inbox-test-database.ts',
+  'packages/tests/shared-server/group-state/group-state-service-timing-fixture.ts',
+  'packages/tests/shared-server/group-state/group-state-service-timing.test.ts',
+  'packages/tests/shared-server/group-state/inbox/group-state-inbox-transaction-failures.test.ts',
+  'packages/tests/shared-server/group-state/inbox/group-state-inbox-transaction-result.test.ts',
+  'packages/tests/shared-server/group-state/inbox/group-state-transaction-boundary-fixture.ts',
+] as const;
+
 export const reviewedPredecessorFunctionSizes: readonly NamedFunctionSize[] = [
   {
     filePath:

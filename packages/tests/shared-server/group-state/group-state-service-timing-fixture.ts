@@ -117,31 +117,18 @@ function createMutationFake(
 export async function invokeEveryTimedGroupStateOperation(
   service: GroupStateService,
 ): Promise<Readonly<Record<TimedAsyncOperation, unknown>>> {
-  const scope = { applicationId: 'timing-app', workspaceId: 'timing-workspace' };
-  const groupRef = { ...scope, groupId: 'timing-group' };
-  const results = {
-    prepareMutation: await service.prepareMutation(timingDescriptor(), {} as never),
-    prepareExpiredPresenceMutations: await service.prepareExpiredPresenceMutations(1_000),
-    prepareSessionCleanupMutations: await service.prepareSessionCleanupMutations({
-      scope,
-      authSession: {} as never,
-      principalId: 'cleanup-principal',
-      disconnectedAtEpochMs: 1_000,
-    }),
-    listSnapshots: await service.listSnapshots(scope),
-    listSnapshotsPage: await service.listSnapshotsPage(scope, { limit: 1 }),
-    readSnapshot: await service.readSnapshot(groupRef),
-    readStateRevision: await service.readStateRevision(groupRef),
-    readCausalRevision: await service.readCausalRevision(groupRef),
-    readIssuedAuthSession: await service.readIssuedAuthSession('timing-session'),
-    listEvents: await service.listEvents(groupRef),
-    listRecentEvents: await service.listRecentEvents!(groupRef, { limit: 1 }),
-    listEventPage: await service.listEventPage(groupRef, { limit: 1 }),
-    observeSnapshot: await service.observeSnapshot({ marker: 'snapshot' } as never),
-    read: await service.read(timingCommand()),
-    write: await service.write((() => undefined) as never, {} as never),
-  };
-  return results;
+  const results: Partial<Record<TimedAsyncOperation, unknown>> = {};
+  for (const operation of TIMED_ASYNC_OPERATIONS) {
+    results[operation] = await invokeTimedGroupStateOperation(service, operation);
+  }
+  return results as Readonly<Record<TimedAsyncOperation, unknown>>;
+}
+
+export async function invokeTimedGroupStateOperation(
+  service: GroupStateService,
+  operation: TimedAsyncOperation,
+): Promise<unknown> {
+  return await TIMED_OPERATION_INVOCATIONS[operation](service);
 }
 
 export function invokeUntimedGroupStateOperations(service: GroupStateService): unknown {
@@ -175,3 +162,36 @@ function timingCommand() {
     },
   } as never;
 }
+
+const timingScope = { applicationId: 'timing-app', workspaceId: 'timing-workspace' };
+const timingGroupRef = { ...timingScope, groupId: 'timing-group' };
+
+const TIMED_OPERATION_INVOCATIONS: Readonly<
+  Record<TimedAsyncOperation, (service: GroupStateService) => Promise<unknown>>
+> = {
+  prepareMutation: async (service) =>
+    await service.prepareMutation(timingDescriptor(), {} as never),
+  prepareExpiredPresenceMutations: async (service) =>
+    await service.prepareExpiredPresenceMutations(1_000),
+  prepareSessionCleanupMutations: async (service) =>
+    await service.prepareSessionCleanupMutations({
+      scope: timingScope,
+      authSession: {} as never,
+      principalId: 'cleanup-principal',
+      disconnectedAtEpochMs: 1_000,
+    }),
+  listSnapshots: async (service) => await service.listSnapshots(timingScope),
+  listSnapshotsPage: async (service) => await service.listSnapshotsPage(timingScope, { limit: 1 }),
+  readSnapshot: async (service) => await service.readSnapshot(timingGroupRef),
+  readStateRevision: async (service) => await service.readStateRevision(timingGroupRef),
+  readCausalRevision: async (service) => await service.readCausalRevision(timingGroupRef),
+  readIssuedAuthSession: async (service) => await service.readIssuedAuthSession('timing-session'),
+  listEvents: async (service) => await service.listEvents(timingGroupRef),
+  listRecentEvents: async (service) =>
+    await service.listRecentEvents!(timingGroupRef, { limit: 1 }),
+  listEventPage: async (service) => await service.listEventPage(timingGroupRef, { limit: 1 }),
+  observeSnapshot: async (service) =>
+    await service.observeSnapshot({ marker: 'snapshot' } as never),
+  read: async (service) => await service.read(timingCommand()),
+  write: async (service) => await service.write((() => undefined) as never, {} as never),
+};

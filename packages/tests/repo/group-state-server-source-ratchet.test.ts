@@ -9,11 +9,15 @@ import {
   expectedGroupStateTestTree,
   readRuntimeCycles,
   reviewedPredecessorFunctionSizes,
+  taskFiveReviewFixFunctionOwners,
   taskNineLayoutProductionOwners,
   taskSevenRepairProductionOwners,
   taskSevenRepairTestOwners,
-  type NamedFunctionSize,
 } from './group-state-server-source-ratchet-inventory.ts';
+import {
+  readEveryFunctionSize,
+  readNamedFunctionSizes,
+} from './group-state-source-ratchet-function-sizes.ts';
 
 const repoRoot = process.cwd();
 const groupStateProductionRoot = path.join(
@@ -184,10 +188,18 @@ describe('authoritative group-state server source ratchet', () => {
 
   it('keeps every named general function within 60 physical lines', () => {
     const oversizedFunctions = readRatchetedSources()
-      .flatMap(({ file, raw }) => readNamedFunctions(file, raw))
+      .flatMap(({ file, raw }) => readNamedFunctionSizes({ repoRoot, filePath: file, source: raw }))
       .filter(({ lines }) => lines > 60);
 
     expect(oversizedFunctions).toEqual(reviewedPredecessorFunctionSizes);
+  });
+
+  it('keeps every Task 5 changed function and test callback within 60 physical lines', () => {
+    const oversizedFunctions = readSources(taskFiveReviewFixFunctionOwners)
+      .flatMap(({ file, raw }) => readEveryFunctionSize({ repoRoot, filePath: file, source: raw }))
+      .filter(({ lines }) => lines > 60);
+
+    expect(oversizedFunctions).toEqual([]);
   });
 
   it('keeps imports first and runtime dependencies acyclic', () => {
@@ -337,53 +349,6 @@ function isReviewedMechanicalFinding(finding: MechanicalFinding): boolean {
     return true;
   }
   return false;
-}
-
-function readNamedFunctions(filePath: string, source: string): readonly NamedFunctionSize[] {
-  const syntaxTree = parse(source, { sourceType: 'module', plugins: ['typescript'] });
-
-  return syntaxTree.program.body.flatMap((statement) => {
-    const declaration =
-      statement.type === 'ExportNamedDeclaration' ? statement.declaration : statement;
-    if (declaration?.type === 'FunctionDeclaration' && declaration.id && declaration.loc) {
-      return [toFunctionSize(filePath, declaration.id.name, declaration.loc)];
-    }
-    if (declaration?.type === 'VariableDeclaration') {
-      return declaration.declarations.flatMap((variable) => {
-        if (
-          variable.id.type !== 'Identifier' ||
-          (variable.init?.type !== 'ArrowFunctionExpression' &&
-            variable.init?.type !== 'FunctionExpression') ||
-          !variable.init.loc
-        ) {
-          return [];
-        }
-        return [toFunctionSize(filePath, variable.id.name, variable.init.loc)];
-      });
-    }
-    if (declaration?.type === 'ClassDeclaration') {
-      return declaration.body.body.flatMap((member) => {
-        if (member.type !== 'ClassMethod' || !member.loc) {
-          return [];
-        }
-        const name = member.key.type === 'Identifier' ? member.key.name : '<computed>';
-        return [toFunctionSize(filePath, name, member.loc)];
-      });
-    }
-    return [];
-  });
-}
-
-function toFunctionSize(
-  filePath: string,
-  name: string,
-  location: { readonly start: { readonly line: number }; readonly end: { readonly line: number } },
-): NamedFunctionSize {
-  return {
-    filePath: path.relative(repoRoot, filePath),
-    name,
-    lines: location.end.line - location.start.line + 1,
-  };
 }
 
 function hasImportAfterDeclaration(source: string): boolean {

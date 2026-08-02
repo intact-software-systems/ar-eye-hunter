@@ -2,8 +2,8 @@
 
 ## Scope and decision
 
-Task 5 changes only tests, source-ratchet inventory paths, and the two approved
-test-support moves. It makes no production, public-contract, AppInbox, timing,
+Task 5 changes only tests, source-ratchet inventory paths, and cohesive test
+support owners. It makes no production, public-contract, AppInbox, timing,
 registration, persistence, or checker change. The predecessor runtime remains
 the GREEN characterization target; the five future Task 6–10 owners are
 deliberately RED and are not a publication verdict for this intermediate task.
@@ -248,12 +248,13 @@ Review-fix runtime fixtures add actual timing operation/detail, setter identity,
 descriptor, and durable-result sequencing coverage. The original combined
 batch remains **9 files / 146 tests**, explicitly **8 behavior files / 139
 tests** plus **1 source-ratchet file / 7 tests**. A supplementary predecessor
-batch is **6 files / 16 tests**: timing 4, setter lifecycle 2, descriptor 2,
+batch is **6 files / 17 tests**: timing 5, setter lifecycle 2, descriptor 2,
 durable/identity/failure 7, and active documentation 1. The separate future
-timing test uses a
-complete fake `GroupStateService` and reserves runtime assertions for every
-async operation, including `write`, exact returns, details, rejection, and the
-direct untimed synchronous functions. It remains RED only because the Task 7
+timing test uses a complete fake `GroupStateService` and reserves runtime
+assertions for every async operation, including `write`, exact returns, and
+details. It creates one independent rejecting fake per operation and requires
+the same rejection identity, one exact underlying call, one error event, and
+operation-specific identity/details. It remains RED only because the Task 7
 owner does not exist; Task 5 does not export the predecessor's private wrapper
 or claim that no-timing identity is currently runtime-observable.
 
@@ -268,8 +269,10 @@ for all 17 authenticated `GROUP_*` types and the exact unsupported-family error.
 `group-state-inbox-transaction-failures.test.ts` replaces the former
 same-shaped fake throws with the real `GroupStateInboxHandler`, real
 `GroupStateService`, and real `AppInboxTransactionWriter`. The shared in-memory
-database exposes three optional stage hooks without changing existing defaults;
-the existing conditional-write hook owns the domain-write failure. Every case
+database keeps its public factory while cohesive contract, SQL-family/stage,
+and transaction publication owners expose three optional stage hooks without
+changing existing defaults. The existing conditional-write hook owns the
+domain-write failure. Every case
 proves its exact named stage was reached, the exact error propagated, all
 runtime state/event/result/outbox work rolled back, the reservation remained
 owned, and no caller result, observation, or wake escaped.
@@ -306,6 +309,11 @@ not exist yet:
 These independently named target failures are the approved RED contract for
 Tasks 6–10, not failures in predecessor behavior. No other target construct was
 asserted as absent.
+
+The Task 5 changed-source ratchet recursively checks named functions and test
+callbacks while excluding only declarative `describe` containers. Every changed
+function/callback is at most 60 physical lines and every changed module is at
+most 400 physical lines.
 
 The three future-only runs fail in exactly **14 named cases**: one timing-owner
 case, one construction-valid registration case, and twelve transaction,
